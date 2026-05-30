@@ -1,13 +1,15 @@
-import type {ModelDiagnosticJson, StateInfo, VariableInfo} from '../inspect';
+import type {ModelDiagnosticJson, StateInfo, TransitionInfo, VariableInfo} from '../inspect';
 
 export function collectDataFlowWarnings(
     variables: VariableInfo[],
     reachabilityGraph: Record<string, string[]>,
     states: StateInfo[] = [],
     rootStatePath?: string,
+    transitions: TransitionInfo[] = [],
 ): ModelDiagnosticJson[] {
     const out: ModelDiagnosticJson[] = [];
     const stateParentPaths = stateParentPathMap(states);
+    const exitTransitionSources = collectExitTransitionSources(transitions);
     out.push(...guardVarsNeverChangeDiagnostics(variables));
     for (const variable of variables) {
         out.push(...variableUsageDiagnostics(
@@ -15,6 +17,7 @@ export function collectDataFlowWarnings(
             reachabilityGraph,
             stateParentPaths,
             rootStatePath,
+            exitTransitionSources,
         ));
     }
     return out;
@@ -25,6 +28,7 @@ function variableUsageDiagnostics(
     reachabilityGraph: Record<string, string[]>,
     stateParentPaths: Record<string, string | null>,
     rootStatePath?: string,
+    exitTransitionSources: Set<string> = new Set(),
 ): ModelDiagnosticJson[] {
     const readStates = variableReadStates(variable);
     const writeStates = variableWriteStates(variable);
@@ -44,6 +48,7 @@ function variableUsageDiagnostics(
         reachabilityGraph,
         stateParentPaths,
         rootStatePath,
+        exitTransitionSources,
     );
     if (finalWrites.length === 0) return [];
     return [{
@@ -62,6 +67,14 @@ function stateParentPathMap(states: StateInfo[]): Record<string, string | null> 
     const out: Record<string, string | null> = {};
     for (const state of states) out[state.path] = state.parent_path;
     return out;
+}
+
+function collectExitTransitionSources(transitions: TransitionInfo[]): Set<string> {
+    return new Set(
+        transitions
+            .filter(transition => transition.to_path === '[*]')
+            .map(transition => transition.from_path),
+    );
 }
 
 function variableReadStates(variable: VariableInfo): Set<string> {
@@ -133,31 +146,41 @@ function guardVarsNeverChangeDiagnostics(variables: VariableInfo[]): ModelDiagno
     for (const variable of variables) {
         writesByVar[variable.name] = variableWriteStates(variable);
     }
-    const guardVars = new Map<string, {edge: [string, string]; names: Set<string>}>();
+    const guardVars = new Map<string, {occurrence: [string, string, string]; names: Set<string>}>();
     for (const variable of variables) {
-        for (const edge of variable.read_in_guards) {
-            const key = `${edge[0]}\u0001${edge[1]}`;
-            const item = guardVars.get(key) ?? {edge, names: new Set<string>()};
+        const guardOccurrences = variable.read_in_guard_occurrences ?? [];
+        const occurrences = guardOccurrences.length > 0
+            ? guardOccurrences
+            : variable.read_in_guards.map(([fromPath, toPath]) =>
+                [fromPath, toPath, `${fromPath}->${toPath}`] as [string, string, string]
+            );
+        for (const occurrence of occurrences) {
+            const key = `${occurrence[0]}\u0001${occurrence[1]}\u0001${occurrence[2]}`;
+            const item = guardVars.get(key) ?? {occurrence, names: new Set<string>()};
             item.names.add(variable.name);
             guardVars.set(key, item);
         }
     }
 
     const out: ModelDiagnosticJson[] = [];
+    const emittedRefs = new Set<string>();
     const items = Array.from(guardVars.values()).sort((a, b) => {
-        const left = `${a.edge[0]}\u0001${a.edge[1]}`;
-        const right = `${b.edge[0]}\u0001${b.edge[1]}`;
+        const left = `${a.occurrence[0]}\u0001${a.occurrence[1]}\u0001${a.occurrence[2]}`;
+        const right = `${b.occurrence[0]}\u0001${b.occurrence[1]}\u0001${b.occurrence[2]}`;
         return left.localeCompare(right);
     });
-    for (const {edge, names} of items) {
+    for (const {occurrence, names} of items) {
         const neverChanged = Array.from(names)
             .filter(name => writesByVar[name].size === 0)
             .sort();
         if (neverChanged.length !== names.size) continue;
+        const refKey = JSON.stringify([neverChanged, null]);
+        if (emittedRefs.has(refKey)) continue;
+        emittedRefs.add(refKey);
         out.push({
             code: 'W_GUARD_VARS_NEVER_CHANGE',
             severity: 'warning',
-            message: `Transition ${JSON.stringify(edge[0])} -> ${JSON.stringify(edge[1])} guard only reads variables that never change.`,
+            message: `Transition ${JSON.stringify(occurrence[0])} -> ${JSON.stringify(occurrence[1])} guard only reads variables that never change.`,
             span: null,
             refs: {
                 transition_span: null,
@@ -174,14 +197,25 @@ function finalWriteLocations(
     reachabilityGraph: Record<string, string[]>,
     stateParentPaths: Record<string, string | null>,
     rootStatePath?: string,
+    exitTransitionSources: Set<string> = new Set(),
 ): string[] {
     const out: string[] = [];
-    for (const statePath of variable.written_in_states) {
-        if (!hasReachableRead(statePath, readStates, reachabilityGraph)) {
-            out.push(statePath);
+    const actionWrites = actionWriteStages(variable);
+    for (const [statePath, stage] of actionWrites) {
+        if (hasReachableReadAfterActionWrite(
+            statePath,
+            stage,
+            readStates,
+            reachabilityGraph,
+            stateParentPaths,
+            rootStatePath,
+            exitTransitionSources,
+        )) {
+            continue;
         }
+        out.push(statePath);
     }
-    for (const [fromPath, toPath] of variable.written_in_effects) {
+    for (const [fromPath, toPath] of effectWriteEdges(variable)) {
         const nextReadStart = effectReadStart(fromPath, toPath, stateParentPaths, rootStatePath);
         if (nextReadStart !== null && hasReachableRead(nextReadStart, readStates, reachabilityGraph)) {
             continue;
@@ -189,6 +223,65 @@ function finalWriteLocations(
         out.push(`${fromPath}->${toPath}`);
     }
     return Array.from(new Set(out)).sort();
+}
+
+function actionWriteStages(variable: VariableInfo): Array<[string, string | null]> {
+    const actionStages = variable.written_in_action_stages ?? [];
+    if (actionStages.length > 0) {
+        return actionStages;
+    }
+    return variable.written_in_states.map(statePath => [statePath, null]);
+}
+
+function effectWriteEdges(variable: VariableInfo): Array<[string, string]> {
+    const effectOccurrences = variable.written_in_effect_occurrences ?? [];
+    if (effectOccurrences.length > 0) {
+        return effectOccurrences.map(([fromPath, toPath]) => [fromPath, toPath]);
+    }
+    return variable.written_in_effects;
+}
+
+function hasReachableReadAfterActionWrite(
+    statePath: string,
+    stage: string | null,
+    readStates: Set<string>,
+    reachabilityGraph: Record<string, string[]>,
+    stateParentPaths: Record<string, string | null>,
+    rootStatePath?: string,
+    exitTransitionSources: Set<string> = new Set(),
+): boolean {
+    if (stage !== 'exit') return hasReachableRead(statePath, readStates, reachabilityGraph);
+    if (hasReachableReadAfterExit(statePath, readStates, reachabilityGraph)) return true;
+    const exitParent = exitTransitionParentStart(
+        statePath,
+        stateParentPaths,
+        rootStatePath,
+        exitTransitionSources,
+    );
+    return exitParent !== null && hasReachableRead(exitParent, readStates, reachabilityGraph);
+}
+
+function hasReachableReadAfterExit(
+    statePath: string,
+    readStates: Set<string>,
+    reachabilityGraph: Record<string, string[]>,
+): boolean {
+    for (const reachable of reachabilityGraph[statePath] ?? []) {
+        if (readStates.has(reachable)) return true;
+    }
+    return false;
+}
+
+function exitTransitionParentStart(
+    statePath: string,
+    stateParentPaths: Record<string, string | null>,
+    rootStatePath: string | undefined,
+    exitTransitionSources: Set<string>,
+): string | null {
+    if (!exitTransitionSources.has(statePath)) return null;
+    const parentPath = stateParentPaths[statePath] ?? null;
+    if (parentPath === null || parentPath === rootStatePath) return null;
+    return parentPath;
 }
 
 function effectReadStart(
@@ -209,7 +302,7 @@ function hasReachableRead(
     reachabilityGraph: Record<string, string[]>,
 ): boolean {
     if (readStates.has(startPath)) return true;
-    for (const reachable of reachabilityGraph[startPath]) {
+    for (const reachable of reachabilityGraph[startPath] ?? []) {
         if (readStates.has(reachable)) return true;
     }
     return false;

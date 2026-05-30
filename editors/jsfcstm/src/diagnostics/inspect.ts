@@ -126,6 +126,10 @@ export interface VariableInfo {
     written_in_states: string[];
     read_in_guards: Array<[string, string]>;
     written_in_effects: Array<[string, string]>;
+    read_in_action_stages: Array<[string, string]>;
+    written_in_action_stages: Array<[string, string]>;
+    read_in_guard_occurrences: Array<[string, string, string]>;
+    written_in_effect_occurrences: Array<[string, string, string]>;
     participates_directly: boolean;
     participates_indirectly: boolean;
     abstract_actions_in_scope: string[];
@@ -464,12 +468,20 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
     const writesByState: Record<string, string[]> = {};
     const readGuards: Record<string, Array<[string, string]>> = {};
     const writtenEffects: Record<string, Array<[string, string]>> = {};
+    const readActionStages: Record<string, Array<[string, string]>> = {};
+    const writtenActionStages: Record<string, Array<[string, string]>> = {};
+    const readGuardOccurrences: Record<string, Array<[string, string, string]>> = {};
+    const writtenEffectOccurrences: Record<string, Array<[string, string, string]>> = {};
     const floatLiteralAssignments: Record<string, string[]> = {};
     for (const name of Object.keys(machine.defines)) {
         readsByState[name] = [];
         writesByState[name] = [];
         readGuards[name] = [];
         writtenEffects[name] = [];
+        readActionStages[name] = [];
+        writtenActionStages[name] = [];
+        readGuardOccurrences[name] = [];
+        writtenEffectOccurrences[name] = [];
         floatLiteralAssignments[name] = [];
     }
     const stateLookup: Record<string, StateInfo> = {};
@@ -478,32 +490,48 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
     }
     for (const state of machine.allStates) {
         const path = dottedPath(state.path);
-        const {reads, writes} = collectActionReadsWrites(state);
         const localFloatAssigns: Record<string, string[]> = {};
-        for (const collection of [state.onEnters, state.onDurings, state.onExits, state.onDuringAspects]) {
+        for (const [stageName, collection] of stateActionCollections(state)) {
             for (const action of collection) {
+                if (action.operations && action.operations.length > 0) {
+                    const localReads: string[] = [];
+                    const localWrites: string[] = [];
+                    for (const stmt of action.operations) {
+                        walkStmtReadsWrites(stmt, localReads, localWrites);
+                    }
+                    for (const name of localReads) {
+                        if (name in readsByState) {
+                            readsByState[name].push(path);
+                            readActionStages[name].push([path, stageName]);
+                        }
+                    }
+                    for (const name of localWrites) {
+                        if (name in writesByState) {
+                            writesByState[name].push(path);
+                            writtenActionStages[name].push([path, stageName]);
+                        }
+                    }
+                }
                 for (const stmt of action.operations ?? []) {
                     walkStmtFloatLiteralAssignments(stmt, localFloatAssigns);
                 }
             }
-        }
-        for (const name of Object.keys(reads)) {
-            if (name in readsByState) readsByState[name].push(path);
-        }
-        for (const name of Object.keys(writes)) {
-            if (name in writesByState) writesByState[name].push(path);
         }
         for (const [name, assignments] of Object.entries(localFloatAssigns)) {
             if (name in floatLiteralAssignments) {
                 floatLiteralAssignments[name].push(...assignments);
             }
         }
-        for (const t of state.transitions) {
+        state.transitions.forEach((t, index) => {
             const fromPath = transitionEndpoint(state.path, t.fromState, true);
             const toPath = transitionEndpoint(state.path, t.toState, false);
+            const occurrenceKey = `${path}#${index + 1}`;
             if (t.guard) {
                 for (const v of walkExprVariables(t.guard)) {
-                    if (v in readGuards) readGuards[v].push([fromPath, toPath]);
+                    if (v in readGuards) {
+                        readGuards[v].push([fromPath, toPath]);
+                        readGuardOccurrences[v].push([fromPath, toPath, occurrenceKey]);
+                    }
                 }
             }
             for (const stmt of t.effects ?? []) {
@@ -516,7 +544,10 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
                     if (v in readsByState) readsByState[v].push(fromPath);
                 }
                 for (const v of localWrites) {
-                    if (v in writtenEffects) writtenEffects[v].push([fromPath, toPath]);
+                    if (v in writtenEffects) {
+                        writtenEffects[v].push([fromPath, toPath]);
+                        writtenEffectOccurrences[v].push([fromPath, toPath, occurrenceKey]);
+                    }
                 }
                 for (const [v, assignments] of Object.entries(localFloatEffectAssigns)) {
                     if (v in floatLiteralAssignments) {
@@ -524,7 +555,7 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
                     }
                 }
             }
-        }
+        });
     }
 
     const dedupe = (xs: string[]): string[] => Array.from(new Set(xs));
@@ -540,6 +571,18 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
         }
         return out;
     };
+    const dedupeTriples = (triples: Array<[string, string, string]>): Array<[string, string, string]> => {
+        const seen = new Set<string>();
+        const out: Array<[string, string, string]> = [];
+        for (const triple of triples) {
+            const key = `${triple[0]}\u0001${triple[1]}\u0001${triple[2]}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                out.push(triple);
+            }
+        }
+        return out;
+    };
 
     const out: VariableInfo[] = [];
     for (const name of Object.keys(machine.defines)) {
@@ -548,6 +591,10 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
         const writtenStates = dedupe(writesByState[name]);
         const readGuardEntries = dedupePairs(readGuards[name]);
         const writtenEffectEntries = dedupePairs(writtenEffects[name]);
+        const readActionStageEntries = dedupePairs(readActionStages[name]);
+        const writtenActionStageEntries = dedupePairs(writtenActionStages[name]);
+        const readGuardOccurrenceEntries = dedupeTriples(readGuardOccurrences[name]);
+        const writtenEffectOccurrenceEntries = dedupeTriples(writtenEffectOccurrences[name]);
         const participatesDirectly = readStates.length > 0 ||
             readGuardEntries.length > 0 ||
             writtenStates.length > 0 ||
@@ -566,6 +613,10 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
             written_in_states: writtenStates,
             read_in_guards: readGuardEntries,
             written_in_effects: writtenEffectEntries,
+            read_in_action_stages: readActionStageEntries,
+            written_in_action_stages: writtenActionStageEntries,
+            read_in_guard_occurrences: readGuardOccurrenceEntries,
+            written_in_effect_occurrences: writtenEffectOccurrenceEntries,
             participates_directly: participatesDirectly,
             participates_indirectly: false,
             abstract_actions_in_scope: abstractActions,
@@ -575,27 +626,18 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
     return out;
 }
 
-function collectActionReadsWrites(state: {
+function stateActionCollections(state: {
     onEnters: OnStage[];
     onDurings: OnStage[];
     onExits: OnStage[];
     onDuringAspects: OnAspect[];
-}): {reads: Record<string, true>; writes: Record<string, true>} {
-    const reads: Record<string, true> = {};
-    const writes: Record<string, true> = {};
-    for (const collection of [state.onEnters, state.onDurings, state.onExits, state.onDuringAspects]) {
-        for (const action of collection) {
-            if (!action.operations || action.operations.length === 0) continue;
-            const localReads: string[] = [];
-            const localWrites: string[] = [];
-            for (const stmt of action.operations) {
-                walkStmtReadsWrites(stmt, localReads, localWrites);
-            }
-            for (const v of localReads) reads[v] = true;
-            for (const v of localWrites) writes[v] = true;
-        }
-    }
-    return {reads, writes};
+}): Array<[string, Array<OnStage | OnAspect>]> {
+    return [
+        ['enter', state.onEnters],
+        ['during', state.onDurings],
+        ['exit', state.onExits],
+        ['during_aspect', state.onDuringAspects],
+    ];
 }
 
 function walkExprVariables(expr: Expr | null | undefined): string[] {

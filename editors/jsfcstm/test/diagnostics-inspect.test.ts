@@ -1356,6 +1356,28 @@ state Root {
             assert.equal(byCode.has('W_UNWRITTEN_READ_VAR'), false);
         });
 
+        it('keeps guard-variable checks separate for parallel transitions', async () => {
+            const report = inspectModel(await buildMachine(`
+def int a = 0;
+def int b = 0;
+def int tick = 0;
+state Root {
+    state A { during { tick = tick + 1; } }
+    state B;
+    [*] -> A;
+    A -> B : if [a > 0];
+    A -> B : if [tick > 0 && b > 0];
+}
+`));
+            const refs = diagnosticsByCode(report)
+                .get('W_GUARD_VARS_NEVER_CHANGE')!
+                .map(d => d.refs);
+            assert.ok(refs.some(ref => JSON.stringify(ref) === JSON.stringify({
+                transition_span: null,
+                guard_vars: ['a'],
+            })));
+        });
+
         it('emits dead-store warning for final transition-effect writes', async () => {
             const report = inspectModel(await buildMachine(`
 def int status = 0;
@@ -1390,6 +1412,41 @@ state Root {
                 var_name: 'status',
                 write_locations: ['Root.Done'],
             });
+        });
+
+        it('does not clear exit-action final writes with source guard reads', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+state Root {
+    state Active {
+        exit { status = 1; }
+    }
+    state Done;
+    [*] -> Active;
+    Active -> Done : if [status == 0];
+}
+`));
+            assert.deepEqual(diagnosticsByCode(report).get('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE')![0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Active'],
+            });
+        });
+
+        it('keeps exit-action writes live when target state reads them', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+state Root {
+    state Active {
+        exit { status = 1; }
+    }
+    state Done {
+        enter { status = status + 1; }
+    }
+    [*] -> Active;
+    Active -> Done;
+}
+`));
+            assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
         });
 
         it('skips dead-store warning when a reachable later guard reads the write', async () => {
@@ -1478,6 +1535,60 @@ state Root {
             assert.deepEqual(diagnostics[0].refs, {
                 var_name: 'status',
                 write_locations: ['Root.Idle->[*]'],
+            });
+        });
+
+        it('keeps old variable-info objects compatible with guard occurrence fallback', () => {
+            const variable = {
+                name: 'ready',
+                type: 'int',
+                init_value: '0',
+                read_in_states: [],
+                written_in_states: [],
+                read_in_guards: [['Root.Idle', 'Root.Active'] as [string, string]],
+                written_in_effects: [],
+                participates_directly: true,
+                participates_indirectly: false,
+                abstract_actions_in_scope: [],
+                float_literal_assignments: [],
+            };
+            const diagnostics = collectDataFlowWarnings(
+                [variable as Parameters<typeof collectDataFlowWarnings>[0][number]],
+                {'Root.Idle': ['Root.Active'], 'Root.Active': []},
+            );
+
+            assert.deepEqual(diagnostics.find(d => d.code === 'W_GUARD_VARS_NEVER_CHANGE')!.refs, {
+                transition_span: null,
+                guard_vars: ['ready'],
+            });
+        });
+
+        it('handles exit-action writes without transition inventory as final writes', () => {
+            const diagnostics = collectDataFlowWarnings(
+                [{
+                    name: 'status',
+                    type: 'int',
+                    init_value: '0',
+                    read_in_states: ['Root.Done'],
+                    written_in_states: ['Root.Active'],
+                    read_in_guards: [],
+                    written_in_effects: [],
+                    read_in_action_stages: [],
+                    written_in_action_stages: [['Root.Active', 'exit']],
+                    read_in_guard_occurrences: [],
+                    written_in_effect_occurrences: [],
+                    participates_directly: true,
+                    participates_indirectly: false,
+                    abstract_actions_in_scope: [],
+                    float_literal_assignments: [],
+                }],
+                {'Root.Active': []},
+                [{path: 'Root.Active', parent_path: null} as Parameters<typeof collectDataFlowWarnings>[2][number]],
+            );
+
+            assert.deepEqual(diagnostics[0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Active'],
             });
         });
 

@@ -1406,6 +1406,28 @@ class TestInspectModelDataFlowClosureDiagnostics:
         assert 'W_GUARD_VARS_NEVER_CHANGE' not in by_code
         assert 'W_UNWRITTEN_READ_VAR' not in by_code
 
+    def test_guard_vars_never_change_keeps_parallel_transition_guards_separate(self):
+        dsl = """
+        def int a = 0;
+        def int b = 0;
+        def int tick = 0;
+        state Root {
+            state A { during { tick = tick + 1; } }
+            state B;
+            [*] -> A;
+            A -> B : if [a > 0];
+            A -> B : if [tick > 0 && b > 0];
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        refs = [
+            diag.refs for diag in by_code['W_GUARD_VARS_NEVER_CHANGE']
+        ]
+        assert {
+            'transition_span': None,
+            'guard_vars': ['a'],
+        } in refs
+
     def test_variable_never_read_after_final_write_for_transition_effect(self):
         dsl = """
         def int status = 0;
@@ -1442,6 +1464,42 @@ class TestInspectModelDataFlowClosureDiagnostics:
             'var_name': 'status',
             'write_locations': ['Root.Done'],
         }
+
+    def test_exit_action_final_write_is_not_cleared_by_source_guard_read(self):
+        dsl = """
+        def int status = 0;
+        state Root {
+            state Active {
+                exit { status = 1; }
+            }
+            state Done;
+            [*] -> Active;
+            Active -> Done : if [status == 0];
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        diag = by_code['W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'][0]
+        assert diag.refs == {
+            'var_name': 'status',
+            'write_locations': ['Root.Active'],
+        }
+
+    def test_exit_action_write_reaching_target_state_read_is_not_final(self):
+        dsl = """
+        def int status = 0;
+        state Root {
+            state Active {
+                exit { status = 1; }
+            }
+            state Done {
+                enter { status = status + 1; }
+            }
+            [*] -> Active;
+            Active -> Done;
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
 
     def test_variable_never_read_after_final_write_skips_reachable_read(self):
         dsl = """

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Set, Tuple
 from ...utils.validate import ModelDiagnostic
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..inspect import StateInfo, VariableInfo
+    from ..inspect import StateInfo, TransitionInfo, VariableInfo
 
 
 def collect_data_flow_warnings(
@@ -13,10 +13,13 @@ def collect_data_flow_warnings(
     reachability_graph,
     states: Iterable['StateInfo'] = (),
     root_state_path: Optional[str] = None,
+    transitions: Iterable['TransitionInfo'] = (),
 ) -> List[ModelDiagnostic]:
     diagnostics: List[ModelDiagnostic] = []
     variables = list(variables)
+    transitions = list(transitions)
     state_parent_paths = _state_parent_paths(states)
+    exit_transition_sources = _exit_transition_sources(transitions)
     diagnostics.extend(_guard_vars_never_change_diagnostics(variables))
     for variable in variables:
         diagnostics.extend(_variable_usage_diagnostics(
@@ -24,6 +27,7 @@ def collect_data_flow_warnings(
             reachability_graph,
             state_parent_paths,
             root_state_path,
+            exit_transition_sources,
         ))
     return diagnostics
 
@@ -33,6 +37,7 @@ def _variable_usage_diagnostics(
     reachability_graph,
     state_parent_paths: Dict[str, Optional[str]],
     root_state_path: Optional[str],
+    exit_transition_sources: Set[str],
 ) -> List[ModelDiagnostic]:
     read_states = _read_states(variable)
     write_states = _write_states(variable)
@@ -49,6 +54,7 @@ def _variable_usage_diagnostics(
         reachability_graph,
         state_parent_paths,
         root_state_path,
+        exit_transition_sources,
     )
     if final_writes:
         return [
@@ -74,6 +80,16 @@ def _state_parent_paths(
     return {
         state.path: state.parent_path
         for state in states
+    }
+
+
+def _exit_transition_sources(
+    transitions: Iterable['TransitionInfo'],
+) -> Set[str]:
+    return {
+        transition.from_path
+        for transition in transitions
+        if transition.to_path == '[*]'
     }
 
 
@@ -155,24 +171,36 @@ def _guard_vars_never_change_diagnostics(
         variable.name: _write_states(variable)
         for variable in variables
     }
-    guard_vars: Dict[Tuple[str, str], Set[str]] = {}
+    guard_vars: Dict[Tuple[str, str, str], Set[str]] = {}
     for variable in variables:
-        for edge in variable.read_in_guards:
-            guard_vars.setdefault(edge, set()).add(variable.name)
+        occurrences = getattr(variable, 'read_in_guard_occurrences', ())
+        if not occurrences:
+            occurrences = tuple(
+                (from_path, to_path, f'{from_path}->{to_path}')
+                for from_path, to_path in variable.read_in_guards
+            )
+        for occurrence in occurrences:
+            guard_vars.setdefault(occurrence, set()).add(variable.name)
 
     diagnostics: List[ModelDiagnostic] = []
-    for edge, names in sorted(guard_vars.items()):
+    emitted_refs: Set[Tuple[Tuple[str, ...], Optional[str]]] = set()
+    for occurrence, names in sorted(guard_vars.items()):
         never_changed = sorted(
             name for name in names
             if not writes_by_var.get(name)
         )
         if len(never_changed) != len(names):
             continue
+        ref_key = (tuple(never_changed), None)
+        if ref_key in emitted_refs:
+            continue
+        emitted_refs.add(ref_key)
+        from_path, to_path, _ = occurrence
         diagnostics.append(ModelDiagnostic(
             code='W_GUARD_VARS_NEVER_CHANGE',
             severity='warning',
             message=(
-                f'Transition {edge[0]!r} -> {edge[1]!r} guard only reads '
+                f'Transition {from_path!r} -> {to_path!r} guard only reads '
                 'variables that never change.'
             ),
             refs={
@@ -189,13 +217,26 @@ def _final_write_locations(
     reachability_graph,
     state_parent_paths: Dict[str, Optional[str]],
     root_state_path: Optional[str],
+    exit_transition_sources: Set[str],
 ) -> List[str]:
     out: List[str] = []
-    for state_path in variable.written_in_states:
-        if _has_reachable_read(state_path, read_states, reachability_graph):
+    action_writes = _action_write_stages(variable)
+    if not action_writes:
+        action_writes = tuple((state_path, None) for state_path in variable.written_in_states)
+    for state_path, stage in action_writes:
+        if _has_reachable_read_after_action_write(
+            state_path,
+            stage,
+            read_states,
+            reachability_graph,
+            state_parent_paths,
+            root_state_path,
+            exit_transition_sources,
+        ):
             continue
         out.append(state_path)
-    for from_path, to_path in variable.written_in_effects:
+    effect_writes = _effect_write_edges(variable)
+    for from_path, to_path in effect_writes:
         next_read_start = _effect_read_start(
             from_path,
             to_path,
@@ -209,6 +250,74 @@ def _final_write_locations(
             continue
         out.append(f'{from_path}->{to_path}')
     return sorted(set(out))
+
+
+def _action_write_stages(variable: 'VariableInfo') -> Tuple[Tuple[str, Optional[str]], ...]:
+    return tuple(
+        (state_path, stage)
+        for state_path, stage in getattr(variable, 'written_in_action_stages', ())
+    )
+
+
+def _effect_write_edges(variable: 'VariableInfo') -> Tuple[Tuple[str, str], ...]:
+    occurrences = getattr(variable, 'written_in_effect_occurrences', ())
+    if occurrences:
+        return tuple((from_path, to_path) for from_path, to_path, _ in occurrences)
+    return tuple(variable.written_in_effects)
+
+
+def _has_reachable_read_after_action_write(
+    state_path: str,
+    stage: Optional[str],
+    read_states: Set[str],
+    reachability_graph,
+    state_parent_paths: Dict[str, Optional[str]],
+    root_state_path: Optional[str],
+    exit_transition_sources: Set[str],
+) -> bool:
+    if stage != 'exit':
+        return _has_reachable_read(state_path, read_states, reachability_graph)
+    if _has_reachable_read_after_exit(
+        state_path,
+        read_states,
+        reachability_graph,
+    ):
+        return True
+    exit_parent = _exit_transition_parent_start(
+        state_path,
+        state_parent_paths,
+        root_state_path,
+        exit_transition_sources,
+    )
+    return (
+        exit_parent is not None and
+        _has_reachable_read(exit_parent, read_states, reachability_graph)
+    )
+
+
+def _has_reachable_read_after_exit(
+    state_path: str,
+    read_states: Set[str],
+    reachability_graph,
+) -> bool:
+    for reachable in reachability_graph.get(state_path, ()):
+        if reachable in read_states:
+            return True
+    return False
+
+
+def _exit_transition_parent_start(
+    state_path: str,
+    state_parent_paths: Dict[str, Optional[str]],
+    root_state_path: Optional[str],
+    exit_transition_sources: Set[str],
+) -> Optional[str]:
+    if state_path not in exit_transition_sources:
+        return None
+    parent_path = state_parent_paths.get(state_path)
+    if parent_path is None or parent_path == root_state_path:
+        return None
+    return parent_path
 
 
 def _effect_read_start(
@@ -232,7 +341,7 @@ def _has_reachable_read(
 ) -> bool:
     if start_path in read_states:
         return True
-    for reachable in reachability_graph[start_path]:
+    for reachable in reachability_graph.get(start_path, ()):
         if reachable in read_states:
             return True
     return False

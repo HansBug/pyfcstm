@@ -83,6 +83,7 @@ def collect_design_health_warnings(
         reachability_graph,
         states,
         resolved_root_state_path,
+        transitions,
     ))
     diagnostics.extend(collect_redundancy_warnings(transitions, events, states))
     diagnostics.extend(collect_transition_infos(states, transitions))

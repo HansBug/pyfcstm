@@ -950,6 +950,89 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
         [],
     ),
     (
+        'design-health-parallel-guard-occurrences',
+        '\n'.join([
+            'def int a = 0;',
+            'def int b = 0;',
+            'def int tick = 0;',
+            'state Root {',
+            '    state A { during { tick = tick + 1; } }',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B : if [a > 0];',
+            '    A -> B : if [tick > 0 && b > 0];',
+            '}',
+        ]),
+        [
+            {
+                'code': 'W_DEADLOCK_LEAF',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.B',
+                    'reason': 'no_outgoing_transition',
+                },
+            },
+            {
+                'code': 'W_GUARD_VARS_NEVER_CHANGE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'guard_vars': ['a'],
+                },
+            },
+            {
+                'code': 'W_UNWRITTEN_READ_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'a',
+                    'read_states': ['Root.A'],
+                    'init_value': '0',
+                },
+            },
+            {
+                'code': 'W_UNWRITTEN_READ_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'b',
+                    'read_states': ['Root.A'],
+                    'init_value': '0',
+                },
+            },
+        ],
+    ),
+    (
+        'design-health-exit-action-final-write-order',
+        '\n'.join([
+            'def int status = 0;',
+            'state Root {',
+            '    state Active {',
+            '        exit { status = 1; }',
+            '    }',
+            '    state Done;',
+            '    [*] -> Active;',
+            '    Active -> Done : if [status == 0];',
+            '}',
+        ]),
+        [
+            {
+                'code': 'W_DEADLOCK_LEAF',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.Done',
+                    'reason': 'no_outgoing_transition',
+                },
+            },
+            {
+                'code': 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'status',
+                    'write_locations': ['Root.Active'],
+                },
+            },
+        ],
+    ),
+    (
         'design-health-threshold-naming-type-info',
         '\n'.join([
             'def int truncated = 3.5;',

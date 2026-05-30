@@ -200,6 +200,22 @@ class VariableInfo:
     :param written_in_effects: Tuples ``(from_path, to_path)`` of
         transitions whose effect block writes this variable.
     :type written_in_effects: Tuple[Tuple[str, str], ...]
+    :param read_in_action_stages: Tuples ``(state_path, stage)`` for
+        action blocks that read this variable. ``stage`` preserves the
+        lifecycle order needed by final-write diagnostics.
+    :type read_in_action_stages: Tuple[Tuple[str, str], ...]
+    :param written_in_action_stages: Tuples ``(state_path, stage)`` for
+        action blocks that write this variable.
+    :type written_in_action_stages: Tuple[Tuple[str, str], ...]
+    :param read_in_guard_occurrences: Tuples
+        ``(from_path, to_path, occurrence_key)`` for transition guards
+        that read this variable. The occurrence key keeps parallel
+        transitions with the same endpoints separate.
+    :type read_in_guard_occurrences: Tuple[Tuple[str, str, str], ...]
+    :param written_in_effect_occurrences: Tuples
+        ``(from_path, to_path, occurrence_key)`` for transition effects
+        that write this variable.
+    :type written_in_effect_occurrences: Tuple[Tuple[str, str, str], ...]
     :param participates_directly: ``True`` when the variable is read or
         written by at least one guard, transition effect, or action
         operation.
@@ -233,6 +249,10 @@ class VariableInfo:
     participates_indirectly: bool
     abstract_actions_in_scope: Tuple[str, ...]
     float_literal_assignments: Tuple[str, ...] = field(default_factory=tuple)
+    read_in_action_stages: Tuple[Tuple[str, str], ...] = field(default_factory=tuple)
+    written_in_action_stages: Tuple[Tuple[str, str], ...] = field(default_factory=tuple)
+    read_in_guard_occurrences: Tuple[Tuple[str, str, str], ...] = field(default_factory=tuple)
+    written_in_effect_occurrences: Tuple[Tuple[str, str, str], ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -785,28 +805,14 @@ def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ..
     return tuple(out)
 
 
-def _collect_action_reads_writes(state: Any) -> Tuple[Dict[str, bool], Dict[str, bool]]:
-    """Aggregate variable reads/writes across all action blocks of a state."""
-    reads: Dict[str, bool] = {}
-    writes: Dict[str, bool] = {}
-    for collection in (
-            state.on_enters,
-            state.on_durings,
-            state.on_exits,
-            state.on_during_aspects,
-    ):
-        for action in collection:
-            if not action.operations:
-                continue
-            local_reads: List[str] = []
-            local_writes: List[str] = []
-            for stmt in action.operations:
-                _walk_stmt_reads_writes(stmt, local_reads, local_writes)
-            for name in local_reads:
-                reads[name] = True
-            for name in local_writes:
-                writes[name] = True
-    return reads, writes
+def _state_action_collections(state: Any) -> Tuple[Tuple[str, Any], ...]:
+    """Return lifecycle action collections with analyzer-facing stage names."""
+    return (
+        ('enter', state.on_enters),
+        ('during', state.on_durings),
+        ('exit', state.on_exits),
+        ('during_aspect', state.on_during_aspects),
+    )
 
 
 def _build_variable_infos(
@@ -817,6 +823,18 @@ def _build_variable_infos(
     var_writes_by_state: Dict[str, List[str]] = {name: [] for name in machine.defines}
     var_read_guards: Dict[str, List[Tuple[str, str]]] = {name: [] for name in machine.defines}
     var_written_effects: Dict[str, List[Tuple[str, str]]] = {name: [] for name in machine.defines}
+    var_read_action_stages: Dict[str, List[Tuple[str, str]]] = {
+        name: [] for name in machine.defines
+    }
+    var_written_action_stages: Dict[str, List[Tuple[str, str]]] = {
+        name: [] for name in machine.defines
+    }
+    var_read_guard_occurrences: Dict[str, List[Tuple[str, str, str]]] = {
+        name: [] for name in machine.defines
+    }
+    var_written_effect_occurrences: Dict[str, List[Tuple[str, str, str]]] = {
+        name: [] for name in machine.defines
+    }
     var_float_literal_assignments: Dict[str, List[str]] = {
         name: [] for name in machine.defines
     }
@@ -824,33 +842,40 @@ def _build_variable_infos(
 
     for state in machine.walk_states():
         path = _state_path(state)
-        reads, writes = _collect_action_reads_writes(state)
         float_assigns: Dict[str, List[str]] = {}
-        for collection in (
-                state.on_enters,
-                state.on_durings,
-                state.on_exits,
-                state.on_during_aspects,
-        ):
+        for stage_name, collection in _state_action_collections(state):
             for action in collection:
+                if action.operations:
+                    local_reads: List[str] = []
+                    local_writes: List[str] = []
+                    for stmt in action.operations:
+                        _walk_stmt_reads_writes(stmt, local_reads, local_writes)
+                    for var_name in local_reads:
+                        if var_name in var_reads_by_state:
+                            var_reads_by_state[var_name].append(path)
+                            var_read_action_stages[var_name].append((path, stage_name))
+                    for var_name in local_writes:
+                        if var_name in var_writes_by_state:
+                            var_writes_by_state[var_name].append(path)
+                            var_written_action_stages[var_name].append((path, stage_name))
                 for stmt in action.operations:
                     _walk_stmt_float_literal_assignments(stmt, float_assigns)
-        for var_name in reads:
-            if var_name in var_reads_by_state:
-                var_reads_by_state[var_name].append(path)
-        for var_name in writes:
-            if var_name in var_writes_by_state:
-                var_writes_by_state[var_name].append(path)
         for var_name, assignments in float_assigns.items():
             if var_name in var_float_literal_assignments:
                 var_float_literal_assignments[var_name].extend(assignments)
 
-        for transition in state.transitions:
+        for transition_index, transition in enumerate(state.transitions, 1):
             from_path = _transition_endpoint(state, transition.from_state, is_source=True)
             to_path = _transition_endpoint(state, transition.to_state, is_source=False)
+            occurrence_key = f'{path}#{transition_index}'
             for v in _walk_expr_variables(transition.guard):
                 if v in var_read_guards:
                     var_read_guards[v].append((from_path, to_path))
+                    var_read_guard_occurrences[v].append((
+                        from_path,
+                        to_path,
+                        occurrence_key,
+                    ))
             for stmt in transition.effects:
                 lreads: List[str] = []
                 lwrites: List[str] = []
@@ -863,6 +888,11 @@ def _build_variable_infos(
                 for v in lwrites:
                     if v in var_written_effects:
                         var_written_effects[v].append((from_path, to_path))
+                        var_written_effect_occurrences[v].append((
+                            from_path,
+                            to_path,
+                            occurrence_key,
+                        ))
                 for v, assignments in lfloat_assigns.items():
                     if v in var_float_literal_assignments:
                         var_float_literal_assignments[v].extend(assignments)
@@ -886,12 +916,29 @@ def _build_variable_infos(
                 out.append(x)
         return tuple(out)
 
+    def _dedupe_triples(
+            seq: List[Tuple[str, str, str]],
+    ) -> Tuple[Tuple[str, str, str], ...]:
+        seen = set()
+        out: List[Tuple[str, str, str]] = []
+        for x in seq:
+            if x not in seen:
+                seen.add(x)
+                out.append(x)
+        return tuple(out)
+
     out: List[VariableInfo] = []
     for name, var_define in machine.defines.items():
         read_states = _dedupe_ordered(var_reads_by_state[name])
         written_states = _dedupe_ordered(var_writes_by_state[name])
         read_guards = _dedupe_pairs(var_read_guards[name])
         written_effects = _dedupe_pairs(var_written_effects[name])
+        read_action_stages = _dedupe_pairs(var_read_action_stages[name])
+        written_action_stages = _dedupe_pairs(var_written_action_stages[name])
+        read_guard_occurrences = _dedupe_triples(var_read_guard_occurrences[name])
+        written_effect_occurrences = _dedupe_triples(
+            var_written_effect_occurrences[name]
+        )
         participates_directly = bool(
             read_states or read_guards or written_states or written_effects
         )
@@ -914,6 +961,10 @@ def _build_variable_infos(
             participates_indirectly=False,
             abstract_actions_in_scope=abstract_actions,
             float_literal_assignments=float_assignments,
+            read_in_action_stages=read_action_stages,
+            written_in_action_stages=written_action_stages,
+            read_in_guard_occurrences=read_guard_occurrences,
+            written_in_effect_occurrences=written_effect_occurrences,
         ))
     return tuple(out)
 

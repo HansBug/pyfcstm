@@ -88,6 +88,7 @@ def collect_const_fold_warnings(
     if machine is None:
         return []
     diagnostics: List[ModelDiagnostic] = []
+    defined_vars = set(machine.defines)
     for state in machine.walk_states():
         state_path = _state_path(state)
         for transition in state.transitions:
@@ -99,7 +100,7 @@ def collect_const_fold_warnings(
                 diagnostics.append(_guard_const_diagnostic(transition, True))
             elif folded_guard is False:
                 diagnostics.append(_guard_const_diagnostic(transition, False))
-        diagnostics.extend(_during_const_assign_diagnostics(state_path, state))
+        diagnostics.extend(_during_const_assign_diagnostics(state_path, state, defined_vars))
     return diagnostics
 
 
@@ -205,23 +206,26 @@ def _compare_values(op: str, left: ConstValue, right: ConstValue) -> Optional[bo
     return False  # pragma: no cover
 
 
-def _during_const_assign_diagnostics(state_path: str, state) -> List[ModelDiagnostic]:
+def _during_const_assign_diagnostics(state_path: str, state, defined_vars) -> List[ModelDiagnostic]:
     diagnostics: List[ModelDiagnostic] = []
     for action in state.on_durings:
         if action.is_abstract or action.is_ref or action.aspect is not None:
             continue
         for stmt in action.operations:
-            diagnostics.extend(_during_stmt_const_assign_diagnostics(state_path, stmt))
+            diagnostics.extend(_during_stmt_const_assign_diagnostics(state_path, stmt, defined_vars))
     return diagnostics
 
 
 def _during_stmt_const_assign_diagnostics(
     state_path: str,
     stmt: 'OperationStatement',
+    defined_vars,
 ) -> List[ModelDiagnostic]:
     from ...model.model import Operation
 
     if not isinstance(stmt, Operation):
+        return []
+    if stmt.var_name not in defined_vars:
         return []
     value = _json_stable_number(fold_numeric_expression(stmt.expr))
     if value is None:

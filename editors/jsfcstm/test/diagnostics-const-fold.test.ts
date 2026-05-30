@@ -178,6 +178,27 @@ state Root {
         assert.equal(messages.some(message => message.includes('INIT_STATE') || message.includes('EXIT_STATE')), false);
     });
 
+    it('does not warn for block-local temporary constant assignments', async () => {
+        const diagnostics = inspectModel(await buildMachine(`
+def int output = 0;
+state Root {
+    state Idle {
+        during {
+            temp = 5;
+            output = temp + 1;
+        }
+    }
+    [*] -> Idle;
+}
+`)).diagnostics;
+        assert.deepEqual(
+            diagnostics
+                .filter(item => item.code === 'W_DURING_CONST_ASSIGN')
+                .map(item => item.refs.var_name),
+            [],
+        );
+    });
+
     it('keeps minimal const-false fallback when design-health helper has no machine', () => {
         const diagnostics = collectDesignHealthWarningsFromIndex(
             [],

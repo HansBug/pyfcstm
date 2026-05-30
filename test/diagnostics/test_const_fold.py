@@ -186,3 +186,31 @@ def test_guard_const_message_uses_dsl_endpoint_labels():
     assert "Transition '[*]' -> 'Idle'" in guard_messages[0]
     assert "Transition 'Idle' -> '[*]'" in guard_messages[1]
     assert all('INIT_STATE' not in message and 'EXIT_STATE' not in message for message in guard_messages)
+
+
+@pytest.mark.unittest
+def test_during_const_assign_skips_block_local_temporaries():
+    from pyfcstm.diagnostics import inspect_model
+    from pyfcstm.dsl import parse_with_grammar_entry
+    from pyfcstm.model import parse_dsl_node_to_state_machine
+
+    source = """
+    def int output = 0;
+    state Root {
+        state Idle {
+            during {
+                temp = 5;
+                output = temp + 1;
+            }
+        }
+        [*] -> Idle;
+    }
+    """
+    ast = parse_with_grammar_entry(source, 'state_machine_dsl')
+    diagnostics = inspect_model(parse_dsl_node_to_state_machine(ast)).diagnostics
+
+    assert [
+        diagnostic.refs['var_name']
+        for diagnostic in diagnostics
+        if diagnostic.code == 'W_DURING_CONST_ASSIGN'
+    ] == []

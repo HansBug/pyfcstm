@@ -97,6 +97,7 @@ export function foldConditionExpression(expr: unknown): boolean | null {
 export function collectConstFoldWarnings(machine: StateMachine | null | undefined): ModelDiagnosticJson[] {
     if (!machine) return [];
     const out: ModelDiagnosticJson[] = [];
+    const definedVars = new Set(Object.keys(machine.defines));
     for (const state of machine.allStates) {
         const statePath = state.path.join('.');
         for (const transition of state.transitions) {
@@ -111,7 +112,7 @@ export function collectConstFoldWarnings(machine: StateMachine | null | undefine
                 ));
             }
         }
-        out.push(...duringConstAssignDiagnostics(statePath, state.onDurings));
+        out.push(...duringConstAssignDiagnostics(statePath, state.onDurings, definedVars));
     }
     return out;
 }
@@ -167,19 +168,24 @@ function numericEqual(left: ConstNumeric, right: ConstNumeric): boolean | null {
     return leftInt !== null && rightInt !== null ? compareExactIntegers(leftInt, rightInt) === 0 : null;
 }
 
-function duringConstAssignDiagnostics(statePath: string, actions: OnStage[]): ModelDiagnosticJson[] {
+function duringConstAssignDiagnostics(statePath: string, actions: OnStage[], definedVars: Set<string>): ModelDiagnosticJson[] {
     const out: ModelDiagnosticJson[] = [];
     for (const action of actions) {
         if (action.isAbstract || action.isRef || action.aspect !== undefined) continue;
         for (const stmt of action.operations) {
-            out.push(...duringStmtConstAssignDiagnostics(statePath, stmt));
+            out.push(...duringStmtConstAssignDiagnostics(statePath, stmt, definedVars));
         }
     }
     return out;
 }
 
-function duringStmtConstAssignDiagnostics(statePath: string, stmt: OperationStatement): ModelDiagnosticJson[] {
+function duringStmtConstAssignDiagnostics(
+    statePath: string,
+    stmt: OperationStatement,
+    definedVars: Set<string>,
+): ModelDiagnosticJson[] {
     if (!(stmt instanceof Operation)) return [];
+    if (!definedVars.has(stmt.varName)) return [];
     const value = jsonStableNumber(foldNumericExpressionInternal(stmt.expr));
     if (value === null) return [];
     return [{

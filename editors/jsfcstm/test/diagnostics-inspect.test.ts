@@ -14,7 +14,7 @@ def int counter = 0;
 def float temp = 25.0;
 state Root {
     state Idle;
-    state Active { during { counter = counter + 1; } }
+    state Active { during { counter = counter + 1; temp = temp + 0.1; } }
     [*] -> Idle;
     Idle -> Active : if [counter > 0];
     Active -> Idle :: Pause;
@@ -157,9 +157,9 @@ state Root {
 
             const temp = report.variables.find(v => v.name === 'temp');
             assert.ok(temp);
-            assert.equal(temp!.read_in_states.length, 0);
-            assert.equal(temp!.written_in_states.length, 0);
-            assert.equal(temp!.participates_directly, false);
+            assert.ok(temp!.read_in_states.includes('Root.Active'));
+            assert.ok(temp!.written_in_states.includes('Root.Active'));
+            assert.equal(temp!.participates_directly, true);
         });
     });
 
@@ -212,7 +212,10 @@ state Root {
                 reads: ['Root.Active'],
                 writes: ['Root.Active'],
             });
-            assert.deepEqual(report.var_dataflow['temp'], {reads: [], writes: []});
+            assert.deepEqual(report.var_dataflow['temp'], {
+                reads: ['Root.Active'],
+                writes: ['Root.Active'],
+            });
         });
 
         it('aspect impact empty when no aspect actions', async () => {
@@ -495,6 +498,11 @@ state Root {
                     code: 'W_FORCED_OVERRIDES_NORMAL',
                     severity: 'warning',
                     refs: {from_path: 'Root.Active', to_path: 'Root.Trapped', forced_span: null, normal_span: null},
+                },
+                {
+                    code: 'W_GUARD_VARS_NEVER_CHANGE',
+                    severity: 'warning',
+                    refs: {transition_span: null, guard_vars: ['read_only']},
                 },
                 {
                     code: 'W_INITIAL_UNCONDITIONAL_MISSING',
@@ -1275,6 +1283,160 @@ state Root {
                 to_path: '[*]',
                 transition_span: null,
             });
+        });
+
+        it('emits unreferenced variable warning when no abstract action exists', async () => {
+            const report = inspectModel(await buildMachine(`
+def int unused = 0;
+state Root {
+    state Idle;
+    [*] -> Idle;
+}
+`));
+            const byCode = diagnosticsByCode(report);
+            assert.deepEqual(byCode.get('W_UNREFERENCED_VAR')![0].refs, {
+                var_name: 'unused',
+                init_value: '0',
+            });
+            assert.equal(byCode.has('I_UNREFERENCED_VAR_MAYBE_ABSTRACT'), false);
+        });
+
+        it('emits info for unreferenced variable when abstract actions exist', async () => {
+            const report = inspectModel(await buildMachine(`
+def int maybe_external = 0;
+state Root {
+    state Idle {
+        enter abstract Setup;
+    }
+    [*] -> Idle;
+}
+`));
+            const byCode = diagnosticsByCode(report);
+            const diagnostic = byCode.get('I_UNREFERENCED_VAR_MAYBE_ABSTRACT')![0];
+            assert.equal(diagnostic.severity, 'info');
+            assert.deepEqual(diagnostic.refs, {
+                var_name: 'maybe_external',
+                abstract_actions_in_scope: ['Root.Idle:<abstract>'],
+            });
+            assert.equal(byCode.has('W_UNREFERENCED_VAR'), false);
+        });
+
+        it('emits guard-variable warning for variables that never change', async () => {
+            const report = inspectModel(await buildMachine(`
+def int ready = 0;
+def int mode = 1;
+state Root {
+    state Idle;
+    state Active;
+    [*] -> Idle;
+    Idle -> Active : if [ready > 0 && mode == 1];
+}
+`));
+            assert.deepEqual(diagnosticsByCode(report).get('W_GUARD_VARS_NEVER_CHANGE')![0].refs, {
+                transition_span: null,
+                guard_vars: ['mode', 'ready'],
+            });
+        });
+
+        it('does not emit guard-variable warning when guard variable is written', async () => {
+            const report = inspectModel(await buildMachine(`
+def int ready = 0;
+state Root {
+    state Idle {
+        during { ready = ready + 1; }
+    }
+    state Active;
+    [*] -> Idle;
+    Idle -> Active : if [ready > 0];
+}
+`));
+            const byCode = diagnosticsByCode(report);
+            assert.equal(byCode.has('W_GUARD_VARS_NEVER_CHANGE'), false);
+            assert.equal(byCode.has('W_UNWRITTEN_READ_VAR'), false);
+        });
+
+        it('emits dead-store warning for final transition-effect writes', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+state Root {
+    state Idle;
+    state Done;
+    [*] -> Idle;
+    Idle -> Done : if [status == 0] effect { status = 1; };
+}
+`));
+            const byCode = diagnosticsByCode(report);
+            assert.deepEqual(byCode.get('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE')![0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Idle->Root.Done'],
+            });
+            assert.equal(byCode.has('W_WRITE_ONLY_VAR'), false);
+        });
+
+        it('skips dead-store warning when a reachable later guard reads the write', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+state Root {
+    state Idle;
+    state Done;
+    state Check;
+    [*] -> Idle;
+    Idle -> Done : if [status == 0] effect { status = 1; };
+    Done -> Check : if [status == 1];
+}
+`));
+            assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
+
+        it('keeps variable warning codes mutually exclusive', async () => {
+            const report = inspectModel(await buildMachine(`
+def int unused = 0;
+def int read_only = 0;
+def int write_only = 0;
+def int final_write = 0;
+state Root {
+    state Idle {
+        enter { write_only = 1; }
+    }
+    state Active;
+    state Done;
+    [*] -> Idle;
+    Idle -> Active : if [read_only > 0] effect { final_write = 1; };
+    Active -> Done : if [final_write > 0] effect { final_write = 2; };
+}
+`));
+            const byCode = diagnosticsByCode(report);
+            const perVar = new Map<string, string[]>();
+            for (const code of [
+                'W_UNREFERENCED_VAR',
+                'W_UNWRITTEN_READ_VAR',
+                'W_WRITE_ONLY_VAR',
+                'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE',
+            ]) {
+                for (const diagnostic of byCode.get(code) ?? []) {
+                    const varName = diagnostic.refs.var_name as string;
+                    perVar.set(varName, [...(perVar.get(varName) ?? []), code]);
+                }
+            }
+            assert.deepEqual(perVar.get('unused'), ['W_UNREFERENCED_VAR']);
+            assert.deepEqual(perVar.get('read_only'), ['W_UNWRITTEN_READ_VAR']);
+            assert.deepEqual(perVar.get('write_only'), ['W_WRITE_ONLY_VAR']);
+            assert.deepEqual(perVar.get('final_write'), ['W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE']);
+        });
+
+        it('marks write-only variables as direct DSL participants', async () => {
+            const report = inspectModel(await buildMachine(`
+def int write_only = 0;
+state Root {
+    state Idle {
+        enter { write_only = 1; }
+    }
+    [*] -> Idle;
+}
+`));
+            const variable = report.variables.find(item => item.name === 'write_only');
+            assert.ok(variable);
+            assert.equal(variable!.participates_directly, true);
         });
     });
 });

@@ -548,11 +548,15 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
         const writtenStates = dedupe(writesByState[name]);
         const readGuardEntries = dedupePairs(readGuards[name]);
         const writtenEffectEntries = dedupePairs(writtenEffects[name]);
-        const participatesDirectly = readStates.length > 0 || readGuardEntries.length > 0;
+        const participatesDirectly = readStates.length > 0 ||
+            readGuardEntries.length > 0 ||
+            writtenStates.length > 0 ||
+            writtenEffectEntries.length > 0;
         const abstractActions = abstractActionsInScope(
             stateLookup,
             readStates,
             writtenStates,
+            states,
         );
         out.push({
             name,
@@ -877,9 +881,14 @@ function abstractActionsInScope(
     stateLookup: Record<string, StateInfo>,
     readStates: string[],
     writtenStates: string[],
+    states: StateInfo[],
 ): string[] {
     const touched = new Set<string>([...readStates, ...writtenStates]);
-    if (touched.size === 0) return [];
+    if (touched.size === 0) {
+        return states
+            .filter(info => info.has_abstract_action)
+            .map(info => `${info.path}:<abstract>`);
+    }
     const out: string[] = [];
     for (const path of Array.from(touched).sort()) {
         const info = stateLookup[path];

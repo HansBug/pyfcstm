@@ -78,7 +78,7 @@ def collect_design_health_warnings(
     ))
     diagnostics.extend(collect_naming_warnings(actions))
     diagnostics.extend(collect_type_warnings(variables))
-    diagnostics.extend(collect_data_flow_warnings(variables))
+    diagnostics.extend(collect_data_flow_warnings(variables, reachability_graph))
     diagnostics.extend(collect_redundancy_warnings(transitions, events, states))
     diagnostics.extend(collect_transition_infos(states, transitions))
     return diagnostics

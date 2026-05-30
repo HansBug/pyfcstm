@@ -1417,6 +1417,157 @@ W_WRITE_ONLY_VAR:
         [*] -> A;
     }
 
+W_UNREFERENCED_VAR:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A variable is declared but is not read or written anywhere in the DSL,
+    and no abstract action is present that could plausibly use it from
+    external code.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: Variable name.
+    init_value:
+      type: str
+      required: true
+      description: Source text of the initial value.
+  for_llm:
+    summary: >-
+      The variable participates in no model logic and no abstract action
+      is available to justify keeping it as external state.
+    recommended_actions:
+      - kind: remove_variable
+        target: variable_definition
+        rationale: Remove the variable if it was speculative scaffolding.
+      - kind: add_reference
+        target: guard_or_action
+        rationale: Read or write the variable where it should affect behavior.
+    do_not:
+      - "Do not add a meaningless read just to silence the warning."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int unused = 0;
+    state Root {
+        state Idle;
+        [*] -> Idle;
+    }
+
+I_UNREFERENCED_VAR_MAYBE_ABSTRACT:
+  severity: info
+  capability: pure_static
+  description: >-
+    A variable is not read or written by DSL statements, but one or more
+    abstract actions exist in the model and their external implementation
+    may use the variable.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: Variable name.
+    abstract_actions_in_scope:
+      type: list[str]
+      required: true
+      description: Abstract action labels that make the unused-variable finding low confidence.
+  for_llm:
+    summary: >-
+      The variable is unused from the DSL's perspective, but abstract
+      action code outside the DSL may still consume it.
+    recommended_actions:
+      - kind: review_abstract_action
+        target: abstract_action
+        rationale: Check the external implementation before deleting the variable.
+      - kind: remove_variable
+        target: variable_definition
+        rationale: Remove it only after confirming abstract code does not need it.
+    do_not:
+      - "Do not automatically delete the variable without checking abstract action implementations."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int maybe_external = 0;
+    state Root {
+        state Idle { enter abstract Setup; }
+        [*] -> Idle;
+    }
+
+W_GUARD_VARS_NEVER_CHANGE:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A transition guard reads variables that are never written by any
+    lifecycle action or transition effect, so the guard can only depend
+    on initial values.
+  refs:
+    transition_span:
+      type: Span
+      required: false
+      description: Source span of the transition declaration.
+    guard_vars:
+      type: list[str]
+      required: true
+      description: Guard variable names that never change after initialization.
+  for_llm:
+    summary: >-
+      The guard is runtime-looking but all of its variables are immutable
+      after initialization, so the transition condition may be accidentally constant.
+    recommended_actions:
+      - kind: add_write
+        target: action_or_effect
+        rationale: Add the missing update if the guard should react to runtime state.
+      - kind: simplify_guard
+        target: transition_guard
+        rationale: Replace the guard with a literal or const-folded expression if it is intentional.
+    do_not:
+      - "Do not add dummy writes only to silence the diagnostic."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int ready = 0;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [ready > 0];
+    }
+
+W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A variable is read and written somewhere in the model, but one or more
+    final write sites are not followed by any reachable read.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: Variable name.
+    write_locations:
+      type: list[str]
+      required: true
+      description: Final write locations that have no reachable later read.
+  for_llm:
+    summary: >-
+      The final write to this variable is a dead store: no reachable later
+      guard, action, or effect reads the value.
+    recommended_actions:
+      - kind: remove_write
+        target: assignment
+        rationale: Remove the assignment if the stored value is not used.
+      - kind: add_read
+        target: guard_or_action
+        rationale: Add the missing read if the value should affect later behavior.
+    do_not:
+      - "Do not keep final writes solely for documentation; use comments instead."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int status = 0;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [status == 0] effect { status = 1; };
+    }
+
 W_REDUNDANT_TRANSITION:
   severity: warning
   capability: pure_static

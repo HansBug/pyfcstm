@@ -200,8 +200,9 @@ class VariableInfo:
     :param written_in_effects: Tuples ``(from_path, to_path)`` of
         transitions whose effect block writes this variable.
     :type written_in_effects: Tuple[Tuple[str, str], ...]
-    :param participates_directly: ``True`` when the variable is read by
-        at least one guard, transition effect, or action operation.
+    :param participates_directly: ``True`` when the variable is read or
+        written by at least one guard, transition effect, or action
+        operation.
     :type participates_directly: bool
     :param participates_indirectly: ``True`` when the variable is not
         directly referenced but is transitively reachable through
@@ -891,8 +892,15 @@ def _build_variable_infos(
         written_states = _dedupe_ordered(var_writes_by_state[name])
         read_guards = _dedupe_pairs(var_read_guards[name])
         written_effects = _dedupe_pairs(var_written_effects[name])
-        participates_directly = bool(read_states or read_guards)
-        abstract_actions = _abstract_actions_in_scope(state_lookup, read_states, written_states)
+        participates_directly = bool(
+            read_states or read_guards or written_states or written_effects
+        )
+        abstract_actions = _abstract_actions_in_scope(
+            state_lookup,
+            read_states,
+            written_states,
+            states,
+        )
         float_assignments = _dedupe_ordered(var_float_literal_assignments[name])
         out.append(VariableInfo(
             name=name,
@@ -914,13 +922,16 @@ def _abstract_actions_in_scope(
         state_lookup: Dict[str, StateInfo],
         read_states: Tuple[str, ...],
         written_states: Tuple[str, ...],
+        all_states: Tuple[StateInfo, ...],
 ) -> Tuple[str, ...]:
     """Return abstract action labels visible from any touching state."""
     touched = set(read_states) | set(written_states)
     if not touched:
-        # Variable touches no state — declared but unused. There is no
-        # abstract-action scope to inspect from here.
-        return tuple()
+        return tuple(
+            f'{info.path}:<abstract>'
+            for info in all_states
+            if info.has_abstract_action
+        )
     out: List[str] = []
     for path in sorted(touched):
         info = state_lookup.get(path)

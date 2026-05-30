@@ -47,7 +47,7 @@ def int counter = 0;
 def float temp = 25.0;
 state Root {
     state Idle;
-    state Active { during { counter = counter + 1; } }
+    state Active { during { counter = counter + 1; temp = temp + 0.1; } }
     [*] -> Idle;
     Idle -> Active : if [counter > 0];
     Active -> Idle :: Pause;
@@ -132,9 +132,9 @@ class TestInspectModelBasic:
         assert any('Root.Idle' == fp for fp, _ in counter.read_in_guards)
         # ``temp`` has no participation in this DSL.
         temp = vars_by_name['temp']
-        assert temp.read_in_states == tuple()
-        assert temp.written_in_states == tuple()
-        assert temp.participates_directly is False
+        assert 'Root.Active' in temp.read_in_states
+        assert 'Root.Active' in temp.written_in_states
+        assert temp.participates_directly is True
 
     def test_event_payload(self, report):
         events_by_name = {e.qualified_name: e for e in report.events}
@@ -186,7 +186,7 @@ class TestInspectModelViews:
         df = report.var_dataflow
         assert df['counter']['reads'] == ('Root.Active',)
         assert df['counter']['writes'] == ('Root.Active',)
-        assert df['temp'] == {'reads': tuple(), 'writes': tuple()}
+        assert df['temp'] == {'reads': ('Root.Active',), 'writes': ('Root.Active',)}
 
     def test_aspect_impact_map_empty_without_aspects(self, report):
         assert report.aspect_impact_map == {}
@@ -1325,3 +1325,162 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
             'to_path': 'Root.B',
             'transition_span': None,
         }
+
+
+@pytest.mark.unittest
+class TestInspectModelDataFlowClosureDiagnostics:
+    """Data-flow closure diagnostics and variable-warning exclusivity."""
+
+    @staticmethod
+    def _diagnostics_by_code(dsl):
+        report = inspect_model(_parse(dsl))
+        assert_all_diags_match_schema(report.diagnostics, context='data-flow-closure')
+        out = {}
+        for diag in report.diagnostics:
+            out.setdefault(diag.code, []).append(diag)
+        return out
+
+    def test_unreferenced_var_without_abstract_action_warns(self):
+        dsl = """
+        def int unused = 0;
+        state Root {
+            state Idle;
+            [*] -> Idle;
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        diag = by_code['W_UNREFERENCED_VAR'][0]
+        assert diag.refs == {'var_name': 'unused', 'init_value': '0'}
+        assert 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT' not in by_code
+
+    def test_unreferenced_var_with_abstract_action_is_info(self):
+        dsl = """
+        def int maybe_external = 0;
+        state Root {
+            state Idle {
+                enter abstract Setup;
+            }
+            [*] -> Idle;
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        diag = by_code['I_UNREFERENCED_VAR_MAYBE_ABSTRACT'][0]
+        assert diag.severity == 'info'
+        assert diag.refs == {
+            'var_name': 'maybe_external',
+            'abstract_actions_in_scope': ['Root.Idle:<abstract>'],
+        }
+        assert 'W_UNREFERENCED_VAR' not in by_code
+
+    def test_guard_vars_never_change_uses_all_guard_variables(self):
+        dsl = """
+        def int ready = 0;
+        def int mode = 1;
+        state Root {
+            state Idle;
+            state Active;
+            [*] -> Idle;
+            Idle -> Active : if [ready > 0 && mode == 1];
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        diag = by_code['W_GUARD_VARS_NEVER_CHANGE'][0]
+        assert diag.refs == {
+            'transition_span': None,
+            'guard_vars': ['mode', 'ready'],
+        }
+
+    def test_guard_vars_never_change_skips_written_guard_vars(self):
+        dsl = """
+        def int ready = 0;
+        state Root {
+            state Idle {
+                during { ready = ready + 1; }
+            }
+            state Active;
+            [*] -> Idle;
+            Idle -> Active : if [ready > 0];
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        assert 'W_GUARD_VARS_NEVER_CHANGE' not in by_code
+        assert 'W_UNWRITTEN_READ_VAR' not in by_code
+
+    def test_variable_never_read_after_final_write_for_transition_effect(self):
+        dsl = """
+        def int status = 0;
+        state Root {
+            state Idle;
+            state Done;
+            [*] -> Idle;
+            Idle -> Done : if [status == 0] effect { status = 1; };
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        diag = by_code['W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'][0]
+        assert diag.refs == {
+            'var_name': 'status',
+            'write_locations': ['Root.Idle->Root.Done'],
+        }
+        assert 'W_WRITE_ONLY_VAR' not in by_code
+
+    def test_variable_never_read_after_final_write_skips_reachable_read(self):
+        dsl = """
+        def int status = 0;
+        state Root {
+            state Idle;
+            state Done;
+            state Check;
+            [*] -> Idle;
+            Idle -> Done : if [status == 0] effect { status = 1; };
+            Done -> Check : if [status == 1];
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
+
+    def test_variable_warning_codes_are_mutually_exclusive(self):
+        dsl = """
+        def int unused = 0;
+        def int read_only = 0;
+        def int write_only = 0;
+        def int final_write = 0;
+        state Root {
+            state Idle {
+                enter { write_only = 1; }
+            }
+            state Active;
+            state Done;
+            [*] -> Idle;
+            Idle -> Active : if [read_only > 0] effect { final_write = 1; };
+            Active -> Done : if [final_write > 0] effect { final_write = 2; };
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        per_var = {}
+        for code in (
+            'W_UNREFERENCED_VAR',
+            'W_UNWRITTEN_READ_VAR',
+            'W_WRITE_ONLY_VAR',
+            'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE',
+        ):
+            for diag in by_code.get(code, []):
+                per_var.setdefault(diag.refs['var_name'], []).append(code)
+        assert per_var['unused'] == ['W_UNREFERENCED_VAR']
+        assert per_var['read_only'] == ['W_UNWRITTEN_READ_VAR']
+        assert per_var['write_only'] == ['W_WRITE_ONLY_VAR']
+        assert per_var['final_write'] == ['W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE']
+
+    def test_write_only_variable_participates_directly(self):
+        dsl = """
+        def int write_only = 0;
+        state Root {
+            state Idle {
+                enter { write_only = 1; }
+            }
+            [*] -> Idle;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        by_name = {item.name: item for item in report.variables}
+        assert by_name['write_only'].participates_directly is True

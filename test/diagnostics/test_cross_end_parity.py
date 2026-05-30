@@ -815,6 +815,14 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 },
             },
             {
+                'code': 'W_GUARD_VARS_NEVER_CHANGE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'guard_vars': ['read_only'],
+                },
+            },
+            {
                 'code': 'W_SHADOWED_EVENT',
                 'severity': 'warning',
                 'refs': {
@@ -835,6 +843,89 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'severity': 'warning',
                 'refs': {
                     'state_path': 'Root.LeafForced',
+                },
+            },
+        ],
+    ),
+    (
+        'design-health-data-flow-closure',
+        '\n'.join([
+            'def int unused = 0;',
+            'def int maybe_external = 0;',
+            'def int ready = 0;',
+            'def int mode = 1;',
+            'def int status = 0;',
+            'def int write_only = 0;',
+            'state Root {',
+            '    state Idle {',
+            '        enter abstract Setup;',
+            '        enter { write_only = 1; }',
+            '    }',
+            '    state Active;',
+            '    state Done;',
+            '    [*] -> Idle;',
+            '    Idle -> Active : if [ready > 0 && mode == 1];',
+            '    Active -> Done : if [status == 0] effect { status = 1; };',
+            '    Done -> [*] :: Finish;',
+            '}',
+        ]),
+        [
+            {
+                'code': 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT',
+                'severity': 'info',
+                'refs': {
+                    'var_name': 'unused',
+                    'abstract_actions_in_scope': ['Root.Idle:<abstract>'],
+                },
+            },
+            {
+                'code': 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT',
+                'severity': 'info',
+                'refs': {
+                    'var_name': 'maybe_external',
+                    'abstract_actions_in_scope': ['Root.Idle:<abstract>'],
+                },
+            },
+            {
+                'code': 'W_GUARD_VARS_NEVER_CHANGE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'guard_vars': ['mode', 'ready'],
+                },
+            },
+            {
+                'code': 'W_UNWRITTEN_READ_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'ready',
+                    'read_states': ['Root.Idle'],
+                    'init_value': '0',
+                },
+            },
+            {
+                'code': 'W_UNWRITTEN_READ_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'mode',
+                    'read_states': ['Root.Idle'],
+                    'init_value': '1',
+                },
+            },
+            {
+                'code': 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'status',
+                    'write_locations': ['Root.Active->Root.Done'],
+                },
+            },
+            {
+                'code': 'W_WRITE_ONLY_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'write_only',
+                    'written_states': ['Root.Idle'],
                 },
             },
         ],
@@ -942,6 +1033,22 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                     'function_name': 'Sync',
                     'inner_state_path': 'Root.Active',
                     'outer_state_path': 'Root',
+                },
+            },
+            {
+                'code': 'W_UNREFERENCED_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'extra',
+                    'init_value': '0',
+                },
+            },
+            {
+                'code': 'W_UNREFERENCED_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'truncated',
+                    'init_value': '3.5',
                 },
             },
             {

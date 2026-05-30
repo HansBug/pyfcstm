@@ -129,7 +129,7 @@ function guardVarsNeverChangeDiagnostics(variables: VariableInfo[]): ModelDiagno
     });
     for (const {edge, names} of items) {
         const neverChanged = Array.from(names)
-            .filter(name => (writesByVar[name]?.size ?? 0) === 0)
+            .filter(name => writesByVar[name].size === 0)
             .sort();
         if (neverChanged.length !== names.size) continue;
         out.push({
@@ -172,7 +172,7 @@ function hasReachableRead(
     reachabilityGraph: Record<string, string[]>,
 ): boolean {
     if (readStates.has(startPath)) return true;
-    for (const reachable of reachabilityGraph[startPath] ?? []) {
+    for (const reachable of reachabilityGraph[startPath]) {
         if (readStates.has(reachable)) return true;
     }
     return false;

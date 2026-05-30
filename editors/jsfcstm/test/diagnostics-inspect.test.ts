@@ -1373,6 +1373,24 @@ state Root {
             assert.equal(byCode.has('W_WRITE_ONLY_VAR'), false);
         });
 
+        it('emits dead-store warning for final state-action writes', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+state Root {
+    state Idle;
+    state Done {
+        enter { status = 1; }
+    }
+    [*] -> Idle;
+    Idle -> Done : if [status == 0];
+}
+`));
+            assert.deepEqual(diagnosticsByCode(report).get('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE')![0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Done'],
+            });
+        });
+
         it('skips dead-store warning when a reachable later guard reads the write', async () => {
             const report = inspectModel(await buildMachine(`
 def int status = 0;

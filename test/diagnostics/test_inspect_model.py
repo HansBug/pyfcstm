@@ -1424,6 +1424,25 @@ class TestInspectModelDataFlowClosureDiagnostics:
         }
         assert 'W_WRITE_ONLY_VAR' not in by_code
 
+    def test_variable_never_read_after_final_write_for_state_action(self):
+        dsl = """
+        def int status = 0;
+        state Root {
+            state Idle;
+            state Done {
+                enter { status = 1; }
+            }
+            [*] -> Idle;
+            Idle -> Done : if [status == 0];
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        diag = by_code['W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'][0]
+        assert diag.refs == {
+            'var_name': 'status',
+            'write_locations': ['Root.Done'],
+        }
+
     def test_variable_never_read_after_final_write_skips_reachable_read(self):
         dsl = """
         def int status = 0;

@@ -182,7 +182,7 @@ def _has_reachable_read(
 ) -> bool:
     if start_path in read_states:
         return True
-    for reachable in reachability_graph.get(start_path, ()):
+    for reachable in reachability_graph[start_path]:
         if reachable in read_states:
             return True
     return False

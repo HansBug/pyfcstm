@@ -1255,6 +1255,10 @@ def inspect_model(
         'large_composite_threshold',
         large_composite_threshold,
     )
+    var_to_leaf_ratio_threshold = _normalize_float_threshold(
+        'var_to_leaf_ratio_threshold',
+        var_to_leaf_ratio_threshold,
+    )
     states = _build_state_infos(machine)
     transitions = _build_transition_infos(machine)
     variables = _build_variable_infos(machine, states)
@@ -1305,6 +1309,17 @@ def _normalize_int_threshold(name: str, value: int) -> int:
             return int(value)
         raise ValueError(f'{name} must be an integer threshold, got {value!r}')
     raise TypeError(f'{name} must be an integer threshold, got {type(value).__name__}')
+
+
+def _normalize_float_threshold(name: str, value: float) -> float:
+    if isinstance(value, bool):
+        raise TypeError(f'{name} must be a finite numeric threshold, got bool')
+    if isinstance(value, (int, float)):
+        normalized = float(value)
+        if math.isfinite(normalized):
+            return normalized
+        raise ValueError(f'{name} must be a finite numeric threshold, got {value!r}')
+    raise TypeError(f'{name} must be a finite numeric threshold, got {type(value).__name__}')
 
 
 def _to_json_dataclass(obj: Any) -> Any:

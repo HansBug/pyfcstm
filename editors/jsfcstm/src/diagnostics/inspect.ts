@@ -242,7 +242,10 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
         'largeCompositeThreshold',
         options.largeCompositeThreshold ?? DEFAULT_LARGE_COMPOSITE_THRESHOLD,
     );
-    const varToLeafRatioThreshold = options.varToLeafRatioThreshold ?? DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD;
+    const varToLeafRatioThreshold = normalizeNumberThreshold(
+        'varToLeafRatioThreshold',
+        options.varToLeafRatioThreshold ?? DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD,
+    );
     const rootStatePath = dottedPath(machine.rootState.path);
     const states = buildStateInfos(machine);
     const transitions = buildTransitionInfos(machine);
@@ -288,6 +291,13 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
 function normalizeIntThreshold(name: string, value: number): number {
     if (!Number.isFinite(value) || !Number.isInteger(value)) {
         throw new Error(`${name} must be an integer threshold, got ${JSON.stringify(value)}`);
+    }
+    return value;
+}
+
+function normalizeNumberThreshold(name: string, value: number): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new Error(`${name} must be a finite numeric threshold, got ${JSON.stringify(value)}`);
     }
     return value;
 }

@@ -1581,9 +1581,10 @@ W_LITERAL_TYPE_NARROWING:
   severity: warning
   capability: pure_static
   description: >-
-    An ``int`` variable is initialized or assigned from a floating-point
-    literal expression, which can imply silent narrowing in generated
-    code.
+    An ``int`` variable is initialized or assigned directly from a
+    floating-point literal, which can imply silent narrowing in generated
+    code. Compound expressions containing floating-point literals are out
+    of scope for this warning.
   refs:
     var_name:
       type: str
@@ -1597,12 +1598,13 @@ W_LITERAL_TYPE_NARROWING:
     source_expr:
       type: str
       required: true
-      description: Source text of the float literal expression.
+      description: Source text of the direct float literal.
   for_llm:
     summary: >-
-      A value with float literal type flows into an ``int`` variable.
-      The model may truncate or generate target-language code with a
-      narrowing conversion.
+      A direct float literal value flows into an ``int`` variable. The
+      model may truncate or generate target-language code with a
+      narrowing conversion; compound expressions such as ``3.0 + 0.5``
+      are intentionally outside this warning's scope.
     recommended_actions:
       - kind: change_type
         target: variable_definition

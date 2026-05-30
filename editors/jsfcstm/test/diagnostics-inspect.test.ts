@@ -1019,6 +1019,23 @@ state Root {
             );
         });
 
+        it('rejects non-finite variable-to-leaf ratio thresholds', async () => {
+            const machine = await buildMachine(`
+state Root {
+    state A;
+    [*] -> A;
+}
+`);
+            assert.throws(
+                () => inspectModel(machine, {varToLeafRatioThreshold: true as unknown as number}),
+                /varToLeafRatioThreshold/,
+            );
+            assert.throws(
+                () => inspectModel(machine, {varToLeafRatioThreshold: Number.NaN}),
+                /varToLeafRatioThreshold/,
+            );
+        });
+
         it('normalizes integer-valued count thresholds before emitting refs', async () => {
             const report = inspectModel(await buildMachine(`
 state Root {
@@ -1161,6 +1178,23 @@ state Root {
             assert.deepEqual(diagnostic.refs, {
                 from_path: 'Root.A',
                 to_path: 'Root.B',
+                transition_span: null,
+            });
+        });
+
+        it('emits info for eventless and guardless exit transitions', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state A;
+    [*] -> A;
+    A -> [*];
+}
+`));
+            const diagnostic = diagnosticsByCode(report).get('I_TRANSITION_NEVER_EVENT_TRIGGERED')![0];
+            assert.equal(diagnostic.severity, 'info');
+            assert.deepEqual(diagnostic.refs, {
+                from_path: 'Root.A',
+                to_path: '[*]',
                 transition_span: null,
             });
         });

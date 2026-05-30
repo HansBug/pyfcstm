@@ -1108,6 +1108,18 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
         with pytest.raises(ValueError, match='large_composite_threshold'):
             inspect_model(_parse(dsl), large_composite_threshold=2.5)
 
+    def test_ratio_threshold_option_rejects_non_finite_values(self):
+        dsl = """
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """
+        with pytest.raises(TypeError, match='var_to_leaf_ratio_threshold'):
+            inspect_model(_parse(dsl), var_to_leaf_ratio_threshold=True)
+        with pytest.raises(ValueError, match='var_to_leaf_ratio_threshold'):
+            inspect_model(_parse(dsl), var_to_leaf_ratio_threshold=float('nan'))
+
     def test_integer_threshold_options_accept_integer_valued_float(self):
         dsl = """
         state Root {

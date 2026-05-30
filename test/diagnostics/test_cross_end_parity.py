@@ -717,6 +717,27 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
             },
         ],
     ),
+    (
+        'transition-never-event-triggered-exit-transition',
+        '\n'.join([
+            'state Root {',
+            '    state A;',
+            '    [*] -> A;',
+            '    A -> [*];',
+            '}',
+        ]),
+        [
+            {
+                'code': 'I_TRANSITION_NEVER_EVENT_TRIGGERED',
+                'severity': 'info',
+                'refs': {
+                    'from_path': 'Root.A',
+                    'to_path': '[*]',
+                    'transition_span': None,
+                },
+            },
+        ],
+    ),
 ]
 
 

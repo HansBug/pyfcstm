@@ -106,9 +106,9 @@ class ModelDiagnostic:
     time so that experimental codes can be emitted in tests.
 
     :attr:`severity` is enforced at construction time to be one of
-    ``'error'`` / ``'warning'`` — a typo such as ``'Error'`` would otherwise
-    cause :meth:`is_error` to silently return ``False`` and skew downstream
-    dispatch.
+    ``'error'`` / ``'warning'`` / ``'info'`` — a typo such as ``'Error'``
+    would otherwise cause :meth:`is_error` to silently return ``False`` and
+    skew downstream dispatch.
 
     The dataclass is frozen so the public contract surface (``code`` /
     ``severity`` / ``message`` / ``span``) cannot be mutated after

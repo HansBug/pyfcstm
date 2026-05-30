@@ -367,6 +367,70 @@ state Root {
             );
         });
 
+        it('emits const-fold guard and during-assignment warnings', async () => {
+            const report = inspectModel(await buildMachine(`
+def int stable = 0;
+def int dynamic = 0;
+state Root {
+    state Idle {
+        during { stable = (2 + 3) * 4; }
+        during { dynamic = dynamic + 1; }
+    }
+    state Active;
+    state Blocked;
+    [*] -> Idle;
+    Idle -> Active : if [(1 + 2) == 3];
+    Active -> Blocked : if [(0x0F & 0xF0) != 0];
+}
+`));
+            const constTrue = report.diagnostics.find(d => d.code === 'W_GUARD_CONST_TRUE');
+            assert.ok(constTrue);
+            assert.deepEqual(constTrue!.refs, {
+                transition_span: null,
+                folded_value: true,
+            });
+
+            const constFalse = report.diagnostics.find(d => d.code === 'W_GUARD_CONST_FALSE');
+            assert.ok(constFalse);
+            assert.deepEqual(constFalse!.refs, {
+                transition_span: null,
+                folded_value: false,
+            });
+
+            const duringConst = report.diagnostics.find(d => d.code === 'W_DURING_CONST_ASSIGN');
+            assert.ok(duringConst);
+            assert.deepEqual(duringConst!.refs, {
+                state_path: 'Root.Idle',
+                var_name: 'stable',
+                value: 20,
+            });
+        });
+
+        it('does not const-fold variables functions or structural during actions', async () => {
+            const report = inspectModel(await buildMachine(`
+def int counter = 0;
+def float angle = 0.0;
+state Root {
+    state Wrapper {
+        during before { counter = 5; }
+        >> during before { counter = 6; }
+        state Idle {
+            during { counter = counter + 1; }
+            during { angle = sin(0.0); }
+        }
+        state Active;
+        [*] -> Idle;
+        Idle -> Active : if [counter > 0];
+    }
+    [*] -> Wrapper;
+}
+`));
+            const codes = report.diagnostics.map(d => d.code);
+            assert.equal(codes.includes('W_GUARD_CONST_TRUE'), false);
+            assert.equal(codes.includes('W_GUARD_CONST_FALSE'), false);
+            assert.equal(codes.includes('W_DURING_CONST_ASSIGN'), false);
+        });
+
         it('emits structural dataflow and redundancy warnings', async () => {
             const report = inspectModel(await buildMachine(STRUCTURAL_DATAFLOW_REDUNDANCY_DSL));
             const normalized = report.diagnostics

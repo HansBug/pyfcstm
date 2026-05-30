@@ -1,9 +1,9 @@
 """Design-health diagnostics derived from inspect-surface data."""
 
-import re
 from typing import TYPE_CHECKING, Iterable, List, Optional
 
 from ...utils.validate import ModelDiagnostic
+from .const_fold import collect_const_fold_warnings
 from .data_flow import collect_data_flow_warnings
 from .naming import collect_naming_warnings
 from .redundancy import collect_redundancy_warnings
@@ -22,6 +22,7 @@ if TYPE_CHECKING:  # pragma: no cover - import-time type hints only
         TransitionInfo,
         VariableInfo,
     )
+    from ...model.model import StateMachine
 
 
 def collect_design_health_warnings(
@@ -37,6 +38,7 @@ def collect_design_health_warnings(
     deep_hierarchy_threshold: int = 6,
     large_composite_threshold: int = 12,
     var_to_leaf_ratio_threshold: float = 2.0,
+    machine: Optional['StateMachine'] = None,
 ) -> List[ModelDiagnostic]:
     """Collect design-health warning diagnostics from inspect payloads."""
     diagnostics: List[ModelDiagnostic] = []
@@ -52,7 +54,7 @@ def collect_design_health_warnings(
         reachability_graph,
         resolved_root_state_path,
     ))
-    diagnostics.extend(_guard_const_false_diagnostics(transitions))
+    diagnostics.extend(collect_const_fold_warnings(machine))
     diagnostics.extend(_unused_event_diagnostics(events))
     diagnostics.extend(collect_structural_warnings(
         states,
@@ -103,36 +105,6 @@ def _unreachable_state_diagnostics(states, reachability_graph, root_state_path) 
             )
         )
     return diagnostics
-
-
-def _guard_const_false_diagnostics(transitions) -> List[ModelDiagnostic]:
-    diagnostics: List[ModelDiagnostic] = []
-    for transition in transitions:
-        if _is_minimal_const_false_guard(transition.guard):
-            diagnostics.append(
-                ModelDiagnostic(
-                    code='W_GUARD_CONST_FALSE',
-                    severity='warning',
-                    message=(
-                        f'Transition {transition.from_path!r} -> {transition.to_path!r} '
-                        'has a guard that is statically false.'
-                    ),
-                    refs={'transition_span': None, 'folded_value': False},
-                )
-            )
-    return diagnostics
-
-
-def _is_minimal_const_false_guard(guard_text) -> bool:
-    if guard_text is None:
-        return False
-    normalized = guard_text.strip().lower()
-    if normalized in {'false', '0'}:
-        return True
-    match = re.match(r'^\s*([+-]?\d+)\s*==\s*([+-]?\d+)\s*$', guard_text)
-    if match is not None:
-        return int(match.group(1)) != int(match.group(2))
-    return False
 
 
 def _unused_event_diagnostics(events) -> List[ModelDiagnostic]:

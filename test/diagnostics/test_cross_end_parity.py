@@ -438,6 +438,106 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
         ],
     ),
     (
+        'design-health-const-fold-guards-and-during-assign',
+        '\n'.join([
+            'def int stable = 0;',
+            'def int dynamic = 0;',
+            'state Root {',
+            '    state Idle {',
+            '        during { stable = (2 + 3) * 4; }',
+            '        during { dynamic = dynamic + 1; }',
+            '    }',
+            '    state Active;',
+            '    state Blocked;',
+            '    [*] -> Idle;',
+            '    Idle -> Active : if [(1 + 2) == 3];',
+            '    Active -> Blocked : if [(0x0F & 0xF0) != 0];',
+            '}',
+        ]),
+        [
+            {
+                'code': 'W_DEADLOCK_LEAF',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.Blocked',
+                    'reason': 'no_outgoing_transition',
+                },
+            },
+            {
+                'code': 'W_DURING_CONST_ASSIGN',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.Idle',
+                    'var_name': 'stable',
+                    'value': 20,
+                },
+            },
+            {
+                'code': 'W_GUARD_CONST_FALSE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'folded_value': False,
+                },
+            },
+            {
+                'code': 'W_GUARD_CONST_TRUE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'folded_value': True,
+                },
+            },
+            {
+                'code': 'W_WRITE_ONLY_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'stable',
+                    'written_states': ['Root.Idle'],
+                },
+            },
+        ],
+    ),
+    (
+        'design-health-const-fold-skips-runtime-dependent-expressions',
+        '\n'.join([
+            'def int counter = 0;',
+            'def float angle = 0.0;',
+            'state Root {',
+            '    state Wrapper {',
+            '        during before { counter = 5; }',
+            '        >> during before { counter = 6; }',
+            '        state Idle {',
+            '            during { counter = counter + 1; }',
+            '            during { angle = sin(0.0); }',
+            '        }',
+            '        state Active;',
+            '        [*] -> Idle;',
+            '        Idle -> Active : if [counter > 0];',
+            '    }',
+            '    [*] -> Wrapper;',
+            '}',
+        ]),
+        [
+            {
+                'code': 'W_DEADLOCK_LEAF',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.Wrapper.Active',
+                    'reason': 'no_outgoing_transition',
+                },
+            },
+            {
+                'code': 'W_WRITE_ONLY_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'angle',
+                    'written_states': ['Root.Wrapper.Idle'],
+                },
+            },
+        ],
+    ),
+    (
         'design-health-structural-dataflow-redundancy',
         '\n'.join([
             'def int read_only = 0;',
@@ -678,6 +778,15 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'state_path': 'Root.Active.Leaf',
                     'reason': 'no_outgoing_transition',
+                },
+            },
+            {
+                'code': 'W_DURING_CONST_ASSIGN',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.B',
+                    'var_name': 'assigned',
+                    'value': 2.25,
                 },
             },
             {

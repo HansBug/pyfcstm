@@ -9,6 +9,7 @@ pyfcstm.diagnostics.analyzers
 .. toctree::
     :maxdepth: 3
 
+    const_fold
     data_flow
     design_health
     naming

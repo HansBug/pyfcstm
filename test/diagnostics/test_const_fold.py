@@ -88,6 +88,8 @@ def test_fold_condition_literal_only_expressions(text, expected):
         ('(1 << 2048) == 0', 'logical'),
         ('(9007199254740992 + 1) == 9007199254740993', 'logical'),
         ('(2 ** 53) == 9007199254740992', 'logical'),
+        ('1.0 < 9007199254740993', 'logical'),
+        ('9007199254740993 == 1.0', 'logical'),
         ('counter > 0', 'logical'),
         ('(counter > 0) ? 1 : 2', 'numeric'),
         ('(counter > 0) ? false : true', 'logical'),

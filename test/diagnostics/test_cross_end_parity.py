@@ -606,6 +606,27 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
         ],
     ),
     (
+        'design-health-const-fold-skips-mixed-float-unsafe-integer-comparison',
+        '\n'.join([
+            'state Root {',
+            '    state Idle;',
+            '    state Active;',
+            '    [*] -> Idle;',
+            '    Idle -> Active : if [1.0 < 9007199254740993];',
+            '}',
+        ]),
+        [
+            {
+                'code': 'W_DEADLOCK_LEAF',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.Active',
+                    'reason': 'no_outgoing_transition',
+                },
+            },
+        ],
+    ),
+    (
         'design-health-structural-dataflow-redundancy',
         '\n'.join([
             'def int read_only = 0;',

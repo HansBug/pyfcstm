@@ -120,6 +120,8 @@ describe('diagnostics/const-fold', () => {
             foldConditionExpression(await guardExpression('(2 ** 53) == 9007199254740992')),
             null,
         );
+        assert.equal(foldConditionExpression(await guardExpression('1.0 < 9007199254740993')), null);
+        assert.equal(foldConditionExpression(await guardExpression('9007199254740993 == 1.0')), null);
         assert.equal(foldConditionExpression(await guardExpression('sin(0) == 0')), null);
         assert.equal(foldConditionExpression(await guardExpression('x > 0')), null);
         assert.equal(foldConditionExpression({}), null);

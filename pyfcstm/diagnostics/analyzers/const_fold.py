@@ -325,6 +325,8 @@ def _comparison_operands(left: ConstValue, right: ConstValue):
         if math.isfinite(left) and math.isfinite(right):
             return left, right, True
         return None
+    if _mixed_float_and_unsafe_integer(left, right):
+        return None
     if left_float:
         if _is_plain_int(right) and abs(right) <= _MAX_JSON_STABLE_INT:
             return left, right, True
@@ -338,6 +340,13 @@ def _comparison_operands(left: ConstValue, right: ConstValue):
     if normalized_right is None:
         return None
     return left, normalized_right, False
+
+
+def _mixed_float_and_unsafe_integer(left: ConstValue, right: ConstValue) -> bool:
+    return (
+        (isinstance(left, float) and _is_plain_int(right) and abs(right) > _MAX_JSON_STABLE_INT)
+        or (isinstance(right, float) and _is_plain_int(left) and abs(left) > _MAX_JSON_STABLE_INT)
+    )
 
 
 def _safe_integer_float(value: float) -> Optional[int]:

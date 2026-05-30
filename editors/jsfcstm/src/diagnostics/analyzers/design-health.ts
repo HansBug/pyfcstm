@@ -1,24 +1,50 @@
-import type {EventInfo, ModelDiagnosticJson, StateInfo, TransitionInfo} from '../inspect';
+import type {
+    ActionInfo,
+    EventInfo,
+    ForcedTransitionInfo,
+    ModelDiagnosticJson,
+    StateInfo,
+    TransitionInfo,
+    VariableInfo,
+} from '../inspect';
+import {collectDataFlowWarnings} from './data-flow';
+import {collectRedundancyWarnings} from './redundancy';
+import {collectStructuralWarnings} from './structural';
 
 export function collectDesignHealthWarnings(
     states: StateInfo[],
     transitions: TransitionInfo[],
+    variables: VariableInfo[],
     events: EventInfo[],
+    actions: ActionInfo[],
+    forcedTransitions: ForcedTransitionInfo[],
     reachabilityGraph: Record<string, string[]>,
+    rootStatePath?: string,
 ): ModelDiagnosticJson[] {
     return [
-        ...collectUnreachableStateDiagnostics(states, reachabilityGraph),
+        ...collectUnreachableStateDiagnostics(states, reachabilityGraph, rootStatePath),
         ...collectGuardConstFalseDiagnostics(transitions),
         ...collectUnusedEventDiagnostics(events),
+        ...collectStructuralWarnings(
+            states,
+            transitions,
+            actions,
+            forcedTransitions,
+            reachabilityGraph,
+            rootStatePath,
+        ),
+        ...collectDataFlowWarnings(variables),
+        ...collectRedundancyWarnings(transitions, events, states),
     ];
 }
 
 function collectUnreachableStateDiagnostics(
     states: StateInfo[],
     reachabilityGraph: Record<string, string[]>,
+    rootStatePath?: string,
 ): ModelDiagnosticJson[] {
     if (states.length === 0) return [];
-    const rootPath = states[0].path;
+    const rootPath = rootStatePath ?? states[0].path;
     const reachable = new Set<string>(reachabilityGraph[rootPath] ?? []);
     reachable.add(rootPath);
     const out: ModelDiagnosticJson[] = [];

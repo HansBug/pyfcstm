@@ -14,7 +14,9 @@ import os
 import pytest
 
 from pyfcstm.diagnostics import (
+    ActionInfo,
     EventInfo,
+    ForcedTransitionInfo,
     ModelInspect,
     ModelMetrics,
     StateInfo,
@@ -244,6 +246,8 @@ class TestInspectModelToJson:
             'transitions',
             'variables',
             'events',
+            'actions',
+            'forced_transitions',
             'metrics',
             'reachability_graph',
             'event_emission_map',
@@ -387,6 +391,142 @@ state Root {
             if t.event and 'Panic' in t.event
         ]
         assert len(panic_transitions) >= 1
+        assert all(t.is_forced for t in panic_transitions)
+        assert all(t.forced_origin for t in panic_transitions)
+
+    def test_forced_transition_origin_matches_declaration(self):
+        dsl = """
+        state Root {
+            state Idle;
+            state Active;
+            state Error;
+            [*] -> Idle;
+            !Idle -> Error :: Fail;
+            !Active -> Error :: Stop;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        origins_by_event = {
+            t.event: t.forced_origin
+            for t in report.transitions
+            if t.is_forced
+        }
+        assert origins_by_event == {
+            'Root.Idle.Fail': '! Idle -> Error :: Fail;',
+            'Root.Active.Stop': '! Active -> Error :: Stop;',
+        }
+
+    def test_forced_transition_origin_keeps_guard_and_chain_path(self):
+        dsl = """
+        def int counter = 0;
+        state Root {
+            state Idle;
+            state Error;
+            state Bus { event Fail; }
+            [*] -> Idle;
+            !Idle -> [*] : if [counter > 0];
+            !Error -> Idle : Bus.Fail;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        declarations = {
+            item.from_path: item.original_raw
+            for item in report.forced_transitions
+        }
+        assert declarations['Root.Idle'] == (
+            '! Idle -> [*] : if [counter > 0];'
+        )
+        assert declarations['Root.Error'] == '! Error -> Idle : Bus.Fail;'
+        origins = {
+            (t.from_path, t.to_path): t.forced_origin
+            for t in report.transitions
+            if t.is_forced
+        }
+        assert origins[('Root.Idle', '[*]')] == (
+            '! Idle -> [*] : if [counter > 0];'
+        )
+        assert origins[('Root.Error', 'Root.Idle')] == (
+            '! Error -> Idle : Bus.Fail;'
+        )
+
+    def test_forced_transition_origin_keeps_grouped_guard(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            !A -> B : if [(x + 1) * 2 > 0];
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        declaration = next(
+            item for item in report.forced_transitions
+            if item.from_path == 'Root.A'
+        )
+        assert declaration.original_raw == (
+            '! A -> B : if [(x + 1) * 2 > 0];'
+        )
+        transition = next(t for t in report.transitions if t.is_forced)
+        assert transition.forced_origin == (
+            '! A -> B : if [(x + 1) * 2 > 0];'
+        )
+
+    def test_forced_transition_declaration_guard_uses_dsl_text_normal_form(self):
+        dsl = """
+        def int x = 0;
+        def int y = 1;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            !A -> B : if [x == 0x0F and not (y == 0)];
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        declaration = next(
+            item for item in report.forced_transitions
+            if item.from_path == 'Root.A'
+        )
+        assert declaration.guard == 'x == 0x0f && !(y == 0)'
+        assert declaration.original_raw == (
+            '! A -> B : if [x == 0x0f && !(y == 0)];'
+        )
+
+    def test_inherited_forced_transition_origin_stays_original(self):
+        dsl = """
+        state Root {
+            state Running {
+                state A;
+                state B;
+                [*] -> A;
+            }
+            state Error;
+            [*] -> Running;
+            !Running -> Error :: Panic;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        origins = {
+            t.from_path: t.forced_origin
+            for t in report.transitions
+            if t.is_forced
+        }
+        assert origins['Root.Running'] == '! Running -> Error :: Panic;'
+        assert origins['Root.Running.A'] == '! Running -> Error :: Panic;'
+        assert origins['Root.Running.B'] == '! Running -> Error :: Panic;'
+
+    def test_actions_and_forced_declarations_visible(self, report):
+        assert all(isinstance(item, ActionInfo) for item in report.actions)
+        assert any(item.name == 'Restart' for item in report.actions)
+        assert all(
+            isinstance(item, ForcedTransitionInfo)
+            for item in report.forced_transitions
+        )
+        assert any(
+            item.original_raw == '! Running -> Error :: Panic;'
+            for item in report.forced_transitions
+        )
 
     def test_forced_local_event_keeps_scope(self):
         dsl = """
@@ -400,6 +540,46 @@ state Root {
         report = inspect_model(_parse(dsl))
         events_by_name = {e.qualified_name: e for e in report.events}
         assert events_by_name['Root.Idle.Panic'].scope == 'local'
+
+    def test_shadowed_event_ignores_unrelated_sibling_scope(self):
+        dsl = """
+        state Root {
+            state A {
+                state A1;
+                state A2;
+                [*] -> A1;
+                A1 -> A2 :: Tick;
+            }
+            state B {
+                state B1;
+                state B2;
+                [*] -> B1;
+                B1 -> B2 : Tick;
+            }
+            [*] -> A;
+            A -> B :: Go;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert [
+            d for d in report.diagnostics
+            if d.code == 'W_SHADOWED_EVENT'
+        ] == []
+
+    def test_dead_named_action_ignores_unreachable_refs(self):
+        dsl = """
+        state Root {
+            state Idle;
+            state Orphan { enter Target {} }
+            state Other { enter ref /Orphan.Target; }
+            [*] -> Idle;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert [
+            d.refs for d in report.diagnostics
+            if d.code == 'W_DEAD_NAMED_ACTION'
+        ] == [{'function_name': 'Target', 'defined_in': 'Root.Orphan'}]
 
     def test_nested_chain_event_keeps_chain_scope(self):
         dsl = """
@@ -744,3 +924,85 @@ class TestInspectModelExtendedCoverage:
         report = inspect_model(_parse(dsl))
         exits = [t for t in report.transitions if t.to_path == '[*]']
         assert len(exits) >= 1, f'expected exit transition, got {report.transitions}'
+
+
+@pytest.mark.unittest
+class TestInspectModelRedundancySemantics:
+    def test_transition_effect_differentiates_redundancy_key(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B effect { x = 1; };
+            A -> B effect { x = 2; };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        effects = [
+            t.effect for t in report.transitions
+            if t.from_path == 'Root.A' and t.to_path == 'Root.B'
+        ]
+        assert effects == ['x = 1;', 'x = 2;']
+        assert [
+            d for d in report.diagnostics
+            if d.code == 'W_REDUNDANT_TRANSITION'
+        ] == []
+
+    def test_self_transition_with_lifecycle_action_is_not_noop(self):
+        dsl = """
+        def int counter = 0;
+        state Root {
+            state Active {
+                enter { counter = counter + 1; }
+            }
+            [*] -> Active;
+            Active -> Active;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert [
+            d for d in report.diagnostics
+            if d.code == 'W_SELF_TRANSITION_NOP'
+        ] == []
+
+    def test_self_transition_with_ancestor_aspect_is_not_noop(self):
+        dsl = """
+        def int counter = 0;
+        state Root {
+            >> during before { counter = counter + 1; }
+            state Active;
+            [*] -> Active;
+            Active -> Active;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert [
+            d for d in report.diagnostics
+            if d.code == 'W_SELF_TRANSITION_NOP'
+        ] == []
+
+    def test_nested_effect_self_assignment_reports_diagnostic(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B effect {
+                if [x > 0] {
+                    x = x;
+                }
+            };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert [
+            d.refs for d in report.diagnostics
+            if d.code == 'W_EFFECT_SELF_ASSIGN'
+        ] == [{
+            'state_path': 'Root.A',
+            'transition_span': None,
+            'var_name': 'x',
+        }]

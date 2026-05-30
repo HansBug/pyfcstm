@@ -143,6 +143,10 @@ class TransitionInfo:
     :type guard: Optional[str]
     :param effect: Source text of the effect block, or ``None``.
     :type effect: Optional[str]
+    :param effect_self_assigns: Variable names assigned to themselves
+        anywhere inside the transition effect block, including nested
+        ``if`` branches.
+    :type effect_self_assigns: Tuple[str, ...]
     :param is_forced: ``True`` when the transition was expanded from a
         ``!``-prefixed forced transition.
     :type is_forced: bool
@@ -158,6 +162,7 @@ class TransitionInfo:
     event_scope: Optional[str]
     guard: Optional[str]
     effect: Optional[str]
+    effect_self_assigns: Tuple[str, ...]
     is_forced: bool
     forced_origin: Optional[str]
 
@@ -244,6 +249,34 @@ class EventInfo:
     used_by: Tuple[Tuple[str, str], ...]
     is_declared: bool
     is_used: bool
+
+
+@dataclass(frozen=True)
+class ActionInfo:
+    """Structural summary of a lifecycle action declaration."""
+
+    signature: str
+    state_path: str
+    name: Optional[str]
+    stage: str
+    aspect: Optional[str]
+    is_ref: bool
+    ref_target: Optional[str]
+    is_attached: bool
+
+
+@dataclass(frozen=True)
+class ForcedTransitionInfo:
+    """Structural summary of a forced transition declaration."""
+
+    state_path: str
+    from_path: str
+    to_path: str
+    event: Optional[str]
+    event_scope: Optional[str]
+    guard: Optional[str]
+    original_raw: str
+    expansion_count: int
 
 
 @dataclass(frozen=True)
@@ -341,6 +374,8 @@ class ModelInspect:
     transitions: Tuple[TransitionInfo, ...]
     variables: Tuple[VariableInfo, ...]
     events: Tuple[EventInfo, ...]
+    actions: Tuple[ActionInfo, ...]
+    forced_transitions: Tuple[ForcedTransitionInfo, ...]
     metrics: ModelMetrics
     reachability_graph: Dict[str, Tuple[str, ...]]
     event_emission_map: Dict[str, Tuple[str, ...]]
@@ -499,6 +534,32 @@ def _walk_stmt_reads_writes(
                     reads.append(v)
             for inner in branch.statements:
                 _walk_stmt_reads_writes(inner, reads, writes)
+
+
+def _effect_self_assigns(effects: List['OperationStatement']) -> Tuple[str, ...]:
+    out: List[str] = []
+    for stmt in effects:
+        _walk_stmt_self_assigns(stmt, out)
+    seen = set()
+    deduped: List[str] = []
+    for name in out:
+        if name not in seen:
+            seen.add(name)
+            deduped.append(name)
+    return tuple(deduped)
+
+
+def _walk_stmt_self_assigns(stmt: 'OperationStatement', out: List[str]) -> None:
+    from ..model.expr import Variable
+    from ..model.model import IfBlock, Operation
+    if isinstance(stmt, Operation):
+        if isinstance(stmt.expr, Variable) and stmt.expr.name == stmt.var_name:
+            out.append(stmt.var_name)
+        return
+    if isinstance(stmt, IfBlock):
+        for branch in stmt.branches:
+            for inner in branch.statements:
+                _walk_stmt_self_assigns(inner, out)
 
 
 def _stage_function_label(stage_item: 'OnStage') -> str:
@@ -689,6 +750,7 @@ def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ..
                 event_scope=scope,
                 guard=_expr_text(transition.guard),
                 effect=_effects_text(transition.effects),
+                effect_self_assigns=_effect_self_assigns(transition.effects),
                 is_forced=is_forced,
                 forced_origin=forced_origin,
             ))
@@ -869,11 +931,67 @@ def _build_event_infos(machine: 'StateMachine', transitions: Tuple[TransitionInf
 
 
 def _scope_from_event_origins(origins: List[str]) -> str:
-    if 'local' in origins:
+    scopes = [origin for origin in origins if origin != 'declared']
+    if 'local' in scopes:
         return 'local'
-    if 'absolute' in origins:
+    if 'absolute' in scopes:
         return 'absolute'
     return 'chain'
+
+
+def _build_action_infos(machine: 'StateMachine') -> Tuple[ActionInfo, ...]:
+    out: List[ActionInfo] = []
+    for state in machine.walk_states():
+        path = _state_path(state)
+        for collection in (
+                state.on_enters,
+                state.on_durings,
+                state.on_exits,
+                state.on_during_aspects,
+        ):
+            for action in collection:
+                signature = _function_signature(state, path, action)
+                ref_target = (
+                    _function_signature(None, None, action.ref)
+                    if action.is_ref and action.ref is not None
+                    else None
+                )
+                out.append(ActionInfo(
+                    signature=signature,
+                    state_path=path,
+                    name=action.name,
+                    stage=action.stage,
+                    aspect=action.aspect,
+                    is_ref=action.is_ref,
+                    ref_target=ref_target,
+                    is_attached=True,
+                ))
+    return tuple(out)
+
+
+def _build_forced_transition_infos(machine: 'StateMachine') -> Tuple[ForcedTransitionInfo, ...]:
+    out: List[ForcedTransitionInfo] = []
+    for item in getattr(machine, 'forced_transitions', ()):
+        out.append(ForcedTransitionInfo(
+            state_path=str(item.get('state_path', '')),
+            from_path=str(item.get('from_path', '')),
+            to_path=str(item.get('to_path', '')),
+            event=(
+                None if item.get('event') is None
+                else str(item.get('event'))
+            ),
+            event_scope=(
+                None if item.get('event_scope') is None
+                else str(item.get('event_scope'))
+            ),
+            guard=(
+                None if item.get('guard') is None
+                else str(item.get('guard'))
+            ),
+            original_raw=str(item.get('original_raw', '')),
+            expansion_count=int(item.get('expansion_count', 0)),
+        ))
+    return tuple(out)
 
 
 def _build_metrics(
@@ -1069,14 +1187,19 @@ def inspect_model(machine: 'StateMachine') -> ModelInspect:
     transitions = _build_transition_infos(machine)
     variables = _build_variable_infos(machine, states)
     events = _build_event_infos(machine, transitions)
+    actions = _build_action_infos(machine)
+    forced_transitions = _build_forced_transition_infos(machine)
     metrics = _build_metrics(states, transitions, variables, events)
     reachability_graph = _build_reachability_graph(states, transitions)
+    root_state_path = _state_path(machine.root_state)
     return ModelInspect(
-        root_state_path=_state_path(machine.root_state),
+        root_state_path=root_state_path,
         states=states,
         transitions=transitions,
         variables=variables,
         events=events,
+        actions=actions,
+        forced_transitions=forced_transitions,
         metrics=metrics,
         reachability_graph=reachability_graph,
         event_emission_map=_build_event_emission_map(events),
@@ -1086,8 +1209,12 @@ def inspect_model(machine: 'StateMachine') -> ModelInspect:
         diagnostics=tuple(collect_design_health_warnings(
             states,
             transitions,
+            variables,
             events,
+            actions,
+            forced_transitions,
             reachability_graph,
+            root_state_path=root_state_path,
         )),
     )
 
@@ -1121,6 +1248,10 @@ def _to_json_inspect(report: ModelInspect) -> Dict[str, Any]:
         'transitions': [_to_json_dataclass(t) for t in report.transitions],
         'variables': [_to_json_dataclass(v) for v in report.variables],
         'events': [_to_json_dataclass(e) for e in report.events],
+        'actions': [_to_json_dataclass(a) for a in report.actions],
+        'forced_transitions': [
+            _to_json_dataclass(f) for f in report.forced_transitions
+        ],
         'metrics': _to_json_dataclass(report.metrics),
         'reachability_graph': {k: list(v) for k, v in report.reachability_graph.items()},
         'event_emission_map': {k: list(v) for k, v in report.event_emission_map.items()},

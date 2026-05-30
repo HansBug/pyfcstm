@@ -29,6 +29,7 @@ import type {
     RawFcstmModelEvent,
     RawFcstmModelExpression,
     RawFcstmModelFloat,
+    RawFcstmModelForcedTransition,
     RawFcstmModelIfBlock,
     RawFcstmModelIfBlockBranch,
     RawFcstmModelInteger,
@@ -1489,6 +1490,8 @@ export class StateMachine extends ModelNode {
     all_events: Event[];
     allTransitions: Transition[];
     all_transitions: Transition[];
+    forcedTransitions: RawFcstmModelForcedTransition[];
+    forced_transitions: RawFcstmModelForcedTransition[];
     allActions: Array<OnStage | OnAspect>;
     all_actions: Array<OnStage | OnAspect>;
     lookups: FcstmModelLookups;
@@ -1505,6 +1508,8 @@ export class StateMachine extends ModelNode {
         this.all_events = this.allEvents;
         this.allTransitions = [];
         this.all_transitions = this.allTransitions;
+        this.forcedTransitions = [];
+        this.forced_transitions = this.forcedTransitions;
         this.allActions = [];
         this.all_actions = this.allActions;
         this.lookups = lookups;
@@ -1853,6 +1858,8 @@ export function hydrateStateMachine(raw: RawFcstmModelStateMachine): StateMachin
     stateMachine.all_events = stateMachine.allEvents;
     stateMachine.allTransitions = raw.allTransitions.map(transition => hydrateTransition(transition, context));
     stateMachine.all_transitions = stateMachine.allTransitions;
+    stateMachine.forcedTransitions = raw.forcedTransitions ?? raw.forced_transitions ?? [];
+    stateMachine.forced_transitions = stateMachine.forcedTransitions;
     stateMachine.allActions = raw.allActions.map(action => hydrateAction(action, context));
     stateMachine.all_actions = stateMachine.allActions;
 

@@ -11,20 +11,60 @@
  */
 
 import {
+    BinaryOp,
+    BooleanExpr,
+    ConditionalOp,
     Event,
     Expr,
+    Float,
     IfBlock,
+    Integer,
     OnAspect,
     OnStage,
     Operation,
     OperationStatement,
     StateMachine,
     Transition,
+    UFunc,
+    UnaryOp,
+    Variable,
 } from '../model/runtime';
 import {collectDesignHealthWarnings} from './analyzers';
+import type {RawFcstmModelForcedTransition} from '../model/raw';
 
 const INIT_MARK = '[*]';
 const EXIT_MARK = '[*]';
+const FLOAT_EPSILON = 1e-10;
+
+const OP_PRECEDENCE: Record<string, number> = {
+    'function_call': 90,
+    'unary+': 80,
+    'unary-': 80,
+    '!': 80,
+    'not': 80,
+    '**': 70,
+    '*': 60,
+    '/': 60,
+    '%': 60,
+    '+': 50,
+    '-': 50,
+    '<<': 40,
+    '>>': 40,
+    '&': 35,
+    '^': 30,
+    '|': 25,
+    '<': 20,
+    '>': 20,
+    '<=': 20,
+    '>=': 20,
+    '==': 20,
+    '!=': 20,
+    '&&': 15,
+    'and': 15,
+    '||': 10,
+    'or': 10,
+    '?:': 5,
+};
 
 /**
  * Per-state structural summary.
@@ -66,6 +106,7 @@ export interface TransitionInfo {
     event_scope: 'local' | 'chain' | 'absolute' | null;
     guard: string | null;
     effect: string | null;
+    effect_self_assigns: string[];
     is_forced: boolean;
     forced_origin: string | null;
 }
@@ -98,6 +139,34 @@ export interface EventInfo {
 }
 
 /**
+ * Per-action structural summary.
+ */
+export interface ActionInfo {
+    signature: string;
+    state_path: string;
+    name: string | null;
+    stage: string;
+    aspect: string | null;
+    is_ref: boolean;
+    ref_target: string | null;
+    is_attached: boolean;
+}
+
+/**
+ * Per-forced-transition declaration summary.
+ */
+export interface ForcedTransitionInfo {
+    state_path: string;
+    from_path: string;
+    to_path: string;
+    event: string | null;
+    event_scope: 'local' | 'chain' | 'absolute' | null;
+    guard: string | null;
+    original_raw: string;
+    expansion_count: number;
+}
+
+/**
  * Aggregate model metrics.
  */
 export interface ModelMetrics {
@@ -123,6 +192,8 @@ export interface ModelInspect {
     transitions: TransitionInfo[];
     variables: VariableInfo[];
     events: EventInfo[];
+    actions: ActionInfo[];
+    forced_transitions: ForcedTransitionInfo[];
     metrics: ModelMetrics;
     reachability_graph: Record<string, string[]>;
     event_emission_map: Record<string, string[]>;
@@ -152,25 +223,39 @@ export interface ModelDiagnosticJson {
  * Run the structural inspector against a jsfcstm state-machine model.
  */
 export function inspectModel(machine: StateMachine): ModelInspect {
+    const rootStatePath = dottedPath(machine.rootState.path);
     const states = buildStateInfos(machine);
     const transitions = buildTransitionInfos(machine);
     const variables = buildVariableInfos(machine, states);
     const events = buildEventInfos(machine);
+    const actions = buildActionInfos(machine);
+    const forcedTransitions = buildForcedTransitionInfos(machine);
     const metrics = buildMetrics(states, transitions, variables, events);
     const reachabilityGraph = buildReachabilityGraph(states, transitions);
     return {
-        root_state_path: dottedPath(machine.rootState.path),
+        root_state_path: rootStatePath,
         states,
         transitions,
         variables,
         events,
+        actions,
+        forced_transitions: forcedTransitions,
         metrics,
         reachability_graph: reachabilityGraph,
         event_emission_map: buildEventEmissionMap(events),
         var_dataflow: buildVarDataflow(variables),
         aspect_impact_map: buildAspectImpactMap(states),
         action_ref_graph: buildActionRefGraph(machine),
-        diagnostics: collectDesignHealthWarnings(states, transitions, events, reachabilityGraph),
+        diagnostics: collectDesignHealthWarnings(
+            states,
+            transitions,
+            variables,
+            events,
+            actions,
+            forcedTransitions,
+            reachabilityGraph,
+            rootStatePath,
+        ),
     };
 }
 
@@ -311,8 +396,9 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
                 event_scope: t.event ? (t.triggerScope ?? null) : null,
                 guard: exprText(t.guard),
                 effect: effectsText(t.effects),
+                effect_self_assigns: effectSelfAssigns(t.effects),
                 is_forced: !!t.forced,
-                forced_origin: null,
+                forced_origin: t.forced ? t.text : null,
             });
         }
     }
@@ -502,21 +588,202 @@ function walkStmtReadsWrites(
     }
 }
 
+function effectSelfAssigns(effects: OperationStatement[] | undefined): string[] {
+    const out: string[] = [];
+    for (const stmt of effects ?? []) {
+        walkStmtSelfAssigns(stmt, out);
+    }
+    return Array.from(new Set(out));
+}
+
+function walkStmtSelfAssigns(stmt: OperationStatement, out: string[]): void {
+    if (stmt instanceof Operation) {
+        if (stmt.expr instanceof Variable && stmt.expr.name === stmt.varName) {
+            out.push(stmt.varName);
+        }
+        return;
+    }
+    if (stmt instanceof IfBlock) {
+        for (const branch of stmt.branches) {
+            for (const inner of branch.statements) {
+                walkStmtSelfAssigns(inner, out);
+            }
+        }
+    }
+}
+
+function canonicalBinaryOperator(op: string): string {
+    if (op === 'and') return '&&';
+    if (op === 'or') return '||';
+    return op;
+}
+
+function canonicalUnaryOperator(op: string): string {
+    return op === 'not' ? '!' : op;
+}
+
+function unaryPrecedenceKey(op: string): string {
+    const canonical = canonicalUnaryOperator(op);
+    return canonical === '+' || canonical === '-' ? `unary${canonical}` : canonical;
+}
+
+function exprPrecedence(expr: Expr): number | null {
+    if (expr instanceof BinaryOp) return OP_PRECEDENCE[canonicalBinaryOperator(expr.op)] ?? null;
+    if (expr instanceof UnaryOp) return OP_PRECEDENCE[unaryPrecedenceKey(expr.op)] ?? null;
+    if (expr instanceof ConditionalOp) return OP_PRECEDENCE['?:'];
+    return null;
+}
+
+function normalizeDecimalDigits(raw: string): string {
+    const normalized = raw.replace(/^0+/, '');
+    return normalized.length > 0 ? normalized : '0';
+}
+
+function addSmallDecimal(raw: string, value: number): string {
+    if (value === 0) return raw;
+    let carry = value;
+    const out: string[] = [];
+    for (let index = raw.length - 1; index >= 0; index -= 1) {
+        const total = Number(raw[index]) + carry;
+        out.push(String(total % 10));
+        carry = Math.floor(total / 10);
+    }
+    while (carry > 0) {
+        out.push(String(carry % 10));
+        carry = Math.floor(carry / 10);
+    }
+    return out.reverse().join('');
+}
+
+function multiplySmallDecimal(raw: string, factor: number): string {
+    if (raw === '0' || factor === 0) return '0';
+    let carry = 0;
+    const out: string[] = [];
+    for (let index = raw.length - 1; index >= 0; index -= 1) {
+        const total = Number(raw[index]) * factor + carry;
+        out.push(String(total % 10));
+        carry = Math.floor(total / 10);
+    }
+    while (carry > 0) {
+        out.push(String(carry % 10));
+        carry = Math.floor(carry / 10);
+    }
+    return out.reverse().join('');
+}
+
+function convertRadixDigitsToDecimal(digits: string, radix: number): string {
+    let value = '0';
+    for (const char of digits.toLowerCase()) {
+        const digit = parseInt(char, radix);
+        value = addSmallDecimal(multiplySmallDecimal(value, radix), digit);
+    }
+    return value;
+}
+
+function integerText(expr: Integer): string {
+    const raw = expr.text.trim();
+    if (/^\d+$/.test(raw)) return normalizeDecimalDigits(raw);
+    if (/^0[xX][0-9a-fA-F]+$/.test(raw)) {
+        return convertRadixDigitsToDecimal(raw.slice(2), 16);
+    }
+    if (/^0[bB][01]+$/.test(raw)) {
+        return convertRadixDigitsToDecimal(raw.slice(2), 2);
+    }
+    return String(Math.trunc(expr.value));
+}
+
+function floatText(expr: Float): string {
+    if (Math.abs(expr.value - Math.PI) < FLOAT_EPSILON) return 'pi';
+    if (Math.abs(expr.value - Math.E) < FLOAT_EPSILON) return 'E';
+    if (Math.abs(expr.value - Math.PI * 2) < FLOAT_EPSILON) return 'tau';
+    if (Number.isInteger(expr.value)) return `${expr.value}.0`;
+    return String(expr.value);
+}
+
+function formatExpr(expr: Expr): string {
+    if (expr instanceof Integer) return integerText(expr);
+    if (expr instanceof Float) return floatText(expr);
+    if (expr instanceof BooleanExpr) return expr.value ? 'true' : 'false';
+    if (expr instanceof Variable) return expr.name;
+    if (expr instanceof UFunc) return `${expr.func}(${formatExpr(expr.x)})`;
+    if (expr instanceof UnaryOp) {
+        const op = canonicalUnaryOperator(expr.op);
+        const myPrecedence = OP_PRECEDENCE[unaryPrecedenceKey(expr.op)];
+        let value = formatExpr(expr.x);
+        const valuePrecedence = exprPrecedence(expr.x);
+        if (valuePrecedence !== null && valuePrecedence <= myPrecedence) {
+            value = `(${value})`;
+        }
+        return `${op}${value}`;
+    }
+    if (expr instanceof BinaryOp) {
+        const op = canonicalBinaryOperator(expr.op);
+        const myPrecedence = OP_PRECEDENCE[op];
+        let left = formatExpr(expr.x);
+        const leftPrecedence = exprPrecedence(expr.x);
+        if (leftPrecedence !== null && leftPrecedence < myPrecedence) {
+            left = `(${left})`;
+        }
+        let right = formatExpr(expr.y);
+        const rightPrecedence = exprPrecedence(expr.y);
+        if (rightPrecedence !== null && rightPrecedence <= myPrecedence) {
+            right = `(${right})`;
+        }
+        return `${left} ${op} ${right}`;
+    }
+    if (expr instanceof ConditionalOp) {
+        const myPrecedence = OP_PRECEDENCE['?:'];
+        let whenTrue = formatExpr(expr.ifTrue);
+        const truePrecedence = exprPrecedence(expr.ifTrue);
+        if (truePrecedence !== null && truePrecedence <= myPrecedence) {
+            whenTrue = `(${whenTrue})`;
+        }
+        let whenFalse = formatExpr(expr.ifFalse);
+        const falsePrecedence = exprPrecedence(expr.ifFalse);
+        if (falsePrecedence !== null && falsePrecedence <= myPrecedence) {
+            whenFalse = `(${whenFalse})`;
+        }
+        return `(${formatExpr(expr.cond)}) ? ${whenTrue} : ${whenFalse}`;
+    }
+    return expr.text;
+}
+
+function statementText(stmt: OperationStatement): string {
+    if (stmt instanceof Operation) {
+        return `${stmt.varName} = ${formatExpr(stmt.expr)};`;
+    }
+    if (stmt instanceof IfBlock) {
+        const firstBranch = stmt.branches[0];
+        if (!firstBranch || firstBranch.condition === null) return stmt.text;
+        const lines: string[] = [`if [${formatExpr(firstBranch.condition)}] {`];
+        for (let index = 0; index < stmt.branches.length; index += 1) {
+            const branch = stmt.branches[index];
+            if (index > 0) {
+                if (branch.condition === null) {
+                    lines.push('} else {');
+                } else {
+                    lines.push(`} else if [${formatExpr(branch.condition)}] {`);
+                }
+            }
+            for (const inner of branch.statements) {
+                for (const line of statementText(inner).split('\n')) {
+                    lines.push(line.trim().length > 0 ? `    ${line}` : line);
+                }
+            }
+        }
+        lines.push('}');
+        return lines.join('\n');
+    }
+    return stmt.text;
+}
+
 function exprText(expr: Expr | null | undefined): string | null {
-    if (!expr) return null;
-    const text = (expr as unknown as {text?: string}).text;
-    if (typeof text === 'string' && text.length > 0) return text;
-    /* c8 ignore next 2 */
-    return null;  // defensive: grammar always sets .text on Expr; this fallback covers future Expr subclasses that don't
+    return expr ? formatExpr(expr) : null;
 }
 
 function effectsText(effects: OperationStatement[] | undefined): string | null {
     if (!effects || effects.length === 0) return null;
-    const parts: string[] = [];
-    for (const stmt of effects) {
-        const t = (stmt as unknown as {text?: string}).text;
-        if (typeof t === 'string' && t.length > 0) parts.push(t);
-    }
+    const parts = effects.map(statementText).filter(text => text.length > 0);
     return parts.length ? parts.join(' ') : null;
 }
 
@@ -573,9 +840,46 @@ function buildEventInfos(machine: StateMachine): EventInfo[] {
     return out;
 }
 
+function buildActionInfos(machine: StateMachine): ActionInfo[] {
+    const out: ActionInfo[] = [];
+    for (const state of machine.allStates) {
+        for (const collection of [state.onEnters, state.onDurings, state.onExits, state.onDuringAspects]) {
+            for (const action of collection) {
+                out.push({
+                    signature: functionSignature(state.path, action),
+                    state_path: dottedPath(state.path),
+                    name: action.name ?? null,
+                    stage: action.stage,
+                    aspect: action.aspect ?? null,
+                    is_ref: action.isRef,
+                    ref_target: action.isRef && action.ref
+                        ? functionSignature(undefined, action.ref as unknown as OnStage)
+                        : null,
+                    is_attached: true,
+                });
+            }
+        }
+    }
+    return out;
+}
+
+function buildForcedTransitionInfos(machine: StateMachine): ForcedTransitionInfo[] {
+    return (machine.forcedTransitions as RawFcstmModelForcedTransition[]).map(item => ({
+        state_path: dottedPath(item.statePath ?? item.state_path),
+        from_path: item.fromPath ?? item.from_path,
+        to_path: item.toPath ?? item.to_path,
+        event: item.event ?? null,
+        event_scope: item.event ? (item.event_scope ?? null) : null,
+        guard: item.guard ?? null,
+        original_raw: item.originalRaw ?? item.original_raw,
+        expansion_count: item.expansionCount ?? item.expansion_count,
+    }));
+}
+
 function scopeFromEventOrigins(event: Event): 'local' | 'chain' | 'absolute' {
-    if (event.origins.includes('local')) return 'local';
-    if (event.origins.includes('absolute')) return 'absolute';
+    const scopes = event.origins.filter(origin => origin !== 'declared');
+    if (scopes.includes('local')) return 'local';
+    if (scopes.includes('absolute')) return 'absolute';
     return 'chain';
 }
 

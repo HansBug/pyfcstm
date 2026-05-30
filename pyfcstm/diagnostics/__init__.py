@@ -30,7 +30,9 @@ from .codes import (
     load_codes,
 )
 from .inspect import (
+    ActionInfo,
     EventInfo,
+    ForcedTransitionInfo,
     ModelInspect,
     ModelMetrics,
     StateInfo,
@@ -42,11 +44,13 @@ from .sink import DiagnosticSink
 
 __all__ = [
     'CODE_REGISTRY',
+    'ActionInfo',
     'CodeFieldSpec',
     'CodeSpec',
     'CodesSchemaError',
     'DiagnosticSink',
     'EventInfo',
+    'ForcedTransitionInfo',
     'ForLlmSpec',
     'ModelInspect',
     'ModelMetrics',

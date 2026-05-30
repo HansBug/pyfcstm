@@ -284,6 +284,7 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
                 largeCompositeThreshold,
                 varToLeafRatioThreshold,
             },
+            machine,
         ),
     };
 }

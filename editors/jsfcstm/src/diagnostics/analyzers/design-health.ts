@@ -8,6 +8,8 @@ import type {
     TransitionInfo,
     VariableInfo,
 } from '../inspect';
+import type {StateMachine} from '../../model/runtime';
+import {collectConstFoldWarnings} from './const-fold';
 import {collectDataFlowWarnings} from './data-flow';
 import {collectNamingWarnings} from './naming';
 import {collectRedundancyWarnings} from './redundancy';
@@ -27,6 +29,7 @@ export function collectDesignHealthWarnings(
     reachabilityGraph: Record<string, string[]>,
     rootStatePath?: string,
     thresholds?: ThresholdOptions,
+    machine?: StateMachine,
 ): ModelDiagnosticJson[] {
     const thresholdOptions = thresholds ?? {
         deepHierarchyThreshold: 6,
@@ -35,7 +38,7 @@ export function collectDesignHealthWarnings(
     };
     return [
         ...collectUnreachableStateDiagnostics(states, reachabilityGraph, rootStatePath),
-        ...collectGuardConstFalseDiagnostics(transitions),
+        ...(machine ? collectConstFoldWarnings(machine) : collectGuardConstFalseDiagnostics(transitions)),
         ...collectUnusedEventDiagnostics(events),
         ...collectStructuralWarnings(
             states,

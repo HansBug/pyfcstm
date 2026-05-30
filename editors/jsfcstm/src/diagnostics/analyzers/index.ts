@@ -1,3 +1,8 @@
+export {
+    collectConstFoldWarnings,
+    foldConditionExpression,
+    foldNumericExpression,
+} from './const-fold';
 export {collectDesignHealthWarnings} from './design-health';
 export {collectNamingWarnings} from './naming';
 export {collectThresholdWarnings} from './thresholds';

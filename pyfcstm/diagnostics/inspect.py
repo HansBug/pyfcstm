@@ -1295,6 +1295,7 @@ def inspect_model(
             deep_hierarchy_threshold=deep_hierarchy_threshold,
             large_composite_threshold=large_composite_threshold,
             var_to_leaf_ratio_threshold=var_to_leaf_ratio_threshold,
+            machine=machine,
         )),
     )
 

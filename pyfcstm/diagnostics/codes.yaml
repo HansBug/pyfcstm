@@ -1036,11 +1036,12 @@ W_GUARD_CONST_FALSE:
   severity: warning
   capability: const_fold
   description: >-
-    A transition's guard condition matches the current minimal
-    constant-false patterns, so the transition can never fire. This
-    analyzer currently recognizes ``false`` / ``0`` and simple signed
-    decimal integer equality checks such as ``1 == 0``; it is not a
-    complete constant-folding engine.
+    A transition's guard condition folds to the boolean literal
+    ``false`` using the built-in constant folder, so the transition can
+    never fire. The folder is intentionally side-effect free: it handles
+    literal-only boolean, comparison, arithmetic, bitwise, unary, and
+    ternary expressions, but does not evaluate variables, functions,
+    solvers, or runtime state.
   refs:
     transition_span:
       type: Span
@@ -1063,12 +1064,98 @@ W_GUARD_CONST_FALSE:
         rationale: Remove the transition if it was placeholder / debug.
     do_not:
       - "Do not silently remove the guard — that would change the semantics."
+  emit_tier: static_pipeline
   example_dsl: |
     state Root {
         state A;
         state B;
         [*] -> A;
-        A -> B : if [false];
+        A -> B : if [(0x0F & 0xF0) != 0];
+    }
+
+W_GUARD_CONST_TRUE:
+  severity: warning
+  capability: const_fold
+  description: >-
+    A transition's guard condition folds to the boolean literal ``true``
+    using the built-in constant folder, so the guard is redundant for
+    all runtime states covered by that literal-only expression.
+  refs:
+    transition_span:
+      type: Span
+      required: false
+      description: Source span of the transition declaration.
+    folded_value:
+      type: bool
+      required: true
+      description: Constant-folded guard value (always ``true``).
+  for_llm:
+    summary: >-
+      The transition's guard is statically known to be ``true`` and does
+      not constrain the transition.
+    recommended_actions:
+      - kind: remove_guard
+        target: transition
+        rationale: Remove the guard if the transition is meant to be unconditional.
+      - kind: fix_guard
+        target: transition
+        rationale: Rewrite the guard if it was intended to depend on runtime state.
+    do_not:
+      - "Do not add a dummy variable dependency only to silence the diagnostic."
+  emit_tier: static_pipeline
+  example_dsl: |
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [(1 + 2) == 3];
+    }
+
+W_DURING_CONST_ASSIGN:
+  severity: warning
+  capability: const_fold
+  description: >-
+    A concrete ``during`` action assigns a variable to the same
+    literal-only numeric value every cycle. The analyzer only checks the
+    direct statements in ordinary ``during { ... }`` blocks; it skips
+    abstract actions, refs, composite ``during before`` / ``during after``
+    actions, aspect actions, functions, variables, and nested control
+    flow.
+  refs:
+    state_path:
+      type: str
+      required: true
+      description: Dotted path of the state that owns the during action.
+    var_name:
+      type: str
+      required: true
+      description: Variable assigned by the constant during statement.
+    value:
+      type: number
+      required: true
+      description: JSON-stable numeric value assigned on every cycle.
+  for_llm:
+    summary: >-
+      The during block writes the same constant numeric value on every
+      cycle, which often indicates initialization logic was placed in
+      ``during`` instead of ``enter``.
+    recommended_actions:
+      - kind: move_to_enter
+        target: action
+        rationale: Move the assignment to ``enter`` if it should run once on state entry.
+      - kind: rewrite_expression
+        target: assignment
+        rationale: Use runtime state in the expression if the value should evolve each cycle.
+    do_not:
+      - "Do not suppress the warning by adding a meaningless arithmetic no-op."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int counter = 0;
+    state Root {
+        state Idle {
+            during { counter = (2 + 3) * 4; }
+        }
+        [*] -> Idle;
     }
 
 W_UNUSED_EVENT:

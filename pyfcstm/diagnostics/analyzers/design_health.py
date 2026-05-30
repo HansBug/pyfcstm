@@ -4,6 +4,7 @@ import re
 from typing import TYPE_CHECKING, Iterable, List, Optional
 
 from ...utils.validate import ModelDiagnostic
+from .const_fold import collect_const_fold_warnings
 from .data_flow import collect_data_flow_warnings
 from .naming import collect_naming_warnings
 from .redundancy import collect_redundancy_warnings
@@ -22,6 +23,7 @@ if TYPE_CHECKING:  # pragma: no cover - import-time type hints only
         TransitionInfo,
         VariableInfo,
     )
+    from ...model.model import StateMachine
 
 
 def collect_design_health_warnings(
@@ -37,6 +39,7 @@ def collect_design_health_warnings(
     deep_hierarchy_threshold: int = 6,
     large_composite_threshold: int = 12,
     var_to_leaf_ratio_threshold: float = 2.0,
+    machine: Optional['StateMachine'] = None,
 ) -> List[ModelDiagnostic]:
     """Collect design-health warning diagnostics from inspect payloads."""
     diagnostics: List[ModelDiagnostic] = []
@@ -52,7 +55,11 @@ def collect_design_health_warnings(
         reachability_graph,
         resolved_root_state_path,
     ))
-    diagnostics.extend(_guard_const_false_diagnostics(transitions))
+    diagnostics.extend(
+        collect_const_fold_warnings(machine)
+        if machine is not None
+        else _guard_const_false_diagnostics(transitions)
+    )
     diagnostics.extend(_unused_event_diagnostics(events))
     diagnostics.extend(collect_structural_warnings(
         states,

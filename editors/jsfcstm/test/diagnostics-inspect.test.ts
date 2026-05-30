@@ -367,6 +367,84 @@ state Root {
             );
         });
 
+        it('emits const-fold guard and during-assignment warnings', async () => {
+            const report = inspectModel(await buildMachine(`
+def int stable = 0;
+def int dynamic = 0;
+def int wide = 0;
+def float powered = 0.0;
+state Root {
+    state Idle {
+        during { stable = (2 + 3) * 4; }
+        during { dynamic = dynamic + 1; }
+        during { wide = 0xFFFFFFFF & 0xFFFFFFFF; }
+        during { powered = 2.0 ** 3; }
+    }
+    state Active;
+    state Blocked;
+    state WideTrue;
+    state ModuloTrue;
+    state PowerTrue;
+    [*] -> Idle;
+    Idle -> Active : if [(1 + 2) == 3];
+    Active -> Blocked : if [(0x0F & 0xF0) != 0];
+    Blocked -> WideTrue : if [(0xFFFFFFFF & 0xFFFFFFFF) == 4294967295];
+    WideTrue -> ModuloTrue : if [(-7 % 4) == 1];
+    ModuloTrue -> PowerTrue : if [(2.0 ** 3) == 8.0];
+}
+`));
+            const constTrue = report.diagnostics.filter(d => d.code === 'W_GUARD_CONST_TRUE');
+            assert.equal(constTrue.length, 4);
+            for (const item of constTrue) {
+                assert.deepEqual(item.refs, {
+                    transition_span: null,
+                    folded_value: true,
+                });
+            }
+
+            const constFalse = report.diagnostics.find(d => d.code === 'W_GUARD_CONST_FALSE');
+            assert.ok(constFalse);
+            assert.deepEqual(constFalse!.refs, {
+                transition_span: null,
+                folded_value: false,
+            });
+
+            const duringRefs = report.diagnostics
+                .filter(d => d.code === 'W_DURING_CONST_ASSIGN')
+                .map(d => d.refs)
+                .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+            assert.deepEqual(duringRefs, [
+                {state_path: 'Root.Idle', var_name: 'powered', value: 8},
+                {state_path: 'Root.Idle', var_name: 'stable', value: 20},
+                {state_path: 'Root.Idle', var_name: 'wide', value: 4294967295},
+            ]);
+        });
+
+        it('does not const-fold variables functions or structural during actions', async () => {
+            const report = inspectModel(await buildMachine(`
+def int counter = 0;
+def float angle = 0.0;
+state Root {
+    state Wrapper {
+        during before { counter = 5; }
+        >> during before { counter = 6; }
+        state Idle {
+            during { counter = counter + 1; }
+            during { angle = sin(0.0); }
+        }
+        state Active;
+        [*] -> Idle;
+        Idle -> Active : if [counter > 0];
+    }
+    [*] -> Wrapper;
+}
+`));
+            const codes = report.diagnostics.map(d => d.code);
+            assert.equal(codes.includes('W_GUARD_CONST_TRUE'), false);
+            assert.equal(codes.includes('W_GUARD_CONST_FALSE'), false);
+            assert.equal(codes.includes('W_DURING_CONST_ASSIGN'), false);
+        });
+
         it('emits structural dataflow and redundancy warnings', async () => {
             const report = inspectModel(await buildMachine(STRUCTURAL_DATAFLOW_REDUNDANCY_DSL));
             const normalized = report.diagnostics

@@ -20,9 +20,13 @@ interface ExactInteger {
 
 type ConstNumeric = ExactInteger | number;
 type ConstValue = boolean | ConstNumeric;
+type RuntimeIntegerFactory = (value: string | number) => any;
+
+declare const BigInt: RuntimeIntegerFactory | undefined;
 
 const MAX_JSON_STABLE_INT = 9007199254740991;
 const EPSILON = 1e-9;
+const RUNTIME_INTEGER = getRuntimeIntegerFactory();
 
 export function foldNumericExpression(expr: unknown): ConstNumeric | null {
     if (expr instanceof Integer) {
@@ -99,15 +103,7 @@ export function collectConstFoldWarnings(machine: StateMachine | null | undefine
 
 function foldNumericBinary(op: string, left: ConstNumeric, right: ConstNumeric): ConstNumeric | null {
     if (['<<', '>>', '&', '^', '|'].includes(op)) {
-        const leftInt = toSafeIntegerNumber(left);
-        const rightInt = toSafeIntegerNumber(right);
-        if (leftInt === null || rightInt === null) return null;
-        if ((op === '<<' || op === '>>') && rightInt < 0) return null;
-        if (op === '<<') return leftInt << rightInt;
-        if (op === '>>') return leftInt >> rightInt;
-        if (op === '&') return leftInt & rightInt;
-        if (op === '^') return leftInt ^ rightInt;
-        return leftInt | rightInt;
+        return foldBitwise(op, left, right);
     }
     if (op === '+') return foldAdd(left, right);
     if (op === '-') return foldSubtract(left, right);
@@ -147,7 +143,8 @@ function compareValues(op: string, left: ConstNumeric, right: ConstNumeric): boo
 }
 
 function nearlyEqual(left: number, right: number): boolean {
-    return Math.abs(left - right) <= EPSILON * Math.max(1, Math.abs(left), Math.abs(right));
+    if (left === right) return true;
+    return Math.abs(left - right) <= EPSILON * Math.max(Math.abs(left), Math.abs(right));
 }
 
 function numericEqual(left: ConstNumeric, right: ConstNumeric): boolean | null {
@@ -188,13 +185,19 @@ function duringStmtConstAssignDiagnostics(statePath: string, stmt: OperationStat
 
 function guardConstDiagnostic(fromState: string, toState: string, value: boolean): ModelDiagnosticJson {
     const label = value ? 'true' : 'false';
+    const sourceLabel = transitionEndpointLabel(fromState);
+    const targetLabel = transitionEndpointLabel(toState);
     return {
         code: value ? 'W_GUARD_CONST_TRUE' : 'W_GUARD_CONST_FALSE',
         severity: 'warning',
-        message: `Transition ${JSON.stringify(fromState)} -> ${JSON.stringify(toState)} has a guard that is statically ${label}.`,
+        message: `Transition ${JSON.stringify(sourceLabel)} -> ${JSON.stringify(targetLabel)} has a guard that is statically ${label}.`,
         span: null,
         refs: {transition_span: null, folded_value: value},
     };
+}
+
+function transitionEndpointLabel(value: string): string {
+    return value === 'INIT_STATE' || value === 'EXIT_STATE' ? '[*]' : value;
 }
 
 function jsonStableNumber(value: ConstValue | null): number | null {
@@ -244,8 +247,8 @@ function toSafeNumber(value: ConstNumeric): number | null {
     return exactIntegerToSafeNumber(value);
 }
 
-function sameNumericKind(left: ConstNumeric, right: ConstNumeric): boolean {
-    return typeof left === typeof right;
+function getRuntimeIntegerFactory(): RuntimeIntegerFactory | null {
+    return typeof BigInt === 'function' ? BigInt : null;
 }
 
 function foldAdd(left: ConstNumeric, right: ConstNumeric): ConstNumeric | null {
@@ -278,21 +281,45 @@ function foldDivide(left: ConstNumeric, right: ConstNumeric): number | null {
 }
 
 function foldModulo(left: ConstNumeric, right: ConstNumeric): ConstNumeric | null {
+    const leftInt = toRuntimeInteger(left);
+    const rightInt = toRuntimeInteger(right);
+    if (leftInt !== null && rightInt !== null && RUNTIME_INTEGER !== null) {
+        const zero = RUNTIME_INTEGER(0);
+        if (rightInt === zero) return null;
+        let remainder = leftInt % rightInt;
+        if (remainder !== zero && (remainder > zero) !== (rightInt > zero)) {
+            remainder += rightInt;
+        }
+        return runtimeIntegerToConst(remainder);
+    }
+
     const rightNumber = toSafeNumber(right);
     if (rightNumber === null || rightNumber === 0) return null;
     const leftNumber = toSafeNumber(left);
     if (leftNumber === null) return null;
-    return leftNumber % rightNumber;
+    const result = leftNumber - Math.floor(leftNumber / rightNumber) * rightNumber;
+    return Object.is(result, -0) ? 0 : result;
 }
 
 function foldPower(left: ConstNumeric, right: ConstNumeric): ConstNumeric | null {
-    if (!sameNumericKind(left, right)) return null;
     const leftNumber = toSafeNumber(left);
     const rightNumber = toSafeNumber(right);
     if (leftNumber === null || rightNumber === null) return null;
     if (leftNumber === 0 && rightNumber < 0) return null;
     const result = leftNumber ** rightNumber;
     return Number.isFinite(result) ? result : null;
+}
+
+function foldBitwise(op: string, left: ConstNumeric, right: ConstNumeric): ConstNumeric | null {
+    const leftInt = toRuntimeInteger(left);
+    const rightInt = toRuntimeInteger(right);
+    if (leftInt === null || rightInt === null || RUNTIME_INTEGER === null) return null;
+    if ((op === '<<' || op === '>>') && rightInt < RUNTIME_INTEGER(0)) return null;
+    if (op === '<<') return runtimeIntegerToConst(leftInt << rightInt);
+    if (op === '>>') return runtimeIntegerToConst(leftInt >> rightInt);
+    if (op === '&') return runtimeIntegerToConst(leftInt & rightInt);
+    if (op === '^') return runtimeIntegerToConst(leftInt ^ rightInt);
+    return runtimeIntegerToConst(leftInt | rightInt);
 }
 
 function isExactInteger(value: ConstNumeric): value is ExactInteger {
@@ -360,6 +387,30 @@ function exactIntegerToSafeNumber(value: ExactInteger): number | null {
     return Number.isSafeInteger(numberValue) ? numberValue : null;
 }
 
+function exactIntegerToSignedDecimal(value: ExactInteger): string {
+    return value.sign < 0 ? `-${value.digits}` : value.digits;
+}
+
+function signedDecimalToConstNumeric(raw: string): ConstNumeric | null {
+    if (!/^-?\d+$/.test(raw)) return null;
+    const sign = raw.startsWith('-') ? -1 : 1;
+    const digits = sign < 0 ? raw.slice(1) : raw;
+    const exact = makeExactInteger(sign, digits);
+    const safe = exactIntegerToSafeNumber(exact);
+    return safe === null ? exact : safe;
+}
+
+function toRuntimeInteger(value: ConstNumeric): any | null {
+    if (RUNTIME_INTEGER === null) return null;
+    if (isExactInteger(value)) return RUNTIME_INTEGER(exactIntegerToSignedDecimal(value));
+    if (typeof value === 'number' && Number.isSafeInteger(value)) return RUNTIME_INTEGER(value);
+    return null;
+}
+
+function runtimeIntegerToConst(value: any): ConstNumeric | null {
+    return signedDecimalToConstNumeric(String(value));
+}
+
 function toExactIntegerIfInteger(value: ConstNumeric): ExactInteger | null {
     if (isExactInteger(value)) return value;
     if (!Number.isSafeInteger(value)) return null;
@@ -384,6 +435,7 @@ function numericCompare(
     predicate: (order: number) => boolean
 ): boolean | null {
     if (typeof left === 'number' && typeof right === 'number') {
+        if (!Number.isFinite(left) || !Number.isFinite(right)) return null;
         return predicate(left < right ? -1 : left > right ? 1 : 0);
     }
     const leftInt = toExactIntegerIfInteger(left);

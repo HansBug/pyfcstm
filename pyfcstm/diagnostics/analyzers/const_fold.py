@@ -1,4 +1,8 @@
-"""Constant-folding diagnostics for literal-only expressions."""
+"""Constant-folding diagnostics for literal-only expressions.
+
+Numeric diagnostic refs are limited to JSON-stable values so Python and
+jsfcstm agree on values that cross the JSON boundary.
+"""
 
 import math
 from typing import TYPE_CHECKING, Any, List, Optional
@@ -230,15 +234,25 @@ def _during_stmt_const_assign_diagnostics(
 def _guard_const_diagnostic(transition, value: bool) -> ModelDiagnostic:
     code = 'W_GUARD_CONST_TRUE' if value else 'W_GUARD_CONST_FALSE'
     label = 'true' if value else 'false'
+    source_label = _transition_endpoint_label(transition.from_state)
+    target_label = _transition_endpoint_label(transition.to_state)
     return ModelDiagnostic(
         code=code,
         severity='warning',
         message=(
-            f'Transition {transition.from_state!r} -> {transition.to_state!r} '
+            f'Transition {source_label!r} -> {target_label!r} '
             f'has a guard that is statically {label}.'
         ),
         refs={'transition_span': None, 'folded_value': value},
     )
+
+
+def _transition_endpoint_label(value) -> str:
+    from ...dsl import EXIT_STATE, INIT_STATE
+
+    if value is INIT_STATE or value is EXIT_STATE:
+        return '[*]'
+    return str(value)
 
 
 def _state_path(state) -> str:

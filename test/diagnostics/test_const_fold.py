@@ -33,6 +33,11 @@ def _cond(text):
         ('-(2 ** 3)', -8),
         ('5 / 2', 2.5),
         ('7 % 4', 3),
+        ('-7 % 4', 1),
+        ('0xFFFFFFFF & 0xFFFFFFFF', 4294967295),
+        ('(1 << 40) >> 8', 4294967296),
+        ('2.0 ** 3', 8.0),
+        ('2 ** 3.0', 8.0),
     ],
 )
 def test_fold_numeric_literal_only_expressions(text, expected):
@@ -99,3 +104,28 @@ def test_collect_const_fold_warnings_none_machine():
     from pyfcstm.diagnostics.analyzers import collect_const_fold_warnings
 
     assert collect_const_fold_warnings(None) == []
+
+
+@pytest.mark.unittest
+def test_guard_const_message_uses_dsl_endpoint_labels():
+    from pyfcstm.diagnostics import inspect_model
+    from pyfcstm.dsl import parse_with_grammar_entry
+    from pyfcstm.model import parse_dsl_node_to_state_machine
+
+    source = """
+    state Root {
+        state Idle;
+        [*] -> Idle : if [true];
+        Idle -> [*] : if [false];
+    }
+    """
+    ast = parse_with_grammar_entry(source, 'state_machine_dsl')
+    diagnostics = inspect_model(parse_dsl_node_to_state_machine(ast)).diagnostics
+    guard_messages = [
+        diagnostic.message
+        for diagnostic in diagnostics
+        if diagnostic.code in {'W_GUARD_CONST_TRUE', 'W_GUARD_CONST_FALSE'}
+    ]
+    assert "Transition '[*]' -> 'Idle'" in guard_messages[0]
+    assert "Transition 'Idle' -> '[*]'" in guard_messages[1]
+    assert all('INIT_STATE' not in message and 'EXIT_STATE' not in message for message in guard_messages)

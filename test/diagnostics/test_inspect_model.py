@@ -900,23 +900,33 @@ class TestInspectModelExtendedCoverage:
         dsl = """
         def int stable = 0;
         def int dynamic = 0;
+        def int wide = 0;
+        def float powered = 0.0;
         state Root {
             state Idle {
                 during { stable = (2 + 3) * 4; }
                 during { dynamic = dynamic + 1; }
+                during { wide = 0xFFFFFFFF & 0xFFFFFFFF; }
+                during { powered = 2.0 ** 3; }
             }
             state Active;
             state Blocked;
+            state WideTrue;
+            state ModuloTrue;
+            state PowerTrue;
             [*] -> Idle;
             Idle -> Active : if [(1 + 2) == 3];
             Active -> Blocked : if [(0x0F & 0xF0) != 0];
+            Blocked -> WideTrue : if [(0xFFFFFFFF & 0xFFFFFFFF) == 4294967295];
+            WideTrue -> ModuloTrue : if [(-7 % 4) == 1];
+            ModuloTrue -> PowerTrue : if [(2.0 ** 3) == 8.0];
         }
         """
         diagnostics = list(inspect_model(_parse(dsl)).diagnostics)
         codes = [d.code for d in diagnostics]
-        assert codes.count('W_GUARD_CONST_TRUE') == 1
+        assert codes.count('W_GUARD_CONST_TRUE') == 4
         assert codes.count('W_GUARD_CONST_FALSE') == 1
-        assert codes.count('W_DURING_CONST_ASSIGN') == 1
+        assert codes.count('W_DURING_CONST_ASSIGN') == 3
 
         const_true = next(d for d in diagnostics if d.code == 'W_GUARD_CONST_TRUE')
         assert const_true.refs == {
@@ -928,12 +938,15 @@ class TestInspectModelExtendedCoverage:
             'transition_span': None,
             'folded_value': False,
         }
-        during_const = next(d for d in diagnostics if d.code == 'W_DURING_CONST_ASSIGN')
-        assert during_const.refs == {
-            'state_path': 'Root.Idle',
-            'var_name': 'stable',
-            'value': 20,
-        }
+        during_refs = sorted(
+            (d.refs for d in diagnostics if d.code == 'W_DURING_CONST_ASSIGN'),
+            key=lambda item: item['var_name'],
+        )
+        assert during_refs == [
+            {'state_path': 'Root.Idle', 'var_name': 'powered', 'value': 8.0},
+            {'state_path': 'Root.Idle', 'var_name': 'stable', 'value': 20},
+            {'state_path': 'Root.Idle', 'var_name': 'wide', 'value': 4294967295},
+        ]
 
         from ._schema_check import assert_all_diags_match_schema
         assert_all_diags_match_schema(diagnostics, context='const-fold-inspect')

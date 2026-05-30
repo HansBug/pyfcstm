@@ -371,24 +371,36 @@ state Root {
             const report = inspectModel(await buildMachine(`
 def int stable = 0;
 def int dynamic = 0;
+def int wide = 0;
+def float powered = 0.0;
 state Root {
     state Idle {
         during { stable = (2 + 3) * 4; }
         during { dynamic = dynamic + 1; }
+        during { wide = 0xFFFFFFFF & 0xFFFFFFFF; }
+        during { powered = 2.0 ** 3; }
     }
     state Active;
     state Blocked;
+    state WideTrue;
+    state ModuloTrue;
+    state PowerTrue;
     [*] -> Idle;
     Idle -> Active : if [(1 + 2) == 3];
     Active -> Blocked : if [(0x0F & 0xF0) != 0];
+    Blocked -> WideTrue : if [(0xFFFFFFFF & 0xFFFFFFFF) == 4294967295];
+    WideTrue -> ModuloTrue : if [(-7 % 4) == 1];
+    ModuloTrue -> PowerTrue : if [(2.0 ** 3) == 8.0];
 }
 `));
-            const constTrue = report.diagnostics.find(d => d.code === 'W_GUARD_CONST_TRUE');
-            assert.ok(constTrue);
-            assert.deepEqual(constTrue!.refs, {
-                transition_span: null,
-                folded_value: true,
-            });
+            const constTrue = report.diagnostics.filter(d => d.code === 'W_GUARD_CONST_TRUE');
+            assert.equal(constTrue.length, 4);
+            for (const item of constTrue) {
+                assert.deepEqual(item.refs, {
+                    transition_span: null,
+                    folded_value: true,
+                });
+            }
 
             const constFalse = report.diagnostics.find(d => d.code === 'W_GUARD_CONST_FALSE');
             assert.ok(constFalse);
@@ -397,13 +409,15 @@ state Root {
                 folded_value: false,
             });
 
-            const duringConst = report.diagnostics.find(d => d.code === 'W_DURING_CONST_ASSIGN');
-            assert.ok(duringConst);
-            assert.deepEqual(duringConst!.refs, {
-                state_path: 'Root.Idle',
-                var_name: 'stable',
-                value: 20,
-            });
+            const duringRefs = report.diagnostics
+                .filter(d => d.code === 'W_DURING_CONST_ASSIGN')
+                .map(d => d.refs)
+                .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+            assert.deepEqual(duringRefs, [
+                {state_path: 'Root.Idle', var_name: 'powered', value: 8},
+                {state_path: 'Root.Idle', var_name: 'stable', value: 20},
+                {state_path: 'Root.Idle', var_name: 'wide', value: 4294967295},
+            ]);
         });
 
         it('does not const-fold variables functions or structural during actions', async () => {

@@ -61,9 +61,14 @@ describe('diagnostics/const-fold', () => {
         assert.equal(foldNumericExpression(await assignmentExpression('3 * 4')), 12);
         assert.equal(foldNumericExpression(await assignmentExpression('7 / 2')), 3.5);
         assert.equal(foldNumericExpression(await assignmentExpression('7 % 4')), 3);
+        assert.equal(foldNumericExpression(await assignmentExpression('-7 % 4')), 1);
         assert.equal(foldNumericExpression(await assignmentExpression('2 ** 3')), 8);
+        assert.equal(foldNumericExpression(await assignmentExpression('2.0 ** 3')), 8);
+        assert.equal(foldNumericExpression(await assignmentExpression('2 ** 3.0')), 8);
         assert.equal(foldNumericExpression(await assignmentExpression('8 >> 1')), 4);
         assert.equal(foldNumericExpression(await assignmentExpression('5 ^ 3')), 6);
+        assert.equal(foldNumericExpression(await assignmentExpression('0xFFFFFFFF & 0xFFFFFFFF')), 4294967295);
+        assert.equal(foldNumericExpression(await assignmentExpression('(1 << 40) >> 8')), 4294967296);
         assert.equal(foldNumericExpression(await assignmentExpression('(1 > 0) ? 9 : 10')), 9);
         assert.equal(foldNumericExpression(await assignmentExpression('x + 1')), null);
         assert.equal(foldNumericExpression(await assignmentExpression('1 / 0')), null);
@@ -94,6 +99,8 @@ describe('diagnostics/const-fold', () => {
             foldConditionExpression(await guardExpression('-9007199254740993 < -9007199254740992')),
             true,
         );
+        assert.equal(foldConditionExpression(await guardExpression('(0xFFFFFFFF & 0xFFFFFFFF) == 4294967295')), true);
+        assert.equal(foldConditionExpression(await guardExpression('(-7 % 4) == 1')), true);
         assert.equal(foldConditionExpression(await guardExpression('sin(0) == 0')), null);
         assert.equal(foldConditionExpression(await guardExpression('x > 0')), null);
         assert.equal(foldConditionExpression({}), null);
@@ -132,5 +139,19 @@ state Root {
                 .sort(),
             ['W_DURING_CONST_ASSIGN', 'W_GUARD_CONST_FALSE', 'W_GUARD_CONST_TRUE'],
         );
+    });
+
+    it('formats special transition endpoints as DSL markers in messages', async () => {
+        const diagnostics = collectConstFoldWarnings(await buildMachine(`
+state Root {
+    state Idle;
+    [*] -> Idle : if [true];
+    Idle -> [*] : if [false];
+}
+`));
+        const messages = diagnostics.map(item => item.message);
+        assert.ok(messages.some(message => message.includes('"[*]" -> "Idle"')));
+        assert.ok(messages.some(message => message.includes('"Idle" -> "[*]"')));
+        assert.equal(messages.some(message => message.includes('INIT_STATE') || message.includes('EXIT_STATE')), false);
     });
 });

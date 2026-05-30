@@ -94,6 +94,8 @@ describe('diagnostics/const-fold', () => {
         assert.equal(foldConditionExpression(await guardExpression('true == false')), false);
         assert.equal(foldConditionExpression(await guardExpression('true != false')), true);
         assert.equal(foldConditionExpression(await guardExpression('(1 > 0) ? false : true')), false);
+        assert.equal(foldConditionExpression(await guardExpression('(0.1 + 0.2) == 0.3')), false);
+        assert.equal(foldConditionExpression(await guardExpression('(0.1 + 0.2) != 0.3')), true);
         assert.equal(
             foldConditionExpression(await guardExpression('9007199254740993 == 9007199254740992')),
             false,

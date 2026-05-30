@@ -627,6 +627,45 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
         ],
     ),
     (
+        'design-health-const-fold-float-equality-matches-runtime-semantics',
+        '\n'.join([
+            'state Root {',
+            '    state Idle;',
+            '    state Active;',
+            '    state Done;',
+            '    [*] -> Idle;',
+            '    Idle -> Active : if [(0.1 + 0.2) == 0.3];',
+            '    Active -> Done : if [(0.1 + 0.2) != 0.3];',
+            '}',
+        ]),
+        [
+            {
+                'code': 'W_DEADLOCK_LEAF',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.Done',
+                    'reason': 'no_outgoing_transition',
+                },
+            },
+            {
+                'code': 'W_GUARD_CONST_FALSE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'folded_value': False,
+                },
+            },
+            {
+                'code': 'W_GUARD_CONST_TRUE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'folded_value': True,
+                },
+            },
+        ],
+    ),
+    (
         'design-health-structural-dataflow-redundancy',
         '\n'.join([
             'def int read_only = 0;',

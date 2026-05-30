@@ -107,8 +107,9 @@ def test_unsupported_or_runtime_dependent_expressions_do_not_fold(text, mode):
 
 
 @pytest.mark.unittest
-def test_float_equality_uses_tolerance():
-    assert fold_condition_expression(_cond('(0.1 + 0.2) == 0.3')) is True
+def test_float_equality_uses_runtime_exact_semantics():
+    assert fold_condition_expression(_cond('(0.1 + 0.2) == 0.3')) is False
+    assert fold_condition_expression(_cond('(0.1 + 0.2) != 0.3')) is True
     assert math.isclose(fold_numeric_expression(_num('0.1 + 0.2')), 0.3)
 
 

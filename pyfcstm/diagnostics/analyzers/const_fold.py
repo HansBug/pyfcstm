@@ -196,11 +196,11 @@ def _compare_values(op: str, left: ConstValue, right: ConstValue) -> Optional[bo
         return left >= right
     if op == '==':
         if approximate:
-            return math.isclose(float(left), float(right))
+            return float(left) == float(right)
         return left == right
     if op == '!=':
         if approximate:
-            return not math.isclose(float(left), float(right))
+            return float(left) != float(right)
         return left != right
     return False  # pragma: no cover
 

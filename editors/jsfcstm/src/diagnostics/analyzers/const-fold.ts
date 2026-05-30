@@ -31,7 +31,6 @@ declare const BigInt: RuntimeIntegerFactory | undefined;
 
 const MAX_JSON_STABLE_INT = 9007199254740991;
 const MAX_FOLD_SHIFT_BITS = 1024;
-const EPSILON = 1e-9;
 const RUNTIME_INTEGER = getRuntimeIntegerFactory();
 
 export function foldNumericExpression(expr: unknown): ConstNumeric | null {
@@ -158,15 +157,10 @@ function compareValues(op: string, left: ConstNumeric, right: ConstNumeric): boo
     return null;
 }
 
-function nearlyEqual(left: number, right: number): boolean {
-    if (left === right) return true;
-    return Math.abs(left - right) <= EPSILON * Math.max(Math.abs(left), Math.abs(right));
-}
-
 function numericEqual(left: ConstNumeric, right: ConstNumeric): boolean | null {
     const leftNumber = constNumericToNumber(left);
     const rightNumber = constNumericToNumber(right);
-    if (leftNumber !== null && rightNumber !== null) return nearlyEqual(leftNumber, rightNumber);
+    if (leftNumber !== null && rightNumber !== null) return leftNumber === rightNumber;
     if (isExactInteger(left) && isExactInteger(right)) return compareExactIntegers(left, right) === 0;
     const leftInt = toExactIntegerIfInteger(left);
     const rightInt = toExactIntegerIfInteger(right);

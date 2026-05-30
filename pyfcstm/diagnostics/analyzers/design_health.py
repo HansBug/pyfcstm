@@ -5,14 +5,19 @@ from typing import TYPE_CHECKING, Iterable, List, Optional
 
 from ...utils.validate import ModelDiagnostic
 from .data_flow import collect_data_flow_warnings
+from .naming import collect_naming_warnings
 from .redundancy import collect_redundancy_warnings
 from .structural import collect_structural_warnings
+from .thresholds import collect_threshold_warnings
+from .transition_info import collect_transition_infos
+from .type_shape import collect_type_warnings
 
 if TYPE_CHECKING:  # pragma: no cover - import-time type hints only
     from ..inspect import (
         ActionInfo,
         EventInfo,
         ForcedTransitionInfo,
+        ModelMetrics,
         StateInfo,
         TransitionInfo,
         VariableInfo,
@@ -26,8 +31,12 @@ def collect_design_health_warnings(
     events: Iterable['EventInfo'],
     actions: Iterable['ActionInfo'],
     forced_transitions: Iterable['ForcedTransitionInfo'],
+    metrics: 'ModelMetrics',
     reachability_graph,
     root_state_path: Optional[str] = None,
+    deep_hierarchy_threshold: int = 6,
+    large_composite_threshold: int = 12,
+    var_to_leaf_ratio_threshold: float = 2.0,
 ) -> List[ModelDiagnostic]:
     """Collect design-health warning diagnostics from inspect payloads."""
     diagnostics: List[ModelDiagnostic] = []
@@ -53,8 +62,18 @@ def collect_design_health_warnings(
         reachability_graph,
         root_state_path=resolved_root_state_path,
     ))
+    diagnostics.extend(collect_threshold_warnings(
+        states,
+        metrics,
+        deep_hierarchy_threshold=deep_hierarchy_threshold,
+        large_composite_threshold=large_composite_threshold,
+        var_to_leaf_ratio_threshold=var_to_leaf_ratio_threshold,
+    ))
+    diagnostics.extend(collect_naming_warnings(actions))
+    diagnostics.extend(collect_type_warnings(variables))
     diagnostics.extend(collect_data_flow_warnings(variables))
     diagnostics.extend(collect_redundancy_warnings(transitions, events, states))
+    diagnostics.extend(collect_transition_infos(states, transitions))
     return diagnostics
 
 

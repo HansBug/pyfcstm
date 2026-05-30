@@ -122,6 +122,8 @@ _ALLOWED_REF_TYPES = (
     'str_or_null',
     'int',
     'int_or_null',
+    'float',
+    'number',
     'bool',
     'Span',
     'list[str]',

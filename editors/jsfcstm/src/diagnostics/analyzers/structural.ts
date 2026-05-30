@@ -18,6 +18,7 @@ export function collectStructuralWarnings(
         ...collectDeadlockLeafWarnings(states, transitions),
         ...collectInitialUnconditionalMissingWarnings(states),
         ...collectForcedNeverExpandsWarnings(forcedTransitions),
+        ...collectAspectNoDescendantLeafWarnings(states),
         ...collectDeadNamedActionWarnings(states, actions, reachabilityGraph, rootStatePath),
     ];
 }
@@ -87,6 +88,40 @@ function collectForcedNeverExpandsWarnings(
         });
     }
     return out;
+}
+
+function collectAspectNoDescendantLeafWarnings(states: StateInfo[]): ModelDiagnosticJson[] {
+    const out: ModelDiagnosticJson[] = [];
+    for (const state of states) {
+        if (!state.is_composite) continue;
+        const descendantLeafCount = states.filter(desc =>
+            desc.path !== state.path &&
+            desc.path.startsWith(`${state.path}.`) &&
+            desc.is_leaf &&
+            !desc.is_pseudo
+        ).length;
+        if (descendantLeafCount > 0) continue;
+        if (state.aspect_before.length > 0) {
+            out.push(aspectNoDescendantLeafDiagnostic(state.path, 'before'));
+        }
+        if (state.aspect_after.length > 0) {
+            out.push(aspectNoDescendantLeafDiagnostic(state.path, 'after'));
+        }
+    }
+    return out;
+}
+
+function aspectNoDescendantLeafDiagnostic(statePath: string, aspect: 'before' | 'after'): ModelDiagnosticJson {
+    return {
+        code: 'W_ASPECT_NO_DESCENDANT_LEAF',
+        severity: 'warning',
+        message: `Composite state ${JSON.stringify(statePath)} declares >> during ${aspect} but has no descendant non-pseudo leaf state.`,
+        span: null,
+        refs: {
+            composite_path: statePath,
+            aspect,
+        },
+    };
 }
 
 function collectDeadNamedActionWarnings(

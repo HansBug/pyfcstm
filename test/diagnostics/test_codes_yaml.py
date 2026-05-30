@@ -75,6 +75,13 @@ class TestCodeRegistryShape:
                     f"warning code {code} must start with 'W_'"
                 )
 
+    def test_info_codes_use_I_prefix(self):
+        for code, spec in CODE_REGISTRY.items():
+            if spec.severity == 'info':
+                assert code.startswith('I_'), (
+                    f"info code {code} must start with 'I_'"
+                )
+
 
 @pytest.mark.unittest
 class TestPR1CodesPresence:
@@ -361,6 +368,22 @@ class TestLoaderValidation:
         reg = load_codes(path)
         spec = reg['E_FOO'].refs_schema['bar']
         assert spec.enum == ('a', 'b', 'c')
+
+    @pytest.mark.parametrize('type_token', ['float', 'number'])
+    def test_loads_numeric_ref_type_tokens(self, tmp_path, type_token):
+        path = self._write_yaml(tmp_path, f"""
+            W_FOO:
+              severity: warning
+              capability: pure_static
+              description: Numeric ref type.
+              refs:
+                value:
+                  type: {type_token}
+                  required: true
+                  description: Numeric payload.
+        """)
+        reg = load_codes(path)
+        assert reg['W_FOO'].refs_schema['value'].type == type_token
 
     def test_rejects_example_dsl_as_non_string(self, tmp_path):
         path = self._write_yaml(tmp_path, """

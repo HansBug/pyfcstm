@@ -45,6 +45,7 @@ Example::
     2
 """
 
+import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
@@ -60,6 +61,11 @@ if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
         StateMachine,
         Transition,
     )
+
+
+DEFAULT_DEEP_HIERARCHY_THRESHOLD = 6
+DEFAULT_LARGE_COMPOSITE_THRESHOLD = 12
+DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD = 2.0
 
 
 @dataclass(frozen=True)
@@ -209,6 +215,10 @@ class VariableInfo:
         use this to distinguish high-confidence unused variables from
         variables that may be touched by abstract behavior.
     :type abstract_actions_in_scope: Tuple[str, ...]
+    :param float_literal_assignments: Source text of float literal
+        assignments to this variable from lifecycle actions or transition
+        effects.
+    :type float_literal_assignments: Tuple[str, ...]
     """
 
     name: str
@@ -221,6 +231,7 @@ class VariableInfo:
     participates_directly: bool
     participates_indirectly: bool
     abstract_actions_in_scope: Tuple[str, ...]
+    float_literal_assignments: Tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -562,6 +573,22 @@ def _walk_stmt_self_assigns(stmt: 'OperationStatement', out: List[str]) -> None:
                 _walk_stmt_self_assigns(inner, out)
 
 
+def _walk_stmt_float_literal_assignments(
+        stmt: 'OperationStatement',
+        out: Dict[str, List[str]],
+) -> None:
+    from ..model.expr import Float
+    from ..model.model import IfBlock, Operation
+    if isinstance(stmt, Operation):
+        if isinstance(stmt.expr, Float):
+            out.setdefault(stmt.var_name, []).append(_expr_text(stmt.expr) or '')
+        return
+    if isinstance(stmt, IfBlock):
+        for branch in stmt.branches:
+            for inner in branch.statements:
+                _walk_stmt_float_literal_assignments(inner, out)
+
+
 def _stage_function_label(stage_item: 'OnStage') -> str:
     """Choose a stable label for an action (named, abstract, or inline)."""
     if stage_item.name:
@@ -789,17 +816,33 @@ def _build_variable_infos(
     var_writes_by_state: Dict[str, List[str]] = {name: [] for name in machine.defines}
     var_read_guards: Dict[str, List[Tuple[str, str]]] = {name: [] for name in machine.defines}
     var_written_effects: Dict[str, List[Tuple[str, str]]] = {name: [] for name in machine.defines}
+    var_float_literal_assignments: Dict[str, List[str]] = {
+        name: [] for name in machine.defines
+    }
     state_lookup: Dict[str, StateInfo] = {s.path: s for s in states}
 
     for state in machine.walk_states():
         path = _state_path(state)
         reads, writes = _collect_action_reads_writes(state)
+        float_assigns: Dict[str, List[str]] = {}
+        for collection in (
+                state.on_enters,
+                state.on_durings,
+                state.on_exits,
+                state.on_during_aspects,
+        ):
+            for action in collection:
+                for stmt in action.operations:
+                    _walk_stmt_float_literal_assignments(stmt, float_assigns)
         for var_name in reads:
             if var_name in var_reads_by_state:
                 var_reads_by_state[var_name].append(path)
         for var_name in writes:
             if var_name in var_writes_by_state:
                 var_writes_by_state[var_name].append(path)
+        for var_name, assignments in float_assigns.items():
+            if var_name in var_float_literal_assignments:
+                var_float_literal_assignments[var_name].extend(assignments)
 
         for transition in state.transitions:
             from_path = _transition_endpoint(state, transition.from_state, is_source=True)
@@ -811,12 +854,17 @@ def _build_variable_infos(
                 lreads: List[str] = []
                 lwrites: List[str] = []
                 _walk_stmt_reads_writes(stmt, lreads, lwrites)
+                lfloat_assigns: Dict[str, List[str]] = {}
+                _walk_stmt_float_literal_assignments(stmt, lfloat_assigns)
                 for v in lreads:
                     if v in var_reads_by_state:
                         var_reads_by_state[v].append(from_path)
                 for v in lwrites:
                     if v in var_written_effects:
                         var_written_effects[v].append((from_path, to_path))
+                for v, assignments in lfloat_assigns.items():
+                    if v in var_float_literal_assignments:
+                        var_float_literal_assignments[v].extend(assignments)
 
     # Stable, deduped sequences for the public payload.
     def _dedupe_ordered(seq: List[str]) -> Tuple[str, ...]:
@@ -845,6 +893,7 @@ def _build_variable_infos(
         written_effects = _dedupe_pairs(var_written_effects[name])
         participates_directly = bool(read_states or read_guards)
         abstract_actions = _abstract_actions_in_scope(state_lookup, read_states, written_states)
+        float_assignments = _dedupe_ordered(var_float_literal_assignments[name])
         out.append(VariableInfo(
             name=name,
             type=var_define.type,
@@ -856,6 +905,7 @@ def _build_variable_infos(
             participates_directly=participates_directly,
             participates_indirectly=False,
             abstract_actions_in_scope=abstract_actions,
+            float_literal_assignments=float_assignments,
         ))
     return tuple(out)
 
@@ -1030,7 +1080,7 @@ def _build_metrics(
         n_transitions_forced=n_forced,
         n_events=len(events),
         n_variables=len(variables),
-        var_to_leaf_ratio=(len(variables) / n_leaf) if n_leaf else 0.0,
+        var_to_leaf_ratio=len(variables) / max(n_leaf, 1),
         aspect_coverage=aspect_coverage,
         abstract_action_inventory=tuple(sorted(abstract_inventory)),
     )
@@ -1164,7 +1214,13 @@ def _function_signature(state: Any, default_path: Optional[str], action: Any) ->
     return f'{normalized}:{leaf}' if normalized else leaf
 
 
-def inspect_model(machine: 'StateMachine') -> ModelInspect:
+def inspect_model(
+        machine: 'StateMachine',
+        *,
+        deep_hierarchy_threshold: int = DEFAULT_DEEP_HIERARCHY_THRESHOLD,
+        large_composite_threshold: int = DEFAULT_LARGE_COMPOSITE_THRESHOLD,
+        var_to_leaf_ratio_threshold: float = DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD,
+) -> ModelInspect:
     """
     Build a structured inspection report for a state machine model.
 
@@ -1174,6 +1230,14 @@ def inspect_model(machine: 'StateMachine') -> ModelInspect:
 
     :param machine: The state machine model to inspect.
     :type machine: pyfcstm.model.StateMachine
+    :param deep_hierarchy_threshold: Maximum accepted hierarchy depth.
+    :type deep_hierarchy_threshold: int
+    :param large_composite_threshold: Maximum accepted number of direct
+        child states in one composite.
+    :type large_composite_threshold: int
+    :param var_to_leaf_ratio_threshold: Maximum accepted variable to
+        non-pseudo leaf-state ratio.
+    :type var_to_leaf_ratio_threshold: float
     :return: Structured view of the model.
     :rtype: ModelInspect
 
@@ -1183,6 +1247,18 @@ def inspect_model(machine: 'StateMachine') -> ModelInspect:
         >>> sorted(report.reachability_graph['Root.Sub.A'])
         ['Root.Sub.B']
     """
+    deep_hierarchy_threshold = _normalize_int_threshold(
+        'deep_hierarchy_threshold',
+        deep_hierarchy_threshold,
+    )
+    large_composite_threshold = _normalize_int_threshold(
+        'large_composite_threshold',
+        large_composite_threshold,
+    )
+    var_to_leaf_ratio_threshold = _normalize_float_threshold(
+        'var_to_leaf_ratio_threshold',
+        var_to_leaf_ratio_threshold,
+    )
     states = _build_state_infos(machine)
     transitions = _build_transition_infos(machine)
     variables = _build_variable_infos(machine, states)
@@ -1213,10 +1289,37 @@ def inspect_model(machine: 'StateMachine') -> ModelInspect:
             events,
             actions,
             forced_transitions,
+            metrics,
             reachability_graph,
             root_state_path=root_state_path,
+            deep_hierarchy_threshold=deep_hierarchy_threshold,
+            large_composite_threshold=large_composite_threshold,
+            var_to_leaf_ratio_threshold=var_to_leaf_ratio_threshold,
         )),
     )
+
+
+def _normalize_int_threshold(name: str, value: int) -> int:
+    if isinstance(value, bool):
+        raise TypeError(f'{name} must be an integer threshold, got bool')
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if math.isfinite(value) and value.is_integer():
+            return int(value)
+        raise ValueError(f'{name} must be an integer threshold, got {value!r}')
+    raise TypeError(f'{name} must be an integer threshold, got {type(value).__name__}')
+
+
+def _normalize_float_threshold(name: str, value: float) -> float:
+    if isinstance(value, bool):
+        raise TypeError(f'{name} must be a finite numeric threshold, got bool')
+    if isinstance(value, (int, float)):
+        normalized = float(value)
+        if math.isfinite(normalized):
+            return normalized
+        raise ValueError(f'{name} must be a finite numeric threshold, got {value!r}')
+    raise TypeError(f'{name} must be a finite numeric threshold, got {type(value).__name__}')
 
 
 def _to_json_dataclass(obj: Any) -> Any:

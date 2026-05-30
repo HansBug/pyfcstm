@@ -3,13 +3,18 @@ import type {
     EventInfo,
     ForcedTransitionInfo,
     ModelDiagnosticJson,
+    ModelMetrics,
     StateInfo,
     TransitionInfo,
     VariableInfo,
 } from '../inspect';
 import {collectDataFlowWarnings} from './data-flow';
+import {collectNamingWarnings} from './naming';
 import {collectRedundancyWarnings} from './redundancy';
 import {collectStructuralWarnings} from './structural';
+import {collectThresholdWarnings, type ThresholdOptions} from './thresholds';
+import {collectTransitionInfos} from './transition-info';
+import {collectTypeWarnings} from './type-shape';
 
 export function collectDesignHealthWarnings(
     states: StateInfo[],
@@ -18,9 +23,16 @@ export function collectDesignHealthWarnings(
     events: EventInfo[],
     actions: ActionInfo[],
     forcedTransitions: ForcedTransitionInfo[],
+    metrics: ModelMetrics,
     reachabilityGraph: Record<string, string[]>,
     rootStatePath?: string,
+    thresholds?: ThresholdOptions,
 ): ModelDiagnosticJson[] {
+    const thresholdOptions = thresholds ?? {
+        deepHierarchyThreshold: 6,
+        largeCompositeThreshold: 12,
+        varToLeafRatioThreshold: 2.0,
+    };
     return [
         ...collectUnreachableStateDiagnostics(states, reachabilityGraph, rootStatePath),
         ...collectGuardConstFalseDiagnostics(transitions),
@@ -33,8 +45,12 @@ export function collectDesignHealthWarnings(
             reachabilityGraph,
             rootStatePath,
         ),
+        ...collectThresholdWarnings(states, metrics, thresholdOptions),
+        ...collectNamingWarnings(actions),
+        ...collectTypeWarnings(variables),
         ...collectDataFlowWarnings(variables),
         ...collectRedundancyWarnings(transitions, events, states),
+        ...collectTransitionInfos(states, transitions),
     ];
 }
 

@@ -24,6 +24,7 @@ def collect_structural_warnings(
     diagnostics.extend(_deadlock_leaf_warnings(states, transitions))
     diagnostics.extend(_initial_unconditional_missing_warnings(states))
     diagnostics.extend(_forced_never_expands_warnings(forced_transitions))
+    diagnostics.extend(_aspect_no_descendant_leaf_warnings(states))
     diagnostics.extend(_dead_named_action_warnings(
         states,
         actions,
@@ -31,6 +32,43 @@ def collect_structural_warnings(
         root_state_path,
     ))
     return diagnostics
+
+
+def _aspect_no_descendant_leaf_warnings(states) -> List[ModelDiagnostic]:
+    diagnostics: List[ModelDiagnostic] = []
+    for state in states:
+        if not state.is_composite:
+            continue
+        descendant_leaf_count = sum(
+            1
+            for desc in states
+            if desc.path != state.path
+            and desc.path.startswith(state.path + '.')
+            and desc.is_leaf
+            and not desc.is_pseudo
+        )
+        if descendant_leaf_count > 0:
+            continue
+        if state.aspect_before:
+            diagnostics.append(_aspect_no_descendant_leaf_diagnostic(state.path, 'before'))
+        if state.aspect_after:
+            diagnostics.append(_aspect_no_descendant_leaf_diagnostic(state.path, 'after'))
+    return diagnostics
+
+
+def _aspect_no_descendant_leaf_diagnostic(state_path, aspect) -> ModelDiagnostic:
+    return ModelDiagnostic(
+        code='W_ASPECT_NO_DESCENDANT_LEAF',
+        severity='warning',
+        message=(
+            f'Composite state {state_path!r} declares >> during '
+            f'{aspect} but has no descendant non-pseudo leaf state.'
+        ),
+        refs={
+            'composite_path': state_path,
+            'aspect': aspect,
+        },
+    )
 
 
 def _deadlock_leaf_warnings(states, transitions) -> List[ModelDiagnostic]:

@@ -943,7 +943,7 @@ class TestInspectModelExtendedCoverage:
             key=lambda item: item['var_name'],
         )
         assert during_refs == [
-            {'state_path': 'Root.Idle', 'var_name': 'powered', 'value': 8.0},
+            {'state_path': 'Root.Idle', 'var_name': 'powered', 'value': 8},
             {'state_path': 'Root.Idle', 'var_name': 'stable', 'value': 20},
             {'state_path': 'Root.Idle', 'var_name': 'wide', 'value': 4294967295},
         ]

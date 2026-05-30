@@ -122,18 +122,23 @@ def _fold_numeric_binary(
             return left ^ right
         return left | right
 
+    if op in {'+', '-', '*', '/', '**'} and _has_unsafe_integer_operand(left, right):
+        return None
+
     if op == '+':
-        return left + right
+        return _json_stable_number(left + right)
     if op == '-':
-        return left - right
+        return _json_stable_number(left - right)
     if op == '*':
-        return left * right
+        return _json_stable_number(left * right)
     if op == '/':
         if right == 0:
             return None
-        return left / right
+        return _json_stable_number(left / right)
     if op == '%':
         if right == 0:
+            return None
+        if not (_is_plain_int(left) and _is_plain_int(right)) and _has_unsafe_integer_operand(left, right):
             return None
         return left % right
     if op == '**':
@@ -154,7 +159,7 @@ def _fold_numeric_binary(
             return None
         if isinstance(result, complex):
             return None
-        return result
+        return _json_stable_number(result)
     return None
 
 
@@ -173,7 +178,11 @@ def _fold_comparison(expr) -> Optional[bool]:
     return left_bool == right_bool if expr.op == '==' else left_bool != right_bool
 
 
-def _compare_values(op: str, left: ConstValue, right: ConstValue) -> bool:
+def _compare_values(op: str, left: ConstValue, right: ConstValue) -> Optional[bool]:
+    comparable = _comparison_operands(left, right)
+    if comparable is None:
+        return None
+    left, right, approximate = comparable
     if op == '<':
         return left < right
     if op == '<=':
@@ -183,11 +192,11 @@ def _compare_values(op: str, left: ConstValue, right: ConstValue) -> bool:
     if op == '>=':
         return left >= right
     if op == '==':
-        if isinstance(left, float) or isinstance(right, float):
+        if approximate:
             return math.isclose(float(left), float(right))
         return left == right
     if op == '!=':
-        if isinstance(left, float) or isinstance(right, float):
+        if approximate:
             return not math.isclose(float(left), float(right))
         return left != right
     return False  # pragma: no cover
@@ -263,6 +272,13 @@ def _is_plain_int(value: ConstValue) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
+def _has_unsafe_integer_operand(left: ConstValue, right: ConstValue) -> bool:
+    return any(
+        _is_plain_int(value) and abs(value) > _MAX_JSON_STABLE_INT
+        for value in (left, right)
+    )
+
+
 def _json_stable_number(value: ConstValue) -> Optional[ConstValue]:
     if value is None or isinstance(value, bool):
         return None
@@ -271,9 +287,47 @@ def _json_stable_number(value: ConstValue) -> Optional[ConstValue]:
             return value
         return None
     if isinstance(value, float):
-        if math.isfinite(value):
-            return value
+        if not math.isfinite(value):
+            return None
+        if value.is_integer():
+            if abs(value) <= _MAX_JSON_STABLE_INT:
+                return int(value)
+            return None
+        return value
+    return None
+
+
+def _comparison_operands(left: ConstValue, right: ConstValue):
+    left_float = isinstance(left, float)
+    right_float = isinstance(right, float)
+    if not left_float and not right_float:
+        return left, right, False
+    if left_float and right_float:
+        if math.isfinite(left) and math.isfinite(right):
+            return left, right, True
         return None
+    if left_float:
+        if _is_plain_int(right) and abs(right) <= _MAX_JSON_STABLE_INT:
+            return left, right, True
+        normalized_left = _safe_integer_float(left)
+        if normalized_left is None:
+            return None
+        return normalized_left, right, False
+    if _is_plain_int(left) and abs(left) <= _MAX_JSON_STABLE_INT:
+        return left, right, True
+    normalized_right = _safe_integer_float(right)
+    if normalized_right is None:
+        return None
+    return left, normalized_right, False
+
+
+def _safe_integer_float(value: float) -> Optional[int]:
+    if (
+        math.isfinite(value)
+        and value.is_integer()
+        and abs(value) <= _MAX_JSON_STABLE_INT
+    ):
+        return int(value)
     return None
 
 

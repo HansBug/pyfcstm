@@ -488,7 +488,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'state_path': 'Root.Idle',
                     'var_name': 'powered',
-                    'value': 8.0,
+                    'value': 8,
                 },
             },
             {

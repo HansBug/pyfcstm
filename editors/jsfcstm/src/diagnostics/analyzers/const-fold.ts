@@ -204,7 +204,7 @@ function jsonStableNumber(value: ConstValue | null): number | null {
     if (value === null || typeof value === 'boolean') return null;
     if (isExactInteger(value)) return null;
     if (!Number.isFinite(value)) return null;
-    if (Number.isInteger(value) && Math.abs(value) > MAX_JSON_STABLE_INT) return null;
+    if (Math.trunc(value) === value && Math.abs(value) > MAX_JSON_STABLE_INT) return null;
     return value;
 }
 
@@ -255,21 +255,21 @@ function foldAdd(left: ConstNumeric, right: ConstNumeric): ConstNumeric | null {
     const leftNumber = toSafeNumber(left);
     const rightNumber = toSafeNumber(right);
     if (leftNumber === null || rightNumber === null) return null;
-    return leftNumber + rightNumber;
+    return jsonStableNumber(leftNumber + rightNumber);
 }
 
 function foldSubtract(left: ConstNumeric, right: ConstNumeric): ConstNumeric | null {
     const leftNumber = toSafeNumber(left);
     const rightNumber = toSafeNumber(right);
     if (leftNumber === null || rightNumber === null) return null;
-    return leftNumber - rightNumber;
+    return jsonStableNumber(leftNumber - rightNumber);
 }
 
 function foldMultiply(left: ConstNumeric, right: ConstNumeric): ConstNumeric | null {
     const leftNumber = toSafeNumber(left);
     const rightNumber = toSafeNumber(right);
     if (leftNumber === null || rightNumber === null) return null;
-    return leftNumber * rightNumber;
+    return jsonStableNumber(leftNumber * rightNumber);
 }
 
 function foldDivide(left: ConstNumeric, right: ConstNumeric): number | null {
@@ -277,7 +277,7 @@ function foldDivide(left: ConstNumeric, right: ConstNumeric): number | null {
     if (rightNumber === null || rightNumber === 0) return null;
     const leftNumber = toSafeNumber(left);
     if (leftNumber === null) return null;
-    return leftNumber / rightNumber;
+    return jsonStableNumber(leftNumber / rightNumber);
 }
 
 function foldModulo(left: ConstNumeric, right: ConstNumeric): ConstNumeric | null {
@@ -298,7 +298,7 @@ function foldModulo(left: ConstNumeric, right: ConstNumeric): ConstNumeric | nul
     const leftNumber = toSafeNumber(left);
     if (leftNumber === null) return null;
     const result = leftNumber - Math.floor(leftNumber / rightNumber) * rightNumber;
-    return Object.is(result, -0) ? 0 : result;
+    return jsonStableNumber(Object.is(result, -0) ? 0 : result);
 }
 
 function foldPower(left: ConstNumeric, right: ConstNumeric): ConstNumeric | null {
@@ -307,7 +307,7 @@ function foldPower(left: ConstNumeric, right: ConstNumeric): ConstNumeric | null
     if (leftNumber === null || rightNumber === null) return null;
     if (leftNumber === 0 && rightNumber < 0) return null;
     const result = leftNumber ** rightNumber;
-    return Number.isFinite(result) ? result : null;
+    return jsonStableNumber(result);
 }
 
 function foldBitwise(op: string, left: ConstNumeric, right: ConstNumeric): ConstNumeric | null {

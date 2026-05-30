@@ -70,6 +70,8 @@ describe('diagnostics/const-fold', () => {
         assert.equal(foldNumericExpression(await assignmentExpression('0xFFFFFFFF & 0xFFFFFFFF')), 4294967295);
         assert.equal(foldNumericExpression(await assignmentExpression('(1 << 40) >> 8')), 4294967296);
         assert.equal(foldNumericExpression(await assignmentExpression('(1 > 0) ? 9 : 10')), 9);
+        assert.equal(foldNumericExpression(await assignmentExpression('9007199254740991 + 1')), null);
+        assert.equal(foldNumericExpression(await assignmentExpression('2 ** 53')), null);
         assert.equal(foldNumericExpression(await assignmentExpression('x + 1')), null);
         assert.equal(foldNumericExpression(await assignmentExpression('1 / 0')), null);
         assert.equal(foldNumericExpression(await assignmentExpression('1 << -1')), null);
@@ -101,6 +103,14 @@ describe('diagnostics/const-fold', () => {
         );
         assert.equal(foldConditionExpression(await guardExpression('(0xFFFFFFFF & 0xFFFFFFFF) == 4294967295')), true);
         assert.equal(foldConditionExpression(await guardExpression('(-7 % 4) == 1')), true);
+        assert.equal(
+            foldConditionExpression(await guardExpression('(9007199254740992 + 1) == 9007199254740993')),
+            null,
+        );
+        assert.equal(
+            foldConditionExpression(await guardExpression('(2 ** 53) == 9007199254740992')),
+            null,
+        );
         assert.equal(foldConditionExpression(await guardExpression('sin(0) == 0')), null);
         assert.equal(foldConditionExpression(await guardExpression('x > 0')), null);
         assert.equal(foldConditionExpression({}), null);

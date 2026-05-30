@@ -462,6 +462,24 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
         ]),
         [
             {
+                'code': 'I_TRANSITION_NEVER_EVENT_TRIGGERED',
+                'severity': 'info',
+                'refs': {
+                    'from_path': 'Root.Active',
+                    'to_path': 'Root.Active',
+                    'transition_span': None,
+                },
+            },
+            {
+                'code': 'I_TRANSITION_NEVER_EVENT_TRIGGERED',
+                'severity': 'info',
+                'refs': {
+                    'from_path': 'Root.Active',
+                    'to_path': 'Root.Idle',
+                    'transition_span': None,
+                },
+            },
+            {
                 'code': 'W_DEADLOCK_LEAF',
                 'severity': 'warning',
                 'refs': {
@@ -589,6 +607,112 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'severity': 'warning',
                 'refs': {
                     'state_path': 'Root.LeafForced',
+                },
+            },
+        ],
+    ),
+    (
+        'design-health-threshold-naming-type-info',
+        '\n'.join([
+            'def int truncated = 3.5;',
+            'def int assigned = 0;',
+            'def int extra = 0;',
+            'state Root {',
+            '    enter Sync { }',
+            '    state Active {',
+            '        enter Sync { }',
+            '        state Leaf;',
+            '        [*] -> Leaf;',
+            '    }',
+            '    state Sparse {',
+            '        pseudo state Marker;',
+            '        [*] -> Marker;',
+            '        >> during before { }',
+            '    }',
+            '    state B { during { assigned = 2.25; } }',
+            '    [*] -> Active;',
+            '    Active -> Active;',
+            '    Active -> Sparse;',
+            '    Sparse -> B :: Next;',
+            '    B -> Active :: Next;',
+            '}',
+        ]),
+        [
+            {
+                'code': 'I_TRANSITION_NEVER_EVENT_TRIGGERED',
+                'severity': 'info',
+                'refs': {
+                    'from_path': 'Root.Active',
+                    'to_path': 'Root.Active',
+                    'transition_span': None,
+                },
+            },
+            {
+                'code': 'I_TRANSITION_NEVER_EVENT_TRIGGERED',
+                'severity': 'info',
+                'refs': {
+                    'from_path': 'Root.Active',
+                    'to_path': 'Root.Sparse',
+                    'transition_span': None,
+                },
+            },
+            {
+                'code': 'I_TRANSITION_TO_SELF_VIA_PARENT',
+                'severity': 'info',
+                'refs': {
+                    'state_path': 'Root.Active',
+                    'crosses_composite': True,
+                },
+            },
+            {
+                'code': 'W_ASPECT_NO_DESCENDANT_LEAF',
+                'severity': 'warning',
+                'refs': {
+                    'composite_path': 'Root.Sparse',
+                    'aspect': 'before',
+                },
+            },
+            {
+                'code': 'W_DEADLOCK_LEAF',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.Active.Leaf',
+                    'reason': 'no_outgoing_transition',
+                },
+            },
+            {
+                'code': 'W_LITERAL_TYPE_NARROWING',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'assigned',
+                    'target_type': 'int',
+                    'source_expr': '2.25',
+                },
+            },
+            {
+                'code': 'W_LITERAL_TYPE_NARROWING',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'truncated',
+                    'target_type': 'int',
+                    'source_expr': '3.5',
+                },
+            },
+            {
+                'code': 'W_NAMED_ACTION_SHADOWS_ANCESTOR',
+                'severity': 'warning',
+                'refs': {
+                    'function_name': 'Sync',
+                    'inner_state_path': 'Root.Active',
+                    'outer_state_path': 'Root',
+                },
+            },
+            {
+                'code': 'W_WRITE_ONLY_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'assigned',
+                    'written_states': ['Root.B'],
                 },
             },
         ],

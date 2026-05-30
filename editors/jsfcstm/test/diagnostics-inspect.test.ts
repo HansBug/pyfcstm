@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 
 import {createDocument, packageModule} from './support';
 
-const {inspectModel} = packageModule;
+const {
+    DEFAULT_DEEP_HIERARCHY_THRESHOLD,
+    DEFAULT_LARGE_COMPOSITE_THRESHOLD,
+    DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD,
+    inspectModel,
+} = packageModule;
 
 const SIMPLE_DSL = `
 def int counter = 0;
@@ -171,6 +176,12 @@ state Root {
             assert.equal(m.n_variables, 2);
             assert.equal(m.var_to_leaf_ratio, 1.0);
             assert.equal(m.max_hierarchy_depth, 1);
+        });
+
+        it('exports default threshold constants', () => {
+            assert.equal(DEFAULT_DEEP_HIERARCHY_THRESHOLD, 6);
+            assert.equal(DEFAULT_LARGE_COMPOSITE_THRESHOLD, 12);
+            assert.equal(DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD, 2.0);
         });
     });
 
@@ -367,6 +378,16 @@ state Root {
                 .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 
             assert.deepEqual(normalized, [
+                {
+                    code: 'I_TRANSITION_NEVER_EVENT_TRIGGERED',
+                    severity: 'info',
+                    refs: {from_path: 'Root.Active', to_path: 'Root.Active', transition_span: null},
+                },
+                {
+                    code: 'I_TRANSITION_NEVER_EVENT_TRIGGERED',
+                    severity: 'info',
+                    refs: {from_path: 'Root.Active', to_path: 'Root.Idle', transition_span: null},
+                },
                 {
                     code: 'W_DEADLOCK_LEAF',
                     severity: 'warning',
@@ -908,6 +929,177 @@ state Root {
             );
             assert.ok(t);
             assert.ok(typeof t!.effect === 'string' && t!.effect!.length > 0);
+        });
+    });
+
+    describe('threshold, info, naming, and type diagnostics', () => {
+        function diagnosticsByCode(report: ReturnType<typeof inspectModel>) {
+            const out = new Map<string, typeof report.diagnostics>();
+            for (const diagnostic of report.diagnostics) {
+                out.set(diagnostic.code, [...(out.get(diagnostic.code) ?? []), diagnostic]);
+            }
+            return out;
+        }
+
+        it('emits threshold diagnostics with actual and threshold refs', async () => {
+            const report = inspectModel(await buildMachine(`
+def int a = 0;
+def int b = 0;
+def int c = 0;
+state Root {
+    state A;
+    state B;
+    state C;
+    [*] -> A;
+    A -> B :: Next;
+    B -> C :: Next;
+    C -> A :: Next;
+}
+`), {
+                varToLeafRatioThreshold: 0.5,
+                largeCompositeThreshold: 2,
+                deepHierarchyThreshold: 0,
+            });
+            const byCode = diagnosticsByCode(report);
+
+            assert.deepEqual(byCode.get('W_HIGH_VAR_TO_LEAF_RATIO')![0].refs, {
+                n_vars: 3,
+                n_leaf_states: 3,
+                actual: 1.0,
+                threshold: 0.5,
+            });
+            assert.deepEqual(byCode.get('W_LARGE_COMPOSITE')![0].refs, {
+                composite_path: 'Root',
+                n_children: 3,
+                actual: 3,
+                threshold: 2,
+            });
+            assert.deepEqual(byCode.get('W_DEEP_HIERARCHY')![0].refs, {
+                max_depth: 1,
+                deepest_path: 'Root.A',
+                actual: 1,
+                threshold: 0,
+            });
+        });
+
+        it('does not emit threshold diagnostics with defaults for a small model', async () => {
+            const report = inspectModel(await buildMachine(SIMPLE_DSL));
+            const codes = new Set(report.diagnostics.map(d => d.code));
+            assert.equal(codes.has('W_HIGH_VAR_TO_LEAF_RATIO'), false);
+            assert.equal(codes.has('W_LARGE_COMPOSITE'), false);
+            assert.equal(codes.has('W_DEEP_HIERARCHY'), false);
+        });
+
+        it('emits named action shadow diagnostics', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    enter Sync { }
+    state Child {
+        enter Sync { }
+    }
+    [*] -> Child;
+}
+`));
+            assert.deepEqual(
+                diagnosticsByCode(report).get('W_NAMED_ACTION_SHADOWS_ANCESTOR')![0].refs,
+                {
+                    function_name: 'Sync',
+                    inner_state_path: 'Root.Child',
+                    outer_state_path: 'Root',
+                },
+            );
+        });
+
+        it('emits literal type narrowing diagnostics for int initializers', async () => {
+            const report = inspectModel(await buildMachine(`
+def int truncated = 3.5;
+state Root {
+    state A;
+    [*] -> A;
+}
+`));
+            assert.deepEqual(
+                diagnosticsByCode(report).get('W_LITERAL_TYPE_NARROWING')![0].refs,
+                {
+                    var_name: 'truncated',
+                    target_type: 'int',
+                    source_expr: '3.5',
+                },
+            );
+        });
+
+        it('emits literal type narrowing diagnostics for int assignments', async () => {
+            const report = inspectModel(await buildMachine(`
+def int truncated = 0;
+state Root {
+    state A {
+        during { truncated = 2.25; }
+    }
+    [*] -> A;
+}
+`));
+            assert.deepEqual(
+                diagnosticsByCode(report).get('W_LITERAL_TYPE_NARROWING')![0].refs,
+                {
+                    var_name: 'truncated',
+                    target_type: 'int',
+                    source_expr: '2.25',
+                },
+            );
+        });
+
+        it('emits aspect diagnostics for aspects with no descendant leaves', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    pseudo state Marker;
+    [*] -> Marker;
+    >> during before { }
+}
+`));
+            assert.deepEqual(
+                diagnosticsByCode(report).get('W_ASPECT_NO_DESCENDANT_LEAF')![0].refs,
+                {
+                    composite_path: 'Root',
+                    aspect: 'before',
+                },
+            );
+        });
+
+        it('emits info for composite self re-entry transitions', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Active {
+        state Leaf;
+        [*] -> Leaf;
+    }
+    [*] -> Active;
+    Active -> Active;
+}
+`));
+            const diagnostic = diagnosticsByCode(report).get('I_TRANSITION_TO_SELF_VIA_PARENT')![0];
+            assert.equal(diagnostic.severity, 'info');
+            assert.deepEqual(diagnostic.refs, {
+                state_path: 'Root.Active',
+                crosses_composite: true,
+            });
+        });
+
+        it('emits info for eventless and guardless transitions', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B;
+}
+`));
+            const diagnostic = diagnosticsByCode(report).get('I_TRANSITION_NEVER_EVENT_TRIGGERED')![0];
+            assert.equal(diagnostic.severity, 'info');
+            assert.deepEqual(diagnostic.refs, {
+                from_path: 'Root.A',
+                to_path: 'Root.B',
+                transition_span: null,
+            });
         });
     });
 });

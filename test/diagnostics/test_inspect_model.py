@@ -15,6 +15,9 @@ import pytest
 
 from pyfcstm.diagnostics import (
     ActionInfo,
+    DEFAULT_DEEP_HIERARCHY_THRESHOLD,
+    DEFAULT_LARGE_COMPOSITE_THRESHOLD,
+    DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD,
     EventInfo,
     ForcedTransitionInfo,
     ModelInspect,
@@ -26,6 +29,8 @@ from pyfcstm.diagnostics import (
 )
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
+
+from ._schema_check import assert_all_diags_match_schema
 
 
 def _parse(src):
@@ -151,6 +156,11 @@ class TestInspectModelBasic:
         assert m.n_variables == 2
         assert m.var_to_leaf_ratio == 1.0
         assert m.max_hierarchy_depth == 1
+
+    def test_default_threshold_constants(self):
+        assert DEFAULT_DEEP_HIERARCHY_THRESHOLD == 6
+        assert DEFAULT_LARGE_COMPOSITE_THRESHOLD == 12
+        assert DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD == 2.0
 
 
 @pytest.mark.unittest
@@ -1006,3 +1016,168 @@ class TestInspectModelRedundancySemantics:
             'transition_span': None,
             'var_name': 'x',
         }]
+
+
+@pytest.mark.unittest
+class TestInspectModelThresholdNamingTypeDiagnostics:
+    """Threshold, info observation, naming, and type diagnostics."""
+
+    @staticmethod
+    def _diagnostics_by_code(dsl, **inspect_kwargs):
+        report = inspect_model(_parse(dsl), **inspect_kwargs)
+        assert_all_diags_match_schema(report.diagnostics, context='threshold-naming-type-inspect')
+        out = {}
+        for diag in report.diagnostics:
+            out.setdefault(diag.code, []).append(diag)
+        return out
+
+    def test_custom_thresholds_emit_with_actual_and_threshold_refs(self):
+        dsl = """
+        def int a = 0;
+        def int b = 0;
+        def int c = 0;
+        state Root {
+            state A;
+            state B;
+            state C;
+            [*] -> A;
+            A -> B :: Next;
+            B -> C :: Next;
+            C -> A :: Next;
+        }
+        """
+        by_code = self._diagnostics_by_code(
+            dsl,
+            var_to_leaf_ratio_threshold=0.5,
+            large_composite_threshold=2,
+            deep_hierarchy_threshold=0,
+        )
+
+        high_ratio = by_code['W_HIGH_VAR_TO_LEAF_RATIO'][0]
+        assert high_ratio.refs == {
+            'n_vars': 3,
+            'n_leaf_states': 3,
+            'actual': 1.0,
+            'threshold': 0.5,
+        }
+
+        large = by_code['W_LARGE_COMPOSITE'][0]
+        assert large.refs == {
+            'composite_path': 'Root',
+            'n_children': 3,
+            'actual': 3,
+            'threshold': 2,
+        }
+
+        deep = by_code['W_DEEP_HIERARCHY'][0]
+        assert deep.refs == {
+            'max_depth': 1,
+            'deepest_path': 'Root.A',
+            'actual': 1,
+            'threshold': 0,
+        }
+
+    def test_default_thresholds_do_not_emit_for_simple_model(self):
+        diagnostics = inspect_model(_parse(SIMPLE_DSL)).diagnostics
+        codes = {diag.code for diag in diagnostics}
+        assert 'W_HIGH_VAR_TO_LEAF_RATIO' not in codes
+        assert 'W_LARGE_COMPOSITE' not in codes
+        assert 'W_DEEP_HIERARCHY' not in codes
+
+    def test_named_action_shadows_ancestor(self):
+        dsl = """
+        state Root {
+            enter Sync { }
+            state Child {
+                enter Sync { }
+            }
+            [*] -> Child;
+        }
+        """
+        diag = self._diagnostics_by_code(dsl)['W_NAMED_ACTION_SHADOWS_ANCESTOR'][0]
+        assert diag.refs == {
+            'function_name': 'Sync',
+            'inner_state_path': 'Root.Child',
+            'outer_state_path': 'Root',
+        }
+
+    def test_literal_type_narrowing_for_int_initializer(self):
+        dsl = """
+        def int truncated = 3.5;
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """
+        diag = self._diagnostics_by_code(dsl)['W_LITERAL_TYPE_NARROWING'][0]
+        assert diag.refs == {
+            'var_name': 'truncated',
+            'target_type': 'int',
+            'source_expr': '3.5',
+        }
+
+    def test_literal_type_narrowing_for_int_assignment(self):
+        dsl = """
+        def int truncated = 0;
+        state Root {
+            state A {
+                during { truncated = 2.25; }
+            }
+            [*] -> A;
+        }
+        """
+        diag = self._diagnostics_by_code(dsl)['W_LITERAL_TYPE_NARROWING'][0]
+        assert diag.refs == {
+            'var_name': 'truncated',
+            'target_type': 'int',
+            'source_expr': '2.25',
+        }
+
+    def test_aspect_no_descendant_leaf(self):
+        dsl = """
+        state Root {
+            pseudo state Marker;
+            [*] -> Marker;
+            >> during before { }
+        }
+        """
+        diag = self._diagnostics_by_code(dsl)['W_ASPECT_NO_DESCENDANT_LEAF'][0]
+        assert diag.refs == {
+            'composite_path': 'Root',
+            'aspect': 'before',
+        }
+
+    def test_transition_to_self_via_parent_info(self):
+        dsl = """
+        state Root {
+            state Active {
+                state Leaf;
+                [*] -> Leaf;
+            }
+            [*] -> Active;
+            Active -> Active;
+        }
+        """
+        diag = self._diagnostics_by_code(dsl)['I_TRANSITION_TO_SELF_VIA_PARENT'][0]
+        assert diag.severity == 'info'
+        assert diag.refs == {
+            'state_path': 'Root.Active',
+            'crosses_composite': True,
+        }
+
+    def test_transition_never_event_triggered_info(self):
+        dsl = """
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B;
+        }
+        """
+        diag = self._diagnostics_by_code(dsl)['I_TRANSITION_NEVER_EVENT_TRIGGERED'][0]
+        assert diag.severity == 'info'
+        assert diag.refs == {
+            'from_path': 'Root.A',
+            'to_path': 'Root.B',
+            'transition_span': None,
+        }

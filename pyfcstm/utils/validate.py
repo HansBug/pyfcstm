@@ -85,7 +85,7 @@ class Span:
     end_column: Optional[int] = None
 
 
-_ALLOWED_SEVERITIES = ('error', 'warning')
+_ALLOWED_SEVERITIES = ('error', 'warning', 'info')
 
 
 @dataclass(frozen=True)
@@ -119,7 +119,7 @@ class ModelDiagnostic:
     :param code: Stable diagnostic code, e.g. ``'E_UNDEFINED_VAR'``,
         ``'W_DEADLOCK_LEAF'``. Always treated as the public contract.
     :type code: str
-    :param severity: Either ``'error'`` or ``'warning'``.
+    :param severity: Either ``'error'``, ``'warning'``, or ``'info'``.
     :type severity: str
     :param message: Human-readable rendering of the diagnostic. **Not** part
         of the contract — downstream tools must not regex-match against it.
@@ -149,7 +149,7 @@ class ModelDiagnostic:
     """
 
     code: str
-    severity: Literal['error', 'warning']
+    severity: Literal['error', 'warning', 'info']
     message: str
     span: Optional[Span] = None
     refs: Dict[str, Any] = field(default_factory=dict)

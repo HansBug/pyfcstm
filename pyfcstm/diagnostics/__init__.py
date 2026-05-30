@@ -31,6 +31,9 @@ from .codes import (
 )
 from .inspect import (
     ActionInfo,
+    DEFAULT_DEEP_HIERARCHY_THRESHOLD,
+    DEFAULT_LARGE_COMPOSITE_THRESHOLD,
+    DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD,
     EventInfo,
     ForcedTransitionInfo,
     ModelInspect,
@@ -48,6 +51,9 @@ __all__ = [
     'CodeFieldSpec',
     'CodeSpec',
     'CodesSchemaError',
+    'DEFAULT_DEEP_HIERARCHY_THRESHOLD',
+    'DEFAULT_LARGE_COMPOSITE_THRESHOLD',
+    'DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD',
     'DiagnosticSink',
     'EventInfo',
     'ForcedTransitionInfo',

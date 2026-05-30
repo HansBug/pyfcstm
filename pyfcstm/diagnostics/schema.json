@@ -180,7 +180,7 @@
         "read_in_states", "written_in_states",
         "read_in_guards", "written_in_effects",
         "participates_directly", "participates_indirectly",
-        "abstract_actions_in_scope"
+        "abstract_actions_in_scope", "float_literal_assignments"
       ],
       "properties": {
         "name": { "type": "string" },
@@ -209,6 +209,10 @@
         "participates_directly": { "type": "boolean" },
         "participates_indirectly": { "type": "boolean" },
         "abstract_actions_in_scope": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "float_literal_assignments": {
           "type": "array",
           "items": { "type": "string" }
         }

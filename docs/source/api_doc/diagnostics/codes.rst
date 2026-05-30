@@ -36,7 +36,7 @@ CodeSpec
 -----------------------------------------------------
 
 .. autoclass:: CodeSpec
-    :members: required_fields,code,severity,description,refs_schema,example_dsl,capability,for_llm
+    :members: required_fields,code,severity,description,refs_schema,example_dsl,capability,for_llm,emit_tier
 
 
 load\_codes

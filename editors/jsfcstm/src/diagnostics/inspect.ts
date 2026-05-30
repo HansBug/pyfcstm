@@ -36,6 +36,10 @@ const INIT_MARK = '[*]';
 const EXIT_MARK = '[*]';
 const FLOAT_EPSILON = 1e-10;
 
+export const DEFAULT_DEEP_HIERARCHY_THRESHOLD = 6;
+export const DEFAULT_LARGE_COMPOSITE_THRESHOLD = 12;
+export const DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD = 2.0;
+
 const OP_PRECEDENCE: Record<string, number> = {
     'function_call': 90,
     'unary+': 80,
@@ -125,6 +129,13 @@ export interface VariableInfo {
     participates_directly: boolean;
     participates_indirectly: boolean;
     abstract_actions_in_scope: string[];
+    float_literal_assignments: string[];
+}
+
+export interface InspectModelOptions {
+    deepHierarchyThreshold?: number;
+    largeCompositeThreshold?: number;
+    varToLeafRatioThreshold?: number;
 }
 
 /**
@@ -222,7 +233,10 @@ export interface ModelDiagnosticJson {
 /**
  * Run the structural inspector against a jsfcstm state-machine model.
  */
-export function inspectModel(machine: StateMachine): ModelInspect {
+export function inspectModel(machine: StateMachine, options: InspectModelOptions = {}): ModelInspect {
+    const deepHierarchyThreshold = options.deepHierarchyThreshold ?? DEFAULT_DEEP_HIERARCHY_THRESHOLD;
+    const largeCompositeThreshold = options.largeCompositeThreshold ?? DEFAULT_LARGE_COMPOSITE_THRESHOLD;
+    const varToLeafRatioThreshold = options.varToLeafRatioThreshold ?? DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD;
     const rootStatePath = dottedPath(machine.rootState.path);
     const states = buildStateInfos(machine);
     const transitions = buildTransitionInfos(machine);
@@ -253,8 +267,14 @@ export function inspectModel(machine: StateMachine): ModelInspect {
             events,
             actions,
             forcedTransitions,
+            metrics,
             reachabilityGraph,
             rootStatePath,
+            {
+                deepHierarchyThreshold,
+                largeCompositeThreshold,
+                varToLeafRatioThreshold,
+            },
         ),
     };
 }
@@ -420,11 +440,13 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
     const writesByState: Record<string, string[]> = {};
     const readGuards: Record<string, Array<[string, string]>> = {};
     const writtenEffects: Record<string, Array<[string, string]>> = {};
+    const floatLiteralAssignments: Record<string, string[]> = {};
     for (const name of Object.keys(machine.defines)) {
         readsByState[name] = [];
         writesByState[name] = [];
         readGuards[name] = [];
         writtenEffects[name] = [];
+        floatLiteralAssignments[name] = [];
     }
     const stateLookup: Record<string, StateInfo> = {};
     for (const info of states) {
@@ -433,11 +455,24 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
     for (const state of machine.allStates) {
         const path = dottedPath(state.path);
         const {reads, writes} = collectActionReadsWrites(state);
+        const localFloatAssigns: Record<string, string[]> = {};
+        for (const collection of [state.onEnters, state.onDurings, state.onExits, state.onDuringAspects]) {
+            for (const action of collection) {
+                for (const stmt of action.operations ?? []) {
+                    walkStmtFloatLiteralAssignments(stmt, localFloatAssigns);
+                }
+            }
+        }
         for (const name of Object.keys(reads)) {
             if (name in readsByState) readsByState[name].push(path);
         }
         for (const name of Object.keys(writes)) {
             if (name in writesByState) writesByState[name].push(path);
+        }
+        for (const [name, assignments] of Object.entries(localFloatAssigns)) {
+            if (name in floatLiteralAssignments) {
+                floatLiteralAssignments[name].push(...assignments);
+            }
         }
         for (const t of state.transitions) {
             const fromPath = transitionEndpoint(state.path, t.fromState, true);
@@ -450,12 +485,19 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
             for (const stmt of t.effects ?? []) {
                 const localReads: string[] = [];
                 const localWrites: string[] = [];
+                const localFloatEffectAssigns: Record<string, string[]> = {};
                 walkStmtReadsWrites(stmt, localReads, localWrites);
+                walkStmtFloatLiteralAssignments(stmt, localFloatEffectAssigns);
                 for (const v of localReads) {
                     if (v in readsByState) readsByState[v].push(fromPath);
                 }
                 for (const v of localWrites) {
                     if (v in writtenEffects) writtenEffects[v].push([fromPath, toPath]);
+                }
+                for (const [v, assignments] of Object.entries(localFloatEffectAssigns)) {
+                    if (v in floatLiteralAssignments) {
+                        floatLiteralAssignments[v].push(...assignments);
+                    }
                 }
             }
         }
@@ -499,6 +541,7 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
             participates_directly: participatesDirectly,
             participates_indirectly: false,
             abstract_actions_in_scope: abstractActions,
+            float_literal_assignments: dedupe(floatLiteralAssignments[name]),
         });
     }
     return out;
@@ -607,6 +650,25 @@ function walkStmtSelfAssigns(stmt: OperationStatement, out: string[]): void {
         for (const branch of stmt.branches) {
             for (const inner of branch.statements) {
                 walkStmtSelfAssigns(inner, out);
+            }
+        }
+    }
+}
+
+function walkStmtFloatLiteralAssignments(
+    stmt: OperationStatement,
+    out: Record<string, string[]>,
+): void {
+    if (stmt instanceof Operation) {
+        if (stmt.expr instanceof Float) {
+            out[stmt.varName] = [...(out[stmt.varName] ?? []), exprText(stmt.expr) ?? ''];
+        }
+        return;
+    }
+    if (stmt instanceof IfBlock) {
+        for (const branch of stmt.branches) {
+            for (const inner of branch.statements) {
+                walkStmtFloatLiteralAssignments(inner, out);
             }
         }
     }

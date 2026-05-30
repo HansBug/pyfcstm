@@ -6,6 +6,24 @@ pyfcstm.diagnostics.inspect
 .. automodule:: pyfcstm.diagnostics.inspect
 
 
+DEFAULT\_DEEP\_HIERARCHY\_THRESHOLD
+-----------------------------------------------------
+
+.. autodata:: DEFAULT_DEEP_HIERARCHY_THRESHOLD
+
+
+DEFAULT\_LARGE\_COMPOSITE\_THRESHOLD
+-----------------------------------------------------
+
+.. autodata:: DEFAULT_LARGE_COMPOSITE_THRESHOLD
+
+
+DEFAULT\_VAR\_TO\_LEAF\_RATIO\_THRESHOLD
+-----------------------------------------------------
+
+.. autodata:: DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD
+
+
 StateInfo
 -----------------------------------------------------
 
@@ -24,7 +42,7 @@ VariableInfo
 -----------------------------------------------------
 
 .. autoclass:: VariableInfo
-    :members: name,type,init_value,read_in_states,written_in_states,read_in_guards,written_in_effects,participates_directly,participates_indirectly,abstract_actions_in_scope
+    :members: name,type,init_value,read_in_states,written_in_states,read_in_guards,written_in_effects,participates_directly,participates_indirectly,abstract_actions_in_scope,float_literal_assignments
 
 
 EventInfo
@@ -66,4 +84,3 @@ inspect\_model
 -----------------------------------------------------
 
 .. autofunction:: inspect_model
-

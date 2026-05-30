@@ -1523,6 +1523,78 @@ state Root {
             assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
         });
 
+        it('keeps transition-effect writes live when composite initial guard reads them', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+state Root {
+    state Parent {
+        state Child;
+        [*] -> Child : if [status > 0];
+    }
+    state Idle;
+    [*] -> Idle;
+    Idle -> Parent effect { status = 1; };
+}
+`));
+            assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
+
+        it('keeps exit-action writes live when re-entry initial guard reads them', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+state Root {
+    state Parent {
+        exit { status = 1; }
+        state Child;
+        [*] -> Child : if [status > 0];
+    }
+    state Done;
+    [*] -> Parent;
+    Parent -> Parent;
+    Parent -> Done;
+}
+`));
+            assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
+
+        it('keeps exit-effect writes live when re-entry initial guard reads them', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+state Root {
+    state Parent {
+        state Child;
+        [*] -> Child : if [status > 0];
+        Child -> [*] effect { status = 1; };
+    }
+    state Done;
+    [*] -> Parent;
+    Parent -> Parent;
+    Parent -> Done;
+}
+`));
+            assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
+
+        it('does not clear exit-effect writes with initial guard reads without re-entry', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+state Root {
+    state Parent {
+        state Child;
+        [*] -> Child : if [status > 0];
+        Child -> [*] effect { status = 1; };
+    }
+    state Done;
+    [*] -> Parent;
+    Parent -> Done;
+}
+`));
+            assert.deepEqual(diagnosticsByCode(report).get('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE')![0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Parent.Child->[*]'],
+            });
+        });
+
         it('emits dead-store warning when root exit effect has no later read', async () => {
             const report = inspectModel(await buildMachine(`
 def int status = 0;

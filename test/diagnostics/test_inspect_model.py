@@ -1552,6 +1552,79 @@ class TestInspectModelDataFlowClosureDiagnostics:
         by_code = self._diagnostics_by_code(dsl)
         assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
 
+    def test_transition_effect_entering_composite_reaches_initial_guard_read(self):
+        dsl = """
+        def int status = 0;
+        state Root {
+            state Parent {
+                state Child;
+                [*] -> Child : if [status > 0];
+            }
+            state Idle;
+            [*] -> Idle;
+            Idle -> Parent effect { status = 1; };
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
+
+    def test_exit_action_reentering_composite_reaches_initial_guard_read(self):
+        dsl = """
+        def int status = 0;
+        state Root {
+            state Parent {
+                exit { status = 1; }
+                state Child;
+                [*] -> Child : if [status > 0];
+            }
+            state Done;
+            [*] -> Parent;
+            Parent -> Parent;
+            Parent -> Done;
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
+
+    def test_exit_effect_reentering_composite_reaches_initial_guard_read(self):
+        dsl = """
+        def int status = 0;
+        state Root {
+            state Parent {
+                state Child;
+                [*] -> Child : if [status > 0];
+                Child -> [*] effect { status = 1; };
+            }
+            state Done;
+            [*] -> Parent;
+            Parent -> Parent;
+            Parent -> Done;
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
+
+    def test_exit_effect_without_reentry_is_not_cleared_by_initial_guard_read(self):
+        dsl = """
+        def int status = 0;
+        state Root {
+            state Parent {
+                state Child;
+                [*] -> Child : if [status > 0];
+                Child -> [*] effect { status = 1; };
+            }
+            state Done;
+            [*] -> Parent;
+            Parent -> Done;
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        diag = by_code['W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'][0]
+        assert diag.refs == {
+            'var_name': 'status',
+            'write_locations': ['Root.Parent.Child->[*]'],
+        }
+
     def test_composite_exit_action_is_not_cleared_by_descendant_prior_guard_read(self):
         dsl = """
         def int status = 0;

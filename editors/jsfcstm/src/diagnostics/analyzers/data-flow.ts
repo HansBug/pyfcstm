@@ -110,8 +110,21 @@ function directReachabilityEdges(
 
 function variableReadStates(variable: VariableInfo): Set<string> {
     const readStates = new Set(variable.read_in_states);
-    for (const [source] of variable.read_in_guards) readStates.add(source);
+    const guardOccurrences = variable.read_in_guard_occurrences ?? [];
+    if (guardOccurrences.length > 0) {
+        for (const [fromPath, toPath] of guardOccurrences) {
+            readStates.add(guardReadState(fromPath, toPath));
+        }
+    } else {
+        for (const [fromPath, toPath] of variable.read_in_guards) {
+            readStates.add(guardReadState(fromPath, toPath));
+        }
+    }
     return readStates;
+}
+
+function guardReadState(fromPath: string, toPath: string): string {
+    return fromPath === '[*]' ? toPath : fromPath;
 }
 
 function variableWriteStates(variable: VariableInfo): Set<string> {

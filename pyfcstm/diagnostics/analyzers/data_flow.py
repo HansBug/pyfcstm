@@ -128,8 +128,24 @@ def _direct_reachability_edges(
 
 def _read_states(variable: 'VariableInfo') -> Set[str]:
     read_states = set(variable.read_in_states)
-    read_states.update(src for src, _ in variable.read_in_guards)
+    occurrences = getattr(variable, 'read_in_guard_occurrences', ())
+    if occurrences:
+        read_states.update(
+            _guard_read_state(from_path, to_path)
+            for from_path, to_path, _ in occurrences
+        )
+    else:
+        read_states.update(
+            _guard_read_state(from_path, to_path)
+            for from_path, to_path in variable.read_in_guards
+        )
     return read_states
+
+
+def _guard_read_state(from_path: str, to_path: str) -> str:
+    if from_path == '[*]':
+        return to_path
+    return from_path
 
 
 def _write_states(variable: 'VariableInfo') -> Set[str]:

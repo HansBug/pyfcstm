@@ -18,40 +18,50 @@ interface ExactInteger {
     digits: string;
 }
 
-type ConstNumeric = ExactInteger | number;
+interface FloatNumeric {
+    kind: 'float';
+    value: number;
+}
+
+type ConstNumeric = ExactInteger | FloatNumeric | number;
 type ConstValue = boolean | ConstNumeric;
 type RuntimeIntegerFactory = (value: string | number) => any;
 
 declare const BigInt: RuntimeIntegerFactory | undefined;
 
 const MAX_JSON_STABLE_INT = 9007199254740991;
+const MAX_FOLD_SHIFT_BITS = 1024;
 const EPSILON = 1e-9;
 const RUNTIME_INTEGER = getRuntimeIntegerFactory();
 
 export function foldNumericExpression(expr: unknown): ConstNumeric | null {
+    return publicNumericValue(foldNumericExpressionInternal(expr));
+}
+
+function foldNumericExpressionInternal(expr: unknown): ConstNumeric | null {
     if (expr instanceof Integer) {
         return integerLiteralValue(expr);
     }
     if (expr instanceof Float) {
-        return expr.value;
+        return makeFloatNumeric(expr.value);
     }
     if (expr instanceof UnaryOp) {
-        const value = foldNumericExpression(expr.x);
+        const value = foldNumericExpressionInternal(expr.x);
         if (value === null) return null;
         if (expr.op === '+') return value;
         if (expr.op === '-') return negateNumeric(value);
         return null;
     }
     if (expr instanceof BinaryOp) {
-        const left = foldNumericExpression(expr.x);
-        const right = foldNumericExpression(expr.y);
+        const left = foldNumericExpressionInternal(expr.x);
+        const right = foldNumericExpressionInternal(expr.y);
         if (left === null || right === null) return null;
         return foldNumericBinary(expr.op, left, right);
     }
     if (expr instanceof ConditionalOp) {
         const condition = foldConditionExpression(expr.cond);
         if (condition === null) return null;
-        return foldNumericExpression(condition ? expr.ifTrue : expr.ifFalse);
+        return foldNumericExpressionInternal(condition ? expr.ifTrue : expr.ifFalse);
     }
     return null;
 }
@@ -93,7 +103,13 @@ export function collectConstFoldWarnings(machine: StateMachine | null | undefine
         for (const transition of state.transitions) {
             const foldedGuard = transition.guard ? foldConditionExpression(transition.guard) : null;
             if (foldedGuard === true || foldedGuard === false) {
-                out.push(guardConstDiagnostic(transition.fromState, transition.toState, foldedGuard));
+                out.push(guardConstDiagnostic(
+                    transition.fromState,
+                    transition.toState,
+                    transition.sourceKind,
+                    transition.targetKind,
+                    foldedGuard,
+                ));
             }
         }
         out.push(...duringConstAssignDiagnostics(statePath, state.onDurings));
@@ -117,8 +133,8 @@ function foldNumericBinary(op: string, left: ConstNumeric, right: ConstNumeric):
 }
 
 function foldComparison(expr: BinaryOp): boolean | null {
-    const leftNumeric = foldNumericExpression(expr.x);
-    const rightNumeric = foldNumericExpression(expr.y);
+    const leftNumeric = foldNumericExpressionInternal(expr.x);
+    const rightNumeric = foldNumericExpressionInternal(expr.y);
     if (leftNumeric !== null && rightNumeric !== null) {
         return compareValues(expr.op, leftNumeric, rightNumeric);
     }
@@ -148,8 +164,10 @@ function nearlyEqual(left: number, right: number): boolean {
 }
 
 function numericEqual(left: ConstNumeric, right: ConstNumeric): boolean | null {
+    const leftNumber = constNumericToNumber(left);
+    const rightNumber = constNumericToNumber(right);
+    if (leftNumber !== null && rightNumber !== null) return nearlyEqual(leftNumber, rightNumber);
     if (isExactInteger(left) && isExactInteger(right)) return compareExactIntegers(left, right) === 0;
-    if (typeof left === 'number' && typeof right === 'number') return nearlyEqual(left, right);
     const leftInt = toExactIntegerIfInteger(left);
     const rightInt = toExactIntegerIfInteger(right);
     return leftInt !== null && rightInt !== null ? compareExactIntegers(leftInt, rightInt) === 0 : null;
@@ -168,7 +186,7 @@ function duringConstAssignDiagnostics(statePath: string, actions: OnStage[]): Mo
 
 function duringStmtConstAssignDiagnostics(statePath: string, stmt: OperationStatement): ModelDiagnosticJson[] {
     if (!(stmt instanceof Operation)) return [];
-    const value = jsonStableNumber(foldNumericExpression(stmt.expr));
+    const value = jsonStableNumber(foldNumericExpressionInternal(stmt.expr));
     if (value === null) return [];
     return [{
         code: 'W_DURING_CONST_ASSIGN',
@@ -183,10 +201,16 @@ function duringStmtConstAssignDiagnostics(statePath: string, stmt: OperationStat
     }];
 }
 
-function guardConstDiagnostic(fromState: string, toState: string, value: boolean): ModelDiagnosticJson {
+function guardConstDiagnostic(
+    fromState: string,
+    toState: string,
+    sourceKind: 'init' | 'state',
+    targetKind: 'state' | 'exit',
+    value: boolean,
+): ModelDiagnosticJson {
     const label = value ? 'true' : 'false';
-    const sourceLabel = transitionEndpointLabel(fromState);
-    const targetLabel = transitionEndpointLabel(toState);
+    const sourceLabel = transitionSourceLabel(fromState, sourceKind);
+    const targetLabel = transitionTargetLabel(toState, targetKind);
     return {
         code: value ? 'W_GUARD_CONST_TRUE' : 'W_GUARD_CONST_FALSE',
         severity: 'warning',
@@ -196,15 +220,35 @@ function guardConstDiagnostic(fromState: string, toState: string, value: boolean
     };
 }
 
-function transitionEndpointLabel(value: string): string {
-    return value === 'INIT_STATE' || value === 'EXIT_STATE' ? '[*]' : value;
+function transitionSourceLabel(value: string, sourceKind: 'init' | 'state'): string {
+    return sourceKind === 'init' ? '[*]' : value;
+}
+
+function transitionTargetLabel(value: string, targetKind: 'state' | 'exit'): string {
+    return targetKind === 'exit' ? '[*]' : value;
 }
 
 function jsonStableNumber(value: ConstValue | null): number | null {
     if (value === null || typeof value === 'boolean') return null;
+    const numberValue = constNumericToNumber(value);
+    if (numberValue === null) return null;
+    value = numberValue;
     if (isExactInteger(value)) return null;
     if (!Number.isFinite(value)) return null;
     if (Math.trunc(value) === value && Math.abs(value) > MAX_JSON_STABLE_INT) return null;
+    return value;
+}
+
+function stableNumericResult(value: number, keepFloat: boolean): ConstNumeric | null {
+    if (!Number.isFinite(value)) return null;
+    if (Math.trunc(value) === value && Math.abs(value) > MAX_JSON_STABLE_INT) return null;
+    if (keepFloat && Math.trunc(value) === value) return makeFloatNumeric(value);
+    return value;
+}
+
+function publicNumericValue(value: ConstNumeric | null): ConstNumeric | null {
+    if (value === null) return null;
+    if (isFloatNumeric(value)) return value.value;
     return value;
 }
 
@@ -231,6 +275,7 @@ function integerLiteralValue(expr: Integer): ExactInteger | number | null {
 
 function negateNumeric(value: ConstNumeric): ConstNumeric {
     if (isExactInteger(value)) return makeExactInteger((value.sign * -1) as -1 | 1, value.digits);
+    if (isFloatNumeric(value)) return makeFloatNumeric(-value.value);
     return -value;
 }
 
@@ -241,6 +286,9 @@ function toSafeIntegerNumber(value: ConstNumeric): number | null {
 }
 
 function toSafeNumber(value: ConstNumeric): number | null {
+    if (isFloatNumeric(value)) {
+        return Number.isFinite(value.value) ? value.value : null;
+    }
     if (typeof value === 'number') {
         return Number.isFinite(value) ? value : null;
     }
@@ -255,29 +303,29 @@ function foldAdd(left: ConstNumeric, right: ConstNumeric): ConstNumeric | null {
     const leftNumber = toSafeNumber(left);
     const rightNumber = toSafeNumber(right);
     if (leftNumber === null || rightNumber === null) return null;
-    return jsonStableNumber(leftNumber + rightNumber);
+    return stableNumericResult(leftNumber + rightNumber, hasFloatNumericOperand(left, right));
 }
 
 function foldSubtract(left: ConstNumeric, right: ConstNumeric): ConstNumeric | null {
     const leftNumber = toSafeNumber(left);
     const rightNumber = toSafeNumber(right);
     if (leftNumber === null || rightNumber === null) return null;
-    return jsonStableNumber(leftNumber - rightNumber);
+    return stableNumericResult(leftNumber - rightNumber, hasFloatNumericOperand(left, right));
 }
 
 function foldMultiply(left: ConstNumeric, right: ConstNumeric): ConstNumeric | null {
     const leftNumber = toSafeNumber(left);
     const rightNumber = toSafeNumber(right);
     if (leftNumber === null || rightNumber === null) return null;
-    return jsonStableNumber(leftNumber * rightNumber);
+    return stableNumericResult(leftNumber * rightNumber, hasFloatNumericOperand(left, right));
 }
 
-function foldDivide(left: ConstNumeric, right: ConstNumeric): number | null {
+function foldDivide(left: ConstNumeric, right: ConstNumeric): ConstNumeric | null {
     const rightNumber = toSafeNumber(right);
     if (rightNumber === null || rightNumber === 0) return null;
     const leftNumber = toSafeNumber(left);
     if (leftNumber === null) return null;
-    return jsonStableNumber(leftNumber / rightNumber);
+    return stableNumericResult(leftNumber / rightNumber, true);
 }
 
 function foldModulo(left: ConstNumeric, right: ConstNumeric): ConstNumeric | null {
@@ -298,7 +346,7 @@ function foldModulo(left: ConstNumeric, right: ConstNumeric): ConstNumeric | nul
     const leftNumber = toSafeNumber(left);
     if (leftNumber === null) return null;
     const result = leftNumber - Math.floor(leftNumber / rightNumber) * rightNumber;
-    return jsonStableNumber(Object.is(result, -0) ? 0 : result);
+    return stableNumericResult(Object.is(result, -0) ? 0 : result, hasFloatNumericOperand(left, right));
 }
 
 function foldPower(left: ConstNumeric, right: ConstNumeric): ConstNumeric | null {
@@ -307,7 +355,7 @@ function foldPower(left: ConstNumeric, right: ConstNumeric): ConstNumeric | null
     if (leftNumber === null || rightNumber === null) return null;
     if (leftNumber === 0 && rightNumber < 0) return null;
     const result = leftNumber ** rightNumber;
-    return jsonStableNumber(result);
+    return stableNumericResult(result, hasFloatNumericOperand(left, right));
 }
 
 function foldBitwise(op: string, left: ConstNumeric, right: ConstNumeric): ConstNumeric | null {
@@ -315,6 +363,7 @@ function foldBitwise(op: string, left: ConstNumeric, right: ConstNumeric): Const
     const rightInt = toRuntimeInteger(right);
     if (leftInt === null || rightInt === null || RUNTIME_INTEGER === null) return null;
     if ((op === '<<' || op === '>>') && rightInt < RUNTIME_INTEGER(0)) return null;
+    if ((op === '<<' || op === '>>') && rightInt > RUNTIME_INTEGER(MAX_FOLD_SHIFT_BITS)) return null;
     if (op === '<<') return runtimeIntegerToConst(leftInt << rightInt);
     if (op === '>>') return runtimeIntegerToConst(leftInt >> rightInt);
     if (op === '&') return runtimeIntegerToConst(leftInt & rightInt);
@@ -324,6 +373,18 @@ function foldBitwise(op: string, left: ConstNumeric, right: ConstNumeric): Const
 
 function isExactInteger(value: ConstNumeric): value is ExactInteger {
     return typeof value === 'object' && value !== null && value.kind === 'exactInteger';
+}
+
+function isFloatNumeric(value: ConstNumeric): value is FloatNumeric {
+    return typeof value === 'object' && value !== null && value.kind === 'float';
+}
+
+function makeFloatNumeric(value: number): FloatNumeric {
+    return {kind: 'float', value};
+}
+
+function hasFloatNumericOperand(left: ConstNumeric, right: ConstNumeric): boolean {
+    return isFloatNumeric(left) || isFloatNumeric(right);
 }
 
 function makeExactInteger(sign: -1 | 1, digits: string): ExactInteger {
@@ -413,9 +474,16 @@ function runtimeIntegerToConst(value: any): ConstNumeric | null {
 
 function toExactIntegerIfInteger(value: ConstNumeric): ExactInteger | null {
     if (isExactInteger(value)) return value;
+    if (isFloatNumeric(value)) return null;
     if (!Number.isSafeInteger(value)) return null;
     const sign = value < 0 ? -1 : 1;
     return makeExactInteger(sign, String(Math.abs(value)));
+}
+
+function constNumericToNumber(value: ConstNumeric): number | null {
+    if (isFloatNumeric(value)) return value.value;
+    if (typeof value === 'number') return value;
+    return exactIntegerToSafeNumber(value);
 }
 
 function compareExactIntegers(left: ExactInteger, right: ExactInteger): number {
@@ -437,6 +505,12 @@ function numericCompare(
     if (typeof left === 'number' && typeof right === 'number') {
         if (!Number.isFinite(left) || !Number.isFinite(right)) return null;
         return predicate(left < right ? -1 : left > right ? 1 : 0);
+    }
+    const leftNumber = constNumericToNumber(left);
+    const rightNumber = constNumericToNumber(right);
+    if (leftNumber !== null && rightNumber !== null) {
+        if (!Number.isFinite(leftNumber) || !Number.isFinite(rightNumber)) return null;
+        return predicate(leftNumber < rightNumber ? -1 : leftNumber > rightNumber ? 1 : 0);
     }
     const leftInt = toExactIntegerIfInteger(left);
     const rightInt = toExactIntegerIfInteger(right);

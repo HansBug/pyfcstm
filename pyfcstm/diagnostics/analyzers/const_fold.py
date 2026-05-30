@@ -17,6 +17,7 @@ if TYPE_CHECKING:  # pragma: no cover
 ConstValue = Any
 
 _MAX_JSON_STABLE_INT = 9007199254740991
+_MAX_FOLD_SHIFT_BITS = 1024
 _COMPARISON_OPS = {'<', '<=', '>', '>=', '==', '!='}
 
 
@@ -112,6 +113,8 @@ def _fold_numeric_binary(
             return None
         if op in {'<<', '>>'} and right < 0:
             return None
+        if op in {'<<', '>>'} and right > _MAX_FOLD_SHIFT_BITS:
+            return None
         if op == '<<':
             return left << right
         if op == '>>':
@@ -126,21 +129,21 @@ def _fold_numeric_binary(
         return None
 
     if op == '+':
-        return _json_stable_number(left + right)
+        return _stable_numeric_result(left + right)
     if op == '-':
-        return _json_stable_number(left - right)
+        return _stable_numeric_result(left - right)
     if op == '*':
-        return _json_stable_number(left * right)
+        return _stable_numeric_result(left * right)
     if op == '/':
         if right == 0:
             return None
-        return _json_stable_number(left / right)
+        return _stable_numeric_result(left / right)
     if op == '%':
         if right == 0:
             return None
         if not (_is_plain_int(left) and _is_plain_int(right)) and _has_unsafe_integer_operand(left, right):
             return None
-        return left % right
+        return _stable_numeric_result(left % right)
     if op == '**':
         if left == 0 and right < 0:
             return None
@@ -159,7 +162,7 @@ def _fold_numeric_binary(
             return None
         if isinstance(result, complex):
             return None
-        return _json_stable_number(result)
+        return _stable_numeric_result(result)
     return None
 
 
@@ -292,6 +295,22 @@ def _json_stable_number(value: ConstValue) -> Optional[ConstValue]:
         if value.is_integer():
             if abs(value) <= _MAX_JSON_STABLE_INT:
                 return int(value)
+            return None
+        return value
+    return None
+
+
+def _stable_numeric_result(value: ConstValue) -> Optional[ConstValue]:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        if abs(value) <= _MAX_JSON_STABLE_INT:
+            return value
+        return None
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return None
+        if value.is_integer() and abs(value) > _MAX_JSON_STABLE_INT:
             return None
         return value
     return None

@@ -5,6 +5,7 @@ import {
     foldConditionExpression,
     foldNumericExpression,
 } from '../src/diagnostics/analyzers/const-fold';
+import {collectDesignHealthWarnings as collectDesignHealthWarningsFromIndex} from '../src/diagnostics/analyzers';
 import {inspectModel} from '../src/diagnostics';
 import {buildStateMachineModel} from '../src/model';
 import {parseAstDocument} from '../src/ast';
@@ -75,6 +76,10 @@ describe('diagnostics/const-fold', () => {
         assert.equal(foldNumericExpression(await assignmentExpression('x + 1')), null);
         assert.equal(foldNumericExpression(await assignmentExpression('1 / 0')), null);
         assert.equal(foldNumericExpression(await assignmentExpression('1 << -1')), null);
+        assert.equal(foldNumericExpression(await assignmentExpression('1.0 & 1')), null);
+        assert.equal(foldNumericExpression(await assignmentExpression('(1.0 + 0) & 1')), null);
+        assert.equal(foldNumericExpression(await assignmentExpression('(2 / 2) & 1')), null);
+        assert.equal(foldNumericExpression(await assignmentExpression('1 << 2048')), null);
         assert.equal(foldNumericExpression(await assignmentExpression('0 ** -1')), null);
         assert.equal(foldNumericExpression({}), null);
     });
@@ -103,6 +108,10 @@ describe('diagnostics/const-fold', () => {
         );
         assert.equal(foldConditionExpression(await guardExpression('(0xFFFFFFFF & 0xFFFFFFFF) == 4294967295')), true);
         assert.equal(foldConditionExpression(await guardExpression('(-7 % 4) == 1')), true);
+        assert.equal(foldConditionExpression(await guardExpression('(1.0 & 1) == 1')), null);
+        assert.equal(foldConditionExpression(await guardExpression('((1.0 + 0) & 1) == 1')), null);
+        assert.equal(foldConditionExpression(await guardExpression('((2 / 2) & 1) == 1')), null);
+        assert.equal(foldConditionExpression(await guardExpression('(1 << 2048) == 0')), null);
         assert.equal(
             foldConditionExpression(await guardExpression('(9007199254740992 + 1) == 9007199254740993')),
             null,
@@ -163,5 +172,41 @@ state Root {
         assert.ok(messages.some(message => message.includes('"[*]" -> "Idle"')));
         assert.ok(messages.some(message => message.includes('"Idle" -> "[*]"')));
         assert.equal(messages.some(message => message.includes('INIT_STATE') || message.includes('EXIT_STATE')), false);
+    });
+
+    it('keeps minimal const-false fallback when design-health helper has no machine', () => {
+        const diagnostics = collectDesignHealthWarningsFromIndex(
+            [],
+            [{
+                from_path: 'Root.Idle',
+                to_path: 'Root.Active',
+                event: null,
+                event_scope: null,
+                guard: '1 == 2',
+                effect: null,
+                effect_self_assigns: [],
+                is_forced: false,
+                forced_origin: null,
+            }],
+            [],
+            [],
+            [],
+            [],
+            {
+                n_states_leaf: 0,
+                n_states_composite: 0,
+                n_states_pseudo: 0,
+                max_hierarchy_depth: 0,
+                n_transitions_normal: 1,
+                n_transitions_forced: 0,
+                n_events: 0,
+                n_variables: 0,
+                var_to_leaf_ratio: 0,
+                aspect_coverage: {},
+                abstract_action_inventory: [],
+            },
+            {},
+        );
+        assert.deepEqual(diagnostics.map(item => item.code), ['W_GUARD_CONST_FALSE']);
     });
 });

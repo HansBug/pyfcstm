@@ -76,8 +76,16 @@ def test_fold_condition_literal_only_expressions(text, expected):
         ('1 << -1', 'numeric'),
         ('1 / 0', 'numeric'),
         ('1 % 0', 'numeric'),
+        ('1.0 & 1', 'numeric'),
+        ('(1.0 + 0) & 1', 'numeric'),
+        ('(2 / 2) & 1', 'numeric'),
+        ('1 << 2048', 'numeric'),
         ('9007199254740991 + 1', 'numeric'),
         ('10 ** 10000', 'numeric'),
+        ('(1.0 & 1) == 1', 'logical'),
+        ('((1.0 + 0) & 1) == 1', 'logical'),
+        ('((2 / 2) & 1) == 1', 'logical'),
+        ('(1 << 2048) == 0', 'logical'),
         ('(9007199254740992 + 1) == 9007199254740993', 'logical'),
         ('(2 ** 53) == 9007199254740992', 'logical'),
         ('counter > 0', 'logical'),
@@ -107,6 +115,49 @@ def test_collect_const_fold_warnings_none_machine():
     from pyfcstm.diagnostics.analyzers import collect_const_fold_warnings
 
     assert collect_const_fold_warnings(None) == []
+
+
+@pytest.mark.unittest
+def test_design_health_helper_keeps_minimal_const_false_fallback_without_machine():
+    from pyfcstm.diagnostics import ModelMetrics, TransitionInfo
+    from pyfcstm.diagnostics.analyzers import collect_design_health_warnings
+
+    diagnostics = collect_design_health_warnings(
+        states=[],
+        transitions=[
+            TransitionInfo(
+                from_path='Root.Idle',
+                to_path='Root.Active',
+                event=None,
+                event_scope=None,
+                guard='1 == 2',
+                effect=None,
+                effect_self_assigns=tuple(),
+                is_forced=False,
+                forced_origin=None,
+            )
+        ],
+        variables=[],
+        events=[],
+        actions=[],
+        forced_transitions=[],
+        metrics=ModelMetrics(
+            n_states_leaf=0,
+            n_states_composite=0,
+            n_states_pseudo=0,
+            max_hierarchy_depth=0,
+            n_transitions_normal=1,
+            n_transitions_forced=0,
+            n_events=0,
+            n_variables=0,
+            var_to_leaf_ratio=0.0,
+            aspect_coverage={},
+            abstract_action_inventory=tuple(),
+        ),
+        reachability_graph={},
+    )
+
+    assert [diagnostic.code for diagnostic in diagnostics] == ['W_GUARD_CONST_FALSE']
 
 
 @pytest.mark.unittest

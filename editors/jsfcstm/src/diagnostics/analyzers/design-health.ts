@@ -38,7 +38,7 @@ export function collectDesignHealthWarnings(
     };
     return [
         ...collectUnreachableStateDiagnostics(states, reachabilityGraph, rootStatePath),
-        ...collectConstFoldWarnings(machine),
+        ...(machine ? collectConstFoldWarnings(machine) : collectGuardConstFalseDiagnostics(transitions)),
         ...collectUnusedEventDiagnostics(events),
         ...collectStructuralWarnings(
             states,
@@ -78,6 +78,41 @@ function collectUnreachableStateDiagnostics(
         });
     }
     return out;
+}
+
+function collectGuardConstFalseDiagnostics(transitions: TransitionInfo[]): ModelDiagnosticJson[] {
+    const out: ModelDiagnosticJson[] = [];
+    for (const transition of transitions) {
+        if (!isMinimalConstFalseGuard(transition.guard)) continue;
+        out.push({
+            code: 'W_GUARD_CONST_FALSE',
+            severity: 'warning',
+            message: `Transition ${JSON.stringify(transition.from_path)} -> ${JSON.stringify(transition.to_path)} has a guard that is statically false.`,
+            span: null,
+            refs: {transition_span: null, folded_value: false},
+        });
+    }
+    return out;
+}
+
+function isMinimalConstFalseGuard(guard: string | null): boolean {
+    if (guard === null) return false;
+    const normalized = guard.trim().toLowerCase();
+    if (normalized === 'false' || normalized === '0') return true;
+    const match = /^\s*([+-]?\d+)\s*==\s*([+-]?\d+)\s*$/.exec(guard);
+    return match !== null && normalizeDecimalInteger(match[1]) !== normalizeDecimalInteger(match[2]);
+}
+
+function normalizeDecimalInteger(value: string): string {
+    let sign = '';
+    let digits = value;
+    if (digits.startsWith('+') || digits.startsWith('-')) {
+        sign = digits[0] === '-' ? '-' : '';
+        digits = digits.slice(1);
+    }
+    digits = digits.replace(/^0+/, '');
+    if (digits === '') return '0';
+    return sign + digits;
 }
 
 function collectUnusedEventDiagnostics(events: EventInfo[]): ModelDiagnosticJson[] {

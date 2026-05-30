@@ -45,6 +45,7 @@ Example::
     2
 """
 
+import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
@@ -1079,7 +1080,7 @@ def _build_metrics(
         n_transitions_forced=n_forced,
         n_events=len(events),
         n_variables=len(variables),
-        var_to_leaf_ratio=(len(variables) / n_leaf) if n_leaf else 0.0,
+        var_to_leaf_ratio=len(variables) / max(n_leaf, 1),
         aspect_coverage=aspect_coverage,
         abstract_action_inventory=tuple(sorted(abstract_inventory)),
     )
@@ -1246,6 +1247,14 @@ def inspect_model(
         >>> sorted(report.reachability_graph['Root.Sub.A'])
         ['Root.Sub.B']
     """
+    deep_hierarchy_threshold = _normalize_int_threshold(
+        'deep_hierarchy_threshold',
+        deep_hierarchy_threshold,
+    )
+    large_composite_threshold = _normalize_int_threshold(
+        'large_composite_threshold',
+        large_composite_threshold,
+    )
     states = _build_state_infos(machine)
     transitions = _build_transition_infos(machine)
     variables = _build_variable_infos(machine, states)
@@ -1284,6 +1293,18 @@ def inspect_model(
             var_to_leaf_ratio_threshold=var_to_leaf_ratio_threshold,
         )),
     )
+
+
+def _normalize_int_threshold(name: str, value: int) -> int:
+    if isinstance(value, bool):
+        raise TypeError(f'{name} must be an integer threshold, got bool')
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if math.isfinite(value) and value.is_integer():
+            return int(value)
+        raise ValueError(f'{name} must be an integer threshold, got {value!r}')
+    raise TypeError(f'{name} must be an integer threshold, got {type(value).__name__}')
 
 
 def _to_json_dataclass(obj: Any) -> Any:

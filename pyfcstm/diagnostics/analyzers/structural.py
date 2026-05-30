@@ -49,10 +49,10 @@ def _aspect_no_descendant_leaf_warnings(states) -> List[ModelDiagnostic]:
         )
         if descendant_leaf_count > 0:
             continue
-        for aspect in (['before'] if state.aspect_before else []):
-            diagnostics.append(_aspect_no_descendant_leaf_diagnostic(state.path, aspect))
-        for aspect in (['after'] if state.aspect_after else []):
-            diagnostics.append(_aspect_no_descendant_leaf_diagnostic(state.path, aspect))
+        if state.aspect_before:
+            diagnostics.append(_aspect_no_descendant_leaf_diagnostic(state.path, 'before'))
+        if state.aspect_after:
+            diagnostics.append(_aspect_no_descendant_leaf_diagnostic(state.path, 'after'))
     return diagnostics
 
 

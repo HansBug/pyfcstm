@@ -982,6 +982,69 @@ state Root {
             });
         });
 
+        it('uses one as the minimum denominator for variable-to-leaf ratio', async () => {
+            const report = inspectModel(await buildMachine(`
+def int a = 0;
+def int b = 0;
+def int c = 0;
+state Root {
+    pseudo state Marker;
+    [*] -> Marker;
+}
+`), {
+                varToLeafRatioThreshold: 2.0,
+            });
+            assert.deepEqual(diagnosticsByCode(report).get('W_HIGH_VAR_TO_LEAF_RATIO')![0].refs, {
+                n_vars: 3,
+                n_leaf_states: 0,
+                actual: 3.0,
+                threshold: 2.0,
+            });
+        });
+
+        it('rejects fractional count thresholds', async () => {
+            const machine = await buildMachine(`
+state Root {
+    state A;
+    [*] -> A;
+}
+`);
+            assert.throws(
+                () => inspectModel(machine, {deepHierarchyThreshold: 0.5}),
+                /deepHierarchyThreshold/,
+            );
+            assert.throws(
+                () => inspectModel(machine, {largeCompositeThreshold: 2.5}),
+                /largeCompositeThreshold/,
+            );
+        });
+
+        it('normalizes integer-valued count thresholds before emitting refs', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state A;
+    state B;
+    state C;
+    [*] -> A;
+}
+`), {
+                deepHierarchyThreshold: 0.0,
+                largeCompositeThreshold: 2.0,
+            });
+            assert.deepEqual(diagnosticsByCode(report).get('W_DEEP_HIERARCHY')![0].refs, {
+                max_depth: 1,
+                deepest_path: 'Root.A',
+                actual: 1,
+                threshold: 0,
+            });
+            assert.deepEqual(diagnosticsByCode(report).get('W_LARGE_COMPOSITE')![0].refs, {
+                composite_path: 'Root',
+                n_children: 3,
+                actual: 3,
+                threshold: 2,
+            });
+        });
+
         it('does not emit threshold diagnostics with defaults for a small model', async () => {
             const report = inspectModel(await buildMachine(SIMPLE_DSL));
             const codes = new Set(report.diagnostics.map(d => d.code));

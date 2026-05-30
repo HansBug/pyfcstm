@@ -234,8 +234,14 @@ export interface ModelDiagnosticJson {
  * Run the structural inspector against a jsfcstm state-machine model.
  */
 export function inspectModel(machine: StateMachine, options: InspectModelOptions = {}): ModelInspect {
-    const deepHierarchyThreshold = options.deepHierarchyThreshold ?? DEFAULT_DEEP_HIERARCHY_THRESHOLD;
-    const largeCompositeThreshold = options.largeCompositeThreshold ?? DEFAULT_LARGE_COMPOSITE_THRESHOLD;
+    const deepHierarchyThreshold = normalizeIntThreshold(
+        'deepHierarchyThreshold',
+        options.deepHierarchyThreshold ?? DEFAULT_DEEP_HIERARCHY_THRESHOLD,
+    );
+    const largeCompositeThreshold = normalizeIntThreshold(
+        'largeCompositeThreshold',
+        options.largeCompositeThreshold ?? DEFAULT_LARGE_COMPOSITE_THRESHOLD,
+    );
     const varToLeafRatioThreshold = options.varToLeafRatioThreshold ?? DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD;
     const rootStatePath = dottedPath(machine.rootState.path);
     const states = buildStateInfos(machine);
@@ -277,6 +283,13 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
             },
         ),
     };
+}
+
+function normalizeIntThreshold(name: string, value: number): number {
+    if (!Number.isFinite(value) || !Number.isInteger(value)) {
+        throw new Error(`${name} must be an integer threshold, got ${JSON.stringify(value)}`);
+    }
+    return value;
 }
 
 /**
@@ -980,7 +993,7 @@ function buildMetrics(
         n_transitions_forced: nForced,
         n_events: events.length,
         n_variables: variables.length,
-        var_to_leaf_ratio: nLeaf > 0 ? variables.length / nLeaf : 0,
+        var_to_leaf_ratio: variables.length / Math.max(nLeaf, 1),
         aspect_coverage: aspectCoverage,
         abstract_action_inventory: abstractInventory,
     };

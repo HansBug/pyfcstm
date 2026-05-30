@@ -1077,6 +1077,58 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
             'threshold': 0,
         }
 
+    def test_var_to_leaf_ratio_uses_one_as_minimum_denominator(self):
+        dsl = """
+        def int a = 0;
+        def int b = 0;
+        def int c = 0;
+        state Root {
+            pseudo state Marker;
+            [*] -> Marker;
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl, var_to_leaf_ratio_threshold=2.0)
+        high_ratio = by_code['W_HIGH_VAR_TO_LEAF_RATIO'][0]
+        assert high_ratio.refs == {
+            'n_vars': 3,
+            'n_leaf_states': 0,
+            'actual': 3.0,
+            'threshold': 2.0,
+        }
+
+    def test_integer_threshold_options_reject_fractional_values(self):
+        dsl = """
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """
+        with pytest.raises(ValueError, match='deep_hierarchy_threshold'):
+            inspect_model(_parse(dsl), deep_hierarchy_threshold=0.5)
+        with pytest.raises(ValueError, match='large_composite_threshold'):
+            inspect_model(_parse(dsl), large_composite_threshold=2.5)
+
+    def test_integer_threshold_options_accept_integer_valued_float(self):
+        dsl = """
+        state Root {
+            state A;
+            state B;
+            state C;
+            [*] -> A;
+        }
+        """
+        report = inspect_model(
+            _parse(dsl),
+            deep_hierarchy_threshold=0.0,
+            large_composite_threshold=2.0,
+        )
+        assert_all_diags_match_schema(report.diagnostics, context='integer-float-thresholds')
+        by_code = {}
+        for diag in report.diagnostics:
+            by_code.setdefault(diag.code, []).append(diag)
+        assert by_code['W_DEEP_HIERARCHY'][0].refs['threshold'] == 0
+        assert by_code['W_LARGE_COMPOSITE'][0].refs['threshold'] == 2
+
     def test_default_thresholds_do_not_emit_for_simple_model(self):
         diagnostics = inspect_model(_parse(SIMPLE_DSL)).diagnostics
         codes = {diag.code for diag in diagnostics}

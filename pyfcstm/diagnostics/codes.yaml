@@ -3,7 +3,7 @@
 # integrations, evaluation scripts, and the jsfcstm visualization layer).
 #
 # Each entry documents:
-#   - `severity`       — 'error' or 'warning'
+#   - `severity`       — 'error', 'warning', or 'info'
 #   - `description`    — human-readable explanation of when this code fires
 #   - `refs`           — payload schema for `ModelDiagnostic.refs`. Each
 #                        field declares its type, whether it is required,
@@ -1649,6 +1649,8 @@ W_ASPECT_NO_DESCENDANT_LEAF:
   emit_tier: static_pipeline
   example_dsl: |
     state Root {
+        pseudo state Marker;
+        [*] -> Marker;
         >> during before { }
     }
 

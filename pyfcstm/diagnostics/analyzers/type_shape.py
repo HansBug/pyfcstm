@@ -36,11 +36,8 @@ def _literal_assignment_narrowing_warnings(variables) -> List[ModelDiagnostic]:
     for variable in variables:
         if variable.type != 'int':
             continue
-        for source_expr in getattr(variable, 'float_literal_assignments', ()):
+        for source_expr in variable.float_literal_assignments:
             diagnostics.append(_narrowing_diagnostic(variable.name, source_expr))
-    # Future-proof: if VariableInfo comes from older construction paths
-    # without ``float_literal_assignments``, scan nothing rather than
-    # inferring from formatted effect text.
     return diagnostics
 
 

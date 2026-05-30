@@ -75,6 +75,13 @@ class TestCodeRegistryShape:
                     f"warning code {code} must start with 'W_'"
                 )
 
+    def test_info_codes_use_I_prefix(self):
+        for code, spec in CODE_REGISTRY.items():
+            if spec.severity == 'info':
+                assert code.startswith('I_'), (
+                    f"info code {code} must start with 'I_'"
+                )
+
 
 @pytest.mark.unittest
 class TestPR1CodesPresence:

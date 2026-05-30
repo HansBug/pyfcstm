@@ -9,6 +9,7 @@ pyfcstm.diagnostics
 .. toctree::
     :maxdepth: 3
 
+    analyzers/index
     codes
     inspect
     sink

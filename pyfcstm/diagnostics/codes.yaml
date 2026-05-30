@@ -3,7 +3,7 @@
 # integrations, evaluation scripts, and the jsfcstm visualization layer).
 #
 # Each entry documents:
-#   - `severity`       — 'error' or 'warning'
+#   - `severity`       — 'error', 'warning', or 'info'
 #   - `description`    — human-readable explanation of when this code fires
 #   - `refs`           — payload schema for `ModelDiagnostic.refs`. Each
 #                        field declares its type, whether it is required,
@@ -17,7 +17,7 @@
 # Allowed `refs.*.type` tokens (must mirror `_ALLOWED_REF_TYPES` in
 # codes.py — that tuple is the single source of truth, this comment block
 # is documentation; a test asserts the two stay aligned):
-#   str | str_or_null | int | int_or_null | bool | Span | list[str]
+#   str | str_or_null | int | int_or_null | float | number | bool | Span | list[str]
 #
 # Adding a new code: append a new top-level entry here AND add a fixture
 # test that triggers it from a real DSL snippet. The loader in `codes.py`
@@ -997,14 +997,9 @@ E_IMPORT_MAPPING_INVALID:
     }
 
 # ---------------------------------------------------------------------------
-# Layer 2 PR-A placeholder warnings — jsfcstm already emits these codes
-# under the new W_* naming; pyfcstm-side analyzers remain TBD in PR-B/PR-C.
-# The schema registry entry exists here so the loader recognises the codes
-# and downstream LLM dispatch logic can mirror the catalog without having
-# to special-case the placeholder set.
+# Design-health warnings emitted from inspect-surface analyzers.
 # ---------------------------------------------------------------------------
 
-# scheduled for PR-C: emitted-by analyzer not yet implemented in either end
 W_UNREACHABLE_STATE:
   severity: warning
   capability: pure_static
@@ -1037,13 +1032,15 @@ W_UNREACHABLE_STATE:
         [*] -> Idle;
     }
 
-# scheduled for PR-C: emitted-by analyzer not yet implemented in either end
 W_GUARD_CONST_FALSE:
   severity: warning
   capability: const_fold
   description: >-
-    A transition's guard condition reduces to the literal ``false``
-    after constant folding, so the transition can never fire.
+    A transition's guard condition matches the current minimal
+    constant-false patterns, so the transition can never fire. This
+    analyzer currently recognizes ``false`` / ``0`` and simple signed
+    decimal integer equality checks such as ``1 == 0``; it is not a
+    complete constant-folding engine.
   refs:
     transition_span:
       type: Span
@@ -1074,7 +1071,6 @@ W_GUARD_CONST_FALSE:
         A -> B : if [false];
     }
 
-# scheduled for PR-C: emitted-by analyzer not yet implemented in either end
 W_UNUSED_EVENT:
   severity: warning
   capability: pure_static
@@ -1110,4 +1106,755 @@ W_UNUSED_EVENT:
         state B;
         [*] -> A;
         A -> B :: SomethingElse;
+    }
+
+W_DEADLOCK_LEAF:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A non-pseudo leaf state has no outgoing transition.
+  refs:
+    state_path:
+      type: str
+      required: true
+      description: Dotted path of the deadlocking leaf state.
+    reason:
+      type: str
+      required: true
+      description: Why the leaf is considered a deadlock.
+      enum: ['no_outgoing_transition']
+  for_llm:
+    summary: >-
+      This leaf state has no outgoing transition, so once the machine
+      enters it there is no modeled way to leave.
+    recommended_actions:
+      - kind: add_transition
+        target: state
+        rationale: Add a modeled transition to the next intended state.
+      - kind: add_exit_transition
+        target: state
+        rationale: Add ``State -> [*];`` if the leaf is meant to finish its parent.
+    do_not:
+      - "Do not add a self-loop just to silence the warning."
+  emit_tier: static_pipeline
+  example_dsl: |
+    state Root {
+        state A;
+        [*] -> A;
+    }
+
+W_INITIAL_UNCONDITIONAL_MISSING:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A composite state has no unconditional ``[*] -> child`` entry
+    transition. Guarded or event-triggered entry transitions do not
+    provide a guaranteed initial child.
+  refs:
+    composite_path:
+      type: str
+      required: true
+      description: Dotted path of the composite state.
+    existing_conditional_count:
+      type: int
+      required: true
+      description: Number of existing initial transitions that are not unconditional.
+  for_llm:
+    summary: >-
+      The composite state can fail to choose an initial child because no
+      unconditional entry transition is declared.
+    recommended_actions:
+      - kind: add_unconditional_initial
+        target: composite_state
+        rationale: Add a fallback ``[*] -> Child;`` entry transition.
+      - kind: simplify_initial
+        target: initial_transition
+        rationale: Remove the guard or event if the current initial transition should always run.
+    do_not:
+      - "Do not assume a guarded initial transition always fires without proving the guard."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int ready = 0;
+    state Root {
+        state A;
+        [*] -> A : if [ready > 0];
+    }
+
+W_FORCED_NEVER_EXPANDS:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A forced transition declaration has no concrete child state in its
+    declaration scope to expand from.
+  refs:
+    state_path:
+      type: str
+      required: true
+      description: Dotted path of the state containing the forced transition.
+    original_raw:
+      type: str
+      required: true
+      description: Original forced transition DSL text.
+  for_llm:
+    summary: >-
+      The forced transition declaration expands to zero concrete
+      transitions, so it has no runtime effect.
+    recommended_actions:
+      - kind: move_transition
+        target: forced_transition
+        rationale: Move the forced transition to a composite scope that owns matching children.
+      - kind: remove_transition
+        target: forced_transition
+        rationale: Remove it if it was speculative.
+    do_not:
+      - "Do not leave a zero-expansion forced transition as documentation."
+  emit_tier: static_pipeline
+  example_dsl: |
+    state Root {
+        state A {
+            !* -> [*];
+        }
+        [*] -> A;
+    }
+
+W_DEAD_NAMED_ACTION:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A named action belongs to an unreachable state and is not referenced
+    by any reachable action ref.
+  refs:
+    function_name:
+      type: str
+      required: true
+      description: Named action identifier.
+    defined_in:
+      type: str
+      required: true
+      description: Dotted path of the state where the action is defined.
+  for_llm:
+    summary: >-
+      This named action cannot run through the reachable state graph and
+      is not referenced from elsewhere.
+    recommended_actions:
+      - kind: connect_state
+        target: state
+        rationale: Add a transition path to the owning state if the action matters.
+      - kind: remove_action
+        target: action
+        rationale: Remove the action if it is unused scaffolding.
+    do_not:
+      - "Do not add an unrelated ref just to silence the warning."
+  emit_tier: static_pipeline
+  example_dsl: |
+    state Root {
+        state A;
+        state B { enter Cleanup {} }
+        [*] -> A;
+    }
+
+W_UNWRITTEN_READ_VAR:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A variable is read in guards or actions but is never written by any
+    lifecycle action or transition effect.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: Variable name.
+    read_states:
+      type: list[str]
+      required: true
+      description: State paths where the variable is read.
+    init_value:
+      type: str
+      required: true
+      description: Source text of the initial value.
+  for_llm:
+    summary: >-
+      The variable is used as input but never updated after its initial
+      definition, so model behavior may be accidentally constant.
+    recommended_actions:
+      - kind: add_write
+        target: action_or_effect
+        rationale: Add the intended update if the variable should change.
+      - kind: simplify_guard
+        target: expression
+        rationale: Replace the read with a literal if the value is intentionally constant.
+    do_not:
+      - "Do not add a meaningless self-assignment."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int ready = 0;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [ready > 0];
+    }
+
+W_WRITE_ONLY_VAR:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A variable is written by actions or effects but is never read by any
+    guard, action, or transition effect expression.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: Variable name.
+    written_states:
+      type: list[str]
+      required: true
+      description: State paths where the variable is written.
+  for_llm:
+    summary: >-
+      The variable is updated but never influences model behavior.
+    recommended_actions:
+      - kind: add_read
+        target: guard_or_action
+        rationale: Read the variable where it should affect behavior.
+      - kind: remove_variable
+        target: variable_definition
+        rationale: Remove the variable and writes if they are dead scaffolding.
+    do_not:
+      - "Do not add an unused read just to silence the warning."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int counter = 0;
+    state Root {
+        state A { during { counter = 1; } }
+        [*] -> A;
+    }
+
+W_REDUNDANT_TRANSITION:
+  severity: warning
+  capability: pure_static
+  description: >-
+    Multiple transitions share the same source, target, event, guard, and
+    effect. Forced and normal transitions with the same behavioral key are
+    counted here as redundant and may also emit W_FORCED_OVERRIDES_NORMAL.
+  refs:
+    from_path:
+      type: str
+      required: true
+      description: Dotted source state path.
+    to_path:
+      type: str
+      required: true
+      description: Dotted target state path.
+    duplicate_spans:
+      type: list[str]
+      required: true
+      description: Stable labels for duplicate transition declarations when source spans are unavailable.
+  for_llm:
+    summary: >-
+      These transitions are indistinguishable by source, target, event,
+      guard, and effect, so later copies do not add behavior.
+    recommended_actions:
+      - kind: remove_duplicate
+        target: transition
+        rationale: Keep one transition and remove redundant copies.
+      - kind: differentiate_transition
+        target: transition
+        rationale: Change event, guard, target, or effect if the copy was meant to do something else.
+    do_not:
+      - "Do not keep duplicate transitions as comments."
+  emit_tier: static_pipeline
+  example_dsl: |
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B :: Go;
+        A -> B :: Go;
+    }
+
+W_SELF_TRANSITION_NOP:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A leaf self transition has no event, guard, effect, own lifecycle action,
+    or ancestor aspect action.
+  refs:
+    state_path:
+      type: str
+      required: true
+      description: Dotted path of the state with the no-op self transition.
+  for_llm:
+    summary: >-
+      The transition points from a state to itself and has no trigger,
+      guard, effect, or re-entry lifecycle behavior, so it does not model
+      useful behavior.
+    recommended_actions:
+      - kind: remove_transition
+        target: transition
+        rationale: Remove the no-op transition.
+      - kind: add_effect_or_trigger
+        target: transition
+        rationale: Add the missing behavior if this transition is intentional.
+    do_not:
+      - "Do not apply this warning to self transitions whose re-entry would run enter, during, exit, or ancestor aspect actions."
+  emit_tier: static_pipeline
+  example_dsl: |
+    state Root {
+        state A;
+        [*] -> A;
+        A -> A;
+    }
+
+W_EFFECT_SELF_ASSIGN:
+  severity: warning
+  capability: pure_static
+  description: >-
+    An effect statement assigns a variable directly to itself.
+  refs:
+    state_path:
+      type: str
+      required: false
+      description: Source state path when known.
+    transition_span:
+      type: Span
+      required: false
+      description: Source span of the transition containing the effect.
+    var_name:
+      type: str
+      required: true
+      description: Variable assigned to itself.
+  for_llm:
+    summary: >-
+      The assignment does not change model state and is likely dead code.
+    recommended_actions:
+      - kind: remove_statement
+        target: effect_statement
+        rationale: Delete the self-assignment.
+      - kind: fix_rhs
+        target: expression
+        rationale: Replace the right-hand side with the intended expression.
+    do_not:
+      - "Do not replace it with another no-op expression."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int x = 0;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B effect { x = x; }
+    }
+
+W_FORCED_OVERRIDES_NORMAL:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A forced transition expands to the same source, target, event, and
+    guard as a normal transition.
+  refs:
+    from_path:
+      type: str
+      required: true
+      description: Dotted source state path.
+    to_path:
+      type: str
+      required: true
+      description: Dotted target state path.
+    forced_span:
+      type: Span
+      required: false
+      description: Source span of the forced transition when available.
+    normal_span:
+      type: Span
+      required: false
+      description: Source span of the normal transition when available.
+  for_llm:
+    summary: >-
+      The forced transition duplicates a normal transition, which can
+      make the forced declaration misleading or redundant.
+    recommended_actions:
+      - kind: remove_duplicate
+        target: forced_transition
+        rationale: Remove the forced transition if the normal one already covers it.
+      - kind: adjust_forced_scope
+        target: forced_transition
+        rationale: Change the forced declaration if it should cover different states.
+    do_not:
+      - "Do not keep both unless the generated runtime intentionally treats forced metadata differently."
+  emit_tier: static_pipeline
+  example_dsl: |
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B :: Go;
+        !A -> B :: Go;
+    }
+
+W_SHADOWED_EVENT:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A local event name shadows a chain or absolute event with the same
+    leaf name.
+  refs:
+    event_name:
+      type: str
+      required: true
+      description: Shared event leaf name.
+    local_path:
+      type: str
+      required: true
+      description: Qualified local event path.
+    chain_path:
+      type: str
+      required: true
+      description: Qualified chain or absolute event path.
+  for_llm:
+    summary: >-
+      The same event leaf name exists in local and broader scopes, which
+      can make transition triggers easy to misread.
+    recommended_actions:
+      - kind: rename_event
+        target: event
+        rationale: Use distinct event names for different scopes.
+      - kind: adjust_scope
+        target: transition_trigger
+        rationale: Use ``:`` or ``::`` deliberately and consistently.
+    do_not:
+      - "Do not rename only one trigger without checking all emitters."
+  emit_tier: static_pipeline
+  example_dsl: |
+    state Root {
+        event Tick;
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : Tick;
+        B -> A :: Tick;
+    }
+
+W_NAMED_ACTION_SHADOWS_ANCESTOR:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A named lifecycle action reuses the same function name as an
+    ancestor-scoped named action.
+  refs:
+    function_name:
+      type: str
+      required: true
+      description: Reused named action identifier.
+    inner_state_path:
+      type: str
+      required: true
+      description: Dotted path of the state containing the shadowing action.
+    outer_state_path:
+      type: str
+      required: true
+      description: Dotted path of the ancestor state containing the shadowed action.
+  for_llm:
+    summary: >-
+      A nested state defines a named action with the same name as an
+      ancestor action. Relative action refs can become hard to audit
+      because the same leaf name means different functions at different
+      hierarchy levels.
+    recommended_actions:
+      - kind: rename_inner_action
+        target: named_action
+        rationale: Give the nested action a distinct name when it implements different behavior.
+      - kind: use_ref
+        target: action
+        rationale: Use ``ref`` to reuse the ancestor action when the behavior should be shared.
+    do_not:
+      - "Do not leave the shadowing name in place unless the scope distinction is intentional and documented outside the DSL."
+  emit_tier: static_pipeline
+  example_dsl: |
+    state Root {
+        enter Sync { }
+        state Child { enter Sync { } }
+        [*] -> Child;
+    }
+
+W_LITERAL_TYPE_NARROWING:
+  severity: warning
+  capability: pure_static
+  description: >-
+    An ``int`` variable is initialized or assigned directly from a
+    floating-point literal, which can imply silent narrowing in generated
+    code. Compound expressions containing floating-point literals are out
+    of scope for this warning.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: Target variable name.
+    target_type:
+      type: str
+      required: true
+      description: Declared target variable type.
+      enum: ['int']
+    source_expr:
+      type: str
+      required: true
+      description: Source text of the direct float literal.
+  for_llm:
+    summary: >-
+      A direct float literal value flows into an ``int`` variable. The
+      model may truncate or generate target-language code with a
+      narrowing conversion; compound expressions such as ``3.0 + 0.5``
+      are intentionally outside this warning's scope.
+    recommended_actions:
+      - kind: change_type
+        target: variable_definition
+        rationale: Use ``def float`` when fractional values are intended.
+      - kind: change_literal
+        target: expression
+        rationale: Use an integer literal or explicit rounding expression when integer behavior is intended.
+    do_not:
+      - "Do not silently rely on target-language truncation rules."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int truncated = 3.5;
+    state Root { state A; [*] -> A; }
+
+W_ASPECT_NO_DESCENDANT_LEAF:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A ``>> during`` aspect is attached to a state with no descendant
+    non-pseudo leaf states, so the aspect cannot affect any leaf cycle.
+  refs:
+    composite_path:
+      type: str
+      required: true
+      description: Dotted path of the state declaring the aspect.
+    aspect:
+      type: str
+      required: true
+      description: Aspect direction.
+      enum: ['before', 'after']
+  for_llm:
+    summary: >-
+      The aspect action has no descendant leaf state to wrap, so it has
+      no modeled runtime target.
+    recommended_actions:
+      - kind: add_leaf
+        target: composite_state
+        rationale: Add the intended descendant leaf state under this composite.
+      - kind: move_or_remove_aspect
+        target: aspect_action
+        rationale: Move the aspect to a composite with leaves, or remove it if it is dead scaffolding.
+    do_not:
+      - "Do not replace it with a normal during action unless the execution semantics really should change."
+  emit_tier: static_pipeline
+  example_dsl: |
+    state Root {
+        pseudo state Marker;
+        [*] -> Marker;
+        >> during before { }
+    }
+
+W_HIGH_VAR_TO_LEAF_RATIO:
+  severity: warning
+  capability: pure_static
+  description: >-
+    The number of variables is high relative to the number of non-pseudo
+    leaf states.
+  refs:
+    n_vars:
+      type: int
+      required: true
+      description: Number of top-level variable definitions.
+    n_leaf_states:
+      type: int
+      required: true
+      description: Number of non-pseudo leaf states.
+    actual:
+      type: number
+      required: true
+      description: Actual ``n_vars / max(n_leaf_states, 1)`` ratio.
+    threshold:
+      type: number
+      required: true
+      description: Effective threshold used for this inspection call.
+  for_llm:
+    summary: >-
+      The model has many variables for its number of leaf states, which
+      often indicates flag bloat or speculative state that does not
+      belong in the DSL.
+    recommended_actions:
+      - kind: audit_variables
+        target: variable_definitions
+        rationale: Remove or consolidate variables that do not represent durable machine state.
+      - kind: split_model
+        target: state_machine
+        rationale: If every variable is meaningful, consider whether the model is combining too many concerns.
+    do_not:
+      - "Do not raise the threshold without checking whether the variables influence behavior."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int a = 0;
+    def int b = 0;
+    def int c = 0;
+    state Root { state A; [*] -> A; }
+
+W_DEEP_HIERARCHY:
+  severity: warning
+  capability: pure_static
+  description: >-
+    The state hierarchy exceeds the configured maximum depth.
+  refs:
+    max_depth:
+      type: int
+      required: true
+      description: Maximum hierarchy depth found in the model.
+    deepest_path:
+      type: str
+      required: true
+      description: One deepest state path that triggered the warning.
+    actual:
+      type: int
+      required: true
+      description: Actual maximum hierarchy depth.
+    threshold:
+      type: int
+      required: true
+      description: Effective threshold used for this inspection call.
+  for_llm:
+    summary: >-
+      The hierarchy is deeper than the configured readability threshold,
+      making lifecycle order and transition scope harder to reason about.
+    recommended_actions:
+      - kind: flatten_hierarchy
+        target: state_tree
+        rationale: Collapse levels that do not add lifecycle or transition semantics.
+      - kind: extract_submachine
+        target: composite_state
+        rationale: Split a deeply nested concern into a separate machine when appropriate.
+    do_not:
+      - "Do not flatten a level that carries required enter, exit, during, or aspect semantics."
+  emit_tier: static_pipeline
+  example_dsl: |
+    state Root { state A { state B { state C; [*] -> C; } [*] -> B; } [*] -> A; }
+
+W_LARGE_COMPOSITE:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A composite state has more direct children than the configured
+    threshold.
+  refs:
+    composite_path:
+      type: str
+      required: true
+      description: Dotted path of the large composite state.
+    n_children:
+      type: int
+      required: true
+      description: Number of direct child states.
+    actual:
+      type: int
+      required: true
+      description: Actual direct child count.
+    threshold:
+      type: int
+      required: true
+      description: Effective threshold used for this inspection call.
+  for_llm:
+    summary: >-
+      A single composite state owns many direct children, which can make
+      transition review and initial-state reasoning difficult.
+    recommended_actions:
+      - kind: group_children
+        target: composite_state
+        rationale: Introduce meaningful nested composites to group related child states.
+      - kind: split_machine
+        target: state_machine
+        rationale: Move unrelated child groups into separate machines if they represent separate concerns.
+    do_not:
+      - "Do not add arbitrary grouping states that have no semantic meaning."
+  emit_tier: static_pipeline
+  example_dsl: |
+    state Root { state A; state B; state C; [*] -> A; }
+
+I_TRANSITION_TO_SELF_VIA_PARENT:
+  severity: info
+  capability: pure_static
+  description: >-
+    A composite state transitions to itself, which can intentionally
+    force a re-entry path through child initialization and lifecycle
+    actions.
+  refs:
+    state_path:
+      type: str
+      required: true
+      description: Dotted path of the self-transitioning composite state.
+    crosses_composite:
+      type: bool
+      required: true
+      description: Always ``True`` for this info because the state is composite.
+  for_llm:
+    summary: >-
+      This is an informational observation rather than a defect: a
+      composite self-transition may be a deliberate reinitialization
+      pattern.
+    recommended_actions:
+      - kind: preserve_if_intentional
+        target: transition
+        rationale: Keep the transition when the model should re-run composite entry semantics.
+      - kind: review_lifecycle
+        target: composite_state
+        rationale: Confirm the enter/exit and initial-child actions are intended to run.
+    do_not:
+      - "Do not delete this transition automatically; it may be the intended reset path."
+  emit_tier: static_pipeline
+  example_dsl: |
+    state Root {
+        state Active { state Leaf; [*] -> Leaf; }
+        [*] -> Active;
+        Active -> Active;
+    }
+
+I_TRANSITION_NEVER_EVENT_TRIGGERED:
+  severity: info
+  capability: pure_static
+  description: >-
+    A normal transition has no event and no guard, so it is an
+    unconditional fall-through candidate.
+  refs:
+    from_path:
+      type: str
+      required: true
+      description: Dotted source state path.
+    to_path:
+      type: str
+      required: true
+      description: Dotted target state path.
+    transition_span:
+      type: Span
+      required: false
+      description: Source span of the transition when available.
+  for_llm:
+    summary: >-
+      The transition is not event-triggered and has no guard. This may
+      be a deliberate unconditional fall-through, so treat it as context
+      rather than a fix target.
+    recommended_actions:
+      - kind: keep_if_fallthrough
+        target: transition
+        rationale: Keep it when the state should immediately advance.
+      - kind: add_trigger_or_guard
+        target: transition
+        rationale: Add the missing event or guard if the transition should wait.
+    do_not:
+      - "Do not add a meaningless event just to silence this info."
+  emit_tier: static_pipeline
+  example_dsl: |
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B;
     }

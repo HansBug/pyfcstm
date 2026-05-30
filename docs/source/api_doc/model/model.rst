@@ -43,14 +43,14 @@ Event
 -----------------------------------------------------
 
 .. autoclass:: Event
-    :members: path,path_name,to_ast_node,name,state_path,extra_name
+    :members: __post_init__,path,path_name,to_ast_node,name,state_path,extra_name,declared,origins
 
 
 Transition
 -----------------------------------------------------
 
 .. autoclass:: Transition
-    :members: parent,parent,to_ast_node,from_state,to_state,event,guard,effects,parent_ref
+    :members: parent,parent,to_ast_node,from_state,to_state,event,guard,effects,event_scope,is_forced,forced_origin,parent_ref
 
 
 OnStage
@@ -85,12 +85,10 @@ StateMachine
 -----------------------------------------------------
 
 .. autoclass:: StateMachine
-    :members: to_ast_node,to_plantuml,walk_states,resolve_event,defines,root_state
+    :members: to_ast_node,to_plantuml,walk_states,resolve_event,defines,root_state,forced_transitions
 
 
 parse\_dsl\_node\_to\_state\_machine
 -----------------------------------------------------
 
 .. autofunction:: parse_dsl_node_to_state_machine
-
-

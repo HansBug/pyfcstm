@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 
 import {createDocument, packageModule} from './support';
 
-const {inspectModel} = packageModule;
+const {
+    DEFAULT_DEEP_HIERARCHY_THRESHOLD,
+    DEFAULT_LARGE_COMPOSITE_THRESHOLD,
+    DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD,
+    inspectModel,
+} = packageModule;
 
 const SIMPLE_DSL = `
 def int counter = 0;
@@ -32,6 +37,28 @@ state Outer {
 }
 `;
 
+const STRUCTURAL_DATAFLOW_REDUNDANCY_DSL = `
+def int read_only = 0;
+def int write_only = 0;
+def int stable = 0;
+state Root {
+    event Tick;
+    state Idle { enter Touch { write_only = 1; } }
+    state Active;
+    state Trapped;
+    state Orphan { enter Cleanup {} }
+    state LeafForced { !* -> [*] :: Never; }
+    [*] -> Idle : if [stable > 0];
+    Idle -> Active : if [read_only > 0];
+    Idle -> Active : if [read_only > 0];
+    Active -> Active;
+    Active -> Idle effect { stable = stable; };
+    Active -> Trapped :: Tick;
+    Trapped -> Idle : Tick;
+    !Active -> Trapped :: Tick;
+}
+`;
+
 async function buildMachine(src: string) {
     const document = createDocument(src, '/tmp/inspect.fcstm');
     const ast = await packageModule.parseAstDocument(document);
@@ -42,7 +69,7 @@ async function buildMachine(src: string) {
     return machine;
 }
 
-describe('diagnostics/inspect (PR-A)', () => {
+describe('diagnostics/inspect', () => {
     describe('basic structure', () => {
         it('returns top-level shape', async () => {
             const report = inspectModel(await buildMachine(SIMPLE_DSL));
@@ -89,6 +116,27 @@ describe('diagnostics/inspect (PR-A)', () => {
             assert.ok(guarded[0].guard && guarded[0].guard.includes('counter'));
         });
 
+        it('normalizes inspect expression and effect text like pyfcstm', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0x0F;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B : if [9007199254740993 == 9007199254740992] effect { x = (0x0F); };
+}
+`));
+            assert.equal(report.variables.find(v => v.name === 'x')!.init_value, '15');
+            const transition = report.transitions.find(t => t.from_path === 'Root.A');
+            assert.ok(transition);
+            assert.equal(transition!.guard, '9007199254740993 == 9007199254740992');
+            assert.equal(transition!.effect, 'x = 15;');
+            assert.equal(
+                report.diagnostics.filter(d => d.code === 'W_GUARD_CONST_FALSE').length,
+                1,
+            );
+        });
+
         it('captures qualified event names with local scope', async () => {
             const report = inspectModel(await buildMachine(SIMPLE_DSL));
             const withEvent = report.transitions.filter(t => t.event !== null);
@@ -128,6 +176,12 @@ describe('diagnostics/inspect (PR-A)', () => {
             assert.equal(m.n_variables, 2);
             assert.equal(m.var_to_leaf_ratio, 1.0);
             assert.equal(m.max_hierarchy_depth, 1);
+        });
+
+        it('exports default threshold constants', () => {
+            assert.equal(DEFAULT_DEEP_HIERARCHY_THRESHOLD, 6);
+            assert.equal(DEFAULT_LARGE_COMPOSITE_THRESHOLD, 12);
+            assert.equal(DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD, 2.0);
         });
     });
 
@@ -201,7 +255,7 @@ describe('diagnostics/inspect (PR-A)', () => {
             assert.equal(parsed.root_state_path, 'Root');
         });
 
-        it('diagnostics array empty for PR-A', async () => {
+        it('diagnostics array empty for clean model without design-health warnings', async () => {
             const report = inspectModel(await buildMachine(SIMPLE_DSL));
             assert.deepEqual(report.diagnostics, []);
         });
@@ -211,10 +265,12 @@ describe('diagnostics/inspect (PR-A)', () => {
             const keys = Object.keys(report).sort();
             assert.deepEqual(keys, [
                 'action_ref_graph',
+                'actions',
                 'aspect_impact_map',
                 'diagnostics',
                 'event_emission_map',
                 'events',
+                'forced_transitions',
                 'metrics',
                 'reachability_graph',
                 'root_state_path',
@@ -226,13 +282,437 @@ describe('diagnostics/inspect (PR-A)', () => {
         });
     });
 
-    // PR-A-coverage: hit the uncovered code paths in
-    // ``editors/jsfcstm/src/diagnostics/inspect.ts`` —
-    // ``inspectModelToJson`` round-trip helper, ``effectsText`` + the
-    // effect-statement var-dataflow walker, ``walkExprCollect`` cases
-    // for BinaryOp/UnaryOp/ConditionalOp inside effects, and the
-    // ``IfBlock`` reads/writes walker.
-    describe('extended coverage (PR-A-coverage)', () => {
+    describe('inspect design-health diagnostics', () => {
+        const DESIGN_HEALTH_DSL = `
+state Root {
+    event Unused;
+    event Used;
+    state Idle;
+    state Active;
+    state Blocked;
+    state Orphan;
+    [*] -> Idle;
+    Idle -> Active : Used;
+    Active -> Blocked : if [false];
+}
+`;
+
+        it('exposes declared-but-unused events in EventInfo', async () => {
+            const report = inspectModel(await buildMachine(DESIGN_HEALTH_DSL));
+            const byName: Record<string, typeof report.events[number]> = {};
+            for (const event of report.events) byName[event.qualified_name] = event;
+
+            assert.deepEqual(Object.keys(byName).sort(), ['Root.Unused', 'Root.Used']);
+            assert.equal(byName['Root.Unused'].scope, 'chain');
+            assert.deepEqual(byName['Root.Unused'].used_by, []);
+            assert.equal(byName['Root.Unused'].is_declared, true);
+            assert.equal(byName['Root.Unused'].is_used, false);
+
+            assert.equal(byName['Root.Used'].scope, 'chain');
+            assert.deepEqual(byName['Root.Used'].used_by, [['Root.Idle', 'Root.Active']]);
+            assert.equal(byName['Root.Used'].is_declared, true);
+            assert.equal(byName['Root.Used'].is_used, true);
+        });
+
+        it('emits design-health warnings on inspectModel diagnostics surface', async () => {
+            const report = inspectModel(await buildMachine(DESIGN_HEALTH_DSL));
+            const codes = report.diagnostics.map(d => d.code);
+            assert.equal(codes.filter(code => code === 'W_UNUSED_EVENT').length, 1);
+            assert.equal(codes.filter(code => code === 'W_GUARD_CONST_FALSE').length, 1);
+            assert.equal(codes.filter(code => code === 'W_UNREACHABLE_STATE').length, 1);
+
+            const unused = report.diagnostics.find(d => d.code === 'W_UNUSED_EVENT');
+            assert.ok(unused);
+            assert.equal(unused!.severity, 'warning');
+            assert.deepEqual(unused!.refs, {
+                event_qualified_name: 'Root.Unused',
+                scope: 'chain',
+            });
+
+            const constFalse = report.diagnostics.find(d => d.code === 'W_GUARD_CONST_FALSE');
+            assert.ok(constFalse);
+            assert.equal(constFalse!.severity, 'warning');
+            assert.deepEqual(constFalse!.refs, {
+                transition_span: null,
+                folded_value: false,
+            });
+
+            const unreachable = report.diagnostics.find(d => d.code === 'W_UNREACHABLE_STATE');
+            assert.ok(unreachable);
+            assert.equal(unreachable!.severity, 'warning');
+            assert.deepEqual(unreachable!.refs, {
+                state_path: 'Root.Orphan',
+            });
+        });
+
+        it('event emission map only lists used events', async () => {
+            const report = inspectModel(await buildMachine(DESIGN_HEALTH_DSL));
+            assert.deepEqual(report.event_emission_map, {
+                'Root.Used': ['Root.Idle'],
+            });
+        });
+
+        it('folds large integer equality guards without number precision loss', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Idle;
+    state Active;
+    [*] -> Idle;
+    Idle -> Active : if [9007199254740993 == 9007199254740992];
+}
+`));
+            assert.equal(
+                report.diagnostics.filter(d => d.code === 'W_GUARD_CONST_FALSE').length,
+                1,
+            );
+        });
+
+        it('emits structural dataflow and redundancy warnings', async () => {
+            const report = inspectModel(await buildMachine(STRUCTURAL_DATAFLOW_REDUNDANCY_DSL));
+            const normalized = report.diagnostics
+                .map(d => ({
+                    code: d.code,
+                    severity: d.severity,
+                    refs: JSON.parse(JSON.stringify(d.refs)),
+                }))
+                .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+
+            assert.deepEqual(normalized, [
+                {
+                    code: 'I_TRANSITION_NEVER_EVENT_TRIGGERED',
+                    severity: 'info',
+                    refs: {from_path: 'Root.Active', to_path: 'Root.Active', transition_span: null},
+                },
+                {
+                    code: 'I_TRANSITION_NEVER_EVENT_TRIGGERED',
+                    severity: 'info',
+                    refs: {from_path: 'Root.Active', to_path: 'Root.Idle', transition_span: null},
+                },
+                {
+                    code: 'W_DEADLOCK_LEAF',
+                    severity: 'warning',
+                    refs: {state_path: 'Root.LeafForced', reason: 'no_outgoing_transition'},
+                },
+                {
+                    code: 'W_DEADLOCK_LEAF',
+                    severity: 'warning',
+                    refs: {state_path: 'Root.Orphan', reason: 'no_outgoing_transition'},
+                },
+                {
+                    code: 'W_DEAD_NAMED_ACTION',
+                    severity: 'warning',
+                    refs: {function_name: 'Cleanup', defined_in: 'Root.Orphan'},
+                },
+                {
+                    code: 'W_EFFECT_SELF_ASSIGN',
+                    severity: 'warning',
+                    refs: {state_path: 'Root.Active', transition_span: null, var_name: 'stable'},
+                },
+                {
+                    code: 'W_FORCED_NEVER_EXPANDS',
+                    severity: 'warning',
+                    refs: {state_path: 'Root.LeafForced', original_raw: '! * -> [*] :: Never;'},
+                },
+                {
+                    code: 'W_FORCED_OVERRIDES_NORMAL',
+                    severity: 'warning',
+                    refs: {from_path: 'Root.Active', to_path: 'Root.Trapped', forced_span: null, normal_span: null},
+                },
+                {
+                    code: 'W_INITIAL_UNCONDITIONAL_MISSING',
+                    severity: 'warning',
+                    refs: {composite_path: 'Root', existing_conditional_count: 1},
+                },
+                {
+                    code: 'W_REDUNDANT_TRANSITION',
+                    severity: 'warning',
+                    refs: {
+                        from_path: 'Root.Idle',
+                        to_path: 'Root.Active',
+                        duplicate_spans: [
+                            'Root.Idle->Root.Active#1',
+                            'Root.Idle->Root.Active#2',
+                        ],
+                    },
+                },
+                {
+                    code: 'W_REDUNDANT_TRANSITION',
+                    severity: 'warning',
+                    refs: {
+                        from_path: 'Root.Active',
+                        to_path: 'Root.Trapped',
+                        duplicate_spans: [
+                            'Root.Active->Root.Trapped#1',
+                            'Root.Active->Root.Trapped#2',
+                        ],
+                    },
+                },
+                {
+                    code: 'W_SELF_TRANSITION_NOP',
+                    severity: 'warning',
+                    refs: {state_path: 'Root.Active'},
+                },
+                {
+                    code: 'W_SHADOWED_EVENT',
+                    severity: 'warning',
+                    refs: {
+                        event_name: 'Tick',
+                        local_path: 'Root.Active.Tick',
+                        chain_path: 'Root.Tick',
+                    },
+                },
+                {
+                    code: 'W_UNREACHABLE_STATE',
+                    severity: 'warning',
+                    refs: {state_path: 'Root.LeafForced'},
+                },
+                {
+                    code: 'W_UNREACHABLE_STATE',
+                    severity: 'warning',
+                    refs: {state_path: 'Root.Orphan'},
+                },
+                {
+                    code: 'W_UNWRITTEN_READ_VAR',
+                    severity: 'warning',
+                    refs: {var_name: 'read_only', read_states: ['Root.Idle'], init_value: '0'},
+                },
+                {
+                    code: 'W_WRITE_ONLY_VAR',
+                    severity: 'warning',
+                    refs: {var_name: 'write_only', written_states: ['Root.Idle']},
+                },
+            ].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
+        });
+
+        it('keeps guard and chain path in forced transition origin text', async () => {
+            const report = inspectModel(await buildMachine(`
+def int counter = 0;
+state Root {
+    state Idle;
+    state Error;
+    state Bus { event Fail; }
+    [*] -> Idle;
+    !Idle -> [*] : if [counter > 0];
+    !Error -> Idle : Bus.Fail;
+}
+`));
+            const declarations: Record<string, string> = {};
+            for (const item of report.forced_transitions) {
+                declarations[item.from_path] = item.original_raw;
+            }
+            assert.equal(declarations['Root.Idle'], '! Idle -> [*] : if [counter > 0];');
+            assert.equal(declarations['Root.Error'], '! Error -> Idle : Bus.Fail;');
+
+            const origins: Record<string, string | null> = {};
+            for (const transition of report.transitions.filter(t => t.is_forced)) {
+                origins[`${transition.from_path}->${transition.to_path}`] = transition.forced_origin;
+            }
+            assert.equal(origins['Root.Idle->[*]'], '! Idle -> [*] : if [counter > 0];');
+            assert.equal(origins['Root.Error->Root.Idle'], '! Error -> Idle : Bus.Fail;');
+        });
+
+        it('keeps grouped guard expression in forced transition origin text', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    !A -> B : if [(x + 1) * 2 > 0];
+}
+`));
+            const declaration = report.forced_transitions.find(item => item.from_path === 'Root.A');
+            assert.ok(declaration);
+            assert.equal(declaration!.original_raw, '! A -> B : if [(x + 1) * 2 > 0];');
+            const transition = report.transitions.find(t => t.is_forced);
+            assert.ok(transition);
+            assert.equal(transition!.forced_origin, '! A -> B : if [(x + 1) * 2 > 0];');
+        });
+
+        it('normalizes forced transition declaration guard text like pyfcstm', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0;
+def int y = 1;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    !A -> B : if [x == 0x0F and not (y == 0)];
+}
+`));
+            const declaration = report.forced_transitions.find(item => item.from_path === 'Root.A');
+            assert.ok(declaration);
+            assert.equal(declaration!.guard, 'x == 0x0f && !(y == 0)');
+            assert.equal(declaration!.original_raw, '! A -> B : if [x == 0x0f && !(y == 0)];');
+        });
+
+        it('keeps inherited forced transition origins on the original declaration', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Running {
+        state A;
+        state B;
+        [*] -> A;
+    }
+    state Error;
+    [*] -> Running;
+    !Running -> Error :: Panic;
+}
+`));
+            const origins: Record<string, string | null> = {};
+            for (const transition of report.transitions.filter(t => t.is_forced)) {
+                origins[transition.from_path] = transition.forced_origin;
+            }
+            assert.equal(origins['Root.Running'], '! Running -> Error :: Panic;');
+            assert.equal(origins['Root.Running.A'], '! Running -> Error :: Panic;');
+            assert.equal(origins['Root.Running.B'], '! Running -> Error :: Panic;');
+        });
+
+        it('does not shadow events across unrelated sibling scopes', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state A {
+        state A1;
+        state A2;
+        [*] -> A1;
+        A1 -> A2 :: Tick;
+    }
+    state B {
+        state B1;
+        state B2;
+        [*] -> B1;
+        B1 -> B2 : Tick;
+    }
+    [*] -> A;
+    A -> B :: Go;
+}
+`));
+            assert.deepEqual(
+                report.diagnostics.filter(d => d.code === 'W_SHADOWED_EVENT'),
+                [],
+            );
+        });
+
+        it('does not let unreachable refs suppress dead named action diagnostics', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Idle;
+    state Orphan { enter Target {} }
+    state Other { enter ref /Orphan.Target; }
+    [*] -> Idle;
+}
+`));
+            assert.deepEqual(
+                report.diagnostics
+                    .filter(d => d.code === 'W_DEAD_NAMED_ACTION')
+                    .map(d => d.refs),
+                [{function_name: 'Target', defined_in: 'Root.Orphan'}],
+            );
+        });
+
+        it('does not treat transitions with different effects as redundant', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B effect { x = 1; };
+    A -> B effect { x = 2; };
+}
+`));
+            const effects = report.transitions
+                .filter(t => t.from_path === 'Root.A' && t.to_path === 'Root.B')
+                .map(t => t.effect);
+            assert.deepEqual(effects, ['x = 1;', 'x = 2;']);
+            assert.deepEqual(
+                report.diagnostics.filter(d => d.code === 'W_REDUNDANT_TRANSITION'),
+                [],
+            );
+        });
+
+        it('normalizes equivalent effect text before redundant transition comparison', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B effect { x = 1; };
+    A -> B effect { x = (1); };
+}
+`));
+            const effects = report.transitions
+                .filter(t => t.from_path === 'Root.A' && t.to_path === 'Root.B')
+                .map(t => t.effect);
+            assert.deepEqual(effects, ['x = 1;', 'x = 1;']);
+            assert.equal(
+                report.diagnostics.filter(d => d.code === 'W_REDUNDANT_TRANSITION').length,
+                1,
+            );
+        });
+
+        it('does not report lifecycle self re-entry as no-op', async () => {
+            const report = inspectModel(await buildMachine(`
+def int counter = 0;
+state Root {
+    state Active {
+        enter { counter = counter + 1; }
+    }
+    [*] -> Active;
+    Active -> Active;
+}
+`));
+            assert.deepEqual(
+                report.diagnostics.filter(d => d.code === 'W_SELF_TRANSITION_NOP'),
+                [],
+            );
+        });
+
+        it('does not report self re-entry with ancestor aspects as no-op', async () => {
+            const report = inspectModel(await buildMachine(`
+def int counter = 0;
+state Root {
+    >> during before { counter = counter + 1; }
+    state Active;
+    [*] -> Active;
+    Active -> Active;
+}
+`));
+            assert.deepEqual(
+                report.diagnostics.filter(d => d.code === 'W_SELF_TRANSITION_NOP'),
+                [],
+            );
+        });
+
+        it('reports self assignment inside nested effect if-block', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B effect {
+        if [x > 0] {
+            x = x;
+        }
+    };
+}
+`));
+            assert.deepEqual(
+                report.diagnostics
+                    .filter(d => d.code === 'W_EFFECT_SELF_ASSIGN')
+                    .map(d => d.refs),
+                [{
+                    state_path: 'Root.A',
+                    transition_span: null,
+                    var_name: 'x',
+                }],
+            );
+        });
+    });
+
+    describe('extended inspect coverage', () => {
         const EFFECTS_DSL = `
 def int counter = 0;
 def int last = 0;
@@ -319,10 +799,10 @@ state Root {
         });
 
         it('effectsText surfaces effect text on BOTH transitions, including the IfBlock-bearing one', async () => {
-            // Tightened (PR-A-coverage Codex I3): pin both transitions
-            // — the guard-effect one (Idle→Active) and the if-block
-            // effect one (Active→Idle). The latter is the case that
-            // exercises ``walkStmtReadsWrites`` IfBlock branch.
+            // Pin both transitions: the guard-effect one
+            // (Idle->Active) and the if-block effect one
+            // (Active->Idle). The latter exercises the
+            // ``walkStmtReadsWrites`` IfBlock branch.
             const report = inspectModel(await buildMachine(EFFECTS_DSL));
             const idleToActive = report.transitions.find(
                 t => t.from_path === 'Root.Idle' && t.to_path === 'Root.Active',
@@ -355,12 +835,10 @@ state Root { state A; state B; [*] -> A; A -> B : if [sensor > 0]; }
             assert.equal(sensor.writes.length, 0);
         });
 
-        // PR-A-coverage push to 100% — cover the remaining 15 lines in
-        // inspect.ts: action label ref branches (263-264, 271-272),
-        // walkExprCollect UnaryOp/UFunc branch (463-464), ref targets
-        // in action_ref_graph (690-692), state-path fallback in
-        // functionSignature (713-714), and the actions_in_scope label
-        // emission (529-530).
+        // Target less common inspect paths: action label ref branches,
+        // unary / function expression walking, ref targets in
+        // action_ref_graph, state-path fallback in functionSignature,
+        // and actions_in_scope label emission.
         it('exposes ref:<name> labels for both action and aspect refs', async () => {
             // Lines 263-264 (functionSignature ref:name) +
             // 271-272 (aspectLabel ref:name).
@@ -451,6 +929,274 @@ state Root {
             );
             assert.ok(t);
             assert.ok(typeof t!.effect === 'string' && t!.effect!.length > 0);
+        });
+    });
+
+    describe('threshold, info, naming, and type diagnostics', () => {
+        function diagnosticsByCode(report: ReturnType<typeof inspectModel>) {
+            const out = new Map<string, typeof report.diagnostics>();
+            for (const diagnostic of report.diagnostics) {
+                out.set(diagnostic.code, [...(out.get(diagnostic.code) ?? []), diagnostic]);
+            }
+            return out;
+        }
+
+        it('emits threshold diagnostics with actual and threshold refs', async () => {
+            const report = inspectModel(await buildMachine(`
+def int a = 0;
+def int b = 0;
+def int c = 0;
+state Root {
+    state A;
+    state B;
+    state C;
+    [*] -> A;
+    A -> B :: Next;
+    B -> C :: Next;
+    C -> A :: Next;
+}
+`), {
+                varToLeafRatioThreshold: 0.5,
+                largeCompositeThreshold: 2,
+                deepHierarchyThreshold: 0,
+            });
+            const byCode = diagnosticsByCode(report);
+
+            assert.deepEqual(byCode.get('W_HIGH_VAR_TO_LEAF_RATIO')![0].refs, {
+                n_vars: 3,
+                n_leaf_states: 3,
+                actual: 1.0,
+                threshold: 0.5,
+            });
+            assert.deepEqual(byCode.get('W_LARGE_COMPOSITE')![0].refs, {
+                composite_path: 'Root',
+                n_children: 3,
+                actual: 3,
+                threshold: 2,
+            });
+            assert.deepEqual(byCode.get('W_DEEP_HIERARCHY')![0].refs, {
+                max_depth: 1,
+                deepest_path: 'Root.A',
+                actual: 1,
+                threshold: 0,
+            });
+        });
+
+        it('uses one as the minimum denominator for variable-to-leaf ratio', async () => {
+            const report = inspectModel(await buildMachine(`
+def int a = 0;
+def int b = 0;
+def int c = 0;
+state Root {
+    pseudo state Marker;
+    [*] -> Marker;
+}
+`), {
+                varToLeafRatioThreshold: 2.0,
+            });
+            assert.deepEqual(diagnosticsByCode(report).get('W_HIGH_VAR_TO_LEAF_RATIO')![0].refs, {
+                n_vars: 3,
+                n_leaf_states: 0,
+                actual: 3.0,
+                threshold: 2.0,
+            });
+        });
+
+        it('rejects fractional count thresholds', async () => {
+            const machine = await buildMachine(`
+state Root {
+    state A;
+    [*] -> A;
+}
+`);
+            assert.throws(
+                () => inspectModel(machine, {deepHierarchyThreshold: 0.5}),
+                /deepHierarchyThreshold/,
+            );
+            assert.throws(
+                () => inspectModel(machine, {largeCompositeThreshold: 2.5}),
+                /largeCompositeThreshold/,
+            );
+        });
+
+        it('rejects non-finite variable-to-leaf ratio thresholds', async () => {
+            const machine = await buildMachine(`
+state Root {
+    state A;
+    [*] -> A;
+}
+`);
+            assert.throws(
+                () => inspectModel(machine, {varToLeafRatioThreshold: true as unknown as number}),
+                /varToLeafRatioThreshold/,
+            );
+            assert.throws(
+                () => inspectModel(machine, {varToLeafRatioThreshold: Number.NaN}),
+                /varToLeafRatioThreshold/,
+            );
+        });
+
+        it('normalizes integer-valued count thresholds before emitting refs', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state A;
+    state B;
+    state C;
+    [*] -> A;
+}
+`), {
+                deepHierarchyThreshold: 0.0,
+                largeCompositeThreshold: 2.0,
+            });
+            assert.deepEqual(diagnosticsByCode(report).get('W_DEEP_HIERARCHY')![0].refs, {
+                max_depth: 1,
+                deepest_path: 'Root.A',
+                actual: 1,
+                threshold: 0,
+            });
+            assert.deepEqual(diagnosticsByCode(report).get('W_LARGE_COMPOSITE')![0].refs, {
+                composite_path: 'Root',
+                n_children: 3,
+                actual: 3,
+                threshold: 2,
+            });
+        });
+
+        it('does not emit threshold diagnostics with defaults for a small model', async () => {
+            const report = inspectModel(await buildMachine(SIMPLE_DSL));
+            const codes = new Set(report.diagnostics.map(d => d.code));
+            assert.equal(codes.has('W_HIGH_VAR_TO_LEAF_RATIO'), false);
+            assert.equal(codes.has('W_LARGE_COMPOSITE'), false);
+            assert.equal(codes.has('W_DEEP_HIERARCHY'), false);
+        });
+
+        it('emits named action shadow diagnostics', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    enter Sync { }
+    state Child {
+        enter Sync { }
+    }
+    [*] -> Child;
+}
+`));
+            assert.deepEqual(
+                diagnosticsByCode(report).get('W_NAMED_ACTION_SHADOWS_ANCESTOR')![0].refs,
+                {
+                    function_name: 'Sync',
+                    inner_state_path: 'Root.Child',
+                    outer_state_path: 'Root',
+                },
+            );
+        });
+
+        it('emits literal type narrowing diagnostics for int initializers', async () => {
+            const report = inspectModel(await buildMachine(`
+def int truncated = 3.5;
+state Root {
+    state A;
+    [*] -> A;
+}
+`));
+            assert.deepEqual(
+                diagnosticsByCode(report).get('W_LITERAL_TYPE_NARROWING')![0].refs,
+                {
+                    var_name: 'truncated',
+                    target_type: 'int',
+                    source_expr: '3.5',
+                },
+            );
+        });
+
+        it('emits literal type narrowing diagnostics for int assignments', async () => {
+            const report = inspectModel(await buildMachine(`
+def int truncated = 0;
+state Root {
+    state A {
+        during { truncated = 2.25; }
+    }
+    [*] -> A;
+}
+`));
+            assert.deepEqual(
+                diagnosticsByCode(report).get('W_LITERAL_TYPE_NARROWING')![0].refs,
+                {
+                    var_name: 'truncated',
+                    target_type: 'int',
+                    source_expr: '2.25',
+                },
+            );
+        });
+
+        it('emits aspect diagnostics for aspects with no descendant leaves', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    pseudo state Marker;
+    [*] -> Marker;
+    >> during before { }
+}
+`));
+            assert.deepEqual(
+                diagnosticsByCode(report).get('W_ASPECT_NO_DESCENDANT_LEAF')![0].refs,
+                {
+                    composite_path: 'Root',
+                    aspect: 'before',
+                },
+            );
+        });
+
+        it('emits info for composite self re-entry transitions', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Active {
+        state Leaf;
+        [*] -> Leaf;
+    }
+    [*] -> Active;
+    Active -> Active;
+}
+`));
+            const diagnostic = diagnosticsByCode(report).get('I_TRANSITION_TO_SELF_VIA_PARENT')![0];
+            assert.equal(diagnostic.severity, 'info');
+            assert.deepEqual(diagnostic.refs, {
+                state_path: 'Root.Active',
+                crosses_composite: true,
+            });
+        });
+
+        it('emits info for eventless and guardless transitions', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B;
+}
+`));
+            const diagnostic = diagnosticsByCode(report).get('I_TRANSITION_NEVER_EVENT_TRIGGERED')![0];
+            assert.equal(diagnostic.severity, 'info');
+            assert.deepEqual(diagnostic.refs, {
+                from_path: 'Root.A',
+                to_path: 'Root.B',
+                transition_span: null,
+            });
+        });
+
+        it('emits info for eventless and guardless exit transitions', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state A;
+    [*] -> A;
+    A -> [*];
+}
+`));
+            const diagnostic = diagnosticsByCode(report).get('I_TRANSITION_NEVER_EVENT_TRIGGERED')![0];
+            assert.equal(diagnostic.severity, 'info');
+            assert.deepEqual(diagnostic.refs, {
+                from_path: 'Root.A',
+                to_path: '[*]',
+                transition_span: null,
+            });
         });
     });
 });

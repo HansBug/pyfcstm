@@ -660,16 +660,22 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.EntryTransitionDefinitionContext
         """
         super().exitEntryTransitionDefinition(ctx)
+        event_id = self.nodes[ctx.chain_id()] if ctx.chain_id() else None
         node = TransitionDefinition(
             from_state=INIT_STATE,
             to_state=ctx.to_state.text,
-            event_id=self.nodes[ctx.chain_id()] if ctx.chain_id() else None,
+            event_id=event_id,
             condition_expr=self.nodes[ctx.cond_expression()]
             if ctx.cond_expression()
             else None,
             post_operations=self.nodes[ctx.operational_statement_set()]
             if ctx.operational_statement_set()
             else [],
+            event_scope=(
+                'absolute' if event_id is not None and event_id.is_absolute
+                else 'chain' if event_id is not None
+                else None
+            ),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -687,8 +693,12 @@ class GrammarParseListener(GrammarListener):
         event_id = None
         if ctx.chain_id():
             event_id = self.nodes[ctx.chain_id()]
+            event_scope = 'absolute' if event_id.is_absolute else 'chain'
         elif ctx.from_id:
             event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
+            event_scope = 'local'
+        else:
+            event_scope = None
         node = TransitionDefinition(
             from_state=ctx.from_state.text,
             to_state=ctx.to_state.text,
@@ -699,6 +709,7 @@ class GrammarParseListener(GrammarListener):
             post_operations=self.nodes[ctx.operational_statement_set()]
             if ctx.operational_statement_set()
             else [],
+            event_scope=event_scope,
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -716,8 +727,12 @@ class GrammarParseListener(GrammarListener):
         event_id = None
         if ctx.chain_id():
             event_id = self.nodes[ctx.chain_id()]
+            event_scope = 'absolute' if event_id.is_absolute else 'chain'
         elif ctx.from_id:
             event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
+            event_scope = 'local'
+        else:
+            event_scope = None
         node = TransitionDefinition(
             from_state=ctx.from_state.text,
             to_state=EXIT_STATE,
@@ -728,6 +743,7 @@ class GrammarParseListener(GrammarListener):
             post_operations=self.nodes[ctx.operational_statement_set()]
             if ctx.operational_statement_set()
             else [],
+            event_scope=event_scope,
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1066,8 +1082,12 @@ class GrammarParseListener(GrammarListener):
         event_id = None
         if ctx.chain_id():
             event_id = self.nodes[ctx.chain_id()]
+            event_scope = 'absolute' if event_id.is_absolute else 'chain'
         elif ctx.from_id:
             event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
+            event_scope = 'local'
+        else:
+            event_scope = None
         node = ForceTransitionDefinition(
             from_state=ctx.from_state.text,
             to_state=ctx.to_state.text,
@@ -1075,6 +1095,7 @@ class GrammarParseListener(GrammarListener):
             condition_expr=self.nodes[ctx.cond_expression()]
             if ctx.cond_expression()
             else None,
+            event_scope=event_scope,
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1092,8 +1113,12 @@ class GrammarParseListener(GrammarListener):
         event_id = None
         if ctx.chain_id():
             event_id = self.nodes[ctx.chain_id()]
+            event_scope = 'absolute' if event_id.is_absolute else 'chain'
         elif ctx.from_id:
             event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
+            event_scope = 'local'
+        else:
+            event_scope = None
         node = ForceTransitionDefinition(
             from_state=ctx.from_state.text,
             to_state=EXIT_STATE,
@@ -1101,6 +1126,7 @@ class GrammarParseListener(GrammarListener):
             condition_expr=self.nodes[ctx.cond_expression()]
             if ctx.cond_expression()
             else None,
+            event_scope=event_scope,
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1122,6 +1148,11 @@ class GrammarParseListener(GrammarListener):
             condition_expr=self.nodes[ctx.cond_expression()]
             if ctx.cond_expression()
             else None,
+            event_scope=(
+                'absolute'
+                if ctx.chain_id() and self.nodes[ctx.chain_id()].is_absolute
+                else 'chain' if ctx.chain_id() else None
+            ),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1143,6 +1174,11 @@ class GrammarParseListener(GrammarListener):
             condition_expr=self.nodes[ctx.cond_expression()]
             if ctx.cond_expression()
             else None,
+            event_scope=(
+                'absolute'
+                if ctx.chain_id() and self.nodes[ctx.chain_id()].is_absolute
+                else 'chain' if ctx.chain_id() else None
+            ),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node

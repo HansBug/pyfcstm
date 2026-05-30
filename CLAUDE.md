@@ -13,6 +13,13 @@ Vibe coding is fine for quick exploration, but once you touch repository code yo
 - Every generated piece of code must be readable, explainable, testable, and revertible by a human.
 - Don't blindly accept AI output; review it the same way you would review a human teammate's commit.
 - Stick to the existing architecture, naming, tests, and tooling — don't start a parallel style of your own.
+- Name modules, functions, classes, tests, and docs for the concrete behavior or domain concept they implement, not
+  for temporary project-management labels such as PR slice IDs, roadmap phases, or plan bullets. A reader should be
+  able to understand what something does without knowing the execution plan that introduced it.
+- Keep Python and JavaScript unit tests strictly independent. Python tests may use fixtures and literals under `test/`,
+  but must not call Node.js, jsfcstm, or resources outside the Python test tree. jsfcstm tests may use fixtures and
+  literals under `editors/jsfcstm/test/`, but must not call Python code or the repository-level `test/` tree. Either
+  side's tests must keep running if the other side's implementation and test directories are removed.
 - After each change, run checks proportional to the risk; nothing that hasn't been verified may be claimed as done.
 - When requirements are unclear, an action is destructive, or you're near a security boundary, stop and surface assumptions and risks before proceeding.
 
@@ -1160,6 +1167,17 @@ For built-in template work, the current design bar is defined by the `python` te
 
 - Tests in `test/`; use `@pytest.mark.unittest`
 - Unit tests must not depend on local files ignored by version control (for example, gitignored files).
+- Unit test suites must be strictly self-contained within their owning test tree. Python tests may use fixtures,
+  helpers, and expected data under `test/`, and jsfcstm tests may use fixtures, helpers, and expected data under
+  `editors/jsfcstm/test/`; neither side may read from, execute, import from, or assume the presence of the other
+  side's test tree. A Python unit test must still run if `editors/jsfcstm/` is removed, and a jsfcstm unit test must
+  still run if `test/` is removed.
+- When both Python and jsfcstm need to cover the same behavior, duplicate the DSL text, expected diagnostics,
+  snapshots, or fixtures as checked-in literals/files inside each side's own test tree. Do not share unit-test
+  fixtures across those trees, do not shell out to the other runtime (for example Python tests invoking Node.js or
+  jsfcstm tests invoking Python), and do not rely on build artifacts from the other side.
+- Unit tests may import the production code under test and use production assets through the public runtime/build
+  entry points, but test-only data, helper scripts, and golden outputs must live in the corresponding test tree.
 - Shared test utilities and fixtures in `test/testings/`
 - Sample DSL files in `test/testfile/sample_codes/` (auto-generate tests via `make sample`)
 - Negative cases in `test/testfile/sample_neg_codes/`

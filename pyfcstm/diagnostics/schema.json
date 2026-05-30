@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/HansBug/pyfcstm/blob/main/pyfcstm/diagnostics/schema.json",
   "title": "ModelInspect",
-  "description": "Shared contract between pyfcstm and jsfcstm for inspect_model() output. PR-A baseline; PR-B/PR-C extend the diagnostics array.",
+  "description": "Shared contract between pyfcstm and jsfcstm for inspect_model() output, including structural data, derived graphs, and diagnostics.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -11,6 +11,8 @@
     "transitions",
     "variables",
     "events",
+    "actions",
+    "forced_transitions",
     "metrics",
     "reachability_graph",
     "event_emission_map",
@@ -39,6 +41,14 @@
     "events": {
       "type": "array",
       "items": { "$ref": "#/definitions/EventInfo" }
+    },
+    "actions": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/ActionInfo" }
+    },
+    "forced_transitions": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/ForcedTransitionInfo" }
     },
     "metrics": { "$ref": "#/definitions/ModelMetrics" },
     "reachability_graph": {
@@ -141,7 +151,8 @@
       "additionalProperties": false,
       "required": [
         "from_path", "to_path", "event", "event_scope",
-        "guard", "effect", "is_forced", "forced_origin"
+        "guard", "effect", "effect_self_assigns", "is_forced",
+        "forced_origin"
       ],
       "properties": {
         "from_path": { "type": "string" },
@@ -153,6 +164,10 @@
         },
         "guard": { "type": ["string", "null"] },
         "effect": { "type": ["string", "null"] },
+        "effect_self_assigns": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "is_forced": { "type": "boolean" },
         "forced_origin": { "type": ["string", "null"] }
       }
@@ -165,7 +180,7 @@
         "read_in_states", "written_in_states",
         "read_in_guards", "written_in_effects",
         "participates_directly", "participates_indirectly",
-        "abstract_actions_in_scope"
+        "abstract_actions_in_scope", "float_literal_assignments"
       ],
       "properties": {
         "name": { "type": "string" },
@@ -196,13 +211,17 @@
         "abstract_actions_in_scope": {
           "type": "array",
           "items": { "type": "string" }
+        },
+        "float_literal_assignments": {
+          "type": "array",
+          "items": { "type": "string" }
         }
       }
     },
     "EventInfo": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["qualified_name", "scope", "used_by"],
+      "required": ["qualified_name", "scope", "used_by", "is_declared", "is_used"],
       "properties": {
         "qualified_name": { "type": "string" },
         "scope": { "type": "string", "enum": ["local", "chain", "absolute"] },
@@ -214,7 +233,48 @@
             "minItems": 2,
             "maxItems": 2
           }
-        }
+        },
+        "is_declared": { "type": "boolean" },
+        "is_used": { "type": "boolean" }
+      }
+    },
+    "ActionInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "signature", "state_path", "name", "stage", "aspect",
+        "is_ref", "ref_target", "is_attached"
+      ],
+      "properties": {
+        "signature": { "type": "string" },
+        "state_path": { "type": "string" },
+        "name": { "type": ["string", "null"] },
+        "stage": { "type": "string" },
+        "aspect": { "type": ["string", "null"] },
+        "is_ref": { "type": "boolean" },
+        "ref_target": { "type": ["string", "null"] },
+        "is_attached": { "type": "boolean" }
+      }
+    },
+    "ForcedTransitionInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state_path", "from_path", "to_path", "event", "event_scope",
+        "guard", "original_raw", "expansion_count"
+      ],
+      "properties": {
+        "state_path": { "type": "string" },
+        "from_path": { "type": "string" },
+        "to_path": { "type": "string" },
+        "event": { "type": ["string", "null"] },
+        "event_scope": {
+          "type": ["string", "null"],
+          "enum": ["local", "chain", "absolute", null]
+        },
+        "guard": { "type": ["string", "null"] },
+        "original_raw": { "type": "string" },
+        "expansion_count": { "type": "integer", "minimum": 0 }
       }
     },
     "ModelMetrics": {

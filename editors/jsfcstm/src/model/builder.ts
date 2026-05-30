@@ -31,6 +31,7 @@ import type {
     RawFcstmModelState as FcstmModelState,
     RawFcstmModelStateMachine as FcstmRawStateMachine,
     RawFcstmModelTransition as FcstmModelTransition,
+    RawFcstmModelForcedTransition as FcstmModelForcedTransition,
     RawFcstmModelUFunc as FcstmModelUFunc,
     RawFcstmModelUnaryOp as FcstmModelUnaryOp,
     RawFcstmModelVarDefine as FcstmModelVarDefine,
@@ -44,6 +45,36 @@ const MATH_CONSTANTS: Record<string, number> = {
     tau: Math.PI * 2,
 };
 
+const EXPR_PRECEDENCE: Record<string, number> = {
+    'function_call': 90,
+    'unary+': 80,
+    'unary-': 80,
+    '!': 80,
+    'not': 80,
+    '**': 70,
+    '*': 60,
+    '/': 60,
+    '%': 60,
+    '+': 50,
+    '-': 50,
+    '<<': 40,
+    '>>': 40,
+    '&': 35,
+    '^': 30,
+    '|': 25,
+    '<': 20,
+    '>': 20,
+    '<=': 20,
+    '>=': 20,
+    '==': 20,
+    '!=': 20,
+    '&&': 15,
+    'and': 15,
+    '||': 10,
+    'or': 10,
+    '?:': 5,
+};
+
 interface InheritedForceTransition {
     fromStateName: 'ALL' | string;
     toState: 'EXIT_STATE' | string;
@@ -51,6 +82,7 @@ interface InheritedForceTransition {
     guard?: FcstmModelExpression;
     range: FcstmModelTransition['range'];
     text: string;
+    originalRaw: string;
     declaredInStatePath: string[];
     triggerScope?: 'local' | 'chain' | 'absolute';
     transitionKind: FcstmModelTransition['transitionKind'];
@@ -78,6 +110,34 @@ function parseNumberLiteral(raw: string): number {
     return Number(raw);
 }
 
+function canonicalBinaryOperator(op: string): string {
+    if (op === 'and') return '&&';
+    if (op === 'or') return '||';
+    return op;
+}
+
+function canonicalUnaryOperator(op: string): string {
+    return op === 'not' ? '!' : op;
+}
+
+function unaryPrecedenceKey(op: string): string {
+    const canonical = canonicalUnaryOperator(op);
+    return canonical === '+' || canonical === '-' ? `unary${canonical}` : canonical;
+}
+
+function expressionPrecedence(expression: FcstmModelExpression): number | null {
+    switch (expression.kind) {
+        case 'binaryOp':
+            return EXPR_PRECEDENCE[canonicalBinaryOperator(expression.op)] ?? null;
+        case 'conditionalOp':
+            return EXPR_PRECEDENCE['?:'];
+        case 'unaryOp':
+            return EXPR_PRECEDENCE[unaryPrecedenceKey(expression.op)] ?? null;
+        default:
+            return null;
+    }
+}
+
 function isSemanticDocument(
     source: FcstmAstDocument | FcstmSemanticDocument | null
 ): source is FcstmSemanticDocument {
@@ -91,6 +151,7 @@ class StateMachineModelBuilder {
     private readonly allStates: FcstmModelState[] = [];
     private readonly allEvents: FcstmModelEvent[] = [];
     private readonly allTransitions: FcstmModelTransition[] = [];
+    private readonly forcedTransitions: FcstmModelForcedTransition[] = [];
     private readonly allActions: FcstmModelNamedFunction[] = [];
     private readonly statesByPath = new Map<string, FcstmModelState>();
     private readonly stateAstByPath = new Map<string, FcstmAstStateDefinition>();
@@ -147,6 +208,8 @@ class StateMachineModelBuilder {
             all_events: this.allEvents,
             allTransitions: this.allTransitions,
             all_transitions: this.allTransitions,
+            forcedTransitions: this.forcedTransitions,
+            forced_transitions: this.forcedTransitions,
             allActions: this.allActions,
             all_actions: this.allActions,
             lookups,
@@ -360,10 +423,16 @@ class StateMachineModelBuilder {
         currentState: FcstmModelState,
         inheritedForceTransitions: InheritedForceTransition[]
     ): void {
+        const localForceTransitions = definition.forceTransitions.map(
+            force => this.buildForceTransition(force, currentState),
+        );
         const effectiveForceTransitions = [
             ...inheritedForceTransitions,
-            ...definition.forceTransitions.map(force => this.buildForceTransition(force, currentState)),
+            ...localForceTransitions,
         ];
+        for (const force of localForceTransitions) {
+            this.recordForcedTransition(force, currentState);
+        }
 
         for (const substateDefinition of definition.substates) {
             const nextState = currentState.substates[substateDefinition.name];
@@ -376,7 +445,7 @@ class StateMachineModelBuilder {
 
                 this.pushTransition({
                     range: force.range,
-                    text: force.text,
+                    text: force.originalRaw,
                     fromState: substateDefinition.name,
                     toState: force.toState,
                     event: force.event,
@@ -398,6 +467,7 @@ class StateMachineModelBuilder {
                     guard: force.guard,
                     range: force.range,
                     text: force.text,
+                    originalRaw: force.originalRaw,
                     declaredInStatePath: force.declaredInStatePath,
                     triggerScope: force.triggerScope,
                     transitionKind: 'exitAll',
@@ -440,6 +510,7 @@ class StateMachineModelBuilder {
         const event = transition.eventId
             ? this.resolveEventReference(currentState, transition.eventId, transition.trigger?.range || transition.range, triggerScope)
             : undefined;
+        const guard = transition.guard ? this.buildExpression(transition.guard) : undefined;
         return {
             fromStateName: transition.sourceKind === 'all'
                 ? 'ALL'
@@ -448,13 +519,136 @@ class StateMachineModelBuilder {
                 ? 'EXIT_STATE'
                 : (transition.targetStateName || 'EXIT_STATE'),
             event,
-            guard: transition.guard ? this.buildExpression(transition.guard) : undefined,
+            guard,
             range: transition.range,
             text: transition.text,
+            originalRaw: this.formatForcedTransitionDeclaration(transition, guard),
             declaredInStatePath: currentState.path,
             triggerScope,
             transitionKind: transition.transitionKind,
         };
+    }
+
+    private recordForcedTransition(
+        force: InheritedForceTransition,
+        currentState: FcstmModelState
+    ): void {
+        const expansionCount = force.fromStateName === 'ALL'
+            ? Object.keys(currentState.substates).length
+            : (currentState.substates[force.fromStateName] ? 1 : 0);
+        const fromPath = force.fromStateName === 'ALL'
+            ? '*'
+            : statePathName([...currentState.path, force.fromStateName]);
+        const toPath = force.toState === 'EXIT_STATE'
+            ? '[*]'
+            : statePathName([...currentState.path, force.toState]);
+        this.forcedTransitions.push({
+            statePath: [...currentState.path],
+            state_path: [...currentState.path],
+            fromPath,
+            from_path: fromPath,
+            toPath,
+            to_path: toPath,
+            event: force.event?.pathName,
+            event_scope: force.event ? force.triggerScope : undefined,
+            guard: force.guard ? this.formatExpression(force.guard) : undefined,
+            originalRaw: force.originalRaw,
+            original_raw: force.originalRaw,
+            expansionCount: expansionCount,
+            expansion_count: expansionCount,
+        });
+    }
+
+    private formatForcedTransitionDeclaration(
+        transition: FcstmAstForcedTransition,
+        guard?: FcstmModelExpression,
+    ): string {
+        const fromState = transition.sourceKind === 'all' ? '*' : (transition.sourceStateName ?? '*');
+        const toState = transition.targetKind === 'exit' ? '[*]' : (transition.targetStateName ?? '[*]');
+        const triggerText = this.formatForcedTransitionTrigger(transition, guard);
+        return `! ${fromState} -> ${toState}${triggerText};`;
+    }
+
+    private formatForcedTransitionTrigger(
+        transition: FcstmAstForcedTransition,
+        guard?: FcstmModelExpression,
+    ): string {
+        if (transition.eventId && !transition.eventId.isAbsolute) {
+            const path = transition.eventId.segments;
+            const isAllLocal = transition.sourceKind === 'all' && path.length === 1;
+            const isStateLocal = transition.sourceKind !== 'all'
+                && transition.sourceStateName !== undefined
+                && path.length === 2
+                && path[0] === transition.sourceStateName;
+            if (isAllLocal || isStateLocal) {
+                return ` :: ${path[path.length - 1]}`;
+            }
+        }
+        if (transition.trigger?.kind === 'localTrigger') {
+            return ` :: ${transition.trigger.eventName}`;
+        }
+        if (transition.trigger?.kind === 'chainTrigger') {
+            return ` : ${transition.trigger.eventPath.text}`;
+        }
+        if (guard) {
+            return ` : if [${this.formatExpression(guard)}]`;
+        }
+        return '';
+    }
+
+    private formatExpression(expression: FcstmModelExpression): string {
+        switch (expression.kind) {
+            case 'binaryOp': {
+                const op = canonicalBinaryOperator(expression.op);
+                const myPrecedence = expressionPrecedence(expression);
+                let left = this.formatExpression(expression.x);
+                const leftPrecedence = expressionPrecedence(expression.x);
+                if (myPrecedence !== null && leftPrecedence !== null && leftPrecedence < myPrecedence) {
+                    left = `(${left})`;
+                }
+                let right = this.formatExpression(expression.y);
+                const rightPrecedence = expressionPrecedence(expression.y);
+                if (myPrecedence !== null && rightPrecedence !== null && rightPrecedence <= myPrecedence) {
+                    right = `(${right})`;
+                }
+                return `${left} ${op} ${right}`;
+            }
+            case 'conditionalOp': {
+                const myPrecedence = expressionPrecedence(expression);
+                const condition = `(${this.formatExpression(expression.cond)})`;
+                let whenTrue = this.formatExpression(expression.ifTrue);
+                const truePrecedence = expressionPrecedence(expression.ifTrue);
+                if (myPrecedence !== null && truePrecedence !== null && truePrecedence <= myPrecedence) {
+                    whenTrue = `(${whenTrue})`;
+                }
+                let whenFalse = this.formatExpression(expression.ifFalse);
+                const falsePrecedence = expressionPrecedence(expression.ifFalse);
+                if (myPrecedence !== null && falsePrecedence !== null && falsePrecedence <= myPrecedence) {
+                    whenFalse = `(${whenFalse})`;
+                }
+                return `${condition} ? ${whenTrue} : ${whenFalse}`;
+            }
+            case 'unaryOp': {
+                const op = canonicalUnaryOperator(expression.op);
+                const myPrecedence = expressionPrecedence(expression);
+                let value = this.formatExpression(expression.x);
+                const valuePrecedence = expressionPrecedence(expression.x);
+                if (myPrecedence !== null && valuePrecedence !== null && valuePrecedence <= myPrecedence) {
+                    value = `(${value})`;
+                }
+                return `${op}${value}`;
+            }
+            case 'ufunc':
+                return `${expression.func}(${this.formatExpression(expression.x)})`;
+            case 'integer':
+                return expression.text.toLowerCase();
+            case 'float':
+                return expression.text;
+            case 'boolean':
+                return expression.value ? 'true' : 'false';
+            case 'variable':
+                return expression.name;
+        }
     }
 
     private getTriggerScope(

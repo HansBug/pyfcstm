@@ -61,5 +61,21 @@ describe('diagnostics resources (PR-A)', () => {
                 }
             }
         });
+
+        it('contains threshold, info, naming, and type diagnostic catalog entries', () => {
+            const registry = loadCodesRegistry();
+            for (const code of [
+                'W_NAMED_ACTION_SHADOWS_ANCESTOR',
+                'W_LITERAL_TYPE_NARROWING',
+                'W_ASPECT_NO_DESCENDANT_LEAF',
+                'W_HIGH_VAR_TO_LEAF_RATIO',
+                'W_DEEP_HIERARCHY',
+                'W_LARGE_COMPOSITE',
+                'I_TRANSITION_TO_SELF_VIA_PARENT',
+                'I_TRANSITION_NEVER_EVENT_TRIGGERED',
+            ]) {
+                assert.ok(registry[code], `${code} missing from bundled codes registry`);
+            }
+        });
     });
 });

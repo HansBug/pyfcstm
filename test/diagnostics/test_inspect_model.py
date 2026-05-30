@@ -1,12 +1,11 @@
 """
-Unit tests for :func:`pyfcstm.diagnostics.inspect_model` (Layer 2 PR-A).
+Unit tests for :func:`pyfcstm.diagnostics.inspect_model`.
 
 These tests pin down the structural contract returned by
-:func:`inspect_model` and verify the five derived view graphs
+:func:`inspect_model`, verify the five derived view graphs
 (reachability, event emission, variable data flow, aspect impact,
-action reference). PR-A populates everything except the
-``diagnostics`` array — which stays empty until PR-B / PR-C add the
-W_* / I_* rules.
+action reference), and cover design-health diagnostics derived from
+that inspect surface.
 """
 
 import json
@@ -15,7 +14,12 @@ import os
 import pytest
 
 from pyfcstm.diagnostics import (
+    ActionInfo,
+    DEFAULT_DEEP_HIERARCHY_THRESHOLD,
+    DEFAULT_LARGE_COMPOSITE_THRESHOLD,
+    DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD,
     EventInfo,
+    ForcedTransitionInfo,
     ModelInspect,
     ModelMetrics,
     StateInfo,
@@ -25,6 +29,8 @@ from pyfcstm.diagnostics import (
 )
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
+
+from ._schema_check import assert_all_diags_match_schema
 
 
 def _parse(src):
@@ -136,6 +142,8 @@ class TestInspectModelBasic:
         pause = events_by_name['Root.Active.Pause']
         assert pause.scope == 'local'
         assert ('Root.Active', 'Root.Idle') in pause.used_by
+        assert pause.is_declared is False
+        assert pause.is_used is True
 
     def test_metrics(self, report):
         m = report.metrics
@@ -148,6 +156,11 @@ class TestInspectModelBasic:
         assert m.n_variables == 2
         assert m.var_to_leaf_ratio == 1.0
         assert m.max_hierarchy_depth == 1
+
+    def test_default_threshold_constants(self):
+        assert DEFAULT_DEEP_HIERARCHY_THRESHOLD == 6
+        assert DEFAULT_LARGE_COMPOSITE_THRESHOLD == 12
+        assert DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD == 2.0
 
 
 @pytest.mark.unittest
@@ -243,6 +256,8 @@ class TestInspectModelToJson:
             'transitions',
             'variables',
             'events',
+            'actions',
+            'forced_transitions',
             'metrics',
             'reachability_graph',
             'event_emission_map',
@@ -259,8 +274,7 @@ class TestInspectModelToJson:
             assert isinstance(state['entry_actions'], list)
         assert isinstance(payload['variables'][0]['read_in_states'], list)
 
-    def test_to_json_diagnostics_empty_for_pr_a(self, report):
-        # PR-A keeps the diagnostics field empty until PR-B / PR-C land.
+    def test_to_json_diagnostics_empty_for_clean_model(self, report):
         assert report.to_json()['diagnostics'] == []
 
 
@@ -380,14 +394,220 @@ state Root {
 
     def test_forced_transition_expansion_visible(self, report):
         # The forced ``!Running -> Error :: Panic;`` is expanded by the
-        # model layer into regular transitions. PR-A surfaces them in
-        # the transition list; the ``is_forced`` flag itself depends
-        # on the model layer preserving the forced-origin (TBD PR-B).
+        # model layer into regular transitions. Inspect exposes them in
+        # the transition list and marks their forced origin.
         panic_transitions = [
             t for t in report.transitions
             if t.event and 'Panic' in t.event
         ]
         assert len(panic_transitions) >= 1
+        assert all(t.is_forced for t in panic_transitions)
+        assert all(t.forced_origin for t in panic_transitions)
+
+    def test_forced_transition_origin_matches_declaration(self):
+        dsl = """
+        state Root {
+            state Idle;
+            state Active;
+            state Error;
+            [*] -> Idle;
+            !Idle -> Error :: Fail;
+            !Active -> Error :: Stop;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        origins_by_event = {
+            t.event: t.forced_origin
+            for t in report.transitions
+            if t.is_forced
+        }
+        assert origins_by_event == {
+            'Root.Idle.Fail': '! Idle -> Error :: Fail;',
+            'Root.Active.Stop': '! Active -> Error :: Stop;',
+        }
+
+    def test_forced_transition_origin_keeps_guard_and_chain_path(self):
+        dsl = """
+        def int counter = 0;
+        state Root {
+            state Idle;
+            state Error;
+            state Bus { event Fail; }
+            [*] -> Idle;
+            !Idle -> [*] : if [counter > 0];
+            !Error -> Idle : Bus.Fail;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        declarations = {
+            item.from_path: item.original_raw
+            for item in report.forced_transitions
+        }
+        assert declarations['Root.Idle'] == (
+            '! Idle -> [*] : if [counter > 0];'
+        )
+        assert declarations['Root.Error'] == '! Error -> Idle : Bus.Fail;'
+        origins = {
+            (t.from_path, t.to_path): t.forced_origin
+            for t in report.transitions
+            if t.is_forced
+        }
+        assert origins[('Root.Idle', '[*]')] == (
+            '! Idle -> [*] : if [counter > 0];'
+        )
+        assert origins[('Root.Error', 'Root.Idle')] == (
+            '! Error -> Idle : Bus.Fail;'
+        )
+
+    def test_forced_transition_origin_keeps_grouped_guard(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            !A -> B : if [(x + 1) * 2 > 0];
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        declaration = next(
+            item for item in report.forced_transitions
+            if item.from_path == 'Root.A'
+        )
+        assert declaration.original_raw == (
+            '! A -> B : if [(x + 1) * 2 > 0];'
+        )
+        transition = next(t for t in report.transitions if t.is_forced)
+        assert transition.forced_origin == (
+            '! A -> B : if [(x + 1) * 2 > 0];'
+        )
+
+    def test_forced_transition_declaration_guard_uses_dsl_text_normal_form(self):
+        dsl = """
+        def int x = 0;
+        def int y = 1;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            !A -> B : if [x == 0x0F and not (y == 0)];
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        declaration = next(
+            item for item in report.forced_transitions
+            if item.from_path == 'Root.A'
+        )
+        assert declaration.guard == 'x == 0x0f && !(y == 0)'
+        assert declaration.original_raw == (
+            '! A -> B : if [x == 0x0f && !(y == 0)];'
+        )
+
+    def test_inherited_forced_transition_origin_stays_original(self):
+        dsl = """
+        state Root {
+            state Running {
+                state A;
+                state B;
+                [*] -> A;
+            }
+            state Error;
+            [*] -> Running;
+            !Running -> Error :: Panic;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        origins = {
+            t.from_path: t.forced_origin
+            for t in report.transitions
+            if t.is_forced
+        }
+        assert origins['Root.Running'] == '! Running -> Error :: Panic;'
+        assert origins['Root.Running.A'] == '! Running -> Error :: Panic;'
+        assert origins['Root.Running.B'] == '! Running -> Error :: Panic;'
+
+    def test_actions_and_forced_declarations_visible(self, report):
+        assert all(isinstance(item, ActionInfo) for item in report.actions)
+        assert any(item.name == 'Restart' for item in report.actions)
+        assert all(
+            isinstance(item, ForcedTransitionInfo)
+            for item in report.forced_transitions
+        )
+        assert any(
+            item.original_raw == '! Running -> Error :: Panic;'
+            for item in report.forced_transitions
+        )
+
+    def test_forced_local_event_keeps_scope(self):
+        dsl = """
+        state Root {
+            state Idle;
+            state Error;
+            [*] -> Idle;
+            !Idle -> Error :: Panic;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        events_by_name = {e.qualified_name: e for e in report.events}
+        assert events_by_name['Root.Idle.Panic'].scope == 'local'
+
+    def test_shadowed_event_ignores_unrelated_sibling_scope(self):
+        dsl = """
+        state Root {
+            state A {
+                state A1;
+                state A2;
+                [*] -> A1;
+                A1 -> A2 :: Tick;
+            }
+            state B {
+                state B1;
+                state B2;
+                [*] -> B1;
+                B1 -> B2 : Tick;
+            }
+            [*] -> A;
+            A -> B :: Go;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert [
+            d for d in report.diagnostics
+            if d.code == 'W_SHADOWED_EVENT'
+        ] == []
+
+    def test_dead_named_action_ignores_unreachable_refs(self):
+        dsl = """
+        state Root {
+            state Idle;
+            state Orphan { enter Target {} }
+            state Other { enter ref /Orphan.Target; }
+            [*] -> Idle;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert [
+            d.refs for d in report.diagnostics
+            if d.code == 'W_DEAD_NAMED_ACTION'
+        ] == [{'function_name': 'Target', 'defined_in': 'Root.Orphan'}]
+
+    def test_nested_chain_event_keeps_chain_scope(self):
+        dsl = """
+        state Root {
+            state Bus {
+                event Stop;
+            }
+            state Idle;
+            state Done;
+            [*] -> Idle;
+            Idle -> Done : Bus.Stop;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        events_by_name = {e.qualified_name: e for e in report.events}
+        assert events_by_name['Root.Bus.Stop'].scope == 'chain'
+        transition = next(t for t in report.transitions if t.event == 'Root.Bus.Stop')
+        assert transition.event_scope == 'chain'
 
     def test_function_call_in_expression(self, report):
         running = next(s for s in report.states if s.path == 'Root.System.Running')
@@ -618,6 +838,64 @@ class TestInspectModelExtendedCoverage:
         # Detailed label check is brittle — focus on coverage.
         assert report.aspect_impact_map is not None
 
+    def test_design_health_declared_unused_event_and_warnings(self):
+        dsl = """
+        state Root {
+            event Unused;
+            event Used;
+            state Idle;
+            state Active;
+            state Blocked;
+            state Orphan;
+            [*] -> Idle;
+            Idle -> Active : Used;
+            Active -> Blocked : if [false];
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        events_by_name = {e.qualified_name: e for e in report.events}
+        assert set(events_by_name) == {'Root.Unused', 'Root.Used'}
+
+        unused = events_by_name['Root.Unused']
+        assert unused.scope == 'chain'
+        assert unused.used_by == tuple()
+        assert unused.is_declared is True
+        assert unused.is_used is False
+
+        used = events_by_name['Root.Used']
+        assert used.scope == 'chain'
+        assert used.used_by == (('Root.Idle', 'Root.Active'),)
+        assert used.is_declared is True
+        assert used.is_used is True
+        assert report.event_emission_map == {'Root.Used': ('Root.Idle',)}
+
+        diagnostics = list(report.diagnostics)
+        codes = [d.code for d in diagnostics]
+        assert codes.count('W_UNUSED_EVENT') == 1
+        assert codes.count('W_GUARD_CONST_FALSE') == 1
+        assert codes.count('W_UNREACHABLE_STATE') == 1
+
+        unused_diag = next(d for d in diagnostics if d.code == 'W_UNUSED_EVENT')
+        assert unused_diag.refs == {
+            'event_qualified_name': 'Root.Unused',
+            'scope': 'chain',
+        }
+        const_false = next(d for d in diagnostics if d.code == 'W_GUARD_CONST_FALSE')
+        assert const_false.refs['folded_value'] is False
+        assert const_false.refs['transition_span'] is None
+        unreachable = next(d for d in diagnostics if d.code == 'W_UNREACHABLE_STATE')
+        assert unreachable.refs == {'state_path': 'Root.Orphan'}
+
+        from ._schema_check import assert_all_diags_match_schema
+        assert_all_diags_match_schema(diagnostics, context='design-health-inspect')
+
+        payload = report.to_json()
+        unused_payload = next(
+            e for e in payload['events'] if e['qualified_name'] == 'Root.Unused'
+        )
+        assert unused_payload['is_declared'] is True
+        assert unused_payload['is_used'] is False
+
     def test_function_signature_for_ref_actions(self):
         # ``_function_signature`` has an ``is_ref`` branch that exposes
         # the ref target's name when present. Hit it via DSL that uses
@@ -656,3 +934,314 @@ class TestInspectModelExtendedCoverage:
         report = inspect_model(_parse(dsl))
         exits = [t for t in report.transitions if t.to_path == '[*]']
         assert len(exits) >= 1, f'expected exit transition, got {report.transitions}'
+
+
+@pytest.mark.unittest
+class TestInspectModelRedundancySemantics:
+    def test_transition_effect_differentiates_redundancy_key(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B effect { x = 1; };
+            A -> B effect { x = 2; };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        effects = [
+            t.effect for t in report.transitions
+            if t.from_path == 'Root.A' and t.to_path == 'Root.B'
+        ]
+        assert effects == ['x = 1;', 'x = 2;']
+        assert [
+            d for d in report.diagnostics
+            if d.code == 'W_REDUNDANT_TRANSITION'
+        ] == []
+
+    def test_self_transition_with_lifecycle_action_is_not_noop(self):
+        dsl = """
+        def int counter = 0;
+        state Root {
+            state Active {
+                enter { counter = counter + 1; }
+            }
+            [*] -> Active;
+            Active -> Active;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert [
+            d for d in report.diagnostics
+            if d.code == 'W_SELF_TRANSITION_NOP'
+        ] == []
+
+    def test_self_transition_with_ancestor_aspect_is_not_noop(self):
+        dsl = """
+        def int counter = 0;
+        state Root {
+            >> during before { counter = counter + 1; }
+            state Active;
+            [*] -> Active;
+            Active -> Active;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert [
+            d for d in report.diagnostics
+            if d.code == 'W_SELF_TRANSITION_NOP'
+        ] == []
+
+    def test_nested_effect_self_assignment_reports_diagnostic(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B effect {
+                if [x > 0] {
+                    x = x;
+                }
+            };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert [
+            d.refs for d in report.diagnostics
+            if d.code == 'W_EFFECT_SELF_ASSIGN'
+        ] == [{
+            'state_path': 'Root.A',
+            'transition_span': None,
+            'var_name': 'x',
+        }]
+
+
+@pytest.mark.unittest
+class TestInspectModelThresholdNamingTypeDiagnostics:
+    """Threshold, info observation, naming, and type diagnostics."""
+
+    @staticmethod
+    def _diagnostics_by_code(dsl, **inspect_kwargs):
+        report = inspect_model(_parse(dsl), **inspect_kwargs)
+        assert_all_diags_match_schema(report.diagnostics, context='threshold-naming-type-inspect')
+        out = {}
+        for diag in report.diagnostics:
+            out.setdefault(diag.code, []).append(diag)
+        return out
+
+    def test_custom_thresholds_emit_with_actual_and_threshold_refs(self):
+        dsl = """
+        def int a = 0;
+        def int b = 0;
+        def int c = 0;
+        state Root {
+            state A;
+            state B;
+            state C;
+            [*] -> A;
+            A -> B :: Next;
+            B -> C :: Next;
+            C -> A :: Next;
+        }
+        """
+        by_code = self._diagnostics_by_code(
+            dsl,
+            var_to_leaf_ratio_threshold=0.5,
+            large_composite_threshold=2,
+            deep_hierarchy_threshold=0,
+        )
+
+        high_ratio = by_code['W_HIGH_VAR_TO_LEAF_RATIO'][0]
+        assert high_ratio.refs == {
+            'n_vars': 3,
+            'n_leaf_states': 3,
+            'actual': 1.0,
+            'threshold': 0.5,
+        }
+
+        large = by_code['W_LARGE_COMPOSITE'][0]
+        assert large.refs == {
+            'composite_path': 'Root',
+            'n_children': 3,
+            'actual': 3,
+            'threshold': 2,
+        }
+
+        deep = by_code['W_DEEP_HIERARCHY'][0]
+        assert deep.refs == {
+            'max_depth': 1,
+            'deepest_path': 'Root.A',
+            'actual': 1,
+            'threshold': 0,
+        }
+
+    def test_var_to_leaf_ratio_uses_one_as_minimum_denominator(self):
+        dsl = """
+        def int a = 0;
+        def int b = 0;
+        def int c = 0;
+        state Root {
+            pseudo state Marker;
+            [*] -> Marker;
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl, var_to_leaf_ratio_threshold=2.0)
+        high_ratio = by_code['W_HIGH_VAR_TO_LEAF_RATIO'][0]
+        assert high_ratio.refs == {
+            'n_vars': 3,
+            'n_leaf_states': 0,
+            'actual': 3.0,
+            'threshold': 2.0,
+        }
+
+    def test_integer_threshold_options_reject_fractional_values(self):
+        dsl = """
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """
+        with pytest.raises(ValueError, match='deep_hierarchy_threshold'):
+            inspect_model(_parse(dsl), deep_hierarchy_threshold=0.5)
+        with pytest.raises(ValueError, match='large_composite_threshold'):
+            inspect_model(_parse(dsl), large_composite_threshold=2.5)
+
+    def test_ratio_threshold_option_rejects_non_finite_values(self):
+        dsl = """
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """
+        with pytest.raises(TypeError, match='var_to_leaf_ratio_threshold'):
+            inspect_model(_parse(dsl), var_to_leaf_ratio_threshold=True)
+        with pytest.raises(ValueError, match='var_to_leaf_ratio_threshold'):
+            inspect_model(_parse(dsl), var_to_leaf_ratio_threshold=float('nan'))
+
+    def test_integer_threshold_options_accept_integer_valued_float(self):
+        dsl = """
+        state Root {
+            state A;
+            state B;
+            state C;
+            [*] -> A;
+        }
+        """
+        report = inspect_model(
+            _parse(dsl),
+            deep_hierarchy_threshold=0.0,
+            large_composite_threshold=2.0,
+        )
+        assert_all_diags_match_schema(report.diagnostics, context='integer-float-thresholds')
+        by_code = {}
+        for diag in report.diagnostics:
+            by_code.setdefault(diag.code, []).append(diag)
+        assert by_code['W_DEEP_HIERARCHY'][0].refs['threshold'] == 0
+        assert by_code['W_LARGE_COMPOSITE'][0].refs['threshold'] == 2
+
+    def test_default_thresholds_do_not_emit_for_simple_model(self):
+        diagnostics = inspect_model(_parse(SIMPLE_DSL)).diagnostics
+        codes = {diag.code for diag in diagnostics}
+        assert 'W_HIGH_VAR_TO_LEAF_RATIO' not in codes
+        assert 'W_LARGE_COMPOSITE' not in codes
+        assert 'W_DEEP_HIERARCHY' not in codes
+
+    def test_named_action_shadows_ancestor(self):
+        dsl = """
+        state Root {
+            enter Sync { }
+            state Child {
+                enter Sync { }
+            }
+            [*] -> Child;
+        }
+        """
+        diag = self._diagnostics_by_code(dsl)['W_NAMED_ACTION_SHADOWS_ANCESTOR'][0]
+        assert diag.refs == {
+            'function_name': 'Sync',
+            'inner_state_path': 'Root.Child',
+            'outer_state_path': 'Root',
+        }
+
+    def test_literal_type_narrowing_for_int_initializer(self):
+        dsl = """
+        def int truncated = 3.5;
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """
+        diag = self._diagnostics_by_code(dsl)['W_LITERAL_TYPE_NARROWING'][0]
+        assert diag.refs == {
+            'var_name': 'truncated',
+            'target_type': 'int',
+            'source_expr': '3.5',
+        }
+
+    def test_literal_type_narrowing_for_int_assignment(self):
+        dsl = """
+        def int truncated = 0;
+        state Root {
+            state A {
+                during { truncated = 2.25; }
+            }
+            [*] -> A;
+        }
+        """
+        diag = self._diagnostics_by_code(dsl)['W_LITERAL_TYPE_NARROWING'][0]
+        assert diag.refs == {
+            'var_name': 'truncated',
+            'target_type': 'int',
+            'source_expr': '2.25',
+        }
+
+    def test_aspect_no_descendant_leaf(self):
+        dsl = """
+        state Root {
+            pseudo state Marker;
+            [*] -> Marker;
+            >> during before { }
+        }
+        """
+        diag = self._diagnostics_by_code(dsl)['W_ASPECT_NO_DESCENDANT_LEAF'][0]
+        assert diag.refs == {
+            'composite_path': 'Root',
+            'aspect': 'before',
+        }
+
+    def test_transition_to_self_via_parent_info(self):
+        dsl = """
+        state Root {
+            state Active {
+                state Leaf;
+                [*] -> Leaf;
+            }
+            [*] -> Active;
+            Active -> Active;
+        }
+        """
+        diag = self._diagnostics_by_code(dsl)['I_TRANSITION_TO_SELF_VIA_PARENT'][0]
+        assert diag.severity == 'info'
+        assert diag.refs == {
+            'state_path': 'Root.Active',
+            'crosses_composite': True,
+        }
+
+    def test_transition_never_event_triggered_info(self):
+        dsl = """
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B;
+        }
+        """
+        diag = self._diagnostics_by_code(dsl)['I_TRANSITION_NEVER_EVENT_TRIGGERED'][0]
+        assert diag.severity == 'info'
+        assert diag.refs == {
+            'from_path': 'Root.A',
+            'to_path': 'Root.B',
+            'transition_span': None,
+        }

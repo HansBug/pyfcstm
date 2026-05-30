@@ -950,6 +950,65 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
         [],
     ),
     (
+        'design-health-composite-exit-action-ignores-descendant-prior-read',
+        '\n'.join([
+            'def int status = 0;',
+            'state Root {',
+            '    state Parent {',
+            '        exit { status = 1; }',
+            '        state Child;',
+            '        state Other;',
+            '        [*] -> Child;',
+            '        Child -> Other : if [status == 0];',
+            '        Other -> Child :: Continue;',
+            '    }',
+            '    state Done;',
+            '    [*] -> Parent;',
+            '    Parent -> Done :: Stop;',
+            '    Done -> [*] :: Close;',
+            '}',
+        ]),
+        [
+            {
+                'code': 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'status',
+                    'write_locations': ['Root.Parent'],
+                },
+            },
+        ],
+    ),
+    (
+        'design-health-exit-effect-ignores-exited-descendant-prior-read',
+        '\n'.join([
+            'def int status = 0;',
+            'state Root {',
+            '    state Parent {',
+            '        state Child {',
+            '            during { status = status + 1; }',
+            '        }',
+            '        [*] -> Child;',
+            '        Child -> [*] :: Finish effect { status = 1; };',
+            '    }',
+            '    state Done;',
+            '    [*] -> Parent;',
+            '    Parent -> Done :: Close;',
+            '    Done -> [*] :: Finish;',
+            '}',
+        ]),
+        [
+            {
+                'code': 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'status',
+                    'write_locations': ['Root.Parent.Child->[*]'],
+                },
+            },
+        ],
+    ),
+    (
         'design-health-parallel-guard-occurrences',
         '\n'.join([
             'def int a = 0;',

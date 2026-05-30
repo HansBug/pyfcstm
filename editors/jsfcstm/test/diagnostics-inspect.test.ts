@@ -1432,6 +1432,30 @@ state Root {
             });
         });
 
+        it('does not clear composite exit-action final writes with descendant prior reads', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+state Root {
+    state Parent {
+        exit { status = 1; }
+        state Child;
+        state Other;
+        [*] -> Child;
+        Child -> Other : if [status == 0];
+        Other -> Child :: Continue;
+    }
+    state Done;
+    [*] -> Parent;
+    Parent -> Done :: Stop;
+    Done -> [*] :: Close;
+}
+`));
+            assert.deepEqual(diagnosticsByCode(report).get('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE')![0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Parent'],
+            });
+        });
+
         it('keeps exit-action writes live when target state reads them', async () => {
             const report = inspectModel(await buildMachine(`
 def int status = 0;
@@ -1514,6 +1538,29 @@ state Root {
             });
         });
 
+        it('does not clear exit-effect final writes with exited descendant prior reads', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+state Root {
+    state Parent {
+        state Child {
+            during { status = status + 1; }
+        }
+        [*] -> Child;
+        Child -> [*] :: Finish effect { status = 1; };
+    }
+    state Done;
+    [*] -> Parent;
+    Parent -> Done :: Close;
+    Done -> [*] :: Finish;
+}
+`));
+            assert.deepEqual(diagnosticsByCode(report).get('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE')![0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Parent.Child->[*]'],
+            });
+        });
+
         it('treats exit effect from an unknown parent as final write', () => {
             const diagnostics = collectDataFlowWarnings(
                 [{
@@ -1535,6 +1582,59 @@ state Root {
             assert.deepEqual(diagnostics[0].refs, {
                 var_name: 'status',
                 write_locations: ['Root.Idle->[*]'],
+            });
+        });
+
+        it('keeps exit-effect writes live through fallback parent reads without state inventory', () => {
+            const diagnostics = collectDataFlowWarnings(
+                [{
+                    name: 'status',
+                    type: 'int',
+                    init_value: '0',
+                    read_in_states: ['Root.Parent'],
+                    written_in_states: [],
+                    read_in_guards: [],
+                    written_in_effects: [['Root.Parent.Child', '[*]']],
+                    participates_directly: true,
+                    participates_indirectly: false,
+                    abstract_actions_in_scope: [],
+                    float_literal_assignments: [],
+                }],
+                {'Root.Parent': []},
+                [
+                    {path: 'Root.Parent.Child', parent_path: 'Root.Parent'},
+                ] as Parameters<typeof collectDataFlowWarnings>[2],
+                'Root',
+            );
+
+            assert.equal(diagnostics.some(d => d.code === 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
+
+        it('ignores fallback descendant prior reads after exit-effect writes', () => {
+            const diagnostics = collectDataFlowWarnings(
+                [{
+                    name: 'status',
+                    type: 'int',
+                    init_value: '0',
+                    read_in_states: ['Root.Parent.Child'],
+                    written_in_states: [],
+                    read_in_guards: [],
+                    written_in_effects: [['Root.Parent.Child', '[*]']],
+                    participates_directly: true,
+                    participates_indirectly: false,
+                    abstract_actions_in_scope: [],
+                    float_literal_assignments: [],
+                }],
+                {'Root.Parent': ['Root.Parent.Child']},
+                [
+                    {path: 'Root.Parent.Child', parent_path: 'Root.Parent'},
+                ] as Parameters<typeof collectDataFlowWarnings>[2],
+                'Root',
+            );
+
+            assert.deepEqual(diagnostics[0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Parent.Child->[*]'],
             });
         });
 
@@ -1590,6 +1690,46 @@ state Root {
                 var_name: 'status',
                 write_locations: ['Root.Active'],
             });
+        });
+
+        it('keeps exit-action writes live when transition inventory reaches parent later read', () => {
+            const diagnostics = collectDataFlowWarnings(
+                [{
+                    name: 'status',
+                    type: 'int',
+                    init_value: '0',
+                    read_in_states: ['Root.Done'],
+                    written_in_states: ['Root.Parent.Child'],
+                    read_in_guards: [],
+                    written_in_effects: [],
+                    read_in_action_stages: [['Root.Done', 'enter']],
+                    written_in_action_stages: [['Root.Parent.Child', 'exit']],
+                    read_in_guard_occurrences: [],
+                    written_in_effect_occurrences: [],
+                    participates_directly: true,
+                    participates_indirectly: false,
+                    abstract_actions_in_scope: [],
+                    float_literal_assignments: [],
+                }],
+                {
+                    'Root.Parent.Child': [],
+                    'Root.Parent': ['Root.Done', 'Root.Parent.Child'],
+                    'Root.Done': [],
+                },
+                [
+                    {path: 'Root', parent_path: null},
+                    {path: 'Root.Parent', parent_path: 'Root'},
+                    {path: 'Root.Parent.Child', parent_path: 'Root.Parent'},
+                    {path: 'Root.Done', parent_path: 'Root'},
+                ] as Parameters<typeof collectDataFlowWarnings>[2],
+                'Root',
+                [
+                    {from_path: 'Root.Parent.Child', to_path: '[*]'},
+                    {from_path: 'Root.Parent', to_path: 'Root.Done'},
+                ] as Parameters<typeof collectDataFlowWarnings>[4],
+            );
+
+            assert.equal(diagnostics.some(d => d.code === 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
         });
 
         it('keeps variable warning codes mutually exclusive', async () => {

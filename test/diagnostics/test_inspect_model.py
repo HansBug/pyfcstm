@@ -27,6 +27,7 @@ from pyfcstm.diagnostics import (
     VariableInfo,
     inspect_model,
 )
+from pyfcstm.diagnostics.analyzers.data_flow import collect_data_flow_warnings
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 
@@ -1551,6 +1552,52 @@ class TestInspectModelDataFlowClosureDiagnostics:
         by_code = self._diagnostics_by_code(dsl)
         assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
 
+    def test_composite_exit_action_is_not_cleared_by_descendant_prior_guard_read(self):
+        dsl = """
+        def int status = 0;
+        state Root {
+            state Parent {
+                exit { status = 1; }
+                state Child;
+                state Other;
+                [*] -> Child;
+                Child -> Other : if [status == 0];
+            }
+            state Done;
+            [*] -> Parent;
+            Parent -> Done;
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        diag = by_code['W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'][0]
+        assert diag.refs == {
+            'var_name': 'status',
+            'write_locations': ['Root.Parent'],
+        }
+
+    def test_exit_effect_is_not_cleared_by_exited_descendant_prior_read(self):
+        dsl = """
+        def int status = 0;
+        state Root {
+            state Parent {
+                state Child {
+                    during { status = status + 1; }
+                }
+                [*] -> Child;
+                Child -> [*] effect { status = 1; };
+            }
+            state Done;
+            [*] -> Parent;
+            Parent -> Done;
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        diag = by_code['W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'][0]
+        assert diag.refs == {
+            'var_name': 'status',
+            'write_locations': ['Root.Parent.Child->[*]'],
+        }
+
     def test_root_exit_effect_write_is_final(self):
         dsl = """
         def int status = 0;
@@ -1565,6 +1612,87 @@ class TestInspectModelDataFlowClosureDiagnostics:
         assert diag.refs == {
             'var_name': 'status',
             'write_locations': ['Root.Idle->[*]'],
+        }
+
+    def test_exit_effect_fallback_keeps_parent_read_live(self):
+        variable = VariableInfo(
+            name='status',
+            type='int',
+            init_value='0',
+            read_in_states=(),
+            written_in_states=(),
+            read_in_guards=(('Root.Parent', 'Root.Done'),),
+            written_in_effects=(('Root.Parent.Child', '[*]'),),
+            participates_directly=True,
+            participates_indirectly=False,
+            abstract_actions_in_scope=(),
+        )
+        diagnostics = collect_data_flow_warnings(
+            [variable],
+            {'Root.Parent': ()},
+            states=[
+                StateInfo(
+                    path='Root.Parent.Child',
+                    name='Child',
+                    parent_path='Root.Parent',
+                    is_leaf=True,
+                    is_pseudo=False,
+                    is_composite=False,
+                    substates=(),
+                    initial_targets=(),
+                    entry_actions=(),
+                    during_actions=(),
+                    exit_actions=(),
+                    aspect_before=(),
+                    aspect_after=(),
+                    has_abstract_action=False,
+                ),
+            ],
+            root_state_path='Root',
+        )
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in {
+            diag.code for diag in diagnostics
+        }
+
+    def test_exit_effect_fallback_ignores_descendant_prior_read(self):
+        variable = VariableInfo(
+            name='status',
+            type='int',
+            init_value='0',
+            read_in_states=('Root.Parent.Child',),
+            written_in_states=(),
+            read_in_guards=(),
+            written_in_effects=(('Root.Parent.Child', '[*]'),),
+            participates_directly=True,
+            participates_indirectly=False,
+            abstract_actions_in_scope=(),
+        )
+        diagnostics = collect_data_flow_warnings(
+            [variable],
+            {'Root.Parent': ('Root.Parent.Child',)},
+            states=[
+                StateInfo(
+                    path='Root.Parent.Child',
+                    name='Child',
+                    parent_path='Root.Parent',
+                    is_leaf=True,
+                    is_pseudo=False,
+                    is_composite=False,
+                    substates=(),
+                    initial_targets=(),
+                    entry_actions=(),
+                    during_actions=(),
+                    exit_actions=(),
+                    aspect_before=(),
+                    aspect_after=(),
+                    has_abstract_action=False,
+                ),
+            ],
+            root_state_path='Root',
+        )
+        assert diagnostics[0].refs == {
+            'var_name': 'status',
+            'write_locations': ['Root.Parent.Child->[*]'],
         }
 
     def test_variable_warning_codes_are_mutually_exclusive(self):

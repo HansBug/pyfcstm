@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import {collectDataFlowWarnings} from '../src/diagnostics/analyzers/data-flow';
 import {createDocument, packageModule} from './support';
 
 const {
@@ -1451,6 +1452,30 @@ state Root {
 }
 `));
             assert.deepEqual(diagnosticsByCode(report).get('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE')![0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Idle->[*]'],
+            });
+        });
+
+        it('treats exit effect from an unknown parent as final write', () => {
+            const diagnostics = collectDataFlowWarnings(
+                [{
+                    name: 'status',
+                    type: 'int',
+                    init_value: '0',
+                    read_in_states: ['Root.Done'],
+                    written_in_states: [],
+                    read_in_guards: [],
+                    written_in_effects: [['Root.Idle', '[*]']],
+                    participates_directly: true,
+                    participates_indirectly: false,
+                    abstract_actions_in_scope: [],
+                    float_literal_assignments: [],
+                }],
+                {'Root.Done': []},
+            );
+
+            assert.deepEqual(diagnostics[0].refs, {
                 var_name: 'status',
                 write_locations: ['Root.Idle->[*]'],
             });

@@ -51,7 +51,7 @@ export function collectDesignHealthWarnings(
         ...collectThresholdWarnings(states, metrics, thresholdOptions),
         ...collectNamingWarnings(actions),
         ...collectTypeWarnings(variables),
-        ...collectDataFlowWarnings(variables, reachabilityGraph),
+        ...collectDataFlowWarnings(variables, reachabilityGraph, states, rootStatePath),
         ...collectRedundancyWarnings(transitions, events, states),
         ...collectTransitionInfos(states, transitions),
     ];

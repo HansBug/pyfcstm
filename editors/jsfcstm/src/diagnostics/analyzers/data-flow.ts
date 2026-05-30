@@ -1,13 +1,21 @@
-import type {ModelDiagnosticJson, VariableInfo} from '../inspect';
+import type {ModelDiagnosticJson, StateInfo, VariableInfo} from '../inspect';
 
 export function collectDataFlowWarnings(
     variables: VariableInfo[],
     reachabilityGraph: Record<string, string[]>,
+    states: StateInfo[] = [],
+    rootStatePath?: string,
 ): ModelDiagnosticJson[] {
     const out: ModelDiagnosticJson[] = [];
+    const stateParentPaths = stateParentPathMap(states);
     out.push(...guardVarsNeverChangeDiagnostics(variables));
     for (const variable of variables) {
-        out.push(...variableUsageDiagnostics(variable, reachabilityGraph));
+        out.push(...variableUsageDiagnostics(
+            variable,
+            reachabilityGraph,
+            stateParentPaths,
+            rootStatePath,
+        ));
     }
     return out;
 }
@@ -15,6 +23,8 @@ export function collectDataFlowWarnings(
 function variableUsageDiagnostics(
     variable: VariableInfo,
     reachabilityGraph: Record<string, string[]>,
+    stateParentPaths: Record<string, string | null>,
+    rootStatePath?: string,
 ): ModelDiagnosticJson[] {
     const readStates = variableReadStates(variable);
     const writeStates = variableWriteStates(variable);
@@ -28,7 +38,13 @@ function variableUsageDiagnostics(
         return [writeOnlyVarDiagnostic(variable, writeStates)];
     }
 
-    const finalWrites = finalWriteLocations(variable, readStates, reachabilityGraph);
+    const finalWrites = finalWriteLocations(
+        variable,
+        readStates,
+        reachabilityGraph,
+        stateParentPaths,
+        rootStatePath,
+    );
     if (finalWrites.length === 0) return [];
     return [{
         code: 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE',
@@ -40,6 +56,12 @@ function variableUsageDiagnostics(
             write_locations: finalWrites,
         },
     }];
+}
+
+function stateParentPathMap(states: StateInfo[]): Record<string, string | null> {
+    const out: Record<string, string | null> = {};
+    for (const state of states) out[state.path] = state.parent_path;
+    return out;
 }
 
 function variableReadStates(variable: VariableInfo): Set<string> {
@@ -150,6 +172,8 @@ function finalWriteLocations(
     variable: VariableInfo,
     readStates: Set<string>,
     reachabilityGraph: Record<string, string[]>,
+    stateParentPaths: Record<string, string | null>,
+    rootStatePath?: string,
 ): string[] {
     const out: string[] = [];
     for (const statePath of variable.written_in_states) {
@@ -158,12 +182,25 @@ function finalWriteLocations(
         }
     }
     for (const [fromPath, toPath] of variable.written_in_effects) {
-        if (toPath !== '[*]' && hasReachableRead(toPath, readStates, reachabilityGraph)) {
+        const nextReadStart = effectReadStart(fromPath, toPath, stateParentPaths, rootStatePath);
+        if (nextReadStart !== null && hasReachableRead(nextReadStart, readStates, reachabilityGraph)) {
             continue;
         }
         out.push(`${fromPath}->${toPath}`);
     }
     return Array.from(new Set(out)).sort();
+}
+
+function effectReadStart(
+    fromPath: string,
+    toPath: string,
+    stateParentPaths: Record<string, string | null>,
+    rootStatePath?: string,
+): string | null {
+    if (toPath !== '[*]') return toPath;
+    const parentPath = stateParentPaths[fromPath] ?? null;
+    if (parentPath === null || parentPath === rootStatePath) return null;
+    return parentPath;
 }
 
 function hasReachableRead(

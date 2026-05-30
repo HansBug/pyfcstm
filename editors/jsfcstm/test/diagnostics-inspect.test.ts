@@ -1406,6 +1406,56 @@ state Root {
             assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
         });
 
+        it('skips dead-store warning when exit effect reaches parent during-after read', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+state Root {
+    state Parent {
+        during after { status = status + 1; }
+        state Child;
+        [*] -> Child;
+        Child -> [*] : if [status == 0] effect { status = 1; };
+    }
+    state Done;
+    [*] -> Parent;
+    Parent -> Done;
+}
+`));
+            assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
+
+        it('skips dead-store warning when exit effect reaches parent guard read', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+state Root {
+    state Parent {
+        state Child;
+        [*] -> Child;
+        Child -> [*] : if [status == 0] effect { status = 1; };
+    }
+    state Done;
+    [*] -> Parent;
+    Parent -> Done : if [status > 0];
+}
+`));
+            assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
+
+        it('emits dead-store warning when root exit effect has no later read', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+state Root {
+    state Idle;
+    [*] -> Idle;
+    Idle -> [*] : if [status == 0] effect { status = 1; };
+}
+`));
+            assert.deepEqual(diagnosticsByCode(report).get('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE')![0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Idle->[*]'],
+            });
+        });
+
         it('keeps variable warning codes mutually exclusive', async () => {
             const report = inspectModel(await buildMachine(`
 def int unused = 0;

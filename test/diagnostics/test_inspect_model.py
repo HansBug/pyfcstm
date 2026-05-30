@@ -1458,6 +1458,57 @@ class TestInspectModelDataFlowClosureDiagnostics:
         by_code = self._diagnostics_by_code(dsl)
         assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
 
+    def test_exit_effect_write_reaches_parent_during_after_read(self):
+        dsl = """
+        def int status = 0;
+        state Root {
+            state Parent {
+                during after { status = status + 1; }
+                state Child;
+                [*] -> Child;
+                Child -> [*] : if [status == 0] effect { status = 1; };
+            }
+            state Done;
+            [*] -> Parent;
+            Parent -> Done;
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
+
+    def test_exit_effect_write_reaches_parent_guard_read(self):
+        dsl = """
+        def int status = 0;
+        state Root {
+            state Parent {
+                state Child;
+                [*] -> Child;
+                Child -> [*] : if [status == 0] effect { status = 1; };
+            }
+            state Done;
+            [*] -> Parent;
+            Parent -> Done : if [status > 0];
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
+
+    def test_root_exit_effect_write_is_final(self):
+        dsl = """
+        def int status = 0;
+        state Root {
+            state Idle;
+            [*] -> Idle;
+            Idle -> [*] : if [status == 0] effect { status = 1; };
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        diag = by_code['W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'][0]
+        assert diag.refs == {
+            'var_name': 'status',
+            'write_locations': ['Root.Idle->[*]'],
+        }
+
     def test_variable_warning_codes_are_mutually_exclusive(self):
         dsl = """
         def int unused = 0;

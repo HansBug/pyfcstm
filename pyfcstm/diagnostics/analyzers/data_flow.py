@@ -1,28 +1,38 @@
 """Variable data-flow design-health diagnostics."""
 
-from typing import TYPE_CHECKING, Dict, Iterable, List, Set, Tuple
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Set, Tuple
 
 from ...utils.validate import ModelDiagnostic
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..inspect import VariableInfo
+    from ..inspect import StateInfo, VariableInfo
 
 
 def collect_data_flow_warnings(
     variables: Iterable['VariableInfo'],
     reachability_graph,
+    states: Iterable['StateInfo'] = (),
+    root_state_path: Optional[str] = None,
 ) -> List[ModelDiagnostic]:
     diagnostics: List[ModelDiagnostic] = []
     variables = list(variables)
+    state_parent_paths = _state_parent_paths(states)
     diagnostics.extend(_guard_vars_never_change_diagnostics(variables))
     for variable in variables:
-        diagnostics.extend(_variable_usage_diagnostics(variable, reachability_graph))
+        diagnostics.extend(_variable_usage_diagnostics(
+            variable,
+            reachability_graph,
+            state_parent_paths,
+            root_state_path,
+        ))
     return diagnostics
 
 
 def _variable_usage_diagnostics(
     variable: 'VariableInfo',
     reachability_graph,
+    state_parent_paths: Dict[str, Optional[str]],
+    root_state_path: Optional[str],
 ) -> List[ModelDiagnostic]:
     read_states = _read_states(variable)
     write_states = _write_states(variable)
@@ -33,7 +43,13 @@ def _variable_usage_diagnostics(
     if write_states and not read_states:
         return [_write_only_var_diagnostic(variable, write_states)]
 
-    final_writes = _final_write_locations(variable, read_states, reachability_graph)
+    final_writes = _final_write_locations(
+        variable,
+        read_states,
+        reachability_graph,
+        state_parent_paths,
+        root_state_path,
+    )
     if final_writes:
         return [
             ModelDiagnostic(
@@ -50,6 +66,15 @@ def _variable_usage_diagnostics(
             )
         ]
     return []
+
+
+def _state_parent_paths(
+    states: Iterable['StateInfo'],
+) -> Dict[str, Optional[str]]:
+    return {
+        state.path: state.parent_path
+        for state in states
+    }
 
 
 def _read_states(variable: 'VariableInfo') -> Set[str]:
@@ -162,6 +187,8 @@ def _final_write_locations(
     variable: 'VariableInfo',
     read_states: Set[str],
     reachability_graph,
+    state_parent_paths: Dict[str, Optional[str]],
+    root_state_path: Optional[str],
 ) -> List[str]:
     out: List[str] = []
     for state_path in variable.written_in_states:
@@ -169,10 +196,33 @@ def _final_write_locations(
             continue
         out.append(state_path)
     for from_path, to_path in variable.written_in_effects:
-        if to_path != '[*]' and _has_reachable_read(to_path, read_states, reachability_graph):
+        next_read_start = _effect_read_start(
+            from_path,
+            to_path,
+            state_parent_paths,
+            root_state_path,
+        )
+        if (
+            next_read_start is not None and
+            _has_reachable_read(next_read_start, read_states, reachability_graph)
+        ):
             continue
         out.append(f'{from_path}->{to_path}')
     return sorted(set(out))
+
+
+def _effect_read_start(
+    from_path: str,
+    to_path: str,
+    state_parent_paths: Dict[str, Optional[str]],
+    root_state_path: Optional[str],
+) -> Optional[str]:
+    if to_path != '[*]':
+        return to_path
+    parent_path = state_parent_paths.get(from_path)
+    if parent_path is None or parent_path == root_state_path:
+        return None
+    return parent_path
 
 
 def _has_reachable_read(

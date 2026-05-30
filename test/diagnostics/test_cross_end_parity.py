@@ -931,6 +931,25 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
         ],
     ),
     (
+        'design-health-exit-effect-parent-read',
+        '\n'.join([
+            'def int status = 0;',
+            'state Root {',
+            '    state Parent {',
+            '        during after { status = status + 1; }',
+            '        state Child;',
+            '        [*] -> Child;',
+            '        Child -> [*] : if [status == 0] effect { status = 1; };',
+            '    }',
+            '    state Done;',
+            '    [*] -> Parent;',
+            '    Parent -> Done : if [status > 0];',
+            '    Done -> [*] :: Finish;',
+            '}',
+        ]),
+        [],
+    ),
+    (
         'design-health-threshold-naming-type-info',
         '\n'.join([
             'def int truncated = 3.5;',

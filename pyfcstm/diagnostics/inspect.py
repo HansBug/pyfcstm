@@ -155,7 +155,8 @@ class TransitionInfo:
     :type effect: Optional[str]
     :param effect_self_assigns: Variable names assigned to themselves
         anywhere inside the transition effect block, including nested
-        ``if`` branches.
+        ``if`` branches. Duplicate names are preserved so quick-fix
+        emitters can detect ambiguous occurrences.
     :type effect_self_assigns: Tuple[str, ...]
     :param is_forced: ``True`` when the transition was expanded from a
         ``!``-prefixed forced transition.
@@ -522,13 +523,7 @@ def _effect_self_assigns(effects: List['OperationStatement']) -> Tuple[str, ...]
     out: List[str] = []
     for stmt in effects:
         _walk_stmt_self_assigns(stmt, out)
-    seen = set()
-    deduped: List[str] = []
-    for name in out:
-        if name not in seen:
-            seen.add(name)
-            deduped.append(name)
-    return tuple(deduped)
+    return tuple(out)
 
 
 def _walk_stmt_self_assigns(stmt: 'OperationStatement', out: List[str]) -> None:

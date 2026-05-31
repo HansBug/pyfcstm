@@ -1433,13 +1433,59 @@ class TestInspectModelRedundancySemantics:
         assert refs[0]['state_path'] == 'Root.A'
         assert refs[0]['transition_span'] is None
         assert refs[0]['var_name'] == 'x'
+        assert refs[0]['effect_self_assign_anchor'] == 'x'
         assert refs[0]['suggested_fix'] == {
             'kind': 'delete',
             'target': 'effect_self_assign_statement',
-            'anchor': {'type': 'ref', 'ref': 'refs.var_name'},
+            'anchor': {'type': 'ref', 'ref': 'refs.effect_self_assign_anchor'},
             'text': '',
             'rationale': 'Remove the no-op self-assignment statement.',
         }
+
+    def test_effect_self_assignment_fix_is_omitted_when_occurrence_is_ambiguous(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            state C;
+            [*] -> A;
+            A -> B effect { x = x; };
+            A -> C effect { x = x; };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        refs = [
+            d.refs for d in report.diagnostics
+            if d.code == 'W_EFFECT_SELF_ASSIGN'
+        ]
+        assert len(refs) == 2
+        assert all(ref['state_path'] == 'Root.A' for ref in refs)
+        assert all(ref['var_name'] == 'x' for ref in refs)
+        assert all('effect_self_assign_anchor' not in ref for ref in refs)
+        assert all('suggested_fix' not in ref for ref in refs)
+
+    def test_duplicate_self_assignments_in_one_effect_do_not_get_fix(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B effect {
+                x = x;
+                x = x;
+            };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        refs = [
+            d.refs for d in report.diagnostics
+            if d.code == 'W_EFFECT_SELF_ASSIGN'
+        ]
+        assert len(refs) == 2
+        assert all('effect_self_assign_anchor' not in ref for ref in refs)
+        assert all('suggested_fix' not in ref for ref in refs)
 
 
 @pytest.mark.unittest

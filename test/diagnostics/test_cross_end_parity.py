@@ -845,6 +845,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                     'state_path': 'Root.Active',
                     'transition_span': None,
                     'var_name': 'stable',
+                    'effect_self_assign_anchor': 'stable',
                 },
             },
             {

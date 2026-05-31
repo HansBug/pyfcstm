@@ -265,6 +265,77 @@ describe('jsfcstm analyzers and code actions', () => {
         await assertParses(updated, filePath);
     });
 
+    it('does not offer self-assignment delete when the effect occurrence is ambiguous', async () => {
+        const text = [
+            'def int x = 0;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    state C;',
+            '    [*] -> A;',
+            '    A -> B effect {',
+            '        x = x;',
+            '    };',
+            '    A -> C effect {',
+            '        x = x;',
+            '    };',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-delete-effect-ambiguous.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
+        const selfAssigns = diagnostics.filter(item => item.code === 'W_EFFECT_SELF_ASSIGN');
+        assert.equal(selfAssigns.length, 2);
+        assert.equal(
+            selfAssigns.every(item => packageModule.suggestedFixFromDiagnostic(item) === null),
+            true,
+        );
+
+        const actions = await packageModule.collectCodeActions(
+            document,
+            packageModule.createRange(0, 0, document.lineCount - 1, document.lineAt(document.lineCount - 1).text.length),
+            selfAssigns,
+        );
+        assert.equal(
+            actions.some(item => /self-assignment/.test(item.title)),
+            false,
+        );
+    });
+
+    it('does not offer self-assignment delete for duplicate occurrences inside one effect', async () => {
+        const text = [
+            'def int x = 0;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B effect {',
+            '        x = x;',
+            '        x = x;',
+            '    };',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-delete-effect-duplicate.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
+        const selfAssigns = diagnostics.filter(item => item.code === 'W_EFFECT_SELF_ASSIGN');
+        assert.equal(selfAssigns.length, 2);
+        assert.equal(
+            selfAssigns.every(item => packageModule.suggestedFixFromDiagnostic(item) === null),
+            true,
+        );
+
+        const actions = await packageModule.collectCodeActions(
+            document,
+            packageModule.createRange(0, 0, document.lineCount - 1, document.lineAt(document.lineCount - 1).text.length),
+            selfAssigns,
+        );
+        assert.equal(
+            actions.some(item => /self-assignment/.test(item.title)),
+            false,
+        );
+    });
+
     it('applies suggested-fix insert actions for deadlock leaves', async () => {
         const text = [
             'state Root {',

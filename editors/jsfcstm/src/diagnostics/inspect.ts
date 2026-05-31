@@ -111,6 +111,8 @@ export interface TransitionInfo {
     event_scope: 'local' | 'chain' | 'absolute' | null;
     guard: string | null;
     effect: string | null;
+    // Duplicate names are preserved so suggested-fix emitters can detect
+    // ambiguous occurrences for the same source state and variable.
     effect_self_assigns: string[];
     is_forced: boolean;
     forced_origin: string | null;
@@ -634,7 +636,7 @@ function effectSelfAssigns(effects: OperationStatement[] | undefined): string[] 
     for (const stmt of effects ?? []) {
         walkStmtSelfAssigns(stmt, out);
     }
-    return Array.from(new Set(out));
+    return out;
 }
 
 function walkStmtSelfAssigns(stmt: OperationStatement, out: string[]): void {

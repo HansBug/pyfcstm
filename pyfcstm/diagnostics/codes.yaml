@@ -1703,6 +1703,13 @@ W_EFFECT_SELF_ASSIGN:
       type: str
       required: true
       description: Variable assigned to itself.
+    effect_self_assign_anchor:
+      type: str
+      required: false
+      description: >-
+        Variable name repeated only when the self-assignment occurrence
+        can be uniquely mapped back to an effect statement for the same
+        source state and variable.
     suggested_fix:
       type: dict
       required: false
@@ -1710,7 +1717,7 @@ W_EFFECT_SELF_ASSIGN:
   suggested_fix:
     kind: delete
     target: effect_self_assign_statement
-    anchor_ref: refs.var_name
+    anchor_ref: refs.effect_self_assign_anchor
     text_template: ""
     rationale: Remove the no-op self-assignment statement.
   for_llm:

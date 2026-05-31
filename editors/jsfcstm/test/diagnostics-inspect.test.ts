@@ -778,7 +778,12 @@ state Root {
                 {
                     code: 'W_EFFECT_SELF_ASSIGN',
                     severity: 'warning',
-                    refs: {state_path: 'Root.Active', transition_span: null, var_name: 'stable'},
+                    refs: {
+                        state_path: 'Root.Active',
+                        transition_span: null,
+                        var_name: 'stable',
+                        effect_self_assign_anchor: 'stable',
+                    },
                 },
                 {
                     code: 'W_FORCED_NEVER_EXPANDS',
@@ -1100,6 +1105,7 @@ state Root {
                     state_path: 'Root.A',
                     transition_span: null,
                     var_name: 'x',
+                    effect_self_assign_anchor: 'x',
                 })],
             );
         });

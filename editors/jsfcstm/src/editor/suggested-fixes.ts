@@ -206,31 +206,29 @@ function isSelfAssignStatement(statement: FcstmAstAssignmentStatement, varName: 
         statement.expression.name === varName;
 }
 
-function findSelfAssignStatement(
+function collectSelfAssignStatements(
     statements: readonly FcstmAstOperationStatement[],
     varName: string,
-): FcstmAstAssignmentStatement | null {
+    out: FcstmAstAssignmentStatement[],
+): void {
     for (const statement of statements) {
         if (statement.kind === 'assignmentStatement' && isSelfAssignStatement(statement, varName)) {
-            return statement;
+            out.push(statement);
         }
         if (statement.kind === 'ifStatement') {
-            const found = findSelfAssignInIf(statement, varName);
-            if (found) return found;
+            collectSelfAssignsInIf(statement, varName, out);
         }
     }
-    return null;
 }
 
-function findSelfAssignInIf(
+function collectSelfAssignsInIf(
     statement: FcstmAstIfStatement,
     varName: string,
-): FcstmAstAssignmentStatement | null {
+    out: FcstmAstAssignmentStatement[],
+): void {
     for (const branch of statement.branches) {
-        const found = findSelfAssignStatement(branch.statements, varName);
-        if (found) return found;
+        collectSelfAssignStatements(branch.statements, varName, out);
     }
-    return null;
 }
 
 function effectSelfAssignRange(
@@ -239,12 +237,16 @@ function effectSelfAssignRange(
     statePath: string | undefined,
     varName: string,
 ): TextRange | null {
+    const matches: TextRange[] = [];
     for (const transition of semantic.transitions) {
         if (statePath && transition.sourceStatePath?.join('.') !== statePath) continue;
-        const statement = findSelfAssignStatement(transition.ast.effect?.statements ?? [], varName);
-        if (statement) return statementDeleteRange(document, statement);
+        const statements: FcstmAstAssignmentStatement[] = [];
+        collectSelfAssignStatements(transition.ast.effect?.statements ?? [], varName, statements);
+        for (const statement of statements) {
+            matches.push(statementDeleteRange(document, statement));
+        }
     }
-    return null;
+    return matches.length === 1 ? matches[0] : null;
 }
 
 function spanLikeToRange(value: unknown): TextRange | null {

@@ -10,6 +10,8 @@ pyfcstm.solver
     :maxdepth: 3
 
     expr
+    logical
     operation
+    safety
     solve
 

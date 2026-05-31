@@ -275,7 +275,7 @@ def test_verify_package_does_not_import_diagnostics():
     assert bad == []
 
 
-def test_pr_a1_does_not_create_later_verify_or_solver_modules():
+def test_verify_package_does_not_create_algorithm_modules():
     import pathlib
 
     forbidden_paths = (
@@ -283,7 +283,5 @@ def test_pr_a1_does_not_create_later_verify_or_solver_modules():
         "pyfcstm/verify/reachability.py",
         "pyfcstm/verify/topology.py",
         "pyfcstm/verify/smt_local.py",
-        "pyfcstm/solver/logical.py",
-        "pyfcstm/solver/safety.py",
     )
     assert [path for path in forbidden_paths if pathlib.Path(path).exists()] == []

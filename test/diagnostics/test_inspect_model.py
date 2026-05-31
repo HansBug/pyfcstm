@@ -295,32 +295,56 @@ class TestInspectModelToJson:
 class TestSchemaJsonValidates:
     """Verify the schema.json contract validates a real inspection."""
 
-    def test_schema_exists(self):
-        path = os.path.join(
+    @staticmethod
+    def _schema_path():
+        return os.path.join(
             os.path.dirname(__file__), '..', '..',
             'pyfcstm', 'diagnostics', 'schema.json',
         )
-        assert os.path.exists(path)
+
+    @staticmethod
+    def _load_schema():
+        with open(TestSchemaJsonValidates._schema_path(), 'r', encoding='utf-8') as f:
+            return json.load(f)
+
+    def test_schema_exists(self):
+        assert os.path.exists(self._schema_path())
 
     def test_schema_is_valid_json(self):
-        path = os.path.join(
-            os.path.dirname(__file__), '..', '..',
-            'pyfcstm', 'diagnostics', 'schema.json',
-        )
-        with open(path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        data = self._load_schema()
         assert data['title'] == 'ModelInspect'
+
+    def test_schema_local_refs_resolve(self):
+        schema = self._load_schema()
+        refs = []
+
+        def walk(node):
+            if isinstance(node, dict):
+                ref = node.get('$ref')
+                if isinstance(ref, str):
+                    refs.append(ref)
+                for value in node.values():
+                    walk(value)
+            elif isinstance(node, list):
+                for value in node:
+                    walk(value)
+
+        walk(schema)
+        assert refs
+        for ref in refs:
+            assert ref.startswith('#/'), f'non-local schema ref is unsupported: {ref!r}'
+            target = schema
+            for raw_part in ref[2:].split('/'):
+                part = raw_part.replace('~1', '/').replace('~0', '~')
+                assert isinstance(target, dict), f'{ref!r} resolves through non-object'
+                assert part in target, f'{ref!r} cannot resolve missing part {part!r}'
+                target = target[part]
 
     def test_schema_validates_simple_inspect(self):
         # Light-weight structural validation rather than pulling in
         # jsonschema as a hard test dep — verify each required top-level
         # key from the schema is present in the inspect output.
-        path = os.path.join(
-            os.path.dirname(__file__), '..', '..',
-            'pyfcstm', 'diagnostics', 'schema.json',
-        )
-        with open(path, 'r', encoding='utf-8') as f:
-            schema = json.load(f)
+        schema = self._load_schema()
         required = set(schema['required'])
         payload = inspect_model(_parse(SIMPLE_DSL)).to_json()
         assert required.issubset(set(payload.keys())), (

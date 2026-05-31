@@ -1090,8 +1090,10 @@ W_GUARD_CONST_TRUE:
       required: false
       description: >-
         Source span of the removable guard suffix, including the leading
-        trigger separator when needed. Reserved for future emitters that
-        can provide a stable guard-only span.
+        trigger separator when needed. This is reserved for future emitters
+        that can provide a stable guard-only span; the current inspect
+        emitters intentionally omit it, so this suggested fix is not wired
+        yet.
     folded_value:
       type: bool
       required: true

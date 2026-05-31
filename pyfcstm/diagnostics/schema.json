@@ -365,7 +365,7 @@
         "refs": {
           "type": "object",
           "properties": {
-            "suggested_fix": { "$ref": "#/$defs/SuggestedFixPayload" }
+            "suggested_fix": { "$ref": "#/definitions/SuggestedFixPayload" }
           },
           "additionalProperties": true
         }

@@ -239,29 +239,30 @@ def _scc_components(
 ) -> Tuple[Tuple[str, ...], ...]:
     node_set = set(nodes)
     ordered_nodes = sorted(node_set)
-    discovered: Set[str] = set()
+    visited: Set[str] = set()
     finish_order: List[str] = []
 
     for start in ordered_nodes:
-        if start in discovered:
+        if start in visited:
             continue
 
-        discovered.add(start)
         visit_stack: List[Tuple[str, bool]] = [(start, False)]
         while visit_stack:
             node, expanded = visit_stack.pop()
             if expanded:
                 finish_order.append(node)
                 continue
+            if node in visited:
+                continue
 
+            visited.add(node)
             visit_stack.append((node, True))
             successors = [
                 successor
                 for successor in edges.get(node, tuple())
-                if successor in node_set and successor not in discovered
+                if successor in node_set and successor not in visited
             ]
             for successor in reversed(sorted(successors)):
-                discovered.add(successor)
                 visit_stack.append((successor, False))
 
     reverse_edges: Dict[str, List[str]] = {node: [] for node in ordered_nodes}

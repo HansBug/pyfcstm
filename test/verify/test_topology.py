@@ -392,6 +392,26 @@ def test_strongly_connected_components_handles_deep_chain_without_recursion():
     assert topology.topological_finite(machine).finite is True
 
 
+def test_strongly_connected_components_keeps_diamond_join_acyclic():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state A;
+            state B;
+            state C;
+            [*] -> A;
+            A -> B;
+            A -> C;
+            B -> C;
+            C -> [*];
+        }
+        """
+    )
+
+    assert topology.strongly_connected_components(machine) == tuple()
+
+
 def test_topological_finite_accepts_every_reachable_leaf_with_exit_path():
     topology = _import_topology()
     machine = _parse(

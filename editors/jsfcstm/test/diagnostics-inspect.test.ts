@@ -276,7 +276,11 @@ state Root {
                 noAbstract.diagnostics
                     .filter(d => d.code === 'W_UNREFERENCED_VAR')
                     .map(d => d.refs),
-                [expectedRefsWithSuggestedFix('W_UNREFERENCED_VAR', {var_name: 'unused', init_value: '0'})],
+                [expectedRefsWithSuggestedFix('W_UNREFERENCED_VAR', {
+                    var_name: 'unused',
+                    init_value: '0',
+                    definition_delete_anchor: 'unused',
+                })],
             );
             assert.equal(
                 noAbstract.diagnostics.filter(d => d.code === 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT').length,
@@ -751,12 +755,20 @@ state Root {
                 {
                     code: 'W_DEADLOCK_LEAF',
                     severity: 'warning',
-                    refs: {state_path: 'Root.LeafForced', reason: 'no_outgoing_transition'},
+                    refs: {
+                        state_path: 'Root.LeafForced',
+                        parent_path: 'Root',
+                        reason: 'no_outgoing_transition',
+                    },
                 },
                 {
                     code: 'W_DEADLOCK_LEAF',
                     severity: 'warning',
-                    refs: {state_path: 'Root.Orphan', reason: 'no_outgoing_transition'},
+                    refs: {
+                        state_path: 'Root.Orphan',
+                        parent_path: 'Root',
+                        reason: 'no_outgoing_transition',
+                    },
                 },
                 {
                     code: 'W_DEAD_NAMED_ACTION',

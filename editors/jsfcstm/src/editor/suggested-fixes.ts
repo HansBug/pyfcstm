@@ -87,15 +87,48 @@ function variableDefinitionRange(
     varName: string,
 ): TextRange | null {
     const variable = semantic.variables.find(item => item.name === varName);
-    return variable ? fullLineRange(document, variable.range) : null;
+    if (!variable) return null;
+    const line = document.lineAt(variable.range.start.line).text;
+    if (trimComparable(line) === trimComparable(variable.ast.text)) {
+        return fullLineRange(document, variable.range);
+    }
+    return variable.range;
 }
 
 function resolveStatePath(semantic: FcstmSemanticDocument, statePath: string) {
     return semantic.states.find(item => item.identity.qualifiedName === statePath);
 }
 
-function insertionAfterLine(line: number): TextRange {
-    return createRange(line + 1, 0, line + 1, 0);
+function resolveStateId(semantic: FcstmSemanticDocument, stateId: string | undefined) {
+    if (!stateId) return undefined;
+    return semantic.states.find(item => item.identity.id === stateId);
+}
+
+function textAtIndent(text: string, indent: string): string {
+    const trimmed = text.trimEnd();
+    if (trimmed.length === 0) return '';
+    return trimmed
+        .split('\n')
+        .map(line => line.length > 0 ? `${indent}${line}` : line)
+        .join('\n');
+}
+
+function insertionAfterLinePlan(
+    document: TextDocumentLike,
+    line: number,
+    newText: string,
+): SuggestedFixEditPlan {
+    if (line + 1 < document.lineCount) {
+        return {
+            range: createRange(line + 1, 0, line + 1, 0),
+            newText,
+        };
+    }
+    const lineText = document.lineAt(line).text;
+    return {
+        range: createRange(line, lineText.length, line, lineText.length),
+        newText: `\n${newText}`,
+    };
 }
 
 function indentedTextForInsertion(
@@ -114,6 +147,25 @@ function indentedTextForInsertion(
         .join('\n');
 }
 
+function insertionBeforeStateClose(
+    document: TextDocumentLike,
+    stateRange: TextRange,
+    text: string,
+): SuggestedFixEditPlan | null {
+    const closeLine = stateRange.end.line;
+    const lineText = document.lineAt(closeLine).text;
+    const searchEnd = Math.min(stateRange.end.character, lineText.length);
+    const closeColumn = lineText.lastIndexOf('}', Math.max(0, searchEnd - 1));
+    if (closeColumn < 0) return null;
+    const parentIndent = lineIndent(document, stateRange.start.line);
+    const inserted = textAtIndent(text, `${parentIndent}    `);
+    if (inserted.length === 0) return null;
+    return {
+        range: createRange(closeLine, closeColumn, closeLine, closeColumn),
+        newText: `\n${inserted}\n${parentIndent}`,
+    };
+}
+
 function deadlockLeafInsertion(
     document: TextDocumentLike,
     semantic: FcstmSemanticDocument,
@@ -122,11 +174,13 @@ function deadlockLeafInsertion(
 ): SuggestedFixEditPlan | null {
     const state = resolveStatePath(semantic, statePath);
     if (!state) return null;
-    const range = insertionAfterLine(state.range.end.line);
-    return {
-        range,
-        newText: indentedTextForInsertion(document, state.range, text),
-    };
+    const parent = resolveStateId(semantic, state.parentStateId);
+    if (!parent) return null;
+    const newText = indentedTextForInsertion(document, state.range, text);
+    if (state.range.end.line < parent.range.end.line) {
+        return insertionAfterLinePlan(document, state.range.end.line, newText);
+    }
+    return insertionBeforeStateClose(document, parent.range, text);
 }
 
 function initialTransitionInsertion(
@@ -138,12 +192,12 @@ function initialTransitionInsertion(
     const composite = resolveStatePath(semantic, compositePath);
     if (!composite) return null;
     const firstChild = semantic.states.find(item => item.parentStateId === composite.identity.id);
-    const anchorRange = firstChild?.range ?? composite.range;
-    const range = insertionAfterLine(anchorRange.end.line);
-    return {
-        range,
-        newText: indentedTextForInsertion(document, anchorRange, text),
-    };
+    if (!firstChild) return null;
+    const newText = indentedTextForInsertion(document, firstChild.range, text);
+    if (firstChild.range.end.line < composite.range.end.line) {
+        return insertionAfterLinePlan(document, firstChild.range.end.line, newText);
+    }
+    return insertionBeforeStateClose(document, composite.range, text);
 }
 
 function isSelfAssignStatement(statement: FcstmAstAssignmentStatement, varName: string): boolean {

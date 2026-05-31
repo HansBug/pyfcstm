@@ -40,6 +40,12 @@ def collect_data_flow_warnings(
                     },
                 ))
             else:
+                refs = {
+                    'var_name': variable.name,
+                    'init_value': variable.init_value,
+                }
+                if not read_states and not write_states:
+                    refs['definition_delete_anchor'] = variable.name
                 diagnostics.append(ModelDiagnostic(
                     code='W_UNREFERENCED_VAR',
                     severity='warning',
@@ -47,10 +53,7 @@ def collect_data_flow_warnings(
                         f'Variable {variable.name!r} does not affect any '
                         'transition guard.'
                     ),
-                    refs={
-                        'var_name': variable.name,
-                        'init_value': variable.init_value,
-                    },
+                    refs=refs,
                 ))
             continue
         if read_states and not write_states:

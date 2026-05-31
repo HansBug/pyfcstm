@@ -28,15 +28,19 @@ export function collectDataFlowWarnings(
                     },
                 });
             } else {
+                const refs: Record<string, unknown> = {
+                    var_name: variable.name,
+                    init_value: variable.init_value,
+                };
+                if (readStates.size === 0 && writeStates.size === 0) {
+                    refs.definition_delete_anchor = variable.name;
+                }
                 out.push({
                     code: 'W_UNREFERENCED_VAR',
                     severity: 'warning',
                     message: `Variable ${JSON.stringify(variable.name)} does not affect any transition guard.`,
                     span: null,
-                    refs: {
-                        var_name: variable.name,
-                        init_value: variable.init_value,
-                    },
+                    refs,
                 });
             }
             continue;

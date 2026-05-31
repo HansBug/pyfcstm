@@ -821,18 +821,41 @@ class TestInspectModelGuardAffectDiagnostics:
         unused_refs = by_code['W_UNREFERENCED_VAR'][0].refs
         assert unused_refs['var_name'] == 'unused'
         assert unused_refs['init_value'] == '0'
+        assert unused_refs['definition_delete_anchor'] == 'unused'
         assert unused_refs['suggested_fix'] == {
             'kind': 'delete',
             'target': 'variable_definition',
-            'anchor': {'type': 'ref', 'ref': 'refs.var_name'},
+            'anchor': {'type': 'ref', 'ref': 'refs.definition_delete_anchor'},
             'text': '',
-            'rationale': (
-                'Remove the variable declaration because it cannot affect '
-                'transition guards.'
-            ),
+            'rationale': 'Remove the declaration-only variable because it has no DSL reads or writes.',
         }
-        assert set(unused_refs) == {'var_name', 'init_value', 'suggested_fix'}
+        assert set(unused_refs) == {
+            'var_name',
+            'init_value',
+            'definition_delete_anchor',
+            'suggested_fix',
+        }
         assert 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT' not in by_code
+
+    def test_unreferenced_variable_fix_is_omitted_when_variable_is_read(self):
+        by_code = self._diagnostics_by_code("""
+        def int unused = 0;
+        def int driver = 0;
+        state Root {
+            state Idle {
+                enter { temp = unused + 1; }
+            }
+            state Done;
+            [*] -> Idle;
+            Idle -> Done : if [driver > 0];
+        }
+        """)
+
+        unused_refs = by_code['W_UNREFERENCED_VAR'][0].refs
+        assert unused_refs == {
+            'var_name': 'unused',
+            'init_value': '0',
+        }
 
     def test_structural_suggested_fixes_are_attached_to_safe_insertions(self):
         by_code = self._diagnostics_by_code("""
@@ -843,10 +866,11 @@ class TestInspectModelGuardAffectDiagnostics:
         """)
 
         deadlock_fix = by_code['W_DEADLOCK_LEAF'][0].refs['suggested_fix']
+        assert by_code['W_DEADLOCK_LEAF'][0].refs['parent_path'] == 'Root'
         assert deadlock_fix == {
             'kind': 'insert',
             'target': 'deadlock_leaf_exit_transition',
-            'anchor': {'type': 'ref', 'ref': 'refs.state_path'},
+            'anchor': {'type': 'ref', 'ref': 'refs.parent_path'},
             'text': 'Idle -> [*];\n',
             'rationale': (
                 'Add an exit transition so the leaf can finish its parent state.'
@@ -864,6 +888,17 @@ class TestInspectModelGuardAffectDiagnostics:
                 'Add an unconditional fallback entry transition for the '
                 'composite state.'
             ),
+        }
+
+    def test_root_deadlock_leaf_fix_is_omitted(self):
+        by_code = self._diagnostics_by_code("""
+        state Root;
+        """)
+
+        deadlock_refs = by_code['W_DEADLOCK_LEAF'][0].refs
+        assert deadlock_refs == {
+            'state_path': 'Root',
+            'reason': 'no_outgoing_transition',
         }
 
     def test_const_true_fix_is_omitted_when_transition_span_is_unavailable(self):

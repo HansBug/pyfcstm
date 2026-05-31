@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import {pathToFileURL} from 'node:url';
 
-import {TextDocumentSyncKind} from 'vscode-languageserver/node';
+import {CodeActionKind, TextDocumentSyncKind} from 'vscode-languageserver/node';
 import type {CancellationToken, MarkupContent} from 'vscode-languageserver/node';
 
 import {packageModule, trackTempDir, writeFile} from './support';
@@ -183,7 +183,10 @@ describe('jsfcstm lsp core', () => {
             packageModule.toLspRange(packageModule.createRange(0, 0, 3, 1)),
             []
         );
-        assert.deepEqual(codeActions, []);
+        assert.ok(codeActions.some(item => (
+            item.kind === CodeActionKind.QuickFix
+            && item.diagnostics?.some(diagnostic => diagnostic.code === 'W_UNREFERENCED_VAR')
+        )));
 
         core.dispose();
     });

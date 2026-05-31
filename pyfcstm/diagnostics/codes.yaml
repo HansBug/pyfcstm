@@ -1085,6 +1085,13 @@ W_GUARD_CONST_TRUE:
       type: Span
       required: false
       description: Source span of the transition declaration.
+    guard_span:
+      type: Span
+      required: false
+      description: >-
+        Source span of the removable guard suffix, including the leading
+        trigger separator when needed. Reserved for future emitters that
+        can provide a stable guard-only span.
     folded_value:
       type: bool
       required: true
@@ -1098,7 +1105,7 @@ W_GUARD_CONST_TRUE:
   suggested_fix:
     kind: replace
     target: transition_guard
-    anchor_ref: refs.transition_span
+    anchor_ref: refs.guard_span
     text_template: ""
     rationale: Remove the redundant constant-true guard.
   for_llm:
@@ -1217,6 +1224,12 @@ W_DEADLOCK_LEAF:
       type: str
       required: true
       description: Dotted path of the deadlocking leaf state.
+    parent_path:
+      type: str
+      required: false
+      description: >-
+        Dotted path of the leaf state's parent. Present only when an
+        exit-transition quick-fix can be inserted inside a parent state.
     reason:
       type: str
       required: true
@@ -1229,7 +1242,7 @@ W_DEADLOCK_LEAF:
   suggested_fix:
     kind: insert
     target: deadlock_leaf_exit_transition
-    anchor_ref: refs.state_path
+    anchor_ref: refs.parent_path
     text_template: "{state_name} -> [*];\n"
     rationale: Add an exit transition so the leaf can finish its parent state.
   for_llm:
@@ -1393,6 +1406,12 @@ W_UNREFERENCED_VAR:
       type: str
       required: true
       description: Source text of the initial value.
+    definition_delete_anchor:
+      type: str
+      required: false
+      description: >-
+        Variable name repeated only when the declaration has no DSL reads
+        or writes, so deleting the declaration alone is a safe quick-fix.
     suggested_fix:
       type: dict
       required: false
@@ -1400,9 +1419,9 @@ W_UNREFERENCED_VAR:
   suggested_fix:
     kind: delete
     target: variable_definition
-    anchor_ref: refs.var_name
+    anchor_ref: refs.definition_delete_anchor
     text_template: ""
-    rationale: Remove the variable declaration because it cannot affect transition guards.
+    rationale: Remove the declaration-only variable because it has no DSL reads or writes.
   for_llm:
     summary: >-
       This variable does not participate in model decisions. It is dead

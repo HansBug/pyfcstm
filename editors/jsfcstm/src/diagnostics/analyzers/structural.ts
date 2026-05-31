@@ -36,15 +36,19 @@ function collectDeadlockLeafWarnings(
     for (const state of states) {
         if (!state.is_leaf || state.is_pseudo) continue;
         if ((outgoing[state.path] ?? 0) > 0) continue;
+        const refs: Record<string, unknown> = {
+            state_path: state.path,
+            reason: 'no_outgoing_transition',
+        };
+        if (state.parent_path !== null) {
+            refs.parent_path = state.parent_path;
+        }
         out.push({
             code: 'W_DEADLOCK_LEAF',
             severity: 'warning',
             message: `Leaf state ${JSON.stringify(state.path)} has no outgoing transition.`,
             span: null,
-            refs: {
-                state_path: state.path,
-                reason: 'no_outgoing_transition',
-            },
+            refs,
         });
     }
     return out;

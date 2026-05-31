@@ -66,7 +66,14 @@ def _expected_with_suggested_fixes(expected):
     out = []
     for item in expected:
         enriched = dict(item)
-        enriched['refs'] = refs_with_suggested_fix(item['code'], item['refs'])
+        refs = dict(item['refs'])
+        if (
+                item['code'] == 'W_DEADLOCK_LEAF'
+                and 'parent_path' not in refs
+                and '.' in refs.get('state_path', '')
+        ):
+            refs['parent_path'] = refs['state_path'].rsplit('.', 1)[0]
+        enriched['refs'] = refs_with_suggested_fix(item['code'], refs)
         out.append(enriched)
     return out
 
@@ -994,6 +1001,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'var_name': 'extra',
                     'init_value': '0',
+                    'definition_delete_anchor': 'extra',
                 },
             },
             {
@@ -1002,6 +1010,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'var_name': 'truncated',
                     'init_value': '3.5',
+                    'definition_delete_anchor': 'truncated',
                 },
             },
         ],

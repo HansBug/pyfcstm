@@ -86,12 +86,19 @@ def _deadlock_leaf_warnings(states, transitions) -> List[ModelDiagnostic]:
             code='W_DEADLOCK_LEAF',
             severity='warning',
             message=f'Leaf state {state.path!r} has no outgoing transition.',
-            refs={
-                'state_path': state.path,
-                'reason': 'no_outgoing_transition',
-            },
+            refs=_deadlock_leaf_refs(state),
         ))
     return diagnostics
+
+
+def _deadlock_leaf_refs(state) -> Dict[str, str]:
+    refs = {
+        'state_path': state.path,
+        'reason': 'no_outgoing_transition',
+    }
+    if state.parent_path is not None:
+        refs['parent_path'] = state.parent_path
+    return refs
 
 
 def _initial_unconditional_missing_warnings(states) -> List[ModelDiagnostic]:

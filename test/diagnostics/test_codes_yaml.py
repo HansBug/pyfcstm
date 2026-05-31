@@ -461,17 +461,18 @@ class TestLoaderValidation:
     def test_refs_with_suggested_fix_renders_declared_payload(self):
         refs = refs_with_suggested_fix(
             'W_UNREFERENCED_VAR',
-            {'var_name': 'unused', 'init_value': '0'},
+            {
+                'var_name': 'unused',
+                'init_value': '0',
+                'definition_delete_anchor': 'unused',
+            },
         )
         assert refs['suggested_fix'] == {
             'kind': 'delete',
             'target': 'variable_definition',
-            'anchor': {'type': 'ref', 'ref': 'refs.var_name'},
+            'anchor': {'type': 'ref', 'ref': 'refs.definition_delete_anchor'},
             'text': '',
-            'rationale': (
-                'Remove the variable declaration because it cannot affect '
-                'transition guards.'
-            ),
+            'rationale': 'Remove the declaration-only variable because it has no DSL reads or writes.',
         }
 
     @pytest.mark.parametrize('type_token', ['float', 'number'])

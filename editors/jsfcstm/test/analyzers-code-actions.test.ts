@@ -593,6 +593,118 @@ describe('jsfcstm analyzers and code actions', () => {
         );
     });
 
+    it('does not let forged client diagnostic ranges unlock current suggested fixes', async () => {
+        const text = [
+            'state Root {',
+            '    state Idle;',
+            '    [*] -> Idle;',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-forged-real-key-range.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const deadlockDiagnostic = diagnostics.find(item => item.code === 'W_DEADLOCK_LEAF');
+        assert.ok(deadlockDiagnostic, `expected W_DEADLOCK_LEAF, got ${JSON.stringify(diagnostics)}`);
+        const forgedDiagnostic = {
+            ...deadlockDiagnostic,
+            range: rangeOf(text, 'Root'),
+        };
+
+        const actions = await packageModule.collectCodeActions(
+            document,
+            forgedDiagnostic.range,
+            [forgedDiagnostic],
+        );
+        assert.equal(
+            actions.some(item => /exit transition/.test(item.title)),
+            false,
+        );
+    });
+
+    it('keeps current suggested fixes available when client diagnostics omit suggested-fix payloads', async () => {
+        const text = [
+            'state Root {',
+            '    state Idle;',
+            '    [*] -> Idle;',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-stripped-client-payload.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const deadlockDiagnostic = diagnostics.find(item => item.code === 'W_DEADLOCK_LEAF');
+        assert.ok(deadlockDiagnostic, `expected W_DEADLOCK_LEAF, got ${JSON.stringify(diagnostics)}`);
+        const strippedDiagnostic = {
+            ...deadlockDiagnostic,
+            data: {...deadlockDiagnostic.data},
+        };
+        delete strippedDiagnostic.data.suggested_fix;
+        assert.equal(
+            packageModule.diagnosticKey(deadlockDiagnostic),
+            packageModule.diagnosticKey(strippedDiagnostic),
+        );
+
+        const actions = await packageModule.collectCodeActions(
+            document,
+            strippedDiagnostic.range,
+            [strippedDiagnostic],
+        );
+        assert.equal(
+            actions.some(item => /exit transition/.test(item.title)),
+            true,
+        );
+    });
+
+    it('keys diagnostics by stable identity refs instead of suggested-fix payload details', () => {
+        const first = {
+            range: packageModule.createRange(0, 0, 0, 1),
+            message: 'first',
+            severity: 'warning' as const,
+            source: 'fcstm',
+            code: 'W_DEADLOCK_LEAF',
+            data: {
+                state_path: 'Root.Idle',
+                parent_path: 'Root',
+                reason: 'no_outgoing_transition',
+                suggested_fix: {
+                    kind: 'insert',
+                    target: 'deadlock_leaf_exit_transition',
+                    anchor: {type: 'ref', ref: 'refs.parent_path'},
+                    text: 'Idle -> [*];\n',
+                    rationale: 'Add old text.',
+                },
+            },
+        };
+        const second = {
+            range: packageModule.createRange(3, 0, 3, 1),
+            message: 'second',
+            severity: 'warning' as const,
+            source: 'fcstm',
+            code: 'W_DEADLOCK_LEAF',
+            data: {
+                suggested_fix: {
+                    rationale: 'Add new text.',
+                    text: 'Idle -> [*];\n',
+                    anchor: {ref: 'refs.parent_path', type: 'ref'},
+                    target: 'deadlock_leaf_exit_transition',
+                    kind: 'insert',
+                },
+                reason: 'no_outgoing_transition',
+                parent_path: 'Root',
+                state_path: 'Root.Idle',
+            },
+        };
+        const differentState = {
+            ...second,
+            data: {
+                ...second.data,
+                state_path: 'Root.Other',
+            },
+        };
+
+        assert.equal(packageModule.diagnosticKey(first), packageModule.diagnosticKey(second));
+        assert.notEqual(packageModule.diagnosticKey(first), packageModule.diagnosticKey(differentState));
+    });
+
     it('does not offer declaration delete when duplicate variables make the occurrence ambiguous', async () => {
         const text = [
             'def int x = 0;',
@@ -775,6 +887,27 @@ describe('jsfcstm analyzers and code actions', () => {
             initialDiagnostics,
         );
         assert.ok(guardedInitialActions.some(item => /fallback entry transition/.test(item.title)));
+    });
+
+    it('provides design-health insert actions from published diagnostic ranges', async () => {
+        const deadlockText = [
+            'state Root {',
+            '    state Idle;',
+            '    [*] -> Idle;',
+            '}',
+        ].join('\n');
+        const deadlockPath = '/tmp/editor-design-deadlock-published-range.fcstm';
+        const deadlockDocument = createDocument(deadlockText, deadlockPath);
+        const deadlockDiagnostics = await packageModule.collectDocumentDiagnostics(deadlockDocument);
+        const deadlockDiagnostic = deadlockDiagnostics.find(item => item.code === 'W_DEADLOCK_LEAF');
+        assert.ok(deadlockDiagnostic, `expected W_DEADLOCK_LEAF, got ${JSON.stringify(deadlockDiagnostics)}`);
+
+        const actions = await packageModule.collectCodeActions(
+            deadlockDocument,
+            deadlockDiagnostic.range,
+            [deadlockDiagnostic],
+        );
+        assert.ok(actions.some(item => /exit transition/.test(item.title)));
     });
 
     it('plans synthetic suggested-fix replace edits from span-backed diagnostic payloads', async () => {

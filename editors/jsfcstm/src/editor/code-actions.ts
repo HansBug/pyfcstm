@@ -134,18 +134,31 @@ export async function collectCodeActions(
         !suggestedFixFromDiagnostic(item) && rangeIntersects(item.range, range)
     ));
     if (node?.model) {
-        const existing = new Set(relevantDiagnostics.map(diagnosticKey));
+        const existing = new Set<string>();
+        const serverSuggestedKeysAtRange = new Set(
+            collectInspectModelDiagnostics(document, semantic, node.model)
+                .filter(diagnostic => (
+                    suggestedFixFromDiagnostic(diagnostic) &&
+                    rangeIntersects(diagnostic.range, range)
+                ))
+                .map(diagnosticKey),
+        );
         for (const diagnostic of collectInspectModelDiagnostics(
             document,
             semantic,
             node.model,
-            relevantDiagnostics,
+            [],
             {rangeMode: 'issue'},
         )) {
             if (!suggestedFixFromDiagnostic(diagnostic)) continue;
-            if (!rangeIntersects(diagnostic.range, range)) continue;
-            if (existing.has(diagnosticKey(diagnostic))) continue;
-            existing.add(diagnosticKey(diagnostic));
+            const key = diagnosticKey(diagnostic);
+            // Suggested-fix diagnostics can have two useful server-derived
+            // ranges: an edit-oriented published range and a broader issue
+            // range for cursor discovery. Never use client-supplied
+            // suggested_fix payloads as authorization for either range.
+            if (!rangeIntersects(diagnostic.range, range) && !serverSuggestedKeysAtRange.has(key)) continue;
+            if (existing.has(key)) continue;
+            existing.add(key);
             relevantDiagnostics.push(diagnostic);
         }
     }

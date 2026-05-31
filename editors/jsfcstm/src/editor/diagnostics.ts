@@ -21,8 +21,28 @@ export const SUPPRESSED_FROM_INSPECT_SURFACE = new Set([
     'W_UNUSED_EVENT',
 ]);
 
+function canonicalDiagnosticData(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        return value.map(item => canonicalDiagnosticData(item));
+    }
+    if (typeof value !== 'object' || value === null) {
+        return value;
+    }
+
+    const out: Record<string, unknown> = {};
+    const item = value as Record<string, unknown>;
+    for (const key of Object.keys(item).sort()) {
+        if (key === 'suggested_fix') continue;
+        out[key] = canonicalDiagnosticData(item[key]);
+    }
+    return out;
+}
+
 export function diagnosticKey(diagnostic: FcstmDiagnostic): string {
-    return JSON.stringify([diagnostic.code ?? null, diagnostic.data ?? null]);
+    return JSON.stringify([
+        diagnostic.code ?? null,
+        canonicalDiagnosticData(diagnostic.data ?? null),
+    ]);
 }
 
 function consumeDiagnosticCount(counts: Map<string, number>, key: string): boolean {

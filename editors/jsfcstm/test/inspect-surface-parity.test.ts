@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import {createDocument, packageModule} from './support';
+import {createDocument, packageModule, withPatchedProperty} from './support';
 
 const SUPPRESSED_FROM_INSPECT_SURFACE = new Set([
     'W_UNREACHABLE_STATE',
@@ -207,6 +207,82 @@ describe('editor inspect diagnostics surface parity', () => {
         }
     });
 
+    it('surfaces inspect diagnostics without suggested fixes, including W_WRITE_ONLY_VAR', async () => {
+        const text = `
+def int write_only = 0;
+state Root {
+    state Idle { enter { write_only = 1; } }
+    [*] -> Idle;
+}
+`;
+        const document = createDocument(text, '/tmp/synthetic-write-only.fcstm');
+        const inspectModule = await import('../dist/diagnostics/inspect');
+
+        await withPatchedProperty(inspectModule, 'inspectModel', (() => ({
+            root_state_path: 'Root',
+            states: [],
+            transitions: [],
+            variables: [],
+            events: [],
+            actions: [],
+            forced_transitions: [],
+            metrics: {
+                n_states_leaf: 0,
+                n_states_composite: 0,
+                n_states_pseudo: 0,
+                max_hierarchy_depth: 0,
+                n_transitions_normal: 0,
+                n_transitions_forced: 0,
+                n_events: 0,
+                n_variables: 0,
+                var_to_leaf_ratio: 0,
+                aspect_coverage: {},
+                abstract_action_inventory: [],
+            },
+            reachability_graph: {},
+            event_emission_map: {},
+            var_dataflow: {},
+            aspect_impact_map: {},
+            action_ref_graph: {},
+            diagnostics: [{
+                code: 'W_WRITE_ONLY_VAR',
+                severity: 'warning',
+                message: 'Synthetic write-only variable diagnostic.',
+                span: null,
+                refs: {
+                    var_name: 'write_only',
+                    written_states: ['Root.Idle'],
+                },
+            }],
+        })) as typeof inspectModule.inspectModel, async () => {
+            const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+            const diagnostic = diagnostics.find(item => item.code === 'W_WRITE_ONLY_VAR');
+            assert.ok(diagnostic, 'expected W_WRITE_ONLY_VAR to be surfaced');
+            assert.equal(diagnostic.data?.var_name, 'write_only');
+            assert.equal(
+                document.lineAt(diagnostic.range.start.line).text.includes('def int write_only = 0;'),
+                true,
+            );
+        });
+    });
+
+    it('keeps the async semantic analyzer wrapper aligned with the shared implementation', async () => {
+        const text = `
+state Root {
+    event Unused;
+    state Idle;
+    [*] -> Idle;
+}
+`;
+        const document = createDocument(text, '/tmp/semantic-wrapper.fcstm');
+        const diagnostics = await packageModule.collectSemanticAnalysisDiagnostics(document);
+
+        assert.ok(
+            diagnostics.some(item => item.code === 'W_UNUSED_EVENT'),
+            'expected the async wrapper to reuse semantic analyzer diagnostics',
+        );
+    });
+
     it('resolves representative inspect refs to editor source ranges', async () => {
         const text = `
 def int counter = 0;
@@ -245,5 +321,10 @@ state Root {
             packageModule.resolveRangeFromRefs(document, semantic, {transition_span: null, duplicate_spans: [duplicateRange]}),
             duplicateRange,
         );
+        assert.equal(
+            packageModule.resolveRangeFromRefs(document, semantic, {duplicate_spans: ['not-a-range']}),
+            null,
+        );
+        assert.equal(packageModule.resolveRangeFromRefs(document, semantic, null), null);
     });
 });

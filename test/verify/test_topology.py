@@ -204,6 +204,51 @@ def test_build_leaf_level_macro_graph_handles_root_exit_sink_once():
     assert graph.edges[topology.EXIT_ROOT_SINK] == tuple()
 
 
+def test_build_leaf_level_macro_graph_bubbles_parent_exit_to_root_sink():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state Outer {
+                state A;
+                [*] -> A;
+                A -> [*];
+            }
+            [*] -> Outer;
+            Outer -> [*];
+        }
+        """
+    )
+
+    graph = topology.build_leaf_level_macro_graph(machine)
+
+    assert graph.edges["Root.Outer.A"] == (topology.EXIT_ROOT_SINK,)
+
+
+def test_topological_reachable_set_handles_diamond_closure_without_duplicates():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state A;
+            state B;
+            state C;
+            state D;
+            [*] -> A;
+            A -> B;
+            A -> C;
+            B -> D;
+            C -> D;
+            D -> [*];
+        }
+        """
+    )
+
+    reachable = topology.topological_reachable_set(machine)
+
+    assert reachable["Root.A"] == ("Root.B", "Root.C", "Root.D")
+
+
 def test_topological_finite_ignores_unreachable_trap_cycle():
     topology = _import_topology()
     machine = _parse(
@@ -460,6 +505,25 @@ def test_topological_inevitable_terminator_reports_self_loop_even_with_exit():
 
     assert report.inevitable is False
     assert report.counterexample_path == ("Root.A",)
+
+
+def test_topological_inevitable_terminator_reports_deadlock_leaf():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B;
+        }
+        """
+    )
+
+    report = topology.topological_inevitable_terminator(machine)
+
+    assert report.inevitable is False
+    assert report.counterexample_path == ("Root.B",)
 
 
 def test_event_emission_to_consumer_reachable_reports_fully_unreachable_event():

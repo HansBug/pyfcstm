@@ -283,6 +283,29 @@ state Root {
         );
     });
 
+    it('returns parse diagnostics without requiring a semantic snapshot', async () => {
+        const document = createDocument('state Root {', '/tmp/parse-only.fcstm');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+
+        assert.ok(diagnostics.length > 0, 'expected parser diagnostics for malformed input');
+        assert.ok(diagnostics.every(item => item.source === 'fcstm'));
+    });
+
+    it('tolerates workspace snapshots without root node data', async () => {
+        const text = `
+state Root;
+`;
+        const document = createDocument(text, '/tmp/no-semantic-snapshot.fcstm');
+        const graph = packageModule.getWorkspaceGraph();
+
+        await withPatchedProperty(graph, 'buildSnapshotForDocument', (async () => ({
+            rootFile: document.filePath,
+            nodes: {},
+        })) as typeof graph.buildSnapshotForDocument, async () => {
+            assert.deepEqual(await packageModule.collectDocumentDiagnostics(document), []);
+        });
+    });
+
     it('resolves representative inspect refs to editor source ranges', async () => {
         const text = `
 def int counter = 0;
@@ -326,5 +349,32 @@ state Root {
             null,
         );
         assert.equal(packageModule.resolveRangeFromRefs(document, semantic, null), null);
+    });
+
+    it('resolves missing and implicit event refs without requiring declarations', async () => {
+        const text = `
+state Root {
+    state Idle;
+    state Done;
+    [*] -> Idle;
+    Idle -> Done :: Tick;
+}
+`;
+        const {document, semantic} = await semanticFor(text, '/tmp/implicit-event-ranges.fcstm');
+
+        assert.equal(
+            packageModule.resolveRangeFromRefs(document, semantic, {event_qualified_name: 'Root.Missing'}),
+            null,
+        );
+        const implicitEventRange = packageModule.resolveRangeFromRefs(
+            document,
+            semantic,
+            {event_qualified_name: 'Root.Idle.Tick'},
+        );
+        assert.ok(implicitEventRange, 'expected implicit transition event range');
+        assert.equal(document.lineAt(implicitEventRange.start.line).text.slice(
+            implicitEventRange.start.character,
+            implicitEventRange.end.character,
+        ), 'Tick');
     });
 });

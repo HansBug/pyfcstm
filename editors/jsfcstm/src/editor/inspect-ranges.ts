@@ -51,7 +51,7 @@ export function resolveRangeFromRefs(
     if (typeof refs !== 'object' || refs === null) return null;
     const refMap = refs as Record<string, unknown>;
 
-    for (const key of ['state_path', 'composite_path', 'parent_path']) {
+    for (const key of ['state_path', 'composite_path', 'parent_path', 'from_path', 'to_path']) {
         const range = statePathRange(document, semantic, stringRef(refMap, key));
         if (range) return range;
     }

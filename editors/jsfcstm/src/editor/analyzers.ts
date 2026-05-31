@@ -327,6 +327,7 @@ function addTransitionDiagnostics(
                 source: 'fcstm',
                 code: FCSTM_DIAGNOSTIC_CODES.guardConstFalse,
                 data: {
+                    transition_span: null,
                     folded_value: false,
                 },
                 relatedInformation: sourceState

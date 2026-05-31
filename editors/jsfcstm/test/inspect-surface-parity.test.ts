@@ -4,7 +4,6 @@ import {createDocument, packageModule, withPatchedProperty} from './support';
 
 const SUPPRESSED_FROM_INSPECT_SURFACE = new Set([
     'W_UNREACHABLE_STATE',
-    'W_GUARD_CONST_FALSE',
     'W_UNUSED_EVENT',
 ]);
 
@@ -34,6 +33,18 @@ state Root {
     }
     [*] -> Idle;
     Idle -> [*] : if [stable > 0];
+}
+`,
+    },
+    {
+        name: 'constant false guard expression',
+        code: 'W_GUARD_CONST_FALSE',
+        text: `
+state Root {
+    state Idle;
+    state Blocked;
+    [*] -> Idle;
+    Idle -> Blocked : if [1 == 2];
 }
 `,
     },
@@ -266,6 +277,42 @@ state Root {
         });
     });
 
+    it('deduplicates editor-covered literal false guards while keeping inspect-only const folds', async () => {
+        const literalFalse = `
+state Root {
+    state Idle;
+    state Blocked;
+    [*] -> Idle;
+    Idle -> Blocked : if [false];
+}
+`;
+        const literalDiagnostics = await packageModule.collectDocumentDiagnostics(
+            createDocument(literalFalse, '/tmp/literal-false-guard.fcstm'),
+        );
+        assert.equal(
+            literalDiagnostics.filter(item => item.code === 'W_GUARD_CONST_FALSE').length,
+            1,
+        );
+
+        const foldedFalse = `
+state Root {
+    state Idle;
+    state Blocked;
+    [*] -> Idle;
+    Idle -> Blocked : if [1 == 2];
+}
+`;
+        const foldedDiagnostics = await packageModule.collectDocumentDiagnostics(
+            createDocument(foldedFalse, '/tmp/folded-false-guard.fcstm'),
+        );
+        const folded = foldedDiagnostics.find(item => item.code === 'W_GUARD_CONST_FALSE');
+        assert.ok(folded, 'expected inspect-only constant false guard diagnostic');
+        assert.deepEqual(folded.data, {
+            transition_span: null,
+            folded_value: false,
+        });
+    });
+
     it('keeps the async semantic analyzer wrapper aligned with the shared implementation', async () => {
         const text = `
 state Root {
@@ -325,6 +372,16 @@ state Root {
         assert.equal(document.lineAt(stateRange!.start.line).text.slice(
             stateRange!.start.character,
             stateRange!.end.character,
+        ), 'Idle');
+
+        const fromPathRange = packageModule.resolveRangeFromRefs(document, semantic, {
+            from_path: 'Root.Idle',
+            to_path: 'Root.Done',
+            transition_span: null,
+        });
+        assert.equal(document.lineAt(fromPathRange!.start.line).text.slice(
+            fromPathRange!.start.character,
+            fromPathRange!.end.character,
         ), 'Idle');
 
         const variableRange = packageModule.resolveRangeFromRefs(document, semantic, {var_name: 'counter'});

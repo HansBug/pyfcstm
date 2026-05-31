@@ -13,9 +13,11 @@ import {getWorkspaceGraph} from '../workspace';
 import {resolveRangeFromRefs} from './inspect-ranges';
 import {suggestedFixDiagnosticRange, suggestedFixIssueRange} from './suggested-fixes';
 
+// Only suppress inspect codes that the semantic analyzer already reports with
+// equivalent coverage. Const-folded false guards stay inspect-backed because
+// the semantic analyzer only recognizes literal `false`.
 export const SUPPRESSED_FROM_INSPECT_SURFACE = new Set([
     'W_UNREACHABLE_STATE',
-    'W_GUARD_CONST_FALSE',
     'W_UNUSED_EVENT',
 ]);
 

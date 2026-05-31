@@ -413,6 +413,40 @@ state Root {
         assert.ok(diagnostics.every(item => item.source === 'fcstm'));
     });
 
+    it('does not let unkeyed existing diagnostics consume inspect diagnostics', async () => {
+        const text = `
+state Root {
+    state Idle;
+    [*] -> Idle;
+}
+`;
+        const {document, semantic} = await semanticFor(text, '/tmp/unkeyed-existing-diagnostic.fcstm');
+        const diagnostics = packageModule.collectInspectDiagnosticsFromItems(
+            document,
+            semantic,
+            [{
+                code: 'W_DEADLOCK_LEAF',
+                severity: 'warning' as const,
+                message: 'Leaf state has no outgoing transition.',
+                span: null,
+                refs: {
+                    state_path: 'Root.Idle',
+                    parent_path: 'Root',
+                    reason: 'no_outgoing_transition',
+                },
+            }],
+            [{
+                range: packageModule.createRange(0, 0, 0, 1),
+                message: 'Parser diagnostic without a stable code.',
+                severity: 'error' as const,
+                source: 'fcstm',
+            }],
+        );
+
+        assert.equal(diagnostics.length, 1);
+        assert.equal(diagnostics[0].code, 'W_DEADLOCK_LEAF');
+    });
+
     it('tolerates workspace snapshots without root node data', async () => {
         const text = `
 state Root;

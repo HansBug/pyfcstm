@@ -1,5 +1,5 @@
 import {getParser, ParseError} from '../dsl/parser';
-import {inspectModel} from '../diagnostics';
+import {inspectModel, type ModelDiagnosticJson} from '../diagnostics';
 import type {FcstmSemanticDocument} from '../semantics';
 import {collectSemanticAnalysisDiagnosticsFromSemantic} from './analyzers';
 import {
@@ -72,22 +72,23 @@ export interface CollectInspectModelDiagnosticsOptions {
     rangeMode?: 'diagnostic' | 'issue';
 }
 
-export function collectInspectModelDiagnostics(
+export function collectInspectDiagnosticsFromItems(
     document: TextDocumentLike,
     semantic: FcstmSemanticDocument,
-    model: Parameters<typeof inspectModel>[0],
+    items: readonly ModelDiagnosticJson[],
     existingDiagnostics: FcstmDiagnostic[] = [],
     options: CollectInspectModelDiagnosticsOptions = {},
 ): FcstmDiagnostic[] {
     const existingCounts = new Map<string, number>();
     for (const diagnostic of existingDiagnostics) {
+        if (!diagnostic.code) continue;
         const key = diagnosticKey(diagnostic);
         existingCounts.set(key, (existingCounts.get(key) ?? 0) + 1);
     }
     const fullRange = fullDocumentRange(document);
     const diagnostics: FcstmDiagnostic[] = [];
 
-    for (const item of inspectModel(model).diagnostics) {
+    for (const item of items) {
         if (SUPPRESSED_FROM_INSPECT_SURFACE.has(item.code)) continue;
         const diagnostic: FcstmDiagnostic = {
             range: fullRange,
@@ -108,6 +109,22 @@ export function collectInspectModelDiagnostics(
     }
 
     return diagnostics;
+}
+
+export function collectInspectModelDiagnostics(
+    document: TextDocumentLike,
+    semantic: FcstmSemanticDocument,
+    model: Parameters<typeof inspectModel>[0],
+    existingDiagnostics: FcstmDiagnostic[] = [],
+    options: CollectInspectModelDiagnosticsOptions = {},
+): FcstmDiagnostic[] {
+    return collectInspectDiagnosticsFromItems(
+        document,
+        semantic,
+        inspectModel(model).diagnostics,
+        existingDiagnostics,
+        options,
+    );
 }
 
 export function convertParseErrorToDiagnostic(

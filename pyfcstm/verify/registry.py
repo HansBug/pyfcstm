@@ -64,6 +64,31 @@ def _smt_local(
     )
 
 
+def _composite_init_guards_incomplete() -> VerifyAlgorithmMeta:
+    return VerifyAlgorithmMeta(
+        name="composite_init_guards_incomplete",
+        description=(
+            "Detect composite states whose initial transitions do not jointly "
+            "cover all variable and event inputs."
+        ),
+        closedness="closed",
+        complexity_tier="smt_linear",
+        smt_logic="QF_LIRA",
+        formula_size_scaling="linear",
+        call_count_scaling="linear_in_states",
+        incremental=True,
+        fallback_unknown_risk="medium",
+        recommended_tactic="qflia",
+        quantifier_alternation_depth=0,
+        max_bitwidth=None,
+        theory_combination=("LIA", "LRA"),
+        verification_scope="smt_local",
+        dominant_dim=("V", "vars", "events"),
+        diagnostic_codes=("W_COMPOSITE_INIT_INCOMPLETE",),
+        impl=None,
+    )
+
+
 def _bmc_placeholder(
     name: str,
     description: str,
@@ -176,6 +201,7 @@ _REGISTRY = {
         ("I_ENTER_DURING_CONTRADICT",),
         dominant_dim=("leaves", "vars"),
     ),
+    "composite_init_guards_incomplete": _composite_init_guards_incomplete(),
     "bounded_reachability": _bmc_placeholder(
         "bounded_reachability",
         "Query whether a target state is reachable from a source within a bound.",

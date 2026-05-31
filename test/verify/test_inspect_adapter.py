@@ -177,6 +177,7 @@ def test_iter_inspect_eligible_preserves_registry_order():
         "effect_contradicts_guard",
         "transition_shadowed_by_predecessor",
         "enter_postcondition_implies_during_precondition",
+        "composite_init_guards_incomplete",
     )
     assert tuple(
         meta.name
@@ -190,4 +191,5 @@ def test_iter_inspect_eligible_preserves_registry_order():
         "strongly_connected_components",
         "topological_finite",
         "topological_inevitable_terminator",
+        "composite_init_guards_incomplete",
     )

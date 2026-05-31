@@ -23,6 +23,7 @@ GROUP2_SMT_LOCAL = (
     "effect_contradicts_guard",
     "transition_shadowed_by_predecessor",
     "enter_postcondition_implies_during_precondition",
+    "composite_init_guards_incomplete",
 )
 
 GROUP3_BMC_PLACEHOLDERS = (
@@ -38,7 +39,7 @@ ALL_ALGORITHMS = GROUP1_TOPOLOGY + GROUP2_SMT_LOCAL + GROUP3_BMC_PLACEHOLDERS
 
 def test_registry_contains_exactly_all_pr_a_algorithms_in_stable_order():
     assert tuple(REGISTRY) == ALL_ALGORITHMS
-    assert len(REGISTRY) == 18
+    assert len(REGISTRY) == 19
 
 
 def test_registry_keys_match_meta_names_and_all_impls_are_placeholders():
@@ -91,9 +92,7 @@ def test_group2_smt_local_metadata_contract():
         assert meta.closedness == "closed"
         assert meta.complexity_tier == "smt_linear"
         assert meta.smt_logic == "QF_LIRA"
-        assert meta.formula_size_scaling == "constant"
         assert meta.fallback_unknown_risk in {"low", "medium"}
-        assert meta.recommended_tactic == "smt"
         assert meta.theory_combination == ("LIA", "LRA")
         assert meta.verification_scope == "smt_local"
 
@@ -103,10 +102,32 @@ def test_group2_smt_local_metadata_contract():
         REGISTRY["enter_postcondition_implies_during_precondition"].call_count_scaling
         == "linear_in_leaves"
     )
+    assert (
+        REGISTRY["composite_init_guards_incomplete"].call_count_scaling
+        == "linear_in_states"
+    )
+    assert REGISTRY["composite_init_guards_incomplete"].formula_size_scaling == "linear"
+    assert REGISTRY["composite_init_guards_incomplete"].incremental is True
+    assert REGISTRY["composite_init_guards_incomplete"].recommended_tactic == "qflia"
+    assert REGISTRY["composite_init_guards_incomplete"].dominant_dim == (
+        "V",
+        "vars",
+        "events",
+    )
+    assert REGISTRY["composite_init_guards_incomplete"].fallback_unknown_risk == (
+        "medium"
+    )
+    assert REGISTRY["composite_init_guards_incomplete"].theory_combination == (
+        "LIA",
+        "LRA",
+    )
     for name in set(GROUP2_SMT_LOCAL) - {
-        "enter_postcondition_implies_during_precondition"
+        "enter_postcondition_implies_during_precondition",
+        "composite_init_guards_incomplete",
     }:
         assert REGISTRY[name].call_count_scaling == "linear_in_transitions"
+        assert REGISTRY[name].formula_size_scaling == "constant"
+        assert REGISTRY[name].recommended_tactic == "smt"
 
     expected_codes = {
         "dead_guard": ("W_DEAD_GUARD",),
@@ -118,6 +139,7 @@ def test_group2_smt_local_metadata_contract():
         "enter_postcondition_implies_during_precondition": (
             "I_ENTER_DURING_CONTRADICT",
         ),
+        "composite_init_guards_incomplete": ("W_COMPOSITE_INIT_INCOMPLETE",),
     }
     for name, codes in expected_codes.items():
         assert REGISTRY[name].diagnostic_codes == codes

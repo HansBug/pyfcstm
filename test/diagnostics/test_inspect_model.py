@@ -968,6 +968,8 @@ class TestInspectModelGuardAffectDiagnostics:
         assert const_true_refs == {
             'transition_span': None,
             'folded_value': True,
+            'from_path': 'Root.Idle',
+            'to_path': 'Root.Done',
         }
 
     def test_unreferenced_variable_with_abstract_action_is_info(self):
@@ -1273,6 +1275,8 @@ class TestInspectModelExtendedCoverage:
         const_false = next(d for d in diagnostics if d.code == 'W_GUARD_CONST_FALSE')
         assert const_false.refs['folded_value'] is False
         assert const_false.refs['transition_span'] is None
+        assert const_false.refs['from_path'] == 'Root.Active'
+        assert const_false.refs['to_path'] == 'Root.Blocked'
         unreachable = next(d for d in diagnostics if d.code == 'W_UNREACHABLE_STATE')
         assert unreachable.refs == {'state_path': 'Root.Orphan'}
 
@@ -1322,11 +1326,15 @@ class TestInspectModelExtendedCoverage:
         assert const_true.refs == {
             'transition_span': None,
             'folded_value': True,
+            'from_path': 'Root.Idle',
+            'to_path': 'Root.Active',
         }
         const_false = next(d for d in diagnostics if d.code == 'W_GUARD_CONST_FALSE')
         assert const_false.refs == {
             'transition_span': None,
             'folded_value': False,
+            'from_path': 'Root.Active',
+            'to_path': 'Root.Blocked',
         }
         during_refs = sorted(
             (d.refs for d in diagnostics if d.code == 'W_DURING_CONST_ASSIGN'),

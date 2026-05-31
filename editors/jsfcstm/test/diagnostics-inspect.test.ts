@@ -621,6 +621,8 @@ state Root {
             assert.deepEqual(constFalse!.refs, {
                 transition_span: null,
                 folded_value: false,
+                from_path: 'Root.Active',
+                to_path: 'Root.Blocked',
             });
 
             const unreachable = report.diagnostics.find(d => d.code === 'W_UNREACHABLE_STATE');
@@ -681,18 +683,43 @@ state Root {
 `));
             const constTrue = report.diagnostics.filter(d => d.code === 'W_GUARD_CONST_TRUE');
             assert.equal(constTrue.length, 4);
-            for (const item of constTrue) {
-                assert.deepEqual(item.refs, {
-                    transition_span: null,
-                    folded_value: true,
-                });
-            }
+            assert.deepEqual(
+                constTrue.map(item => item.refs).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+                [
+                    {
+                        transition_span: null,
+                        folded_value: true,
+                        from_path: 'Root.Blocked',
+                        to_path: 'Root.WideTrue',
+                    },
+                    {
+                        transition_span: null,
+                        folded_value: true,
+                        from_path: 'Root.Idle',
+                        to_path: 'Root.Active',
+                    },
+                    {
+                        transition_span: null,
+                        folded_value: true,
+                        from_path: 'Root.ModuloTrue',
+                        to_path: 'Root.PowerTrue',
+                    },
+                    {
+                        transition_span: null,
+                        folded_value: true,
+                        from_path: 'Root.WideTrue',
+                        to_path: 'Root.ModuloTrue',
+                    },
+                ].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+            );
 
             const constFalse = report.diagnostics.find(d => d.code === 'W_GUARD_CONST_FALSE');
             assert.ok(constFalse);
             assert.deepEqual(constFalse!.refs, {
                 transition_span: null,
                 folded_value: false,
+                from_path: 'Root.Active',
+                to_path: 'Root.Blocked',
             });
 
             const duringRefs = report.diagnostics

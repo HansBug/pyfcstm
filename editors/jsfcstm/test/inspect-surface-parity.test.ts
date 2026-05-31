@@ -310,7 +310,44 @@ state Root {
         assert.deepEqual(folded.data, {
             transition_span: null,
             folded_value: false,
+            from_path: 'Root.Idle',
+            to_path: 'Root.Blocked',
         });
+    });
+
+    it('keeps inspect-only folded false guards when literal false guards share the file', async () => {
+        const text = `
+state Root {
+    state Idle;
+    state LiteralBlocked;
+    state FoldedBlocked;
+    [*] -> Idle;
+    Idle -> LiteralBlocked : if [false];
+    Idle -> FoldedBlocked : if [1 == 2];
+}
+`;
+        const diagnostics = await packageModule.collectDocumentDiagnostics(
+            createDocument(text, '/tmp/mixed-false-guards.fcstm'),
+        );
+        const guardRefs = diagnostics
+            .filter(item => item.code === 'W_GUARD_CONST_FALSE')
+            .map(item => item.data)
+            .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+
+        assert.deepEqual(guardRefs, [
+            {
+                transition_span: null,
+                folded_value: false,
+                from_path: 'Root.Idle',
+                to_path: 'Root.FoldedBlocked',
+            },
+            {
+                transition_span: null,
+                folded_value: false,
+                from_path: 'Root.Idle',
+                to_path: 'Root.LiteralBlocked',
+            },
+        ]);
     });
 
     it('keeps the async semantic analyzer wrapper aligned with the shared implementation', async () => {

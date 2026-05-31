@@ -70,6 +70,25 @@ function isFalseLiteral(expression: FcstmAstExpression): boolean {
         && /^(false|False)$/i.test(expression.valueText);
 }
 
+function dottedPath(path: readonly string[] | undefined): string | null {
+    return path && path.length > 0 ? path.join('.') : null;
+}
+
+function transitionDiagnosticEndpointPaths(
+    transition: FcstmSemanticTransition,
+): {from_path?: string; to_path?: string} {
+    const fromPath = transition.sourceKind === 'init'
+        ? '[*]'
+        : dottedPath(transition.sourceStatePath) ?? transition.sourceStateName ?? null;
+    const toPath = transition.targetKind === 'exit'
+        ? '[*]'
+        : dottedPath(transition.targetStatePath) ?? transition.targetStateName ?? null;
+    return {
+        ...(fromPath ? {from_path: fromPath} : {}),
+        ...(toPath ? {to_path: toPath} : {}),
+    };
+}
+
 function toFileUri(document: TextDocumentLike): string {
     const filePath = document.filePath || document.uri?.fsPath;
     return filePath ? pathToFileURL(filePath).toString() : 'untitled:fcstm';
@@ -329,6 +348,7 @@ function addTransitionDiagnostics(
                 data: {
                     transition_span: null,
                     folded_value: false,
+                    ...transitionDiagnosticEndpointPaths(transition),
                 },
                 relatedInformation: sourceState
                     ? [{

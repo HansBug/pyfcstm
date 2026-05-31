@@ -108,6 +108,7 @@ export function collectConstFoldWarnings(machine: StateMachine | null | undefine
                     transition.toState,
                     transition.sourceKind,
                     transition.targetKind,
+                    state.path,
                     foldedGuard,
                 ));
             }
@@ -206,6 +207,7 @@ function guardConstDiagnostic(
     toState: string,
     sourceKind: 'init' | 'state',
     targetKind: 'state' | 'exit',
+    parentPath: readonly string[],
     value: boolean,
 ): ModelDiagnosticJson {
     const label = value ? 'true' : 'false';
@@ -216,7 +218,12 @@ function guardConstDiagnostic(
         severity: 'warning',
         message: `Transition ${JSON.stringify(sourceLabel)} -> ${JSON.stringify(targetLabel)} has a guard that is statically ${label}.`,
         span: null,
-        refs: {transition_span: null, folded_value: value},
+        refs: {
+            transition_span: null,
+            folded_value: value,
+            from_path: transitionSourcePath(parentPath, fromState, sourceKind),
+            to_path: transitionTargetPath(parentPath, toState, targetKind),
+        },
     };
 }
 
@@ -226,6 +233,22 @@ function transitionSourceLabel(value: string, sourceKind: 'init' | 'state'): str
 
 function transitionTargetLabel(value: string, targetKind: 'state' | 'exit'): string {
     return targetKind === 'exit' ? '[*]' : value;
+}
+
+function transitionSourcePath(
+    parentPath: readonly string[],
+    value: string,
+    sourceKind: 'init' | 'state',
+): string {
+    return sourceKind === 'init' ? '[*]' : [...parentPath, value].join('.');
+}
+
+function transitionTargetPath(
+    parentPath: readonly string[],
+    value: string,
+    targetKind: 'state' | 'exit',
+): string {
+    return targetKind === 'exit' ? '[*]' : [...parentPath, value].join('.');
 }
 
 function jsonStableNumber(value: ConstValue | null): number | null {

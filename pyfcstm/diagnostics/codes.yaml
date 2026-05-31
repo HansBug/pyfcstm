@@ -1051,6 +1051,14 @@ W_GUARD_CONST_FALSE:
       type: bool
       required: true
       description: Constant-folded guard value (always ``false``).
+    from_path:
+      type: str
+      required: false
+      description: Source state path of the transition, or ``[*]`` for an initial transition.
+    to_path:
+      type: str
+      required: false
+      description: Target state path of the transition, or ``[*]`` for an exit transition.
   for_llm:
     summary: >-
       The transition's guard is statically known to be ``false`` and the
@@ -1097,6 +1105,14 @@ W_GUARD_CONST_TRUE:
       type: bool
       required: true
       description: Constant-folded guard value (always ``true``).
+    from_path:
+      type: str
+      required: false
+      description: Source state path of the transition, or ``[*]`` for an initial transition.
+    to_path:
+      type: str
+      required: false
+      description: Target state path of the transition, or ``[*]`` for an exit transition.
   for_llm:
     summary: >-
       The transition's guard is statically known to be ``true`` and does

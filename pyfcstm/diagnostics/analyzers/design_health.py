@@ -133,7 +133,12 @@ def _guard_const_false_diagnostics(transitions) -> List[ModelDiagnostic]:
                         f'Transition {transition.from_path!r} -> {transition.to_path!r} '
                         'has a guard that is statically false.'
                     ),
-                    refs={'transition_span': None, 'folded_value': False},
+                    refs={
+                        'transition_span': None,
+                        'folded_value': False,
+                        'from_path': transition.from_path,
+                        'to_path': transition.to_path,
+                    },
                 )
             )
     return diagnostics

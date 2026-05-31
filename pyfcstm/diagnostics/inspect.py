@@ -19,7 +19,7 @@ The module exposes the following dataclasses:
 * :class:`StateInfo` — per-state structural summary
 * :class:`TransitionInfo` — per-transition structural summary
 * :class:`VariableInfo` — per-variable structural summary plus
-  participation flags used by ``W_UNREFERENCED_VAR``
+  guard-affect flags used by ``W_UNREFERENCED_VAR``
 * :class:`EventInfo` — per-event structural summary
 * :class:`ModelMetrics` — aggregate counts and ratios
 * :class:`ModelInspect` — top-level container including diagnostics
@@ -49,7 +49,11 @@ import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
-from .analyzers import collect_design_health_warnings
+from .analyzers import (
+    build_use_def_graph,
+    collect_design_health_warnings,
+    collect_expr_variables,
+)
 from ..utils.validate import ModelDiagnostic
 
 if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
@@ -176,9 +180,9 @@ class TransitionInfo:
 @dataclass(frozen=True)
 class VariableInfo:
     """
-    Structural summary of a variable definition plus participation flags.
+    Structural summary of a variable definition plus guard-affect flags.
 
-    The ``participates_directly`` and ``participates_indirectly`` flags
+    The ``affects_guard_directly`` and ``affects_guard_indirectly`` flags
     are precomputed here so that unreferenced-variable diagnostics can
     be expressed as a one-line filter against this object.
 
@@ -200,20 +204,18 @@ class VariableInfo:
     :param written_in_effects: Tuples ``(from_path, to_path)`` of
         transitions whose effect block writes this variable.
     :type written_in_effects: Tuple[Tuple[str, str], ...]
-    :param participates_directly: ``True`` when the variable is read by
-        at least one guard, transition effect, or action operation.
-    :type participates_directly: bool
-    :param participates_indirectly: ``True`` when the variable is not
-        directly referenced but is transitively reachable through
-        write-then-read data dependency across blocks. The current
-        inspect implementation keeps this field as ``False`` for
-        variables that lack any read.
-    :type participates_indirectly: bool
+    :param affects_guard_directly: ``True`` when the variable is read by
+        at least one transition guard.
+    :type affects_guard_directly: bool
+    :param affects_guard_indirectly: ``True`` when the variable reaches
+        a transition guard through the conservative use-def graph.
+    :type affects_guard_indirectly: bool
     :param abstract_actions_in_scope: Function names of abstract actions
-        whose enclosing state is on the ancestor chain or sub-tree of
-        any state that touches this variable. Downstream diagnostics can
-        use this to distinguish high-confidence unused variables from
-        variables that may be touched by abstract behavior.
+        that may access this variable. FCSTM variables are global, so any
+        abstract action in the machine is conservatively visible here.
+        Downstream diagnostics can use this to distinguish high-confidence
+        unused variables from variables that may be touched by abstract
+        behavior.
     :type abstract_actions_in_scope: Tuple[str, ...]
     :param float_literal_assignments: Source text of float literal
         assignments to this variable from lifecycle actions or transition
@@ -228,8 +230,8 @@ class VariableInfo:
     written_in_states: Tuple[str, ...]
     read_in_guards: Tuple[Tuple[str, str], ...]
     written_in_effects: Tuple[Tuple[str, str], ...]
-    participates_directly: bool
-    participates_indirectly: bool
+    affects_guard_directly: bool
+    affects_guard_indirectly: bool
     abstract_actions_in_scope: Tuple[str, ...]
     float_literal_assignments: Tuple[str, ...] = field(default_factory=tuple)
 
@@ -492,38 +494,7 @@ def _walk_expr_variables(expr: Optional['Expr']) -> List[str]:
     """Return variable names read by ``expr`` in left-to-right order."""
     if expr is None:
         return []
-    seen: List[str] = []
-    _walk_expr_collect(expr, seen)
-    return seen
-
-
-def _walk_expr_collect(expr: 'Expr', out: List[str]) -> None:
-    from ..model.expr import (
-        BinaryOp,
-        ConditionalOp,
-        UFunc,
-        UnaryOp,
-        Variable,
-    )
-    if isinstance(expr, Variable):
-        out.append(expr.name)
-        return
-    # Constants have no children.
-    if isinstance(expr, UnaryOp):
-        _walk_expr_collect(expr.x, out)
-        return
-    if isinstance(expr, BinaryOp):
-        _walk_expr_collect(expr.x, out)
-        _walk_expr_collect(expr.y, out)
-        return
-    if isinstance(expr, ConditionalOp):
-        _walk_expr_collect(expr.cond, out)
-        _walk_expr_collect(expr.if_true, out)
-        _walk_expr_collect(expr.if_false, out)
-        return
-    if isinstance(expr, UFunc):
-        _walk_expr_collect(expr.x, out)
-        return
+    return list(collect_expr_variables(expr))
 
 
 def _walk_stmt_reads_writes(
@@ -885,14 +856,20 @@ def _build_variable_infos(
                 out.append(x)
         return tuple(out)
 
+    use_def_graph = build_use_def_graph(machine)
+    direct_guard_vars = {
+        name for name, entries in var_read_guards.items()
+        if entries
+    }
+    indirect_guard_vars = set(use_def_graph.affecting_variables(direct_guard_vars))
+
     out: List[VariableInfo] = []
     for name, var_define in machine.defines.items():
         read_states = _dedupe_ordered(var_reads_by_state[name])
         written_states = _dedupe_ordered(var_writes_by_state[name])
         read_guards = _dedupe_pairs(var_read_guards[name])
         written_effects = _dedupe_pairs(var_written_effects[name])
-        participates_directly = bool(read_states or read_guards)
-        abstract_actions = _abstract_actions_in_scope(state_lookup, read_states, written_states)
+        abstract_actions = _abstract_actions_in_scope(state_lookup)
         float_assignments = _dedupe_ordered(var_float_literal_assignments[name])
         out.append(VariableInfo(
             name=name,
@@ -902,8 +879,10 @@ def _build_variable_infos(
             written_in_states=written_states,
             read_in_guards=read_guards,
             written_in_effects=written_effects,
-            participates_directly=participates_directly,
-            participates_indirectly=False,
+            affects_guard_directly=name in direct_guard_vars,
+            affects_guard_indirectly=(
+                name not in direct_guard_vars and name in indirect_guard_vars
+            ),
             abstract_actions_in_scope=abstract_actions,
             float_literal_assignments=float_assignments,
         ))
@@ -912,29 +891,13 @@ def _build_variable_infos(
 
 def _abstract_actions_in_scope(
         state_lookup: Dict[str, StateInfo],
-        read_states: Tuple[str, ...],
-        written_states: Tuple[str, ...],
 ) -> Tuple[str, ...]:
-    """Return abstract action labels visible from any touching state."""
-    touched = set(read_states) | set(written_states)
-    if not touched:
-        # Variable touches no state — declared but unused. There is no
-        # abstract-action scope to inspect from here.
-        return tuple()
-    out: List[str] = []
-    for path in sorted(touched):
-        info = state_lookup.get(path)
-        if info is None:  # pragma: no cover
-            # Defensive: ``touched`` paths come from VariableInfo
-            # read_in_states / written_in_states, which are populated
-            # only with paths that exist in state_lookup. Unreachable
-            # in the current pipeline; kept as a safety net.
-            continue
-        if info.has_abstract_action:
-            label = f'{info.path}:<abstract>'
-            if label not in out:
-                out.append(label)
-    return tuple(out)
+    """Return abstract action labels that can see global variables."""
+    return tuple(
+        f'{info.path}:<abstract>'
+        for info in sorted(state_lookup.values(), key=lambda item: item.path)
+        if info.has_abstract_action
+    )
 
 
 def _build_event_infos(machine: 'StateMachine', transitions: Tuple[TransitionInfo, ...]) -> Tuple[EventInfo, ...]:

@@ -179,7 +179,7 @@
         "name", "type", "init_value",
         "read_in_states", "written_in_states",
         "read_in_guards", "written_in_effects",
-        "participates_directly", "participates_indirectly",
+        "affects_guard_directly", "affects_guard_indirectly",
         "abstract_actions_in_scope", "float_literal_assignments"
       ],
       "properties": {
@@ -206,8 +206,8 @@
             "maxItems": 2
           }
         },
-        "participates_directly": { "type": "boolean" },
-        "participates_indirectly": { "type": "boolean" },
+        "affects_guard_directly": { "type": "boolean" },
+        "affects_guard_indirectly": { "type": "boolean" },
         "abstract_actions_in_scope": {
           "type": "array",
           "items": { "type": "string" }

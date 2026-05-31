@@ -130,11 +130,14 @@ class TestInspectModelBasic:
         assert 'Root.Active' in counter.written_in_states
         # guard read should also be captured
         assert any('Root.Idle' == fp for fp, _ in counter.read_in_guards)
+        assert counter.affects_guard_directly is True
+        assert counter.affects_guard_indirectly is False
         # ``temp`` has no participation in this DSL.
         temp = vars_by_name['temp']
         assert temp.read_in_states == tuple()
         assert temp.written_in_states == tuple()
-        assert temp.participates_directly is False
+        assert temp.affects_guard_directly is False
+        assert temp.affects_guard_indirectly is False
 
     def test_event_payload(self, report):
         events_by_name = {e.qualified_name: e for e in report.events}
@@ -275,7 +278,17 @@ class TestInspectModelToJson:
         assert isinstance(payload['variables'][0]['read_in_states'], list)
 
     def test_to_json_diagnostics_empty_for_clean_model(self, report):
-        assert report.to_json()['diagnostics'] == []
+        clean = """
+        def int counter = 0;
+        state Root {
+            state Idle;
+            state Active { during { counter = counter + 1; } }
+            [*] -> Idle;
+            Idle -> Active : if [counter > 0];
+            Active -> Idle :: Pause;
+        }
+        """
+        assert inspect_model(_parse(clean)).to_json()['diagnostics'] == []
 
 
 @pytest.mark.unittest
@@ -660,6 +673,237 @@ state Root {
         assert 'Root.A' in vars_by_name['x'].read_in_states
         # ``y`` is written in both branches.
         assert 'Root.A' in vars_by_name['y'].written_in_states
+
+
+@pytest.mark.unittest
+class TestInspectModelGuardAffectDataFlow:
+    """Layer-0 use-def closure behind guard-affect participation flags."""
+
+    def test_use_def_graph_tracks_nested_branch_conditions(self):
+        from pyfcstm.diagnostics.analyzers.use_def import build_use_def_graph
+
+        dsl = """
+        def int x = 0;
+        def int y = 0;
+        def int z = 0;
+        def int flag = 0;
+        def int dedupe = 0;
+        state Root {
+            state Active {
+                during {
+                    dedupe = x + x;
+                    if [x >= 10] {
+                        if [x % 2 == 0] {
+                            y = x + 10;
+                        } else {
+                            y = x + 12;
+                            z = x * y - 2;
+                        }
+                    } else if [flag > 0] {
+                        z = y + flag;
+                    } else {
+                        z = y - 10;
+                        x = x + 2;
+                    }
+                }
+            }
+            [*] -> Active;
+        }
+        """
+        graph = build_use_def_graph(_parse(dsl))
+
+        assert ('x', 'y') in graph.edges
+        assert ('x', 'z') in graph.edges
+        assert ('y', 'z') in graph.edges
+        assert ('flag', 'z') in graph.edges
+        assert ('x', 'x') in graph.edges
+        assert ('flag', 'x') in graph.edges
+
+    def test_collect_expr_variables_rejects_unknown_expr_subclass(self):
+        from pyfcstm.diagnostics.analyzers.use_def import collect_expr_variables
+        from pyfcstm.model.expr import Expr
+
+        class UnknownExpr(Expr):
+            pass
+
+        with pytest.raises(TypeError, match='UnknownExpr'):
+            collect_expr_variables(UnknownExpr())
+
+    def test_build_use_def_graph_rejects_unknown_statement_subclass(self):
+        from types import SimpleNamespace
+
+        from pyfcstm.diagnostics.analyzers.use_def import build_use_def_graph
+        from pyfcstm.model.model import OperationStatement
+
+        class UnknownStatement(OperationStatement):
+            pass
+
+        machine = SimpleNamespace(
+            walk_states=lambda: [SimpleNamespace(
+                on_enters=[SimpleNamespace(
+                    is_abstract=False,
+                    operations=[UnknownStatement()],
+                )],
+                on_durings=[],
+                on_exits=[],
+                on_during_aspects=[],
+                transitions=[],
+            )],
+        )
+
+        with pytest.raises(TypeError, match='UnknownStatement'):
+            build_use_def_graph(machine)
+
+    def test_variable_info_marks_direct_and_indirect_guard_affect(self):
+        dsl = """
+        def int source = 0;
+        def int middle = 0;
+        def int guard_value = 0;
+        def int direct = 0;
+        def int ternary_only = 0;
+        def int unused = 0;
+        state Root {
+            state Idle {
+                during {
+                    middle = source + 1;
+                    guard_value = middle;
+                    unused = (ternary_only > 0) ? 1 : 2;
+                }
+            }
+            state Done;
+            [*] -> Idle : if [direct > 0];
+            Idle -> Done : if [guard_value > 0];
+            Done -> [*] : if [direct > 1];
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        variables = {v.name: v for v in report.variables}
+
+        assert variables['direct'].affects_guard_directly is True
+        assert variables['direct'].affects_guard_indirectly is False
+        assert variables['guard_value'].affects_guard_directly is True
+        assert variables['guard_value'].affects_guard_indirectly is False
+        assert variables['middle'].affects_guard_directly is False
+        assert variables['middle'].affects_guard_indirectly is True
+        assert variables['source'].affects_guard_directly is False
+        assert variables['source'].affects_guard_indirectly is True
+        assert variables['ternary_only'].affects_guard_directly is False
+        assert variables['ternary_only'].affects_guard_indirectly is False
+        assert variables['unused'].affects_guard_directly is False
+        assert variables['unused'].affects_guard_indirectly is False
+
+
+@pytest.mark.unittest
+class TestInspectModelGuardAffectDiagnostics:
+    """Diagnostics whose trigger is the guard-affect closure."""
+
+    @staticmethod
+    def _diagnostics_by_code(dsl):
+        report = inspect_model(_parse(dsl))
+        assert_all_diags_match_schema(report.diagnostics, context='guard-affect-data-flow')
+        out = {}
+        for diag in report.diagnostics:
+            out.setdefault(diag.code, []).append(diag)
+        return out
+
+    def test_unreferenced_variable_without_abstract_action_is_warning(self):
+        by_code = self._diagnostics_by_code("""
+        def int unused = 0;
+        def int driver = 0;
+        state Root {
+            state Idle;
+            state Done;
+            [*] -> Idle;
+            Idle -> Done : if [driver > 0];
+        }
+        """)
+
+        assert by_code['W_UNREFERENCED_VAR'][0].refs == {
+            'var_name': 'unused',
+            'init_value': '0',
+        }
+        assert 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT' not in by_code
+
+    def test_unreferenced_variable_with_abstract_action_is_info(self):
+        by_code = self._diagnostics_by_code("""
+        def int maybe_external = 0;
+        def int driver = 0;
+        state Root {
+            state Idle { enter abstract ExternalHook; }
+            state Done;
+            [*] -> Idle;
+            Idle -> Done : if [driver > 0];
+        }
+        """)
+
+        assert by_code['I_UNREFERENCED_VAR_MAYBE_ABSTRACT'][0].refs == {
+            'var_name': 'maybe_external',
+            'abstract_actions_in_scope': ['Root.Idle:<abstract>'],
+        }
+        assert 'W_UNREFERENCED_VAR' not in by_code
+
+    def test_indirect_guard_dependency_is_not_reported_as_unreferenced(self):
+        by_code = self._diagnostics_by_code("""
+        def int source = 0;
+        def int guard_value = 0;
+        state Root {
+            state Idle { during { guard_value = source + 1; } }
+            state Done;
+            [*] -> Idle;
+            Idle -> Done : if [guard_value > 0];
+        }
+        """)
+
+        variable_codes = [
+            diag for diags in by_code.values() for diag in diags
+            if diag.refs.get('var_name') == 'source'
+        ]
+        variable_codes = [diag.code for diag in variable_codes]
+        assert 'W_UNREFERENCED_VAR' not in variable_codes
+        assert 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT' not in variable_codes
+        assert variable_codes == ['W_UNWRITTEN_READ_VAR']
+
+    def test_guard_vars_never_change_is_per_transition(self):
+        by_code = self._diagnostics_by_code("""
+        def int stable = 0;
+        def int changing = 0;
+        state Root {
+            state Idle { during { changing = changing + 1; } }
+            state StableBlocked;
+            state DynamicAllowed;
+            [*] -> Idle;
+            Idle -> StableBlocked : if [stable > 0];
+            Idle -> DynamicAllowed : if [changing > 0];
+        }
+        """)
+
+        assert [diag.refs for diag in by_code['W_GUARD_VARS_NEVER_CHANGE']] == [{
+            'from_path': 'Root.Idle',
+            'to_path': 'Root.StableBlocked',
+            'guard_vars': ['stable'],
+        }]
+
+    def test_write_only_branch_remains_available_for_affecting_payload(self):
+        from pyfcstm.diagnostics.analyzers.data_flow import collect_data_flow_warnings
+
+        variable = VariableInfo(
+            name='write_only',
+            type='int',
+            init_value='0',
+            read_in_states=tuple(),
+            written_in_states=('Root.Idle',),
+            read_in_guards=tuple(),
+            written_in_effects=tuple(),
+            affects_guard_directly=True,
+            affects_guard_indirectly=False,
+            abstract_actions_in_scope=tuple(),
+            float_literal_assignments=tuple(),
+        )
+
+        assert [diag.refs for diag in collect_data_flow_warnings([variable])] == [{
+            'var_name': 'write_only',
+            'written_states': ['Root.Idle'],
+        }]
 
 
 @pytest.mark.unittest

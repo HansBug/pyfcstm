@@ -870,6 +870,16 @@ state Root {
             const hasIdleActive = pairs.some(p => p[0] === 'Root.Idle' && p[1] === 'Root.Active');
             assert.ok(hasIdleActive,
                 `expected ['Root.Idle', 'Root.Active'] in counter.written_in_effects, got ${JSON.stringify(pairs)}`);
+            const readPairs = new Set(counter!.read_in_effect_occurrences.map(p => `${p[0]}->${p[1]}`));
+            assert.ok(readPairs.has('Root.Idle->Root.Active'));
+            assert.ok(readPairs.has('Root.Active->Root.Idle'));
+
+            const last = report.variables.find(v => v.name === 'last');
+            assert.ok(last);
+            assert.deepEqual(
+                last!.read_in_effect_occurrences.map(p => [p[0], p[1]]),
+                [['Root.Idle', 'Root.Active']],
+            );
         });
 
         it('walks IfBlock inside transition effect to collect reads/writes', async () => {
@@ -1430,6 +1440,41 @@ state Root {
                 var_name: 'status',
                 write_locations: ['Root.Active'],
             });
+        });
+
+        it('keeps exit-action writes live when the transition effect reads them', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+def int sink = 0;
+state Root {
+    state Active {
+        exit { status = 1; }
+    }
+    state Done;
+    [*] -> Active;
+    Active -> Done effect { sink = status; };
+}
+`));
+            assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
+
+        it('keeps descendant exit-action writes live when a parent transition effect reads them', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+def int sink = 0;
+state Root {
+    state Parent {
+        state Child {
+            exit { status = 1; }
+        }
+        [*] -> Child;
+    }
+    state Done;
+    [*] -> Parent;
+    Parent -> Done effect { sink = status; };
+}
+`));
+            assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
         });
 
         it('does not clear composite exit-action final writes with descendant prior reads', async () => {

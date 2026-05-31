@@ -212,6 +212,10 @@ class VariableInfo:
         that read this variable. The occurrence key keeps parallel
         transitions with the same endpoints separate.
     :type read_in_guard_occurrences: Tuple[Tuple[str, str, str], ...]
+    :param read_in_effect_occurrences: Tuples
+        ``(from_path, to_path, occurrence_key)`` for transition effects
+        that read this variable.
+    :type read_in_effect_occurrences: Tuple[Tuple[str, str, str], ...]
     :param written_in_effect_occurrences: Tuples
         ``(from_path, to_path, occurrence_key)`` for transition effects
         that write this variable.
@@ -252,6 +256,7 @@ class VariableInfo:
     read_in_action_stages: Tuple[Tuple[str, str], ...] = field(default_factory=tuple)
     written_in_action_stages: Tuple[Tuple[str, str], ...] = field(default_factory=tuple)
     read_in_guard_occurrences: Tuple[Tuple[str, str, str], ...] = field(default_factory=tuple)
+    read_in_effect_occurrences: Tuple[Tuple[str, str, str], ...] = field(default_factory=tuple)
     written_in_effect_occurrences: Tuple[Tuple[str, str, str], ...] = field(default_factory=tuple)
 
 
@@ -832,6 +837,9 @@ def _build_variable_infos(
     var_read_guard_occurrences: Dict[str, List[Tuple[str, str, str]]] = {
         name: [] for name in machine.defines
     }
+    var_read_effect_occurrences: Dict[str, List[Tuple[str, str, str]]] = {
+        name: [] for name in machine.defines
+    }
     var_written_effect_occurrences: Dict[str, List[Tuple[str, str, str]]] = {
         name: [] for name in machine.defines
     }
@@ -885,6 +893,11 @@ def _build_variable_infos(
                 for v in lreads:
                     if v in var_reads_by_state:
                         var_reads_by_state[v].append(from_path)
+                        var_read_effect_occurrences[v].append((
+                            from_path,
+                            to_path,
+                            occurrence_key,
+                        ))
                 for v in lwrites:
                     if v in var_written_effects:
                         var_written_effects[v].append((from_path, to_path))
@@ -936,6 +949,9 @@ def _build_variable_infos(
         read_action_stages = _dedupe_pairs(var_read_action_stages[name])
         written_action_stages = _dedupe_pairs(var_written_action_stages[name])
         read_guard_occurrences = _dedupe_triples(var_read_guard_occurrences[name])
+        read_effect_occurrences = _dedupe_triples(
+            var_read_effect_occurrences[name]
+        )
         written_effect_occurrences = _dedupe_triples(
             var_written_effect_occurrences[name]
         )
@@ -964,6 +980,7 @@ def _build_variable_infos(
             read_in_action_stages=read_action_stages,
             written_in_action_stages=written_action_stages,
             read_in_guard_occurrences=read_guard_occurrences,
+            read_in_effect_occurrences=read_effect_occurrences,
             written_in_effect_occurrences=written_effect_occurrences,
         ))
     return tuple(out)

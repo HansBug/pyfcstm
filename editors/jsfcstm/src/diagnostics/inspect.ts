@@ -129,6 +129,7 @@ export interface VariableInfo {
     read_in_action_stages: Array<[string, string]>;
     written_in_action_stages: Array<[string, string]>;
     read_in_guard_occurrences: Array<[string, string, string]>;
+    read_in_effect_occurrences: Array<[string, string, string]>;
     written_in_effect_occurrences: Array<[string, string, string]>;
     participates_directly: boolean;
     participates_indirectly: boolean;
@@ -471,6 +472,7 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
     const readActionStages: Record<string, Array<[string, string]>> = {};
     const writtenActionStages: Record<string, Array<[string, string]>> = {};
     const readGuardOccurrences: Record<string, Array<[string, string, string]>> = {};
+    const readEffectOccurrences: Record<string, Array<[string, string, string]>> = {};
     const writtenEffectOccurrences: Record<string, Array<[string, string, string]>> = {};
     const floatLiteralAssignments: Record<string, string[]> = {};
     for (const name of Object.keys(machine.defines)) {
@@ -481,6 +483,7 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
         readActionStages[name] = [];
         writtenActionStages[name] = [];
         readGuardOccurrences[name] = [];
+        readEffectOccurrences[name] = [];
         writtenEffectOccurrences[name] = [];
         floatLiteralAssignments[name] = [];
     }
@@ -541,7 +544,10 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
                 walkStmtReadsWrites(stmt, localReads, localWrites);
                 walkStmtFloatLiteralAssignments(stmt, localFloatEffectAssigns);
                 for (const v of localReads) {
-                    if (v in readsByState) readsByState[v].push(fromPath);
+                    if (v in readsByState) {
+                        readsByState[v].push(fromPath);
+                        readEffectOccurrences[v].push([fromPath, toPath, occurrenceKey]);
+                    }
                 }
                 for (const v of localWrites) {
                     if (v in writtenEffects) {
@@ -594,6 +600,7 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
         const readActionStageEntries = dedupePairs(readActionStages[name]);
         const writtenActionStageEntries = dedupePairs(writtenActionStages[name]);
         const readGuardOccurrenceEntries = dedupeTriples(readGuardOccurrences[name]);
+        const readEffectOccurrenceEntries = dedupeTriples(readEffectOccurrences[name]);
         const writtenEffectOccurrenceEntries = dedupeTriples(writtenEffectOccurrences[name]);
         const participatesDirectly = readStates.length > 0 ||
             readGuardEntries.length > 0 ||
@@ -616,6 +623,7 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
             read_in_action_stages: readActionStageEntries,
             written_in_action_stages: writtenActionStageEntries,
             read_in_guard_occurrences: readGuardOccurrenceEntries,
+            read_in_effect_occurrences: readEffectOccurrenceEntries,
             written_in_effect_occurrences: writtenEffectOccurrenceEntries,
             participates_directly: participatesDirectly,
             participates_indirectly: false,

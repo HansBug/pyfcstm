@@ -727,6 +727,12 @@ class TestInspectModelExtendedCoverage:
         # ``counter`` is read by guard AND read by effect AND written by
         # effect — exercise the effect-walking branch in _build_var_dataflow.
         assert 'counter' in vars_by_name
+        counter_effect_reads = {
+            (src, dst)
+            for src, dst, _ in vars_by_name['counter'].read_in_effect_occurrences
+        }
+        assert ('Root.Idle', 'Root.Active') in counter_effect_reads
+        assert ('Root.Active', 'Root.Idle') in counter_effect_reads
         # ``last`` is assigned only in effects.
         assert 'last' in vars_by_name
         # ``temperature`` uses a ternary in the effect right-hand side.
@@ -1520,6 +1526,41 @@ class TestInspectModelDataFlowClosureDiagnostics:
             'var_name': 'status',
             'write_locations': ['Root.Active'],
         }
+
+    def test_exit_action_write_reaching_transition_effect_read_is_not_final(self):
+        dsl = """
+        def int status = 0;
+        def int sink = 0;
+        state Root {
+            state Active {
+                exit { status = 1; }
+            }
+            state Done;
+            [*] -> Active;
+            Active -> Done effect { sink = status; };
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
+
+    def test_descendant_exit_action_write_reaching_parent_transition_effect_read_is_not_final(self):
+        dsl = """
+        def int status = 0;
+        def int sink = 0;
+        state Root {
+            state Parent {
+                state Child {
+                    exit { status = 1; }
+                }
+                [*] -> Child;
+            }
+            state Done;
+            [*] -> Parent;
+            Parent -> Done effect { sink = status; };
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
 
     def test_exit_action_write_reaching_target_state_read_is_not_final(self):
         dsl = """

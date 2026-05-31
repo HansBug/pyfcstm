@@ -48,6 +48,7 @@ def _variable_usage_diagnostics(
     usage_read_states = _usage_read_states(variable)
     liveness_read_states = _liveness_read_states(variable)
     initial_guard_read_edges = _initial_guard_read_edges(variable)
+    effect_read_edges = _effect_read_edges(variable)
     write_states = _write_states(variable)
     if not usage_read_states and not write_states:
         return [_unreferenced_var_diagnostic(variable)]
@@ -66,6 +67,7 @@ def _variable_usage_diagnostics(
         normal_edges,
         initial_edges,
         initial_guard_read_edges,
+        effect_read_edges,
     )
     if final_writes:
         return [
@@ -307,6 +309,7 @@ def _final_write_locations(
     normal_edges: Dict[str, Set[str]],
     initial_edges: Dict[str, Set[str]],
     initial_guard_read_edges: Set[Tuple[str, str]],
+    effect_read_edges: Set[Tuple[str, str]],
 ) -> List[str]:
     out: List[str] = []
     action_writes = _action_write_stages(variable)
@@ -324,6 +327,7 @@ def _final_write_locations(
             normal_edges,
             initial_edges,
             initial_guard_read_edges,
+            effect_read_edges,
         ):
             continue
         out.append(state_path)
@@ -369,6 +373,14 @@ def _effect_write_edges(variable: 'VariableInfo') -> Tuple[Tuple[str, str], ...]
     return tuple(variable.written_in_effects)
 
 
+def _effect_read_edges(variable: 'VariableInfo') -> Set[Tuple[str, str]]:
+    occurrences = getattr(variable, 'read_in_effect_occurrences', ())
+    return {
+        (from_path, to_path)
+        for from_path, to_path, _ in occurrences
+    }
+
+
 def _has_reachable_read_after_action_write(
     state_path: str,
     stage: Optional[str],
@@ -380,6 +392,7 @@ def _has_reachable_read_after_action_write(
     normal_edges: Dict[str, Set[str]],
     initial_edges: Dict[str, Set[str]],
     initial_guard_read_edges: Set[Tuple[str, str]],
+    effect_read_edges: Set[Tuple[str, str]],
 ) -> bool:
     if stage != 'exit':
         return _has_reachable_read(
@@ -401,6 +414,8 @@ def _has_reachable_read_after_action_write(
         initial_guard_read_edges=initial_guard_read_edges,
     ):
         return True
+    if _has_transition_effect_read_after_exit(state_path, effect_read_edges):
+        return True
     exit_parent = _exit_transition_parent_start(
         state_path,
         state_parent_paths,
@@ -419,6 +434,16 @@ def _has_reachable_read_after_action_write(
             initial_edges=initial_edges,
             initial_guard_read_edges=initial_guard_read_edges,
         )
+    )
+
+
+def _has_transition_effect_read_after_exit(
+    state_path: str,
+    effect_read_edges: Set[Tuple[str, str]],
+) -> bool:
+    return any(
+        from_path == state_path or _is_descendant_path(state_path, from_path)
+        for from_path, _ in effect_read_edges
     )
 
 

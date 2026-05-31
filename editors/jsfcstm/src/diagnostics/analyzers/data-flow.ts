@@ -38,6 +38,7 @@ function variableUsageDiagnostics(
     const usageReadStates = variableUsageReadStates(variable);
     const livenessReadStates = variableLivenessReadStates(variable);
     const initialGuardReadEdges = variableInitialGuardReadEdges(variable);
+    const effectReadEdges = variableEffectReadEdges(variable);
     const writeStates = variableWriteStates(variable);
     if (usageReadStates.size === 0 && writeStates.size === 0) {
         return [unreferencedVarDiagnostic(variable)];
@@ -59,6 +60,7 @@ function variableUsageDiagnostics(
         normalEdges,
         initialEdges,
         initialGuardReadEdges,
+        effectReadEdges,
     );
     if (finalWrites.length === 0) return [];
     return [{
@@ -280,6 +282,7 @@ function finalWriteLocations(
     normalEdges: Record<string, Set<string>> = {},
     initialEdges: Record<string, Set<string>> = {},
     initialGuardReadEdges: Set<string> = new Set(),
+    effectReadEdges: Set<string> = new Set(),
 ): string[] {
     const out: string[] = [];
     const actionWrites = actionWriteStages(variable);
@@ -295,6 +298,7 @@ function finalWriteLocations(
             normalEdges,
             initialEdges,
             initialGuardReadEdges,
+            effectReadEdges,
         )) {
             continue;
         }
@@ -341,6 +345,14 @@ function effectWriteEdges(variable: VariableInfo): Array<[string, string]> {
     return variable.written_in_effects;
 }
 
+function variableEffectReadEdges(variable: VariableInfo): Set<string> {
+    const edges = new Set<string>();
+    for (const [fromPath, toPath] of variable.read_in_effect_occurrences ?? []) {
+        edges.add(edgeKey(fromPath, toPath));
+    }
+    return edges;
+}
+
 function hasReachableReadAfterActionWrite(
     statePath: string,
     stage: string | null,
@@ -352,6 +364,7 @@ function hasReachableReadAfterActionWrite(
     normalEdges: Record<string, Set<string>> = {},
     initialEdges: Record<string, Set<string>> = {},
     initialGuardReadEdges: Set<string> = new Set(),
+    effectReadEdges: Set<string> = new Set(),
 ): boolean {
     if (stage !== 'exit') {
         return hasReachableRead(
@@ -373,6 +386,7 @@ function hasReachableReadAfterActionWrite(
         initialEdges,
         initialGuardReadEdges,
     )) return true;
+    if (hasTransitionEffectReadAfterExit(statePath, effectReadEdges)) return true;
     const exitParent = exitTransitionParentStart(
         statePath,
         stateParentPaths,
@@ -389,6 +403,14 @@ function hasReachableReadAfterActionWrite(
         initialEdges,
         initialGuardReadEdges,
     );
+}
+
+function hasTransitionEffectReadAfterExit(statePath: string, effectReadEdges: Set<string>): boolean {
+    for (const edge of effectReadEdges) {
+        const [fromPath] = edge.split('\u0001', 1);
+        if (fromPath === statePath || isDescendantPath(statePath, fromPath)) return true;
+    }
+    return false;
 }
 
 function hasReachableReadAfterExitEffect(

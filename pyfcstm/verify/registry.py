@@ -3,6 +3,7 @@
 from types import MappingProxyType
 from typing import Mapping, Tuple
 
+from . import topology
 from .taxonomy import CallCountScaling, FallbackUnknownRisk, VerifyAlgorithmMeta
 
 
@@ -30,7 +31,7 @@ def _structural(
         verification_scope="topological_only",
         dominant_dim=dominant_dim,
         diagnostic_codes=diagnostic_codes,
-        impl=None,
+        impl=getattr(topology, name),
     )
 
 

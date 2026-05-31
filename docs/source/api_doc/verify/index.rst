@@ -12,6 +12,7 @@ pyfcstm.verify
     inspect_adapter
     registry
     taxonomy
+    topology
 
 \_\_all\_\_
 -----------------------------------------------------

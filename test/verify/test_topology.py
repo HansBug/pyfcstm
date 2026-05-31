@@ -1,0 +1,561 @@
+import inspect
+from typing import cast
+
+import pytest
+
+from pyfcstm.diagnostics import inspect_model
+from pyfcstm.dsl import parse_with_grammar_entry
+from pyfcstm.model import StateMachine, parse_dsl_node_to_state_machine
+from pyfcstm.verify.registry import REGISTRY
+
+
+pytestmark = pytest.mark.unittest
+
+
+GROUP1_TOPOLOGY = (
+    "topological_reachable_set",
+    "unreachable_states",
+    "strongly_connected_components",
+    "topological_finite",
+    "topological_inevitable_terminator",
+    "event_emission_to_consumer_reachable",
+)
+
+GROUP2_AND_GROUP3 = (
+    "dead_guard",
+    "guard_tautology",
+    "forced_guard_unsat_under_init",
+    "effect_no_op_under_guard",
+    "effect_contradicts_guard",
+    "transition_shadowed_by_predecessor",
+    "enter_postcondition_implies_during_precondition",
+    "composite_init_guards_incomplete",
+    "bounded_reachability",
+    "symbolic_bfs",
+    "bounded_safety",
+    "bounded_invariant",
+    "path_witness",
+)
+
+
+def _parse(src: str) -> StateMachine:
+    ast = parse_with_grammar_entry(src, "state_machine_dsl")
+    return cast(StateMachine, parse_dsl_node_to_state_machine(ast))
+
+
+def _import_topology():
+    from pyfcstm.verify import topology
+
+    return topology
+
+
+def test_build_leaf_level_macro_graph_flat_edges():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state Idle;
+            state Active;
+            [*] -> Idle;
+            Idle -> Active;
+            Active -> [*];
+        }
+        """
+    )
+
+    graph = topology.build_leaf_level_macro_graph(machine)
+
+    assert graph.nodes == ("Root.Active", "Root.Idle")
+    assert graph.edges["Root.Idle"] == ("Root.Active",)
+    assert graph.edges["Root.Active"] == (topology.EXIT_ROOT_SINK,)
+
+
+def test_build_leaf_level_macro_graph_init_cascade_and_leaf_bubble():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state System {
+            state Working {
+                state Active;
+                state Idle;
+                [*] -> Active;
+                Active -> Idle;
+                Idle -> [*];
+            }
+            state Done;
+            state Orphan;
+            [*] -> Working;
+            Working -> Done;
+            Done -> [*];
+        }
+        """
+    )
+
+    graph = topology.build_leaf_level_macro_graph(machine)
+
+    assert graph.edges["System.Working.Active"] == ("System.Working.Idle",)
+    assert graph.edges["System.Working.Idle"] == ("System.Done",)
+    assert graph.edges["System.Done"] == (topology.EXIT_ROOT_SINK,)
+    assert graph.edges["System.Orphan"] == tuple()
+
+
+def test_build_leaf_level_macro_graph_uses_forced_expansion_and_parent_bubble():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state A {
+                state A1;
+                state A2;
+                [*] -> A1;
+            }
+            state Error;
+            [*] -> A;
+            !A -> Error :: Crash;
+        }
+        """
+    )
+
+    graph = topology.build_leaf_level_macro_graph(machine)
+
+    assert graph.edges["Root.A.A1"] == ("Root.Error",)
+    assert graph.edges["Root.A.A2"] == ("Root.Error",)
+
+
+def test_topological_reachable_set_handles_nested_hierarchy_and_bubble():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state System {
+            state Working {
+                state Active;
+                state Idle;
+                [*] -> Active;
+                Active -> Idle;
+                Idle -> [*];
+            }
+            state Done;
+            state Orphan;
+            [*] -> Working;
+            Working -> Done;
+            Done -> [*];
+        }
+        """
+    )
+
+    reachable = topology.topological_reachable_set(machine)
+
+    assert reachable["System"] == (
+        "System.Done",
+        "System.Working.Active",
+        "System.Working.Idle",
+    )
+    assert reachable["System.Working"] == (
+        "System.Done",
+        "System.Working.Active",
+        "System.Working.Idle",
+    )
+    assert reachable["System.Working.Active"] == (
+        "System.Done",
+        "System.Working.Idle",
+    )
+    assert reachable["System.Working.Idle"] == ("System.Done",)
+    assert reachable["System.Done"] == tuple()
+    assert reachable["System.Orphan"] == tuple()
+
+
+def test_topological_reachable_set_matches_inspect_on_flat_model():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state Idle;
+            state Active;
+            [*] -> Idle;
+            Idle -> Active;
+            Active -> Idle;
+        }
+        """
+    )
+
+    actual = topology.topological_reachable_set(machine)
+    expected = inspect_model(machine).reachability_graph
+
+    assert {name: set(value) for name, value in actual.items()} == {
+        name: set(value) for name, value in expected.items()
+    }
+
+
+def test_build_leaf_level_macro_graph_handles_root_exit_sink_once():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state A;
+            [*] -> A;
+            A -> [*];
+        }
+        """
+    )
+
+    graph = topology.build_leaf_level_macro_graph(machine)
+
+    assert graph.edges["Root.A"] == (topology.EXIT_ROOT_SINK,)
+    assert graph.edges[topology.EXIT_ROOT_SINK] == tuple()
+
+
+def test_topological_finite_ignores_unreachable_trap_cycle():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state A;
+            state Lost1;
+            state Lost2;
+            [*] -> A;
+            A -> [*];
+            Lost1 -> Lost2;
+            Lost2 -> Lost1;
+        }
+        """
+    )
+
+    report = topology.topological_finite(machine)
+
+    assert report.finite is True
+    assert report.counterexamples == tuple()
+
+
+def test_unreachable_states_reports_unreachable_leaves_only():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state A;
+            state OrphanComposite {
+                state Lost;
+                [*] -> Lost;
+            }
+            state OrphanLeaf;
+            [*] -> A;
+        }
+        """
+    )
+
+    assert topology.unreachable_states(machine) == (
+        "Root.OrphanComposite.Lost",
+        "Root.OrphanLeaf",
+    )
+
+
+def test_unreachable_states_ignores_unreachable_pseudo_states():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state A;
+            pseudo state Crash;
+            [*] -> A;
+        }
+        """
+    )
+
+    assert topology.unreachable_states(machine) == tuple()
+
+
+def test_strongly_connected_components_reports_two_node_cycle():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Controller {
+            state Idle;
+            state Running;
+            state Stopped;
+            [*] -> Idle;
+            Idle -> Running;
+            Running -> Idle;
+            Running -> Stopped;
+            Stopped -> [*];
+        }
+        """
+    )
+
+    assert topology.strongly_connected_components(machine) == (
+        ("Controller.Idle", "Controller.Running"),
+    )
+
+
+def test_strongly_connected_components_reports_self_loop():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state Loop;
+            [*] -> Loop;
+            Loop -> Loop;
+            Loop -> [*];
+        }
+        """
+    )
+
+    assert topology.strongly_connected_components(machine) == (("Root.Loop",),)
+
+
+def test_strongly_connected_components_ignores_acyclic_graph():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B;
+            B -> [*];
+        }
+        """
+    )
+
+    assert topology.strongly_connected_components(machine) == tuple()
+
+
+def test_topological_finite_accepts_every_reachable_leaf_with_exit_path():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B;
+            B -> [*];
+        }
+        """
+    )
+
+    report = topology.topological_finite(machine)
+
+    assert report.finite is True
+    assert report.counterexamples == tuple()
+
+
+def test_topological_finite_reports_trap_cycle():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state System {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B;
+            B -> A;
+        }
+        """
+    )
+
+    report = topology.topological_finite(machine)
+
+    assert report.finite is False
+    assert report.counterexamples == (("trap_cycle", ("System.A", "System.B")),)
+
+
+def test_topological_finite_reports_deadlock():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state System {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B;
+        }
+        """
+    )
+
+    report = topology.topological_finite(machine)
+
+    assert report.finite is False
+    assert report.counterexamples == (("deadlock", "System.B"),)
+
+
+def test_topological_finite_treats_parent_off_cliff_exit_as_deadlock():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state Outer {
+                state A;
+                [*] -> A;
+                A -> [*];
+            }
+            [*] -> Outer;
+        }
+        """
+    )
+
+    report = topology.topological_finite(machine)
+
+    assert report.finite is False
+    assert report.counterexamples == (("deadlock", "Root.Outer.A"),)
+
+
+def test_topological_inevitable_terminator_accepts_straight_exit():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state A;
+            state Done;
+            [*] -> A;
+            A -> Done;
+            Done -> [*];
+        }
+        """
+    )
+
+    report = topology.topological_inevitable_terminator(machine)
+
+    assert report.inevitable is True
+    assert report.counterexample_path is None
+
+
+def test_topological_inevitable_terminator_reports_branch_to_cycle():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state System {
+            state Init;
+            state Cycle;
+            state Done;
+            [*] -> Init;
+            Init -> Cycle;
+            Init -> Done;
+            Done -> [*];
+            Cycle -> Cycle;
+        }
+        """
+    )
+
+    report = topology.topological_inevitable_terminator(machine)
+
+    assert report.inevitable is False
+    assert report.counterexample_path == ("System.Cycle",)
+
+
+def test_topological_inevitable_terminator_reports_self_loop_even_with_exit():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state A;
+            state Done;
+            [*] -> A;
+            A -> A;
+            A -> Done;
+            Done -> [*];
+        }
+        """
+    )
+
+    report = topology.topological_inevitable_terminator(machine)
+
+    assert report.inevitable is False
+    assert report.counterexample_path == ("Root.A",)
+
+
+def test_event_emission_to_consumer_reachable_reports_fully_unreachable_event():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            event PanicEvt;
+            state A;
+            state Unreachable1;
+            state Unreachable2;
+            [*] -> A;
+            A -> A;
+            Unreachable1 -> Unreachable2 : PanicEvt;
+            Unreachable2 -> A : PanicEvt;
+        }
+        """
+    )
+
+    assert topology.event_emission_to_consumer_reachable(machine) == ("Root.PanicEvt",)
+
+
+def test_event_emission_to_consumer_reachable_allows_partially_reachable_event():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            event NormalEvt;
+            state A;
+            state B;
+            state Unreachable;
+            [*] -> A;
+            A -> B : NormalEvt;
+            Unreachable -> A : NormalEvt;
+        }
+        """
+    )
+
+    assert topology.event_emission_to_consumer_reachable(machine) == tuple()
+
+
+def test_event_emission_to_consumer_reachable_ignores_unused_declared_event():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            event Unused;
+            state A;
+            [*] -> A;
+        }
+        """
+    )
+
+    assert topology.event_emission_to_consumer_reachable(machine) == tuple()
+
+
+def test_event_emission_to_consumer_reachable_handles_init_event_source_as_reachable():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            event Boot;
+            state A;
+            [*] -> A : Boot;
+        }
+        """
+    )
+
+    assert topology.event_emission_to_consumer_reachable(machine) == tuple()
+
+
+def test_registry_wires_group1_impls_and_preserves_later_placeholders():
+    topology = _import_topology()
+
+    expected_impls = {
+        "topological_reachable_set": topology.topological_reachable_set,
+        "unreachable_states": topology.unreachable_states,
+        "strongly_connected_components": topology.strongly_connected_components,
+        "topological_finite": topology.topological_finite,
+        "topological_inevitable_terminator": (
+            topology.topological_inevitable_terminator
+        ),
+        "event_emission_to_consumer_reachable": (
+            topology.event_emission_to_consumer_reachable
+        ),
+    }
+    for name in GROUP1_TOPOLOGY:
+        assert REGISTRY[name].impl is expected_impls[name]
+    for name in GROUP2_AND_GROUP3:
+        assert REGISTRY[name].impl is None
+
+
+def test_topology_module_stays_independent_from_diagnostics_package():
+    topology = _import_topology()
+
+    source = inspect.getsource(topology)
+
+    assert "pyfcstm.diagnostics" not in source
+    assert "from ..diagnostics" not in source

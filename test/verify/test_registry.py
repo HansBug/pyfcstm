@@ -42,14 +42,17 @@ def test_registry_contains_exactly_all_pr_a_algorithms_in_stable_order():
     assert len(REGISTRY) == 19
 
 
-def test_registry_keys_match_meta_names_and_all_impls_are_placeholders():
+def test_registry_keys_match_meta_names_and_pr_a3_impl_state():
     assert not hasattr(REGISTRY, "__setitem__")
     assert len(set(REGISTRY)) == len(REGISTRY)
     for name, meta in REGISTRY.items():
         assert meta.name == name
         assert meta.description
         assert meta.quantifier_alternation_depth == 0
-        assert meta.impl is None
+        if name in GROUP1_TOPOLOGY:
+            assert meta.impl is not None
+        else:
+            assert meta.impl is None
 
 
 def test_registry_module_does_not_expose_mutable_backing_store():
@@ -122,8 +125,7 @@ def test_group2_smt_local_metadata_contract():
     assert REGISTRY["forced_guard_unsat_under_init"].fallback_unknown_risk == "low"
     assert REGISTRY["transition_shadowed_by_predecessor"].incremental is True
     assert (
-        REGISTRY["enter_postcondition_implies_during_precondition"].incremental
-        is True
+        REGISTRY["enter_postcondition_implies_during_precondition"].incremental is True
     )
     assert (
         REGISTRY["enter_postcondition_implies_during_precondition"].call_count_scaling
@@ -275,13 +277,12 @@ def test_verify_package_does_not_import_diagnostics():
     assert bad == []
 
 
-def test_verify_package_does_not_create_algorithm_modules():
+def test_verify_package_does_not_create_later_algorithm_modules():
     import pathlib
 
     forbidden_paths = (
         "pyfcstm/verify/search.py",
         "pyfcstm/verify/reachability.py",
-        "pyfcstm/verify/topology.py",
         "pyfcstm/verify/smt_local.py",
     )
     assert [path for path in forbidden_paths if pathlib.Path(path).exists()] == []

@@ -1961,6 +1961,124 @@ state Root {
             });
         });
 
+        it('warns when exit-action inventory reaches an unlisted state without later reads', () => {
+            const diagnostics = collectDataFlowWarnings(
+                [{
+                    name: 'status',
+                    type: 'int',
+                    init_value: '0',
+                    read_in_states: ['Root.Other'],
+                    written_in_states: ['Root.Source'],
+                    read_in_guards: [],
+                    written_in_effects: [],
+                    read_in_action_stages: [],
+                    written_in_action_stages: [['Root.Source', 'exit']],
+                    read_in_guard_occurrences: [],
+                    written_in_effect_occurrences: [],
+                    participates_directly: true,
+                    participates_indirectly: false,
+                    abstract_actions_in_scope: [],
+                    float_literal_assignments: [],
+                }],
+                {},
+                [
+                    {path: 'Root.Source', parent_path: 'Root'},
+                ] as Parameters<typeof collectDataFlowWarnings>[2],
+                'Root',
+                [
+                    {from_path: 'Root.Source', to_path: 'Root.Missing'},
+                ] as Parameters<typeof collectDataFlowWarnings>[4],
+            );
+
+            assert.deepEqual(diagnostics[0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Source'],
+            });
+        });
+
+        it('warns when fallback exit-effect parent has no reachability entry', () => {
+            const diagnostics = collectDataFlowWarnings(
+                [{
+                    name: 'status',
+                    type: 'int',
+                    init_value: '0',
+                    read_in_states: ['Root.Other'],
+                    written_in_states: [],
+                    read_in_guards: [],
+                    written_in_effects: [['Root.Parent.Child', '[*]']],
+                    participates_directly: true,
+                    participates_indirectly: false,
+                    abstract_actions_in_scope: [],
+                    float_literal_assignments: [],
+                }],
+                {},
+                [
+                    {path: 'Root.Parent.Child', parent_path: 'Root.Parent'},
+                ] as Parameters<typeof collectDataFlowWarnings>[2],
+                'Root',
+            );
+
+            assert.deepEqual(diagnostics[0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Parent.Child->[*]'],
+            });
+        });
+
+        it('warns when transition-effect inventory reaches an unlisted state without later reads', () => {
+            const diagnostics = collectDataFlowWarnings(
+                [{
+                    name: 'status',
+                    type: 'int',
+                    init_value: '0',
+                    read_in_states: ['Root.Other'],
+                    written_in_states: [],
+                    read_in_guards: [],
+                    written_in_effects: [['Root.Source', 'Root.Target']],
+                    participates_directly: true,
+                    participates_indirectly: false,
+                    abstract_actions_in_scope: [],
+                    float_literal_assignments: [],
+                }],
+                {},
+                [
+                    {path: 'Root.Target', parent_path: 'Root'},
+                ] as Parameters<typeof collectDataFlowWarnings>[2],
+                'Root',
+                [
+                    {from_path: 'Root.Target', to_path: 'Root.Missing'},
+                ] as Parameters<typeof collectDataFlowWarnings>[4],
+            );
+
+            assert.deepEqual(diagnostics[0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Source->Root.Target'],
+            });
+        });
+
+        it('warns when fallback transition-effect target has no reachability entry', () => {
+            const diagnostics = collectDataFlowWarnings(
+                [{
+                    name: 'status',
+                    type: 'int',
+                    init_value: '0',
+                    read_in_states: ['Root.Other'],
+                    written_in_states: [],
+                    read_in_guards: [],
+                    written_in_effects: [['Root.Source', 'Root.Target']],
+                    participates_directly: true,
+                    participates_indirectly: false,
+                    abstract_actions_in_scope: [],
+                    float_literal_assignments: [],
+                }],
+                {},
+            );
+
+            assert.deepEqual(diagnostics[0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Source->Root.Target'],
+            });
+        });
+
         it('uses old-shape initial guard owner fallback for dotted targets', () => {
             const diagnostics = collectDataFlowWarnings(
                 [{

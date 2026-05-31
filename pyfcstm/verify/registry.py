@@ -117,120 +117,122 @@ def _bmc_placeholder(
     )
 
 
-_REGISTRY = {
-    "topological_reachable_set": _structural(
-        "topological_reachable_set",
-        "Compute guard-agnostic reachable states over the transition topology.",
-        "linear_in_states",
-        diagnostic_codes=(),
-    ),
-    "unreachable_states": _structural(
-        "unreachable_states",
-        "Report states unreachable from the root entry topology.",
-        "linear_in_states",
-        diagnostic_codes=("W_UNREACHABLE_STATE",),
-    ),
-    "strongly_connected_components": _structural(
-        "strongly_connected_components",
-        "Find non-trivial strongly connected components in the topology graph.",
-        "linear_in_states",
-        diagnostic_codes=("I_NONTRIVIAL_SCC",),
-    ),
-    "topological_finite": _structural(
-        "topological_finite",
-        "Check whether topology has an exit path rather than a closed no-exit region.",
-        "linear_in_states",
-        diagnostic_codes=("W_TOPOLOGICAL_NOEXIT",),
-    ),
-    "topological_inevitable_terminator": _structural(
-        "topological_inevitable_terminator",
-        "Identify topology regions that are not forced to reach a terminator.",
-        "linear_in_states",
-        diagnostic_codes=("I_TOPOLOGICAL_NON_TERMINATING",),
-    ),
-    "event_emission_to_consumer_reachable": _structural(
-        "event_emission_to_consumer_reachable",
-        "Check whether each used event has a topologically reachable consumer source.",
-        "linear_in_transitions",
-        diagnostic_codes=("W_EVENT_UNREACHABLE_EMIT",),
-        dominant_dim=("events", "transitions"),
-    ),
-    "dead_guard": _smt_local(
-        "dead_guard",
-        "Detect guards that are unsatisfiable under variable constraints.",
-        "linear_in_transitions",
-        ("W_DEAD_GUARD",),
-    ),
-    "guard_tautology": _smt_local(
-        "guard_tautology",
-        "Detect guards that are always true under variable constraints.",
-        "linear_in_transitions",
-        ("W_GUARD_TAUTOLOGY",),
-    ),
-    "forced_guard_unsat_under_init": _smt_local(
-        "forced_guard_unsat_under_init",
-        "Detect forced-transition guards unsatisfiable under initial variable values.",
-        "linear_in_transitions",
-        ("W_FORCED_GUARD_UNSAT",),
-        fallback_unknown_risk="low",
-    ),
-    "effect_no_op_under_guard": _smt_local(
-        "effect_no_op_under_guard",
-        "Detect transition effects that are no-ops whenever the guard holds.",
-        "linear_in_transitions",
-        ("W_EFFECT_SMT_NO_OP",),
-    ),
-    "effect_contradicts_guard": _smt_local(
-        "effect_contradicts_guard",
-        "Detect effects whose post-state contradicts their transition guard.",
-        "linear_in_transitions",
-        ("I_EFFECT_GUARD_CONTRADICT",),
-    ),
-    "transition_shadowed_by_predecessor": _smt_local(
-        "transition_shadowed_by_predecessor",
-        "Detect outgoing transitions fully shadowed by earlier same-domain transitions.",
-        "linear_in_transitions",
-        ("W_TRANSITION_SHADOWED",),
-        incremental=True,
-        dominant_dim=("transitions", "vars"),
-    ),
-    "enter_postcondition_implies_during_precondition": _smt_local(
-        "enter_postcondition_implies_during_precondition",
-        "Compare entry postconditions with first-cycle during preconditions.",
-        "linear_in_leaves",
-        ("I_ENTER_DURING_CONTRADICT",),
-        dominant_dim=("leaves", "vars"),
-    ),
-    "composite_init_guards_incomplete": _composite_init_guards_incomplete(),
-    "bounded_reachability": _bmc_placeholder(
-        "bounded_reachability",
-        "Query whether a target state is reachable from a source within a bound.",
-        "k_unrollings",
-    ),
-    "symbolic_bfs": _bmc_placeholder(
-        "symbolic_bfs",
-        "Build bounded symbolic BFS spaces for queried reachability algorithms.",
-        "k_unrollings_times_branching",
-    ),
-    "bounded_safety": _bmc_placeholder(
-        "bounded_safety",
-        "Query whether bounded executions avoid bad states or bad conditions.",
-        "k_unrollings",
-    ),
-    "bounded_invariant": _bmc_placeholder(
-        "bounded_invariant",
-        "Query whether an invariant holds over all bounded reachable frames.",
-        "k_unrollings_times_branching",
-        fallback_unknown_risk="high",
-    ),
-    "path_witness": _bmc_placeholder(
-        "path_witness",
-        "Decode a concrete path witness from a satisfiable symbolic frame.",
-        "one",
-        dominant_dim=("depth",),
-    ),
-}
+def _build_registry() -> Mapping[str, VerifyAlgorithmMeta]:
+    return {
+        "topological_reachable_set": _structural(
+            "topological_reachable_set",
+            "Compute guard-agnostic reachable states over the transition topology.",
+            "linear_in_states",
+            diagnostic_codes=(),
+        ),
+        "unreachable_states": _structural(
+            "unreachable_states",
+            "Report states unreachable from the root entry topology.",
+            "linear_in_states",
+            diagnostic_codes=("W_UNREACHABLE_STATE",),
+        ),
+        "strongly_connected_components": _structural(
+            "strongly_connected_components",
+            "Find non-trivial strongly connected components in the topology graph.",
+            "linear_in_states",
+            diagnostic_codes=("I_NONTRIVIAL_SCC",),
+        ),
+        "topological_finite": _structural(
+            "topological_finite",
+            "Check whether topology has an exit path rather than a closed no-exit region.",
+            "linear_in_states",
+            diagnostic_codes=("W_TOPOLOGICAL_NOEXIT",),
+        ),
+        "topological_inevitable_terminator": _structural(
+            "topological_inevitable_terminator",
+            "Identify topology regions that are not forced to reach a terminator.",
+            "linear_in_states",
+            diagnostic_codes=("I_TOPOLOGICAL_NON_TERMINATING",),
+        ),
+        "event_emission_to_consumer_reachable": _structural(
+            "event_emission_to_consumer_reachable",
+            "Check whether each used event has a topologically reachable consumer source.",
+            "linear_in_transitions",
+            diagnostic_codes=("W_EVENT_UNREACHABLE_EMIT",),
+            dominant_dim=("events", "transitions"),
+        ),
+        "dead_guard": _smt_local(
+            "dead_guard",
+            "Detect guards that are unsatisfiable under variable constraints.",
+            "linear_in_transitions",
+            ("W_DEAD_GUARD",),
+        ),
+        "guard_tautology": _smt_local(
+            "guard_tautology",
+            "Detect guards that are always true under variable constraints.",
+            "linear_in_transitions",
+            ("W_GUARD_TAUTOLOGY",),
+        ),
+        "forced_guard_unsat_under_init": _smt_local(
+            "forced_guard_unsat_under_init",
+            "Detect forced-transition guards unsatisfiable under initial variable values.",
+            "linear_in_transitions",
+            ("W_FORCED_GUARD_UNSAT",),
+            fallback_unknown_risk="low",
+        ),
+        "effect_no_op_under_guard": _smt_local(
+            "effect_no_op_under_guard",
+            "Detect transition effects that are no-ops whenever the guard holds.",
+            "linear_in_transitions",
+            ("W_EFFECT_SMT_NO_OP",),
+        ),
+        "effect_contradicts_guard": _smt_local(
+            "effect_contradicts_guard",
+            "Detect effects whose post-state contradicts their transition guard.",
+            "linear_in_transitions",
+            ("I_EFFECT_GUARD_CONTRADICT",),
+        ),
+        "transition_shadowed_by_predecessor": _smt_local(
+            "transition_shadowed_by_predecessor",
+            "Detect outgoing transitions fully shadowed by earlier same-domain transitions.",
+            "linear_in_transitions",
+            ("W_TRANSITION_SHADOWED",),
+            incremental=True,
+            dominant_dim=("transitions", "vars"),
+        ),
+        "enter_postcondition_implies_during_precondition": _smt_local(
+            "enter_postcondition_implies_during_precondition",
+            "Compare entry postconditions with first-cycle during preconditions.",
+            "linear_in_leaves",
+            ("I_ENTER_DURING_CONTRADICT",),
+            dominant_dim=("leaves", "vars"),
+        ),
+        "composite_init_guards_incomplete": _composite_init_guards_incomplete(),
+        "bounded_reachability": _bmc_placeholder(
+            "bounded_reachability",
+            "Query whether a target state is reachable from a source within a bound.",
+            "k_unrollings",
+        ),
+        "symbolic_bfs": _bmc_placeholder(
+            "symbolic_bfs",
+            "Build bounded symbolic BFS spaces for queried reachability algorithms.",
+            "k_unrollings_times_branching",
+        ),
+        "bounded_safety": _bmc_placeholder(
+            "bounded_safety",
+            "Query whether bounded executions avoid bad states or bad conditions.",
+            "k_unrollings",
+        ),
+        "bounded_invariant": _bmc_placeholder(
+            "bounded_invariant",
+            "Query whether an invariant holds over all bounded reachable frames.",
+            "k_unrollings_times_branching",
+            fallback_unknown_risk="high",
+        ),
+        "path_witness": _bmc_placeholder(
+            "path_witness",
+            "Decode a concrete path witness from a satisfiable symbolic frame.",
+            "one",
+            dominant_dim=("depth",),
+        ),
+    }
 
-REGISTRY: Mapping[str, VerifyAlgorithmMeta] = MappingProxyType(_REGISTRY)
+
+REGISTRY: Mapping[str, VerifyAlgorithmMeta] = MappingProxyType(dict(_build_registry()))
 
 __all__ = ["REGISTRY"]

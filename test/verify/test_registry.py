@@ -52,6 +52,12 @@ def test_registry_keys_match_meta_names_and_all_impls_are_placeholders():
         assert meta.impl is None
 
 
+def test_registry_module_does_not_expose_mutable_backing_store():
+    import pyfcstm.verify.registry as registry_module
+
+    assert not hasattr(registry_module, "_REGISTRY")
+
+
 def test_group1_topology_metadata_contract():
     for name in GROUP1_TOPOLOGY:
         meta = REGISTRY[name]

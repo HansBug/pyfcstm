@@ -25,6 +25,17 @@ export function diagnosticKey(diagnostic: FcstmDiagnostic): string {
     return JSON.stringify([diagnostic.code ?? null, diagnostic.data ?? null]);
 }
 
+function consumeDiagnosticCount(counts: Map<string, number>, key: string): boolean {
+    const count = counts.get(key) ?? 0;
+    if (count <= 0) return false;
+    if (count === 1) {
+        counts.delete(key);
+    } else {
+        counts.set(key, count - 1);
+    }
+    return true;
+}
+
 export function fullDocumentRange(document: TextDocumentLike): TextRange {
     const lastLine = Math.max(0, document.lineCount - 1);
     return createRange(0, 0, lastLine, document.lineAt(lastLine).text.length);
@@ -48,7 +59,11 @@ export function collectInspectModelDiagnostics(
     existingDiagnostics: FcstmDiagnostic[] = [],
     options: CollectInspectModelDiagnosticsOptions = {},
 ): FcstmDiagnostic[] {
-    const existing = new Set(existingDiagnostics.map(diagnosticKey));
+    const existingCounts = new Map<string, number>();
+    for (const diagnostic of existingDiagnostics) {
+        const key = diagnosticKey(diagnostic);
+        existingCounts.set(key, (existingCounts.get(key) ?? 0) + 1);
+    }
     const fullRange = fullDocumentRange(document);
     const diagnostics: FcstmDiagnostic[] = [];
 
@@ -68,7 +83,7 @@ export function collectInspectModelDiagnostics(
         diagnostic.range = rangeEquals(suggestedRange, fullRange)
             ? resolveRangeFromRefs(document, semantic, item.refs) ?? fullRange
             : suggestedRange;
-        if (existing.has(diagnosticKey(diagnostic))) continue;
+        if (consumeDiagnosticCount(existingCounts, diagnosticKey(diagnostic))) continue;
         diagnostics.push(diagnostic);
     }
 

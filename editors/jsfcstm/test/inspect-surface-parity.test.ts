@@ -350,6 +350,44 @@ state Root {
         ]);
     });
 
+    it('keeps same-endpoint inspect-only folded false guards when a literal false guard exists', async () => {
+        const text = `
+state Root {
+    state Idle;
+    state Blocked;
+    [*] -> Idle;
+    Idle -> Blocked : if [false];
+    Idle -> Blocked : if [1 == 2];
+}
+`;
+        const filePath = '/tmp/same-endpoint-mixed-false-guards.fcstm';
+        const diagnostics = await packageModule.collectDocumentDiagnostics(
+            createDocument(text, filePath),
+        );
+        const guardRefs = diagnostics
+            .filter(item => item.code === 'W_GUARD_CONST_FALSE')
+            .map(item => item.data);
+
+        assert.deepEqual(guardRefs, [
+            {
+                transition_span: null,
+                folded_value: false,
+                from_path: 'Root.Idle',
+                to_path: 'Root.Blocked',
+            },
+            {
+                transition_span: null,
+                folded_value: false,
+                from_path: 'Root.Idle',
+                to_path: 'Root.Blocked',
+            },
+        ]);
+        assertBagCovers(
+            await editorDiagnosticKeys(text, filePath),
+            await inspectDiagnosticKeys(text, filePath),
+        );
+    });
+
     it('keeps the async semantic analyzer wrapper aligned with the shared implementation', async () => {
         const text = `
 state Root {

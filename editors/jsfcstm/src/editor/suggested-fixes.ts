@@ -191,6 +191,20 @@ function initialTransitionInsertion(
 ): SuggestedFixEditPlan | null {
     const composite = resolveStatePath(semantic, compositePath);
     if (!composite) return null;
+    const initialTransitions = semantic.transitions
+        .filter(item => item.ownerStateId === composite.identity.id && item.sourceKind === 'init')
+        .sort((a, b) => (
+            a.range.end.line - b.range.end.line ||
+            a.range.end.character - b.range.end.character
+        ));
+    const lastInitial = initialTransitions[initialTransitions.length - 1];
+    if (lastInitial) {
+        const newText = indentedTextForInsertion(document, lastInitial.range, text);
+        if (lastInitial.range.end.line < composite.range.end.line) {
+            return insertionAfterLinePlan(document, lastInitial.range.end.line, newText);
+        }
+        return insertionBeforeStateClose(document, composite.range, text);
+    }
     const firstChild = semantic.states.find(item => item.parentStateId === composite.identity.id);
     if (!firstChild) return null;
     const newText = indentedTextForInsertion(document, firstChild.range, text);

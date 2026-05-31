@@ -386,12 +386,43 @@ describe('jsfcstm analyzers and code actions', () => {
         const edit = Object.values(action.edit?.changes || {}).flat()[0];
         assert.match(edit.newText, /\[\*\] -> Idle;\n/);
         const updated = applySingleEdit(text, edit);
+        assert.ok(
+            updated.indexOf('[*] -> Idle : if [ready > 0];') < updated.indexOf('[*] -> Idle;'),
+            'fallback entry transition must stay after existing guarded initial transitions',
+        );
         await assertParses(updated, filePath);
         const followup = await inspectDiagnosticsAsEditorDiagnostics(updated, filePath);
         assert.equal(
             followup.some(item => item.code === 'W_INITIAL_UNCONDITIONAL_MISSING'),
             false,
         );
+    });
+
+    it('keeps fallback initial transition after existing guarded initial transitions', async () => {
+        const text = [
+            'def int ready = 1;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> B : if [ready > 0];',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-insert-initial-fallback-order.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
+        const diag = diagnostics.find(item => item.code === 'W_INITIAL_UNCONDITIONAL_MISSING');
+        assert.ok(diag, 'expected W_INITIAL_UNCONDITIONAL_MISSING suggested fix diagnostic');
+
+        const actions = await packageModule.collectCodeActions(document, diag.range, [diag]);
+        const action = actions.find(item => /fallback entry transition/.test(item.title));
+        assert.ok(action, `expected insert initial action, got ${JSON.stringify(actions)}`);
+        const edit = Object.values(action.edit?.changes || {}).flat()[0];
+        const updated = applySingleEdit(text, edit);
+        assert.ok(
+            updated.indexOf('[*] -> B : if [ready > 0];') < updated.indexOf('[*] -> A;'),
+            'fallback entry transition must not outrank existing guarded initial transition',
+        );
+        await assertParses(updated, filePath);
     });
 
     it('does not offer declaration delete when an unreferenced variable is still read', async () => {
@@ -471,6 +502,10 @@ describe('jsfcstm analyzers and code actions', () => {
         const initialEdit = Object.values(initialActions[0].edit?.changes || {}).flat()[0];
         const initialUpdated = applySingleEdit(initialText, initialEdit);
         assert.ok(initialUpdated.includes('[*] -> Idle;'));
+        assert.ok(
+            initialUpdated.indexOf('[*] -> Idle : if [ready > 0];') < initialUpdated.indexOf('[*] -> Idle;'),
+            'fallback entry transition must stay after the guarded transition in single-line composites',
+        );
         await assertParses(initialUpdated, initialPath);
     });
 

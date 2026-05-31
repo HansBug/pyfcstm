@@ -71,6 +71,23 @@ def test_group1_topology_metadata_contract():
         assert meta.verification_scope == "topological_only"
         assert meta.incremental is False
 
+    assert REGISTRY["topological_reachable_set"].dominant_dim == (
+        "V",
+        "E",
+        "depth",
+    )
+    assert REGISTRY["unreachable_states"].dominant_dim == ("V_leaf", "depth")
+    for name in {
+        "strongly_connected_components",
+        "topological_finite",
+        "topological_inevitable_terminator",
+    }:
+        assert REGISTRY[name].dominant_dim == ("V", "E")
+    assert REGISTRY["event_emission_to_consumer_reachable"].dominant_dim == (
+        "events",
+        "E",
+    )
+
     assert (
         REGISTRY["event_emission_to_consumer_reachable"].call_count_scaling
         == "linear_in_transitions"
@@ -105,6 +122,10 @@ def test_group2_smt_local_metadata_contract():
     assert REGISTRY["forced_guard_unsat_under_init"].fallback_unknown_risk == "low"
     assert REGISTRY["transition_shadowed_by_predecessor"].incremental is True
     assert (
+        REGISTRY["enter_postcondition_implies_during_precondition"].incremental
+        is True
+    )
+    assert (
         REGISTRY["enter_postcondition_implies_during_precondition"].call_count_scaling
         == "linear_in_leaves"
     )
@@ -127,13 +148,29 @@ def test_group2_smt_local_metadata_contract():
         "LIA",
         "LRA",
     )
+    assert REGISTRY["forced_guard_unsat_under_init"].dominant_dim == (
+        "forced_transitions",
+        "vars",
+    )
+    assert REGISTRY["enter_postcondition_implies_during_precondition"].dominant_dim == (
+        "V_leaf",
+        "vars",
+    )
+    for name in set(GROUP2_SMT_LOCAL) - {
+        "enter_postcondition_implies_during_precondition",
+        "composite_init_guards_incomplete",
+        "forced_guard_unsat_under_init",
+    }:
+        assert REGISTRY[name].dominant_dim == ("E", "vars")
+
     for name in set(GROUP2_SMT_LOCAL) - {
         "enter_postcondition_implies_during_precondition",
         "composite_init_guards_incomplete",
     }:
         assert REGISTRY[name].call_count_scaling == "linear_in_transitions"
         assert REGISTRY[name].formula_size_scaling == "constant"
-        assert REGISTRY[name].recommended_tactic == "smt"
+    for name in GROUP2_SMT_LOCAL:
+        assert REGISTRY[name].recommended_tactic == "qflia"
 
     expected_codes = {
         "dead_guard": ("W_DEAD_GUARD",),
@@ -158,10 +195,20 @@ def test_group3_bmc_placeholder_metadata_contract():
         assert meta.complexity_tier == "bmc_search"
         assert meta.smt_logic == "QF_LIRA"
         assert meta.formula_size_scaling == "linear"
-        assert meta.incremental is True
         assert meta.recommended_tactic == "smt"
         assert meta.verification_scope == "bmc_unrolled"
         assert meta.diagnostic_codes == ()
+
+    for name in set(GROUP3_BMC_PLACEHOLDERS) - {"path_witness"}:
+        assert REGISTRY[name].incremental is True
+        assert REGISTRY[name].dominant_dim == (
+            "depth",
+            "vars",
+            "events",
+            "branching",
+        )
+    assert REGISTRY["path_witness"].incremental is False
+    assert REGISTRY["path_witness"].dominant_dim == ("depth",)
 
     assert REGISTRY["bounded_reachability"].call_count_scaling == "k_unrollings"
     assert REGISTRY["bounded_safety"].call_count_scaling == "k_unrollings"
@@ -197,10 +244,7 @@ def test_verify_package_does_not_import_diagnostics():
 
     def resolved_import_from(path, node):
         parts = list(path.with_suffix("").parts)
-        if path.name == "__init__.py":
-            current_module = parts
-        else:
-            current_module = parts[:-1]
+        current_module = parts[:-1]
         if node.level:
             prefix = current_module[: len(current_module) - node.level + 1]
             if node.module:

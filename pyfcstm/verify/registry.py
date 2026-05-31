@@ -41,7 +41,7 @@ def _smt_local(
     diagnostic_codes: Tuple[str, ...],
     fallback_unknown_risk: FallbackUnknownRisk = "medium",
     incremental: bool = False,
-    dominant_dim: Tuple[str, ...] = ("transitions", "vars"),
+    dominant_dim: Tuple[str, ...] = ("E", "vars"),
 ) -> VerifyAlgorithmMeta:
     return VerifyAlgorithmMeta(
         name=name,
@@ -53,7 +53,7 @@ def _smt_local(
         call_count_scaling=call_count_scaling,
         incremental=incremental,
         fallback_unknown_risk=fallback_unknown_risk,
-        recommended_tactic="smt",
+        recommended_tactic="qflia",
         quantifier_alternation_depth=0,
         max_bitwidth=None,
         theory_combination=("LIA", "LRA"),
@@ -94,6 +94,7 @@ def _bmc_placeholder(
     description: str,
     call_count_scaling: CallCountScaling,
     fallback_unknown_risk: FallbackUnknownRisk = "medium",
+    incremental: bool = True,
     dominant_dim: Tuple[str, ...] = ("depth", "vars", "events", "branching"),
 ) -> VerifyAlgorithmMeta:
     return VerifyAlgorithmMeta(
@@ -104,7 +105,7 @@ def _bmc_placeholder(
         smt_logic="QF_LIRA",
         formula_size_scaling="linear",
         call_count_scaling=call_count_scaling,
-        incremental=True,
+        incremental=incremental,
         fallback_unknown_risk=fallback_unknown_risk,
         recommended_tactic="smt",
         quantifier_alternation_depth=0,
@@ -124,37 +125,42 @@ def _build_registry() -> Mapping[str, VerifyAlgorithmMeta]:
             "Compute guard-agnostic reachable states over the transition topology.",
             "linear_in_states",
             diagnostic_codes=(),
+            dominant_dim=("V", "E", "depth"),
         ),
         "unreachable_states": _structural(
             "unreachable_states",
             "Report states unreachable from the root entry topology.",
             "linear_in_states",
             diagnostic_codes=("W_UNREACHABLE_STATE",),
+            dominant_dim=("V_leaf", "depth"),
         ),
         "strongly_connected_components": _structural(
             "strongly_connected_components",
             "Find non-trivial strongly connected components in the topology graph.",
             "linear_in_states",
             diagnostic_codes=("I_NONTRIVIAL_SCC",),
+            dominant_dim=("V", "E"),
         ),
         "topological_finite": _structural(
             "topological_finite",
             "Check whether topology has an exit path rather than a closed no-exit region.",
             "linear_in_states",
             diagnostic_codes=("W_TOPOLOGICAL_NOEXIT",),
+            dominant_dim=("V", "E"),
         ),
         "topological_inevitable_terminator": _structural(
             "topological_inevitable_terminator",
             "Identify topology regions that are not forced to reach a terminator.",
             "linear_in_states",
             diagnostic_codes=("I_TOPOLOGICAL_NON_TERMINATING",),
+            dominant_dim=("V", "E"),
         ),
         "event_emission_to_consumer_reachable": _structural(
             "event_emission_to_consumer_reachable",
             "Check whether each used event has a topologically reachable consumer source.",
             "linear_in_transitions",
             diagnostic_codes=("W_EVENT_UNREACHABLE_EMIT",),
-            dominant_dim=("events", "transitions"),
+            dominant_dim=("events", "E"),
         ),
         "dead_guard": _smt_local(
             "dead_guard",
@@ -174,6 +180,7 @@ def _build_registry() -> Mapping[str, VerifyAlgorithmMeta]:
             "linear_in_transitions",
             ("W_FORCED_GUARD_UNSAT",),
             fallback_unknown_risk="low",
+            dominant_dim=("forced_transitions", "vars"),
         ),
         "effect_no_op_under_guard": _smt_local(
             "effect_no_op_under_guard",
@@ -193,14 +200,14 @@ def _build_registry() -> Mapping[str, VerifyAlgorithmMeta]:
             "linear_in_transitions",
             ("W_TRANSITION_SHADOWED",),
             incremental=True,
-            dominant_dim=("transitions", "vars"),
         ),
         "enter_postcondition_implies_during_precondition": _smt_local(
             "enter_postcondition_implies_during_precondition",
             "Compare entry postconditions with first-cycle during preconditions.",
             "linear_in_leaves",
             ("I_ENTER_DURING_CONTRADICT",),
-            dominant_dim=("leaves", "vars"),
+            incremental=True,
+            dominant_dim=("V_leaf", "vars"),
         ),
         "composite_init_guards_incomplete": _composite_init_guards_incomplete(),
         "bounded_reachability": _bmc_placeholder(
@@ -228,6 +235,7 @@ def _build_registry() -> Mapping[str, VerifyAlgorithmMeta]:
             "path_witness",
             "Decode a concrete path witness from a satisfiable symbolic frame.",
             "one",
+            incremental=False,
             dominant_dim=("depth",),
         ),
     }

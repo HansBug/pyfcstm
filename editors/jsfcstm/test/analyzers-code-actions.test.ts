@@ -265,6 +265,38 @@ describe('jsfcstm analyzers and code actions', () => {
         await assertParses(updated, filePath);
     });
 
+    it('applies suggested-fix delete actions for nested effect self assignments', async () => {
+        const text = [
+            'def int x = 0;',
+            'def int enabled = 1;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B effect {',
+            '        if [enabled > 0] {',
+            '            x = x;',
+            '        }',
+            '    };',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-delete-nested-effect.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
+        const diag = diagnostics.find(item => item.code === 'W_EFFECT_SELF_ASSIGN');
+        assert.ok(diag, 'expected W_EFFECT_SELF_ASSIGN suggested fix diagnostic inside nested if');
+
+        const actions = await packageModule.collectCodeActions(document, diag.range, [diag]);
+        const action = actions.find(item => /self-assignment/.test(item.title));
+        assert.ok(action, `expected nested delete self-assignment action, got ${JSON.stringify(actions)}`);
+        const edit = Object.values(action.edit?.changes || {}).flat()[0];
+        assert.equal(edit.newText, '');
+        const updated = applySingleEdit(text, edit);
+        assert.equal(updated.includes('x = x;'), false);
+        assert.ok(updated.includes('if [enabled > 0]'));
+        await assertParses(updated, filePath);
+    });
+
     it('does not offer self-assignment delete when the effect occurrence is ambiguous', async () => {
         const text = [
             'def int x = 0;',
@@ -673,6 +705,39 @@ describe('jsfcstm analyzers and code actions', () => {
                     },
                 },
             },
+            {
+                range: rangeOf(text, 'A -> [*]'),
+                message: 'Missing anchor.',
+                severity: 'warning' as const,
+                source: 'fcstm',
+                code: 'W_MISSING_ANCHOR',
+                data: {
+                    suggested_fix: {
+                        kind: 'insert',
+                        target: 'transition_suffix',
+                        anchor: {type: 'ref', ref: 'refs.transition_span'},
+                        text: ' : Go',
+                        rationale: 'Add missing anchor trigger.',
+                    },
+                },
+            },
+            {
+                range: rangeOf(text, 'A -> [*]'),
+                message: 'Invalid anchor.',
+                severity: 'warning' as const,
+                source: 'fcstm',
+                code: 'W_INVALID_ANCHOR',
+                data: {
+                    transition_span: 'not-a-span',
+                    suggested_fix: {
+                        kind: 'insert',
+                        target: 'transition_suffix',
+                        anchor: {type: 'ref', ref: 'refs.transition_span'},
+                        text: ' : Go',
+                        rationale: 'Add invalid anchor trigger.',
+                    },
+                },
+            },
         ];
 
         assert.equal(packageModule.suggestedFixFromDiagnostic(diagnostics[1]), null);
@@ -682,7 +747,7 @@ describe('jsfcstm analyzers and code actions', () => {
             diagnostics,
         );
         assert.equal(
-            actions.some(item => /Remove missing variable|Invalid kind/.test(item.title)),
+            actions.some(item => /Remove missing variable|Invalid kind|missing anchor trigger|invalid anchor trigger/.test(item.title)),
             false,
         );
         assert.equal(packageModule.renderSuggestedFix(

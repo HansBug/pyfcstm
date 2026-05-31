@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import {pathToFileURL} from 'node:url';
 
-import {CodeActionKind, TextDocumentSyncKind} from 'vscode-languageserver/node';
+import {CodeActionKind, DiagnosticSeverity, TextDocumentSyncKind} from 'vscode-languageserver/node';
 import type {CancellationToken, MarkupContent} from 'vscode-languageserver/node';
 
 import {packageModule, trackTempDir, writeFile} from './support';
@@ -187,6 +187,62 @@ describe('jsfcstm lsp core', () => {
             item.kind === CodeActionKind.QuickFix
             && item.diagnostics?.some(diagnostic => diagnostic.code === 'W_UNREFERENCED_VAR')
         )));
+
+        core.dispose();
+    });
+
+    it('preserves diagnostic severity and related information on code actions', async () => {
+        const dir = trackTempDir('jsfcstm-lsp-codeaction-');
+        const hostFile = path.join(dir, 'host.fcstm');
+        const hostUri = toUri(hostFile);
+        const text = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B;',
+            '}',
+        ].join('\n');
+        const core = new packageModule.FcstmLanguageServerCore();
+        await core.openTextDocument(makeTextDocumentItem(hostFile, text));
+
+        const diagnosticRange = packageModule.toLspRange(packageModule.createRange(4, 4, 4, 10));
+        const anchorRange = packageModule.toLspRange(packageModule.createRange(4, 10, 4, 10));
+        const actions = await core.provideCodeActions(
+            hostUri,
+            diagnosticRange,
+            [{
+                range: diagnosticRange,
+                message: 'Synthetic informational suggested fix.',
+                severity: DiagnosticSeverity.Information,
+                source: 'fcstm',
+                code: 'W_SYNTHETIC_INFO',
+                data: {
+                    transition_span: anchorRange,
+                    suggested_fix: {
+                        kind: 'insert',
+                        target: 'transition_suffix',
+                        anchor: {type: 'ref', ref: 'refs.transition_span'},
+                        text: ' : Go',
+                        rationale: 'Add informational trigger.',
+                    },
+                },
+                relatedInformation: [{
+                    location: {
+                        uri: hostUri,
+                        range: packageModule.toLspRange(packageModule.createRange(1, 4, 1, 12)),
+                    },
+                    message: 'Related state declaration.',
+                }],
+            }]
+        );
+
+        const action = actions.find(item => /informational trigger/.test(item.title));
+        assert.ok(action, `expected informational suggested-fix action, got ${JSON.stringify(actions)}`);
+        const actionDiagnostic = action.diagnostics?.[0];
+        assert.equal(actionDiagnostic?.severity, DiagnosticSeverity.Information);
+        assert.equal(actionDiagnostic?.relatedInformation?.[0]?.message, 'Related state declaration.');
+        assert.equal(actionDiagnostic?.relatedInformation?.[0]?.location.uri, hostUri);
 
         core.dispose();
     });

@@ -2,6 +2,7 @@
 
 from typing import TYPE_CHECKING, Any, Iterable, List, Optional
 
+from ...dsl import EXIT_STATE, INIT_STATE
 from ...utils.validate import ModelDiagnostic
 from .use_def import collect_expr_variables
 
@@ -125,7 +126,6 @@ def _guard_vars_never_change_diagnostics(
                 refs={
                     'from_path': from_path,
                     'to_path': to_path,
-                    'transition_span': None,
                     'guard_vars': guard_vars,
                 },
             ))
@@ -145,8 +145,10 @@ def _resolve_sibling_path(parent_state: Any, name: str) -> str:
 
 
 def _transition_endpoint(parent_state: Any, marker_or_name: Any, is_source: bool) -> str:
-    if marker_or_name.__class__.__name__ == '_StateSingletonMark':
-        return _INIT_MARK if is_source else _EXIT_MARK
+    if marker_or_name is INIT_STATE:
+        return _INIT_MARK
+    if marker_or_name is EXIT_STATE:
+        return _EXIT_MARK
     if isinstance(marker_or_name, str):
         return _resolve_sibling_path(parent_state, marker_or_name)
     return str(marker_or_name)  # pragma: no cover

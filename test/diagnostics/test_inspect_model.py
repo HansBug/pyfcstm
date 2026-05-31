@@ -729,6 +729,31 @@ class TestInspectModelGuardAffectDataFlow:
         with pytest.raises(TypeError, match='UnknownExpr'):
             collect_expr_variables(UnknownExpr())
 
+    def test_build_use_def_graph_rejects_unknown_statement_subclass(self):
+        from types import SimpleNamespace
+
+        from pyfcstm.diagnostics.analyzers.use_def import build_use_def_graph
+        from pyfcstm.model.model import OperationStatement
+
+        class UnknownStatement(OperationStatement):
+            pass
+
+        machine = SimpleNamespace(
+            walk_states=lambda: [SimpleNamespace(
+                on_enters=[SimpleNamespace(
+                    is_abstract=False,
+                    operations=[UnknownStatement()],
+                )],
+                on_durings=[],
+                on_exits=[],
+                on_during_aspects=[],
+                transitions=[],
+            )],
+        )
+
+        with pytest.raises(TypeError, match='UnknownStatement'):
+            build_use_def_graph(machine)
+
     def test_variable_info_marks_direct_and_indirect_guard_affect(self):
         dsl = """
         def int source = 0;
@@ -855,7 +880,6 @@ class TestInspectModelGuardAffectDiagnostics:
         assert [diag.refs for diag in by_code['W_GUARD_VARS_NEVER_CHANGE']] == [{
             'from_path': 'Root.Idle',
             'to_path': 'Root.StableBlocked',
-            'transition_span': None,
             'guard_vars': ['stable'],
         }]
 

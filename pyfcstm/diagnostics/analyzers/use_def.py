@@ -115,6 +115,10 @@ def _walk_block(
                 )
                 _walk_block(branch.statements, branch_enclosing, edges)
                 accumulated.update(this_cond)
+            continue
+        raise TypeError(
+            f'unhandled OperationStatement subclass: {type(stmt).__name__}'
+        )
 
 
 def _walk_expr_collect(expr: 'Expr', out: List[str]) -> None:

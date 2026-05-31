@@ -337,7 +337,6 @@ state Root {
                 [{
                     from_path: 'Root.Idle',
                     to_path: 'Root.StableBlocked',
-                    transition_span: null,
                     guard_vars: ['stable'],
                 }],
             );
@@ -390,6 +389,45 @@ state Root {
             assert.throws(
                 () => collectExprVariables(new UnknownExpr()),
                 /Unhandled Expr subclass: UnknownExpr/,
+            );
+        });
+
+        it('rejects unknown operation statement subclasses in the use-def graph', async () => {
+            const {buildUseDefGraph} = await import('../dist/diagnostics/analyzers/use-def');
+            const {OperationStatement} = await import('../dist/model/runtime');
+
+            class UnknownStatement extends OperationStatement {
+                constructor() {
+                    super(
+                        'operationStatement',
+                        'UnknownStatement' as any,
+                        {
+                            start: {line: 0, character: 0},
+                            end: {line: 0, character: 0},
+                        },
+                        'unknown',
+                    );
+                }
+
+                to_ast_node(): any {
+                    return {};
+                }
+            }
+
+            assert.throws(
+                () => buildUseDefGraph({
+                    allStates: [{
+                        onEnters: [{
+                            isAbstract: false,
+                            operations: [new UnknownStatement()],
+                        }],
+                        onDurings: [],
+                        onExits: [],
+                        onDuringAspects: [],
+                        transitions: [],
+                    }],
+                } as any),
+                /Unhandled OperationStatement subclass: UnknownStatement/,
             );
         });
     });
@@ -742,7 +780,6 @@ state Root {
                     refs: {
                         from_path: 'Root.Idle',
                         to_path: 'Root.Active',
-                        transition_span: null,
                         guard_vars: ['read_only'],
                     },
                 },
@@ -752,7 +789,6 @@ state Root {
                     refs: {
                         from_path: 'Root.Idle',
                         to_path: 'Root.Active',
-                        transition_span: null,
                         guard_vars: ['read_only'],
                     },
                 },

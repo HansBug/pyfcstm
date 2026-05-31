@@ -101,7 +101,6 @@ function collectGuardVarsNeverChangeDiagnostics(
                 refs: {
                     from_path: fromPath,
                     to_path: toPath,
-                    transition_span: null,
                     guard_vars: guardVars,
                 },
             });

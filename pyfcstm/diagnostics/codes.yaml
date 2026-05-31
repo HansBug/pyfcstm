@@ -1438,10 +1438,6 @@ W_GUARD_VARS_NEVER_CHANGE:
       type: str
       required: true
       description: Target state path of the transition, or [*] for an exit marker.
-    transition_span:
-      type: Span
-      required: false
-      description: Source span of the transition declaration.
     guard_vars:
       type: list[str]
       required: true

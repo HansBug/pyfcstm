@@ -101,7 +101,9 @@ function walkBlock(
                 walkBlock(branch.statements, branchEnclosing, edges);
                 for (const item of thisCond) accumulated.add(item);
             }
+            continue;
         }
+        throw new TypeError(`Unhandled OperationStatement subclass: ${stmt.constructor.name}`);
     }
 }
 

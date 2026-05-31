@@ -204,6 +204,18 @@ def test_build_leaf_level_macro_graph_handles_root_exit_sink_once():
     assert graph.edges[topology.EXIT_ROOT_SINK] == tuple()
 
 
+def test_build_leaf_level_macro_graph_treats_root_leaf_as_exit_capable():
+    topology = _import_topology()
+    machine = _parse("state Root;")
+
+    graph = topology.build_leaf_level_macro_graph(machine)
+
+    assert graph.nodes == ("Root",)
+    assert graph.edges["Root"] == (topology.EXIT_ROOT_SINK,)
+    assert topology.topological_finite(machine).finite is True
+    assert topology.topological_inevitable_terminator(machine).inevitable is True
+
+
 def test_build_leaf_level_macro_graph_bubbles_parent_exit_to_root_sink():
     topology = _import_topology()
     machine = _parse(
@@ -361,6 +373,23 @@ def test_strongly_connected_components_ignores_acyclic_graph():
     )
 
     assert topology.strongly_connected_components(machine) == tuple()
+
+
+def test_strongly_connected_components_handles_deep_chain_without_recursion():
+    topology = _import_topology()
+    n_states = 1050
+    lines = ["state Root {"]
+    for index in range(n_states):
+        lines.append("    state S%d;" % index)
+    lines.append("    [*] -> S0;")
+    for index in range(n_states - 1):
+        lines.append("    S%d -> S%d;" % (index, index + 1))
+    lines.append("    S%d -> [*];" % (n_states - 1))
+    lines.append("}")
+    machine = _parse("\n".join(lines))
+
+    assert topology.strongly_connected_components(machine) == tuple()
+    assert topology.topological_finite(machine).finite is True
 
 
 def test_topological_finite_accepts_every_reachable_leaf_with_exit_path():

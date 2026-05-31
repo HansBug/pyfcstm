@@ -162,6 +162,9 @@ def build_leaf_level_macro_graph(machine: StateMachine) -> LeafLevelGraph:
                 _project_target(parent_state, transition.to_state)
             )
 
+    if machine.root_state.is_leaf_state:
+        edge_sets.setdefault(_state_path(machine.root_state), set()).add(EXIT_ROOT_SINK)
+
     edges = {node: tuple(sorted(targets)) for node, targets in edge_sets.items()}
     edges.setdefault(EXIT_ROOT_SINK, tuple())
     return LeafLevelGraph(nodes=nodes, edges=edges)
@@ -231,46 +234,60 @@ def unreachable_states(machine: StateMachine) -> Tuple[str, ...]:
     )
 
 
-def _tarjan_scc(
+def _scc_components(
     nodes: Sequence[str], edges: Dict[str, Tuple[str, ...]]
 ) -> Tuple[Tuple[str, ...], ...]:
-    index = 0
-    indexes: Dict[str, int] = {}
-    lowlinks: Dict[str, int] = {}
-    stack: List[str] = []
-    on_stack: Set[str] = set()
-    components: List[Tuple[str, ...]] = []
+    node_set = set(nodes)
+    ordered_nodes = sorted(node_set)
+    discovered: Set[str] = set()
+    finish_order: List[str] = []
 
-    def strongconnect(node: str) -> None:
-        nonlocal index
-        indexes[node] = index
-        lowlinks[node] = index
-        index += 1
-        stack.append(node)
-        on_stack.add(node)
+    for start in ordered_nodes:
+        if start in discovered:
+            continue
 
-        for successor in edges.get(node, tuple()):
-            if successor == EXIT_ROOT_SINK:
+        discovered.add(start)
+        visit_stack: List[Tuple[str, bool]] = [(start, False)]
+        while visit_stack:
+            node, expanded = visit_stack.pop()
+            if expanded:
+                finish_order.append(node)
                 continue
-            if successor not in indexes:
-                strongconnect(successor)
-                lowlinks[node] = min(lowlinks[node], lowlinks[successor])
-            elif successor in on_stack:
-                lowlinks[node] = min(lowlinks[node], indexes[successor])
 
-        if lowlinks[node] == indexes[node]:
-            component: List[str] = []
-            while True:
-                item = stack.pop()
-                on_stack.remove(item)
-                component.append(item)
-                if item == node:
-                    break
-            components.append(tuple(sorted(component)))
+            visit_stack.append((node, True))
+            successors = [
+                successor
+                for successor in edges.get(node, tuple())
+                if successor in node_set and successor not in discovered
+            ]
+            for successor in reversed(sorted(successors)):
+                discovered.add(successor)
+                visit_stack.append((successor, False))
 
-    for node in sorted(nodes):
-        if node not in indexes:
-            strongconnect(node)
+    reverse_edges: Dict[str, List[str]] = {node: [] for node in ordered_nodes}
+    for source in ordered_nodes:
+        for target in edges.get(source, tuple()):
+            if target in node_set:
+                reverse_edges[target].append(source)
+
+    components: List[Tuple[str, ...]] = []
+    assigned: Set[str] = set()
+    for start in reversed(finish_order):
+        if start in assigned:
+            continue
+
+        component: List[str] = []
+        collect_stack = [start]
+        assigned.add(start)
+        while collect_stack:
+            node = collect_stack.pop()
+            component.append(node)
+            for predecessor in reversed(sorted(reverse_edges.get(node, []))):
+                if predecessor not in assigned:
+                    assigned.add(predecessor)
+                    collect_stack.append(predecessor)
+
+        components.append(tuple(sorted(component)))
 
     return tuple(sorted(components))
 
@@ -282,8 +299,9 @@ def _is_cyclic_component(
     if len(component) > 1:
         return True
     if len(component) == 0:  # pragma: no cover
-        # Tarjan only emits non-empty components. Keep this guard so the helper
-        # remains total if it is reused with hand-built component data.
+        # SCC decomposition only emits non-empty components. Keep this guard so
+        # the helper remains total if it is reused with hand-built component
+        # data.
         return False
     node = component[0]
     return node in edges.get(node, tuple())
@@ -300,7 +318,7 @@ def strongly_connected_components(machine: StateMachine) -> Tuple[Tuple[str, ...
     graph = build_leaf_level_macro_graph(machine)
     return tuple(
         component
-        for component in _tarjan_scc(graph.nodes, graph.edges)
+        for component in _scc_components(graph.nodes, graph.edges)
         if _is_cyclic_component(component, graph.edges)
     )
 

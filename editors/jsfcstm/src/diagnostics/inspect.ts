@@ -30,6 +30,7 @@ import {
     Variable,
 } from '../model/runtime';
 import {collectDesignHealthWarnings} from './analyzers';
+import {buildUseDefGraph} from './analyzers/use-def';
 import type {RawFcstmModelForcedTransition} from '../model/raw';
 
 const INIT_MARK = '[*]';
@@ -126,8 +127,8 @@ export interface VariableInfo {
     written_in_states: string[];
     read_in_guards: Array<[string, string]>;
     written_in_effects: Array<[string, string]>;
-    participates_directly: boolean;
-    participates_indirectly: boolean;
+    affects_guard_directly: boolean;
+    affects_guard_indirectly: boolean;
     abstract_actions_in_scope: string[];
     float_literal_assignments: string[];
 }
@@ -541,6 +542,14 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
         return out;
     };
 
+    const useDefGraph = buildUseDefGraph(machine);
+    const directGuardVars = new Set(
+        Object.entries(readGuards)
+            .filter(([, entries]) => entries.length > 0)
+            .map(([name]) => name),
+    );
+    const indirectGuardVars = new Set(useDefGraph.affectingVariables(directGuardVars));
+
     const out: VariableInfo[] = [];
     for (const name of Object.keys(machine.defines)) {
         const def = machine.defines[name];
@@ -548,7 +557,6 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
         const writtenStates = dedupe(writesByState[name]);
         const readGuardEntries = dedupePairs(readGuards[name]);
         const writtenEffectEntries = dedupePairs(writtenEffects[name]);
-        const participatesDirectly = readStates.length > 0 || readGuardEntries.length > 0;
         const abstractActions = abstractActionsInScope(
             stateLookup,
             readStates,
@@ -562,8 +570,8 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
             written_in_states: writtenStates,
             read_in_guards: readGuardEntries,
             written_in_effects: writtenEffectEntries,
-            participates_directly: participatesDirectly,
-            participates_indirectly: false,
+            affects_guard_directly: directGuardVars.has(name),
+            affects_guard_indirectly: !directGuardVars.has(name) && indirectGuardVars.has(name),
             abstract_actions_in_scope: abstractActions,
             float_literal_assignments: dedupe(floatLiteralAssignments[name]),
         });
@@ -878,14 +886,13 @@ function abstractActionsInScope(
     readStates: string[],
     writtenStates: string[],
 ): string[] {
-    const touched = new Set<string>([...readStates, ...writtenStates]);
-    if (touched.size === 0) return [];
+    void readStates;
+    void writtenStates;
     const out: string[] = [];
-    for (const path of Array.from(touched).sort()) {
+    for (const path of Object.keys(stateLookup).sort()) {
         const info = stateLookup[path];
         if (!info || !info.has_abstract_action) continue;
-        const label = `${info.path}:<abstract>`;
-        if (!out.includes(label)) out.push(label);
+        out.push(`${info.path}:<abstract>`);
     }
     return out;
 }

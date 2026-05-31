@@ -541,27 +541,35 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 },
             },
             {
-                'code': 'W_WRITE_ONLY_VAR',
+                'code': 'W_UNREFERENCED_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'dynamic',
+                    'init_value': '0',
+                },
+            },
+            {
+                'code': 'W_UNREFERENCED_VAR',
                 'severity': 'warning',
                 'refs': {
                     'var_name': 'stable',
-                    'written_states': ['Root.Idle'],
+                    'init_value': '0',
                 },
             },
             {
-                'code': 'W_WRITE_ONLY_VAR',
+                'code': 'W_UNREFERENCED_VAR',
                 'severity': 'warning',
                 'refs': {
                     'var_name': 'wide',
-                    'written_states': ['Root.Idle'],
+                    'init_value': '0',
                 },
             },
             {
-                'code': 'W_WRITE_ONLY_VAR',
+                'code': 'W_UNREFERENCED_VAR',
                 'severity': 'warning',
                 'refs': {
                     'var_name': 'powered',
-                    'written_states': ['Root.Idle'],
+                    'init_value': '0.0',
                 },
             },
         ],
@@ -596,11 +604,11 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 },
             },
             {
-                'code': 'W_WRITE_ONLY_VAR',
+                'code': 'W_UNREFERENCED_VAR',
                 'severity': 'warning',
                 'refs': {
                     'var_name': 'angle',
-                    'written_states': ['Root.Wrapper.Idle'],
+                    'init_value': '0.0',
                 },
             },
         ],
@@ -757,11 +765,27 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 },
             },
             {
-                'code': 'W_WRITE_ONLY_VAR',
+                'code': 'W_UNREFERENCED_VAR',
                 'severity': 'warning',
                 'refs': {
                     'var_name': 'write_only',
-                    'written_states': ['Root.Idle'],
+                    'init_value': '0',
+                },
+            },
+            {
+                'code': 'W_GUARD_VARS_NEVER_CHANGE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'guard_vars': ['read_only'],
+                },
+            },
+            {
+                'code': 'W_GUARD_VARS_NEVER_CHANGE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'guard_vars': ['read_only'],
                 },
             },
             {
@@ -945,11 +969,106 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 },
             },
             {
-                'code': 'W_WRITE_ONLY_VAR',
+                'code': 'W_UNREFERENCED_VAR',
                 'severity': 'warning',
                 'refs': {
                     'var_name': 'assigned',
-                    'written_states': ['Root.B'],
+                    'init_value': '0',
+                },
+            },
+            {
+                'code': 'W_UNREFERENCED_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'extra',
+                    'init_value': '0',
+                },
+            },
+            {
+                'code': 'W_UNREFERENCED_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'truncated',
+                    'init_value': '3.5',
+                },
+            },
+        ],
+    ),
+    (
+        'design-health-guard-affect-data-flow',
+        '\n'.join([
+            'def int unused = 0;',
+            'def int maybe_external = 0;',
+            'def int source = 0;',
+            'def int guard_value = 0;',
+            'def int stable = 0;',
+            'def int changing = 0;',
+            'state Root {',
+            '    state Idle {',
+            '        enter abstract ExternalHook;',
+            '        during {',
+            '            guard_value = source + 1;',
+            '            changing = changing + 1;',
+            '        }',
+            '    }',
+            '    state StableBlocked;',
+            '    state DynamicAllowed;',
+            '    state Done;',
+            '    [*] -> Idle;',
+            '    Idle -> StableBlocked : if [stable > 0];',
+            '    StableBlocked -> DynamicAllowed : if [changing > 0];',
+            '    DynamicAllowed -> Done : if [guard_value > 0];',
+            '}',
+        ]),
+        [
+            {
+                'code': 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT',
+                'severity': 'info',
+                'refs': {
+                    'var_name': 'maybe_external',
+                    'abstract_actions_in_scope': ['Root.Idle:<abstract>'],
+                },
+            },
+            {
+                'code': 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT',
+                'severity': 'info',
+                'refs': {
+                    'var_name': 'unused',
+                    'abstract_actions_in_scope': ['Root.Idle:<abstract>'],
+                },
+            },
+            {
+                'code': 'W_DEADLOCK_LEAF',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.Done',
+                    'reason': 'no_outgoing_transition',
+                },
+            },
+            {
+                'code': 'W_GUARD_VARS_NEVER_CHANGE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'guard_vars': ['stable'],
+                },
+            },
+            {
+                'code': 'W_UNWRITTEN_READ_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'source',
+                    'read_states': ['Root.Idle'],
+                    'init_value': '0',
+                },
+            },
+            {
+                'code': 'W_UNWRITTEN_READ_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'stable',
+                    'read_states': ['Root.Idle'],
+                    'init_value': '0',
                 },
             },
         ],

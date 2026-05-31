@@ -1340,6 +1340,124 @@ W_DEAD_NAMED_ACTION:
         [*] -> A;
     }
 
+W_UNREFERENCED_VAR:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A variable cannot affect any transition guard either directly or
+    through the action/effect use-def graph, and no abstract action is
+    visible that might use it outside the DSL.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: Variable name.
+    init_value:
+      type: str
+      required: true
+      description: Source text of the initial value.
+  for_llm:
+    summary: >-
+      This variable does not participate in model decisions. It is dead
+      from the DSL's guard-affect data-flow perspective.
+    recommended_actions:
+      - kind: remove_variable
+        target: variable_definition
+        rationale: Remove the variable and related writes if it was speculative scaffolding.
+      - kind: connect_to_guard
+        target: guard_or_assignment
+        rationale: Add the missing data-flow path if the variable should affect a transition decision.
+    do_not:
+      - "Do not add a dummy guard reference only to silence the diagnostic."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int unused = 0;
+    def int ready = 0;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [ready > 0];
+    }
+
+I_UNREFERENCED_VAR_MAYBE_ABSTRACT:
+  severity: info
+  capability: pure_static
+  description: >-
+    A variable cannot affect any transition guard through DSL data-flow,
+    but at least one visible abstract action may use it outside the DSL.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: Variable name.
+    abstract_actions_in_scope:
+      type: list[str]
+      required: true
+      description: Abstract action owners that may access the variable.
+  for_llm:
+    summary: >-
+      This variable is unused by DSL guard-affect data-flow, but abstract
+      action implementations may still use it.
+    recommended_actions:
+      - kind: inspect_abstract_action
+        target: abstract_action
+        rationale: Check the external implementation before removing the variable.
+      - kind: remove_variable
+        target: variable_definition
+        rationale: Remove it only if the abstract action does not need it.
+    do_not:
+      - "Do not remove the variable without checking the abstract implementation."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int maybe_external = 0;
+    def int ready = 0;
+    state Root {
+        state A { enter abstract ExternalHook; }
+        state B;
+        [*] -> A;
+        A -> B : if [ready > 0];
+    }
+
+W_GUARD_VARS_NEVER_CHANGE:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A transition guard reads variables that are never changed by any
+    lifecycle action or transition effect, so the guard only depends on
+    initial values.
+  refs:
+    transition_span:
+      type: Span
+      required: false
+      description: Source span of the transition declaration.
+    guard_vars:
+      type: list[str]
+      required: true
+      description: Guard variables that never change.
+  for_llm:
+    summary: >-
+      This guard is controlled only by initial variable values. If those
+      values never change, the transition condition is effectively fixed.
+    recommended_actions:
+      - kind: add_write
+        target: action_or_effect
+        rationale: Add the missing state update if the guard should evolve at runtime.
+      - kind: simplify_guard
+        target: transition
+        rationale: Simplify or remove the guard if the initial value is intentional.
+    do_not:
+      - "Do not add a meaningless self-assignment; it does not model a real change."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int ready = 0;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [ready > 0];
+    }
+
 W_UNWRITTEN_READ_VAR:
   severity: warning
   capability: pure_static

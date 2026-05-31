@@ -18,6 +18,7 @@ pyfcstm.diagnostics.analyzers
     thresholds
     transition_info
     type_shape
+    use_def
 
 \_\_all\_\_
 -----------------------------------------------------

@@ -94,7 +94,12 @@ function collectGuardConstFalseDiagnostics(transitions: TransitionInfo[]): Model
             severity: 'warning',
             message: `Transition ${JSON.stringify(transition.from_path)} -> ${JSON.stringify(transition.to_path)} has a guard that is statically false.`,
             span: null,
-            refs: {transition_span: null, folded_value: false},
+            refs: {
+                transition_span: null,
+                folded_value: false,
+                from_path: transition.from_path,
+                to_path: transition.to_path,
+            },
         });
     }
     return out;

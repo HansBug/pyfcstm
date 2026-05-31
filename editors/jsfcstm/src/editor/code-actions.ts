@@ -5,9 +5,10 @@ import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticVariable} 
 import {FcstmDiagnostic, TextDocumentLike, TextRange, createRange} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {FCSTM_DIAGNOSTIC_CODES} from './analyzers';
+import {collectInspectDiagnosticsFromItems, diagnosticKey} from './diagnostics';
 import {rangeIntersects} from './ranges';
 import type {FcstmWorkspaceEdit} from './references';
-import {planSuggestedFixEdit, suggestedFixFromDiagnostic, suggestedFixIssueRange} from './suggested-fixes';
+import {planSuggestedFixEdit, suggestedFixFromDiagnostic} from './suggested-fixes';
 
 export type FcstmCodeActionKind = 'quickfix' | 'refactor.rename';
 
@@ -110,42 +111,6 @@ function uniqueCaseInsensitiveStateCandidates(
     )];
 }
 
-function diagnosticKey(diagnostic: FcstmDiagnostic): string {
-    return JSON.stringify([diagnostic.code ?? null, diagnostic.data ?? null]);
-}
-
-function fullDocumentRange(document: TextDocumentLike): TextRange {
-    const lastLine = Math.max(0, document.lineCount - 1);
-    return createRange(0, 0, lastLine, document.lineAt(lastLine).text.length);
-}
-
-function collectSuggestedFixDesignDiagnostics(
-    document: TextDocumentLike,
-    semantic: FcstmSemanticDocument,
-    model: Parameters<typeof inspectModel>[0],
-    existingDiagnostics: FcstmDiagnostic[],
-): FcstmDiagnostic[] {
-    const existing = new Set(existingDiagnostics.map(diagnosticKey));
-    const fullRange = fullDocumentRange(document);
-    const diagnostics: FcstmDiagnostic[] = [];
-    for (const item of inspectModel(model).diagnostics) {
-        const diagnostic: FcstmDiagnostic = {
-            range: fullRange,
-            message: item.message,
-            severity: item.severity,
-            source: 'fcstm',
-            code: item.code,
-            data: item.refs,
-        };
-        const suggestedFix = suggestedFixFromDiagnostic(diagnostic);
-        if (!suggestedFix) continue;
-        diagnostic.range = suggestedFixIssueRange(document, semantic, diagnostic);
-        if (existing.has(diagnosticKey(diagnostic))) continue;
-        diagnostics.push(diagnostic);
-    }
-    return diagnostics;
-}
-
 /**
  * Build code actions / quick fixes for the selected FCSTM range.
  */
@@ -170,16 +135,32 @@ export async function collectCodeActions(
         !suggestedFixFromDiagnostic(item) && rangeIntersects(item.range, range)
     ));
     if (node?.model) {
-        const existing = new Set(relevantDiagnostics.map(diagnosticKey));
-        for (const diagnostic of collectSuggestedFixDesignDiagnostics(
+        const existing = new Set<string>();
+        const inspectDiagnostics = inspectModel(node.model).diagnostics;
+        const serverSuggestedKeysAtRange = new Set(
+            collectInspectDiagnosticsFromItems(document, semantic, inspectDiagnostics)
+                .filter(diagnostic => (
+                    suggestedFixFromDiagnostic(diagnostic) &&
+                    rangeIntersects(diagnostic.range, range)
+                ))
+                .map(diagnosticKey),
+        );
+        for (const diagnostic of collectInspectDiagnosticsFromItems(
             document,
             semantic,
-            node.model,
-            relevantDiagnostics,
+            inspectDiagnostics,
+            [],
+            {rangeMode: 'issue'},
         )) {
-            if (!rangeIntersects(diagnostic.range, range)) continue;
-            if (existing.has(diagnosticKey(diagnostic))) continue;
-            existing.add(diagnosticKey(diagnostic));
+            if (!suggestedFixFromDiagnostic(diagnostic)) continue;
+            const key = diagnosticKey(diagnostic);
+            // Suggested-fix diagnostics can have two useful server-derived
+            // ranges: an edit-oriented published range and a broader issue
+            // range for cursor discovery. Never use client-supplied
+            // suggested_fix payloads as authorization for either range.
+            if (!rangeIntersects(diagnostic.range, range) && !serverSuggestedKeysAtRange.has(key)) continue;
+            if (existing.has(key)) continue;
+            existing.add(key);
             relevantDiagnostics.push(diagnostic);
         }
     }

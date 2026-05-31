@@ -81,7 +81,7 @@ function statementDeleteRange(document: TextDocumentLike, statement: FcstmAstAss
     return statement.range;
 }
 
-function variableDefinitionRange(
+export function variableDefinitionRange(
     document: TextDocumentLike,
     semantic: FcstmSemanticDocument,
     varName: string,
@@ -96,7 +96,7 @@ function variableDefinitionRange(
     return variable.range;
 }
 
-function resolveStatePath(semantic: FcstmSemanticDocument, statePath: string) {
+export function resolveStatePath(semantic: FcstmSemanticDocument, statePath: string) {
     return semantic.states.find(item => item.identity.qualifiedName === statePath);
 }
 
@@ -264,7 +264,7 @@ function effectSelfAssignRange(
     return matches.length === 1 ? matches[0] : null;
 }
 
-function spanLikeToRange(value: unknown): TextRange | null {
+export function spanLikeToRange(value: unknown): TextRange | null {
     if (typeof value !== 'object' || value === null) return null;
     const obj = value as Record<string, unknown>;
     const start = obj.start as Record<string, unknown> | undefined;

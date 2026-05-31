@@ -259,8 +259,25 @@ def _guard_const_diagnostic(transition, value: bool) -> ModelDiagnostic:
             f'Transition {source_label!r} -> {target_label!r} '
             f'has a guard that is statically {label}.'
         ),
-        refs={'transition_span': None, 'folded_value': value},
+        refs={
+            'transition_span': None,
+            'folded_value': value,
+            'from_path': _transition_endpoint_path(transition, is_source=True),
+            'to_path': _transition_endpoint_path(transition, is_source=False),
+        },
     )
+
+
+def _transition_endpoint_path(transition, *, is_source: bool) -> str:
+    from ...dsl import EXIT_STATE, INIT_STATE
+
+    endpoint = transition.from_state if is_source else transition.to_state
+    if endpoint is INIT_STATE or endpoint is EXIT_STATE:
+        return '[*]'
+    parent = transition.parent
+    if parent is None:  # pragma: no cover - model-built transitions always have parents.
+        return str(endpoint)
+    return '.'.join(str(part) for part in (*parent.path, endpoint) if part is not None)
 
 
 def _transition_endpoint_label(value) -> str:

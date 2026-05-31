@@ -6,6 +6,7 @@ export * from './diagnostics';
 export * from './folding';
 export * from './formatter';
 export * from './hover';
+export * from './inspect-ranges';
 export * from './navigation';
 export * from './ranges';
 export * from './selection';

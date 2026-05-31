@@ -405,6 +405,8 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'transition_span': None,
                     'folded_value': False,
+                    'from_path': 'Root.Active',
+                    'to_path': 'Root.Blocked',
                 },
             },
             {
@@ -449,6 +451,8 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'transition_span': None,
                     'folded_value': False,
+                    'from_path': 'Root.Idle',
+                    'to_path': 'Root.Active',
                 },
             },
         ],
@@ -522,6 +526,8 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'transition_span': None,
                     'folded_value': False,
+                    'from_path': 'Root.Active',
+                    'to_path': 'Root.Blocked',
                 },
             },
             {
@@ -530,6 +536,8 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'transition_span': None,
                     'folded_value': True,
+                    'from_path': 'Root.Idle',
+                    'to_path': 'Root.Active',
                 },
             },
             {
@@ -538,6 +546,8 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'transition_span': None,
                     'folded_value': True,
+                    'from_path': 'Root.Blocked',
+                    'to_path': 'Root.WideTrue',
                 },
             },
             {
@@ -546,6 +556,8 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'transition_span': None,
                     'folded_value': True,
+                    'from_path': 'Root.WideTrue',
+                    'to_path': 'Root.ModuloTrue',
                 },
             },
             {
@@ -554,6 +566,8 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'transition_span': None,
                     'folded_value': True,
+                    'from_path': 'Root.ModuloTrue',
+                    'to_path': 'Root.PowerTrue',
                 },
             },
             {
@@ -677,6 +691,8 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'transition_span': None,
                     'folded_value': False,
+                    'from_path': 'Root.Idle',
+                    'to_path': 'Root.Active',
                 },
             },
             {
@@ -685,6 +701,8 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'transition_span': None,
                     'folded_value': True,
+                    'from_path': 'Root.Active',
+                    'to_path': 'Root.Done',
                 },
             },
         ],

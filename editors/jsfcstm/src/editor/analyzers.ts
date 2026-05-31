@@ -971,20 +971,11 @@ function addInitialTransitionInvalidDiagnostics(
     }
 }
 
-export async function collectSemanticAnalysisDiagnostics(
-    document: TextDocumentLike
-): Promise<FcstmDiagnostic[]> {
+export function collectSemanticAnalysisDiagnosticsFromSemantic(
+    semantic: FcstmSemanticDocument,
+    document: TextDocumentLike,
+): FcstmDiagnostic[] {
     const diagnostics: FcstmDiagnostic[] = [];
-    const semantic = await getWorkspaceGraph().getSemanticDocument(document);
-    // Defensive: callers always invoke against documents with a
-    // semantic analysis available; this guard exists for hypothetical
-    // future async paths.
-    /* c8 ignore start */
-    if (!semantic) {
-        return diagnostics;
-    }
-    /* c8 ignore stop */
-
     addImportMappingDiagnostics(semantic, document, diagnostics);
     addUnreachableStateDiagnostics(semantic, document, diagnostics);
     addTransitionDiagnostics(semantic, document, diagnostics);
@@ -998,6 +989,22 @@ export async function collectSemanticAnalysisDiagnostics(
     addInitialTransitionInvalidDiagnostics(semantic, document, diagnostics);
     addTypeMismatchDiagnostics(semantic, document, diagnostics);
     return diagnostics;
+}
+
+export async function collectSemanticAnalysisDiagnostics(
+    document: TextDocumentLike
+): Promise<FcstmDiagnostic[]> {
+    const semantic = await getWorkspaceGraph().getSemanticDocument(document);
+    // Defensive: callers always invoke against documents with a
+    // semantic analysis available; this guard exists for hypothetical
+    // future async paths.
+    /* c8 ignore start */
+    if (!semantic) {
+        return [];
+    }
+    /* c8 ignore stop */
+
+    return collectSemanticAnalysisDiagnosticsFromSemantic(semantic, document);
 }
 
 // -------------------------------------------------------------------------

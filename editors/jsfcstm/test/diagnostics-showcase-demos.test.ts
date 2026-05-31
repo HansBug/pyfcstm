@@ -361,6 +361,10 @@ function tallyCodes(codes: Array<string | undefined>): Map<string, number> {
     return tally;
 }
 
+function isInspectSurfaceSideEffect(code: string): boolean {
+    return code.startsWith('W_') || code.startsWith('I_');
+}
+
 function consumeOne(tally: Map<string, number>, code: string): boolean {
     const n = tally.get(code) ?? 0;
     if (n === 0) return false;
@@ -427,14 +431,17 @@ describe('diagnostics showcase: jsfcstm collectDocumentDiagnostics parity', () =
 
             // 3. Anything left over after consuming mustFire entries
             //    must be a declared side effect (or a leftover instance
-            //    of a mustFire code, which is also fine).
+            //    of a mustFire code, which is also fine). The editor
+            //    surface also includes inspectModel W/I design-health
+            //    diagnostics, so W_/I_ leftovers are allowed unless the
+            //    fixture explicitly lists them under mustNotFire.
             const allowedExtras = new Set<string>([
                 ...fixture.mustFire,
                 ...(fixture.sideEffects ?? []),
             ]);
             for (const code of tally.keys()) {
                 assert.ok(
-                    allowedExtras.has(code),
+                    allowedExtras.has(code) || isInspectSurfaceSideEffect(code),
                     `${fixture.name} emitted unexpected code ${code} (declared mustFire=[${fixture.mustFire.join(', ')}], sideEffects=[${(fixture.sideEffects ?? []).join(', ')}])`,
                 );
             }

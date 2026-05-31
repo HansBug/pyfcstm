@@ -1,13 +1,13 @@
 import {pathToFileURL} from 'node:url';
 
-import {inspectModel} from '../diagnostics';
 import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticVariable} from '../semantics';
 import {FcstmDiagnostic, TextDocumentLike, TextRange, createRange} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {FCSTM_DIAGNOSTIC_CODES} from './analyzers';
+import {collectInspectModelDiagnostics, diagnosticKey} from './diagnostics';
 import {rangeIntersects} from './ranges';
 import type {FcstmWorkspaceEdit} from './references';
-import {planSuggestedFixEdit, suggestedFixFromDiagnostic, suggestedFixIssueRange} from './suggested-fixes';
+import {planSuggestedFixEdit, suggestedFixFromDiagnostic} from './suggested-fixes';
 
 export type FcstmCodeActionKind = 'quickfix' | 'refactor.rename';
 
@@ -110,42 +110,6 @@ function uniqueCaseInsensitiveStateCandidates(
     )];
 }
 
-function diagnosticKey(diagnostic: FcstmDiagnostic): string {
-    return JSON.stringify([diagnostic.code ?? null, diagnostic.data ?? null]);
-}
-
-function fullDocumentRange(document: TextDocumentLike): TextRange {
-    const lastLine = Math.max(0, document.lineCount - 1);
-    return createRange(0, 0, lastLine, document.lineAt(lastLine).text.length);
-}
-
-function collectSuggestedFixDesignDiagnostics(
-    document: TextDocumentLike,
-    semantic: FcstmSemanticDocument,
-    model: Parameters<typeof inspectModel>[0],
-    existingDiagnostics: FcstmDiagnostic[],
-): FcstmDiagnostic[] {
-    const existing = new Set(existingDiagnostics.map(diagnosticKey));
-    const fullRange = fullDocumentRange(document);
-    const diagnostics: FcstmDiagnostic[] = [];
-    for (const item of inspectModel(model).diagnostics) {
-        const diagnostic: FcstmDiagnostic = {
-            range: fullRange,
-            message: item.message,
-            severity: item.severity,
-            source: 'fcstm',
-            code: item.code,
-            data: item.refs,
-        };
-        const suggestedFix = suggestedFixFromDiagnostic(diagnostic);
-        if (!suggestedFix) continue;
-        diagnostic.range = suggestedFixIssueRange(document, semantic, diagnostic);
-        if (existing.has(diagnosticKey(diagnostic))) continue;
-        diagnostics.push(diagnostic);
-    }
-    return diagnostics;
-}
-
 /**
  * Build code actions / quick fixes for the selected FCSTM range.
  */
@@ -171,12 +135,14 @@ export async function collectCodeActions(
     ));
     if (node?.model) {
         const existing = new Set(relevantDiagnostics.map(diagnosticKey));
-        for (const diagnostic of collectSuggestedFixDesignDiagnostics(
+        for (const diagnostic of collectInspectModelDiagnostics(
             document,
             semantic,
             node.model,
             relevantDiagnostics,
+            {rangeMode: 'issue'},
         )) {
+            if (!suggestedFixFromDiagnostic(diagnostic)) continue;
             if (!rangeIntersects(diagnostic.range, range)) continue;
             if (existing.has(diagnosticKey(diagnostic))) continue;
             existing.add(diagnosticKey(diagnostic));

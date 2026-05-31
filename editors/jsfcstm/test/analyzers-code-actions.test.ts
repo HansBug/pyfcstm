@@ -709,7 +709,7 @@ describe('jsfcstm analyzers and code actions', () => {
         await assertParses(initialUpdated, initialPath);
     });
 
-    it('provides design-health suggested-fix actions without prepublished diagnostics', async () => {
+    it('provides design-health suggested-fix actions from published inspect diagnostics', async () => {
         const text = [
             'def int unused = 0;',
             'def int driver = 0;',
@@ -725,7 +725,7 @@ describe('jsfcstm analyzers and code actions', () => {
         const diagnostics = await packageModule.collectDocumentDiagnostics(document);
         assert.equal(
             diagnostics.some(item => item.code === 'W_UNREFERENCED_VAR' || item.code === 'W_DEADLOCK_LEAF'),
-            false,
+            true,
         );
 
         const actions = await packageModule.collectCodeActions(

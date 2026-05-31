@@ -1,5 +1,6 @@
 """Redundancy and overlap design-health diagnostics."""
 
+from collections import Counter
 from typing import TYPE_CHECKING, Dict, Iterable, List, Tuple
 
 from ...utils.validate import ModelDiagnostic
@@ -105,18 +106,26 @@ def _is_lifecycle_free_leaf(state_path: str, states_by_path) -> bool:
 
 
 def _effect_self_assign_warnings(transitions) -> List[ModelDiagnostic]:
+    counts = Counter(
+        (t.from_path, var_name)
+        for t in transitions
+        for var_name in getattr(t, 'effect_self_assigns', ())
+    )
     diagnostics: List[ModelDiagnostic] = []
     for t in transitions:
         for var_name in getattr(t, 'effect_self_assigns', ()):
+            refs = {
+                'state_path': t.from_path,
+                'transition_span': None,
+                'var_name': var_name,
+            }
+            if t.from_path != '[*]' and counts[(t.from_path, var_name)] == 1:
+                refs['effect_self_assign_anchor'] = var_name
             diagnostics.append(ModelDiagnostic(
                 code='W_EFFECT_SELF_ASSIGN',
                 severity='warning',
                 message=f'Transition effect assigns {var_name!r} to itself.',
-                refs={
-                    'state_path': t.from_path,
-                    'transition_span': None,
-                    'var_name': var_name,
-                },
+                refs=refs,
             ))
     return diagnostics
 

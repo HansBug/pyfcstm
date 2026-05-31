@@ -13,6 +13,7 @@ pyfcstm.diagnostics
     codes
     inspect
     sink
+    suggested_fix
 
 \_\_all\_\_
 -----------------------------------------------------

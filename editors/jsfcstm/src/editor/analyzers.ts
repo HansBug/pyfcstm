@@ -57,6 +57,11 @@ export const FCSTM_DIAGNOSTIC_CODES = {
     unreachableState: 'W_UNREACHABLE_STATE',
     guardConstFalse: 'W_GUARD_CONST_FALSE',
     unusedEvent: 'W_UNUSED_EVENT',
+    guardConstTrue: 'W_GUARD_CONST_TRUE',
+    deadlockLeaf: 'W_DEADLOCK_LEAF',
+    initialUnconditionalMissing: 'W_INITIAL_UNCONDITIONAL_MISSING',
+    unreferencedVar: 'W_UNREFERENCED_VAR',
+    effectSelfAssign: 'W_EFFECT_SELF_ASSIGN',
 } as const;
 
 function isFalseLiteral(expression: FcstmAstExpression): boolean {

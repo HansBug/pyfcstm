@@ -17,7 +17,7 @@
 # Allowed `refs.*.type` tokens (must mirror `_ALLOWED_REF_TYPES` in
 # codes.py — that tuple is the single source of truth, this comment block
 # is documentation; a test asserts the two stay aligned):
-#   str | str_or_null | int | int_or_null | float | number | bool | Span | list[str]
+#   str | str_or_null | int | int_or_null | float | number | bool | dict | Span | list[str]
 #
 # Adding a new code: append a new top-level entry here AND add a fixture
 # test that triggers it from a real DSL snippet. The loader in `codes.py`
@@ -1085,6 +1085,14 @@ W_GUARD_CONST_TRUE:
       type: Span
       required: false
       description: Source span of the transition declaration.
+    guard_span:
+      type: Span
+      required: false
+      description: >-
+        Source span of the removable guard suffix, including the leading
+        trigger separator when needed. This is reserved for future emitters
+        that can provide a stable guard-only span; the current inspect
+        emitters intentionally omit it.
     folded_value:
       type: bool
       required: true
@@ -1205,11 +1213,27 @@ W_DEADLOCK_LEAF:
       type: str
       required: true
       description: Dotted path of the deadlocking leaf state.
+    parent_path:
+      type: str
+      required: false
+      description: >-
+        Dotted path of the leaf state's parent. Present only when an
+        exit-transition quick-fix can be inserted inside a parent state.
     reason:
       type: str
       required: true
       description: Why the leaf is considered a deadlock.
       enum: ['no_outgoing_transition']
+    suggested_fix:
+      type: dict
+      required: false
+      description: Structured quick-fix payload for adding a parent exit transition.
+  suggested_fix:
+    kind: insert
+    target: deadlock_leaf_exit_transition
+    anchor_ref: refs.parent_path
+    text_template: "{state_name} -> [*];\n"
+    rationale: Add an exit transition so the leaf can finish its parent state.
   for_llm:
     summary: >-
       This leaf state has no outgoing transition, so once the machine
@@ -1246,6 +1270,22 @@ W_INITIAL_UNCONDITIONAL_MISSING:
       type: int
       required: true
       description: Number of existing initial transitions that are not unconditional.
+    first_child_name:
+      type: str
+      required: false
+      description: >-
+        First declared non-pseudo child state name used as the fallback
+        insertion target.
+    suggested_fix:
+      type: dict
+      required: false
+      description: Structured quick-fix payload for inserting an unconditional entry transition.
+  suggested_fix:
+    kind: insert
+    target: unconditional_initial_transition
+    anchor_ref: refs.composite_path
+    text_template: "[*] -> {first_child_name};\n"
+    rationale: Add an unconditional fallback entry transition for the composite state.
   for_llm:
     summary: >-
       The composite state can fail to choose an initial child because no
@@ -1356,6 +1396,22 @@ W_UNREFERENCED_VAR:
       type: str
       required: true
       description: Source text of the initial value.
+    definition_delete_anchor:
+      type: str
+      required: false
+      description: >-
+        Variable name repeated only when the declaration has no DSL reads
+        or writes, so deleting the declaration alone is a safe quick-fix.
+    suggested_fix:
+      type: dict
+      required: false
+      description: Structured quick-fix payload for removing the variable definition.
+  suggested_fix:
+    kind: delete
+    target: variable_definition
+    anchor_ref: refs.definition_delete_anchor
+    text_template: ""
+    rationale: Remove the declaration-only variable because it has no DSL reads or writes.
   for_llm:
     summary: >-
       This variable does not participate in model decisions. It is dead
@@ -1627,7 +1683,7 @@ W_EFFECT_SELF_ASSIGN:
   refs:
     state_path:
       type: str
-      required: false
+      required: true
       description: Source state path when known.
     transition_span:
       type: Span
@@ -1637,6 +1693,23 @@ W_EFFECT_SELF_ASSIGN:
       type: str
       required: true
       description: Variable assigned to itself.
+    effect_self_assign_anchor:
+      type: str
+      required: false
+      description: >-
+        Variable name repeated only when the self-assignment occurrence
+        can be uniquely mapped back to a non-initial effect statement for
+        the same source state and variable.
+    suggested_fix:
+      type: dict
+      required: false
+      description: Structured quick-fix payload for removing the no-op effect statement.
+  suggested_fix:
+    kind: delete
+    target: effect_self_assign_statement
+    anchor_ref: refs.effect_self_assign_anchor
+    text_template: ""
+    rationale: Remove the no-op self-assignment statement.
   for_llm:
     summary: >-
       The assignment does not change model state and is likely dead code.

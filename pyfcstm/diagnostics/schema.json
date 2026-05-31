@@ -306,6 +306,35 @@
         }
       }
     },
+    "SuggestedFixPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "target", "anchor", "text", "rationale"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["insert", "delete", "replace"]
+        },
+        "target": { "type": "string", "minLength": 1 },
+        "anchor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "ref"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["ref"]
+            },
+            "ref": {
+              "type": "string",
+              "pattern": "^refs\\.[A-Za-z_][A-Za-z0-9_]*$"
+            }
+          }
+        },
+        "text": { "type": "string" },
+        "rationale": { "type": "string", "minLength": 1 }
+      }
+    },
     "ModelDiagnostic": {
       "type": "object",
       "additionalProperties": false,
@@ -333,7 +362,13 @@
             }
           ]
         },
-        "refs": { "type": "object" }
+        "refs": {
+          "type": "object",
+          "properties": {
+            "suggested_fix": { "$ref": "#/definitions/SuggestedFixPayload" }
+          },
+          "additionalProperties": true
+        }
       }
     }
   }

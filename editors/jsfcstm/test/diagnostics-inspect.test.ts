@@ -69,6 +69,10 @@ async function buildMachine(src: string) {
     return machine;
 }
 
+function expectedRefsWithSuggestedFix(code: string, refs: Record<string, unknown>): Record<string, unknown> {
+    return packageModule.refsWithSuggestedFix(code, refs);
+}
+
 describe('diagnostics/inspect', () => {
     describe('basic structure', () => {
         it('returns top-level shape', async () => {
@@ -272,7 +276,11 @@ state Root {
                 noAbstract.diagnostics
                     .filter(d => d.code === 'W_UNREFERENCED_VAR')
                     .map(d => d.refs),
-                [{var_name: 'unused', init_value: '0'}],
+                [expectedRefsWithSuggestedFix('W_UNREFERENCED_VAR', {
+                    var_name: 'unused',
+                    init_value: '0',
+                    definition_delete_anchor: 'unused',
+                })],
             );
             assert.equal(
                 noAbstract.diagnostics.filter(d => d.code === 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT').length,
@@ -747,12 +755,20 @@ state Root {
                 {
                     code: 'W_DEADLOCK_LEAF',
                     severity: 'warning',
-                    refs: {state_path: 'Root.LeafForced', reason: 'no_outgoing_transition'},
+                    refs: {
+                        state_path: 'Root.LeafForced',
+                        parent_path: 'Root',
+                        reason: 'no_outgoing_transition',
+                    },
                 },
                 {
                     code: 'W_DEADLOCK_LEAF',
                     severity: 'warning',
-                    refs: {state_path: 'Root.Orphan', reason: 'no_outgoing_transition'},
+                    refs: {
+                        state_path: 'Root.Orphan',
+                        parent_path: 'Root',
+                        reason: 'no_outgoing_transition',
+                    },
                 },
                 {
                     code: 'W_DEAD_NAMED_ACTION',
@@ -762,7 +778,12 @@ state Root {
                 {
                     code: 'W_EFFECT_SELF_ASSIGN',
                     severity: 'warning',
-                    refs: {state_path: 'Root.Active', transition_span: null, var_name: 'stable'},
+                    refs: {
+                        state_path: 'Root.Active',
+                        transition_span: null,
+                        var_name: 'stable',
+                        effect_self_assign_anchor: 'stable',
+                    },
                 },
                 {
                     code: 'W_FORCED_NEVER_EXPANDS',
@@ -795,7 +816,7 @@ state Root {
                 {
                     code: 'W_INITIAL_UNCONDITIONAL_MISSING',
                     severity: 'warning',
-                    refs: {composite_path: 'Root', existing_conditional_count: 1},
+                    refs: {composite_path: 'Root', existing_conditional_count: 1, first_child_name: 'Idle'},
                 },
                 {
                     code: 'W_REDUNDANT_TRANSITION',
@@ -855,7 +876,10 @@ state Root {
                     severity: 'warning',
                     refs: {var_name: 'read_only', read_states: ['Root.Idle'], init_value: '0'},
                 },
-            ].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
+            ].map(item => ({
+                ...item,
+                refs: expectedRefsWithSuggestedFix(item.code, item.refs),
+            })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
         });
 
         it('keeps guard and chain path in forced transition origin text', async () => {
@@ -1077,11 +1101,12 @@ state Root {
                 report.diagnostics
                     .filter(d => d.code === 'W_EFFECT_SELF_ASSIGN')
                     .map(d => d.refs),
-                [{
+                [expectedRefsWithSuggestedFix('W_EFFECT_SELF_ASSIGN', {
                     state_path: 'Root.A',
                     transition_span: null,
                     var_name: 'x',
-                }],
+                    effect_self_assign_anchor: 'x',
+                })],
             );
         });
     });

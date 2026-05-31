@@ -1,8 +1,10 @@
 """Design-health diagnostics derived from inspect-surface data."""
 
 import re
+from dataclasses import replace
 from typing import TYPE_CHECKING, Iterable, List, Optional
 
+from ..suggested_fix import refs_with_suggested_fix
 from ...utils.validate import ModelDiagnostic
 from .const_fold import collect_const_fold_warnings
 from .data_flow import collect_data_flow_warnings
@@ -81,7 +83,14 @@ def collect_design_health_warnings(
     diagnostics.extend(collect_data_flow_warnings(variables, machine))
     diagnostics.extend(collect_redundancy_warnings(transitions, events, states))
     diagnostics.extend(collect_transition_infos(states, transitions))
-    return diagnostics
+    return _with_suggested_fixes(diagnostics)
+
+
+def _with_suggested_fixes(diagnostics: List[ModelDiagnostic]) -> List[ModelDiagnostic]:
+    return [
+        replace(diag, refs=refs_with_suggested_fix(diag.code, diag.refs))
+        for diag in diagnostics
+    ]
 
 
 def _resolve_root_state_path(states, root_state_path):

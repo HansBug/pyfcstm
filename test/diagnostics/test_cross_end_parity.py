@@ -11,7 +11,7 @@ import json
 import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry
-from pyfcstm.diagnostics import inspect_model
+from pyfcstm.diagnostics import inspect_model, refs_with_suggested_fix
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.utils.validate import ModelDiagnostic
 
@@ -60,6 +60,22 @@ def _normalize_inspect_diagnostics(diags):
             json.dumps(item['refs'], sort_keys=True),
         ),
     )
+
+
+def _expected_with_suggested_fixes(expected):
+    out = []
+    for item in expected:
+        enriched = dict(item)
+        refs = dict(item['refs'])
+        if (
+                item['code'] == 'W_DEADLOCK_LEAF'
+                and 'parent_path' not in refs
+                and '.' in refs.get('state_path', '')
+        ):
+            refs['parent_path'] = refs['state_path'].rsplit('.', 1)[0]
+        enriched['refs'] = refs_with_suggested_fix(item['code'], refs)
+        out.append(enriched)
+    return out
 
 
 def _py_inspect_normalized_diagnostics(dsl: str):
@@ -737,6 +753,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'composite_path': 'Root',
                     'existing_conditional_count': 1,
+                    'first_child_name': 'Idle',
                 },
             },
             {
@@ -828,6 +845,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                     'state_path': 'Root.Active',
                     'transition_span': None,
                     'var_name': 'stable',
+                    'effect_self_assign_anchor': 'stable',
                 },
             },
             {
@@ -984,6 +1002,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'var_name': 'extra',
                     'init_value': '0',
+                    'definition_delete_anchor': 'extra',
                 },
             },
             {
@@ -992,6 +1011,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'var_name': 'truncated',
                     'init_value': '3.5',
+                    'definition_delete_anchor': 'truncated',
                 },
             },
         ],
@@ -1144,7 +1164,9 @@ def test_multi_file_fixture_emits_expected_codes(name, files, entry, must_fire, 
     item[0] for item in DESIGN_HEALTH_INSPECT_FIXTURES
 ])
 def test_design_health_inspect_diagnostics_match_inlined_expected(name, dsl, expected):
-    normalized_expected = _normalize_inspect_diagnostics(expected)
+    normalized_expected = _normalize_inspect_diagnostics(
+        _expected_with_suggested_fixes(expected),
+    )
     py_diags = _py_inspect_normalized_diagnostics(dsl)
     assert py_diags == normalized_expected, (
         f'{name}: pyfcstm inspect diagnostics mismatch: {py_diags}'

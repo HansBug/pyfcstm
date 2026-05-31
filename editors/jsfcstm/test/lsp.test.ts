@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import {pathToFileURL} from 'node:url';
 
-import {TextDocumentSyncKind} from 'vscode-languageserver/node';
+import {CodeActionKind, DiagnosticSeverity, TextDocumentSyncKind} from 'vscode-languageserver/node';
 import type {CancellationToken, MarkupContent} from 'vscode-languageserver/node';
 
 import {packageModule, trackTempDir, writeFile} from './support';
@@ -183,7 +183,61 @@ describe('jsfcstm lsp core', () => {
             packageModule.toLspRange(packageModule.createRange(0, 0, 3, 1)),
             []
         );
-        assert.deepEqual(codeActions, []);
+        assert.ok(codeActions.some(item => (
+            item.kind === CodeActionKind.QuickFix
+            && item.diagnostics?.some(diagnostic => diagnostic.code === 'W_UNREFERENCED_VAR')
+        )));
+
+        core.dispose();
+    });
+
+    it('preserves diagnostic severity and related information on code actions', async () => {
+        const dir = trackTempDir('jsfcstm-lsp-codeaction-');
+        const hostFile = path.join(dir, 'host.fcstm');
+        const hostUri = toUri(hostFile);
+        const text = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B : if [missing > 0];',
+            '}',
+        ].join('\n');
+        const core = new packageModule.FcstmLanguageServerCore();
+        await core.openTextDocument(makeTextDocumentItem(hostFile, text));
+
+        const missingColumn = text.split('\n')[4].indexOf('missing');
+        const diagnosticRange = packageModule.toLspRange(packageModule.createRange(
+            4,
+            missingColumn,
+            4,
+            missingColumn + 'missing'.length,
+        ));
+        const actions = await core.provideCodeActions(
+            hostUri,
+            diagnosticRange,
+            [{
+                range: diagnosticRange,
+                message: 'Variable "missing" is not defined.',
+                severity: DiagnosticSeverity.Information,
+                source: 'fcstm',
+                code: packageModule.FCSTM_DIAGNOSTIC_CODES.undefinedVar,
+                relatedInformation: [{
+                    location: {
+                        uri: hostUri,
+                        range: packageModule.toLspRange(packageModule.createRange(1, 4, 1, 12)),
+                    },
+                    message: 'Related state declaration.',
+                }],
+            }]
+        );
+
+        const action = actions.find(item => /Define "missing"/.test(item.title));
+        assert.ok(action, `expected define-variable action, got ${JSON.stringify(actions)}`);
+        const actionDiagnostic = action.diagnostics?.[0];
+        assert.equal(actionDiagnostic?.severity, DiagnosticSeverity.Information);
+        assert.equal(actionDiagnostic?.relatedInformation?.[0]?.message, 'Related state declaration.');
+        assert.equal(actionDiagnostic?.relatedInformation?.[0]?.location.uri, hostUri);
 
         core.dispose();
     });

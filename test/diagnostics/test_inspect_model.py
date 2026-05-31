@@ -295,32 +295,56 @@ class TestInspectModelToJson:
 class TestSchemaJsonValidates:
     """Verify the schema.json contract validates a real inspection."""
 
-    def test_schema_exists(self):
-        path = os.path.join(
+    @staticmethod
+    def _schema_path():
+        return os.path.join(
             os.path.dirname(__file__), '..', '..',
             'pyfcstm', 'diagnostics', 'schema.json',
         )
-        assert os.path.exists(path)
+
+    @staticmethod
+    def _load_schema():
+        with open(TestSchemaJsonValidates._schema_path(), 'r', encoding='utf-8') as f:
+            return json.load(f)
+
+    def test_schema_exists(self):
+        assert os.path.exists(self._schema_path())
 
     def test_schema_is_valid_json(self):
-        path = os.path.join(
-            os.path.dirname(__file__), '..', '..',
-            'pyfcstm', 'diagnostics', 'schema.json',
-        )
-        with open(path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        data = self._load_schema()
         assert data['title'] == 'ModelInspect'
+
+    def test_schema_local_refs_resolve(self):
+        schema = self._load_schema()
+        refs = []
+
+        def walk(node):
+            if isinstance(node, dict):
+                ref = node.get('$ref')
+                if isinstance(ref, str):
+                    refs.append(ref)
+                for value in node.values():
+                    walk(value)
+            elif isinstance(node, list):
+                for value in node:
+                    walk(value)
+
+        walk(schema)
+        assert refs
+        for ref in refs:
+            assert ref.startswith('#/'), f'non-local schema ref is unsupported: {ref!r}'
+            target = schema
+            for raw_part in ref[2:].split('/'):
+                part = raw_part.replace('~1', '/').replace('~0', '~')
+                assert isinstance(target, dict), f'{ref!r} resolves through non-object'
+                assert part in target, f'{ref!r} cannot resolve missing part {part!r}'
+                target = target[part]
 
     def test_schema_validates_simple_inspect(self):
         # Light-weight structural validation rather than pulling in
         # jsonschema as a hard test dep — verify each required top-level
         # key from the schema is present in the inspect output.
-        path = os.path.join(
-            os.path.dirname(__file__), '..', '..',
-            'pyfcstm', 'diagnostics', 'schema.json',
-        )
-        with open(path, 'r', encoding='utf-8') as f:
-            schema = json.load(f)
+        schema = self._load_schema()
         required = set(schema['required'])
         payload = inspect_model(_parse(SIMPLE_DSL)).to_json()
         assert required.issubset(set(payload.keys())), (
@@ -818,11 +842,133 @@ class TestInspectModelGuardAffectDiagnostics:
         }
         """)
 
-        assert by_code['W_UNREFERENCED_VAR'][0].refs == {
+        unused_refs = by_code['W_UNREFERENCED_VAR'][0].refs
+        assert unused_refs['var_name'] == 'unused'
+        assert unused_refs['init_value'] == '0'
+        assert unused_refs['definition_delete_anchor'] == 'unused'
+        assert unused_refs['suggested_fix'] == {
+            'kind': 'delete',
+            'target': 'variable_definition',
+            'anchor': {'type': 'ref', 'ref': 'refs.definition_delete_anchor'},
+            'text': '',
+            'rationale': 'Remove the declaration-only variable because it has no DSL reads or writes.',
+        }
+        assert set(unused_refs) == {
+            'var_name',
+            'init_value',
+            'definition_delete_anchor',
+            'suggested_fix',
+        }
+        assert 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT' not in by_code
+
+    def test_unreferenced_variable_fix_is_omitted_when_variable_is_read(self):
+        by_code = self._diagnostics_by_code("""
+        def int unused = 0;
+        def int driver = 0;
+        state Root {
+            state Idle {
+                enter { temp = unused + 1; }
+            }
+            state Done;
+            [*] -> Idle;
+            Idle -> Done : if [driver > 0];
+        }
+        """)
+
+        unused_refs = by_code['W_UNREFERENCED_VAR'][0].refs
+        assert unused_refs == {
             'var_name': 'unused',
             'init_value': '0',
         }
-        assert 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT' not in by_code
+
+    def test_structural_suggested_fixes_are_attached_to_safe_insertions(self):
+        by_code = self._diagnostics_by_code("""
+        state Root {
+            state Idle;
+            [*] -> Idle : if [true];
+        }
+        """)
+
+        deadlock_fix = by_code['W_DEADLOCK_LEAF'][0].refs['suggested_fix']
+        assert by_code['W_DEADLOCK_LEAF'][0].refs['parent_path'] == 'Root'
+        assert deadlock_fix == {
+            'kind': 'insert',
+            'target': 'deadlock_leaf_exit_transition',
+            'anchor': {'type': 'ref', 'ref': 'refs.parent_path'},
+            'text': 'Idle -> [*];\n',
+            'rationale': (
+                'Add an exit transition so the leaf can finish its parent state.'
+            ),
+        }
+
+        initial_refs = by_code['W_INITIAL_UNCONDITIONAL_MISSING'][0].refs
+        assert initial_refs['first_child_name'] == 'Idle'
+        assert initial_refs['suggested_fix'] == {
+            'kind': 'insert',
+            'target': 'unconditional_initial_transition',
+            'anchor': {'type': 'ref', 'ref': 'refs.composite_path'},
+            'text': '[*] -> Idle;\n',
+            'rationale': (
+                'Add an unconditional fallback entry transition for the '
+                'composite state.'
+            ),
+        }
+
+    def test_initial_fallback_suggested_fix_skips_pseudo_first_child(self):
+        by_code = self._diagnostics_by_code("""
+        def int ready = 1;
+        state Root {
+            pseudo state Choice;
+            state A;
+            [*] -> A : if [ready > 0];
+        }
+        """)
+
+        initial_refs = by_code['W_INITIAL_UNCONDITIONAL_MISSING'][0].refs
+        assert initial_refs['first_child_name'] == 'A'
+        assert initial_refs['suggested_fix']['text'] == '[*] -> A;\n'
+
+    def test_initial_fallback_suggested_fix_is_omitted_for_only_pseudo_children(self):
+        by_code = self._diagnostics_by_code("""
+        def int ready = 1;
+        state Root {
+            pseudo state Choice;
+            [*] -> Choice : if [ready > 0];
+        }
+        """)
+
+        initial_refs = by_code['W_INITIAL_UNCONDITIONAL_MISSING'][0].refs
+        assert initial_refs == {
+            'composite_path': 'Root',
+            'existing_conditional_count': 1,
+        }
+
+    def test_root_deadlock_leaf_fix_is_omitted(self):
+        by_code = self._diagnostics_by_code("""
+        state Root;
+        """)
+
+        deadlock_refs = by_code['W_DEADLOCK_LEAF'][0].refs
+        assert deadlock_refs == {
+            'state_path': 'Root',
+            'reason': 'no_outgoing_transition',
+        }
+
+    def test_const_true_fix_is_omitted_when_transition_span_is_unavailable(self):
+        by_code = self._diagnostics_by_code("""
+        state Root {
+            state Idle;
+            state Done;
+            [*] -> Idle;
+            Idle -> Done : if [(1 + 2) == 3];
+        }
+        """)
+
+        const_true_refs = by_code['W_GUARD_CONST_TRUE'][0].refs
+        assert const_true_refs == {
+            'transition_span': None,
+            'folded_value': True,
+        }
 
     def test_unreferenced_variable_with_abstract_action_is_info(self):
         by_code = self._diagnostics_by_code("""
@@ -1332,14 +1478,89 @@ class TestInspectModelRedundancySemantics:
         }
         """
         report = inspect_model(_parse(dsl))
-        assert [
+        refs = [
             d.refs for d in report.diagnostics
             if d.code == 'W_EFFECT_SELF_ASSIGN'
-        ] == [{
-            'state_path': 'Root.A',
+        ]
+        assert len(refs) == 1
+        assert refs[0]['state_path'] == 'Root.A'
+        assert refs[0]['transition_span'] is None
+        assert refs[0]['var_name'] == 'x'
+        assert refs[0]['effect_self_assign_anchor'] == 'x'
+        assert refs[0]['suggested_fix'] == {
+            'kind': 'delete',
+            'target': 'effect_self_assign_statement',
+            'anchor': {'type': 'ref', 'ref': 'refs.effect_self_assign_anchor'},
+            'text': '',
+            'rationale': 'Remove the no-op self-assignment statement.',
+        }
+
+    def test_effect_self_assignment_fix_is_omitted_when_occurrence_is_ambiguous(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            state C;
+            [*] -> A;
+            A -> B effect { x = x; };
+            A -> C effect { x = x; };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        refs = [
+            d.refs for d in report.diagnostics
+            if d.code == 'W_EFFECT_SELF_ASSIGN'
+        ]
+        assert len(refs) == 2
+        assert all(ref['state_path'] == 'Root.A' for ref in refs)
+        assert all(ref['var_name'] == 'x' for ref in refs)
+        assert all('effect_self_assign_anchor' not in ref for ref in refs)
+        assert all('suggested_fix' not in ref for ref in refs)
+
+    def test_duplicate_self_assignments_in_one_effect_do_not_get_fix(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B effect {
+                x = x;
+                x = x;
+            };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        refs = [
+            d.refs for d in report.diagnostics
+            if d.code == 'W_EFFECT_SELF_ASSIGN'
+        ]
+        assert len(refs) == 2
+        assert all('effect_self_assign_anchor' not in ref for ref in refs)
+        assert all('suggested_fix' not in ref for ref in refs)
+
+    def test_initial_transition_self_assignment_does_not_get_fix(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            [*] -> A effect {
+                x = x;
+            };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        refs = [
+            d.refs for d in report.diagnostics
+            if d.code == 'W_EFFECT_SELF_ASSIGN'
+        ]
+        assert len(refs) == 1
+        assert refs[0] == {
+            'state_path': '[*]',
             'transition_span': None,
             'var_name': 'x',
-        }]
+        }
 
 
 @pytest.mark.unittest

@@ -86,16 +86,24 @@ def _deadlock_leaf_warnings(states, transitions) -> List[ModelDiagnostic]:
             code='W_DEADLOCK_LEAF',
             severity='warning',
             message=f'Leaf state {state.path!r} has no outgoing transition.',
-            refs={
-                'state_path': state.path,
-                'reason': 'no_outgoing_transition',
-            },
+            refs=_deadlock_leaf_refs(state),
         ))
     return diagnostics
 
 
+def _deadlock_leaf_refs(state) -> Dict[str, str]:
+    refs = {
+        'state_path': state.path,
+        'reason': 'no_outgoing_transition',
+    }
+    if state.parent_path is not None:
+        refs['parent_path'] = state.parent_path
+    return refs
+
+
 def _initial_unconditional_missing_warnings(states) -> List[ModelDiagnostic]:
     diagnostics: List[ModelDiagnostic] = []
+    states_by_path = {state.path: state for state in states}
     for state in states:
         if not state.is_composite:
             continue
@@ -105,6 +113,13 @@ def _initial_unconditional_missing_warnings(states) -> List[ModelDiagnostic]:
         ]
         if unconditional:
             continue
+        refs = {
+            'composite_path': state.path,
+            'existing_conditional_count': len(state.initial_targets),
+        }
+        first_child_name = _first_child_name(state, states_by_path)
+        if first_child_name is not None:
+            refs['first_child_name'] = first_child_name
         diagnostics.append(ModelDiagnostic(
             code='W_INITIAL_UNCONDITIONAL_MISSING',
             severity='warning',
@@ -112,12 +127,17 @@ def _initial_unconditional_missing_warnings(states) -> List[ModelDiagnostic]:
                 f'Composite state {state.path!r} has no unconditional '
                 '[*] entry transition.'
             ),
-            refs={
-                'composite_path': state.path,
-                'existing_conditional_count': len(state.initial_targets),
-            },
+            refs=refs,
         ))
     return diagnostics
+
+
+def _first_child_name(state, states_by_path) -> Optional[str]:
+    for child_path in state.substates:
+        child = states_by_path.get(child_path)
+        if child is not None and not child.is_pseudo:
+            return child_path.rsplit('.', 1)[-1]
+    return None
 
 
 def _forced_never_expands_warnings(forced_transitions) -> List[ModelDiagnostic]:

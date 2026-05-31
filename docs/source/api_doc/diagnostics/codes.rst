@@ -32,11 +32,18 @@ ForLlmSpec
     :members: summary,recommended_actions,do_not
 
 
+SuggestedFixSpec
+-----------------------------------------------------
+
+.. autoclass:: SuggestedFixSpec
+    :members: kind,target,anchor_ref,text_template,rationale
+
+
 CodeSpec
 -----------------------------------------------------
 
 .. autoclass:: CodeSpec
-    :members: required_fields,code,severity,description,refs_schema,example_dsl,capability,for_llm,emit_tier
+    :members: required_fields,code,severity,description,refs_schema,example_dsl,capability,for_llm,emit_tier,suggested_fix
 
 
 load\_codes

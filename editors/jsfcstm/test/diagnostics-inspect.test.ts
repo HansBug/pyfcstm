@@ -69,6 +69,10 @@ async function buildMachine(src: string) {
     return machine;
 }
 
+function expectedRefsWithSuggestedFix(code: string, refs: Record<string, unknown>): Record<string, unknown> {
+    return packageModule.refsWithSuggestedFix(code, refs);
+}
+
 describe('diagnostics/inspect', () => {
     describe('basic structure', () => {
         it('returns top-level shape', async () => {
@@ -272,7 +276,7 @@ state Root {
                 noAbstract.diagnostics
                     .filter(d => d.code === 'W_UNREFERENCED_VAR')
                     .map(d => d.refs),
-                [{var_name: 'unused', init_value: '0'}],
+                [expectedRefsWithSuggestedFix('W_UNREFERENCED_VAR', {var_name: 'unused', init_value: '0'})],
             );
             assert.equal(
                 noAbstract.diagnostics.filter(d => d.code === 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT').length,
@@ -795,7 +799,7 @@ state Root {
                 {
                     code: 'W_INITIAL_UNCONDITIONAL_MISSING',
                     severity: 'warning',
-                    refs: {composite_path: 'Root', existing_conditional_count: 1},
+                    refs: {composite_path: 'Root', existing_conditional_count: 1, first_child_name: 'Idle'},
                 },
                 {
                     code: 'W_REDUNDANT_TRANSITION',
@@ -855,7 +859,10 @@ state Root {
                     severity: 'warning',
                     refs: {var_name: 'read_only', read_states: ['Root.Idle'], init_value: '0'},
                 },
-            ].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
+            ].map(item => ({
+                ...item,
+                refs: expectedRefsWithSuggestedFix(item.code, item.refs),
+            })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
         });
 
         it('keeps guard and chain path in forced transition origin text', async () => {
@@ -1077,11 +1084,11 @@ state Root {
                 report.diagnostics
                     .filter(d => d.code === 'W_EFFECT_SELF_ASSIGN')
                     .map(d => d.refs),
-                [{
+                [expectedRefsWithSuggestedFix('W_EFFECT_SELF_ASSIGN', {
                     state_path: 'Root.A',
                     transition_span: null,
                     var_name: 'x',
-                }],
+                })],
             );
         });
     });

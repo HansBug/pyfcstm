@@ -11,6 +11,7 @@ export * from './ranges';
 export * from './selection';
 export * from './semantic-tokens';
 export * from './symbols';
+export * from './suggested-fixes';
 export {
     collectDocumentHighlights,
     collectReferences,

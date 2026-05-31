@@ -56,18 +56,29 @@ function collectInitialUnconditionalMissingWarnings(states: StateInfo[]): ModelD
         if (!state.is_composite) continue;
         const hasUnconditional = state.initial_targets.some(item => item.is_unconditional);
         if (hasUnconditional) continue;
+        const refs: Record<string, unknown> = {
+            composite_path: state.path,
+            existing_conditional_count: state.initial_targets.length,
+        };
+        const firstChildName = firstChildNameOf(state);
+        if (firstChildName !== null) {
+            refs.first_child_name = firstChildName;
+        }
         out.push({
             code: 'W_INITIAL_UNCONDITIONAL_MISSING',
             severity: 'warning',
             message: `Composite state ${JSON.stringify(state.path)} has no unconditional [*] entry transition.`,
             span: null,
-            refs: {
-                composite_path: state.path,
-                existing_conditional_count: state.initial_targets.length,
-            },
+            refs,
         });
     }
     return out;
+}
+
+function firstChildNameOf(state: StateInfo): string | null {
+    if (state.substates.length === 0) return null;
+    const parts = state.substates[0].split('.');
+    return parts.length > 0 ? parts[parts.length - 1] : null;
 }
 
 function collectForcedNeverExpandsWarnings(

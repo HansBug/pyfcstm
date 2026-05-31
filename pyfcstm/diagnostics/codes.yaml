@@ -17,7 +17,7 @@
 # Allowed `refs.*.type` tokens (must mirror `_ALLOWED_REF_TYPES` in
 # codes.py — that tuple is the single source of truth, this comment block
 # is documentation; a test asserts the two stay aligned):
-#   str | str_or_null | int | int_or_null | float | number | bool | Span | list[str]
+#   str | str_or_null | int | int_or_null | float | number | bool | dict | Span | list[str]
 #
 # Adding a new code: append a new top-level entry here AND add a fixture
 # test that triggers it from a real DSL snippet. The loader in `codes.py`
@@ -1089,6 +1089,18 @@ W_GUARD_CONST_TRUE:
       type: bool
       required: true
       description: Constant-folded guard value (always ``true``).
+    suggested_fix:
+      type: dict
+      required: false
+      description: >-
+        Optional structured quick-fix payload. Emitted only when the
+        transition guard has a stable source anchor.
+  suggested_fix:
+    kind: replace
+    target: transition_guard
+    anchor_ref: refs.transition_span
+    text_template: ""
+    rationale: Remove the redundant constant-true guard.
   for_llm:
     summary: >-
       The transition's guard is statically known to be ``true`` and does
@@ -1210,6 +1222,16 @@ W_DEADLOCK_LEAF:
       required: true
       description: Why the leaf is considered a deadlock.
       enum: ['no_outgoing_transition']
+    suggested_fix:
+      type: dict
+      required: false
+      description: Structured quick-fix payload for adding a parent exit transition.
+  suggested_fix:
+    kind: insert
+    target: deadlock_leaf_exit_transition
+    anchor_ref: refs.state_path
+    text_template: "{state_name} -> [*];\n"
+    rationale: Add an exit transition so the leaf can finish its parent state.
   for_llm:
     summary: >-
       This leaf state has no outgoing transition, so once the machine
@@ -1246,6 +1268,21 @@ W_INITIAL_UNCONDITIONAL_MISSING:
       type: int
       required: true
       description: Number of existing initial transitions that are not unconditional.
+    first_child_name:
+      type: str
+      required: false
+      description: >-
+        First declared child state name used as the fallback insertion target.
+    suggested_fix:
+      type: dict
+      required: false
+      description: Structured quick-fix payload for inserting an unconditional entry transition.
+  suggested_fix:
+    kind: insert
+    target: unconditional_initial_transition
+    anchor_ref: refs.composite_path
+    text_template: "[*] -> {first_child_name};\n"
+    rationale: Add an unconditional fallback entry transition for the composite state.
   for_llm:
     summary: >-
       The composite state can fail to choose an initial child because no
@@ -1356,6 +1393,16 @@ W_UNREFERENCED_VAR:
       type: str
       required: true
       description: Source text of the initial value.
+    suggested_fix:
+      type: dict
+      required: false
+      description: Structured quick-fix payload for removing the variable definition.
+  suggested_fix:
+    kind: delete
+    target: variable_definition
+    anchor_ref: refs.var_name
+    text_template: ""
+    rationale: Remove the variable declaration because it cannot affect transition guards.
   for_llm:
     summary: >-
       This variable does not participate in model decisions. It is dead
@@ -1637,6 +1684,16 @@ W_EFFECT_SELF_ASSIGN:
       type: str
       required: true
       description: Variable assigned to itself.
+    suggested_fix:
+      type: dict
+      required: false
+      description: Structured quick-fix payload for removing the no-op effect statement.
+  suggested_fix:
+    kind: delete
+    target: effect_self_assign_statement
+    anchor_ref: refs.var_name
+    text_template: ""
+    rationale: Remove the no-op self-assignment statement.
   for_llm:
     summary: >-
       The assignment does not change model state and is likely dead code.

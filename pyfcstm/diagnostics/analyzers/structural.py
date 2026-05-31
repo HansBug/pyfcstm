@@ -105,6 +105,13 @@ def _initial_unconditional_missing_warnings(states) -> List[ModelDiagnostic]:
         ]
         if unconditional:
             continue
+        refs = {
+            'composite_path': state.path,
+            'existing_conditional_count': len(state.initial_targets),
+        }
+        first_child_name = _first_child_name(state)
+        if first_child_name is not None:
+            refs['first_child_name'] = first_child_name
         diagnostics.append(ModelDiagnostic(
             code='W_INITIAL_UNCONDITIONAL_MISSING',
             severity='warning',
@@ -112,12 +119,16 @@ def _initial_unconditional_missing_warnings(states) -> List[ModelDiagnostic]:
                 f'Composite state {state.path!r} has no unconditional '
                 '[*] entry transition.'
             ),
-            refs={
-                'composite_path': state.path,
-                'existing_conditional_count': len(state.initial_targets),
-            },
+            refs=refs,
         ))
     return diagnostics
+
+
+def _first_child_name(state) -> Optional[str]:
+    if not state.substates:
+        return None
+    first_path = state.substates[0]
+    return first_path.rsplit('.', 1)[-1]
 
 
 def _forced_never_expands_warnings(forced_transitions) -> List[ModelDiagnostic]:

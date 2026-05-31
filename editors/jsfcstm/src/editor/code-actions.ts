@@ -6,6 +6,7 @@ import {getWorkspaceGraph} from '../workspace';
 import {FCSTM_DIAGNOSTIC_CODES} from './analyzers';
 import {rangeIntersects} from './ranges';
 import type {FcstmWorkspaceEdit} from './references';
+import {planSuggestedFixEdit, suggestedFixFromDiagnostic} from './suggested-fixes';
 
 export type FcstmCodeActionKind = 'quickfix' | 'refactor.rename';
 
@@ -129,6 +130,20 @@ export async function collectCodeActions(
     const relevantDiagnostics = diagnostics.filter(item => rangeIntersects(item.range, range));
 
     for (const diagnostic of relevantDiagnostics) {
+        const suggestedFix = suggestedFixFromDiagnostic(diagnostic);
+        if (suggestedFix) {
+            const plan = planSuggestedFixEdit(document, semantic, diagnostic);
+            if (plan) {
+                actions.push({
+                    title: `${suggestedFix.rationale} (${diagnostic.code ?? 'suggested fix'})`,
+                    kind: 'quickfix',
+                    diagnostics: [diagnostic],
+                    edit: createWorkspaceEdit(document, plan.range, plan.newText),
+                });
+            }
+            continue;
+        }
+
         if (diagnostic.code === FCSTM_DIAGNOSTIC_CODES.importNotFound) {
             const importItem = findImportByRange(semantic, diagnostic.range);
             if (importItem) {

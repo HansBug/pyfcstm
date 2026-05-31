@@ -34,6 +34,17 @@ export interface ForLlmSpec {
 }
 
 /**
+ * Structured auto-fix metadata declared by ``codes.yaml``.
+ */
+export interface SuggestedFixSpec {
+    kind: 'insert' | 'delete' | 'replace';
+    target: string;
+    anchor_ref: string;
+    text_template?: string;
+    rationale: string;
+}
+
+/**
  * Specification for a single diagnostic code as expressed in
  * ``codes.yaml``.
  */
@@ -43,6 +54,7 @@ export interface CodeSpec {
     refs?: Record<string, CodeFieldSpec>;
     capability?: 'pure_static' | 'const_fold' | 'requires_solver' | 'requires_simulation';
     for_llm?: ForLlmSpec;
+    suggested_fix?: SuggestedFixSpec;
     example_dsl?: string;
 }
 

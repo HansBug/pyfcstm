@@ -1533,6 +1533,59 @@ state Root {
             });
         });
 
+        for (const [name, action] of [
+            ['self-updates', 'status = status + 1;'],
+            ['middle reads', 'status = 1; sink = status; status = 2;'],
+        ] as const) {
+            it(`does not clear enter-action final writes with same-action ${name}`, async () => {
+                const report = inspectModel(await buildMachine(`
+def int status = 0;
+def int sink = 0;
+state Root {
+    state Idle {
+        enter { ${action} }
+    }
+    [*] -> Idle;
+}
+`));
+                assert.deepEqual(diagnosticsByCode(report).get('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE')![0].refs, {
+                    var_name: 'status',
+                    write_locations: ['Root.Idle'],
+                });
+            });
+        }
+
+        it('keeps enter-action writes live when a later action stage reads them', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+def int sink = 0;
+state Root {
+    state Idle {
+        enter { status = 1; }
+        during { sink = status; }
+    }
+    [*] -> Idle;
+}
+`));
+            assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
+
+        it('keeps enter-action writes live when a transition effect reads them', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+def int sink = 0;
+state Root {
+    state Idle {
+        enter { status = 1; }
+    }
+    state Done;
+    [*] -> Idle;
+    Idle -> Done effect { sink = status; };
+}
+`));
+            assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
+
         it('does not clear exit-action final writes with source guard reads', async () => {
             const report = inspectModel(await buildMachine(`
 def int status = 0;
@@ -1683,12 +1736,13 @@ state Root {
         it('keeps exit-action writes live when target state reads them', async () => {
             const report = inspectModel(await buildMachine(`
 def int status = 0;
+def int sink = 0;
 state Root {
     state Active {
         exit { status = 1; }
     }
     state Done {
-        enter { status = status + 1; }
+        enter { sink = status; }
     }
     [*] -> Active;
     Active -> Done;
@@ -2052,6 +2106,7 @@ state Root {
         it('keeps exit-effect writes live when a later composite initial target action reads them', async () => {
             const report = inspectModel(await buildMachine(`
 def int status = 0;
+def int sink = 0;
 state Root {
     state Parent {
         state Child;
@@ -2060,7 +2115,7 @@ state Root {
     }
     state Bridge {
         state Leaf {
-            enter { status = status + 1; }
+            enter { sink = status; }
         }
         [*] -> Leaf;
     }

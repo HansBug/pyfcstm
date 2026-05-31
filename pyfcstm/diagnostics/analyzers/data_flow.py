@@ -332,10 +332,16 @@ def _final_write_locations(
                 (state_path, stage) in action_read_after_write_stages
         ):
             continue
-        if _has_reachable_read_after_action_write(
+        action_read_states = _action_read_states_after_write(
+            variable,
             state_path,
             stage,
             read_states,
+        )
+        if _has_reachable_read_after_action_write(
+            state_path,
+            stage,
+            action_read_states,
             reachability_graph,
             state_parent_paths,
             root_state_path,
@@ -390,6 +396,62 @@ def _action_write_stages(
     return tuple(
         (state_path, stage)
         for state_path, stage in getattr(variable, 'written_in_action_stages', ())
+    )
+
+
+_ACTION_STAGE_ORDER = {
+    'enter': 0,
+    'during': 1,
+    'during_aspect': 1,
+    'exit': 2,
+}
+
+
+def _action_read_states_after_write(
+    variable: 'VariableInfo',
+    state_path: str,
+    stage: Optional[str],
+    read_states: Set[str],
+) -> Set[str]:
+    if (
+            stage is None or
+            stage != 'enter' or
+            _same_state_read_can_follow_action_write(
+                variable,
+                state_path,
+                stage,
+            )
+    ):
+        return read_states
+    filtered = set(read_states)
+    filtered.discard(state_path)
+    return filtered
+
+
+def _same_state_read_can_follow_action_write(
+    variable: 'VariableInfo',
+    state_path: str,
+    stage: str,
+) -> bool:
+    for read_state, read_stage in getattr(variable, 'read_in_action_stages', ()):
+        if (
+                read_state == state_path and
+                _action_stage_is_after(read_stage, stage)
+        ):
+            return True
+    for from_path, _, _ in _guard_occurrences(variable):
+        if from_path == state_path:
+            return True
+    for from_path, _, _ in getattr(variable, 'read_in_effect_occurrences', ()):
+        if from_path == state_path:
+            return True
+    return False
+
+
+def _action_stage_is_after(read_stage: str, write_stage: str) -> bool:
+    return (
+        _ACTION_STAGE_ORDER.get(read_stage, -1) >
+        _ACTION_STAGE_ORDER.get(write_stage, -1)
     )
 
 

@@ -1619,6 +1619,59 @@ class TestInspectModelDataFlowClosureDiagnostics:
             'write_locations': ['Root.Done'],
         }
 
+    @pytest.mark.parametrize('action', [
+        'status = status + 1;',
+        'status = 1; sink = status; status = 2;',
+    ], ids=['self-update', 'read-before-final-write'])
+    def test_enter_action_reads_before_final_write_do_not_clear(self, action):
+        dsl = f"""
+        def int status = 0;
+        def int sink = 0;
+        state Root {{
+            state Idle {{
+                enter {{ {action} }}
+            }}
+            [*] -> Idle;
+        }}
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        diag = by_code['W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'][0]
+        assert diag.refs == {
+            'var_name': 'status',
+            'write_locations': ['Root.Idle'],
+        }
+
+    def test_enter_action_final_write_read_later_in_during_is_not_final(self):
+        dsl = """
+        def int status = 0;
+        def int sink = 0;
+        state Root {
+            state Idle {
+                enter { status = 1; }
+                during { sink = status; }
+            }
+            [*] -> Idle;
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
+
+    def test_enter_action_write_reaching_transition_effect_read_is_not_final(self):
+        dsl = """
+        def int status = 0;
+        def int sink = 0;
+        state Root {
+            state Idle {
+                enter { status = 1; }
+            }
+            state Done;
+            [*] -> Idle;
+            Idle -> Done effect { sink = status; };
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
+
     def test_exit_action_final_write_is_not_cleared_by_source_guard_read(self):
         dsl = """
         def int status = 0;
@@ -1748,12 +1801,13 @@ class TestInspectModelDataFlowClosureDiagnostics:
     def test_exit_action_write_reaching_target_state_read_is_not_final(self):
         dsl = """
         def int status = 0;
+        def int sink = 0;
         state Root {
             state Active {
                 exit { status = 1; }
             }
             state Done {
-                enter { status = status + 1; }
+                enter { sink = status; }
             }
             [*] -> Active;
             Active -> Done;
@@ -1815,6 +1869,7 @@ class TestInspectModelDataFlowClosureDiagnostics:
     def test_exit_effect_write_reaches_composite_initial_target_read(self):
         dsl = """
         def int status = 0;
+        def int sink = 0;
         state Root {
             state Parent {
                 state Child;
@@ -1823,7 +1878,7 @@ class TestInspectModelDataFlowClosureDiagnostics:
             }
             state Bridge {
                 state Leaf {
-                    enter { status = status + 1; }
+                    enter { sink = status; }
                 }
                 [*] -> Leaf;
             }

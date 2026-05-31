@@ -305,10 +305,16 @@ function finalWriteLocations(
         ) {
             continue;
         }
-        if (hasReachableReadAfterActionWrite(
+        const actionReadStates = actionReadStatesAfterWrite(
+            variable,
             statePath,
             stage,
             readStates,
+        );
+        if (hasReachableReadAfterActionWrite(
+            statePath,
+            stage,
+            actionReadStates,
             reachabilityGraph,
             stateParentPaths,
             rootStatePath,
@@ -359,6 +365,58 @@ function actionWriteStages(variable: VariableInfo): Array<[string, string | null
         return actionStages;
     }
     return variable.written_in_states.map(statePath => [statePath, null]);
+}
+
+const ACTION_STAGE_ORDER: Record<string, number> = {
+    enter: 0,
+    during: 1,
+    during_aspect: 1,
+    exit: 2,
+};
+
+function actionReadStatesAfterWrite(
+    variable: VariableInfo,
+    statePath: string,
+    stage: string | null,
+    readStates: Set<string>,
+): Set<string> {
+    if (
+        stage === null ||
+        stage !== 'enter' ||
+        sameStateReadCanFollowActionWrite(
+            variable,
+            statePath,
+            stage,
+        )
+    ) {
+        return readStates;
+    }
+    const filtered = new Set(readStates);
+    filtered.delete(statePath);
+    return filtered;
+}
+
+function sameStateReadCanFollowActionWrite(
+    variable: VariableInfo,
+    statePath: string,
+    stage: string,
+): boolean {
+    for (const [readState, readStage] of variable.read_in_action_stages ?? []) {
+        if (readState === statePath && actionStageIsAfter(readStage, stage)) {
+            return true;
+        }
+    }
+    for (const [fromPath] of guardOccurrences(variable)) {
+        if (fromPath === statePath) return true;
+    }
+    for (const [fromPath] of variable.read_in_effect_occurrences ?? []) {
+        if (fromPath === statePath) return true;
+    }
+    return false;
+}
+
+function actionStageIsAfter(readStage: string, writeStage: string): boolean {
+    return (ACTION_STAGE_ORDER[readStage] ?? -1) > (ACTION_STAGE_ORDER[writeStage] ?? -1);
 }
 
 function effectWriteOccurrences(variable: VariableInfo): Array<[string, string, string | null]> {

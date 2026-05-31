@@ -1539,6 +1539,27 @@ state Root {
             assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
         });
 
+        it('does not clear sibling transition writes with initial target guard reads', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+state Root {
+    state Parent {
+        state Child;
+        state Other;
+        [*] -> Child : if [status > 0];
+        [*] -> Other;
+        Child -> Other :: Reset;
+        Other -> Child :: Move effect { status = 1; };
+    }
+    [*] -> Parent;
+}
+`));
+            assert.deepEqual(diagnosticsByCode(report).get('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE')![0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Parent.Other->Root.Parent.Child'],
+            });
+        });
+
         it('keeps exit-action writes live when re-entry initial guard reads them', async () => {
             const report = inspectModel(await buildMachine(`
 def int status = 0;

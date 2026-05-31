@@ -973,6 +973,33 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
         [],
     ),
     (
+        'design-health-sibling-transition-initial-target-guard-read',
+        '\n'.join([
+            'def int status = 0;',
+            'state Root {',
+            '    state Parent {',
+            '        state Child;',
+            '        state Other;',
+            '        [*] -> Child : if [status > 0];',
+            '        [*] -> Other;',
+            '        Child -> Other :: Reset;',
+            '        Other -> Child :: Move effect { status = 1; };',
+            '    }',
+            '    [*] -> Parent;',
+            '}',
+        ]),
+        [
+            {
+                'code': 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'status',
+                    'write_locations': ['Root.Parent.Other->Root.Parent.Child'],
+                },
+            },
+        ],
+    ),
+    (
         'design-health-composite-exit-action-ignores-descendant-prior-read',
         '\n'.join([
             'def int status = 0;',

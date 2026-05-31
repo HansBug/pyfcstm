@@ -35,27 +35,30 @@ function variableUsageDiagnostics(
     normalEdges: Record<string, Set<string>> = {},
     initialEdges: Record<string, Set<string>> = {},
 ): ModelDiagnosticJson[] {
-    const readStates = variableReadStates(variable);
+    const usageReadStates = variableUsageReadStates(variable);
+    const livenessReadStates = variableLivenessReadStates(variable);
+    const initialGuardReadEdges = variableInitialGuardReadEdges(variable);
     const writeStates = variableWriteStates(variable);
-    if (readStates.size === 0 && writeStates.size === 0) {
+    if (usageReadStates.size === 0 && writeStates.size === 0) {
         return [unreferencedVarDiagnostic(variable)];
     }
-    if (readStates.size > 0 && writeStates.size === 0) {
-        return [unwrittenReadVarDiagnostic(variable, readStates)];
+    if (usageReadStates.size > 0 && writeStates.size === 0) {
+        return [unwrittenReadVarDiagnostic(variable, usageReadStates)];
     }
-    if (writeStates.size > 0 && readStates.size === 0) {
+    if (writeStates.size > 0 && usageReadStates.size === 0) {
         return [writeOnlyVarDiagnostic(variable, writeStates)];
     }
 
     const finalWrites = finalWriteLocations(
         variable,
-        readStates,
+        livenessReadStates,
         reachabilityGraph,
         stateParentPaths,
         rootStatePath,
         exitTransitionSources,
         normalEdges,
         initialEdges,
+        initialGuardReadEdges,
     );
     if (finalWrites.length === 0) return [];
     return [{
@@ -108,23 +111,55 @@ function directReachabilityEdges(
     return {normalEdges, initialEdges};
 }
 
-function variableReadStates(variable: VariableInfo): Set<string> {
+function variableUsageReadStates(variable: VariableInfo): Set<string> {
     const readStates = new Set(variable.read_in_states);
-    const guardOccurrences = variable.read_in_guard_occurrences ?? [];
-    if (guardOccurrences.length > 0) {
-        for (const [fromPath, toPath] of guardOccurrences) {
-            readStates.add(guardReadState(fromPath, toPath));
-        }
-    } else {
-        for (const [fromPath, toPath] of variable.read_in_guards) {
-            readStates.add(guardReadState(fromPath, toPath));
-        }
+    for (const [fromPath, toPath] of guardOccurrences(variable)) {
+        readStates.add(guardReadState(fromPath, toPath));
     }
     return readStates;
 }
 
+function variableLivenessReadStates(variable: VariableInfo): Set<string> {
+    const readStates = new Set(variable.read_in_states);
+    for (const [fromPath] of guardOccurrences(variable)) {
+        if (fromPath !== '[*]') readStates.add(fromPath);
+    }
+    return readStates;
+}
+
+function guardOccurrences(variable: VariableInfo): Array<[string, string, string]> {
+    const occurrences = variable.read_in_guard_occurrences ?? [];
+    if (occurrences.length > 0) return occurrences;
+    return variable.read_in_guards.map(([fromPath, toPath]) =>
+        [fromPath, toPath, `${fromPath}->${toPath}`] as [string, string, string]
+    );
+}
+
 function guardReadState(fromPath: string, toPath: string): string {
     return fromPath === '[*]' ? toPath : fromPath;
+}
+
+function variableInitialGuardReadEdges(variable: VariableInfo): Set<string> {
+    const edges = new Set<string>();
+    for (const [fromPath, toPath, occurrenceKey] of guardOccurrences(variable)) {
+        if (fromPath !== '[*]') continue;
+        const owner = initialGuardOwner(occurrenceKey, toPath);
+        if (owner !== null) edges.add(edgeKey(owner, toPath));
+    }
+    return edges;
+}
+
+function initialGuardOwner(occurrenceKey: string, targetPath: string): string | null {
+    if (occurrenceKey && occurrenceKey.includes('#')) {
+        const owner = occurrenceKey.split('#').slice(0, -1).join('#');
+        if (owner) return owner;
+    }
+    const lastDot = targetPath.lastIndexOf('.');
+    return lastDot >= 0 ? targetPath.slice(0, lastDot) : null;
+}
+
+function edgeKey(fromPath: string, toPath: string): string {
+    return `${fromPath}\u0001${toPath}`;
 }
 
 function variableWriteStates(variable: VariableInfo): Set<string> {
@@ -244,6 +279,7 @@ function finalWriteLocations(
     exitTransitionSources: Set<string> = new Set(),
     normalEdges: Record<string, Set<string>> = {},
     initialEdges: Record<string, Set<string>> = {},
+    initialGuardReadEdges: Set<string> = new Set(),
 ): string[] {
     const out: string[] = [];
     const actionWrites = actionWriteStages(variable);
@@ -258,6 +294,7 @@ function finalWriteLocations(
             exitTransitionSources,
             normalEdges,
             initialEdges,
+            initialGuardReadEdges,
         )) {
             continue;
         }
@@ -273,8 +310,16 @@ function finalWriteLocations(
                 rootStatePath,
                 normalEdges,
                 initialEdges,
+                initialGuardReadEdges,
             )) continue;
-        } else if (hasReachableRead(toPath, readStates, reachabilityGraph)) continue;
+        } else if (hasReachableRead(
+            toPath,
+            readStates,
+            reachabilityGraph,
+            normalEdges,
+            initialEdges,
+            initialGuardReadEdges,
+        )) continue;
         out.push(`${fromPath}->${toPath}`);
     }
     return Array.from(new Set(out)).sort();
@@ -306,8 +351,18 @@ function hasReachableReadAfterActionWrite(
     exitTransitionSources: Set<string> = new Set(),
     normalEdges: Record<string, Set<string>> = {},
     initialEdges: Record<string, Set<string>> = {},
+    initialGuardReadEdges: Set<string> = new Set(),
 ): boolean {
-    if (stage !== 'exit') return hasReachableRead(statePath, readStates, reachabilityGraph);
+    if (stage !== 'exit') {
+        return hasReachableRead(
+            statePath,
+            readStates,
+            reachabilityGraph,
+            normalEdges,
+            initialEdges,
+            initialGuardReadEdges,
+        );
+    }
     if (hasReachableReadAfterExitingSubtree(
         statePath,
         statePath,
@@ -316,6 +371,7 @@ function hasReachableReadAfterActionWrite(
         false,
         normalEdges,
         initialEdges,
+        initialGuardReadEdges,
     )) return true;
     const exitParent = exitTransitionParentStart(
         statePath,
@@ -331,6 +387,7 @@ function hasReachableReadAfterActionWrite(
         true,
         normalEdges,
         initialEdges,
+        initialGuardReadEdges,
     );
 }
 
@@ -342,6 +399,7 @@ function hasReachableReadAfterExitEffect(
     rootStatePath?: string,
     normalEdges: Record<string, Set<string>> = {},
     initialEdges: Record<string, Set<string>> = {},
+    initialGuardReadEdges: Set<string> = new Set(),
 ): boolean {
     const parentPath = exitTransitionParentStart(
         fromPath,
@@ -357,6 +415,7 @@ function hasReachableReadAfterExitEffect(
         true,
         normalEdges,
         initialEdges,
+        initialGuardReadEdges,
     );
 }
 
@@ -368,6 +427,7 @@ function hasReachableReadAfterExitingSubtree(
     includeStart: boolean,
     normalEdges: Record<string, Set<string>>,
     initialEdges: Record<string, Set<string>>,
+    initialGuardReadEdges: Set<string>,
 ): boolean {
     if (Object.prototype.hasOwnProperty.call(normalEdges, startPath)) {
         const seen = new Set<string>([`${startPath}\u0001false`]);
@@ -382,7 +442,10 @@ function hasReachableReadAfterExitingSubtree(
             }
             const nextPaths = new Set(normalEdges[current] ?? []);
             if (allowInitial) {
-                for (const target of initialEdges[current] ?? []) nextPaths.add(target);
+                for (const target of initialEdges[current] ?? []) {
+                    if (initialGuardReadEdges.has(edgeKey(current, target))) return true;
+                    nextPaths.add(target);
+                }
             }
             for (const nextPath of Array.from(nextPaths).sort()) {
                 const item = `${nextPath}\u0001true`;
@@ -418,7 +481,30 @@ function hasReachableRead(
     startPath: string,
     readStates: Set<string>,
     reachabilityGraph: Record<string, string[]>,
+    normalEdges: Record<string, Set<string>>,
+    initialEdges: Record<string, Set<string>>,
+    initialGuardReadEdges: Set<string>,
 ): boolean {
+    if (Object.prototype.hasOwnProperty.call(normalEdges, startPath)) {
+        const seen = new Set<string>([startPath]);
+        const queue = [startPath];
+        while (queue.length > 0) {
+            const current = queue.shift()!;
+            if (readStates.has(current)) return true;
+            const nextPaths = new Set(normalEdges[current] ?? []);
+            for (const target of initialEdges[current] ?? []) {
+                if (initialGuardReadEdges.has(edgeKey(current, target))) return true;
+                nextPaths.add(target);
+            }
+            for (const nextPath of Array.from(nextPaths).sort()) {
+                if (seen.has(nextPath)) continue;
+                seen.add(nextPath);
+                queue.push(nextPath);
+            }
+        }
+        return false;
+    }
+
     if (readStates.has(startPath)) return true;
     for (const reachable of reachabilityGraph[startPath] ?? []) {
         if (readStates.has(reachable)) return true;

@@ -1568,6 +1568,28 @@ class TestInspectModelDataFlowClosureDiagnostics:
         by_code = self._diagnostics_by_code(dsl)
         assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
 
+    def test_sibling_transition_to_initial_target_does_not_reach_initial_guard_read(self):
+        dsl = """
+        def int status = 0;
+        state Root {
+            state Parent {
+                state Child;
+                state Other;
+                [*] -> Child : if [status > 0];
+                [*] -> Other;
+                Child -> Other :: Reset;
+                Other -> Child :: Move effect { status = 1; };
+            }
+            [*] -> Parent;
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        diag = by_code['W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'][0]
+        assert diag.refs == {
+            'var_name': 'status',
+            'write_locations': ['Root.Parent.Other->Root.Parent.Child'],
+        }
+
     def test_exit_action_reentering_composite_reaches_initial_guard_read(self):
         dsl = """
         def int status = 0;

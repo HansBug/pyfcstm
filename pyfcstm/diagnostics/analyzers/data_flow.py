@@ -45,24 +45,27 @@ def _variable_usage_diagnostics(
     normal_edges: Dict[str, Set[str]],
     initial_edges: Dict[str, Set[str]],
 ) -> List[ModelDiagnostic]:
-    read_states = _read_states(variable)
+    usage_read_states = _usage_read_states(variable)
+    liveness_read_states = _liveness_read_states(variable)
+    initial_guard_read_edges = _initial_guard_read_edges(variable)
     write_states = _write_states(variable)
-    if not read_states and not write_states:
+    if not usage_read_states and not write_states:
         return [_unreferenced_var_diagnostic(variable)]
-    if read_states and not write_states:
-        return [_unwritten_read_var_diagnostic(variable, read_states)]
-    if write_states and not read_states:
+    if usage_read_states and not write_states:
+        return [_unwritten_read_var_diagnostic(variable, usage_read_states)]
+    if write_states and not usage_read_states:
         return [_write_only_var_diagnostic(variable, write_states)]
 
     final_writes = _final_write_locations(
         variable,
-        read_states,
+        liveness_read_states,
         reachability_graph,
         state_parent_paths,
         root_state_path,
         exit_transition_sources,
         normal_edges,
         initial_edges,
+        initial_guard_read_edges,
     )
     if final_writes:
         return [
@@ -126,26 +129,60 @@ def _direct_reachability_edges(
     return normal_edges, initial_edges
 
 
-def _read_states(variable: 'VariableInfo') -> Set[str]:
+def _usage_read_states(variable: 'VariableInfo') -> Set[str]:
     read_states = set(variable.read_in_states)
+    read_states.update(
+        _guard_read_state(from_path, to_path)
+        for from_path, to_path, _ in _guard_occurrences(variable)
+    )
+    return read_states
+
+
+def _liveness_read_states(variable: 'VariableInfo') -> Set[str]:
+    read_states = set(variable.read_in_states)
+    read_states.update(
+        from_path
+        for from_path, _, _ in _guard_occurrences(variable)
+        if from_path != '[*]'
+    )
+    return read_states
+
+
+def _guard_occurrences(variable: 'VariableInfo') -> Tuple[Tuple[str, str, str], ...]:
     occurrences = getattr(variable, 'read_in_guard_occurrences', ())
     if occurrences:
-        read_states.update(
-            _guard_read_state(from_path, to_path)
-            for from_path, to_path, _ in occurrences
-        )
-    else:
-        read_states.update(
-            _guard_read_state(from_path, to_path)
-            for from_path, to_path in variable.read_in_guards
-        )
-    return read_states
+        return tuple(occurrences)
+    return tuple(
+        (from_path, to_path, f'{from_path}->{to_path}')
+        for from_path, to_path in variable.read_in_guards
+    )
 
 
 def _guard_read_state(from_path: str, to_path: str) -> str:
     if from_path == '[*]':
         return to_path
     return from_path
+
+
+def _initial_guard_read_edges(variable: 'VariableInfo') -> Set[Tuple[str, str]]:
+    edges: Set[Tuple[str, str]] = set()
+    for from_path, to_path, occurrence_key in _guard_occurrences(variable):
+        if from_path != '[*]':
+            continue
+        owner = _initial_guard_owner(occurrence_key, to_path)
+        if owner is not None:
+            edges.add((owner, to_path))
+    return edges
+
+
+def _initial_guard_owner(occurrence_key: str, target_path: str) -> Optional[str]:
+    if occurrence_key and '#' in occurrence_key:
+        owner, _ = occurrence_key.rsplit('#', 1)
+        if owner:
+            return owner
+    if '.' in target_path:
+        return target_path.rsplit('.', 1)[0]
+    return None
 
 
 def _write_states(variable: 'VariableInfo') -> Set[str]:
@@ -269,6 +306,7 @@ def _final_write_locations(
     exit_transition_sources: Set[str],
     normal_edges: Dict[str, Set[str]],
     initial_edges: Dict[str, Set[str]],
+    initial_guard_read_edges: Set[Tuple[str, str]],
 ) -> List[str]:
     out: List[str] = []
     action_writes = _action_write_stages(variable)
@@ -285,6 +323,7 @@ def _final_write_locations(
             exit_transition_sources,
             normal_edges,
             initial_edges,
+            initial_guard_read_edges,
         ):
             continue
         out.append(state_path)
@@ -299,10 +338,18 @@ def _final_write_locations(
                 root_state_path,
                 normal_edges,
                 initial_edges,
+                initial_guard_read_edges,
             ):
                 continue
         else:
-            if _has_reachable_read(to_path, read_states, reachability_graph):
+            if _has_reachable_read(
+                to_path,
+                read_states,
+                reachability_graph,
+                normal_edges,
+                initial_edges,
+                initial_guard_read_edges,
+            ):
                 continue
         out.append(f'{from_path}->{to_path}')
     return sorted(set(out))
@@ -332,9 +379,17 @@ def _has_reachable_read_after_action_write(
     exit_transition_sources: Set[str],
     normal_edges: Dict[str, Set[str]],
     initial_edges: Dict[str, Set[str]],
+    initial_guard_read_edges: Set[Tuple[str, str]],
 ) -> bool:
     if stage != 'exit':
-        return _has_reachable_read(state_path, read_states, reachability_graph)
+        return _has_reachable_read(
+            state_path,
+            read_states,
+            reachability_graph,
+            normal_edges,
+            initial_edges,
+            initial_guard_read_edges,
+        )
     if _has_reachable_read_after_exiting_subtree(
         state_path,
         state_path,
@@ -343,6 +398,7 @@ def _has_reachable_read_after_action_write(
         include_start=False,
         normal_edges=normal_edges,
         initial_edges=initial_edges,
+        initial_guard_read_edges=initial_guard_read_edges,
     ):
         return True
     exit_parent = _exit_transition_parent_start(
@@ -361,6 +417,7 @@ def _has_reachable_read_after_action_write(
             include_start=True,
             normal_edges=normal_edges,
             initial_edges=initial_edges,
+            initial_guard_read_edges=initial_guard_read_edges,
         )
     )
 
@@ -373,6 +430,7 @@ def _has_reachable_read_after_exit_effect(
     root_state_path: Optional[str],
     normal_edges: Dict[str, Set[str]],
     initial_edges: Dict[str, Set[str]],
+    initial_guard_read_edges: Set[Tuple[str, str]],
 ) -> bool:
     parent_path = _exit_transition_parent_start(
         from_path,
@@ -390,6 +448,7 @@ def _has_reachable_read_after_exit_effect(
             include_start=True,
             normal_edges=normal_edges,
             initial_edges=initial_edges,
+            initial_guard_read_edges=initial_guard_read_edges,
         )
     )
 
@@ -402,6 +461,7 @@ def _has_reachable_read_after_exiting_subtree(
     include_start: bool,
     normal_edges: Dict[str, Set[str]],
     initial_edges: Dict[str, Set[str]],
+    initial_guard_read_edges: Set[Tuple[str, str]],
 ) -> bool:
     if start_path in normal_edges:
         seen = {(start_path, False)}
@@ -414,7 +474,10 @@ def _has_reachable_read_after_exiting_subtree(
                 return True
             next_paths = set(normal_edges.get(current, ()))
             if allow_initial:
-                next_paths.update(initial_edges.get(current, ()))
+                for target in initial_edges.get(current, ()):
+                    if (current, target) in initial_guard_read_edges:
+                        return True
+                    next_paths.add(target)
             for next_path in sorted(next_paths):
                 item = (next_path, True)
                 if item in seen:
@@ -451,7 +514,29 @@ def _has_reachable_read(
     start_path: str,
     read_states: Set[str],
     reachability_graph,
+    normal_edges: Dict[str, Set[str]],
+    initial_edges: Dict[str, Set[str]],
+    initial_guard_read_edges: Set[Tuple[str, str]],
 ) -> bool:
+    if start_path in normal_edges:
+        seen = {start_path}
+        queue = [start_path]
+        while queue:
+            current = queue.pop(0)
+            if current in read_states:
+                return True
+            next_paths = set(normal_edges.get(current, ()))
+            for target in initial_edges.get(current, ()):
+                if (current, target) in initial_guard_read_edges:
+                    return True
+                next_paths.add(target)
+            for next_path in sorted(next_paths):
+                if next_path in seen:
+                    continue
+                seen.add(next_path)
+                queue.append(next_path)
+        return False
+
     if start_path in read_states:
         return True
     for reachable in reachability_graph.get(start_path, ()):

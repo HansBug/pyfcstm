@@ -7,7 +7,7 @@ import {getWorkspaceGraph} from '../workspace';
 import {FCSTM_DIAGNOSTIC_CODES} from './analyzers';
 import {rangeIntersects} from './ranges';
 import type {FcstmWorkspaceEdit} from './references';
-import {planSuggestedFixEdit, suggestedFixDiagnosticRange, suggestedFixFromDiagnostic} from './suggested-fixes';
+import {planSuggestedFixEdit, suggestedFixFromDiagnostic, suggestedFixIssueRange} from './suggested-fixes';
 
 export type FcstmCodeActionKind = 'quickfix' | 'refactor.rename';
 
@@ -123,7 +123,6 @@ function collectSuggestedFixDesignDiagnostics(
     document: TextDocumentLike,
     semantic: FcstmSemanticDocument,
     model: Parameters<typeof inspectModel>[0],
-    range: TextRange,
     existingDiagnostics: FcstmDiagnostic[],
 ): FcstmDiagnostic[] {
     const existing = new Set(existingDiagnostics.map(diagnosticKey));
@@ -140,8 +139,7 @@ function collectSuggestedFixDesignDiagnostics(
         };
         const suggestedFix = suggestedFixFromDiagnostic(diagnostic);
         if (!suggestedFix) continue;
-        diagnostic.range = suggestedFixDiagnosticRange(document, semantic, diagnostic);
-        if (!rangeIntersects(diagnostic.range, range)) continue;
+        diagnostic.range = suggestedFixIssueRange(document, semantic, diagnostic);
         if (existing.has(diagnosticKey(diagnostic))) continue;
         diagnostics.push(diagnostic);
     }
@@ -168,15 +166,22 @@ export async function collectCodeActions(
     /* c8 ignore stop */
 
     const actions: FcstmCodeAction[] = [];
-    const relevantDiagnostics = diagnostics.filter(item => rangeIntersects(item.range, range));
+    const relevantDiagnostics = diagnostics.filter(item => (
+        !suggestedFixFromDiagnostic(item) && rangeIntersects(item.range, range)
+    ));
     if (node?.model) {
-        relevantDiagnostics.push(...collectSuggestedFixDesignDiagnostics(
+        const existing = new Set(relevantDiagnostics.map(diagnosticKey));
+        for (const diagnostic of collectSuggestedFixDesignDiagnostics(
             document,
             semantic,
             node.model,
-            range,
             relevantDiagnostics,
-        ));
+        )) {
+            if (!rangeIntersects(diagnostic.range, range)) continue;
+            if (existing.has(diagnosticKey(diagnostic))) continue;
+            existing.add(diagnosticKey(diagnostic));
+            relevantDiagnostics.push(diagnostic);
+        }
     }
 
     for (const diagnostic of relevantDiagnostics) {

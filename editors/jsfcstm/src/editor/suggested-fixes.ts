@@ -86,8 +86,9 @@ function variableDefinitionRange(
     semantic: FcstmSemanticDocument,
     varName: string,
 ): TextRange | null {
-    const variable = semantic.variables.find(item => item.name === varName);
-    if (!variable) return null;
+    const variables = semantic.variables.filter(item => item.name === varName);
+    if (variables.length !== 1) return null;
+    const variable = variables[0];
     const line = document.lineAt(variable.range.start.line).text;
     if (trimComparable(line) === trimComparable(variable.ast.text)) {
         return fullLineRange(document, variable.range);
@@ -317,10 +318,12 @@ export function planSuggestedFixEdit(
         return range ? {range, newText: ''} : null;
     }
     if (payload.target === 'effect_self_assign_statement' && typeof diagnostic.data?.var_name === 'string') {
+        const statePath = typeof diagnostic.data.state_path === 'string' ? diagnostic.data.state_path : undefined;
+        if (!statePath || statePath === '[*]') return null;
         const range = effectSelfAssignRange(
             document,
             semantic,
-            typeof diagnostic.data.state_path === 'string' ? diagnostic.data.state_path : undefined,
+            statePath,
             diagnostic.data.var_name,
         );
         return range ? {range, newText: ''} : null;
@@ -349,6 +352,36 @@ export function planSuggestedFixEdit(
         range: spanRange,
         newText: payload.kind === 'delete' ? '' : payload.text,
     };
+}
+
+export function suggestedFixIssueRange(
+    document: TextDocumentLike,
+    semantic: FcstmSemanticDocument,
+    diagnostic: FcstmDiagnostic,
+): TextRange {
+    const payload = suggestedFixFromDiagnostic(diagnostic);
+    if (!payload) return diagnostic.range;
+
+    if (payload.target === 'variable_definition' && typeof diagnostic.data?.var_name === 'string') {
+        return variableDefinitionRange(document, semantic, diagnostic.data.var_name) ?? diagnostic.range;
+    }
+    if (payload.target === 'effect_self_assign_statement' && typeof diagnostic.data?.var_name === 'string') {
+        const statePath = typeof diagnostic.data.state_path === 'string' ? diagnostic.data.state_path : undefined;
+        if (!statePath || statePath === '[*]') return diagnostic.range;
+        return effectSelfAssignRange(
+            document,
+            semantic,
+            statePath,
+            diagnostic.data.var_name,
+        ) ?? diagnostic.range;
+    }
+    if (payload.target === 'deadlock_leaf_exit_transition' && typeof diagnostic.data?.state_path === 'string') {
+        return resolveStatePath(semantic, diagnostic.data.state_path)?.range ?? diagnostic.range;
+    }
+    if (payload.target === 'unconditional_initial_transition' && typeof diagnostic.data?.composite_path === 'string') {
+        return resolveStatePath(semantic, diagnostic.data.composite_path)?.range ?? diagnostic.range;
+    }
+    return diagnostic.range;
 }
 
 export function suggestedFixDiagnosticRange(

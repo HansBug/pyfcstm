@@ -103,6 +103,7 @@ def _deadlock_leaf_refs(state) -> Dict[str, str]:
 
 def _initial_unconditional_missing_warnings(states) -> List[ModelDiagnostic]:
     diagnostics: List[ModelDiagnostic] = []
+    states_by_path = {state.path: state for state in states}
     for state in states:
         if not state.is_composite:
             continue
@@ -116,7 +117,7 @@ def _initial_unconditional_missing_warnings(states) -> List[ModelDiagnostic]:
             'composite_path': state.path,
             'existing_conditional_count': len(state.initial_targets),
         }
-        first_child_name = _first_child_name(state)
+        first_child_name = _first_child_name(state, states_by_path)
         if first_child_name is not None:
             refs['first_child_name'] = first_child_name
         diagnostics.append(ModelDiagnostic(
@@ -131,11 +132,12 @@ def _initial_unconditional_missing_warnings(states) -> List[ModelDiagnostic]:
     return diagnostics
 
 
-def _first_child_name(state) -> Optional[str]:
-    if not state.substates:
-        return None
-    first_path = state.substates[0]
-    return first_path.rsplit('.', 1)[-1]
+def _first_child_name(state, states_by_path) -> Optional[str]:
+    for child_path in state.substates:
+        child = states_by_path.get(child_path)
+        if child is not None and not child.is_pseudo:
+            return child_path.rsplit('.', 1)[-1]
+    return None
 
 
 def _forced_never_expands_warnings(forced_transitions) -> List[ModelDiagnostic]:

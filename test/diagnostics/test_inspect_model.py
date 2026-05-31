@@ -914,6 +914,35 @@ class TestInspectModelGuardAffectDiagnostics:
             ),
         }
 
+    def test_initial_fallback_suggested_fix_skips_pseudo_first_child(self):
+        by_code = self._diagnostics_by_code("""
+        def int ready = 1;
+        state Root {
+            pseudo state Choice;
+            state A;
+            [*] -> A : if [ready > 0];
+        }
+        """)
+
+        initial_refs = by_code['W_INITIAL_UNCONDITIONAL_MISSING'][0].refs
+        assert initial_refs['first_child_name'] == 'A'
+        assert initial_refs['suggested_fix']['text'] == '[*] -> A;\n'
+
+    def test_initial_fallback_suggested_fix_is_omitted_for_only_pseudo_children(self):
+        by_code = self._diagnostics_by_code("""
+        def int ready = 1;
+        state Root {
+            pseudo state Choice;
+            [*] -> Choice : if [ready > 0];
+        }
+        """)
+
+        initial_refs = by_code['W_INITIAL_UNCONDITIONAL_MISSING'][0].refs
+        assert initial_refs == {
+            'composite_path': 'Root',
+            'existing_conditional_count': 1,
+        }
+
     def test_root_deadlock_leaf_fix_is_omitted(self):
         by_code = self._diagnostics_by_code("""
         state Root;
@@ -1510,6 +1539,28 @@ class TestInspectModelRedundancySemantics:
         assert len(refs) == 2
         assert all('effect_self_assign_anchor' not in ref for ref in refs)
         assert all('suggested_fix' not in ref for ref in refs)
+
+    def test_initial_transition_self_assignment_does_not_get_fix(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            [*] -> A effect {
+                x = x;
+            };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        refs = [
+            d.refs for d in report.diagnostics
+            if d.code == 'W_EFFECT_SELF_ASSIGN'
+        ]
+        assert len(refs) == 1
+        assert refs[0] == {
+            'state_path': '[*]',
+            'transition_span': None,
+            'var_name': 'x',
+        }
 
 
 @pytest.mark.unittest

@@ -1092,24 +1092,11 @@ W_GUARD_CONST_TRUE:
         Source span of the removable guard suffix, including the leading
         trigger separator when needed. This is reserved for future emitters
         that can provide a stable guard-only span; the current inspect
-        emitters intentionally omit it, so this suggested fix is not wired
-        yet.
+        emitters intentionally omit it.
     folded_value:
       type: bool
       required: true
       description: Constant-folded guard value (always ``true``).
-    suggested_fix:
-      type: dict
-      required: false
-      description: >-
-        Optional structured quick-fix payload. Emitted only when the
-        transition guard has a stable source anchor.
-  suggested_fix:
-    kind: replace
-    target: transition_guard
-    anchor_ref: refs.guard_span
-    text_template: ""
-    rationale: Remove the redundant constant-true guard.
   for_llm:
     summary: >-
       The transition's guard is statically known to be ``true`` and does
@@ -1287,7 +1274,8 @@ W_INITIAL_UNCONDITIONAL_MISSING:
       type: str
       required: false
       description: >-
-        First declared child state name used as the fallback insertion target.
+        First declared non-pseudo child state name used as the fallback
+        insertion target.
     suggested_fix:
       type: dict
       required: false
@@ -1695,7 +1683,7 @@ W_EFFECT_SELF_ASSIGN:
   refs:
     state_path:
       type: str
-      required: false
+      required: true
       description: Source state path when known.
     transition_span:
       type: Span
@@ -1710,8 +1698,8 @@ W_EFFECT_SELF_ASSIGN:
       required: false
       description: >-
         Variable name repeated only when the self-assignment occurrence
-        can be uniquely mapped back to an effect statement for the same
-        source state and variable.
+        can be uniquely mapped back to a non-initial effect statement for
+        the same source state and variable.
     suggested_fix:
       type: dict
       required: false

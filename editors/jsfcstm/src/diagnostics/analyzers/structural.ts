@@ -56,6 +56,7 @@ function collectDeadlockLeafWarnings(
 
 function collectInitialUnconditionalMissingWarnings(states: StateInfo[]): ModelDiagnosticJson[] {
     const out: ModelDiagnosticJson[] = [];
+    const statesByPath = new Map(states.map(state => [state.path, state]));
     for (const state of states) {
         if (!state.is_composite) continue;
         const hasUnconditional = state.initial_targets.some(item => item.is_unconditional);
@@ -64,7 +65,7 @@ function collectInitialUnconditionalMissingWarnings(states: StateInfo[]): ModelD
             composite_path: state.path,
             existing_conditional_count: state.initial_targets.length,
         };
-        const firstChildName = firstChildNameOf(state);
+        const firstChildName = firstChildNameOf(state, statesByPath);
         if (firstChildName !== null) {
             refs.first_child_name = firstChildName;
         }
@@ -79,10 +80,15 @@ function collectInitialUnconditionalMissingWarnings(states: StateInfo[]): ModelD
     return out;
 }
 
-function firstChildNameOf(state: StateInfo): string | null {
-    if (state.substates.length === 0) return null;
-    const parts = state.substates[0].split('.');
-    return parts.length > 0 ? parts[parts.length - 1] : null;
+function firstChildNameOf(state: StateInfo, statesByPath: Map<string, StateInfo>): string | null {
+    for (const childPath of state.substates) {
+        const child = statesByPath.get(childPath);
+        if (child && !child.is_pseudo) {
+            const parts = childPath.split('.');
+            return parts.length > 0 ? parts[parts.length - 1] : null;
+        }
+    }
+    return null;
 }
 
 function collectForcedNeverExpandsWarnings(

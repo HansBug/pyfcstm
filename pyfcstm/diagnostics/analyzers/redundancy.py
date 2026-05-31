@@ -119,7 +119,7 @@ def _effect_self_assign_warnings(transitions) -> List[ModelDiagnostic]:
                 'transition_span': None,
                 'var_name': var_name,
             }
-            if counts[(t.from_path, var_name)] == 1:
+            if t.from_path != '[*]' and counts[(t.from_path, var_name)] == 1:
                 refs['effect_self_assign_anchor'] = var_name
             diagnostics.append(ModelDiagnostic(
                 code='W_EFFECT_SELF_ASSIGN',

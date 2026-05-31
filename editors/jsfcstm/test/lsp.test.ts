@@ -200,33 +200,28 @@ describe('jsfcstm lsp core', () => {
             '    state A;',
             '    state B;',
             '    [*] -> A;',
-            '    A -> B;',
+            '    A -> B : if [missing > 0];',
             '}',
         ].join('\n');
         const core = new packageModule.FcstmLanguageServerCore();
         await core.openTextDocument(makeTextDocumentItem(hostFile, text));
 
-        const diagnosticRange = packageModule.toLspRange(packageModule.createRange(4, 4, 4, 10));
-        const anchorRange = packageModule.toLspRange(packageModule.createRange(4, 10, 4, 10));
+        const missingColumn = text.split('\n')[4].indexOf('missing');
+        const diagnosticRange = packageModule.toLspRange(packageModule.createRange(
+            4,
+            missingColumn,
+            4,
+            missingColumn + 'missing'.length,
+        ));
         const actions = await core.provideCodeActions(
             hostUri,
             diagnosticRange,
             [{
                 range: diagnosticRange,
-                message: 'Synthetic informational suggested fix.',
+                message: 'Variable "missing" is not defined.',
                 severity: DiagnosticSeverity.Information,
                 source: 'fcstm',
-                code: 'W_SYNTHETIC_INFO',
-                data: {
-                    transition_span: anchorRange,
-                    suggested_fix: {
-                        kind: 'insert',
-                        target: 'transition_suffix',
-                        anchor: {type: 'ref', ref: 'refs.transition_span'},
-                        text: ' : Go',
-                        rationale: 'Add informational trigger.',
-                    },
-                },
+                code: packageModule.FCSTM_DIAGNOSTIC_CODES.undefinedVar,
                 relatedInformation: [{
                     location: {
                         uri: hostUri,
@@ -237,8 +232,8 @@ describe('jsfcstm lsp core', () => {
             }]
         );
 
-        const action = actions.find(item => /informational trigger/.test(item.title));
-        assert.ok(action, `expected informational suggested-fix action, got ${JSON.stringify(actions)}`);
+        const action = actions.find(item => /Define "missing"/.test(item.title));
+        assert.ok(action, `expected define-variable action, got ${JSON.stringify(actions)}`);
         const actionDiagnostic = action.diagnostics?.[0];
         assert.equal(actionDiagnostic?.severity, DiagnosticSeverity.Information);
         assert.equal(actionDiagnostic?.relatedInformation?.[0]?.message, 'Related state declaration.');

@@ -115,7 +115,10 @@ function collectEffectSelfAssignWarnings(transitions: TransitionInfo[]): ModelDi
                 transition_span: null,
                 var_name: varName,
             };
-            if (counts.get(JSON.stringify([transition.from_path, varName])) === 1) {
+            if (
+                transition.from_path !== '[*]' &&
+                counts.get(JSON.stringify([transition.from_path, varName])) === 1
+            ) {
                 refs.effect_self_assign_anchor = varName;
             }
             out.push({

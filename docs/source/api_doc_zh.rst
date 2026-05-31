@@ -17,6 +17,7 @@ API 文档
     api_doc/solver/index
     api_doc/template/index
     api_doc/utils/index
+    api_doc/verify/index
 
 * :doc:`api_doc/config/index`
 * :doc:`api_doc/diagnostics/index`
@@ -29,4 +30,5 @@ API 文档
 * :doc:`api_doc/solver/index`
 * :doc:`api_doc/template/index`
 * :doc:`api_doc/utils/index`
+* :doc:`api_doc/verify/index`
 

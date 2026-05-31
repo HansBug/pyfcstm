@@ -1341,6 +1341,42 @@ class TestInspectModelDataFlowClosureDiagnostics:
             out.setdefault(diag.code, []).append(diag)
         return out
 
+    @staticmethod
+    def _variable_info(**kwargs):
+        defaults = {
+            'name': 'status',
+            'type': 'int',
+            'init_value': '0',
+            'read_in_states': (),
+            'written_in_states': (),
+            'read_in_guards': (),
+            'written_in_effects': (),
+            'participates_directly': True,
+            'participates_indirectly': False,
+            'abstract_actions_in_scope': (),
+        }
+        defaults.update(kwargs)
+        return VariableInfo(**defaults)
+
+    @staticmethod
+    def _state_info(path, parent_path=None, *, initial_targets=()):
+        return StateInfo(
+            path=path,
+            name=path.rsplit('.', 1)[-1],
+            parent_path=parent_path,
+            is_leaf=not initial_targets,
+            is_pseudo=False,
+            is_composite=bool(initial_targets),
+            substates=(),
+            initial_targets=initial_targets,
+            entry_actions=(),
+            during_actions=(),
+            exit_actions=(),
+            aspect_before=(),
+            aspect_after=(),
+            has_abstract_action=False,
+        )
+
     def test_unreferenced_var_without_abstract_action_warns(self):
         dsl = """
         def int unused = 0;
@@ -1551,6 +1587,52 @@ class TestInspectModelDataFlowClosureDiagnostics:
         """
         by_code = self._diagnostics_by_code(dsl)
         assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
+
+    def test_exit_effect_write_reaches_composite_initial_target_read(self):
+        dsl = """
+        def int status = 0;
+        state Root {
+            state Parent {
+                state Child;
+                [*] -> Child;
+                Child -> [*] effect { status = 1; };
+            }
+            state Bridge {
+                state Leaf {
+                    enter { status = status + 1; }
+                }
+                [*] -> Leaf;
+            }
+            [*] -> Parent;
+            Parent -> Bridge;
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
+
+    def test_exit_effect_cycle_without_later_read_still_warns(self):
+        dsl = """
+        def int status = 0;
+        state Root {
+            state Parent {
+                state Child;
+                [*] -> Child;
+                Child -> [*] effect { status = 1; };
+            }
+            state Bridge;
+            state Observer;
+            [*] -> Parent;
+            Parent -> Bridge;
+            Bridge -> Parent;
+            Observer -> Bridge : if [status == 0];
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        diag = by_code['W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'][0]
+        assert diag.refs == {
+            'var_name': 'status',
+            'write_locations': ['Root.Parent.Child->[*]'],
+        }
 
     def test_transition_effect_entering_composite_reaches_initial_guard_read(self):
         dsl = """
@@ -1788,6 +1870,103 @@ class TestInspectModelDataFlowClosureDiagnostics:
         assert diagnostics[0].refs == {
             'var_name': 'status',
             'write_locations': ['Root.Parent.Child->[*]'],
+        }
+
+    def test_exit_effect_fallback_keeps_reachable_parent_read_live(self):
+        variable = self._variable_info(
+            read_in_states=('Root.Done',),
+            written_in_effects=(('Root.Parent.Child', '[*]'),),
+        )
+        diagnostics = collect_data_flow_warnings(
+            [variable],
+            {'Root.Parent': ('Root.Done',)},
+            states=[
+                self._state_info('Root.Parent.Child', 'Root.Parent'),
+            ],
+            root_state_path='Root',
+        )
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in {
+            diag.code for diag in diagnostics
+        }
+
+    def test_effect_fallback_target_self_read_is_live(self):
+        variable = self._variable_info(
+            read_in_states=('Root.Target',),
+            written_in_effects=(('Root.Source', 'Root.Target'),),
+        )
+        diagnostics = collect_data_flow_warnings(
+            [variable],
+            {},
+        )
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in {
+            diag.code for diag in diagnostics
+        }
+
+    def test_effect_fallback_reachable_target_read_is_live(self):
+        variable = self._variable_info(
+            read_in_states=('Root.Next',),
+            written_in_effects=(('Root.Source', 'Root.Target'),),
+        )
+        diagnostics = collect_data_flow_warnings(
+            [variable],
+            {'Root.Target': ('Root.Next',)},
+        )
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in {
+            diag.code for diag in diagnostics
+        }
+
+    def test_effect_fallback_without_reachable_read_warns(self):
+        variable = self._variable_info(
+            read_in_states=('Root.Other',),
+            written_in_effects=(('Root.Source', 'Root.Target'),),
+        )
+        diagnostics = collect_data_flow_warnings(
+            [variable],
+            {'Root.Target': ('Root.Next',)},
+        )
+        assert diagnostics[0].refs == {
+            'var_name': 'status',
+            'write_locations': ['Root.Source->Root.Target'],
+        }
+
+    def test_initial_guard_fallback_owner_keeps_old_shape_live(self):
+        variable = self._variable_info(
+            read_in_guards=(('[*]', 'Root.Parent.Child'),),
+            written_in_effects=(('Root.Idle', 'Root.Parent'),),
+        )
+        diagnostics = collect_data_flow_warnings(
+            [variable],
+            {'Root.Idle': ('Root.Parent',), 'Root.Parent': ('Root.Parent.Child',)},
+            states=[
+                self._state_info('Root.Idle', 'Root'),
+                self._state_info(
+                    'Root.Parent',
+                    'Root',
+                    initial_targets=({'target': 'Root.Parent.Child'},),
+                ),
+                self._state_info('Root.Parent.Child', 'Root.Parent'),
+            ],
+        )
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in {
+            diag.code for diag in diagnostics
+        }
+
+    def test_initial_guard_fallback_without_owner_does_not_keep_write_live(self):
+        variable = self._variable_info(
+            read_in_guards=(('[*]', 'Root'),),
+            written_in_effects=(('Root.Idle', 'Root'),),
+        )
+        diagnostics = collect_data_flow_warnings(
+            [variable],
+            {'Root.Idle': ('Root',), 'Root': ()},
+            states=[
+                self._state_info('Root'),
+                self._state_info('Root.Idle', 'Root'),
+            ],
+        )
+        assert diagnostics[0].refs == {
+            'var_name': 'status',
+            'write_locations': ['Root.Idle->Root'],
         }
 
     def test_variable_warning_codes_are_mutually_exclusive(self):

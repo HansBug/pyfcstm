@@ -1825,6 +1825,200 @@ state Root {
             assert.equal(diagnostics.some(d => d.code === 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
         });
 
+        it('keeps exit-effect writes live when a later composite initial target action reads them', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+state Root {
+    state Parent {
+        state Child;
+        [*] -> Child;
+        Child -> [*] effect { status = 1; };
+    }
+    state Bridge {
+        state Leaf {
+            enter { status = status + 1; }
+        }
+        [*] -> Leaf;
+    }
+    [*] -> Parent;
+    Parent -> Bridge;
+}
+`));
+            assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
+
+        it('does not loop forever on exit-effect reachability cycles without later reads', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+state Root {
+    state Parent {
+        state Child;
+        [*] -> Child;
+        Child -> [*] effect { status = 1; };
+    }
+    state Bridge;
+    state Observer;
+    [*] -> Parent;
+    Parent -> Bridge;
+    Bridge -> Parent;
+    Observer -> Bridge : if [status == 0];
+}
+`));
+            assert.deepEqual(diagnosticsByCode(report).get('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE')![0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Parent.Child->[*]'],
+            });
+        });
+
+        it('keeps fallback exit-effect writes live through reachable parent reads', () => {
+            const diagnostics = collectDataFlowWarnings(
+                [{
+                    name: 'status',
+                    type: 'int',
+                    init_value: '0',
+                    read_in_states: ['Root.Done'],
+                    written_in_states: [],
+                    read_in_guards: [],
+                    written_in_effects: [['Root.Parent.Child', '[*]']],
+                    participates_directly: true,
+                    participates_indirectly: false,
+                    abstract_actions_in_scope: [],
+                    float_literal_assignments: [],
+                }],
+                {'Root.Parent': ['Root.Done']},
+                [
+                    {path: 'Root.Parent.Child', parent_path: 'Root.Parent'},
+                ] as Parameters<typeof collectDataFlowWarnings>[2],
+                'Root',
+            );
+
+            assert.equal(diagnostics.some(d => d.code === 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
+
+        it('keeps fallback transition-effect writes live through target self reads', () => {
+            const diagnostics = collectDataFlowWarnings(
+                [{
+                    name: 'status',
+                    type: 'int',
+                    init_value: '0',
+                    read_in_states: ['Root.Target'],
+                    written_in_states: [],
+                    read_in_guards: [],
+                    written_in_effects: [['Root.Source', 'Root.Target']],
+                    participates_directly: true,
+                    participates_indirectly: false,
+                    abstract_actions_in_scope: [],
+                    float_literal_assignments: [],
+                }],
+                {},
+            );
+
+            assert.equal(diagnostics.some(d => d.code === 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
+
+        it('keeps fallback transition-effect writes live through reachable target reads', () => {
+            const diagnostics = collectDataFlowWarnings(
+                [{
+                    name: 'status',
+                    type: 'int',
+                    init_value: '0',
+                    read_in_states: ['Root.Next'],
+                    written_in_states: [],
+                    read_in_guards: [],
+                    written_in_effects: [['Root.Source', 'Root.Target']],
+                    participates_directly: true,
+                    participates_indirectly: false,
+                    abstract_actions_in_scope: [],
+                    float_literal_assignments: [],
+                }],
+                {'Root.Target': ['Root.Next']},
+            );
+
+            assert.equal(diagnostics.some(d => d.code === 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
+
+        it('warns when fallback transition-effect writes have no reachable target read', () => {
+            const diagnostics = collectDataFlowWarnings(
+                [{
+                    name: 'status',
+                    type: 'int',
+                    init_value: '0',
+                    read_in_states: ['Root.Other'],
+                    written_in_states: [],
+                    read_in_guards: [],
+                    written_in_effects: [['Root.Source', 'Root.Target']],
+                    participates_directly: true,
+                    participates_indirectly: false,
+                    abstract_actions_in_scope: [],
+                    float_literal_assignments: [],
+                }],
+                {'Root.Target': ['Root.Next']},
+            );
+
+            assert.deepEqual(diagnostics[0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Source->Root.Target'],
+            });
+        });
+
+        it('uses old-shape initial guard owner fallback for dotted targets', () => {
+            const diagnostics = collectDataFlowWarnings(
+                [{
+                    name: 'status',
+                    type: 'int',
+                    init_value: '0',
+                    read_in_states: [],
+                    written_in_states: [],
+                    read_in_guards: [['[*]', 'Root.Parent.Child']],
+                    written_in_effects: [['Root.Idle', 'Root.Parent']],
+                    participates_directly: true,
+                    participates_indirectly: false,
+                    abstract_actions_in_scope: [],
+                    float_literal_assignments: [],
+                } as Parameters<typeof collectDataFlowWarnings>[0][number]],
+                {'Root.Idle': ['Root.Parent'], 'Root.Parent': ['Root.Parent.Child']},
+                [
+                    {path: 'Root.Idle', parent_path: 'Root'},
+                    {
+                        path: 'Root.Parent',
+                        parent_path: 'Root',
+                        initial_targets: [{target: 'Root.Parent.Child'}],
+                    },
+                    {path: 'Root.Parent.Child', parent_path: 'Root.Parent'},
+                ] as Parameters<typeof collectDataFlowWarnings>[2],
+            );
+
+            assert.equal(diagnostics.some(d => d.code === 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
+
+        it('does not keep writes live when old-shape initial guard owner is unavailable', () => {
+            const diagnostics = collectDataFlowWarnings(
+                [{
+                    name: 'status',
+                    type: 'int',
+                    init_value: '0',
+                    read_in_states: [],
+                    written_in_states: [],
+                    read_in_guards: [['[*]', 'Root']],
+                    written_in_effects: [['Root.Idle', 'Root']],
+                    participates_directly: true,
+                    participates_indirectly: false,
+                    abstract_actions_in_scope: [],
+                    float_literal_assignments: [],
+                } as Parameters<typeof collectDataFlowWarnings>[0][number]],
+                {'Root.Idle': ['Root'], 'Root': []},
+                [
+                    {path: 'Root', parent_path: null},
+                    {path: 'Root.Idle', parent_path: 'Root'},
+                ] as Parameters<typeof collectDataFlowWarnings>[2],
+            );
+
+            assert.deepEqual(diagnostics[0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Idle->Root'],
+            });
+        });
+
         it('keeps variable warning codes mutually exclusive', async () => {
             const report = inspectModel(await buildMachine(`
 def int unused = 0;

@@ -1423,6 +1423,7 @@ state Root {
         for (const [name, effect] of [
             ['read-before-write', 'sink = status; status = 1;'],
             ['self-update', 'status = status + 1;'],
+            ['read-before-final-write', 'status = 1; sink = status; status = 2;'],
         ] as const) {
             it(`does not clear final transition-effect writes for ${name}`, async () => {
                 const report = inspectModel(await buildMachine(`
@@ -1441,6 +1442,78 @@ state Root {
                 });
             });
         }
+
+        it('keeps transition-effect final writes live when the same effect reads them later', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+def int sink = 0;
+state Root {
+    state Idle;
+    state Done;
+    [*] -> Idle;
+    Idle -> Done effect { status = 1; status = 2; sink = status; };
+}
+`));
+            assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
+
+        it('still warns when a conditional branch overwrites a read final write', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+state Root {
+    state Idle;
+    state Done;
+    [*] -> Idle;
+    Idle -> Done effect {
+        status = 1;
+        if [status > 0] { status = 2; }
+    };
+}
+`));
+            assert.deepEqual(diagnosticsByCode(report).get('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE')![0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Idle->Root.Done'],
+            });
+        });
+
+        it('still warns when only some conditional final writes are read later', async () => {
+            const report = inspectModel(await buildMachine(`
+def int flag = 0;
+def int status = 0;
+def int sink = 0;
+state Root {
+    state Idle;
+    state Done;
+    [*] -> Idle;
+    Idle -> Done effect {
+        if [flag > 0] { status = 1; sink = status; }
+        else { status = 2; }
+    };
+}
+`));
+            assert.deepEqual(diagnosticsByCode(report).get('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE')![0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Idle->Root.Done'],
+            });
+        });
+
+        it('keeps conditional transition-effect final writes live when all are read later', async () => {
+            const report = inspectModel(await buildMachine(`
+def int flag = 0;
+def int status = 0;
+def int sink = 0;
+state Root {
+    state Idle;
+    state Done;
+    [*] -> Idle;
+    Idle -> Done effect {
+        if [flag > 0] { status = 1; sink = status; }
+        else { status = 2; sink = status; }
+    };
+}
+`));
+            assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
 
         it('emits dead-store warning for final state-action writes', async () => {
             const report = inspectModel(await buildMachine(`
@@ -1511,6 +1584,41 @@ state Root {
                 var_name: 'status',
                 write_locations: ['Root.Active'],
             });
+        });
+
+        it('does not clear exit-action final writes with same-action middle reads', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+def int sink = 0;
+state Root {
+    state Active {
+        exit { status = 1; sink = status; status = 2; }
+    }
+    state Done;
+    [*] -> Active;
+    Active -> Done;
+}
+`));
+            assert.deepEqual(diagnosticsByCode(report).get('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE')![0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Active'],
+            });
+        });
+
+        it('keeps exit-action final writes live when the same action reads them later', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+def int sink = 0;
+state Root {
+    state Active {
+        exit { status = 1; status = 2; sink = status; }
+    }
+    state Done;
+    [*] -> Active;
+    Active -> Done;
+}
+`));
+            assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
         });
 
         it('keeps exit-action writes live when the transition effect reads them', async () => {

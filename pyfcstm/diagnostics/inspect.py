@@ -55,6 +55,7 @@ from ..utils.validate import ModelDiagnostic
 if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
     from ..model.expr import Expr
     from ..model.model import (
+        IfBlock,
         OperationStatement,
         OnAspect,
         OnStage,
@@ -217,13 +218,13 @@ class VariableInfo:
         that read this variable.
     :type read_in_effect_occurrences: Tuple[Tuple[str, str, str], ...]
     :param read_after_write_action_stages: Tuples ``(state_path, stage)``
-        for action blocks where a write to this variable is followed by a
-        later read in the same operation block.
+        for action blocks where every path-final write to this variable is
+        followed by a later read in the same operation block.
     :type read_after_write_action_stages: Tuple[Tuple[str, str], ...]
     :param read_after_write_effect_occurrences: Tuples
         ``(from_path, to_path, occurrence_key)`` for transition effect
-        blocks where a write to this variable is followed by a later read
-        in the same operation block.
+        blocks where every path-final write to this variable is followed by
+        a later read in the same operation block.
     :type read_after_write_effect_occurrences: Tuple[Tuple[str, str, str], ...]
     :param written_in_effect_occurrences: Tuples
         ``(from_path, to_path, occurrence_key)`` for transition effects
@@ -587,44 +588,108 @@ def _walk_stmt_reads_writes(
 def _block_reads_after_writes(
         statements: Iterable['OperationStatement'],
 ) -> Set[str]:
-    """Return variables read after an earlier write in one operation block."""
-    reads_after_writes, _ = _block_reads_after_writes_from(
-        statements,
-        set(),
-    )
-    return reads_after_writes
+    """Return variables whose path-final block writes are all read later."""
+    observation_state = _block_write_observation_states(statements, {})
+    return {
+        name
+        for name, observations in observation_state.items()
+        if (
+            _WRITE_OBSERVED in observations and
+            _WRITE_UNOBSERVED not in observations
+        )
+    }
 
 
-def _block_reads_after_writes_from(
+_WRITE_OBSERVED = 'observed'
+_WRITE_UNOBSERVED = 'unobserved'
+_BlockWriteObservationState = Dict[str, Set[str]]
+
+
+def _block_write_observation_states(
         statements: Iterable['OperationStatement'],
-        prior_writes: Set[str],
-) -> Tuple[Set[str], Set[str]]:
-    from ..model.model import IfBlock, Operation
-    reads_after_writes: Set[str] = set()
-    writes = set(prior_writes)
+        initial_state: _BlockWriteObservationState,
+) -> _BlockWriteObservationState:
+    state = _clone_block_write_observation_state(initial_state)
     for stmt in statements:
-        if isinstance(stmt, Operation):
-            for var_name in _walk_expr_variables(stmt.expr):
-                if var_name in writes:
-                    reads_after_writes.add(var_name)
-            writes.add(stmt.var_name)
-            continue
-        if isinstance(stmt, IfBlock):
-            for branch in stmt.branches:
-                if branch.condition is not None:
-                    for var_name in _walk_expr_variables(branch.condition):
-                        if var_name in writes:
-                            reads_after_writes.add(var_name)
-            branch_writes = set(writes)
-            for branch in stmt.branches:
-                branch_reads, branch_result_writes = _block_reads_after_writes_from(
-                    branch.statements,
-                    set(writes),
-                )
-                reads_after_writes.update(branch_reads)
-                branch_writes.update(branch_result_writes)
-            writes = branch_writes
-    return reads_after_writes, writes
+        _apply_stmt_observation_state(stmt, state)
+    return state
+
+
+def _apply_stmt_observation_state(
+        stmt: 'OperationStatement',
+        state: _BlockWriteObservationState,
+) -> None:
+    from ..model.model import IfBlock, Operation
+    if isinstance(stmt, Operation):
+        _mark_observed_writes(state, _walk_expr_variables(stmt.expr))
+        state[stmt.var_name] = {_WRITE_UNOBSERVED}
+        return
+    if isinstance(stmt, IfBlock):
+        _apply_if_block_observation_state(stmt, state)
+
+
+def _apply_if_block_observation_state(
+        stmt: 'IfBlock',
+        state: _BlockWriteObservationState,
+) -> None:
+    branch_states: List[_BlockWriteObservationState] = []
+    fallthrough_state: Optional[_BlockWriteObservationState] = (
+        _clone_block_write_observation_state(state)
+    )
+    for branch in stmt.branches:
+        if fallthrough_state is None:  # pragma: no cover
+            break
+        condition_state = _clone_block_write_observation_state(
+            fallthrough_state
+        )
+        if branch.condition is not None:
+            _mark_observed_writes(
+                condition_state,
+                _walk_expr_variables(branch.condition),
+            )
+        branch_states.append(_block_write_observation_states(
+            branch.statements,
+            condition_state,
+        ))
+        if branch.condition is None:
+            fallthrough_state = None
+        else:
+            fallthrough_state = condition_state
+    if fallthrough_state is not None:
+        branch_states.append(fallthrough_state)
+    if branch_states:
+        state.clear()
+        state.update(_merge_block_write_observation_states(branch_states))
+
+
+def _mark_observed_writes(
+        state: _BlockWriteObservationState,
+        var_names: Iterable[str],
+) -> None:
+    for name in var_names:
+        observations = state.get(name)
+        if observations and _WRITE_UNOBSERVED in observations:
+            observations.discard(_WRITE_UNOBSERVED)
+            observations.add(_WRITE_OBSERVED)
+
+
+def _clone_block_write_observation_state(
+        state: _BlockWriteObservationState,
+) -> _BlockWriteObservationState:
+    return {
+        name: set(observations)
+        for name, observations in state.items()
+    }
+
+
+def _merge_block_write_observation_states(
+        states: Iterable[_BlockWriteObservationState],
+) -> _BlockWriteObservationState:
+    merged: _BlockWriteObservationState = {}
+    for state in states:
+        for name, observations in state.items():
+            merged.setdefault(name, set()).update(observations)
+    return merged
 
 
 def _effect_self_assigns(effects: List['OperationStatement']) -> Tuple[str, ...]:

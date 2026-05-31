@@ -35,6 +35,11 @@ import type {RawFcstmModelForcedTransition} from '../model/raw';
 const INIT_MARK = '[*]';
 const EXIT_MARK = '[*]';
 const FLOAT_EPSILON = 1e-10;
+const WRITE_OBSERVED = 'observed';
+const WRITE_UNOBSERVED = 'unobserved';
+
+type WriteObservation = typeof WRITE_OBSERVED | typeof WRITE_UNOBSERVED;
+type BlockWriteObservationState = Map<string, Set<WriteObservation>>;
 
 export const DEFAULT_DEEP_HIERARCHY_THRESHOLD = 6;
 export const DEFAULT_LARGE_COMPOSITE_THRESHOLD = 12;
@@ -732,45 +737,99 @@ function walkStmtReadsWrites(
 }
 
 function blockReadsAfterWrites(statements: OperationStatement[]): string[] {
-    const [readsAfterWrites] = blockReadsAfterWritesFrom(statements, new Set<string>());
-    return Array.from(readsAfterWrites);
+    const observationState = blockWriteObservationStates(statements, new Map());
+    return Array.from(observationState.entries())
+        .filter(([, observations]) =>
+            observations.has(WRITE_OBSERVED) &&
+            !observations.has(WRITE_UNOBSERVED)
+        )
+        .map(([name]) => name);
 }
 
-function blockReadsAfterWritesFrom(
+function blockWriteObservationStates(
     statements: OperationStatement[],
-    priorWrites: Set<string>,
-): [Set<string>, Set<string>] {
-    const readsAfterWrites = new Set<string>();
-    let writes = new Set(priorWrites);
-    for (const stmt of statements) {
-        if (stmt instanceof Operation) {
-            for (const name of walkExprVariables(stmt.expr)) {
-                if (writes.has(name)) readsAfterWrites.add(name);
-            }
-            writes.add(stmt.varName);
-            continue;
+    initialState: BlockWriteObservationState,
+): BlockWriteObservationState {
+    const state = cloneBlockWriteObservationState(initialState);
+    for (const stmt of statements) applyStatementObservationState(stmt, state);
+    return state;
+}
+
+function applyStatementObservationState(
+    stmt: OperationStatement,
+    state: BlockWriteObservationState,
+): void {
+    if (stmt instanceof Operation) {
+        markObservedWrites(state, walkExprVariables(stmt.expr));
+        state.set(stmt.varName, new Set<WriteObservation>([WRITE_UNOBSERVED]));
+        return;
+    }
+    if (stmt instanceof IfBlock) applyIfBlockObservationState(stmt, state);
+}
+
+function applyIfBlockObservationState(
+    stmt: IfBlock,
+    state: BlockWriteObservationState,
+): void {
+    const branchStates: BlockWriteObservationState[] = [];
+    let fallthroughState: BlockWriteObservationState | null =
+        cloneBlockWriteObservationState(state);
+    for (const branch of stmt.branches) {
+        if (fallthroughState === null) break;
+        const conditionState = cloneBlockWriteObservationState(fallthroughState);
+        if (branch.condition) {
+            markObservedWrites(conditionState, walkExprVariables(branch.condition));
         }
-        if (stmt instanceof IfBlock) {
-            for (const branch of stmt.branches) {
-                if (branch.condition) {
-                    for (const name of walkExprVariables(branch.condition)) {
-                        if (writes.has(name)) readsAfterWrites.add(name);
-                    }
-                }
-            }
-            const branchWrites = new Set(writes);
-            for (const branch of stmt.branches) {
-                const [branchReads, branchResultWrites] = blockReadsAfterWritesFrom(
-                    branch.statements,
-                    new Set(writes),
-                );
-                for (const name of branchReads) readsAfterWrites.add(name);
-                for (const name of branchResultWrites) branchWrites.add(name);
-            }
-            writes = branchWrites;
+        branchStates.push(blockWriteObservationStates(
+            branch.statements,
+            conditionState,
+        ));
+        fallthroughState = branch.condition === null ? null : conditionState;
+    }
+    if (fallthroughState !== null) branchStates.push(fallthroughState);
+    if (branchStates.length > 0) {
+        state.clear();
+        for (const [name, observations] of mergeBlockWriteObservationStates(branchStates)) {
+            state.set(name, observations);
         }
     }
-    return [readsAfterWrites, writes];
+}
+
+function markObservedWrites(
+    state: BlockWriteObservationState,
+    names: string[],
+): void {
+    for (const name of names) {
+        const observations = state.get(name);
+        if (observations?.has(WRITE_UNOBSERVED)) {
+            observations.delete(WRITE_UNOBSERVED);
+            observations.add(WRITE_OBSERVED);
+        }
+    }
+}
+
+function cloneBlockWriteObservationState(
+    state: BlockWriteObservationState,
+): BlockWriteObservationState {
+    return new Map(
+        Array.from(state.entries()).map(
+            ([name, observations]) => [name, new Set(observations)],
+        ),
+    );
+}
+
+function mergeBlockWriteObservationStates(
+    states: BlockWriteObservationState[],
+): BlockWriteObservationState {
+    const merged: BlockWriteObservationState = new Map();
+    for (const state of states) {
+        for (const [name, observations] of state) {
+            const mergedObservations = merged.get(name) ?? new Set<WriteObservation>();
+            for (const observation of observations) mergedObservations.add(observation);
+            merged.set(name, mergedObservations);
+        }
+    }
+    return merged;
 }
 
 function effectSelfAssigns(effects: OperationStatement[] | undefined): string[] {

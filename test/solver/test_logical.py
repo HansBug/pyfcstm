@@ -58,8 +58,10 @@ class TestIsSat:
         """Non-timeout unknown results stay distinguishable from timeouts."""
 
         class UnknownSolver:
+            configured_timeout = None
+
             def set(self, *args, **kwargs):
-                pass
+                self.configured_timeout = (args, kwargs)
 
             def add(self, *constraints):
                 pass
@@ -76,6 +78,75 @@ class TestIsSat:
 
         assert result.kind == "unknown"
         assert result.model is None
+
+    def test_default_timeout_does_not_configure_z3_timeout(self, monkeypatch):
+        """The default timeout policy leaves Z3's timeout parameter unset."""
+        calls = []
+
+        class NoTimeoutSolver:
+            def set(self, *args, **kwargs):
+                calls.append((args, kwargs))
+
+            def add(self, *constraints):
+                pass
+
+            def check(self):
+                return z3.sat
+
+            def model(self):
+                return None
+
+        monkeypatch.setattr(logical.z3, "Solver", NoTimeoutSolver)
+
+        result = is_sat(exprs(z3.BoolVal(True)))
+
+        assert result.kind == "sat"
+        assert calls == []
+
+    def test_none_timeout_does_not_configure_z3_timeout(self, monkeypatch):
+        """Passing ``None`` explicitly is the same no-timeout policy."""
+        calls = []
+
+        class NoTimeoutSolver:
+            def set(self, *args, **kwargs):
+                calls.append((args, kwargs))
+
+            def add(self, *constraints):
+                pass
+
+            def check(self):
+                return z3.unsat
+
+        monkeypatch.setattr(logical.z3, "Solver", NoTimeoutSolver)
+
+        result = is_sat(exprs(z3.BoolVal(False)), timeout_ms=None)
+
+        assert result.kind == "unsat"
+        assert calls == []
+
+    def test_non_none_timeout_is_delegated_to_z3(self, monkeypatch):
+        """Any non-``None`` timeout value is passed to Z3 unchanged."""
+        calls = []
+
+        class TimeoutCaptureSolver:
+            def set(self, *args, **kwargs):
+                calls.append((args, kwargs))
+
+            def add(self, *constraints):
+                pass
+
+            def check(self):
+                return z3.sat
+
+            def model(self):
+                return None
+
+        monkeypatch.setattr(logical.z3, "Solver", TimeoutCaptureSolver)
+
+        result = is_sat(exprs(z3.BoolVal(True)), timeout_ms=123)
+
+        assert result.kind == "sat"
+        assert calls == [(("timeout", 123), {})]
 
     def test_timeout_constraints(self, monkeypatch):
         """Timeout-limited checks return ``timeout`` instead of raising."""
@@ -100,23 +171,16 @@ class TestIsSat:
         assert result.kind == "timeout"
         assert result.model is None
 
-    def test_timeout_ms_is_required(self):
-        """Omitting the keyword-only timeout lets Python raise TypeError."""
-        with pytest.raises(TypeError):
-            getattr(logical, "is_sat")([])
-
     def test_iterable_constraints_are_accepted(self):
         """Constraint inputs may be any finite iterable accepted by Python unpacking."""
         value = z3.Int("iterable_value")
 
-        result = is_sat(
-            (expr(item) for item in (value >= 1, value <= 1)), timeout_ms=1000
-        )
+        result = is_sat((expr(item) for item in (value >= 1, value <= 1)))
 
         assert result.kind == "sat"
 
     def test_zero_timeout_is_delegated_to_z3(self):
-        """The helper requires a timeout argument but does not impose a finite budget."""
+        """The helper does not impose a finite budget on explicit values."""
         result = is_sat(exprs(z3.BoolVal(True)), timeout_ms=0)
 
         assert result.kind == "sat"
@@ -173,7 +237,7 @@ class TestIsValid:
 
     def test_true_literal_is_valid(self):
         """``true`` is valid."""
-        assert is_valid(expr(z3.BoolVal(True)), timeout_ms=1000).kind == "sat"
+        assert is_valid(expr(z3.BoolVal(True))).kind == "sat"
 
     def test_false_literal_is_not_valid(self):
         """``false`` is not valid."""
@@ -197,6 +261,19 @@ class TestIsValid:
 
         assert is_valid(expr(z3.BoolVal(True)), timeout_ms=1).kind == "timeout"
 
+    def test_default_timeout_is_forwarded_as_none(self, monkeypatch):
+        """The validity helper keeps the default no-timeout policy."""
+        timeouts = []
+
+        def valid_result(constraints, *, timeout_ms=None, get_model=False):
+            timeouts.append(timeout_ms)
+            return SatResult(kind="unsat")
+
+        monkeypatch.setattr(logical, "is_sat", valid_result)
+
+        assert is_valid(expr(z3.BoolVal(True))).kind == "sat"
+        assert timeouts == [None]
+
 
 @pytest.mark.unittest
 class TestIsOverlap:
@@ -206,7 +283,7 @@ class TestIsOverlap:
         """Overlapping predicates return ``sat``."""
         value = z3.Int("value")
 
-        result = is_overlap(expr(value > 0), expr(value < 10), timeout_ms=1000)
+        result = is_overlap(expr(value > 0), expr(value < 10))
 
         assert result.kind == "sat"
 
@@ -221,7 +298,10 @@ class TestIsOverlap:
     def test_timeout_formulas(self, monkeypatch):
         """Timeouts are preserved for overlap checks."""
 
+        timeouts = []
+
         def timeout_result(constraints, *, timeout_ms, get_model=False):
+            timeouts.append(timeout_ms)
             return SatResult(kind="timeout")
 
         monkeypatch.setattr(logical, "is_sat", timeout_result)
@@ -231,3 +311,19 @@ class TestIsOverlap:
         )
 
         assert result.kind == "timeout"
+        assert timeouts == [1]
+
+    def test_default_timeout_is_forwarded_as_none(self, monkeypatch):
+        """The overlap helper keeps the default no-timeout policy."""
+        timeouts = []
+
+        def overlap_result(constraints, *, timeout_ms=None, get_model=False):
+            timeouts.append(timeout_ms)
+            return SatResult(kind="sat")
+
+        monkeypatch.setattr(logical, "is_sat", overlap_result)
+
+        result = is_overlap(expr(z3.BoolVal(True)), expr(z3.BoolVal(True)))
+
+        assert result.kind == "sat"
+        assert timeouts == [None]

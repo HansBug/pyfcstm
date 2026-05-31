@@ -1,16 +1,14 @@
 """Small logical predicates around Z3 solver checks.
 
 This module provides thin wrappers for satisfiability, validity, and overlap
-queries needed by the verify algorithms.  The wrappers require callers to pass a
-``timeout_ms`` keyword explicitly, forward that value to Z3 unchanged, and keep
-the result shape small so callers can handle ``unknown`` and ``timeout`` without
-parsing Z3-specific status objects.
+queries needed by the verify algorithms.  The wrappers keep the result shape
+small so callers can handle ``unknown`` and ``timeout`` without parsing
+Z3-specific status objects.
 
-The helpers intentionally do not validate whether ``timeout_ms`` is a finite
-positive budget.  Values accepted by the installed Z3 build, including
-unrestricted/no-timeout settings, remain available to downstream algorithms.
-Callers that need a bounded resource policy must validate their own budget before
-calling these infrastructure helpers.
+The helpers treat ``timeout_ms=None`` as the no-timeout path and do not configure
+Z3's ``timeout`` parameter in that case.  Any non-``None`` value is forwarded to
+Z3 unchanged.  Callers that need a bounded resource policy must validate their
+own budget before calling these infrastructure helpers.
 """
 
 from dataclasses import dataclass
@@ -66,18 +64,21 @@ def _check_solver(solver: z3.Solver, *, get_model: bool = False) -> SatResult:
 
 
 def is_sat(
-    constraints: Iterable[z3.ExprRef], *, timeout_ms: int, get_model: bool = False
+    constraints: Iterable[z3.ExprRef],
+    *,
+    timeout_ms: Optional[int] = None,
+    get_model: bool = False,
 ) -> SatResult:
     """Check whether an iterable of Z3 constraints is satisfiable.
 
     :param constraints: Constraints to add to a fresh Z3 solver.
     :type constraints: Iterable[z3.ExprRef]
-    :param timeout_ms: Value forwarded unchanged to Z3's ``timeout`` parameter.
-        This is keyword-only and required by design, but it is not otherwise
-        validated by this helper.  Values rejected by Z3 propagate as Z3 errors;
-        callers that need a finite positive budget must validate it before
-        calling.
-    :type timeout_ms: int
+    :param timeout_ms: Optional value forwarded unchanged to Z3's ``timeout``
+        parameter.  ``None`` means the helper does not configure a solver
+        timeout.  Values rejected by Z3 propagate as Z3 errors; callers that
+        need a finite positive budget must validate it before calling, defaults
+        to ``None``.
+    :type timeout_ms: Optional[int], optional
     :param get_model: Whether to return a model when the constraints are
         satisfiable, defaults to ``False``.
     :type get_model: bool, optional
@@ -92,12 +93,13 @@ def is_sat(
         'sat'
     """
     solver = z3.Solver()
-    solver.set("timeout", timeout_ms)
+    if timeout_ms is not None:
+        solver.set("timeout", timeout_ms)
     solver.add(*constraints)
     return _check_solver(solver, get_model=get_model)
 
 
-def is_valid(formula: z3.ExprRef, *, timeout_ms: int) -> SatResult:
+def is_valid(formula: z3.ExprRef, *, timeout_ms: Optional[int] = None) -> SatResult:
     """Check whether a Z3 formula is valid.
 
     The helper checks the satisfiability of ``Not(formula)``.  The result kind
@@ -107,9 +109,9 @@ def is_valid(formula: z3.ExprRef, *, timeout_ms: int) -> SatResult:
 
     :param formula: Formula to prove valid.
     :type formula: z3.ExprRef
-    :param timeout_ms: Value forwarded unchanged through :func:`is_sat` to Z3's
-        ``timeout`` parameter.  This is keyword-only and required by design.
-    :type timeout_ms: int
+    :param timeout_ms: Optional value forwarded through :func:`is_sat`.  ``None``
+        means no solver timeout is configured, defaults to ``None``.
+    :type timeout_ms: Optional[int], optional
     :return: Validity result.
     :rtype: SatResult
     """
@@ -123,7 +125,10 @@ def is_valid(formula: z3.ExprRef, *, timeout_ms: int) -> SatResult:
 
 
 def is_overlap(
-    formula_a: z3.ExprRef, formula_b: z3.ExprRef, *, timeout_ms: int
+    formula_a: z3.ExprRef,
+    formula_b: z3.ExprRef,
+    *,
+    timeout_ms: Optional[int] = None,
 ) -> SatResult:
     """Check whether two formulas can hold at the same time.
 
@@ -131,9 +136,9 @@ def is_overlap(
     :type formula_a: z3.ExprRef
     :param formula_b: Second formula.
     :type formula_b: z3.ExprRef
-    :param timeout_ms: Value forwarded unchanged through :func:`is_sat` to Z3's
-        ``timeout`` parameter.  This is keyword-only and required by design.
-    :type timeout_ms: int
+    :param timeout_ms: Optional value forwarded through :func:`is_sat`.  ``None``
+        means no solver timeout is configured, defaults to ``None``.
+    :type timeout_ms: Optional[int], optional
     :return: ``'sat'`` if the formulas overlap, ``'unsat'`` if they are
         disjoint, or an indeterminate solver result.
     :rtype: SatResult

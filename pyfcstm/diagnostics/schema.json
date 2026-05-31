@@ -181,6 +181,8 @@
         "read_in_guards", "written_in_effects",
         "read_in_action_stages", "written_in_action_stages",
         "read_in_guard_occurrences", "read_in_effect_occurrences",
+        "read_after_write_action_stages",
+        "read_after_write_effect_occurrences",
         "written_in_effect_occurrences",
         "participates_directly", "participates_indirectly",
         "abstract_actions_in_scope", "float_literal_assignments"
@@ -237,6 +239,24 @@
           }
         },
         "read_in_effect_occurrences": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 3,
+            "maxItems": 3
+          }
+        },
+        "read_after_write_action_stages": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "read_after_write_effect_occurrences": {
           "type": "array",
           "items": {
             "type": "array",

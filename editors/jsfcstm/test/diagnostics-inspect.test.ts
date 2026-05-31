@@ -1406,6 +1406,42 @@ state Root {
             assert.equal(byCode.has('W_WRITE_ONLY_VAR'), false);
         });
 
+        it('keeps transition-effect writes live when the same effect reads them later', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+def int sink = 0;
+state Root {
+    state Idle;
+    state Done;
+    [*] -> Idle;
+    Idle -> Done effect { status = 1; sink = status; };
+}
+`));
+            assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
+
+        for (const [name, effect] of [
+            ['read-before-write', 'sink = status; status = 1;'],
+            ['self-update', 'status = status + 1;'],
+        ] as const) {
+            it(`does not clear final transition-effect writes for ${name}`, async () => {
+                const report = inspectModel(await buildMachine(`
+def int status = 0;
+def int sink = 0;
+state Root {
+    state Idle;
+    state Done;
+    [*] -> Idle;
+    Idle -> Done effect { ${effect} };
+}
+`));
+                assert.deepEqual(diagnosticsByCode(report).get('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE')![0].refs, {
+                    var_name: 'status',
+                    write_locations: ['Root.Idle->Root.Done'],
+                });
+            });
+        }
+
         it('emits dead-store warning for final state-action writes', async () => {
             const report = inspectModel(await buildMachine(`
 def int status = 0;
@@ -1434,6 +1470,41 @@ state Root {
     state Done;
     [*] -> Active;
     Active -> Done : if [status == 0];
+}
+`));
+            assert.deepEqual(diagnosticsByCode(report).get('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE')![0].refs, {
+                var_name: 'status',
+                write_locations: ['Root.Active'],
+            });
+        });
+
+        it('keeps exit-action writes live when the same action reads them later', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+def int sink = 0;
+state Root {
+    state Active {
+        exit { status = 1; sink = status; }
+    }
+    state Done;
+    [*] -> Active;
+    Active -> Done;
+}
+`));
+            assert.equal(diagnosticsByCode(report).has('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'), false);
+        });
+
+        it('does not clear exit-action final writes with same-action prior reads', async () => {
+            const report = inspectModel(await buildMachine(`
+def int status = 0;
+def int sink = 0;
+state Root {
+    state Active {
+        exit { sink = status; status = 1; }
+    }
+    state Done;
+    [*] -> Active;
+    Active -> Done;
 }
 `));
             assert.deepEqual(diagnosticsByCode(report).get('W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE')![0].refs, {

@@ -39,6 +39,10 @@ function variableUsageDiagnostics(
     const livenessReadStates = variableLivenessReadStates(variable);
     const initialGuardReadEdges = variableInitialGuardReadEdges(variable);
     const effectReadEdges = variableEffectReadEdges(variable);
+    const actionReadAfterWriteStages =
+        variableActionReadAfterWriteStages(variable);
+    const effectReadAfterWriteOccurrences =
+        variableEffectReadAfterWriteOccurrences(variable);
     const writeStates = variableWriteStates(variable);
     if (usageReadStates.size === 0 && writeStates.size === 0) {
         return [unreferencedVarDiagnostic(variable)];
@@ -61,6 +65,8 @@ function variableUsageDiagnostics(
         initialEdges,
         initialGuardReadEdges,
         effectReadEdges,
+        actionReadAfterWriteStages,
+        effectReadAfterWriteOccurrences,
     );
     if (finalWrites.length === 0) return [];
     return [{
@@ -162,6 +168,10 @@ function initialGuardOwner(occurrenceKey: string, targetPath: string): string | 
 
 function edgeKey(fromPath: string, toPath: string): string {
     return `${fromPath}\u0001${toPath}`;
+}
+
+function tripleKey(fromPath: string, toPath: string, occurrenceKey: string): string {
+    return `${fromPath}\u0001${toPath}\u0001${occurrenceKey}`;
 }
 
 function variableWriteStates(variable: VariableInfo): Set<string> {
@@ -283,10 +293,18 @@ function finalWriteLocations(
     initialEdges: Record<string, Set<string>> = {},
     initialGuardReadEdges: Set<string> = new Set(),
     effectReadEdges: Set<string> = new Set(),
+    actionReadAfterWriteStages: Set<string> = new Set(),
+    effectReadAfterWriteOccurrences: Set<string> = new Set(),
 ): string[] {
     const out: string[] = [];
     const actionWrites = actionWriteStages(variable);
     for (const [statePath, stage] of actionWrites) {
+        if (
+            stage !== null &&
+            actionReadAfterWriteStages.has(edgeKey(statePath, stage))
+        ) {
+            continue;
+        }
         if (hasReachableReadAfterActionWrite(
             statePath,
             stage,
@@ -304,7 +322,13 @@ function finalWriteLocations(
         }
         out.push(statePath);
     }
-    for (const [fromPath, toPath] of effectWriteEdges(variable)) {
+    for (const [fromPath, toPath, occurrenceKey] of effectWriteOccurrences(variable)) {
+        if (
+            occurrenceKey !== null &&
+            effectReadAfterWriteOccurrences.has(
+                tripleKey(fromPath, toPath, occurrenceKey),
+            )
+        ) continue;
         if (toPath === '[*]') {
             if (hasReachableReadAfterExitEffect(
                 fromPath,
@@ -337,12 +361,20 @@ function actionWriteStages(variable: VariableInfo): Array<[string, string | null
     return variable.written_in_states.map(statePath => [statePath, null]);
 }
 
-function effectWriteEdges(variable: VariableInfo): Array<[string, string]> {
+function effectWriteOccurrences(variable: VariableInfo): Array<[string, string, string | null]> {
     const effectOccurrences = variable.written_in_effect_occurrences ?? [];
     if (effectOccurrences.length > 0) {
-        return effectOccurrences.map(([fromPath, toPath]) => [fromPath, toPath]);
+        return effectOccurrences.map(([fromPath, toPath, occurrenceKey]) => [
+            fromPath,
+            toPath,
+            occurrenceKey,
+        ]);
     }
-    return variable.written_in_effects;
+    return variable.written_in_effects.map(([fromPath, toPath]) => [
+        fromPath,
+        toPath,
+        null,
+    ]);
 }
 
 function variableEffectReadEdges(variable: VariableInfo): Set<string> {
@@ -351,6 +383,24 @@ function variableEffectReadEdges(variable: VariableInfo): Set<string> {
         edges.add(edgeKey(fromPath, toPath));
     }
     return edges;
+}
+
+function variableActionReadAfterWriteStages(variable: VariableInfo): Set<string> {
+    const stages = new Set<string>();
+    for (const [statePath, stage] of variable.read_after_write_action_stages ?? []) {
+        stages.add(edgeKey(statePath, stage));
+    }
+    return stages;
+}
+
+function variableEffectReadAfterWriteOccurrences(variable: VariableInfo): Set<string> {
+    const occurrences = new Set<string>();
+    const readAfterWriteOccurrences =
+        variable.read_after_write_effect_occurrences ?? [];
+    for (const [fromPath, toPath, occurrenceKey] of readAfterWriteOccurrences) {
+        occurrences.add(tripleKey(fromPath, toPath, occurrenceKey));
+    }
+    return occurrences;
 }
 
 function hasReachableReadAfterActionWrite(

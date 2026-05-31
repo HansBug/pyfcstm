@@ -47,7 +47,7 @@ Example::
 
 import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from .analyzers import collect_design_health_warnings
 from ..utils.validate import ModelDiagnostic
@@ -216,6 +216,15 @@ class VariableInfo:
         ``(from_path, to_path, occurrence_key)`` for transition effects
         that read this variable.
     :type read_in_effect_occurrences: Tuple[Tuple[str, str, str], ...]
+    :param read_after_write_action_stages: Tuples ``(state_path, stage)``
+        for action blocks where a write to this variable is followed by a
+        later read in the same operation block.
+    :type read_after_write_action_stages: Tuple[Tuple[str, str], ...]
+    :param read_after_write_effect_occurrences: Tuples
+        ``(from_path, to_path, occurrence_key)`` for transition effect
+        blocks where a write to this variable is followed by a later read
+        in the same operation block.
+    :type read_after_write_effect_occurrences: Tuple[Tuple[str, str, str], ...]
     :param written_in_effect_occurrences: Tuples
         ``(from_path, to_path, occurrence_key)`` for transition effects
         that write this variable.
@@ -257,6 +266,8 @@ class VariableInfo:
     written_in_action_stages: Tuple[Tuple[str, str], ...] = field(default_factory=tuple)
     read_in_guard_occurrences: Tuple[Tuple[str, str, str], ...] = field(default_factory=tuple)
     read_in_effect_occurrences: Tuple[Tuple[str, str, str], ...] = field(default_factory=tuple)
+    read_after_write_action_stages: Tuple[Tuple[str, str], ...] = field(default_factory=tuple)
+    read_after_write_effect_occurrences: Tuple[Tuple[str, str, str], ...] = field(default_factory=tuple)
     written_in_effect_occurrences: Tuple[Tuple[str, str, str], ...] = field(default_factory=tuple)
 
 
@@ -573,6 +584,49 @@ def _walk_stmt_reads_writes(
                 _walk_stmt_reads_writes(inner, reads, writes)
 
 
+def _block_reads_after_writes(
+        statements: Iterable['OperationStatement'],
+) -> Set[str]:
+    """Return variables read after an earlier write in one operation block."""
+    reads_after_writes, _ = _block_reads_after_writes_from(
+        statements,
+        set(),
+    )
+    return reads_after_writes
+
+
+def _block_reads_after_writes_from(
+        statements: Iterable['OperationStatement'],
+        prior_writes: Set[str],
+) -> Tuple[Set[str], Set[str]]:
+    from ..model.model import IfBlock, Operation
+    reads_after_writes: Set[str] = set()
+    writes = set(prior_writes)
+    for stmt in statements:
+        if isinstance(stmt, Operation):
+            for var_name in _walk_expr_variables(stmt.expr):
+                if var_name in writes:
+                    reads_after_writes.add(var_name)
+            writes.add(stmt.var_name)
+            continue
+        if isinstance(stmt, IfBlock):
+            for branch in stmt.branches:
+                if branch.condition is not None:
+                    for var_name in _walk_expr_variables(branch.condition):
+                        if var_name in writes:
+                            reads_after_writes.add(var_name)
+            branch_writes = set(writes)
+            for branch in stmt.branches:
+                branch_reads, branch_result_writes = _block_reads_after_writes_from(
+                    branch.statements,
+                    set(writes),
+                )
+                reads_after_writes.update(branch_reads)
+                branch_writes.update(branch_result_writes)
+            writes = branch_writes
+    return reads_after_writes, writes
+
+
 def _effect_self_assigns(effects: List['OperationStatement']) -> Tuple[str, ...]:
     out: List[str] = []
     for stmt in effects:
@@ -840,6 +894,12 @@ def _build_variable_infos(
     var_read_effect_occurrences: Dict[str, List[Tuple[str, str, str]]] = {
         name: [] for name in machine.defines
     }
+    var_read_after_write_action_stages: Dict[str, List[Tuple[str, str]]] = {
+        name: [] for name in machine.defines
+    }
+    var_read_after_write_effect_occurrences: Dict[str, List[Tuple[str, str, str]]] = {
+        name: [] for name in machine.defines
+    }
     var_written_effect_occurrences: Dict[str, List[Tuple[str, str, str]]] = {
         name: [] for name in machine.defines
     }
@@ -852,7 +912,9 @@ def _build_variable_infos(
         path = _state_path(state)
         float_assigns: Dict[str, List[str]] = {}
         for stage_name, collection in _state_action_collections(state):
+            stage_operations: List['OperationStatement'] = []
             for action in collection:
+                stage_operations.extend(action.operations)
                 if action.operations:
                     local_reads: List[str] = []
                     local_writes: List[str] = []
@@ -868,6 +930,11 @@ def _build_variable_infos(
                             var_written_action_stages[var_name].append((path, stage_name))
                 for stmt in action.operations:
                     _walk_stmt_float_literal_assignments(stmt, float_assigns)
+            for var_name in _block_reads_after_writes(stage_operations):
+                if var_name in var_read_after_write_action_stages:
+                    var_read_after_write_action_stages[var_name].append(
+                        (path, stage_name)
+                    )
         for var_name, assignments in float_assigns.items():
             if var_name in var_float_literal_assignments:
                 var_float_literal_assignments[var_name].extend(assignments)
@@ -909,6 +976,13 @@ def _build_variable_infos(
                 for v, assignments in lfloat_assigns.items():
                     if v in var_float_literal_assignments:
                         var_float_literal_assignments[v].extend(assignments)
+            for v in _block_reads_after_writes(transition.effects):
+                if v in var_read_after_write_effect_occurrences:
+                    var_read_after_write_effect_occurrences[v].append((
+                        from_path,
+                        to_path,
+                        occurrence_key,
+                    ))
 
     # Stable, deduped sequences for the public payload.
     def _dedupe_ordered(seq: List[str]) -> Tuple[str, ...]:
@@ -952,6 +1026,12 @@ def _build_variable_infos(
         read_effect_occurrences = _dedupe_triples(
             var_read_effect_occurrences[name]
         )
+        read_after_write_action_stages = _dedupe_pairs(
+            var_read_after_write_action_stages[name]
+        )
+        read_after_write_effect_occurrences = _dedupe_triples(
+            var_read_after_write_effect_occurrences[name]
+        )
         written_effect_occurrences = _dedupe_triples(
             var_written_effect_occurrences[name]
         )
@@ -981,6 +1061,8 @@ def _build_variable_infos(
             written_in_action_stages=written_action_stages,
             read_in_guard_occurrences=read_guard_occurrences,
             read_in_effect_occurrences=read_effect_occurrences,
+            read_after_write_action_stages=read_after_write_action_stages,
+            read_after_write_effect_occurrences=read_after_write_effect_occurrences,
             written_in_effect_occurrences=written_effect_occurrences,
         ))
     return tuple(out)

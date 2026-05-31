@@ -49,6 +49,10 @@ def _variable_usage_diagnostics(
     liveness_read_states = _liveness_read_states(variable)
     initial_guard_read_edges = _initial_guard_read_edges(variable)
     effect_read_edges = _effect_read_edges(variable)
+    action_read_after_write_stages = _action_read_after_write_stages(variable)
+    effect_read_after_write_occurrences = _effect_read_after_write_occurrences(
+        variable
+    )
     write_states = _write_states(variable)
     if not usage_read_states and not write_states:
         return [_unreferenced_var_diagnostic(variable)]
@@ -68,6 +72,8 @@ def _variable_usage_diagnostics(
         initial_edges,
         initial_guard_read_edges,
         effect_read_edges,
+        action_read_after_write_stages,
+        effect_read_after_write_occurrences,
     )
     if final_writes:
         return [
@@ -310,12 +316,22 @@ def _final_write_locations(
     initial_edges: Dict[str, Set[str]],
     initial_guard_read_edges: Set[Tuple[str, str]],
     effect_read_edges: Set[Tuple[str, str]],
+    action_read_after_write_stages: Set[Tuple[str, str]],
+    effect_read_after_write_occurrences: Set[Tuple[str, str, str]],
 ) -> List[str]:
     out: List[str] = []
     action_writes = _action_write_stages(variable)
     if not action_writes:
-        action_writes = tuple((state_path, None) for state_path in variable.written_in_states)
+        action_writes = tuple(
+            (state_path, None)
+            for state_path in variable.written_in_states
+        )
     for state_path, stage in action_writes:
+        if (
+                stage is not None and
+                (state_path, stage) in action_read_after_write_stages
+        ):
+            continue
         if _has_reachable_read_after_action_write(
             state_path,
             stage,
@@ -331,8 +347,17 @@ def _final_write_locations(
         ):
             continue
         out.append(state_path)
-    effect_writes = _effect_write_edges(variable)
-    for from_path, to_path in effect_writes:
+    effect_writes = _effect_write_occurrences(variable)
+    for from_path, to_path, occurrence_key in effect_writes:
+        if (
+                occurrence_key is not None and
+                (
+                    from_path,
+                    to_path,
+                    occurrence_key,
+                ) in effect_read_after_write_occurrences
+        ):
+            continue
         if to_path == '[*]':
             if _has_reachable_read_after_exit_effect(
                 from_path,
@@ -359,18 +384,28 @@ def _final_write_locations(
     return sorted(set(out))
 
 
-def _action_write_stages(variable: 'VariableInfo') -> Tuple[Tuple[str, Optional[str]], ...]:
+def _action_write_stages(
+        variable: 'VariableInfo',
+) -> Tuple[Tuple[str, Optional[str]], ...]:
     return tuple(
         (state_path, stage)
         for state_path, stage in getattr(variable, 'written_in_action_stages', ())
     )
 
 
-def _effect_write_edges(variable: 'VariableInfo') -> Tuple[Tuple[str, str], ...]:
+def _effect_write_occurrences(
+        variable: 'VariableInfo',
+) -> Tuple[Tuple[str, str, Optional[str]], ...]:
     occurrences = getattr(variable, 'written_in_effect_occurrences', ())
     if occurrences:
-        return tuple((from_path, to_path) for from_path, to_path, _ in occurrences)
-    return tuple(variable.written_in_effects)
+        return tuple(
+            (from_path, to_path, occurrence_key)
+            for from_path, to_path, occurrence_key in occurrences
+        )
+    return tuple(
+        (from_path, to_path, None)
+        for from_path, to_path in variable.written_in_effects
+    )
 
 
 def _effect_read_edges(variable: 'VariableInfo') -> Set[Tuple[str, str]]:
@@ -379,6 +414,18 @@ def _effect_read_edges(variable: 'VariableInfo') -> Set[Tuple[str, str]]:
         (from_path, to_path)
         for from_path, to_path, _ in occurrences
     }
+
+
+def _action_read_after_write_stages(
+        variable: 'VariableInfo',
+) -> Set[Tuple[str, str]]:
+    return set(getattr(variable, 'read_after_write_action_stages', ()))
+
+
+def _effect_read_after_write_occurrences(
+        variable: 'VariableInfo',
+) -> Set[Tuple[str, str, str]]:
+    return set(getattr(variable, 'read_after_write_effect_occurrences', ()))
 
 
 def _has_reachable_read_after_action_write(

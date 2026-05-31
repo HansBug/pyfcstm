@@ -42,7 +42,7 @@ VariableInfo
 -----------------------------------------------------
 
 .. autoclass:: VariableInfo
-    :members: name,type,init_value,read_in_states,written_in_states,read_in_guards,written_in_effects,read_in_action_stages,written_in_action_stages,read_in_guard_occurrences,read_in_effect_occurrences,written_in_effect_occurrences,participates_directly,participates_indirectly,abstract_actions_in_scope,float_literal_assignments
+    :members: name,type,init_value,read_in_states,written_in_states,read_in_guards,written_in_effects,read_in_action_stages,written_in_action_stages,read_in_guard_occurrences,read_in_effect_occurrences,read_after_write_action_stages,read_after_write_effect_occurrences,written_in_effect_occurrences,participates_directly,participates_indirectly,abstract_actions_in_scope,float_literal_assignments
 
 
 EventInfo

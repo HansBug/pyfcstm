@@ -1489,6 +1489,42 @@ class TestInspectModelDataFlowClosureDiagnostics:
         }
         assert 'W_WRITE_ONLY_VAR' not in by_code
 
+    def test_transition_effect_write_read_later_in_same_block_is_not_final(self):
+        dsl = """
+        def int status = 0;
+        def int sink = 0;
+        state Root {
+            state Idle;
+            state Done;
+            [*] -> Idle;
+            Idle -> Done effect { status = 1; sink = status; };
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
+
+    @pytest.mark.parametrize('effect', [
+        'sink = status; status = 1;',
+        'status = status + 1;',
+    ], ids=['read-before-write', 'self-update'])
+    def test_transition_effect_prior_reads_do_not_clear_final_write(self, effect):
+        dsl = f"""
+        def int status = 0;
+        def int sink = 0;
+        state Root {{
+            state Idle;
+            state Done;
+            [*] -> Idle;
+            Idle -> Done effect {{ {effect} }};
+        }}
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        diag = by_code['W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'][0]
+        assert diag.refs == {
+            'var_name': 'status',
+            'write_locations': ['Root.Idle->Root.Done'],
+        }
+
     def test_variable_never_read_after_final_write_for_state_action(self):
         dsl = """
         def int status = 0;
@@ -1518,6 +1554,42 @@ class TestInspectModelDataFlowClosureDiagnostics:
             state Done;
             [*] -> Active;
             Active -> Done : if [status == 0];
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        diag = by_code['W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE'][0]
+        assert diag.refs == {
+            'var_name': 'status',
+            'write_locations': ['Root.Active'],
+        }
+
+    def test_exit_action_write_read_later_in_same_block_is_not_final(self):
+        dsl = """
+        def int status = 0;
+        def int sink = 0;
+        state Root {
+            state Active {
+                exit { status = 1; sink = status; }
+            }
+            state Done;
+            [*] -> Active;
+            Active -> Done;
+        }
+        """
+        by_code = self._diagnostics_by_code(dsl)
+        assert 'W_VARIABLE_NEVER_READ_AFTER_FINAL_WRITE' not in by_code
+
+    def test_exit_action_prior_read_does_not_clear_final_write(self):
+        dsl = """
+        def int status = 0;
+        def int sink = 0;
+        state Root {
+            state Active {
+                exit { sink = status; status = 1; }
+            }
+            state Done;
+            [*] -> Active;
+            Active -> Done;
         }
         """
         by_code = self._diagnostics_by_code(dsl)

@@ -130,6 +130,8 @@ export interface VariableInfo {
     written_in_action_stages: Array<[string, string]>;
     read_in_guard_occurrences: Array<[string, string, string]>;
     read_in_effect_occurrences: Array<[string, string, string]>;
+    read_after_write_action_stages: Array<[string, string]>;
+    read_after_write_effect_occurrences: Array<[string, string, string]>;
     written_in_effect_occurrences: Array<[string, string, string]>;
     participates_directly: boolean;
     participates_indirectly: boolean;
@@ -473,6 +475,8 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
     const writtenActionStages: Record<string, Array<[string, string]>> = {};
     const readGuardOccurrences: Record<string, Array<[string, string, string]>> = {};
     const readEffectOccurrences: Record<string, Array<[string, string, string]>> = {};
+    const readAfterWriteActionStages: Record<string, Array<[string, string]>> = {};
+    const readAfterWriteEffectOccurrences: Record<string, Array<[string, string, string]>> = {};
     const writtenEffectOccurrences: Record<string, Array<[string, string, string]>> = {};
     const floatLiteralAssignments: Record<string, string[]> = {};
     for (const name of Object.keys(machine.defines)) {
@@ -484,6 +488,8 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
         writtenActionStages[name] = [];
         readGuardOccurrences[name] = [];
         readEffectOccurrences[name] = [];
+        readAfterWriteActionStages[name] = [];
+        readAfterWriteEffectOccurrences[name] = [];
         writtenEffectOccurrences[name] = [];
         floatLiteralAssignments[name] = [];
     }
@@ -495,7 +501,9 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
         const path = dottedPath(state.path);
         const localFloatAssigns: Record<string, string[]> = {};
         for (const [stageName, collection] of stateActionCollections(state)) {
+            const stageOperations: OperationStatement[] = [];
             for (const action of collection) {
+                stageOperations.push(...(action.operations ?? []));
                 if (action.operations && action.operations.length > 0) {
                     const localReads: string[] = [];
                     const localWrites: string[] = [];
@@ -517,6 +525,11 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
                 }
                 for (const stmt of action.operations ?? []) {
                     walkStmtFloatLiteralAssignments(stmt, localFloatAssigns);
+                }
+            }
+            for (const name of blockReadsAfterWrites(stageOperations)) {
+                if (name in readAfterWriteActionStages) {
+                    readAfterWriteActionStages[name].push([path, stageName]);
                 }
             }
         }
@@ -561,6 +574,11 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
                     }
                 }
             }
+            for (const v of blockReadsAfterWrites(t.effects ?? [])) {
+                if (v in readAfterWriteEffectOccurrences) {
+                    readAfterWriteEffectOccurrences[v].push([fromPath, toPath, occurrenceKey]);
+                }
+            }
         });
     }
 
@@ -601,6 +619,8 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
         const writtenActionStageEntries = dedupePairs(writtenActionStages[name]);
         const readGuardOccurrenceEntries = dedupeTriples(readGuardOccurrences[name]);
         const readEffectOccurrenceEntries = dedupeTriples(readEffectOccurrences[name]);
+        const readAfterWriteActionStageEntries = dedupePairs(readAfterWriteActionStages[name]);
+        const readAfterWriteEffectOccurrenceEntries = dedupeTriples(readAfterWriteEffectOccurrences[name]);
         const writtenEffectOccurrenceEntries = dedupeTriples(writtenEffectOccurrences[name]);
         const participatesDirectly = readStates.length > 0 ||
             readGuardEntries.length > 0 ||
@@ -624,6 +644,8 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
             written_in_action_stages: writtenActionStageEntries,
             read_in_guard_occurrences: readGuardOccurrenceEntries,
             read_in_effect_occurrences: readEffectOccurrenceEntries,
+            read_after_write_action_stages: readAfterWriteActionStageEntries,
+            read_after_write_effect_occurrences: readAfterWriteEffectOccurrenceEntries,
             written_in_effect_occurrences: writtenEffectOccurrenceEntries,
             participates_directly: participatesDirectly,
             participates_indirectly: false,
@@ -707,6 +729,48 @@ function walkStmtReadsWrites(
             }
         }
     }
+}
+
+function blockReadsAfterWrites(statements: OperationStatement[]): string[] {
+    const [readsAfterWrites] = blockReadsAfterWritesFrom(statements, new Set<string>());
+    return Array.from(readsAfterWrites);
+}
+
+function blockReadsAfterWritesFrom(
+    statements: OperationStatement[],
+    priorWrites: Set<string>,
+): [Set<string>, Set<string>] {
+    const readsAfterWrites = new Set<string>();
+    let writes = new Set(priorWrites);
+    for (const stmt of statements) {
+        if (stmt instanceof Operation) {
+            for (const name of walkExprVariables(stmt.expr)) {
+                if (writes.has(name)) readsAfterWrites.add(name);
+            }
+            writes.add(stmt.varName);
+            continue;
+        }
+        if (stmt instanceof IfBlock) {
+            for (const branch of stmt.branches) {
+                if (branch.condition) {
+                    for (const name of walkExprVariables(branch.condition)) {
+                        if (writes.has(name)) readsAfterWrites.add(name);
+                    }
+                }
+            }
+            const branchWrites = new Set(writes);
+            for (const branch of stmt.branches) {
+                const [branchReads, branchResultWrites] = blockReadsAfterWritesFrom(
+                    branch.statements,
+                    new Set(writes),
+                );
+                for (const name of branchReads) readsAfterWrites.add(name);
+                for (const name of branchResultWrites) branchWrites.add(name);
+            }
+            writes = branchWrites;
+        }
+    }
+    return [readsAfterWrites, writes];
 }
 
 function effectSelfAssigns(effects: OperationStatement[] | undefined): string[] {

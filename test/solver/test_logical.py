@@ -105,6 +105,52 @@ class TestIsSat:
         with pytest.raises(TypeError):
             getattr(logical, "is_sat")([])
 
+    def test_iterable_constraints_are_accepted(self):
+        """Constraint inputs may be any finite iterable accepted by Python unpacking."""
+        value = z3.Int("iterable_value")
+
+        result = is_sat(
+            (expr(item) for item in (value >= 1, value <= 1)), timeout_ms=1000
+        )
+
+        assert result.kind == "sat"
+
+    def test_zero_timeout_is_delegated_to_z3(self):
+        """The helper requires a timeout argument but does not impose a finite budget."""
+        result = is_sat(exprs(z3.BoolVal(True)), timeout_ms=0)
+
+        assert result.kind == "sat"
+
+    def test_negative_timeout_is_delegated_to_z3(self):
+        """Z3-supported timeout values are policy decisions for callers."""
+        result = is_sat(exprs(z3.BoolVal(True)), timeout_ms=-1)
+
+        assert result.kind == "sat"
+
+    def test_invalid_timeout_value_is_reported_by_z3(self):
+        """Timeout values outside Z3's accepted parameter domain are not swallowed."""
+        with pytest.raises(z3.Z3Exception):
+            getattr(logical, "is_sat")(exprs(z3.BoolVal(True)), timeout_ms="invalid")
+
+    def test_real_z3_timeout_constraints(self):
+        """A real nonlinear arithmetic query can still be classified as timeout."""
+        x, y, z = z3.Ints("x y z")
+
+        result = is_sat(
+            exprs(
+                x > 0,
+                y > 0,
+                z > 0,
+                x < 1000,
+                y < 1000,
+                z < 1000,
+                x**3 + y**3 == z**3,
+            ),
+            timeout_ms=1,
+        )
+
+        assert result.kind == "timeout"
+
     def test_get_model_returns_model_only_for_sat(self):
         """Model retrieval is opt-in and only populated for sat checks."""
         value = z3.Int("value")

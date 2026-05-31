@@ -1,13 +1,20 @@
 """Small logical predicates around Z3 solver checks.
 
-This module provides thin, timeout-aware wrappers for the satisfiability,
-validity, and overlap queries needed by the verify algorithms.  The wrappers
-intentionally keep the result shape small so callers can handle ``unknown`` and
-``timeout`` without parsing Z3-specific status objects.
+This module provides thin wrappers for satisfiability, validity, and overlap
+queries needed by the verify algorithms.  The wrappers require callers to pass a
+``timeout_ms`` keyword explicitly, forward that value to Z3 unchanged, and keep
+the result shape small so callers can handle ``unknown`` and ``timeout`` without
+parsing Z3-specific status objects.
+
+The helpers intentionally do not validate whether ``timeout_ms`` is a finite
+positive budget.  Values accepted by the installed Z3 build, including
+unrestricted/no-timeout settings, remain available to downstream algorithms.
+Callers that need a bounded resource policy must validate their own budget before
+calling these infrastructure helpers.
 """
 
 from dataclasses import dataclass
-from typing import List, Optional, cast
+from typing import Iterable, Optional, cast
 
 try:
     from typing import Literal
@@ -59,14 +66,17 @@ def _check_solver(solver: z3.Solver, *, get_model: bool = False) -> SatResult:
 
 
 def is_sat(
-    constraints: List[z3.ExprRef], *, timeout_ms: int, get_model: bool = False
+    constraints: Iterable[z3.ExprRef], *, timeout_ms: int, get_model: bool = False
 ) -> SatResult:
-    """Check whether a list of Z3 constraints is satisfiable.
+    """Check whether an iterable of Z3 constraints is satisfiable.
 
     :param constraints: Constraints to add to a fresh Z3 solver.
-    :type constraints: List[z3.ExprRef]
-    :param timeout_ms: Z3 timeout in milliseconds.  This is keyword-only and
-        required by design.
+    :type constraints: Iterable[z3.ExprRef]
+    :param timeout_ms: Value forwarded unchanged to Z3's ``timeout`` parameter.
+        This is keyword-only and required by design, but it is not otherwise
+        validated by this helper.  Values rejected by Z3 propagate as Z3 errors;
+        callers that need a finite positive budget must validate it before
+        calling.
     :type timeout_ms: int
     :param get_model: Whether to return a model when the constraints are
         satisfiable, defaults to ``False``.
@@ -97,8 +107,8 @@ def is_valid(formula: z3.ExprRef, *, timeout_ms: int) -> SatResult:
 
     :param formula: Formula to prove valid.
     :type formula: z3.ExprRef
-    :param timeout_ms: Z3 timeout in milliseconds.  This is keyword-only and
-        required by design.
+    :param timeout_ms: Value forwarded unchanged through :func:`is_sat` to Z3's
+        ``timeout`` parameter.  This is keyword-only and required by design.
     :type timeout_ms: int
     :return: Validity result.
     :rtype: SatResult
@@ -121,8 +131,8 @@ def is_overlap(
     :type formula_a: z3.ExprRef
     :param formula_b: Second formula.
     :type formula_b: z3.ExprRef
-    :param timeout_ms: Z3 timeout in milliseconds.  This is keyword-only and
-        required by design.
+    :param timeout_ms: Value forwarded unchanged through :func:`is_sat` to Z3's
+        ``timeout`` parameter.  This is keyword-only and required by design.
     :type timeout_ms: int
     :return: ``'sat'`` if the formulas overlap, ``'unsat'`` if they are
         disjoint, or an indeterminate solver result.

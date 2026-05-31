@@ -1394,7 +1394,10 @@ I_UNREFERENCED_VAR_MAYBE_ABSTRACT:
     abstract_actions_in_scope:
       type: list[str]
       required: true
-      description: Abstract action owners that may access the variable.
+      description: >-
+        Abstract action owners that may access the variable. FCSTM
+        variables are global, so this is the full machine abstract-action
+        inventory.
   for_llm:
     summary: >-
       This variable is unused by DSL guard-affect data-flow, but abstract
@@ -1427,6 +1430,14 @@ W_GUARD_VARS_NEVER_CHANGE:
     lifecycle action or transition effect, so the guard only depends on
     initial values.
   refs:
+    from_path:
+      type: str
+      required: true
+      description: Source state path of the transition, or [*] for an entry marker.
+    to_path:
+      type: str
+      required: true
+      description: Target state path of the transition, or [*] for an exit marker.
     transition_span:
       type: Span
       required: false
@@ -1448,6 +1459,7 @@ W_GUARD_VARS_NEVER_CHANGE:
         rationale: Simplify or remove the guard if the initial value is intentional.
     do_not:
       - "Do not add a meaningless self-assignment; it does not model a real change."
+      - "Do not rewrite the guard to a meaningless constant only to silence this diagnostic."
   emit_tier: static_pipeline
   example_dsl: |
     def int ready = 0;

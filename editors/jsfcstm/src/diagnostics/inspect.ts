@@ -30,7 +30,7 @@ import {
     Variable,
 } from '../model/runtime';
 import {collectDesignHealthWarnings} from './analyzers';
-import {buildUseDefGraph} from './analyzers/use-def';
+import {buildUseDefGraph, collectExprVariables} from './analyzers/use-def';
 import type {RawFcstmModelForcedTransition} from '../model/raw';
 
 const INIT_MARK = '[*]';
@@ -604,41 +604,7 @@ function collectActionReadsWrites(state: {
 
 function walkExprVariables(expr: Expr | null | undefined): string[] {
     if (!expr) return [];
-    const out: string[] = [];
-    walkExprCollect(expr, out);
-    return out;
-}
-
-function walkExprCollect(expr: Expr, out: string[]): void {
-    const anyExpr = expr as unknown as {
-        pyModelType: string;
-        name?: string;
-        x?: Expr;
-        y?: Expr;
-        cond?: Expr;
-        ifTrue?: Expr;
-        ifFalse?: Expr;
-    };
-    switch (anyExpr.pyModelType) {
-        case 'Variable':
-            if (anyExpr.name) out.push(anyExpr.name);
-            return;
-        case 'UnaryOp':
-        case 'UFunc':
-            if (anyExpr.x) walkExprCollect(anyExpr.x, out);
-            return;
-        case 'BinaryOp':
-            if (anyExpr.x) walkExprCollect(anyExpr.x, out);
-            if (anyExpr.y) walkExprCollect(anyExpr.y, out);
-            return;
-        case 'ConditionalOp':
-            if (anyExpr.cond) walkExprCollect(anyExpr.cond, out);
-            if (anyExpr.ifTrue) walkExprCollect(anyExpr.ifTrue, out);
-            if (anyExpr.ifFalse) walkExprCollect(anyExpr.ifFalse, out);
-            return;
-        default:
-            return;
-    }
+    return collectExprVariables(expr);
 }
 
 function walkStmtReadsWrites(

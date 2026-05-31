@@ -335,6 +335,8 @@ state Root {
                     .filter(d => d.code === 'W_GUARD_VARS_NEVER_CHANGE')
                     .map(d => d.refs),
                 [{
+                    from_path: 'Root.Idle',
+                    to_path: 'Root.StableBlocked',
                     transition_span: null,
                     guard_vars: ['stable'],
                 }],
@@ -361,6 +363,34 @@ state Root {
                 var_name: 'write_only',
                 written_states: ['Root.Idle'],
             }]);
+        });
+
+        it('rejects unknown expression subclasses in the shared variable collector', async () => {
+            const {collectExprVariables} = await import('../dist/diagnostics/analyzers/use-def');
+            const {Expr} = await import('../dist/model/runtime');
+
+            class UnknownExpr extends Expr {
+                constructor() {
+                    super(
+                        'expression',
+                        'UnknownExpr' as any,
+                        {
+                            start: {line: 0, character: 0},
+                            end: {line: 0, character: 0},
+                        },
+                        'unknown',
+                    );
+                }
+
+                to_ast_node(): any {
+                    return {};
+                }
+            }
+
+            assert.throws(
+                () => collectExprVariables(new UnknownExpr()),
+                /Unhandled Expr subclass: UnknownExpr/,
+            );
         });
     });
 
@@ -709,12 +739,22 @@ state Root {
                 {
                     code: 'W_GUARD_VARS_NEVER_CHANGE',
                     severity: 'warning',
-                    refs: {transition_span: null, guard_vars: ['read_only']},
+                    refs: {
+                        from_path: 'Root.Idle',
+                        to_path: 'Root.Active',
+                        transition_span: null,
+                        guard_vars: ['read_only'],
+                    },
                 },
                 {
                     code: 'W_GUARD_VARS_NEVER_CHANGE',
                     severity: 'warning',
-                    refs: {transition_span: null, guard_vars: ['read_only']},
+                    refs: {
+                        from_path: 'Root.Idle',
+                        to_path: 'Root.Active',
+                        transition_span: null,
+                        guard_vars: ['read_only'],
+                    },
                 },
                 {
                     code: 'W_INITIAL_UNCONDITIONAL_MISSING',

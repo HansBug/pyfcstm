@@ -2,6 +2,9 @@ import type {ModelDiagnosticJson, VariableInfo} from '../inspect';
 import type {StateMachine} from '../../model/runtime';
 import {collectExprVariables} from './use-def';
 
+const INIT_MARK = '[*]';
+const EXIT_MARK = '[*]';
+
 export function collectDataFlowWarnings(
     variables: VariableInfo[],
     machine?: StateMachine,
@@ -88,12 +91,16 @@ function collectGuardVarsNeverChangeDiagnostics(
                 .sort();
             if (guardVars.length === 0) continue;
             if (guardVars.some(name => writtenVars.has(name))) continue;
+            const fromPath = transitionEndpoint(state.path, transition.fromState, true);
+            const toPath = transitionEndpoint(state.path, transition.toState, false);
             out.push({
                 code: 'W_GUARD_VARS_NEVER_CHANGE',
                 severity: 'warning',
                 message: 'Transition guard reads only variables that are never changed by actions or effects.',
                 span: null,
                 refs: {
+                    from_path: fromPath,
+                    to_path: toPath,
                     transition_span: null,
                     guard_vars: guardVars,
                 },
@@ -101,4 +108,24 @@ function collectGuardVarsNeverChangeDiagnostics(
         }
     }
     return out;
+}
+
+function dottedPath(path: readonly string[]): string {
+    return path.filter(item => item !== null && item !== undefined).join('.');
+}
+
+function resolveSiblingPath(parentPath: readonly string[], name: string): string {
+    const parent = dottedPath(parentPath);
+    return parent ? `${parent}.${name}` : name;
+}
+
+function transitionEndpoint(
+    parentPath: readonly string[],
+    marker: string,
+    isSource: boolean,
+): string {
+    if (marker === 'INIT_STATE' || marker === 'EXIT_STATE') {
+        return isSource ? INIT_MARK : EXIT_MARK;
+    }
+    return resolveSiblingPath(parentPath, marker);
 }

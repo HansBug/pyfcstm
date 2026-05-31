@@ -1,6 +1,6 @@
 """Variable data-flow design-health diagnostics."""
 
-from typing import TYPE_CHECKING, Iterable, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Iterable, List, Optional
 
 from ...utils.validate import ModelDiagnostic
 from .use_def import collect_expr_variables
@@ -8,6 +8,9 @@ from .use_def import collect_expr_variables
 if TYPE_CHECKING:  # pragma: no cover
     from ..inspect import VariableInfo
     from ...model.model import StateMachine
+
+_INIT_MARK = '[*]'
+_EXIT_MARK = '[*]'
 
 
 def collect_data_flow_warnings(
@@ -102,6 +105,16 @@ def _guard_vars_never_change_diagnostics(
                 continue
             if any(v in written_vars for v in guard_vars):
                 continue
+            from_path = _transition_endpoint(
+                state,
+                transition.from_state,
+                is_source=True,
+            )
+            to_path = _transition_endpoint(
+                state,
+                transition.to_state,
+                is_source=False,
+            )
             diagnostics.append(ModelDiagnostic(
                 code='W_GUARD_VARS_NEVER_CHANGE',
                 severity='warning',
@@ -110,8 +123,30 @@ def _guard_vars_never_change_diagnostics(
                     'changed by actions or effects.'
                 ),
                 refs={
+                    'from_path': from_path,
+                    'to_path': to_path,
                     'transition_span': None,
                     'guard_vars': guard_vars,
                 },
             ))
     return diagnostics
+
+
+def _state_path(state: Any) -> str:
+    path = getattr(state, 'path', None)
+    if not path:  # pragma: no cover
+        return ''
+    return '.'.join(p for p in path if p is not None)
+
+
+def _resolve_sibling_path(parent_state: Any, name: str) -> str:
+    parent_path = _state_path(parent_state)
+    return f'{parent_path}.{name}' if parent_path else name
+
+
+def _transition_endpoint(parent_state: Any, marker_or_name: Any, is_source: bool) -> str:
+    if marker_or_name.__class__.__name__ == '_StateSingletonMark':
+        return _INIT_MARK if is_source else _EXIT_MARK
+    if isinstance(marker_or_name, str):
+        return _resolve_sibling_path(parent_state, marker_or_name)
+    return str(marker_or_name)  # pragma: no cover

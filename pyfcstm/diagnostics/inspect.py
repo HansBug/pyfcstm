@@ -49,7 +49,11 @@ import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
-from .analyzers import build_use_def_graph, collect_design_health_warnings
+from .analyzers import (
+    build_use_def_graph,
+    collect_design_health_warnings,
+    collect_expr_variables,
+)
 from ..utils.validate import ModelDiagnostic
 
 if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
@@ -207,10 +211,11 @@ class VariableInfo:
         a transition guard through the conservative use-def graph.
     :type affects_guard_indirectly: bool
     :param abstract_actions_in_scope: Function names of abstract actions
-        whose enclosing state is on the ancestor chain or sub-tree of
-        any state that touches this variable. Downstream diagnostics can
-        use this to distinguish high-confidence unused variables from
-        variables that may be touched by abstract behavior.
+        that may access this variable. FCSTM variables are global, so any
+        abstract action in the machine is conservatively visible here.
+        Downstream diagnostics can use this to distinguish high-confidence
+        unused variables from variables that may be touched by abstract
+        behavior.
     :type abstract_actions_in_scope: Tuple[str, ...]
     :param float_literal_assignments: Source text of float literal
         assignments to this variable from lifecycle actions or transition
@@ -489,38 +494,7 @@ def _walk_expr_variables(expr: Optional['Expr']) -> List[str]:
     """Return variable names read by ``expr`` in left-to-right order."""
     if expr is None:
         return []
-    seen: List[str] = []
-    _walk_expr_collect(expr, seen)
-    return seen
-
-
-def _walk_expr_collect(expr: 'Expr', out: List[str]) -> None:
-    from ..model.expr import (
-        BinaryOp,
-        ConditionalOp,
-        UFunc,
-        UnaryOp,
-        Variable,
-    )
-    if isinstance(expr, Variable):
-        out.append(expr.name)
-        return
-    # Constants have no children.
-    if isinstance(expr, UnaryOp):
-        _walk_expr_collect(expr.x, out)
-        return
-    if isinstance(expr, BinaryOp):
-        _walk_expr_collect(expr.x, out)
-        _walk_expr_collect(expr.y, out)
-        return
-    if isinstance(expr, ConditionalOp):
-        _walk_expr_collect(expr.cond, out)
-        _walk_expr_collect(expr.if_true, out)
-        _walk_expr_collect(expr.if_false, out)
-        return
-    if isinstance(expr, UFunc):
-        _walk_expr_collect(expr.x, out)
-        return
+    return list(collect_expr_variables(expr))
 
 
 def _walk_stmt_reads_writes(
@@ -895,7 +869,7 @@ def _build_variable_infos(
         written_states = _dedupe_ordered(var_writes_by_state[name])
         read_guards = _dedupe_pairs(var_read_guards[name])
         written_effects = _dedupe_pairs(var_written_effects[name])
-        abstract_actions = _abstract_actions_in_scope(state_lookup, read_states, written_states)
+        abstract_actions = _abstract_actions_in_scope(state_lookup)
         float_assignments = _dedupe_ordered(var_float_literal_assignments[name])
         out.append(VariableInfo(
             name=name,
@@ -917,8 +891,6 @@ def _build_variable_infos(
 
 def _abstract_actions_in_scope(
         state_lookup: Dict[str, StateInfo],
-        read_states: Tuple[str, ...],
-        written_states: Tuple[str, ...],
 ) -> Tuple[str, ...]:
     """Return abstract action labels that can see global variables."""
     return tuple(

@@ -1,8 +1,11 @@
 import {
     BinaryOp,
+    BooleanExpr,
     ConditionalOp,
     Expr,
+    Float,
     IfBlock,
+    Integer,
     Operation,
     OperationStatement,
     StateMachine,
@@ -36,8 +39,8 @@ export class UseDefGraph {
         const seen = new Set(direct);
         const out = new Set<string>();
         const queue = Array.from(direct);
-        while (queue.length > 0) {
-            const target = queue.shift()!;
+        for (let index = 0; index < queue.length; index++) {
+            const target = queue[index];
             for (const source of this.dependenciesOf(target)) {
                 if (seen.has(source)) continue;
                 seen.add(source);
@@ -120,7 +123,10 @@ function walkExprCollect(expr: Expr, out: string[]): void {
         walkExprCollect(expr.cond, out);
         walkExprCollect(expr.ifTrue, out);
         walkExprCollect(expr.ifFalse, out);
+        return;
     }
+    if (expr instanceof Integer || expr instanceof Float || expr instanceof BooleanExpr) return;
+    throw new TypeError(`Unhandled Expr subclass: ${expr.constructor.name}`);
 }
 
 function joinEdge(source: string, target: string): string {

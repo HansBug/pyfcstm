@@ -776,6 +776,8 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'code': 'W_GUARD_VARS_NEVER_CHANGE',
                 'severity': 'warning',
                 'refs': {
+                    'from_path': 'Root.Idle',
+                    'to_path': 'Root.Active',
                     'transition_span': None,
                     'guard_vars': ['read_only'],
                 },
@@ -784,6 +786,8 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'code': 'W_GUARD_VARS_NEVER_CHANGE',
                 'severity': 'warning',
                 'refs': {
+                    'from_path': 'Root.Idle',
+                    'to_path': 'Root.Active',
                     'transition_span': None,
                     'guard_vars': ['read_only'],
                 },
@@ -1049,6 +1053,8 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'code': 'W_GUARD_VARS_NEVER_CHANGE',
                 'severity': 'warning',
                 'refs': {
+                    'from_path': 'Root.Idle',
+                    'to_path': 'Root.StableBlocked',
                     'transition_span': None,
                     'guard_vars': ['stable'],
                 },

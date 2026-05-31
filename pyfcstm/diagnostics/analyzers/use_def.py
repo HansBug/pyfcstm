@@ -30,8 +30,10 @@ class UseDefGraph:
         seen: Set[str] = set(direct)
         out: Set[str] = set()
         queue = list(direct)
-        while queue:
-            target = queue.pop(0)
+        index = 0
+        while index < len(queue):
+            target = queue[index]
+            index += 1
             for source in self.dependencies_of(target):
                 if source in seen:
                     continue
@@ -118,7 +120,10 @@ def _walk_block(
 def _walk_expr_collect(expr: 'Expr', out: List[str]) -> None:
     from ...model.expr import (
         BinaryOp,
+        Boolean,
         ConditionalOp,
+        Float,
+        Integer,
         UFunc,
         UnaryOp,
         Variable,
@@ -141,3 +146,7 @@ def _walk_expr_collect(expr: 'Expr', out: List[str]) -> None:
         return
     if isinstance(expr, UFunc):
         _walk_expr_collect(expr.x, out)
+        return
+    if isinstance(expr, (Integer, Float, Boolean)):
+        return
+    raise TypeError(f'unhandled Expr subclass: {type(expr).__name__}')

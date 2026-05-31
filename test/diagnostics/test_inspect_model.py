@@ -719,6 +719,16 @@ class TestInspectModelGuardAffectDataFlow:
         assert ('x', 'x') in graph.edges
         assert ('flag', 'x') in graph.edges
 
+    def test_collect_expr_variables_rejects_unknown_expr_subclass(self):
+        from pyfcstm.diagnostics.analyzers.use_def import collect_expr_variables
+        from pyfcstm.model.expr import Expr
+
+        class UnknownExpr(Expr):
+            pass
+
+        with pytest.raises(TypeError, match='UnknownExpr'):
+            collect_expr_variables(UnknownExpr())
+
     def test_variable_info_marks_direct_and_indirect_guard_affect(self):
         dsl = """
         def int source = 0;
@@ -843,6 +853,8 @@ class TestInspectModelGuardAffectDiagnostics:
         """)
 
         assert [diag.refs for diag in by_code['W_GUARD_VARS_NEVER_CHANGE']] == [{
+            'from_path': 'Root.Idle',
+            'to_path': 'Root.StableBlocked',
             'transition_span': None,
             'guard_vars': ['stable'],
         }]

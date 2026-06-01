@@ -1,9 +1,45 @@
 """Topological verification algorithms for :mod:`pyfcstm.verify`.
 
-The algorithms in this module intentionally stay at the structural layer. They
-ignore guard satisfiability, event availability, and runtime variable evolution;
-their results therefore describe topological reachability rather than concrete
-execution reachability.
+This module implements the group-1 verification algorithms that work only on
+the hierarchical state topology. The algorithms project a
+:class:`pyfcstm.model.StateMachine` into a leaf-level macro graph and then run
+structural graph queries over that projection. They intentionally ignore guard
+satisfiability, event availability, transition ordering, and runtime variable
+evolution; positive reachability results are therefore over-approximations of
+runtime behavior, while unreachable results describe structural topology facts.
+
+The module contains:
+
+* :class:`LeafLevelGraph` - Immutable container for the projected leaf graph.
+* :class:`FinitenessReport` - Report object for
+  :func:`topological_finite`.
+* :class:`InevitabilityReport` - Report object for
+  :func:`topological_inevitable_terminator`.
+* :func:`build_leaf_level_macro_graph` - Build the guard-agnostic projection.
+* :func:`topological_reachable_set` - Compute reachable leaf states.
+* :func:`unreachable_states` - Find structurally unreachable leaf states.
+* :func:`strongly_connected_components` - Find cyclic leaf-level regions.
+* :func:`topological_finite` - Detect reachable no-exit regions.
+* :func:`topological_inevitable_terminator` - Detect non-terminating topology.
+* :func:`event_emission_to_consumer_reachable` - Detect events whose consumers
+  are all unreachable.
+
+.. note::
+   The graph projection is independent from the diagnostics package.
+   Diagnostic integration is expected to wrap these functions and translate
+   their plain Python return values into diagnostic payloads.
+
+Example::
+
+    >>> from pyfcstm.dsl import parse_with_grammar_entry
+    >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+    >>> ast = parse_with_grammar_entry("state Root;", "state_machine_dsl")
+    >>> machine = parse_dsl_node_to_state_machine(ast)
+    >>> graph = build_leaf_level_macro_graph(machine)
+    >>> graph.nodes
+    ('Root',)
+    >>> graph.edges[EXIT_ROOT_SINK]
+    ()
 """
 
 from collections import deque
@@ -24,13 +60,31 @@ EXIT_ROOT_SINK = "⊥_root"
 
 @dataclass(frozen=True)
 class LeafLevelGraph:
-    """Leaf-level macro graph projected from a hierarchical state machine.
+    """
+    Leaf-level macro graph projected from a hierarchical state machine.
+
+    Each node is a dotted path for a leaf state in the source model. Edges
+    describe guard-agnostic macro steps between leaf states after expanding
+    composite targets through their initial transitions and bubbling leaf exits
+    through parent transitions. The synthetic :data:`EXIT_ROOT_SINK` key is
+    present in :attr:`edges` so callers can query root termination uniformly.
 
     :param nodes: Dotted paths of leaf states in stable sorted order.
     :type nodes: Tuple[str, ...]
     :param edges: Mapping from each leaf path, and optionally
         :data:`EXIT_ROOT_SINK`, to sorted successor paths.
     :type edges: Dict[str, Tuple[str, ...]]
+
+    Example::
+
+        >>> graph = LeafLevelGraph(
+        ...     nodes=("Root.Idle",),
+        ...     edges={"Root.Idle": (EXIT_ROOT_SINK,), EXIT_ROOT_SINK: ()},
+        ... )
+        >>> graph.nodes
+        ('Root.Idle',)
+        >>> graph.edges["Root.Idle"]
+        ('⊥_root',)
     """
 
     nodes: Tuple[str, ...]
@@ -39,7 +93,13 @@ class LeafLevelGraph:
 
 @dataclass(frozen=True)
 class FinitenessReport:
-    """Result for :func:`topological_finite`.
+    """
+    Result for :func:`topological_finite`.
+
+    The report is true when every root-reachable leaf can eventually reach the
+    synthetic root-exit sink in the topology graph. Counterexamples are plain
+    tuples so later diagnostic layers can choose their own payload shape without
+    coupling the topology package to the diagnostics package.
 
     :param finite: ``True`` when every root-reachable leaf can reach the root
         exit sink in the topological graph.
@@ -47,6 +107,16 @@ class FinitenessReport:
     :param counterexamples: Counterexamples as ``('trap_cycle', scc_tuple)`` or
         ``('deadlock', state_path)`` entries.
     :type counterexamples: Tuple[Tuple[Literal['trap_cycle', 'deadlock'], object], ...]
+
+    Example::
+
+        >>> report = FinitenessReport(finite=False, counterexamples=(
+        ...     ("deadlock", "Root.Stuck"),
+        ... ))
+        >>> report.finite
+        False
+        >>> report.counterexamples[0][0]
+        'deadlock'
     """
 
     finite: bool
@@ -55,7 +125,13 @@ class FinitenessReport:
 
 @dataclass(frozen=True)
 class InevitabilityReport:
-    """Result for :func:`topological_inevitable_terminator`.
+    """
+    Result for :func:`topological_inevitable_terminator`.
+
+    The report is true only when the topology has no root-reachable cycle or
+    deadlock that could keep execution away from the root terminator forever.
+    A false report contains one representative path or SCC; it is not intended
+    to enumerate every possible non-terminating region.
 
     :param inevitable: ``True`` when no root-reachable topological path can stay
         in a cycle or deadlock forever.
@@ -63,6 +139,17 @@ class InevitabilityReport:
     :param counterexample_path: Representative non-terminating SCC or deadlock
         path, or ``None`` when :attr:`inevitable` is true.
     :type counterexample_path: Optional[Tuple[str, ...]]
+
+    Example::
+
+        >>> report = InevitabilityReport(
+        ...     inevitable=False,
+        ...     counterexample_path=("Root.Loop",),
+        ... )
+        >>> report.inevitable
+        False
+        >>> report.counterexample_path
+        ('Root.Loop',)
     """
 
     inevitable: bool
@@ -125,17 +212,39 @@ def _initial_leaf_targets(state: State) -> Tuple[str, ...]:
 
 
 def build_leaf_level_macro_graph(machine: StateMachine) -> LeafLevelGraph:
-    """Build the guard-agnostic leaf-level macro graph for ``machine``.
+    """
+    Build the guard-agnostic leaf-level macro graph for ``machine``.
 
     The projection follows normal leaf-to-leaf transitions, expands composite
     targets through their initial transitions, and bubbles ``Leaf -> [*]``
     transitions through parent outgoing transitions. If a non-root parent has no
     outgoing transition, the bubble is an off-cliff exit and contributes no edge.
+    A root leaf is treated as root-exit-capable by adding an edge to
+    :data:`EXIT_ROOT_SINK`.
 
     :param machine: State machine to project.
     :type machine: StateMachine
     :return: Leaf-level macro graph.
     :rtype: LeafLevelGraph
+    :raises TypeError: If a transition endpoint uses a model object type that
+        is not produced by the FCSTM grammar pipeline.
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> source = '''
+        ... state Root {
+        ...     state Idle;
+        ...     [*] -> Idle;
+        ...     Idle -> [*];
+        ... }
+        ... '''
+        >>> ast = parse_with_grammar_entry(source, "state_machine_dsl")
+        >>> machine = parse_dsl_node_to_state_machine(ast)
+        >>> graph = build_leaf_level_macro_graph(machine)
+        >>> graph.edges["Root.Idle"]
+        ('⊥_root',)
     """
     leaves = _leaf_states(machine)
     nodes = tuple(sorted(_state_path(state) for state in leaves))
@@ -188,16 +297,36 @@ def _closure_from(
 
 
 def topological_reachable_set(machine: StateMachine) -> Dict[str, Tuple[str, ...]]:
-    """Compute guard-agnostic reachable leaf states for every model state.
+    """
+    Compute guard-agnostic reachable leaf states for every model state.
 
     Composite states are first projected through their initial descent and then
     closed over the leaf-level macro graph. Leaf-state results omit the leaf
     itself, matching the existing inspect reachability convention for cycles.
+    The returned mapping is keyed by dotted state paths for all states, not only
+    leaves.
 
     :param machine: State machine to inspect.
     :type machine: StateMachine
     :return: Mapping from every state path to sorted reachable leaf paths.
     :rtype: Dict[str, Tuple[str, ...]]
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> source = '''
+        ... state Root {
+        ...     state A;
+        ...     state B;
+        ...     [*] -> A;
+        ...     A -> B;
+        ... }
+        ... '''
+        >>> ast = parse_with_grammar_entry(source, "state_machine_dsl")
+        >>> machine = parse_dsl_node_to_state_machine(ast)
+        >>> topological_reachable_set(machine)["Root.A"]
+        ('Root.B',)
     """
     graph = build_leaf_level_macro_graph(machine)
     result: Dict[str, Tuple[str, ...]] = {}
@@ -213,12 +342,33 @@ def topological_reachable_set(machine: StateMachine) -> Dict[str, Tuple[str, ...
 
 
 def unreachable_states(machine: StateMachine) -> Tuple[str, ...]:
-    """Return non-pseudo leaf states unreachable from the root topology.
+    """
+    Return non-pseudo leaf states unreachable from the root topology.
+
+    The result uses topology reachability from the root initial descent and
+    filters out pseudo leaf states. Composite states are not returned directly;
+    their unreachable leaf descendants are reported instead.
 
     :param machine: State machine to inspect.
     :type machine: StateMachine
     :return: Sorted unreachable leaf state paths.
     :rtype: Tuple[str, ...]
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> source = '''
+        ... state Root {
+        ...     state A;
+        ...     state Lost;
+        ...     [*] -> A;
+        ... }
+        ... '''
+        >>> ast = parse_with_grammar_entry(source, "state_machine_dsl")
+        >>> machine = parse_dsl_node_to_state_machine(ast)
+        >>> unreachable_states(machine)
+        ('Root.Lost',)
     """
     root_path = _state_path(machine.root_state)
     reachable = set(topological_reachable_set(machine).get(root_path, tuple()))
@@ -309,12 +459,35 @@ def _is_cyclic_component(
 
 
 def strongly_connected_components(machine: StateMachine) -> Tuple[Tuple[str, ...], ...]:
-    """Return non-trivial SCCs in the leaf-level topology graph.
+    """
+    Return non-trivial SCCs in the leaf-level topology graph.
+
+    A non-trivial SCC is either a component with more than one leaf or a single
+    leaf with a self-loop. The implementation is iterative so deeply nested or
+    wide generated models are not limited by Python's recursion depth.
 
     :param machine: State machine to inspect.
     :type machine: StateMachine
     :return: Sorted non-trivial SCCs.
     :rtype: Tuple[Tuple[str, ...], ...]
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> source = '''
+        ... state Root {
+        ...     state A;
+        ...     state B;
+        ...     [*] -> A;
+        ...     A -> B;
+        ...     B -> A;
+        ... }
+        ... '''
+        >>> ast = parse_with_grammar_entry(source, "state_machine_dsl")
+        >>> machine = parse_dsl_node_to_state_machine(ast)
+        >>> strongly_connected_components(machine)
+        (('Root.A', 'Root.B'),)
     """
     graph = build_leaf_level_macro_graph(machine)
     return tuple(
@@ -349,12 +522,38 @@ def _nodes_that_can_reach_sink(graph: LeafLevelGraph) -> Set[str]:
 
 
 def topological_finite(machine: StateMachine) -> FinitenessReport:
-    """Check whether all root-reachable leaves can reach the root exit sink.
+    """
+    Check whether all root-reachable leaves can reach the root exit sink.
+
+    This check accepts models where every reachable leaf has at least one
+    topological route to termination, even if runtime guards could block that
+    route. It reports closed trap cycles that cannot reach the root sink and
+    deadlock leaves with no outgoing projected edge.
 
     :param machine: State machine to inspect.
     :type machine: StateMachine
     :return: Finiteness report with trap-cycle and deadlock counterexamples.
     :rtype: FinitenessReport
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> source = '''
+        ... state Root {
+        ...     state A;
+        ...     state B;
+        ...     [*] -> A;
+        ...     A -> B;
+        ... }
+        ... '''
+        >>> ast = parse_with_grammar_entry(source, "state_machine_dsl")
+        >>> machine = parse_dsl_node_to_state_machine(ast)
+        >>> report = topological_finite(machine)
+        >>> report.finite
+        False
+        >>> report.counterexamples
+        (('deadlock', 'Root.B'),)
     """
     graph = build_leaf_level_macro_graph(machine)
     reachable = _root_reachable_leaf_paths(machine, graph)
@@ -380,7 +579,8 @@ def topological_finite(machine: StateMachine) -> FinitenessReport:
 
 
 def topological_inevitable_terminator(machine: StateMachine) -> InevitabilityReport:
-    """Check whether every topological path must eventually terminate.
+    """
+    Check whether every topological path must eventually terminate.
 
     This is an intentionally structural check: any root-reachable deadlock or
     cycle is enough to produce a non-inevitability counterexample, even when
@@ -390,6 +590,26 @@ def topological_inevitable_terminator(machine: StateMachine) -> InevitabilityRep
     :type machine: StateMachine
     :return: Inevitability report.
     :rtype: InevitabilityReport
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> source = '''
+        ... state Root {
+        ...     state A;
+        ...     [*] -> A;
+        ...     A -> A;
+        ...     A -> [*];
+        ... }
+        ... '''
+        >>> ast = parse_with_grammar_entry(source, "state_machine_dsl")
+        >>> machine = parse_dsl_node_to_state_machine(ast)
+        >>> report = topological_inevitable_terminator(machine)
+        >>> report.inevitable
+        False
+        >>> report.counterexample_path
+        ('Root.A',)
     """
     graph = build_leaf_level_macro_graph(machine)
     reachable = _root_reachable_leaf_paths(machine, graph)
@@ -452,15 +672,37 @@ def _root_reachable_state_paths(
 
 
 def event_emission_to_consumer_reachable(machine: StateMachine) -> Tuple[str, ...]:
-    """Return events whose consumer source states are all unreachable.
+    """
+    Return events whose consumer source states are all unreachable.
 
     Unused declared events are ignored here; they remain the responsibility of
     the existing design-health unused-event check.
+    A transition is treated as an event consumer at its source state. If every
+    consumer source for a used event is outside the root-reachable topology, the
+    event's qualified name is returned.
 
     :param machine: State machine to inspect.
     :type machine: StateMachine
     :return: Sorted qualified event names whose consumers are all unreachable.
     :rtype: Tuple[str, ...]
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> source = '''
+        ... state Root {
+        ...     event Panic;
+        ...     state A;
+        ...     state Lost;
+        ...     [*] -> A;
+        ...     Lost -> A : Panic;
+        ... }
+        ... '''
+        >>> ast = parse_with_grammar_entry(source, "state_machine_dsl")
+        >>> machine = parse_dsl_node_to_state_machine(ast)
+        >>> event_emission_to_consumer_reachable(machine)
+        ('Root.Panic',)
     """
     graph = build_leaf_level_macro_graph(machine)
     reachable = _root_reachable_state_paths(machine, graph)

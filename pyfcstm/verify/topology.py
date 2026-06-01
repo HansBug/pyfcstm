@@ -67,7 +67,7 @@ except ImportError:  # pragma: no cover - Python < 3.8 compatibility
 
 from ..dsl import EXIT_STATE, INIT_STATE
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - imports used only by static type checkers
     from ..model import State, StateMachine
 
 EXIT_ROOT_SINK = "⊥_root"

@@ -344,13 +344,6 @@ def test_transition_shadowing_helper_reports_unconditional_followers():
     assert diag["data"]["reason"] == "unconditional_catchall"
 
 
-def test_transition_shadowing_helper_starts_unconditional_domain():
-    """The first unconditional transition is the catch-all baseline."""
-    transition = Transition("A", "B", event=None, guard=None, effects=[])
-
-    assert smt_local._domain_key(transition) == "unconditional"
-
-
 def test_lifecycle_action_collection_skips_abstract_actions():
     """Abstract lifecycle actions do not contribute concrete operations."""
     machine = parse_machine(
@@ -425,11 +418,11 @@ def test_operation_prefix_collection_updates_after_if_block():
 
     assert result is None
     assert condition_points is not None
-    assert [condition for condition, _ in condition_points] == [
+    assert [point.condition for point in condition_points] == [
         condition,
         ternary_condition,
     ]
-    assert str(condition_points[1][1]["mode"]) in {
+    assert str(condition_points[1].z3_vars["mode"]) in {
         "If(mode == 0, 1, 2)",
         "If(0 == mode, 1, 2)",
     }
@@ -470,6 +463,41 @@ def test_operation_prefix_collection_propagates_if_merge_failure():
             ]
         )
     ]
+
+    condition_points, result = smt_local._execute_operation_prefix_conditions_or_result(
+        operations,
+        {"x": smt_local.z3.Int("x")},
+    )
+
+    assert condition_points is None
+    assert result.kind == "undecidable_skip"
+
+
+def test_operation_prefix_collection_propagates_if_merge_failure_after_branch_scan(
+    monkeypatch,
+):
+    """If-block merge failures after collected branch points stay normalized."""
+    condition = BinaryOp(Variable("x"), ">", Integer(0))
+    operations = [
+        IfBlock(
+            branches=[
+                IfBlockBranch(
+                    condition=condition,
+                    statements=[],
+                )
+            ]
+        )
+    ]
+    calls = []
+    real_execute = smt_local.execute_operations
+
+    def fail_only_during_final_merge(operations_arg, z3_vars):
+        calls.append(operations_arg)
+        if len(calls) == 1:
+            raise ValueError("synthetic merge failure")
+        return real_execute(operations_arg, z3_vars)
+
+    monkeypatch.setattr(smt_local, "execute_operations", fail_only_during_final_merge)
 
     condition_points, result = smt_local._execute_operation_prefix_conditions_or_result(
         operations,
@@ -1579,8 +1607,8 @@ class TestTransitionShadowedByPredecessor:
 
         result = transition_shadowed_by_predecessor(machine, variables(machine))
 
-        assert len(calls) >= 2
-        assert result.kind == "undecidable_skip"
+        assert len(calls) == 1
+        assert result.kind == "sat"
 
     def test_event_duplicate_shadowing_is_structural(self):
         machine = parse_machine(
@@ -1603,7 +1631,7 @@ class TestTransitionShadowedByPredecessor:
         diag = assert_single_diag(result, "W_TRANSITION_SHADOWED")
         assert diag["data"]["reason"] == "duplicate_event"
 
-    def test_unconditional_transition_does_not_cross_shadow_event_domain(self):
+    def test_unconditional_transition_shadows_later_event_transition(self):
         machine = parse_machine(
             """
             state System {
@@ -1620,9 +1648,11 @@ class TestTransitionShadowedByPredecessor:
 
         result = transition_shadowed_by_predecessor(machine, variables(machine))
 
-        assert result == AlgorithmResult(kind="sat")
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "W_TRANSITION_SHADOWED")
+        assert diag["data"]["reason"] == "unconditional_catchall"
 
-    def test_unconditional_transition_does_not_cross_shadow_guard_domain(self):
+    def test_unconditional_transition_shadows_later_guard_transition(self):
         machine = parse_machine(
             """
             def int x = 0;
@@ -1639,7 +1669,33 @@ class TestTransitionShadowedByPredecessor:
 
         result = transition_shadowed_by_predecessor(machine, variables(machine))
 
-        assert result == AlgorithmResult(kind="sat")
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "W_TRANSITION_SHADOWED")
+        assert diag["data"]["reason"] == "unconditional_catchall"
+
+    def test_event_guard_shadowing_reports_prior_trigger_cover(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            state System {
+                event Tick;
+                state A;
+                state B;
+                state C;
+                state D;
+                [*] -> A;
+                A -> B : Tick;
+                A -> D : if [x > 0];
+                A -> C : if [x > 1];
+            }
+            """
+        )
+
+        result = transition_shadowed_by_predecessor(machine, variables(machine))
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "W_TRANSITION_SHADOWED")
+        assert diag["data"]["reason"] == "prior_trigger_cover"
 
     def test_second_unconditional_transition_is_shadowed(self):
         machine = parse_machine(
@@ -2023,7 +2079,77 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         )
 
         assert result == AlgorithmResult(kind="unknown")
-        assert len(calls) == 4
+        assert len(calls) == 5
+
+    def test_condition_path_reachability_unknown_propagates(self, monkeypatch):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during { x = (mode > 0) ? 10 : 20; }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+        calls = []
+
+        def path_unknown_after_context(*args, **kwargs):
+            calls.append(args)
+            from pyfcstm.solver.logical import SatResult
+
+            if len(calls) == 3:
+                return sat_unknown_result(*args, **kwargs)
+            if len(calls) > 3:
+                return SatResult(kind="unsat")
+            return SatResult(kind="sat")
+
+        monkeypatch.setattr(smt_local, "is_sat", path_unknown_after_context)
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result == AlgorithmResult(kind="unknown")
+        assert len(calls) == 3
+
+    def test_condition_path_reachability_timeout_propagates(self, monkeypatch):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during { x = (mode > 0) ? 10 : 20; }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+        calls = []
+
+        def path_timeout_after_context(*args, **kwargs):
+            calls.append(args)
+            from pyfcstm.solver.logical import SatResult
+
+            if len(calls) == 3:
+                return sat_timeout_result(*args, **kwargs)
+            if len(calls) > 3:
+                return SatResult(kind="unsat")
+            return SatResult(kind="sat")
+
+        monkeypatch.setattr(smt_local, "is_sat", path_timeout_after_context)
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result == AlgorithmResult(kind="timeout")
+        assert len(calls) == 3
 
     def test_unsatisfiable_entry_context_short_circuits_before_conditions(self):
         machine = parse_machine(
@@ -2129,7 +2255,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         def missing_condition_point(*args, **kwargs):
             return (
                 (
-                    (
+                    smt_local._ConditionPoint(
                         BinaryOp(Variable("missing"), "==", Integer(1)),
                         smt_local._z3_vars(variables(machine)),
                     ),
@@ -2219,6 +2345,92 @@ class TestEnterPostconditionImpliesDuringPrecondition:
             and diag["data"]["branch_taken"] == "true"
             for diag in result.diagnostics
         )
+
+    def test_unreachable_if_branch_condition_is_not_reported(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during {
+                        if [mode == 1] {
+                            x = (mode == 0) ? 10 : 20;
+                        }
+                    }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        conditions = {diag["data"]["condition"] for diag in result.diagnostics}
+        assert conditions == {"mode == 1"}
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["branch_taken"] == "false"
+
+    def test_unreachable_else_branch_ternary_is_not_reported(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during {
+                        if [mode == 0] {
+                            x = 1;
+                        } else {
+                            x = (mode == 1) ? 10 : 20;
+                        }
+                    }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        conditions = {diag["data"]["condition"] for diag in result.diagnostics}
+        assert conditions == {"mode == 0"}
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["branch_taken"] == "true"
+
+    def test_aspect_condition_is_checked_before_leaf_during(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Parent {
+                    >> during before { x = (mode == 0) ? 10 : 20; }
+                    state Child;
+                    [*] -> Child;
+                }
+                [*] -> Parent;
+            }
+            """
+        )
+        state = machine.root_state.substates["Parent"].substates["Child"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["condition"] == "mode == 0"
+        assert diag["data"]["branch_taken"] == "true"
 
     def test_enter_translation_failure_propagates(self):
         machine = parse_machine(
@@ -2321,7 +2533,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
 
         def both_branches_feasible(constraints, **kwargs):
             calls.append(tuple(constraints))
-            if len(calls) in {1, 2, 3}:
+            if len(calls) in {1, 2, 3, 4}:
                 return SatResult(kind="sat")
             return real_is_sat(constraints, **kwargs)
 
@@ -2332,7 +2544,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         )
 
         assert result == AlgorithmResult(kind="sat")
-        assert len(calls) == 4
+        assert len(calls) == 5
 
     def test_ancestor_before_aspect_feeds_first_during_condition(self):
         machine = parse_machine(

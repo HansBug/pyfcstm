@@ -42,6 +42,15 @@ _Z3Expr = Union[z3.ArithRef, z3.BoolRef]
 _Z3Vars = Dict[str, _Z3Expr]
 
 
+@dataclass(frozen=True)
+class _ConditionPoint:
+    """Condition expression with its symbolic store and path predicates."""
+
+    condition: "Expr"
+    z3_vars: _Z3Vars
+    path_conditions: Tuple[z3.ExprRef, ...] = ()
+
+
 def _dsl_nodes():
     """Import DSL node sentinels lazily to keep registry import lightweight."""
     from pyfcstm.dsl import node as dsl_nodes
@@ -315,24 +324,35 @@ def _execute_operations_or_result(
 def _execute_operation_prefix_conditions_or_result(
     operations: Sequence[OperationStatement],
     z3_vars: _Z3Vars,
-) -> Tuple[Optional[Tuple[Tuple[Expr, _Z3Vars], ...]], Optional[AlgorithmResult]]:
-    """Collect condition expressions with the symbolic environment at each point.
+    path_conditions: Sequence[z3.ExprRef] = (),
+) -> Tuple[Optional[Tuple[_ConditionPoint, ...]], Optional[AlgorithmResult]]:
+    """Collect condition expressions with point-in-time path predicates.
+
+    The collected path predicates model the branch-selection predicates needed
+    to reach the condition point.  They let callers skip diagnostics for
+    syntactic conditions inside branches that are unreachable in the surrounding
+    first-cycle context.
 
     :param operations: Operation statements to scan in execution order.
     :type operations: Sequence[OperationStatement]
     :param z3_vars: Starting symbolic environment before the operation block.
     :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
-    :return: Pairs of condition expression and point-in-time symbolic store, or
-        an algorithm result when symbolic prefix execution cannot be expressed.
-    :rtype: Tuple[Optional[Tuple[Tuple[Expr, Dict[str, Union[z3.ArithRef, z3.BoolRef]]], ...]], Optional[AlgorithmResult]]
+    :param path_conditions: Predicates that must hold before this block is run.
+    :type path_conditions: Sequence[z3.ExprRef]
+    :return: Condition points, or an algorithm result when symbolic prefix
+        execution cannot be expressed.
+    :rtype: Tuple[Optional[Tuple[_ConditionPoint, ...]], Optional[AlgorithmResult]]
     """
-    pairs: List[Tuple[Expr, _Z3Vars]] = []
+    points: List[_ConditionPoint] = []
     current_vars = dict(z3_vars)
+    current_path = tuple(path_conditions)
 
     for statement in operations:
         if isinstance(statement, _operation_type()):
             for condition in _conditional_conditions_from_expr(statement.expr):
-                pairs.append((condition, dict(current_vars)))
+                points.append(
+                    _ConditionPoint(condition, dict(current_vars), current_path)
+                )
             current_vars, result = _execute_operations_or_result(
                 [statement], current_vars
             )
@@ -341,16 +361,33 @@ def _execute_operation_prefix_conditions_or_result(
             continue
 
         if isinstance(statement, _if_block_type()):
+            prior_not_taken: List[z3.ExprRef] = []
             for branch in statement.branches:
+                branch_path = [*current_path, *prior_not_taken]
                 if branch.condition is not None:
-                    pairs.append((branch.condition, dict(current_vars)))
-                branch_pairs, result = _execute_operation_prefix_conditions_or_result(
+                    branch_condition, result = _expr_to_z3_or_result(
+                        branch.condition,
+                        current_vars,
+                    )
+                    if result is not None:
+                        return None, result
+                    points.append(
+                        _ConditionPoint(
+                            branch.condition,
+                            dict(current_vars),
+                            tuple(branch_path),
+                        )
+                    )
+                    branch_path.append(branch_condition)
+                    prior_not_taken.append(z3.Not(branch_condition))
+                branch_points, result = _execute_operation_prefix_conditions_or_result(
                     branch.statements,
                     current_vars,
+                    branch_path,
                 )
                 if result is not None:
                     return None, result
-                pairs.extend(branch_pairs or ())
+                points.extend(branch_points or ())
 
             current_vars, result = _execute_operations_or_result(
                 [statement], current_vars
@@ -364,7 +401,7 @@ def _execute_operation_prefix_conditions_or_result(
             f"Unknown operation statement type {type(statement)!r}.",
         )
 
-    return tuple(pairs), None
+    return tuple(points), None
 
 
 def _transition_trigger_or_result(
@@ -887,20 +924,6 @@ def effect_contradicts_guard(
     return AlgorithmResult(kind=sat_result.kind)
 
 
-def _domain_key(transition: Transition):
-    """Return the transition trigger domain key.
-
-    :param transition: Transition to inspect.
-    :type transition: Transition
-    :return: Domain key.
-    """
-    if transition.guard is not None:
-        return "guard"
-    if transition.event is not None:
-        return ("event", transition.event.path_name)
-    return "unconditional"
-
-
 def _iter_ordered_outgoing(
     machine: StateMachine,
 ) -> Iterable[Tuple[State, List[Transition]]]:
@@ -950,109 +973,75 @@ def transition_shadowed_by_predecessor(
     first_indeterminate_result: Optional[AlgorithmResult] = None
 
     for source, outgoing in _iter_ordered_outgoing(machine):
-        prior_events: Dict[str, Transition] = {}
-        prior_guards: List[Transition] = []
-        prior_unconditional: Optional[Transition] = None
+        z3_vars = _z3_vars(variables)
+        event_vars: Dict[str, z3.BoolRef] = {}
+        prior_triggers: List[z3.ExprRef] = []
+        prior_payloads: List[dict] = []
 
         for transition in outgoing:
-            key = _domain_key(transition)
-            if key == "unconditional":
-                if prior_unconditional is not None:
-                    diagnostics.append(
-                        _make_diag(
-                            "W_TRANSITION_SHADOWED",
-                            "transition_shadowed_by_predecessor",
-                            transition=_transition_payload(transition),
-                            shadowed_by=(_transition_payload(prior_unconditional),),
-                            reason="unconditional_catchall",
-                            source=_state_path(source),
-                            verification_scope="topological_only",
-                        )
-                    )
-                    continue
-
-                prior_unconditional = transition
+            trigger, result = _transition_trigger_or_result(
+                transition,
+                z3_vars,
+                event_vars,
+            )
+            if result is not None:
+                first_indeterminate_result = _first_indeterminate(
+                    first_indeterminate_result,
+                    result.kind,
+                    result.reason,
+                )
                 continue
 
-            if isinstance(key, tuple) and key[0] == "event":
-                event_name = key[1]
-                if event_name in prior_events:
+            current_payload = _transition_payload(transition)
+            if prior_triggers:
+                formula = z3.And(
+                    trigger,
+                    *(z3.Not(prior_trigger) for prior_trigger in prior_triggers),
+                    *_build_type_constraints(variables, z3_vars),
+                )
+                sat_result = is_sat([formula], timeout_ms=smt_timeout_ms)
+                if sat_result.kind == "unsat":
+                    if any(
+                        item["event"] is None and item["guard"] is None
+                        for item in prior_payloads
+                    ):
+                        reason = "unconditional_catchall"
+                    elif (
+                        current_payload["event"] is not None
+                        and current_payload["guard"] is None
+                        and any(
+                            item["event"] == current_payload["event"]
+                            and item["guard"] is None
+                            for item in prior_payloads
+                        )
+                    ):
+                        reason = "duplicate_event"
+                    elif current_payload["guard"] is not None and all(
+                        item["event"] is None and item["guard"] is not None
+                        for item in prior_payloads
+                    ):
+                        reason = "guard_shadow"
+                    else:
+                        reason = "prior_trigger_cover"
                     diagnostics.append(
                         _make_diag(
                             "W_TRANSITION_SHADOWED",
                             "transition_shadowed_by_predecessor",
-                            transition=_transition_payload(transition),
-                            shadowed_by=(
-                                _transition_payload(prior_events[event_name]),
-                            ),
-                            reason="duplicate_event",
+                            transition=current_payload,
+                            shadowed_by=tuple(prior_payloads),
+                            reason=reason,
                             source=_state_path(source),
-                            verification_scope="topological_only",
+                            verification_scope="smt_local",
                         )
                     )
                 else:
-                    prior_events[event_name] = transition
-                continue
-
-            if key == "guard":
-                z3_vars = _z3_vars(variables)
-                current_guard, result = _expr_to_z3_or_result(transition.guard, z3_vars)
-                if result is not None:
                     first_indeterminate_result = _first_indeterminate(
                         first_indeterminate_result,
-                        result.kind,
-                        result.reason,
-                    )
-                    prior_guards.append(transition)
-                    continue
-
-                predecessor_guards: List[z3.ExprRef] = []
-                predecessor_payloads = []
-                predecessor_failed = False
-                for prior_guard_transition in prior_guards:
-                    prior_guard, result = _expr_to_z3_or_result(
-                        prior_guard_transition.guard,
-                        z3_vars,
-                    )
-                    if result is not None:
-                        first_indeterminate_result = _first_indeterminate(
-                            first_indeterminate_result,
-                            result.kind,
-                            result.reason,
-                        )
-                        predecessor_failed = True
-                        break
-                    predecessor_guards.append(z3.Not(prior_guard))
-                    predecessor_payloads.append(
-                        _transition_payload(prior_guard_transition)
+                        sat_result.kind,
                     )
 
-                if not predecessor_failed and predecessor_guards:
-                    formula = z3.And(
-                        current_guard,
-                        *predecessor_guards,
-                        *_build_type_constraints(variables, z3_vars),
-                    )
-                    sat_result = is_sat([formula], timeout_ms=smt_timeout_ms)
-                    if sat_result.kind == "unsat":
-                        diagnostics.append(
-                            _make_diag(
-                                "W_TRANSITION_SHADOWED",
-                                "transition_shadowed_by_predecessor",
-                                transition=_transition_payload(transition),
-                                shadowed_by=tuple(predecessor_payloads),
-                                reason="guard_shadow",
-                                source=_state_path(source),
-                                verification_scope="smt_local",
-                            )
-                        )
-                    else:
-                        first_indeterminate_result = _first_indeterminate(
-                            first_indeterminate_result,
-                            sat_result.kind,
-                        )
-
-                prior_guards.append(transition)
+            prior_triggers.append(trigger)
+            prior_payloads.append(current_payload)
 
     if diagnostics:
         return AlgorithmResult(kind="unsat", diagnostics=tuple(diagnostics))
@@ -1225,24 +1214,20 @@ def enter_postcondition_implies_during_precondition(
     if init_transitions is None:
         return AlgorithmResult(kind="sat")
 
-    before_aspect_operations = _concrete_before_aspect_operations(state)
-    during_operations = _action_operations(state.on_durings)
-    if not during_operations:
+    first_cycle_operations = [
+        *_concrete_before_aspect_operations(state),
+        *_action_operations(state.on_durings),
+    ]
+    if not first_cycle_operations:
         return AlgorithmResult(kind="sat")
 
     entry_vars, result = _execute_operations_or_result(entry_operations or (), z3_vars)
     if result is not None:
         return result
-    first_cycle_vars, result = _execute_operations_or_result(
-        before_aspect_operations,
-        entry_vars,
-    )
-    if result is not None:
-        return result
 
     condition_points, result = _execute_operation_prefix_conditions_or_result(
-        during_operations,
-        first_cycle_vars,
+        first_cycle_operations,
+        entry_vars,
     )
     if result is not None:
         return result
@@ -1266,8 +1251,32 @@ def enter_postcondition_implies_during_precondition(
     if context_check.kind == "unsat":
         return AlgorithmResult(kind="sat")
 
-    for condition, condition_vars in condition_points:
-        condition_z3, result = _expr_to_z3_or_result(condition, condition_vars)
+    for condition_point in condition_points:
+        condition = condition_point.condition
+        point_context = [
+            *init_constraints,
+            *(entry_constraints or ()),
+            *condition_point.path_conditions,
+            *type_constraints,
+        ]
+        reachability_check = is_sat(
+            point_context,
+            timeout_ms=smt_timeout_ms,
+        )
+        if reachability_check.kind == "unsat":
+            continue
+        if reachability_check.kind in {"unknown", "timeout"}:
+            first_indeterminate_result = _first_indeterminate(
+                first_indeterminate_result,
+                reachability_check.kind,
+                getattr(reachability_check, "reason", None),
+            )
+            continue
+
+        condition_z3, result = _expr_to_z3_or_result(
+            condition,
+            condition_point.z3_vars,
+        )
         if result is not None:
             first_indeterminate_result = _first_indeterminate(
                 first_indeterminate_result,
@@ -1277,21 +1286,11 @@ def enter_postcondition_implies_during_precondition(
             continue
 
         true_check = is_sat(
-            [
-                condition_z3,
-                *init_constraints,
-                *(entry_constraints or ()),
-                *type_constraints,
-            ],
+            [condition_z3, *point_context],
             timeout_ms=smt_timeout_ms,
         )
         false_check = is_sat(
-            [
-                z3.Not(condition_z3),
-                *init_constraints,
-                *(entry_constraints or ()),
-                *type_constraints,
-            ],
+            [z3.Not(condition_z3), *point_context],
             timeout_ms=smt_timeout_ms,
         )
 

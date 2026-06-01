@@ -476,7 +476,7 @@ def test_operation_prefix_collection_propagates_if_merge_failure():
 def test_operation_prefix_collection_propagates_if_merge_failure_after_branch_scan(
     monkeypatch,
 ):
-    """If-block merge failures after collected branch points stay normalized."""
+    """Helper-level prefix collection merges if-blocks internally."""
     condition = BinaryOp(Variable("x"), ">", Integer(0))
     operations = [
         IfBlock(
@@ -504,8 +504,10 @@ def test_operation_prefix_collection_propagates_if_merge_failure_after_branch_sc
         {"x": smt_local.z3.Int("x")},
     )
 
-    assert condition_points is None
-    assert result.kind == "undecidable_skip"
+    assert result is None
+    assert condition_points is not None
+    assert [point.condition for point in condition_points] == [condition]
+    assert calls == []
 
 
 def test_operation_prefix_collection_rejects_unknown_statement_type():
@@ -2151,6 +2153,39 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         assert result == AlgorithmResult(kind="timeout")
         assert len(calls) == 3
 
+    def test_condition_path_reachability_unsat_skips_condition(self, monkeypatch):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during { x = (mode > 0) ? 10 : 20; }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+        calls = []
+
+        def path_unsat_after_context(*args, **kwargs):
+            calls.append(args)
+            from pyfcstm.solver.logical import SatResult
+
+            if len(calls) == 3:
+                return SatResult(kind="unsat")
+            return SatResult(kind="sat")
+
+        monkeypatch.setattr(smt_local, "is_sat", path_unsat_after_context)
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result == AlgorithmResult(kind="sat")
+        assert len(calls) == 3
+
     def test_unsatisfiable_entry_context_short_circuits_before_conditions(self):
         machine = parse_machine(
             """
@@ -2233,6 +2268,127 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         )
 
         assert result.kind == "undecidable_skip"
+
+    def test_unreachable_branch_unsupported_expression_does_not_mask_later_condition(
+        self,
+    ):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int flags = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during {
+                        if [mode == 1] {
+                            x = ((flags & 1) == 1) ? 10 : 20;
+                        }
+                        x = (mode == 0) ? 30 : 40;
+                    }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag_items = {
+            (
+                diag["data"]["condition"],
+                diag["data"]["condition_source"],
+                diag["data"]["branch_taken"],
+            )
+            for diag in result.diagnostics
+        }
+        assert diag_items == {
+            ("mode == 1", "branch", "false"),
+            ("mode == 0", "expression", "true"),
+        }
+
+    def test_condition_path_reachability_branch_timeout_propagates(self, monkeypatch):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during {
+                        if [mode == 1] { x = 1; }
+                        x = (mode == 0) ? 30 : 40;
+                    }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+        calls = []
+
+        def branch_timeout_after_context(*args, **kwargs):
+            calls.append(args)
+            from pyfcstm.solver.logical import SatResult
+
+            if len(calls) == 3:
+                return sat_timeout_result(*args, **kwargs)
+            if len(calls) > 3:
+                return SatResult(kind="unsat")
+            return SatResult(kind="sat")
+
+        monkeypatch.setattr(smt_local, "is_sat", branch_timeout_after_context)
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result == AlgorithmResult(kind="timeout")
+        assert len(calls) == 3
+
+    def test_condition_path_reachability_before_branch_timeout_propagates(
+        self,
+        monkeypatch,
+    ):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during {
+                        if [mode == 1] { x = 1; }
+                        else if [mode == 2] { x = 2; }
+                        x = (mode == 0) ? 30 : 40;
+                    }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+        calls = []
+
+        def second_branch_timeout_after_context(*args, **kwargs):
+            calls.append(args)
+            from pyfcstm.solver.logical import SatResult
+
+            if len(calls) == 4:
+                return sat_timeout_result(*args, **kwargs)
+            if len(calls) > 4:
+                return SatResult(kind="unsat")
+            return SatResult(kind="sat")
+
+        monkeypatch.setattr(smt_local, "is_sat", second_branch_timeout_after_context)
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result == AlgorithmResult(kind="timeout")
+        assert len(calls) == 4
 
     def test_condition_translation_failure_inside_condition_loop_is_aggregated(
         self,
@@ -2346,7 +2502,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
             for diag in result.diagnostics
         )
 
-    def test_unreachable_if_branch_condition_is_not_reported(self):
+    def test_unreachable_branch_body_condition_is_not_reported(self):
         machine = parse_machine(
             """
             def int mode = 0;
@@ -2370,9 +2526,9 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         )
 
         assert result.kind == "unsat"
-        conditions = {diag["data"]["condition"] for diag in result.diagnostics}
-        assert conditions == {"mode == 1"}
         diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["condition"] == "mode == 1"
+        assert diag["data"]["condition_source"] == "branch"
         assert diag["data"]["branch_taken"] == "false"
 
     def test_unreachable_else_branch_ternary_is_not_reported(self):
@@ -2405,6 +2561,48 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         assert conditions == {"mode == 0"}
         diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
         assert diag["data"]["branch_taken"] == "true"
+
+    def test_unreachable_else_if_body_is_not_reported(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during {
+                        if [mode == 0] {
+                            mode = 1;
+                        } else if [mode == 2] {
+                            x = (mode == 2) ? 10 : 20;
+                        } else {
+                            mode = 3;
+                        }
+                        x = (mode == 1) ? 30 : 40;
+                    }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag_items = [
+            (
+                diag["data"]["condition"],
+                diag["data"]["condition_source"],
+                diag["data"]["branch_taken"],
+            )
+            for diag in result.diagnostics
+        ]
+        assert diag_items == [
+            ("mode == 0", "branch", "true"),
+            ("mode == 1", "expression", "true"),
+        ]
 
     def test_aspect_condition_is_checked_before_leaf_during(self):
         machine = parse_machine(

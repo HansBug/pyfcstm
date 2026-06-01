@@ -49,6 +49,7 @@ class _ConditionPoint:
     condition: "Expr"
     z3_vars: _Z3Vars
     path_conditions: Tuple[z3.ExprRef, ...] = ()
+    source: str = "expression"
 
 
 def _dsl_nodes():
@@ -321,17 +322,61 @@ def _execute_operations_or_result(
         return None, _skip_result("undecidable_skip", str(err))
 
 
-def _execute_operation_prefix_conditions_or_result(
+def _path_reachability_or_result(
+    context_constraints: Optional[Sequence[z3.ExprRef]],
+    path_conditions: Sequence[z3.ExprRef],
+    *,
+    smt_timeout_ms: Optional[int] = None,
+) -> Tuple[Optional[bool], Optional[AlgorithmResult]]:
+    """Check whether a symbolic operation path is reachable.
+
+    ``context_constraints=None`` disables pruning for helper-level callers that
+    only want syntax-local prefix collection.  Raw verification algorithms pass
+    their already-built first-cycle context so unreachable branches can be
+    skipped before translating branch bodies.
+
+    :param context_constraints: Outer constraints for the analyzed execution
+        context, or ``None`` to disable pruning.
+    :type context_constraints: Optional[Sequence[z3.ExprRef]]
+    :param path_conditions: Branch predicates needed to reach the path.
+    :type path_conditions: Sequence[z3.ExprRef]
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+    :type smt_timeout_ms: Optional[int], optional
+    :return: Reachability flag, or an indeterminate algorithm result.
+    :rtype: Tuple[Optional[bool], Optional[AlgorithmResult]]
+    """
+    if context_constraints is None:
+        return True, None
+
+    sat_result = is_sat(
+        [*context_constraints, *path_conditions],
+        timeout_ms=smt_timeout_ms,
+    )
+    if sat_result.kind == "sat":
+        return True, None
+    if sat_result.kind == "unsat":
+        return False, None
+    return None, _skip_result(sat_result.kind, getattr(sat_result, "reason", None))
+
+
+def _execute_operation_prefix_conditions_and_vars_or_result(
     operations: Sequence[OperationStatement],
     z3_vars: _Z3Vars,
     path_conditions: Sequence[z3.ExprRef] = (),
-) -> Tuple[Optional[Tuple[_ConditionPoint, ...]], Optional[AlgorithmResult]]:
-    """Collect condition expressions with point-in-time path predicates.
+    *,
+    context_constraints: Optional[Sequence[z3.ExprRef]] = None,
+    smt_timeout_ms: Optional[int] = None,
+) -> Tuple[
+    Optional[Tuple[_ConditionPoint, ...]],
+    Optional[_Z3Vars],
+    Optional[AlgorithmResult],
+]:
+    """Collect prefix conditions and execute operations path-sensitively.
 
-    The collected path predicates model the branch-selection predicates needed
-    to reach the condition point.  They let callers skip diagnostics for
-    syntactic conditions inside branches that are unreachable in the surrounding
-    first-cycle context.
+    When ``context_constraints`` are supplied, branch bodies whose path is
+    unsatisfiable in that context are not translated.  This preserves later
+    reachable diagnostics instead of letting dead branch expressions force the
+    entire algorithm into ``undecidable_skip``.
 
     :param operations: Operation statements to scan in execution order.
     :type operations: Sequence[OperationStatement]
@@ -339,9 +384,14 @@ def _execute_operation_prefix_conditions_or_result(
     :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
     :param path_conditions: Predicates that must hold before this block is run.
     :type path_conditions: Sequence[z3.ExprRef]
-    :return: Condition points, or an algorithm result when symbolic prefix
-        execution cannot be expressed.
-    :rtype: Tuple[Optional[Tuple[_ConditionPoint, ...]], Optional[AlgorithmResult]]
+    :param context_constraints: Optional outer constraints used to prune
+        unreachable branch paths.
+    :type context_constraints: Optional[Sequence[z3.ExprRef]], optional
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+    :type smt_timeout_ms: Optional[int], optional
+    :return: Condition points, post-state variables, or an algorithm result
+        when symbolic prefix execution cannot be expressed.
+    :rtype: Tuple[Optional[Tuple[_ConditionPoint, ...]], Optional[Dict[str, Union[z3.ArithRef, z3.BoolRef]]], Optional[AlgorithmResult]]
     """
     points: List[_ConditionPoint] = []
     current_vars = dict(z3_vars)
@@ -357,51 +407,138 @@ def _execute_operation_prefix_conditions_or_result(
                 [statement], current_vars
             )
             if result is not None:
-                return None, result
+                return None, None, result
             continue
 
         if isinstance(statement, _if_block_type()):
             prior_not_taken: List[z3.ExprRef] = []
+            branch_results = []
+            visible_names = tuple(current_vars.keys())
             for branch in statement.branches:
-                branch_path = [*current_path, *prior_not_taken]
+                evaluation_path = [*current_path, *prior_not_taken]
+                evaluation_reachable, result = _path_reachability_or_result(
+                    context_constraints,
+                    evaluation_path,
+                    smt_timeout_ms=smt_timeout_ms,
+                )
+                if result is not None:
+                    return None, None, result
+                if evaluation_reachable is False:
+                    break
+
+                branch_condition = None
+                branch_path = list(evaluation_path)
                 if branch.condition is not None:
                     branch_condition, result = _expr_to_z3_or_result(
                         branch.condition,
                         current_vars,
                     )
                     if result is not None:
-                        return None, result
+                        return None, None, result
                     points.append(
                         _ConditionPoint(
                             branch.condition,
                             dict(current_vars),
-                            tuple(branch_path),
+                            tuple(evaluation_path),
+                            "branch",
                         )
                     )
                     branch_path.append(branch_condition)
                     prior_not_taken.append(z3.Not(branch_condition))
-                branch_points, result = _execute_operation_prefix_conditions_or_result(
-                    branch.statements,
-                    current_vars,
+
+                branch_reachable, result = _path_reachability_or_result(
+                    context_constraints,
                     branch_path,
+                    smt_timeout_ms=smt_timeout_ms,
                 )
                 if result is not None:
-                    return None, result
-                points.extend(branch_points or ())
+                    return None, None, result
+                if branch_reachable is False:
+                    continue
 
-            current_vars, result = _execute_operations_or_result(
-                [statement], current_vars
-            )
-            if result is not None:
-                return None, result
+                branch_points, branch_vars, result = (
+                    _execute_operation_prefix_conditions_and_vars_or_result(
+                        branch.statements,
+                        current_vars,
+                        branch_path,
+                        context_constraints=context_constraints,
+                        smt_timeout_ms=smt_timeout_ms,
+                    )
+                )
+                if result is not None:
+                    return None, None, result
+                points.extend(branch_points or ())
+                branch_results.append((branch_condition, branch_vars or current_vars))
+
+                if branch.condition is None:
+                    break
+
+            merged_vars = dict(current_vars)
+            for name in visible_names:
+                merged_value = current_vars[name]
+                for branch_condition, branch_vars in reversed(branch_results):
+                    if branch_condition is None:
+                        merged_value = branch_vars[name]
+                    else:
+                        merged_value = z3.If(
+                            branch_condition,
+                            branch_vars[name],
+                            merged_value,
+                        )
+                merged_vars[name] = merged_value
+            current_vars = merged_vars
             continue
 
-        return None, _skip_result(
-            "undecidable_skip",
-            f"Unknown operation statement type {type(statement)!r}.",
+        return (
+            None,
+            None,
+            _skip_result(
+                "undecidable_skip",
+                f"Unknown operation statement type {type(statement)!r}.",
+            ),
         )
 
-    return tuple(points), None
+    return tuple(points), current_vars, None
+
+
+def _execute_operation_prefix_conditions_or_result(
+    operations: Sequence[OperationStatement],
+    z3_vars: _Z3Vars,
+    path_conditions: Sequence[z3.ExprRef] = (),
+    *,
+    context_constraints: Optional[Sequence[z3.ExprRef]] = None,
+    smt_timeout_ms: Optional[int] = None,
+) -> Tuple[Optional[Tuple[_ConditionPoint, ...]], Optional[AlgorithmResult]]:
+    """Collect condition expressions with point-in-time path predicates.
+
+    The collected path predicates model the branch-selection predicates needed
+    to reach the condition point.  They let callers skip diagnostics for
+    syntactic conditions inside branches that are unreachable in the surrounding
+    first-cycle context.
+
+    :param operations: Operation statements to scan in execution order.
+    :type operations: Sequence[OperationStatement]
+    :param z3_vars: Starting symbolic environment before the operation block.
+    :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :param path_conditions: Predicates that must hold before this block is run.
+    :type path_conditions: Sequence[z3.ExprRef]
+    :param context_constraints: Optional outer constraints used to prune
+        unreachable branch paths.
+    :type context_constraints: Optional[Sequence[z3.ExprRef]], optional
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+    :type smt_timeout_ms: Optional[int], optional
+    :return: Condition points, or an algorithm result when symbolic prefix
+        execution cannot be expressed.
+    :rtype: Tuple[Optional[Tuple[_ConditionPoint, ...]], Optional[AlgorithmResult]]
+    """
+    points, _, result = _execute_operation_prefix_conditions_and_vars_or_result(
+        operations,
+        z3_vars,
+        path_conditions,
+        context_constraints=context_constraints,
+        smt_timeout_ms=smt_timeout_ms,
+    )
+    return points, result
 
 
 def _transition_trigger_or_result(
@@ -1225,21 +1362,28 @@ def enter_postcondition_implies_during_precondition(
     if result is not None:
         return result
 
+    type_constraints = _build_type_constraints(variables, z3_vars)
+    context_constraints = [
+        *init_constraints,
+        *(entry_constraints or ()),
+        *type_constraints,
+    ]
     condition_points, result = _execute_operation_prefix_conditions_or_result(
         first_cycle_operations,
         entry_vars,
+        context_constraints=context_constraints,
+        smt_timeout_ms=smt_timeout_ms,
     )
     if result is not None:
         return result
     if not condition_points:
         return AlgorithmResult(kind="sat")
 
-    type_constraints = _build_type_constraints(variables, z3_vars)
     diagnostics: List[dict] = []
     first_indeterminate_result: Optional[AlgorithmResult] = None
 
     context_check = is_sat(
-        [*init_constraints, *(entry_constraints or ()), *type_constraints],
+        context_constraints,
         timeout_ms=smt_timeout_ms,
     )
     if context_check.kind in {"unknown", "timeout"}:
@@ -1253,6 +1397,18 @@ def enter_postcondition_implies_during_precondition(
 
     for condition_point in condition_points:
         condition = condition_point.condition
+        condition_z3, result = _expr_to_z3_or_result(
+            condition,
+            condition_point.z3_vars,
+        )
+        if result is not None:
+            first_indeterminate_result = _first_indeterminate(
+                first_indeterminate_result,
+                result.kind,
+                result.reason,
+            )
+            continue
+
         point_context = [
             *init_constraints,
             *(entry_constraints or ()),
@@ -1273,18 +1429,6 @@ def enter_postcondition_implies_during_precondition(
             )
             continue
 
-        condition_z3, result = _expr_to_z3_or_result(
-            condition,
-            condition_point.z3_vars,
-        )
-        if result is not None:
-            first_indeterminate_result = _first_indeterminate(
-                first_indeterminate_result,
-                result.kind,
-                result.reason,
-            )
-            continue
-
         true_check = is_sat(
             [condition_z3, *point_context],
             timeout_ms=smt_timeout_ms,
@@ -1301,6 +1445,7 @@ def enter_postcondition_implies_during_precondition(
                     "enter_postcondition_implies_during_precondition",
                     state=_state_path(state),
                     condition=str(condition),
+                    condition_source=condition_point.source,
                     branch_taken="false",
                     verification_scope="smt_local",
                 )
@@ -1312,6 +1457,7 @@ def enter_postcondition_implies_during_precondition(
                     "enter_postcondition_implies_during_precondition",
                     state=_state_path(state),
                     condition=str(condition),
+                    condition_source=condition_point.source,
                     branch_taken="true",
                     verification_scope="smt_local",
                 )

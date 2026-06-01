@@ -10,7 +10,7 @@ import {
 } from '../utils/text';
 import {getImportWorkspaceIndex} from '../workspace/imports';
 import {getWorkspaceGraph} from '../workspace';
-import {resolveRangeFromRefs} from './inspect-ranges';
+import {resolveRangeFromRefsDetailed} from './inspect-ranges';
 import {suggestedFixDiagnosticRange, suggestedFixIssueRange} from './suggested-fixes';
 
 // Only suppress inspect codes that the semantic analyzer already reports with
@@ -32,7 +32,7 @@ function canonicalDiagnosticData(value: unknown): unknown {
     const out: Record<string, unknown> = {};
     const item = value as Record<string, unknown>;
     for (const key of Object.keys(item).sort()) {
-        if (key === 'suggested_fix') continue;
+        if (key === 'suggested_fix' || key === '__rangeFallback') continue;
         out[key] = canonicalDiagnosticData(item[key]);
     }
     return out;
@@ -69,7 +69,7 @@ function rangeEquals(left: TextRange, right: TextRange): boolean {
 }
 
 export interface CollectInspectModelDiagnosticsOptions {
-    rangeMode?: 'diagnostic' | 'issue';
+    rangeMode?: 'problem' | 'fix-edit';
 }
 
 export function collectInspectDiagnosticsFromItems(
@@ -98,12 +98,23 @@ export function collectInspectDiagnosticsFromItems(
             code: item.code,
             data: item.refs,
         };
-        const suggestedRange = options.rangeMode === 'issue'
-            ? suggestedFixIssueRange(document, semantic, diagnostic)
-            : suggestedFixDiagnosticRange(document, semantic, diagnostic);
-        diagnostic.range = rangeEquals(suggestedRange, fullRange)
-            ? resolveRangeFromRefs(document, semantic, item.refs) ?? fullRange
-            : suggestedRange;
+        const refResolution = resolveRangeFromRefsDetailed(document, semantic, item.refs);
+        const problemRange = refResolution.range
+            ?? suggestedFixIssueRange(document, semantic, diagnostic);
+        if (options.rangeMode === 'fix-edit') {
+            const suggestedRange = suggestedFixDiagnosticRange(document, semantic, diagnostic);
+            diagnostic.range = rangeEquals(suggestedRange, fullRange)
+                ? problemRange
+                : suggestedRange;
+        } else {
+            diagnostic.range = problemRange;
+            if (rangeEquals(diagnostic.range, fullRange)) {
+                diagnostic.data = {...(diagnostic.data ?? {}), __rangeFallback: 'full_document'};
+            }
+        }
+        if (refResolution.fallback) {
+            diagnostic.data = {...(diagnostic.data ?? {}), __rangeFallback: refResolution.fallback};
+        }
         if (consumeDiagnosticCount(existingCounts, diagnosticKey(diagnostic))) continue;
         diagnostics.push(diagnostic);
     }

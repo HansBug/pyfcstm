@@ -81,6 +81,18 @@ function statementDeleteRange(document: TextDocumentLike, statement: FcstmAstAss
     return statement.range;
 }
 
+function variableDeclarationRange(
+    document: TextDocumentLike,
+    range: TextRange,
+    text: string,
+): TextRange {
+    const line = document.lineAt(range.start.line).text;
+    if (trimComparable(line) === trimComparable(text)) {
+        return fullLineRange(document, range);
+    }
+    return range;
+}
+
 export function variableDefinitionRange(
     document: TextDocumentLike,
     semantic: FcstmSemanticDocument,
@@ -89,11 +101,23 @@ export function variableDefinitionRange(
     const variables = semantic.variables.filter(item => item.name === varName);
     if (variables.length !== 1) return null;
     const variable = variables[0];
-    const line = document.lineAt(variable.range.start.line).text;
-    if (trimComparable(line) === trimComparable(variable.ast.text)) {
-        return fullLineRange(document, variable.range);
-    }
-    return variable.range;
+    return variableDeclarationRange(document, variable.range, variable.ast.text);
+}
+
+export function firstVariableDefinitionRange(
+    document: TextDocumentLike,
+    semantic: FcstmSemanticDocument,
+    varName: string,
+): TextRange | null {
+    const variables = semantic.variables.filter(item => item.name === varName);
+    if (variables.length === 0) return null;
+    const variable = variables
+        .slice()
+        .sort((left, right) => (
+            left.range.start.line - right.range.start.line ||
+            left.range.start.character - right.range.start.character
+        ))[0];
+    return variableDeclarationRange(document, variable.range, variable.ast.text);
 }
 
 export function resolveStatePath(semantic: FcstmSemanticDocument, statePath: string) {
@@ -246,7 +270,7 @@ function collectSelfAssignsInIf(
     }
 }
 
-function effectSelfAssignRange(
+export function effectSelfAssignRange(
     document: TextDocumentLike,
     semantic: FcstmSemanticDocument,
     statePath: string | undefined,

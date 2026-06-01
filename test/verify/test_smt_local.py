@@ -382,6 +382,354 @@ def test_conditional_collection_includes_if_block_conditions():
     )
 
 
+def test_conditional_collection_includes_nested_ternary_conditions():
+    """Legacy condition iterator still reports ternary expression conditions."""
+    outer_condition = BinaryOp(Variable("x"), ">", Integer(0))
+    inner_condition = BinaryOp(Variable("y"), ">", Integer(0))
+    operations = [
+        Operation(
+            var_name="z",
+            expr=outer_condition.select(
+                inner_condition.select(Integer(1), Integer(2)),
+                Integer(3),
+            ),
+        )
+    ]
+
+    assert tuple(smt_local._conditional_conditions_from_operations(operations)) == (
+        outer_condition,
+        inner_condition,
+    )
+
+
+def test_path_sensitive_operator_helpers_normalize_z3_exceptions():
+    """Helper-level Z3 sort failures are normalized as undecidable skips."""
+
+    _, binary_result = smt_local._binary_z3_or_result(
+        "&&",
+        smt_local.z3.IntVal(1),
+        smt_local.z3.BoolVal(True),
+    )
+    _, unary_result = smt_local._unary_z3_or_result("!", smt_local.z3.IntVal(1))
+
+    class BadOperand:
+        def __ge__(self, other):
+            raise smt_local.z3.Z3Exception("synthetic Z3 ufunc failure")
+
+    _, ufunc_result = smt_local._ufunc_z3_or_result("abs", BadOperand())
+
+    assert binary_result.kind == "undecidable_skip"
+    assert unary_result.kind == "undecidable_skip"
+    assert ufunc_result.kind == "undecidable_skip"
+
+
+def test_path_sensitive_ufunc_helper_covers_round_fallback_and_type_error():
+    """Synthetic ufunc edge cases stay normalized for private helper callers."""
+    round_value, round_result = smt_local._ufunc_z3_or_result(
+        "round",
+        smt_local.z3.BoolVal(True),
+    )
+    abs_value, abs_result = smt_local._ufunc_z3_or_result(
+        "abs",
+        smt_local.z3.BoolVal(True),
+    )
+
+    assert round_value is not None
+    assert round_result is None
+    assert abs_value is None
+    assert abs_result.kind == "undecidable_skip"
+
+
+def test_path_sensitive_ufunc_helper_matches_python_round_half_even():
+    """The path-sensitive round helper matches Python's half-even semantics."""
+    operand = smt_local.z3.Real("x")
+    rounded, result = smt_local._ufunc_z3_or_result("round", operand)
+
+    assert result is None
+    for raw_value, expected in [
+        ("-2.5", -2),
+        ("-1.5", -2),
+        ("1.5", 2),
+        ("2.5", 2),
+        ("3.6", 4),
+        ("-3.6", -4),
+    ]:
+        solver = smt_local.z3.Solver()
+        solver.add(operand == smt_local.z3.RealVal(raw_value), rounded != expected)
+
+        assert solver.check() == smt_local.z3.unsat
+
+
+def test_path_sensitive_ufunc_helper_reports_bad_sqrt_sort():
+    """The ufunc helper covers direct unsupported sqrt operands."""
+    sqrt_value, sqrt_result = smt_local._ufunc_z3_or_result(
+        "sqrt",
+        smt_local.z3.BoolVal(True),
+    )
+
+    assert sqrt_value is None
+    assert sqrt_result.kind == "undecidable_skip"
+
+
+def test_path_sensitive_expression_translator_supports_all_base_node_shapes():
+    """Path-sensitive expression conversion covers non-ternary expression forms."""
+    from pyfcstm.model.expr import Float, UFunc, UnaryOp
+
+    z3_vars = {
+        "x": smt_local.z3.Int("x"),
+        "y": smt_local.z3.Int("y"),
+    }
+    expressions = [
+        BinaryOp(Variable("x"), "+", Integer(1)),
+        BinaryOp(Variable("x"), "-", Integer(1)),
+        BinaryOp(Variable("x"), "*", Integer(2)),
+        BinaryOp(Variable("x"), "/", Integer(2)),
+        BinaryOp(Variable("x"), "%", Integer(2)),
+        BinaryOp(Variable("x"), "**", Integer(2)),
+        BinaryOp(Variable("x"), "<", Integer(2)),
+        BinaryOp(Variable("x"), "<=", Integer(2)),
+        BinaryOp(Variable("x"), ">", Integer(2)),
+        BinaryOp(Variable("x"), ">=", Integer(2)),
+        BinaryOp(Variable("x"), "==", Integer(2)),
+        BinaryOp(Variable("x"), "!=", Integer(2)),
+        BinaryOp(Boolean(True), "&&", Boolean(False)),
+        BinaryOp(Boolean(True), "||", Boolean(False)),
+        BinaryOp(Boolean(True), "&", Boolean(False)),
+        BinaryOp(Boolean(True), "|", Boolean(False)),
+        BinaryOp(Boolean(True), "^", Boolean(False)),
+        UnaryOp("-", Variable("x")),
+        UnaryOp("+", Variable("x")),
+        UnaryOp("!", Boolean(False)),
+        UFunc("abs", Variable("x")),
+        UFunc("sign", Variable("x")),
+        UFunc("floor", Float(1.5)),
+        UFunc("ceil", Float(1.5)),
+        UFunc("trunc", Float(-1.5)),
+        UFunc("trunc", Integer(-1)),
+        UFunc("sqrt", Float(4.0)),
+        UFunc("sqrt", Integer(4)),
+        UFunc("round", Float(1.2)),
+        UFunc("round", Integer(1)),
+    ]
+
+    for expr in expressions:
+        points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+            expr,
+            z3_vars,
+        )
+
+        assert points == ()
+        assert z3_expr is not None
+        assert result is None
+
+
+def test_path_sensitive_expression_translator_normalizes_unsupported_shapes():
+    """Unsupported path-sensitive conversion cases return undecidable skips."""
+    from pyfcstm.model.expr import UFunc, UnaryOp
+
+    z3_vars = {"x": smt_local.z3.Int("x")}
+    expressions = [
+        BinaryOp(Variable("x"), "@", Integer(1)),
+        BinaryOp(Variable("x"), "&", Integer(1)),
+        BinaryOp(Variable("x"), ">>", Integer(1)),
+        BinaryOp(Boolean(True), "<<", Boolean(False)),
+        Boolean(True).select(
+            Variable("x"), BinaryOp(Boolean(True), "<<", Boolean(False))
+        ),
+        Boolean(False).select(
+            BinaryOp(Boolean(True), "<<", Boolean(False)), Variable("x")
+        ),
+        Boolean(True).select(
+            BinaryOp(Boolean(True), "<<", Boolean(False)), Variable("x")
+        ),
+        Boolean(True)
+        .select(Variable("x"), BinaryOp(Boolean(True), "<<", Boolean(False)))
+        .select(Integer(1), Integer(2)),
+        BinaryOp(Variable("x"), "+", BinaryOp(Boolean(True), "<<", Boolean(False))),
+        UnaryOp("~", Variable("x")),
+        UnaryOp("?", Variable("x")),
+        UFunc("log", Variable("x")),
+        UFunc("abs", BinaryOp(Boolean(True), "<<", Boolean(False))),
+        UFunc("sqrt", Boolean(True)),
+    ]
+
+    for expr in expressions:
+        z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+            expr,
+            z3_vars,
+        )[1:]
+
+        assert z3_expr is None
+        assert result.kind == "undecidable_skip"
+
+
+def test_path_sensitive_expression_translator_handles_empty_reachable_ternary(
+    monkeypatch,
+):
+    """A contradictory context that prunes both ternary branches is undecidable."""
+    from pyfcstm.solver.logical import SatResult
+
+    def always_unsat(*args, **kwargs):
+        return SatResult(kind="unsat")
+
+    monkeypatch.setattr(smt_local, "is_sat", always_unsat)
+
+    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+        Boolean(True).select(Integer(1), Integer(2)),
+        {},
+        context_constraints=(),
+    )
+
+    assert points is None
+    assert z3_expr is None
+    assert result.kind == "undecidable_skip"
+
+
+def test_path_sensitive_expression_translator_propagates_false_path_unknown(
+    monkeypatch,
+):
+    """Ternary false-branch reachability uncertainty propagates to the caller."""
+    from pyfcstm.solver.logical import SatResult
+
+    calls = []
+
+    def sat_then_unknown(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 2:
+            return SatResult(kind="unknown")
+        return SatResult(kind="sat")
+
+    monkeypatch.setattr(smt_local, "is_sat", sat_then_unknown)
+
+    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+        Boolean(True).select(Integer(1), Integer(2)),
+        {},
+        context_constraints=(),
+    )
+
+    assert points is None
+    assert z3_expr is None
+    assert result.kind == "unknown"
+    assert len(calls) == 2
+
+
+def test_path_sensitive_expression_translator_normalizes_if_merge_failure(
+    monkeypatch,
+):
+    """A Z3 failure while merging two reachable ternary branches is normalized."""
+
+    def raise_z3_exception(*args, **kwargs):
+        raise smt_local.z3.Z3Exception("synthetic if merge failure")
+
+    monkeypatch.setattr(smt_local.z3, "If", raise_z3_exception)
+
+    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+        Boolean(True).select(Integer(1), Integer(2)),
+        {},
+    )
+
+    assert points is None
+    assert z3_expr is None
+    assert result.kind == "undecidable_skip"
+
+
+def test_path_sensitive_expression_translator_normalizes_non_boolean_logic_left():
+    """Malformed logical operands are normalized after both sides are translated."""
+    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+        BinaryOp(Integer(1), "&&", Boolean(True)),
+        {},
+    )
+
+    assert points == ()
+    assert z3_expr is None
+    assert result.kind == "undecidable_skip"
+
+
+def test_path_sensitive_expression_translator_wraps_reachable_branch_domains():
+    """Reachable ternary value-branch domain constraints are path-qualified."""
+    domain_constraints = []
+    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+        Boolean(True).select(BinaryOp(Variable("x"), "/", Integer(2)), Integer(0)),
+        {"x": smt_local.z3.Int("x")},
+        domain_constraints=domain_constraints,
+    )
+
+    assert points is not None
+    assert z3_expr is not None
+    assert result is None
+    assert [str(item) for item in domain_constraints] == [
+        "Implies(True, 2 != 0)"
+    ]
+
+
+def test_path_sensitive_expression_translator_wraps_false_branch_domains():
+    """False value-branch domain constraints are path-qualified too."""
+    domain_constraints = []
+    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+        Boolean(True).select(Integer(0), BinaryOp(Variable("x"), "/", Integer(2))),
+        {"x": smt_local.z3.Int("x")},
+        domain_constraints=domain_constraints,
+    )
+
+    assert points is not None
+    assert z3_expr is not None
+    assert result is None
+    assert [str(item) for item in domain_constraints] == [
+        "Implies(Not(True), 2 != 0)"
+    ]
+
+
+def test_path_sensitive_expression_translator_denominator_failure_is_normalized():
+    """Malformed denominator domain checks are undecidable, not crashes."""
+    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+        BinaryOp(Integer(1), "/", Boolean(True)),
+        {},
+    )
+
+    assert points is None
+    assert z3_expr is None
+    assert result.kind == "undecidable_skip"
+
+
+def test_path_sensitive_expression_translator_propagates_rhs_failure():
+    """Logical RHS translation is not skipped by symbolic short-circuit rules."""
+    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+        BinaryOp(Boolean(True), "&&", BinaryOp(Boolean(True), "<<", Boolean(False))),
+        {},
+    )
+
+    assert points is None
+    assert z3_expr is None
+    assert result.kind == "undecidable_skip"
+
+
+def test_path_sensitive_expression_translator_propagates_unary_child_failure():
+    """Unary expressions propagate unsupported child translation results."""
+    from pyfcstm.model.expr import UnaryOp
+
+    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+        UnaryOp("-", BinaryOp(Boolean(True), "<<", Boolean(False))),
+        {},
+    )
+
+    assert points is None
+    assert z3_expr is None
+    assert result.kind == "undecidable_skip"
+
+
+def test_path_sensitive_expression_translator_rejects_unknown_expr_type():
+    """Unknown expression objects are normalized as undecidable skips."""
+
+    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+        object(),
+        {},
+    )
+
+    assert points is None
+    assert z3_expr is None
+    assert result.kind == "undecidable_skip"
+
+
 def test_operation_prefix_collection_updates_after_if_block():
     """Prefix condition collection uses the merged store after operation ifs."""
     condition = BinaryOp(Variable("mode"), "==", Integer(0))
@@ -508,6 +856,117 @@ def test_operation_prefix_collection_propagates_if_merge_failure_after_branch_sc
     assert condition_points is not None
     assert [point.condition for point in condition_points] == [condition]
     assert calls == []
+
+
+def test_operation_prefix_collection_records_else_domain_constraints():
+    """Else-branch runtime domain constraints are collected without implication."""
+    operations = [
+        IfBlock(
+            branches=[
+                IfBlockBranch(
+                    condition=None,
+                    statements=[
+                        Operation(
+                            var_name="x",
+                            expr=BinaryOp(Variable("x"), "/", Integer(2)),
+                        )
+                    ],
+                )
+            ]
+        )
+    ]
+
+    _, _, domain_constraints, result = (
+        smt_local._execute_operation_prefix_conditions_and_vars_or_result(
+            operations,
+            {"x": smt_local.z3.Int("x")},
+        )
+    )
+
+    assert result is None
+    assert [str(item) for item in domain_constraints] == ["2 != 0"]
+
+
+def test_operation_prefix_collection_records_branch_domain_constraints():
+    """Guarded branch runtime domain constraints are path-qualified."""
+    condition = BinaryOp(Variable("x"), ">", Integer(0))
+    operations = [
+        IfBlock(
+            branches=[
+                IfBlockBranch(
+                    condition=condition,
+                    statements=[
+                        Operation(
+                            var_name="x",
+                            expr=BinaryOp(Variable("x"), "/", Integer(2)),
+                        )
+                    ],
+                )
+            ]
+        )
+    ]
+
+    _, _, domain_constraints, result = (
+        smt_local._execute_operation_prefix_conditions_and_vars_or_result(
+            operations,
+            {"x": smt_local.z3.Int("x")},
+        )
+    )
+
+    assert result is None
+    assert [str(item) for item in domain_constraints] == ["Implies(0 < x, 2 != 0)"]
+
+
+def test_operation_prefix_collection_records_plain_assignment_domain_constraints():
+    """Plain operation expression domain constraints are collected."""
+    _, _, domain_constraints, result = (
+        smt_local._execute_operation_prefix_conditions_and_vars_or_result(
+            [Operation("x", BinaryOp(Variable("x"), "/", Integer(2)))],
+            {"x": smt_local.z3.Int("x")},
+        )
+    )
+
+    assert result is None
+    assert [str(item) for item in domain_constraints] == ["2 != 0"]
+
+
+def test_operation_prefix_collection_qualifies_branch_condition_domains():
+    """If-condition definedness constraints are qualified by branch selection."""
+    operations = [
+        IfBlock(
+            branches=[
+                IfBlockBranch(
+                    condition=BinaryOp(
+                        BinaryOp(Variable("x"), "/", Integer(2)),
+                        ">",
+                        Integer(0),
+                    ),
+                    statements=[],
+                ),
+                IfBlockBranch(
+                    condition=BinaryOp(
+                        BinaryOp(Variable("x"), "/", Integer(3)),
+                        ">",
+                        Integer(0),
+                    ),
+                    statements=[],
+                ),
+            ]
+        )
+    ]
+
+    _, _, domain_constraints, result = (
+        smt_local._execute_operation_prefix_conditions_and_vars_or_result(
+            operations,
+            {"x": smt_local.z3.Int("x")},
+        )
+    )
+
+    assert result is None
+    assert [str(item) for item in domain_constraints] == [
+        "2 != 0",
+        "Implies(And(2 != 0, Not(0 < x/2)), 3 != 0)",
+    ]
 
 
 def test_operation_prefix_collection_rejects_unknown_statement_type():
@@ -1489,6 +1948,115 @@ class TestTransitionShadowedByPredecessor:
         diag = assert_single_diag(result, "W_TRANSITION_SHADOWED")
         assert diag["data"]["reason"] == "guard_shadow"
 
+    def test_dead_candidate_guard_is_not_reported_as_shadowed(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            state System {
+                state A;
+                state B;
+                state C;
+                [*] -> A;
+                A -> B : if [x > 0];
+                A -> C : if [x > 0 && x < 0];
+            }
+            """
+        )
+
+        result = transition_shadowed_by_predecessor(machine, variables(machine))
+
+        assert result == AlgorithmResult(kind="sat")
+
+    def test_candidate_trigger_unknown_is_not_reported_as_shadowed(
+        self,
+        monkeypatch,
+    ):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            state System {
+                state A;
+                state B;
+                state C;
+                [*] -> A;
+                A -> B : if [x > 0];
+                A -> C : if [x > 1];
+            }
+            """
+        )
+        calls = []
+
+        def shadow_unsat_then_trigger_unknown(*args, **kwargs):
+            calls.append(args)
+            if len(calls) == 1:
+                from pyfcstm.solver.logical import SatResult
+
+                return SatResult(kind="unsat")
+            return sat_unknown_result(*args, **kwargs)
+
+        monkeypatch.setattr(smt_local, "is_sat", shadow_unsat_then_trigger_unknown)
+
+        result = transition_shadowed_by_predecessor(machine, variables(machine))
+
+        assert result == AlgorithmResult(kind="unknown")
+        assert len(calls) == 2
+
+    def test_candidate_trigger_timeout_is_not_reported_as_shadowed(
+        self,
+        monkeypatch,
+    ):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            state System {
+                state A;
+                state B;
+                state C;
+                [*] -> A;
+                A -> B : if [x > 0];
+                A -> C : if [x > 1];
+            }
+            """
+        )
+        calls = []
+
+        def shadow_unsat_then_trigger_timeout(*args, **kwargs):
+            calls.append(args)
+            if len(calls) == 1:
+                from pyfcstm.solver.logical import SatResult
+
+                return SatResult(kind="unsat")
+            return sat_timeout_result(*args, **kwargs)
+
+        monkeypatch.setattr(smt_local, "is_sat", shadow_unsat_then_trigger_timeout)
+
+        result = transition_shadowed_by_predecessor(machine, variables(machine))
+
+        assert result == AlgorithmResult(kind="timeout")
+        assert len(calls) == 2
+
+    def test_unconditional_predecessor_shadows_unknown_candidate_trigger(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            def int y = 0;
+            state System {
+                state A;
+                state B;
+                state C;
+                [*] -> A;
+                A -> B;
+                A -> C : if [x ** y > 0];
+            }
+            """
+        )
+
+        result = transition_shadowed_by_predecessor(machine, variables(machine))
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "W_TRANSITION_SHADOWED")
+        assert diag["data"]["reason"] == "unconditional_catchall"
+
     def test_does_not_trigger_for_complementary_guards(self):
         machine = parse_machine(
             """
@@ -2042,13 +2610,20 @@ class TestEnterPostconditionImpliesDuringPrecondition:
             """
         )
         state = machine.root_state.substates["Idle"]
-        monkeypatch.setattr(smt_local, "is_sat", sat_unknown_result)
+        calls = []
+
+        def context_unknown(*args, **kwargs):
+            calls.append(args)
+            return sat_unknown_result(*args, **kwargs)
+
+        monkeypatch.setattr(smt_local, "is_sat", context_unknown)
 
         result = enter_postcondition_implies_during_precondition(
             state, variables(machine)
         )
 
         assert result == AlgorithmResult(kind="unknown")
+        assert len(calls) == 1
 
     def test_context_unknown_takes_precedence_when_no_diagnostic(self, monkeypatch):
         machine = parse_machine(
@@ -2081,7 +2656,46 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         )
 
         assert result == AlgorithmResult(kind="unknown")
-        assert len(calls) == 5
+        assert len(calls) == 2
+
+    def test_context_unknown_is_recorded_when_diagnostic_exists(
+        self,
+        monkeypatch,
+    ):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during { x = (mode > 0) ? 10 : 20; }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+        calls = []
+
+        def context_unknown_then_sat(*args, **kwargs):
+            calls.append(args)
+            if len(calls) == 4:
+                return sat_unknown_result(*args, **kwargs)
+            from pyfcstm.solver.logical import SatResult
+
+            if len(calls) == 6:
+                return SatResult(kind="unsat")
+            return SatResult(kind="sat")
+
+        monkeypatch.setattr(smt_local, "is_sat", context_unknown_then_sat)
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert len(calls) == 7
 
     def test_condition_path_reachability_unknown_propagates(self, monkeypatch):
         machine = parse_machine(
@@ -2103,10 +2717,8 @@ class TestEnterPostconditionImpliesDuringPrecondition:
             calls.append(args)
             from pyfcstm.solver.logical import SatResult
 
-            if len(calls) == 3:
+            if len(calls) == 5:
                 return sat_unknown_result(*args, **kwargs)
-            if len(calls) > 3:
-                return SatResult(kind="unsat")
             return SatResult(kind="sat")
 
         monkeypatch.setattr(smt_local, "is_sat", path_unknown_after_context)
@@ -2116,7 +2728,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         )
 
         assert result == AlgorithmResult(kind="unknown")
-        assert len(calls) == 3
+        assert len(calls) == 5
 
     def test_condition_path_reachability_timeout_propagates(self, monkeypatch):
         machine = parse_machine(
@@ -2138,10 +2750,8 @@ class TestEnterPostconditionImpliesDuringPrecondition:
             calls.append(args)
             from pyfcstm.solver.logical import SatResult
 
-            if len(calls) == 3:
+            if len(calls) == 5:
                 return sat_timeout_result(*args, **kwargs)
-            if len(calls) > 3:
-                return SatResult(kind="unsat")
             return SatResult(kind="sat")
 
         monkeypatch.setattr(smt_local, "is_sat", path_timeout_after_context)
@@ -2151,7 +2761,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         )
 
         assert result == AlgorithmResult(kind="timeout")
-        assert len(calls) == 3
+        assert len(calls) == 5
 
     def test_condition_path_reachability_unsat_skips_condition(self, monkeypatch):
         machine = parse_machine(
@@ -2173,7 +2783,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
             calls.append(args)
             from pyfcstm.solver.logical import SatResult
 
-            if len(calls) == 3:
+            if len(calls) == 4:
                 return SatResult(kind="unsat")
             return SatResult(kind="sat")
 
@@ -2184,7 +2794,43 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         )
 
         assert result == AlgorithmResult(kind="sat")
-        assert len(calls) == 3
+        assert len(calls) == 4
+
+    def test_condition_path_reachability_unsat_after_context_skips_condition(
+        self,
+        monkeypatch,
+    ):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during { x = (mode > 0) ? 10 : 20; }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+        calls = []
+
+        def path_unsat_after_context(*args, **kwargs):
+            calls.append(args)
+            from pyfcstm.solver.logical import SatResult
+
+            if len(calls) == 5:
+                return SatResult(kind="unsat")
+            return SatResult(kind="sat")
+
+        monkeypatch.setattr(smt_local, "is_sat", path_unsat_after_context)
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result == AlgorithmResult(kind="sat")
+        assert len(calls) == 5
 
     def test_unsatisfiable_entry_context_short_circuits_before_conditions(self):
         machine = parse_machine(
@@ -2230,7 +2876,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
             calls.append(args)
             from pyfcstm.solver.logical import SatResult
 
-            return SatResult(kind="unsat" if len(calls) == 2 else "sat")
+            return SatResult(kind="unsat" if len(calls) == 4 else "sat")
 
         monkeypatch.setattr(smt_local, "is_sat", context_unsat_then_sat)
 
@@ -2239,7 +2885,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         )
 
         assert result == AlgorithmResult(kind="sat")
-        assert len(calls) == 2
+        assert len(calls) == 4
 
     def test_during_condition_translation_failure_after_prefix_execution(self):
         machine = parse_machine(
@@ -2419,10 +3065,14 @@ class TestEnterPostconditionImpliesDuringPrecondition:
                 None,
             )
 
+        def missing_condition_point_with_vars(*args, **kwargs):
+            condition_points, result = missing_condition_point(*args, **kwargs)
+            return condition_points, smt_local._z3_vars(variables(machine)), (), result
+
         monkeypatch.setattr(
             smt_local,
-            "_execute_operation_prefix_conditions_or_result",
-            missing_condition_point,
+            "_execute_operation_prefix_conditions_and_vars_or_result",
+            missing_condition_point_with_vars,
         )
 
         result = enter_postcondition_implies_during_precondition(
@@ -2562,6 +3212,392 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
         assert diag["data"]["branch_taken"] == "true"
 
+    def test_logical_or_unsupported_rhs_is_not_short_circuit_pruned(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int flags = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during {
+                        x = (mode == 0 || (flags & 1) == 1) ? 10 : 20;
+                    }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "undecidable_skip"
+
+    def test_logical_and_unsupported_rhs_is_not_short_circuit_pruned(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int flags = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during {
+                        x = (mode == 1 && (flags & 1) == 1) ? 10 : 20;
+                    }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "undecidable_skip"
+
+    def test_logical_if_condition_unsupported_rhs_is_not_short_circuit_pruned(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int flags = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during {
+                        if [mode == 0 || (flags & 1) == 1] { x = 1; }
+                        else { x = 2; }
+                    }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "undecidable_skip"
+
+    def test_logical_or_division_rhs_is_not_short_circuit_pruned(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            def int y = 0;
+            state System {
+                state Idle {
+                    enter { x = 1; }
+                    during { y = (x == 1 || (x / (x - 1)) == 1) ? 1 : 2; }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "undecidable_skip"
+        assert result.diagnostics == ()
+
+    def test_unreachable_enter_branch_unsupported_expr_does_not_mask_during_condition(
+        self,
+    ):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int flags = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    enter {
+                        if [mode == 0] { mode = 1; }
+                        else { mode = flags & 1; }
+                    }
+                    during { x = (mode == 1) ? 10 : 20; }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["condition"] == "mode == 1"
+        assert diag["data"]["branch_taken"] == "true"
+
+    def test_ancestor_enter_uses_path_sensitive_entry_execution(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int flags = 0;
+            def int x = 0;
+            state System {
+                enter {
+                    if [false] { mode = flags & 1; }
+                    else { mode = 1; }
+                }
+                state Idle { during { x = (mode == 1) ? 10 : 20; } }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["condition"] == "mode == 1"
+        assert diag["data"]["branch_taken"] == "true"
+
+    def test_ancestor_enter_with_guarded_branch_uses_path_sensitive_entry_execution(
+        self,
+    ):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int flags = 0;
+            def int x = 0;
+            state System {
+                enter {
+                    if [mode == 0] { mode = 1; }
+                    else { mode = flags & 1; }
+                }
+                state Idle { during { x = (mode == 1) ? 10 : 20; } }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["condition"] == "mode == 1"
+        assert diag["data"]["branch_taken"] == "true"
+
+    def test_composite_during_before_uses_path_sensitive_entry_execution(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int flags = 0;
+            def int x = 0;
+            state System {
+                state Parent {
+                    during before { mode = (false) ? (flags & 1) : 1; }
+                    state Child { during { x = (mode == 1) ? 10 : 20; } }
+                    [*] -> Child;
+                }
+                [*] -> Parent;
+            }
+            """
+        )
+        state = machine.root_state.substates["Parent"].substates["Child"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["condition"] == "mode == 1"
+        assert diag["data"]["branch_taken"] == "true"
+
+    def test_init_transition_effect_uses_path_sensitive_entry_execution(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int flags = 0;
+            def int x = 0;
+            state System {
+                state Idle { during { x = (mode == 1) ? 10 : 20; } }
+                [*] -> Idle effect { mode = (false) ? (flags & 1) : 1; };
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["condition"] == "mode == 1"
+        assert diag["data"]["branch_taken"] == "true"
+
+    def test_prior_domain_failure_skips_later_during_conditions(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int y = 0;
+            def int x = 0;
+            state System {
+                during {
+                    y = 1 / 0;
+                    x = (mode == 0) ? 10 : 20;
+                }
+            }
+            """
+        )
+
+        result = enter_postcondition_implies_during_precondition(
+            machine.root_state, variables(machine)
+        )
+
+        assert result.kind == "undecidable_skip"
+        assert result.diagnostics == ()
+
+    def test_variable_denominator_failure_skips_later_during_conditions(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int y = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during {
+                        y = 1 / mode;
+                        x = (mode == 0) ? 10 : 20;
+                    }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "undecidable_skip"
+        assert result.diagnostics == ()
+
+    def test_round_negative_half_matches_runtime_branch_direction(self):
+        machine = parse_machine(
+            """
+            def float value = -1.5;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during {
+                        rounded = round(value);
+                        x = (rounded == -2) ? 10 : 20;
+                    }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["condition"] == "rounded == -2"
+        assert diag["data"]["branch_taken"] == "true"
+
+    def test_unreachable_nested_ternary_branch_is_not_reported(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during { x = (mode == 0) ? 10 : ((mode == 1) ? 20 : 30); }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["condition"] == "mode == 0"
+        assert diag["data"]["branch_taken"] == "true"
+
+    def test_unreachable_nested_ternary_unsupported_branch_does_not_mask_condition(
+        self,
+    ):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int flags = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during { x = (mode == 0) ? 10 : (((flags & 1) == 1) ? 20 : 30); }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["condition"] == "mode == 0"
+        assert diag["data"]["branch_taken"] == "true"
+
+    def test_unselected_ternary_value_translation_failure_does_not_mask_condition(
+        self,
+    ):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int flags = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during { x = (mode == 0) ? 30 : (flags & 1); }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["condition"] == "mode == 0"
+        assert diag["data"]["branch_taken"] == "true"
+
     def test_unreachable_else_if_body_is_not_reported(self):
         machine = parse_machine(
             """
@@ -2603,6 +3639,43 @@ class TestEnterPostconditionImpliesDuringPrecondition:
             ("mode == 0", "branch", "true"),
             ("mode == 1", "expression", "true"),
         ]
+
+    def test_elif_condition_uses_prior_branch_path_for_later_store(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during {
+                        if [mode == 0] { mode = 1; }
+                        else if [mode == 1] { mode = 2; }
+                        x = (mode == 2) ? 10 : 20;
+                    }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag_items = {
+            (
+                diag["data"]["condition"],
+                diag["data"]["condition_source"],
+                diag["data"]["branch_taken"],
+            )
+            for diag in result.diagnostics
+        }
+        assert diag_items == {
+            ("mode == 0", "branch", "true"),
+            ("mode == 2", "expression", "false"),
+        }
 
     def test_aspect_condition_is_checked_before_leaf_during(self):
         machine = parse_machine(
@@ -2726,14 +3799,8 @@ class TestEnterPostconditionImpliesDuringPrecondition:
 
         from pyfcstm.solver.logical import SatResult
 
-        calls = []
-        real_is_sat = smt_local.is_sat
-
         def both_branches_feasible(constraints, **kwargs):
-            calls.append(tuple(constraints))
-            if len(calls) in {1, 2, 3, 4}:
-                return SatResult(kind="sat")
-            return real_is_sat(constraints, **kwargs)
+            return SatResult(kind="sat")
 
         monkeypatch.setattr(smt_local, "is_sat", both_branches_feasible)
 
@@ -2742,7 +3809,6 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         )
 
         assert result == AlgorithmResult(kind="sat")
-        assert len(calls) == 5
 
     def test_ancestor_before_aspect_feeds_first_during_condition(self):
         machine = parse_machine(
@@ -2769,6 +3835,32 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
         assert diag["data"]["branch_taken"] == "true"
 
+    def test_ancestor_after_aspect_feeds_first_during_condition(self):
+        machine = parse_machine(
+            """
+            def int trace = 0;
+            def int x = 0;
+            state System {
+                >> during before { trace = trace * 10 + 1; }
+                >> during after { x = (trace == 12) ? 10 : 20; }
+                state Idle {
+                    during { trace = trace * 10 + 2; }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["condition"] == "trace == 12"
+        assert diag["data"]["branch_taken"] == "true"
+
     def test_root_enter_feeds_first_during_condition(self):
         machine = parse_machine(
             """
@@ -2792,6 +3884,27 @@ class TestEnterPostconditionImpliesDuringPrecondition:
 
         assert result.kind == "unsat"
         diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["branch_taken"] == "true"
+
+    def test_root_leaf_enter_feeds_first_during_condition(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                enter { mode = 1; }
+                during { x = (mode == 1) ? 10 : 20; }
+            }
+            """
+        )
+
+        result = enter_postcondition_implies_during_precondition(
+            machine.root_state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["condition"] == "mode == 1"
         assert diag["data"]["branch_taken"] == "true"
 
     def test_composite_during_before_feeds_first_during_condition(self):

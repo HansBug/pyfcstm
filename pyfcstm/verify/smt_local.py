@@ -1,7 +1,13 @@
 """SMT-local verification algorithms for FCSTM models.
 
-This module implements the Track A / PR-A4 algorithms from issue #114.  The
-functions intentionally return lightweight dictionaries instead of
+This module implements the Track A / PR-A4 algorithms from issue #114.  Raw
+verify algorithms are full-power by default: they do not consult
+``pyfcstm.solver.safety`` or diagnostics/inspect policy gates, and
+``smt_timeout_ms=None`` leaves the underlying solver timeout unset.  Callers
+that need product-level limits can pass optional budgets or apply policy in an
+adapter layer.
+
+The functions intentionally return lightweight dictionaries instead of
 ``ModelDiagnostic`` objects; PR-B1 is responsible for adapting these raw
 algorithm results to the diagnostics layer.
 """
@@ -50,6 +56,7 @@ class _ConditionPoint:
     z3_vars: _Z3Vars
     path_conditions: Tuple[z3.ExprRef, ...] = ()
     source: str = "expression"
+    z3_condition: Optional[z3.ExprRef] = None
 
 
 def _dsl_nodes():
@@ -322,6 +329,418 @@ def _execute_operations_or_result(
         return None, _skip_result("undecidable_skip", str(err))
 
 
+def _binary_z3_or_result(
+    op: str,
+    left: _Z3Expr,
+    right: _Z3Expr,
+) -> Tuple[Optional[_Z3Expr], Optional[AlgorithmResult]]:
+    """Apply a binary operator to already translated Z3 operands.
+
+    This mirrors :func:`pyfcstm.solver.expr.expr_to_z3` for expression trees
+    whose children were translated path-sensitively.
+
+    :param op: DSL binary operator.
+    :type op: str
+    :param left: Left Z3 operand.
+    :type left: Union[z3.ArithRef, z3.BoolRef]
+    :param right: Right Z3 operand.
+    :type right: Union[z3.ArithRef, z3.BoolRef]
+    :return: Translated Z3 expression and optional normalized failure.
+    :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[AlgorithmResult]]
+    """
+    try:
+        if op == "+":
+            return left + right, None
+        if op == "-":
+            return left - right, None
+        if op == "*":
+            return left * right, None
+        if op == "/":
+            return left / right, None
+        if op == "%":
+            return left % right, None
+        if op == "**":
+            return left**right, None
+        if op == "&":
+            return left & right, None
+        if op == "|":
+            return left | right, None
+        if op == "^":
+            return left ^ right, None
+        if op == "<<":
+            return left << right, None
+        if op == ">>":
+            return left >> right, None
+        if op == "<":
+            return left < right, None
+        if op == "<=":
+            return left <= right, None
+        if op == ">":
+            return left > right, None
+        if op == ">=":
+            return left >= right, None
+        if op == "==":
+            return left == right, None
+        if op == "!=":
+            return left != right, None
+        if op in ("&&", "and"):
+            return z3.And(left, right), None
+        if op in ("||", "or"):
+            return z3.Or(left, right), None
+        return None, _skip_result(
+            "undecidable_skip", f"Unsupported binary operator: {op}"
+        )
+    except TypeError as err:
+        # TypeError: Python/Z3 operator overloads reject unsupported operand
+        # combinations, for example bitwise Int expressions.
+        return None, _skip_result("undecidable_skip", str(err))
+    except z3.Z3Exception as err:
+        # Z3Exception: Z3 rejects sort/operator-domain mismatches.
+        return None, _skip_result("undecidable_skip", str(err))
+
+
+def _unary_z3_or_result(
+    op: str,
+    operand: _Z3Expr,
+) -> Tuple[Optional[_Z3Expr], Optional[AlgorithmResult]]:
+    """Apply a unary operator to an already translated Z3 operand.
+
+    :param op: DSL unary operator.
+    :type op: str
+    :param operand: Z3 operand.
+    :type operand: Union[z3.ArithRef, z3.BoolRef]
+    :return: Translated Z3 expression and optional normalized failure.
+    :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[AlgorithmResult]]
+    """
+    try:
+        if op == "-":
+            return -operand, None
+        if op == "+":
+            return operand, None
+        if op == "~":
+            return ~operand, None
+        if op in ("!", "not"):
+            return z3.Not(operand), None
+        return None, _skip_result(
+            "undecidable_skip", f"Unsupported unary operator: {op}"
+        )
+    except TypeError as err:
+        # TypeError: Python/Z3 operator overloads reject unsupported operand
+        # combinations, for example bitwise NOT on arithmetic references.
+        return None, _skip_result("undecidable_skip", str(err))
+    except z3.Z3Exception as err:
+        # Z3Exception: Z3 rejects sort/operator-domain mismatches.
+        return None, _skip_result("undecidable_skip", str(err))
+
+
+def _ufunc_z3_or_result(
+    func: str,
+    operand: _Z3Expr,
+) -> Tuple[Optional[_Z3Expr], Optional[AlgorithmResult]]:
+    """Apply a supported unary math function to a Z3 operand.
+
+    :param func: Function name.
+    :type func: str
+    :param operand: Z3 operand.
+    :type operand: Union[z3.ArithRef, z3.BoolRef]
+    :return: Translated Z3 expression and optional normalized failure.
+    :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[AlgorithmResult]]
+    """
+    try:
+        if func == "abs":
+            return z3.If(operand >= 0, operand, -operand), None
+        if func == "sign":
+            zero = z3.IntVal(0) if z3.is_int(operand) else z3.RealVal(0)
+            one = z3.IntVal(1) if z3.is_int(operand) else z3.RealVal(1)
+            minus_one = z3.IntVal(-1) if z3.is_int(operand) else z3.RealVal(-1)
+            return z3.If(
+                operand == zero, zero, z3.If(operand > zero, one, minus_one)
+            ), None
+        if func == "floor":
+            return (z3.ToInt(operand) if z3.is_real(operand) else operand), None
+        if func == "ceil":
+            return (-z3.ToInt(-operand) if z3.is_real(operand) else operand), None
+        if func == "trunc":
+            if z3.is_real(operand):
+                zero = z3.RealVal(0)
+                return z3.If(
+                    operand >= zero, z3.ToInt(operand), -z3.ToInt(-operand)
+                ), None
+            return operand, None
+        if func == "sqrt":
+            if z3.is_real(operand):
+                return z3.Sqrt(operand), None
+            if z3.is_int(operand):
+                return z3.Sqrt(z3.ToReal(operand)), None
+            return None, _skip_result(
+                "undecidable_skip",
+                f"sqrt requires Real or Int operand, got {operand.sort()}.",
+            )
+        if func == "round":
+            return _python_round_z3(operand), None
+        return None, _skip_result(
+            "undecidable_skip",
+            "Mathematical function {func!r} is not supported in Z3 conversion.".format(
+                func=func
+            ),
+        )
+    except TypeError as err:
+        # TypeError: Python/Z3 operator overloads reject unsupported operand
+        # combinations during function expansion.
+        return None, _skip_result("undecidable_skip", str(err))
+    except z3.Z3Exception as err:
+        # Z3Exception: Z3 rejects sort/operator-domain mismatches.
+        return None, _skip_result("undecidable_skip", str(err))
+
+
+def _python_round_z3(operand: _Z3Expr) -> z3.ArithRef:
+    """Return a Z3 expression matching Python's single-argument ``round``.
+
+    :param operand: Integer or real operand.
+    :type operand: Union[z3.ArithRef, z3.BoolRef]
+    :return: Rounded integer expression.
+    :rtype: z3.ArithRef
+    """
+    if z3.is_int(operand):
+        return operand
+    real_operand = operand if z3.is_real(operand) else z3.ToReal(operand)
+    floor_value = z3.ToInt(real_operand)
+    fraction = real_operand - z3.ToReal(floor_value)
+    half = z3.RealVal("1/2")
+    return z3.If(
+        fraction < half,
+        floor_value,
+        z3.If(
+            fraction > half,
+            floor_value + 1,
+            z3.If(floor_value % 2 == 0, floor_value, floor_value + 1),
+        ),
+    )
+
+
+def _expr_conditions_and_z3_or_result(
+    expr: Expr,
+    z3_vars: _Z3Vars,
+    path_conditions: Sequence[z3.ExprRef] = (),
+    *,
+    context_constraints: Optional[Sequence[z3.ExprRef]] = None,
+    smt_timeout_ms: Optional[int] = None,
+    domain_constraints: Optional[List[z3.ExprRef]] = None,
+) -> Tuple[
+    Optional[Tuple[_ConditionPoint, ...]],
+    Optional[_Z3Expr],
+    Optional[AlgorithmResult],
+]:
+    """Translate an expression while pruning unreachable ternary branches.
+
+    Expression-level ternaries have runtime short-circuit semantics: only the
+    selected value branch is evaluated.  When the caller supplies a symbolic
+    context, this helper avoids translating value branches that are unreachable
+    in that context, matching the path-sensitive handling used for operation
+    ``if`` blocks.
+
+    :param expr: Expression to translate.
+    :type expr: Expr
+    :param z3_vars: Symbolic environment at this expression point.
+    :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :param path_conditions: Predicates needed to reach this expression.
+    :type path_conditions: Sequence[z3.ExprRef]
+    :param context_constraints: Optional surrounding execution context.
+    :type context_constraints: Optional[Sequence[z3.ExprRef]], optional
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+    :type smt_timeout_ms: Optional[int], optional
+    :param domain_constraints: Optional accumulator for runtime definedness
+        constraints, such as non-zero divisors.  These constraints align Z3's
+        total arithmetic operators with FCSTM runtime evaluation, where numeric
+        domain errors abort the execution path instead of choosing an arbitrary
+        model value.
+    :type domain_constraints: Optional[List[z3.ExprRef]], optional
+    :return: Condition points, translated expression, or normalized failure.
+    :rtype: Tuple[Optional[Tuple[_ConditionPoint, ...]], Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[AlgorithmResult]]
+    """
+    from pyfcstm.model.expr import BinaryOp, Boolean, Float, Integer, UFunc, UnaryOp
+
+    if domain_constraints is None:
+        domain_constraints = []
+
+    if isinstance(expr, (Integer, Float, Boolean, _variable_type())):
+        z3_expr, result = _expr_to_z3_or_result(expr, z3_vars)
+        return (), z3_expr, result
+
+    if isinstance(expr, _conditional_op_type()):
+        points: List[_ConditionPoint] = []
+        condition_domains: List[z3.ExprRef] = []
+        cond_points, condition_z3, result = _expr_conditions_and_z3_or_result(
+            expr.cond,
+            z3_vars,
+            path_conditions,
+            context_constraints=context_constraints,
+            smt_timeout_ms=smt_timeout_ms,
+            domain_constraints=condition_domains,
+        )
+        if result is not None:
+            return None, None, result
+        domain_constraints.extend(condition_domains)
+        points.extend(cond_points or ())
+        points.append(
+            _ConditionPoint(
+                expr.cond,
+                dict(z3_vars),
+                (*path_conditions, *condition_domains),
+                z3_condition=condition_z3,
+            )
+        )
+
+        true_path = (*path_conditions, *condition_domains, condition_z3)
+        false_path = (*path_conditions, *condition_domains, z3.Not(condition_z3))
+        true_reachable, result = _path_reachability_or_result(
+            context_constraints,
+            true_path,
+            smt_timeout_ms=smt_timeout_ms,
+        )
+        if result is not None:
+            return None, None, result
+        false_reachable, result = _path_reachability_or_result(
+            context_constraints,
+            false_path,
+            smt_timeout_ms=smt_timeout_ms,
+        )
+        if result is not None:
+            return None, None, result
+
+        true_expr = false_expr = None
+        true_domains: List[z3.ExprRef] = []
+        false_domains: List[z3.ExprRef] = []
+        if true_reachable is not False:
+            true_points, true_expr, result = _expr_conditions_and_z3_or_result(
+                expr.if_true,
+                z3_vars,
+                true_path,
+                context_constraints=context_constraints,
+                smt_timeout_ms=smt_timeout_ms,
+                domain_constraints=true_domains,
+            )
+            if result is not None:
+                return None, None, result
+            points.extend(true_points or ())
+        if false_reachable is not False:
+            false_points, false_expr, result = _expr_conditions_and_z3_or_result(
+                expr.if_false,
+                z3_vars,
+                false_path,
+                context_constraints=context_constraints,
+                smt_timeout_ms=smt_timeout_ms,
+                domain_constraints=false_domains,
+            )
+            if result is not None:
+                return None, None, result
+            points.extend(false_points or ())
+
+        if true_reachable is False and false_reachable is False:
+            return (
+                None,
+                None,
+                _skip_result(
+                    "undecidable_skip",
+                    "Conditional expression has no reachable value branch.",
+                ),
+            )
+        if true_reachable is False:
+            domain_constraints.extend(false_domains)
+            return tuple(points), false_expr, None
+        if false_reachable is False:
+            domain_constraints.extend(true_domains)
+            return tuple(points), true_expr, None
+        for item in true_domains:
+            domain_constraints.append(z3.Implies(condition_z3, item))
+        for item in false_domains:
+            domain_constraints.append(z3.Implies(z3.Not(condition_z3), item))
+        try:
+            return tuple(points), z3.If(condition_z3, true_expr, false_expr), None
+        except z3.Z3Exception as err:
+            # Z3Exception: Z3 rejects If branches with incompatible sorts.
+            return None, None, _skip_result("undecidable_skip", str(err))
+
+    if isinstance(expr, BinaryOp):
+        points: List[_ConditionPoint] = []
+        left_points, left, result = _expr_conditions_and_z3_or_result(
+            expr.x,
+            z3_vars,
+            path_conditions,
+            context_constraints=context_constraints,
+            smt_timeout_ms=smt_timeout_ms,
+            domain_constraints=domain_constraints,
+        )
+        if result is not None:
+            return None, None, result
+        points.extend(left_points or ())
+
+        right_points, right, result = _expr_conditions_and_z3_or_result(
+            expr.y,
+            z3_vars,
+            path_conditions,
+            context_constraints=context_constraints,
+            smt_timeout_ms=smt_timeout_ms,
+            domain_constraints=domain_constraints,
+        )
+        if result is not None:
+            return None, None, result
+        points.extend(right_points or ())
+        if expr.op in ("/", "%"):
+            try:
+                domain_constraints.append(right != 0)
+            except (TypeError, z3.Z3Exception) as err:
+                # TypeError/Z3Exception: malformed arithmetic expressions can
+                # produce a denominator that Z3 cannot compare against zero.
+                return None, None, _skip_result("undecidable_skip", str(err))
+        z3_expr, result = _binary_z3_or_result(expr.op, left, right)
+        return tuple(points), z3_expr, result
+
+    if isinstance(expr, UnaryOp):
+        points, operand, result = _expr_conditions_and_z3_or_result(
+            expr.x,
+            z3_vars,
+            path_conditions,
+            context_constraints=context_constraints,
+            smt_timeout_ms=smt_timeout_ms,
+            domain_constraints=domain_constraints,
+        )
+        if result is not None:
+            return None, None, result
+        z3_expr, result = _unary_z3_or_result(expr.op, operand)
+        return points, z3_expr, result
+
+    if isinstance(expr, UFunc):
+        points, operand, result = _expr_conditions_and_z3_or_result(
+            expr.x,
+            z3_vars,
+            path_conditions,
+            context_constraints=context_constraints,
+            smt_timeout_ms=smt_timeout_ms,
+            domain_constraints=domain_constraints,
+        )
+        if result is not None:
+            return None, None, result
+        if expr.func == "sqrt":
+            try:
+                domain_constraints.append(operand >= 0)
+            except (TypeError, z3.Z3Exception) as err:
+                # TypeError/Z3Exception: malformed operands can be rejected
+                # before the Z3 sqrt expression is built.
+                return None, None, _skip_result("undecidable_skip", str(err))
+        z3_expr, result = _ufunc_z3_or_result(expr.func, operand)
+        return points, z3_expr, result
+
+    return (
+        None,
+        None,
+        _skip_result(
+            "undecidable_skip",
+            f"Unsupported expression type: {type(expr).__name__}",
+        ),
+    )
+
+
 def _path_reachability_or_result(
     context_constraints: Optional[Sequence[z3.ExprRef]],
     path_conditions: Sequence[z3.ExprRef],
@@ -359,6 +778,24 @@ def _path_reachability_or_result(
     return None, _skip_result(sat_result.kind, getattr(sat_result, "reason", None))
 
 
+def _append_expr_domain_constraints(
+    source_constraints: Sequence[z3.ExprRef],
+    target_constraints: List[z3.ExprRef],
+) -> None:
+    """Append expression-definedness constraints visible in ``z3_vars``.
+
+    :param source_constraints: Candidate constraints collected while
+        translating the expression assigned to one name.
+    :type source_constraints: Sequence[z3.ExprRef]
+    :param target_constraints: Mutable block-level domain constraint list.
+    :type target_constraints: List[z3.ExprRef]
+    :return: ``None``.
+    :rtype: None
+    """
+    if source_constraints:
+        target_constraints.extend(source_constraints)
+
+
 def _execute_operation_prefix_conditions_and_vars_or_result(
     operations: Sequence[OperationStatement],
     z3_vars: _Z3Vars,
@@ -366,9 +803,11 @@ def _execute_operation_prefix_conditions_and_vars_or_result(
     *,
     context_constraints: Optional[Sequence[z3.ExprRef]] = None,
     smt_timeout_ms: Optional[int] = None,
+    domain_constraints: Optional[Sequence[z3.ExprRef]] = None,
 ) -> Tuple[
     Optional[Tuple[_ConditionPoint, ...]],
     Optional[_Z3Vars],
+    Optional[Tuple[z3.ExprRef, ...]],
     Optional[AlgorithmResult],
 ]:
     """Collect prefix conditions and execute operations path-sensitively.
@@ -389,25 +828,41 @@ def _execute_operation_prefix_conditions_and_vars_or_result(
     :type context_constraints: Optional[Sequence[z3.ExprRef]], optional
     :param smt_timeout_ms: Optional solver timeout in milliseconds.
     :type smt_timeout_ms: Optional[int], optional
-    :return: Condition points, post-state variables, or an algorithm result
-        when symbolic prefix execution cannot be expressed.
-    :rtype: Tuple[Optional[Tuple[_ConditionPoint, ...]], Optional[Dict[str, Union[z3.ArithRef, z3.BoolRef]]], Optional[AlgorithmResult]]
+    :param domain_constraints: Runtime definedness constraints already known
+        before this operation block.
+    :type domain_constraints: Optional[Sequence[z3.ExprRef]], optional
+    :return: Condition points, post-state variables, accumulated domain
+        constraints, or an algorithm result when symbolic prefix execution
+        cannot be expressed.
+    :rtype: Tuple[Optional[Tuple[_ConditionPoint, ...]], Optional[Dict[str, Union[z3.ArithRef, z3.BoolRef]]], Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]
     """
     points: List[_ConditionPoint] = []
     current_vars = dict(z3_vars)
     current_path = tuple(path_conditions)
+    current_domains: List[z3.ExprRef] = list(domain_constraints or ())
 
     for statement in operations:
         if isinstance(statement, _operation_type()):
-            for condition in _conditional_conditions_from_expr(statement.expr):
-                points.append(
-                    _ConditionPoint(condition, dict(current_vars), current_path)
+            expression_domains: List[z3.ExprRef] = []
+            expression_path = (*current_path, *current_domains)
+            expression_points, expression_value, result = (
+                _expr_conditions_and_z3_or_result(
+                    statement.expr,
+                    current_vars,
+                    expression_path,
+                    context_constraints=context_constraints,
+                    smt_timeout_ms=smt_timeout_ms,
+                    domain_constraints=expression_domains,
                 )
-            current_vars, result = _execute_operations_or_result(
-                [statement], current_vars
             )
             if result is not None:
-                return None, None, result
+                return None, None, None, result
+            points.extend(expression_points or ())
+            current_vars[statement.var_name] = expression_value
+            _append_expr_domain_constraints(
+                expression_domains,
+                current_domains,
+            )
             continue
 
         if isinstance(statement, _if_block_type()):
@@ -415,35 +870,62 @@ def _execute_operation_prefix_conditions_and_vars_or_result(
             branch_results = []
             visible_names = tuple(current_vars.keys())
             for branch in statement.branches:
-                evaluation_path = [*current_path, *prior_not_taken]
+                evaluation_path = [*current_path, *current_domains, *prior_not_taken]
                 evaluation_reachable, result = _path_reachability_or_result(
                     context_constraints,
                     evaluation_path,
                     smt_timeout_ms=smt_timeout_ms,
                 )
                 if result is not None:
-                    return None, None, result
+                    return None, None, None, result
                 if evaluation_reachable is False:
                     break
 
                 branch_condition = None
+                branch_condition_domains: List[z3.ExprRef] = []
                 branch_path = list(evaluation_path)
+                evaluation_selector = (
+                    z3.And(*prior_not_taken) if prior_not_taken else None
+                )
+                branch_selector = evaluation_selector
                 if branch.condition is not None:
-                    branch_condition, result = _expr_to_z3_or_result(
-                        branch.condition,
-                        current_vars,
+                    condition_points, branch_condition, result = (
+                        _expr_conditions_and_z3_or_result(
+                            branch.condition,
+                            current_vars,
+                            evaluation_path,
+                            context_constraints=context_constraints,
+                            smt_timeout_ms=smt_timeout_ms,
+                            domain_constraints=branch_condition_domains,
+                        )
                     )
                     if result is not None:
-                        return None, None, result
+                        return None, None, None, result
+                    points.extend(condition_points or ())
+                    for item in branch_condition_domains:
+                        if evaluation_selector is None:
+                            current_domains.append(item)
+                        else:
+                            current_domains.append(
+                                z3.Implies(evaluation_selector, item)
+                            )
                     points.append(
                         _ConditionPoint(
                             branch.condition,
                             dict(current_vars),
-                            tuple(evaluation_path),
+                            (*evaluation_path, *branch_condition_domains),
                             "branch",
+                            branch_condition,
                         )
                     )
+                    branch_path.extend(branch_condition_domains)
                     branch_path.append(branch_condition)
+                    branch_selector = (
+                        z3.And(*prior_not_taken, branch_condition)
+                        if prior_not_taken
+                        else branch_condition
+                    )
+                    prior_not_taken.extend(branch_condition_domains)
                     prior_not_taken.append(z3.Not(branch_condition))
 
                 branch_reachable, result = _path_reachability_or_result(
@@ -452,23 +934,32 @@ def _execute_operation_prefix_conditions_and_vars_or_result(
                     smt_timeout_ms=smt_timeout_ms,
                 )
                 if result is not None:
-                    return None, None, result
+                    return None, None, None, result
                 if branch_reachable is False:
                     continue
 
-                branch_points, branch_vars, result = (
+                branch_domains: List[z3.ExprRef] = []
+                branch_points, branch_vars, branch_domains, result = (
                     _execute_operation_prefix_conditions_and_vars_or_result(
                         branch.statements,
                         current_vars,
                         branch_path,
                         context_constraints=context_constraints,
                         smt_timeout_ms=smt_timeout_ms,
+                        domain_constraints=branch_domains,
                     )
                 )
                 if result is not None:
-                    return None, None, result
+                    return None, None, None, result
                 points.extend(branch_points or ())
-                branch_results.append((branch_condition, branch_vars or current_vars))
+                branch_results.append(
+                    (
+                        branch_condition,
+                        branch_selector,
+                        branch_vars or current_vars,
+                        tuple(branch_domains or ()),
+                    )
+                )
 
                 if branch.condition is None:
                     break
@@ -476,7 +967,7 @@ def _execute_operation_prefix_conditions_and_vars_or_result(
             merged_vars = dict(current_vars)
             for name in visible_names:
                 merged_value = current_vars[name]
-                for branch_condition, branch_vars in reversed(branch_results):
+                for branch_condition, _, branch_vars, _ in reversed(branch_results):
                     if branch_condition is None:
                         merged_value = branch_vars[name]
                     else:
@@ -486,10 +977,17 @@ def _execute_operation_prefix_conditions_and_vars_or_result(
                             merged_value,
                         )
                 merged_vars[name] = merged_value
+            for _, branch_selector, _, branch_domains in branch_results:
+                for item in branch_domains:
+                    if branch_selector is None:
+                        current_domains.append(item)
+                    else:
+                        current_domains.append(z3.Implies(branch_selector, item))
             current_vars = merged_vars
             continue
 
         return (
+            None,
             None,
             None,
             _skip_result(
@@ -498,7 +996,7 @@ def _execute_operation_prefix_conditions_and_vars_or_result(
             ),
         )
 
-    return tuple(points), current_vars, None
+    return tuple(points), current_vars, tuple(current_domains), None
 
 
 def _execute_operation_prefix_conditions_or_result(
@@ -531,7 +1029,7 @@ def _execute_operation_prefix_conditions_or_result(
         execution cannot be expressed.
     :rtype: Tuple[Optional[Tuple[_ConditionPoint, ...]], Optional[AlgorithmResult]]
     """
-    points, _, result = _execute_operation_prefix_conditions_and_vars_or_result(
+    points, _, _, result = _execute_operation_prefix_conditions_and_vars_or_result(
         operations,
         z3_vars,
         path_conditions,
@@ -612,10 +1110,11 @@ def _root_initial_path_context(
     """
     path = _state_path_from_root(state)
     if len(path) <= 1:
-        return (), (), [], None
+        return (), (), _action_operations(state.on_enters), None
 
     selected: List[Transition] = []
     constraints: List[z3.ExprRef] = []
+    domain_constraints: List[z3.ExprRef] = []
     operations: List[OperationStatement] = []
     current_vars: _Z3Vars = dict(z3_vars)
     type_constraints = _build_type_constraints(variables, z3_vars)
@@ -624,21 +1123,46 @@ def _root_initial_path_context(
         child = path[index + 1]
         enter_ops = _action_operations(path_state.on_enters)
         operations.extend(enter_ops)
-        current_vars, result = _execute_operations_or_result(enter_ops, current_vars)
+        _, current_vars, new_domains, result = (
+            _execute_operation_prefix_conditions_and_vars_or_result(
+                enter_ops,
+                current_vars,
+                context_constraints=[
+                    *base_constraints,
+                    *constraints,
+                    *domain_constraints,
+                    *type_constraints,
+                ],
+                smt_timeout_ms=smt_timeout_ms,
+                domain_constraints=domain_constraints,
+            )
+        )
         if result is not None:
             return None, None, None, result
+        domain_constraints = list(new_domains or ())
 
         if not path_state.is_leaf_state:
             during_before_ops = _action_operations(
                 path_state.list_on_durings(aspect="before")
             )
             operations.extend(during_before_ops)
-            current_vars, result = _execute_operations_or_result(
-                during_before_ops,
-                current_vars,
+            _, current_vars, new_domains, result = (
+                _execute_operation_prefix_conditions_and_vars_or_result(
+                    during_before_ops,
+                    current_vars,
+                    context_constraints=[
+                        *base_constraints,
+                        *constraints,
+                        *domain_constraints,
+                        *type_constraints,
+                    ],
+                    smt_timeout_ms=smt_timeout_ms,
+                    domain_constraints=domain_constraints,
+                )
             )
             if result is not None:
                 return None, None, None, result
+            domain_constraints = list(new_domains or ())
 
         target_transition = None
         selected_constraints = None
@@ -654,7 +1178,12 @@ def _root_initial_path_context(
                     trigger,
                 ]
                 context_check = is_sat(
-                    [*base_constraints, *candidate_constraints, *type_constraints],
+                    [
+                        *base_constraints,
+                        *candidate_constraints,
+                        *domain_constraints,
+                        *type_constraints,
+                    ],
                     timeout_ms=smt_timeout_ms,
                 )
                 if context_check.kind in {"unknown", "timeout"}:
@@ -679,12 +1208,23 @@ def _root_initial_path_context(
 
         selected.append(target_transition)
         operations.extend(target_transition.effects)
-        current_vars, result = _execute_operations_or_result(
-            target_transition.effects,
-            current_vars,
+        _, current_vars, new_domains, result = (
+            _execute_operation_prefix_conditions_and_vars_or_result(
+                target_transition.effects,
+                current_vars,
+                context_constraints=[
+                    *base_constraints,
+                    *constraints,
+                    *domain_constraints,
+                    *type_constraints,
+                ],
+                smt_timeout_ms=smt_timeout_ms,
+                domain_constraints=domain_constraints,
+            )
         )
         if result is not None:
             return None, None, None, result
+        domain_constraints = list(new_domains or ())
 
     leaf_enter_ops = _action_operations(state.on_enters)
     operations.extend(leaf_enter_ops)
@@ -1138,28 +1678,44 @@ def transition_shadowed_by_predecessor(
                 )
                 sat_result = is_sat([formula], timeout_ms=smt_timeout_ms)
                 if sat_result.kind == "unsat":
-                    if any(
+                    has_unconditional_catchall = any(
                         item["event"] is None and item["guard"] is None
                         for item in prior_payloads
-                    ):
+                    )
+                    if has_unconditional_catchall:
                         reason = "unconditional_catchall"
-                    elif (
-                        current_payload["event"] is not None
-                        and current_payload["guard"] is None
-                        and any(
-                            item["event"] == current_payload["event"]
-                            and item["guard"] is None
-                            for item in prior_payloads
-                        )
-                    ):
-                        reason = "duplicate_event"
-                    elif current_payload["guard"] is not None and all(
-                        item["event"] is None and item["guard"] is not None
-                        for item in prior_payloads
-                    ):
-                        reason = "guard_shadow"
                     else:
-                        reason = "prior_trigger_cover"
+                        trigger_sat = is_sat(
+                            [trigger, *_build_type_constraints(variables, z3_vars)],
+                            timeout_ms=smt_timeout_ms,
+                        )
+                        if trigger_sat.kind == "unsat":
+                            # A transition whose own trigger is unsatisfiable
+                            # belongs to dead_guard, not predecessor shadowing.
+                            continue
+                        if trigger_sat.kind != "sat":
+                            first_indeterminate_result = _first_indeterminate(
+                                first_indeterminate_result,
+                                trigger_sat.kind,
+                            )
+                            continue
+                        if (
+                            current_payload["event"] is not None
+                            and current_payload["guard"] is None
+                            and any(
+                                item["event"] == current_payload["event"]
+                                and item["guard"] is None
+                                for item in prior_payloads
+                            )
+                        ):
+                            reason = "duplicate_event"
+                        elif current_payload["guard"] is not None and all(
+                            item["event"] is None and item["guard"] is not None
+                            for item in prior_payloads
+                        ):
+                            reason = "guard_shadow"
+                        else:
+                            reason = "prior_trigger_cover"
                     diagnostics.append(
                         _make_diag(
                             "W_TRANSITION_SHADOWED",
@@ -1245,16 +1801,21 @@ def _conditional_conditions_from_operations(
                 yield from _conditional_conditions_from_operations(branch.statements)
 
 
-def _concrete_before_aspect_operations(state: State) -> List[OperationStatement]:
-    """Collect concrete ancestor ``>> during before`` operations in run order.
+def _concrete_during_operations(state: State) -> List[OperationStatement]:
+    """Collect the complete concrete first-cycle during chain in run order.
 
-    :param state: Leaf state whose first-cycle aspect prelude is inspected.
+    This mirrors :meth:`pyfcstm.model.State.iter_on_during_aspect_recursively`,
+    including ancestor ``>> during before`` actions, leaf ``during`` actions,
+    and ancestor ``>> during after`` actions.  Abstract actions are omitted
+    because raw SMT-local verification has no implementation body for them.
+
+    :param state: Leaf state whose first-cycle during chain is inspected.
     :type state: State
-    :return: Flattened concrete aspect operation statements.
+    :return: Flattened concrete operation statements.
     :rtype: List[OperationStatement]
     """
     return _action_operations(
-        [action for _, action in state.iter_on_during_before_aspect_recursively()]
+        [action for _, action in state.iter_on_during_aspect_recursively()]
     )
 
 
@@ -1351,16 +1912,9 @@ def enter_postcondition_implies_during_precondition(
     if init_transitions is None:
         return AlgorithmResult(kind="sat")
 
-    first_cycle_operations = [
-        *_concrete_before_aspect_operations(state),
-        *_action_operations(state.on_durings),
-    ]
+    first_cycle_operations = _concrete_during_operations(state)
     if not first_cycle_operations:
         return AlgorithmResult(kind="sat")
-
-    entry_vars, result = _execute_operations_or_result(entry_operations or (), z3_vars)
-    if result is not None:
-        return result
 
     type_constraints = _build_type_constraints(variables, z3_vars)
     context_constraints = [
@@ -1368,11 +1922,25 @@ def enter_postcondition_implies_during_precondition(
         *(entry_constraints or ()),
         *type_constraints,
     ]
-    condition_points, result = _execute_operation_prefix_conditions_or_result(
-        first_cycle_operations,
-        entry_vars,
-        context_constraints=context_constraints,
-        smt_timeout_ms=smt_timeout_ms,
+    _, entry_vars, entry_domain_constraints, result = (
+        _execute_operation_prefix_conditions_and_vars_or_result(
+            entry_operations or (),
+            z3_vars,
+            context_constraints=context_constraints,
+            smt_timeout_ms=smt_timeout_ms,
+        )
+    )
+    if result is not None:
+        return result
+    context_constraints.extend(entry_domain_constraints or ())
+
+    condition_points, _, _, result = (
+        _execute_operation_prefix_conditions_and_vars_or_result(
+            first_cycle_operations,
+            entry_vars,
+            context_constraints=context_constraints,
+            smt_timeout_ms=smt_timeout_ms,
+        )
     )
     if result is not None:
         return result
@@ -1397,17 +1965,19 @@ def enter_postcondition_implies_during_precondition(
 
     for condition_point in condition_points:
         condition = condition_point.condition
-        condition_z3, result = _expr_to_z3_or_result(
-            condition,
-            condition_point.z3_vars,
-        )
-        if result is not None:
-            first_indeterminate_result = _first_indeterminate(
-                first_indeterminate_result,
-                result.kind,
-                result.reason,
+        condition_z3 = condition_point.z3_condition
+        if condition_z3 is None:
+            condition_z3, result = _expr_to_z3_or_result(
+                condition,
+                condition_point.z3_vars,
             )
-            continue
+            if result is not None:
+                first_indeterminate_result = _first_indeterminate(
+                    first_indeterminate_result,
+                    result.kind,
+                    result.reason,
+                )
+                continue
 
         point_context = [
             *init_constraints,

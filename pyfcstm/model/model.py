@@ -82,6 +82,11 @@ from ..utils import sequence_safe
 
 def _node_span(node) -> Optional[Span]:
     """Return an AST node span when the parser attached one."""
+    # PR-D1 span propagation is deliberately tolerant of AST nodes that do not
+    # carry parser spans yet: older synthetic/export-created nodes can still
+    # pass through this path, and PR-D2 will decide which missing spans are
+    # diagnostic-contract gaps. Keep the missing-span case observable as
+    # ``None`` instead of manufacturing an imprecise fallback.
     return getattr(node, '_span', None)
 
 
@@ -146,6 +151,9 @@ class Operation(OperationStatement):
         """
         Convert this operation to an AST node.
 
+        The private ``_span`` metadata is intentionally not copied. Exported
+        AST nodes are for DSL serialization, not source-span round-tripping.
+
         :return: An operation assignment AST node
         :rtype: dsl_nodes.OperationAssignment
         """
@@ -183,6 +191,9 @@ class IfBlockBranch(AstExportable):
         """
         Convert this branch back to a DSL AST node.
 
+        The private ``_span`` metadata is intentionally not copied. Exported
+        AST nodes are for DSL serialization, not source-span round-tripping.
+
         :return: Operation-if branch AST node
         :rtype: dsl_nodes.OperationIfBranch
         """
@@ -209,6 +220,9 @@ class IfBlock(OperationStatement):
     def to_ast_node(self) -> dsl_nodes.OperationIf:
         """
         Convert this if-block back to a DSL AST node.
+
+        The private ``_span`` metadata is intentionally not copied. Exported
+        AST nodes are for DSL serialization, not source-span round-tripping.
 
         :return: Operation-if AST node
         :rtype: dsl_nodes.OperationIf

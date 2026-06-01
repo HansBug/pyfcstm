@@ -116,6 +116,35 @@ class TestModelSpanPropagation:
         _assert_source_slice(MODEL_SPAN_DSL, aspect_action.operations[0], "x = x + 2;")
         _assert_source_slice(MODEL_SPAN_DSL, user_transition.effects[0], "x = x + 4;")
 
+    def test_lifecycle_ref_actions_keep_their_own_ast_source_spans(self):
+        source = """def int x = 0;
+
+state Root {
+    enter SharedEnter { x = 1; }
+    enter ref SharedEnter;
+    during before SharedDuring { x = x + 1; }
+    during before ref SharedDuring;
+    exit SharedExit { x = x + 2; }
+    exit ref SharedExit;
+    >> during after SharedAspect { x = x + 3; }
+    >> during after ref SharedAspect;
+
+    state A;
+    [*] -> A;
+}
+"""
+        machine = load_state_machine_from_text(source)
+        root = machine.root_state
+
+        _assert_source_slice(source, root.on_enters[1], "enter ref SharedEnter;")
+        _assert_source_slice(
+            source, root.on_durings[1], "during before ref SharedDuring;"
+        )
+        _assert_source_slice(source, root.on_exits[1], "exit ref SharedExit;")
+        _assert_source_slice(
+            source, root.on_during_aspects[1], ">> during after ref SharedAspect;"
+        )
+
     def test_inspect_json_does_not_leak_model_private_span_fields(self):
         machine = load_state_machine_from_text(MODEL_SPAN_DSL)
         payload = inspect_model(machine).to_json()

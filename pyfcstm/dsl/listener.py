@@ -803,6 +803,9 @@ class GrammarParseListener(GrammarListener):
                 condition=self.nodes[condition],
                 statements=self.nodes[block],
             )
+            # Branch spans intentionally cover the executable operation block.
+            # The condition text remains covered by the parent OperationIf span;
+            # expression-level guard spans are a separate diagnostic contract.
             branch._span = _ctx_span(block)
             branches.append(branch)
 
@@ -811,6 +814,8 @@ class GrammarParseListener(GrammarListener):
                 condition=None,
                 statements=self.nodes[blocks[-1]],
             )
+            # Keep else-branch semantics aligned with condition branches: the
+            # branch span points at the executable block, not the ``else`` token.
             branch._span = _ctx_span(blocks[-1])
             branches.append(branch)
 

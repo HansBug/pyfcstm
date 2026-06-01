@@ -1,5 +1,5 @@
-import type {FcstmSemanticDocument} from '../semantics';
-import type {TextDocumentLike, TextRange} from '../utils/text';
+import type {FcstmSemanticDocument, FcstmSemanticTransition} from '../semantics';
+import {createRange, type TextDocumentLike, type TextRange} from '../utils/text';
 import {findIdentifierRange} from './ranges';
 import {
     effectSelfAssignRange,
@@ -24,6 +24,115 @@ function statePathRange(
     return state ? findIdentifierRange(document, state.name, state.range) : null;
 }
 
+function dottedPath(path: readonly string[] | undefined): string | null {
+    return path && path.length > 0 ? path.join('.') : null;
+}
+
+function transitionEndpointPath(
+    transition: FcstmSemanticTransition,
+    endpoint: 'source' | 'target',
+): string | null {
+    if (endpoint === 'source') {
+        if (transition.sourceKind === 'init') return '[*]';
+        return dottedPath(transition.sourceStatePath) ?? transition.sourceStateName ?? null;
+    }
+    if (transition.targetKind === 'exit') return '[*]';
+    return dottedPath(transition.targetStatePath) ?? transition.targetStateName ?? null;
+}
+
+function compactText(value: string | null | undefined): string | null {
+    if (value === undefined || value === null) return null;
+    return value.replace(/\s+/g, '');
+}
+
+function effectBlockRange(
+    document: TextDocumentLike,
+    transition: FcstmSemanticTransition,
+): TextRange | null {
+    const effectRange = transition.ast.effect?.range;
+    if (!effectRange) return null;
+    for (let lineIndex = transition.range.start.line; lineIndex <= effectRange.start.line; lineIndex += 1) {
+        const line = document.lineAt(lineIndex).text;
+        const startCharacter = lineIndex === transition.range.start.line ? transition.range.start.character : 0;
+        const endCharacter = lineIndex === effectRange.start.line ? effectRange.start.character : line.length;
+        const prefix = line.slice(startCharacter, endCharacter);
+        const keywordOffset = prefix.lastIndexOf('effect');
+        if (keywordOffset >= 0) {
+            const keywordCharacter = startCharacter + keywordOffset;
+            return createRange(
+                lineIndex,
+                keywordCharacter,
+                transition.range.end.line,
+                transition.range.end.character,
+            );
+        }
+    }
+    return effectRange;
+}
+
+function transitionHasEvent(transition: FcstmSemanticTransition, expectedEvent: string | null): boolean {
+    if (expectedEvent === null) return true;
+    if (!transition.trigger) return false;
+    return transition.trigger.rawText === expectedEvent ||
+        transition.trigger.qualifiedName === expectedEvent ||
+        transition.trigger.normalizedPath.join('.') === expectedEvent;
+}
+
+function transitionMatchesRefs(
+    transition: FcstmSemanticTransition,
+    refs: Record<string, unknown>,
+): boolean {
+    const fromPath = stringRef(refs, 'from_path');
+    const toPath = stringRef(refs, 'to_path');
+    if (fromPath && transitionEndpointPath(transition, 'source') !== fromPath) return false;
+    if (toPath && transitionEndpointPath(transition, 'target') !== toPath) return false;
+
+    const statePath = stringRef(refs, 'state_path');
+    if (statePath && statePath !== transitionEndpointPath(transition, 'source')) return false;
+
+    const guardText = compactText(stringRef(refs, 'guard_text'));
+    if (guardText !== null && compactText(transition.guard?.text) !== guardText) return false;
+
+    const effectText = compactText(stringRef(refs, 'effect_text'));
+    if (effectText !== null && compactText(transition.effectText) !== effectText) return false;
+
+    const eventName = stringRef(refs, 'event_name') ?? stringRef(refs, 'event_chain') ?? stringRef(refs, 'event');
+    if (!transitionHasEvent(transition, eventName)) return false;
+
+    return true;
+}
+
+function transitionRangeResolution(
+    semantic: FcstmSemanticDocument,
+    refs: Record<string, unknown>,
+): InspectRangeResolution {
+    const transitions = semantic.transitions.filter(transition => !transition.forced && transitionMatchesRefs(transition, refs));
+    if (transitions.length === 0) return {range: null};
+    const requestedIndex = refs.transition_index;
+    const selected = typeof requestedIndex === 'number' && Number.isInteger(requestedIndex)
+        ? transitions.find(transition => semantic.transitions.indexOf(transition) === requestedIndex)
+        : transitions[0];
+    if (!selected) return {range: null};
+    return {
+        range: selected.range,
+        fallback: transitions.length > 1 && requestedIndex === undefined ? 'transition_ambiguous' : undefined,
+        transition: selected,
+    };
+}
+
+function guardRangeResolution(
+    semantic: FcstmSemanticDocument,
+    refs: Record<string, unknown>,
+): InspectRangeResolution {
+    const transitionResolution = transitionRangeResolution(semantic, refs);
+    if (!transitionResolution.range) return transitionResolution;
+    const guardRange = transitionResolution.transition?.guard?.range ?? null;
+    return {
+        range: guardRange ?? transitionResolution.range,
+        fallback: transitionResolution.fallback,
+    };
+}
+
 function eventRange(
     document: TextDocumentLike,
     semantic: FcstmSemanticDocument,
@@ -35,11 +144,17 @@ function eventRange(
     return findIdentifierRange(document, event.name, event.declarationAst?.range ?? event.range);
 }
 
-export type InspectRangeFallback = 'full_document' | 'first_of_ambiguous';
+export type InspectRangeFallback =
+    | 'full_document'
+    | 'first_of_ambiguous'
+    | 'transition_ambiguous'
+    | 'effect_fallback'
+    | 'transition_fallback';
 
 export interface InspectRangeResolution {
     range: TextRange | null;
     fallback?: InspectRangeFallback;
+    transition?: FcstmSemanticTransition;
 }
 
 function arrayFirstRange(value: unknown): TextRange | null {
@@ -114,6 +229,16 @@ export function resolveRangeFromRefsDetailed(
         );
         consumeEffectSelfAssignOccurrenceIndex(seenEffectSelfAssigns, refMap, Boolean(range));
         if (range) return {range};
+        const transitionResolution = transitionRangeResolution(semantic, refMap);
+        if (transitionResolution.range) {
+            const effectRange = transitionResolution.transition
+                ? effectBlockRange(document, transitionResolution.transition)
+                : null;
+            return {
+                range: effectRange ?? transitionResolution.range,
+                fallback: transitionResolution.fallback ?? (effectRange ? 'effect_fallback' : 'transition_fallback'),
+            };
+        }
         return {range: null};
     }
 
@@ -122,6 +247,17 @@ export function resolveRangeFromRefsDetailed(
         if (range) return {range};
     }
 
+    const duplicateRange = arrayFirstRange(refMap.duplicate_spans);
+    if (duplicateRange) return {range: duplicateRange};
+
+    if (refMap.transition_span === null || refMap.guard_span === null || refMap.duplicate_spans !== undefined) {
+        if (refMap.folded_value === true || refMap.folded_value === false || stringRef(refMap, 'guard_text')) {
+            const guardResolution = guardRangeResolution(semantic, refMap);
+            if (guardResolution.range) return guardResolution;
+        }
+        const transitionResolution = transitionRangeResolution(semantic, refMap);
+        if (transitionResolution.range) return transitionResolution;
+    }
     for (const key of ['state_path', 'composite_path', 'parent_path', 'from_path', 'to_path', 'deepest_path']) {
         const range = statePathRange(document, semantic, stringRef(refMap, key));
         if (range) return {range};
@@ -137,8 +273,7 @@ export function resolveRangeFromRefsDetailed(
     const resolvedEventRange = eventRange(document, semantic, stringRef(refMap, 'event_qualified_name'));
     if (resolvedEventRange) return {range: resolvedEventRange};
 
-    const duplicateRange = arrayFirstRange(refMap.duplicate_spans);
-    return {range: duplicateRange};
+    return {range: null};
 }
 
 export function resolveRangeFromRefs(

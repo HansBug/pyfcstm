@@ -145,8 +145,23 @@ function isInspectSurfaceCode(code: unknown): code is string {
     return typeof code === 'string' && (code.startsWith('W_') || code.startsWith('I_'));
 }
 
+function canonicalRefs(refs: unknown): unknown {
+    if (Array.isArray(refs)) {
+        return refs.map(item => canonicalRefs(item));
+    }
+    if (typeof refs !== 'object' || refs === null) {
+        return refs;
+    }
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(refs as Record<string, unknown>).sort()) {
+        if (key === '__rangeFallback') continue;
+        out[key] = canonicalRefs((refs as Record<string, unknown>)[key]);
+    }
+    return out;
+}
+
 function stableKey(code: string, refs: unknown): string {
-    return JSON.stringify([code, refs ?? null]);
+    return JSON.stringify([code, canonicalRefs(refs ?? null)]);
 }
 
 async function inspectDiagnosticKeys(text: string, filePath: string): Promise<string[]> {
@@ -194,6 +209,22 @@ async function semanticFor(text: string, filePath: string) {
     const semantic = await packageModule.getWorkspaceGraph().getSemanticDocument(document);
     assert.ok(semantic, 'expected semantic document');
     return {document, semantic};
+}
+
+function sliceText(
+    document: ReturnType<typeof createDocument>,
+    range: {start: {line: number; character: number}; end: {line: number; character: number}},
+): string {
+    if (range.start.line === range.end.line) {
+        return document.lineAt(range.start.line).text.slice(range.start.character, range.end.character);
+    }
+    const lines = [];
+    lines.push(document.lineAt(range.start.line).text.slice(range.start.character));
+    for (let line = range.start.line + 1; line < range.end.line; line += 1) {
+        lines.push(document.lineAt(line).text);
+    }
+    lines.push(document.lineAt(range.end.line).text.slice(0, range.end.character));
+    return lines.join('\n');
 }
 
 describe('editor inspect diagnostics surface parity', () => {
@@ -312,6 +343,8 @@ state Root {
             folded_value: false,
             from_path: 'Root.Idle',
             to_path: 'Root.Blocked',
+            guard_text: '1==2',
+            transition_index: 1,
         });
     });
 
@@ -340,12 +373,16 @@ state Root {
                 folded_value: false,
                 from_path: 'Root.Idle',
                 to_path: 'Root.FoldedBlocked',
+                guard_text: '1==2',
+                transition_index: 2,
             },
             {
                 transition_span: null,
                 folded_value: false,
                 from_path: 'Root.Idle',
                 to_path: 'Root.LiteralBlocked',
+                guard_text: 'false',
+                transition_index: 1,
             },
         ]);
     });
@@ -374,12 +411,16 @@ state Root {
                 folded_value: false,
                 from_path: 'Root.Idle',
                 to_path: 'Root.Blocked',
+                guard_text: 'false',
+                transition_index: 1,
             },
             {
                 transition_span: null,
                 folded_value: false,
                 from_path: 'Root.Idle',
                 to_path: 'Root.Blocked',
+                guard_text: '1==2',
+                transition_index: 2,
             },
         ]);
         assertBagCovers(
@@ -491,7 +532,7 @@ state Root {
         assert.equal(document.lineAt(fromPathRange!.start.line).text.slice(
             fromPathRange!.start.character,
             fromPathRange!.end.character,
-        ), 'Idle');
+        ).trim(), 'Idle -> Done : Tick;');
 
         const variableRange = packageModule.resolveRangeFromRefs(document, semantic, {var_name: 'counter'});
         assert.equal(document.lineAt(variableRange!.start.line).text.includes('def int counter = 0;'), true);
@@ -511,8 +552,12 @@ state Root {
             duplicateRange,
         );
         assert.equal(
-            packageModule.resolveRangeFromRefs(document, semantic, {duplicate_spans: ['not-a-range']}),
-            null,
+            sliceText(document, packageModule.resolveRangeFromRefs(document, semantic, {
+                from_path: 'Root.Idle',
+                to_path: 'Root.Done',
+                duplicate_spans: ['not-a-range'],
+            })!).trim(),
+            'Idle -> Done : Tick;',
         );
         assert.equal(packageModule.resolveRangeFromRefs(document, semantic, null), null);
     });

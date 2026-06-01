@@ -348,6 +348,8 @@ function addTransitionDiagnostics(
                 data: {
                     transition_span: null,
                     folded_value: false,
+                    guard_text: transition.guard?.text ?? null,
+                    transition_index: semantic.transitions.indexOf(transition),
                     ...transitionDiagnosticEndpointPaths(transition),
                 },
                 relatedInformation: sourceState

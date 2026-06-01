@@ -98,10 +98,14 @@ export function collectConstFoldWarnings(machine: StateMachine | null | undefine
     if (!machine) return [];
     const out: ModelDiagnosticJson[] = [];
     const definedVars = new Set(Object.keys(machine.defines));
+    let transitionIndex = 0;
     for (const state of machine.allStates) {
         const statePath = state.path.join('.');
         for (const transition of state.transitions) {
-            const foldedGuard = transition.guard ? foldConditionExpression(transition.guard) : null;
+            const currentTransitionIndex = transitionIndex;
+            transitionIndex += 1;
+            const guard = transition.guard;
+            const foldedGuard = guard ? foldConditionExpression(guard) : null;
             if (foldedGuard === true || foldedGuard === false) {
                 out.push(guardConstDiagnostic(
                     transition.fromState,
@@ -110,6 +114,8 @@ export function collectConstFoldWarnings(machine: StateMachine | null | undefine
                     transition.targetKind,
                     state.path,
                     foldedGuard,
+                    guard ? guard.text : '',
+                    currentTransitionIndex,
                 ));
             }
         }
@@ -209,6 +215,8 @@ function guardConstDiagnostic(
     targetKind: 'state' | 'exit',
     parentPath: readonly string[],
     value: boolean,
+    guardText: string,
+    transitionIndex: number,
 ): ModelDiagnosticJson {
     const label = value ? 'true' : 'false';
     const sourceLabel = transitionSourceLabel(fromState, sourceKind);
@@ -223,6 +231,8 @@ function guardConstDiagnostic(
             folded_value: value,
             from_path: transitionSourcePath(parentPath, fromState, sourceKind),
             to_path: transitionTargetPath(parentPath, toState, targetKind),
+            guard_text: guardText,
+            transition_index: transitionIndex,
         },
     };
 }

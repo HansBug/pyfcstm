@@ -36,7 +36,8 @@ function collectCompositeSelfTransitionInfos(
 
 function collectEventlessGuardlessTransitionInfos(transitions: TransitionInfo[]): ModelDiagnosticJson[] {
     const out: ModelDiagnosticJson[] = [];
-    for (const transition of transitions) {
+    for (let transitionIndex = 0; transitionIndex < transitions.length; transitionIndex += 1) {
+        const transition = transitions[transitionIndex];
         if (transition.from_path === '[*]') continue;
         if (transition.event !== null || transition.guard !== null) continue;
         out.push({
@@ -48,6 +49,7 @@ function collectEventlessGuardlessTransitionInfos(transitions: TransitionInfo[])
                 from_path: transition.from_path,
                 to_path: transition.to_path,
                 transition_span: null,
+                transition_index: transitionIndex,
             },
         });
     }

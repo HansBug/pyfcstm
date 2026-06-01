@@ -101,6 +101,13 @@ def create_z3_vars_from_models(models):
     return impl(models)
 
 
+def python_round_to_z3(operand):
+    """Delegate to :func:`pyfcstm.solver.expr.python_round_to_z3`."""
+    from pyfcstm.solver.expr import python_round_to_z3 as impl
+
+    return impl(operand)
+
+
 def expr_to_z3(expr, z3_vars):
     """Delegate to :func:`pyfcstm.solver.expr.expr_to_z3`."""
     from pyfcstm.solver.expr import expr_to_z3 as impl
@@ -477,7 +484,7 @@ def _ufunc_z3_or_result(
                 f"sqrt requires Real or Int operand, got {operand.sort()}.",
             )
         if func == "round":
-            return _python_round_z3(operand), None
+            return python_round_to_z3(operand), None
         return None, _skip_result(
             "undecidable_skip",
             "Mathematical function {func!r} is not supported in Z3 conversion.".format(
@@ -491,31 +498,6 @@ def _ufunc_z3_or_result(
     except z3.Z3Exception as err:
         # Z3Exception: Z3 rejects sort/operator-domain mismatches.
         return None, _skip_result("undecidable_skip", str(err))
-
-
-def _python_round_z3(operand: _Z3Expr) -> z3.ArithRef:
-    """Return a Z3 expression matching Python's single-argument ``round``.
-
-    :param operand: Integer or real operand.
-    :type operand: Union[z3.ArithRef, z3.BoolRef]
-    :return: Rounded integer expression.
-    :rtype: z3.ArithRef
-    """
-    if z3.is_int(operand):
-        return operand
-    real_operand = operand if z3.is_real(operand) else z3.ToReal(operand)
-    floor_value = z3.ToInt(real_operand)
-    fraction = real_operand - z3.ToReal(floor_value)
-    half = z3.RealVal("1/2")
-    return z3.If(
-        fraction < half,
-        floor_value,
-        z3.If(
-            fraction > half,
-            floor_value + 1,
-            z3.If(floor_value % 2 == 0, floor_value, floor_value + 1),
-        ),
-    )
 
 
 def _expr_conditions_and_z3_or_result(
@@ -1466,6 +1448,105 @@ def forced_guard_unsat_under_init(
     return AlgorithmResult(kind=sat_result.kind)
 
 
+def _effect_guard_context_or_result(
+    transition: Transition,
+    variables: Sequence[VarDefine],
+    z3_vars: _Z3Vars,
+    *,
+    smt_timeout_ms: Optional[int] = None,
+) -> Tuple[
+    Optional[_Z3Expr], Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]
+]:
+    """Build a feasible guard context for transition-effect algorithms.
+
+    :param transition: Transition whose effect context is analyzed.
+    :type transition: Transition
+    :param variables: Variable definitions available to the model.
+    :type variables: Sequence[VarDefine]
+    :param z3_vars: Initial Z3 variable environment.
+    :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+    :type smt_timeout_ms: Optional[int], optional
+    :return: Guard expression, type constraints, or an algorithm result.
+    :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]
+    """
+    if transition.guard is None:
+        guard_z3 = z3.BoolVal(True)
+    else:
+        guard_z3, result = _expr_to_z3_or_result(transition.guard, z3_vars)
+        if result is not None:
+            return None, None, result
+
+    type_constraints = _build_type_constraints(variables, z3_vars)
+    guard_feasible = is_sat(
+        [guard_z3, *type_constraints],
+        timeout_ms=smt_timeout_ms,
+    )
+    if guard_feasible.kind == "unsat":
+        return None, None, AlgorithmResult(kind="sat")
+    if guard_feasible.kind != "sat":
+        return None, None, AlgorithmResult(kind=guard_feasible.kind)
+    return guard_z3, type_constraints, None
+
+
+def _execute_effects_under_guard_or_result(
+    transition: Transition,
+    z3_vars: _Z3Vars,
+    guard_z3: _Z3Expr,
+    type_constraints: Sequence[z3.ExprRef],
+    *,
+    smt_timeout_ms: Optional[int] = None,
+) -> Tuple[
+    Optional[_Z3Vars], Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]
+]:
+    """Execute transition effects with guard-pruned ternary semantics.
+
+    Transition effects run only when the transition trigger is enabled.  This
+    helper passes that guard context into the raw path-sensitive operation
+    executor so expression-level ternary value branches that the guard makes
+    unreachable are not translated.
+
+    :param transition: Transition whose effects should be executed.
+    :type transition: Transition
+    :param z3_vars: Initial Z3 variable environment.
+    :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :param guard_z3: Z3 guard expression for the transition.
+    :type guard_z3: Union[z3.ArithRef, z3.BoolRef]
+    :param type_constraints: Type/domain constraints for model variables.
+    :type type_constraints: Sequence[z3.ExprRef]
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+    :type smt_timeout_ms: Optional[int], optional
+    :return: Post-effect variables, runtime definedness constraints, or an
+        algorithm result when execution cannot be expressed.
+    :rtype: Tuple[Optional[Dict[str, Union[z3.ArithRef, z3.BoolRef]]], Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]
+    """
+    _, after_vars, effect_domain_constraints, result = (
+        _execute_operation_prefix_conditions_and_vars_or_result(
+            transition.effects,
+            z3_vars,
+            context_constraints=[guard_z3, *type_constraints],
+            smt_timeout_ms=smt_timeout_ms,
+        )
+    )
+    if result is not None:
+        return None, None, result
+
+    defined_effect_context = [
+        guard_z3,
+        *type_constraints,
+        *(effect_domain_constraints or ()),
+    ]
+    defined_effect_feasible = is_sat(
+        defined_effect_context,
+        timeout_ms=smt_timeout_ms,
+    )
+    if defined_effect_feasible.kind == "unsat":
+        return None, None, AlgorithmResult(kind="sat")
+    if defined_effect_feasible.kind != "sat":
+        return None, None, AlgorithmResult(kind=defined_effect_feasible.kind)
+    return after_vars, tuple(effect_domain_constraints or ()), None
+
+
 def effect_no_op_under_guard(
     transition: Transition,
     variables: Sequence[VarDefine],
@@ -1473,6 +1554,10 @@ def effect_no_op_under_guard(
     smt_timeout_ms: Optional[int] = None,
 ) -> AlgorithmResult:
     """Detect transition effects that never change model variables.
+
+    Pure syntactic self-assignment blocks such as ``x = x`` are deliberately
+    ignored as a presentation-level no-op rather than reported as SMT no-op
+    diagnostics.
 
     :param transition: Transition to check.
     :type transition: Transition
@@ -1489,37 +1574,43 @@ def effect_no_op_under_guard(
         return AlgorithmResult(kind="sat")
 
     z3_vars = _z3_vars(variables)
-    after_vars, result = _execute_operations_or_result(transition.effects, z3_vars)
+    guard_z3, type_constraints, result = _effect_guard_context_or_result(
+        transition,
+        variables,
+        z3_vars,
+        smt_timeout_ms=smt_timeout_ms,
+    )
+    if result is not None:
+        return result
+    after_vars, effect_domain_constraints, result = (
+        _execute_effects_under_guard_or_result(
+            transition,
+            z3_vars,
+            guard_z3,
+            type_constraints or (),
+            smt_timeout_ms=smt_timeout_ms,
+        )
+    )
     if result is not None:
         return result
 
-    if transition.guard is None:
-        guard_z3 = z3.BoolVal(True)
-    else:
-        guard_z3, result = _expr_to_z3_or_result(transition.guard, z3_vars)
-        if result is not None:
-            return result
-
-    type_constraints = _build_type_constraints(variables, z3_vars)
-    guard_feasible = is_sat(
-        [guard_z3, *type_constraints],
-        timeout_ms=smt_timeout_ms,
-    )
-    if guard_feasible.kind == "unsat":
-        return AlgorithmResult(kind="sat")
-    if guard_feasible.kind != "sat":
-        return AlgorithmResult(kind=guard_feasible.kind)
-
-    changed_disjuncts = [
-        after_vars[variable.name] != z3_vars[variable.name] for variable in variables
-    ]
+    try:
+        changed_disjuncts = [
+            after_vars[variable.name] != z3_vars[variable.name]
+            for variable in variables
+        ]
+    except KeyError as err:
+        # KeyError: the symbolic executor should preserve all model variables;
+        # a missing variable means the effect state cannot be compared.
+        return _skip_result("undecidable_skip", str(err))
     if not changed_disjuncts:
         return AlgorithmResult(kind="sat")
 
     formula = z3.And(
         guard_z3,
         z3.Or(*changed_disjuncts),
-        *type_constraints,
+        *(type_constraints or ()),
+        *(effect_domain_constraints or ()),
     )
     sat_result = is_sat([formula], timeout_ms=smt_timeout_ms)
     if sat_result.kind == "unsat":
@@ -1558,31 +1649,35 @@ def effect_contradicts_guard(
         return AlgorithmResult(kind="sat")
 
     z3_vars = _z3_vars(variables)
-    guard_before, result = _expr_to_z3_or_result(transition.guard, z3_vars)
+    guard_before, type_constraints, result = _effect_guard_context_or_result(
+        transition,
+        variables,
+        z3_vars,
+        smt_timeout_ms=smt_timeout_ms,
+    )
     if result is not None:
         return result
-    after_vars, result = _execute_operations_or_result(transition.effects, z3_vars)
+    after_vars, effect_domain_constraints, result = (
+        _execute_effects_under_guard_or_result(
+            transition,
+            z3_vars,
+            guard_before,
+            type_constraints or (),
+            smt_timeout_ms=smt_timeout_ms,
+        )
+    )
     if result is not None:
         return result
     guard_after, result = _expr_to_z3_or_result(transition.guard, after_vars)
     if result is not None:
         return result
-    type_constraints = _build_type_constraints(variables, z3_vars)
-
-    guard_feasible = is_sat(
-        [guard_before, *type_constraints],
-        timeout_ms=smt_timeout_ms,
-    )
-    if guard_feasible.kind == "unsat":
-        return AlgorithmResult(kind="sat")
-    if guard_feasible.kind != "sat":
-        return AlgorithmResult(kind=guard_feasible.kind)
 
     sat_result = is_sat(
         [
             guard_before,
             guard_after,
-            *type_constraints,
+            *(type_constraints or ()),
+            *(effect_domain_constraints or ()),
         ],
         timeout_ms=smt_timeout_ms,
     )
@@ -1678,44 +1773,44 @@ def transition_shadowed_by_predecessor(
                 )
                 sat_result = is_sat([formula], timeout_ms=smt_timeout_ms)
                 if sat_result.kind == "unsat":
+                    trigger_sat = is_sat(
+                        [trigger, *_build_type_constraints(variables, z3_vars)],
+                        timeout_ms=smt_timeout_ms,
+                    )
+                    if trigger_sat.kind == "unsat":
+                        # A transition whose own trigger is unsatisfiable
+                        # belongs to dead_guard, not predecessor shadowing.
+                        continue
+                    if trigger_sat.kind != "sat":
+                        first_indeterminate_result = _first_indeterminate(
+                            first_indeterminate_result,
+                            trigger_sat.kind,
+                        )
+                        continue
+
                     has_unconditional_catchall = any(
                         item["event"] is None and item["guard"] is None
                         for item in prior_payloads
                     )
                     if has_unconditional_catchall:
                         reason = "unconditional_catchall"
-                    else:
-                        trigger_sat = is_sat(
-                            [trigger, *_build_type_constraints(variables, z3_vars)],
-                            timeout_ms=smt_timeout_ms,
-                        )
-                        if trigger_sat.kind == "unsat":
-                            # A transition whose own trigger is unsatisfiable
-                            # belongs to dead_guard, not predecessor shadowing.
-                            continue
-                        if trigger_sat.kind != "sat":
-                            first_indeterminate_result = _first_indeterminate(
-                                first_indeterminate_result,
-                                trigger_sat.kind,
-                            )
-                            continue
-                        if (
-                            current_payload["event"] is not None
-                            and current_payload["guard"] is None
-                            and any(
-                                item["event"] == current_payload["event"]
-                                and item["guard"] is None
-                                for item in prior_payloads
-                            )
-                        ):
-                            reason = "duplicate_event"
-                        elif current_payload["guard"] is not None and all(
-                            item["event"] is None and item["guard"] is not None
+                    elif (
+                        current_payload["event"] is not None
+                        and current_payload["guard"] is None
+                        and any(
+                            item["event"] == current_payload["event"]
+                            and item["guard"] is None
                             for item in prior_payloads
-                        ):
-                            reason = "guard_shadow"
-                        else:
-                            reason = "prior_trigger_cover"
+                        )
+                    ):
+                        reason = "duplicate_event"
+                    elif current_payload["guard"] is not None and all(
+                        item["event"] is None and item["guard"] is not None
+                        for item in prior_payloads
+                    ):
+                        reason = "guard_shadow"
+                    else:
+                        reason = "prior_trigger_cover"
                     diagnostics.append(
                         _make_diag(
                             "W_TRANSITION_SHADOWED",

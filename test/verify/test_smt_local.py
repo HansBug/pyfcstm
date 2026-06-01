@@ -657,9 +657,7 @@ def test_path_sensitive_expression_translator_wraps_reachable_branch_domains():
     assert points is not None
     assert z3_expr is not None
     assert result is None
-    assert [str(item) for item in domain_constraints] == [
-        "Implies(True, 2 != 0)"
-    ]
+    assert [str(item) for item in domain_constraints] == ["Implies(True, 2 != 0)"]
 
 
 def test_path_sensitive_expression_translator_wraps_false_branch_domains():
@@ -674,9 +672,7 @@ def test_path_sensitive_expression_translator_wraps_false_branch_domains():
     assert points is not None
     assert z3_expr is not None
     assert result is None
-    assert [str(item) for item in domain_constraints] == [
-        "Implies(Not(True), 2 != 0)"
-    ]
+    assert [str(item) for item in domain_constraints] == ["Implies(Not(True), 2 != 0)"]
 
 
 def test_path_sensitive_expression_translator_denominator_failure_is_normalized():
@@ -1656,6 +1652,28 @@ class TestEffectNoOpUnderGuard:
 
         assert result.kind == "undecidable_skip"
 
+    def test_guard_prunes_unselected_ternary_value_for_no_op_effect(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int flags = 0;
+            def int x = 7;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B : if [mode == 0] effect {
+                    x = (mode == 0) ? x : (flags & 1);
+                };
+            }
+            """
+        )
+
+        result = effect_no_op_under_guard(root_transition(machine), variables(machine))
+
+        assert result.kind == "unsat"
+        assert_single_diag(result, "W_EFFECT_SMT_NO_OP")
+
 
 class TestEffectContradictsGuard:
     """Test effect/guard contradiction checks."""
@@ -1853,11 +1871,11 @@ class TestEffectContradictsGuard:
         )
 
         def drop_guard_variable(*args, **kwargs):
-            return {}, None
+            return {}, (), None
 
         monkeypatch.setattr(
             smt_local,
-            "_execute_operations_or_result",
+            "_execute_effects_under_guard_or_result",
             drop_guard_variable,
         )
 
@@ -1908,6 +1926,27 @@ class TestEffectContradictsGuard:
         )
 
         assert result.kind == "undecidable_skip"
+
+    def test_guard_prunes_unselected_ternary_value_for_guard_contradiction(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int flags = 0;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B : if [mode == 0] effect {
+                    mode = (mode == 0) ? 1 : (flags & 1);
+                };
+            }
+            """
+        )
+
+        result = effect_contradicts_guard(root_transition(machine), variables(machine))
+
+        assert result.kind == "unsat"
+        assert_single_diag(result, "I_EFFECT_GUARD_CONTRADICT")
 
 
 class TestTransitionShadowedByPredecessor:
@@ -2035,7 +2074,7 @@ class TestTransitionShadowedByPredecessor:
         assert result == AlgorithmResult(kind="timeout")
         assert len(calls) == 2
 
-    def test_unconditional_predecessor_shadows_unknown_candidate_trigger(self):
+    def test_unconditional_predecessor_does_not_force_unknown_candidate_shadow(self):
         machine = parse_machine(
             """
             def int x = 0;
@@ -2053,9 +2092,26 @@ class TestTransitionShadowedByPredecessor:
 
         result = transition_shadowed_by_predecessor(machine, variables(machine))
 
-        assert result.kind == "unsat"
-        diag = assert_single_diag(result, "W_TRANSITION_SHADOWED")
-        assert diag["data"]["reason"] == "unconditional_catchall"
+        assert result == AlgorithmResult(kind="unknown")
+
+    def test_unconditional_predecessor_does_not_shadow_dead_candidate_guard(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            state System {
+                state A;
+                state B;
+                state C;
+                [*] -> A;
+                A -> B;
+                A -> C : if [x > 0 && x < 0];
+            }
+            """
+        )
+
+        result = transition_shadowed_by_predecessor(machine, variables(machine))
+
+        assert result == AlgorithmResult(kind="sat")
 
     def test_does_not_trigger_for_complementary_guards(self):
         machine = parse_machine(

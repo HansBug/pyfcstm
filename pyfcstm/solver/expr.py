@@ -38,13 +38,51 @@ from typing import Dict, List, Union
 import z3
 
 from ..model.expr import (
-    Expr, Integer, Float, Boolean, Variable,
-    BinaryOp, UnaryOp, ConditionalOp, UFunc
+    Expr,
+    Integer,
+    Float,
+    Boolean,
+    Variable,
+    BinaryOp,
+    UnaryOp,
+    ConditionalOp,
+    UFunc,
 )
 from ..model.model import StateMachine, VarDefine
 
 
-def expr_to_z3(expr: Expr, z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]) -> Union[z3.ArithRef, z3.BoolRef]:
+def python_round_to_z3(operand: Union[z3.ArithRef, z3.BoolRef]) -> z3.ArithRef:
+    """Return a Z3 expression matching Python single-argument ``round``.
+
+    Python rounds half-way cases to the nearest even integer.  Keeping this
+    helper in the shared solver layer prevents raw verify algorithms from
+    drifting away from runtime expression semantics.
+
+    :param operand: Integer or real Z3 operand.
+    :type operand: Union[z3.ArithRef, z3.BoolRef]
+    :return: Rounded integer expression.
+    :rtype: z3.ArithRef
+    """
+    if z3.is_int(operand):
+        return operand
+    real_operand = operand if z3.is_real(operand) else z3.ToReal(operand)
+    floor_value = z3.ToInt(real_operand)
+    fraction = real_operand - z3.ToReal(floor_value)
+    half = z3.RealVal("1/2")
+    return z3.If(
+        fraction < half,
+        floor_value,
+        z3.If(
+            fraction > half,
+            floor_value + 1,
+            z3.If(floor_value % 2 == 0, floor_value, floor_value + 1),
+        ),
+    )
+
+
+def expr_to_z3(
+    expr: Expr, z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+) -> Union[z3.ArithRef, z3.BoolRef]:
     """
     Convert a pyfcstm expression to a Z3 solver expression.
 
@@ -97,17 +135,17 @@ def expr_to_z3(expr: Expr, z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]) -
         right = expr_to_z3(expr.y, z3_vars)
 
         # Arithmetic operators
-        if expr.op == '+':
+        if expr.op == "+":
             return left + right
-        elif expr.op == '-':
+        elif expr.op == "-":
             return left - right
-        elif expr.op == '*':
+        elif expr.op == "*":
             return left * right
-        elif expr.op == '/':
+        elif expr.op == "/":
             return left / right
-        elif expr.op == '%':
+        elif expr.op == "%":
             return left % right
-        elif expr.op == '**':
+        elif expr.op == "**":
             # Power operator in Z3 has different performance characteristics:
             # - x ** constant: Generally OK (e.g., x**2, x**3)
             # - constant ** x: Slower but acceptable (e.g., 2**x)
@@ -119,87 +157,87 @@ def expr_to_z3(expr: Expr, z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]) -
 
             if left_is_var and right_is_var:
                 warnings.warn(
-                    f"Power operation with two variables (x ** y) may be very slow in Z3. "
-                    f"Z3's nonlinear arithmetic solver has limited support for this pattern. "
-                    f"Consider using alternative formulations or constraints if possible.",
+                    "Power operation with two variables (x ** y) may be very slow in Z3. "
+                    "Z3's nonlinear arithmetic solver has limited support for this pattern. "
+                    "Consider using alternative formulations or constraints if possible.",
                     UserWarning,
-                    stacklevel=2
+                    stacklevel=2,
                 )
             elif right_is_var:
                 warnings.warn(
-                    f"Power operation with variable exponent (constant ** x) may be slow in Z3. "
-                    f"Performance depends on the solver's ability to handle exponential constraints.",
+                    "Power operation with variable exponent (constant ** x) may be slow in Z3. "
+                    "Performance depends on the solver's ability to handle exponential constraints.",
                     UserWarning,
-                    stacklevel=2
+                    stacklevel=2,
                 )
             # x ** constant is generally fine, no warning needed
 
-            return left ** right
+            return left**right
 
         # Bitwise operators
         # Note: These work on Z3 Int but have limitations compared to BitVec
-        elif expr.op == '&':
+        elif expr.op == "&":
             warnings.warn(
-                f"Bitwise AND (&) on Z3 Int types has limited support. "
-                f"For full bitwise operation support, consider using Z3 BitVec types. "
-                f"The operation may not work as expected for negative numbers.",
+                "Bitwise AND (&) on Z3 Int types has limited support. "
+                "For full bitwise operation support, consider using Z3 BitVec types. "
+                "The operation may not work as expected for negative numbers.",
                 UserWarning,
-                stacklevel=2
+                stacklevel=2,
             )
             return left & right
-        elif expr.op == '|':
+        elif expr.op == "|":
             warnings.warn(
-                f"Bitwise OR (|) on Z3 Int types has limited support. "
-                f"For full bitwise operation support, consider using Z3 BitVec types. "
-                f"The operation may not work as expected for negative numbers.",
+                "Bitwise OR (|) on Z3 Int types has limited support. "
+                "For full bitwise operation support, consider using Z3 BitVec types. "
+                "The operation may not work as expected for negative numbers.",
                 UserWarning,
-                stacklevel=2
+                stacklevel=2,
             )
             return left | right
-        elif expr.op == '^':
+        elif expr.op == "^":
             warnings.warn(
-                f"Bitwise XOR (^) on Z3 Int types has limited support. "
-                f"For full bitwise operation support, consider using Z3 BitVec types. "
-                f"The operation may not work as expected for negative numbers.",
+                "Bitwise XOR (^) on Z3 Int types has limited support. "
+                "For full bitwise operation support, consider using Z3 BitVec types. "
+                "The operation may not work as expected for negative numbers.",
                 UserWarning,
-                stacklevel=2
+                stacklevel=2,
             )
             return left ^ right
-        elif expr.op == '<<':
+        elif expr.op == "<<":
             warnings.warn(
-                f"Left shift (<<) on Z3 Int types has limited support. "
-                f"For full bitwise operation support, consider using Z3 BitVec types.",
+                "Left shift (<<) on Z3 Int types has limited support. "
+                "For full bitwise operation support, consider using Z3 BitVec types.",
                 UserWarning,
-                stacklevel=2
+                stacklevel=2,
             )
             return left << right
-        elif expr.op == '>>':
+        elif expr.op == ">>":
             warnings.warn(
-                f"Right shift (>>) on Z3 Int types has limited support. "
-                f"For full bitwise operation support, consider using Z3 BitVec types.",
+                "Right shift (>>) on Z3 Int types has limited support. "
+                "For full bitwise operation support, consider using Z3 BitVec types.",
                 UserWarning,
-                stacklevel=2
+                stacklevel=2,
             )
             return left >> right
 
         # Comparison operators
-        elif expr.op == '<':
+        elif expr.op == "<":
             return left < right
-        elif expr.op == '<=':
+        elif expr.op == "<=":
             return left <= right
-        elif expr.op == '>':
+        elif expr.op == ">":
             return left > right
-        elif expr.op == '>=':
+        elif expr.op == ">=":
             return left >= right
-        elif expr.op == '==':
+        elif expr.op == "==":
             return left == right
-        elif expr.op == '!=':
+        elif expr.op == "!=":
             return left != right
 
         # Logical operators
-        elif expr.op in ('&&', 'and'):
+        elif expr.op in ("&&", "and"):
             return z3.And(left, right)
-        elif expr.op in ('||', 'or'):
+        elif expr.op in ("||", "or"):
             return z3.Or(left, right)
 
         else:
@@ -209,20 +247,20 @@ def expr_to_z3(expr: Expr, z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]) -
     elif isinstance(expr, UnaryOp):
         operand = expr_to_z3(expr.x, z3_vars)
 
-        if expr.op == '-':
+        if expr.op == "-":
             return -operand
-        elif expr.op == '+':
+        elif expr.op == "+":
             return operand
-        elif expr.op == '~':
+        elif expr.op == "~":
             warnings.warn(
-                f"Bitwise NOT (~) on Z3 Int types has limited support. "
-                f"For full bitwise operation support, consider using Z3 BitVec types. "
-                f"The operation may not work as expected.",
+                "Bitwise NOT (~) on Z3 Int types has limited support. "
+                "For full bitwise operation support, consider using Z3 BitVec types. "
+                "The operation may not work as expected.",
                 UserWarning,
-                stacklevel=2
+                stacklevel=2,
             )
             return ~operand
-        elif expr.op in ('!', 'not'):
+        elif expr.op in ("!", "not"):
             return z3.Not(operand)
         else:
             raise ValueError(f"Unsupported unary operator: {expr.op}")
@@ -239,11 +277,11 @@ def expr_to_z3(expr: Expr, z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]) -
         operand = expr_to_z3(expr.x, z3_vars)
 
         # Absolute value and sign functions
-        if expr.func == 'abs':
+        if expr.func == "abs":
             # Use conditional expression for absolute value
             return z3.If(operand >= 0, operand, -operand)
 
-        elif expr.func == 'sign':
+        elif expr.func == "sign":
             # Sign function: returns -1, 0, or 1
             zero = z3.IntVal(0) if z3.is_int(operand) else z3.RealVal(0)
             one = z3.IntVal(1) if z3.is_int(operand) else z3.RealVal(1)
@@ -251,7 +289,7 @@ def expr_to_z3(expr: Expr, z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]) -
             return z3.If(operand == zero, zero, z3.If(operand > zero, one, minus_one))
 
         # Rounding functions (for Real numbers)
-        elif expr.func == 'floor':
+        elif expr.func == "floor":
             # Z3 has ToInt which performs floor for non-negative reals
             # For general floor, we need to handle negative numbers
             if z3.is_real(operand):
@@ -263,7 +301,7 @@ def expr_to_z3(expr: Expr, z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]) -
                 # Try to convert to Real first (silent conversion)
                 return z3.ToInt(z3.ToReal(operand))
 
-        elif expr.func == 'ceil':
+        elif expr.func == "ceil":
             # Ceiling: ceil(x) = -floor(-x)
             if z3.is_real(operand):
                 return -z3.ToInt(-operand)
@@ -274,7 +312,7 @@ def expr_to_z3(expr: Expr, z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]) -
                 # Try to convert to Real first (silent conversion)
                 return -z3.ToInt(-z3.ToReal(operand))
 
-        elif expr.func == 'trunc':
+        elif expr.func == "trunc":
             # Truncate towards zero
             if z3.is_real(operand):
                 zero = z3.RealVal(0)
@@ -286,13 +324,17 @@ def expr_to_z3(expr: Expr, z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]) -
                 # Try to convert to Real first (silent conversion)
                 real_operand = z3.ToReal(operand)
                 zero = z3.RealVal(0)
-                return z3.If(real_operand >= zero, z3.ToInt(real_operand), -z3.ToInt(-real_operand))
+                return z3.If(
+                    real_operand >= zero,
+                    z3.ToInt(real_operand),
+                    -z3.ToInt(-real_operand),
+                )
 
         # Min/Max functions (if operand is a comparison, we can use If)
         # Note: These would need special handling as they typically take 2 arguments
 
         # Power and root functions
-        elif expr.func == 'sqrt':
+        elif expr.func == "sqrt":
             # Z3 has limited support for sqrt
             # We can use z3.Sqrt for Real numbers in some theories
             if z3.is_real(operand):
@@ -306,55 +348,45 @@ def expr_to_z3(expr: Expr, z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]) -
                     f"Cannot convert to Real."
                 )
 
-        elif expr.func == 'cbrt':
+        elif expr.func == "cbrt":
             # Cube root: x^(1/3)
             # Z3 doesn't have native cbrt, would need uninterpreted function
             raise NotImplementedError(
-                f"Mathematical function 'cbrt' is not directly supported in Z3. "
-                f"Consider using uninterpreted functions or polynomial constraints (y^3 = x)."
+                "Mathematical function 'cbrt' is not directly supported in Z3. "
+                "Consider using uninterpreted functions or polynomial constraints (y^3 = x)."
             )
 
-        elif expr.func == 'exp':
+        elif expr.func == "exp":
             # Exponential function
             raise NotImplementedError(
-                f"Mathematical function 'exp' is not directly supported in Z3. "
-                f"Consider using uninterpreted functions or approximations."
+                "Mathematical function 'exp' is not directly supported in Z3. "
+                "Consider using uninterpreted functions or approximations."
             )
 
         # Logarithmic functions
-        elif expr.func in ('log', 'log10', 'log2', 'log1p'):
+        elif expr.func in ("log", "log10", "log2", "log1p"):
             raise NotImplementedError(
                 f"Logarithmic function '{expr.func}' is not directly supported in Z3. "
                 f"Consider using uninterpreted functions or approximations."
             )
 
         # Trigonometric functions
-        elif expr.func in ('sin', 'cos', 'tan', 'asin', 'acos', 'atan'):
+        elif expr.func in ("sin", "cos", "tan", "asin", "acos", "atan"):
             raise NotImplementedError(
                 f"Trigonometric function '{expr.func}' is not directly supported in Z3. "
                 f"Consider using uninterpreted functions or approximations."
             )
 
         # Hyperbolic functions
-        elif expr.func in ('sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh'):
+        elif expr.func in ("sinh", "cosh", "tanh", "asinh", "acosh", "atanh"):
             raise NotImplementedError(
                 f"Hyperbolic function '{expr.func}' is not directly supported in Z3. "
                 f"Consider using uninterpreted functions or approximations."
             )
 
         # Round function
-        elif expr.func == 'round':
-            # Python's round function - rounds to nearest even
-            if z3.is_real(operand):
-                # Z3 doesn't have native round, approximate with floor(x + 0.5)
-                # This is "round half up" not "round half to even" but close enough
-                return z3.ToInt(operand + z3.RealVal(0.5))
-            elif z3.is_int(operand):
-                # Already an integer
-                return operand
-            else:
-                # Try to convert to Real first (silent conversion)
-                return z3.ToInt(z3.ToReal(operand) + z3.RealVal(0.5))
+        elif expr.func == "round":
+            return python_round_to_z3(operand)
 
         else:
             raise NotImplementedError(
@@ -367,7 +399,9 @@ def expr_to_z3(expr: Expr, z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]) -
         raise ValueError(f"Unsupported expression type: {type(expr).__name__}")
 
 
-def create_z3_vars_from_models(models: Union[StateMachine, VarDefine, List[VarDefine]]) -> Dict[str, Union[z3.ArithRef, z3.BoolRef]]:
+def create_z3_vars_from_models(
+    models: Union[StateMachine, VarDefine, List[VarDefine]],
+) -> Dict[str, Union[z3.ArithRef, z3.BoolRef]]:
     """
     Create a dictionary of Z3 variables from model objects.
 
@@ -421,8 +455,10 @@ def create_z3_vars_from_models(models: Union[StateMachine, VarDefine, List[VarDe
     elif isinstance(models, list):
         var_defines = models
     else:
-        raise TypeError(f"Unsupported input type: {type(models).__name__}. "
-                        "Expected StateMachine, VarDefine, or List[VarDefine]")
+        raise TypeError(
+            f"Unsupported input type: {type(models).__name__}. "
+            "Expected StateMachine, VarDefine, or List[VarDefine]"
+        )
 
     # Create Z3 variables
     z3_vars = {}
@@ -431,12 +467,14 @@ def create_z3_vars_from_models(models: Union[StateMachine, VarDefine, List[VarDe
         var_name = var_def.name
         var_type = var_def.type.lower()
 
-        if var_type == 'int':
+        if var_type == "int":
             z3_vars[var_name] = z3.Int(var_name)
-        elif var_type == 'float':
+        elif var_type == "float":
             z3_vars[var_name] = z3.Real(var_name)
         else:
-            raise ValueError(f"Unsupported variable type '{var_type}' for variable '{var_name}'. "
-                             "Supported types: int, float")
+            raise ValueError(
+                f"Unsupported variable type '{var_type}' for variable '{var_name}'. "
+                "Supported types: int, float"
+            )
 
     return z3_vars

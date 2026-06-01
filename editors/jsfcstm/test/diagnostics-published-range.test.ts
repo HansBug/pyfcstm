@@ -170,6 +170,73 @@ describe('diagnostics published ranges', () => {
         );
     });
 
+    it('keeps self-assignment problem ranges ahead of later transition spans', async () => {
+        const text = [
+            'def int x = 0;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B effect {',
+            '        x = x;',
+            '    };',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/published-self-assign-with-span.fcstm');
+        const semantic = await packageModule.getWorkspaceGraph().getSemanticDocument(document);
+        const diagnostics = packageModule.collectInspectDiagnosticsFromItems(
+            document,
+            semantic,
+            [{
+                code: 'W_EFFECT_SELF_ASSIGN',
+                severity: 'warning' as const,
+                message: 'Transition effect assigns "x" to itself.',
+                span: null,
+                refs: {
+                    state_path: 'Root.A',
+                    transition_span: packageModule.createRange(5, 4, 7, 6),
+                    var_name: 'x',
+                    effect_self_assign_anchor: 'x',
+                },
+            }],
+        );
+
+        assert.equal(diagnostics.length, 1);
+        const slice = sliceByRange(text, diagnostics[0].range).trim();
+        assert.equal(slice, 'x = x;');
+        assert.notEqual(slice, 'A -> B effect {\n        x = x;\n    };');
+    });
+
+    it('only consumes self-assignment occurrence counters after a range is matched', async () => {
+        const text = [
+            'def int x = 0;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B effect {',
+            '        x = x;',
+            '    };',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/published-self-assign-counter.fcstm');
+        const semantic = await packageModule.getWorkspaceGraph().getSemanticDocument(document);
+        const refs = {
+            state_path: 'Root.A',
+            transition_span: null,
+            var_name: 'x',
+        };
+        const seen = new Map<string, number>();
+
+        const first = packageModule.resolveRangeFromRefsDetailed(document, semantic, refs, seen);
+        assert.equal(sliceByRange(text, first.range!).trim(), 'x = x;');
+        assert.equal(seen.get(JSON.stringify(['Root.A', 'x'])), 1);
+
+        const missing = packageModule.resolveRangeFromRefsDetailed(document, semantic, refs, seen);
+        assert.equal(missing.range, null);
+        assert.equal(seen.get(JSON.stringify(['Root.A', 'x'])), 1);
+    });
+
     it('anchors repeated initial self-assignment diagnostics on each matching statement', async () => {
         const text = [
             'def int x = 0;',

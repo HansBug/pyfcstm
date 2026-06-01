@@ -64,15 +64,24 @@ function effectSelfAssignGroupKey(refMap: Record<string, unknown>): string | nul
     return JSON.stringify([statePath, variableName]);
 }
 
-function effectSelfAssignOccurrenceIndex(
+function consumeEffectSelfAssignOccurrenceIndex(
+    seen: Map<string, number> | undefined,
+    refMap: Record<string, unknown>,
+    matched: boolean,
+): void {
+    if (!matched) return;
+    const key = effectSelfAssignGroupKey(refMap);
+    if (!key || !seen) return;
+    seen.set(key, (seen.get(key) ?? 0) + 1);
+}
+
+function peekEffectSelfAssignOccurrenceIndex(
     seen: Map<string, number> | undefined,
     refMap: Record<string, unknown>,
 ): number | undefined {
     const key = effectSelfAssignGroupKey(refMap);
     if (!key || !seen) return undefined;
-    const index = seen.get(key) ?? 0;
-    seen.set(key, index + 1);
-    return index;
+    return seen.get(key) ?? 0;
 }
 
 /**
@@ -89,11 +98,6 @@ export function resolveRangeFromRefsDetailed(
     if (typeof refs !== 'object' || refs === null) return {range: null};
     const refMap = refs as Record<string, unknown>;
 
-    for (const key of ['guard_span', 'transition_span', 'forced_span', 'normal_span']) {
-        const range = spanLikeToRange(refMap[key]);
-        if (range) return {range};
-    }
-
     const variableName = stringRef(refMap, 'var_name');
     const statePath = stringRef(refMap, 'state_path');
     const looksLikeEffectSelfAssign = variableName && statePath && (
@@ -106,10 +110,16 @@ export function resolveRangeFromRefsDetailed(
             semantic,
             statePath,
             variableName,
-            effectSelfAssignOccurrenceIndex(seenEffectSelfAssigns, refMap),
+            peekEffectSelfAssignOccurrenceIndex(seenEffectSelfAssigns, refMap),
         );
+        consumeEffectSelfAssignOccurrenceIndex(seenEffectSelfAssigns, refMap, Boolean(range));
         if (range) return {range};
         return {range: null};
+    }
+
+    for (const key of ['guard_span', 'transition_span', 'forced_span', 'normal_span']) {
+        const range = spanLikeToRange(refMap[key]);
+        if (range) return {range};
     }
 
     for (const key of ['state_path', 'composite_path', 'parent_path', 'from_path', 'to_path', 'deepest_path']) {

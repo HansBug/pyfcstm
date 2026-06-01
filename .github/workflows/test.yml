@@ -2,8 +2,31 @@
 name: Code Test
 
 on:
-  - push
-  - workflow_dispatch
+  push:
+    paths:
+      # Source code
+      - 'pyfcstm/**'
+      - 'editors/jsfcstm/**'
+      - 'editors/fcstm.tmLanguage.json'
+      # Tests
+      - 'test/**'
+      # Templates (test/template/* compiles built-in templates)
+      - 'templates/**'
+      - 'tools/**'
+      # Build & dependency manifests
+      - 'setup.py'
+      - 'setup.cfg'
+      - 'pyproject.toml'
+      - 'MANIFEST.in'
+      - 'requirements*.txt'
+      # Test / coverage configuration
+      - 'pytest.ini'
+      - '.coveragerc'
+      - 'codecov.yml'
+      - 'Makefile'
+      # This workflow itself
+      - '.github/workflows/test.yml'
+  workflow_dispatch:
 
 jobs:
   unittest:

@@ -6,7 +6,7 @@ import {FcstmDiagnostic, TextDocumentLike, TextRange, createRange} from '../util
 import {getWorkspaceGraph} from '../workspace';
 import {FCSTM_DIAGNOSTIC_CODES} from './analyzers';
 import {collectInspectDiagnosticsFromItems, diagnosticKey} from './diagnostics';
-import {rangeIntersects} from './ranges';
+import {findIdentifierRange, rangeIntersects} from './ranges';
 import type {FcstmWorkspaceEdit} from './references';
 import {planSuggestedFixEdit, suggestedFixFromDiagnostic} from './suggested-fixes';
 
@@ -138,26 +138,60 @@ export async function collectCodeActions(
         const existing = new Set<string>();
         const inspectDiagnostics = inspectModel(node.model).diagnostics;
         const serverSuggestedKeysAtRange = new Set(
-            collectInspectDiagnosticsFromItems(document, semantic, inspectDiagnostics)
+            collectInspectDiagnosticsFromItems(document, semantic, inspectDiagnostics, [], {rangeMode: 'fix-edit'})
                 .filter(diagnostic => (
                     suggestedFixFromDiagnostic(diagnostic) &&
                     rangeIntersects(diagnostic.range, range)
                 ))
                 .map(diagnosticKey),
         );
+        for (const item of inspectDiagnostics) {
+            const suggestedFix = item.refs?.suggested_fix;
+            if (
+                item.code !== 'W_INITIAL_UNCONDITIONAL_MISSING' ||
+                typeof item.refs?.composite_path !== 'string' ||
+                typeof suggestedFix !== 'object' ||
+                suggestedFix === null
+            ) {
+                continue;
+            }
+            const composite = semantic.states.find(state => (
+                state.identity.qualifiedName === item.refs.composite_path
+            ));
+            if (!composite) continue;
+            const transitionHit = semantic.transitions.some(transition => {
+                if (transition.sourceKind !== 'init' || transition.ownerStateId !== composite.identity.id) {
+                    return false;
+                }
+                return rangeIntersects(transition.range, range) || rangeIntersects(
+                    findIdentifierRange(document, transition.targetStateName, transition.range, {preferLast: true}),
+                    range,
+                );
+            });
+            if (transitionHit) {
+                serverSuggestedKeysAtRange.add(diagnosticKey({
+                    range: composite.range,
+                    message: item.message,
+                    severity: item.severity,
+                    source: 'fcstm',
+                    code: item.code,
+                    data: item.refs,
+                }));
+            }
+        }
         for (const diagnostic of collectInspectDiagnosticsFromItems(
             document,
             semantic,
             inspectDiagnostics,
             [],
-            {rangeMode: 'issue'},
+            {rangeMode: 'problem'},
         )) {
             if (!suggestedFixFromDiagnostic(diagnostic)) continue;
             const key = diagnosticKey(diagnostic);
             // Suggested-fix diagnostics can have two useful server-derived
-            // ranges: an edit-oriented published range and a broader issue
-            // range for cursor discovery. Never use client-supplied
-            // suggested_fix payloads as authorization for either range.
+            // ranges: the problem-object range and the fix-edit range. Never
+            // use client-supplied suggested_fix payloads as authorization
+            // for either range.
             if (!rangeIntersects(diagnostic.range, range) && !serverSuggestedKeysAtRange.has(key)) continue;
             if (existing.has(key)) continue;
             existing.add(key);

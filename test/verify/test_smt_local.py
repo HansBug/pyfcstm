@@ -989,7 +989,7 @@ def test_transition_trigger_builds_private_event_bool_when_no_mapping_given():
     trigger, result = smt_local._transition_trigger_or_result(transition, {})
 
     assert result is None
-    assert str(trigger) == "__event__System__Tick"
+    assert str(trigger) == "__event__6:System4:Tick"
 
 
 def test_root_initial_context_handles_root_state_directly():
@@ -1039,6 +1039,28 @@ def test_event_bool_name_falls_back_for_anonymous_transition():
     transition = Transition("A", "B", event=None, guard=None, effects=[])
 
     assert smt_local._event_bool_name(transition) == "__event__anonymous"
+
+
+def test_event_bool_name_is_injective_for_underscore_and_path_boundaries():
+    """Event Bool encoding keeps ``S.A__B`` distinct from ``S.A.B``."""
+    flat = Transition(
+        "X",
+        "Y",
+        event=Event("A__B", ("S",)),
+        guard=None,
+        effects=[],
+    )
+    nested = Transition(
+        "X",
+        "Z",
+        event=Event("B", ("S", "A")),
+        guard=None,
+        effects=[],
+    )
+
+    assert smt_local._event_bool_name(flat) == "__event__1:S4:A__B"
+    assert smt_local._event_bool_name(nested) == "__event__1:S1:A1:B"
+    assert smt_local._event_bool_name(flat) != smt_local._event_bool_name(nested)
 
 
 def test_group2_registry_impls_are_real_function_pointers():
@@ -1652,6 +1674,54 @@ class TestEffectNoOpUnderGuard:
 
         assert result.kind == "undecidable_skip"
 
+    def test_effect_definedness_unsat_under_guard_is_undecidable(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            def int y = 0;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B : if [x == 0] effect { y = 1 / x; };
+            }
+            """
+        )
+
+        result = effect_no_op_under_guard(root_transition(machine), variables(machine))
+
+        assert result.kind == "undecidable_skip"
+        assert "runtime definedness" in result.reason
+
+    def test_missing_effect_variable_after_symbolic_execution_is_undecidable(
+        self,
+        monkeypatch,
+    ):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B effect { x = 1; };
+            }
+            """
+        )
+
+        def drop_effect_variable(*args, **kwargs):
+            return {}, (), None
+
+        monkeypatch.setattr(
+            smt_local,
+            "_execute_effects_under_guard_or_result",
+            drop_effect_variable,
+        )
+
+        result = effect_no_op_under_guard(root_transition(machine), variables(machine))
+
+        assert result.kind == "undecidable_skip"
+
     def test_guard_prunes_unselected_ternary_value_for_no_op_effect(self):
         machine = parse_machine(
             """
@@ -1926,6 +1996,24 @@ class TestEffectContradictsGuard:
         )
 
         assert result.kind == "undecidable_skip"
+
+    def test_effect_definedness_unsat_under_guard_contradiction_is_undecidable(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B : if [x == 0] effect { x = 1 / x; };
+            }
+            """
+        )
+
+        result = effect_contradicts_guard(root_transition(machine), variables(machine))
+
+        assert result.kind == "undecidable_skip"
+        assert "runtime definedness" in result.reason
 
     def test_guard_prunes_unselected_ternary_value_for_guard_contradiction(self):
         machine = parse_machine(
@@ -2235,6 +2323,26 @@ class TestTransitionShadowedByPredecessor:
 
         assert len(calls) == 1
         assert result.kind == "sat"
+
+    def test_events_with_underscore_path_boundary_do_not_shadow_each_other(self):
+        machine = parse_machine(
+            """
+            state S {
+                event A__B;
+                state A { event B; }
+                state X;
+                state Y;
+                state Z;
+                [*] -> X;
+                X -> Y : A__B;
+                X -> Z : /A.B;
+            }
+            """
+        )
+
+        result = transition_shadowed_by_predecessor(machine, variables(machine))
+
+        assert result == AlgorithmResult(kind="sat")
 
     def test_event_duplicate_shadowing_is_structural(self):
         machine = parse_machine(
@@ -4240,6 +4348,27 @@ class TestCompositeInitGuardsIncomplete:
 
         assert result.kind == "sat"
         assert_single_diag(result, "W_COMPOSITE_INIT_INCOMPLETE")
+
+    def test_init_events_with_underscore_path_boundary_use_distinct_witness_bools(self):
+        machine = parse_machine(
+            """
+            state S {
+                event A__B;
+                state A { event B; }
+                state X;
+                state Y;
+                [*] -> X : A__B;
+                [*] -> Y : /A.B;
+            }
+            """
+        )
+
+        result = composite_init_guards_incomplete(machine, variables(machine))
+
+        assert result.kind == "sat"
+        diag = assert_single_diag(result, "W_COMPOSITE_INIT_INCOMPLETE")
+        assert "__event__1:S4:A__B" in diag["data"]["witness"]
+        assert "__event__1:S1:A1:B" in diag["data"]["witness"]
 
     def test_triggers_for_event_coverage_gap(self):
         machine = parse_machine(

@@ -1541,7 +1541,10 @@ def _execute_effects_under_guard_or_result(
         timeout_ms=smt_timeout_ms,
     )
     if defined_effect_feasible.kind == "unsat":
-        return None, None, AlgorithmResult(kind="sat")
+        return None, None, _skip_result(
+            "undecidable_skip",
+            "Transition effect runtime definedness constraints are unsatisfiable under guard.",
+        )
     if defined_effect_feasible.kind != "sat":
         return None, None, AlgorithmResult(kind=defined_effect_feasible.kind)
     return after_vars, tuple(effect_domain_constraints or ()), None
@@ -2145,15 +2148,23 @@ def enter_postcondition_implies_during_precondition(
 
 
 def _event_bool_name(transition: Transition) -> str:
-    """Return a Z3-safe-ish event boolean variable name.
+    """Return an injective internal event boolean variable name.
+
+    FCSTM identifiers may contain underscores, so replacing ``.`` with ``__``
+    is not injective: ``S.A__B`` and ``S.A.B`` would collide.  Length-prefix
+    each path component instead so separate events always get separate Z3
+    symbols while diagnostics continue to expose the original event path.
 
     :param transition: Event transition.
     :type transition: Transition
     :return: Event boolean name.
     :rtype: str
     """
-    event = _event_name(transition) or "anonymous"
-    return "__event__" + event.replace(".", "__")
+    if transition.event is None:
+        return "__event__anonymous"
+    return "__event__" + "".join(
+        f"{len(part)}:{part}" for part in transition.event.path
+    )
 
 
 def composite_init_guards_incomplete(

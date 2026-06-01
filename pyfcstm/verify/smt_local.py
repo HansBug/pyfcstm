@@ -312,6 +312,212 @@ def _execute_operations_or_result(
         return None, _skip_result("undecidable_skip", str(err))
 
 
+def _execute_operation_prefix_conditions_or_result(
+    operations: Sequence[OperationStatement],
+    z3_vars: _Z3Vars,
+) -> Tuple[Optional[Tuple[Tuple[Expr, _Z3Vars], ...]], Optional[AlgorithmResult]]:
+    """Collect condition expressions with the symbolic environment at each point.
+
+    :param operations: Operation statements to scan in execution order.
+    :type operations: Sequence[OperationStatement]
+    :param z3_vars: Starting symbolic environment before the operation block.
+    :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :return: Pairs of condition expression and point-in-time symbolic store, or
+        an algorithm result when symbolic prefix execution cannot be expressed.
+    :rtype: Tuple[Optional[Tuple[Tuple[Expr, Dict[str, Union[z3.ArithRef, z3.BoolRef]]], ...]], Optional[AlgorithmResult]]
+    """
+    pairs: List[Tuple[Expr, _Z3Vars]] = []
+    current_vars = dict(z3_vars)
+
+    for statement in operations:
+        if isinstance(statement, _operation_type()):
+            for condition in _conditional_conditions_from_expr(statement.expr):
+                pairs.append((condition, dict(current_vars)))
+            current_vars, result = _execute_operations_or_result(
+                [statement], current_vars
+            )
+            if result is not None:
+                return None, result
+            continue
+
+        if isinstance(statement, _if_block_type()):
+            for branch in statement.branches:
+                if branch.condition is not None:
+                    pairs.append((branch.condition, dict(current_vars)))
+                branch_pairs, result = _execute_operation_prefix_conditions_or_result(
+                    branch.statements,
+                    current_vars,
+                )
+                if result is not None:
+                    return None, result
+                pairs.extend(branch_pairs or ())
+
+            current_vars, result = _execute_operations_or_result(
+                [statement], current_vars
+            )
+            if result is not None:
+                return None, result
+            continue
+
+        return None, _skip_result(
+            "undecidable_skip",
+            f"Unknown operation statement type {type(statement)!r}.",
+        )
+
+    return tuple(pairs), None
+
+
+def _transition_trigger_or_result(
+    transition: Transition,
+    z3_vars: _Z3Vars,
+    event_vars: Optional[Dict[str, z3.BoolRef]] = None,
+) -> Tuple[Optional[z3.ExprRef], Optional[AlgorithmResult]]:
+    """Build a transition trigger expression in the supplied environment.
+
+    :param transition: Transition whose event and guard should be encoded.
+    :type transition: Transition
+    :param z3_vars: Symbolic variable environment at the trigger point.
+    :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :param event_vars: Optional shared event boolean variable mapping.
+    :type event_vars: Optional[Dict[str, z3.BoolRef]], optional
+    :return: Trigger expression and optional failure result.
+    :rtype: Tuple[Optional[z3.ExprRef], Optional[AlgorithmResult]]
+    """
+    parts: List[z3.ExprRef] = []
+    if transition.event is not None:
+        event_key = _event_bool_name(transition)
+        if event_vars is None:
+            event_expr = z3.Bool(event_key)
+        else:
+            event_expr = event_vars.setdefault(event_key, z3.Bool(event_key))
+        parts.append(event_expr)
+
+    if transition.guard is not None:
+        guard_expr, result = _expr_to_z3_or_result(transition.guard, z3_vars)
+        if result is not None:
+            return None, result
+        parts.append(guard_expr)
+
+    if not parts:
+        return z3.BoolVal(True), None
+    if len(parts) == 1:
+        return parts[0], None
+    return z3.And(*parts), None
+
+
+def _root_initial_path_context(
+    state: State,
+    variables: Sequence[VarDefine],
+    z3_vars: _Z3Vars,
+    base_constraints: Sequence[z3.ExprRef],
+    *,
+    smt_timeout_ms: Optional[int] = None,
+) -> Tuple[
+    Optional[Tuple[Transition, ...]],
+    Optional[Tuple[z3.ExprRef, ...]],
+    Optional[List[OperationStatement]],
+    Optional[AlgorithmResult],
+]:
+    """Build the runtime first-enabled initial path context for a leaf.
+
+    :param state: Candidate root-initial leaf state.
+    :type state: State
+    :param variables: FCSTM variable definitions.
+    :type variables: Sequence[VarDefine]
+    :param z3_vars: Root symbolic variables.
+    :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :param base_constraints: Constraints that hold before root entry, usually
+        DSL declaration initializers.
+    :type base_constraints: Sequence[z3.ExprRef]
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+    :type smt_timeout_ms: Optional[int], optional
+    :return: Initial transitions, path constraints, entry operation stream, and
+        optional algorithm result.  A ``None`` transition tuple without a result
+        means the state is not selected by the root first-enabled initial path.
+    :rtype: Tuple[Optional[Tuple[Transition, ...]], Optional[Tuple[z3.ExprRef, ...]], Optional[List[OperationStatement]], Optional[AlgorithmResult]]
+    """
+    path = _state_path_from_root(state)
+    if len(path) <= 1:
+        return (), (), [], None
+
+    selected: List[Transition] = []
+    constraints: List[z3.ExprRef] = []
+    operations: List[OperationStatement] = []
+    current_vars: _Z3Vars = dict(z3_vars)
+    type_constraints = _build_type_constraints(variables, z3_vars)
+
+    for index, path_state in enumerate(path[:-1]):
+        child = path[index + 1]
+        enter_ops = _action_operations(path_state.on_enters)
+        operations.extend(enter_ops)
+        current_vars, result = _execute_operations_or_result(enter_ops, current_vars)
+        if result is not None:
+            return None, None, None, result
+
+        if not path_state.is_leaf_state:
+            during_before_ops = _action_operations(
+                path_state.list_on_durings(aspect="before")
+            )
+            operations.extend(during_before_ops)
+            current_vars, result = _execute_operations_or_result(
+                during_before_ops,
+                current_vars,
+            )
+            if result is not None:
+                return None, None, None, result
+
+        target_transition = None
+        selected_constraints = None
+        prior_triggers: List[z3.ExprRef] = []
+        for transition in path_state.init_transitions:
+            trigger, result = _transition_trigger_or_result(transition, current_vars)
+            if result is not None:
+                return None, None, None, result
+            if transition.to_state == child.name:
+                candidate_constraints = [
+                    *constraints,
+                    *(z3.Not(prior_trigger) for prior_trigger in prior_triggers),
+                    trigger,
+                ]
+                context_check = is_sat(
+                    [*base_constraints, *candidate_constraints, *type_constraints],
+                    timeout_ms=smt_timeout_ms,
+                )
+                if context_check.kind in {"unknown", "timeout"}:
+                    return (
+                        None,
+                        None,
+                        None,
+                        _skip_result(
+                            context_check.kind,
+                            getattr(context_check, "reason", None),
+                        ),
+                    )
+                if context_check.kind == "sat":
+                    target_transition = transition
+                    selected_constraints = candidate_constraints
+                    break
+            prior_triggers.append(trigger)
+
+        if target_transition is None or selected_constraints is None:
+            return None, None, None, None
+        constraints = selected_constraints
+
+        selected.append(target_transition)
+        operations.extend(target_transition.effects)
+        current_vars, result = _execute_operations_or_result(
+            target_transition.effects,
+            current_vars,
+        )
+        if result is not None:
+            return None, None, None, result
+
+    leaf_enter_ops = _action_operations(state.on_enters)
+    operations.extend(leaf_enter_ops)
+
+    return tuple(selected), tuple(constraints), operations, None
+
+
 def _build_init_constraints_or_result(
     variables: Sequence[VarDefine],
     z3_vars: _Z3Vars,
@@ -764,6 +970,7 @@ def transition_shadowed_by_predecessor(
                         )
                     )
                     continue
+
                 prior_unconditional = transition
                 continue
 
@@ -959,11 +1166,7 @@ def _root_initial_path_transitions(state: State) -> Optional[Tuple[Transition, .
     transitions: List[Transition] = []
     for parent, child in zip(path, path[1:]):
         transition = next(
-            (
-                item
-                for item in parent.init_transitions
-                if item.to_state == child.name
-            ),
+            (item for item in parent.init_transitions if item.to_state == child.name),
             None,
         )
         if transition is None:
@@ -981,40 +1184,6 @@ def _is_root_initial_leaf(state: State) -> bool:
     :rtype: bool
     """
     return _root_initial_path_transitions(state) is not None
-
-
-def _root_initial_entry_operations(
-    state: State,
-    init_transitions: Sequence[Transition],
-) -> List[OperationStatement]:
-    """Collect first-entry operations from the root through ``state``.
-
-    The order mirrors :class:`pyfcstm.simulate.runtime.SimulationRuntime` for a
-    root initial entry: each entered state executes its ``enter`` actions, a
-    composite then executes local ``during before`` actions, then the selected
-    initial transition effect runs before entering the child.  Leaf ``during``
-    and cross-cutting ``>> during before`` aspect actions are intentionally left
-    to the caller because they form the first-cycle condition being inspected.
-
-    :param state: Leaf state reached by the initial chain.
-    :type state: State
-    :param init_transitions: Initial transition chain returned by
-        :func:`_root_initial_path_transitions`.
-    :type init_transitions: Sequence[Transition]
-    :return: Flattened operation stream before first leaf during.
-    :rtype: List[OperationStatement]
-    """
-    path = _state_path_from_root(state)
-    operations: List[OperationStatement] = []
-    for index, path_state in enumerate(path):
-        operations.extend(_action_operations(path_state.on_enters))
-        if not path_state.is_leaf_state:
-            operations.extend(
-                _action_operations(path_state.list_on_durings(aspect="before"))
-            )
-        if index < len(init_transitions):
-            operations.extend(init_transitions[index].effects)
-    return operations
 
 
 def enter_postcondition_implies_during_precondition(
@@ -1036,35 +1205,32 @@ def enter_postcondition_implies_during_precondition(
     """
     if not state.is_leaf_state or state.is_pseudo:
         return AlgorithmResult(kind="sat")
-    init_transitions = _root_initial_path_transitions(state)
-    if init_transitions is None:
-        return AlgorithmResult(kind="sat")
-
-    entry_operations = _root_initial_entry_operations(state, init_transitions)
-    before_aspect_operations = _concrete_before_aspect_operations(state)
-    during_operations = _action_operations(state.on_durings)
-    if not during_operations:
-        return AlgorithmResult(kind="sat")
-
-    conditions = tuple(_conditional_conditions_from_operations(during_operations))
-    if not conditions:
-        return AlgorithmResult(kind="sat")
 
     z3_vars = _z3_vars(variables)
     init_constraints, result = _build_init_constraints_or_result(variables, z3_vars)
     if result is not None:
         return result
-    entry_constraints: List[z3.ExprRef] = []
-    for transition in init_transitions:
-        if transition.event is not None:
-            entry_constraints.append(z3.Bool(_event_bool_name(transition)))
-        if transition.guard is not None:
-            guard_z3, result = _expr_to_z3_or_result(transition.guard, z3_vars)
-            if result is not None:
-                return result
-            entry_constraints.append(guard_z3)
 
-    entry_vars, result = _execute_operations_or_result(entry_operations, z3_vars)
+    init_transitions, entry_constraints, entry_operations, result = (
+        _root_initial_path_context(
+            state,
+            variables,
+            z3_vars,
+            init_constraints,
+            smt_timeout_ms=smt_timeout_ms,
+        )
+    )
+    if result is not None:
+        return result
+    if init_transitions is None:
+        return AlgorithmResult(kind="sat")
+
+    before_aspect_operations = _concrete_before_aspect_operations(state)
+    during_operations = _action_operations(state.on_durings)
+    if not during_operations:
+        return AlgorithmResult(kind="sat")
+
+    entry_vars, result = _execute_operations_or_result(entry_operations or (), z3_vars)
     if result is not None:
         return result
     first_cycle_vars, result = _execute_operations_or_result(
@@ -1074,12 +1240,21 @@ def enter_postcondition_implies_during_precondition(
     if result is not None:
         return result
 
+    condition_points, result = _execute_operation_prefix_conditions_or_result(
+        during_operations,
+        first_cycle_vars,
+    )
+    if result is not None:
+        return result
+    if not condition_points:
+        return AlgorithmResult(kind="sat")
+
     type_constraints = _build_type_constraints(variables, z3_vars)
     diagnostics: List[dict] = []
     first_indeterminate_result: Optional[AlgorithmResult] = None
 
     context_check = is_sat(
-        [*init_constraints, *entry_constraints, *type_constraints],
+        [*init_constraints, *(entry_constraints or ()), *type_constraints],
         timeout_ms=smt_timeout_ms,
     )
     if context_check.kind in {"unknown", "timeout"}:
@@ -1091,8 +1266,8 @@ def enter_postcondition_implies_during_precondition(
     if context_check.kind == "unsat":
         return AlgorithmResult(kind="sat")
 
-    for condition in conditions:
-        condition_z3, result = _expr_to_z3_or_result(condition, first_cycle_vars)
+    for condition, condition_vars in condition_points:
+        condition_z3, result = _expr_to_z3_or_result(condition, condition_vars)
         if result is not None:
             first_indeterminate_result = _first_indeterminate(
                 first_indeterminate_result,
@@ -1105,7 +1280,7 @@ def enter_postcondition_implies_during_precondition(
             [
                 condition_z3,
                 *init_constraints,
-                *entry_constraints,
+                *(entry_constraints or ()),
                 *type_constraints,
             ],
             timeout_ms=smt_timeout_ms,
@@ -1114,7 +1289,7 @@ def enter_postcondition_implies_during_precondition(
             [
                 z3.Not(condition_z3),
                 *init_constraints,
-                *entry_constraints,
+                *(entry_constraints or ()),
                 *type_constraints,
             ],
             timeout_ms=smt_timeout_ms,
@@ -1213,22 +1388,20 @@ def composite_init_guards_incomplete(
         triggers: List[z3.ExprRef] = []
         per_composite_failed = False
         for transition in init_transitions:
-            if transition.guard is not None:
-                guard_expr, result = _expr_to_z3_or_result(transition.guard, z3_vars)
-                if result is not None:
-                    first_indeterminate_result = _first_indeterminate(
-                        first_indeterminate_result,
-                        result.kind,
-                        result.reason,
-                    )
-                    per_composite_failed = True
-                    break
-                triggers.append(guard_expr)
-                continue
-
-            event_key = _event_bool_name(transition)
-            event_vars.setdefault(event_key, z3.Bool(event_key))
-            triggers.append(event_vars[event_key])
+            trigger, result = _transition_trigger_or_result(
+                transition,
+                z3_vars,
+                event_vars,
+            )
+            if result is not None:
+                first_indeterminate_result = _first_indeterminate(
+                    first_indeterminate_result,
+                    result.kind,
+                    result.reason,
+                )
+                per_composite_failed = True
+                break
+            triggers.append(trigger)
 
         if per_composite_failed or not triggers:
             continue

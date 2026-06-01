@@ -19,7 +19,14 @@ from pyfcstm.verify.smt_local import (
     transition_shadowed_by_predecessor,
 )
 from pyfcstm.model.expr import BinaryOp, Boolean, Integer, Variable
-from pyfcstm.model.model import IfBlock, IfBlockBranch, Operation, Transition, VarDefine
+from pyfcstm.model.model import (
+    Event,
+    IfBlock,
+    IfBlockBranch,
+    Operation,
+    Transition,
+    VarDefine,
+)
 
 
 pytestmark = pytest.mark.unittest
@@ -76,6 +83,13 @@ def sat_timeout_result(*args, **kwargs):
     from pyfcstm.solver.logical import SatResult
 
     return SatResult(kind="timeout")
+
+
+def sat_unknown_result(*args, **kwargs):
+    """Deterministic unknown-shaped logical helper result."""
+    from pyfcstm.solver.logical import SatResult
+
+    return SatResult(kind="unknown")
 
 
 def assert_single_diag(result, code):
@@ -375,6 +389,149 @@ def test_conditional_collection_includes_if_block_conditions():
     )
 
 
+def test_operation_prefix_collection_updates_after_if_block():
+    """Prefix condition collection uses the merged store after operation ifs."""
+    condition = BinaryOp(Variable("mode"), "==", Integer(0))
+    ternary_condition = BinaryOp(Variable("mode"), "==", Integer(1))
+    operations = [
+        IfBlock(
+            branches=[
+                IfBlockBranch(
+                    condition=condition,
+                    statements=[Operation(var_name="mode", expr=Integer(1))],
+                ),
+                IfBlockBranch(
+                    condition=None,
+                    statements=[Operation(var_name="mode", expr=Integer(2))],
+                ),
+            ]
+        ),
+        Operation(
+            var_name="x",
+            expr=ternary_condition.select(Integer(10), Integer(20)),
+        ),
+    ]
+    z3_vars = smt_local._z3_vars(
+        [
+            VarDefine("mode", "int", Integer(0)),
+            VarDefine("x", "int", Integer(0)),
+        ]
+    )
+
+    condition_points, result = smt_local._execute_operation_prefix_conditions_or_result(
+        operations,
+        z3_vars,
+    )
+
+    assert result is None
+    assert condition_points is not None
+    assert [condition for condition, _ in condition_points] == [
+        condition,
+        ternary_condition,
+    ]
+    assert str(condition_points[1][1]["mode"]) in {
+        "If(mode == 0, 1, 2)",
+        "If(0 == mode, 1, 2)",
+    }
+
+
+def test_operation_prefix_collection_propagates_branch_body_failure():
+    """Nested branch symbolic failures stop prefix condition collection."""
+    condition = BinaryOp(Variable("x"), ">", Integer(0))
+    operations = [
+        IfBlock(
+            branches=[
+                IfBlockBranch(
+                    condition=condition,
+                    statements=[Operation(var_name="x", expr=Variable("missing"))],
+                )
+            ]
+        )
+    ]
+
+    condition_points, result = smt_local._execute_operation_prefix_conditions_or_result(
+        operations,
+        {"x": smt_local.z3.Int("x")},
+    )
+
+    assert condition_points is None
+    assert result.kind == "undecidable_skip"
+
+
+def test_operation_prefix_collection_propagates_if_merge_failure():
+    """The final symbolic if merge can fail after branch scanning succeeds."""
+    operations = [
+        IfBlock(
+            branches=[
+                IfBlockBranch(
+                    condition=Variable("missing"),
+                    statements=[],
+                )
+            ]
+        )
+    ]
+
+    condition_points, result = smt_local._execute_operation_prefix_conditions_or_result(
+        operations,
+        {"x": smt_local.z3.Int("x")},
+    )
+
+    assert condition_points is None
+    assert result.kind == "undecidable_skip"
+
+
+def test_operation_prefix_collection_rejects_unknown_statement_type():
+    """Unknown operation statement objects are normalized as undecidable."""
+    condition_points, result = smt_local._execute_operation_prefix_conditions_or_result(
+        [object()],
+        {"x": smt_local.z3.Int("x")},
+    )
+
+    assert condition_points is None
+    assert result.kind == "undecidable_skip"
+
+
+def test_transition_trigger_builds_private_event_bool_when_no_mapping_given():
+    """Trigger construction can create standalone event predicates."""
+    transition = Transition(
+        from_state="A",
+        to_state="B",
+        event=Event("Tick", ("System",)),
+        guard=None,
+        effects=[],
+    )
+
+    trigger, result = smt_local._transition_trigger_or_result(transition, {})
+
+    assert result is None
+    assert str(trigger) == "__event__System__Tick"
+
+
+def test_root_initial_context_handles_root_state_directly():
+    """A root-only helper call has an empty initial path context."""
+    machine = parse_machine(
+        """
+        state System {
+            state Idle;
+            [*] -> Idle;
+        }
+        """
+    )
+
+    z3_vars = smt_local._z3_vars(variables(machine))
+    transitions, constraints, operations, result = smt_local._root_initial_path_context(
+        machine.root_state,
+        variables(machine),
+        z3_vars,
+        (),
+    )
+
+    assert result is None
+    assert transitions == ()
+    assert constraints == ()
+    assert operations == []
+
+
 def test_root_initial_leaf_helper_identifies_global_initial_path():
     """Lifecycle first-cycle analysis only pins the global initial leaf."""
     machine = parse_machine(
@@ -428,6 +585,15 @@ def test_group2_algorithms_default_to_unbounded_solver_timeout():
         )
 
         assert default is None
+
+
+def test_first_indeterminate_keeps_first_relevant_outcome():
+    """Aggregate helper ignores definite results after first indeterminate."""
+    current = smt_local._first_indeterminate(None, "sat")
+    current = smt_local._first_indeterminate(current, "unknown", "first")
+
+    assert current == AlgorithmResult(kind="unknown", reason="first")
+    assert smt_local._first_indeterminate(current, "timeout", "later") is current
 
 
 class TestDeadGuard:
@@ -942,6 +1108,49 @@ class TestEffectNoOpUnderGuard:
 
         assert result.kind == "undecidable_skip"
 
+    def test_guard_translation_failure_propagates(self):
+        transition = Transition(
+            from_state="A",
+            to_state="B",
+            event=None,
+            guard=BinaryOp(Variable("missing"), ">", Integer(0)),
+            effects=[
+                Operation(var_name="x", expr=BinaryOp(Variable("x"), "+", Integer(1)))
+            ],
+        )
+
+        result = effect_no_op_under_guard(
+            transition,
+            [VarDefine("x", "int", Integer(0))],
+        )
+
+        assert result.kind == "undecidable_skip"
+
+    def test_guard_feasibility_unknown_propagates(self, monkeypatch):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B : if [x > 0] effect { x = x + 1; };
+            }
+            """
+        )
+        calls = []
+
+        def feasible_unknown(*args, **kwargs):
+            calls.append(args)
+            return sat_unknown_result(*args, **kwargs)
+
+        monkeypatch.setattr(smt_local, "is_sat", feasible_unknown)
+
+        result = effect_no_op_under_guard(root_transition(machine), variables(machine))
+
+        assert result == AlgorithmResult(kind="unknown")
+        assert len(calls) == 1
+
     def test_effect_translation_failure_propagates(self):
         transition = Transition(
             from_state="A",
@@ -1093,6 +1302,107 @@ class TestEffectContradictsGuard:
         result = effect_contradicts_guard(root_transition(machine), variables(machine))
 
         assert result == AlgorithmResult(kind="sat")
+
+    def test_guard_before_translation_failure_propagates(self):
+        transition = Transition(
+            from_state="A",
+            to_state="B",
+            event=None,
+            guard=BinaryOp(Variable("missing"), ">", Integer(0)),
+            effects=[Operation(var_name="x", expr=Integer(0))],
+        )
+
+        result = effect_contradicts_guard(
+            transition,
+            [VarDefine("x", "int", Integer(0))],
+        )
+
+        assert result.kind == "undecidable_skip"
+
+    def test_guard_after_translation_failure_propagates(self):
+        transition = Transition(
+            from_state="A",
+            to_state="B",
+            event=None,
+            guard=BinaryOp(Variable("tmp"), ">", Integer(0)),
+            effects=[Operation(var_name="x", expr=Integer(0))],
+        )
+
+        result = effect_contradicts_guard(
+            transition,
+            [VarDefine("x", "int", Integer(0))],
+        )
+
+        assert result.kind == "undecidable_skip"
+
+    def test_guard_after_retranslation_failure_propagates(self):
+        transition = Transition(
+            from_state="A",
+            to_state="B",
+            event=None,
+            guard=BinaryOp(Variable("tmp"), ">", Integer(0)),
+            effects=[Operation(var_name="tmp", expr=Integer(1))],
+        )
+
+        result = effect_contradicts_guard(
+            transition,
+            [VarDefine("x", "int", Integer(0))],
+        )
+
+        assert result.kind == "undecidable_skip"
+
+    def test_guard_after_translation_failure_after_symbolic_execution_propagates(
+        self,
+        monkeypatch,
+    ):
+        transition = Transition(
+            from_state="A",
+            to_state="B",
+            event=None,
+            guard=BinaryOp(Variable("x"), ">", Integer(0)),
+            effects=[Operation(var_name="x", expr=Integer(1))],
+        )
+
+        def drop_guard_variable(*args, **kwargs):
+            return {}, None
+
+        monkeypatch.setattr(
+            smt_local,
+            "_execute_operations_or_result",
+            drop_guard_variable,
+        )
+
+        result = effect_contradicts_guard(
+            transition,
+            [VarDefine("x", "int", Integer(0))],
+        )
+
+        assert result.kind == "undecidable_skip"
+
+    def test_guard_feasibility_unknown_propagates(self, monkeypatch):
+        machine = parse_machine(
+            """
+            def int counter = 0;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B : if [counter > 0] effect { counter = counter + 1; };
+            }
+            """
+        )
+        calls = []
+
+        def feasible_unknown(*args, **kwargs):
+            calls.append(args)
+            return sat_unknown_result(*args, **kwargs)
+
+        monkeypatch.setattr(smt_local, "is_sat", feasible_unknown)
+
+        result = effect_contradicts_guard(root_transition(machine), variables(machine))
+
+        assert result == AlgorithmResult(kind="unknown")
+        assert len(calls) == 1
 
     def test_effect_translation_failure_propagates(self):
         transition = Transition(
@@ -1331,6 +1641,26 @@ class TestTransitionShadowedByPredecessor:
 
         assert result == AlgorithmResult(kind="sat")
 
+    def test_second_unconditional_transition_is_shadowed(self):
+        machine = parse_machine(
+            """
+            state System {
+                state A;
+                state B;
+                state C;
+                [*] -> A;
+                A -> B;
+                A -> C;
+            }
+            """
+        )
+
+        result = transition_shadowed_by_predecessor(machine, variables(machine))
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "W_TRANSITION_SHADOWED")
+        assert diag["data"]["reason"] == "unconditional_catchall"
+
 
 class TestEnterPostconditionImpliesDuringPrecondition:
     """Test first-cycle lifecycle coupling checks."""
@@ -1498,6 +1828,398 @@ class TestEnterPostconditionImpliesDuringPrecondition:
 
         assert result.kind == "undecidable_skip"
 
+    def test_no_during_operations_returns_sat(self):
+        machine = parse_machine(
+            """
+            state System {
+                state Idle;
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result == AlgorithmResult(kind="sat")
+
+    def test_init_context_timeout_propagates(self, monkeypatch):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during { x = (mode == 1) ? 10 : 20; }
+                }
+                [*] -> Idle : if [mode == 1];
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+        monkeypatch.setattr(smt_local, "is_sat", sat_timeout_result)
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result == AlgorithmResult(kind="timeout")
+
+    def test_init_path_entry_translation_failure_propagates(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                enter { mode = 1; }
+                state Idle {
+                    during { x = (mode == 1) ? 10 : 20; }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        machine.root_state.on_enters[0].operations = [
+            Operation(var_name="mode", expr=Variable("missing"))
+        ]
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "undecidable_skip"
+
+    def test_init_path_during_before_translation_failure_propagates(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Parent {
+                    during before { mode = 1; }
+                    state Child {
+                        during { x = (mode == 1) ? 10 : 20; }
+                    }
+                    [*] -> Child;
+                }
+                [*] -> Parent;
+            }
+            """
+        )
+        parent = machine.root_state.substates["Parent"]
+        parent.on_durings[0].operations = [
+            Operation(var_name="mode", expr=Variable("missing"))
+        ]
+        state = parent.substates["Child"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "undecidable_skip"
+
+    def test_init_transition_guard_translation_failure_propagates(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during { x = (mode == 1) ? 10 : 20; }
+                }
+                [*] -> Idle : if [mode == 1];
+            }
+            """
+        )
+        machine.root_state.init_transitions[0].guard = BinaryOp(
+            Variable("missing"), "==", Integer(1)
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "undecidable_skip"
+
+    def test_init_transition_effect_translation_failure_propagates(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during { x = (mode == 1) ? 10 : 20; }
+                }
+                [*] -> Idle effect { mode = 1; };
+            }
+            """
+        )
+        machine.root_state.init_transitions[0].effects = [
+            Operation(var_name="mode", expr=Variable("missing"))
+        ]
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "undecidable_skip"
+
+    def test_context_unknown_without_diagnostic_is_returned(self, monkeypatch):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int external = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during { x = (external > mode) ? 10 : 20; }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+        monkeypatch.setattr(smt_local, "is_sat", sat_unknown_result)
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result == AlgorithmResult(kind="unknown")
+
+    def test_context_unknown_takes_precedence_when_no_diagnostic(self, monkeypatch):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during { x = (mode > 0) ? 10 : 20; }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+        calls = []
+
+        def context_unknown_then_sat(*args, **kwargs):
+            calls.append(args)
+            if len(calls) == 2:
+                return sat_unknown_result(*args, **kwargs)
+            from pyfcstm.solver.logical import SatResult
+
+            return SatResult(kind="sat")
+
+        monkeypatch.setattr(smt_local, "is_sat", context_unknown_then_sat)
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result == AlgorithmResult(kind="unknown")
+        assert len(calls) == 4
+
+    def test_unsatisfiable_entry_context_short_circuits_before_conditions(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during { x = (mode == 1) ? 10 : 20; }
+                }
+                [*] -> Idle : if [mode == 1];
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result == AlgorithmResult(kind="sat")
+
+    def test_entry_context_unsat_short_circuits_after_condition_collection(
+        self,
+        monkeypatch,
+    ):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during { x = (mode > 0) ? 10 : 20; }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+        calls = []
+
+        def context_unsat_then_sat(*args, **kwargs):
+            calls.append(args)
+            from pyfcstm.solver.logical import SatResult
+
+            return SatResult(kind="unsat" if len(calls) == 2 else "sat")
+
+        monkeypatch.setattr(smt_local, "is_sat", context_unsat_then_sat)
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result == AlgorithmResult(kind="sat")
+        assert len(calls) == 2
+
+    def test_during_condition_translation_failure_after_prefix_execution(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during {
+                        x = (mode == 1) ? 10 : 20;
+                    }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+        state.on_durings[0].operations[0].expr.cond = BinaryOp(
+            Variable("temp"),
+            "==",
+            Integer(1),
+        )
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "undecidable_skip"
+
+    def test_condition_translation_failure_inside_condition_loop_is_aggregated(
+        self,
+        monkeypatch,
+    ):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during { x = (mode == 0) ? 10 : 20; }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        def missing_condition_point(*args, **kwargs):
+            return (
+                (
+                    (
+                        BinaryOp(Variable("missing"), "==", Integer(1)),
+                        smt_local._z3_vars(variables(machine)),
+                    ),
+                ),
+                None,
+            )
+
+        monkeypatch.setattr(
+            smt_local,
+            "_execute_operation_prefix_conditions_or_result",
+            missing_condition_point,
+        )
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "undecidable_skip"
+
+    def test_condition_translation_failure_returns_first_prior_indeterminate(
+        self,
+        monkeypatch,
+    ):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during {
+                        x = (mode == 0) ? 10 : 20;
+                        x = (mode == 1) ? 30 : 40;
+                    }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+        state.on_durings[0].operations[1].expr.cond = BinaryOp(
+            Variable("missing"),
+            "==",
+            Integer(1),
+        )
+
+        def always_unknown(*args, **kwargs):
+            return sat_unknown_result(*args, **kwargs)
+
+        monkeypatch.setattr(smt_local, "is_sat", always_unknown)
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result == AlgorithmResult(kind="unknown")
+
+    def test_during_if_block_prefix_feeds_following_condition(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during {
+                        if [mode == 0] {
+                            mode = 1;
+                        } else {
+                            mode = 2;
+                        }
+                        x = (mode == 1) ? 10 : 20;
+                    }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        assert any(
+            diag["code"] == "I_ENTER_DURING_CONTRADICT"
+            and diag["data"]["condition"] == "mode == 1"
+            and diag["data"]["branch_taken"] == "true"
+            for diag in result.diagnostics
+        )
+
     def test_enter_translation_failure_propagates(self):
         machine = parse_machine(
             """
@@ -1599,7 +2321,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
 
         def both_branches_feasible(constraints, **kwargs):
             calls.append(tuple(constraints))
-            if len(calls) in {1, 2}:
+            if len(calls) in {1, 2, 3}:
                 return SatResult(kind="sat")
             return real_is_sat(constraints, **kwargs)
 
@@ -1610,7 +2332,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         )
 
         assert result == AlgorithmResult(kind="sat")
-        assert len(calls) == 3
+        assert len(calls) == 4
 
     def test_ancestor_before_aspect_feeds_first_during_condition(self):
         machine = parse_machine(
@@ -1700,6 +2422,106 @@ class TestEnterPostconditionImpliesDuringPrecondition:
                     enter { x = 0; }
                     during { x = (mode == 1) ? 10 : 20; }
                 }
+                [*] -> Idle effect { mode = 1; };
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["branch_taken"] == "true"
+
+    def test_during_prefix_assignment_feeds_following_condition(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during {
+                        mode = 1;
+                        x = (mode == 1) ? 10 : 20;
+                    }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["branch_taken"] == "true"
+
+    def test_nested_init_guard_uses_parent_entry_context(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                enter { mode = 1; }
+                state Parent {
+                    state Child {
+                        during { x = (mode == 1) ? 10 : 20; }
+                    }
+                    [*] -> Child : if [mode == 1];
+                }
+                [*] -> Parent;
+            }
+            """
+        )
+        state = machine.root_state.substates["Parent"].substates["Child"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["branch_taken"] == "true"
+
+    def test_later_shadowed_init_transition_target_is_not_root_initial(self):
+        machine = parse_machine(
+            """
+            def int mode = 1;
+            def int x = 0;
+            state System {
+                state A;
+                state B {
+                    during { x = (mode == 1) ? 10 : 20; }
+                }
+                [*] -> A;
+                [*] -> B;
+            }
+            """
+        )
+        state = machine.root_state.substates["B"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result == AlgorithmResult(kind="sat")
+
+    def test_second_same_target_init_transition_can_be_selected(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during { x = (mode == 1) ? 10 : 20; }
+                }
+                [*] -> Idle : if [mode == 1] effect { mode = 0; };
                 [*] -> Idle effect { mode = 1; };
             }
             """
@@ -1880,6 +2702,78 @@ class TestCompositeInitGuardsIncomplete:
 
         assert result == AlgorithmResult(kind="unsat")
 
+    def test_ignores_composites_without_init_transitions(self):
+        machine = parse_machine(
+            """
+            state System {
+                state Parent {
+                    state Child;
+                    [*] -> Child;
+                }
+                [*] -> Parent;
+            }
+            """
+        )
+        machine.root_state.substates["Parent"].init_transitions.clear()
+        machine.root_state.substates["Parent"].transitions.clear()
+
+        result = composite_init_guards_incomplete(machine, variables(machine))
+
+        assert result == AlgorithmResult(kind="unsat")
+
+    def test_ignores_composite_without_init_transitions_with_prior_timeout(
+        self,
+        monkeypatch,
+    ):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            state System {
+                state A;
+                state B;
+                state Parent {
+                    state Child;
+                    [*] -> Child;
+                }
+                [*] -> A : if [x > 0];
+                [*] -> B : if [x < 0];
+            }
+            """
+        )
+        machine.root_state.substates["Parent"].init_transitions.clear()
+        machine.root_state.substates["Parent"].transitions.clear()
+        calls = []
+
+        def timeout_once(*args, **kwargs):
+            calls.append(args)
+            return sat_timeout_result(*args, **kwargs)
+
+        monkeypatch.setattr(smt_local, "is_sat", timeout_once)
+
+        result = composite_init_guards_incomplete(machine, variables(machine))
+
+        assert result == AlgorithmResult(kind="timeout")
+        assert len(calls) == 1
+
+    def test_event_only_transition_uses_fresh_event_boolean(self):
+        machine = parse_machine(
+            """
+            state System {
+                event Tick;
+                state A;
+                state B;
+                [*] -> A : Tick;
+                [*] -> B : Tick;
+            }
+            """
+        )
+
+        result = composite_init_guards_incomplete(machine, variables(machine))
+
+        assert result.kind == "sat"
+        diag = assert_single_diag(result, "W_COMPOSITE_INIT_INCOMPLETE")
+        assert diag["data"]["state"] == "System"
+
     def test_does_not_trigger_for_complete_guard_coverage(self):
         machine = parse_machine(
             """
@@ -1914,6 +2808,27 @@ class TestCompositeInitGuardsIncomplete:
         result = composite_init_guards_incomplete(machine, variables(machine))
 
         assert result == AlgorithmResult(kind="timeout")
+
+    def test_internal_guarded_event_init_transition_requires_both_triggers(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            state System {
+                state A;
+                state B;
+                [*] -> A : if [x >= 0];
+                [*] -> B : if [x < 0];
+            }
+            """
+        )
+        transition = machine.root_state.init_transitions[0]
+        transition.event = Event("E", machine.root_state.path)
+
+        result = composite_init_guards_incomplete(machine, variables(machine))
+
+        assert result.kind == "sat"
+        diag = assert_single_diag(result, "W_COMPOSITE_INIT_INCOMPLETE")
+        assert diag["data"]["state"] == "System"
 
     def test_bitwise_init_guard_translation_failure_is_undecidable(self):
         machine = parse_machine(

@@ -61,6 +61,33 @@ def test_registry_module_does_not_expose_mutable_backing_store():
     assert not hasattr(registry_module, "_REGISTRY")
 
 
+def test_registry_import_does_not_transitively_import_diagnostics():
+    import subprocess
+    import sys
+
+    script = """
+import sys
+
+before = set(sys.modules)
+import pyfcstm.verify.registry  # noqa: F401
+loaded = sorted(
+    name for name in set(sys.modules) - before
+    if name == 'pyfcstm.diagnostics' or name.startswith('pyfcstm.diagnostics.')
+)
+if loaded:
+    raise SystemExit("\\n".join(loaded))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_group1_topology_metadata_contract():
     for name in GROUP1_TOPOLOGY:
         meta = REGISTRY[name]

@@ -1,4 +1,5 @@
 import inspect
+from dataclasses import FrozenInstanceError
 from typing import cast
 
 import pytest
@@ -68,6 +69,20 @@ def test_build_leaf_level_macro_graph_flat_edges():
     assert graph.nodes == ("Root.Active", "Root.Idle")
     assert graph.edges["Root.Idle"] == ("Root.Active",)
     assert graph.edges["Root.Active"] == (topology.EXIT_ROOT_SINK,)
+
+
+def test_leaf_level_graph_is_immutable_value_object():
+    topology = _import_topology()
+
+    graph = topology.LeafLevelGraph(
+        nodes=("Root.A",),
+        edges={"Root.A": (topology.EXIT_ROOT_SINK,)},
+    )
+
+    with pytest.raises(FrozenInstanceError):
+        graph.nodes = ("Root.B",)  # pyright: ignore[reportAttributeAccessIssue]
+    with pytest.raises(TypeError):
+        graph.edges["Root.A"] = ("Root.B",)  # pyright: ignore[reportIndexIssue]
 
 
 def test_build_leaf_level_macro_graph_init_cascade_and_leaf_bubble():

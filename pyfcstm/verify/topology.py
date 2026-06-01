@@ -42,9 +42,23 @@ Example::
     ()
 """
 
+from __future__ import annotations
+
 from collections import deque
 from dataclasses import dataclass
-from typing import Deque, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from types import MappingProxyType
+from typing import (
+    TYPE_CHECKING,
+    Deque,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+)
 
 try:
     from typing import Literal
@@ -52,7 +66,9 @@ except ImportError:  # pragma: no cover - Python < 3.8 compatibility
     from typing_extensions import Literal
 
 from ..dsl import EXIT_STATE, INIT_STATE
-from ..model import State, StateMachine
+
+if TYPE_CHECKING:
+    from ..model import State, StateMachine
 
 EXIT_ROOT_SINK = "⊥_root"
 """Synthetic sink used for transitions that exit the root state."""
@@ -72,8 +88,9 @@ class LeafLevelGraph:
     :param nodes: Dotted paths of leaf states in stable sorted order.
     :type nodes: Tuple[str, ...]
     :param edges: Mapping from each leaf path, and optionally
-        :data:`EXIT_ROOT_SINK`, to sorted successor paths.
-    :type edges: Dict[str, Tuple[str, ...]]
+        :data:`EXIT_ROOT_SINK`, to sorted successor paths. The mapping is copied
+        into a read-only proxy during initialization.
+    :type edges: Mapping[str, Tuple[str, ...]]
 
     Example::
 
@@ -85,10 +102,23 @@ class LeafLevelGraph:
         ('Root.Idle',)
         >>> graph.edges["Root.Idle"]
         ('⊥_root',)
+        >>> graph.edges["Root.Idle"] = ("Root.Other",)
+        Traceback (most recent call last):
+        ...
+        TypeError: 'mappingproxy' object does not support item assignment
     """
 
     nodes: Tuple[str, ...]
-    edges: Dict[str, Tuple[str, ...]]
+    edges: Mapping[str, Tuple[str, ...]]
+
+    def __post_init__(self) -> None:
+        """
+        Freeze the edge mapping after dataclass initialization.
+
+        :return: ``None``.
+        :rtype: None
+        """
+        object.__setattr__(self, "edges", MappingProxyType(dict(self.edges)))
 
 
 @dataclass(frozen=True)
@@ -168,7 +198,7 @@ def _dedupe_sorted(items: Iterable[str]) -> Tuple[str, ...]:
     return tuple(sorted(set(items)))
 
 
-def _successors(edges: Dict[str, Tuple[str, ...]], node: str) -> Tuple[str, ...]:
+def _successors(edges: Mapping[str, Tuple[str, ...]], node: str) -> Tuple[str, ...]:
     return edges.get(node, tuple())
 
 
@@ -283,7 +313,7 @@ def build_leaf_level_macro_graph(machine: StateMachine) -> LeafLevelGraph:
 
 
 def _closure_from(
-    edges: Dict[str, Tuple[str, ...]],
+    edges: Mapping[str, Tuple[str, ...]],
     starts: Iterable[str],
 ) -> Set[str]:
     seen: Set[str] = set()
@@ -388,7 +418,7 @@ def unreachable_states(machine: StateMachine) -> Tuple[str, ...]:
 
 
 def _scc_components(
-    nodes: Sequence[str], edges: Dict[str, Tuple[str, ...]]
+    nodes: Sequence[str], edges: Mapping[str, Tuple[str, ...]]
 ) -> Tuple[Tuple[str, ...], ...]:
     node_set = set(nodes)
     ordered_nodes = sorted(node_set)
@@ -448,7 +478,7 @@ def _scc_components(
 
 def _is_cyclic_component(
     component: Tuple[str, ...],
-    edges: Dict[str, Tuple[str, ...]],
+    edges: Mapping[str, Tuple[str, ...]],
 ) -> bool:
     if len(component) > 1:
         return True

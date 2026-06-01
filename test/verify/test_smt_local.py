@@ -150,8 +150,8 @@ def test_expected_operation_translation_failures_are_normalized():
     assert result.kind == "undecidable_skip"
 
 
-def test_expr_translation_not_implemented_is_unsafe_skip(monkeypatch):
-    """Unsupported function translation is normalized as unsafe skip."""
+def test_expr_translation_not_implemented_is_undecidable_skip(monkeypatch):
+    """Unsupported function translation is normalized as undecidable."""
 
     def raise_not_implemented(*args, **kwargs):
         raise NotImplementedError("unsupported function")
@@ -164,11 +164,11 @@ def test_expr_translation_not_implemented_is_unsafe_skip(monkeypatch):
     )
 
     assert value is None
-    assert result.kind == "unsafe_skip"
+    assert result.kind == "undecidable_skip"
 
 
-def test_operation_translation_not_implemented_is_unsafe_skip(monkeypatch):
-    """Operation execution preserves unsupported-function safety skips."""
+def test_operation_translation_not_implemented_is_undecidable_skip(monkeypatch):
+    """Operation execution normalizes unsupported functions as undecidable."""
 
     def raise_not_implemented(*args, **kwargs):
         raise NotImplementedError("unsupported function")
@@ -181,7 +181,7 @@ def test_operation_translation_not_implemented_is_unsafe_skip(monkeypatch):
     )
 
     assert value is None
-    assert result.kind == "unsafe_skip"
+    assert result.kind == "undecidable_skip"
 
 
 def test_operation_translation_z3_exception_is_undecidable_skip(monkeypatch):
@@ -241,8 +241,8 @@ def test_init_constraint_translation_failure_is_normalized():
     assert result.kind == "undecidable_skip"
 
 
-def test_unsafe_initializers_skip_before_translation():
-    """Unsafe DSL initializers are reported instead of crashing in Z3."""
+def test_initializer_translation_failure_is_undecidable_skip():
+    """Initializer translation failures are reported after full-power translation."""
     machine = parse_machine(
         """
         def int flags = 1 << 2;
@@ -259,8 +259,7 @@ def test_unsafe_initializers_skip_before_translation():
     )
 
     assert constraints is None
-    assert result.kind == "unsafe_skip"
-    assert result.reason == "bitwise"
+    assert result.kind == "undecidable_skip"
 
 
 def test_guard_translation_failure_is_normalized():
@@ -278,6 +277,35 @@ def test_guard_translation_failure_is_normalized():
     assert guard is None
     assert z3_vars is None
     assert result.kind == "undecidable_skip"
+
+
+def test_verify_algorithms_do_not_import_solver_safety_by_default(monkeypatch):
+    """Direct verify calls run full-power instead of consulting safety gates."""
+    machine = parse_machine(
+        """
+        def int x = 0;
+        def int y = 0;
+        state System {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B : if [x * y > 1 && x * y < 0];
+        }
+        """
+    )
+
+    def fail_import(name, *args, **kwargs):
+        if name == "pyfcstm.solver.safety":
+            raise AssertionError("verify must not consult solver.safety by default")
+        return real_import(name, *args, **kwargs)
+
+    real_import = __import__
+    monkeypatch.setattr("builtins.__import__", fail_import)
+
+    result = dead_guard(root_transition(machine), variables(machine))
+
+    assert result.kind == "unsat"
+    assert_single_diag(result, "W_DEAD_GUARD")
 
 
 def test_transition_shadowing_helper_reports_unconditional_followers():
@@ -474,7 +502,7 @@ class TestDeadGuard:
 
         assert result == AlgorithmResult(kind="timeout")
 
-    def test_unsafe_guard_skips_solver(self):
+    def test_bitwise_guard_translation_failure_is_undecidable(self):
         machine = parse_machine(
             """
             def int flags = 0;
@@ -489,10 +517,9 @@ class TestDeadGuard:
 
         result = dead_guard(root_transition(machine), variables(machine))
 
-        assert result.kind == "unsafe_skip"
-        assert result.reason == "bitwise"
+        assert result.kind == "undecidable_skip"
 
-    def test_non_linear_variable_multiplication_is_unsafe_skip(self):
+    def test_non_linear_variable_multiplication_runs_full_power(self):
         machine = parse_machine(
             """
             def int x = 0;
@@ -508,8 +535,9 @@ class TestDeadGuard:
 
         result = dead_guard(root_transition(machine), variables(machine))
 
-        assert result.kind == "unsafe_skip"
-        assert result.reason == "nonlinear"
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "W_DEAD_GUARD")
+        assert diag["data"]["verification_scope"] == "smt_local"
 
 
 class TestGuardTautology:
@@ -584,7 +612,7 @@ class TestGuardTautology:
 
         assert result == AlgorithmResult(kind="timeout")
 
-    def test_unsafe_guard_skips_solver(self):
+    def test_bitwise_guard_translation_failure_is_undecidable(self):
         machine = parse_machine(
             """
             def int flags = 0;
@@ -599,8 +627,7 @@ class TestGuardTautology:
 
         result = guard_tautology(root_transition(machine), variables(machine))
 
-        assert result.kind == "unsafe_skip"
-        assert result.reason == "bitwise"
+        assert result.kind == "undecidable_skip"
 
 
 class TestForcedGuardUnsatUnderInit:
@@ -704,7 +731,7 @@ class TestForcedGuardUnsatUnderInit:
 
         assert result == AlgorithmResult(kind="timeout")
 
-    def test_unsafe_guard_skips_solver(self):
+    def test_bitwise_guard_translation_failure_is_undecidable(self):
         machine = parse_machine(
             """
             def int flags = 0;
@@ -727,8 +754,7 @@ class TestForcedGuardUnsatUnderInit:
             variables(machine),
         )
 
-        assert result.kind == "unsafe_skip"
-        assert result.reason == "bitwise"
+        assert result.kind == "undecidable_skip"
 
     def test_forced_init_translation_failure_propagates(self):
         machine = parse_machine(
@@ -899,7 +925,7 @@ class TestEffectNoOpUnderGuard:
 
         assert result == AlgorithmResult(kind="timeout")
 
-    def test_unsafe_effect_skips_solver(self):
+    def test_bitwise_effect_translation_failure_is_undecidable(self):
         machine = parse_machine(
             """
             def int x = 0;
@@ -914,8 +940,7 @@ class TestEffectNoOpUnderGuard:
 
         result = effect_no_op_under_guard(root_transition(machine), variables(machine))
 
-        assert result.kind == "unsafe_skip"
-        assert result.reason == "bitwise"
+        assert result.kind == "undecidable_skip"
 
     def test_effect_translation_failure_propagates(self):
         transition = Transition(
@@ -1052,7 +1077,7 @@ class TestEffectContradictsGuard:
 
         assert result == AlgorithmResult(kind="sat")
 
-    def test_unsafe_effect_skips_solver(self):
+    def test_nonlinear_effect_runs_full_power(self):
         machine = parse_machine(
             """
             def int counter = 0;
@@ -1067,8 +1092,7 @@ class TestEffectContradictsGuard:
 
         result = effect_contradicts_guard(root_transition(machine), variables(machine))
 
-        assert result.kind == "unsafe_skip"
-        assert result.reason == "double_var_power"
+        assert result == AlgorithmResult(kind="sat")
 
     def test_effect_translation_failure_propagates(self):
         transition = Transition(
@@ -1164,7 +1188,7 @@ class TestTransitionShadowedByPredecessor:
 
         assert result == AlgorithmResult(kind="timeout")
 
-    def test_unsafe_guard_skips_solver(self):
+    def test_bitwise_guard_translation_failure_is_undecidable(self):
         machine = parse_machine(
             """
             def int flags = 0;
@@ -1181,8 +1205,7 @@ class TestTransitionShadowedByPredecessor:
 
         result = transition_shadowed_by_predecessor(machine, variables(machine))
 
-        assert result.kind == "unsafe_skip"
-        assert result.reason == "bitwise"
+        assert result.kind == "undecidable_skip"
 
     def test_current_guard_translation_failure_propagates(self, monkeypatch):
         machine = parse_machine(
@@ -1336,7 +1359,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
 
         assert result == AlgorithmResult(kind="sat")
 
-    def test_ignores_states_without_enter_actions(self):
+    def test_def_initializer_can_determine_first_during_condition(self):
         machine = parse_machine(
             """
             def int mode = 0;
@@ -1355,7 +1378,9 @@ class TestEnterPostconditionImpliesDuringPrecondition:
             state, variables(machine)
         )
 
-        assert result == AlgorithmResult(kind="sat")
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["branch_taken"] == "false"
 
     def test_triggers_when_enter_determines_during_ternary_true_branch(self):
         machine = parse_machine(
@@ -1428,7 +1453,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
 
         assert result == AlgorithmResult(kind="timeout")
 
-    def test_unsafe_during_condition_skips_solver(self):
+    def test_bitwise_during_condition_translation_failure_is_undecidable(self):
         machine = parse_machine(
             """
             def int flags = 1;
@@ -1448,8 +1473,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
             state, variables(machine)
         )
 
-        assert result.kind == "unsafe_skip"
-        assert result.reason == "bitwise"
+        assert result.kind == "undecidable_skip"
 
     def test_init_constraint_failure_propagates(self):
         machine = parse_machine(
@@ -1586,7 +1610,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         )
 
         assert result == AlgorithmResult(kind="sat")
-        assert len(calls) == 2
+        assert len(calls) == 3
 
     def test_ancestor_before_aspect_feeds_first_during_condition(self):
         machine = parse_machine(
@@ -1612,6 +1636,105 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         assert result.kind == "unsat"
         diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
         assert diag["data"]["branch_taken"] == "true"
+
+    def test_root_enter_feeds_first_during_condition(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                enter { mode = 1; }
+                state Idle {
+                    enter { x = 0; }
+                    during { x = (mode > 0) ? 10 : 20; }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["branch_taken"] == "true"
+
+    def test_composite_during_before_feeds_first_during_condition(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Parent {
+                    during before { mode = 1; }
+                    state Child {
+                        enter { x = 0; }
+                        during { x = (mode > 0) ? 10 : 20; }
+                    }
+                    [*] -> Child;
+                }
+                [*] -> Parent;
+            }
+            """
+        )
+        state = machine.root_state.substates["Parent"].substates["Child"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["branch_taken"] == "true"
+
+    def test_init_transition_effect_feeds_first_during_condition(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    enter { x = 0; }
+                    during { x = (mode == 1) ? 10 : 20; }
+                }
+                [*] -> Idle effect { mode = 1; };
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
+        assert diag["data"]["branch_taken"] == "true"
+
+    def test_unsatisfiable_init_transition_context_returns_sat(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    enter { x = 0; }
+                    during { x = (mode == 1) ? 10 : 20; }
+                }
+                [*] -> Idle : if [mode == 1];
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result == AlgorithmResult(kind="sat")
 
     def test_uninitialized_leaf_entry_is_overapproximated(self):
         machine = parse_machine(
@@ -1792,7 +1915,7 @@ class TestCompositeInitGuardsIncomplete:
 
         assert result == AlgorithmResult(kind="timeout")
 
-    def test_unsafe_init_guard_skips_solver(self):
+    def test_bitwise_init_guard_translation_failure_is_undecidable(self):
         machine = parse_machine(
             """
             def int flags = 0;
@@ -1807,8 +1930,7 @@ class TestCompositeInitGuardsIncomplete:
 
         result = composite_init_guards_incomplete(machine, variables(machine))
 
-        assert result.kind == "unsafe_skip"
-        assert result.reason == "bitwise"
+        assert result.kind == "undecidable_skip"
 
     def test_nested_composite_reports_nested_state(self):
         machine = parse_machine(

@@ -1,8 +1,9 @@
-"""Expression safety checks for SMT-local verification algorithms.
+"""Optional expression safety scans for downstream SMT callers.
 
-The SMT-local verify algorithms operate in arithmetic theories.  This module
-provides a small syntactic pre-check that rejects expression shapes known to be
-outside that solver envelope before an algorithm attempts a Z3 translation.
+The core solver and verify algorithms are intentionally full-power by default:
+they translate the requested expression and let Z3 try the query.  This module
+provides a separate syntactic scanner for callers such as diagnostics adapters
+that want to apply their own policy before invoking those core algorithms.
 """
 
 from dataclasses import dataclass
@@ -51,10 +52,10 @@ _TRANSCENDENTAL_FUNCTIONS = frozenset(
 
 @dataclass(frozen=True)
 class SafetyCheck:
-    """Result of a solver-safety expression scan.
+    """Result of an optional solver-safety expression scan.
 
-    :param safe: Whether the expression or operation block is safe for the
-        arithmetic solver envelope.
+    :param safe: Whether the expression or operation block passes the optional
+        downstream policy.
     :type safe: bool
     :param reason: First unsafe reason found, defaults to ``None``.
     :type reason: Optional[SafetyReason], optional
@@ -86,20 +87,20 @@ def _unsafe(reason: SafetyReason, offending_node: Expr) -> SafetyCheck:
     :type reason: SafetyReason
     :param offending_node: Node that caused the result.
     :type offending_node: Expr
-    :return: Unsafe safety result.
+    :return: Policy rejection result.
     :rtype: SafetyCheck
     """
     return SafetyCheck(safe=False, reason=reason, offending_node=offending_node)
 
 
 def check_expr_safety(expr: Optional[Expr]) -> SafetyCheck:
-    """Check whether an expression is suitable for SMT-local arithmetic solving.
+    """Run an optional downstream policy scan over an expression.
 
     :param expr: Expression to scan, or ``None`` for optional missing
         expressions.
     :type expr: Optional[Expr]
-    :return: Safety result.  The first unsafe node in pre-order traversal is
-        reported when a hazard is found.
+    :return: Safety-policy result.  The first policy-rejected node in pre-order
+        traversal is reported when a hazard is found.
     :rtype: SafetyCheck
     """
     if expr is None:
@@ -135,13 +136,13 @@ def check_expr_safety(expr: Optional[Expr]) -> SafetyCheck:
 
 
 def check_expr_safety_for_effect(ops: Sequence[OperationStatement]) -> SafetyCheck:
-    """Check every expression inside an operation block for solver safety.
+    """Run an optional downstream policy scan over an operation block.
 
     :param ops: Operation statements from an ``enter`` / ``during`` / ``exit``
         / ``effect`` block.
     :type ops: Sequence[OperationStatement]
-    :return: First unsafe expression result, or a safe result if all scanned
-        expressions are acceptable.
+    :return: First policy-rejected expression result, or a safe result if all
+        scanned expressions are acceptable.
     :rtype: SafetyCheck
     """
     for statement in ops:

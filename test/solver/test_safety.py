@@ -1,4 +1,4 @@
-"""Tests for solver expression safety classification."""
+"""Tests for optional solver expression policy classification."""
 
 from dataclasses import FrozenInstanceError
 

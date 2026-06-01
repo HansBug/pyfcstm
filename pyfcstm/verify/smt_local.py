@@ -29,14 +29,12 @@ if TYPE_CHECKING:  # pragma: no cover - imported only for static checkers
         Transition,
         VarDefine,
     )
-    from pyfcstm.solver.safety import SafetyCheck
 
 ResultKind = Literal[
     "sat",
     "unsat",
     "unknown",
     "timeout",
-    "unsafe_skip",
     "undecidable_skip",
 ]
 
@@ -105,20 +103,6 @@ def execute_operations(operations, z3_vars):
     from pyfcstm.solver.operation import execute_operations as impl
 
     return impl(operations, z3_vars)
-
-
-def check_expr_safety(expr):
-    """Delegate to :func:`pyfcstm.solver.safety.check_expr_safety`."""
-    from pyfcstm.solver.safety import check_expr_safety as impl
-
-    return impl(expr)
-
-
-def check_expr_safety_for_effect(ops):
-    """Delegate to :func:`pyfcstm.solver.safety.check_expr_safety_for_effect`."""
-    from pyfcstm.solver.safety import check_expr_safety_for_effect as impl
-
-    return impl(ops)
 
 
 @dataclass(frozen=True)
@@ -229,30 +213,6 @@ def _skip_result(kind: ResultKind, reason: Optional[str]) -> AlgorithmResult:
     return AlgorithmResult(kind=kind, diagnostics=(), reason=reason)
 
 
-def _unsafe_result(safety: SafetyCheck) -> AlgorithmResult:
-    """Create an unsafe-skip result from a safety check.
-
-    :param safety: Safety check result.
-    :type safety: SafetyCheck
-    :return: Unsafe-skip result.
-    :rtype: AlgorithmResult
-    """
-    return _skip_result("unsafe_skip", safety.reason)
-
-
-def _merge_safety_checks(*checks: SafetyCheck) -> Optional[AlgorithmResult]:
-    """Return the first unsafe check as an algorithm result.
-
-    :param checks: Safety checks to inspect.
-    :return: First unsafe result, or ``None`` if all checks are safe.
-    :rtype: Optional[AlgorithmResult]
-    """
-    for check in checks:
-        if not check.safe:
-            return _unsafe_result(check)
-    return None
-
-
 def _z3_vars(variables: Sequence[VarDefine]) -> _Z3Vars:
     """Create Z3 variables from a generic sequence of variable definitions.
 
@@ -304,7 +264,7 @@ def _expr_to_z3_or_result(
     except NotImplementedError as err:
         # NotImplementedError: expr_to_z3 raises this for unsupported math
         # functions such as logarithms or trigonometric functions.
-        return None, _skip_result("unsafe_skip", str(err))
+        return None, _skip_result("undecidable_skip", str(err))
     except ValueError as err:
         # ValueError: expr_to_z3 raises this for unknown variables or operators.
         return None, _skip_result("undecidable_skip", str(err))
@@ -336,7 +296,7 @@ def _execute_operations_or_result(
     except NotImplementedError as err:
         # NotImplementedError: execute_operations delegates expression
         # translation to expr_to_z3, which raises this for unsupported functions.
-        return None, _skip_result("unsafe_skip", str(err))
+        return None, _skip_result("undecidable_skip", str(err))
     except ValueError as err:
         # ValueError: execute_operations delegates to expr_to_z3, which raises
         # this for unknown variables or unsupported operators.
@@ -367,9 +327,6 @@ def _build_init_constraints_or_result(
     """
     constraints: List[z3.ExprRef] = []
     for variable in variables:
-        safety = check_expr_safety(variable.init)
-        if not safety.safe:
-            return None, _unsafe_result(safety)
         init_value, result = _expr_to_z3_or_result(variable.init, z3_vars)
         if result is not None:
             return None, result
@@ -381,7 +338,7 @@ def _guard_z3_or_result(
     transition: Transition,
     variables: Sequence[VarDefine],
 ) -> Tuple[Optional[_Z3Expr], Optional[_Z3Vars], Optional[AlgorithmResult]]:
-    """Check and translate a transition guard.
+    """Translate a transition guard.
 
     :param transition: Transition with a non-``None`` guard.
     :type transition: Transition
@@ -390,10 +347,6 @@ def _guard_z3_or_result(
     :return: Guard Z3 expression, variable mapping, and optional failure result.
     :rtype: tuple
     """
-    safety = check_expr_safety(transition.guard)
-    if not safety.safe:
-        return None, None, _unsafe_result(safety)
-
     z3_vars = _z3_vars(variables)
     guard_expr, result = _expr_to_z3_or_result(transition.guard, z3_vars)
     if result is not None:
@@ -449,7 +402,7 @@ def _first_indeterminate(
     """
     if current is not None:
         return current
-    if candidate_kind in {"unknown", "timeout", "unsafe_skip", "undecidable_skip"}:
+    if candidate_kind in {"unknown", "timeout", "undecidable_skip"}:
         return _skip_result(candidate_kind, reason)
     return None
 
@@ -615,13 +568,6 @@ def effect_no_op_under_guard(
     if _is_syntactically_self_assign_only(transition.effects):
         return AlgorithmResult(kind="sat")
 
-    result = _merge_safety_checks(
-        check_expr_safety(transition.guard),
-        check_expr_safety_for_effect(transition.effects),
-    )
-    if result is not None:
-        return result
-
     z3_vars = _z3_vars(variables)
     after_vars, result = _execute_operations_or_result(transition.effects, z3_vars)
     if result is not None:
@@ -690,13 +636,6 @@ def effect_contradicts_guard(
     """
     if transition.guard is None or not transition.effects:
         return AlgorithmResult(kind="sat")
-
-    result = _merge_safety_checks(
-        check_expr_safety(transition.guard),
-        check_expr_safety_for_effect(transition.effects),
-    )
-    if result is not None:
-        return result
 
     z3_vars = _z3_vars(variables)
     guard_before, result = _expr_to_z3_or_result(transition.guard, z3_vars)
@@ -849,16 +788,6 @@ def transition_shadowed_by_predecessor(
                 continue
 
             if key == "guard":
-                safety = check_expr_safety(transition.guard)
-                if not safety.safe:
-                    first_indeterminate_result = _first_indeterminate(
-                        first_indeterminate_result,
-                        "unsafe_skip",
-                        safety.reason,
-                    )
-                    prior_guards.append(transition)
-                    continue
-
                 z3_vars = _z3_vars(variables)
                 current_guard, result = _expr_to_z3_or_result(transition.guard, z3_vars)
                 if result is not None:
@@ -872,17 +801,8 @@ def transition_shadowed_by_predecessor(
 
                 predecessor_guards: List[z3.ExprRef] = []
                 predecessor_payloads = []
-                predecessor_unsafe = False
+                predecessor_failed = False
                 for prior_guard_transition in prior_guards:
-                    prior_safety = check_expr_safety(prior_guard_transition.guard)
-                    if not prior_safety.safe:
-                        first_indeterminate_result = _first_indeterminate(
-                            first_indeterminate_result,
-                            "unsafe_skip",
-                            prior_safety.reason,
-                        )
-                        predecessor_unsafe = True
-                        break
                     prior_guard, result = _expr_to_z3_or_result(
                         prior_guard_transition.guard,
                         z3_vars,
@@ -893,14 +813,14 @@ def transition_shadowed_by_predecessor(
                             result.kind,
                             result.reason,
                         )
-                        predecessor_unsafe = True
+                        predecessor_failed = True
                         break
                     predecessor_guards.append(z3.Not(prior_guard))
                     predecessor_payloads.append(
                         _transition_payload(prior_guard_transition)
                     )
 
-                if not predecessor_unsafe and predecessor_guards:
+                if not predecessor_failed and predecessor_guards:
                     formula = z3.And(
                         current_guard,
                         *predecessor_guards,
@@ -1005,28 +925,96 @@ def _concrete_before_aspect_operations(state: State) -> List[OperationStatement]
     )
 
 
-def _is_root_initial_leaf(state: State) -> bool:
-    """Return whether a leaf is reached only through initial transitions.
+def _state_path_from_root(state: State) -> Tuple[State, ...]:
+    """Return the state path from the root to ``state``.
 
-    ``enter_postcondition_implies_during_precondition`` pins variables to DSL
-    declaration initializers.  That pre-state is sound only for the global
-    initial leaf reached through root-to-leaf ``[*]`` transitions.
+    :param state: State whose ancestry should be collected.
+    :type state: State
+    :return: Root-to-state path.
+    :rtype: Tuple[State, ...]
+    """
+    path = []
+    current = state
+    while current is not None:
+        path.append(current)
+        current = current.parent
+    return tuple(reversed(path))
+
+
+def _root_initial_path_transitions(state: State) -> Optional[Tuple[Transition, ...]]:
+    """Return the root-to-leaf initial-transition chain for ``state``.
+
+    ``enter_postcondition_implies_during_precondition`` reasons about first
+    cycle entry from the global root.  This helper returns the concrete
+    declaration-order transition chain that reaches ``state`` when every
+    ancestor follows an initial transition.  A missing initial edge means the
+    leaf is not a root-initial leaf and should be ignored by this algorithm.
+
+    :param state: Leaf state to inspect.
+    :type state: State
+    :return: Initial transition chain, or ``None`` when no such chain exists.
+    :rtype: Optional[Tuple[Transition, ...]]
+    """
+    path = _state_path_from_root(state)
+    transitions: List[Transition] = []
+    for parent, child in zip(path, path[1:]):
+        transition = next(
+            (
+                item
+                for item in parent.init_transitions
+                if item.to_state == child.name
+            ),
+            None,
+        )
+        if transition is None:
+            return None
+        transitions.append(transition)
+    return tuple(transitions)
+
+
+def _is_root_initial_leaf(state: State) -> bool:
+    """Return whether a leaf is reachable through initial transitions.
 
     :param state: Leaf state to inspect.
     :type state: State
     :return: Whether the root-to-leaf path is initial-transition-only.
     :rtype: bool
     """
-    current = state
-    while current.parent is not None:
-        parent = current.parent
-        if not any(
-            transition.to_state == current.name
-            for transition in parent.init_transitions
-        ):
-            return False
-        current = parent
-    return True
+    return _root_initial_path_transitions(state) is not None
+
+
+def _root_initial_entry_operations(
+    state: State,
+    init_transitions: Sequence[Transition],
+) -> List[OperationStatement]:
+    """Collect first-entry operations from the root through ``state``.
+
+    The order mirrors :class:`pyfcstm.simulate.runtime.SimulationRuntime` for a
+    root initial entry: each entered state executes its ``enter`` actions, a
+    composite then executes local ``during before`` actions, then the selected
+    initial transition effect runs before entering the child.  Leaf ``during``
+    and cross-cutting ``>> during before`` aspect actions are intentionally left
+    to the caller because they form the first-cycle condition being inspected.
+
+    :param state: Leaf state reached by the initial chain.
+    :type state: State
+    :param init_transitions: Initial transition chain returned by
+        :func:`_root_initial_path_transitions`.
+    :type init_transitions: Sequence[Transition]
+    :return: Flattened operation stream before first leaf during.
+    :rtype: List[OperationStatement]
+    """
+    path = _state_path_from_root(state)
+    operations: List[OperationStatement] = []
+    for index, path_state in enumerate(path):
+        operations.extend(_action_operations(path_state.on_enters))
+        if not path_state.is_leaf_state:
+            operations.extend(
+                _action_operations(path_state.list_on_durings(aspect="before"))
+            )
+        if index < len(init_transitions):
+            operations.extend(init_transitions[index].effects)
+    return operations
 
 
 def enter_postcondition_implies_during_precondition(
@@ -1048,22 +1036,15 @@ def enter_postcondition_implies_during_precondition(
     """
     if not state.is_leaf_state or state.is_pseudo:
         return AlgorithmResult(kind="sat")
-    if not _is_root_initial_leaf(state):
+    init_transitions = _root_initial_path_transitions(state)
+    if init_transitions is None:
         return AlgorithmResult(kind="sat")
 
-    enter_operations = _action_operations(state.on_enters)
+    entry_operations = _root_initial_entry_operations(state, init_transitions)
     before_aspect_operations = _concrete_before_aspect_operations(state)
     during_operations = _action_operations(state.on_durings)
-    if not enter_operations or not during_operations:
+    if not during_operations:
         return AlgorithmResult(kind="sat")
-
-    result = _merge_safety_checks(
-        check_expr_safety_for_effect(enter_operations),
-        check_expr_safety_for_effect(before_aspect_operations),
-        check_expr_safety_for_effect(during_operations),
-    )
-    if result is not None:
-        return result
 
     conditions = tuple(_conditional_conditions_from_operations(during_operations))
     if not conditions:
@@ -1073,12 +1054,22 @@ def enter_postcondition_implies_during_precondition(
     init_constraints, result = _build_init_constraints_or_result(variables, z3_vars)
     if result is not None:
         return result
-    enter_vars, result = _execute_operations_or_result(enter_operations, z3_vars)
+    entry_constraints: List[z3.ExprRef] = []
+    for transition in init_transitions:
+        if transition.event is not None:
+            entry_constraints.append(z3.Bool(_event_bool_name(transition)))
+        if transition.guard is not None:
+            guard_z3, result = _expr_to_z3_or_result(transition.guard, z3_vars)
+            if result is not None:
+                return result
+            entry_constraints.append(guard_z3)
+
+    entry_vars, result = _execute_operations_or_result(entry_operations, z3_vars)
     if result is not None:
         return result
     first_cycle_vars, result = _execute_operations_or_result(
         before_aspect_operations,
-        enter_vars,
+        entry_vars,
     )
     if result is not None:
         return result
@@ -1086,6 +1077,19 @@ def enter_postcondition_implies_during_precondition(
     type_constraints = _build_type_constraints(variables, z3_vars)
     diagnostics: List[dict] = []
     first_indeterminate_result: Optional[AlgorithmResult] = None
+
+    context_check = is_sat(
+        [*init_constraints, *entry_constraints, *type_constraints],
+        timeout_ms=smt_timeout_ms,
+    )
+    if context_check.kind in {"unknown", "timeout"}:
+        first_indeterminate_result = _first_indeterminate(
+            first_indeterminate_result,
+            context_check.kind,
+            getattr(context_check, "reason", None),
+        )
+    if context_check.kind == "unsat":
+        return AlgorithmResult(kind="sat")
 
     for condition in conditions:
         condition_z3, result = _expr_to_z3_or_result(condition, first_cycle_vars)
@@ -1098,11 +1102,21 @@ def enter_postcondition_implies_during_precondition(
             continue
 
         true_check = is_sat(
-            [condition_z3, *init_constraints, *type_constraints],
+            [
+                condition_z3,
+                *init_constraints,
+                *entry_constraints,
+                *type_constraints,
+            ],
             timeout_ms=smt_timeout_ms,
         )
         false_check = is_sat(
-            [z3.Not(condition_z3), *init_constraints, *type_constraints],
+            [
+                z3.Not(condition_z3),
+                *init_constraints,
+                *entry_constraints,
+                *type_constraints,
+            ],
             timeout_ms=smt_timeout_ms,
         )
 
@@ -1192,20 +1206,6 @@ def composite_init_guards_incomplete(
             transition.guard is None and transition.event is None
             for transition in init_transitions
         ):
-            continue
-
-        unsafe_safety: Optional[SafetyCheck] = None
-        for transition in init_transitions:
-            safety = check_expr_safety(transition.guard)
-            if not safety.safe:
-                unsafe_safety = safety
-                break
-        if unsafe_safety is not None:
-            first_indeterminate_result = _first_indeterminate(
-                first_indeterminate_result,
-                "unsafe_skip",
-                unsafe_safety.reason,
-            )
             continue
 
         z3_vars = _z3_vars(variables)

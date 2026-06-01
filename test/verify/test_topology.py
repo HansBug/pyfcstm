@@ -237,6 +237,121 @@ def test_build_leaf_level_macro_graph_bubbles_parent_exit_to_root_sink():
     assert graph.edges["Root.Outer.A"] == (topology.EXIT_ROOT_SINK,)
 
 
+def test_build_leaf_level_macro_graph_requires_leaf_exit_before_parent_transition():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state Running {
+                state Active;
+                state Idle;
+                [*] -> Active;
+                Active -> Idle;
+            }
+            state Error;
+            [*] -> Running;
+            Running -> Error;
+            Error -> [*];
+        }
+        """
+    )
+
+    graph = topology.build_leaf_level_macro_graph(machine)
+    reachable = topology.topological_reachable_set(machine)
+
+    assert graph.edges["Root.Running.Active"] == ("Root.Running.Idle",)
+    assert graph.edges["Root.Running.Idle"] == tuple()
+    assert reachable["Root"] == ("Root.Running.Active", "Root.Running.Idle")
+    assert reachable["Root.Running"] == (
+        "Root.Running.Active",
+        "Root.Running.Idle",
+    )
+    assert topology.unreachable_states(machine) == ("Root.Error",)
+    assert topology.topological_finite(machine).counterexamples == (
+        ("deadlock", "Root.Running.Idle"),
+    )
+    assert topology.topological_inevitable_terminator(
+        machine
+    ).counterexample_path == ("Root.Running.Idle",)
+
+
+def test_build_leaf_level_macro_graph_bubbles_multi_level_exit_to_nested_target():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state Outer {
+                state Inner {
+                    state Active;
+                    [*] -> Active;
+                    Active -> [*];
+                }
+                state Cleanup {
+                    state Flush;
+                    [*] -> Flush;
+                    Flush -> [*];
+                }
+                [*] -> Inner;
+                Inner -> Cleanup;
+                Cleanup -> [*];
+            }
+            state Done;
+            [*] -> Outer;
+            Outer -> Done;
+            Done -> [*];
+        }
+        """
+    )
+
+    graph = topology.build_leaf_level_macro_graph(machine)
+    reachable = topology.topological_reachable_set(machine)
+
+    assert graph.edges["Root.Outer.Inner.Active"] == (
+        "Root.Outer.Cleanup.Flush",
+    )
+    assert graph.edges["Root.Outer.Cleanup.Flush"] == ("Root.Done",)
+    assert graph.edges["Root.Done"] == (topology.EXIT_ROOT_SINK,)
+    assert reachable["Root"] == (
+        "Root.Done",
+        "Root.Outer.Cleanup.Flush",
+        "Root.Outer.Inner.Active",
+    )
+    assert topology.topological_finite(machine).finite is True
+    assert topology.topological_inevitable_terminator(machine).inevitable is True
+
+
+def test_event_consumer_reachability_handles_nested_composite_sources():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            event Stop;
+            event Lost;
+            state System {
+                state Running {
+                    state Active;
+                    [*] -> Active;
+                    Active -> [*];
+                }
+                [*] -> Running;
+                Running -> [*] : Stop;
+            }
+            state Orphan {
+                state LostLeaf;
+                [*] -> LostLeaf;
+                LostLeaf -> LostLeaf : Lost;
+            }
+            [*] -> System;
+            System -> [*];
+        }
+        """
+    )
+
+    assert topology.event_emission_to_consumer_reachable(machine) == (
+        "Root.Orphan.Lost",
+    )
+
+
 def test_topological_reachable_set_handles_diamond_closure_without_duplicates():
     topology = _import_topology()
     machine = _parse(

@@ -217,9 +217,12 @@ def build_leaf_level_macro_graph(machine: StateMachine) -> LeafLevelGraph:
 
     The projection follows normal leaf-to-leaf transitions, expands composite
     targets through their initial transitions, and bubbles ``Leaf -> [*]``
-    transitions through parent outgoing transitions. If a non-root parent has no
-    outgoing transition, the bubble is an off-cliff exit and contributes no edge.
-    A root leaf is treated as root-exit-capable by adding an edge to
+    transitions through parent outgoing transitions. Parent-level transitions
+    whose source is a composite state are therefore considered only after a
+    descendant leaf explicitly exits to that parent; they are not copied onto
+    every active descendant leaf. If a non-root parent has no outgoing
+    transition, the bubble is an off-cliff exit and contributes no edge. A root
+    leaf is treated as root-exit-capable by adding an edge to
     :data:`EXIT_ROOT_SINK`.
 
     :param machine: State machine to project.

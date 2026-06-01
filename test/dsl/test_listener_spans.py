@@ -451,3 +451,88 @@ class TestSpanInvariants:
         # Slice should start with "state Root" and end with "}"
         assert sliced.startswith("state Root")
         assert sliced.endswith("}")
+
+
+@pytest.mark.unittest
+class TestActionAndOperationSpan:
+    def test_event_and_lifecycle_action_spans(self):
+        src = (
+            "def int x = 0;\n"
+            "state Root {\n"
+            "    event Go named \"Go Event\";\n"
+            "    enter Init { x = 1; }\n"
+            "    during before Tick { x = x + 1; }\n"
+            "    exit abstract Cleanup;\n"
+            "    >> during after Monitor { x = x + 2; }\n"
+            "    state A;\n"
+            "    [*] -> A;\n"
+            "}"
+        )
+        ast = parse_with_grammar_entry(src, 'state_machine_dsl')
+        root = ast.root_state
+
+        assert (
+            _slice_by_span(src, root.events[0]._span)
+            == 'event Go named "Go Event";'
+        )
+        assert _slice_by_span(src, root.enters[0]._span) == "enter Init { x = 1; }"
+        assert _slice_by_span(src, root.enters[0].operations[0]._span) == "x = 1;"
+        assert (
+            _slice_by_span(src, root.durings[0]._span)
+            == "during before Tick { x = x + 1; }"
+        )
+        assert _slice_by_span(src, root.durings[0].operations[0]._span) == "x = x + 1;"
+        assert _slice_by_span(src, root.exits[0]._span) == "exit abstract Cleanup;"
+        assert (
+            _slice_by_span(src, root.during_aspects[0]._span)
+            == ">> during after Monitor { x = x + 2; }"
+        )
+        assert (
+            _slice_by_span(src, root.during_aspects[0].operations[0]._span)
+            == "x = x + 2;"
+        )
+
+    def test_operation_if_span(self):
+        src = (
+            "def int x = 0;\n"
+            "state Root {\n"
+            "    state A {\n"
+            "        during {\n"
+            "            if [x > 0] {\n"
+            "                x = x + 1;\n"
+            "            } else {\n"
+            "                x = x + 2;\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "    [*] -> A;\n"
+            "}"
+        )
+        ast = parse_with_grammar_entry(src, 'state_machine_dsl')
+        if_statement = ast.root_state.substates[0].durings[0].operations[0]
+
+        assert _slice_by_span(src, if_statement._span) == (
+            "if [x > 0] {\n"
+            "                x = x + 1;\n"
+            "            } else {\n"
+            "                x = x + 2;\n"
+            "            }"
+        )
+        assert _slice_by_span(src, if_statement.branches[0]._span) == (
+            "{\n"
+            "                x = x + 1;\n"
+            "            }"
+        )
+        assert (
+            _slice_by_span(src, if_statement.branches[0].statements[0]._span)
+            == "x = x + 1;"
+        )
+        assert _slice_by_span(src, if_statement.branches[1]._span) == (
+            "{\n"
+            "                x = x + 2;\n"
+            "            }"
+        )
+        assert (
+            _slice_by_span(src, if_statement.branches[1].statements[0]._span)
+            == "x = x + 2;"
+        )

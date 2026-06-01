@@ -1547,6 +1547,7 @@ class OperationAssignment(OperationalStatement):
 
     name: str
     expr: Expr
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """
@@ -1573,6 +1574,7 @@ class OperationIfBranch(ASTNode):
 
     condition: Optional[Expr]
     statements: List[OperationalStatement]
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
 
 @dataclass
@@ -1588,6 +1590,7 @@ class OperationIf(OperationalStatement):
     """
 
     branches: List[OperationIfBranch]
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """
@@ -1644,6 +1647,7 @@ class EventDefinition(ASTNode):
 
     name: str
     extra_name: Optional[str] = None
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """
@@ -1739,6 +1743,7 @@ class EnterOperations(EnterStatement):
 
     operations: List[OperationalStatement]
     name: Optional[str] = None
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """
@@ -1782,6 +1787,7 @@ class EnterAbstractFunction(EnterStatement):
 
     name: Optional[str]
     doc: Optional[str]
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """
@@ -1829,6 +1835,7 @@ class EnterRefFunction(EnterStatement):
 
     name: Optional[str]
     ref: ChainID
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """
@@ -1880,6 +1887,7 @@ class ExitOperations(ExitStatement):
 
     operations: List[OperationalStatement]
     name: Optional[str] = None
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """
@@ -1924,6 +1932,7 @@ class ExitAbstractFunction(ExitStatement):
 
     name: Optional[str]
     doc: Optional[str]
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """
@@ -1971,6 +1980,7 @@ class ExitRefFunction(ExitStatement):
 
     name: Optional[str]
     ref: ChainID
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """
@@ -2025,6 +2035,7 @@ class DuringOperations(DuringStatement):
     aspect: Optional[str]
     operations: List[OperationalStatement]
     name: Optional[str] = None
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """
@@ -2077,6 +2088,7 @@ class DuringAbstractFunction(DuringStatement):
     name: Optional[str]
     aspect: Optional[str]
     doc: Optional[str]
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """
@@ -2133,6 +2145,7 @@ class DuringRefFunction(DuringStatement):
     name: Optional[str]
     aspect: Optional[str]
     ref: ChainID
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """
@@ -2193,6 +2206,7 @@ class DuringAspectOperations(DuringAspectStatement):
     aspect: str
     operations: List[OperationalStatement]
     name: Optional[str] = None
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """
@@ -2241,6 +2255,7 @@ class DuringAspectAbstractFunction(DuringAspectStatement):
     name: Optional[str]
     aspect: str
     doc: Optional[str]
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """
@@ -2293,6 +2308,7 @@ class DuringAspectRefFunction(DuringAspectStatement):
     name: Optional[str]
     aspect: str
     ref: ChainID
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """

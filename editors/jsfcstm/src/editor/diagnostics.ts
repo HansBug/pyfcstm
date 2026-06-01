@@ -87,6 +87,7 @@ export function collectInspectDiagnosticsFromItems(
     }
     const fullRange = fullDocumentRange(document);
     const diagnostics: FcstmDiagnostic[] = [];
+    const seenEffectSelfAssigns = new Map<string, number>();
 
     for (const item of items) {
         if (SUPPRESSED_FROM_INSPECT_SURFACE.has(item.code)) continue;
@@ -98,7 +99,7 @@ export function collectInspectDiagnosticsFromItems(
             code: item.code,
             data: item.refs,
         };
-        const refResolution = resolveRangeFromRefsDetailed(document, semantic, item.refs);
+        const refResolution = resolveRangeFromRefsDetailed(document, semantic, item.refs, seenEffectSelfAssigns);
         const problemRange = refResolution.range
             ?? suggestedFixIssueRange(document, semantic, diagnostic);
         if (options.rangeMode === 'fix-edit') {

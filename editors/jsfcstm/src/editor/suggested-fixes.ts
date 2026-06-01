@@ -275,6 +275,7 @@ export function effectSelfAssignRange(
     semantic: FcstmSemanticDocument,
     statePath: string | undefined,
     varName: string,
+    occurrenceIndex?: number,
 ): TextRange | null {
     const matches: TextRange[] = [];
     for (const transition of semantic.transitions) {
@@ -288,6 +289,9 @@ export function effectSelfAssignRange(
         for (const statement of statements) {
             matches.push(statementDeleteRange(document, statement));
         }
+    }
+    if (occurrenceIndex !== undefined) {
+        return matches[occurrenceIndex] ?? null;
     }
     return matches.length === 1 ? matches[0] : null;
 }

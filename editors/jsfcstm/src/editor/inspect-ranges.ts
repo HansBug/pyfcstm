@@ -51,6 +51,30 @@ function arrayFirstRange(value: unknown): TextRange | null {
     return null;
 }
 
+function effectSelfAssignGroupKey(refMap: Record<string, unknown>): string | null {
+    const variableName = stringRef(refMap, 'var_name');
+    const statePath = stringRef(refMap, 'state_path');
+    if (!variableName || !statePath) return null;
+    if (
+        typeof refMap.effect_self_assign_anchor !== 'string' &&
+        !Object.prototype.hasOwnProperty.call(refMap, 'transition_span')
+    ) {
+        return null;
+    }
+    return JSON.stringify([statePath, variableName]);
+}
+
+function effectSelfAssignOccurrenceIndex(
+    seen: Map<string, number> | undefined,
+    refMap: Record<string, unknown>,
+): number | undefined {
+    const key = effectSelfAssignGroupKey(refMap);
+    if (!key || !seen) return undefined;
+    const index = seen.get(key) ?? 0;
+    seen.set(key, index + 1);
+    return index;
+}
+
 /**
  * Resolve inspect diagnostic refs into the best source range available in the
  * editor semantic document. Returning null lets callers fall back to a full
@@ -60,6 +84,7 @@ export function resolveRangeFromRefsDetailed(
     document: TextDocumentLike,
     semantic: FcstmSemanticDocument,
     refs: unknown,
+    seenEffectSelfAssigns?: Map<string, number>,
 ): InspectRangeResolution {
     if (typeof refs !== 'object' || refs === null) return {range: null};
     const refMap = refs as Record<string, unknown>;
@@ -72,13 +97,19 @@ export function resolveRangeFromRefsDetailed(
     const variableName = stringRef(refMap, 'var_name');
     const statePath = stringRef(refMap, 'state_path');
     const looksLikeEffectSelfAssign = variableName && statePath && (
-        refMap.effect_self_assign_anchor !== undefined ||
+        typeof refMap.effect_self_assign_anchor === 'string' ||
         Object.prototype.hasOwnProperty.call(refMap, 'transition_span')
     );
     if (looksLikeEffectSelfAssign) {
-        const range = effectSelfAssignRange(document, semantic, statePath, variableName);
+        const range = effectSelfAssignRange(
+            document,
+            semantic,
+            statePath,
+            variableName,
+            effectSelfAssignOccurrenceIndex(seenEffectSelfAssigns, refMap),
+        );
         if (range) return {range};
-        if (statePath === '[*]') return {range: null};
+        return {range: null};
     }
 
     for (const key of ['state_path', 'composite_path', 'parent_path', 'from_path', 'to_path', 'deepest_path']) {

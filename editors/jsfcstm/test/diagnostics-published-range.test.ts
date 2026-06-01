@@ -131,6 +131,76 @@ describe('diagnostics published ranges', () => {
         assert.notEqual(sliceByRange(text, diagnostic.range), 'def int x = 0;');
     });
 
+    it('anchors ambiguous self-assignment diagnostics on each matching transition statement', async () => {
+        const text = [
+            'def int x = 0;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    state C;',
+            '    [*] -> A;',
+            '    A -> B effect {',
+            '        x = x;',
+            '    };',
+            '    A -> C effect {',
+            '        x = x;',
+            '    };',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/published-ambiguous-self-assign.fcstm');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const selfAssignments = diagnostics.filter(item => item.code === 'W_EFFECT_SELF_ASSIGN');
+
+        assert.equal(selfAssignments.length, 2, JSON.stringify(diagnostics));
+        assert.deepEqual(
+            selfAssignments.map(item => item.range.start.line),
+            [7, 10],
+        );
+        assert.deepEqual(
+            selfAssignments.map(item => sliceByRange(text, item.range).trim()),
+            ['x = x;', 'x = x;'],
+        );
+        assert.deepEqual(
+            selfAssignments.map(item => item.data?.__rangeFallback ?? null),
+            [null, null],
+        );
+        assert.notDeepEqual(
+            selfAssignments.map(item => sliceByRange(text, item.range)),
+            ['A', 'A'],
+        );
+    });
+
+    it('anchors repeated initial self-assignment diagnostics on each matching statement', async () => {
+        const text = [
+            'def int x = 0;',
+            'state Root {',
+            '    state A;',
+            '    [*] -> A effect {',
+            '        x = x;',
+            '        x = x;',
+            '    };',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/published-repeated-initial-self-assign.fcstm');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const selfAssignments = diagnostics.filter(item => item.code === 'W_EFFECT_SELF_ASSIGN');
+
+        assert.equal(selfAssignments.length, 2, JSON.stringify(diagnostics));
+        assert.deepEqual(
+            selfAssignments.map(item => item.range.start.line),
+            [4, 5],
+        );
+        assert.deepEqual(
+            selfAssignments.map(item => sliceByRange(text, item.range).trim()),
+            ['x = x;', 'x = x;'],
+        );
+        assert.deepEqual(
+            selfAssignments.map(item => item.data?.__rangeFallback ?? null),
+            [null, null],
+        );
+        assert.notEqual(sliceByRange(text, selfAssignments[0].range), fullDocumentSlice(text));
+    });
+
     it('keeps quick-fix edit ranges separate from published problem ranges', async () => {
         const text = [
             'state Root {',

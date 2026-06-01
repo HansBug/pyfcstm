@@ -8,6 +8,7 @@ import {
     Operation,
     OperationStatement,
     StateMachine,
+    Transition,
     UnaryOp,
 } from '../../model/runtime';
 import type {ModelDiagnosticJson} from '../inspect';
@@ -98,28 +99,15 @@ export function collectConstFoldWarnings(machine: StateMachine | null | undefine
     if (!machine) return [];
     const out: ModelDiagnosticJson[] = [];
     const definedVars = new Set(Object.keys(machine.defines));
-    let transitionIndex = 0;
-    for (const state of machine.allStates) {
-        const statePath = state.path.join('.');
-        for (const transition of state.transitions) {
-            const currentTransitionIndex = transitionIndex;
-            transitionIndex += 1;
-            const guard = transition.guard;
-            const foldedGuard = guard ? foldConditionExpression(guard) : null;
-            if (foldedGuard === true || foldedGuard === false) {
-                out.push(guardConstDiagnostic(
-                    transition.fromState,
-                    transition.toState,
-                    transition.sourceKind,
-                    transition.targetKind,
-                    state.path,
-                    foldedGuard,
-                    guard ? guard.text : '',
-                    currentTransitionIndex,
-                ));
-            }
+    for (const [transitionIndex, transition] of machine.allTransitions.entries()) {
+        const guard = transition.guard;
+        const foldedGuard = guard ? foldConditionExpression(guard) : null;
+        if (foldedGuard === true || foldedGuard === false) {
+            out.push(guardConstDiagnostic(transition, foldedGuard, transitionIndex));
         }
-        out.push(...duringConstAssignDiagnostics(statePath, state.onDurings, definedVars));
+    }
+    for (const state of machine.allStates) {
+        out.push(...duringConstAssignDiagnostics(state.path.join('.'), state.onDurings, definedVars));
     }
     return out;
 }
@@ -209,18 +197,13 @@ function duringStmtConstAssignDiagnostics(
 }
 
 function guardConstDiagnostic(
-    fromState: string,
-    toState: string,
-    sourceKind: 'init' | 'state',
-    targetKind: 'state' | 'exit',
-    parentPath: readonly string[],
+    transition: Transition,
     value: boolean,
-    guardText: string,
     transitionIndex: number,
 ): ModelDiagnosticJson {
     const label = value ? 'true' : 'false';
-    const sourceLabel = transitionSourceLabel(fromState, sourceKind);
-    const targetLabel = transitionTargetLabel(toState, targetKind);
+    const sourceLabel = transitionSourceLabel(transition.fromState, transition.sourceKind);
+    const targetLabel = transitionTargetLabel(transition.toState, transition.targetKind);
     return {
         code: value ? 'W_GUARD_CONST_TRUE' : 'W_GUARD_CONST_FALSE',
         severity: 'warning',
@@ -229,9 +212,9 @@ function guardConstDiagnostic(
         refs: {
             transition_span: null,
             folded_value: value,
-            from_path: transitionSourcePath(parentPath, fromState, sourceKind),
-            to_path: transitionTargetPath(parentPath, toState, targetKind),
-            guard_text: guardText,
+            from_path: transitionSourcePath(transition.parentPath, transition.fromState, transition.sourceKind),
+            to_path: transitionTargetPath(transition.parentPath, transition.toState, transition.targetKind),
+            guard_text: transition.guard!.text,
             transition_index: transitionIndex,
         },
     };

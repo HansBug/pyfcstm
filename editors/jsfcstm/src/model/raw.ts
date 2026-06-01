@@ -2,6 +2,12 @@
 /**
  * Raw model node shapes used while building the jsfcstm model graph.
  *
+ * Transition raw records include a diagnostic-only ``transitionIndex`` /
+ * ``transition_index`` hint. It counts transitions in inspect/model order,
+ * including expanded forced transitions, so editor diagnostics can map
+ * spanless inspect refs back to source ranges without changing runtime
+ * behavior.
+ *
  * These interfaces are intentionally plain-data only. ``builder.ts`` produces
  * these raw objects first, then ``runtime.ts`` hydrates them into pyfcstm-like
  * runtime classes with methods, parent links, and derived properties.
@@ -239,6 +245,8 @@ export interface RawFcstmModelTransition extends RawFcstmModelNodeBase {
     declared_in_state_path: string[];
     triggerScope?: 'local' | 'chain' | 'absolute';
     trigger_scope?: 'local' | 'chain' | 'absolute';
+    transitionIndex?: number;
+    transition_index?: number;
 }
 
 export interface RawFcstmModelForcedTransition {

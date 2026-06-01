@@ -64,6 +64,7 @@ def _eventless_guardless_transition_infos(transitions) -> List[ModelDiagnostic]:
                 'from_path': transition.from_path,
                 'to_path': transition.to_path,
                 'transition_span': None,
+                'transition_index': transition.transition_index,
             },
         ))
     return diagnostics

@@ -35,7 +35,7 @@ TransitionInfo
 -----------------------------------------------------
 
 .. autoclass:: TransitionInfo
-    :members: from_path,to_path,event,event_scope,guard,effect,effect_self_assigns,is_forced,forced_origin
+    :members: from_path,to_path,event,event_scope,guard,effect,effect_self_assigns,is_forced,forced_origin,transition_index
 
 
 VariableInfo

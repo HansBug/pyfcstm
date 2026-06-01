@@ -152,7 +152,7 @@
       "required": [
         "from_path", "to_path", "event", "event_scope",
         "guard", "effect", "effect_self_assigns", "is_forced",
-        "forced_origin"
+        "forced_origin", "transition_index"
       ],
       "properties": {
         "from_path": { "type": "string" },
@@ -169,7 +169,8 @@
           "items": { "type": "string" }
         },
         "is_forced": { "type": "boolean" },
-        "forced_origin": { "type": ["string", "null"] }
+        "forced_origin": { "type": ["string", "null"] },
+        "transition_index": { "type": ["integer", "null"], "minimum": 0 }
       }
     },
     "VariableInfo": {

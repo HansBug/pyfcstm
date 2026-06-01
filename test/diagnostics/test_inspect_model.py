@@ -970,6 +970,8 @@ class TestInspectModelGuardAffectDiagnostics:
             'folded_value': True,
             'from_path': 'Root.Idle',
             'to_path': 'Root.Done',
+            'guard_text': '1 + 2 == 3',
+            'transition_index': 1,
         }
 
     def test_unreferenced_variable_with_abstract_action_is_info(self):
@@ -1328,6 +1330,8 @@ class TestInspectModelExtendedCoverage:
             'folded_value': True,
             'from_path': 'Root.Idle',
             'to_path': 'Root.Active',
+            'guard_text': '1 + 2 == 3',
+            'transition_index': 1,
         }
         const_false = next(d for d in diagnostics if d.code == 'W_GUARD_CONST_FALSE')
         assert const_false.refs == {
@@ -1335,6 +1339,8 @@ class TestInspectModelExtendedCoverage:
             'folded_value': False,
             'from_path': 'Root.Active',
             'to_path': 'Root.Blocked',
+            'guard_text': '15 & 240 != 0',
+            'transition_index': 2,
         }
         during_refs = sorted(
             (d.refs for d in diagnostics if d.code == 'W_DURING_CONST_ASSIGN'),
@@ -1568,6 +1574,7 @@ class TestInspectModelRedundancySemantics:
             'state_path': '[*]',
             'transition_span': None,
             'var_name': 'x',
+            'transition_index': 0,
         }
 
 
@@ -1797,4 +1804,5 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
             'from_path': 'Root.A',
             'to_path': 'Root.B',
             'transition_span': None,
+            'transition_index': 1,
         }

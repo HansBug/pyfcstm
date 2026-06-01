@@ -86,6 +86,7 @@ interface InheritedForceTransition {
     declaredInStatePath: string[];
     triggerScope?: 'local' | 'chain' | 'absolute';
     transitionKind: FcstmModelTransition['transitionKind'];
+    ast: FcstmAstForcedTransition;
 }
 
 function pathKey(path: Array<string | null>): string {
@@ -152,12 +153,12 @@ class StateMachineModelBuilder {
     private readonly allEvents: FcstmModelEvent[] = [];
     private readonly allTransitions: FcstmModelTransition[] = [];
     private readonly forcedTransitions: FcstmModelForcedTransition[] = [];
+    private nextTransitionIndex = 0;
     private readonly allActions: FcstmModelNamedFunction[] = [];
     private readonly statesByPath = new Map<string, FcstmModelState>();
     private readonly stateAstByPath = new Map<string, FcstmAstStateDefinition>();
     private readonly eventsByPath = new Map<string, FcstmModelEvent>();
     private readonly namedFunctionsByPath = new Map<string, FcstmModelNamedFunction>();
-
     constructor(private readonly ast: FcstmAstDocument) {
         this.filePath = ast.filePath;
         this.rootStateName = ast.rootState?.name || '';
@@ -458,6 +459,7 @@ class StateMachineModelBuilder {
                     forced: true,
                     declaredInStatePath: force.declaredInStatePath,
                     triggerScope: force.triggerScope,
+                    ast: force.ast,
                 });
 
                 childInheritedTransitions.push({
@@ -471,6 +473,7 @@ class StateMachineModelBuilder {
                     declaredInStatePath: force.declaredInStatePath,
                     triggerScope: force.triggerScope,
                     transitionKind: 'exitAll',
+                    ast: force.ast,
                 });
             }
 
@@ -498,6 +501,7 @@ class StateMachineModelBuilder {
                 forced: false,
                 declaredInStatePath: currentState.path,
                 triggerScope,
+                ast: transition,
             });
         }
     }
@@ -526,6 +530,7 @@ class StateMachineModelBuilder {
             declaredInStatePath: currentState.path,
             triggerScope,
             transitionKind: transition.transitionKind,
+            ast: transition,
         };
     }
 
@@ -760,7 +765,9 @@ class StateMachineModelBuilder {
         forced: boolean;
         declaredInStatePath: string[];
         triggerScope?: FcstmModelTransition['triggerScope'];
+        ast?: FcstmAstTransition | FcstmAstForcedTransition;
     }): void {
+        const transitionIndex = this.nextTransitionIndex;
         const transition: FcstmModelTransition = {
             kind: 'transition',
             pyModelType: 'Transition',
@@ -795,7 +802,13 @@ class StateMachineModelBuilder {
             declared_in_state_path: params.declaredInStatePath,
             triggerScope: params.triggerScope,
             trigger_scope: params.triggerScope,
+            transitionIndex,
+            transition_index: transitionIndex,
         };
+        this.nextTransitionIndex += 1;
+        if (params.ast && !params.forced) {
+            (params.ast as unknown as Record<string, unknown>).transitionIndex = transitionIndex;
+        }
 
         params.parentState.transitions.push(transition);
         this.allTransitions.push(transition);

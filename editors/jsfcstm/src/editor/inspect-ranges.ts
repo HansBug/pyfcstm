@@ -102,20 +102,32 @@ function transitionMatchesRefs(
     return true;
 }
 
+
+function transitionRangeMatchesIndex(transition: FcstmSemanticTransition, index: number): boolean {
+    const rawIndex = (transition.ast as unknown as Record<string, unknown>).transitionIndex;
+    return typeof rawIndex === 'number' && Number.isInteger(rawIndex) && rawIndex === index;
+}
+
 function transitionRangeResolution(
     semantic: FcstmSemanticDocument,
     refs: Record<string, unknown>,
 ): InspectRangeResolution {
     const transitions = semantic.transitions.filter(transition => !transition.forced && transitionMatchesRefs(transition, refs));
-    if (transitions.length === 0) return {range: null};
+    if (transitions.length === 0) return {range: null, fallback: 'transition_ambiguous'};
+
     const requestedIndex = refs.transition_index;
-    const selected = typeof requestedIndex === 'number' && Number.isInteger(requestedIndex)
-        ? transitions.find(transition => semantic.transitions.indexOf(transition) === requestedIndex)
-        : transitions[0];
-    if (!selected) return {range: null};
+    if (typeof requestedIndex === 'number' && Number.isInteger(requestedIndex)) {
+        const selected = transitions.find(transition => transitionRangeMatchesIndex(transition, requestedIndex));
+        return selected
+            ? {range: selected.range, transition: selected}
+            : {range: null, fallback: 'transition_ambiguous'};
+    }
+
+    const selected = transitions[0];
+    const invalidIndexProvided = requestedIndex !== undefined;
     return {
         range: selected.range,
-        fallback: transitions.length > 1 && requestedIndex === undefined ? 'transition_ambiguous' : undefined,
+        fallback: transitions.length > 1 || invalidIndexProvided ? 'transition_ambiguous' : undefined,
         transition: selected,
     };
 }

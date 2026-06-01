@@ -169,6 +169,95 @@ describe('diagnostics transition body ranges', () => {
         );
     });
 
+    it('keeps nested parent transition guard diagnostics on guard expressions', async () => {
+        const text = [
+            'state Root {',
+            '    state P {',
+            '        state A;',
+            '        state B;',
+            '        [*] -> A;',
+            '        A -> B : if [1 == 1];',
+            '    }',
+            '    state C;',
+            '    [*] -> P;',
+            '    P -> C : if [1 == 1];',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/transition-nested-parent-guard-range.fcstm');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const constTrue = targetDiagnostics(diagnostics, 'W_GUARD_CONST_TRUE');
+
+        assert.equal(constTrue.length, 2, JSON.stringify(diagnostics));
+        assert.deepEqual(
+            constTrue.map(item => sliceByRange(text, item.range).trim()),
+            ['1 == 1', '1 == 1'],
+        );
+        assert.deepEqual(
+            constTrue.map(item => item.range.start.line),
+            [5, 9],
+        );
+        assert.deepEqual(
+            constTrue.map(item => item.data?.__rangeFallback ?? null),
+            [null, null],
+        );
+    });
+
+    it('keeps forced-transition index offsets from moving guard diagnostics to state identifiers', async () => {
+        const text = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    !* -> B :: FatalError;',
+            '    A -> B : if [1 == 1];',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/transition-forced-offset-guard-range.fcstm');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const diagnostic = targetDiagnostics(diagnostics, 'W_GUARD_CONST_TRUE')[0];
+
+        assert.ok(diagnostic, JSON.stringify(diagnostics));
+        assert.equal(sliceByRange(text, diagnostic.range).trim(), '1 == 1');
+        assert.equal(diagnostic.data?.transition_index, 3);
+        assert.equal(diagnostic.data?.__rangeFallback, undefined);
+    });
+
+    it('uses model-order transition indexes for nested repeated eventless transitions', async () => {
+        const text = [
+            'state Root {',
+            '    state A {',
+            '        state X;',
+            '        state Y;',
+            '        [*] -> X;',
+            '        X -> Y;',
+            '        X -> Y;',
+            '    }',
+            '    [*] -> A;',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/transition-nested-eventless-index-range.fcstm');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const neverTriggered = targetDiagnostics(diagnostics, 'I_TRANSITION_NEVER_EVENT_TRIGGERED');
+
+        assert.equal(neverTriggered.length, 2, JSON.stringify(diagnostics));
+        assert.deepEqual(
+            neverTriggered.map(item => sliceByRange(text, item.range).trim()),
+            ['X -> Y;', 'X -> Y;'],
+        );
+        assert.deepEqual(
+            neverTriggered.map(item => item.range.start.line),
+            [5, 6],
+        );
+        assert.deepEqual(
+            neverTriggered.map(item => item.data?.transition_index),
+            [1, 2],
+        );
+        assert.deepEqual(
+            neverTriggered.map(item => item.data?.__rangeFallback ?? null),
+            [null, null],
+        );
+    });
+
     it('marks fallback when duplicate transitions omit transition_index', async () => {
         const text = [
             'state Root {',
@@ -190,6 +279,36 @@ describe('diagnostics transition body ranges', () => {
                 from_path: 'Root.A',
                 to_path: 'Root.B',
                 transition_span: null,
+            },
+        }]);
+
+        assert.equal(diagnostics.length, 1);
+        assert.equal(sliceByRange(text, diagnostics[0].range).trim(), 'A -> B;');
+        assert.equal(diagnostics[0].data?.__rangeFallback, 'transition_ambiguous');
+    });
+
+    it('marks fallback when duplicate transitions provide an invalid transition_index type', async () => {
+        const text = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B;',
+            '    A -> B;',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/transition-index-invalid-marker.fcstm');
+        const semantic = await packageModule.getWorkspaceGraph().getSemanticDocument(document);
+        const diagnostics = packageModule.collectInspectDiagnosticsFromItems(document, semantic, [{
+            code: 'I_TRANSITION_NEVER_EVENT_TRIGGERED',
+            severity: 'info' as const,
+            message: 'Transition "Root.A" -> "Root.B" has no event or guard.',
+            span: null,
+            refs: {
+                from_path: 'Root.A',
+                to_path: 'Root.B',
+                transition_span: null,
+                transition_index: '1',
             },
         }]);
 

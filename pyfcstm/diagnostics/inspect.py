@@ -165,6 +165,11 @@ class TransitionInfo:
         ``!X -> Y`` declaration when ``is_forced`` is ``True``, otherwise
         ``None``.
     :type forced_origin: Optional[str]
+    :param transition_index: Zero-based index in the model transition order,
+        including expanded forced transitions. Downstream tooling may use this
+        as a best-effort source-range disambiguation hint when spans are not
+        available.
+    :type transition_index: Optional[int]
     """
 
     from_path: str
@@ -176,6 +181,7 @@ class TransitionInfo:
     effect_self_assigns: Tuple[str, ...]
     is_forced: bool
     forced_origin: Optional[str]
+    transition_index: Optional[int]
 
 
 @dataclass(frozen=True)
@@ -723,6 +729,7 @@ def _build_state_infos(machine: 'StateMachine') -> Tuple[StateInfo, ...]:
 
 def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ...]:
     out: List[TransitionInfo] = []
+    transition_index = 0
     for state in machine.walk_states():
         for transition in state.transitions:
             from_path = _transition_endpoint(state, transition.from_state, is_source=True)
@@ -746,7 +753,9 @@ def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ..
                 effect_self_assigns=_effect_self_assigns(transition.effects),
                 is_forced=is_forced,
                 forced_origin=forced_origin,
+                transition_index=transition_index,
             ))
+            transition_index += 1
     return tuple(out)
 
 

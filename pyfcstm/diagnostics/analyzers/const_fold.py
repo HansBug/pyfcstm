@@ -89,6 +89,7 @@ def collect_const_fold_warnings(
         return []
     diagnostics: List[ModelDiagnostic] = []
     defined_vars = set(machine.defines)
+    transition_indexes = _transition_indexes(machine)
     for state in machine.walk_states():
         state_path = _state_path(state)
         for transition in state.transitions:
@@ -97,10 +98,24 @@ def collect_const_fold_warnings(
                 else fold_condition_expression(transition.guard)
             )
             if folded_guard is True:
-                diagnostics.append(_guard_const_diagnostic(transition, True))
+                diagnostics.append(
+                    _guard_const_diagnostic(
+                        transition,
+                        True,
+                        transition_indexes.get(id(transition)),
+                    )
+                )
             elif folded_guard is False:
-                diagnostics.append(_guard_const_diagnostic(transition, False))
-        diagnostics.extend(_during_const_assign_diagnostics(state_path, state, defined_vars))
+                diagnostics.append(
+                    _guard_const_diagnostic(
+                        transition,
+                        False,
+                        transition_indexes.get(id(transition)),
+                    )
+                )
+        diagnostics.extend(
+            _during_const_assign_diagnostics(state_path, state, defined_vars)
+        )
     return diagnostics
 
 
@@ -247,7 +262,33 @@ def _during_stmt_const_assign_diagnostics(
     ]
 
 
-def _guard_const_diagnostic(transition, value: bool) -> ModelDiagnostic:
+
+def _expr_text(expr) -> Optional[str]:
+    if expr is None:
+        return None
+    try:
+        return str(expr.to_ast_node())
+    except (AttributeError, TypeError, ValueError):
+        # AttributeError: non-model guard object; TypeError/ValueError:
+        # future expression implementations with invalid AST conversion.
+        return None
+
+
+def _transition_indexes(machine: 'StateMachine') -> dict:
+    indexes = {}
+    index = 0
+    for state in machine.walk_states():
+        for transition in state.transitions:
+            indexes[id(transition)] = index
+            index += 1
+    return indexes
+
+
+def _guard_const_diagnostic(
+    transition,
+    value: bool,
+    transition_index: Optional[int],
+) -> ModelDiagnostic:
     code = 'W_GUARD_CONST_TRUE' if value else 'W_GUARD_CONST_FALSE'
     label = 'true' if value else 'false'
     source_label = _transition_endpoint_label(transition.from_state)
@@ -264,6 +305,8 @@ def _guard_const_diagnostic(transition, value: bool) -> ModelDiagnostic:
             'folded_value': value,
             'from_path': _transition_endpoint_path(transition, is_source=True),
             'to_path': _transition_endpoint_path(transition, is_source=False),
+            'guard_text': _expr_text(transition.guard),
+            'transition_index': transition_index,
         },
     )
 

@@ -138,6 +138,8 @@ def _guard_const_false_diagnostics(transitions) -> List[ModelDiagnostic]:
                         'folded_value': False,
                         'from_path': transition.from_path,
                         'to_path': transition.to_path,
+                        'guard_text': transition.guard,
+                        'transition_index': transition.transition_index,
                     },
                 )
             )

@@ -1069,8 +1069,9 @@ W_GUARD_CONST_FALSE:
       type: int
       required: false
       description: >-
-        Zero-based transition index in inspect transition order, used only
-        as a source-range disambiguation hint when spans are unavailable.
+        Zero-based index in model transition order, including expanded forced
+        transitions, used only as a source-range disambiguation hint when spans
+        are unavailable.
   for_llm:
     summary: >-
       The transition's guard is statically known to be ``false`` and the
@@ -1135,8 +1136,9 @@ W_GUARD_CONST_TRUE:
       type: int
       required: false
       description: >-
-        Zero-based transition index in inspect transition order, used only
-        as a source-range disambiguation hint when spans are unavailable.
+        Zero-based index in model transition order, including expanded forced
+        transitions, used only as a source-range disambiguation hint when spans
+        are unavailable.
   for_llm:
     summary: >-
       The transition's guard is statically known to be ``true`` and does
@@ -1663,8 +1665,9 @@ W_REDUNDANT_TRANSITION:
       type: int
       required: false
       description: >-
-        Zero-based transition index in inspect transition order, used only
-        as a source-range disambiguation hint when spans are unavailable.
+        Zero-based index in model transition order, including expanded forced
+        transitions, used only as a source-range disambiguation hint when spans
+        are unavailable.
   for_llm:
     summary: >-
       These transitions are indistinguishable by source, target, event,
@@ -1715,8 +1718,9 @@ W_SELF_TRANSITION_NOP:
       type: int
       required: false
       description: >-
-        Zero-based transition index in inspect transition order, used only
-        as a source-range disambiguation hint when spans are unavailable.
+        Zero-based index in model transition order, including expanded forced
+        transitions, used only as a source-range disambiguation hint when spans
+        are unavailable.
   for_llm:
     summary: >-
       The transition points from a state to itself and has no trigger,
@@ -1772,8 +1776,9 @@ W_EFFECT_SELF_ASSIGN:
       type: int
       required: false
       description: >-
-        Zero-based transition index in inspect transition order, used only
-        as a source-range disambiguation hint when spans are unavailable.
+        Zero-based index in model transition order, including expanded forced
+        transitions, used only as a source-range disambiguation hint when spans
+        are unavailable.
   suggested_fix:
     kind: delete
     target: effect_self_assign_statement
@@ -2196,8 +2201,9 @@ I_TRANSITION_NEVER_EVENT_TRIGGERED:
       type: int
       required: false
       description: >-
-        Zero-based transition index in inspect transition order, used only
-        as a source-range disambiguation hint when spans are unavailable.
+        Zero-based index in model transition order, including expanded forced
+        transitions, used only as a source-range disambiguation hint when spans
+        are unavailable.
   for_llm:
     summary: >-
       The transition is not event-triggered and has no guard. This may

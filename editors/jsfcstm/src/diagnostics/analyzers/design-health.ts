@@ -87,8 +87,7 @@ function collectUnreachableStateDiagnostics(
 
 function collectGuardConstFalseDiagnostics(transitions: TransitionInfo[]): ModelDiagnosticJson[] {
     const out: ModelDiagnosticJson[] = [];
-    for (let transitionIndex = 0; transitionIndex < transitions.length; transitionIndex += 1) {
-        const transition = transitions[transitionIndex];
+    for (const transition of transitions) {
         if (!isMinimalConstFalseGuard(transition.guard)) continue;
         out.push({
             code: 'W_GUARD_CONST_FALSE',
@@ -101,7 +100,7 @@ function collectGuardConstFalseDiagnostics(transitions: TransitionInfo[]): Model
                 from_path: transition.from_path,
                 to_path: transition.to_path,
                 guard_text: transition.guard,
-                transition_index: transitionIndex,
+                transition_index: transition.transition_index,
             },
         });
     }

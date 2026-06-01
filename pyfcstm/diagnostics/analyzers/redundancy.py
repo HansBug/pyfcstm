@@ -58,6 +58,7 @@ def _redundant_transition_warnings(transitions) -> List[ModelDiagnostic]:
                     f'{item.from_path}->{item.to_path}#{index}'
                     for index, item in enumerate(items, 1)
                 ],
+                'transition_index': items[0].transition_index,
             },
         ))
     return diagnostics
@@ -80,7 +81,13 @@ def _self_transition_nop_warnings(transitions, states) -> List[ModelDiagnostic]:
                 f'Self transition on {t.from_path!r} has no trigger, '
                 'guard, effect, or re-entry lifecycle behavior.'
             ),
-            refs={'state_path': t.from_path},
+            refs={
+                'state_path': t.from_path,
+                'from_path': t.from_path,
+                'to_path': t.to_path,
+                'transition_span': None,
+                'transition_index': t.transition_index,
+            },
         ))
     return diagnostics
 
@@ -118,6 +125,7 @@ def _effect_self_assign_warnings(transitions) -> List[ModelDiagnostic]:
                 'state_path': t.from_path,
                 'transition_span': None,
                 'var_name': var_name,
+                'transition_index': t.transition_index,
             }
             if t.from_path != '[*]' and counts[(t.from_path, var_name)] == 1:
                 refs['effect_self_assign_anchor'] = var_name

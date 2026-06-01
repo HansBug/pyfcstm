@@ -116,7 +116,9 @@ export interface TransitionInfo {
     effect_self_assigns: string[];
     is_forced: boolean;
     forced_origin: string | null;
+    transition_index: number | null;
 }
+
 
 /**
  * Per-variable structural summary plus participation flags.
@@ -446,6 +448,7 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
                 effect_self_assigns: effectSelfAssigns(t.effects),
                 is_forced: !!t.forced,
                 forced_origin: t.forced ? t.text : null,
+                transition_index: typeof t.transitionIndex === 'number' ? t.transitionIndex : null,
             });
         }
     }

@@ -80,6 +80,16 @@ __all__ = [
 from ..utils import sequence_safe
 
 
+def _node_span(node) -> Optional[Span]:
+    """Return an AST node span when the parser attached one."""
+    # PR-D1 span propagation is deliberately tolerant of AST nodes that do not
+    # carry parser spans yet: older synthetic/export-created nodes can still
+    # pass through this path, and PR-D2 will decide which missing spans are
+    # diagnostic-contract gaps. Keep the missing-span case observable as
+    # ``None`` instead of manufacturing an imprecise fallback.
+    return getattr(node, '_span', None)
+
+
 def _event_origin_from_id(
         event_id: dsl_nodes.ChainID,
         event_scope: Optional[str] = None,
@@ -135,10 +145,14 @@ class Operation(OperationStatement):
 
     var_name: str
     expr: Expr
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def to_ast_node(self) -> dsl_nodes.OperationAssignment:
         """
         Convert this operation to an AST node.
+
+        The private ``_span`` metadata is intentionally not copied. Exported
+        AST nodes are for DSL serialization, not source-span round-tripping.
 
         :return: An operation assignment AST node
         :rtype: dsl_nodes.OperationAssignment
@@ -171,10 +185,14 @@ class IfBlockBranch(AstExportable):
 
     condition: Optional[Expr]
     statements: List[OperationStatement]
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def to_ast_node(self) -> dsl_nodes.OperationIfBranch:
         """
         Convert this branch back to a DSL AST node.
+
+        The private ``_span`` metadata is intentionally not copied. Exported
+        AST nodes are for DSL serialization, not source-span round-tripping.
 
         :return: Operation-if branch AST node
         :rtype: dsl_nodes.OperationIfBranch
@@ -197,10 +215,14 @@ class IfBlock(OperationStatement):
     """
 
     branches: List[IfBlockBranch]
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def to_ast_node(self) -> dsl_nodes.OperationIf:
         """
         Convert this if-block back to a DSL AST node.
+
+        The private ``_span`` metadata is intentionally not copied. Exported
+        AST nodes are for DSL serialization, not source-span round-tripping.
 
         :return: Operation-if AST node
         :rtype: dsl_nodes.OperationIf
@@ -237,6 +259,7 @@ class Event:
     extra_name: Optional[str] = None
     declared: bool = field(default=False, compare=False)
     origins: List[str] = field(default_factory=list, compare=False)
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         self.origins = list(self.origins or (['declared'] if self.declared else []))
@@ -344,6 +367,7 @@ class Transition(AstExportable):
     is_forced: bool = field(default=False, compare=False)
     forced_origin: Optional[str] = field(default=None, compare=False)
     parent_ref: Optional[weakref.ReferenceType] = None
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     @property
     def parent(self) -> Optional["State"]:
@@ -433,6 +457,7 @@ class OnStage(AstExportable):
     ref: Union["OnStage", "OnAspect", None] = None
     ref_state_path: Optional[Tuple[str, ...]] = None
     parent_ref: Optional[weakref.ReferenceType] = None
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     @property
     def parent(self) -> Optional["State"]:
@@ -649,6 +674,7 @@ class OnAspect(AstExportable):
     ref: Union["OnStage", "OnAspect", None] = None
     ref_state_path: Optional[Tuple[str, ...]] = None
     parent_ref: Optional[weakref.ReferenceType] = None
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     @property
     def parent(self) -> Optional["State"]:
@@ -826,6 +852,7 @@ class State(AstExportable, PlantUMLExportable):
     substate_name_to_id: Dict[str, int] = None
     extra_name: Optional[str] = None
     is_pseudo: bool = False
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         """
@@ -1933,6 +1960,7 @@ class VarDefine(AstExportable):
     name: str
     type: str
     init: Expr
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def to_ast_node(self) -> dsl_nodes.DefAssignment:
         """
@@ -2313,8 +2341,9 @@ def parse_dsl_node_to_state_machine(
                 name=def_item.name,
                 type=def_item.type,
                 init=parse_expr_node_to_expr(def_item.expr),
+                _span=_node_span(def_item),
             )
-            d_define_spans[def_item.name] = getattr(def_item, '_span', None)
+            d_define_spans[def_item.name] = _node_span(def_item)
         else:
             sink.emit(ModelDiagnostic(
                 code='E_DUPLICATE_VAR',
@@ -2429,7 +2458,11 @@ def parse_dsl_node_to_state_machine(
                     },
                 ))
 
-            operation = Operation(var_name=op_item.name, expr=operation_val)
+            operation = Operation(
+                var_name=op_item.name,
+                expr=operation_val,
+                _span=_node_span(op_item),
+            )
             available_vars.add(op_item.name)
             return operation
         elif isinstance(op_item, dsl_nodes.OperationIf):
@@ -2503,10 +2536,14 @@ def parse_dsl_node_to_state_machine(
                 block_local_names=block_local_names,
             )
             branches.append(
-                IfBlockBranch(condition=condition, statements=branch_statements)
+                IfBlockBranch(
+                    condition=condition,
+                    statements=branch_statements,
+                    _span=_node_span(branch),
+                )
             )
 
-        return IfBlock(branches=branches)
+        return IfBlock(branches=branches, _span=_node_span(if_node))
 
     def _recursive_build_states(
         node: dsl_nodes.StateDefinition, current_path: Tuple[str, ...]
@@ -2559,6 +2596,7 @@ def parse_dsl_node_to_state_machine(
                     state_path=(*current_path, enter_item.name),
                     ref=None,
                     ref_state_path=None,
+                    _span=_node_span(enter_item),
                 )
             elif isinstance(enter_item, dsl_nodes.EnterAbstractFunction):
                 on_stage = OnStage(
@@ -2571,6 +2609,7 @@ def parse_dsl_node_to_state_machine(
                     state_path=(*current_path, enter_item.name),
                     ref=None,
                     ref_state_path=None,
+                    _span=_node_span(enter_item),
                 )
             elif isinstance(enter_item, dsl_nodes.EnterRefFunction):
                 on_stage = OnStage(
@@ -2590,6 +2629,7 @@ def parse_dsl_node_to_state_machine(
                         ),
                         *enter_item.ref.path,
                     ),
+                    _span=_node_span(enter_item),
                 )
 
             if on_stage is not None:
@@ -2670,6 +2710,7 @@ def parse_dsl_node_to_state_machine(
                     state_path=(*current_path, during_item.name),
                     ref=None,
                     ref_state_path=None,
+                    _span=_node_span(during_item),
                 )
             elif isinstance(during_item, dsl_nodes.DuringAbstractFunction):
                 on_stage = OnStage(
@@ -2682,6 +2723,7 @@ def parse_dsl_node_to_state_machine(
                     state_path=(*current_path, during_item.name),
                     ref=None,
                     ref_state_path=None,
+                    _span=_node_span(during_item),
                 )
             elif isinstance(during_item, dsl_nodes.DuringRefFunction):
                 on_stage = OnStage(
@@ -2701,6 +2743,7 @@ def parse_dsl_node_to_state_machine(
                         ),
                         *during_item.ref.path,
                     ),
+                    _span=_node_span(during_item),
                 )
 
             if on_stage is not None:
@@ -2745,6 +2788,7 @@ def parse_dsl_node_to_state_machine(
                     state_path=(*current_path, exit_item.name),
                     ref=None,
                     ref_state_path=None,
+                    _span=_node_span(exit_item),
                 )
             elif isinstance(exit_item, dsl_nodes.ExitAbstractFunction):
                 on_stage = OnStage(
@@ -2757,6 +2801,7 @@ def parse_dsl_node_to_state_machine(
                     state_path=(*current_path, exit_item.name),
                     ref=None,
                     ref_state_path=None,
+                    _span=_node_span(exit_item),
                 )
             elif isinstance(exit_item, dsl_nodes.ExitRefFunction):
                 on_stage = OnStage(
@@ -2776,6 +2821,7 @@ def parse_dsl_node_to_state_machine(
                         ),
                         *exit_item.ref.path,
                     ),
+                    _span=_node_span(exit_item),
                 )
 
             if on_stage is not None:
@@ -2841,6 +2887,7 @@ def parse_dsl_node_to_state_machine(
                     state_path=(*current_path, during_aspect_item.name),
                     ref=None,
                     ref_state_path=None,
+                    _span=_node_span(during_aspect_item),
                 )
             elif isinstance(during_aspect_item, dsl_nodes.DuringAspectAbstractFunction):
                 on_aspect = OnAspect(
@@ -2853,6 +2900,7 @@ def parse_dsl_node_to_state_machine(
                     state_path=(*current_path, during_aspect_item.name),
                     ref=None,
                     ref_state_path=None,
+                    _span=_node_span(during_aspect_item),
                 )
             elif isinstance(during_aspect_item, dsl_nodes.DuringAspectRefFunction):
                 on_aspect = OnAspect(
@@ -2872,6 +2920,7 @@ def parse_dsl_node_to_state_machine(
                         ),
                         *during_aspect_item.ref.path,
                     ),
+                    _span=_node_span(during_aspect_item),
                 )
 
             if on_aspect is not None:
@@ -2903,6 +2952,7 @@ def parse_dsl_node_to_state_machine(
                 state_path=current_path,
                 declared=True,
                 origins=['declared'],
+                _span=_node_span(event),
             )
 
         my_state = State(
@@ -2917,6 +2967,7 @@ def parse_dsl_node_to_state_machine(
             on_exits=on_exits,
             on_during_aspects=on_during_aspects,
             named_functions=named_functions,
+            _span=_node_span(node),
         )
         if my_state.is_pseudo and not my_state.is_leaf_state:
             sink.emit(ModelDiagnostic(
@@ -3062,6 +3113,7 @@ def parse_dsl_node_to_state_machine(
                             name=suffix_name,
                             state_path=start_state.path,
                             origins=[origin],
+                            _span=_node_span(f_transnode),
                         )
                     else:
                         if origin not in start_state.events[suffix_name].origins:
@@ -3126,6 +3178,7 @@ def parse_dsl_node_to_state_machine(
                     guard,
                     f_transnode.event_scope,
                     getattr(f_transnode, 'source_raw', None) or str(f_transnode),
+                    _node_span(f_transnode),
                 )
             )
 
@@ -3141,6 +3194,7 @@ def parse_dsl_node_to_state_machine(
                 guard,
                 event_scope,
                 forced_origin,
+                forced_span,
             ) in force_transition_tuples_to_inherit:
                 if from_state is dsl_nodes.ALL or from_state == subnode.name:
                     transitions.append(
@@ -3153,6 +3207,7 @@ def parse_dsl_node_to_state_machine(
                             event_scope=event_scope,
                             is_forced=True,
                             forced_origin=forced_origin,
+                            _span=forced_span,
                         )
                     )
                     _inner_force_transitions.append(
@@ -3163,6 +3218,7 @@ def parse_dsl_node_to_state_machine(
                             condition_expr=condition_expr,
                             event_scope=event_scope,
                             source_raw=forced_origin,
+                            _span=forced_span,
                         )
                     )
 
@@ -3314,6 +3370,7 @@ def parse_dsl_node_to_state_machine(
                             name=suffix_name,
                             state_path=start_state.path,
                             origins=[origin],
+                            _span=_node_span(transnode),
                         )
                     else:
                         if origin not in start_state.events[suffix_name].origins:
@@ -3359,6 +3416,7 @@ def parse_dsl_node_to_state_machine(
                 guard=guard,
                 effects=post_operations,
                 event_scope=event_scope,
+                _span=_node_span(transnode),
             )
             transitions.append(transition)
 

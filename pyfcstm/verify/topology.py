@@ -634,37 +634,12 @@ def topological_inevitable_terminator(machine: StateMachine) -> InevitabilityRep
     return InevitabilityReport(inevitable=True, counterexample_path=None)
 
 
-def _event_consumers(machine: StateMachine) -> Dict[str, Set[str]]:
-    consumers: Dict[str, Set[str]] = {}
-    for parent_state in machine.walk_states():
-        parent_path = _state_path(parent_state)
-        for transition in parent_state.transitions:
-            event = transition.event
-            if event is None:
-                continue
-
-            event_name = event.path_name
-            if transition.from_state is INIT_STATE:
-                source_path = parent_path
-            elif isinstance(transition.from_state, str):
-                source_path = _state_path(parent_state.substates[transition.from_state])
-            else:
-                raise TypeError(  # pragma: no cover
-                    # Grammar-produced non-init transition sources are strings.
-                    # A future model endpoint type should be made explicit here.
-                    f"Unsupported transition source: {transition.from_state!r}."
-                )
-            consumers.setdefault(event_name, set()).add(source_path)
-    return consumers
-
-
-def _root_reachable_state_paths(
+def _root_reachable_initial_state_paths(
     machine: StateMachine,
     graph: LeafLevelGraph,
 ) -> Set[str]:
     reachable_leaves = _root_reachable_leaf_paths(machine, graph)
-    reachable_paths = set(reachable_leaves)
-    reachable_paths.add(_state_path(machine.root_state))
+    reachable_paths = {_state_path(machine.root_state)}
 
     for state in machine.walk_states():
         if state.is_leaf_state:
@@ -674,15 +649,95 @@ def _root_reachable_state_paths(
     return reachable_paths
 
 
+def _root_reachable_boundary_state_paths(
+    machine: StateMachine,
+    graph: LeafLevelGraph,
+) -> Set[str]:
+    reachable_leaves = _root_reachable_leaf_paths(machine, graph)
+    boundary_paths: Set[str] = set()
+    queue: Deque[State] = deque()
+
+    def add_boundary(state: State) -> None:
+        state_path = _state_path(state)
+        if state_path in boundary_paths:
+            return
+        boundary_paths.add(state_path)
+        queue.append(state)
+
+    for leaf in _leaf_states(machine):
+        if _state_path(leaf) not in reachable_leaves:
+            continue
+        if not any(transition.to_state is EXIT_STATE for transition in leaf.transitions_from):
+            continue
+
+        parent = leaf.parent
+        if parent is not None and not parent.is_root_state:
+            add_boundary(parent)
+
+    while queue:
+        state = queue.popleft()
+        for transition in state.transitions_from:
+            if transition.to_state is not EXIT_STATE:
+                continue
+
+            parent = state.parent
+            if parent is not None and not parent.is_root_state:
+                add_boundary(parent)
+
+    return boundary_paths
+
+
+def _event_consumer_reachability(
+    machine: StateMachine,
+    graph: LeafLevelGraph,
+) -> Dict[str, List[bool]]:
+    active_leaves = _root_reachable_leaf_paths(machine, graph)
+    init_sources = _root_reachable_initial_state_paths(machine, graph)
+    boundary_sources = _root_reachable_boundary_state_paths(machine, graph)
+    consumers: Dict[str, List[bool]] = {}
+
+    for parent_state in machine.walk_states():
+        parent_path = _state_path(parent_state)
+        for transition in parent_state.transitions:
+            event = transition.event
+            if event is None:
+                continue
+
+            event_name = event.path_name
+            if transition.from_state is INIT_STATE:
+                reachable = parent_path in init_sources
+            elif isinstance(transition.from_state, str):
+                source_state = parent_state.substates[transition.from_state]
+                source_path = _state_path(source_state)
+                if source_state.is_leaf_state:
+                    reachable = source_path in active_leaves
+                else:
+                    reachable = source_path in boundary_sources
+            else:
+                raise TypeError(  # pragma: no cover
+                    # Grammar-produced non-init transition sources are strings.
+                    # A future model endpoint type should be made explicit here.
+                    f"Unsupported transition source: {transition.from_state!r}."
+                )
+            consumers.setdefault(event_name, []).append(reachable)
+    return consumers
+
+
 def event_emission_to_consumer_reachable(machine: StateMachine) -> Tuple[str, ...]:
     """
     Return events whose consumer source states are all unreachable.
 
     Unused declared events are ignored here; they remain the responsibility of
     the existing design-health unused-event check.
-    A transition is treated as an event consumer at its source state. If every
-    consumer source for a used event is outside the root-reachable topology, the
-    event's qualified name is returned.
+    A transition is treated as an event consumer at the point where its source
+    can be selected. Leaf-source consumers are reachable when their leaf is
+    root-reachable. Initial-transition consumers are reachable when the owning
+    composite can be entered. Composite-source consumers are reachable only when
+    a root-reachable descendant leaf can explicitly exit to the composite
+    boundary, because parent-level transitions are considered after
+    ``Leaf -> [*]`` bubble semantics rather than while any descendant leaf is
+    merely active. If every consumer source for a used event is outside these
+    root-reachable topology points, the event's qualified name is returned.
 
     :param machine: State machine to inspect.
     :type machine: StateMachine
@@ -708,10 +763,11 @@ def event_emission_to_consumer_reachable(machine: StateMachine) -> Tuple[str, ..
         ('Root.Panic',)
     """
     graph = build_leaf_level_macro_graph(machine)
-    reachable = _root_reachable_state_paths(machine, graph)
     unreachable_events = []
-    for event_name, sources in _event_consumers(machine).items():
-        if sources and all(source not in reachable for source in sources):
+    for event_name, source_reachability in _event_consumer_reachability(
+        machine, graph
+    ).items():
+        if source_reachability and not any(source_reachability):
             unreachable_events.append(event_name)
     return tuple(sorted(unreachable_events))
 

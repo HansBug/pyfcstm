@@ -79,5 +79,3 @@ event\_emission\_to\_consumer\_reachable
 -----------------------------------------------------
 
 .. autofunction:: event_emission_to_consumer_reachable
-
-

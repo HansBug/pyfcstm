@@ -352,6 +352,135 @@ def test_event_consumer_reachability_handles_nested_composite_sources():
     )
 
 
+def test_event_consumer_reachability_requires_bubble_for_composite_sources():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state System {
+                event Stop;
+                state Running {
+                    state Active;
+                    [*] -> Active;
+                }
+                [*] -> Running;
+                Running -> [*] : Stop;
+            }
+            [*] -> System;
+            System -> [*];
+        }
+        """
+    )
+
+    assert topology.event_emission_to_consumer_reachable(machine) == (
+        "Root.System.Stop",
+    )
+
+
+def test_event_consumer_reachability_follows_chained_composite_boundary_exits():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            event RootStop;
+            event InnerStop;
+            state Outer {
+                state Inner {
+                    state Active;
+                    [*] -> Active;
+                    Active -> [*];
+                }
+                [*] -> Inner;
+                Inner -> [*] : InnerStop;
+            }
+            [*] -> Outer;
+            Outer -> [*] : RootStop;
+        }
+        """
+    )
+
+    assert topology.event_emission_to_consumer_reachable(machine) == tuple()
+
+
+def test_event_consumer_reachability_deduplicates_boundary_exits():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            event Stop;
+            state Outer {
+                state Inner {
+                    state A;
+                    state B;
+                    [*] -> A;
+                    A -> B;
+                    A -> [*];
+                    B -> [*];
+                }
+                [*] -> Inner;
+                Inner -> [*] : Stop;
+            }
+            [*] -> Outer;
+            Outer -> [*];
+        }
+        """
+    )
+
+    assert topology.event_emission_to_consumer_reachable(machine) == tuple()
+
+
+def test_event_consumer_reachability_ignores_non_exit_boundary_transition():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            event Stop;
+            state Outer {
+                state Inner {
+                    state Active;
+                    [*] -> Active;
+                    Active -> [*];
+                }
+                state Done;
+                [*] -> Inner;
+                Inner -> Done;
+            }
+            [*] -> Outer;
+            Outer -> [*] : Stop;
+        }
+        """
+    )
+
+    assert topology.event_emission_to_consumer_reachable(machine) == (
+        "Root.Stop",
+    )
+
+
+def test_event_consumer_reachability_reports_unexposed_outer_boundary_event():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            event RootStop;
+            state Outer {
+                state Inner {
+                    state Active;
+                    [*] -> Active;
+                    Active -> [*];
+                }
+                [*] -> Inner;
+            }
+            [*] -> Outer;
+            Outer -> [*] : RootStop;
+        }
+        """
+    )
+
+    assert topology.event_emission_to_consumer_reachable(machine) == (
+        "Root.RootStop",
+    )
+
+
 def test_topological_reachable_set_handles_diamond_closure_without_duplicates():
     topology = _import_topology()
     machine = _parse(

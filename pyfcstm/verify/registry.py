@@ -1,10 +1,20 @@
 """Algorithm registry for :mod:`pyfcstm.verify`."""
 
 from types import MappingProxyType
-from typing import Mapping, Tuple
+from typing import Callable, Mapping, Optional, Tuple
 
 from . import topology
 from .taxonomy import CallCountScaling, FallbackUnknownRisk, VerifyAlgorithmMeta
+from .smt_local import (
+    composite_init_guards_incomplete,
+    dead_guard,
+    effect_contradicts_guard,
+    effect_no_op_under_guard,
+    enter_postcondition_implies_during_precondition,
+    forced_guard_unsat_under_init,
+    guard_tautology,
+    transition_shadowed_by_predecessor,
+)
 
 
 def _structural(
@@ -43,6 +53,7 @@ def _smt_local(
     fallback_unknown_risk: FallbackUnknownRisk = "medium",
     incremental: bool = False,
     dominant_dim: Tuple[str, ...] = ("E", "vars"),
+    impl: Optional[Callable] = None,
 ) -> VerifyAlgorithmMeta:
     return VerifyAlgorithmMeta(
         name=name,
@@ -61,11 +72,13 @@ def _smt_local(
         verification_scope="smt_local",
         dominant_dim=dominant_dim,
         diagnostic_codes=diagnostic_codes,
-        impl=None,
+        impl=impl,
     )
 
 
-def _composite_init_guards_incomplete() -> VerifyAlgorithmMeta:
+def _composite_init_guards_incomplete(
+    impl: Optional[Callable] = None,
+) -> VerifyAlgorithmMeta:
     return VerifyAlgorithmMeta(
         name="composite_init_guards_incomplete",
         description=(
@@ -86,7 +99,7 @@ def _composite_init_guards_incomplete() -> VerifyAlgorithmMeta:
         verification_scope="smt_local",
         dominant_dim=("V", "vars", "events"),
         diagnostic_codes=("W_COMPOSITE_INIT_INCOMPLETE",),
-        impl=None,
+        impl=impl,
     )
 
 
@@ -168,12 +181,14 @@ def _build_registry() -> Mapping[str, VerifyAlgorithmMeta]:
             "Detect guards that are unsatisfiable under variable constraints.",
             "linear_in_transitions",
             ("W_DEAD_GUARD",),
+            impl=dead_guard,
         ),
         "guard_tautology": _smt_local(
             "guard_tautology",
             "Detect guards that are always true under variable constraints.",
             "linear_in_transitions",
             ("W_GUARD_TAUTOLOGY",),
+            impl=guard_tautology,
         ),
         "forced_guard_unsat_under_init": _smt_local(
             "forced_guard_unsat_under_init",
@@ -182,18 +197,21 @@ def _build_registry() -> Mapping[str, VerifyAlgorithmMeta]:
             ("W_FORCED_GUARD_UNSAT",),
             fallback_unknown_risk="low",
             dominant_dim=("forced_transitions", "vars"),
+            impl=forced_guard_unsat_under_init,
         ),
         "effect_no_op_under_guard": _smt_local(
             "effect_no_op_under_guard",
             "Detect transition effects that are no-ops whenever the guard holds.",
             "linear_in_transitions",
             ("W_EFFECT_SMT_NO_OP",),
+            impl=effect_no_op_under_guard,
         ),
         "effect_contradicts_guard": _smt_local(
             "effect_contradicts_guard",
             "Detect effects whose post-state contradicts their transition guard.",
             "linear_in_transitions",
             ("I_EFFECT_GUARD_CONTRADICT",),
+            impl=effect_contradicts_guard,
         ),
         "transition_shadowed_by_predecessor": _smt_local(
             "transition_shadowed_by_predecessor",
@@ -201,6 +219,7 @@ def _build_registry() -> Mapping[str, VerifyAlgorithmMeta]:
             "linear_in_transitions",
             ("W_TRANSITION_SHADOWED",),
             incremental=True,
+            impl=transition_shadowed_by_predecessor,
         ),
         "enter_postcondition_implies_during_precondition": _smt_local(
             "enter_postcondition_implies_during_precondition",
@@ -209,8 +228,11 @@ def _build_registry() -> Mapping[str, VerifyAlgorithmMeta]:
             ("I_ENTER_DURING_CONTRADICT",),
             incremental=True,
             dominant_dim=("V_leaf", "vars"),
+            impl=enter_postcondition_implies_during_precondition,
         ),
-        "composite_init_guards_incomplete": _composite_init_guards_incomplete(),
+        "composite_init_guards_incomplete": _composite_init_guards_incomplete(
+            impl=composite_init_guards_incomplete
+        ),
         "bounded_reachability": _bmc_placeholder(
             "bounded_reachability",
             "Query whether a target state is reachable from a source within a bound.",

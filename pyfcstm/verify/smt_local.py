@@ -723,6 +723,78 @@ def _expr_conditions_and_z3_or_result(
     )
 
 
+def _expr_z3_and_domains_or_result(
+    expr: Expr,
+    z3_vars: _Z3Vars,
+    path_conditions: Sequence[z3.ExprRef] = (),
+    *,
+    context_constraints: Optional[Sequence[z3.ExprRef]] = None,
+    smt_timeout_ms: Optional[int] = None,
+) -> Tuple[
+    Optional[_Z3Expr],
+    Optional[Tuple[z3.ExprRef, ...]],
+    Optional[AlgorithmResult],
+]:
+    """Translate an expression and return runtime-definedness constraints.
+
+    Z3 arithmetic is total for operators such as division and modulo, while the
+    FCSTM runtime aborts expression evaluation on invalid numeric domains.  Raw
+    guard and trigger algorithms therefore need both the translated expression
+    and the side constraints that make evaluating it well-defined.
+
+    :param expr: Expression to translate.
+    :type expr: Expr
+    :param z3_vars: Symbolic environment at this expression point.
+    :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :param path_conditions: Predicates needed to reach this expression.
+    :type path_conditions: Sequence[z3.ExprRef]
+    :param context_constraints: Optional surrounding execution context.
+    :type context_constraints: Optional[Sequence[z3.ExprRef]], optional
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+    :type smt_timeout_ms: Optional[int], optional
+    :return: Z3 expression, runtime-definedness constraints, or a normalized
+        algorithm result.
+    :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]
+    """
+    domain_constraints: List[z3.ExprRef] = []
+    _, z3_expr, result = _expr_conditions_and_z3_or_result(
+        expr,
+        z3_vars,
+        path_conditions,
+        context_constraints=context_constraints,
+        smt_timeout_ms=smt_timeout_ms,
+        domain_constraints=domain_constraints,
+    )
+    if result is not None:
+        return None, None, result
+    return z3_expr, tuple(domain_constraints), None
+
+
+def _definedness_feasibility_or_result(
+    constraints: Sequence[z3.ExprRef],
+    *,
+    reason: str,
+    smt_timeout_ms: Optional[int] = None,
+) -> Optional[AlgorithmResult]:
+    """Return an indeterminate result when runtime-definedness is infeasible.
+
+    :param constraints: Context plus definedness constraints to check.
+    :type constraints: Sequence[z3.ExprRef]
+    :param reason: Reason to use when the context is unsatisfiable.
+    :type reason: str
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+    :type smt_timeout_ms: Optional[int], optional
+    :return: ``None`` when feasible, otherwise an algorithm result.
+    :rtype: Optional[AlgorithmResult]
+    """
+    sat_result = is_sat(constraints, timeout_ms=smt_timeout_ms)
+    if sat_result.kind == "sat":
+        return None
+    if sat_result.kind == "unsat":
+        return _skip_result("undecidable_skip", reason)
+    return _skip_result(sat_result.kind, getattr(sat_result, "reason", None))
+
+
 def _path_reachability_or_result(
     context_constraints: Optional[Sequence[z3.ExprRef]],
     path_conditions: Sequence[z3.ExprRef],
@@ -825,8 +897,8 @@ def _execute_operation_prefix_conditions_and_vars_or_result(
 
     for statement in operations:
         if isinstance(statement, _operation_type()):
-            expression_domains: List[z3.ExprRef] = []
             expression_path = (*current_path, *current_domains)
+            expression_domains: List[z3.ExprRef] = []
             expression_points, expression_value, result = (
                 _expr_conditions_and_z3_or_result(
                     statement.expr,
@@ -839,6 +911,21 @@ def _execute_operation_prefix_conditions_and_vars_or_result(
             )
             if result is not None:
                 return None, None, None, result
+            if context_constraints is not None and expression_domains:
+                result = _definedness_feasibility_or_result(
+                    [
+                        *context_constraints,
+                        *expression_path,
+                        *expression_domains,
+                    ],
+                    reason=(
+                        "Operation expression runtime definedness constraints "
+                        "are unsatisfiable in context."
+                    ),
+                    smt_timeout_ms=smt_timeout_ms,
+                )
+                if result is not None:
+                    return None, None, None, result
             points.extend(expression_points or ())
             current_vars[statement.var_name] = expression_value
             _append_expr_domain_constraints(
@@ -864,13 +951,13 @@ def _execute_operation_prefix_conditions_and_vars_or_result(
                     break
 
                 branch_condition = None
-                branch_condition_domains: List[z3.ExprRef] = []
                 branch_path = list(evaluation_path)
                 evaluation_selector = (
                     z3.And(*prior_not_taken) if prior_not_taken else None
                 )
                 branch_selector = evaluation_selector
                 if branch.condition is not None:
+                    branch_condition_domains: List[z3.ExprRef] = []
                     condition_points, branch_condition, result = (
                         _expr_conditions_and_z3_or_result(
                             branch.condition,
@@ -883,6 +970,21 @@ def _execute_operation_prefix_conditions_and_vars_or_result(
                     )
                     if result is not None:
                         return None, None, None, result
+                    if context_constraints is not None and branch_condition_domains:
+                        result = _definedness_feasibility_or_result(
+                            [
+                                *context_constraints,
+                                *evaluation_path,
+                                *branch_condition_domains,
+                            ],
+                            reason=(
+                                "Branch condition runtime definedness "
+                                "constraints are unsatisfiable in context."
+                            ),
+                            smt_timeout_ms=smt_timeout_ms,
+                        )
+                        if result is not None:
+                            return None, None, None, result
                     points.extend(condition_points or ())
                     for item in branch_condition_domains:
                         if evaluation_selector is None:
@@ -1025,7 +1127,14 @@ def _transition_trigger_or_result(
     transition: Transition,
     z3_vars: _Z3Vars,
     event_vars: Optional[Dict[str, z3.BoolRef]] = None,
-) -> Tuple[Optional[z3.ExprRef], Optional[AlgorithmResult]]:
+    *,
+    context_constraints: Optional[Sequence[z3.ExprRef]] = None,
+    smt_timeout_ms: Optional[int] = None,
+) -> Tuple[
+    Optional[z3.ExprRef],
+    Optional[Tuple[z3.ExprRef, ...]],
+    Optional[AlgorithmResult],
+]:
     """Build a transition trigger expression in the supplied environment.
 
     :param transition: Transition whose event and guard should be encoded.
@@ -1034,10 +1143,18 @@ def _transition_trigger_or_result(
     :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
     :param event_vars: Optional shared event boolean variable mapping.
     :type event_vars: Optional[Dict[str, z3.BoolRef]], optional
-    :return: Trigger expression and optional failure result.
-    :rtype: Tuple[Optional[z3.ExprRef], Optional[AlgorithmResult]]
+    :param context_constraints: Optional context used to prune guard ternary
+        branches while translating.
+    :type context_constraints: Optional[Sequence[z3.ExprRef]], optional
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+    :type smt_timeout_ms: Optional[int], optional
+    :return: Trigger expression, runtime-definedness constraints, and optional
+        failure result.
+    :rtype: Tuple[Optional[z3.ExprRef], Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]
     """
     parts: List[z3.ExprRef] = []
+    domain_constraints: List[z3.ExprRef] = []
+    event_expr = None
     if transition.event is not None:
         event_key = _event_bool_name(transition)
         if event_vars is None:
@@ -1047,16 +1164,30 @@ def _transition_trigger_or_result(
         parts.append(event_expr)
 
     if transition.guard is not None:
-        guard_expr, result = _expr_to_z3_or_result(transition.guard, z3_vars)
+        guard_expr, guard_domains, result = _expr_z3_and_domains_or_result(
+            transition.guard,
+            z3_vars,
+            context_constraints=context_constraints,
+            smt_timeout_ms=smt_timeout_ms,
+        )
         if result is not None:
-            return None, result
+            return None, None, result
+        domain_constraints.extend(guard_domains or ())
+        parts.extend(guard_domains or ())
         parts.append(guard_expr)
 
+    if event_expr is not None:
+        trigger_domains = tuple(
+            z3.Implies(event_expr, item) for item in domain_constraints
+        )
+    else:
+        trigger_domains = tuple(domain_constraints)
+
     if not parts:
-        return z3.BoolVal(True), None
+        return z3.BoolVal(True), trigger_domains, None
     if len(parts) == 1:
-        return parts[0], None
-    return z3.And(*parts), None
+        return parts[0], trigger_domains, None
+    return z3.And(*parts), trigger_domains, None
 
 
 def _root_initial_path_context(
@@ -1148,15 +1279,48 @@ def _root_initial_path_context(
 
         target_transition = None
         selected_constraints = None
+        selected_guard_domains = None
         prior_triggers: List[z3.ExprRef] = []
+        prior_guard_domains: List[z3.ExprRef] = []
         for transition in path_state.init_transitions:
-            trigger, result = _transition_trigger_or_result(transition, current_vars)
+            trigger, guard_domains, result = _transition_trigger_or_result(
+                transition,
+                current_vars,
+                context_constraints=[
+                    *base_constraints,
+                    *constraints,
+                    *domain_constraints,
+                    *prior_guard_domains,
+                    *type_constraints,
+                ],
+                smt_timeout_ms=smt_timeout_ms,
+            )
             if result is not None:
                 return None, None, None, result
+            if guard_domains:
+                result = _definedness_feasibility_or_result(
+                    [
+                        *base_constraints,
+                        *constraints,
+                        *domain_constraints,
+                        *prior_guard_domains,
+                        *guard_domains,
+                        *type_constraints,
+                    ],
+                    reason=(
+                        "Initial transition guard runtime definedness "
+                        "constraints are unsatisfiable in context."
+                    ),
+                    smt_timeout_ms=smt_timeout_ms,
+                )
+                if result is not None:
+                    return None, None, None, result
             if transition.to_state == child.name:
                 candidate_constraints = [
                     *constraints,
+                    *prior_guard_domains,
                     *(z3.Not(prior_trigger) for prior_trigger in prior_triggers),
+                    *(guard_domains or ()),
                     trigger,
                 ]
                 context_check = is_sat(
@@ -1181,10 +1345,16 @@ def _root_initial_path_context(
                 if context_check.kind == "sat":
                     target_transition = transition
                     selected_constraints = candidate_constraints
+                    selected_guard_domains = guard_domains
                     break
+            prior_guard_domains.extend(guard_domains or ())
             prior_triggers.append(trigger)
 
-        if target_transition is None or selected_constraints is None:
+        if (
+            target_transition is None
+            or selected_constraints is None
+            or selected_guard_domains is None
+        ):
             return None, None, None, None
         constraints = selected_constraints
 
@@ -1239,21 +1409,42 @@ def _build_init_constraints_or_result(
 def _guard_z3_or_result(
     transition: Transition,
     variables: Sequence[VarDefine],
-) -> Tuple[Optional[_Z3Expr], Optional[_Z3Vars], Optional[AlgorithmResult]]:
+    *,
+    context_constraints: Optional[Sequence[z3.ExprRef]] = None,
+    smt_timeout_ms: Optional[int] = None,
+) -> Tuple[
+    Optional[_Z3Expr],
+    Optional[_Z3Vars],
+    Optional[Tuple[z3.ExprRef, ...]],
+    Optional[AlgorithmResult],
+]:
     """Translate a transition guard.
 
     :param transition: Transition with a non-``None`` guard.
     :type transition: Transition
     :param variables: FCSTM variable definitions.
     :type variables: Sequence[VarDefine]
-    :return: Guard Z3 expression, variable mapping, and optional failure result.
+    :param context_constraints: Optional context used to prune guard ternary
+        branches while translating.
+    :type context_constraints: Optional[Sequence[z3.ExprRef]], optional
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+    :type smt_timeout_ms: Optional[int], optional
+    :return: Guard Z3 expression, variable mapping, runtime-definedness
+        constraints, and optional failure result.
     :rtype: tuple
     """
     z3_vars = _z3_vars(variables)
-    guard_expr, result = _expr_to_z3_or_result(transition.guard, z3_vars)
+    if context_constraints is None:
+        context_constraints = _build_type_constraints(variables, z3_vars)
+    guard_expr, guard_domains, result = _expr_z3_and_domains_or_result(
+        transition.guard,
+        z3_vars,
+        context_constraints=context_constraints,
+        smt_timeout_ms=smt_timeout_ms,
+    )
     if result is not None:
-        return None, None, result
-    return guard_expr, z3_vars, None
+        return None, None, None, result
+    return guard_expr, z3_vars, guard_domains, None
 
 
 def _is_self_assign(statement: OperationStatement) -> bool:
@@ -1335,12 +1526,31 @@ def dead_guard(
     if transition.guard is None:
         return AlgorithmResult(kind="sat")
 
-    guard_z3, z3_vars, result = _guard_z3_or_result(transition, variables)
+    guard_z3, z3_vars, guard_domains, result = _guard_z3_or_result(
+        transition,
+        variables,
+        smt_timeout_ms=smt_timeout_ms,
+    )
     if result is not None:
         return result
+    type_constraints = _build_type_constraints(variables, z3_vars)
+    if guard_domains:
+        result = _definedness_feasibility_or_result(
+            [*type_constraints, *guard_domains],
+            reason=(
+                "Transition guard runtime definedness constraints are unsatisfiable."
+            ),
+            smt_timeout_ms=smt_timeout_ms,
+        )
+        if result is not None:
+            return result
 
     sat_result = is_sat(
-        [guard_z3, *_build_type_constraints(variables, z3_vars)],
+        [
+            guard_z3,
+            *type_constraints,
+            *(guard_domains or ()),
+        ],
         timeout_ms=smt_timeout_ms,
     )
     if sat_result.kind == "unsat":
@@ -1378,12 +1588,31 @@ def guard_tautology(
     if transition.guard is None:
         return AlgorithmResult(kind="sat")
 
-    guard_z3, z3_vars, result = _guard_z3_or_result(transition, variables)
+    guard_z3, z3_vars, guard_domains, result = _guard_z3_or_result(
+        transition,
+        variables,
+        smt_timeout_ms=smt_timeout_ms,
+    )
     if result is not None:
         return result
+    type_constraints = _build_type_constraints(variables, z3_vars)
+    if guard_domains:
+        result = _definedness_feasibility_or_result(
+            [*type_constraints, *guard_domains],
+            reason=(
+                "Transition guard runtime definedness constraints are unsatisfiable."
+            ),
+            smt_timeout_ms=smt_timeout_ms,
+        )
+        if result is not None:
+            return result
 
     sat_result = is_sat(
-        [z3.Not(guard_z3), *_build_type_constraints(variables, z3_vars)],
+        [
+            z3.Not(guard_z3),
+            *type_constraints,
+            *(guard_domains or ()),
+        ],
         timeout_ms=smt_timeout_ms,
     )
     if sat_result.kind == "unsat":
@@ -1421,15 +1650,32 @@ def forced_guard_unsat_under_init(
     if not transition.is_forced or transition.guard is None:
         return AlgorithmResult(kind="sat")
 
-    guard_z3, z3_vars, result = _guard_z3_or_result(transition, variables)
-    if result is not None:
-        return result
+    z3_vars = _z3_vars(variables)
     init_constraints, result = _build_init_constraints_or_result(variables, z3_vars)
     if result is not None:
         return result
+    guard_z3, guard_domains, result = _expr_z3_and_domains_or_result(
+        transition.guard,
+        z3_vars,
+        context_constraints=init_constraints,
+        smt_timeout_ms=smt_timeout_ms,
+    )
+    if result is not None:
+        return result
+    if guard_domains:
+        result = _definedness_feasibility_or_result(
+            [*init_constraints, *(guard_domains or ())],
+            reason=(
+                "Transition guard runtime definedness constraints are "
+                "unsatisfiable under initial values."
+            ),
+            smt_timeout_ms=smt_timeout_ms,
+        )
+        if result is not None:
+            return result
 
     sat_result = is_sat(
-        [guard_z3, *init_constraints],
+        [guard_z3, *init_constraints, *(guard_domains or ())],
         timeout_ms=smt_timeout_ms,
     )
     if sat_result.kind == "unsat":
@@ -1472,21 +1718,38 @@ def _effect_guard_context_or_result(
     """
     if transition.guard is None:
         guard_z3 = z3.BoolVal(True)
+        guard_domains: Tuple[z3.ExprRef, ...] = ()
     else:
-        guard_z3, result = _expr_to_z3_or_result(transition.guard, z3_vars)
+        guard_z3, guard_domains, result = _expr_z3_and_domains_or_result(
+            transition.guard,
+            z3_vars,
+            smt_timeout_ms=smt_timeout_ms,
+        )
         if result is not None:
             return None, None, result
 
     type_constraints = _build_type_constraints(variables, z3_vars)
     guard_feasible = is_sat(
-        [guard_z3, *type_constraints],
+        [guard_z3, *type_constraints, *(guard_domains or ())],
         timeout_ms=smt_timeout_ms,
     )
     if guard_feasible.kind == "unsat":
+        if guard_domains:
+            return (
+                None,
+                None,
+                _skip_result(
+                    "undecidable_skip",
+                    (
+                        "Transition guard runtime definedness constraints are "
+                        "unsatisfiable."
+                    ),
+                ),
+            )
         return None, None, AlgorithmResult(kind="sat")
     if guard_feasible.kind != "sat":
         return None, None, AlgorithmResult(kind=guard_feasible.kind)
-    return guard_z3, type_constraints, None
+    return guard_z3, (*type_constraints, *(guard_domains or ())), None
 
 
 def _execute_effects_under_guard_or_result(
@@ -1541,10 +1804,11 @@ def _execute_effects_under_guard_or_result(
         timeout_ms=smt_timeout_ms,
     )
     if defined_effect_feasible.kind == "unsat":
-        return None, None, _skip_result(
+        result = _skip_result(
             "undecidable_skip",
             "Transition effect runtime definedness constraints are unsatisfiable under guard.",
         )
+        return None, None, result
     if defined_effect_feasible.kind != "sat":
         return None, None, AlgorithmResult(kind=defined_effect_feasible.kind)
     return after_vars, tuple(effect_domain_constraints or ()), None
@@ -1751,13 +2015,17 @@ def transition_shadowed_by_predecessor(
         z3_vars = _z3_vars(variables)
         event_vars: Dict[str, z3.BoolRef] = {}
         prior_triggers: List[z3.ExprRef] = []
+        prior_domain_constraints: List[z3.ExprRef] = []
         prior_payloads: List[dict] = []
+        type_constraints = _build_type_constraints(variables, z3_vars)
 
         for transition in outgoing:
-            trigger, result = _transition_trigger_or_result(
+            trigger, trigger_domains, result = _transition_trigger_or_result(
                 transition,
                 z3_vars,
                 event_vars,
+                context_constraints=type_constraints,
+                smt_timeout_ms=smt_timeout_ms,
             )
             if result is not None:
                 first_indeterminate_result = _first_indeterminate(
@@ -1766,18 +2034,35 @@ def transition_shadowed_by_predecessor(
                     result.reason,
                 )
                 continue
+            if trigger_domains:
+                result = _definedness_feasibility_or_result(
+                    [*type_constraints, *prior_domain_constraints, *trigger_domains],
+                    reason=(
+                        "Transition trigger runtime definedness constraints "
+                        "are unsatisfiable in context."
+                    ),
+                    smt_timeout_ms=smt_timeout_ms,
+                )
+                if result is not None:
+                    first_indeterminate_result = _first_indeterminate(
+                        first_indeterminate_result,
+                        result.kind,
+                        result.reason,
+                    )
+                    break
 
             current_payload = _transition_payload(transition)
             if prior_triggers:
                 formula = z3.And(
                     trigger,
                     *(z3.Not(prior_trigger) for prior_trigger in prior_triggers),
-                    *_build_type_constraints(variables, z3_vars),
+                    *prior_domain_constraints,
+                    *type_constraints,
                 )
                 sat_result = is_sat([formula], timeout_ms=smt_timeout_ms)
                 if sat_result.kind == "unsat":
                     trigger_sat = is_sat(
-                        [trigger, *_build_type_constraints(variables, z3_vars)],
+                        [trigger, *type_constraints, *(trigger_domains or ())],
                         timeout_ms=smt_timeout_ms,
                     )
                     if trigger_sat.kind == "unsat":
@@ -1832,6 +2117,7 @@ def transition_shadowed_by_predecessor(
                     )
 
             prior_triggers.append(trigger)
+            prior_domain_constraints.extend(trigger_domains or ())
             prior_payloads.append(current_payload)
 
     if diagnostics:
@@ -2208,11 +2494,14 @@ def composite_init_guards_incomplete(
         event_vars: Dict[str, z3.BoolRef] = {}
         triggers: List[z3.ExprRef] = []
         per_composite_failed = False
+        type_constraints = _build_type_constraints(variables, z3_vars)
         for transition in init_transitions:
-            trigger, result = _transition_trigger_or_result(
+            trigger, trigger_domains, result = _transition_trigger_or_result(
                 transition,
                 z3_vars,
                 event_vars,
+                context_constraints=type_constraints,
+                smt_timeout_ms=smt_timeout_ms,
             )
             if result is not None:
                 first_indeterminate_result = _first_indeterminate(
@@ -2222,6 +2511,8 @@ def composite_init_guards_incomplete(
                 )
                 per_composite_failed = True
                 break
+            if trigger_domains:
+                trigger = z3.And(trigger, *trigger_domains)
             triggers.append(trigger)
 
         if per_composite_failed or not triggers:
@@ -2231,7 +2522,7 @@ def composite_init_guards_incomplete(
         sat_result = is_sat(
             [
                 no_coverage,
-                *_build_type_constraints(variables, z3_vars),
+                *type_constraints,
             ],
             timeout_ms=smt_timeout_ms,
             get_model=True,

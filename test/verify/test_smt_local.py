@@ -286,10 +286,13 @@ def test_guard_translation_failure_is_normalized():
         effects=[],
     )
 
-    guard, z3_vars, result = smt_local._guard_z3_or_result(transition, ())
+    guard, z3_vars, guard_domains, result = smt_local._guard_z3_or_result(
+        transition, ()
+    )
 
     assert guard is None
     assert z3_vars is None
+    assert guard_domains is None
     assert result.kind == "undecidable_skip"
 
 
@@ -965,6 +968,54 @@ def test_operation_prefix_collection_qualifies_branch_condition_domains():
     ]
 
 
+def test_branch_condition_definedness_unsat_in_context_is_undecidable():
+    """Unrunnable branch conditions stop path-sensitive operation execution."""
+    z3_vars = {"x": smt_local.z3.Int("x")}
+    operations = [
+        IfBlock(
+            branches=[
+                IfBlockBranch(
+                    condition=BinaryOp(
+                        BinaryOp(Variable("x"), "/", Variable("x")),
+                        ">",
+                        Integer(0),
+                    ),
+                    statements=[],
+                )
+            ]
+        )
+    ]
+
+    _, _, _, result = smt_local._execute_operation_prefix_conditions_and_vars_or_result(
+        operations,
+        z3_vars,
+        context_constraints=[z3_vars["x"] == 0],
+    )
+
+    assert result.kind == "undecidable_skip"
+    assert "runtime definedness" in result.reason
+
+
+def test_definedness_feasibility_helper_handles_sat_and_timeout(monkeypatch):
+    """The shared definedness helper preserves feasible and indeterminate cases."""
+    feasible = smt_local._definedness_feasibility_or_result(
+        [smt_local.z3.BoolVal(True)],
+        reason="unused",
+    )
+
+    assert feasible is None
+
+    monkeypatch.setattr(smt_local, "is_sat", sat_timeout_result)
+
+    timeout = smt_local._definedness_feasibility_or_result(
+        [smt_local.z3.BoolVal(True)],
+        reason="unused",
+        smt_timeout_ms=1,
+    )
+
+    assert timeout.kind == "timeout"
+
+
 def test_operation_prefix_collection_rejects_unknown_statement_type():
     """Unknown operation statement objects are normalized as undecidable."""
     condition_points, result = smt_local._execute_operation_prefix_conditions_or_result(
@@ -986,10 +1037,40 @@ def test_transition_trigger_builds_private_event_bool_when_no_mapping_given():
         effects=[],
     )
 
-    trigger, result = smt_local._transition_trigger_or_result(transition, {})
+    trigger, trigger_domains, result = smt_local._transition_trigger_or_result(
+        transition, {}
+    )
 
     assert result is None
+    assert trigger_domains == ()
     assert str(trigger) == "__event__6:System4:Tick"
+
+
+def test_initial_path_guard_definedness_unsat_is_undecidable():
+    """Root initial path selection rejects unrunnable init guards."""
+    machine = parse_machine(
+        """
+        def int x = 0;
+        state System {
+            state Idle { during { x = 1; } }
+            [*] -> Idle : if [1 / 0 == 1 || true];
+        }
+        """
+    )
+    z3_vars = smt_local._z3_vars(variables(machine))
+
+    transitions, constraints, operations, result = smt_local._root_initial_path_context(
+        machine.root_state.substates["Idle"],
+        variables(machine),
+        z3_vars,
+        (),
+    )
+
+    assert transitions is None
+    assert constraints is None
+    assert operations is None
+    assert result.kind == "undecidable_skip"
+    assert "runtime definedness" in result.reason
 
 
 def test_root_initial_context_handles_root_state_directly():
@@ -1192,6 +1273,24 @@ class TestDeadGuard:
 
         assert result.kind == "undecidable_skip"
 
+    def test_runtime_undefined_guard_is_undecidable_not_dead(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B : if [1 / 0 == 1 || false];
+            }
+            """
+        )
+
+        result = dead_guard(root_transition(machine), variables(machine))
+
+        assert result.kind == "undecidable_skip"
+        assert "runtime definedness" in result.reason
+
     def test_non_linear_variable_multiplication_runs_full_power(self):
         machine = parse_machine(
             """
@@ -1302,6 +1401,43 @@ class TestGuardTautology:
 
         assert result.kind == "undecidable_skip"
 
+    def test_runtime_undefined_guard_is_undecidable_not_tautological(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B : if [1 / 0 == 1 || true];
+            }
+            """
+        )
+
+        result = guard_tautology(root_transition(machine), variables(machine))
+
+        assert result.kind == "undecidable_skip"
+        assert "runtime definedness" in result.reason
+
+    def test_unselected_guard_ternary_branch_is_pruned(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            def int flags = 0;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B : if [(x == x) ? true : ((flags & 1) == 1)];
+            }
+            """
+        )
+
+        result = guard_tautology(root_transition(machine), variables(machine))
+
+        assert result.kind == "unsat"
+        assert_single_diag(result, "W_GUARD_TAUTOLOGY")
+
 
 class TestForcedGuardUnsatUnderInit:
     """Test forced transition guard checks under initial values."""
@@ -1351,6 +1487,25 @@ class TestForcedGuardUnsatUnderInit:
         assert result.kind == "unsat"
         diag = assert_single_diag(result, "W_FORCED_GUARD_UNSAT")
         assert diag["data"]["scope"] == "dsl_def_init_only"
+
+    def test_runtime_undefined_forced_guard_is_undecidable(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                !A -> B : if [x == 0 && 1 / x == 1];
+            }
+            """
+        )
+        transition = transition_by_guard(machine, "1 / x")
+
+        result = forced_guard_unsat_under_init(transition, variables(machine))
+
+        assert result.kind == "undecidable_skip"
+        assert "runtime definedness" in result.reason
 
     def test_does_not_trigger_when_forced_guard_true_at_init(self):
         machine = parse_machine(
@@ -1690,6 +1845,69 @@ class TestEffectNoOpUnderGuard:
 
         result = effect_no_op_under_guard(root_transition(machine), variables(machine))
 
+        assert result.kind == "undecidable_skip"
+        assert "runtime definedness" in result.reason
+
+    def test_guard_definedness_unsat_for_effect_is_undecidable(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            def int y = 0;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B : if [x == 0 && 1 / x == 1] effect { y = y + 0; };
+            }
+            """
+        )
+
+        result = effect_no_op_under_guard(root_transition(machine), variables(machine))
+
+        assert result.kind == "undecidable_skip"
+        assert "runtime definedness" in result.reason
+
+    def test_effect_definedness_helper_reports_unsat_context(self, monkeypatch):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            def int y = 0;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B : if [x == 0] effect { y = 1 / x; };
+            }
+            """
+        )
+        transition = root_transition(machine)
+        z3_vars = smt_local._z3_vars(variables(machine))
+        guard_z3, type_constraints, result = smt_local._effect_guard_context_or_result(
+            transition,
+            variables(machine),
+            z3_vars,
+        )
+
+        assert result is None
+
+        def defer_effect_domains(*args, **kwargs):
+            return (), dict(z3_vars), (z3_vars["x"] != 0,), None
+
+        monkeypatch.setattr(
+            smt_local,
+            "_execute_operation_prefix_conditions_and_vars_or_result",
+            defer_effect_domains,
+        )
+
+        after_vars, domains, result = smt_local._execute_effects_under_guard_or_result(
+            transition,
+            z3_vars,
+            guard_z3,
+            type_constraints,
+        )
+
+        assert after_vars is None
+        assert domains is None
         assert result.kind == "undecidable_skip"
         assert "runtime definedness" in result.reason
 
@@ -2259,6 +2477,26 @@ class TestTransitionShadowedByPredecessor:
 
         assert result.kind == "undecidable_skip"
 
+    def test_runtime_undefined_guard_does_not_shadow_following_transition(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            state System {
+                state A;
+                state B;
+                state C;
+                [*] -> A;
+                A -> B : if [1 / 0 == 1 || true];
+                A -> C : if [x == 0];
+            }
+            """
+        )
+
+        result = transition_shadowed_by_predecessor(machine, variables(machine))
+
+        assert result.kind == "undecidable_skip"
+        assert "runtime definedness" in result.reason
+
     def test_current_guard_translation_failure_propagates(self, monkeypatch):
         machine = parse_machine(
             """
@@ -2274,15 +2512,26 @@ class TestTransitionShadowedByPredecessor:
             """
         )
         calls = []
-        real_expr_to_z3 = smt_local.expr_to_z3
+        real_translate = smt_local._expr_conditions_and_z3_or_result
 
-        def fail_on_second_guard(expr, z3_vars):
+        def fail_on_second_guard(expr, *args, **kwargs):
             if str(expr) == "x <= 5":
                 calls.append(expr)
-                raise ValueError("synthetic current guard failure")
-            return real_expr_to_z3(expr, z3_vars)
+                return (
+                    None,
+                    None,
+                    AlgorithmResult(
+                        kind="undecidable_skip",
+                        reason="synthetic current guard failure",
+                    ),
+                )
+            return real_translate(expr, *args, **kwargs)
 
-        monkeypatch.setattr(smt_local, "expr_to_z3", fail_on_second_guard)
+        monkeypatch.setattr(
+            smt_local,
+            "_expr_conditions_and_z3_or_result",
+            fail_on_second_guard,
+        )
 
         result = transition_shadowed_by_predecessor(machine, variables(machine))
 
@@ -2290,6 +2539,8 @@ class TestTransitionShadowedByPredecessor:
         assert result.kind == "undecidable_skip"
 
     def test_prior_guard_translation_failure_propagates(self, monkeypatch):
+        from pyfcstm.model.expr import BinaryOp
+
         machine = parse_machine(
             """
             def int x = 0;
@@ -2304,25 +2555,31 @@ class TestTransitionShadowedByPredecessor:
             """
         )
         calls = []
-        real_expr_to_z3 = smt_local.expr_to_z3
+        real_translate = smt_local._expr_conditions_and_z3_or_result
 
-        def fail_when_prior_guard_is_retranslated(expr, z3_vars):
-            if str(expr) == "x > 0":
+        def fail_when_prior_guard_is_translated(expr, *args, **kwargs):
+            if isinstance(expr, BinaryOp) and str(expr) == "x > 0":
                 calls.append(expr)
-                if len(calls) >= 2:
-                    raise ValueError("synthetic prior guard failure")
-            return real_expr_to_z3(expr, z3_vars)
+                return (
+                    None,
+                    None,
+                    AlgorithmResult(
+                        kind="undecidable_skip",
+                        reason="synthetic prior guard failure",
+                    ),
+                )
+            return real_translate(expr, *args, **kwargs)
 
         monkeypatch.setattr(
             smt_local,
-            "expr_to_z3",
-            fail_when_prior_guard_is_retranslated,
+            "_expr_conditions_and_z3_or_result",
+            fail_when_prior_guard_is_translated,
         )
 
         result = transition_shadowed_by_predecessor(machine, variables(machine))
 
         assert len(calls) == 1
-        assert result.kind == "sat"
+        assert result.kind == "undecidable_skip"
 
     def test_events_with_underscore_path_boundary_do_not_shadow_each_other(self):
         machine = parse_machine(
@@ -3472,6 +3729,34 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         assert result.kind == "undecidable_skip"
         assert result.diagnostics == ()
 
+    def test_selected_value_branch_definedness_failure_is_undecidable(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            def float y = 0.0;
+            def int z = 0;
+            state System {
+                state Idle {
+                    during {
+                        y = (x == 0) ? sqrt(-1.0) : 1.0;
+                        z = 1;
+                        if [z == 1] { z = 2; } else { z = 3; }
+                    }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "undecidable_skip"
+        assert "runtime definedness" in result.reason
+        assert result.diagnostics == ()
+
     def test_unreachable_enter_branch_unsupported_expr_does_not_mask_during_condition(
         self,
     ):
@@ -4554,6 +4839,24 @@ class TestCompositeInitGuardsIncomplete:
         result = composite_init_guards_incomplete(machine, variables(machine))
 
         assert result.kind == "undecidable_skip"
+
+    def test_runtime_undefined_init_guard_does_not_cover_composite_gap(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            state Root {
+                state A;
+                state B;
+                [*] -> A : if [1 / 0 == 1 || true];
+                [*] -> B : if [x > 0];
+            }
+            """
+        )
+
+        result = composite_init_guards_incomplete(machine, variables(machine))
+
+        assert result.kind == "sat"
+        assert_single_diag(result, "W_COMPOSITE_INIT_INCOMPLETE")
 
     def test_nested_composite_reports_nested_state(self):
         machine = parse_machine(

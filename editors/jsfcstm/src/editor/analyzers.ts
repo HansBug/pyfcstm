@@ -64,6 +64,188 @@ export const FCSTM_DIAGNOSTIC_CODES = {
     effectSelfAssign: 'W_EFFECT_SELF_ASSIGN',
 } as const;
 
+
+const EXPR_PRECEDENCE: Record<string, number> = {
+    'function_call': 90,
+    'unary+': 80,
+    'unary-': 80,
+    '!': 80,
+    'not': 80,
+    '**': 70,
+    '*': 60,
+    '/': 60,
+    '%': 60,
+    '+': 50,
+    '-': 50,
+    '<<': 40,
+    '>>': 40,
+    '&': 35,
+    '^': 30,
+    '|': 25,
+    '<': 20,
+    '>': 20,
+    '<=': 20,
+    '>=': 20,
+    '==': 20,
+    '!=': 20,
+    '&&': 15,
+    'and': 15,
+    '||': 10,
+    'or': 10,
+    '?:': 5,
+};
+const HEX_RADIX = 16;
+const BINARY_RADIX = 2;
+
+function canonicalBinaryOperator(op: string): string {
+    if (op === 'and') return '&&';
+    if (op === 'or') return '||';
+    return op;
+}
+
+function canonicalUnaryOperator(op: string): string {
+    return op === 'not' ? '!' : op;
+}
+
+function unaryPrecedenceKey(op: string): string {
+    const canonical = canonicalUnaryOperator(op);
+    return canonical === '+' || canonical === '-' ? `unary${canonical}` : canonical;
+}
+
+function normalizeDecimalDigits(raw: string): string {
+    const normalized = raw.replace(/^0+/, '');
+    return normalized.length > 0 ? normalized : '0';
+}
+
+function addSmallDecimal(raw: string, value: number): string {
+    if (value === 0) return raw;
+    let carry = value;
+    const out: string[] = [];
+    for (let index = raw.length - 1; index >= 0; index -= 1) {
+        const total = Number(raw[index]) + carry;
+        out.push(String(total % 10));
+        carry = Math.floor(total / 10);
+    }
+    while (carry > 0) {
+        out.push(String(carry % 10));
+        carry = Math.floor(carry / 10);
+    }
+    return out.reverse().join('');
+}
+
+function multiplySmallDecimal(raw: string, factor: number): string {
+    if (raw === '0' || factor === 0) return '0';
+    let carry = 0;
+    const out: string[] = [];
+    for (let index = raw.length - 1; index >= 0; index -= 1) {
+        const total = Number(raw[index]) * factor + carry;
+        out.push(String(total % 10));
+        carry = Math.floor(total / 10);
+    }
+    while (carry > 0) {
+        out.push(String(carry % 10));
+        carry = Math.floor(carry / 10);
+    }
+    return out.reverse().join('');
+}
+
+function convertRadixDigitsToDecimal(digits: string, radix: number): string {
+    let value = '0';
+    for (const char of digits.toLowerCase()) {
+        const digit = parseInt(char, radix);
+        value = addSmallDecimal(multiplySmallDecimal(value, radix), digit);
+    }
+    return value;
+}
+
+function numericAstText(expression: FcstmAstLiteralExpression): string {
+    const raw = expression.valueText.trim();
+    if (/^\d+$/.test(raw)) return normalizeDecimalDigits(raw);
+    if (/^0[xX][0-9a-fA-F]+$/.test(raw)) {
+        return convertRadixDigitsToDecimal(raw.slice(2), HEX_RADIX);
+    }
+    if (/^0[bB][01]+$/.test(raw)) {
+        return convertRadixDigitsToDecimal(raw.slice(2), BINARY_RADIX);
+    }
+    const value = Number(raw);
+    if (expression.pyNodeType === 'Float') {
+        return Number.isInteger(value) ? `${value}.0` : String(value);
+    }
+    return String(Math.trunc(value));
+}
+
+function astExprPrecedence(expression: FcstmAstExpression): number | null {
+    if (expression.expressionKind === 'binary') {
+        return EXPR_PRECEDENCE[canonicalBinaryOperator(expression.op)] ?? null;
+    }
+    if (expression.expressionKind === 'conditional') return EXPR_PRECEDENCE['?:'];
+    if (expression.expressionKind === 'unary') return EXPR_PRECEDENCE[unaryPrecedenceKey(expression.op)] ?? null;
+    return null;
+}
+
+function astExprText(expression: FcstmAstExpression | undefined): string | null {
+    if (!expression) return null;
+    switch (expression.expressionKind) {
+        case 'literal':
+            return expression.literalType === 'boolean'
+                ? expression.valueText.toLowerCase()
+                : numericAstText(expression);
+        case 'identifier':
+            return expression.name;
+        case 'mathConst':
+            return expression.name;
+        case 'parenthesized':
+            return astExprText(expression.expression);
+        case 'function': {
+            const argument = astExprText(expression.argument);
+            return argument === null ? null : `${expression.functionName}(${argument})`;
+        }
+        case 'unary': {
+            const op = canonicalUnaryOperator(expression.op);
+            const myPrecedence = EXPR_PRECEDENCE[unaryPrecedenceKey(expression.op)];
+            let value = astExprText(expression.operand);
+            if (value === null) return null;
+            const valuePrecedence = astExprPrecedence(expression.operand);
+            if (valuePrecedence !== null && valuePrecedence <= myPrecedence) {
+                value = `(${value})`;
+            }
+            return `${op}${value}`;
+        }
+        case 'binary': {
+            const op = canonicalBinaryOperator(expression.op);
+            const myPrecedence = EXPR_PRECEDENCE[op];
+            let left = astExprText(expression.left);
+            let right = astExprText(expression.right);
+            if (left === null || right === null) return null;
+            const leftPrecedence = astExprPrecedence(expression.left);
+            if (leftPrecedence !== null && leftPrecedence < myPrecedence) {
+                left = `(${left})`;
+            }
+            const rightPrecedence = astExprPrecedence(expression.right);
+            if (rightPrecedence !== null && rightPrecedence <= myPrecedence) {
+                right = `(${right})`;
+            }
+            return `${left} ${op} ${right}`;
+        }
+        case 'conditional': {
+            const myPrecedence = EXPR_PRECEDENCE['?:'];
+            const condition = astExprText(expression.condition);
+            let whenTrue = astExprText(expression.whenTrue);
+            let whenFalse = astExprText(expression.whenFalse);
+            if (condition === null || whenTrue === null || whenFalse === null) return null;
+            const truePrecedence = astExprPrecedence(expression.whenTrue);
+            if (truePrecedence !== null && truePrecedence <= myPrecedence) {
+                whenTrue = `(${whenTrue})`;
+            }
+            const falsePrecedence = astExprPrecedence(expression.whenFalse);
+            if (falsePrecedence !== null && falsePrecedence <= myPrecedence) {
+                whenFalse = `(${whenFalse})`;
+            }
+            return `(${condition}) ? ${whenTrue} : ${whenFalse}`;
+        }
+    }
+}
+
 function isFalseLiteral(expression: FcstmAstExpression): boolean {
     return expression.expressionKind === 'literal'
         && expression.literalType === 'boolean'
@@ -102,14 +284,13 @@ function transitionDiagnosticEndpointPaths(
 }
 
 function transitionModelOrderIndex(transition: FcstmSemanticTransition): number | null {
-    const astRecord = transition.ast as unknown as Record<string, unknown>;
-    const rawIndex = astRecord.transitionIndex;
+    const rawIndex = transition.ast.transitionIndex;
     if (typeof rawIndex === 'number' && Number.isInteger(rawIndex)) return rawIndex;
 
-    if (!Array.isArray(astRecord.transitionIndexRefs)) return null;
+    if (!Array.isArray(transition.ast.transitionIndexRefs)) return null;
     if (transition.forced && transition.expandedTransitions.length === 1) {
         const [expanded] = transition.expandedTransitions;
-        const match = (astRecord.transitionIndexRefs as Array<Record<string, unknown>>).find(ref => (
+        const match = transition.ast.transitionIndexRefs.find(ref => (
             typeof ref.index === 'number' &&
             (typeof ref.fromPath !== 'string' || ref.fromPath === dottedPath(expanded.sourceStatePath)) &&
             (typeof ref.toPath !== 'string' || ref.toPath === (
@@ -120,7 +301,7 @@ function transitionModelOrderIndex(transition: FcstmSemanticTransition): number 
     }
 
     const endpoints = transitionDiagnosticEndpointPaths(transition);
-    const match = (astRecord.transitionIndexRefs as Array<Record<string, unknown>>).find(ref => (
+    const match = transition.ast.transitionIndexRefs.find(ref => (
         typeof ref.index === 'number' &&
         (typeof ref.fromPath !== 'string' || ref.fromPath === endpoints.from_path) &&
         (typeof ref.toPath !== 'string' || ref.toPath === endpoints.to_path)
@@ -377,6 +558,9 @@ function addTransitionDiagnostics(
         if (sourceUnreachable || (transition.guard && isFalseLiteral(transition.guard))) {
             const sourceState = semantic.states.find(item => item.identity.id === transition.sourceStateId);
             diagnostics.push({
+                // For forced expansions, ``transition.guard`` still points at
+                // the original forced declaration guard, so this range anchors
+                // literal-false warnings to the authored guard expression.
                 range: !sourceUnreachable && transition.guard ? transition.guard.range : transition.range,
                 message: sourceUnreachable
                     ? `Transition ${JSON.stringify(transition.ast.text)} is dead because its source state is unreachable.`
@@ -387,7 +571,7 @@ function addTransitionDiagnostics(
                 data: {
                     transition_span: null,
                     folded_value: false,
-                    guard_text: transition.guard?.text ?? null,
+                    guard_text: astExprText(transition.guard),
                     transition_index: transitionModelOrderIndex(transition),
                     ...transitionDiagnosticEndpointPaths(transition),
                 },

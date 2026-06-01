@@ -264,14 +264,9 @@ def _during_stmt_const_assign_diagnostics(
 
 
 def _expr_text(expr) -> Optional[str]:
-    if expr is None:
-        return None
-    try:
-        return str(expr.to_ast_node())
-    except (AttributeError, TypeError, ValueError):
-        # AttributeError: non-model guard object; TypeError/ValueError:
-        # future expression implementations with invalid AST conversion.
-        return None
+    from ..inspect import _expr_text as inspect_expr_text
+
+    return inspect_expr_text(expr)
 
 
 def _transition_indexes(machine: 'StateMachine') -> dict:

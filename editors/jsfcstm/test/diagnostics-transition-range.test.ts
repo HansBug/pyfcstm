@@ -258,7 +258,6 @@ describe('diagnostics transition body ranges', () => {
         );
     });
 
-
     it('anchors forced eventless transition diagnostics on the forced statement', async () => {
         const text = [
             'state Root {',
@@ -416,7 +415,6 @@ describe('diagnostics transition body ranges', () => {
         assert.equal(diagnostics[0].data?.__rangeFallback, undefined);
     });
 
-
     it('keeps js inspect transition indexes aligned with Python parent-first order', async () => {
         const text = [
             'state Root {',
@@ -442,6 +440,43 @@ describe('diagnostics transition body ranges', () => {
                 [1, '[*]', 'Root.A.X'],
                 [2, 'Root.A.X', 'Root.A.Y'],
                 [3, 'Root.A.X', 'Root.A.Y'],
+            ],
+        );
+    });
+
+
+    it('keeps JS inspect transition indexes aligned for forced nested transitions', async () => {
+        const text = [
+            'state Root {',
+            '    state A {',
+            '        state X;',
+            '        state Y;',
+            '        [*] -> X;',
+            '        X -> Y;',
+            '        X -> Y;',
+            '    }',
+            '    state B;',
+            '    [*] -> A;',
+            '    !A -> B :: Fatal;',
+            '    A -> B : if [false];',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/transition-forced-nested-model-order.fcstm');
+        const ast = await packageModule.parseAstDocument(document);
+        const machine = packageModule.buildStateMachineModel(ast);
+        const report = packageModule.inspectModel(machine);
+
+        assert.deepEqual(
+            report.transitions.map(item => [item.transition_index, item.from_path, item.to_path, item.is_forced]),
+            [
+                [0, 'Root.A', 'Root.B', true],
+                [1, '[*]', 'Root.A', false],
+                [2, 'Root.A', 'Root.B', false],
+                [3, 'Root.A.X', '[*]', true],
+                [4, 'Root.A.Y', '[*]', true],
+                [5, '[*]', 'Root.A.X', false],
+                [6, 'Root.A.X', 'Root.A.Y', false],
+                [7, 'Root.A.X', 'Root.A.Y', false],
             ],
         );
     });
@@ -503,6 +538,62 @@ describe('diagnostics transition body ranges', () => {
         assert.equal(diagnostics.length, 1);
         assert.equal(sliceByRange(text, diagnostics[0].range).trim(), 'A -> B;');
         assert.equal(diagnostics[0].data?.__rangeFallback, 'transition_ambiguous');
+    });
+
+
+    it('uses transition_index to resolve out-of-order self-assignment diagnostics', async () => {
+        const text = [
+            'def int x = 0;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    state C;',
+            '    [*] -> A;',
+            '    A -> B effect { x = x; };',
+            '    A -> C effect { x = x; };',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/transition-self-assign-index-range.fcstm');
+        const semantic = await packageModule.getWorkspaceGraph().getSemanticDocument(document);
+        const diagnostics = packageModule.collectInspectDiagnosticsFromItems(document, semantic, [
+            {
+                code: 'W_EFFECT_SELF_ASSIGN',
+                severity: 'warning' as const,
+                message: 'second transition self-assign first',
+                span: null,
+                refs: {
+                    state_path: 'Root.A',
+                    transition_span: null,
+                    var_name: 'x',
+                    transition_index: 2,
+                },
+            },
+            {
+                code: 'W_EFFECT_SELF_ASSIGN',
+                severity: 'warning' as const,
+                message: 'first transition self-assign second',
+                span: null,
+                refs: {
+                    state_path: 'Root.A',
+                    transition_span: null,
+                    var_name: 'x',
+                    transition_index: 1,
+                },
+            },
+        ]);
+
+        assert.equal(diagnostics.length, 2);
+        assert.deepEqual(
+            diagnostics.map(item => [item.message, item.range.start.line, sliceByRange(text, item.range).trim()]),
+            [
+                ['second transition self-assign first', 7, 'x = x;'],
+                ['first transition self-assign second', 6, 'x = x;'],
+            ],
+        );
+        assert.deepEqual(
+            diagnostics.map(item => item.data?.__rangeFallback ?? null),
+            [null, null],
+        );
     });
 
     it('marks self-assignment transition fallback when the concrete statement cannot be resolved', async () => {

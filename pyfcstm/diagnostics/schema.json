@@ -132,7 +132,10 @@
             "required": ["target", "guard", "event", "is_unconditional"],
             "properties": {
               "target": { "type": "string" },
-              "guard": { "type": ["string", "null"] },
+              "guard": {
+                "type": ["string", "null"],
+                "description": "Normalized inspect expression text shared by pyfcstm and jsfcstm."
+              },
               "event": { "type": ["string", "null"] },
               "is_unconditional": { "type": "boolean" }
             }
@@ -162,7 +165,10 @@
           "type": ["string", "null"],
           "enum": ["local", "chain", "absolute", null]
         },
-        "guard": { "type": ["string", "null"] },
+        "guard": {
+          "type": ["string", "null"],
+          "description": "Normalized inspect expression text shared by pyfcstm and jsfcstm."
+        },
         "effect": { "type": ["string", "null"] },
         "effect_self_assigns": {
           "type": "array",
@@ -170,7 +176,11 @@
         },
         "is_forced": { "type": "boolean" },
         "forced_origin": { "type": ["string", "null"] },
-        "transition_index": { "type": ["integer", "null"], "minimum": 0 }
+        "transition_index": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Zero-based parent-first model transition order, including forced expansions at their declaring state."
+        }
       }
     },
     "VariableInfo": {
@@ -273,7 +283,10 @@
           "type": ["string", "null"],
           "enum": ["local", "chain", "absolute", null]
         },
-        "guard": { "type": ["string", "null"] },
+        "guard": {
+          "type": ["string", "null"],
+          "description": "Normalized inspect expression text shared by pyfcstm and jsfcstm."
+        },
         "original_raw": { "type": "string" },
         "expansion_count": { "type": "integer", "minimum": 0 }
       }

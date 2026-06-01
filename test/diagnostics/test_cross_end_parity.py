@@ -1230,6 +1230,44 @@ def test_design_health_inspect_diagnostics_match_inlined_expected(name, dsl, exp
 
 
 @pytest.mark.unittest
+def test_transition_refs_contract_uses_parent_first_transition_index_and_guard_text():
+    dsl = '\n'.join([
+        'state Root {',
+        '    state A {',
+        '        state X;',
+        '        state Y;',
+        '        [*] -> X;',
+        '        X -> Y;',
+        '        X -> Y;',
+        '    }',
+        '    state B;',
+        '    [*] -> A;',
+        '    !A -> B :: Fatal;',
+        '    A -> B : if [(0x0F & 0xF0) != 0];',
+        '}',
+    ])
+    ast = parse_with_grammar_entry(dsl, 'state_machine_dsl')
+    report = inspect_model(parse_dsl_node_to_state_machine(ast))
+
+    assert [
+        (item.transition_index, item.from_path, item.to_path, item.is_forced)
+        for item in report.transitions
+    ] == [
+        (0, 'Root.A', 'Root.B', True),
+        (1, '[*]', 'Root.A', False),
+        (2, 'Root.A', 'Root.B', False),
+        (3, 'Root.A.X', '[*]', True),
+        (4, 'Root.A.Y', '[*]', True),
+        (5, '[*]', 'Root.A.X', False),
+        (6, 'Root.A.X', 'Root.A.Y', False),
+        (7, 'Root.A.X', 'Root.A.Y', False),
+    ]
+    const_false = next(item for item in report.diagnostics if item.code == 'W_GUARD_CONST_FALSE')
+    assert const_false.refs['guard_text'] == '15 & 240 != 0'
+    assert const_false.refs['transition_index'] == 2
+
+
+@pytest.mark.unittest
 def test_strict_mode_raises_with_diagnostic_attribute():
     """In strict mode the first E_* still surfaces as a raised
     ModelValidationError carrying the diagnostic. Confirms the

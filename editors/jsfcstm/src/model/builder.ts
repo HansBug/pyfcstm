@@ -9,6 +9,7 @@ import type {
     FcstmAstOperationStatement,
     FcstmAstStateDefinition,
     FcstmAstTransition,
+    FcstmAstTransitionIndexRef,
     FcstmAstVariableDefinition,
 } from '../ast';
 import type {FcstmSemanticDocument} from '../semantics';
@@ -74,12 +75,6 @@ const EXPR_PRECEDENCE: Record<string, number> = {
     'or': 10,
     '?:': 5,
 };
-
-interface TransitionIndexRef {
-    index: number;
-    fromPath: string | null;
-    toPath: string | null;
-}
 
 interface InheritedForceTransition {
     fromStateName: 'ALL' | string;
@@ -833,20 +828,19 @@ class StateMachineModelBuilder {
         transitionIndex: number,
         transition: FcstmModelTransition,
     ): void {
-        const astRecord = ast as unknown as Record<string, unknown>;
         if (!transition.forced) {
-            astRecord.transitionIndex = transitionIndex;
+            ast.transitionIndex = transitionIndex;
         }
 
-        const refs = Array.isArray(astRecord.transitionIndexRefs)
-            ? astRecord.transitionIndexRefs as TransitionIndexRef[]
+        const refs = Array.isArray(ast.transitionIndexRefs)
+            ? ast.transitionIndexRefs as FcstmAstTransitionIndexRef[]
             : [];
         refs.push({
             index: transitionIndex,
             fromPath: this.transitionEndpointPath(transition, 'source'),
             toPath: this.transitionEndpointPath(transition, 'target'),
         });
-        astRecord.transitionIndexRefs = refs;
+        ast.transitionIndexRefs = refs;
     }
 
     private transitionEndpointPath(

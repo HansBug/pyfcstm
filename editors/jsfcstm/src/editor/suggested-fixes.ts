@@ -3,7 +3,7 @@ import type {
     FcstmAstIfStatement,
     FcstmAstOperationStatement,
 } from '../ast';
-import type {FcstmSemanticDocument} from '../semantics';
+import type {FcstmSemanticDocument, FcstmSemanticTransition} from '../semantics';
 import {
     createRange,
     FcstmDiagnostic,
@@ -276,9 +276,11 @@ export function effectSelfAssignRange(
     statePath: string | undefined,
     varName: string,
     occurrenceIndex?: number,
+    selectedTransition?: FcstmSemanticTransition,
 ): TextRange | null {
     const matches: TextRange[] = [];
-    for (const transition of semantic.transitions) {
+    const transitions = selectedTransition ? [selectedTransition] : semantic.transitions;
+    for (const transition of transitions) {
         if (statePath === '[*]') {
             if (transition.sourceKind !== 'init') continue;
         } else if (statePath && transition.sourceStatePath?.join('.') !== statePath) {

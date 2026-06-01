@@ -192,6 +192,24 @@ export interface FcstmAstTransitionBase extends FcstmAstNodeBase {
     condition_expr?: FcstmAstExpression;
     postOperations: FcstmAstOperationStatement[];
     post_operations: FcstmAstOperationStatement[];
+    /**
+     * Diagnostic-only model-order index used to map spanless transition
+     * diagnostics back to this source declaration. Normal transitions have a
+     * single index; forced transitions use ``transitionIndexRefs`` because one
+     * forced declaration can expand to multiple model transitions.
+     */
+    transitionIndex?: number;
+    /**
+     * Diagnostic-only expanded model-order refs for transition range
+     * disambiguation. This metadata is not part of FCSTM execution semantics.
+     */
+    transitionIndexRefs?: FcstmAstTransitionIndexRef[];
+}
+
+export interface FcstmAstTransitionIndexRef {
+    index: number;
+    fromPath: string | null;
+    toPath: string | null;
 }
 
 export interface FcstmAstTransition extends FcstmAstTransitionBase {

@@ -113,7 +113,7 @@ class TestInspectModelBasic:
     def test_transition_guard_text(self, report):
         guarded = [t for t in report.transitions if t.guard is not None]
         assert len(guarded) == 1
-        assert 'counter' in guarded[0].guard
+        assert guarded[0].guard == 'counter > 0'
 
     def test_transition_event_qualified(self, report):
         with_event = [t for t in report.transitions if t.event is not None]
@@ -1806,6 +1806,57 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
             'transition_span': None,
             'transition_index': 1,
         }
+
+
+@pytest.mark.unittest
+def test_inspect_guard_text_is_shared_normalized_format():
+    report = inspect_model(_parse("""
+    state Root {
+        state Idle;
+        state Blocked;
+        [*] -> Idle;
+        Idle -> Blocked : if [(0x0F & 0xF0) != 0];
+    }
+    """))
+    transition = next(item for item in report.transitions if item.guard is not None)
+    diagnostic = next(item for item in report.diagnostics if item.code == 'W_GUARD_CONST_FALSE')
+
+    assert transition.guard == '15 & 240 != 0'
+    assert diagnostic.refs['guard_text'] == '15 & 240 != 0'
+
+
+@pytest.mark.unittest
+def test_forced_transition_indexes_include_declaring_state_expansions_before_descendants():
+    report = inspect_model(_parse("""
+    state Root {
+        state A {
+            state X;
+            state Y;
+            [*] -> X;
+            X -> Y;
+            X -> Y;
+        }
+        state B;
+        [*] -> A;
+        !A -> B :: Fatal;
+        A -> B : if [false];
+    }
+    """))
+
+    assert [
+        (transition.transition_index, transition.from_path, transition.to_path, transition.is_forced)
+        for transition in report.transitions
+    ] == [
+        (0, 'Root.A', 'Root.B', True),
+        (1, '[*]', 'Root.A', False),
+        (2, 'Root.A', 'Root.B', False),
+        (3, 'Root.A.X', '[*]', True),
+        (4, 'Root.A.Y', '[*]', True),
+        (5, '[*]', 'Root.A.X', False),
+        (6, 'Root.A.X', 'Root.A.Y', False),
+        (7, 'Root.A.X', 'Root.A.Y', False),
+    ]
+
 
 @pytest.mark.unittest
 def test_nested_transition_indexes_follow_parent_first_model_order():

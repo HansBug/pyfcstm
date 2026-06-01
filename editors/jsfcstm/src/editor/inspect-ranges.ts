@@ -42,7 +42,7 @@ function transitionEndpointPath(
 
 function compactText(value: string | null | undefined): string | null {
     if (value === undefined || value === null) return null;
-    return value.replace(/\s+/g, '').toLowerCase();
+    return value.replace(/\s+/g, '');
 }
 
 interface TransitionEndpointPair {
@@ -144,9 +144,9 @@ function transitionMatchesRefs(
 
 
 interface TransitionIndexRef {
-    index?: unknown;
-    fromPath?: unknown;
-    toPath?: unknown;
+    index: number;
+    fromPath: string | null;
+    toPath: string | null;
 }
 
 function transitionIndexRefMatchesRefs(
@@ -166,13 +166,12 @@ function transitionRangeMatchesIndex(
     index: number,
     refs: Record<string, unknown>,
 ): boolean {
-    const astRecord = transition.ast as unknown as Record<string, unknown>;
-    if (Array.isArray(astRecord.transitionIndexRefs)) {
-        return (astRecord.transitionIndexRefs as TransitionIndexRef[])
+    if (Array.isArray(transition.ast.transitionIndexRefs)) {
+        return transition.ast.transitionIndexRefs
             .some(ref => transitionIndexRefMatchesRefs(ref, index, refs));
     }
 
-    const rawIndex = astRecord.transitionIndex;
+    const rawIndex = transition.ast.transitionIndex;
     return typeof rawIndex === 'number' && Number.isInteger(rawIndex) && rawIndex === index;
 }
 
@@ -259,7 +258,10 @@ function effectSelfAssignGroupKey(refMap: Record<string, unknown>): string | nul
     ) {
         return null;
     }
-    return JSON.stringify([statePath, variableName]);
+    const transitionIndex = refMap.transition_index;
+    return typeof transitionIndex === 'number' && Number.isInteger(transitionIndex)
+        ? JSON.stringify([statePath, variableName, transitionIndex])
+        : JSON.stringify([statePath, variableName]);
 }
 
 function consumeEffectSelfAssignOccurrenceIndex(
@@ -303,16 +305,31 @@ export function resolveRangeFromRefsDetailed(
         Object.prototype.hasOwnProperty.call(refMap, 'transition_span')
     );
     if (looksLikeEffectSelfAssign) {
-        const range = effectSelfAssignRange(
-            document,
-            semantic,
-            statePath,
-            variableName,
-            peekEffectSelfAssignOccurrenceIndex(seenEffectSelfAssigns, refMap),
-        );
-        consumeEffectSelfAssignOccurrenceIndex(seenEffectSelfAssigns, refMap, Boolean(range));
-        if (range) return {range};
         const transitionResolution = transitionRangeResolution(semantic, refMap);
+        const occurrenceIndex = peekEffectSelfAssignOccurrenceIndex(seenEffectSelfAssigns, refMap);
+        const range = transitionResolution.transition
+            ? effectSelfAssignRange(
+                document,
+                semantic,
+                statePath,
+                variableName,
+                occurrenceIndex,
+                transitionResolution.transition,
+            )
+            : effectSelfAssignRange(
+                document,
+                semantic,
+                statePath,
+                variableName,
+                occurrenceIndex,
+            );
+        consumeEffectSelfAssignOccurrenceIndex(seenEffectSelfAssigns, refMap, Boolean(range));
+        if (range) {
+            return {
+                range,
+                fallback: transitionResolution.fallback,
+            };
+        }
         if (transitionResolution.range) {
             const effectRange = transitionResolution.transition
                 ? effectBlockRange(document, transitionResolution.transition)

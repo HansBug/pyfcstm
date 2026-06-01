@@ -106,7 +106,7 @@ export function collectConstFoldWarnings(machine: StateMachine | null | undefine
             out.push(guardConstDiagnostic(
                 transition,
                 foldedGuard,
-                transition.transitionIndex ?? transition.transition_index ?? machine.allTransitions.indexOf(transition),
+                transition.transition_index ?? machine.allTransitions.indexOf(transition),
             ));
         }
     }

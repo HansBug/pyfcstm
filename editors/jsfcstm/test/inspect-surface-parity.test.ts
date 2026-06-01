@@ -348,6 +348,46 @@ state Root {
         });
     });
 
+
+    it('keeps literal false editor guard refs normalized like inspect refs', async () => {
+        const text = `
+state Root {
+    state Idle;
+    state Blocked;
+    [*] -> Idle;
+    Idle -> Blocked : if [False];
+}
+`;
+        const diagnostics = await packageModule.collectDocumentDiagnostics(
+            createDocument(text, '/tmp/literal-false-normalized-guard.fcstm'),
+        );
+        const diagnostic = diagnostics.find(item => item.code === 'W_GUARD_CONST_FALSE');
+
+        assert.ok(diagnostic, 'expected literal false guard diagnostic');
+        assert.equal(diagnostic.data?.guard_text, 'false');
+    });
+
+    it('keeps editor analyzer float guard refs normalized like inspect refs', async () => {
+        const text = `
+state Root {
+    state Reachable;
+    state Isolated;
+    state Blocked;
+    [*] -> Reachable;
+    Isolated -> Blocked : if [2.0 == 2.0];
+}
+`;
+        const diagnostics = await packageModule.collectDocumentDiagnostics(
+            createDocument(text, '/tmp/unreachable-float-normalized-guard.fcstm'),
+        );
+        const diagnostic = diagnostics.find(item => (
+            item.code === 'W_GUARD_CONST_FALSE' && item.data?.from_path === 'Root.Isolated'
+        ));
+
+        assert.ok(diagnostic, 'expected source-unreachable transition diagnostic');
+        assert.equal(diagnostic.data?.guard_text, '2.0 == 2.0');
+    });
+
     it('keeps inspect-only folded false guards when literal false guards share the file', async () => {
         const text = `
 state Root {

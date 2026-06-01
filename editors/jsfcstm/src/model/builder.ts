@@ -75,6 +75,12 @@ const EXPR_PRECEDENCE: Record<string, number> = {
     '?:': 5,
 };
 
+interface TransitionIndexRef {
+    index: number;
+    fromPath: string | null;
+    toPath: string | null;
+}
+
 interface InheritedForceTransition {
     fromStateName: 'ALL' | string;
     toState: 'EXIT_STATE' | string;
@@ -435,9 +441,10 @@ class StateMachineModelBuilder {
             this.recordForcedTransition(force, currentState);
         }
 
+        const inheritedForSubstates = new Map<string, InheritedForceTransition[]>();
         for (const substateDefinition of definition.substates) {
-            const nextState = currentState.substates[substateDefinition.name];
             const childInheritedTransitions: InheritedForceTransition[] = [];
+            inheritedForSubstates.set(substateDefinition.name, childInheritedTransitions);
 
             for (const force of effectiveForceTransitions) {
                 if (force.fromStateName !== 'ALL' && force.fromStateName !== substateDefinition.name) {
@@ -476,8 +483,6 @@ class StateMachineModelBuilder {
                     ast: force.ast,
                 });
             }
-
-            this.finalizeTransitions(substateDefinition, nextState, childInheritedTransitions);
         }
 
         for (const transition of definition.transitions) {
@@ -503,6 +508,15 @@ class StateMachineModelBuilder {
                 triggerScope,
                 ast: transition,
             });
+        }
+
+        for (const substateDefinition of definition.substates) {
+            const nextState = currentState.substates[substateDefinition.name];
+            this.finalizeTransitions(
+                substateDefinition,
+                nextState,
+                inheritedForSubstates.get(substateDefinition.name) ?? [],
+            );
         }
     }
 
@@ -806,12 +820,45 @@ class StateMachineModelBuilder {
             transition_index: transitionIndex,
         };
         this.nextTransitionIndex += 1;
-        if (params.ast && !params.forced) {
-            (params.ast as unknown as Record<string, unknown>).transitionIndex = transitionIndex;
+        if (params.ast) {
+            this.recordAstTransitionIndex(params.ast, transitionIndex, transition);
         }
 
         params.parentState.transitions.push(transition);
         this.allTransitions.push(transition);
+    }
+
+    private recordAstTransitionIndex(
+        ast: FcstmAstTransition | FcstmAstForcedTransition,
+        transitionIndex: number,
+        transition: FcstmModelTransition,
+    ): void {
+        const astRecord = ast as unknown as Record<string, unknown>;
+        if (!transition.forced) {
+            astRecord.transitionIndex = transitionIndex;
+        }
+
+        const refs = Array.isArray(astRecord.transitionIndexRefs)
+            ? astRecord.transitionIndexRefs as TransitionIndexRef[]
+            : [];
+        refs.push({
+            index: transitionIndex,
+            fromPath: this.transitionEndpointPath(transition, 'source'),
+            toPath: this.transitionEndpointPath(transition, 'target'),
+        });
+        astRecord.transitionIndexRefs = refs;
+    }
+
+    private transitionEndpointPath(
+        transition: FcstmModelTransition,
+        endpoint: 'source' | 'target',
+    ): string | null {
+        if (endpoint === 'source') {
+            if (transition.sourceKind === 'init') return '[*]';
+            return transition.sourceStatePath ? statePathName(transition.sourceStatePath) : null;
+        }
+        if (transition.targetKind === 'exit') return '[*]';
+        return transition.targetStatePath ? statePathName(transition.targetStatePath) : null;
     }
 
     private resolveStateReference(

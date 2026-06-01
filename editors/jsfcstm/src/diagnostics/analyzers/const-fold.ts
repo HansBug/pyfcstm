@@ -11,7 +11,7 @@ import {
     Transition,
     UnaryOp,
 } from '../../model/runtime';
-import type {ModelDiagnosticJson} from '../inspect';
+import {exprText, type ModelDiagnosticJson} from '../inspect';
 
 interface ExactInteger {
     kind: 'exactInteger';
@@ -99,11 +99,15 @@ export function collectConstFoldWarnings(machine: StateMachine | null | undefine
     if (!machine) return [];
     const out: ModelDiagnosticJson[] = [];
     const definedVars = new Set(Object.keys(machine.defines));
-    for (const [transitionIndex, transition] of machine.allTransitions.entries()) {
+    for (const transition of machine.allTransitions) {
         const guard = transition.guard;
         const foldedGuard = guard ? foldConditionExpression(guard) : null;
         if (foldedGuard === true || foldedGuard === false) {
-            out.push(guardConstDiagnostic(transition, foldedGuard, transitionIndex));
+            out.push(guardConstDiagnostic(
+                transition,
+                foldedGuard,
+                transition.transitionIndex ?? transition.transition_index ?? machine.allTransitions.indexOf(transition),
+            ));
         }
     }
     for (const state of machine.allStates) {
@@ -214,7 +218,7 @@ function guardConstDiagnostic(
             folded_value: value,
             from_path: transitionSourcePath(transition.parentPath, transition.fromState, transition.sourceKind),
             to_path: transitionTargetPath(transition.parentPath, transition.toState, transition.targetKind),
-            guard_text: transition.guard!.text,
+            guard_text: exprText(transition.guard),
             transition_index: transitionIndex,
         },
     };

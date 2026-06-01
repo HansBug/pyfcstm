@@ -343,7 +343,7 @@ state Root {
             folded_value: false,
             from_path: 'Root.Idle',
             to_path: 'Root.Blocked',
-            guard_text: '1==2',
+            guard_text: '1 == 2',
             transition_index: 1,
         });
     });
@@ -373,7 +373,7 @@ state Root {
                 folded_value: false,
                 from_path: 'Root.Idle',
                 to_path: 'Root.FoldedBlocked',
-                guard_text: '1==2',
+                guard_text: '1 == 2',
                 transition_index: 2,
             },
             {
@@ -419,7 +419,7 @@ state Root {
                 folded_value: false,
                 from_path: 'Root.Idle',
                 to_path: 'Root.Blocked',
-                guard_text: '1==2',
+                guard_text: '1 == 2',
                 transition_index: 2,
             },
         ]);

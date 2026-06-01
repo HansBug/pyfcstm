@@ -693,7 +693,7 @@ state Root {
                         folded_value: true,
                         from_path: 'Root.Blocked',
                         to_path: 'Root.WideTrue',
-                        guard_text: '(0xFFFFFFFF&0xFFFFFFFF)==4294967295',
+                        guard_text: '4294967295 & 4294967295 == 4294967295',
                         transition_index: 3,
                     },
                     {
@@ -701,7 +701,7 @@ state Root {
                         folded_value: true,
                         from_path: 'Root.Idle',
                         to_path: 'Root.Active',
-                        guard_text: '(1+2)==3',
+                        guard_text: '1 + 2 == 3',
                         transition_index: 1,
                     },
                     {
@@ -709,7 +709,7 @@ state Root {
                         folded_value: true,
                         from_path: 'Root.ModuloTrue',
                         to_path: 'Root.PowerTrue',
-                        guard_text: '(2.0**3)==8.0',
+                        guard_text: '2.0 ** 3 == 8.0',
                         transition_index: 5,
                     },
                     {
@@ -717,7 +717,7 @@ state Root {
                         folded_value: true,
                         from_path: 'Root.WideTrue',
                         to_path: 'Root.ModuloTrue',
-                        guard_text: '(-7%4)==1',
+                        guard_text: '-7 % 4 == 1',
                         transition_index: 4,
                     },
                 ].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
@@ -730,7 +730,7 @@ state Root {
                 folded_value: false,
                 from_path: 'Root.Active',
                 to_path: 'Root.Blocked',
-                guard_text: '(0x0F&0xF0)!=0',
+                guard_text: '15 & 240 != 0',
                 transition_index: 2,
             });
 

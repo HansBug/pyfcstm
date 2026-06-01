@@ -42,7 +42,47 @@ function transitionEndpointPath(
 
 function compactText(value: string | null | undefined): string | null {
     if (value === undefined || value === null) return null;
-    return value.replace(/\s+/g, '');
+    return value.replace(/\s+/g, '').toLowerCase();
+}
+
+interface TransitionEndpointPair {
+    fromPath: string | null;
+    toPath: string | null;
+}
+
+function transitionEndpointPairs(transition: FcstmSemanticTransition): TransitionEndpointPair[] {
+    if (transition.forced && transition.expandedTransitions.length > 0) {
+        return transition.expandedTransitions.map(expanded => ({
+            fromPath: dottedPath(expanded.sourceStatePath),
+            toPath: expanded.targetKind === 'exit'
+                ? '[*]'
+                : dottedPath(expanded.targetStatePath),
+        }));
+    }
+    return [{
+        fromPath: transitionEndpointPath(transition, 'source'),
+        toPath: transitionEndpointPath(transition, 'target'),
+    }];
+}
+
+function transitionPathRefsMatch(
+    transition: FcstmSemanticTransition,
+    refs: Record<string, unknown>,
+): boolean {
+    const fromPath = stringRef(refs, 'from_path');
+    const toPath = stringRef(refs, 'to_path');
+    const statePath = stringRef(refs, 'state_path');
+    if (!fromPath && !toPath && !statePath) return true;
+
+    return transitionEndpointPairs(transition).some(pair => (
+        (!fromPath || pair.fromPath === fromPath) &&
+        (!toPath || pair.toPath === toPath) &&
+        (!statePath || pair.fromPath === statePath)
+    ));
+}
+
+function guardExpressionRange(transition: FcstmSemanticTransition): TextRange | null {
+    return transition.guard?.range ?? null;
 }
 
 function effectBlockRange(
@@ -78,20 +118,20 @@ function transitionHasEvent(transition: FcstmSemanticTransition, expectedEvent: 
         transition.trigger.normalizedPath.join('.') === expectedEvent;
 }
 
+function hasNumericTransitionIndex(refs: Record<string, unknown>): boolean {
+    return typeof refs.transition_index === 'number' && Number.isInteger(refs.transition_index);
+}
+
 function transitionMatchesRefs(
     transition: FcstmSemanticTransition,
     refs: Record<string, unknown>,
 ): boolean {
-    const fromPath = stringRef(refs, 'from_path');
-    const toPath = stringRef(refs, 'to_path');
-    if (fromPath && transitionEndpointPath(transition, 'source') !== fromPath) return false;
-    if (toPath && transitionEndpointPath(transition, 'target') !== toPath) return false;
-
-    const statePath = stringRef(refs, 'state_path');
-    if (statePath && statePath !== transitionEndpointPath(transition, 'source')) return false;
+    if (!transitionPathRefsMatch(transition, refs)) return false;
 
     const guardText = compactText(stringRef(refs, 'guard_text'));
-    if (guardText !== null && compactText(transition.guard?.text) !== guardText) return false;
+    if (guardText !== null && !hasNumericTransitionIndex(refs) && compactText(transition.guard?.text) !== guardText) {
+        return false;
+    }
 
     const effectText = compactText(stringRef(refs, 'effect_text'));
     if (effectText !== null && compactText(transition.effectText) !== effectText) return false;
@@ -103,8 +143,36 @@ function transitionMatchesRefs(
 }
 
 
-function transitionRangeMatchesIndex(transition: FcstmSemanticTransition, index: number): boolean {
-    const rawIndex = (transition.ast as unknown as Record<string, unknown>).transitionIndex;
+interface TransitionIndexRef {
+    index?: unknown;
+    fromPath?: unknown;
+    toPath?: unknown;
+}
+
+function transitionIndexRefMatchesRefs(
+    ref: TransitionIndexRef,
+    index: number,
+    refs: Record<string, unknown>,
+): boolean {
+    if (ref.index !== index) return false;
+    const fromPath = stringRef(refs, 'from_path') ?? stringRef(refs, 'state_path');
+    const toPath = stringRef(refs, 'to_path');
+    return (!fromPath || ref.fromPath === fromPath) &&
+        (!toPath || ref.toPath === toPath);
+}
+
+function transitionRangeMatchesIndex(
+    transition: FcstmSemanticTransition,
+    index: number,
+    refs: Record<string, unknown>,
+): boolean {
+    const astRecord = transition.ast as unknown as Record<string, unknown>;
+    if (Array.isArray(astRecord.transitionIndexRefs)) {
+        return (astRecord.transitionIndexRefs as TransitionIndexRef[])
+            .some(ref => transitionIndexRefMatchesRefs(ref, index, refs));
+    }
+
+    const rawIndex = astRecord.transitionIndex;
     return typeof rawIndex === 'number' && Number.isInteger(rawIndex) && rawIndex === index;
 }
 
@@ -112,15 +180,15 @@ function transitionRangeResolution(
     semantic: FcstmSemanticDocument,
     refs: Record<string, unknown>,
 ): InspectRangeResolution {
-    const transitions = semantic.transitions.filter(transition => !transition.forced && transitionMatchesRefs(transition, refs));
-    if (transitions.length === 0) return {range: null, fallback: 'transition_ambiguous'};
+    const transitions = semantic.transitions.filter(transition => transitionMatchesRefs(transition, refs));
+    if (transitions.length === 0) return {range: null, fallback: 'transition_not_found'};
 
     const requestedIndex = refs.transition_index;
     if (typeof requestedIndex === 'number' && Number.isInteger(requestedIndex)) {
-        const selected = transitions.find(transition => transitionRangeMatchesIndex(transition, requestedIndex));
+        const selected = transitions.find(transition => transitionRangeMatchesIndex(transition, requestedIndex, refs));
         return selected
             ? {range: selected.range, transition: selected}
-            : {range: null, fallback: 'transition_ambiguous'};
+            : {range: null, fallback: 'transition_not_found'};
     }
 
     const selected = transitions[0];
@@ -138,7 +206,9 @@ function guardRangeResolution(
 ): InspectRangeResolution {
     const transitionResolution = transitionRangeResolution(semantic, refs);
     if (!transitionResolution.range) return transitionResolution;
-    const guardRange = transitionResolution.transition?.guard?.range ?? null;
+    const guardRange = transitionResolution.transition
+        ? guardExpressionRange(transitionResolution.transition)
+        : null;
     return {
         range: guardRange ?? transitionResolution.range,
         fallback: transitionResolution.fallback,
@@ -160,6 +230,7 @@ export type InspectRangeFallback =
     | 'full_document'
     | 'first_of_ambiguous'
     | 'transition_ambiguous'
+    | 'transition_not_found'
     | 'effect_fallback'
     | 'transition_fallback';
 
@@ -269,6 +340,7 @@ export function resolveRangeFromRefsDetailed(
         }
         const transitionResolution = transitionRangeResolution(semantic, refMap);
         if (transitionResolution.range) return transitionResolution;
+        if (transitionResolution.fallback) return transitionResolution;
     }
     for (const key of ['state_path', 'composite_path', 'parent_path', 'from_path', 'to_path', 'deepest_path']) {
         const range = statePathRange(document, semantic, stringRef(refMap, key));

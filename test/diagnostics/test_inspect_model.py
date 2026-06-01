@@ -1806,3 +1806,35 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
             'transition_span': None,
             'transition_index': 1,
         }
+
+@pytest.mark.unittest
+def test_nested_transition_indexes_follow_parent_first_model_order():
+    from pyfcstm.diagnostics import inspect_model
+    from pyfcstm.dsl import parse_with_grammar_entry
+    from pyfcstm.model import parse_dsl_node_to_state_machine
+
+    source = """
+    state Root {
+        state A {
+            state X;
+            state Y;
+            [*] -> X;
+            X -> Y;
+            X -> Y;
+        }
+        [*] -> A;
+    }
+    """
+    report = inspect_model(parse_dsl_node_to_state_machine(
+        parse_with_grammar_entry(source, 'state_machine_dsl'),
+    ))
+
+    assert [
+        (transition.transition_index, transition.from_path, transition.to_path)
+        for transition in report.transitions
+    ] == [
+        (0, '[*]', 'Root.A'),
+        (1, '[*]', 'Root.A.X'),
+        (2, 'Root.A.X', 'Root.A.Y'),
+        (3, 'Root.A.X', 'Root.A.Y'),
+    ]

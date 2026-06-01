@@ -172,7 +172,7 @@ export class FcstmWorkspaceGraph {
                         document,
                         ast,
                         semantic,
-                        model: buildStateMachineModel(ast),
+                        model: buildStateMachineModel(semantic || ast),
                         imports: [],
                     },
                 },

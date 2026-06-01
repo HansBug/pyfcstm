@@ -77,6 +77,18 @@ function dottedPath(path: readonly string[] | undefined): string | null {
 function transitionDiagnosticEndpointPaths(
     transition: FcstmSemanticTransition,
 ): {from_path?: string; to_path?: string} {
+    if (transition.forced && transition.expandedTransitions.length === 1) {
+        const [expanded] = transition.expandedTransitions;
+        const fromPath = dottedPath(expanded.sourceStatePath);
+        const toPath = expanded.targetKind === 'exit'
+            ? '[*]'
+            : dottedPath(expanded.targetStatePath);
+        return {
+            ...(fromPath ? {from_path: fromPath} : {}),
+            ...(toPath ? {to_path: toPath} : {}),
+        };
+    }
+
     const fromPath = transition.sourceKind === 'init'
         ? '[*]'
         : dottedPath(transition.sourceStatePath) ?? transition.sourceStateName ?? null;
@@ -87,6 +99,33 @@ function transitionDiagnosticEndpointPaths(
         ...(fromPath ? {from_path: fromPath} : {}),
         ...(toPath ? {to_path: toPath} : {}),
     };
+}
+
+function transitionModelOrderIndex(transition: FcstmSemanticTransition): number | null {
+    const astRecord = transition.ast as unknown as Record<string, unknown>;
+    const rawIndex = astRecord.transitionIndex;
+    if (typeof rawIndex === 'number' && Number.isInteger(rawIndex)) return rawIndex;
+
+    if (!Array.isArray(astRecord.transitionIndexRefs)) return null;
+    if (transition.forced && transition.expandedTransitions.length === 1) {
+        const [expanded] = transition.expandedTransitions;
+        const match = (astRecord.transitionIndexRefs as Array<Record<string, unknown>>).find(ref => (
+            typeof ref.index === 'number' &&
+            (typeof ref.fromPath !== 'string' || ref.fromPath === dottedPath(expanded.sourceStatePath)) &&
+            (typeof ref.toPath !== 'string' || ref.toPath === (
+                expanded.targetKind === 'exit' ? '[*]' : dottedPath(expanded.targetStatePath)
+            ))
+        ));
+        return typeof match?.index === 'number' ? match.index : null;
+    }
+
+    const endpoints = transitionDiagnosticEndpointPaths(transition);
+    const match = (astRecord.transitionIndexRefs as Array<Record<string, unknown>>).find(ref => (
+        typeof ref.index === 'number' &&
+        (typeof ref.fromPath !== 'string' || ref.fromPath === endpoints.from_path) &&
+        (typeof ref.toPath !== 'string' || ref.toPath === endpoints.to_path)
+    ));
+    return typeof match?.index === 'number' ? match.index : null;
 }
 
 function toFileUri(document: TextDocumentLike): string {
@@ -338,7 +377,7 @@ function addTransitionDiagnostics(
         if (sourceUnreachable || (transition.guard && isFalseLiteral(transition.guard))) {
             const sourceState = semantic.states.find(item => item.identity.id === transition.sourceStateId);
             diagnostics.push({
-                range: transition.range,
+                range: !sourceUnreachable && transition.guard ? transition.guard.range : transition.range,
                 message: sourceUnreachable
                     ? `Transition ${JSON.stringify(transition.ast.text)} is dead because its source state is unreachable.`
                     : `Transition ${JSON.stringify(transition.ast.text)} is dead because its guard is always false.`,
@@ -349,7 +388,7 @@ function addTransitionDiagnostics(
                     transition_span: null,
                     folded_value: false,
                     guard_text: transition.guard?.text ?? null,
-                    transition_index: semantic.transitions.indexOf(transition),
+                    transition_index: transitionModelOrderIndex(transition),
                     ...transitionDiagnosticEndpointPaths(transition),
                 },
                 relatedInformation: sourceState

@@ -36,6 +36,8 @@ import type {RawFcstmModelForcedTransition} from '../model/raw';
 const INIT_MARK = '[*]';
 const EXIT_MARK = '[*]';
 const FLOAT_EPSILON = 1e-10;
+const HEX_RADIX = 16;
+const BINARY_RADIX = 2;
 
 export const DEFAULT_DEEP_HIERARCHY_THRESHOLD = 6;
 export const DEFAULT_LARGE_COMPOSITE_THRESHOLD = 12;
@@ -749,10 +751,10 @@ function integerText(expr: Integer): string {
     const raw = expr.text.trim();
     if (/^\d+$/.test(raw)) return normalizeDecimalDigits(raw);
     if (/^0[xX][0-9a-fA-F]+$/.test(raw)) {
-        return convertRadixDigitsToDecimal(raw.slice(2), 16);
+        return convertRadixDigitsToDecimal(raw.slice(2), HEX_RADIX);
     }
     if (/^0[bB][01]+$/.test(raw)) {
-        return convertRadixDigitsToDecimal(raw.slice(2), 2);
+        return convertRadixDigitsToDecimal(raw.slice(2), BINARY_RADIX);
     }
     return String(Math.trunc(expr.value));
 }
@@ -842,7 +844,7 @@ function statementText(stmt: OperationStatement): string {
     return stmt.text;
 }
 
-function exprText(expr: Expr | null | undefined): string | null {
+export function exprText(expr: Expr | null | undefined): string | null {
     return expr ? formatExpr(expr) : null;
 }
 

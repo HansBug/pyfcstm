@@ -71,9 +71,14 @@ export function resolveRangeFromRefsDetailed(
 
     const variableName = stringRef(refMap, 'var_name');
     const statePath = stringRef(refMap, 'state_path');
-    if (variableName && refMap.effect_self_assign_anchor !== undefined && statePath) {
+    const looksLikeEffectSelfAssign = variableName && statePath && (
+        refMap.effect_self_assign_anchor !== undefined ||
+        Object.prototype.hasOwnProperty.call(refMap, 'transition_span')
+    );
+    if (looksLikeEffectSelfAssign) {
         const range = effectSelfAssignRange(document, semantic, statePath, variableName);
         if (range) return {range};
+        if (statePath === '[*]') return {range: null};
     }
 
     for (const key of ['state_path', 'composite_path', 'parent_path', 'from_path', 'to_path', 'deepest_path']) {

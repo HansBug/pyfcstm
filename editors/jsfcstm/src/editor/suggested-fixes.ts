@@ -278,7 +278,11 @@ export function effectSelfAssignRange(
 ): TextRange | null {
     const matches: TextRange[] = [];
     for (const transition of semantic.transitions) {
-        if (statePath && transition.sourceStatePath?.join('.') !== statePath) continue;
+        if (statePath === '[*]') {
+            if (transition.sourceKind !== 'init') continue;
+        } else if (statePath && transition.sourceStatePath?.join('.') !== statePath) {
+            continue;
+        }
         const statements: FcstmAstAssignmentStatement[] = [];
         collectSelfAssignStatements(transition.ast.effect?.statements ?? [], varName, statements);
         for (const statement of statements) {

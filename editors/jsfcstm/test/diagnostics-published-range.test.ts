@@ -112,6 +112,25 @@ describe('diagnostics published ranges', () => {
         assert.notEqual(sliceByRange(text, diagnostic.range), 'A');
     });
 
+    it('anchors initial-transition self-assignment diagnostics on the effect statement', async () => {
+        const text = [
+            'def int x = 0;',
+            'state Root {',
+            '    state A;',
+            '    [*] -> A effect {',
+            '        x = x;',
+            '    };',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/published-initial-self-assign.fcstm');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const diagnostic = diagnostics.find(item => item.code === 'W_EFFECT_SELF_ASSIGN');
+
+        assert.ok(diagnostic, JSON.stringify(diagnostics));
+        assert.equal(sliceByRange(text, diagnostic.range).trim(), 'x = x;');
+        assert.notEqual(sliceByRange(text, diagnostic.range), 'def int x = 0;');
+    });
+
     it('keeps quick-fix edit ranges separate from published problem ranges', async () => {
         const text = [
             'state Root {',

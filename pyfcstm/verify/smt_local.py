@@ -1903,6 +1903,11 @@ def effect_contradicts_guard(
 ) -> AlgorithmResult:
     """Detect effects after which the transition guard cannot still hold.
 
+    The post-effect guard counts as still holding only when it is both
+    runtime-defined and true.  If post-state guard definedness is itself
+    infeasible under the pre-guard/effect context, the raw algorithm returns
+    ``undecidable_skip`` instead of emitting a deterministic contradiction.
+
     :param transition: Transition to check.
     :type transition: Transition
     :param variables: Variable definitions available to the model.
@@ -1935,9 +1940,34 @@ def effect_contradicts_guard(
     )
     if result is not None:
         return result
-    guard_after, result = _expr_to_z3_or_result(transition.guard, after_vars)
+    guard_after, guard_after_domains, result = _expr_z3_and_domains_or_result(
+        transition.guard,
+        after_vars,
+        context_constraints=[
+            guard_before,
+            *(type_constraints or ()),
+            *(effect_domain_constraints or ()),
+        ],
+        smt_timeout_ms=smt_timeout_ms,
+    )
     if result is not None:
         return result
+    if guard_after_domains:
+        result = _definedness_feasibility_or_result(
+            [
+                guard_before,
+                *(type_constraints or ()),
+                *(effect_domain_constraints or ()),
+                *guard_after_domains,
+            ],
+            reason=(
+                "Post-effect transition guard runtime definedness "
+                "constraints are unsatisfiable."
+            ),
+            smt_timeout_ms=smt_timeout_ms,
+        )
+        if result is not None:
+            return result
 
     sat_result = is_sat(
         [
@@ -1945,6 +1975,7 @@ def effect_contradicts_guard(
             guard_after,
             *(type_constraints or ()),
             *(effect_domain_constraints or ()),
+            *(guard_after_domains or ()),
         ],
         timeout_ms=smt_timeout_ms,
     )
@@ -2053,14 +2084,48 @@ def transition_shadowed_by_predecessor(
 
             current_payload = _transition_payload(transition)
             if prior_triggers:
+                prior_disabled = tuple(
+                    z3.Not(prior_trigger) for prior_trigger in prior_triggers
+                )
                 formula = z3.And(
                     trigger,
-                    *(z3.Not(prior_trigger) for prior_trigger in prior_triggers),
+                    *prior_disabled,
                     *prior_domain_constraints,
                     *type_constraints,
                 )
                 sat_result = is_sat([formula], timeout_ms=smt_timeout_ms)
                 if sat_result.kind == "unsat":
+                    loose_formula = z3.And(
+                        trigger,
+                        *prior_disabled,
+                        *type_constraints,
+                    )
+                    loose_result = is_sat(
+                        [loose_formula],
+                        timeout_ms=smt_timeout_ms,
+                    )
+                    if loose_result.kind == "sat":
+                        first_indeterminate_result = _first_indeterminate(
+                            first_indeterminate_result,
+                            "undecidable_skip",
+                            (
+                                "Prior transition trigger runtime definedness "
+                                "constraints exclude the remaining candidate "
+                                "space."
+                            ),
+                        )
+                        prior_triggers.append(trigger)
+                        prior_domain_constraints.extend(trigger_domains or ())
+                        prior_payloads.append(current_payload)
+                        continue
+                    if loose_result.kind != "unsat":
+                        first_indeterminate_result = _first_indeterminate(
+                            first_indeterminate_result,
+                            loose_result.kind,
+                            getattr(loose_result, "reason", None),
+                        )
+                        continue
+
                     trigger_sat = is_sat(
                         [trigger, *type_constraints, *(trigger_domains or ())],
                         timeout_ms=smt_timeout_ms,

@@ -2233,6 +2233,41 @@ class TestEffectContradictsGuard:
         assert result.kind == "undecidable_skip"
         assert "runtime definedness" in result.reason
 
+    def test_post_guard_runtime_undefined_after_effect_is_undecidable(self):
+        machine = parse_machine(
+            """
+            def int x = 1;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B : if [1 / x > 0] effect { x = 0; };
+            }
+            """
+        )
+
+        result = effect_contradicts_guard(root_transition(machine), variables(machine))
+
+        assert result.kind == "undecidable_skip"
+        assert "runtime definedness" in result.reason
+
+    def test_post_guard_runtime_defined_after_effect_is_not_contradiction(self):
+        machine = parse_machine(
+            """
+            def int x = 1;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B : if [1 / x > 0] effect { x = 1; };
+            }
+            """
+        )
+
+        result = effect_contradicts_guard(root_transition(machine), variables(machine))
+
+        assert result == AlgorithmResult(kind="sat")
+
     def test_guard_prunes_unselected_ternary_value_for_guard_contradiction(self):
         machine = parse_machine(
             """
@@ -2495,6 +2530,27 @@ class TestTransitionShadowedByPredecessor:
         result = transition_shadowed_by_predecessor(machine, variables(machine))
 
         assert result.kind == "undecidable_skip"
+        assert "runtime definedness" in result.reason
+
+    def test_prior_guard_undefined_in_candidate_space_is_not_shadow(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            state System {
+                state A;
+                state B;
+                state C;
+                [*] -> A;
+                A -> B : if [1 / x > 0];
+                A -> C : if [x == 0];
+            }
+            """
+        )
+
+        result = transition_shadowed_by_predecessor(machine, variables(machine))
+
+        assert result.kind == "undecidable_skip"
+        assert result.diagnostics == ()
         assert "runtime definedness" in result.reason
 
     def test_current_guard_translation_failure_propagates(self, monkeypatch):

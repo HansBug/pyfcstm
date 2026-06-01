@@ -57,7 +57,7 @@ from .analyzers import (
 from ..utils.validate import ModelDiagnostic
 
 if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
-    from ..model.expr import Expr
+    from ..model.expr import Expr, Float, Integer
     from ..model.model import (
         OperationStatement,
         OnAspect,
@@ -531,11 +531,11 @@ def _expr_precedence(expr: 'Expr') -> Optional[int]:
     return None
 
 
-def _integer_text(expr: 'Expr') -> str:
+def _integer_text(expr: 'Integer') -> str:
     return str(int(expr.value))
 
 
-def _float_text(expr: 'Expr') -> str:
+def _float_text(expr: 'Float') -> str:
     if abs(expr.value - math.pi) < _FLOAT_EPSILON:
         return 'pi'
     if abs(expr.value - math.e) < _FLOAT_EPSILON:

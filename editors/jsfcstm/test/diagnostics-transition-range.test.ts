@@ -356,6 +356,38 @@ describe('diagnostics transition body ranges', () => {
         assert.equal(diagnostic.data?.__rangeFallback, undefined);
     });
 
+    it('treats uppercase boolean literal guards as true values', async () => {
+        const text = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    state C;',
+            '    [*] -> A;',
+            '    A -> B : if [True];',
+            '    B -> C : if [TRUE];',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/transition-uppercase-boolean-guard-range.fcstm');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const constTrue = targetDiagnostics(diagnostics, 'W_GUARD_CONST_TRUE');
+        const constFalse = targetDiagnostics(diagnostics, 'W_GUARD_CONST_FALSE');
+
+        assert.equal(constFalse.length, 0, JSON.stringify(diagnostics));
+        assert.equal(constTrue.length, 2, JSON.stringify(diagnostics));
+        assert.deepEqual(
+            constTrue.map(item => [
+                sliceByRange(text, item.range).trim(),
+                item.data?.folded_value,
+                item.data?.guard_text,
+                item.data?.__rangeFallback,
+            ]),
+            [
+                ['True', true, 'true', undefined],
+                ['TRUE', true, 'true', undefined],
+            ],
+        );
+    });
+
     it('marks transition_not_found when refs cannot match any transition', async () => {
         const text = [
             'state Root {',

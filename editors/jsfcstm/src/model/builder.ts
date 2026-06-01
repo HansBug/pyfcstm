@@ -946,7 +946,7 @@ class StateMachineModelBuilder {
                         pyModelType: 'Boolean',
                         range: expression.range,
                         text: expression.text,
-                        value: expression.valueText === 'true',
+                        value: expression.valueText.toLowerCase() === 'true',
                     };
                     return booleanExpr;
                 }

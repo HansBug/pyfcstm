@@ -11,7 +11,7 @@ import json
 import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry
-from pyfcstm.diagnostics import inspect_model
+from pyfcstm.diagnostics import inspect_model, refs_with_suggested_fix
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.utils.validate import ModelDiagnostic
 
@@ -60,6 +60,22 @@ def _normalize_inspect_diagnostics(diags):
             json.dumps(item['refs'], sort_keys=True),
         ),
     )
+
+
+def _expected_with_suggested_fixes(expected):
+    out = []
+    for item in expected:
+        enriched = dict(item)
+        refs = dict(item['refs'])
+        if (
+                item['code'] == 'W_DEADLOCK_LEAF'
+                and 'parent_path' not in refs
+                and '.' in refs.get('state_path', '')
+        ):
+            refs['parent_path'] = refs['state_path'].rsplit('.', 1)[0]
+        enriched['refs'] = refs_with_suggested_fix(item['code'], refs)
+        out.append(enriched)
+    return out
 
 
 def _py_inspect_normalized_diagnostics(dsl: str):
@@ -389,6 +405,8 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'transition_span': None,
                     'folded_value': False,
+                    'from_path': 'Root.Active',
+                    'to_path': 'Root.Blocked',
                 },
             },
             {
@@ -433,6 +451,258 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'transition_span': None,
                     'folded_value': False,
+                    'from_path': 'Root.Idle',
+                    'to_path': 'Root.Active',
+                },
+            },
+        ],
+    ),
+    (
+        'design-health-const-fold-guards-and-during-assign',
+        '\n'.join([
+            'def int stable = 0;',
+            'def int dynamic = 0;',
+            'def int wide = 0;',
+            'def float powered = 0.0;',
+            'state Root {',
+            '    state Idle {',
+            '        during { stable = (2 + 3) * 4; }',
+            '        during { dynamic = dynamic + 1; }',
+            '        during { wide = 0xFFFFFFFF & 0xFFFFFFFF; }',
+            '        during { powered = 2.0 ** 3; }',
+            '    }',
+            '    state Active;',
+            '    state Blocked;',
+            '    state WideTrue;',
+            '    state ModuloTrue;',
+            '    state PowerTrue;',
+            '    [*] -> Idle;',
+            '    Idle -> Active : if [(1 + 2) == 3];',
+            '    Active -> Blocked : if [(0x0F & 0xF0) != 0];',
+            '    Blocked -> WideTrue : if [(0xFFFFFFFF & 0xFFFFFFFF) == 4294967295];',
+            '    WideTrue -> ModuloTrue : if [(-7 % 4) == 1];',
+            '    ModuloTrue -> PowerTrue : if [(2.0 ** 3) == 8.0];',
+            '}',
+        ]),
+        [
+            {
+                'code': 'W_DEADLOCK_LEAF',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.PowerTrue',
+                    'reason': 'no_outgoing_transition',
+                },
+            },
+            {
+                'code': 'W_DURING_CONST_ASSIGN',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.Idle',
+                    'var_name': 'stable',
+                    'value': 20,
+                },
+            },
+            {
+                'code': 'W_DURING_CONST_ASSIGN',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.Idle',
+                    'var_name': 'powered',
+                    'value': 8,
+                },
+            },
+            {
+                'code': 'W_DURING_CONST_ASSIGN',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.Idle',
+                    'var_name': 'wide',
+                    'value': 4294967295,
+                },
+            },
+            {
+                'code': 'W_GUARD_CONST_FALSE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'folded_value': False,
+                    'from_path': 'Root.Active',
+                    'to_path': 'Root.Blocked',
+                },
+            },
+            {
+                'code': 'W_GUARD_CONST_TRUE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'folded_value': True,
+                    'from_path': 'Root.Idle',
+                    'to_path': 'Root.Active',
+                },
+            },
+            {
+                'code': 'W_GUARD_CONST_TRUE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'folded_value': True,
+                    'from_path': 'Root.Blocked',
+                    'to_path': 'Root.WideTrue',
+                },
+            },
+            {
+                'code': 'W_GUARD_CONST_TRUE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'folded_value': True,
+                    'from_path': 'Root.WideTrue',
+                    'to_path': 'Root.ModuloTrue',
+                },
+            },
+            {
+                'code': 'W_GUARD_CONST_TRUE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'folded_value': True,
+                    'from_path': 'Root.ModuloTrue',
+                    'to_path': 'Root.PowerTrue',
+                },
+            },
+            {
+                'code': 'W_UNREFERENCED_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'dynamic',
+                    'init_value': '0',
+                },
+            },
+            {
+                'code': 'W_UNREFERENCED_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'stable',
+                    'init_value': '0',
+                },
+            },
+            {
+                'code': 'W_UNREFERENCED_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'wide',
+                    'init_value': '0',
+                },
+            },
+            {
+                'code': 'W_UNREFERENCED_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'powered',
+                    'init_value': '0.0',
+                },
+            },
+        ],
+    ),
+    (
+        'design-health-const-fold-skips-runtime-dependent-expressions',
+        '\n'.join([
+            'def int counter = 0;',
+            'def float angle = 0.0;',
+            'state Root {',
+            '    state Wrapper {',
+            '        during before { counter = 5; }',
+            '        >> during before { counter = 6; }',
+            '        state Idle {',
+            '            during { counter = counter + 1; }',
+            '            during { angle = sin(0.0); }',
+            '        }',
+            '        state Active;',
+            '        [*] -> Idle;',
+            '        Idle -> Active : if [counter > 0];',
+            '    }',
+            '    [*] -> Wrapper;',
+            '}',
+        ]),
+        [
+            {
+                'code': 'W_DEADLOCK_LEAF',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.Wrapper.Active',
+                    'reason': 'no_outgoing_transition',
+                },
+            },
+            {
+                'code': 'W_UNREFERENCED_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'angle',
+                    'init_value': '0.0',
+                },
+            },
+        ],
+    ),
+    (
+        'design-health-const-fold-skips-mixed-float-unsafe-integer-comparison',
+        '\n'.join([
+            'state Root {',
+            '    state Idle;',
+            '    state Active;',
+            '    [*] -> Idle;',
+            '    Idle -> Active : if [1.0 < 9007199254740993];',
+            '}',
+        ]),
+        [
+            {
+                'code': 'W_DEADLOCK_LEAF',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.Active',
+                    'reason': 'no_outgoing_transition',
+                },
+            },
+        ],
+    ),
+    (
+        'design-health-const-fold-float-equality-matches-runtime-semantics',
+        '\n'.join([
+            'state Root {',
+            '    state Idle;',
+            '    state Active;',
+            '    state Done;',
+            '    [*] -> Idle;',
+            '    Idle -> Active : if [(0.1 + 0.2) == 0.3];',
+            '    Active -> Done : if [(0.1 + 0.2) != 0.3];',
+            '}',
+        ]),
+        [
+            {
+                'code': 'W_DEADLOCK_LEAF',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.Done',
+                    'reason': 'no_outgoing_transition',
+                },
+            },
+            {
+                'code': 'W_GUARD_CONST_FALSE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'folded_value': False,
+                    'from_path': 'Root.Idle',
+                    'to_path': 'Root.Active',
+                },
+            },
+            {
+                'code': 'W_GUARD_CONST_TRUE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'folded_value': True,
+                    'from_path': 'Root.Active',
+                    'to_path': 'Root.Done',
                 },
             },
         ],
@@ -501,6 +771,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'composite_path': 'Root',
                     'existing_conditional_count': 1,
+                    'first_child_name': 'Idle',
                 },
             },
             {
@@ -529,11 +800,29 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 },
             },
             {
-                'code': 'W_WRITE_ONLY_VAR',
+                'code': 'W_UNREFERENCED_VAR',
                 'severity': 'warning',
                 'refs': {
                     'var_name': 'write_only',
-                    'written_states': ['Root.Idle'],
+                    'init_value': '0',
+                },
+            },
+            {
+                'code': 'W_GUARD_VARS_NEVER_CHANGE',
+                'severity': 'warning',
+                'refs': {
+                    'from_path': 'Root.Idle',
+                    'to_path': 'Root.Active',
+                    'guard_vars': ['read_only'],
+                },
+            },
+            {
+                'code': 'W_GUARD_VARS_NEVER_CHANGE',
+                'severity': 'warning',
+                'refs': {
+                    'from_path': 'Root.Idle',
+                    'to_path': 'Root.Active',
+                    'guard_vars': ['read_only'],
                 },
             },
             {
@@ -574,6 +863,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                     'state_path': 'Root.Active',
                     'transition_span': None,
                     'var_name': 'stable',
+                    'effect_self_assign_anchor': 'stable',
                 },
             },
             {
@@ -681,6 +971,15 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 },
             },
             {
+                'code': 'W_DURING_CONST_ASSIGN',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.B',
+                    'var_name': 'assigned',
+                    'value': 2.25,
+                },
+            },
+            {
                 'code': 'W_LITERAL_TYPE_NARROWING',
                 'severity': 'warning',
                 'refs': {
@@ -708,11 +1007,109 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 },
             },
             {
-                'code': 'W_WRITE_ONLY_VAR',
+                'code': 'W_UNREFERENCED_VAR',
                 'severity': 'warning',
                 'refs': {
                     'var_name': 'assigned',
-                    'written_states': ['Root.B'],
+                    'init_value': '0',
+                },
+            },
+            {
+                'code': 'W_UNREFERENCED_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'extra',
+                    'init_value': '0',
+                    'definition_delete_anchor': 'extra',
+                },
+            },
+            {
+                'code': 'W_UNREFERENCED_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'truncated',
+                    'init_value': '3.5',
+                    'definition_delete_anchor': 'truncated',
+                },
+            },
+        ],
+    ),
+    (
+        'design-health-guard-affect-data-flow',
+        '\n'.join([
+            'def int unused = 0;',
+            'def int maybe_external = 0;',
+            'def int source = 0;',
+            'def int guard_value = 0;',
+            'def int stable = 0;',
+            'def int changing = 0;',
+            'state Root {',
+            '    state Idle {',
+            '        enter abstract ExternalHook;',
+            '        during {',
+            '            guard_value = source + 1;',
+            '            changing = changing + 1;',
+            '        }',
+            '    }',
+            '    state StableBlocked;',
+            '    state DynamicAllowed;',
+            '    state Done;',
+            '    [*] -> Idle;',
+            '    Idle -> StableBlocked : if [stable > 0];',
+            '    StableBlocked -> DynamicAllowed : if [changing > 0];',
+            '    DynamicAllowed -> Done : if [guard_value > 0];',
+            '}',
+        ]),
+        [
+            {
+                'code': 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT',
+                'severity': 'info',
+                'refs': {
+                    'var_name': 'maybe_external',
+                    'abstract_actions_in_scope': ['Root.Idle:<abstract>'],
+                },
+            },
+            {
+                'code': 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT',
+                'severity': 'info',
+                'refs': {
+                    'var_name': 'unused',
+                    'abstract_actions_in_scope': ['Root.Idle:<abstract>'],
+                },
+            },
+            {
+                'code': 'W_DEADLOCK_LEAF',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.Done',
+                    'reason': 'no_outgoing_transition',
+                },
+            },
+            {
+                'code': 'W_GUARD_VARS_NEVER_CHANGE',
+                'severity': 'warning',
+                'refs': {
+                    'from_path': 'Root.Idle',
+                    'to_path': 'Root.StableBlocked',
+                    'guard_vars': ['stable'],
+                },
+            },
+            {
+                'code': 'W_UNWRITTEN_READ_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'source',
+                    'read_states': ['Root.Idle'],
+                    'init_value': '0',
+                },
+            },
+            {
+                'code': 'W_UNWRITTEN_READ_VAR',
+                'severity': 'warning',
+                'refs': {
+                    'var_name': 'stable',
+                    'read_states': ['Root.Idle'],
+                    'init_value': '0',
                 },
             },
         ],
@@ -785,7 +1182,9 @@ def test_multi_file_fixture_emits_expected_codes(name, files, entry, must_fire, 
     item[0] for item in DESIGN_HEALTH_INSPECT_FIXTURES
 ])
 def test_design_health_inspect_diagnostics_match_inlined_expected(name, dsl, expected):
-    normalized_expected = _normalize_inspect_diagnostics(expected)
+    normalized_expected = _normalize_inspect_diagnostics(
+        _expected_with_suggested_fixes(expected),
+    )
     py_diags = _py_inspect_normalized_diagnostics(dsl)
     assert py_diags == normalized_expected, (
         f'{name}: pyfcstm inspect diagnostics mismatch: {py_diags}'

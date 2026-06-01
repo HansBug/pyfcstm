@@ -30,6 +30,7 @@ import {
     Variable,
 } from '../model/runtime';
 import {collectDesignHealthWarnings} from './analyzers';
+import {buildUseDefGraph, collectExprVariables} from './analyzers/use-def';
 import type {RawFcstmModelForcedTransition} from '../model/raw';
 
 const INIT_MARK = '[*]';
@@ -110,6 +111,8 @@ export interface TransitionInfo {
     event_scope: 'local' | 'chain' | 'absolute' | null;
     guard: string | null;
     effect: string | null;
+    // Duplicate names are preserved so suggested-fix emitters can detect
+    // ambiguous occurrences for the same source state and variable.
     effect_self_assigns: string[];
     is_forced: boolean;
     forced_origin: string | null;
@@ -126,8 +129,8 @@ export interface VariableInfo {
     written_in_states: string[];
     read_in_guards: Array<[string, string]>;
     written_in_effects: Array<[string, string]>;
-    participates_directly: boolean;
-    participates_indirectly: boolean;
+    affects_guard_directly: boolean;
+    affects_guard_indirectly: boolean;
     abstract_actions_in_scope: string[];
     float_literal_assignments: string[];
 }
@@ -284,6 +287,7 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
                 largeCompositeThreshold,
                 varToLeafRatioThreshold,
             },
+            machine,
         ),
     };
 }
@@ -540,6 +544,14 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
         return out;
     };
 
+    const useDefGraph = buildUseDefGraph(machine);
+    const directGuardVars = new Set(
+        Object.entries(readGuards)
+            .filter(([, entries]) => entries.length > 0)
+            .map(([name]) => name),
+    );
+    const indirectGuardVars = new Set(useDefGraph.affectingVariables(directGuardVars));
+
     const out: VariableInfo[] = [];
     for (const name of Object.keys(machine.defines)) {
         const def = machine.defines[name];
@@ -547,7 +559,6 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
         const writtenStates = dedupe(writesByState[name]);
         const readGuardEntries = dedupePairs(readGuards[name]);
         const writtenEffectEntries = dedupePairs(writtenEffects[name]);
-        const participatesDirectly = readStates.length > 0 || readGuardEntries.length > 0;
         const abstractActions = abstractActionsInScope(
             stateLookup,
             readStates,
@@ -561,8 +572,8 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
             written_in_states: writtenStates,
             read_in_guards: readGuardEntries,
             written_in_effects: writtenEffectEntries,
-            participates_directly: participatesDirectly,
-            participates_indirectly: false,
+            affects_guard_directly: directGuardVars.has(name),
+            affects_guard_indirectly: !directGuardVars.has(name) && indirectGuardVars.has(name),
             abstract_actions_in_scope: abstractActions,
             float_literal_assignments: dedupe(floatLiteralAssignments[name]),
         });
@@ -595,41 +606,7 @@ function collectActionReadsWrites(state: {
 
 function walkExprVariables(expr: Expr | null | undefined): string[] {
     if (!expr) return [];
-    const out: string[] = [];
-    walkExprCollect(expr, out);
-    return out;
-}
-
-function walkExprCollect(expr: Expr, out: string[]): void {
-    const anyExpr = expr as unknown as {
-        pyModelType: string;
-        name?: string;
-        x?: Expr;
-        y?: Expr;
-        cond?: Expr;
-        ifTrue?: Expr;
-        ifFalse?: Expr;
-    };
-    switch (anyExpr.pyModelType) {
-        case 'Variable':
-            if (anyExpr.name) out.push(anyExpr.name);
-            return;
-        case 'UnaryOp':
-        case 'UFunc':
-            if (anyExpr.x) walkExprCollect(anyExpr.x, out);
-            return;
-        case 'BinaryOp':
-            if (anyExpr.x) walkExprCollect(anyExpr.x, out);
-            if (anyExpr.y) walkExprCollect(anyExpr.y, out);
-            return;
-        case 'ConditionalOp':
-            if (anyExpr.cond) walkExprCollect(anyExpr.cond, out);
-            if (anyExpr.ifTrue) walkExprCollect(anyExpr.ifTrue, out);
-            if (anyExpr.ifFalse) walkExprCollect(anyExpr.ifFalse, out);
-            return;
-        default:
-            return;
-    }
+    return collectExprVariables(expr);
 }
 
 function walkStmtReadsWrites(
@@ -659,7 +636,7 @@ function effectSelfAssigns(effects: OperationStatement[] | undefined): string[] 
     for (const stmt of effects ?? []) {
         walkStmtSelfAssigns(stmt, out);
     }
-    return Array.from(new Set(out));
+    return out;
 }
 
 function walkStmtSelfAssigns(stmt: OperationStatement, out: string[]): void {
@@ -877,14 +854,13 @@ function abstractActionsInScope(
     readStates: string[],
     writtenStates: string[],
 ): string[] {
-    const touched = new Set<string>([...readStates, ...writtenStates]);
-    if (touched.size === 0) return [];
+    void readStates;
+    void writtenStates;
     const out: string[] = [];
-    for (const path of Array.from(touched).sort()) {
+    for (const path of Object.keys(stateLookup).sort()) {
         const info = stateLookup[path];
         if (!info || !info.has_abstract_action) continue;
-        const label = `${info.path}:<abstract>`;
-        if (!out.includes(label)) out.push(label);
+        out.push(`${info.path}:<abstract>`);
     }
     return out;
 }

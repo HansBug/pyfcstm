@@ -179,7 +179,7 @@
         "name", "type", "init_value",
         "read_in_states", "written_in_states",
         "read_in_guards", "written_in_effects",
-        "participates_directly", "participates_indirectly",
+        "affects_guard_directly", "affects_guard_indirectly",
         "abstract_actions_in_scope", "float_literal_assignments"
       ],
       "properties": {
@@ -206,8 +206,8 @@
             "maxItems": 2
           }
         },
-        "participates_directly": { "type": "boolean" },
-        "participates_indirectly": { "type": "boolean" },
+        "affects_guard_directly": { "type": "boolean" },
+        "affects_guard_indirectly": { "type": "boolean" },
         "abstract_actions_in_scope": {
           "type": "array",
           "items": { "type": "string" }
@@ -306,6 +306,35 @@
         }
       }
     },
+    "SuggestedFixPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "target", "anchor", "text", "rationale"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["insert", "delete", "replace"]
+        },
+        "target": { "type": "string", "minLength": 1 },
+        "anchor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "ref"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["ref"]
+            },
+            "ref": {
+              "type": "string",
+              "pattern": "^refs\\.[A-Za-z_][A-Za-z0-9_]*$"
+            }
+          }
+        },
+        "text": { "type": "string" },
+        "rationale": { "type": "string", "minLength": 1 }
+      }
+    },
     "ModelDiagnostic": {
       "type": "object",
       "additionalProperties": false,
@@ -333,7 +362,13 @@
             }
           ]
         },
-        "refs": { "type": "object" }
+        "refs": {
+          "type": "object",
+          "properties": {
+            "suggested_fix": { "$ref": "#/definitions/SuggestedFixPayload" }
+          },
+          "additionalProperties": true
+        }
       }
     }
   }

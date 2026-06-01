@@ -1068,7 +1068,11 @@ describe('jsfcstm lsp coverage support', () => {
         assert.ok(selectionRanges[0]?.parent);
         assert.ok(semanticTokens.data.length > 0);
         assert.ok(workspaceSymbols.some(item => item.name === 'Worker'));
-        assert.deepEqual(codeActions, []);
+        assert.ok(codeActions.some(item => (
+            (item as { kind?: string }).kind === CodeActionKind.QuickFix
+            && (item as { diagnostics?: Array<{ code?: string }> }).diagnostics
+                ?.some(diagnostic => diagnostic.code === 'W_UNREFERENCED_VAR')
+        )));
 
         fakeConnection.handlers.initialized?.();
         await fakeConnection.workspaceFolderHandler?.({

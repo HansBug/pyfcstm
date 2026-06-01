@@ -1,9 +1,12 @@
 """Design-health diagnostics derived from inspect-surface data."""
 
 import re
+from dataclasses import replace
 from typing import TYPE_CHECKING, Iterable, List, Optional
 
+from ..suggested_fix import refs_with_suggested_fix
 from ...utils.validate import ModelDiagnostic
+from .const_fold import collect_const_fold_warnings
 from .data_flow import collect_data_flow_warnings
 from .naming import collect_naming_warnings
 from .redundancy import collect_redundancy_warnings
@@ -22,6 +25,7 @@ if TYPE_CHECKING:  # pragma: no cover - import-time type hints only
         TransitionInfo,
         VariableInfo,
     )
+    from ...model.model import StateMachine
 
 
 def collect_design_health_warnings(
@@ -37,6 +41,7 @@ def collect_design_health_warnings(
     deep_hierarchy_threshold: int = 6,
     large_composite_threshold: int = 12,
     var_to_leaf_ratio_threshold: float = 2.0,
+    machine: Optional['StateMachine'] = None,
 ) -> List[ModelDiagnostic]:
     """Collect design-health warning diagnostics from inspect payloads."""
     diagnostics: List[ModelDiagnostic] = []
@@ -52,7 +57,11 @@ def collect_design_health_warnings(
         reachability_graph,
         resolved_root_state_path,
     ))
-    diagnostics.extend(_guard_const_false_diagnostics(transitions))
+    diagnostics.extend(
+        collect_const_fold_warnings(machine)
+        if machine is not None
+        else _guard_const_false_diagnostics(transitions)
+    )
     diagnostics.extend(_unused_event_diagnostics(events))
     diagnostics.extend(collect_structural_warnings(
         states,
@@ -71,10 +80,17 @@ def collect_design_health_warnings(
     ))
     diagnostics.extend(collect_naming_warnings(actions))
     diagnostics.extend(collect_type_warnings(variables))
-    diagnostics.extend(collect_data_flow_warnings(variables))
+    diagnostics.extend(collect_data_flow_warnings(variables, machine))
     diagnostics.extend(collect_redundancy_warnings(transitions, events, states))
     diagnostics.extend(collect_transition_infos(states, transitions))
-    return diagnostics
+    return _with_suggested_fixes(diagnostics)
+
+
+def _with_suggested_fixes(diagnostics: List[ModelDiagnostic]) -> List[ModelDiagnostic]:
+    return [
+        replace(diag, refs=refs_with_suggested_fix(diag.code, diag.refs))
+        for diag in diagnostics
+    ]
 
 
 def _resolve_root_state_path(states, root_state_path):
@@ -117,7 +133,12 @@ def _guard_const_false_diagnostics(transitions) -> List[ModelDiagnostic]:
                         f'Transition {transition.from_path!r} -> {transition.to_path!r} '
                         'has a guard that is statically false.'
                     ),
-                    refs={'transition_span': None, 'folded_value': False},
+                    refs={
+                        'transition_span': None,
+                        'folded_value': False,
+                        'from_path': transition.from_path,
+                        'to_path': transition.to_path,
+                    },
                 )
             )
     return diagnostics

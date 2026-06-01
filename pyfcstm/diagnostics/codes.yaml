@@ -17,7 +17,7 @@
 # Allowed `refs.*.type` tokens (must mirror `_ALLOWED_REF_TYPES` in
 # codes.py — that tuple is the single source of truth, this comment block
 # is documentation; a test asserts the two stay aligned):
-#   str | str_or_null | int | int_or_null | float | number | bool | Span | list[str]
+#   str | str_or_null | int | int_or_null | float | number | bool | dict | Span | list[str]
 #
 # Adding a new code: append a new top-level entry here AND add a fixture
 # test that triggers it from a real DSL snippet. The loader in `codes.py`
@@ -1036,11 +1036,12 @@ W_GUARD_CONST_FALSE:
   severity: warning
   capability: const_fold
   description: >-
-    A transition's guard condition matches the current minimal
-    constant-false patterns, so the transition can never fire. This
-    analyzer currently recognizes ``false`` / ``0`` and simple signed
-    decimal integer equality checks such as ``1 == 0``; it is not a
-    complete constant-folding engine.
+    A transition's guard condition folds to the boolean literal
+    ``false`` using the built-in constant folder, so the transition can
+    never fire. The folder is intentionally side-effect free: it handles
+    literal-only boolean, comparison, arithmetic, bitwise, unary, and
+    ternary expressions, but does not evaluate variables, functions,
+    solvers, or runtime state.
   refs:
     transition_span:
       type: Span
@@ -1050,6 +1051,14 @@ W_GUARD_CONST_FALSE:
       type: bool
       required: true
       description: Constant-folded guard value (always ``false``).
+    from_path:
+      type: str
+      required: false
+      description: Source state path of the transition, or ``[*]`` for an initial transition.
+    to_path:
+      type: str
+      required: false
+      description: Target state path of the transition, or ``[*]`` for an exit transition.
   for_llm:
     summary: >-
       The transition's guard is statically known to be ``false`` and the
@@ -1063,12 +1072,114 @@ W_GUARD_CONST_FALSE:
         rationale: Remove the transition if it was placeholder / debug.
     do_not:
       - "Do not silently remove the guard — that would change the semantics."
+  emit_tier: static_pipeline
   example_dsl: |
     state Root {
         state A;
         state B;
         [*] -> A;
-        A -> B : if [false];
+        A -> B : if [(0x0F & 0xF0) != 0];
+    }
+
+W_GUARD_CONST_TRUE:
+  severity: warning
+  capability: const_fold
+  description: >-
+    A transition's guard condition folds to the boolean literal ``true``
+    using the built-in constant folder, so the guard is redundant for
+    all runtime states covered by that literal-only expression.
+  refs:
+    transition_span:
+      type: Span
+      required: false
+      description: Source span of the transition declaration.
+    guard_span:
+      type: Span
+      required: false
+      description: >-
+        Source span of the removable guard suffix, including the leading
+        trigger separator when needed. This is reserved for future emitters
+        that can provide a stable guard-only span; the current inspect
+        emitters intentionally omit it.
+    folded_value:
+      type: bool
+      required: true
+      description: Constant-folded guard value (always ``true``).
+    from_path:
+      type: str
+      required: false
+      description: Source state path of the transition, or ``[*]`` for an initial transition.
+    to_path:
+      type: str
+      required: false
+      description: Target state path of the transition, or ``[*]`` for an exit transition.
+  for_llm:
+    summary: >-
+      The transition's guard is statically known to be ``true`` and does
+      not constrain the transition.
+    recommended_actions:
+      - kind: remove_guard
+        target: transition
+        rationale: Remove the guard if the transition is meant to be unconditional.
+      - kind: fix_guard
+        target: transition
+        rationale: Rewrite the guard if it was intended to depend on runtime state.
+    do_not:
+      - "Do not add a dummy variable dependency only to silence the diagnostic."
+  emit_tier: static_pipeline
+  example_dsl: |
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [(1 + 2) == 3];
+    }
+
+W_DURING_CONST_ASSIGN:
+  severity: warning
+  capability: const_fold
+  description: >-
+    A concrete ``during`` action assigns a variable to the same
+    literal-only numeric value every cycle. The analyzer only checks the
+    direct statements in ordinary ``during { ... }`` blocks; it skips
+    abstract actions, refs, composite ``during before`` / ``during after``
+    actions, aspect actions, functions, variables, and nested control
+    flow.
+  refs:
+    state_path:
+      type: str
+      required: true
+      description: Dotted path of the state that owns the during action.
+    var_name:
+      type: str
+      required: true
+      description: Variable assigned by the constant during statement.
+    value:
+      type: number
+      required: true
+      description: JSON-stable numeric value assigned on every cycle.
+  for_llm:
+    summary: >-
+      The during block writes the same constant numeric value on every
+      cycle, which often indicates initialization logic was placed in
+      ``during`` instead of ``enter``.
+    recommended_actions:
+      - kind: move_to_enter
+        target: action
+        rationale: Move the assignment to ``enter`` if it should run once on state entry.
+      - kind: rewrite_expression
+        target: assignment
+        rationale: Use runtime state in the expression if the value should evolve each cycle.
+    do_not:
+      - "Do not suppress the warning by adding a meaningless arithmetic no-op."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int counter = 0;
+    state Root {
+        state Idle {
+            during { counter = (2 + 3) * 4; }
+        }
+        [*] -> Idle;
     }
 
 W_UNUSED_EVENT:
@@ -1118,11 +1229,27 @@ W_DEADLOCK_LEAF:
       type: str
       required: true
       description: Dotted path of the deadlocking leaf state.
+    parent_path:
+      type: str
+      required: false
+      description: >-
+        Dotted path of the leaf state's parent. Present only when an
+        exit-transition quick-fix can be inserted inside a parent state.
     reason:
       type: str
       required: true
       description: Why the leaf is considered a deadlock.
       enum: ['no_outgoing_transition']
+    suggested_fix:
+      type: dict
+      required: false
+      description: Structured quick-fix payload for adding a parent exit transition.
+  suggested_fix:
+    kind: insert
+    target: deadlock_leaf_exit_transition
+    anchor_ref: refs.parent_path
+    text_template: "{state_name} -> [*];\n"
+    rationale: Add an exit transition so the leaf can finish its parent state.
   for_llm:
     summary: >-
       This leaf state has no outgoing transition, so once the machine
@@ -1159,6 +1286,22 @@ W_INITIAL_UNCONDITIONAL_MISSING:
       type: int
       required: true
       description: Number of existing initial transitions that are not unconditional.
+    first_child_name:
+      type: str
+      required: false
+      description: >-
+        First declared non-pseudo child state name used as the fallback
+        insertion target.
+    suggested_fix:
+      type: dict
+      required: false
+      description: Structured quick-fix payload for inserting an unconditional entry transition.
+  suggested_fix:
+    kind: insert
+    target: unconditional_initial_transition
+    anchor_ref: refs.composite_path
+    text_template: "[*] -> {first_child_name};\n"
+    rationale: Add an unconditional fallback entry transition for the composite state.
   for_llm:
     summary: >-
       The composite state can fail to choose an initial child because no
@@ -1251,6 +1394,148 @@ W_DEAD_NAMED_ACTION:
         state A;
         state B { enter Cleanup {} }
         [*] -> A;
+    }
+
+W_UNREFERENCED_VAR:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A variable cannot affect any transition guard either directly or
+    through the action/effect use-def graph, and no abstract action is
+    visible that might use it outside the DSL.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: Variable name.
+    init_value:
+      type: str
+      required: true
+      description: Source text of the initial value.
+    definition_delete_anchor:
+      type: str
+      required: false
+      description: >-
+        Variable name repeated only when the declaration has no DSL reads
+        or writes, so deleting the declaration alone is a safe quick-fix.
+    suggested_fix:
+      type: dict
+      required: false
+      description: Structured quick-fix payload for removing the variable definition.
+  suggested_fix:
+    kind: delete
+    target: variable_definition
+    anchor_ref: refs.definition_delete_anchor
+    text_template: ""
+    rationale: Remove the declaration-only variable because it has no DSL reads or writes.
+  for_llm:
+    summary: >-
+      This variable does not participate in model decisions. It is dead
+      from the DSL's guard-affect data-flow perspective.
+    recommended_actions:
+      - kind: remove_variable
+        target: variable_definition
+        rationale: Remove the variable and related writes if it was speculative scaffolding.
+      - kind: connect_to_guard
+        target: guard_or_assignment
+        rationale: Add the missing data-flow path if the variable should affect a transition decision.
+    do_not:
+      - "Do not add a dummy guard reference only to silence the diagnostic."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int unused = 0;
+    def int ready = 0;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [ready > 0];
+    }
+
+I_UNREFERENCED_VAR_MAYBE_ABSTRACT:
+  severity: info
+  capability: pure_static
+  description: >-
+    A variable cannot affect any transition guard through DSL data-flow,
+    but at least one visible abstract action may use it outside the DSL.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: Variable name.
+    abstract_actions_in_scope:
+      type: list[str]
+      required: true
+      description: >-
+        Abstract action owners that may access the variable. FCSTM
+        variables are global, so this is the full machine abstract-action
+        inventory.
+  for_llm:
+    summary: >-
+      This variable is unused by DSL guard-affect data-flow, but abstract
+      action implementations may still use it.
+    recommended_actions:
+      - kind: inspect_abstract_action
+        target: abstract_action
+        rationale: Check the external implementation before removing the variable.
+      - kind: remove_variable
+        target: variable_definition
+        rationale: Remove it only if the abstract action does not need it.
+    do_not:
+      - "Do not remove the variable without checking the abstract implementation."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int maybe_external = 0;
+    def int ready = 0;
+    state Root {
+        state A { enter abstract ExternalHook; }
+        state B;
+        [*] -> A;
+        A -> B : if [ready > 0];
+    }
+
+W_GUARD_VARS_NEVER_CHANGE:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A transition guard reads variables that are never changed by any
+    lifecycle action or transition effect, so the guard only depends on
+    initial values.
+  refs:
+    from_path:
+      type: str
+      required: true
+      description: Source state path of the transition, or [*] for an entry marker.
+    to_path:
+      type: str
+      required: true
+      description: Target state path of the transition, or [*] for an exit marker.
+    guard_vars:
+      type: list[str]
+      required: true
+      description: Guard variables that never change.
+  for_llm:
+    summary: >-
+      This guard is controlled only by initial variable values. If those
+      values never change, the transition condition is effectively fixed.
+    recommended_actions:
+      - kind: add_write
+        target: action_or_effect
+        rationale: Add the missing state update if the guard should evolve at runtime.
+      - kind: simplify_guard
+        target: transition
+        rationale: Simplify or remove the guard if the initial value is intentional.
+    do_not:
+      - "Do not add a meaningless self-assignment; it does not model a real change."
+      - "Do not rewrite the guard to a meaningless constant only to silence this diagnostic."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int ready = 0;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [ready > 0];
     }
 
 W_UNWRITTEN_READ_VAR:
@@ -1414,7 +1699,7 @@ W_EFFECT_SELF_ASSIGN:
   refs:
     state_path:
       type: str
-      required: false
+      required: true
       description: Source state path when known.
     transition_span:
       type: Span
@@ -1424,6 +1709,23 @@ W_EFFECT_SELF_ASSIGN:
       type: str
       required: true
       description: Variable assigned to itself.
+    effect_self_assign_anchor:
+      type: str
+      required: false
+      description: >-
+        Variable name repeated only when the self-assignment occurrence
+        can be uniquely mapped back to a non-initial effect statement for
+        the same source state and variable.
+    suggested_fix:
+      type: dict
+      required: false
+      description: Structured quick-fix payload for removing the no-op effect statement.
+  suggested_fix:
+    kind: delete
+    target: effect_self_assign_statement
+    anchor_ref: refs.effect_self_assign_anchor
+    text_template: ""
+    rationale: Remove the no-op self-assignment statement.
   for_llm:
     summary: >-
       The assignment does not change model state and is likely dead code.

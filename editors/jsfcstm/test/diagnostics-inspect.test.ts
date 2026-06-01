@@ -69,6 +69,10 @@ async function buildMachine(src: string) {
     return machine;
 }
 
+function expectedRefsWithSuggestedFix(code: string, refs: Record<string, unknown>): Record<string, unknown> {
+    return packageModule.refsWithSuggestedFix(code, refs);
+}
+
 describe('diagnostics/inspect', () => {
     describe('basic structure', () => {
         it('returns top-level shape', async () => {
@@ -159,7 +163,280 @@ state Root {
             assert.ok(temp);
             assert.equal(temp!.read_in_states.length, 0);
             assert.equal(temp!.written_in_states.length, 0);
-            assert.equal(temp!.participates_directly, false);
+            assert.equal(temp!.affects_guard_directly, false);
+            assert.equal(temp!.affects_guard_indirectly, false);
+        });
+    });
+
+    describe('guard-affect data flow', () => {
+        it('tracks nested branch conditions in the use-def graph', async () => {
+            const {buildUseDefGraph} = await import('../dist/diagnostics/analyzers/use-def');
+            const graph = buildUseDefGraph(await buildMachine(`
+def int x = 0;
+def int y = 0;
+def int z = 0;
+def int flag = 0;
+def int dedupe = 0;
+state Root {
+    state Active {
+        during {
+            dedupe = x + x;
+            if [x >= 10] {
+                if [x % 2 == 0] {
+                    y = x + 10;
+                } else {
+                    y = x + 12;
+                    z = x * y - 2;
+                }
+            } else if [flag > 0] {
+                z = y + flag;
+            } else {
+                z = y - 10;
+                x = x + 2;
+            }
+        }
+    }
+    [*] -> Active;
+}
+`));
+            const edges = new Set(graph.edges.map(([source, target]) => `${source}->${target}`));
+            assert.ok(edges.has('x->y'));
+            assert.ok(edges.has('x->z'));
+            assert.ok(edges.has('y->z'));
+            assert.ok(edges.has('flag->z'));
+            assert.ok(edges.has('x->x'));
+            assert.ok(edges.has('flag->x'));
+        });
+
+        it('keeps use-def graph ordering stable for duplicate edge input', async () => {
+            const {UseDefGraph} = await import('../dist/diagnostics/analyzers/use-def');
+            const graph = new UseDefGraph([
+                ['b', 'target'],
+                ['a', 'target'],
+                ['a', 'target'],
+            ]);
+
+            assert.deepEqual(graph.edges, [
+                ['a', 'target'],
+                ['a', 'target'],
+                ['b', 'target'],
+            ]);
+            assert.deepEqual(graph.dependenciesOf('target'), ['a', 'a', 'b']);
+        });
+
+        it('marks direct and indirect guard-affect variables', async () => {
+            const report = inspectModel(await buildMachine(`
+def int source = 0;
+def int middle = 0;
+def int guard_value = 0;
+def int direct = 0;
+def int ternary_only = 0;
+def int unused = 0;
+state Root {
+    state Idle {
+        during {
+            middle = source + 1;
+            guard_value = middle;
+            unused = (ternary_only > 0) ? 1 : 2;
+        }
+    }
+    state Done;
+    [*] -> Idle : if [direct > 0];
+    Idle -> Done : if [guard_value > 0];
+    Done -> [*] : if [direct > 1];
+}
+`));
+            const variables = new Map(report.variables.map(v => [v.name, v]));
+            assert.equal(variables.get('direct')!.affects_guard_directly, true);
+            assert.equal(variables.get('direct')!.affects_guard_indirectly, false);
+            assert.equal(variables.get('guard_value')!.affects_guard_directly, true);
+            assert.equal(variables.get('guard_value')!.affects_guard_indirectly, false);
+            assert.equal(variables.get('middle')!.affects_guard_directly, false);
+            assert.equal(variables.get('middle')!.affects_guard_indirectly, true);
+            assert.equal(variables.get('source')!.affects_guard_directly, false);
+            assert.equal(variables.get('source')!.affects_guard_indirectly, true);
+            assert.equal(variables.get('ternary_only')!.affects_guard_directly, false);
+            assert.equal(variables.get('ternary_only')!.affects_guard_indirectly, false);
+            assert.equal(variables.get('unused')!.affects_guard_directly, false);
+            assert.equal(variables.get('unused')!.affects_guard_indirectly, false);
+        });
+
+        it('emits unreferenced variables as warning or info based on abstract actions', async () => {
+            const noAbstract = inspectModel(await buildMachine(`
+def int unused = 0;
+def int driver = 0;
+state Root {
+    state Idle;
+    state Done;
+    [*] -> Idle;
+    Idle -> Done : if [driver > 0];
+}
+`));
+            assert.deepEqual(
+                noAbstract.diagnostics
+                    .filter(d => d.code === 'W_UNREFERENCED_VAR')
+                    .map(d => d.refs),
+                [expectedRefsWithSuggestedFix('W_UNREFERENCED_VAR', {
+                    var_name: 'unused',
+                    init_value: '0',
+                    definition_delete_anchor: 'unused',
+                })],
+            );
+            assert.equal(
+                noAbstract.diagnostics.filter(d => d.code === 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT').length,
+                0,
+            );
+
+            const withAbstract = inspectModel(await buildMachine(`
+def int maybe_external = 0;
+def int driver = 0;
+state Root {
+    state Idle { enter abstract ExternalHook; }
+    state Done;
+    [*] -> Idle;
+    Idle -> Done : if [driver > 0];
+}
+`));
+            assert.deepEqual(
+                withAbstract.diagnostics
+                    .filter(d => d.code === 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT')
+                    .map(d => d.refs),
+                [{
+                    var_name: 'maybe_external',
+                    abstract_actions_in_scope: ['Root.Idle:<abstract>'],
+                }],
+            );
+        });
+
+        it('does not report indirect guard dependencies as unreferenced', async () => {
+            const report = inspectModel(await buildMachine(`
+def int source = 0;
+def int guard_value = 0;
+state Root {
+    state Idle { during { guard_value = source + 1; } }
+    state Done;
+    [*] -> Idle;
+    Idle -> Done : if [guard_value > 0];
+}
+`));
+            const sourceCodes = report.diagnostics
+                .filter(d => d.refs.var_name === 'source')
+                .map(d => d.code);
+            assert.deepEqual(sourceCodes, ['W_UNWRITTEN_READ_VAR']);
+        });
+
+        it('reports guard vars that never change per transition', async () => {
+            const report = inspectModel(await buildMachine(`
+def int stable = 0;
+def int changing = 0;
+state Root {
+    state Idle { during { changing = changing + 1; } }
+    state StableBlocked;
+    state DynamicAllowed;
+    [*] -> Idle;
+    Idle -> StableBlocked : if [stable > 0];
+    Idle -> DynamicAllowed : if [changing > 0];
+}
+`));
+            assert.deepEqual(
+                report.diagnostics
+                    .filter(d => d.code === 'W_GUARD_VARS_NEVER_CHANGE')
+                    .map(d => d.refs),
+                [{
+                    from_path: 'Root.Idle',
+                    to_path: 'Root.StableBlocked',
+                    guard_vars: ['stable'],
+                }],
+            );
+        });
+
+        it('keeps the write-only branch available for affecting payloads', async () => {
+            const {collectDataFlowWarnings} = await import('../dist/diagnostics/analyzers/data-flow');
+            const diagnostics = collectDataFlowWarnings([{
+                name: 'write_only',
+                type: 'int',
+                init_value: '0',
+                read_in_states: [],
+                written_in_states: ['Root.Idle'],
+                read_in_guards: [],
+                written_in_effects: [],
+                affects_guard_directly: true,
+                affects_guard_indirectly: false,
+                abstract_actions_in_scope: [],
+                float_literal_assignments: [],
+            }]);
+
+            assert.deepEqual(diagnostics.map(d => d.refs), [{
+                var_name: 'write_only',
+                written_states: ['Root.Idle'],
+            }]);
+        });
+
+        it('rejects unknown expression subclasses in the shared variable collector', async () => {
+            const {collectExprVariables} = await import('../dist/diagnostics/analyzers/use-def');
+            const {Expr} = await import('../dist/model/runtime');
+
+            class UnknownExpr extends Expr {
+                constructor() {
+                    super(
+                        'expression',
+                        'UnknownExpr' as any,
+                        {
+                            start: {line: 0, character: 0},
+                            end: {line: 0, character: 0},
+                        },
+                        'unknown',
+                    );
+                }
+
+                to_ast_node(): any {
+                    return {};
+                }
+            }
+
+            assert.throws(
+                () => collectExprVariables(new UnknownExpr()),
+                /Unhandled Expr subclass: UnknownExpr/,
+            );
+        });
+
+        it('rejects unknown operation statement subclasses in the use-def graph', async () => {
+            const {buildUseDefGraph} = await import('../dist/diagnostics/analyzers/use-def');
+            const {OperationStatement} = await import('../dist/model/runtime');
+
+            class UnknownStatement extends OperationStatement {
+                constructor() {
+                    super(
+                        'operationStatement',
+                        'UnknownStatement' as any,
+                        {
+                            start: {line: 0, character: 0},
+                            end: {line: 0, character: 0},
+                        },
+                        'unknown',
+                    );
+                }
+
+                to_ast_node(): any {
+                    return {};
+                }
+            }
+
+            assert.throws(
+                () => buildUseDefGraph({
+                    allStates: [{
+                        onEnters: [{
+                            isAbstract: false,
+                            operations: [new UnknownStatement()],
+                        }],
+                        onDurings: [],
+                        onExits: [],
+                        onDuringAspects: [],
+                        transitions: [],
+                    }],
+                } as any),
+                /Unhandled OperationStatement subclass: UnknownStatement/,
+            );
         });
     });
 
@@ -256,7 +533,16 @@ state Root {
         });
 
         it('diagnostics array empty for clean model without design-health warnings', async () => {
-            const report = inspectModel(await buildMachine(SIMPLE_DSL));
+            const report = inspectModel(await buildMachine(`
+def int counter = 0;
+state Root {
+    state Idle;
+    state Active { during { counter = counter + 1; } }
+    [*] -> Idle;
+    Idle -> Active : if [counter > 0];
+    Active -> Idle :: Pause;
+}
+`));
             assert.deepEqual(report.diagnostics, []);
         });
 
@@ -335,6 +621,8 @@ state Root {
             assert.deepEqual(constFalse!.refs, {
                 transition_span: null,
                 folded_value: false,
+                from_path: 'Root.Active',
+                to_path: 'Root.Blocked',
             });
 
             const unreachable = report.diagnostics.find(d => d.code === 'W_UNREACHABLE_STATE');
@@ -367,6 +655,109 @@ state Root {
             );
         });
 
+        it('emits const-fold guard and during-assignment warnings', async () => {
+            const report = inspectModel(await buildMachine(`
+def int stable = 0;
+def int dynamic = 0;
+def int wide = 0;
+def float powered = 0.0;
+state Root {
+    state Idle {
+        during { stable = (2 + 3) * 4; }
+        during { dynamic = dynamic + 1; }
+        during { wide = 0xFFFFFFFF & 0xFFFFFFFF; }
+        during { powered = 2.0 ** 3; }
+    }
+    state Active;
+    state Blocked;
+    state WideTrue;
+    state ModuloTrue;
+    state PowerTrue;
+    [*] -> Idle;
+    Idle -> Active : if [(1 + 2) == 3];
+    Active -> Blocked : if [(0x0F & 0xF0) != 0];
+    Blocked -> WideTrue : if [(0xFFFFFFFF & 0xFFFFFFFF) == 4294967295];
+    WideTrue -> ModuloTrue : if [(-7 % 4) == 1];
+    ModuloTrue -> PowerTrue : if [(2.0 ** 3) == 8.0];
+}
+`));
+            const constTrue = report.diagnostics.filter(d => d.code === 'W_GUARD_CONST_TRUE');
+            assert.equal(constTrue.length, 4);
+            assert.deepEqual(
+                constTrue.map(item => item.refs).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+                [
+                    {
+                        transition_span: null,
+                        folded_value: true,
+                        from_path: 'Root.Blocked',
+                        to_path: 'Root.WideTrue',
+                    },
+                    {
+                        transition_span: null,
+                        folded_value: true,
+                        from_path: 'Root.Idle',
+                        to_path: 'Root.Active',
+                    },
+                    {
+                        transition_span: null,
+                        folded_value: true,
+                        from_path: 'Root.ModuloTrue',
+                        to_path: 'Root.PowerTrue',
+                    },
+                    {
+                        transition_span: null,
+                        folded_value: true,
+                        from_path: 'Root.WideTrue',
+                        to_path: 'Root.ModuloTrue',
+                    },
+                ].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+            );
+
+            const constFalse = report.diagnostics.find(d => d.code === 'W_GUARD_CONST_FALSE');
+            assert.ok(constFalse);
+            assert.deepEqual(constFalse!.refs, {
+                transition_span: null,
+                folded_value: false,
+                from_path: 'Root.Active',
+                to_path: 'Root.Blocked',
+            });
+
+            const duringRefs = report.diagnostics
+                .filter(d => d.code === 'W_DURING_CONST_ASSIGN')
+                .map(d => d.refs)
+                .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+            assert.deepEqual(duringRefs, [
+                {state_path: 'Root.Idle', var_name: 'powered', value: 8},
+                {state_path: 'Root.Idle', var_name: 'stable', value: 20},
+                {state_path: 'Root.Idle', var_name: 'wide', value: 4294967295},
+            ]);
+        });
+
+        it('does not const-fold variables functions or structural during actions', async () => {
+            const report = inspectModel(await buildMachine(`
+def int counter = 0;
+def float angle = 0.0;
+state Root {
+    state Wrapper {
+        during before { counter = 5; }
+        >> during before { counter = 6; }
+        state Idle {
+            during { counter = counter + 1; }
+            during { angle = sin(0.0); }
+        }
+        state Active;
+        [*] -> Idle;
+        Idle -> Active : if [counter > 0];
+    }
+    [*] -> Wrapper;
+}
+`));
+            const codes = report.diagnostics.map(d => d.code);
+            assert.equal(codes.includes('W_GUARD_CONST_TRUE'), false);
+            assert.equal(codes.includes('W_GUARD_CONST_FALSE'), false);
+            assert.equal(codes.includes('W_DURING_CONST_ASSIGN'), false);
+        });
+
         it('emits structural dataflow and redundancy warnings', async () => {
             const report = inspectModel(await buildMachine(STRUCTURAL_DATAFLOW_REDUNDANCY_DSL));
             const normalized = report.diagnostics
@@ -391,12 +782,20 @@ state Root {
                 {
                     code: 'W_DEADLOCK_LEAF',
                     severity: 'warning',
-                    refs: {state_path: 'Root.LeafForced', reason: 'no_outgoing_transition'},
+                    refs: {
+                        state_path: 'Root.LeafForced',
+                        parent_path: 'Root',
+                        reason: 'no_outgoing_transition',
+                    },
                 },
                 {
                     code: 'W_DEADLOCK_LEAF',
                     severity: 'warning',
-                    refs: {state_path: 'Root.Orphan', reason: 'no_outgoing_transition'},
+                    refs: {
+                        state_path: 'Root.Orphan',
+                        parent_path: 'Root',
+                        reason: 'no_outgoing_transition',
+                    },
                 },
                 {
                     code: 'W_DEAD_NAMED_ACTION',
@@ -406,7 +805,12 @@ state Root {
                 {
                     code: 'W_EFFECT_SELF_ASSIGN',
                     severity: 'warning',
-                    refs: {state_path: 'Root.Active', transition_span: null, var_name: 'stable'},
+                    refs: {
+                        state_path: 'Root.Active',
+                        transition_span: null,
+                        var_name: 'stable',
+                        effect_self_assign_anchor: 'stable',
+                    },
                 },
                 {
                     code: 'W_FORCED_NEVER_EXPANDS',
@@ -419,9 +823,27 @@ state Root {
                     refs: {from_path: 'Root.Active', to_path: 'Root.Trapped', forced_span: null, normal_span: null},
                 },
                 {
+                    code: 'W_GUARD_VARS_NEVER_CHANGE',
+                    severity: 'warning',
+                    refs: {
+                        from_path: 'Root.Idle',
+                        to_path: 'Root.Active',
+                        guard_vars: ['read_only'],
+                    },
+                },
+                {
+                    code: 'W_GUARD_VARS_NEVER_CHANGE',
+                    severity: 'warning',
+                    refs: {
+                        from_path: 'Root.Idle',
+                        to_path: 'Root.Active',
+                        guard_vars: ['read_only'],
+                    },
+                },
+                {
                     code: 'W_INITIAL_UNCONDITIONAL_MISSING',
                     severity: 'warning',
-                    refs: {composite_path: 'Root', existing_conditional_count: 1},
+                    refs: {composite_path: 'Root', existing_conditional_count: 1, first_child_name: 'Idle'},
                 },
                 {
                     code: 'W_REDUNDANT_TRANSITION',
@@ -472,16 +894,19 @@ state Root {
                     refs: {state_path: 'Root.Orphan'},
                 },
                 {
+                    code: 'W_UNREFERENCED_VAR',
+                    severity: 'warning',
+                    refs: {var_name: 'write_only', init_value: '0'},
+                },
+                {
                     code: 'W_UNWRITTEN_READ_VAR',
                     severity: 'warning',
                     refs: {var_name: 'read_only', read_states: ['Root.Idle'], init_value: '0'},
                 },
-                {
-                    code: 'W_WRITE_ONLY_VAR',
-                    severity: 'warning',
-                    refs: {var_name: 'write_only', written_states: ['Root.Idle']},
-                },
-            ].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
+            ].map(item => ({
+                ...item,
+                refs: expectedRefsWithSuggestedFix(item.code, item.refs),
+            })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
         });
 
         it('keeps guard and chain path in forced transition origin text', async () => {
@@ -703,11 +1128,12 @@ state Root {
                 report.diagnostics
                     .filter(d => d.code === 'W_EFFECT_SELF_ASSIGN')
                     .map(d => d.refs),
-                [{
+                [expectedRefsWithSuggestedFix('W_EFFECT_SELF_ASSIGN', {
                     state_path: 'Root.A',
                     transition_span: null,
                     var_name: 'x',
-                }],
+                    effect_self_assign_anchor: 'x',
+                })],
             );
         });
     });

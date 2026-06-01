@@ -20,6 +20,8 @@ from pyfcstm.diagnostics import (
     CodeSpec,
     CodesSchemaError,
     load_codes,
+    refs_with_suggested_fix,
+    render_suggested_fix,
 )
 from pyfcstm.diagnostics.codes import _ALLOWED_REF_TYPES, _ALLOWED_SEVERITIES
 
@@ -368,6 +370,110 @@ class TestLoaderValidation:
         reg = load_codes(path)
         spec = reg['E_FOO'].refs_schema['bar']
         assert spec.enum == ('a', 'b', 'c')
+
+    def test_loads_suggested_fix_metadata(self, tmp_path):
+        path = self._write_yaml(tmp_path, """
+            W_FOO:
+              severity: warning
+              capability: pure_static
+              description: With suggested fix.
+              refs:
+                name:
+                  type: str
+                  required: true
+                  description: Name payload.
+              suggested_fix:
+                kind: delete
+                target: variable_definition
+                anchor_ref: refs.name
+                text_template: ""
+                rationale: Remove the unused declaration.
+        """)
+        reg = load_codes(path)
+        fix = reg['W_FOO'].suggested_fix
+        assert fix is not None
+        assert fix.kind == 'delete'
+        assert fix.anchor_ref == 'refs.name'
+
+    def test_rejects_bad_suggested_fix_kind(self, tmp_path):
+        path = self._write_yaml(tmp_path, """
+            W_FOO:
+              severity: warning
+              capability: pure_static
+              description: Bad suggested fix.
+              refs:
+                name:
+                  type: str
+                  required: true
+                  description: Name payload.
+              suggested_fix:
+                kind: move
+                target: variable_definition
+                anchor_ref: refs.name
+                rationale: Invalid kind.
+        """)
+        with pytest.raises(CodesSchemaError, match='suggested_fix.kind'):
+            load_codes(path)
+
+    def test_rejects_bad_suggested_fix_anchor_ref(self, tmp_path):
+        path = self._write_yaml(tmp_path, """
+            W_FOO:
+              severity: warning
+              capability: pure_static
+              description: Bad suggested fix anchor.
+              refs:
+                name:
+                  type: str
+                  required: true
+                  description: Name payload.
+              suggested_fix:
+                kind: delete
+                target: variable_definition
+                anchor_ref: name
+                rationale: Invalid anchor.
+        """)
+        with pytest.raises(CodesSchemaError, match='suggested_fix.anchor_ref'):
+            load_codes(path)
+
+    def test_catalog_suggested_fix_refs_are_declared(self):
+        for code, spec in CODE_REGISTRY.items():
+            if spec.suggested_fix is None:
+                continue
+            anchor_field = spec.suggested_fix.anchor_ref.split('.', 1)[1]
+            assert anchor_field in spec.refs_schema, (
+                f"{code} suggested_fix anchor {spec.suggested_fix.anchor_ref!r} "
+                f"must point to a declared refs field"
+            )
+            assert 'suggested_fix' in spec.refs_schema, (
+                f"{code} emits refs.suggested_fix and must declare it in refs"
+            )
+
+    def test_render_suggested_fix_skips_missing_anchors_or_template_values(self):
+        assert render_suggested_fix(
+            'W_GUARD_CONST_TRUE',
+            {'transition_span': None, 'folded_value': True},
+        ) is None
+        assert render_suggested_fix(
+            'W_INITIAL_UNCONDITIONAL_MISSING',
+            {'composite_path': 'Root', 'existing_conditional_count': 1},
+        ) is None
+
+    def test_refs_with_suggested_fix_renders_declared_payload(self):
+        refs = refs_with_suggested_fix(
+            'W_UNREFERENCED_VAR',
+            {
+                'var_name': 'unused',
+                'init_value': '0',
+                'definition_delete_anchor': 'unused',
+            },
+        )
+        assert refs['suggested_fix'] == {
+            'kind': 'delete',
+            'target': 'variable_definition',
+            'anchor': {'type': 'ref', 'ref': 'refs.definition_delete_anchor'},
+            'text': '',
+            'rationale': 'Remove the declaration-only variable because it has no DSL reads or writes.',
+        }
 
     @pytest.mark.parametrize('type_token', ['float', 'number'])
     def test_loads_numeric_ref_type_tokens(self, tmp_path, type_token):

@@ -57,12 +57,36 @@ export const FCSTM_DIAGNOSTIC_CODES = {
     unreachableState: 'W_UNREACHABLE_STATE',
     guardConstFalse: 'W_GUARD_CONST_FALSE',
     unusedEvent: 'W_UNUSED_EVENT',
+    guardConstTrue: 'W_GUARD_CONST_TRUE',
+    deadlockLeaf: 'W_DEADLOCK_LEAF',
+    initialUnconditionalMissing: 'W_INITIAL_UNCONDITIONAL_MISSING',
+    unreferencedVar: 'W_UNREFERENCED_VAR',
+    effectSelfAssign: 'W_EFFECT_SELF_ASSIGN',
 } as const;
 
 function isFalseLiteral(expression: FcstmAstExpression): boolean {
     return expression.expressionKind === 'literal'
         && expression.literalType === 'boolean'
         && /^(false|False)$/i.test(expression.valueText);
+}
+
+function dottedPath(path: readonly string[] | undefined): string | null {
+    return path && path.length > 0 ? path.join('.') : null;
+}
+
+function transitionDiagnosticEndpointPaths(
+    transition: FcstmSemanticTransition,
+): {from_path?: string; to_path?: string} {
+    const fromPath = transition.sourceKind === 'init'
+        ? '[*]'
+        : dottedPath(transition.sourceStatePath) ?? transition.sourceStateName ?? null;
+    const toPath = transition.targetKind === 'exit'
+        ? '[*]'
+        : dottedPath(transition.targetStatePath) ?? transition.targetStateName ?? null;
+    return {
+        ...(fromPath ? {from_path: fromPath} : {}),
+        ...(toPath ? {to_path: toPath} : {}),
+    };
 }
 
 function toFileUri(document: TextDocumentLike): string {
@@ -322,7 +346,9 @@ function addTransitionDiagnostics(
                 source: 'fcstm',
                 code: FCSTM_DIAGNOSTIC_CODES.guardConstFalse,
                 data: {
+                    transition_span: null,
                     folded_value: false,
+                    ...transitionDiagnosticEndpointPaths(transition),
                 },
                 relatedInformation: sourceState
                     ? [{
@@ -966,20 +992,11 @@ function addInitialTransitionInvalidDiagnostics(
     }
 }
 
-export async function collectSemanticAnalysisDiagnostics(
-    document: TextDocumentLike
-): Promise<FcstmDiagnostic[]> {
+export function collectSemanticAnalysisDiagnosticsFromSemantic(
+    semantic: FcstmSemanticDocument,
+    document: TextDocumentLike,
+): FcstmDiagnostic[] {
     const diagnostics: FcstmDiagnostic[] = [];
-    const semantic = await getWorkspaceGraph().getSemanticDocument(document);
-    // Defensive: callers always invoke against documents with a
-    // semantic analysis available; this guard exists for hypothetical
-    // future async paths.
-    /* c8 ignore start */
-    if (!semantic) {
-        return diagnostics;
-    }
-    /* c8 ignore stop */
-
     addImportMappingDiagnostics(semantic, document, diagnostics);
     addUnreachableStateDiagnostics(semantic, document, diagnostics);
     addTransitionDiagnostics(semantic, document, diagnostics);
@@ -993,6 +1010,22 @@ export async function collectSemanticAnalysisDiagnostics(
     addInitialTransitionInvalidDiagnostics(semantic, document, diagnostics);
     addTypeMismatchDiagnostics(semantic, document, diagnostics);
     return diagnostics;
+}
+
+export async function collectSemanticAnalysisDiagnostics(
+    document: TextDocumentLike
+): Promise<FcstmDiagnostic[]> {
+    const semantic = await getWorkspaceGraph().getSemanticDocument(document);
+    // Defensive: callers always invoke against documents with a
+    // semantic analysis available; this guard exists for hypothetical
+    // future async paths.
+    /* c8 ignore start */
+    if (!semantic) {
+        return [];
+    }
+    /* c8 ignore stop */
+
+    return collectSemanticAnalysisDiagnosticsFromSemantic(semantic, document);
 }
 
 // -------------------------------------------------------------------------

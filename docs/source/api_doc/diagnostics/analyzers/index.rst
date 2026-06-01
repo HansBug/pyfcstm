@@ -9,6 +9,7 @@ pyfcstm.diagnostics.analyzers
 .. toctree::
     :maxdepth: 3
 
+    const_fold
     data_flow
     design_health
     naming
@@ -17,6 +18,7 @@ pyfcstm.diagnostics.analyzers
     thresholds
     transition_info
     type_shape
+    use_def
 
 \_\_all\_\_
 -----------------------------------------------------

@@ -27,6 +27,7 @@ from .codes import (
     CodeSpec,
     CodesSchemaError,
     ForLlmSpec,
+    SuggestedFixSpec,
     load_codes,
 )
 from .inspect import (
@@ -44,6 +45,7 @@ from .inspect import (
     inspect_model,
 )
 from .sink import DiagnosticSink
+from .suggested_fix import refs_with_suggested_fix, render_suggested_fix
 
 __all__ = [
     'CODE_REGISTRY',
@@ -61,8 +63,11 @@ __all__ = [
     'ModelInspect',
     'ModelMetrics',
     'StateInfo',
+    'SuggestedFixSpec',
     'TransitionInfo',
     'VariableInfo',
     'inspect_model',
     'load_codes',
+    'refs_with_suggested_fix',
+    'render_suggested_fix',
 ]

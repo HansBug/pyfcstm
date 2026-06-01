@@ -308,6 +308,10 @@ def _expr_to_z3_or_result(
     except ValueError as err:
         # ValueError: expr_to_z3 raises this for unknown variables or operators.
         return None, _skip_result("undecidable_skip", str(err))
+    except TypeError as err:
+        # TypeError: expr_to_z3 may delegate unsupported Python/Z3 operators
+        # before Z3 creates an expression, for example Int left-shift.
+        return None, _skip_result("undecidable_skip", str(err))
     except z3.Z3Exception as err:
         # Z3Exception: Z3 can reject otherwise parsed expressions for sort or
         # operator-domain mismatches, for example modulo over Real operands.
@@ -337,6 +341,11 @@ def _execute_operations_or_result(
         # ValueError: execute_operations delegates to expr_to_z3, which raises
         # this for unknown variables or unsupported operators.
         return None, _skip_result("undecidable_skip", str(err))
+    except TypeError as err:
+        # TypeError: execute_operations delegates to expr_to_z3 and can also
+        # surface unsupported Python/Z3 operator combinations before Z3 wraps
+        # them in Z3Exception.
+        return None, _skip_result("undecidable_skip", str(err))
     except z3.Z3Exception as err:
         # Z3Exception: Z3 can reject symbolic operation expressions because of
         # sort/operator-domain mismatches.
@@ -358,6 +367,9 @@ def _build_init_constraints_or_result(
     """
     constraints: List[z3.ExprRef] = []
     for variable in variables:
+        safety = check_expr_safety(variable.init)
+        if not safety.safe:
+            return None, _unsafe_result(safety)
         init_value, result = _expr_to_z3_or_result(variable.init, z3_vars)
         if result is not None:
             return None, result
@@ -446,16 +458,21 @@ def dead_guard(
     transition: Transition,
     variables: Sequence[VarDefine],
     *,
-    smt_timeout_ms: Optional[int] = 1000,
+    smt_timeout_ms: Optional[int] = None,
 ) -> AlgorithmResult:
     """Detect a transition guard that is unsatisfiable.
+
+    This pure-guard variant does not pin variables to DSL declaration
+    initializers.  Use :func:`forced_guard_unsat_under_init` for the separate
+    forced-transition check that additionally evaluates guards under DSL
+    initial values.
 
     :param transition: Transition to check.
     :type transition: Transition
     :param variables: Variable definitions available to the model.
     :type variables: Sequence[VarDefine]
-    :param smt_timeout_ms: Optional solver timeout in milliseconds, defaults to
-        ``1000``.  ``None`` is forwarded to the solver helper as no timeout.
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+        ``None`` is forwarded to the solver helper as no timeout.
     :type smt_timeout_ms: Optional[int], optional
     :return: Algorithm result.
     :rtype: AlgorithmResult
@@ -490,7 +507,7 @@ def guard_tautology(
     transition: Transition,
     variables: Sequence[VarDefine],
     *,
-    smt_timeout_ms: Optional[int] = 1000,
+    smt_timeout_ms: Optional[int] = None,
 ) -> AlgorithmResult:
     """Detect a transition guard that is valid under all assignments.
 
@@ -533,7 +550,7 @@ def forced_guard_unsat_under_init(
     transition: Transition,
     variables: Sequence[VarDefine],
     *,
-    smt_timeout_ms: Optional[int] = 1000,
+    smt_timeout_ms: Optional[int] = None,
 ) -> AlgorithmResult:
     """Detect a forced-transition guard unsatisfiable under initial values.
 
@@ -568,6 +585,7 @@ def forced_guard_unsat_under_init(
                     "W_FORCED_GUARD_UNSAT",
                     "forced_guard_unsat_under_init",
                     transition=_transition_payload(transition),
+                    scope="dsl_def_init_only",
                     verification_scope="smt_local",
                 ),
             ),
@@ -579,7 +597,7 @@ def effect_no_op_under_guard(
     transition: Transition,
     variables: Sequence[VarDefine],
     *,
-    smt_timeout_ms: Optional[int] = 1000,
+    smt_timeout_ms: Optional[int] = None,
 ) -> AlgorithmResult:
     """Detect transition effects that never change model variables.
 
@@ -616,6 +634,16 @@ def effect_no_op_under_guard(
         if result is not None:
             return result
 
+    type_constraints = _build_type_constraints(variables, z3_vars)
+    guard_feasible = is_sat(
+        [guard_z3, *type_constraints],
+        timeout_ms=smt_timeout_ms,
+    )
+    if guard_feasible.kind == "unsat":
+        return AlgorithmResult(kind="sat")
+    if guard_feasible.kind != "sat":
+        return AlgorithmResult(kind=guard_feasible.kind)
+
     changed_disjuncts = [
         after_vars[variable.name] != z3_vars[variable.name] for variable in variables
     ]
@@ -625,7 +653,7 @@ def effect_no_op_under_guard(
     formula = z3.And(
         guard_z3,
         z3.Or(*changed_disjuncts),
-        *_build_type_constraints(variables, z3_vars),
+        *type_constraints,
     )
     sat_result = is_sat([formula], timeout_ms=smt_timeout_ms)
     if sat_result.kind == "unsat":
@@ -647,7 +675,7 @@ def effect_contradicts_guard(
     transition: Transition,
     variables: Sequence[VarDefine],
     *,
-    smt_timeout_ms: Optional[int] = 1000,
+    smt_timeout_ms: Optional[int] = None,
 ) -> AlgorithmResult:
     """Detect effects after which the transition guard cannot still hold.
 
@@ -760,7 +788,7 @@ def transition_shadowed_by_predecessor(
     machine: StateMachine,
     variables: Sequence[VarDefine],
     *,
-    smt_timeout_ms: Optional[int] = 1000,
+    smt_timeout_ms: Optional[int] = None,
 ) -> AlgorithmResult:
     """Detect outgoing transitions shadowed by earlier transitions.
 
@@ -777,27 +805,26 @@ def transition_shadowed_by_predecessor(
     first_indeterminate_result: Optional[AlgorithmResult] = None
 
     for source, outgoing in _iter_ordered_outgoing(machine):
-        prior_unconditional: Optional[Transition] = None
         prior_events: Dict[str, Transition] = {}
         prior_guards: List[Transition] = []
+        prior_unconditional: Optional[Transition] = None
 
         for transition in outgoing:
-            if prior_unconditional is not None:
-                diagnostics.append(
-                    _make_diag(
-                        "W_TRANSITION_SHADOWED",
-                        "transition_shadowed_by_predecessor",
-                        transition=_transition_payload(transition),
-                        shadowed_by=(_transition_payload(prior_unconditional),),
-                        reason="unconditional_catchall",
-                        source=_state_path(source),
-                        verification_scope="topological_only",
-                    )
-                )
-                continue
-
             key = _domain_key(transition)
             if key == "unconditional":
+                if prior_unconditional is not None:
+                    diagnostics.append(
+                        _make_diag(
+                            "W_TRANSITION_SHADOWED",
+                            "transition_shadowed_by_predecessor",
+                            transition=_transition_payload(transition),
+                            shadowed_by=(_transition_payload(prior_unconditional),),
+                            reason="unconditional_catchall",
+                            source=_state_path(source),
+                            verification_scope="topological_only",
+                        )
+                    )
+                    continue
                 prior_unconditional = transition
                 continue
 
@@ -912,6 +939,10 @@ def _action_operations(
 ) -> List[OperationStatement]:
     """Collect concrete operation statements from lifecycle actions.
 
+    Abstract actions cannot be symbolically executed in this raw solver layer,
+    so they are treated as identity and omitted from the collected operation
+    stream.
+
     :param actions: Lifecycle actions.
     :type actions: Sequence[Union[OnStage, OnAspect]]
     :return: Flattened concrete operation statements.
@@ -961,11 +992,48 @@ def _conditional_conditions_from_operations(
                 yield from _conditional_conditions_from_operations(branch.statements)
 
 
+def _concrete_before_aspect_operations(state: State) -> List[OperationStatement]:
+    """Collect concrete ancestor ``>> during before`` operations in run order.
+
+    :param state: Leaf state whose first-cycle aspect prelude is inspected.
+    :type state: State
+    :return: Flattened concrete aspect operation statements.
+    :rtype: List[OperationStatement]
+    """
+    return _action_operations(
+        [action for _, action in state.iter_on_during_before_aspect_recursively()]
+    )
+
+
+def _is_root_initial_leaf(state: State) -> bool:
+    """Return whether a leaf is reached only through initial transitions.
+
+    ``enter_postcondition_implies_during_precondition`` pins variables to DSL
+    declaration initializers.  That pre-state is sound only for the global
+    initial leaf reached through root-to-leaf ``[*]`` transitions.
+
+    :param state: Leaf state to inspect.
+    :type state: State
+    :return: Whether the root-to-leaf path is initial-transition-only.
+    :rtype: bool
+    """
+    current = state
+    while current.parent is not None:
+        parent = current.parent
+        if not any(
+            transition.to_state == current.name
+            for transition in parent.init_transitions
+        ):
+            return False
+        current = parent
+    return True
+
+
 def enter_postcondition_implies_during_precondition(
     state: State,
     variables: Sequence[VarDefine],
     *,
-    smt_timeout_ms: Optional[int] = 1000,
+    smt_timeout_ms: Optional[int] = None,
 ) -> AlgorithmResult:
     """Detect first-cycle during conditions determined by enter-time values.
 
@@ -980,14 +1048,18 @@ def enter_postcondition_implies_during_precondition(
     """
     if not state.is_leaf_state or state.is_pseudo:
         return AlgorithmResult(kind="sat")
+    if not _is_root_initial_leaf(state):
+        return AlgorithmResult(kind="sat")
 
     enter_operations = _action_operations(state.on_enters)
+    before_aspect_operations = _concrete_before_aspect_operations(state)
     during_operations = _action_operations(state.on_durings)
     if not enter_operations or not during_operations:
         return AlgorithmResult(kind="sat")
 
     result = _merge_safety_checks(
         check_expr_safety_for_effect(enter_operations),
+        check_expr_safety_for_effect(before_aspect_operations),
         check_expr_safety_for_effect(during_operations),
     )
     if result is not None:
@@ -1004,13 +1076,19 @@ def enter_postcondition_implies_during_precondition(
     enter_vars, result = _execute_operations_or_result(enter_operations, z3_vars)
     if result is not None:
         return result
+    first_cycle_vars, result = _execute_operations_or_result(
+        before_aspect_operations,
+        enter_vars,
+    )
+    if result is not None:
+        return result
 
     type_constraints = _build_type_constraints(variables, z3_vars)
     diagnostics: List[dict] = []
     first_indeterminate_result: Optional[AlgorithmResult] = None
 
     for condition in conditions:
-        condition_z3, result = _expr_to_z3_or_result(condition, enter_vars)
+        condition_z3, result = _expr_to_z3_or_result(condition, first_cycle_vars)
         if result is not None:
             first_indeterminate_result = _first_indeterminate(
                 first_indeterminate_result,
@@ -1083,9 +1161,13 @@ def composite_init_guards_incomplete(
     machine: StateMachine,
     variables: Sequence[VarDefine],
     *,
-    smt_timeout_ms: Optional[int] = 1000,
+    smt_timeout_ms: Optional[int] = None,
 ) -> AlgorithmResult:
     """Detect composite states whose initial transitions do not cover inputs.
+
+    The result ``kind`` follows the witness query: ``'sat'`` means a coverage
+    gap was found and diagnostics were emitted, while ``'unsat'`` means the
+    initial-transition triggers cover all modeled inputs.
 
     :param machine: State machine to inspect.
     :type machine: StateMachine

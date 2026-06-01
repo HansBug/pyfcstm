@@ -21,6 +21,7 @@ SafetyReason = Literal[
     "transcendental",
     "double_var_power",
     "variable_exponent",
+    "nonlinear",
 ]
 
 _BITWISE_BINARY_OPERATORS = frozenset({"&", "|", "^", "<<", ">>"})
@@ -107,6 +108,10 @@ def check_expr_safety(expr: Optional[Expr]) -> SafetyCheck:
     if isinstance(expr, BinaryOp):
         if expr.op in _BITWISE_BINARY_OPERATORS:
             return _unsafe("bitwise", expr)
+        if expr.op == "*" and _contains_variable(expr.x) and _contains_variable(expr.y):
+            return _unsafe("nonlinear", expr)
+        if expr.op in {"/", "%"} and _contains_variable(expr.y):
+            return _unsafe("nonlinear", expr)
         if expr.op == "**":
             left_has_variable = _contains_variable(expr.x)
             right_has_variable = _contains_variable(expr.y)

@@ -42,14 +42,14 @@ def test_registry_contains_exactly_all_pr_a_algorithms_in_stable_order():
     assert len(REGISTRY) == 19
 
 
-def test_registry_keys_match_meta_names_and_pr_a3_impl_state():
+def test_registry_keys_match_meta_names_and_pr_a4_impl_state():
     assert not hasattr(REGISTRY, "__setitem__")
     assert len(set(REGISTRY)) == len(REGISTRY)
     for name, meta in REGISTRY.items():
         assert meta.name == name
         assert meta.description
         assert meta.quantifier_alternation_depth == 0
-        if name in GROUP1_TOPOLOGY:
+        if name in GROUP1_TOPOLOGY or name in GROUP2_SMT_LOCAL:
             assert meta.impl is not None
         else:
             assert meta.impl is None
@@ -310,6 +310,5 @@ def test_verify_package_does_not_create_later_algorithm_modules():
     forbidden_paths = (
         "pyfcstm/verify/search.py",
         "pyfcstm/verify/reachability.py",
-        "pyfcstm/verify/smt_local.py",
     )
     assert [path for path in forbidden_paths if pathlib.Path(path).exists()] == []

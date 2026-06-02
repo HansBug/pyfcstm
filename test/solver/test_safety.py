@@ -1,4 +1,4 @@
-"""Tests for solver expression safety classification."""
+"""Tests for optional solver expression policy classification."""
 
 from dataclasses import FrozenInstanceError
 
@@ -125,6 +125,31 @@ class TestPowerSafety:
     def test_variable_exponent_negative_case(self):
         """Constant-only power expressions are accepted."""
         assert_safe(BinaryOp(Integer(2), "**", Integer(8)))
+
+
+@pytest.mark.unittest
+class TestLinearArithmeticSafety:
+    """Test rejection of arithmetic outside the linear SMT envelope."""
+
+    def test_variable_multiplication_is_rejected(self):
+        """Variable-variable multiplication is nonlinear."""
+        expr = BinaryOp(Variable("x"), "*", Variable("y"))
+
+        assert assert_unsafe(expr, "nonlinear") is expr
+
+    def test_variable_denominator_is_rejected(self):
+        """Division and modulo by symbolic values leave linear arithmetic."""
+        div_expr = BinaryOp(Variable("x"), "/", Variable("y"))
+        mod_expr = BinaryOp(Variable("x"), "%", Variable("y"))
+
+        assert assert_unsafe(div_expr, "nonlinear") is div_expr
+        assert assert_unsafe(mod_expr, "nonlinear") is mod_expr
+
+    def test_constant_scaled_variable_is_accepted(self):
+        """Linear scalar multiplication and constant division stay accepted."""
+        assert_safe(BinaryOp(Variable("x"), "*", Integer(2)))
+        assert_safe(BinaryOp(Integer(2), "*", Variable("x")))
+        assert_safe(BinaryOp(Variable("x"), "/", Integer(2)))
 
 
 @pytest.mark.unittest

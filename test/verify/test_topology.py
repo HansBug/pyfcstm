@@ -22,7 +22,7 @@ GROUP1_TOPOLOGY = (
     "event_emission_to_consumer_reachable",
 )
 
-GROUP2_AND_GROUP3 = (
+GROUP2_SMT_LOCAL = (
     "dead_guard",
     "guard_tautology",
     "forced_guard_unsat_under_init",
@@ -31,6 +31,9 @@ GROUP2_AND_GROUP3 = (
     "transition_shadowed_by_predecessor",
     "enter_postcondition_implies_during_precondition",
     "composite_init_guards_incomplete",
+)
+
+GROUP3_BMC_PLACEHOLDERS = (
     "bounded_reachability",
     "symbolic_bfs",
     "bounded_safety",
@@ -920,7 +923,10 @@ def test_registry_wires_group1_impls_and_preserves_later_placeholders():
     }
     for name in GROUP1_TOPOLOGY:
         assert REGISTRY[name].impl is expected_impls[name]
-    for name in GROUP2_AND_GROUP3:
+
+
+def test_registry_preserves_group3_placeholders_after_topology_and_smt_local():
+    for name in GROUP3_BMC_PLACEHOLDERS:
         assert REGISTRY[name].impl is None
 
 

@@ -1,3 +1,5 @@
+import {pathToFileURL} from 'node:url';
+
 import {getParser, ParseError} from '../dsl/parser';
 import {inspectModel, type ModelDiagnosticJson} from '../diagnostics';
 import {buildStateMachineModel} from '../model';
@@ -12,7 +14,7 @@ import {
 import {getImportWorkspaceIndex} from '../workspace/imports';
 import {getWorkspaceGraph} from '../workspace';
 import {resolveRangeFromRefsDetailed} from './inspect-ranges';
-import {suggestedFixDiagnosticRange, suggestedFixIssueRange} from './suggested-fixes';
+import {spanLikeToRange, suggestedFixDiagnosticRange, suggestedFixIssueRange} from './suggested-fixes';
 
 // Only suppress inspect codes that the semantic analyzer already reports with
 // equivalent coverage. Const-folded false guards stay inspect-backed because
@@ -67,6 +69,27 @@ function rangeEquals(left: TextRange, right: TextRange): boolean {
         left.start.character === right.start.character &&
         left.end.line === right.end.line &&
         left.end.character === right.end.character;
+}
+
+function documentUri(document: TextDocumentLike): string {
+    const filePath = document.filePath || document.uri?.fsPath;
+    return filePath ? pathToFileURL(filePath).toString() : 'untitled:fcstm';
+}
+
+function relatedInformationFromRefs(
+    document: TextDocumentLike,
+    item: ModelDiagnosticJson,
+): FcstmDiagnostic['relatedInformation'] {
+    if (item.code !== 'W_FORCED_OVERRIDES_NORMAL') return undefined;
+    const normalRange = spanLikeToRange(item.refs.normal_transition_span);
+    if (!normalRange) return undefined;
+    return [{
+        location: {
+            uri: documentUri(document),
+            range: normalRange,
+        },
+        message: 'Normal transition duplicated by this forced transition.',
+    }];
 }
 
 export interface CollectInspectModelDiagnosticsOptions {
@@ -129,6 +152,7 @@ export function collectInspectDiagnosticsFromItems(
         if (refResolution.fallback) {
             diagnostic.data = {...(diagnostic.data ?? {}), __rangeFallback: refResolution.fallback};
         }
+        diagnostic.relatedInformation = relatedInformationFromRefs(document, item);
         if (consumeDiagnosticCount(existingCounts, diagnosticKey(diagnostic))) continue;
         diagnostics.push(diagnostic);
     }

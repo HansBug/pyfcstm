@@ -872,8 +872,8 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 'refs': {
                     'from_path': 'Root.Active',
                     'to_path': 'Root.Trapped',
-                    'forced_span': None,
-                    'normal_span': None,
+                    'forced_declaration_span': None,
+                    'normal_transition_span': None,
                 },
             },
             {

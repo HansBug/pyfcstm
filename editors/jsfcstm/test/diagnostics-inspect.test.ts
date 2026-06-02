@@ -833,7 +833,18 @@ state Root {
                 {
                     code: 'W_FORCED_OVERRIDES_NORMAL',
                     severity: 'warning',
-                    refs: {from_path: 'Root.Active', to_path: 'Root.Trapped', forced_span: null, normal_span: null},
+                    refs: {
+                        from_path: 'Root.Active',
+                        to_path: 'Root.Trapped',
+                        forced_declaration_span: {
+                            start: {line: 18, character: 4},
+                            end: {line: 18, character: 31},
+                        },
+                        normal_transition_span: {
+                            start: {line: 16, character: 4},
+                            end: {line: 16, character: 30},
+                        },
+                    },
                 },
                 {
                     code: 'W_GUARD_VARS_NEVER_CHANGE',

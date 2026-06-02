@@ -32,6 +32,7 @@ import {
 import {collectDesignHealthWarnings} from './analyzers';
 import {buildUseDefGraph, collectExprVariables} from './analyzers/use-def';
 import type {RawFcstmModelForcedTransition} from '../model/raw';
+import type {TextRange} from '../utils/text';
 
 const INIT_MARK = '[*]';
 const EXIT_MARK = '[*]';
@@ -119,6 +120,12 @@ export interface TransitionInfo {
     is_forced: boolean;
     forced_origin: string | null;
     transition_index: number | null;
+    /**
+     * Non-enumerable editor-only source range for analyzer-to-editor
+     * handoff. It is intentionally omitted from ``toJson()`` output and from
+     * the shared schema; PR-E will formalize public span fields separately.
+     */
+    __sourceRange?: TextRange;
 }
 
 
@@ -440,7 +447,7 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
     const out: TransitionInfo[] = [];
     for (const state of machine.allStates) {
         for (const t of state.transitions) {
-            out.push({
+            const info: TransitionInfo = {
                 from_path: transitionEndpoint(state.path, t.fromState, true),
                 to_path: transitionEndpoint(state.path, t.toState, false),
                 event: t.event ? t.event.pathName : null,
@@ -451,7 +458,14 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
                 is_forced: !!t.forced,
                 forced_origin: t.forced ? t.text : null,
                 transition_index: typeof t.transitionIndex === 'number' ? t.transitionIndex : null,
+            };
+            Object.defineProperty(info, '__sourceRange', {
+                value: t.range,
+                enumerable: false,
+                configurable: false,
+                writable: false,
             });
+            out.push(info);
         }
     }
     return out;

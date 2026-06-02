@@ -138,6 +138,7 @@ def test_design_health_helper_keeps_minimal_const_false_fallback_without_machine
                 effect_self_assigns=tuple(),
                 is_forced=False,
                 forced_origin=None,
+                transition_index=0,
             )
         ],
         variables=[],

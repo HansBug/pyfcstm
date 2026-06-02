@@ -113,7 +113,7 @@ class TestInspectModelBasic:
     def test_transition_guard_text(self, report):
         guarded = [t for t in report.transitions if t.guard is not None]
         assert len(guarded) == 1
-        assert 'counter' in guarded[0].guard
+        assert guarded[0].guard == 'counter > 0'
 
     def test_transition_event_qualified(self, report):
         with_event = [t for t in report.transitions if t.event is not None]
@@ -970,6 +970,8 @@ class TestInspectModelGuardAffectDiagnostics:
             'folded_value': True,
             'from_path': 'Root.Idle',
             'to_path': 'Root.Done',
+            'guard_text': '1 + 2 == 3',
+            'transition_index': 1,
         }
 
     def test_unreferenced_variable_with_abstract_action_is_info(self):
@@ -1328,6 +1330,8 @@ class TestInspectModelExtendedCoverage:
             'folded_value': True,
             'from_path': 'Root.Idle',
             'to_path': 'Root.Active',
+            'guard_text': '1 + 2 == 3',
+            'transition_index': 1,
         }
         const_false = next(d for d in diagnostics if d.code == 'W_GUARD_CONST_FALSE')
         assert const_false.refs == {
@@ -1335,6 +1339,8 @@ class TestInspectModelExtendedCoverage:
             'folded_value': False,
             'from_path': 'Root.Active',
             'to_path': 'Root.Blocked',
+            'guard_text': '15 & 240 != 0',
+            'transition_index': 2,
         }
         during_refs = sorted(
             (d.refs for d in diagnostics if d.code == 'W_DURING_CONST_ASSIGN'),
@@ -1568,6 +1574,7 @@ class TestInspectModelRedundancySemantics:
             'state_path': '[*]',
             'transition_span': None,
             'var_name': 'x',
+            'transition_index': 0,
         }
 
 
@@ -1797,4 +1804,88 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
             'from_path': 'Root.A',
             'to_path': 'Root.B',
             'transition_span': None,
+            'transition_index': 1,
         }
+
+
+@pytest.mark.unittest
+def test_inspect_guard_text_is_shared_normalized_format():
+    report = inspect_model(_parse("""
+    state Root {
+        state Idle;
+        state Blocked;
+        [*] -> Idle;
+        Idle -> Blocked : if [(0x0F & 0xF0) != 0];
+    }
+    """))
+    transition = next(item for item in report.transitions if item.guard is not None)
+    diagnostic = next(item for item in report.diagnostics if item.code == 'W_GUARD_CONST_FALSE')
+
+    assert transition.guard == '15 & 240 != 0'
+    assert diagnostic.refs['guard_text'] == '15 & 240 != 0'
+
+
+@pytest.mark.unittest
+def test_forced_transition_indexes_include_declaring_state_expansions_before_descendants():
+    report = inspect_model(_parse("""
+    state Root {
+        state A {
+            state X;
+            state Y;
+            [*] -> X;
+            X -> Y;
+            X -> Y;
+        }
+        state B;
+        [*] -> A;
+        !A -> B :: Fatal;
+        A -> B : if [false];
+    }
+    """))
+
+    assert [
+        (transition.transition_index, transition.from_path, transition.to_path, transition.is_forced)
+        for transition in report.transitions
+    ] == [
+        (0, 'Root.A', 'Root.B', True),
+        (1, '[*]', 'Root.A', False),
+        (2, 'Root.A', 'Root.B', False),
+        (3, 'Root.A.X', '[*]', True),
+        (4, 'Root.A.Y', '[*]', True),
+        (5, '[*]', 'Root.A.X', False),
+        (6, 'Root.A.X', 'Root.A.Y', False),
+        (7, 'Root.A.X', 'Root.A.Y', False),
+    ]
+
+
+@pytest.mark.unittest
+def test_nested_transition_indexes_follow_parent_first_model_order():
+    from pyfcstm.diagnostics import inspect_model
+    from pyfcstm.dsl import parse_with_grammar_entry
+    from pyfcstm.model import parse_dsl_node_to_state_machine
+
+    source = """
+    state Root {
+        state A {
+            state X;
+            state Y;
+            [*] -> X;
+            X -> Y;
+            X -> Y;
+        }
+        [*] -> A;
+    }
+    """
+    report = inspect_model(parse_dsl_node_to_state_machine(
+        parse_with_grammar_entry(source, 'state_machine_dsl'),
+    ))
+
+    assert [
+        (transition.transition_index, transition.from_path, transition.to_path)
+        for transition in report.transitions
+    ] == [
+        (0, '[*]', 'Root.A'),
+        (1, '[*]', 'Root.A.X'),
+        (2, 'Root.A.X', 'Root.A.Y'),
+        (3, 'Root.A.X', 'Root.A.Y'),
+    ]

@@ -9,6 +9,7 @@ import type {
     FcstmAstOperationStatement,
     FcstmAstStateDefinition,
     FcstmAstTransition,
+    FcstmAstTransitionIndexRef,
     FcstmAstVariableDefinition,
 } from '../ast';
 import type {FcstmSemanticDocument} from '../semantics';
@@ -86,6 +87,7 @@ interface InheritedForceTransition {
     declaredInStatePath: string[];
     triggerScope?: 'local' | 'chain' | 'absolute';
     transitionKind: FcstmModelTransition['transitionKind'];
+    ast: FcstmAstForcedTransition;
 }
 
 function pathKey(path: Array<string | null>): string {
@@ -152,12 +154,12 @@ class StateMachineModelBuilder {
     private readonly allEvents: FcstmModelEvent[] = [];
     private readonly allTransitions: FcstmModelTransition[] = [];
     private readonly forcedTransitions: FcstmModelForcedTransition[] = [];
+    private nextTransitionIndex = 0;
     private readonly allActions: FcstmModelNamedFunction[] = [];
     private readonly statesByPath = new Map<string, FcstmModelState>();
     private readonly stateAstByPath = new Map<string, FcstmAstStateDefinition>();
     private readonly eventsByPath = new Map<string, FcstmModelEvent>();
     private readonly namedFunctionsByPath = new Map<string, FcstmModelNamedFunction>();
-
     constructor(private readonly ast: FcstmAstDocument) {
         this.filePath = ast.filePath;
         this.rootStateName = ast.rootState?.name || '';
@@ -434,9 +436,10 @@ class StateMachineModelBuilder {
             this.recordForcedTransition(force, currentState);
         }
 
+        const inheritedForSubstates = new Map<string, InheritedForceTransition[]>();
         for (const substateDefinition of definition.substates) {
-            const nextState = currentState.substates[substateDefinition.name];
             const childInheritedTransitions: InheritedForceTransition[] = [];
+            inheritedForSubstates.set(substateDefinition.name, childInheritedTransitions);
 
             for (const force of effectiveForceTransitions) {
                 if (force.fromStateName !== 'ALL' && force.fromStateName !== substateDefinition.name) {
@@ -458,6 +461,7 @@ class StateMachineModelBuilder {
                     forced: true,
                     declaredInStatePath: force.declaredInStatePath,
                     triggerScope: force.triggerScope,
+                    ast: force.ast,
                 });
 
                 childInheritedTransitions.push({
@@ -471,10 +475,9 @@ class StateMachineModelBuilder {
                     declaredInStatePath: force.declaredInStatePath,
                     triggerScope: force.triggerScope,
                     transitionKind: 'exitAll',
+                    ast: force.ast,
                 });
             }
-
-            this.finalizeTransitions(substateDefinition, nextState, childInheritedTransitions);
         }
 
         for (const transition of definition.transitions) {
@@ -498,7 +501,17 @@ class StateMachineModelBuilder {
                 forced: false,
                 declaredInStatePath: currentState.path,
                 triggerScope,
+                ast: transition,
             });
+        }
+
+        for (const substateDefinition of definition.substates) {
+            const nextState = currentState.substates[substateDefinition.name];
+            this.finalizeTransitions(
+                substateDefinition,
+                nextState,
+                inheritedForSubstates.get(substateDefinition.name) ?? [],
+            );
         }
     }
 
@@ -526,6 +539,7 @@ class StateMachineModelBuilder {
             declaredInStatePath: currentState.path,
             triggerScope,
             transitionKind: transition.transitionKind,
+            ast: transition,
         };
     }
 
@@ -760,7 +774,9 @@ class StateMachineModelBuilder {
         forced: boolean;
         declaredInStatePath: string[];
         triggerScope?: FcstmModelTransition['triggerScope'];
+        ast?: FcstmAstTransition | FcstmAstForcedTransition;
     }): void {
+        const transitionIndex = this.nextTransitionIndex;
         const transition: FcstmModelTransition = {
             kind: 'transition',
             pyModelType: 'Transition',
@@ -795,10 +811,48 @@ class StateMachineModelBuilder {
             declared_in_state_path: params.declaredInStatePath,
             triggerScope: params.triggerScope,
             trigger_scope: params.triggerScope,
+            transitionIndex,
+            transition_index: transitionIndex,
         };
+        this.nextTransitionIndex += 1;
+        if (params.ast) {
+            this.recordAstTransitionIndex(params.ast, transitionIndex, transition);
+        }
 
         params.parentState.transitions.push(transition);
         this.allTransitions.push(transition);
+    }
+
+    private recordAstTransitionIndex(
+        ast: FcstmAstTransition | FcstmAstForcedTransition,
+        transitionIndex: number,
+        transition: FcstmModelTransition,
+    ): void {
+        if (!transition.forced) {
+            ast.transitionIndex = transitionIndex;
+        }
+
+        const refs = Array.isArray(ast.transitionIndexRefs)
+            ? ast.transitionIndexRefs as FcstmAstTransitionIndexRef[]
+            : [];
+        refs.push({
+            index: transitionIndex,
+            fromPath: this.transitionEndpointPath(transition, 'source'),
+            toPath: this.transitionEndpointPath(transition, 'target'),
+        });
+        ast.transitionIndexRefs = refs;
+    }
+
+    private transitionEndpointPath(
+        transition: FcstmModelTransition,
+        endpoint: 'source' | 'target',
+    ): string | null {
+        if (endpoint === 'source') {
+            if (transition.sourceKind === 'init') return '[*]';
+            return transition.sourceStatePath ? statePathName(transition.sourceStatePath) : null;
+        }
+        if (transition.targetKind === 'exit') return '[*]';
+        return transition.targetStatePath ? statePathName(transition.targetStatePath) : null;
     }
 
     private resolveStateReference(
@@ -892,7 +946,7 @@ class StateMachineModelBuilder {
                         pyModelType: 'Boolean',
                         range: expression.range,
                         text: expression.text,
-                        value: expression.valueText === 'true',
+                        value: expression.valueText.toLowerCase() === 'true',
                     };
                     return booleanExpr;
                 }

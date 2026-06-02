@@ -1,7 +1,7 @@
 """Redundancy and overlap design-health diagnostics."""
 
 from collections import Counter
-from typing import TYPE_CHECKING, Dict, Iterable, List, Tuple
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Tuple
 
 from ...utils.validate import ModelDiagnostic
 
@@ -25,16 +25,18 @@ def collect_redundancy_warnings(
     return diagnostics
 
 
-def _transition_trigger_key(t) -> Tuple[str, str, object, object]:
+def _transition_trigger_key(t: 'TransitionInfo') -> Tuple[str, str, object, object]:
     return t.from_path, t.to_path, t.event, t.guard
 
 
-def _transition_behavior_key(t) -> Tuple[str, str, object, object, object]:
+def _transition_behavior_key(t: 'TransitionInfo') -> Tuple[str, str, object, object, object]:
     return t.from_path, t.to_path, t.event, t.guard, t.effect
 
 
-def _redundant_transition_warnings(transitions) -> List[ModelDiagnostic]:
-    groups: Dict[Tuple[str, str, object, object, object], List[object]] = {}
+def _redundant_transition_warnings(
+        transitions: Iterable['TransitionInfo'],
+) -> List[ModelDiagnostic]:
+    groups: Dict[Tuple[str, str, object, object, object], List['TransitionInfo']] = {}
     for t in transitions:
         if t.from_path == '[*]':
             continue
@@ -58,12 +60,16 @@ def _redundant_transition_warnings(transitions) -> List[ModelDiagnostic]:
                     f'{item.from_path}->{item.to_path}#{index}'
                     for index, item in enumerate(items, 1)
                 ],
+                'transition_index': items[0].transition_index,
             },
         ))
     return diagnostics
 
 
-def _self_transition_nop_warnings(transitions, states) -> List[ModelDiagnostic]:
+def _self_transition_nop_warnings(
+        transitions: Iterable['TransitionInfo'],
+        states: Iterable['StateInfo'],
+) -> List[ModelDiagnostic]:
     states_by_path = {state.path: state for state in states}
     diagnostics: List[ModelDiagnostic] = []
     for t in transitions:
@@ -80,12 +86,21 @@ def _self_transition_nop_warnings(transitions, states) -> List[ModelDiagnostic]:
                 f'Self transition on {t.from_path!r} has no trigger, '
                 'guard, effect, or re-entry lifecycle behavior.'
             ),
-            refs={'state_path': t.from_path},
+            refs={
+                'state_path': t.from_path,
+                'from_path': t.from_path,
+                'to_path': t.to_path,
+                'transition_span': None,
+                'transition_index': t.transition_index,
+            },
         ))
     return diagnostics
 
 
-def _is_lifecycle_free_leaf(state_path: str, states_by_path) -> bool:
+def _is_lifecycle_free_leaf(
+        state_path: str,
+        states_by_path: Dict[str, 'StateInfo'],
+) -> bool:
     state = states_by_path.get(state_path)
     if state is None or not state.is_leaf or state.is_pseudo:
         return False
@@ -105,7 +120,7 @@ def _is_lifecycle_free_leaf(state_path: str, states_by_path) -> bool:
     return True
 
 
-def _effect_self_assign_warnings(transitions) -> List[ModelDiagnostic]:
+def _effect_self_assign_warnings(transitions: Iterable['TransitionInfo']) -> List[ModelDiagnostic]:
     counts = Counter(
         (t.from_path, var_name)
         for t in transitions
@@ -118,6 +133,7 @@ def _effect_self_assign_warnings(transitions) -> List[ModelDiagnostic]:
                 'state_path': t.from_path,
                 'transition_span': None,
                 'var_name': var_name,
+                'transition_index': t.transition_index,
             }
             if t.from_path != '[*]' and counts[(t.from_path, var_name)] == 1:
                 refs['effect_self_assign_anchor'] = var_name
@@ -130,7 +146,7 @@ def _effect_self_assign_warnings(transitions) -> List[ModelDiagnostic]:
     return diagnostics
 
 
-def _forced_overrides_normal_warnings(transitions) -> List[ModelDiagnostic]:
+def _forced_overrides_normal_warnings(transitions: Iterable['TransitionInfo']) -> List[ModelDiagnostic]:
     normal = {
         _transition_trigger_key(t)
         for t in transitions
@@ -157,8 +173,8 @@ def _forced_overrides_normal_warnings(transitions) -> List[ModelDiagnostic]:
     return diagnostics
 
 
-def _shadowed_event_warnings(events) -> List[ModelDiagnostic]:
-    by_leaf_name: Dict[str, List[object]] = {}
+def _shadowed_event_warnings(events: Iterable['EventInfo']) -> List[ModelDiagnostic]:
+    by_leaf_name: Dict[str, List['EventInfo']] = {}
     for event in events:
         leaf = event.qualified_name.rsplit('.', 1)[-1]
         by_leaf_name.setdefault(leaf, []).append(event)
@@ -191,7 +207,10 @@ def _shadowed_event_warnings(events) -> List[ModelDiagnostic]:
     return diagnostics
 
 
-def _find_shadowing_event(local_event, chain_like):
+def _find_shadowing_event(
+        local_event: 'EventInfo',
+        chain_like: Iterable['EventInfo'],
+) -> Optional['EventInfo']:
     local_owner = _event_owner_path(local_event.qualified_name)
     candidates = [
         item for item in chain_like

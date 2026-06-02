@@ -127,6 +127,7 @@ class SemanticBuilder {
     private readonly actionsByPath = new Map<string, FcstmSemanticAction>();
     private readonly eventsByQualifiedName = new Map<string, FcstmSemanticEvent>();
     private readonly importsByPath = new Map<string, FcstmSemanticImport>();
+    private readonly importsByMountedPath = new Map<string, FcstmSemanticImport>();
     private rootState: FcstmSemanticState | undefined;
     private nextId = 0;
 
@@ -181,6 +182,7 @@ class SemanticBuilder {
                 actionsByPath: Object.fromEntries(this.actionsByPath.entries()),
                 eventsByQualifiedName: Object.fromEntries(this.eventsByQualifiedName.entries()),
                 importsByPath: Object.fromEntries(this.importsByPath.entries()),
+                importsByMountedPath: Object.fromEntries(this.importsByMountedPath.entries()),
             },
         };
     }
@@ -466,6 +468,7 @@ class SemanticBuilder {
 
         this.imports.push(semanticImport);
         this.importsByPath.set(pathKey([...ownerState.identity.path, alias]), semanticImport);
+        this.importsByMountedPath.set(pathKey(semanticImport.mountedStatePath), semanticImport);
     }
 
     private finalizeActions(): void {

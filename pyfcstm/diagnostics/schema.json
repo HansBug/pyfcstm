@@ -132,7 +132,10 @@
             "required": ["target", "guard", "event", "is_unconditional"],
             "properties": {
               "target": { "type": "string" },
-              "guard": { "type": ["string", "null"] },
+              "guard": {
+                "type": ["string", "null"],
+                "description": "Normalized inspect expression text shared by pyfcstm and jsfcstm."
+              },
               "event": { "type": ["string", "null"] },
               "is_unconditional": { "type": "boolean" }
             }
@@ -152,7 +155,7 @@
       "required": [
         "from_path", "to_path", "event", "event_scope",
         "guard", "effect", "effect_self_assigns", "is_forced",
-        "forced_origin"
+        "forced_origin", "transition_index"
       ],
       "properties": {
         "from_path": { "type": "string" },
@@ -162,14 +165,22 @@
           "type": ["string", "null"],
           "enum": ["local", "chain", "absolute", null]
         },
-        "guard": { "type": ["string", "null"] },
+        "guard": {
+          "type": ["string", "null"],
+          "description": "Normalized inspect expression text shared by pyfcstm and jsfcstm."
+        },
         "effect": { "type": ["string", "null"] },
         "effect_self_assigns": {
           "type": "array",
           "items": { "type": "string" }
         },
         "is_forced": { "type": "boolean" },
-        "forced_origin": { "type": ["string", "null"] }
+        "forced_origin": { "type": ["string", "null"] },
+        "transition_index": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Zero-based parent-first model transition order, including forced expansions at their declaring state."
+        }
       }
     },
     "VariableInfo": {
@@ -272,7 +283,10 @@
           "type": ["string", "null"],
           "enum": ["local", "chain", "absolute", null]
         },
-        "guard": { "type": ["string", "null"] },
+        "guard": {
+          "type": ["string", "null"],
+          "description": "Normalized inspect expression text shared by pyfcstm and jsfcstm."
+        },
         "original_raw": { "type": "string" },
         "expansion_count": { "type": "integer", "minimum": 0 }
       }

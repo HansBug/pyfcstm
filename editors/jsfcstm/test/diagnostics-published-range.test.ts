@@ -233,7 +233,8 @@ describe('diagnostics published ranges', () => {
         assert.equal(seen.get(JSON.stringify(['Root.A', 'x'])), 1);
 
         const missing = packageModule.resolveRangeFromRefsDetailed(document, semantic, refs, seen);
-        assert.equal(missing.range, null);
+        assert.equal(sliceByRange(text, missing.range!).trim(), 'effect {\n        x = x;\n    }');
+        assert.equal(missing.fallback, 'effect_fallback');
         assert.equal(seen.get(JSON.stringify(['Root.A', 'x'])), 1);
     });
 

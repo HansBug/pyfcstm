@@ -57,7 +57,7 @@ from .analyzers import (
 from ..utils.validate import ModelDiagnostic
 
 if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
-    from ..model.expr import Expr
+    from ..model.expr import Expr, Float, Integer
     from ..model.model import (
         OperationStatement,
         OnAspect,
@@ -70,6 +70,39 @@ if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
 DEFAULT_DEEP_HIERARCHY_THRESHOLD = 6
 DEFAULT_LARGE_COMPOSITE_THRESHOLD = 12
 DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD = 2.0
+
+
+_OP_PRECEDENCE = {
+    'function_call': 90,
+    'unary+': 80,
+    'unary-': 80,
+    '!': 80,
+    'not': 80,
+    '**': 70,
+    '*': 60,
+    '/': 60,
+    '%': 60,
+    '+': 50,
+    '-': 50,
+    '<<': 40,
+    '>>': 40,
+    '&': 35,
+    '^': 30,
+    '|': 25,
+    '<': 20,
+    '>': 20,
+    '<=': 20,
+    '>=': 20,
+    '==': 20,
+    '!=': 20,
+    '&&': 15,
+    'and': 15,
+    '||': 10,
+    'or': 10,
+    '?:': 5,
+}
+
+_FLOAT_EPSILON = 1e-10
 
 
 @dataclass(frozen=True)
@@ -149,7 +182,10 @@ class TransitionInfo:
     :param event_scope: ``'local'``, ``'chain'``, ``'absolute'``, or
         ``None`` when there is no event.
     :type event_scope: Optional[str]
-    :param guard: Source text of the guard expression, or ``None``.
+    :param guard: Normalized guard expression text, or ``None``.
+        Pyfcstm and jsfcstm share this inspect expression format so
+        downstream range resolution can treat ``guard_text`` as a stable
+        disambiguation hint.
     :type guard: Optional[str]
     :param effect: Source text of the effect block, or ``None``.
     :type effect: Optional[str]
@@ -165,6 +201,12 @@ class TransitionInfo:
         ``!X -> Y`` declaration when ``is_forced`` is ``True``, otherwise
         ``None``.
     :type forced_origin: Optional[str]
+    :param transition_index: Zero-based index in parent-first model
+        transition order, including expanded forced transitions at their
+        declaring state before ordinary transitions and descendant-state
+        transitions. Downstream tooling may use this as a best-effort
+        source-range disambiguation hint when spans are not available.
+    :type transition_index: Optional[int]
     """
 
     from_path: str
@@ -176,6 +218,7 @@ class TransitionInfo:
     effect_self_assigns: Tuple[str, ...]
     is_forced: bool
     forced_origin: Optional[str]
+    transition_index: Optional[int]
 
 
 @dataclass(frozen=True)
@@ -459,16 +502,120 @@ def _transition_endpoint(parent_state: Any, marker_or_name: Any, is_source: bool
     # exists for future AST extensions and never fires today.
 
 
+def _canonical_binary_operator(op: str) -> str:
+    if op == 'and':
+        return '&&'
+    if op == 'or':
+        return '||'
+    return op
+
+
+def _canonical_unary_operator(op: str) -> str:
+    return '!' if op == 'not' else op
+
+
+def _unary_precedence_key(op: str) -> str:
+    canonical = _canonical_unary_operator(op)
+    return f'unary{canonical}' if canonical in {'+', '-'} else canonical
+
+
+def _expr_precedence(expr: 'Expr') -> Optional[int]:
+    from ..model.expr import BinaryOp, ConditionalOp, UnaryOp
+
+    if isinstance(expr, BinaryOp):
+        return _OP_PRECEDENCE.get(_canonical_binary_operator(expr.op))
+    if isinstance(expr, ConditionalOp):
+        return _OP_PRECEDENCE['?:']
+    if isinstance(expr, UnaryOp):
+        return _OP_PRECEDENCE.get(_unary_precedence_key(expr.op))
+    return None
+
+
+def _integer_text(expr: 'Integer') -> str:
+    return str(int(expr.value))
+
+
+def _float_text(expr: 'Float') -> str:
+    if abs(expr.value - math.pi) < _FLOAT_EPSILON:
+        return 'pi'
+    if abs(expr.value - math.e) < _FLOAT_EPSILON:
+        return 'E'
+    if abs(expr.value - math.tau) < _FLOAT_EPSILON:
+        return 'tau'
+    if float(expr.value).is_integer():
+        return f'{int(expr.value)}.0'
+    return str(expr.value)
+
+
 def _expr_text(expr: Optional['Expr']) -> Optional[str]:
     if expr is None:
         return None
+    from ..model.expr import (
+        BinaryOp,
+        Boolean,
+        ConditionalOp,
+        Float,
+        Integer,
+        UFunc,
+        UnaryOp,
+        Variable,
+    )
+
+    if isinstance(expr, Integer):
+        return _integer_text(expr)
+    if isinstance(expr, Float):
+        return _float_text(expr)
+    if isinstance(expr, Boolean):
+        return 'true' if expr.value else 'false'
+    if isinstance(expr, Variable):
+        return expr.name
+    if isinstance(expr, UFunc):
+        argument = _expr_text(expr.x)
+        return None if argument is None else f'{expr.func}({argument})'
+    if isinstance(expr, UnaryOp):
+        op = _canonical_unary_operator(expr.op)
+        my_precedence = _OP_PRECEDENCE[_unary_precedence_key(expr.op)]
+        value = _expr_text(expr.x)
+        if value is None:
+            return None
+        value_precedence = _expr_precedence(expr.x)
+        if value_precedence is not None and value_precedence <= my_precedence:
+            value = f'({value})'
+        return f'{op}{value}'
+    if isinstance(expr, BinaryOp):
+        op = _canonical_binary_operator(expr.op)
+        my_precedence = _OP_PRECEDENCE[op]
+        left = _expr_text(expr.x)
+        right = _expr_text(expr.y)
+        if left is None or right is None:
+            return None
+        left_precedence = _expr_precedence(expr.x)
+        if left_precedence is not None and left_precedence < my_precedence:
+            left = f'({left})'
+        right_precedence = _expr_precedence(expr.y)
+        if right_precedence is not None and right_precedence <= my_precedence:
+            right = f'({right})'
+        return f'{left} {op} {right}'
+    if isinstance(expr, ConditionalOp):
+        my_precedence = _OP_PRECEDENCE['?:']
+        condition = _expr_text(expr.cond)
+        when_true = _expr_text(expr.if_true)
+        when_false = _expr_text(expr.if_false)
+        if condition is None or when_true is None or when_false is None:
+            return None
+        true_precedence = _expr_precedence(expr.if_true)
+        if true_precedence is not None and true_precedence <= my_precedence:
+            when_true = f'({when_true})'
+        false_precedence = _expr_precedence(expr.if_false)
+        if false_precedence is not None and false_precedence <= my_precedence:
+            when_false = f'({when_false})'
+        return f'({condition}) ? {when_true} : {when_false}'
+
     try:
         return str(expr.to_ast_node())
-    except Exception:  # pragma: no cover
-        # Defensive: grammar-emitted Expr.to_ast_node always succeeds.
-        # The try/except guards against future Expr subclasses whose
-        # to_ast_node could fail; keep as fail-soft so inspection
-        # never crashes the IDE / CLI.
+    except (AttributeError, TypeError, ValueError):  # pragma: no cover
+        # AttributeError: non-model Expr-like object; TypeError/ValueError:
+        # future expression implementations with invalid AST conversion.
         return None
 
 
@@ -479,9 +626,9 @@ def _effects_text(effects: List['OperationStatement']) -> Optional[str]:
     for stmt in effects:
         try:
             parts.append(str(stmt.to_ast_node()))
-        except Exception:  # pragma: no cover
-            # Defensive: see ``_expr_text`` — grammar-emitted stmts
-            # always serialize.
+        except (AttributeError, TypeError, ValueError):  # pragma: no cover
+            # AttributeError: non-model statement-like object; TypeError/ValueError:
+            # future statement implementations with invalid AST conversion.
             continue
     if not parts:  # pragma: no cover
         # Unreachable while ``except`` above is unreachable. Belt-and-
@@ -723,6 +870,7 @@ def _build_state_infos(machine: 'StateMachine') -> Tuple[StateInfo, ...]:
 
 def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ...]:
     out: List[TransitionInfo] = []
+    transition_index = 0
     for state in machine.walk_states():
         for transition in state.transitions:
             from_path = _transition_endpoint(state, transition.from_state, is_source=True)
@@ -746,7 +894,9 @@ def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ..
                 effect_self_assigns=_effect_self_assigns(transition.effects),
                 is_forced=is_forced,
                 forced_origin=forced_origin,
+                transition_index=transition_index,
             ))
+            transition_index += 1
     return tuple(out)
 
 

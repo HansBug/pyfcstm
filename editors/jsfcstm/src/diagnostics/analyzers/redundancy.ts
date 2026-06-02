@@ -34,16 +34,17 @@ function transitionBehaviorKey(transition: TransitionInfo): string {
 }
 
 function collectRedundantTransitionWarnings(transitions: TransitionInfo[]): ModelDiagnosticJson[] {
-    const groups = new Map<string, TransitionInfo[]>();
-    for (const transition of transitions) {
+    const groups = new Map<string, Array<{transition: TransitionInfo; index: number}>>();
+    for (let index = 0; index < transitions.length; index += 1) {
+        const transition = transitions[index];
         if (transition.from_path === '[*]') continue;
         const key = transitionBehaviorKey(transition);
-        groups.set(key, [...(groups.get(key) ?? []), transition]);
+        groups.set(key, [...(groups.get(key) ?? []), {transition, index}]);
     }
     const out: ModelDiagnosticJson[] = [];
     for (const items of groups.values()) {
         if (items.length < 2) continue;
-        const first = items[0];
+        const first = items[0].transition;
         out.push({
             code: 'W_REDUNDANT_TRANSITION',
             severity: 'warning',
@@ -52,7 +53,8 @@ function collectRedundantTransitionWarnings(transitions: TransitionInfo[]): Mode
             refs: {
                 from_path: first.from_path,
                 to_path: first.to_path,
-                duplicate_spans: items.map((item, index) => `${item.from_path}->${item.to_path}#${index + 1}`),
+                duplicate_spans: items.map((item, index) => `${item.transition.from_path}->${item.transition.to_path}#${index + 1}`),
+                transition_index: items[0].transition.transition_index,
             },
         });
     }
@@ -71,7 +73,13 @@ function collectSelfTransitionNopWarnings(transitions: TransitionInfo[], states:
             severity: 'warning',
             message: `Self transition on ${JSON.stringify(transition.from_path)} has no trigger, guard, effect, or re-entry lifecycle behavior.`,
             span: null,
-            refs: {state_path: transition.from_path},
+            refs: {
+                state_path: transition.from_path,
+                from_path: transition.from_path,
+                to_path: transition.to_path,
+                transition_span: null,
+                transition_index: transition.transition_index,
+            },
         });
     }
     return out;
@@ -114,6 +122,7 @@ function collectEffectSelfAssignWarnings(transitions: TransitionInfo[]): ModelDi
                 state_path: transition.from_path,
                 transition_span: null,
                 var_name: varName,
+                transition_index: transition.transition_index,
             };
             if (
                 transition.from_path !== '[*]' &&

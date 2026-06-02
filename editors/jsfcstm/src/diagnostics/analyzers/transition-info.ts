@@ -48,6 +48,7 @@ function collectEventlessGuardlessTransitionInfos(transitions: TransitionInfo[])
                 from_path: transition.from_path,
                 to_path: transition.to_path,
                 transition_span: null,
+                transition_index: transition.transition_index,
             },
         });
     }

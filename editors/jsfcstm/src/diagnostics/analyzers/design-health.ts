@@ -99,6 +99,8 @@ function collectGuardConstFalseDiagnostics(transitions: TransitionInfo[]): Model
                 folded_value: false,
                 from_path: transition.from_path,
                 to_path: transition.to_path,
+                guard_text: transition.guard,
+                transition_index: transition.transition_index,
             },
         });
     }

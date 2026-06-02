@@ -623,6 +623,8 @@ state Root {
                 folded_value: false,
                 from_path: 'Root.Active',
                 to_path: 'Root.Blocked',
+                guard_text: 'false',
+                transition_index: 2,
             });
 
             const unreachable = report.diagnostics.find(d => d.code === 'W_UNREACHABLE_STATE');
@@ -691,24 +693,32 @@ state Root {
                         folded_value: true,
                         from_path: 'Root.Blocked',
                         to_path: 'Root.WideTrue',
+                        guard_text: '4294967295 & 4294967295 == 4294967295',
+                        transition_index: 3,
                     },
                     {
                         transition_span: null,
                         folded_value: true,
                         from_path: 'Root.Idle',
                         to_path: 'Root.Active',
+                        guard_text: '1 + 2 == 3',
+                        transition_index: 1,
                     },
                     {
                         transition_span: null,
                         folded_value: true,
                         from_path: 'Root.ModuloTrue',
                         to_path: 'Root.PowerTrue',
+                        guard_text: '2.0 ** 3 == 8.0',
+                        transition_index: 5,
                     },
                     {
                         transition_span: null,
                         folded_value: true,
                         from_path: 'Root.WideTrue',
                         to_path: 'Root.ModuloTrue',
+                        guard_text: '-7 % 4 == 1',
+                        transition_index: 4,
                     },
                 ].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
             );
@@ -720,6 +730,8 @@ state Root {
                 folded_value: false,
                 from_path: 'Root.Active',
                 to_path: 'Root.Blocked',
+                guard_text: '15 & 240 != 0',
+                transition_index: 2,
             });
 
             const duringRefs = report.diagnostics
@@ -772,12 +784,12 @@ state Root {
                 {
                     code: 'I_TRANSITION_NEVER_EVENT_TRIGGERED',
                     severity: 'info',
-                    refs: {from_path: 'Root.Active', to_path: 'Root.Active', transition_span: null},
+                    refs: {from_path: 'Root.Active', to_path: 'Root.Active', transition_span: null, transition_index: 4},
                 },
                 {
                     code: 'I_TRANSITION_NEVER_EVENT_TRIGGERED',
                     severity: 'info',
-                    refs: {from_path: 'Root.Active', to_path: 'Root.Idle', transition_span: null},
+                    refs: {from_path: 'Root.Active', to_path: 'Root.Idle', transition_span: null, transition_index: 5},
                 },
                 {
                     code: 'W_DEADLOCK_LEAF',
@@ -810,6 +822,7 @@ state Root {
                         transition_span: null,
                         var_name: 'stable',
                         effect_self_assign_anchor: 'stable',
+                        transition_index: 5,
                     },
                 },
                 {
@@ -855,6 +868,7 @@ state Root {
                             'Root.Idle->Root.Active#1',
                             'Root.Idle->Root.Active#2',
                         ],
+                        transition_index: 2,
                     },
                 },
                 {
@@ -867,12 +881,19 @@ state Root {
                             'Root.Active->Root.Trapped#1',
                             'Root.Active->Root.Trapped#2',
                         ],
+                        transition_index: 0,
                     },
                 },
                 {
                     code: 'W_SELF_TRANSITION_NOP',
                     severity: 'warning',
-                    refs: {state_path: 'Root.Active'},
+                    refs: {
+                        state_path: 'Root.Active',
+                        from_path: 'Root.Active',
+                        to_path: 'Root.Active',
+                        transition_span: null,
+                        transition_index: 4,
+                    },
                 },
                 {
                     code: 'W_SHADOWED_EVENT',
@@ -1133,6 +1154,7 @@ state Root {
                     transition_span: null,
                     var_name: 'x',
                     effect_self_assign_anchor: 'x',
+                    transition_index: 1,
                 })],
             );
         });
@@ -1605,6 +1627,7 @@ state Root {
                 from_path: 'Root.A',
                 to_path: 'Root.B',
                 transition_span: null,
+                transition_index: 1,
             });
         });
 
@@ -1622,6 +1645,7 @@ state Root {
                 from_path: 'Root.A',
                 to_path: '[*]',
                 transition_span: null,
+                transition_index: 1,
             });
         });
     });

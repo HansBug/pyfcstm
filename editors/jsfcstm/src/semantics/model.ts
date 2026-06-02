@@ -238,6 +238,7 @@ export interface FcstmSemanticLookups {
     actionsByPath: Record<string, FcstmSemanticAction>;
     eventsByQualifiedName: Record<string, FcstmSemanticEvent>;
     importsByPath: Record<string, FcstmSemanticImport>;
+    importsByMountedPath: Record<string, FcstmSemanticImport>;
 }
 
 /**

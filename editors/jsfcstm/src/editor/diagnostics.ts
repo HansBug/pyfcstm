@@ -1,5 +1,6 @@
 import {getParser, ParseError} from '../dsl/parser';
 import {inspectModel, type ModelDiagnosticJson} from '../diagnostics';
+import {buildStateMachineModel} from '../model';
 import type {FcstmSemanticDocument} from '../semantics';
 import {collectSemanticAnalysisDiagnosticsFromSemantic} from './analyzers';
 import {
@@ -72,6 +73,17 @@ export interface CollectInspectModelDiagnosticsOptions {
     rangeMode?: 'problem' | 'fix-edit';
 }
 
+function shouldSuppressInspectDiagnostic(
+    semantic: FcstmSemanticDocument,
+    item: ModelDiagnosticJson,
+): boolean {
+    if (item.code !== 'W_DEADLOCK_LEAF') return false;
+    const statePath = typeof item.refs.state_path === 'string' ? item.refs.state_path : null;
+    if (!statePath) return false;
+    const semanticState = semantic.lookups.statesByPath[statePath];
+    return Boolean(semanticState && semanticState.ast.imports.length > 0);
+}
+
 export function collectInspectDiagnosticsFromItems(
     document: TextDocumentLike,
     semantic: FcstmSemanticDocument,
@@ -91,6 +103,7 @@ export function collectInspectDiagnosticsFromItems(
 
     for (const item of items) {
         if (SUPPRESSED_FROM_INSPECT_SURFACE.has(item.code)) continue;
+        if (shouldSuppressInspectDiagnostic(semantic, item)) continue;
         const diagnostic: FcstmDiagnostic = {
             range: fullRange,
             message: item.message,
@@ -175,8 +188,9 @@ export async function collectDocumentDiagnostics(
     const node = snapshot.nodes[snapshot.rootFile];
     if (node?.semantic) {
         diagnostics.push(...collectSemanticAnalysisDiagnosticsFromSemantic(node.semantic, document));
-        if (node.model) {
-            diagnostics.push(...collectInspectModelDiagnostics(document, node.semantic, node.model, diagnostics));
+        const localModel = buildStateMachineModel(node.semantic);
+        if (localModel) {
+            diagnostics.push(...collectInspectModelDiagnostics(document, node.semantic, localModel, diagnostics));
         }
     }
     return diagnostics;

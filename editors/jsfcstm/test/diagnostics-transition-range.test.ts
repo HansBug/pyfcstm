@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import * as path from 'node:path';
 
-import {createDocument, packageModule, sliceByRange} from './support';
+import {createDocument, packageModule, sliceByRange, trackTempDir, writeFile} from './support';
 
 function targetDiagnostics(diagnostics: any[], code: string): any[] {
     return diagnostics.filter(item => item.code === code);
@@ -385,6 +386,56 @@ describe('diagnostics transition body ranges', () => {
                 ['True', true, 'true', undefined],
                 ['TRUE', true, 'true', undefined],
             ],
+        );
+    });
+
+
+    it('keeps import-aware transition diagnostics on source-owned ranges', async () => {
+        const dir = trackTempDir('jsfcstm-transition-import-range-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'main.fcstm');
+        writeFile(childFile, [
+            'def int x = 0;',
+            'state Child {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B : if [1 == 1];',
+            '    A -> B effect { x = x; };',
+            '}',
+        ].join('\n'));
+        const hostText = [
+            'state Root {',
+            '    import "./child.fcstm" as Imported;',
+            '    state Local;',
+            '    [*] -> Imported;',
+            '    Imported -> Local : if [True];',
+            '}',
+        ].join('\n');
+        const document = createDocument(hostText, hostFile);
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const transitionCodes = new Set([
+            'W_GUARD_CONST_TRUE',
+            'W_EFFECT_SELF_ASSIGN',
+            'I_TRANSITION_NEVER_EVENT_TRIGGERED',
+        ]);
+        const transitionDiagnostics = diagnostics.filter(item => transitionCodes.has(String(item.code)));
+        const constTrue = targetDiagnostics(diagnostics, 'W_GUARD_CONST_TRUE');
+
+        assert.equal(constTrue.length, 1, JSON.stringify(diagnostics));
+        assert.equal(constTrue[0].data?.from_path, 'Root.Imported');
+        assert.equal(constTrue[0].data?.to_path, 'Root.Local');
+        assert.equal(sliceByRange(hostText, constTrue[0].range).trim(), 'True');
+        assert.equal(constTrue[0].data?.__rangeFallback, undefined);
+        assert.equal(targetDiagnostics(diagnostics, 'W_EFFECT_SELF_ASSIGN').length, 0, JSON.stringify(diagnostics));
+        assert.equal(
+            targetDiagnostics(diagnostics, 'I_TRANSITION_NEVER_EVENT_TRIGGERED').length,
+            0,
+            JSON.stringify(diagnostics),
+        );
+        assert.deepEqual(
+            transitionDiagnostics.map(item => item.data?.__rangeFallback).filter(Boolean),
+            [],
         );
     });
 

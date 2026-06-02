@@ -1,6 +1,7 @@
 import {pathToFileURL} from 'node:url';
 
 import {inspectModel} from '../diagnostics';
+import {buildStateMachineModel} from '../model';
 import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticVariable} from '../semantics';
 import {FcstmDiagnostic, TextDocumentLike, TextRange, createRange} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
@@ -134,9 +135,10 @@ export async function collectCodeActions(
     const relevantDiagnostics = diagnostics.filter(item => (
         !suggestedFixFromDiagnostic(item) && rangeIntersects(item.range, range)
     ));
-    if (node?.model) {
+    const localModel = semantic ? buildStateMachineModel(semantic) : null;
+    if (localModel) {
         const existing = new Set<string>();
-        const inspectDiagnostics = inspectModel(node.model).diagnostics;
+        const inspectDiagnostics = inspectModel(localModel).diagnostics;
         const serverSuggestedKeysAtRange = new Set(
             collectInspectDiagnosticsFromItems(document, semantic, inspectDiagnostics, [], {rangeMode: 'fix-edit'})
                 .filter(diagnostic => (

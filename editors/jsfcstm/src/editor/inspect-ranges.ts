@@ -28,6 +28,16 @@ function dottedPath(path: readonly string[] | undefined): string | null {
     return path && path.length > 0 ? path.join('.') : null;
 }
 
+function importAliasPathMatches(
+    semantic: FcstmSemanticDocument,
+    path: string | null,
+    stateName: string | undefined,
+): boolean {
+    if (!path || !stateName) return false;
+    const mountedImport = semantic.lookups.importsByMountedPath[path];
+    return Boolean(mountedImport && mountedImport.alias === stateName);
+}
+
 function transitionEndpointPath(
     transition: FcstmSemanticTransition,
     endpoint: 'source' | 'target',
@@ -66,6 +76,7 @@ function transitionEndpointPairs(transition: FcstmSemanticTransition): Transitio
 }
 
 function transitionPathRefsMatch(
+    semantic: FcstmSemanticDocument,
     transition: FcstmSemanticTransition,
     refs: Record<string, unknown>,
 ): boolean {
@@ -75,9 +86,9 @@ function transitionPathRefsMatch(
     if (!fromPath && !toPath && !statePath) return true;
 
     return transitionEndpointPairs(transition).some(pair => (
-        (!fromPath || pair.fromPath === fromPath) &&
-        (!toPath || pair.toPath === toPath) &&
-        (!statePath || pair.fromPath === statePath)
+        (!fromPath || pair.fromPath === fromPath || importAliasPathMatches(semantic, fromPath, transition.sourceStateName)) &&
+        (!toPath || pair.toPath === toPath || importAliasPathMatches(semantic, toPath, transition.targetStateName)) &&
+        (!statePath || pair.fromPath === statePath || importAliasPathMatches(semantic, statePath, transition.sourceStateName))
     ));
 }
 
@@ -123,10 +134,11 @@ function hasNumericTransitionIndex(refs: Record<string, unknown>): boolean {
 }
 
 function transitionMatchesRefs(
+    semantic: FcstmSemanticDocument,
     transition: FcstmSemanticTransition,
     refs: Record<string, unknown>,
 ): boolean {
-    if (!transitionPathRefsMatch(transition, refs)) return false;
+    if (!transitionPathRefsMatch(semantic, transition, refs)) return false;
 
     const guardText = compactText(stringRef(refs, 'guard_text'));
     if (guardText !== null && !hasNumericTransitionIndex(refs) && compactText(transition.guard?.text) !== guardText) {
@@ -150,6 +162,8 @@ interface TransitionIndexRef {
 }
 
 function transitionIndexRefMatchesRefs(
+    semantic: FcstmSemanticDocument,
+    transition: FcstmSemanticTransition,
     ref: TransitionIndexRef,
     index: number,
     refs: Record<string, unknown>,
@@ -157,18 +171,19 @@ function transitionIndexRefMatchesRefs(
     if (ref.index !== index) return false;
     const fromPath = stringRef(refs, 'from_path') ?? stringRef(refs, 'state_path');
     const toPath = stringRef(refs, 'to_path');
-    return (!fromPath || ref.fromPath === fromPath) &&
-        (!toPath || ref.toPath === toPath);
+    return (!fromPath || ref.fromPath === fromPath || importAliasPathMatches(semantic, fromPath, transition.sourceStateName)) &&
+        (!toPath || ref.toPath === toPath || importAliasPathMatches(semantic, toPath, transition.targetStateName));
 }
 
 function transitionRangeMatchesIndex(
+    semantic: FcstmSemanticDocument,
     transition: FcstmSemanticTransition,
     index: number,
     refs: Record<string, unknown>,
 ): boolean {
     if (Array.isArray(transition.ast.transitionIndexRefs)) {
         return transition.ast.transitionIndexRefs
-            .some(ref => transitionIndexRefMatchesRefs(ref, index, refs));
+            .some(ref => transitionIndexRefMatchesRefs(semantic, transition, ref, index, refs));
     }
 
     const rawIndex = transition.ast.transitionIndex;
@@ -179,12 +194,12 @@ function transitionRangeResolution(
     semantic: FcstmSemanticDocument,
     refs: Record<string, unknown>,
 ): InspectRangeResolution {
-    const transitions = semantic.transitions.filter(transition => transitionMatchesRefs(transition, refs));
+    const transitions = semantic.transitions.filter(transition => transitionMatchesRefs(semantic, transition, refs));
     if (transitions.length === 0) return {range: null, fallback: 'transition_not_found'};
 
     const requestedIndex = refs.transition_index;
     if (typeof requestedIndex === 'number' && Number.isInteger(requestedIndex)) {
-        const selected = transitions.find(transition => transitionRangeMatchesIndex(transition, requestedIndex, refs));
+        const selected = transitions.find(transition => transitionRangeMatchesIndex(semantic, transition, requestedIndex, refs));
         return selected
             ? {range: selected.range, transition: selected}
             : {range: null, fallback: 'transition_not_found'};

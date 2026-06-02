@@ -1,15 +1,9 @@
 import assert from 'node:assert/strict';
 
-import {createDocument, packageModule, sliceByRange} from './support';
+import {createDocument, editorModule, packageModule, sliceByRange} from './support';
 
 const SEMANTIC_RECOVERY_CODES = new Set(['E_UNDEFINED_VAR', 'E_TYPE_MISMATCH']);
 const DSL_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
-function rangeIsEmptyOrInvalid(range: {start: {line: number; character: number}; end: {line: number; character: number}}): boolean {
-    if (range.end.line < range.start.line) return true;
-    if (range.end.line === range.start.line && range.end.character <= range.start.character) return true;
-    return false;
-}
 
 function rangeKey(range: {start: {line: number; character: number}; end: {line: number; character: number}}): string {
     return `${range.start.line}:${range.start.character}-${range.end.line}:${range.end.character}`;
@@ -70,7 +64,7 @@ describe('diagnostics parse recovery', () => {
             const semanticDiagnostics = diagnostics.filter(item => item.code !== undefined);
             const semanticRecoveryDiagnostics = semanticDiagnostics.filter(item => SEMANTIC_RECOVERY_CODES.has(String(item.code)));
             const invalidSemanticDiagnostics = semanticRecoveryDiagnostics.filter(item => (
-                rangeIsEmptyOrInvalid(item.range)
+                packageModule.rangeIsEmptyOrInvalid(item.range)
                 || sliceByRange(testCase.text, item.range).length === 0
                 || item.data?.var_name === ''
                 || item.data?.expr_text === ''
@@ -88,7 +82,7 @@ describe('diagnostics parse recovery', () => {
                 [],
             );
 
-            const zeroWidthSemanticDiagnostics = semanticDiagnostics.filter(item => rangeIsEmptyOrInvalid(item.range));
+            const zeroWidthSemanticDiagnostics = semanticDiagnostics.filter(item => packageModule.rangeIsEmptyOrInvalid(item.range));
             assert.deepEqual(
                 zeroWidthSemanticDiagnostics.map(item => ({
                     code: item.code,
@@ -116,4 +110,114 @@ describe('diagnostics parse recovery', () => {
             );
         });
     }
+
+    it('suppresses final recovery diagnostics with empty data or zero-width ranges', () => {
+        const parseDiagnostic = {
+            range: packageModule.createRange(0, 8, 0, 9),
+            message: 'parse error',
+            severity: 'error' as const,
+            source: 'fcstm',
+        };
+        const parseDiagnostics = [parseDiagnostic];
+        const makeDiagnostic = (
+            code: string,
+            data: Record<string, unknown>,
+            range = packageModule.createRange(0, 4, 0, 5),
+        ) => ({
+            range,
+            message: code,
+            severity: 'error' as const,
+            source: 'fcstm',
+            code,
+            data,
+        });
+
+        assert.equal(packageModule.shouldSuppressParseRecoveryDiagnostic(parseDiagnostic, parseDiagnostics), false);
+        assert.equal(
+            packageModule.shouldSuppressParseRecoveryDiagnostic(
+                makeDiagnostic('E_UNDEFINED_VAR', {var_name: ''}),
+                parseDiagnostics,
+            ),
+            true,
+        );
+        assert.equal(
+            packageModule.shouldSuppressParseRecoveryDiagnostic(
+                makeDiagnostic('E_UNDEFINED_VAR', {var_name: '1bad'}),
+                parseDiagnostics,
+            ),
+            true,
+        );
+        assert.equal(
+            packageModule.shouldSuppressParseRecoveryDiagnostic(
+                makeDiagnostic('E_UNDEFINED_VAR', {var_name: 'valid_name'}),
+                parseDiagnostics,
+            ),
+            false,
+        );
+        assert.equal(
+            packageModule.shouldSuppressParseRecoveryDiagnostic(
+                makeDiagnostic('E_TYPE_MISMATCH', {expr_text: ''}),
+                parseDiagnostics,
+            ),
+            true,
+        );
+        assert.equal(
+            packageModule.shouldSuppressParseRecoveryDiagnostic(
+                makeDiagnostic('E_TYPE_MISMATCH', {expr_text: 'x'}),
+                parseDiagnostics,
+            ),
+            false,
+        );
+        assert.equal(
+            packageModule.shouldSuppressParseRecoveryDiagnostic(
+                makeDiagnostic('W_UNREFERENCED_VAR', {var_name: 'not-a-name'}),
+                parseDiagnostics,
+            ),
+            true,
+        );
+        assert.equal(
+            packageModule.shouldSuppressParseRecoveryDiagnostic(
+                makeDiagnostic('W_UNREFERENCED_VAR', {var_name: 'unused'}),
+                parseDiagnostics,
+            ),
+            false,
+        );
+        assert.equal(
+            packageModule.shouldSuppressParseRecoveryDiagnostic(
+                makeDiagnostic('W_SOME_FUTURE_RECOVERY', {}, packageModule.createRange(1, 2, 1, 2)),
+                parseDiagnostics,
+            ),
+            true,
+        );
+        assert.equal(
+            packageModule.shouldSuppressParseRecoveryDiagnostic(
+                makeDiagnostic('E_UNDEFINED_VAR', {var_name: ''}),
+                [],
+            ),
+            false,
+        );
+    });
+
+    it('shares the range emptiness predicate across analyzer and final-filter guards', () => {
+        assert.equal(packageModule.rangeIsEmptyOrInvalid(packageModule.createRange(1, 2, 0, 9)), true);
+        assert.equal(packageModule.rangeIsEmptyOrInvalid(packageModule.createRange(1, 2, 1, 2)), true);
+        assert.equal(packageModule.rangeIsEmptyOrInvalid(packageModule.createRange(1, 2, 1, 3)), false);
+    });
+
+    it('does not emit type mismatches for recovered empty expressions', () => {
+        const diagnostics: unknown[] = [];
+        editorModule.checkExpression({
+            expressionKind: 'identifier',
+            name: '',
+            range: packageModule.createRange(0, 0, 0, 0),
+        }, 'boolean', diagnostics);
+        editorModule.checkExpression({
+            expressionKind: 'identifier',
+            name: 'x',
+            text: 'x',
+            range: packageModule.createRange(0, 3, 0, 3),
+        }, 'boolean', diagnostics);
+
+        assert.deepEqual(diagnostics, []);
+    });
 });

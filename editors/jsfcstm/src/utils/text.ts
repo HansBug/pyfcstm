@@ -95,6 +95,11 @@ export function createRange(
     };
 }
 
+export function rangeIsEmptyOrInvalid(range: TextRange): boolean {
+    if (range.end.line < range.start.line) return true;
+    return range.end.line === range.start.line && range.end.character <= range.start.character;
+}
+
 export function cloneRange(range: TextRange): TextRange {
     return createRange(
         range.start.line,

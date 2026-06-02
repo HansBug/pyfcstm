@@ -17,7 +17,7 @@ import type {
     FcstmAstUnaryExpression,
 } from '../ast';
 import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticTransition} from '../semantics';
-import {FcstmDiagnostic, TextDocumentLike} from '../utils/text';
+import {FcstmDiagnostic, rangeIsEmptyOrInvalid, TextDocumentLike} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {findIdentifierRange} from './ranges';
 
@@ -716,11 +716,6 @@ function pushIdentifierDiagnostic(
         code,
         data: mergedData,
     });
-}
-
-function rangeIsEmptyOrInvalid(range: import('../utils/text').TextRange): boolean {
-    if (range.end.line < range.start.line) return true;
-    return range.end.line === range.start.line && range.end.character <= range.start.character;
 }
 
 /**

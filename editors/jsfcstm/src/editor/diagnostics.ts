@@ -8,6 +8,7 @@ import {collectSemanticAnalysisDiagnosticsFromSemantic} from './analyzers';
 import {
     createRange,
     FcstmDiagnostic,
+    rangeIsEmptyOrInvalid,
     TextDocumentLike,
     TextRange,
 } from '../utils/text';
@@ -69,11 +70,6 @@ function rangeEquals(left: TextRange, right: TextRange): boolean {
         left.start.character === right.start.character &&
         left.end.line === right.end.line &&
         left.end.character === right.end.character;
-}
-
-function rangeIsEmptyOrInvalid(range: TextRange): boolean {
-    if (range.end.line < range.start.line) return true;
-    return range.end.line === range.start.line && range.end.character <= range.start.character;
 }
 
 function isDslIdentifier(value: string): boolean {
@@ -257,7 +253,13 @@ export function convertParseErrorToDiagnostic(
     };
 }
 
-function shouldSuppressParseRecoveryDiagnostic(
+/**
+ * Return whether a semantic diagnostic should be hidden after parser recovery.
+ *
+ * The collector only calls this when parse diagnostics already exist, keeping
+ * normal semantic diagnostics untouched for syntactically valid documents.
+ */
+export function shouldSuppressParseRecoveryDiagnostic(
     diagnostic: FcstmDiagnostic,
     parseDiagnostics: readonly FcstmDiagnostic[],
 ): boolean {

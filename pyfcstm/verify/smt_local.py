@@ -15,7 +15,17 @@ algorithm results to the diagnostics layer.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import (
+    TYPE_CHECKING,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+)
 
 try:
     from typing import Literal
@@ -57,6 +67,26 @@ class _ConditionPoint:
     path_conditions: Tuple[z3.ExprRef, ...] = ()
     source: str = "expression"
     z3_condition: Optional[z3.ExprRef] = None
+
+
+@dataclass(frozen=True)
+class _InitialPathContext:
+    """One feasible root-to-leaf initial path symbolic context."""
+
+    transitions: Tuple["Transition", ...]
+    constraints: Tuple[z3.ExprRef, ...]
+    operations: Tuple["OperationStatement", ...]
+
+
+@dataclass(frozen=True)
+class _InitialPathSearchContext:
+    """Search state used while enumerating root initial path alternatives."""
+
+    transitions: Tuple["Transition", ...]
+    constraints: Tuple[z3.ExprRef, ...]
+    operations: Tuple["OperationStatement", ...]
+    z3_vars: _Z3Vars
+    domain_constraints: Tuple[z3.ExprRef, ...]
 
 
 def _dsl_nodes():
@@ -1190,6 +1220,223 @@ def _transition_trigger_or_result(
     return z3.And(*parts), trigger_domains, None
 
 
+def _root_initial_path_contexts(
+    state: State,
+    variables: Sequence[VarDefine],
+    z3_vars: _Z3Vars,
+    base_constraints: Sequence[z3.ExprRef],
+    *,
+    smt_timeout_ms: Optional[int] = None,
+) -> Tuple[Optional[Tuple[_InitialPathContext, ...]], Optional[AlgorithmResult]]:
+    """Enumerate feasible runtime first-enabled initial path contexts.
+
+    Evented and guarded initial transitions can offer multiple feasible paths to
+    the same leaf in one cycle.  A raw SMT diagnostic is deterministic only when
+    it holds for every feasible first-enabled path, so this helper enumerates the
+    full path set instead of committing to the first satisfiable transition.
+
+    :param state: Candidate root-initial leaf state.
+    :type state: State
+    :param variables: FCSTM variable definitions.
+    :type variables: Sequence[VarDefine]
+    :param z3_vars: Root symbolic variables.
+    :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :param base_constraints: Constraints that hold before root entry, usually
+        DSL declaration initializers.
+    :type base_constraints: Sequence[z3.ExprRef]
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+    :type smt_timeout_ms: Optional[int], optional
+    :return: Feasible path contexts or an indeterminate algorithm result.  A
+        ``None`` context tuple without a result means ``state`` is not selected
+        by any feasible root first-enabled initial path.
+    :rtype: Tuple[Optional[Tuple[_InitialPathContext, ...]], Optional[AlgorithmResult]]
+    """
+    path = _state_path_from_root(state)
+    if len(path) <= 1:
+        return (
+            (
+                _InitialPathContext(
+                    transitions=(),
+                    constraints=(),
+                    operations=tuple(_action_operations(state.on_enters)),
+                ),
+            ),
+            None,
+        )
+
+    type_constraints = _build_type_constraints(variables, z3_vars)
+    search_contexts = [
+        _InitialPathSearchContext(
+            transitions=(),
+            constraints=(),
+            operations=(),
+            z3_vars=dict(z3_vars),
+            domain_constraints=(),
+        )
+    ]
+
+    for index, path_state in enumerate(path[:-1]):
+        child = path[index + 1]
+        next_contexts: List[_InitialPathSearchContext] = []
+
+        for context in search_contexts:
+            current_vars = dict(context.z3_vars)
+            context_constraints = [
+                *base_constraints,
+                *context.constraints,
+                *context.domain_constraints,
+                *type_constraints,
+            ]
+            current_operations = list(context.operations)
+            current_domains = list(context.domain_constraints)
+
+            enter_ops = _action_operations(path_state.on_enters)
+            current_operations.extend(enter_ops)
+            _, current_vars, new_domains, result = (
+                _execute_operation_prefix_conditions_and_vars_or_result(
+                    enter_ops,
+                    current_vars,
+                    context_constraints=context_constraints,
+                    smt_timeout_ms=smt_timeout_ms,
+                    domain_constraints=current_domains,
+                )
+            )
+            if result is not None:
+                return None, result
+            current_domains = list(new_domains or ())
+
+            if not path_state.is_leaf_state:
+                during_before_ops = _action_operations(
+                    path_state.list_on_durings(aspect="before")
+                )
+                current_operations.extend(during_before_ops)
+                _, current_vars, new_domains, result = (
+                    _execute_operation_prefix_conditions_and_vars_or_result(
+                        during_before_ops,
+                        current_vars,
+                        context_constraints=[
+                            *base_constraints,
+                            *context.constraints,
+                            *current_domains,
+                            *type_constraints,
+                        ],
+                        smt_timeout_ms=smt_timeout_ms,
+                        domain_constraints=current_domains,
+                    )
+                )
+                if result is not None:
+                    return None, result
+                current_domains = list(new_domains or ())
+
+            prior_triggers: List[z3.ExprRef] = []
+            prior_guard_domains: List[z3.ExprRef] = []
+            for transition in path_state.init_transitions:
+                trigger, guard_domains, result = _transition_trigger_or_result(
+                    transition,
+                    current_vars,
+                    context_constraints=[
+                        *base_constraints,
+                        *context.constraints,
+                        *current_domains,
+                        *prior_guard_domains,
+                        *type_constraints,
+                    ],
+                    smt_timeout_ms=smt_timeout_ms,
+                )
+                if result is not None:
+                    return None, result
+                if guard_domains:
+                    result = _definedness_feasibility_or_result(
+                        [
+                            *base_constraints,
+                            *context.constraints,
+                            *current_domains,
+                            *prior_guard_domains,
+                            *guard_domains,
+                            *type_constraints,
+                        ],
+                        reason=(
+                            "Initial transition guard runtime definedness "
+                            "constraints are unsatisfiable in context."
+                        ),
+                        smt_timeout_ms=smt_timeout_ms,
+                    )
+                    if result is not None:
+                        return None, result
+
+                if transition.to_state == child.name:
+                    candidate_constraints = [
+                        *context.constraints,
+                        *prior_guard_domains,
+                        *(z3.Not(prior_trigger) for prior_trigger in prior_triggers),
+                        *(guard_domains or ()),
+                        trigger,
+                    ]
+                    candidate_context = [
+                        *base_constraints,
+                        *candidate_constraints,
+                        *current_domains,
+                        *type_constraints,
+                    ]
+                    context_check = is_sat(
+                        candidate_context,
+                        timeout_ms=smt_timeout_ms,
+                    )
+                    if context_check.kind in {"unknown", "timeout"}:
+                        return (
+                            None,
+                            _skip_result(
+                                context_check.kind,
+                                getattr(context_check, "reason", None),
+                            ),
+                        )
+                    if context_check.kind == "sat":
+                        effect_operations = [*current_operations, *transition.effects]
+                        _, effect_vars, effect_domains, result = (
+                            _execute_operation_prefix_conditions_and_vars_or_result(
+                                transition.effects,
+                                current_vars,
+                                context_constraints=candidate_context,
+                                smt_timeout_ms=smt_timeout_ms,
+                                domain_constraints=current_domains,
+                            )
+                        )
+                        if result is not None:
+                            return None, result
+                        next_contexts.append(
+                            _InitialPathSearchContext(
+                                transitions=(
+                                    *context.transitions,
+                                    transition,
+                                ),
+                                constraints=tuple(candidate_constraints),
+                                operations=tuple(effect_operations),
+                                z3_vars=effect_vars or current_vars,
+                                domain_constraints=tuple(effect_domains or ()),
+                            )
+                        )
+
+                prior_guard_domains.extend(guard_domains or ())
+                prior_triggers.append(trigger)
+
+        if not next_contexts:
+            return None, None
+        search_contexts = next_contexts
+
+    leaf_enter_ops = tuple(_action_operations(state.on_enters))
+    return (
+        tuple(
+            _InitialPathContext(
+                transitions=context.transitions,
+                constraints=context.constraints,
+                operations=(*context.operations, *leaf_enter_ops),
+            )
+            for context in search_contexts
+        ),
+        None,
+    )
+
+
 def _root_initial_path_context(
     state: State,
     variables: Sequence[VarDefine],
@@ -1221,167 +1468,24 @@ def _root_initial_path_context(
         means the state is not selected by the root first-enabled initial path.
     :rtype: Tuple[Optional[Tuple[Transition, ...]], Optional[Tuple[z3.ExprRef, ...]], Optional[List[OperationStatement]], Optional[AlgorithmResult]]
     """
-    path = _state_path_from_root(state)
-    if len(path) <= 1:
-        return (), (), _action_operations(state.on_enters), None
-
-    selected: List[Transition] = []
-    constraints: List[z3.ExprRef] = []
-    domain_constraints: List[z3.ExprRef] = []
-    operations: List[OperationStatement] = []
-    current_vars: _Z3Vars = dict(z3_vars)
-    type_constraints = _build_type_constraints(variables, z3_vars)
-
-    for index, path_state in enumerate(path[:-1]):
-        child = path[index + 1]
-        enter_ops = _action_operations(path_state.on_enters)
-        operations.extend(enter_ops)
-        _, current_vars, new_domains, result = (
-            _execute_operation_prefix_conditions_and_vars_or_result(
-                enter_ops,
-                current_vars,
-                context_constraints=[
-                    *base_constraints,
-                    *constraints,
-                    *domain_constraints,
-                    *type_constraints,
-                ],
-                smt_timeout_ms=smt_timeout_ms,
-                domain_constraints=domain_constraints,
-            )
-        )
-        if result is not None:
-            return None, None, None, result
-        domain_constraints = list(new_domains or ())
-
-        if not path_state.is_leaf_state:
-            during_before_ops = _action_operations(
-                path_state.list_on_durings(aspect="before")
-            )
-            operations.extend(during_before_ops)
-            _, current_vars, new_domains, result = (
-                _execute_operation_prefix_conditions_and_vars_or_result(
-                    during_before_ops,
-                    current_vars,
-                    context_constraints=[
-                        *base_constraints,
-                        *constraints,
-                        *domain_constraints,
-                        *type_constraints,
-                    ],
-                    smt_timeout_ms=smt_timeout_ms,
-                    domain_constraints=domain_constraints,
-                )
-            )
-            if result is not None:
-                return None, None, None, result
-            domain_constraints = list(new_domains or ())
-
-        target_transition = None
-        selected_constraints = None
-        selected_guard_domains = None
-        prior_triggers: List[z3.ExprRef] = []
-        prior_guard_domains: List[z3.ExprRef] = []
-        for transition in path_state.init_transitions:
-            trigger, guard_domains, result = _transition_trigger_or_result(
-                transition,
-                current_vars,
-                context_constraints=[
-                    *base_constraints,
-                    *constraints,
-                    *domain_constraints,
-                    *prior_guard_domains,
-                    *type_constraints,
-                ],
-                smt_timeout_ms=smt_timeout_ms,
-            )
-            if result is not None:
-                return None, None, None, result
-            if guard_domains:
-                result = _definedness_feasibility_or_result(
-                    [
-                        *base_constraints,
-                        *constraints,
-                        *domain_constraints,
-                        *prior_guard_domains,
-                        *guard_domains,
-                        *type_constraints,
-                    ],
-                    reason=(
-                        "Initial transition guard runtime definedness "
-                        "constraints are unsatisfiable in context."
-                    ),
-                    smt_timeout_ms=smt_timeout_ms,
-                )
-                if result is not None:
-                    return None, None, None, result
-            if transition.to_state == child.name:
-                candidate_constraints = [
-                    *constraints,
-                    *prior_guard_domains,
-                    *(z3.Not(prior_trigger) for prior_trigger in prior_triggers),
-                    *(guard_domains or ()),
-                    trigger,
-                ]
-                context_check = is_sat(
-                    [
-                        *base_constraints,
-                        *candidate_constraints,
-                        *domain_constraints,
-                        *type_constraints,
-                    ],
-                    timeout_ms=smt_timeout_ms,
-                )
-                if context_check.kind in {"unknown", "timeout"}:
-                    return (
-                        None,
-                        None,
-                        None,
-                        _skip_result(
-                            context_check.kind,
-                            getattr(context_check, "reason", None),
-                        ),
-                    )
-                if context_check.kind == "sat":
-                    target_transition = transition
-                    selected_constraints = candidate_constraints
-                    selected_guard_domains = guard_domains
-                    break
-            prior_guard_domains.extend(guard_domains or ())
-            prior_triggers.append(trigger)
-
-        if (
-            target_transition is None
-            or selected_constraints is None
-            or selected_guard_domains is None
-        ):
-            return None, None, None, None
-        constraints = selected_constraints
-
-        selected.append(target_transition)
-        operations.extend(target_transition.effects)
-        _, current_vars, new_domains, result = (
-            _execute_operation_prefix_conditions_and_vars_or_result(
-                target_transition.effects,
-                current_vars,
-                context_constraints=[
-                    *base_constraints,
-                    *constraints,
-                    *domain_constraints,
-                    *type_constraints,
-                ],
-                smt_timeout_ms=smt_timeout_ms,
-                domain_constraints=domain_constraints,
-            )
-        )
-        if result is not None:
-            return None, None, None, result
-        domain_constraints = list(new_domains or ())
-
-    leaf_enter_ops = _action_operations(state.on_enters)
-    operations.extend(leaf_enter_ops)
-
-    return tuple(selected), tuple(constraints), operations, None
+    contexts, result = _root_initial_path_contexts(
+        state,
+        variables,
+        z3_vars,
+        base_constraints,
+        smt_timeout_ms=smt_timeout_ms,
+    )
+    if result is not None:
+        return None, None, None, result
+    if contexts is None:
+        return None, None, None, None
+    context = contexts[0]
+    return (
+        context.transitions,
+        context.constraints,
+        list(context.operations),
+        None,
+    )
 
 
 def _build_init_constraints_or_result(
@@ -2040,6 +2144,64 @@ def _iter_ordered_outgoing(
                 yield source, transitions
 
 
+def _state_has_definite_stable_entry(state: State) -> bool:
+    """Return whether entering ``state`` definitely reaches a stable leaf.
+
+    This helper is intentionally conservative: it proves only unconditional
+    initial chains whose first transition at each composite is eventless,
+    guardless, and leads recursively to a stoppable leaf.  Other cases may still
+    be valid at runtime, but transition shadowing must not emit a deterministic
+    diagnostic when validation viability depends on events, guards, or deeper
+    continuation semantics.
+
+    :param state: State entered by a transition.
+    :type state: State
+    :return: Whether entry is definitely validation-stable.
+    :rtype: bool
+    """
+    if state.is_stoppable:
+        return True
+    if state.is_leaf_state:
+        return False
+    if not state.init_transitions:
+        return False
+
+    transition = state.init_transitions[0]
+    if transition.event is not None or transition.guard is not None:
+        return False
+    if not isinstance(transition.to_state, str):
+        return False
+    target = state.substates.get(transition.to_state)
+    if target is None:
+        return False
+    return _state_has_definite_stable_entry(target)
+
+
+def _transition_has_definite_stable_continuation(
+    source: State,
+    transition: Transition,
+) -> bool:
+    """Return whether ``transition`` definitely passes stoppable validation.
+
+    :param source: Source state whose runtime selection validates outgoing
+        transitions.
+    :type source: State
+    :param transition: Candidate predecessor transition.
+    :type transition: Transition
+    :return: Whether the transition has a locally proven stable continuation.
+    :rtype: bool
+    """
+    parent = source.parent
+    if transition.to_state is _dsl_nodes().EXIT_STATE:
+        return parent is not None and parent.is_root_state
+    if parent is None or not isinstance(transition.to_state, str):
+        return False
+    target = parent.substates.get(transition.to_state)
+    if target is None:
+        return False
+    return _state_has_definite_stable_entry(target)
+
+
 def transition_shadowed_by_predecessor(
     machine: StateMachine,
     variables: Sequence[VarDefine],
@@ -2066,6 +2228,7 @@ def transition_shadowed_by_predecessor(
         prior_triggers: List[z3.ExprRef] = []
         prior_domain_constraints: List[z3.ExprRef] = []
         prior_payloads: List[dict] = []
+        prior_transitions: List[Transition] = []
         type_constraints = _build_type_constraints(variables, z3_vars)
 
         for transition in outgoing:
@@ -2135,6 +2298,7 @@ def transition_shadowed_by_predecessor(
                         prior_triggers.append(trigger)
                         prior_domain_constraints.extend(trigger_domains or ())
                         prior_payloads.append(current_payload)
+                        prior_transitions.append(transition)
                         continue
                     if loose_result.kind != "unsat":
                         first_indeterminate_result = _first_indeterminate(
@@ -2159,40 +2323,61 @@ def transition_shadowed_by_predecessor(
                         )
                         continue
 
-                    has_unconditional_catchall = any(
-                        item["event"] is None and item["guard"] is None
-                        for item in prior_payloads
+                    unstable_predecessor = (
+                        source.is_stoppable
+                        and not all(
+                            _transition_has_definite_stable_continuation(
+                                source, item
+                            )
+                            for item in prior_transitions
+                        )
                     )
-                    if has_unconditional_catchall:
-                        reason = "unconditional_catchall"
-                    elif (
-                        current_payload["event"] is not None
-                        and current_payload["guard"] is None
-                        and any(
-                            item["event"] == current_payload["event"]
-                            and item["guard"] is None
+                    if unstable_predecessor:
+                        first_indeterminate_result = _first_indeterminate(
+                            first_indeterminate_result,
+                            "undecidable_skip",
+                            (
+                                "Prior transition trigger coverage does not "
+                                "prove runtime shadowing because a predecessor "
+                                "transition lacks a locally proven stable "
+                                "continuation."
+                            ),
+                        )
+                    else:
+                        has_unconditional_catchall = any(
+                            item["event"] is None and item["guard"] is None
                             for item in prior_payloads
                         )
-                    ):
-                        reason = "duplicate_event"
-                    elif current_payload["guard"] is not None and all(
-                        item["event"] is None and item["guard"] is not None
-                        for item in prior_payloads
-                    ):
-                        reason = "guard_shadow"
-                    else:
-                        reason = "prior_trigger_cover"
-                    diagnostics.append(
-                        _make_diag(
-                            "W_TRANSITION_SHADOWED",
-                            "transition_shadowed_by_predecessor",
-                            transition=current_payload,
-                            shadowed_by=tuple(prior_payloads),
-                            reason=reason,
-                            source=_state_path(source),
-                            verification_scope="smt_local",
+                        if has_unconditional_catchall:
+                            reason = "unconditional_catchall"
+                        elif (
+                            current_payload["event"] is not None
+                            and current_payload["guard"] is None
+                            and any(
+                                item["event"] == current_payload["event"]
+                                and item["guard"] is None
+                                for item in prior_payloads
+                            )
+                        ):
+                            reason = "duplicate_event"
+                        elif current_payload["guard"] is not None and all(
+                            item["event"] is None and item["guard"] is not None
+                            for item in prior_payloads
+                        ):
+                            reason = "guard_shadow"
+                        else:
+                            reason = "prior_trigger_cover"
+                        diagnostics.append(
+                            _make_diag(
+                                "W_TRANSITION_SHADOWED",
+                                "transition_shadowed_by_predecessor",
+                                transition=current_payload,
+                                shadowed_by=tuple(prior_payloads),
+                                reason=reason,
+                                source=_state_path(source),
+                                verification_scope="smt_local",
+                            )
                         )
-                    )
                 else:
                     first_indeterminate_result = _first_indeterminate(
                         first_indeterminate_result,
@@ -2202,6 +2387,7 @@ def transition_shadowed_by_predecessor(
             prior_triggers.append(trigger)
             prior_domain_constraints.extend(trigger_domains or ())
             prior_payloads.append(current_payload)
+            prior_transitions.append(transition)
 
     if diagnostics:
         return AlgorithmResult(kind="unsat", diagnostics=tuple(diagnostics))
@@ -2340,65 +2526,55 @@ def _is_root_initial_leaf(state: State) -> bool:
     return _root_initial_path_transitions(state) is not None
 
 
-def enter_postcondition_implies_during_precondition(
+def _enter_condition_descriptors_for_context(
     state: State,
     variables: Sequence[VarDefine],
+    z3_vars: _Z3Vars,
+    init_constraints: Sequence[z3.ExprRef],
+    type_constraints: Sequence[z3.ExprRef],
+    first_cycle_operations: Sequence[OperationStatement],
+    context: _InitialPathContext,
     *,
     smt_timeout_ms: Optional[int] = None,
-) -> AlgorithmResult:
-    """Detect first-cycle during conditions determined by enter-time values.
+) -> Tuple[Optional[Set[Tuple[str, str, str]]], Optional[AlgorithmResult]]:
+    """Return branch descriptors determined in one initial-path context.
 
-    :param state: State to inspect.
+    :param state: Leaf state whose first-cycle during block is inspected.
     :type state: State
     :param variables: Variable definitions available to the model.
     :type variables: Sequence[VarDefine]
+    :param z3_vars: Root symbolic variables.
+    :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :param init_constraints: DSL initializer constraints.
+    :type init_constraints: Sequence[z3.ExprRef]
+    :param type_constraints: Type-domain constraints.
+    :type type_constraints: Sequence[z3.ExprRef]
+    :param first_cycle_operations: Concrete first-cycle during operations.
+    :type first_cycle_operations: Sequence[OperationStatement]
+    :param context: One feasible root initial path context.
+    :type context: _InitialPathContext
     :param smt_timeout_ms: Optional solver timeout in milliseconds.
     :type smt_timeout_ms: Optional[int], optional
-    :return: Algorithm result.
-    :rtype: AlgorithmResult
+    :return: Determined ``(condition, source, branch_taken)`` descriptors or an
+        indeterminate algorithm result.
+    :rtype: Tuple[Optional[Set[Tuple[str, str, str]]], Optional[AlgorithmResult]]
     """
-    if not state.is_leaf_state or state.is_pseudo:
-        return AlgorithmResult(kind="sat")
-
-    z3_vars = _z3_vars(variables)
-    init_constraints, result = _build_init_constraints_or_result(variables, z3_vars)
-    if result is not None:
-        return result
-
-    init_transitions, entry_constraints, entry_operations, result = (
-        _root_initial_path_context(
-            state,
-            variables,
-            z3_vars,
-            init_constraints,
-            smt_timeout_ms=smt_timeout_ms,
-        )
-    )
-    if result is not None:
-        return result
-    if init_transitions is None:
-        return AlgorithmResult(kind="sat")
-
-    first_cycle_operations = _concrete_during_operations(state)
-    if not first_cycle_operations:
-        return AlgorithmResult(kind="sat")
-
-    type_constraints = _build_type_constraints(variables, z3_vars)
+    _ = variables, state
     context_constraints = [
         *init_constraints,
-        *(entry_constraints or ()),
+        *context.constraints,
         *type_constraints,
     ]
     _, entry_vars, entry_domain_constraints, result = (
         _execute_operation_prefix_conditions_and_vars_or_result(
-            entry_operations or (),
+            context.operations,
             z3_vars,
             context_constraints=context_constraints,
             smt_timeout_ms=smt_timeout_ms,
         )
     )
     if result is not None:
-        return result
+        return None, result
     context_constraints.extend(entry_domain_constraints or ())
 
     condition_points, _, _, result = (
@@ -2410,11 +2586,10 @@ def enter_postcondition_implies_during_precondition(
         )
     )
     if result is not None:
-        return result
+        return None, result
     if not condition_points:
-        return AlgorithmResult(kind="sat")
+        return set(), None
 
-    diagnostics: List[dict] = []
     first_indeterminate_result: Optional[AlgorithmResult] = None
 
     context_check = is_sat(
@@ -2428,7 +2603,9 @@ def enter_postcondition_implies_during_precondition(
             getattr(context_check, "reason", None),
         )
     if context_check.kind == "unsat":
-        return AlgorithmResult(kind="sat")
+        return set(), None
+
+    descriptors: Set[Tuple[str, str, str]] = set()
 
     for condition_point in condition_points:
         condition = condition_point.condition
@@ -2448,7 +2625,8 @@ def enter_postcondition_implies_during_precondition(
 
         point_context = [
             *init_constraints,
-            *(entry_constraints or ()),
+            *context.constraints,
+            *(entry_domain_constraints or ()),
             *condition_point.path_conditions,
             *type_constraints,
         ]
@@ -2476,29 +2654,9 @@ def enter_postcondition_implies_during_precondition(
         )
 
         if true_check.kind == "unsat":
-            diagnostics.append(
-                _make_diag(
-                    "I_ENTER_DURING_CONTRADICT",
-                    "enter_postcondition_implies_during_precondition",
-                    state=_state_path(state),
-                    condition=str(condition),
-                    condition_source=condition_point.source,
-                    branch_taken="false",
-                    verification_scope="smt_local",
-                )
-            )
+            descriptors.add((str(condition), condition_point.source, "false"))
         elif false_check.kind == "unsat":
-            diagnostics.append(
-                _make_diag(
-                    "I_ENTER_DURING_CONTRADICT",
-                    "enter_postcondition_implies_during_precondition",
-                    state=_state_path(state),
-                    condition=str(condition),
-                    condition_source=condition_point.source,
-                    branch_taken="true",
-                    verification_scope="smt_local",
-                )
-            )
+            descriptors.add((str(condition), condition_point.source, "true"))
         else:
             first_indeterminate_result = _first_indeterminate(
                 first_indeterminate_result,
@@ -2508,6 +2666,98 @@ def enter_postcondition_implies_during_precondition(
                 first_indeterminate_result,
                 false_check.kind,
             )
+
+    if first_indeterminate_result is not None and not descriptors:
+        return None, first_indeterminate_result
+    return descriptors, None
+
+
+def enter_postcondition_implies_during_precondition(
+    state: State,
+    variables: Sequence[VarDefine],
+    *,
+    smt_timeout_ms: Optional[int] = None,
+) -> AlgorithmResult:
+    """Detect first-cycle during conditions determined by enter-time values.
+
+    :param state: State to inspect.
+    :type state: State
+    :param variables: Variable definitions available to the model.
+    :type variables: Sequence[VarDefine]
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+    :type smt_timeout_ms: Optional[int], optional
+    :return: Algorithm result.
+    :rtype: AlgorithmResult
+    """
+    if not state.is_leaf_state or state.is_pseudo:
+        return AlgorithmResult(kind="sat")
+
+    z3_vars = _z3_vars(variables)
+    init_constraints, result = _build_init_constraints_or_result(variables, z3_vars)
+    if result is not None:
+        return result
+
+    contexts, result = (
+        _root_initial_path_contexts(
+            state,
+            variables,
+            z3_vars,
+            init_constraints,
+            smt_timeout_ms=smt_timeout_ms,
+        )
+    )
+    if result is not None:
+        return result
+    if contexts is None:
+        return AlgorithmResult(kind="sat")
+
+    first_cycle_operations = _concrete_during_operations(state)
+    if not first_cycle_operations:
+        return AlgorithmResult(kind="sat")
+
+    type_constraints = _build_type_constraints(variables, z3_vars)
+    first_indeterminate_result: Optional[AlgorithmResult] = None
+    common_descriptors: Optional[Set[Tuple[str, str, str]]] = None
+
+    for context in contexts:
+        descriptors, result = _enter_condition_descriptors_for_context(
+            state,
+            variables,
+            z3_vars,
+            init_constraints,
+            type_constraints,
+            first_cycle_operations,
+            context,
+            smt_timeout_ms=smt_timeout_ms,
+        )
+        if result is not None:
+            first_indeterminate_result = _first_indeterminate(
+                first_indeterminate_result,
+                result.kind,
+                result.reason,
+            )
+            common_descriptors = set()
+            continue
+        if common_descriptors is None:
+            common_descriptors = set(descriptors or ())
+        else:
+            common_descriptors &= set(descriptors or ())
+
+    diagnostics: List[dict] = []
+    for condition, condition_source, branch_taken in sorted(
+        common_descriptors or ()
+    ):
+        diagnostics.append(
+            _make_diag(
+                "I_ENTER_DURING_CONTRADICT",
+                "enter_postcondition_implies_during_precondition",
+                state=_state_path(state),
+                condition=condition,
+                condition_source=condition_source,
+                branch_taken=branch_taken,
+                verification_scope="smt_local",
+            )
+        )
 
     if diagnostics:
         return AlgorithmResult(kind="unsat", diagnostics=tuple(diagnostics))

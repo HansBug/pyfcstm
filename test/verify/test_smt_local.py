@@ -1098,6 +1098,159 @@ def test_root_initial_context_handles_root_state_directly():
     assert operations == []
 
 
+def test_root_initial_path_context_returns_empty_for_unselected_leaf():
+    """Legacy single-context helper reports no context for non-initial leaves."""
+    machine = parse_machine(
+        """
+        state System {
+            state Idle;
+            state Active;
+            [*] -> Idle;
+        }
+        """
+    )
+    z3_vars = smt_local._z3_vars(variables(machine))
+
+    transitions, constraints, operations, result = smt_local._root_initial_path_context(
+        machine.root_state.substates["Active"],
+        variables(machine),
+        z3_vars,
+        (),
+    )
+
+    assert result is None
+    assert transitions is None
+    assert constraints is None
+    assert operations is None
+
+
+def test_definite_stable_entry_helper_is_conservative_for_edge_shapes():
+    """Validation-stability proof rejects shapes it cannot prove locally."""
+    pseudo_machine = parse_machine(
+        """
+        state System {
+            pseudo state Jump;
+            [*] -> Jump;
+        }
+        """
+    )
+    missing_init_machine = parse_machine(
+        """
+        state System {
+            state Parent {
+                state Child;
+                [*] -> Child;
+            }
+            [*] -> Parent;
+        }
+        """
+    )
+    stable_machine = parse_machine(
+        """
+        state System {
+            state Parent {
+                state Child;
+                [*] -> Child;
+            }
+            [*] -> Parent;
+        }
+        """
+    )
+    exit_init_machine = parse_machine(
+        """
+        state System {
+            state Parent {
+                state Child;
+                [*] -> Child;
+            }
+            [*] -> Parent;
+        }
+        """
+    )
+    missing_target_machine = parse_machine(
+        """
+        state System {
+            state Parent {
+                state Child;
+                [*] -> Child;
+            }
+            [*] -> Parent;
+        }
+        """
+    )
+    pseudo = pseudo_machine.root_state.substates["Jump"]
+    parent_without_init = missing_init_machine.root_state.substates["Parent"]
+    parent_without_init.transitions = []
+    exit_parent = exit_init_machine.root_state.substates["Parent"]
+    missing_target_parent = missing_target_machine.root_state.substates["Parent"]
+    exit_parent.init_transitions[0].to_state = smt_local._dsl_nodes().EXIT_STATE
+    missing_target_parent.init_transitions[0].to_state = "Missing"
+
+    stable_parent = stable_machine.root_state.substates["Parent"]
+
+    assert smt_local._state_has_definite_stable_entry(stable_parent)
+    assert not smt_local._state_has_definite_stable_entry(pseudo)
+    assert not smt_local._state_has_definite_stable_entry(parent_without_init)
+    assert not smt_local._state_has_definite_stable_entry(exit_parent)
+    assert not smt_local._state_has_definite_stable_entry(missing_target_parent)
+
+
+def test_transition_stable_continuation_helper_covers_exit_and_bad_targets():
+    """Transition continuation proof handles root exits and malformed targets."""
+    machine = parse_machine(
+        """
+        state System {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B;
+        }
+        """
+    )
+    state_a = machine.root_state.substates["A"]
+    exit_transition = Transition(
+        from_state="A",
+        to_state=smt_local._dsl_nodes().EXIT_STATE,
+        event=None,
+        guard=None,
+        effects=[],
+    )
+    root_exit_transition = Transition(
+        from_state="System",
+        to_state=smt_local._dsl_nodes().EXIT_STATE,
+        event=None,
+        guard=None,
+        effects=[],
+    )
+    bad_target_transition = Transition(
+        from_state="A",
+        to_state="Missing",
+        event=None,
+        guard=None,
+        effects=[],
+    )
+    non_string_transition = Transition(
+        from_state="A",
+        to_state=smt_local._dsl_nodes().INIT_STATE,
+        event=None,
+        guard=None,
+        effects=[],
+    )
+
+    assert smt_local._transition_has_definite_stable_continuation(
+        state_a, exit_transition
+    )
+    assert not smt_local._transition_has_definite_stable_continuation(
+        machine.root_state, root_exit_transition
+    )
+    assert not smt_local._transition_has_definite_stable_continuation(
+        state_a, bad_target_transition
+    )
+    assert not smt_local._transition_has_definite_stable_continuation(
+        state_a, non_string_transition
+    )
+
+
 def test_root_initial_leaf_helper_identifies_global_initial_path():
     """Lifecycle first-cycle analysis only pins the global initial leaf."""
     machine = parse_machine(
@@ -2382,6 +2535,31 @@ class TestTransitionShadowedByPredecessor:
         assert result.kind == "unsat"
         diag = assert_single_diag(result, "W_TRANSITION_SHADOWED")
         assert diag["data"]["reason"] == "guard_shadow"
+
+
+    def test_validation_rejected_predecessor_is_not_deterministic_shadow(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            state S {
+                state A;
+                state Bad {
+                    state Sink;
+                    [*] -> Sink : if [false];
+                }
+                state Good;
+                [*] -> A;
+                A -> Bad;
+                A -> Good;
+            }
+            """
+        )
+
+        result = transition_shadowed_by_predecessor(machine, variables(machine))
+
+        assert result.kind == "undecidable_skip"
+        assert result.diagnostics == ()
+        assert "stable continuation" in result.reason
 
     def test_dead_candidate_guard_is_not_reported_as_shadowed(self):
         machine = parse_machine(
@@ -4618,6 +4796,31 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         assert result.kind == "unsat"
         diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
         assert diag["data"]["branch_taken"] == "true"
+
+
+    def test_event_dependent_same_target_init_paths_do_not_force_branch(self):
+        machine = parse_machine(
+            """
+            def int mode = 0;
+            def int x = 0;
+            state System {
+                event E1;
+                event E2;
+                state Idle {
+                    during { x = (mode == 1) ? 10 : 20; }
+                }
+                [*] -> Idle : E1 effect { mode = 1; };
+                [*] -> Idle : E2 effect { mode = 2; };
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result == AlgorithmResult(kind="sat")
 
     def test_unsatisfiable_init_transition_context_returns_sat(self):
         machine = parse_machine(

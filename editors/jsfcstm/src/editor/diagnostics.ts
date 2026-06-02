@@ -76,20 +76,66 @@ function documentUri(document: TextDocumentLike): string {
     return filePath ? pathToFileURL(filePath).toString() : 'untitled:fcstm';
 }
 
-function relatedInformationFromRefs(
+function actionShadowRelatedInformation(
     document: TextDocumentLike,
-    item: ModelDiagnosticJson,
+    semantic: FcstmSemanticDocument,
+    refs: Record<string, unknown>,
 ): FcstmDiagnostic['relatedInformation'] {
-    if (item.code !== 'W_FORCED_OVERRIDES_NORMAL') return undefined;
-    const normalRange = spanLikeToRange(item.refs.normal_transition_span);
-    if (!normalRange) return undefined;
+    const range = resolveRangeFromRefsDetailed(document, semantic, {
+        function_name: refs.function_name,
+        defined_in: refs.outer_state_path,
+    }).range;
+    if (!range) return undefined;
     return [{
         location: {
             uri: documentUri(document),
-            range: normalRange,
+            range,
         },
-        message: 'Normal transition duplicated by this forced transition.',
+        message: 'Ancestor named action shadowed by this declaration.',
     }];
+}
+
+function shadowedEventRelatedInformation(
+    document: TextDocumentLike,
+    semantic: FcstmSemanticDocument,
+    refs: Record<string, unknown>,
+): FcstmDiagnostic['relatedInformation'] {
+    const range = resolveRangeFromRefsDetailed(document, semantic, {
+        event_qualified_name: refs.chain_path,
+    }).range;
+    if (!range) return undefined;
+    return [{
+        location: {
+            uri: documentUri(document),
+            range,
+        },
+        message: 'Broader event shadowed by this local event.',
+    }];
+}
+
+function relatedInformationFromRefs(
+    document: TextDocumentLike,
+    semantic: FcstmSemanticDocument,
+    item: ModelDiagnosticJson,
+): FcstmDiagnostic['relatedInformation'] {
+    if (item.code === 'W_FORCED_OVERRIDES_NORMAL') {
+        const normalRange = spanLikeToRange(item.refs.normal_transition_span);
+        if (!normalRange) return undefined;
+        return [{
+            location: {
+                uri: documentUri(document),
+                range: normalRange,
+            },
+            message: 'Normal transition duplicated by this forced transition.',
+        }];
+    }
+    if (item.code === 'W_NAMED_ACTION_SHADOWS_ANCESTOR') {
+        return actionShadowRelatedInformation(document, semantic, item.refs);
+    }
+    if (item.code === 'W_SHADOWED_EVENT') {
+        return shadowedEventRelatedInformation(document, semantic, item.refs);
+    }
+    return undefined;
 }
 
 export interface CollectInspectModelDiagnosticsOptions {
@@ -152,7 +198,7 @@ export function collectInspectDiagnosticsFromItems(
         if (refResolution.fallback) {
             diagnostic.data = {...(diagnostic.data ?? {}), __rangeFallback: refResolution.fallback};
         }
-        diagnostic.relatedInformation = relatedInformationFromRefs(document, item);
+        diagnostic.relatedInformation = relatedInformationFromRefs(document, semantic, item);
         if (consumeDiagnosticCount(existingCounts, diagnosticKey(diagnostic))) continue;
         diagnostics.push(diagnostic);
     }

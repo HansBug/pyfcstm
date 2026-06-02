@@ -1,5 +1,5 @@
 import type {FcstmSemanticDocument, FcstmSemanticTransition} from '../semantics';
-import {createRange, type TextDocumentLike, type TextRange} from '../utils/text';
+import {createRange, getDocumentFilePath, type TextDocumentLike, type TextRange} from '../utils/text';
 import {findIdentifierRange} from './ranges';
 import {
     effectSelfAssignRange,
@@ -229,15 +229,62 @@ function guardRangeResolution(
     };
 }
 
+function importedBoundaryFileForStatePath(
+    semantic: FcstmSemanticDocument,
+    statePath: string | null,
+): string | null {
+    if (!statePath) return null;
+    const segments = statePath.split('.');
+    for (let length = segments.length; length >= 1; length -= 1) {
+        const candidatePath = segments.slice(0, length).join('.');
+        const state = semantic.lookups.statesByPath[candidatePath];
+        const importedFromFile = state?.ast.importedFromFile;
+        if (importedFromFile) return importedFromFile;
+    }
+    return null;
+}
+
+function statePathIsLocalToDocument(
+    document: TextDocumentLike,
+    semantic: FcstmSemanticDocument,
+    statePath: string | null,
+): boolean {
+    const importedFromFile = importedBoundaryFileForStatePath(semantic, statePath);
+    if (!importedFromFile) return true;
+    const documentFilePath = getDocumentFilePath(document);
+    return documentFilePath.length > 0 && importedFromFile === documentFilePath;
+}
+
+function actionDeclarationRange(
+    document: TextDocumentLike,
+    semantic: FcstmSemanticDocument,
+    statePath: string | null,
+    functionName: string | null,
+): TextRange | null {
+    if (!statePath || !functionName) return null;
+    if (!statePathIsLocalToDocument(document, semantic, statePath)) return null;
+
+    const matches = semantic.actions.filter(action => (
+        action.name === functionName && dottedPath(action.ownerStatePath) === statePath
+    ));
+    if (matches.length !== 1) return null;
+
+    const action = matches[0];
+    return action.ast.nameRange ?? findIdentifierRange(document, functionName, action.range);
+}
+
 function eventRange(
     document: TextDocumentLike,
     semantic: FcstmSemanticDocument,
     qualifiedName: string | null,
 ): TextRange | null {
     if (!qualifiedName) return null;
-    const event = semantic.events.find(item => item.identity.qualifiedName === qualifiedName);
+    const event = semantic.lookups.eventsByQualifiedName[qualifiedName]
+        ?? semantic.events.find(item => item.identity.qualifiedName === qualifiedName);
     if (!event) return null;
-    return findIdentifierRange(document, event.name, event.declarationAst?.range ?? event.range);
+    if (!statePathIsLocalToDocument(document, semantic, dottedPath(event.statePath))) return null;
+    return event.declarationAst?.nameRange
+        ?? findIdentifierRange(document, event.name, event.declarationAst?.range ?? event.range);
 }
 
 export type InspectRangeFallback =
@@ -364,6 +411,15 @@ export function resolveRangeFromRefsDetailed(
 
     const duplicateRange = arrayFirstRange(refMap.duplicate_spans);
     if (duplicateRange) return {range: duplicateRange};
+
+    const functionName = stringRef(refMap, 'function_name');
+    for (const key of ['defined_in', 'defined_in_path', 'inner_state_path']) {
+        const range = actionDeclarationRange(document, semantic, stringRef(refMap, key), functionName);
+        if (range) return {range};
+    }
+
+    const localEventRange = eventRange(document, semantic, stringRef(refMap, 'local_path'));
+    if (localEventRange) return {range: localEventRange};
 
     if (refMap.transition_span === null || refMap.guard_span === null || refMap.duplicate_spans !== undefined) {
         if (refMap.folded_value === true || refMap.folded_value === false || stringRef(refMap, 'guard_text')) {

@@ -166,8 +166,8 @@ def _forced_overrides_normal_warnings(transitions: Iterable['TransitionInfo']) -
             refs={
                 'from_path': t.from_path,
                 'to_path': t.to_path,
-                'forced_span': None,
-                'normal_span': None,
+                'forced_declaration_span': None,
+                'normal_transition_span': None,
             },
         ))
     return diagnostics

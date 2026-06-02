@@ -439,6 +439,64 @@ describe('diagnostics transition body ranges', () => {
         );
     });
 
+    it('anchors forced override diagnostics on the forced declaration with related normal transition', async () => {
+        const text = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    !A -> B :: Go;',
+            '    A -> B :: Go;',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/forced-override-related-normal-range.fcstm');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const diagnostic = targetDiagnostics(diagnostics, 'W_FORCED_OVERRIDES_NORMAL')[0];
+
+        assert.ok(diagnostic, JSON.stringify(diagnostics));
+        assert.equal(sliceByRange(text, diagnostic.range).trim(), '!A -> B :: Go;');
+        assert.equal(diagnostic.data?.forced_declaration_span !== undefined, true);
+        assert.equal(diagnostic.data?.normal_transition_span !== undefined, true);
+        assert.equal(diagnostic.data?.forced_span, undefined);
+        assert.equal(diagnostic.data?.normal_span, undefined);
+        assert.equal(diagnostic.data?.__rangeFallback, undefined);
+        assert.ok(diagnostic.relatedInformation?.length, JSON.stringify(diagnostic));
+        assert.equal(sliceByRange(text, diagnostic.relatedInformation[0].location.range).trim(), 'A -> B :: Go;');
+    });
+
+    it('uses the wildcard forced declaration range for each forced override expansion', async () => {
+        const text = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    state C;',
+            '    [*] -> A;',
+            '    !* -> C : Reset;',
+            '    A -> C : Reset;',
+            '    B -> C : Reset;',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/forced-override-wildcard-related-range.fcstm');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const forcedOverrides = targetDiagnostics(diagnostics, 'W_FORCED_OVERRIDES_NORMAL')
+            .sort((left, right) => String(left.data?.from_path).localeCompare(String(right.data?.from_path)));
+
+        assert.equal(forcedOverrides.length, 2, JSON.stringify(diagnostics));
+        assert.deepEqual(
+            forcedOverrides.map(item => [
+                item.data?.from_path,
+                item.data?.to_path,
+                sliceByRange(text, item.range).trim(),
+                item.relatedInformation?.map((info: any) => sliceByRange(text, info.location.range).trim()),
+                item.data?.__rangeFallback,
+            ]),
+            [
+                ['Root.A', 'Root.C', '!* -> C : Reset;', ['A -> C : Reset;'], undefined],
+                ['Root.B', 'Root.C', '!* -> C : Reset;', ['B -> C : Reset;'], undefined],
+            ],
+        );
+    });
+
     it('marks transition_not_found when refs cannot match any transition', async () => {
         const text = [
             'state Root {',

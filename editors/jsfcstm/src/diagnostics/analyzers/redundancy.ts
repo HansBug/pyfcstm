@@ -1,4 +1,5 @@
 import type {EventInfo, ModelDiagnosticJson, StateInfo, TransitionInfo} from '../inspect';
+import type {TextRange} from '../../utils/text';
 
 export function collectRedundancyWarnings(
     transitions: TransitionInfo[],
@@ -143,10 +144,19 @@ function collectEffectSelfAssignWarnings(transitions: TransitionInfo[]): ModelDi
 }
 
 function collectForcedOverridesNormalWarnings(transitions: TransitionInfo[]): ModelDiagnosticJson[] {
-    const normal = new Set(transitions.filter(t => !t.is_forced).map(transitionTriggerKey));
+    const normal = new Map<string, TransitionInfo>();
+    for (const transition of transitions) {
+        if (transition.is_forced) continue;
+        const key = transitionTriggerKey(transition);
+        if (!normal.has(key)) {
+            normal.set(key, transition);
+        }
+    }
     const out: ModelDiagnosticJson[] = [];
     for (const transition of transitions) {
-        if (!transition.is_forced || !normal.has(transitionTriggerKey(transition))) continue;
+        if (!transition.is_forced) continue;
+        const normalTransition = normal.get(transitionTriggerKey(transition));
+        if (!normalTransition) continue;
         out.push({
             code: 'W_FORCED_OVERRIDES_NORMAL',
             severity: 'warning',
@@ -155,12 +165,16 @@ function collectForcedOverridesNormalWarnings(transitions: TransitionInfo[]): Mo
             refs: {
                 from_path: transition.from_path,
                 to_path: transition.to_path,
-                forced_span: null,
-                normal_span: null,
+                forced_declaration_span: sourceRange(transition),
+                normal_transition_span: sourceRange(normalTransition),
             },
         });
     }
     return out;
+}
+
+function sourceRange(transition: TransitionInfo): TextRange | null {
+    return transition.__sourceRange ?? null;
 }
 
 function collectShadowedEventWarnings(events: EventInfo[]): ModelDiagnosticJson[] {

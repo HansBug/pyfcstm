@@ -1831,11 +1831,11 @@ W_FORCED_OVERRIDES_NORMAL:
       type: str
       required: true
       description: Dotted target state path.
-    forced_span:
+    forced_declaration_span:
       type: Span
       required: false
       description: Source span of the forced transition when available.
-    normal_span:
+    normal_transition_span:
       type: Span
       required: false
       description: Source span of the normal transition when available.

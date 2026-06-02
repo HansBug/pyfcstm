@@ -357,7 +357,7 @@ export function resolveRangeFromRefsDetailed(
         return {range: null};
     }
 
-    for (const key of ['guard_span', 'transition_span', 'forced_span', 'normal_span']) {
+    for (const key of ['guard_span', 'transition_span', 'forced_declaration_span', 'forced_span', 'normal_span']) {
         const range = spanLikeToRange(refMap[key]);
         if (range) return {range};
     }

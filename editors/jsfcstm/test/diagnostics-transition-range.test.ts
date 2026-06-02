@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import * as path from 'node:path';
 
+import {collectRedundancyWarnings} from '../src/diagnostics/analyzers/redundancy';
 import {createDocument, packageModule, sliceByRange, trackTempDir, writeFile} from './support';
 
 function targetDiagnostics(diagnostics: any[], code: string): any[] {
@@ -495,6 +496,133 @@ describe('diagnostics transition body ranges', () => {
                 ['Root.B', 'Root.C', '!* -> C : Reset;', ['B -> C : Reset;'], undefined],
             ],
         );
+    });
+
+    it('keeps normal transition spans out of primary range fallback', async () => {
+        const text = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    !A -> B :: Go;',
+            '    A -> B :: Go;',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/forced-override-normal-span-fallback.fcstm');
+        const semantic = await packageModule.getWorkspaceGraph().getSemanticDocument(document);
+        const forcedRange = packageModule.createRange(4, 4, 4, 20);
+        const normalRange = packageModule.createRange(5, 4, 5, 19);
+
+        assert.deepEqual(
+            packageModule.resolveRangeFromRefsDetailed(document, semantic, {forced_span: forcedRange}).range,
+            forcedRange,
+        );
+        assert.equal(
+            packageModule.resolveRangeFromRefsDetailed(document, semantic, {normal_span: normalRange}).range,
+            null,
+        );
+    });
+
+    it('omits forced override related information when the normal span is unavailable', async () => {
+        const text = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    !A -> B :: Go;',
+            '    A -> B :: Go;',
+            '}',
+        ].join('\n');
+        const semanticDocument = createDocument(text, '/tmp/forced-override-null-related-semantic.fcstm');
+        const semantic = await packageModule.getWorkspaceGraph().getSemanticDocument(semanticDocument);
+        const document = {
+            getText() {
+                return text;
+            },
+            lineCount: text.split('\n').length,
+            lineAt(line: number) {
+                return {text: text.split('\n')[line] || ''};
+            },
+        };
+        const diagnostics = packageModule.collectInspectDiagnosticsFromItems(document, semantic, [{
+            code: 'W_FORCED_OVERRIDES_NORMAL',
+            severity: 'warning' as const,
+            message: 'Synthetic forced override without a normal span.',
+            span: null,
+            refs: {
+                from_path: 'Root.A',
+                to_path: 'Root.B',
+                forced_declaration_span: packageModule.createRange(4, 4, 4, 20),
+                normal_transition_span: null,
+            },
+        }]);
+
+        assert.equal(diagnostics.length, 1);
+        assert.equal(sliceByRange(text, diagnostics[0].range).trim(), '!A -> B :: Go;');
+        assert.equal(diagnostics[0].relatedInformation, undefined);
+    });
+
+    it('uses an untitled URI for forced override related information without a document file path', async () => {
+        const text = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    !A -> B :: Go;',
+            '    A -> B :: Go;',
+            '}',
+        ].join('\n');
+        const semanticDocument = createDocument(text, '/tmp/forced-override-untitled-related-semantic.fcstm');
+        const semantic = await packageModule.getWorkspaceGraph().getSemanticDocument(semanticDocument);
+        const document = {
+            getText() {
+                return text;
+            },
+            lineCount: text.split('\n').length,
+            lineAt(line: number) {
+                return {text: text.split('\n')[line] || ''};
+            },
+        };
+        const diagnostics = packageModule.collectInspectDiagnosticsFromItems(document, semantic, [{
+            code: 'W_FORCED_OVERRIDES_NORMAL',
+            severity: 'warning' as const,
+            message: 'Synthetic forced override with an untitled document.',
+            span: null,
+            refs: {
+                from_path: 'Root.A',
+                to_path: 'Root.B',
+                forced_declaration_span: packageModule.createRange(4, 4, 4, 20),
+                normal_transition_span: packageModule.createRange(5, 4, 5, 19),
+            },
+        }]);
+
+        assert.equal(diagnostics.length, 1);
+        assert.equal(diagnostics[0].relatedInformation?.[0]?.location.uri, 'untitled:fcstm');
+        assert.equal(
+            sliceByRange(text, diagnostics[0].relatedInformation![0].location.range).trim(),
+            'A -> B :: Go;',
+        );
+    });
+
+    it('skips forced override analyzer warnings when no normal trigger matches', () => {
+        const diagnostics = collectRedundancyWarnings(
+            [{
+                from_path: 'Root.A',
+                to_path: 'Root.B',
+                event: 'Root.A.Go',
+                event_scope: 'local',
+                guard: null,
+                effect: null,
+                effect_self_assigns: [],
+                is_forced: true,
+                forced_origin: 'Root.A',
+                transition_index: 1,
+            }],
+            [],
+            [],
+        );
+
+        assert.deepEqual(targetDiagnostics(diagnostics, 'W_FORCED_OVERRIDES_NORMAL'), []);
     });
 
     it('marks transition_not_found when refs cannot match any transition', async () => {

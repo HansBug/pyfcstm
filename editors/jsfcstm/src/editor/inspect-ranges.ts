@@ -1,13 +1,15 @@
 import type {FcstmSemanticDocument, FcstmSemanticTransition} from '../semantics';
 import {createRange, getDocumentFilePath, type TextDocumentLike, type TextRange} from '../utils/text';
 import {findIdentifierRange} from './ranges';
+import {spanToRange} from './span-ranges';
 import {
     effectSelfAssignRange,
     firstVariableDefinitionRange,
     resolveStatePath,
-    spanLikeToRange,
     variableDefinitionRange,
 } from './suggested-fixes';
+
+export {spanToRange};
 
 function stringRef(refs: Record<string, unknown>, key: string): string | null {
     const value = refs[key];
@@ -304,7 +306,7 @@ export interface InspectRangeResolution {
 function arrayFirstRange(value: unknown): TextRange | null {
     if (!Array.isArray(value)) return null;
     for (const item of value) {
-        const range = spanLikeToRange(item);
+        const range = spanToRange(item);
         if (range) return range;
     }
     return null;
@@ -405,7 +407,7 @@ export function resolveRangeFromRefsDetailed(
     }
 
     for (const key of ['guard_span', 'transition_span', 'forced_declaration_span', 'forced_span']) {
-        const range = spanLikeToRange(refMap[key]);
+        const range = spanToRange(refMap[key]);
         if (range) return {range};
     }
 

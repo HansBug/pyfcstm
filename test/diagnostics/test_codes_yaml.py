@@ -23,7 +23,11 @@ from pyfcstm.diagnostics import (
     refs_with_suggested_fix,
     render_suggested_fix,
 )
-from pyfcstm.diagnostics.codes import _ALLOWED_REF_TYPES, _ALLOWED_SEVERITIES
+from pyfcstm.diagnostics.codes import (
+    _ALLOWED_REF_TYPES,
+    _ALLOWED_SEVERITIES,
+    _ALLOWED_SPAN_OBJECTS,
+)
 
 
 @pytest.mark.unittest
@@ -52,6 +56,14 @@ class TestCodeRegistryShape:
         assert len(CODE_REGISTRY[code].refs_schema) >= 1, (
             f"code {code} has no refs schema; a diagnostic without any "
             f"structured payload is rarely useful to downstream tooling."
+        )
+
+    @pytest.mark.parametrize('code', sorted(CODE_REGISTRY.keys()))
+    def test_each_code_declares_span_object(self, code):
+        span_object = CODE_REGISTRY[code].span_object
+        assert span_object in _ALLOWED_SPAN_OBJECTS, (
+            f"code {code} must declare a span_object from "
+            f"{_ALLOWED_SPAN_OBJECTS!r}, got {span_object!r}"
         )
 
     @pytest.mark.parametrize('code', sorted(CODE_REGISTRY.keys()))
@@ -354,6 +366,36 @@ class TestLoaderValidation:
         """)
         reg = load_codes(path)
         assert reg['E_FOO'].refs_schema['bar'].enum is None
+
+    def test_loads_span_object_metadata(self, tmp_path):
+        path = self._write_yaml(tmp_path, """
+            E_FOO:
+              severity: error
+              description: With span object.
+              span_object: transition
+              refs:
+                bar:
+                  type: str
+                  required: true
+                  description: A bar.
+        """)
+        reg = load_codes(path)
+        assert reg['E_FOO'].span_object == 'transition'
+
+    def test_rejects_unknown_span_object(self, tmp_path):
+        path = self._write_yaml(tmp_path, """
+            E_FOO:
+              severity: error
+              description: Bad span object.
+              span_object: imaginary_object
+              refs:
+                bar:
+                  type: str
+                  required: true
+                  description: A bar.
+        """)
+        with pytest.raises(CodesSchemaError, match='span_object'):
+            load_codes(path)
 
     def test_loads_enum_into_code_field_spec(self, tmp_path):
         path = self._write_yaml(tmp_path, """

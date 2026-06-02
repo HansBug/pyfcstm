@@ -1,4 +1,4 @@
-import type {EventInfo, ModelDiagnosticJson, StateInfo, TransitionInfo} from '../inspect';
+import type {EventInfo, ModelDiagnosticJson, ModelSpanJson, StateInfo, TransitionInfo} from '../inspect';
 import type {TextRange} from '../../utils/text';
 
 export function collectRedundancyWarnings(
@@ -54,7 +54,7 @@ function collectRedundantTransitionWarnings(transitions: TransitionInfo[]): Mode
             refs: {
                 from_path: first.from_path,
                 to_path: first.to_path,
-                duplicate_spans: items.map((item, index) => `${item.transition.from_path}->${item.transition.to_path}#${index + 1}`),
+                duplicate_spans: items.map(item => sourceSpan(item.transition)),
                 transition_index: items[0].transition.transition_index,
             },
         });
@@ -165,12 +165,23 @@ function collectForcedOverridesNormalWarnings(transitions: TransitionInfo[]): Mo
             refs: {
                 from_path: transition.from_path,
                 to_path: transition.to_path,
-                forced_declaration_span: sourceRange(transition),
-                normal_transition_span: sourceRange(normalTransition),
+                forced_declaration_span: sourceSpan(transition),
+                normal_transition_span: sourceSpan(normalTransition),
             },
         });
     }
     return out;
+}
+
+function sourceSpan(transition: TransitionInfo): ModelSpanJson | null {
+    const range = sourceRange(transition);
+    if (!range) return null;
+    return {
+        line: range.start.line + 1,
+        column: range.start.character + 1,
+        end_line: range.end.line + 1,
+        end_column: range.end.character + 1,
+    };
 }
 
 function sourceRange(transition: TransitionInfo): TextRange | null {

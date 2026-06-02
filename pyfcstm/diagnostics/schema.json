@@ -361,27 +361,90 @@
         },
         "message": { "type": "string" },
         "span": {
+          "description": "Primary problem range for the diagnostic. When non-null this is a pyfcstm Span using 1-based, end-exclusive coordinates and should point at the object described by the diagnostic message and code span_object.",
           "oneOf": [
             { "type": "null" },
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["line", "column", "end_line", "end_column"],
-              "properties": {
-                "line": { "type": "integer", "minimum": 1 },
-                "column": { "type": "integer", "minimum": 1 },
-                "end_line": { "anyOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }] },
-                "end_column": { "anyOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }] }
-              }
-            }
+            { "$ref": "#/definitions/Span" }
           ]
         },
         "refs": {
           "type": "object",
+          "description": "Structured payload declared in codes.yaml. Any refs key named <object>_span carries a Span for an auxiliary source object; keys ending in _spans carry list[Span]. These related ranges use the same 1-based, end-exclusive Span coordinates as ModelDiagnostic.span.",
           "properties": {
-            "suggested_fix": { "$ref": "#/definitions/SuggestedFixPayload" }
+            "suggested_fix": { "$ref": "#/definitions/SuggestedFixPayload" },
+            "transition_span": {
+              "description": "Span for the transition related to the diagnostic.",
+              "oneOf": [
+                { "type": "null" },
+                { "$ref": "#/definitions/Span" }
+              ]
+            },
+            "guard_span": {
+              "description": "Span for the guard expression related to the diagnostic.",
+              "oneOf": [
+                { "type": "null" },
+                { "$ref": "#/definitions/Span" }
+              ]
+            },
+            "forced_declaration_span": {
+              "description": "Span for the forced-transition declaration related to the diagnostic.",
+              "oneOf": [
+                { "type": "null" },
+                { "$ref": "#/definitions/Span" }
+              ]
+            },
+            "normal_transition_span": {
+              "description": "Span for the normal transition related to a forced/normal pair diagnostic.",
+              "oneOf": [
+                { "type": "null" },
+                { "$ref": "#/definitions/Span" }
+              ]
+            },
+            "previous_span": {
+              "description": "Span for a previous declaration related to a duplicate diagnostic.",
+              "oneOf": [
+                { "type": "null" },
+                { "$ref": "#/definitions/Span" }
+              ]
+            },
+            "duplicate_spans": {
+              "description": "list[Span] for duplicate transitions related to a redundancy diagnostic.",
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  { "type": "null" },
+                  { "$ref": "#/definitions/Span" }
+                ]
+              }
+            }
           },
           "additionalProperties": true
+        }
+      }
+    },
+    "Span": {
+      "type": "object",
+      "description": "Source span emitted by pyfcstm diagnostics and refs.<object>_span fields. Coordinates are 1-based and end-exclusive: line/column identify the first covered source position, and end_line/end_column identify the first source position after the covered text. jsfcstm consumers convert this to an LSP Range, which is 0-based and end-exclusive.",
+      "additionalProperties": false,
+      "required": ["line", "column", "end_line", "end_column"],
+      "properties": {
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based start line of the source span."
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based start column of the source span."
+        },
+        "end_line": {
+          "anyOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }],
+          "description": "1-based end line of the source span; null means the start line."
+        },
+        "end_column": {
+          "anyOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }],
+          "description": "1-based end-exclusive column; null means a point-style span at column."
         }
       }
     }

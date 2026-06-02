@@ -10,6 +10,7 @@ import {
     TextDocumentLike,
     TextRange,
 } from '../utils/text';
+import {spanToRange} from './span-ranges';
 export interface SuggestedFixEditPlan {
     range: TextRange;
     newText: string;
@@ -299,26 +300,7 @@ export function effectSelfAssignRange(
 }
 
 export function spanLikeToRange(value: unknown): TextRange | null {
-    if (typeof value !== 'object' || value === null) return null;
-    const obj = value as Record<string, unknown>;
-    const start = obj.start as Record<string, unknown> | undefined;
-    const end = obj.end as Record<string, unknown> | undefined;
-    if (
-        typeof start?.line === 'number' &&
-        typeof start?.character === 'number' &&
-        typeof end?.line === 'number' &&
-        typeof end?.character === 'number'
-    ) {
-        return createRange(start.line, start.character, end.line, end.character);
-    }
-    if (typeof obj.line === 'number' && typeof obj.column === 'number') {
-        const startLine = Math.max(0, obj.line - 1);
-        const startColumn = Math.max(0, obj.column - 1);
-        const endLine = typeof obj.end_line === 'number' ? Math.max(0, obj.end_line - 1) : startLine;
-        const endColumn = typeof obj.end_column === 'number' ? Math.max(0, obj.end_column - 1) : startColumn;
-        return createRange(startLine, startColumn, endLine, endColumn);
-    }
-    return null;
+    return spanToRange(value);
 }
 
 function referencedValue(

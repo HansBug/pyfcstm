@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import {createDocument, packageModule, withPatchedProperty} from './support';
+import {createDocument, packageModule, sliceByRange, withPatchedProperty} from './support';
 
 const SUPPRESSED_FROM_INSPECT_SURFACE = new Set([
     'W_UNREACHABLE_STATE',
@@ -600,6 +600,78 @@ state Root {
             'Idle -> Done : Tick;',
         );
         assert.equal(packageModule.resolveRangeFromRefs(document, semantic, null), null);
+    });
+
+
+    it('keeps inspect-derived source slices on the same problem objects', async () => {
+        const text = [
+            'def int read_only = 0;',
+            'def int write_only = 0;',
+            'def int stable = 0;',
+            'state Root {',
+            '    event Tick;',
+            '    enter Sync { }',
+            '    state Active {',
+            '        enter Sync { }',
+            '        state Leaf;',
+            '        [*] -> Leaf;',
+            '    }',
+            '    state Orphan { enter Cleanup {} }',
+            '    state Idle;',
+            '    state Done;',
+            '    [*] -> Idle : if [stable > 0];',
+            '    Idle -> Done : if [(1 + 2) == 3];',
+            '    Idle -> Done : if [(1 + 2) == 3];',
+            '    Done -> Done;',
+            '    Done -> Idle :: Tick effect { stable = stable; };',
+            '    !Done -> Idle :: Tick;',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/inspect-source-slice-contract.fcstm');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+
+        function find(code: string, predicate: (diag: {data?: Record<string, unknown>}) => boolean = () => true) {
+            const diagnostic = diagnostics.find(item => item.code === code && predicate(item));
+            assert.ok(diagnostic, `expected ${code}, got ${diagnostics.map(item => item.code).join(', ')}`);
+            return diagnostic;
+        }
+
+        const checks: Array<[string, (diag: {data?: Record<string, unknown>}) => boolean, string]> = [
+            ['W_DEADLOCK_LEAF', diag => diag.data?.state_path === 'Root.Active.Leaf', 'Leaf'],
+            ['W_INITIAL_UNCONDITIONAL_MISSING', () => true, 'Root'],
+            ['W_DEAD_NAMED_ACTION', diag => diag.data?.function_name === 'Cleanup', 'Cleanup'],
+            ['W_GUARD_CONST_TRUE', diag => diag.data?.to_path === 'Root.Done', '(1 + 2) == 3'],
+            ['W_SELF_TRANSITION_NOP', () => true, 'Done -> Done;'],
+            ['W_EFFECT_SELF_ASSIGN', () => true, 'stable = stable;'],
+            ['W_FORCED_OVERRIDES_NORMAL', () => true, '!Done -> Idle :: Tick;'],
+            ['W_SHADOWED_EVENT', () => true, 'Tick'],
+            ['W_UNREFERENCED_VAR', diag => diag.data?.var_name === 'write_only', 'def int write_only'],
+        ];
+        for (const [code, predicate, expectedSlice] of checks) {
+            const diagnostic = find(code, predicate);
+            assert.ok(
+                sliceByRange(text, diagnostic.range).includes(expectedSlice),
+                `${code} range slice ${JSON.stringify(sliceByRange(text, diagnostic.range))} should include ${JSON.stringify(expectedSlice)}`,
+            );
+        }
+
+        const forced = find('W_FORCED_OVERRIDES_NORMAL');
+        const relatedRange = forced.relatedInformation?.[0]?.location.range;
+        assert.ok(relatedRange, 'expected forced override related range for normal transition');
+        assert.equal(sliceByRange(text, relatedRange).trim(), 'Done -> Idle :: Tick effect { stable = stable; }');
+
+        const duplicateSpans = (find(
+            'W_REDUNDANT_TRANSITION',
+            diag => diag.data?.from_path === 'Root.Idle',
+        ).data?.duplicate_spans ?? []) as unknown[];
+        const duplicateSlices = duplicateSpans
+            .map(span => packageModule.spanToRange(span))
+            .filter(range => range !== null)
+            .map(range => sliceByRange(text, range!).trim());
+        assert.deepEqual(duplicateSlices, [
+            'Idle -> Done : if [(1 + 2) == 3];',
+            'Idle -> Done : if [(1 + 2) == 3];',
+        ]);
     });
 
     it('resolves missing and implicit event refs without requiring declarations', async () => {

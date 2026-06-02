@@ -1904,8 +1904,8 @@ def effect_contradicts_guard(
     """Detect effects after which the transition guard cannot still hold.
 
     The post-effect guard counts as still holding only when it is both
-    runtime-defined and true.  If post-state guard definedness is itself
-    infeasible under the pre-guard/effect context, the raw algorithm returns
+    runtime-defined and true.  If post-state guard definedness is not guaranteed
+    under the pre-guard/effect context, the raw algorithm returns
     ``undecidable_skip`` instead of emitting a deterministic contradiction.
 
     :param transition: Transition to check.
@@ -1953,13 +1953,13 @@ def effect_contradicts_guard(
     if result is not None:
         return result
     if guard_after_domains:
+        post_context = [
+            guard_before,
+            *(type_constraints or ()),
+            *(effect_domain_constraints or ()),
+        ]
         result = _definedness_feasibility_or_result(
-            [
-                guard_before,
-                *(type_constraints or ()),
-                *(effect_domain_constraints or ()),
-                *guard_after_domains,
-            ],
+            [*post_context, *guard_after_domains],
             reason=(
                 "Post-effect transition guard runtime definedness "
                 "constraints are unsatisfiable."
@@ -1968,6 +1968,24 @@ def effect_contradicts_guard(
         )
         if result is not None:
             return result
+
+        undefined_post_guard = is_sat(
+            [*post_context, z3.Not(z3.And(*guard_after_domains))],
+            timeout_ms=smt_timeout_ms,
+        )
+        if undefined_post_guard.kind == "sat":
+            return _skip_result(
+                "undecidable_skip",
+                (
+                    "Post-effect transition guard runtime definedness "
+                    "constraints are not guaranteed."
+                ),
+            )
+        if undefined_post_guard.kind != "unsat":
+            return _skip_result(
+                undefined_post_guard.kind,
+                getattr(undefined_post_guard, "reason", None),
+            )
 
     sat_result = is_sat(
         [

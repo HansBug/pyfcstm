@@ -2268,6 +2268,61 @@ class TestEffectContradictsGuard:
 
         assert result == AlgorithmResult(kind="sat")
 
+    def test_partially_undefined_post_guard_after_effect_is_undecidable(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            def int d = -1;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B : if [d != 0 && x >= 0 && 1 / d < 0] effect {
+                    d = x;
+                };
+            }
+            """
+        )
+
+        result = effect_contradicts_guard(root_transition(machine), variables(machine))
+
+        assert result.kind == "undecidable_skip"
+        assert result.diagnostics == ()
+        assert "runtime definedness" in result.reason
+
+    def test_post_guard_definedness_implication_timeout_propagates(self, monkeypatch):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            def int d = -1;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B : if [d != 0 && x >= 0 && 1 / d < 0] effect {
+                    d = x;
+                };
+            }
+            """
+        )
+        calls = []
+        real_is_sat = smt_local.is_sat
+
+        def timeout_on_definedness_implication(*args, **kwargs):
+            from pyfcstm.solver.logical import SatResult
+
+            calls.append(args)
+            if len(calls) == 4:
+                return SatResult(kind="timeout")
+            return real_is_sat(*args, **kwargs)
+
+        monkeypatch.setattr(smt_local, "is_sat", timeout_on_definedness_implication)
+
+        result = effect_contradicts_guard(root_transition(machine), variables(machine))
+
+        assert result == AlgorithmResult(kind="timeout")
+        assert len(calls) == 4
+
     def test_guard_prunes_unselected_ternary_value_for_guard_contradiction(self):
         machine = parse_machine(
             """

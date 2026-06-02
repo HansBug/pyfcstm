@@ -48,6 +48,7 @@ def _redundant_transition_warnings(
         from_path, to_path, _, _, _ = key
         diagnostics.append(ModelDiagnostic(
             code='W_REDUNDANT_TRANSITION',
+            span=items[0].span,
             severity='warning',
             message=(
                 f'Transition {from_path!r} -> {to_path!r} is duplicated '
@@ -56,10 +57,7 @@ def _redundant_transition_warnings(
             refs={
                 'from_path': from_path,
                 'to_path': to_path,
-                'duplicate_spans': [
-                    f'{item.from_path}->{item.to_path}#{index}'
-                    for index, item in enumerate(items, 1)
-                ],
+                'duplicate_spans': [item.span for item in items],
                 'transition_index': items[0].transition_index,
             },
         ))
@@ -81,6 +79,7 @@ def _self_transition_nop_warnings(
             continue
         diagnostics.append(ModelDiagnostic(
             code='W_SELF_TRANSITION_NOP',
+            span=t.span,
             severity='warning',
             message=(
                 f'Self transition on {t.from_path!r} has no trigger, '
@@ -90,7 +89,7 @@ def _self_transition_nop_warnings(
                 'state_path': t.from_path,
                 'from_path': t.from_path,
                 'to_path': t.to_path,
-                'transition_span': None,
+                'transition_span': t.span,
                 'transition_index': t.transition_index,
             },
         ))
@@ -128,10 +127,12 @@ def _effect_self_assign_warnings(transitions: Iterable['TransitionInfo']) -> Lis
     )
     diagnostics: List[ModelDiagnostic] = []
     for t in transitions:
-        for var_name in getattr(t, 'effect_self_assigns', ()):
+        effect_self_assigns = getattr(t, 'effect_self_assigns', ())
+        effect_self_assign_spans = getattr(t, 'effect_self_assign_spans', ())
+        for index, var_name in enumerate(effect_self_assigns):
             refs = {
                 'state_path': t.from_path,
-                'transition_span': None,
+                'transition_span': t.span,
                 'var_name': var_name,
                 'transition_index': t.transition_index,
             }
@@ -139,6 +140,12 @@ def _effect_self_assign_warnings(transitions: Iterable['TransitionInfo']) -> Lis
                 refs['effect_self_assign_anchor'] = var_name
             diagnostics.append(ModelDiagnostic(
                 code='W_EFFECT_SELF_ASSIGN',
+                span=(
+                    effect_self_assign_spans[index]
+                    if index < len(effect_self_assign_spans)
+                    and effect_self_assign_spans[index] is not None
+                    else t.span
+                ),
                 severity='warning',
                 message=f'Transition effect assigns {var_name!r} to itself.',
                 refs=refs,
@@ -147,17 +154,19 @@ def _effect_self_assign_warnings(transitions: Iterable['TransitionInfo']) -> Lis
 
 
 def _forced_overrides_normal_warnings(transitions: Iterable['TransitionInfo']) -> List[ModelDiagnostic]:
-    normal = {
-        _transition_trigger_key(t)
+    normal_by_key = {
+        _transition_trigger_key(t): t
         for t in transitions
         if not t.is_forced
     }
     diagnostics: List[ModelDiagnostic] = []
     for t in transitions:
-        if not t.is_forced or _transition_trigger_key(t) not in normal:
+        normal_transition = normal_by_key.get(_transition_trigger_key(t))
+        if not t.is_forced or normal_transition is None:
             continue
         diagnostics.append(ModelDiagnostic(
             code='W_FORCED_OVERRIDES_NORMAL',
+            span=t.span,
             severity='warning',
             message=(
                 f'Forced transition {t.from_path!r} -> {t.to_path!r} '
@@ -166,8 +175,8 @@ def _forced_overrides_normal_warnings(transitions: Iterable['TransitionInfo']) -
             refs={
                 'from_path': t.from_path,
                 'to_path': t.to_path,
-                'forced_declaration_span': None,
-                'normal_transition_span': None,
+                'forced_declaration_span': t.span,
+                'normal_transition_span': normal_transition.span,
             },
         ))
     return diagnostics
@@ -193,6 +202,7 @@ def _shadowed_event_warnings(events: Iterable['EventInfo']) -> List[ModelDiagnos
                 continue
             diagnostics.append(ModelDiagnostic(
                 code='W_SHADOWED_EVENT',
+                span=local_event.span,
                 severity='warning',
                 message=(
                     f'Local event {local_event.qualified_name!r} shadows '

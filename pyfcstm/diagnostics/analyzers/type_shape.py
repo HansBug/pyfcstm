@@ -27,6 +27,7 @@ def _literal_init_narrowing_warnings(variables) -> List[ModelDiagnostic]:
         diagnostics.append(_narrowing_diagnostic(
             variable.name,
             variable.init_value,
+            variable.span,
         ))
     return diagnostics
 
@@ -36,14 +37,21 @@ def _literal_assignment_narrowing_warnings(variables) -> List[ModelDiagnostic]:
     for variable in variables:
         if variable.type != 'int':
             continue
-        for source_expr in variable.float_literal_assignments:
-            diagnostics.append(_narrowing_diagnostic(variable.name, source_expr))
+        for index, source_expr in enumerate(variable.float_literal_assignments):
+            span = (
+                variable.float_literal_assignment_spans[index]
+                if index < len(variable.float_literal_assignment_spans)
+                and variable.float_literal_assignment_spans[index] is not None
+                else variable.span
+            )
+            diagnostics.append(_narrowing_diagnostic(variable.name, source_expr, span))
     return diagnostics
 
 
-def _narrowing_diagnostic(var_name: str, source_expr: str) -> ModelDiagnostic:
+def _narrowing_diagnostic(var_name: str, source_expr: str, span) -> ModelDiagnostic:
     return ModelDiagnostic(
         code='W_LITERAL_TYPE_NARROWING',
+        span=span,
         severity='warning',
         message=(
             f'Integer variable {var_name!r} receives float literal '

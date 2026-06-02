@@ -13,6 +13,7 @@ import os
 
 import pytest
 
+import pyfcstm.diagnostics.inspect as inspect_module
 from pyfcstm.diagnostics import (
     ActionInfo,
     DEFAULT_DEEP_HIERARCHY_THRESHOLD,
@@ -33,9 +34,29 @@ from pyfcstm.model import parse_dsl_node_to_state_machine
 from ._schema_check import assert_all_diags_match_schema
 
 
+def _assert_has_span(value):
+    assert value is not None
+    assert value.line >= 1
+    assert value.column >= 1
+
+
 def _parse(src):
     ast = parse_with_grammar_entry(src, 'state_machine_dsl')
     return parse_dsl_node_to_state_machine(ast)
+
+
+def _slice_by_span(source, span):
+    lines = source.split('\n')
+    end_line = span.end_line or span.line
+    end_column = span.end_column or span.column
+    if end_line == span.line:
+        return lines[span.line - 1][span.column - 1:end_column - 1]
+
+    pieces = [lines[span.line - 1][span.column - 1:]]
+    for index in range(span.line, end_line - 1):
+        pieces.append(lines[index])
+    pieces.append(lines[end_line - 1][:end_column - 1])
+    return '\n'.join(pieces)
 
 
 def _by_path(infos):
@@ -954,7 +975,7 @@ class TestInspectModelGuardAffectDiagnostics:
             'reason': 'no_outgoing_transition',
         }
 
-    def test_const_true_fix_is_omitted_when_transition_span_is_unavailable(self):
+    def test_const_true_transition_refs_include_source_span(self):
         by_code = self._diagnostics_by_code("""
         state Root {
             state Idle;
@@ -965,8 +986,9 @@ class TestInspectModelGuardAffectDiagnostics:
         """)
 
         const_true_refs = by_code['W_GUARD_CONST_TRUE'][0].refs
+        _assert_has_span(const_true_refs['transition_span'])
         assert const_true_refs == {
-            'transition_span': None,
+            'transition_span': const_true_refs['transition_span'],
             'folded_value': True,
             'from_path': 'Root.Idle',
             'to_path': 'Root.Done',
@@ -1276,7 +1298,7 @@ class TestInspectModelExtendedCoverage:
         }
         const_false = next(d for d in diagnostics if d.code == 'W_GUARD_CONST_FALSE')
         assert const_false.refs['folded_value'] is False
-        assert const_false.refs['transition_span'] is None
+        _assert_has_span(const_false.refs['transition_span'])
         assert const_false.refs['from_path'] == 'Root.Active'
         assert const_false.refs['to_path'] == 'Root.Blocked'
         unreachable = next(d for d in diagnostics if d.code == 'W_UNREACHABLE_STATE')
@@ -1291,6 +1313,35 @@ class TestInspectModelExtendedCoverage:
         )
         assert unused_payload['is_declared'] is True
         assert unused_payload['is_used'] is False
+
+    def test_implicit_event_info_uses_transition_span(self):
+        dsl = """
+        state Root {
+            state Idle;
+            state Active;
+            [*] -> Idle;
+            Idle -> Active : Go;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        event = next(e for e in report.events if e.qualified_name == 'Root.Go')
+
+        assert event.is_declared is False
+        assert event.is_used is True
+        _assert_has_span(event.span)
+        assert 'Idle -> Active : Go' in _slice_by_span(dsl, event.span)
+
+    def test_event_lookup_returns_none_for_unknown_qualified_name(self):
+        machine = _parse("""
+        state Root {
+            state Idle;
+            [*] -> Idle;
+        }
+        """)
+
+        assert inspect_module._find_event_by_qualified_name(
+            machine, 'Root.MissingEvent'
+        ) is None
 
     def test_const_fold_guard_true_and_false_and_during_assign(self):
         dsl = """
@@ -1325,8 +1376,9 @@ class TestInspectModelExtendedCoverage:
         assert codes.count('W_DURING_CONST_ASSIGN') == 3
 
         const_true = next(d for d in diagnostics if d.code == 'W_GUARD_CONST_TRUE')
+        _assert_has_span(const_true.refs['transition_span'])
         assert const_true.refs == {
-            'transition_span': None,
+            'transition_span': const_true.refs['transition_span'],
             'folded_value': True,
             'from_path': 'Root.Idle',
             'to_path': 'Root.Active',
@@ -1334,8 +1386,9 @@ class TestInspectModelExtendedCoverage:
             'transition_index': 1,
         }
         const_false = next(d for d in diagnostics if d.code == 'W_GUARD_CONST_FALSE')
+        _assert_has_span(const_false.refs['transition_span'])
         assert const_false.refs == {
-            'transition_span': None,
+            'transition_span': const_false.refs['transition_span'],
             'folded_value': False,
             'from_path': 'Root.Active',
             'to_path': 'Root.Blocked',
@@ -1444,6 +1497,28 @@ class TestInspectModelRedundancySemantics:
             if d.code == 'W_REDUNDANT_TRANSITION'
         ] == []
 
+    def test_redundant_transition_refs_include_each_duplicate_span(self):
+        dsl = """
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B;
+            A -> B;
+            A -> B;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert_all_diags_match_schema(report.diagnostics, context='redundant-transition-spans')
+        diag = next(d for d in report.diagnostics if d.code == 'W_REDUNDANT_TRANSITION')
+
+        duplicate_spans = diag.refs['duplicate_spans']
+        assert len(duplicate_spans) == 3
+        assert diag.span == duplicate_spans[0]
+        sliced = [_slice_by_span(dsl, span) for span in duplicate_spans]
+        assert sliced == ['A -> B;', 'A -> B;', 'A -> B;']
+        assert [span.line for span in duplicate_spans] == [6, 7, 8]
+
     def test_self_transition_with_lifecycle_action_is_not_noop(self):
         dsl = """
         def int counter = 0;
@@ -1498,7 +1573,7 @@ class TestInspectModelRedundancySemantics:
         ]
         assert len(refs) == 1
         assert refs[0]['state_path'] == 'Root.A'
-        assert refs[0]['transition_span'] is None
+        _assert_has_span(refs[0]['transition_span'])
         assert refs[0]['var_name'] == 'x'
         assert refs[0]['effect_self_assign_anchor'] == 'x'
         assert refs[0]['suggested_fix'] == {
@@ -1570,9 +1645,10 @@ class TestInspectModelRedundancySemantics:
             if d.code == 'W_EFFECT_SELF_ASSIGN'
         ]
         assert len(refs) == 1
+        _assert_has_span(refs[0]['transition_span'])
         assert refs[0] == {
             'state_path': '[*]',
-            'transition_span': None,
+            'transition_span': refs[0]['transition_span'],
             'var_name': 'x',
             'transition_index': 0,
         }
@@ -1663,8 +1739,12 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
             [*] -> A;
         }
         """
+        with pytest.raises(TypeError, match='deep_hierarchy_threshold'):
+            inspect_model(_parse(dsl), deep_hierarchy_threshold=True)
         with pytest.raises(ValueError, match='deep_hierarchy_threshold'):
             inspect_model(_parse(dsl), deep_hierarchy_threshold=0.5)
+        with pytest.raises(TypeError, match='large_composite_threshold'):
+            inspect_model(_parse(dsl), large_composite_threshold='bad')
         with pytest.raises(ValueError, match='large_composite_threshold'):
             inspect_model(_parse(dsl), large_composite_threshold=2.5)
 
@@ -1679,6 +1759,8 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
             inspect_model(_parse(dsl), var_to_leaf_ratio_threshold=True)
         with pytest.raises(ValueError, match='var_to_leaf_ratio_threshold'):
             inspect_model(_parse(dsl), var_to_leaf_ratio_threshold=float('nan'))
+        with pytest.raises(TypeError, match='var_to_leaf_ratio_threshold'):
+            inspect_model(_parse(dsl), var_to_leaf_ratio_threshold='bad')
 
     def test_integer_threshold_options_accept_integer_valued_float(self):
         dsl = """
@@ -1757,6 +1839,46 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
             'source_expr': '2.25',
         }
 
+    def test_literal_type_narrowing_keeps_deduped_assignment_spans_aligned(self):
+        dsl = """
+        def int truncated = 0;
+        state Root {
+            state A {
+                during {
+                    truncated = 2.25;
+                    truncated = 2.25;
+                    truncated = 3.5;
+                }
+            }
+            [*] -> A;
+        }
+        """
+        diagnostics = self._diagnostics_by_code(dsl)['W_LITERAL_TYPE_NARROWING']
+        by_expr = {diag.refs['source_expr']: diag for diag in diagnostics}
+
+        assert set(by_expr) == {'2.25', '3.5'}
+        assert 'truncated = 2.25;' in _slice_by_span(dsl, by_expr['2.25'].span)
+        assert 'truncated = 3.5;' in _slice_by_span(dsl, by_expr['3.5'].span)
+
+    def test_literal_type_narrowing_for_int_transition_effect_assignment(self):
+        dsl = """
+        def int truncated = 0;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B effect { truncated = 2.25; };
+        }
+        """
+        diag = self._diagnostics_by_code(dsl)['W_LITERAL_TYPE_NARROWING'][0]
+        assert diag.refs == {
+            'var_name': 'truncated',
+            'target_type': 'int',
+            'source_expr': '2.25',
+        }
+        _assert_has_span(diag.span)
+        assert 'truncated = 2.25' in _slice_by_span(dsl, diag.span)
+
     def test_aspect_no_descendant_leaf(self):
         dsl = """
         state Root {
@@ -1769,6 +1891,20 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
         assert diag.refs == {
             'composite_path': 'Root',
             'aspect': 'before',
+        }
+
+    def test_after_aspect_no_descendant_leaf(self):
+        dsl = """
+        state Root {
+            pseudo state Marker;
+            [*] -> Marker;
+            >> during after { }
+        }
+        """
+        diag = self._diagnostics_by_code(dsl)['W_ASPECT_NO_DESCENDANT_LEAF'][0]
+        assert diag.refs == {
+            'composite_path': 'Root',
+            'aspect': 'after',
         }
 
     def test_transition_to_self_via_parent_info(self):
@@ -1800,10 +1936,11 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
         """
         diag = self._diagnostics_by_code(dsl)['I_TRANSITION_NEVER_EVENT_TRIGGERED'][0]
         assert diag.severity == 'info'
+        _assert_has_span(diag.refs['transition_span'])
         assert diag.refs == {
             'from_path': 'Root.A',
             'to_path': 'Root.B',
-            'transition_span': None,
+            'transition_span': diag.refs['transition_span'],
             'transition_index': 1,
         }
 

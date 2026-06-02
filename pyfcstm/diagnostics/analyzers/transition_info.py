@@ -33,6 +33,7 @@ def _composite_self_transition_infos(states_by_path, transitions) -> List[ModelD
             continue
         diagnostics.append(ModelDiagnostic(
             code='I_TRANSITION_TO_SELF_VIA_PARENT',
+            span=transition.span,
             severity='info',
             message=(
                 f'Composite state {transition.from_path!r} transitions '
@@ -55,6 +56,7 @@ def _eventless_guardless_transition_infos(transitions) -> List[ModelDiagnostic]:
             continue
         diagnostics.append(ModelDiagnostic(
             code='I_TRANSITION_NEVER_EVENT_TRIGGERED',
+            span=transition.span,
             severity='info',
             message=(
                 f'Transition {transition.from_path!r} -> '
@@ -63,7 +65,7 @@ def _eventless_guardless_transition_infos(transitions) -> List[ModelDiagnostic]:
             refs={
                 'from_path': transition.from_path,
                 'to_path': transition.to_path,
-                'transition_span': None,
+                'transition_span': transition.span,
                 'transition_index': transition.transition_index,
             },
         ))

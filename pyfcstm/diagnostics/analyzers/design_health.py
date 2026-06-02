@@ -115,6 +115,7 @@ def _unreachable_state_diagnostics(states, reachability_graph, root_state_path) 
                 code='W_UNREACHABLE_STATE',
                 severity='warning',
                 message=f'State {state.path!r} is unreachable from the root entry path.',
+                span=state.span,
                 refs={'state_path': state.path},
             )
         )
@@ -133,8 +134,9 @@ def _guard_const_false_diagnostics(transitions) -> List[ModelDiagnostic]:
                         f'Transition {transition.from_path!r} -> {transition.to_path!r} '
                         'has a guard that is statically false.'
                     ),
+                    span=transition.span,
                     refs={
-                        'transition_span': None,
+                        'transition_span': transition.span,
                         'folded_value': False,
                         'from_path': transition.from_path,
                         'to_path': transition.to_path,
@@ -168,6 +170,7 @@ def _unused_event_diagnostics(events) -> List[ModelDiagnostic]:
                 code='W_UNUSED_EVENT',
                 severity='warning',
                 message=f'Event {event.qualified_name!r} is declared but never used.',
+                span=event.span,
                 refs={
                     'event_qualified_name': event.qualified_name,
                     'scope': event.scope,

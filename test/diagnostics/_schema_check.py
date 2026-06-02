@@ -29,6 +29,9 @@ _TYPE_PREDICATES = {
     'bool': lambda v: isinstance(v, bool),
     'dict': lambda v: isinstance(v, dict),
     'list[str]': lambda v: isinstance(v, list) and all(isinstance(item, str) for item in v),
+    'list[Span]': lambda v: isinstance(v, list) and all(
+        item is None or hasattr(item, 'line') for item in v
+    ),
     'Span': lambda v: v is None or hasattr(v, 'line'),
     'str_or_null': lambda v: v is None or isinstance(v, str),
     'int_or_null': lambda v: v is None or (isinstance(v, int) and not isinstance(v, bool)),

@@ -8,6 +8,7 @@ import {collectSemanticAnalysisDiagnosticsFromSemantic} from './analyzers';
 import {
     createRange,
     FcstmDiagnostic,
+    rangeIsEmptyOrInvalid,
     TextDocumentLike,
     TextRange,
 } from '../utils/text';
@@ -69,6 +70,10 @@ function rangeEquals(left: TextRange, right: TextRange): boolean {
         left.start.character === right.start.character &&
         left.end.line === right.end.line &&
         left.end.character === right.end.character;
+}
+
+function isDslIdentifier(value: string): boolean {
+    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
 }
 
 function documentUri(document: TextDocumentLike): string {
@@ -248,11 +253,38 @@ export function convertParseErrorToDiagnostic(
     };
 }
 
+/**
+ * Return whether a semantic diagnostic should be hidden after parser recovery.
+ *
+ * The collector only calls this when parse diagnostics already exist, keeping
+ * normal semantic diagnostics untouched for syntactically valid documents.
+ */
+export function shouldSuppressParseRecoveryDiagnostic(
+    diagnostic: FcstmDiagnostic,
+    parseDiagnostics: readonly FcstmDiagnostic[],
+): boolean {
+    if (!diagnostic.code || parseDiagnostics.length === 0) return false;
+    if (diagnostic.code === 'E_UNDEFINED_VAR') {
+        const varName = typeof diagnostic.data?.var_name === 'string' ? diagnostic.data.var_name : '';
+        if (varName.length === 0 || !isDslIdentifier(varName)) return true;
+    }
+    if (diagnostic.code === 'E_TYPE_MISMATCH') {
+        const exprText = typeof diagnostic.data?.expr_text === 'string' ? diagnostic.data.expr_text : '';
+        if (exprText.length === 0) return true;
+    }
+    if (diagnostic.code === 'W_UNREFERENCED_VAR') {
+        const varName = typeof diagnostic.data?.var_name === 'string' ? diagnostic.data.var_name : '';
+        if (varName.length === 0 || !isDslIdentifier(varName)) return true;
+    }
+    return rangeIsEmptyOrInvalid(diagnostic.range);
+}
+
 export async function collectDocumentDiagnostics(
     document: TextDocumentLike
 ): Promise<FcstmDiagnostic[]> {
     const parseResult = await getParser().parse(document.getText());
-    const diagnostics = parseResult.errors.map(error => convertParseErrorToDiagnostic(error, document));
+    const parseDiagnostics = parseResult.errors.map(error => convertParseErrorToDiagnostic(error, document));
+    const diagnostics = [...parseDiagnostics];
     diagnostics.push(...await getImportWorkspaceIndex().collectImportDiagnostics(document));
     const snapshot = await getWorkspaceGraph().buildSnapshotForDocument(document);
     const node = snapshot.nodes[snapshot.rootFile];
@@ -263,5 +295,5 @@ export async function collectDocumentDiagnostics(
             diagnostics.push(...collectInspectModelDiagnostics(document, node.semantic, localModel, diagnostics));
         }
     }
-    return diagnostics;
+    return diagnostics.filter(diagnostic => !shouldSuppressParseRecoveryDiagnostic(diagnostic, parseDiagnostics));
 }

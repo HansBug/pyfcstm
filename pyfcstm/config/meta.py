@@ -31,7 +31,7 @@ Example::
 __TITLE__: str = 'pyfcstm'
 
 #: Version of this project.
-__VERSION__: str = '0.4.0'
+__VERSION__: str = '0.4.1'
 
 #: Short description of the project, will be included in ``setup.py``.
 __DESCRIPTION__: str = (

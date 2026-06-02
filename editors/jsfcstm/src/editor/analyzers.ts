@@ -699,6 +699,9 @@ function pushIdentifierDiagnostic(
     severity: 'error' | 'warning' | 'info' = 'error',
     data?: Record<string, unknown>
 ): void {
+    if (identifier.name.length === 0 || rangeIsEmptyOrInvalid(identifier.range)) {
+        return;
+    }
     // M2 (PR #115 final review): inject ``var_name`` from the
     // identifier itself so every E_UNDEFINED_VAR / E_DUPLICATE_VAR
     // emit carries the schema-required field without each caller
@@ -713,6 +716,11 @@ function pushIdentifierDiagnostic(
         code,
         data: mergedData,
     });
+}
+
+function rangeIsEmptyOrInvalid(range: import('../utils/text').TextRange): boolean {
+    if (range.end.line < range.start.line) return true;
+    return range.end.line === range.start.line && range.end.character <= range.start.character;
 }
 
 /**
@@ -1341,16 +1349,20 @@ function emitTypeMismatch(
     expected: TypeCategory,
     actual: TypeCategory,
 ): void {
+    const exprText = (expr as {text?: string}).text ?? '';
+    if (exprText.length === 0 || rangeIsEmptyOrInvalid(expr.range)) {
+        return;
+    }
     diagnostics.push({
         range: expr.range,
-        message: `Type mismatch: expected ${expected} expression, got ${actual} (${JSON.stringify((expr as {text?: string}).text ?? '')}).`,
+        message: `Type mismatch: expected ${expected} expression, got ${actual} (${JSON.stringify(exprText)}).`,
         severity: 'error',
         source: 'fcstm',
         code: FCSTM_DIAGNOSTIC_CODES.typeMismatch,
         data: {
             expected,
             actual,
-            expr_text: (expr as {text?: string}).text ?? '',
+            expr_text: exprText,
         },
     });
 }

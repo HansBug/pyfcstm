@@ -20,7 +20,38 @@ describe('inspect span/range contract', () => {
             packageModule.createRange(1, 2, 1, 6),
         );
         assert.equal(packageModule.spanToRange(null), null);
+        assert.equal(packageModule.spanToRange('span'), null);
         assert.equal(packageModule.spanToRange({line: 0, column: 5, end_line: 0, end_column: 8}), null);
+        assert.equal(packageModule.spanToRange({line: 1, column: 0, end_line: 1, end_column: 4}), null);
+        assert.equal(packageModule.spanToRange({line: '1', column: 5, end_line: 1, end_column: 8}), null);
+        assert.equal(packageModule.spanToRange({line: 1.5, column: 5, end_line: 1, end_column: 8}), null);
+        assert.equal(packageModule.spanToRange({line: 1, column: 5.5, end_line: 1, end_column: 8}), null);
+        assert.equal(packageModule.spanToRange({line: 2, column: 5, end_line: 1, end_column: 8}), null);
+        assert.equal(packageModule.spanToRange({line: 2, column: 5, end_line: 2, end_column: 4}), null);
+        assert.equal(packageModule.spanToRange({line: 2, column: 5, end_line: 2.5, end_column: 8}), null);
+        assert.equal(packageModule.spanToRange({line: 2, column: 5, end_line: 2, end_column: 8.5}), null);
+        assert.deepEqual(
+            packageModule.spanToRange({start: {line: 1}, end: {line: 1, character: 6}, line: 2, column: 5}),
+            packageModule.createRange(1, 4, 1, 4),
+        );
+        assert.deepEqual(
+            packageModule.spanToRange({
+                start: {line: 1, character: 2},
+                end: {character: 6},
+                line: 3,
+                column: 7,
+            }),
+            packageModule.createRange(2, 6, 2, 6),
+        );
+        assert.deepEqual(
+            packageModule.spanToRange({
+                start: {line: 1, character: 2},
+                end: {line: 1},
+                line: 4,
+                column: 9,
+            }),
+            packageModule.createRange(3, 8, 3, 8),
+        );
     });
 
     it('uses spanToRange for inspect-derived span refs and source slices', async () => {

@@ -103,6 +103,25 @@ _ALLOWED_EMIT_TIERS = (
 
 _ALLOWED_SUGGESTED_FIX_KINDS = ('insert', 'delete', 'replace')
 
+#: Allowed values for the optional ``span_object`` field on a code entry.
+#: The field documents which semantic source object the primary
+#: ``ModelDiagnostic.span`` identifies. The initial issue #133 PR-E
+#: vocabulary covers the common problem objects plus current import,
+#: variable, and expression diagnostics that already carry source spans.
+_ALLOWED_SPAN_OBJECTS = (
+    'state_identifier',
+    'transition',
+    'guard_expression',
+    'effect_statement',
+    'composite_block',
+    'named_action_declaration',
+    'event_declaration',
+    'variable_declaration',
+    'expression',
+    'lifecycle_action',
+    'import_statement',
+)
+
 #: Required keys for the ``for_llm`` payload when present on a code.
 #: ``summary`` is a one-line description aimed at downstream LLM consumers;
 #: ``recommended_actions`` is a list of dicts describing concrete fixes;
@@ -268,6 +287,10 @@ class CodeSpec:
         field explicit so dispatchers can register handlers based on
         the actual emit channel.
     :type emit_tier: str, optional
+    :param span_object: Semantic source object identified by the primary
+        diagnostic span. Repository entries declare this to make source-slice
+        assertions and downstream UI behavior explicit.
+    :type span_object: str, optional
     """
 
     code: str
@@ -279,6 +302,7 @@ class CodeSpec:
     for_llm: Optional[ForLlmSpec] = None
     emit_tier: str = 'static_pipeline'
     suggested_fix: Optional[SuggestedFixSpec] = None
+    span_object: Optional[str] = None
 
     def required_fields(self) -> List[str]:
         """
@@ -431,6 +455,7 @@ def _validate_code(path: str, code: str, raw: Any) -> CodeSpec:
 
     for_llm = _validate_for_llm(path, code, raw.get('for_llm'))
     suggested_fix = _validate_suggested_fix(path, code, raw.get('suggested_fix'))
+    span_object = _validate_span_object(path, code, raw.get('span_object'))
 
     return CodeSpec(
         code=code,
@@ -442,7 +467,20 @@ def _validate_code(path: str, code: str, raw: Any) -> CodeSpec:
         for_llm=for_llm,
         emit_tier=emit_tier,
         suggested_fix=suggested_fix,
+        span_object=span_object,
     )
+
+
+def _validate_span_object(path: str, code: str, raw: Any) -> Optional[str]:
+    if raw is None:
+        return None
+    if raw not in _ALLOWED_SPAN_OBJECTS:
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} has invalid span_object {raw!r}.",
+            f"Allowed: {_ALLOWED_SPAN_OBJECTS}.",
+        ))
+    return raw
 
 
 def _validate_suggested_fix(path: str, code: str, raw: Any) -> Optional[SuggestedFixSpec]:

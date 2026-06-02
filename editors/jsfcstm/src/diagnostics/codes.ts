@@ -50,6 +50,18 @@ export interface SuggestedFixSpec {
  */
 export interface CodeSpec {
     severity: 'error' | 'warning' | 'info';
+    span_object?:
+        | 'state_identifier'
+        | 'transition'
+        | 'guard_expression'
+        | 'effect_statement'
+        | 'composite_block'
+        | 'named_action_declaration'
+        | 'event_declaration'
+        | 'variable_declaration'
+        | 'expression'
+        | 'lifecycle_action'
+        | 'import_statement';
     description: string;
     refs?: Record<string, CodeFieldSpec>;
     capability?: 'pure_static' | 'const_fold' | 'requires_solver' | 'requires_simulation';

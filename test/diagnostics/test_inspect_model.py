@@ -372,6 +372,47 @@ class TestSchemaJsonValidates:
             f'missing keys: {required - set(payload.keys())}'
         )
 
+    def test_schema_documents_span_contract(self):
+        schema = self._load_schema()
+        span_def = schema['definitions']['Span']
+        span_text = json.dumps(span_def, sort_keys=True)
+        assert '1-based' in span_text
+        assert 'end-exclusive' in span_text
+        assert 'line' in span_def['required']
+        assert 'column' in span_def['required']
+        assert 'end_line' in span_def['required']
+        assert 'end_column' in span_def['required']
+
+        diagnostic_span = schema['definitions']['ModelDiagnostic']['properties']['span']
+        assert {'$ref': '#/definitions/Span'} in diagnostic_span['oneOf']
+
+        refs_schema = schema['definitions']['ModelDiagnostic']['properties']['refs']
+        refs_text = json.dumps(refs_schema, sort_keys=True)
+        assert '<object>_span' in refs_text
+        assert 'list[Span]' in refs_text
+
+    def test_diagnostics_readme_documents_range_layers(self):
+        readme_path = os.path.join(
+            os.path.dirname(__file__), '..', '..',
+            'pyfcstm', 'diagnostics', 'README.md',
+        )
+        assert os.path.exists(readme_path)
+        with open(readme_path, 'r', encoding='utf-8') as f:
+            text = f.read()
+
+        for required in [
+            'problem range',
+            'fix-edit range',
+            'related range',
+            'Span',
+            '<object>_span',
+            '1-based',
+            'end-exclusive',
+            'LSP Range',
+            '0-based',
+        ]:
+            assert required in text
+
 
 @pytest.mark.unittest
 class TestInspectModelAdvancedFeatures:

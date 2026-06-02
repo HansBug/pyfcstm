@@ -1200,6 +1200,96 @@ def test_multi_file_fixture_emits_expected_codes(name, files, entry, must_fire, 
     assert_all_diags_match_schema(diagnostics, context=name)
 
 
+def _slice_by_span(source: str, span) -> str:
+    lines = source.split('\n')
+    end_line = span.end_line or span.line
+    end_column = span.end_column or span.column
+    if span.line == end_line:
+        return lines[span.line - 1][span.column - 1:end_column - 1]
+    return '\n'.join(
+        [lines[span.line - 1][span.column - 1:]]
+        + lines[span.line:end_line - 1]
+        + [lines[end_line - 1][:end_column - 1]]
+    )
+
+
+SOURCE_SLICE_CONTRACT_DSL = '\n'.join([
+    'def int read_only = 0;',
+    'def int write_only = 0;',
+    'def int stable = 0;',
+    'state Root {',
+    '    event Tick;',
+    '    enter Sync { }',
+    '    state Active {',
+    '        enter Sync { }',
+    '        state Leaf;',
+    '        [*] -> Leaf;',
+    '    }',
+    '    state Orphan { enter Cleanup {} }',
+    '    state Idle;',
+    '    state Done;',
+    '    [*] -> Idle : if [stable > 0];',
+    '    Idle -> Done : if [(1 + 2) == 3];',
+    '    Idle -> Done : if [(1 + 2) == 3];',
+    '    Done -> Done;',
+    '    Done -> Idle :: Tick effect { stable = stable; };',
+    '    !Done -> Idle :: Tick;',
+    '}',
+])
+
+
+@pytest.mark.unittest
+def test_source_slice_contract_hits_problem_objects_for_pr_e_representatives():
+    ast = parse_with_grammar_entry(SOURCE_SLICE_CONTRACT_DSL, 'state_machine_dsl')
+    report = inspect_model(
+        parse_dsl_node_to_state_machine(ast),
+        large_composite_threshold=3,
+    )
+    diagnostics = report.diagnostics
+
+    def find(code, predicate=lambda diag: True):
+        matches = [diag for diag in diagnostics if diag.code == code and predicate(diag)]
+        assert matches, f'expected {code}, got {[diag.code for diag in diagnostics]}'
+        return matches[0]
+
+    checks = [
+        ('W_DEADLOCK_LEAF', lambda d: d.refs.get('state_path') == 'Root.Active.Leaf', 'state Leaf;'),
+        ('W_INITIAL_UNCONDITIONAL_MISSING', lambda d: True, 'state Root {'),
+        ('W_DEAD_NAMED_ACTION', lambda d: d.refs.get('function_name') == 'Cleanup', 'enter Cleanup'),
+        ('W_GUARD_CONST_TRUE', lambda d: d.refs.get('to_path') == 'Root.Done', '(1 + 2) == 3'),
+        ('W_SELF_TRANSITION_NOP', lambda d: True, 'Done -> Done;'),
+        ('W_EFFECT_SELF_ASSIGN', lambda d: True, 'stable = stable;'),
+        ('W_FORCED_OVERRIDES_NORMAL', lambda d: True, '!Done -> Idle :: Tick;'),
+        ('W_SHADOWED_EVENT', lambda d: True, 'Tick'),
+        ('W_UNREFERENCED_VAR', lambda d: d.refs.get('var_name') == 'write_only', 'def int write_only'),
+    ]
+    for code, predicate, expected_slice in checks:
+        diag = find(code, predicate)
+        assert diag.span is not None, (code, diag.refs)
+        assert expected_slice in _slice_by_span(SOURCE_SLICE_CONTRACT_DSL, diag.span), (
+            code,
+            diag.refs,
+            diag.span,
+            _slice_by_span(SOURCE_SLICE_CONTRACT_DSL, diag.span),
+        )
+
+    forced = find('W_FORCED_OVERRIDES_NORMAL')
+    assert 'Done -> Idle :: Tick effect' in _slice_by_span(
+        SOURCE_SLICE_CONTRACT_DSL,
+        forced.refs['normal_transition_span'],
+    )
+
+    redundant = find('W_REDUNDANT_TRANSITION', lambda d: d.refs.get('from_path') == 'Root.Idle')
+    duplicate_slices = [
+        _slice_by_span(SOURCE_SLICE_CONTRACT_DSL, span)
+        for span in redundant.refs['duplicate_spans']
+    ]
+    assert duplicate_slices == [
+        'Idle -> Done : if [(1 + 2) == 3];',
+        'Idle -> Done : if [(1 + 2) == 3];',
+    ]
+
+
 @pytest.mark.unittest
 @pytest.mark.parametrize('name,dsl,expected', DESIGN_HEALTH_INSPECT_FIXTURES, ids=[
     item[0] for item in DESIGN_HEALTH_INSPECT_FIXTURES

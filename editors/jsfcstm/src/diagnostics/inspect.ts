@@ -229,18 +229,29 @@ export interface ModelInspect {
 }
 
 /**
+ * 1-based, end-exclusive pyfcstm diagnostic source span.
+ */
+export interface ModelSpanJson {
+    line: number;
+    column: number;
+    end_line: number | null;
+    end_column: number | null;
+}
+
+/**
  * JSON-shaped diagnostic payload used inside :class:`ModelInspect`.
  */
 export interface ModelDiagnosticJson {
     code: string;
     severity: 'error' | 'warning' | 'info';
     message: string;
-    span: {
-        start_line: number;
-        start_col: number;
-        end_line: number;
-        end_col: number;
-    } | null;
+    /**
+     * Primary problem source span. Pyfcstm-origin spans use 1-based,
+     * end-exclusive coordinates; jsfcstm-origin diagnostics normally keep
+     * ``span`` null and expose editor ``TextRange`` values in refs while the
+     * editor layer converts both forms via ``spanToRange``.
+     */
+    span: ModelSpanJson | null;
     refs: Record<string, unknown>;
 }
 

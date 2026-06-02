@@ -5,6 +5,10 @@
 # Each entry documents:
 #   - `severity`       — 'error', 'warning', or 'info'
 #   - `description`    — human-readable explanation of when this code fires
+#   - `span_object`    — semantic object identified by the primary problem
+#                        span/range for this code. Implementations may differ
+#                        in precision (identifier vs containing statement),
+#                        but the source slice must still hit this object.
 #   - `refs`           — payload schema for `ModelDiagnostic.refs`. Each
 #                        field declares its type, whether it is required,
 #                        and a short description. Field names are part of
@@ -25,6 +29,7 @@
 
 E_UNDEFINED_VAR:
   severity: error
+  span_object: expression
   description: >-
     A guard, effect, or lifecycle-action block references a name that was
     never declared with a top-level `def` statement.
@@ -97,6 +102,7 @@ E_UNDEFINED_VAR:
 
 E_DUPLICATE_VAR:
   severity: error
+  span_object: variable_declaration
   description: >-
     A top-level `def` statement re-declares an identifier that was already
     defined earlier in the file.
@@ -134,6 +140,7 @@ E_DUPLICATE_VAR:
 
 E_MISSING_STATE:
   severity: error
+  span_object: state_identifier
   description: >-
     A transition target references a state path that cannot be resolved
     in the surrounding hierarchy.
@@ -179,6 +186,7 @@ E_MISSING_STATE:
 
 E_DUPLICATE_STATE:
   severity: error
+  span_object: state_identifier
   description: Two states share the same name within the same parent scope.
   refs:
     state_name:
@@ -217,6 +225,7 @@ E_DUPLICATE_STATE:
 
 E_EVENT_REF_INVALID:
   severity: error
+  span_object: event_declaration
   emit_tier: lookup_api
   description: >-
     The textual form of an event reference is syntactically invalid (e.g.
@@ -264,6 +273,7 @@ E_EVENT_REF_INVALID:
 
 E_EVENT_NOT_FOUND:
   severity: error
+  span_object: event_declaration
   emit_tier: lookup_api
   description: >-
     An event reference parses correctly but does not resolve to any event
@@ -312,6 +322,7 @@ E_EVENT_NOT_FOUND:
 
 E_DANGLING_TRANSITION:
   severity: error
+  span_object: transition
   description: >-
     A transition cannot resolve either its source or its target.
   refs:
@@ -356,6 +367,7 @@ E_DANGLING_TRANSITION:
 
 E_TYPE_MISMATCH:
   severity: error
+  span_object: expression
   emit_tier: partial_static_pipeline
   description: >-
     A guard, effect, or assignment uses an expression whose type does not
@@ -400,6 +412,7 @@ E_TYPE_MISMATCH:
 
 E_FORCED_TRANSITION_EXPANSION:
   severity: error
+  span_object: transition
   description: >-
     A forced transition (`!State -> ...` or `!*`) cannot be expanded
     because the source or target reference is invalid.
@@ -443,6 +456,7 @@ E_FORCED_TRANSITION_EXPANSION:
 
 E_INITIAL_TRANSITION_INVALID:
   severity: error
+  span_object: transition
   description: >-
     A composite state either lacks an entry transition (`[*] -> child`) or
     declares one whose target is not a direct child of the composite.
@@ -481,6 +495,7 @@ E_INITIAL_TRANSITION_INVALID:
 
 E_DUPLICATE_FUNCTION_NAME:
   severity: error
+  span_object: named_action_declaration
   description: >-
     Two named lifecycle actions (enter / during / exit / during-aspect) within
     the same state share the same name. Named actions are referenced via
@@ -527,6 +542,7 @@ E_DUPLICATE_FUNCTION_NAME:
 
 E_DURING_ASPECT_INVALID:
   severity: error
+  span_object: lifecycle_action
   description: >-
     A `during` block is declared inconsistently with the host state's
     leaf/composite kind. Leaf states must use `during { ... }` without an
@@ -584,6 +600,7 @@ E_DURING_ASPECT_INVALID:
 
 E_PSEUDO_NOT_LEAF:
   severity: error
+  span_object: state_identifier
   description: >-
     A state was declared with the `pseudo` keyword but has nested
     substates. Pseudo states must be leaves: they skip ancestor
@@ -623,6 +640,7 @@ E_PSEUDO_NOT_LEAF:
 
 E_NAMED_FUNCTION_REF_NOT_FOUND:
   severity: error
+  span_object: named_action_declaration
   description: >-
     A `ref` lifecycle action could not resolve its target named action.
     Either the path walks through a state that does not exist, or the final
@@ -683,6 +701,7 @@ E_NAMED_FUNCTION_REF_NOT_FOUND:
 
 E_IMPORT_NOT_FOUND:
   severity: error
+  span_object: import_statement
   capability: pure_static
   description: >-
     An ``import`` statement points at a source file that cannot be found,
@@ -774,6 +793,7 @@ E_IMPORT_NOT_FOUND:
 
 E_IMPORT_CIRCULAR:
   severity: error
+  span_object: import_statement
   capability: pure_static
   description: >-
     A cycle was detected while resolving ``import`` statements between
@@ -824,6 +844,7 @@ E_IMPORT_CIRCULAR:
 
 E_IMPORT_ALIAS_CONFLICT:
   severity: error
+  span_object: import_statement
   capability: pure_static
   description: >-
     An ``import`` alias clashes with an existing child state (or with
@@ -870,6 +891,7 @@ E_IMPORT_ALIAS_CONFLICT:
 
 E_IMPORT_DUPLICATE_MAPPING:
   severity: error
+  span_object: import_statement
   capability: pure_static
   description: >-
     Two or more mapping clauses under the same ``import { ... }`` block
@@ -929,6 +951,7 @@ E_IMPORT_DUPLICATE_MAPPING:
 
 E_IMPORT_MAPPING_INVALID:
   severity: error
+  span_object: import_statement
   capability: pure_static
   description: >-
     An import-mapping clause refers to a source name that does not exist
@@ -1002,6 +1025,7 @@ E_IMPORT_MAPPING_INVALID:
 
 W_UNREACHABLE_STATE:
   severity: warning
+  span_object: state_identifier
   capability: pure_static
   description: >-
     A state is not reachable from the model's root entry path via any
@@ -1034,6 +1058,7 @@ W_UNREACHABLE_STATE:
 
 W_GUARD_CONST_FALSE:
   severity: warning
+  span_object: guard_expression
   capability: const_fold
   description: >-
     A transition's guard condition folds to the boolean literal
@@ -1099,6 +1124,7 @@ W_GUARD_CONST_FALSE:
 
 W_GUARD_CONST_TRUE:
   severity: warning
+  span_object: guard_expression
   capability: const_fold
   description: >-
     A transition's guard condition folds to the boolean literal ``true``
@@ -1169,6 +1195,7 @@ W_GUARD_CONST_TRUE:
 
 W_DURING_CONST_ASSIGN:
   severity: warning
+  span_object: lifecycle_action
   capability: const_fold
   description: >-
     A concrete ``during`` action assigns a variable to the same
@@ -1216,6 +1243,7 @@ W_DURING_CONST_ASSIGN:
 
 W_UNUSED_EVENT:
   severity: warning
+  span_object: event_declaration
   capability: pure_static
   description: >-
     An ``event`` declaration is never referenced by any transition.
@@ -1253,6 +1281,7 @@ W_UNUSED_EVENT:
 
 W_DEADLOCK_LEAF:
   severity: warning
+  span_object: state_identifier
   capability: pure_static
   description: >-
     A non-pseudo leaf state has no outgoing transition.
@@ -1304,6 +1333,7 @@ W_DEADLOCK_LEAF:
 
 W_INITIAL_UNCONDITIONAL_MISSING:
   severity: warning
+  span_object: composite_block
   capability: pure_static
   description: >-
     A composite state has no unconditional ``[*] -> child`` entry
@@ -1357,6 +1387,7 @@ W_INITIAL_UNCONDITIONAL_MISSING:
 
 W_FORCED_NEVER_EXPANDS:
   severity: warning
+  span_object: transition
   capability: pure_static
   description: >-
     A forced transition declaration has no concrete child state in its
@@ -1394,6 +1425,7 @@ W_FORCED_NEVER_EXPANDS:
 
 W_DEAD_NAMED_ACTION:
   severity: warning
+  span_object: named_action_declaration
   capability: pure_static
   description: >-
     A named action belongs to an unreachable state and is not referenced
@@ -1430,6 +1462,7 @@ W_DEAD_NAMED_ACTION:
 
 W_UNREFERENCED_VAR:
   severity: warning
+  span_object: variable_declaration
   capability: pure_static
   description: >-
     A variable cannot affect any transition guard either directly or
@@ -1486,6 +1519,7 @@ W_UNREFERENCED_VAR:
 
 I_UNREFERENCED_VAR_MAYBE_ABSTRACT:
   severity: info
+  span_object: variable_declaration
   capability: pure_static
   description: >-
     A variable cannot affect any transition guard through DSL data-flow,
@@ -1528,6 +1562,7 @@ I_UNREFERENCED_VAR_MAYBE_ABSTRACT:
 
 W_GUARD_VARS_NEVER_CHANGE:
   severity: warning
+  span_object: guard_expression
   capability: pure_static
   description: >-
     A transition guard reads variables that are never changed by any
@@ -1572,6 +1607,7 @@ W_GUARD_VARS_NEVER_CHANGE:
 
 W_UNWRITTEN_READ_VAR:
   severity: warning
+  span_object: variable_declaration
   capability: pure_static
   description: >-
     A variable is read in guards or actions but is never written by any
@@ -1614,6 +1650,7 @@ W_UNWRITTEN_READ_VAR:
 
 W_WRITE_ONLY_VAR:
   severity: warning
+  span_object: variable_declaration
   capability: pure_static
   description: >-
     A variable is written by actions or effects but is never read by any
@@ -1649,6 +1686,7 @@ W_WRITE_ONLY_VAR:
 
 W_REDUNDANT_TRANSITION:
   severity: warning
+  span_object: transition
   capability: pure_static
   description: >-
     Multiple transitions share the same source, target, event, guard, and
@@ -1700,6 +1738,7 @@ W_REDUNDANT_TRANSITION:
 
 W_SELF_TRANSITION_NOP:
   severity: warning
+  span_object: transition
   capability: pure_static
   description: >-
     A leaf self transition has no event, guard, effect, own lifecycle action,
@@ -1753,6 +1792,7 @@ W_SELF_TRANSITION_NOP:
 
 W_EFFECT_SELF_ASSIGN:
   severity: warning
+  span_object: effect_statement
   capability: pure_static
   description: >-
     An effect statement assigns a variable directly to itself.
@@ -1818,6 +1858,7 @@ W_EFFECT_SELF_ASSIGN:
 
 W_FORCED_OVERRIDES_NORMAL:
   severity: warning
+  span_object: transition
   capability: pure_static
   description: >-
     A forced transition expands to the same source, target, event, and
@@ -1864,6 +1905,7 @@ W_FORCED_OVERRIDES_NORMAL:
 
 W_SHADOWED_EVENT:
   severity: warning
+  span_object: event_declaration
   capability: pure_static
   description: >-
     A local event name shadows a chain or absolute event with the same
@@ -1907,6 +1949,7 @@ W_SHADOWED_EVENT:
 
 W_NAMED_ACTION_SHADOWS_ANCESTOR:
   severity: warning
+  span_object: named_action_declaration
   capability: pure_static
   description: >-
     A named lifecycle action reuses the same function name as an
@@ -1949,6 +1992,7 @@ W_NAMED_ACTION_SHADOWS_ANCESTOR:
 
 W_LITERAL_TYPE_NARROWING:
   severity: warning
+  span_object: expression
   capability: pure_static
   description: >-
     An ``int`` variable is initialized or assigned directly from a
@@ -1991,6 +2035,7 @@ W_LITERAL_TYPE_NARROWING:
 
 W_ASPECT_NO_DESCENDANT_LEAF:
   severity: warning
+  span_object: lifecycle_action
   capability: pure_static
   description: >-
     A ``>> during`` aspect is attached to a state with no descendant
@@ -2028,6 +2073,7 @@ W_ASPECT_NO_DESCENDANT_LEAF:
 
 W_HIGH_VAR_TO_LEAF_RATIO:
   severity: warning
+  span_object: composite_block
   capability: pure_static
   description: >-
     The number of variables is high relative to the number of non-pseudo
@@ -2072,6 +2118,7 @@ W_HIGH_VAR_TO_LEAF_RATIO:
 
 W_DEEP_HIERARCHY:
   severity: warning
+  span_object: state_identifier
   capability: pure_static
   description: >-
     The state hierarchy exceeds the configured maximum depth.
@@ -2111,6 +2158,7 @@ W_DEEP_HIERARCHY:
 
 W_LARGE_COMPOSITE:
   severity: warning
+  span_object: composite_block
   capability: pure_static
   description: >-
     A composite state has more direct children than the configured
@@ -2151,6 +2199,7 @@ W_LARGE_COMPOSITE:
 
 I_TRANSITION_TO_SELF_VIA_PARENT:
   severity: info
+  span_object: transition
   capability: pure_static
   description: >-
     A composite state transitions to itself, which can intentionally
@@ -2189,6 +2238,7 @@ I_TRANSITION_TO_SELF_VIA_PARENT:
 
 I_TRANSITION_NEVER_EVENT_TRIGGERED:
   severity: info
+  span_object: transition
   capability: pure_static
   description: >-
     A normal transition has no event and no guard, so it is an

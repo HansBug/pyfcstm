@@ -14,8 +14,8 @@ import {
 } from '../utils/text';
 import {getImportWorkspaceIndex} from '../workspace/imports';
 import {getWorkspaceGraph} from '../workspace';
-import {resolveRangeFromRefsDetailed} from './inspect-ranges';
-import {spanLikeToRange, suggestedFixDiagnosticRange, suggestedFixIssueRange} from './suggested-fixes';
+import {resolveRangeFromRefsDetailed, spanToRange} from './inspect-ranges';
+import {suggestedFixDiagnosticRange, suggestedFixIssueRange} from './suggested-fixes';
 
 // Only suppress inspect codes that the semantic analyzer already reports with
 // equivalent coverage. Const-folded false guards stay inspect-backed because
@@ -124,7 +124,7 @@ function relatedInformationFromRefs(
     item: ModelDiagnosticJson,
 ): FcstmDiagnostic['relatedInformation'] {
     if (item.code === 'W_FORCED_OVERRIDES_NORMAL') {
-        const normalRange = spanLikeToRange(item.refs.normal_transition_span);
+        const normalRange = spanToRange(item.refs.normal_transition_span);
         if (!normalRange) return undefined;
         return [{
             location: {
@@ -186,8 +186,10 @@ export function collectInspectDiagnosticsFromItems(
             code: item.code,
             data: item.refs,
         };
+        const primarySpanRange = spanToRange(item.span);
         const refResolution = resolveRangeFromRefsDetailed(document, semantic, item.refs, seenEffectSelfAssigns);
-        const problemRange = refResolution.range
+        const problemRange = primarySpanRange
+            ?? refResolution.range
             ?? suggestedFixIssueRange(document, semantic, diagnostic);
         if (options.rangeMode === 'fix-edit') {
             const suggestedRange = suggestedFixDiagnosticRange(document, semantic, diagnostic);

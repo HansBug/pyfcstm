@@ -22,6 +22,7 @@ def collect_threshold_warnings(
     diagnostics.extend(_high_var_to_leaf_ratio_warnings(
         metrics,
         var_to_leaf_ratio_threshold,
+        states,
     ))
     diagnostics.extend(_deep_hierarchy_warnings(
         states,
@@ -35,12 +36,14 @@ def collect_threshold_warnings(
     return diagnostics
 
 
-def _high_var_to_leaf_ratio_warnings(metrics, threshold) -> List[ModelDiagnostic]:
+def _high_var_to_leaf_ratio_warnings(metrics, threshold, states) -> List[ModelDiagnostic]:
     actual = metrics.var_to_leaf_ratio
     if actual <= threshold:
         return []
+    anchor_state = states[0] if states else None
     return [ModelDiagnostic(
         code='W_HIGH_VAR_TO_LEAF_RATIO',
+        span=getattr(anchor_state, 'span', None),
         severity='warning',
         message=(
             f'Variable-to-leaf ratio {actual!r} exceeds threshold '
@@ -64,8 +67,10 @@ def _deep_hierarchy_warnings(states, metrics, threshold) -> List[ModelDiagnostic
         if state.path.count('.') == actual
     ]
     deepest_path = sorted(deepest)[0] if deepest else ''
+    deepest_state = next((state for state in states if state.path == deepest_path), None)
     return [ModelDiagnostic(
         code='W_DEEP_HIERARCHY',
+        span=getattr(deepest_state, 'span', None),
         severity='warning',
         message=(
             f'Hierarchy depth {actual!r} exceeds threshold '
@@ -90,6 +95,7 @@ def _large_composite_warnings(states, threshold) -> List[ModelDiagnostic]:
             continue
         diagnostics.append(ModelDiagnostic(
             code='W_LARGE_COMPOSITE',
+            span=state.span,
             severity='warning',
             message=(
                 f'Composite state {state.path!r} has {actual!r} direct '

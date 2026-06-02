@@ -17,7 +17,7 @@
 # Allowed `refs.*.type` tokens (must mirror `_ALLOWED_REF_TYPES` in
 # codes.py — that tuple is the single source of truth, this comment block
 # is documentation; a test asserts the two stay aligned):
-#   str | str_or_null | int | int_or_null | float | number | bool | dict | Span | list[str]
+#   str | str_or_null | int | int_or_null | float | number | bool | dict | Span | list[str] | list[Span]
 #
 # Adding a new code: append a new top-level entry here AND add a fixture
 # test that triggers it from a real DSL snippet. The loader in `codes.py`
@@ -1664,9 +1664,9 @@ W_REDUNDANT_TRANSITION:
       required: true
       description: Dotted target state path.
     duplicate_spans:
-      type: list[str]
+      type: list[Span]
       required: true
-      description: Stable labels for duplicate transition declarations when source spans are unavailable.
+      description: Source spans for the duplicate transition declarations, using null for declarations whose span is unavailable.
     transition_index:
       type: int
       required: false

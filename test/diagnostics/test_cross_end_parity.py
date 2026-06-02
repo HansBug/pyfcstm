@@ -7,6 +7,7 @@ read resources outside the Python test runtime.
 """
 
 import json
+from dataclasses import is_dataclass
 
 import pytest
 
@@ -50,7 +51,7 @@ def _normalize_inspect_diagnostics(diags):
         normalized.append({
             'code': diag.code if isinstance(diag, ModelDiagnostic) else diag['code'],
             'severity': diag.severity if isinstance(diag, ModelDiagnostic) else diag['severity'],
-            'refs': json.loads(json.dumps(refs, sort_keys=True)),
+            'refs': json.loads(json.dumps(_stable_refs_for_parity(refs), sort_keys=True)),
         })
     return sorted(
         normalized,
@@ -60,6 +61,28 @@ def _normalize_inspect_diagnostics(diags):
             json.dumps(item['refs'], sort_keys=True),
         ),
     )
+
+
+def _stable_refs_for_parity(value):
+    if _is_span_like(value):
+        return None
+    if isinstance(value, dict):
+        return {
+            str(k): _stable_refs_for_parity(v)
+            for k, v in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_stable_refs_for_parity(item) for item in value]
+    if is_dataclass(value):  # pragma: no cover - defensive for future refs payloads
+        return {
+            name: _stable_refs_for_parity(getattr(value, name))
+            for name in value.__dataclass_fields__
+        }
+    return value
+
+
+def _is_span_like(value):
+    return all(hasattr(value, attr) for attr in ('line', 'column', 'end_line', 'end_column'))
 
 
 def _expected_with_suggested_fixes(expected):
@@ -832,8 +855,8 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                     'from_path': 'Root.Idle',
                     'to_path': 'Root.Active',
                     'duplicate_spans': [
-                        'Root.Idle->Root.Active#1',
-                        'Root.Idle->Root.Active#2',
+                        None,
+                        None,
                     ],
                 },
             },
@@ -844,8 +867,8 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                     'from_path': 'Root.Active',
                     'to_path': 'Root.Trapped',
                     'duplicate_spans': [
-                        'Root.Active->Root.Trapped#1',
-                        'Root.Active->Root.Trapped#2',
+                        None,
+                        None,
                     ],
                 },
             },

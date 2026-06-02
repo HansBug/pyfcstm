@@ -130,6 +130,7 @@ _ALLOWED_REF_TYPES = (
     'dict',
     'Span',
     'list[str]',
+    'list[Span]',
 )
 
 

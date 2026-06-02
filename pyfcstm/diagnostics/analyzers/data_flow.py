@@ -1,6 +1,6 @@
 """Variable data-flow design-health diagnostics."""
 
-from typing import TYPE_CHECKING, Any, Iterable, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional
 
 from ...dsl import EXIT_STATE, INIT_STATE
 from ...utils.validate import ModelDiagnostic
@@ -20,6 +20,7 @@ def collect_data_flow_warnings(
 ) -> List[ModelDiagnostic]:
     diagnostics: List[ModelDiagnostic] = []
     variables = list(variables)
+    variable_spans = {variable.name: variable.span for variable in variables}
     for variable in variables:
         read_states = set(variable.read_in_states)
         read_states.update(src for src, _ in variable.read_in_guards)
@@ -29,6 +30,7 @@ def collect_data_flow_warnings(
             if variable.abstract_actions_in_scope:
                 diagnostics.append(ModelDiagnostic(
                     code='I_UNREFERENCED_VAR_MAYBE_ABSTRACT',
+                    span=variable.span,
                     severity='info',
                     message=(
                         f'Variable {variable.name!r} does not affect any '
@@ -48,6 +50,7 @@ def collect_data_flow_warnings(
                     refs['definition_delete_anchor'] = variable.name
                 diagnostics.append(ModelDiagnostic(
                     code='W_UNREFERENCED_VAR',
+                    span=variable.span,
                     severity='warning',
                     message=(
                         f'Variable {variable.name!r} does not affect any '
@@ -59,6 +62,7 @@ def collect_data_flow_warnings(
         if read_states and not write_states:
             diagnostics.append(ModelDiagnostic(
                 code='W_UNWRITTEN_READ_VAR',
+                span=variable.span,
                 severity='warning',
                 message=(
                     f'Variable {variable.name!r} is read but never written '
@@ -73,6 +77,7 @@ def collect_data_flow_warnings(
         if write_states and not read_states:
             diagnostics.append(ModelDiagnostic(
                 code='W_WRITE_ONLY_VAR',
+                span=variable.span,
                 severity='warning',
                 message=f'Variable {variable.name!r} is written but never read.',
                 refs={
@@ -80,13 +85,14 @@ def collect_data_flow_warnings(
                     'written_states': sorted(write_states),
                 },
             ))
-    diagnostics.extend(_guard_vars_never_change_diagnostics(variables, machine))
+    diagnostics.extend(_guard_vars_never_change_diagnostics(variables, machine, variable_spans))
     return diagnostics
 
 
 def _guard_vars_never_change_diagnostics(
         variables: List['VariableInfo'],
         machine: Optional['StateMachine'],
+        variable_spans: Dict[str, object],
 ) -> List[ModelDiagnostic]:
     if machine is None:
         return []
@@ -121,6 +127,7 @@ def _guard_vars_never_change_diagnostics(
             )
             diagnostics.append(ModelDiagnostic(
                 code='W_GUARD_VARS_NEVER_CHANGE',
+                span=getattr(transition, '_span', None) or (variable_spans.get(guard_vars[0]) if guard_vars else None),
                 severity='warning',
                 message=(
                     'Transition guard reads only variables that are never '

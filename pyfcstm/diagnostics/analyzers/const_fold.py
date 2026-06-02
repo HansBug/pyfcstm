@@ -253,6 +253,7 @@ def _during_stmt_const_assign_diagnostics(
                 f'During action in {state_path!r} assigns {stmt.var_name!r} '
                 'to the same constant value every cycle.'
             ),
+            span=getattr(stmt, '_span', None),
             refs={
                 'state_path': state_path,
                 'var_name': stmt.var_name,
@@ -291,12 +292,13 @@ def _guard_const_diagnostic(
     return ModelDiagnostic(
         code=code,
         severity='warning',
+        span=getattr(transition, '_span', None),
         message=(
             f'Transition {source_label!r} -> {target_label!r} '
             f'has a guard that is statically {label}.'
         ),
         refs={
-            'transition_span': None,
+            'transition_span': getattr(transition, '_span', None),
             'folded_value': value,
             'from_path': _transition_endpoint_path(transition, is_source=True),
             'to_path': _transition_endpoint_path(transition, is_source=False),

@@ -54,7 +54,7 @@ from .analyzers import (
     collect_design_health_warnings,
     collect_expr_variables,
 )
-from ..utils.validate import ModelDiagnostic
+from ..utils.validate import ModelDiagnostic, Span
 
 if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
     from ..model.expr import Expr, Float, Integer
@@ -70,6 +70,12 @@ if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
 DEFAULT_DEEP_HIERARCHY_THRESHOLD = 6
 DEFAULT_LARGE_COMPOSITE_THRESHOLD = 12
 DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD = 2.0
+
+# PR-D2 span contract guard: analyzer diagnostics should carry a real
+# source span by default. Any future code that intentionally cannot point to
+# one source object must be listed here and covered by
+# test/diagnostics/test_inspect_span_contract.py.
+KNOWN_SPANLESS_CODES = frozenset()
 
 
 _OP_PRECEDENCE = {
@@ -163,6 +169,7 @@ class StateInfo:
     aspect_before: Tuple[str, ...]
     aspect_after: Tuple[str, ...]
     has_abstract_action: bool
+    span: Optional['Span'] = None
 
 
 @dataclass(frozen=True)
@@ -194,6 +201,11 @@ class TransitionInfo:
         ``if`` branches. Duplicate names are preserved so quick-fix
         emitters can detect ambiguous occurrences.
     :type effect_self_assigns: Tuple[str, ...]
+    :param effect_self_assign_spans: Source spans for the self-assign
+        statements listed in ``effect_self_assigns``. The order matches
+        ``effect_self_assigns`` and uses ``None`` when a statement has no
+        source span, preventing later spans from shifting to earlier names.
+    :type effect_self_assign_spans: Tuple[Optional[pyfcstm.utils.validate.Span], ...]
     :param is_forced: ``True`` when the transition was expanded from a
         ``!``-prefixed forced transition.
     :type is_forced: bool
@@ -219,6 +231,9 @@ class TransitionInfo:
     is_forced: bool
     forced_origin: Optional[str]
     transition_index: Optional[int]
+    span: Optional['Span'] = None
+    effect_spans: Tuple['Span', ...] = field(default_factory=tuple)
+    effect_self_assign_spans: Tuple[Optional['Span'], ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -278,6 +293,8 @@ class VariableInfo:
     affects_guard_indirectly: bool
     abstract_actions_in_scope: Tuple[str, ...]
     float_literal_assignments: Tuple[str, ...] = field(default_factory=tuple)
+    span: Optional['Span'] = None
+    float_literal_assignment_spans: Tuple[Optional['Span'], ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -306,6 +323,7 @@ class EventInfo:
     used_by: Tuple[Tuple[str, str], ...]
     is_declared: bool
     is_used: bool
+    span: Optional['Span'] = None
 
 
 @dataclass(frozen=True)
@@ -320,6 +338,7 @@ class ActionInfo:
     is_ref: bool
     ref_target: Optional[str]
     is_attached: bool
+    span: Optional['Span'] = None
 
 
 @dataclass(frozen=True)
@@ -334,6 +353,7 @@ class ForcedTransitionInfo:
     guard: Optional[str]
     original_raw: str
     expansion_count: int
+    span: Optional['Span'] = None
 
 
 @dataclass(frozen=True)
@@ -673,6 +693,13 @@ def _effect_self_assigns(effects: List['OperationStatement']) -> Tuple[str, ...]
     return tuple(out)
 
 
+def _effect_self_assign_spans(effects: List['OperationStatement']) -> Tuple[Optional['Span'], ...]:
+    out: List[Optional['Span']] = []
+    for stmt in effects:
+        _walk_stmt_self_assign_spans(stmt, out)
+    return tuple(out)
+
+
 def _walk_stmt_self_assigns(stmt: 'OperationStatement', out: List[str]) -> None:
     from ..model.expr import Variable
     from ..model.model import IfBlock, Operation
@@ -686,20 +713,36 @@ def _walk_stmt_self_assigns(stmt: 'OperationStatement', out: List[str]) -> None:
                 _walk_stmt_self_assigns(inner, out)
 
 
+def _walk_stmt_self_assign_spans(stmt: 'OperationStatement', out: List[Optional['Span']]) -> None:
+    from ..model.expr import Variable
+    from ..model.model import IfBlock, Operation
+    if isinstance(stmt, Operation):
+        if isinstance(stmt.expr, Variable) and stmt.expr.name == stmt.var_name:
+            out.append(getattr(stmt, '_span', None))
+        return
+    if isinstance(stmt, IfBlock):
+        for branch in stmt.branches:
+            for inner in branch.statements:
+                _walk_stmt_self_assign_spans(inner, out)
+
+
 def _walk_stmt_float_literal_assignments(
         stmt: 'OperationStatement',
         out: Dict[str, List[str]],
+        spans: Optional[Dict[str, List[Optional[Span]]]] = None,
 ) -> None:
     from ..model.expr import Float
     from ..model.model import IfBlock, Operation
     if isinstance(stmt, Operation):
         if isinstance(stmt.expr, Float):
             out.setdefault(stmt.var_name, []).append(_expr_text(stmt.expr) or '')
+            if spans is not None:
+                spans.setdefault(stmt.var_name, []).append(getattr(stmt, '_span', None))
         return
     if isinstance(stmt, IfBlock):
         for branch in stmt.branches:
             for inner in branch.statements:
-                _walk_stmt_float_literal_assignments(inner, out)
+                _walk_stmt_float_literal_assignments(inner, out, spans)
 
 
 def _stage_function_label(stage_item: 'OnStage') -> str:
@@ -864,6 +907,7 @@ def _build_state_infos(machine: 'StateMachine') -> Tuple[StateInfo, ...]:
             aspect_before=asp_before,
             aspect_after=asp_after,
             has_abstract_action=has_abstract,
+            span=getattr(state, '_span', None),
         ))
     return tuple(out)
 
@@ -895,6 +939,13 @@ def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ..
                 is_forced=is_forced,
                 forced_origin=forced_origin,
                 transition_index=transition_index,
+                span=getattr(transition, '_span', None),
+                effect_spans=tuple(
+                    span
+                    for span in (getattr(effect, '_span', None) for effect in transition.effects)
+                    if span is not None
+                ),
+                effect_self_assign_spans=_effect_self_assign_spans(transition.effects),
             ))
             transition_index += 1
     return tuple(out)
@@ -935,12 +986,16 @@ def _build_variable_infos(
     var_float_literal_assignments: Dict[str, List[str]] = {
         name: [] for name in machine.defines
     }
+    var_float_literal_assignment_spans: Dict[str, List[Optional[Span]]] = {
+        name: [] for name in machine.defines
+    }
     state_lookup: Dict[str, StateInfo] = {s.path: s for s in states}
 
     for state in machine.walk_states():
         path = _state_path(state)
         reads, writes = _collect_action_reads_writes(state)
         float_assigns: Dict[str, List[str]] = {}
+        float_assign_spans: Dict[str, List[Optional[Span]]] = {}
         for collection in (
                 state.on_enters,
                 state.on_durings,
@@ -949,7 +1004,7 @@ def _build_variable_infos(
         ):
             for action in collection:
                 for stmt in action.operations:
-                    _walk_stmt_float_literal_assignments(stmt, float_assigns)
+                    _walk_stmt_float_literal_assignments(stmt, float_assigns, float_assign_spans)
         for var_name in reads:
             if var_name in var_reads_by_state:
                 var_reads_by_state[var_name].append(path)
@@ -959,6 +1014,7 @@ def _build_variable_infos(
         for var_name, assignments in float_assigns.items():
             if var_name in var_float_literal_assignments:
                 var_float_literal_assignments[var_name].extend(assignments)
+                var_float_literal_assignment_spans[var_name].extend(float_assign_spans.get(var_name, []))
 
         for transition in state.transitions:
             from_path = _transition_endpoint(state, transition.from_state, is_source=True)
@@ -971,7 +1027,8 @@ def _build_variable_infos(
                 lwrites: List[str] = []
                 _walk_stmt_reads_writes(stmt, lreads, lwrites)
                 lfloat_assigns: Dict[str, List[str]] = {}
-                _walk_stmt_float_literal_assignments(stmt, lfloat_assigns)
+                lfloat_assign_spans: Dict[str, List[Optional[Span]]] = {}
+                _walk_stmt_float_literal_assignments(stmt, lfloat_assigns, lfloat_assign_spans)
                 for v in lreads:
                     if v in var_reads_by_state:
                         var_reads_by_state[v].append(from_path)
@@ -981,6 +1038,7 @@ def _build_variable_infos(
                 for v, assignments in lfloat_assigns.items():
                     if v in var_float_literal_assignments:
                         var_float_literal_assignments[v].extend(assignments)
+                        var_float_literal_assignment_spans[v].extend(lfloat_assign_spans.get(v, []))
 
     # Stable, deduped sequences for the public payload.
     def _dedupe_ordered(seq: List[str]) -> Tuple[str, ...]:
@@ -1001,6 +1059,21 @@ def _build_variable_infos(
                 out.append(x)
         return tuple(out)
 
+    def _dedupe_float_assignment_pairs(
+            exprs: List[str],
+            spans: List[Optional[Span]],
+    ) -> Tuple[Tuple[str, ...], Tuple[Optional[Span], ...]]:
+        seen = set()
+        out_exprs: List[str] = []
+        out_spans: List[Optional[Span]] = []
+        for index, expr in enumerate(exprs):
+            if expr in seen:
+                continue
+            seen.add(expr)
+            out_exprs.append(expr)
+            out_spans.append(spans[index] if index < len(spans) else None)
+        return tuple(out_exprs), tuple(out_spans)
+
     use_def_graph = build_use_def_graph(machine)
     direct_guard_vars = {
         name for name, entries in var_read_guards.items()
@@ -1015,7 +1088,10 @@ def _build_variable_infos(
         read_guards = _dedupe_pairs(var_read_guards[name])
         written_effects = _dedupe_pairs(var_written_effects[name])
         abstract_actions = _abstract_actions_in_scope(state_lookup)
-        float_assignments = _dedupe_ordered(var_float_literal_assignments[name])
+        float_assignments, float_assignment_spans = _dedupe_float_assignment_pairs(
+            var_float_literal_assignments[name],
+            var_float_literal_assignment_spans[name],
+        )
         out.append(VariableInfo(
             name=name,
             type=var_define.type,
@@ -1030,6 +1106,8 @@ def _build_variable_infos(
             ),
             abstract_actions_in_scope=abstract_actions,
             float_literal_assignments=float_assignments,
+            span=getattr(var_define, '_span', None),
+            float_literal_assignment_spans=float_assignment_spans,
         ))
     return tuple(out)
 
@@ -1078,14 +1156,24 @@ def _build_event_infos(machine: 'StateMachine', transitions: Tuple[TransitionInf
     out: List[EventInfo] = []
     for qn in sorted(set(event_users.keys()) | set(event_declared.keys())):
         used_by = tuple(event_users.get(qn, []))
+        event_obj = _find_event_by_qualified_name(machine, qn)
         out.append(EventInfo(
             qualified_name=qn,
             scope=event_scope.get(qn, 'absolute'),
             used_by=used_by,
             is_declared=event_declared.get(qn, False),
             is_used=bool(used_by),
+            span=getattr(event_obj, '_span', None) if event_obj is not None else None,
         ))
     return tuple(out)
+
+
+def _find_event_by_qualified_name(machine: 'StateMachine', qualified_name: str):
+    for state in machine.walk_states():
+        for event in state.events.values():
+            if event.path_name == qualified_name:
+                return event
+    return None
 
 
 def _scope_from_event_origins(origins: List[str]) -> str:
@@ -1123,6 +1211,7 @@ def _build_action_infos(machine: 'StateMachine') -> Tuple[ActionInfo, ...]:
                     is_ref=action.is_ref,
                     ref_target=ref_target,
                     is_attached=True,
+                    span=getattr(action, '_span', None),
                 ))
     return tuple(out)
 
@@ -1148,6 +1237,7 @@ def _build_forced_transition_infos(machine: 'StateMachine') -> Tuple[ForcedTrans
             ),
             original_raw=str(item.get('original_raw', '')),
             expansion_count=int(item.get('expansion_count', 0)),
+            span=item.get('span'),
         ))
     return tuple(out)
 
@@ -1436,6 +1526,12 @@ def _to_json_dataclass(obj: Any) -> Any:
         return {
             name: _to_json_dataclass(getattr(obj, name))
             for name in obj.__dataclass_fields__
+            if name not in {
+                'span',
+                'effect_spans',
+                'effect_self_assign_spans',
+                'float_literal_assignment_spans',
+            }
         }
     if isinstance(obj, tuple):
         return [_to_json_dataclass(x) for x in obj]
@@ -1479,10 +1575,7 @@ def _to_json_inspect(report: ModelInspect) -> Dict[str, Any]:
 
 def _diagnostic_to_json(d: ModelDiagnostic) -> Dict[str, Any]:
     span = None
-    if d.span is not None:  # pragma: no cover
-        # Current design-health diagnostics are spanless, but the JSON
-        # contract already supports spans for diagnostics that can be
-        # anchored precisely.
+    if d.span is not None:
         span = {
             'line': d.span.line,
             'column': d.span.column,
@@ -1494,5 +1587,5 @@ def _diagnostic_to_json(d: ModelDiagnostic) -> Dict[str, Any]:
         'severity': d.severity,
         'message': d.message,
         'span': span,
-        'refs': dict(d.refs),
+        'refs': _to_json_dataclass(d.refs),
     }

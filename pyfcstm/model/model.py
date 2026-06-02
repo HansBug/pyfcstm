@@ -3166,6 +3166,7 @@ def parse_dsl_node_to_state_machine(
                     'guard': str(condition_expr) if condition_expr is not None else None,
                     'original_raw': str(f_transnode),
                     'expansion_count': expansion_count,
+                    'span': _node_span(f_transnode),
                 })
 
             force_transition_tuples_to_inherit.append(

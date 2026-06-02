@@ -33,6 +33,7 @@ def _named_action_shadows_ancestor_warnings(actions) -> List[ModelDiagnostic]:
             outer = max(ancestors, key=lambda item: len(item.state_path))
             diagnostics.append(ModelDiagnostic(
                 code='W_NAMED_ACTION_SHADOWS_ANCESTOR',
+                span=inner.span,
                 severity='warning',
                 message=(
                     f'Named action {function_name!r} in {inner.state_path!r} '

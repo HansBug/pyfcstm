@@ -91,6 +91,11 @@ handlers:
     exception:
       type: ValueError
       message: boom
+  - action: Root.A.Touch
+    behavior: record_var_write_attempt
+    write:
+      name: x
+      value: 999
 ```
 
 Allowed handler behaviors:
@@ -98,6 +103,9 @@ Allowed handler behaviors:
 - `record_call`: registers a handler that appends a call record.
 - `raise_error`: registers a handler that appends a call record and then raises
   the configured exception.
+- `record_var_write_attempt`: registers a handler that attempts one
+  `ctx.vars[name] = value` assignment and records whether the read-only
+  context rejected it.
 
 Handler call records have this shape:
 
@@ -107,6 +115,13 @@ state: Root
 stage: enter
 vars:
   x: 0
+write_attempt:
+  name: x
+  value: 999
+  succeeded: false
+  error_type: TypeError
+  vars:
+    x: 0
 ```
 
 Only `ValueError` is currently supported for `raise_error`, because the fixture
@@ -173,6 +188,8 @@ parent-relative paths (`.go`), and root-relative paths (`/go`).
 | `warnings` | Step-local Python warning assertions. Simulation-only. |
 | `handler_calls` | Exact accumulated fixture-handler call records. Simulation-only. |
 | `abstract_handler_errors` | Expected `runtime.abstract_handler_errors` records. Simulation-only. |
+| `error_state` | Expected `runtime.is_error_state`. Simulation-only. |
+| `error_info` | Expected `runtime.error_info` action, exception type, and optional message match. Simulation-only. |
 
 Allowed stack modes are `active` and `init_wait`.
 
@@ -262,17 +279,32 @@ expect:
       type: ValueError
       message: boom
       match_kind: substring
+  error_state: true
+  error_info:
+    action: Root.A.Boom
+    type: ValueError
+    message: boom
+    match_kind: substring
 ```
 
 `handler_calls` is an exact accumulated-list assertion over the fixture handlers
 registered by the top-level `handlers` field. Use `handler_calls: []` to prove a
 failed speculative execution did not invoke any handler.
 
+When a handler call includes `write_attempt`, the record asserts the attempted
+variable name, attempted value, success flag, optional exception type, and the
+handler-visible variable snapshot after the attempt. This is intended for
+simulation-only checks of `ReadOnlyExecutionContext.vars`.
+
 `abstract_handler_errors` matches the public
 `SimulationRuntime.abstract_handler_errors` list. Each item may assert `action`,
 `type`, and `message`; `message` supports `substring` or `regex` via
 `match_kind`. Use `abstract_handler_errors: []` to prove failed rollback did not
 leave committed error metadata.
+
+`error_info` uses the same `action`, `type`, `message`, and `match_kind` shape
+for `SimulationRuntime.error_info`. Use `error_info: null` when a simulation-only
+case needs to assert that no error-state metadata is present.
 
 ## Generated Python alignment runner
 
@@ -293,9 +325,9 @@ at construction time and after every step:
 Even when YAML does not contain an explicit `stack` assertion, the alignment
 runner compares both stacks internally. `cycle_count` is rejected for generated
 alignment cases because the generated runtime does not expose it as a public
-contract. `runtime_options`, `handlers`, `warnings`, `handler_calls`, and
-`abstract_handler_errors` are also rejected for generated alignment cases in
-this schema version.
+contract. `runtime_options`, `handlers`, `warnings`, `handler_calls`,
+`abstract_handler_errors`, `error_state`, and `error_info` are also rejected for
+generated alignment cases in this schema version.
 
 ## CLI command cases
 
@@ -327,6 +359,6 @@ strings. `should_exit`, when present, must be a boolean.
 
 ## Reserved fields
 
-`expected_failure`, `error_state`, and `error_info` are intentionally not active
-in this schema version. Any extension that needs them must update this schema
+`expected_failure` is intentionally not active in this schema version. Any
+extension that needs inactive expected-failure fixtures must update this schema
 and the loader tests rather than silently accepting ignored data.

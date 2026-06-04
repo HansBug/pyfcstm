@@ -1,0 +1,53 @@
+schema_version: 1
+id: ref_abstract_handler_reports_calling_state
+title: Ref abstract handler reports the calling state
+source:
+  fcstm: ref_abstract_handler_reports_calling_state.fcstm
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614012639
+  assertion_types:
+  - cycle_count
+  - ended
+  - handler_calls
+  - return
+  - stack
+  - state
+  - vars_exact
+  notes:
+  - Simulation-only callback contract for referenced abstract actions.
+categories:
+- runtime
+- abstract
+- lifecycle
+runners:
+- simulation
+initial:
+  state: null
+  vars: null
+handlers:
+- action: Root.Library.Shared
+  behavior: record_call
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars_exact: {}
+    ended: false
+    stack:
+    - path:
+      - Root
+      mode: init_wait
+    - path:
+      - Root
+      - A
+      mode: active
+    cycle_count: 1
+    handler_calls:
+    - action: Root.Library.Shared
+      state: Root.A
+      stage: enter
+      vars: {}
+    return: null

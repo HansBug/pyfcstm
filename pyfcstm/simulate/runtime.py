@@ -464,6 +464,8 @@ class SimulationRuntime:
            states, the runtime will automatically attempt initial transitions
            to find a stoppable leaf state during the first cycle.
         """
+        if abstract_error_mode not in ('raise', 'log'):
+            raise ValueError("abstract_error_mode must be 'raise' or 'log'")
         self.state_machine = state_machine
         self.stack: List[_Frame] = []
         self.vars: Dict[str, Union[int, float]] = {}
@@ -1166,6 +1168,10 @@ class SimulationRuntime:
         :return: ``None``.
         :rtype: None
         """
+        # Preserve the caller state before resolving ``ref`` chains.
+        # Model construction assigns a parent state for lifecycle actions.
+        calling_state_path = func.parent.path
+
         while func.ref is not None:
             new_func = func.ref
             self.logger.debug(f'Function {func.func_name} -> {new_func.func_name}.')
@@ -1221,8 +1227,8 @@ class SimulationRuntime:
             # Create read-only context
             # func.parent is always set during state machine construction
             ctx = ReadOnlyExecutionContext(
-                state_path=func.parent.path,
-                vars=dict(vars_),  # Frozen copy
+                state_path=calling_state_path,
+                vars=dict(vars_),
                 action_name=func_path,
                 action_stage=func.stage
             )
@@ -2121,6 +2127,10 @@ class SimulationRuntime:
            :class:`SimulationRuntimeDfsError` is raised. This indicates an
            invalid state machine with unbounded execution chains.
         """
+        if self._is_error_state:
+            self.logger.warning('Runtime in error state, cycle ignored. Check error_info.')
+            return
+
         if self._ended:
             self.logger.warning('Runtime already ended, cycle ignored.')
             return

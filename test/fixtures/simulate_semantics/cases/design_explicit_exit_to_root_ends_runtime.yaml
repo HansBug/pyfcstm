@@ -1,0 +1,86 @@
+schema_version: 1
+id: design_explicit_exit_to_root_ends_runtime
+title: 4 30 explicit exit to root ends runtime
+source:
+  fcstm: design_explicit_exit_to_root_ends_runtime.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_30_explicit_exit_to_root_ends_runtime
+  - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_30_explicit_exit_to_root_ends_runtime
+  assertion_types:
+  - ended
+  - logs
+  - return
+  - stack
+  - state
+  - vars
+categories:
+- design_example
+- runtime
+- template_alignment
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      phase: 1
+      trace: 10
+    ended: false
+    return: null
+    stack:
+    - path:
+      - Root
+      mode: init_wait
+    - path:
+      - Root
+      - A
+      mode: active
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      phase: 2
+      trace: 20
+    ended: false
+    return: null
+    stack:
+    - path:
+      - Root
+      mode: init_wait
+    - path:
+      - Root
+      - A
+      mode: active
+- cycle: {}
+  expect:
+    state: null
+    vars:
+      phase: 2
+      trace: 20
+    ended: true
+    return: null
+    stack: []
+- cycle: {}
+  expect:
+    state: null
+    vars:
+      phase: 2
+      trace: 20
+    ended: true
+    return: null
+    stack: []
+    logs:
+      contains:
+      - level: WARNING
+        message: Runtime already ended, cycle ignored.
+        match_kind: substring

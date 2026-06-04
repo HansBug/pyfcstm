@@ -1,0 +1,42 @@
+def int counter = 0;
+state Root {
+    >> during before {
+        counter = counter + 1;
+    }
+
+    >> during after {
+        counter = counter + 100000;
+    }
+
+    state System {
+        >> during before {
+            counter = counter + 10;
+        }
+
+        >> during after {
+            counter = counter + 10000;
+        }
+
+        state Module {
+            >> during before {
+                counter = counter + 100;
+            }
+
+            >> during after {
+                counter = counter + 1000;
+            }
+
+            state Active {
+                during {
+                    counter = counter + 1;
+                }
+            }
+
+            [*] -> Active;
+        }
+
+        [*] -> Module;
+    }
+
+    [*] -> System;
+}

@@ -1,0 +1,27 @@
+def int trace = 0;
+state Root {
+    >> during before SharedBefore {
+        trace = trace + 100;
+    }
+
+    state System {
+        >> during before ref /SharedBefore;
+
+        state A {
+            during {
+                trace = trace + 1;
+            }
+        }
+
+        state B {
+            during {
+                trace = trace + 10;
+            }
+        }
+
+        [*] -> A;
+        A -> B :: Go;
+    }
+
+    [*] -> System;
+}

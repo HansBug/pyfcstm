@@ -1,0 +1,22 @@
+def int counter = 0;
+state Root {
+    event root_event;
+    state System {
+        event system_event;
+        state Active {
+            event active_event;
+            during {
+                counter = counter + 1;
+            }
+        }
+        state Idle {
+            during {
+                counter = counter + 10;
+            }
+        }
+        [*] -> Active;
+        Active -> Idle :: active_event;
+        Idle -> Active : system_event;
+    }
+    [*] -> System;
+}

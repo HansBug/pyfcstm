@@ -1,0 +1,56 @@
+schema_version: 1
+id: cli_init_then_cycle
+title: CLI init command followed by cycle execution
+source:
+  fcstm: cli_init_then_cycle.fcstm
+origin:
+  files:
+  - test/simulate/test_cli_init.py::TestCLIInitCommand::test_init_command_then_cycle
+  assertion_types:
+  - cli_output
+  - state
+  - vars
+  - cycle_count
+  - ended
+categories:
+- runtime
+- hot_start
+- cli
+runners:
+- cli_command
+initial:
+  state: null
+  vars: null
+commands:
+- input: init System.Active counter=5
+  expect:
+    output_contains:
+    - 'Initialized from state: System.Active'
+    runtime:
+      state:
+      - System
+      - Active
+      vars:
+        counter: 5
+      ended: false
+      cycle_count: 0
+- input: cycle
+  expect:
+    runtime:
+      state:
+      - System
+      - Active
+      vars:
+        counter: 15
+      ended: false
+      cycle_count: 1
+- input: cycle
+  expect:
+    runtime:
+      state:
+      - System
+      - Active
+      vars:
+        counter: 25
+      ended: false
+      cycle_count: 2

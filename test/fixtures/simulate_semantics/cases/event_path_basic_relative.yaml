@@ -1,0 +1,46 @@
+schema_version: 1
+id: event_path_basic_relative
+title: 4 200 flexible path basic relative
+source:
+  fcstm: event_path_basic_relative.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_200_flexible_path_basic_relative
+  - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_200_flexible_path_basic_relative
+  assertion_types:
+  - ended
+  - return
+  - state
+  - vars
+categories:
+- event_paths
+- runtime
+- scenario_example
+- template_alignment
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      counter: 1
+    ended: false
+    return: null
+- cycle:
+    events:
+    - go
+  expect:
+    state:
+    - Root
+    - B
+    vars:
+      counter: 11
+    ended: false
+    return: null

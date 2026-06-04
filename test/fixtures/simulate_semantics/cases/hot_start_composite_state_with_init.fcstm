@@ -1,0 +1,13 @@
+def int counter = 0;
+state Root {
+    state System {
+        state Idle {
+            during { counter = counter + 1; }
+        }
+        state Active {
+            during { counter = counter + 10; }
+        }
+        [*] -> Idle;
+    }
+    [*] -> System;
+}

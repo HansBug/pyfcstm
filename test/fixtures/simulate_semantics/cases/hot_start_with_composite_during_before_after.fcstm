@@ -1,0 +1,21 @@
+def int enter_count = 0;
+def int during_count = 0;
+def int exit_count = 0;
+state Root {
+    state System {
+        enter { enter_count = enter_count + 1; }
+        exit { exit_count = exit_count + 1; }
+
+        state A {
+            during { during_count = during_count + 1; }
+        }
+
+        state B {
+            during { during_count = during_count + 10; }
+        }
+
+        [*] -> A;
+        A -> B :: Go;
+    }
+    [*] -> System;
+}

@@ -1,0 +1,36 @@
+schema_version: 1
+id: design_multi_layer_aspect_actions
+title: 4 22 multi layer aspect actions
+source:
+  fcstm: design_multi_layer_aspect_actions.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_22_multi_layer_aspect_actions
+  - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_22_multi_layer_aspect_actions
+  assertion_types:
+  - ended
+  - return
+  - state
+  - vars
+categories:
+- design_example
+- runtime
+- template_alignment
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - System
+    - Module
+    - Active
+    vars:
+      counter: 111112
+    ended: false
+    return: null

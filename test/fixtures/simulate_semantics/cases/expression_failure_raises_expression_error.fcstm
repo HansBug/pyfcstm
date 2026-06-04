@@ -1,0 +1,9 @@
+def int counter = 1;
+state Root {
+    state A {
+        during {
+            counter = counter / 0;
+        }
+    }
+    [*] -> A;
+}

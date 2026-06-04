@@ -1,0 +1,25 @@
+def int init_count = 0;
+def int trace = 0;
+state Root {
+    enter CommonInit {
+        init_count = init_count + 1;
+        trace = trace + 100;
+    }
+
+    state A {
+        enter ref /CommonInit;
+        during {
+            trace = trace + 1;
+        }
+    }
+
+    state B {
+        enter ref /CommonInit;
+        during {
+            trace = trace + 10;
+        }
+    }
+
+    [*] -> A;
+    A -> B :: Go;
+}

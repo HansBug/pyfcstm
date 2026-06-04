@@ -1,0 +1,47 @@
+schema_version: 1
+id: design_multi_level_non_stoppable_deep
+title: 4 7 multi level non stoppable
+source:
+  fcstm: design_multi_level_non_stoppable_deep.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_7_multi_level_non_stoppable
+  - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_7_multi_level_non_stoppable
+  assertion_types:
+  - ended
+  - return
+  - state
+  - vars
+categories:
+- design_example
+- runtime
+- template_alignment
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      counter: 1
+    ended: false
+    return: null
+- cycle:
+    events:
+    - Root.A.GoB
+  expect:
+    state:
+    - Root
+    - B
+    - B1
+    - B1a
+    vars:
+      counter: 11
+    ended: false
+    return: null

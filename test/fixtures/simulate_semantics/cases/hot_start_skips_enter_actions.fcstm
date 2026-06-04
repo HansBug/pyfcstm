@@ -1,0 +1,9 @@
+def int enter_count = 0;
+def int during_count = 0;
+state Root {
+    state A {
+        enter { enter_count = enter_count + 1; }
+        during { during_count = during_count + 1; }
+    }
+    [*] -> A;
+}

@@ -1,0 +1,114 @@
+schema_version: 1
+id: scenario_traffic_signal_with_pedestrian_request_pedestrian
+title: 4 102 traffic signal with pedestrian request
+source:
+  fcstm: scenario_traffic_signal_with_pedestrian_request_pedestrian.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_102_traffic_signal_with_pedestrian_request
+  - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_102_traffic_signal_with_pedestrian_request
+  assertion_types:
+  - ended
+  - return
+  - state
+  - vars
+categories:
+- runtime
+- scenario_example
+- template_alignment
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - MainGreen
+    vars:
+      green_ticks: 1
+      request_latched: 0
+      yellow_ticks: 0
+      walk_ticks: 0
+    ended: false
+    return: null
+- cycle:
+    events:
+    - Root.MainGreen.PedRequest
+  expect:
+    state:
+    - Root
+    - MainGreen
+    vars:
+      green_ticks: 2
+      request_latched: 1
+      yellow_ticks: 0
+      walk_ticks: 0
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - MainGreen
+    vars:
+      green_ticks: 3
+      request_latched: 1
+      yellow_ticks: 0
+      walk_ticks: 0
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - PedestrianPhase
+    - MainYellow
+    vars:
+      green_ticks: 3
+      request_latched: 0
+      yellow_ticks: 1
+      walk_ticks: 0
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - PedestrianPhase
+    - PedWalk
+    vars:
+      green_ticks: 3
+      request_latched: 0
+      yellow_ticks: 1
+      walk_ticks: 1
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - PedestrianPhase
+    - PedWalk
+    vars:
+      green_ticks: 3
+      request_latched: 0
+      yellow_ticks: 1
+      walk_ticks: 2
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - MainGreen
+    vars:
+      green_ticks: 1
+      request_latched: 0
+      yellow_ticks: 0
+      walk_ticks: 0
+    ended: false
+    return: null

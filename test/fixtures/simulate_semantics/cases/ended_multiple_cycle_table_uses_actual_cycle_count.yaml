@@ -1,0 +1,45 @@
+schema_version: 1
+id: ended_multiple_cycle_table_uses_actual_cycle_count
+title: CLI multiple cycle table uses actual ended runtime cycle count
+source:
+  fcstm: ended_multiple_cycle_table_uses_actual_cycle_count.fcstm
+origin:
+  files:
+  - test/simulate/test_semantic_fixtures.py::test_cli_command_semantic_fixture
+  docs:
+  - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614017303
+  assertion_types:
+  - cli_output
+  - cycle_count
+  - ended
+categories:
+- runtime
+- cli
+runners:
+- cli_command
+initial:
+  state: null
+  vars: null
+commands:
+- input: cycle
+  expect:
+    runtime:
+      state:
+      - System
+      - A
+      ended: false
+      cycle_count: 1
+- input: cycle 5
+  expect:
+    output_contains:
+    - '(terminated)'
+    - ' 2 '
+    output_not_contains:
+    - ' 3 '
+    - ' 4 '
+    - ' 5 '
+    - ' 6 '
+    runtime:
+      state: null
+      ended: true
+      cycle_count: 2

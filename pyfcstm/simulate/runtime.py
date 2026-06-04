@@ -2468,6 +2468,38 @@ class SimulationRuntime:
         """
         return list(self._abstract_handler_errors)
 
+    @property
+    def abstract_error_mode(self) -> Literal['raise', 'log']:
+        """
+        Return the configured abstract-handler error mode.
+
+        :return: Abstract-handler error mode, either ``'raise'`` or ``'log'``.
+        :rtype: Literal['raise', 'log']
+        """
+        return self._abstract_error_mode
+
+    def copy_session_configuration_to(self, runtime: 'SimulationRuntime') -> None:
+        """
+        Copy session-level configuration into another runtime instance.
+
+        Command-line ``init`` and ``clear`` rebuild a runtime while preserving
+        the user's session-level configuration. This helper copies only that
+        configuration: history retention, abstract-handler error mode, and
+        registered abstract handlers. Execution history, warning records, and
+        error-state diagnostics are intentionally not copied.
+
+        :param runtime: Target runtime that should receive session settings.
+        :type runtime: SimulationRuntime
+        :return: ``None``.
+        :rtype: None
+        """
+        runtime.history_size = self.history_size
+        runtime._abstract_error_mode = self._abstract_error_mode
+        runtime._abstract_handlers = {
+            action_path: list(handlers)
+            for action_path, handlers in self._abstract_handlers.items()
+        }
+
     def register_abstract_handler(
             self,
             action_path: str,

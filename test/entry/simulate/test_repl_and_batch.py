@@ -10,9 +10,11 @@ continue) through the public class API.
 import textwrap
 
 import pytest
+from prompt_toolkit.document import Document
 
 from pyfcstm.dsl import parse_with_grammar_entry
-from pyfcstm.entry.simulate.batch import create_cross_platform_output_func
+from pyfcstm.entry.simulate.batch import BatchProcessor, create_cross_platform_output_func
+from pyfcstm.entry.simulate.commands import CommandProcessor
 from pyfcstm.entry.simulate.repl import SimulationREPL
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.simulate import SimulationRuntime
@@ -66,7 +68,11 @@ class _DummySession:
     """
 
     def __init__(self, *args, **kwargs):
-        pass
+        self.history = kwargs.get('history')
+        self.auto_suggest = kwargs.get('auto_suggest')
+        self.completer = kwargs.get('completer')
+        self.enable_history_search = kwargs.get('enable_history_search')
+        self.style = kwargs.get('style')
 
     def prompt(self, *args, **kwargs):  # pragma: no cover - replaced per test
         raise EOFError
@@ -141,3 +147,214 @@ class TestCrossPlatformOutput:
         out_func('hello world')
         captured = capsys.readouterr()
         assert 'hello world' in captured.out
+
+
+_SESSION_STATE_DSL = textwrap.dedent("""
+    def int counter = 0;
+
+    state System {
+        [*] -> Idle;
+        state Idle {
+            during abstract Touch;
+            during { counter = counter + 1; }
+        }
+        state Active {
+            during { counter = counter + 10; }
+        }
+    }
+""").strip()
+
+_CONTINUATION_DSL = textwrap.dedent("""
+    state Root {
+        state System1 {
+            state A;
+            [*] -> A;
+            A -> [*] :: Exit;
+        }
+        state System2 {
+            state B;
+            [*] -> B;
+            B -> [*];
+        }
+        [*] -> System1;
+        System1 -> System2 :: Switch;
+        System2 -> [*];
+    }
+""").strip()
+
+_AUTO_EXIT_CONTINUATION_DSL = textwrap.dedent("""
+    state Root {
+        state System1 {
+            state A;
+            [*] -> A;
+            A -> [*];
+        }
+        state System2 {
+            state B;
+            [*] -> B;
+        }
+        [*] -> System1;
+        System1 -> System2 :: Switch;
+    }
+""").strip()
+
+
+def _build_runtime(dsl_code):
+    ast_node = parse_with_grammar_entry(dsl_code, entry_name='state_machine_dsl')
+    model = parse_dsl_node_to_state_machine(ast_node)
+    return SimulationRuntime(model), model
+
+
+def _run_to_idle_processor():
+    runtime, model = _build_runtime(_SESSION_STATE_DSL)
+    processor = CommandProcessor(runtime, state_machine=model, use_color=False)
+    processor.process('cycle')
+    return processor
+
+
+@pytest.mark.unittest
+class TestCommandProcessorSessionState:
+    def test_clear_preserves_history_size_setting(self):
+        processor = _run_to_idle_processor()
+        processor.process('setting history_size 1')
+        processor.process('cycle')
+        processor.process('cycle')
+
+        assert processor.runtime.history_size == 1
+        assert len(processor.runtime.history) == 1
+
+        processor.process('clear')
+        assert processor.settings.history_size == 1
+        assert processor.runtime.history_size == 1
+
+        processor.process('cycle')
+        processor.process('cycle')
+        assert len(processor.runtime.history) == 1
+        assert processor.runtime.history[-1]['cycle'] == processor.runtime.cycle_count
+
+    def test_init_preserves_registered_abstract_handlers(self):
+        processor = _run_to_idle_processor()
+        calls = []
+
+        def record_touch(ctx):
+            calls.append(ctx.get_full_state_path())
+
+        processor.runtime.register_abstract_handler('System.Idle.Touch', record_touch)
+        result = processor.process('init System.Idle counter=10')
+
+        assert 'Initialized from state: System.Idle' in result.output
+        assert processor.runtime.has_abstract_handlers('System.Idle.Touch')
+
+        processor.process('cycle')
+        assert calls == ['System.Idle']
+        assert processor.runtime.vars['counter'] == 11
+
+    def test_clear_preserves_abstract_handlers_and_error_mode(self):
+        processor = _run_to_idle_processor()
+
+        def raise_touch(ctx):
+            raise ValueError('touch failed')
+
+        processor.runtime.register_abstract_handler('System.Idle.Touch', raise_touch)
+        processor.runtime._abstract_error_mode = 'log'
+
+        processor.process('clear')
+        assert processor.runtime.has_abstract_handlers('System.Idle.Touch')
+        assert processor.runtime._abstract_error_mode == 'log'
+
+        processor.process('cycle')
+        assert not processor.runtime.is_error_state
+        assert len(processor.runtime.abstract_handler_errors) == 1
+        action_path, error = processor.runtime.abstract_handler_errors[0]
+        assert action_path == 'System.Idle.Touch'
+        assert isinstance(error, ValueError)
+        assert str(error) == 'touch failed'
+
+    def test_events_lists_parent_continuation_candidates(self):
+        runtime, model = _build_runtime(_CONTINUATION_DSL)
+        processor = CommandProcessor(runtime, state_machine=model, use_color=False)
+        processor.process('cycle')
+
+        result = processor.process('events')
+
+        assert 'Exit' in result.output
+        assert 'Root.System1.A.Exit' in result.output
+        assert 'Root.System1.Switch' in result.output
+        assert 'post-exit continuation' in result.output
+
+        cycle_result = processor.process('cycle Exit Root.System1.Switch')
+        assert 'Root.System2.B' in cycle_result.output
+
+    def test_events_lists_continuation_candidate_after_automatic_exit(self):
+        runtime, model = _build_runtime(_AUTO_EXIT_CONTINUATION_DSL)
+        processor = CommandProcessor(runtime, state_machine=model, use_color=False)
+        processor.process('cycle')
+
+        result = processor.process('events')
+
+        assert 'Root.System1.Switch' in result.output
+        assert 'post-exit continuation' in result.output
+
+    def test_events_omits_continuation_candidates_after_end(self):
+        runtime, model = _build_runtime(_CONTINUATION_DSL)
+        processor = CommandProcessor(runtime, state_machine=model, use_color=False)
+        processor.process('cycle')
+        processor.process('cycle Exit Root.System1.Switch')
+        assert processor.runtime.current_state.path == ('Root', 'System2', 'B')
+        processor.process('cycle')
+        assert processor.runtime.is_ended
+
+        result = processor.process('events')
+
+        assert 'Root.System1.Switch' not in result.output
+        assert 'No events available' in result.output
+
+
+@pytest.mark.unittest
+class TestRuntimeReferenceSynchronization:
+    def test_repl_init_refreshes_runtime_and_completer_reference(self, patch_prompt_session):
+        runtime, model = _build_runtime(_SESSION_STATE_DSL)
+        repl = SimulationREPL(runtime, state_machine=model, use_color=False)
+
+        repl.command_processor.process('init System.Active counter=7')
+
+        assert repl.runtime is repl.command_processor.runtime
+        assert repl.completer.runtime is repl.command_processor.runtime
+        assert repl.session.auto_suggest.completer.runtime is repl.command_processor.runtime
+        assert repl.runtime.current_state.path == ('System', 'Active')
+
+    def test_batch_init_refreshes_runtime_reference(self):
+        runtime, model = _build_runtime(_SESSION_STATE_DSL)
+        batch = BatchProcessor(runtime, state_machine=model, use_color=False, output_func=lambda text: None)
+
+        batch.execute_commands('init System.Active counter=7')
+
+        assert batch.runtime is batch.command_processor.runtime
+        assert batch.runtime.current_state.path == ('System', 'Active')
+
+    def test_batch_clear_refreshes_runtime_reference(self):
+        runtime, model = _build_runtime(_SESSION_STATE_DSL)
+        batch = BatchProcessor(runtime, state_machine=model, use_color=False, output_func=lambda text: None)
+        batch.execute_commands('cycle; clear')
+
+        assert batch.runtime is batch.command_processor.runtime
+        assert batch.runtime.current_state.path == ('System',)
+
+
+@pytest.mark.unittest
+class TestSimulationCompleterRuntimeEvents:
+    def test_cycle_completion_includes_parent_continuation_event_path(self):
+        runtime, model = _build_runtime(_CONTINUATION_DSL)
+        processor = CommandProcessor(runtime, state_machine=model, use_color=False)
+        processor.process('cycle')
+        completer = processor.create_completer()
+
+        completions = list(completer.get_completions(Document('cycle Root.System1.S'), None))
+        completion_texts = {completion.text for completion in completions}
+        completion_meta = {
+            completion.text: str(completion.display_meta_text)
+            for completion in completions
+        }
+
+        assert 'Root.System1.Switch' in completion_texts
+        assert 'post-exit continuation' in completion_meta['Root.System1.Switch']

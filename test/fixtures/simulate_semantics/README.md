@@ -65,11 +65,15 @@ Reviewers can use this fixed template when checking a migrated case:
 ## Current migration index
 
 The table below is generated from the current YAML metadata and is intended to
-make anti-drift review straightforward.
+make anti-drift review straightforward. `origin.files` points to the original
+inline tests that supplied each fixture's semantics; fully migrated runtime and
+Python-template alignment tests are now executed through the fixture runners, so
+those origin paths may be visible only through git history / PR diff after the
+inline files are removed.
 
 | Fixture id | Runners | Assertion types | Origin files |
 |---|---|---|---|
-| `auto_initialization_on_current_state_access` | simulation, generated_python_alignment | initial, state, vars, return, ended | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_auto_initialization_on_current_state_access`<br>`test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_auto_initialization_on_current_state_access` |
+| `auto_initialization_on_current_state_access` | simulation, generated_python_alignment | initial, stack, state, vars, return, ended | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_auto_initialization_on_current_state_access`<br>`test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_auto_initialization_on_current_state_access` |
 | `cli_init_basic` | cli_command | cli_output, state, vars, ended | `test/simulate/test_cli_init.py::TestCLIInitCommand::test_init_command_basic` |
 | `cli_init_composite_state` | cli_command | cli_output, state, vars, stack, cycle_count, ended | `test/simulate/test_cli_init.py::TestCLIInitCommand::test_init_command_composite_state` |
 | `cli_init_then_cycle` | cli_command | cli_output, state, vars, cycle_count, ended | `test/simulate/test_cli_init.py::TestCLIInitCommand::test_init_command_then_cycle` |
@@ -112,7 +116,7 @@ make anti-drift review straightforward.
 | `design_validation_init_transition_requires_event` | simulation, generated_python_alignment | ended, return, state, vars | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_4_validation_init_transition_requires_event`<br>`test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_4_validation_init_transition_requires_event` |
 | `event_path_absolute` | simulation, generated_python_alignment | ended, return, state, vars | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_202_flexible_path_absolute`<br>`test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_202_flexible_path_absolute` |
 | `event_path_basic_relative` | simulation, generated_python_alignment | ended, return, state, vars | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_200_flexible_path_basic_relative`<br>`test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_200_flexible_path_basic_relative` |
-| `event_path_invalid_raises_event_error` | simulation | ended, exception, state, vars | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_200_invalid_event_path_raises_event_error` |
+| `event_path_invalid_raises_event_error` | simulation | ended, exception, stack, state, vars | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_200_invalid_event_path_raises_event_error` |
 | `event_path_mixed_formats_absolute` | simulation, generated_python_alignment | ended, return, state, vars | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_203_flexible_path_mixed_formats`<br>`test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_203_flexible_path_mixed_formats` |
 | `event_path_mixed_formats_full` | simulation, generated_python_alignment | ended, return, state, vars | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_203_flexible_path_mixed_formats`<br>`test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_203_flexible_path_mixed_formats` |
 | `event_path_mixed_formats_parent_relative` | simulation, generated_python_alignment | ended, return, state, vars | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_203_flexible_path_mixed_formats`<br>`test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_203_flexible_path_mixed_formats` |

@@ -9,6 +9,7 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_auto_initialization_on_current_state_access
   assertion_types:
   - initial
+  - stack
   - state
   - vars
   - return

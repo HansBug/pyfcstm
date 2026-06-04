@@ -9,6 +9,7 @@ origin:
   assertion_types:
   - ended
   - exception
+  - stack
   - state
   - vars
 categories:

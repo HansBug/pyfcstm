@@ -96,8 +96,8 @@ make unittest MIN_COVERAGE=80                        # With minimum coverage
 make unittest WORKERS=4                              # With parallel workers
 
 # Run a single test file or function directly:
-pytest test/simulate/test_runtime.py -v
-pytest test/simulate/test_runtime.py::TestClassName::test_method -v
+pytest test/simulate/test_semantic_fixtures.py -v
+pytest test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture -v
 
 # Fast path: skip native-toolchain template tests (test/template/c, test/template/c_poll)
 # which invoke real cmake/cc per case and consume ~85% of unittest wall time.

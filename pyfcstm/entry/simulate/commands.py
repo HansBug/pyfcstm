@@ -181,6 +181,10 @@ class CommandProcessor:
         self.settings = Settings()
         self.settings.color = use_color
         self.display = StateDisplay(use_color=use_color, logger=runtime.logger)
+        if self.runtime.history_size is None:
+            self._apply_history_size_setting()
+        else:
+            self.settings.history_size = self.runtime.history_size
 
         configure_simulate_cli_logger(self.runtime.logger, use_color=use_color)
 
@@ -200,6 +204,21 @@ class CommandProcessor:
             LogLevel.OFF: logging.CRITICAL + 10,  # Higher than CRITICAL to disable all
         }
         self.runtime.logger.setLevel(level_map[self.settings.log_level])
+
+    def _apply_history_size_setting(self) -> None:
+        """
+        Synchronize the session history-size setting into the active runtime.
+
+        ``Settings.history_size`` is the command-layer value shown to users by
+        ``setting history_size``.  The runtime must use the same value so the
+        displayed setting and actual history retention cannot drift apart.
+
+        :return: ``None``.
+        :rtype: None
+        """
+        self.runtime.history_size = self.settings.history_size if self.settings.history_size > 0 else None
+        if self.runtime.history_size is not None and len(self.runtime.history) > self.runtime.history_size:
+            self.runtime.history = self.runtime.history[-self.runtime.history_size:]
 
     def _replace_runtime(self, runtime) -> None:
         """
@@ -674,11 +693,7 @@ Keyboard shortcuts (interactive mode):
                 # Sync log level with runtime logger
                 self._sync_log_level()
             elif key == 'history_size':
-                # Update runtime history size
-                self.runtime.history_size = self.settings.history_size if self.settings.history_size > 0 else None
-                # Trim existing history to new size
-                if self.runtime.history_size is not None and len(self.runtime.history) > self.runtime.history_size:
-                    self.runtime.history = self.runtime.history[-self.runtime.history_size:]
+                self._apply_history_size_setting()
 
             return CommandResult(f"Setting updated: {key} = {value}")
         except (KeyError, ValueError) as e:

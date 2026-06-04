@@ -12,9 +12,10 @@ import textwrap
 import pytest
 from prompt_toolkit.document import Document
 
-from pyfcstm.dsl import parse_with_grammar_entry
+from pyfcstm.dsl import EXIT_STATE, parse_with_grammar_entry
 from pyfcstm.entry.simulate.batch import BatchProcessor, create_cross_platform_output_func
 from pyfcstm.entry.simulate.commands import CommandProcessor
+from pyfcstm.entry.simulate.events import get_current_event_display_items
 from pyfcstm.entry.simulate.repl import SimulationREPL
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.simulate import SimulationRuntime
@@ -198,6 +199,26 @@ _AUTO_EXIT_CONTINUATION_DSL = textwrap.dedent("""
     }
 """).strip()
 
+_CASCADED_CONTINUATION_DSL = textwrap.dedent("""
+    state Root {
+        state System1 {
+            state Sub {
+                state A;
+                [*] -> A;
+                A -> [*] :: Exit;
+            }
+            [*] -> Sub;
+            Sub -> [*];
+        }
+        state System2 {
+            state B;
+            [*] -> B;
+        }
+        [*] -> System1;
+        System1 -> System2 :: Switch;
+    }
+""").strip()
+
 
 def _build_runtime(dsl_code):
     ast_node = parse_with_grammar_entry(dsl_code, entry_name='state_machine_dsl')
@@ -214,6 +235,35 @@ def _run_to_idle_processor():
 
 @pytest.mark.unittest
 class TestCommandProcessorSessionState:
+    def test_default_history_size_setting_matches_runtime_retention(self):
+        processor = _run_to_idle_processor()
+
+        assert 'history_size = 100' in processor.process('setting history_size').output
+        assert processor.runtime.history_size == 100
+
+        processor.process('cycle 105')
+        assert len(processor.runtime.history) == 100
+
+        processor.process('clear')
+        assert 'history_size = 100' in processor.process('setting history_size').output
+        assert processor.runtime.history_size == 100
+
+        processor.process('cycle 105')
+        assert len(processor.runtime.history) == 100
+
+    def test_constructor_history_size_becomes_displayed_session_setting(self):
+        runtime, model = _build_runtime(_SESSION_STATE_DSL)
+
+        processor = CommandProcessor(
+            SimulationRuntime(model, history_size=2),
+            state_machine=model,
+            use_color=False,
+        )
+
+        assert 'history_size = 2' in processor.process('setting history_size').output
+        processor.process('cycle 4')
+        assert len(processor.runtime.history) == 2
+
     def test_clear_preserves_history_size_setting(self):
         processor = _run_to_idle_processor()
         processor.process('setting history_size 1')
@@ -279,6 +329,21 @@ class TestCommandProcessorSessionState:
 
         assert 'Exit' in result.output
         assert 'Root.System1.A.Exit' in result.output
+        assert 'Root.System1.Switch' in result.output
+        assert 'post-exit continuation' in result.output
+
+        cycle_result = processor.process('cycle Exit Root.System1.Switch')
+        assert 'Root.System2.B' in cycle_result.output
+
+    def test_events_lists_cascaded_parent_continuation_candidates(self):
+        runtime, model = _build_runtime(_CASCADED_CONTINUATION_DSL)
+        processor = CommandProcessor(runtime, state_machine=model, use_color=False)
+        processor.process('cycle')
+
+        result = processor.process('events')
+
+        assert 'Exit' in result.output
+        assert 'Root.System1.Sub.A.Exit' in result.output
         assert 'Root.System1.Switch' in result.output
         assert 'post-exit continuation' in result.output
 
@@ -358,3 +423,92 @@ class TestSimulationCompleterRuntimeEvents:
 
         assert 'Root.System1.Switch' in completion_texts
         assert 'post-exit continuation' in completion_meta['Root.System1.Switch']
+
+    def test_cycle_completion_includes_cascaded_parent_continuation_event_path(self):
+        runtime, model = _build_runtime(_CASCADED_CONTINUATION_DSL)
+        processor = CommandProcessor(runtime, state_machine=model, use_color=False)
+        processor.process('cycle')
+        completer = processor.create_completer()
+
+        completions = list(completer.get_completions(Document('cycle Root.System1.S'), None))
+        completion_texts = {completion.text for completion in completions}
+        completion_meta = {
+            completion.text: str(completion.display_meta_text)
+            for completion in completions
+        }
+
+        assert 'Root.System1.Switch' in completion_texts
+        assert 'post-exit continuation' in completion_meta['Root.System1.Switch']
+
+
+class _NoCurrentStateRuntime:
+    is_ended = False
+
+    @property
+    def current_state(self):
+        raise IndexError('no active state')
+
+
+class _NoneCurrentStateRuntime:
+    is_ended = False
+    current_state = None
+
+
+class _FakeEvent:
+    def __init__(self, path_name, name):
+        self.path_name = path_name
+        self.name = name
+
+
+class _FakeTransition:
+    def __init__(self, event, to_state='Other'):
+        self.event = event
+        self.to_state = to_state
+
+
+class _FakeState:
+    def __init__(self, transitions, parent=None, is_root_state=False):
+        self.is_root_state = is_root_state
+        self.parent = parent
+        self.transitions_from = transitions
+
+
+class _FakeRuntime:
+    is_ended = False
+
+    def __init__(self, current_state):
+        self.current_state = current_state
+
+
+@pytest.mark.unittest
+class TestEventDisplayItems:
+    def test_display_items_return_empty_without_active_state(self):
+        assert get_current_event_display_items(_NoCurrentStateRuntime()) == []
+        assert get_current_event_display_items(_NoneCurrentStateRuntime()) == []
+
+    def test_display_items_deduplicate_event_paths(self):
+        event = _FakeEvent('System.A.Go', 'Go')
+        state = _FakeState([
+            _FakeTransition(event),
+            _FakeTransition(event),
+        ])
+
+        assert get_current_event_display_items(_FakeRuntime(state)) == [('System.A.Go', 'Go')]
+
+    def test_display_items_omits_root_boundary_continuation(self):
+        root = _FakeState([], is_root_state=True)
+        state = _FakeState([_FakeTransition(None, to_state=EXIT_STATE)], parent=root)
+
+        assert get_current_event_display_items(_FakeRuntime(state)) == []
+
+    def test_display_items_deduplicate_continuation_event_paths(self):
+        event = _FakeEvent('Root.Parent.Switch', 'Switch')
+        parent = _FakeState([
+            _FakeTransition(event),
+            _FakeTransition(event),
+        ])
+        state = _FakeState([_FakeTransition(None, to_state=EXIT_STATE)], parent=parent)
+
+        assert get_current_event_display_items(_FakeRuntime(state)) == [
+            ('Root.Parent.Switch', 'post-exit continuation'),
+        ]

@@ -17,7 +17,66 @@ POST_EXIT_CONTINUATION_LABEL = "post-exit continuation"
 
 def _event_path(event) -> str:
     """Return the dot-separated path for a model event."""
-    return getattr(event, "path_name", ".".join(event.state_path) + "." + event.name)
+    return event.path_name
+
+
+def _add_event_display_item(events, seen_events, event, label):
+    """
+    Add an event display row unless the event path was already emitted.
+
+    :param events: Accumulated ``(event_path, label)`` rows.
+    :type events: List[Tuple[str, Optional[str]]]
+    :param seen_events: Event paths that are already present in ``events``.
+    :type seen_events: set
+    :param event: Model event to append.
+    :type event: Event
+    :param label: Display label for the event.
+    :type label: str, optional
+    :return: ``None``.
+    :rtype: None
+    """
+    event_path = _event_path(event)
+    if event_path in seen_events:
+        return
+    seen_events.add(event_path)
+    events.append((event_path, label))
+
+
+def _has_exit_transition(state) -> bool:
+    """
+    Return whether a state has a transition to its parent's ``[*]`` boundary.
+
+    :param state: State to inspect.
+    :type state: State
+    :return: ``True`` if any outgoing transition targets ``[*]``.
+    :rtype: bool
+    """
+    return any(transition.to_state == EXIT_STATE for transition in state.transitions_from)
+
+
+def _iter_post_exit_continuation_states(state):
+    """
+    Yield ancestor states that can consume events after a child exit chain.
+
+    Starting from the current active state, each ``state -> [*]`` transition puts
+    the parent in ``post_child_exit`` mode.  If that parent can also exit to
+    ``[*]``, runtime execution may continue upward in the same cycle before a
+    named ancestor transition consumes another supplied event.  This generator
+    mirrors that parent-chain shape for presentation only; guards and final
+    reachability remain runtime responsibilities.
+
+    :param state: Current active state.
+    :type state: State
+    :return: Ancestor states reached after one or more possible ``[*]`` exits.
+    :rtype: Iterator[State]
+    """
+    current = state
+    while _has_exit_transition(current):
+        parent = current.parent
+        if parent is None or parent.is_root_state:
+            return
+        yield parent
+        current = parent
 
 
 def get_current_event_display_items(runtime) -> List[Tuple[str, Optional[str]]]:
@@ -61,20 +120,16 @@ def get_current_event_display_items(runtime) -> List[Tuple[str, Optional[str]]]:
         short_name = transition.event.name
         events.append((event_path, short_name if short_name != event_path else None))
 
-    if current_state.parent and not current_state.parent.is_root_state:
-        has_parent_exit = any(
-            transition.to_state == EXIT_STATE
-            for transition in current_state.transitions_from
-        )
-        if has_parent_exit:
-            for transition in current_state.parent.transitions_from:
-                if not transition.event:
-                    continue
-                event_path = _event_path(transition.event)
-                if event_path in seen_events:
-                    continue
-                seen_events.add(event_path)
-                events.append((event_path, POST_EXIT_CONTINUATION_LABEL))
+    for state in _iter_post_exit_continuation_states(current_state):
+        for transition in state.transitions_from:
+            if not transition.event:
+                continue
+            _add_event_display_item(
+                events,
+                seen_events,
+                transition.event,
+                POST_EXIT_CONTINUATION_LABEL,
+            )
 
     return events
 

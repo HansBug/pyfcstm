@@ -6,6 +6,28 @@ expr_styles:
     base_lang: python
     Name: "scope[{{ node.name | tojson }}]"
 
+stmt_styles:
+  python_runtime:
+    base_lang: python
+    expr_lang: python
+    state_var_target: "scope[{{ name | tojson }}]"
+    temp_var_target: "{{ name }}"
+    assign: |-
+      {{ target }} = self._evaluate_runtime_expr(
+          lambda: {{ expr }},
+          {{ ("operation assignment to '" ~ name ~ "'") | tojson }},
+      )
+    if: |-
+      if self._evaluate_runtime_expr(
+          lambda: {{ condition }},
+          "if-block condition",
+      ):
+    elif: |-
+      elif self._evaluate_runtime_expr(
+          lambda: {{ condition }},
+          "if-block condition",
+      ):
+
 globals:
   machine_class_name:
     type: template

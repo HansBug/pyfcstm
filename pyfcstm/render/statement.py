@@ -332,6 +332,28 @@ def _render_template_string(
     return env.from_string(template_str).render(**kwargs)
 
 
+def _indent_rendered_text(text: str, indent: str, level: int) -> str:
+    """
+    Prefix each rendered line with the requested indentation level.
+
+    Statement-style templates may render either a single line or a multi-line
+    language fragment. Applying indentation to each line lets custom templates
+    emit formatter-friendly wrapped expressions without hard-coding the caller's
+    nesting level.
+
+    :param text: Rendered statement text.
+    :type text: str
+    :param indent: Indentation unit.
+    :type indent: str
+    :param level: Indentation level.
+    :type level: int
+    :return: Indented rendered text.
+    :rtype: str
+    """
+    prefix = indent * level
+    return '\n'.join(prefix + line if line else line for line in text.splitlines())
+
+
 def _merge_numeric_types(type_a: Optional[str], type_b: Optional[str]) -> Optional[str]:
     """
     Merge two inferred numeric types conservatively.
@@ -650,7 +672,13 @@ def _render_statement_impl(
                 env,
                 name=node.name,
             )
-            text = _render_template_string(templates['assign'], env, target=target, expr=expr)
+            text = _render_template_string(
+                templates['assign'],
+                env,
+                target=target,
+                expr=expr,
+                name=node.name,
+            )
             new_visible = set(visible_names)
             new_visible_types = dict(visible_var_types)
             lines = []
@@ -668,10 +696,10 @@ def _render_statement_impl(
                         inferred_type=inferred_type,
                     )
                     if declaration:
-                        lines.append('{indent}{text}'.format(indent=indent * level, text=declaration))
+                        lines.append(_indent_rendered_text(declaration, indent, level))
                 if inferred_type is not None:
                     new_visible_types[node.name] = inferred_type
-            lines.append('{indent}{text}'.format(indent=indent * level, text=text))
+            lines.append(_indent_rendered_text(text, indent, level))
             return '\n'.join(lines), new_visible, new_visible_types
 
         if isinstance(node, dsl_nodes.OperationIf):
@@ -710,7 +738,7 @@ def _render_statement_impl(
                         _restore_scoped_expr_render(env, previous_global, previous_filter, previous_resolver)
                     header = _render_template_string(templates['elif'], env, condition=condition)
 
-                lines.append('{indent}{header}'.format(indent=indent * level, header=header))
+                lines.append(_indent_rendered_text(header, indent, level))
                 body, _, _ = _render_statements_impl(
                     nodes=branch.statements,
                     templates=templates,
@@ -750,7 +778,13 @@ def _render_statement_impl(
                 env,
                 name=node.name,
             )
-            text = _render_template_string(templates['assign'], env, target=target, expr=expr)
+            text = _render_template_string(
+                templates['assign'],
+                env,
+                target=target,
+                expr=expr,
+                name=node.name,
+            )
             new_visible = set(visible_names)
             new_visible_types = dict(visible_var_types)
             lines = []
@@ -767,11 +801,11 @@ def _render_statement_impl(
                         inferred_type=inferred_type,
                     )
                     if declaration:
-                        lines.append('{indent}{text}'.format(indent=indent * level, text=declaration))
+                        lines.append(_indent_rendered_text(declaration, indent, level))
                 new_visible.add(node.name)
                 if inferred_type is not None:
                     new_visible_types[node.name] = inferred_type
-            lines.append('{indent}{text}'.format(indent=indent * level, text=text))
+            lines.append(_indent_rendered_text(text, indent, level))
             return '\n'.join(lines), new_visible, new_visible_types
 
         if isinstance(node, dsl_nodes.OperationIf):
@@ -799,7 +833,7 @@ def _render_statement_impl(
                     else:
                         header = _render_template_string(templates['elif'], env, condition=condition)
 
-                lines.append('{indent}{header}'.format(indent=indent * level, header=header))
+                lines.append(_indent_rendered_text(header, indent, level))
                 body, _, _ = _render_statements_impl(
                     nodes=branch.statements,
                     templates=templates,

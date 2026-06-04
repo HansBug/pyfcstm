@@ -1,17 +1,17 @@
 schema_version: 1
-id: expression_failure_raises_expression_error
-title: 4 200 dsl expression failure raises expression error
+id: expression_failure_if_condition_raises_expression_error
+title: if block condition expression failure raises expression error
 source:
-  fcstm: expression_failure_raises_expression_error.fcstm
+  fcstm: expression_failure_if_condition_raises_expression_error.fcstm
 origin:
   files:
-  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_200_dsl_expression_failure_raises_expression_error
+  - test/fixtures/simulate_semantics/cases/expression_failure_if_condition_raises_expression_error.fcstm
   assertion_types:
   - exception
 categories:
 - runtime
-- scenario_example
 - template_alignment
+- if_blocks
 runners:
 - simulation
 - generated_python_alignment
@@ -23,7 +23,7 @@ steps:
   expect:
     raises:
       type: SimulationRuntimeExpressionError
-      match: "operation assignment to 'counter' evaluation failed: division by zero"
+      match: 'if-block condition evaluation failed: division by zero'
       match_kind: substring
       cause_type: ZeroDivisionError
       cause_match: 'division by zero'

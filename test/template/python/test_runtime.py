@@ -1,7 +1,6 @@
 import ast
 import importlib.util
 import os.path
-import shutil
 import subprocess
 import sys
 import textwrap
@@ -454,10 +453,26 @@ class TestPythonBuiltinTemplate:
             assert 'subprocess' not in source
             assert 'pathlib' not in source
 
-            ruff_executable = shutil.which('ruff')
-            if ruff_executable is None:
+            try:
+                from ruff import find_ruff_bin
+            except ImportError:
+                # from ruff import find_ruff_bin: Ruff is absent from the
+                # active test environment, so formatter convergence cannot run.
                 pytest.skip('ruff is not installed in this test environment')
+            try:
+                ruff_executable = find_ruff_bin()
+            except FileNotFoundError:
+                # find_ruff_bin(): the installed Ruff wrapper package cannot
+                # locate its bundled CLI binary in this test environment.
+                pytest.skip('ruff binary is not available in this test environment')
 
+            subprocess.run(
+                [ruff_executable, 'check', artifacts['machine_file']],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
             subprocess.run(
                 [ruff_executable, 'format', '--check', artifacts['machine_file']],
                 check=True,

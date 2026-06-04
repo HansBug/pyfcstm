@@ -8,8 +8,9 @@ built-in Python runtime alignment tests.  A fixture is a pair of files under
 - `<id>.yaml`: metadata, input sequence, runner selection, and expectations.
 
 The schema is intentionally strict. Unknown top-level fields, unknown runner
-names, unknown categories, and unknown expectation fields must fail fast with a
-diagnostic containing the case id and YAML path.
+names, unknown categories, unknown expectation fields, and unknown nested fields
+inside `cycle`, `raises`, `logs`, `stack`, and CLI expectations must fail fast
+with a diagnostic containing the case id and YAML path.
 
 ## Top-level fields
 
@@ -82,9 +83,9 @@ steps:
       return: null
 ```
 
-`cycle` may be `{}`, `null`, or a mapping with `events`. `events` may be `null`
-or a list. Bare string event input is deliberately not supported in PR-0,
-because string-vs-list cycle input is tracked separately.
+`cycle` may be `{}`, `null`, or a mapping with only the `events` field.
+`events` may be `null` or a list. Bare string event input is deliberately not
+supported in PR-0, because string-vs-list cycle input is tracked separately.
 
 Event strings are passed through unchanged. The corpus covers existing event
 path forms such as full paths (`Root.A.Go`), relative paths (`go`),
@@ -135,6 +136,8 @@ Allowed exception type names in PR-0 are:
 
 `match_kind` may be `substring` or `regex`; default is `substring`.
 Exception steps may still assert rollback state, vars, ended status, and stack.
+`raises` only allows the fields `type`, `match`, and `match_kind`; misspelled
+message fields must be rejected instead of weakening the exception assertion.
 
 ## Logs
 
@@ -153,13 +156,17 @@ expect:
 
 Logs are captured per step. The helper clears `caplog` before each step and
 includes the case id, step index, expected message, level, and actual records in
-failure messages.
+failure messages. `logs` only allows `contains` and `not_contains`; each log
+matcher only allows `level`, `message`, and `match_kind`.
 
 ## Generated Python alignment runner
 
 `generated_python_alignment` builds a `SimulationRuntime` and a generated Python
-runtime from the same fixture DSL. It checks alignment at construction time and
-after every step:
+runtime from the same fixture DSL. The generated runtime is rendered from the
+packaged built-in `python` template via `extract_template("python", ...)`, which
+preserves the old `test_runtime_alignment.py` release-surface coverage rather
+than testing only the repository source template directory. It checks alignment
+at construction time and after every step:
 
 - `is_ended`
 - variables
@@ -197,6 +204,9 @@ commands:
 CLI output is ANSI-stripped before assertion. `runtime` reuses the public
 runtime expectation subset: `state`, `vars`, `vars_exact`, `vars_keys`,
 `vars_absent`, `ended`, `stack`, and `cycle_count`.
+
+`output_contains`, `output_not_contains`, and `error_contains` must be lists of
+strings. `should_exit`, when present, must be a boolean.
 
 ## Reserved fields
 

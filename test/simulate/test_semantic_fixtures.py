@@ -71,6 +71,18 @@ def _valid_case_data():
     }
 
 
+def _set_expected_raises(data, raises):
+    data["steps"][0]["expect"].pop("return", None)
+    data["steps"][0]["expect"]["raises"] = raises
+
+
+def _set_cli_expectation(data, expect):
+    data["categories"] = ["cli"]
+    data["runners"] = ["cli_command"]
+    data.pop("steps", None)
+    data["commands"] = [{"input": "help", "expect": expect}]
+
+
 @pytest.mark.unittest
 @pytest.mark.parametrize(
     ["mutate", "message"],
@@ -152,6 +164,28 @@ def _valid_case_data():
         (
             lambda data: data["source"].update({"extra": "x"}),
             "source has unknown fields",
+        ),
+        (
+            lambda data: data["steps"][0]["cycle"].update({"eventz": []}),
+            "cycle has unknown fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"logs": {"containz": []}}),
+            "logs has unknown fields",
+        ),
+        (
+            lambda data: _set_expected_raises(
+                data, {"type": "ValueError", "matc": "typo"}
+            ),
+            "raises has unknown fields",
+        ),
+        (
+            lambda data: _set_cli_expectation(data, {"output_contains": "Commands"}),
+            "output_contains must be a list of strings",
+        ),
+        (
+            lambda data: _set_cli_expectation(data, {"should_exit": "false"}),
+            "should_exit must be a boolean",
         ),
     ],
 )

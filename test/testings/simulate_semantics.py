@@ -28,11 +28,6 @@ FIXTURE_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), os.pardir, "fixtures", "simulate_semantics")
 )
 CASE_DIR = os.path.join(FIXTURE_ROOT, "cases")
-_REPO_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
-_SOURCE_PYTHON_TEMPLATE_DIR = os.path.join(_REPO_ROOT, "templates", "python")
-
 _ALLOWED_TOP_LEVEL_FIELDS = {
     "schema_version",
     "id",
@@ -105,6 +100,12 @@ _ALLOWED_CLI_RUNTIME_FIELDS = {
     "stack",
     "cycle_count",
 }
+_ALLOWED_CYCLE_FIELDS = {"events"}
+_ALLOWED_STACK_FIELDS = {"path", "mode"}
+_ALLOWED_RAISES_FIELDS = {"type", "match", "match_kind"}
+_ALLOWED_LOG_FIELDS = {"contains", "not_contains"}
+_ALLOWED_LOG_ITEM_FIELDS = {"level", "message", "match_kind"}
+_CLI_OUTPUT_FIELDS = ("output_contains", "output_not_contains", "error_contains")
 _EXCEPTION_TYPES = {
     "SimulationRuntimeDfsError": SimulationRuntimeDfsError,
     "SimulationRuntimeEventError": SimulationRuntimeEventError,
@@ -618,18 +619,6 @@ class _GeneratedPythonAlignmentRuntime:
 
 def _build_generated_runtime(case: SemanticCase) -> Any:
     model = build_state_machine_from_case(case)
-    if os.path.isdir(_SOURCE_PYTHON_TEMPLATE_DIR):
-        with TemporaryDirectory() as output_td:
-            StateMachineCodeRenderer(_SOURCE_PYTHON_TEMPLATE_DIR).render(
-                model=model, output_dir=output_td
-            )
-            module_file = os.path.join(output_td, "machine.py")
-            module_name = "generated_python_runtime_%s" % re.sub(r"\W+", "_", case.id)
-            spec = importlib.util.spec_from_file_location(module_name, module_file)
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            machine_cls = getattr(module, "%sMachine" % model.root_state.name)
-            return machine_cls(**_initial_kwargs(case))
     with TemporaryDirectory() as template_td:
         template_dir = extract_template("python", template_td)
         with TemporaryDirectory() as output_td:
@@ -755,6 +744,18 @@ def _validate_stack(
                 yaml_path,
                 "%s.stack[%d] must be a mapping" % (field_path, index),
             )
+        unknown = set(item.keys()) - _ALLOWED_STACK_FIELDS
+        if unknown:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.stack[%d] has unknown fields: %r"
+                % (
+                    field_path,
+                    index,
+                    sorted(unknown),
+                ),
+            )
         if "path" not in item or item.get("path") is None:
             raise _case_error(
                 case_id,
@@ -801,10 +802,21 @@ def _validate_raises(
         raise _case_error(
             case_id, yaml_path, "%s.raises must be a mapping" % field_path
         )
+    unknown = set(raises.keys()) - _ALLOWED_RAISES_FIELDS
+    if unknown:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s.raises has unknown fields: %r" % (field_path, sorted(unknown)),
+        )
     exc_type = raises.get("type")
     if exc_type not in _EXCEPTION_TYPES:
         raise _case_error(
             case_id, yaml_path, "%s.raises.type is unknown: %r" % (field_path, exc_type)
+        )
+    if "match" in raises and not isinstance(raises["match"], str):
+        raise _case_error(
+            case_id, yaml_path, "%s.raises.match must be a string" % field_path
         )
     if raises.get("match_kind", "substring") not in {"substring", "regex"}:
         raise _case_error(
@@ -820,8 +832,22 @@ def _validate_logs(
         return
     if not isinstance(logs, dict):
         raise _case_error(case_id, yaml_path, "%s.logs must be a mapping" % field_path)
+    unknown = set(logs.keys()) - _ALLOWED_LOG_FIELDS
+    if unknown:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s.logs has unknown fields: %r" % (field_path, sorted(unknown)),
+        )
     for group_name in ("contains", "not_contains"):
-        for index, item in enumerate(logs.get(group_name, []) or []):
+        group_items = logs.get(group_name, []) or []
+        if not isinstance(group_items, list):
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.logs.%s must be a list" % (field_path, group_name),
+            )
+        for index, item in enumerate(group_items):
             if not isinstance(item, dict):
                 raise _case_error(
                     case_id,
@@ -844,6 +870,30 @@ def _validate_logs(
                         index,
                     ),
                 )
+            unknown_item = set(item.keys()) - _ALLOWED_LOG_ITEM_FIELDS
+            if unknown_item:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "%s.logs.%s[%d] has unknown fields: %r"
+                    % (
+                        field_path,
+                        group_name,
+                        index,
+                        sorted(unknown_item),
+                    ),
+                )
+            if "level" in item and not isinstance(item["level"], str):
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "%s.logs.%s[%d].level must be a string"
+                    % (
+                        field_path,
+                        group_name,
+                        index,
+                    ),
+                )
             if item.get("match_kind", "substring") not in {"substring", "regex"}:
                 raise _case_error(
                     case_id,
@@ -860,6 +910,17 @@ def _validate_logs(
                     case_id,
                     yaml_path,
                     "%s.logs.%s[%d].message is required"
+                    % (
+                        field_path,
+                        group_name,
+                        index,
+                    ),
+                )
+            if not isinstance(item["message"], str):
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "%s.logs.%s[%d].message must be a string"
                     % (
                         field_path,
                         group_name,
@@ -1109,14 +1170,23 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
                         yaml_path,
                         "%s.cycle must be a mapping or null" % field_path,
                     )
-                if isinstance(cycle_data, dict) and "events" in cycle_data:
-                    events = cycle_data["events"]
-                    if events is not None and not isinstance(events, list):
+                if isinstance(cycle_data, dict):
+                    unknown_cycle = set(cycle_data.keys()) - _ALLOWED_CYCLE_FIELDS
+                    if unknown_cycle:
                         raise _case_error(
                             case_id,
                             yaml_path,
-                            "%s.cycle.events must be a list or null" % field_path,
+                            "%s.cycle has unknown fields: %r"
+                            % (field_path, sorted(unknown_cycle)),
                         )
+                    if "events" in cycle_data:
+                        events = cycle_data["events"]
+                        if events is not None and not isinstance(events, list):
+                            raise _case_error(
+                                case_id,
+                                yaml_path,
+                                "%s.cycle.events must be a list or null" % field_path,
+                            )
                 _validate_expect(
                     step["expect"], case_id, yaml_path, field_path + ".expect", runners
                 )
@@ -1144,6 +1214,10 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
                     case_id, yaml_path, "commands[%d].input must be a string" % index
                 )
             expect = command.get("expect") or {}
+            if not isinstance(expect, dict):
+                raise _case_error(
+                    case_id, yaml_path, "commands[%d].expect must be a mapping" % index
+                )
             unknown_expect = set(expect.keys()) - _ALLOWED_CLI_EXPECT_FIELDS
             if unknown_expect:
                 raise _case_error(
@@ -1154,6 +1228,20 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
                         index,
                         sorted(unknown_expect),
                     ),
+                )
+            for field_name in _CLI_OUTPUT_FIELDS:
+                if field_name in expect:
+                    _validate_string_list(
+                        expect[field_name],
+                        case_id,
+                        yaml_path,
+                        "commands[%d].expect.%s" % (index, field_name),
+                    )
+            if "should_exit" in expect and not isinstance(expect["should_exit"], bool):
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "commands[%d].expect.should_exit must be a boolean" % index,
                 )
             if "runtime" in expect:
                 _validate_expect(

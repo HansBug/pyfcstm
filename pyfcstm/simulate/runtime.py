@@ -1129,13 +1129,9 @@ class SimulationRuntime:
         :return: ``None``.
         :rtype: None
         """
-        calling_parent = func.parent
-        if calling_parent is not None:
-            calling_state_path = calling_parent.path
-        else:
-            calling_state_path = tuple(
-                segment for segment in func.state_path[:-1] if segment is not None
-            )
+        # Preserve the caller state before resolving ``ref`` chains.
+        # Model construction assigns a parent state for lifecycle actions.
+        calling_state_path = func.parent.path
 
         while func.ref is not None:
             new_func = func.ref

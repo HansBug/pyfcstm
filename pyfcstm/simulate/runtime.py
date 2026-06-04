@@ -704,14 +704,17 @@ class SimulationRuntime:
 
         return stack
 
-    def _parse_event(self, event: Union[str, Event]) -> Event:
+    def _parse_event(self, event: Any) -> Event:
         """
         Resolve an event reference into a concrete event object.
 
-        This method accepts either an event object (returned as-is) or a
-        dot-separated event path string. String paths are resolved using
-        intelligent resolution that supports both StateMachine and State
-        resolve_event methods for maximum flexibility.
+        This method accepts an event object (returned as-is), a dot-separated
+        event path string, or an event-like object exposing a ``path_name``
+        attribute. Event-like inputs are resolved by passing their ``path_name``
+        value through the same string path resolver used for direct string
+        inputs. String paths are resolved using intelligent resolution that
+        supports both StateMachine and State resolve_event methods for maximum
+        flexibility.
 
         **Path Resolution Strategy**:
 
@@ -731,11 +734,13 @@ class SimulationRuntime:
         - **Parent-relative**: ``.error`` or ``..system.error`` (State.resolve_event)
         - **Absolute**: ``/global.shutdown`` (State.resolve_event from root)
 
-        :param event: Event object or dot-separated event path string.
-        :type event: Union[str, Event]
+        :param event: Event object, dot-separated event path string, or
+            event-like object exposing ``path_name``.
+        :type event: Any
         :return: The resolved event instance.
         :rtype: Event
-        :raises TypeError: If ``event`` is neither a string nor an :class:`Event`.
+        :raises TypeError: If ``event`` is neither a string, an :class:`Event`,
+            nor an event-like object exposing a string ``path_name``.
         :raises SimulationRuntimeEventError: If the user-supplied event path
             cannot be resolved by any supported method.
 
@@ -784,7 +789,15 @@ class SimulationRuntime:
         """
         if isinstance(event, Event):
             return event
-        elif isinstance(event, str):
+        if not isinstance(event, str) and hasattr(event, 'path_name'):
+            path_name = getattr(event, 'path_name')
+            if not isinstance(path_name, str):
+                raise TypeError(
+                    'Event-like object path_name must be str, got '
+                    f'{type(path_name)!r} - {path_name!r}.'
+                )
+            event = path_name
+        if isinstance(event, str):
             from .utils import is_state_resolve_event_path
 
             # Check if runtime has ended (no current state)
@@ -829,8 +842,7 @@ class SimulationRuntime:
                             f"failed with both StateMachine.resolve_event and State.resolve_event. "
                             f"Last error: {e}"
                         ) from e
-        else:
-            raise TypeError(f'Unknown event type {type(event)!r} - {event!r}.')
+        raise TypeError(f'Unknown event type {type(event)!r} - {event!r}.')
 
     @staticmethod
     def _clone_stack(stack: List[_Frame]) -> List[_Frame]:
@@ -849,21 +861,48 @@ class SimulationRuntime:
         """
         return [_Frame(frame.state, frame.mode) for frame in stack]
 
-    def _normalize_events(self, events: Optional[List[Union[str, Event]]]) -> Tuple[List[Event], Dict[str, Event]]:
+    @staticmethod
+    def _is_single_event_input(events: Any) -> bool:
+        """Return whether ``events`` is one event value rather than a collection."""
+        return isinstance(events, (str, Event))
+
+    def _iter_event_inputs(self, events: Any) -> List[Any]:
+        """Normalize the public ``cycle(events=...)`` shape into event items."""
+        if events is None:
+            return []
+        if self._is_single_event_input(events):
+            return [events]
+        try:
+            return list(events)
+        except TypeError as e:
+            # TypeError: list(events) raises when the caller supplied a
+            # non-iterable object that is not one of the supported single-event
+            # shapes. Surface the same public unsupported-event diagnostic that
+            # item-level parsing uses.
+            raise TypeError(
+                f'Unknown event type {type(events)!r} - {events!r}.'
+            ) from e
+
+    def _normalize_events(self, events: Any) -> Tuple[List[Event], Dict[str, Event]]:
         """
         Normalize user-provided events into object and lookup forms.
 
-        The runtime accepts both event objects and string paths. This helper
-        resolves them into concrete :class:`Event` instances and also builds a
-        dictionary keyed by :attr:`Event.path_name` so transition
-        matching can perform constant-time membership checks.
+        The runtime accepts event objects, string paths, and iterables
+        containing event objects, string paths, or event-like objects exposing
+        ``path_name``. Bare strings and model event objects are treated as
+        single events, not as generic iterables. This helper resolves inputs
+        into concrete :class:`Event` instances and also builds a dictionary keyed
+        by :attr:`Event.path_name` so transition matching can perform
+        constant-time membership checks.
 
         :param events: Raw event inputs for the current execution attempt.
-        :type events: Optional[List[Union[str, Event]]]
+        :type events: Any
         :return: A pair containing the resolved event list and a name-indexed mapping.
         :rtype: Tuple[List[Event], Dict[str, Event]]
         """
-        event_objects = [self._parse_event(event) for event in list(events or [])]
+        event_objects = [
+            self._parse_event(event) for event in self._iter_event_inputs(events)
+        ]
         d_events = {event.path_name: event for event in event_objects}
         return event_objects, d_events
 
@@ -1852,7 +1891,7 @@ class SimulationRuntime:
 
         return True, True
 
-    def cycle(self, events: List[Union[str, Event]] = None):
+    def cycle(self, events: Any = None):
         """
         Execute a full runtime cycle until reaching a stable boundary.
 
@@ -1875,9 +1914,12 @@ class SimulationRuntime:
 
         **Event Handling**:
 
-        Events can be provided as either event objects or dot-separated path
-        strings. Multiple events can be active simultaneously, allowing complex
-        transition chains to execute in a single cycle.
+        Events can be provided as event objects, dot-separated path strings, or
+        iterables containing event objects, path strings, and event-like objects
+        exposing ``path_name``. A bare string is treated as one event path, not
+        as an iterable of characters. Multiple events can be active
+        simultaneously, allowing complex transition chains to execute in a
+        single cycle.
 
         **Flexible Event Path Formats**:
 
@@ -1912,9 +1954,11 @@ class SimulationRuntime:
         - For initial cycle: Pin runtime at root boundary in ``init_wait`` mode
         - All side effects from failed validation are discarded
 
-        :param events: Events available for the current cycle. Can be event
-            objects or dot-separated path strings.
-        :type events: List[Union[str, Event]], optional
+        :param events: Events available for the current cycle. Can be a single
+            event object, a dot-separated path string, or an iterable containing
+            event objects, path strings, and event-like objects exposing
+            ``path_name``.
+        :type events: Any, optional
         :return: ``None``.
         :rtype: None
 
@@ -1944,7 +1988,7 @@ class SimulationRuntime:
             ('System', 'Idle')
             >>> runtime.vars['counter']
             1
-            >>> runtime.cycle(['System.Idle.Start'])  # Transition to Active
+            >>> runtime.cycle('System.Idle.Start')  # Transition to Active
             >>> runtime.current_state.path
             ('System', 'Active')
 
@@ -2077,14 +2121,18 @@ class SimulationRuntime:
            :class:`SimulationRuntimeDfsError` is raised. This indicates an
            invalid state machine with unbounded execution chains.
         """
-        _, d_events = self._normalize_events(events)
         if self._ended:
             self.logger.warning('Runtime already ended, cycle ignored.')
             return
 
+        event_objects, d_events = self._normalize_events(events)
+
         # Log cycle start
-        event_names = [e.path_name if isinstance(e, Event) else e for e in (events or [])]
-        self.logger.info(f'Cycle {self.cycle_count + 1} starting with events: {event_names if event_names else "none"}')
+        event_names = [event.path_name for event in event_objects]
+        self.logger.info(
+            f'Cycle {self.cycle_count + 1} starting with events: '
+            f'{event_names if event_names else "none"}'
+        )
 
         snapshot_stack = self._clone_stack(self.stack)
         snapshot_vars = copy.deepcopy(self.vars)

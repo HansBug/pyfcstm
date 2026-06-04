@@ -1137,10 +1137,14 @@ class SimulationRuntime:
 
             # Check if this is an anonymous abstract (no name)
             if func.name is None:
+                if is_validation_mode:
+                    self.logger.debug(f'[VALIDATION] Skip anonymous abstract function {func_path}')
+                    return
+
                 # Generate a unique key for this anonymous abstract
                 anonymous_key = id(func)
 
-                # Warn only once per anonymous abstract
+                # Warn only once per anonymous abstract during committed execution.
                 if anonymous_key not in self._warned_anonymous_abstracts:
                     warnings.warn(
                         f'Abstract action at {func_path} has no name. '
@@ -1151,10 +1155,7 @@ class SimulationRuntime:
                     )
                     self._warned_anonymous_abstracts.add(anonymous_key)
 
-                if is_validation_mode:
-                    self.logger.debug(f'[VALIDATION] Skip anonymous abstract function {func_path}')
-                else:
-                    self.logger.info(f'Execute anonymous abstract function {func_path} (no handlers supported)')
+                self.logger.info(f'Execute anonymous abstract function {func_path} (no handlers supported)')
                 return
 
             # Named abstract - check for handlers
@@ -2089,17 +2090,42 @@ class SimulationRuntime:
         snapshot_vars = copy.deepcopy(self.vars)
         snapshot_initialized = self._initialized
         snapshot_ended = self._ended
+        snapshot_warned_anonymous = set(self._warned_anonymous_abstracts)
+        snapshot_handler_errors = list(self._abstract_handler_errors)
 
-        sim_stack = self._clone_stack(self.stack)
-        sim_vars = copy.deepcopy(self.vars)
-        sim_initialized = self._initialized
-        sim_ended = self._ended
+        validation_stack = self._clone_stack(snapshot_stack)
+        validation_vars = copy.deepcopy(snapshot_vars)
+        validation_initialized = snapshot_initialized
+        validation_ended = snapshot_ended
 
-        if not sim_initialized:
-            sim_ended = self._initialize_context(sim_stack, sim_vars, d_events)
-            sim_initialized = True
+        if not validation_initialized:
+            validation_ended = self._initialize_context(
+                validation_stack,
+                validation_vars,
+                d_events,
+                is_validation_mode=True,
+            )
+            validation_initialized = True
 
-        success, sim_ended = self._run_cycle_on_context(sim_stack, sim_vars, d_events, ended=sim_ended)
+        success, validation_ended = self._run_cycle_on_context(
+            validation_stack,
+            validation_vars,
+            d_events,
+            ended=validation_ended,
+            is_validation_mode=True,
+        )
+
+        if success:
+            sim_stack = self._clone_stack(snapshot_stack)
+            sim_vars = copy.deepcopy(snapshot_vars)
+            sim_initialized = snapshot_initialized
+            sim_ended = snapshot_ended
+
+            if not sim_initialized:
+                sim_ended = self._initialize_context(sim_stack, sim_vars, d_events)
+                sim_initialized = True
+
+            success, sim_ended = self._run_cycle_on_context(sim_stack, sim_vars, d_events, ended=sim_ended)
 
         if success:
             self.stack = [] if sim_ended else sim_stack
@@ -2139,12 +2165,13 @@ class SimulationRuntime:
         else:
             self.vars = snapshot_vars
             self._ended = snapshot_ended
+            self._warned_anonymous_abstracts = snapshot_warned_anonymous
+            self._abstract_handler_errors = snapshot_handler_errors
             if not snapshot_initialized and not snapshot_ended:
                 self.stack = self._create_root_rollback_stack()
-                self._initialized = True
             else:
                 self.stack = snapshot_stack
-                self._initialized = snapshot_initialized
+            self._initialized = snapshot_initialized
             self.logger.warning(
                 f'Cycle {self.cycle_count + 1} failed - Unable to reach a stoppable state, changes rolled back')
 

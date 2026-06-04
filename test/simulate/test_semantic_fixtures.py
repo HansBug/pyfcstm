@@ -16,7 +16,7 @@ from test.testings.simulate_semantics import (
 def test_all_semantic_fixtures_load():
     cases = iter_semantic_cases()
 
-    assert len(cases) >= 77
+    assert len(cases) >= 81
     assert {case.id for case in cases}
 
 
@@ -83,6 +83,10 @@ def _set_cli_expectation(data, expect):
     data["commands"] = [{"input": "help", "expect": expect}]
 
 
+def _set_generated_alignment(data):
+    data["runners"] = ["simulation", "generated_python_alignment"]
+
+
 @pytest.mark.unittest
 @pytest.mark.parametrize(
     ["mutate", "message"],
@@ -94,8 +98,72 @@ def _set_cli_expectation(data, expect):
             "exactly one of steps or commands is required",
         ),
         (
-            lambda data: data.update({"handlers": []}),
-            "handlers is reserved",
+            lambda data: data.update({"handlers": "Root.Init"}),
+            "handlers must be a list",
+        ),
+        (
+            lambda data: data.update({"handlers": [{"action": "Root.Init"}]}),
+            "handlers\\[0\\].behavior is required",
+        ),
+        (
+            lambda data: data.update(
+                {"handlers": [{"action": "Root.Init", "behavior": "unknown_behavior"}]}
+            ),
+            "handlers\\[0\\].behavior is invalid",
+        ),
+        (
+            lambda data: data.update(
+                {
+                    "handlers": [
+                        {
+                            "action": "Root.Init",
+                            "behavior": "record_call",
+                            "exception": {"type": "ValueError"},
+                        }
+                    ]
+                }
+            ),
+            "handlers\\[0\\].exception is only allowed for raise_error",
+        ),
+        (
+            lambda data: data.update(
+                {
+                    "handlers": [
+                        {
+                            "action": "Root.Init",
+                            "behavior": "raise_error",
+                            "exception": {"type": "KeyError"},
+                        }
+                    ]
+                }
+            ),
+            "handlers\\[0\\].exception.type is invalid",
+        ),
+        (
+            lambda data: (
+                _set_generated_alignment(data)
+                or data.update(
+                    {"handlers": [{"action": "Root.Init", "behavior": "record_call"}]}
+                )
+            ),
+            "handlers are only supported by simulation-only cases",
+        ),
+        (
+            lambda data: data.update({"runtime_options": {"unknown": "value"}}),
+            "runtime_options has unknown fields",
+        ),
+        (
+            lambda data: data.update(
+                {"runtime_options": {"abstract_error_mode": "unknown"}}
+            ),
+            "runtime_options.abstract_error_mode is invalid",
+        ),
+        (
+            lambda data: (
+                _set_generated_alignment(data)
+                or data.update({"runtime_options": {"abstract_error_mode": "log"}})
+            ),
+            "runtime_options are only supported by simulation-only cases",
         ),
         (
             lambda data: data.update({"expected_failure": {"reason": "known bug"}}),
@@ -146,10 +214,63 @@ def _set_cli_expectation(data, expect):
         ),
         (
             lambda data: (
-                data.update({"runners": ["simulation", "generated_python_alignment"]})
+                _set_generated_alignment(data)
                 or data["steps"][0]["expect"].update({"cycle_count": 1})
             ),
             "cycle_count is not allowed for generated alignment",
+        ),
+        (
+            lambda data: (
+                _set_generated_alignment(data)
+                or data["steps"][0]["expect"].update({"warnings": {"count": 0}})
+            ),
+            "fields are not allowed for generated alignment",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"warnings": {"count": -1}}),
+            "warnings.count must be a non-negative integer",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {"warnings": {"contains": {"message": "x"}}}
+            ),
+            "warnings.contains must be a list",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {"warnings": {"contains": [{"category": "UserWarning"}]}}
+            ),
+            "warnings.contains\\[0\\].message is required",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {"warnings": {"contains": [{"message": "x", "category": "Warning"}]}}
+            ),
+            "warnings.contains\\[0\\].category is invalid",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {"handler_calls": {"action": "Root.Init"}}
+            ),
+            "handler_calls must be a list",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {"handler_calls": [{"action": "Root.Init"}]}
+            ),
+            "handler_calls\\[0\\] missing fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {"abstract_handler_errors": [{"message": "boom", "match_kind": "glob"}]}
+            ),
+            "abstract_handler_errors\\[0\\].match_kind is invalid",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {"abstract_handler_errors": [{"match_kind": "regex"}]}
+            ),
+            "abstract_handler_errors\\[0\\].match_kind requires message",
         ),
         (
             lambda data: data["steps"][0]["expect"].update(

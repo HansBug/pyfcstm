@@ -1,0 +1,9 @@
+def int x = 0;
+
+state Root {
+    state A {
+        during abstract Touch;
+    }
+
+    [*] -> A;
+}

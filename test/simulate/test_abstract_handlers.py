@@ -572,7 +572,8 @@ class TestAbstractHandlers:
         runtime.register_abstract_handler('System.Active.Init', handler)
 
         # Execute
-        runtime.cycle()
+        with pytest.raises(TypeError):
+            runtime.cycle()
 
         # Verify vars were not modified
         assert runtime.vars['counter'] == 10
@@ -718,6 +719,25 @@ class TestAbstractHandlers:
 @pytest.mark.unittest
 class TestAbstractHandlerErrorModes:
     """Test error handling modes for abstract handlers."""
+
+    def test_invalid_abstract_error_mode_raises_value_error(self):
+        """Test that unsupported abstract handler error modes fail at construction."""
+        dsl_code = '''
+        state System {
+            state Idle;
+
+            [*] -> Idle;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+
+        for mode in ('bogus', '', 'Raise', None, 0):
+            with pytest.raises(
+                    ValueError,
+                    match="abstract_error_mode must be 'raise' or 'log'",
+            ):
+                SimulationRuntime(sm, abstract_error_mode=mode)
 
     def test_raise_mode_stops_on_error(self):
         """Test that 'raise' mode stops execution on handler error."""

@@ -78,6 +78,8 @@ _ALLOWED_EXPECT_FIELDS = {
     "warnings",
     "handler_calls",
     "abstract_handler_errors",
+    "error_state",
+    "error_info",
 }
 _ALLOWED_INITIAL_EXPECT_FIELDS = {
     "state",
@@ -112,15 +114,19 @@ _ALLOWED_LOG_FIELDS = {"contains", "not_contains"}
 _ALLOWED_LOG_ITEM_FIELDS = {"level", "message", "match_kind"}
 _ALLOWED_RUNTIME_OPTION_FIELDS = {"abstract_error_mode"}
 _ALLOWED_ABSTRACT_ERROR_MODES = {"raise", "log"}
-_ALLOWED_HANDLER_FIELDS = {"action", "behavior", "exception"}
-_ALLOWED_HANDLER_BEHAVIORS = {"record_call", "raise_error"}
+_ALLOWED_HANDLER_FIELDS = {"action", "behavior", "exception", "write"}
+_ALLOWED_HANDLER_BEHAVIORS = {"record_call", "raise_error", "record_var_write_attempt"}
 _ALLOWED_HANDLER_EXCEPTION_FIELDS = {"type", "message"}
 _ALLOWED_HANDLER_EXCEPTION_TYPES = {"ValueError"}
+_ALLOWED_HANDLER_WRITE_FIELDS = {"name", "value"}
 _ALLOWED_WARNING_FIELDS = {"contains", "not_contains", "count"}
 _ALLOWED_WARNING_ITEM_FIELDS = {"category", "message", "match_kind"}
 _ALLOWED_WARNING_CATEGORIES = {"UserWarning"}
-_ALLOWED_HANDLER_CALL_FIELDS = {"action", "state", "stage", "vars"}
+_REQUIRED_HANDLER_CALL_FIELDS = {"action", "state", "stage", "vars"}
+_ALLOWED_HANDLER_CALL_FIELDS = _REQUIRED_HANDLER_CALL_FIELDS | {"write_attempt"}
+_ALLOWED_WRITE_ATTEMPT_FIELDS = {"name", "value", "succeeded", "error_type", "vars"}
 _ALLOWED_ABSTRACT_HANDLER_ERROR_FIELDS = {"action", "type", "message", "match_kind"}
+_ALLOWED_ERROR_INFO_FIELDS = {"action", "type", "message", "match_kind"}
 _CLI_OUTPUT_FIELDS = ("output_contains", "output_not_contains", "error_contains")
 _EXCEPTION_TYPES = {
     "SimulationRuntimeDfsError": SimulationRuntimeDfsError,
@@ -315,6 +321,61 @@ def _assert_abstract_handler_errors(
             )
 
 
+def _assert_error_info(
+    runtime: Any, expect: Mapping[str, Any], case: SemanticCase, field_path: str
+) -> None:
+    if "error_state" in expect:
+        actual_error_state = bool(getattr(runtime, "is_error_state"))
+        assert actual_error_state is bool(expect["error_state"]), (
+            "%s %s error_state mismatch: %r != %r"
+            % (case.id, field_path, actual_error_state, expect["error_state"])
+        )
+    if "error_info" not in expect:
+        return
+    actual_info = getattr(runtime, "error_info")
+    expected_info = expect["error_info"]
+    if expected_info is None:
+        assert actual_info is None, "%s %s error_info mismatch: %r != None" % (
+            case.id,
+            field_path,
+            actual_info,
+        )
+        return
+    assert actual_info is not None, "%s %s error_info missing" % (case.id, field_path)
+    actual_action, actual_error = actual_info
+    if "action" in expected_info:
+        assert actual_action == expected_info["action"], (
+            "%s %s error_info.action mismatch: %r != %r"
+            % (case.id, field_path, actual_action, expected_info["action"])
+        )
+    if "type" in expected_info:
+        actual_type = type(actual_error).__name__
+        assert actual_type == expected_info["type"], (
+            "%s %s error_info.type mismatch: %r != %r"
+            % (case.id, field_path, actual_type, expected_info["type"])
+        )
+    if "message" in expected_info:
+        actual_message = str(actual_error)
+        match_text = expected_info["message"]
+        match_kind = expected_info.get("match_kind", "substring")
+        if match_kind == "substring":
+            matched = match_text in actual_message
+        elif match_kind == "regex":
+            matched = re.search(match_text, actual_message) is not None
+        else:
+            raise _case_error(
+                case.id,
+                case.yaml_path,
+                "%s.error_info.match_kind is invalid" % field_path,
+            )
+        assert matched, "%s %s error_info.message mismatch: %r did not match %r" % (
+            case.id,
+            field_path,
+            actual_message,
+            match_text,
+        )
+
+
 def _assert_runtime_expectation(
     runtime: Any,
     expect: Mapping[str, Any],
@@ -409,6 +470,7 @@ def _assert_runtime_expectation(
 
     _assert_handler_calls(expect, handler_calls, case, field_path)
     _assert_abstract_handler_errors(runtime, expect, case, field_path)
+    _assert_error_info(runtime, expect, case, field_path)
 
 
 def _assert_logs(
@@ -699,6 +761,27 @@ def _handler_call_record(ctx: Any) -> Dict[str, Any]:
     }
 
 
+def _handler_var_write_record(ctx: Any, name: str, value: Any) -> Dict[str, Any]:
+    write_record = {
+        "name": name,
+        "value": value,
+        "succeeded": False,
+        "vars": dict(ctx.vars),
+    }
+    try:
+        ctx.vars[name] = value
+    except TypeError as err:
+        # MappingProxyType and other immutable mappings reject item assignment
+        # with TypeError; other exceptions should surface as test bugs.
+        write_record["error_type"] = type(err).__name__
+    else:
+        write_record["succeeded"] = True
+        write_record["vars"] = dict(ctx.vars)
+    record = _handler_call_record(ctx)
+    record["write_attempt"] = write_record
+    return record
+
+
 def _register_fixture_handlers(
     runtime: SimulationRuntime, case: SemanticCase
 ) -> List[Mapping[str, Any]]:
@@ -721,6 +804,19 @@ def _register_fixture_handlers(
                 raise ValueError(error_message)
 
             runtime.register_abstract_handler(action_path, raising_handler)
+        elif behavior == "record_var_write_attempt":
+            write_data = handler_data["write"]
+            name = write_data["name"]
+            value = write_data["value"]
+
+            def write_attempt_handler(
+                    ctx, handler_calls=calls, var_name=name, var_value=value
+            ):
+                handler_calls.append(
+                    _handler_var_write_record(ctx, var_name, var_value)
+                )
+
+            runtime.register_abstract_handler(action_path, write_attempt_handler)
         else:
             raise _case_error(
                 case.id,
@@ -1290,7 +1386,7 @@ def _validate_handler_calls(
                 "%s.handler_calls[%d] has unknown fields: %r"
                 % (field_path, index, sorted(unknown)),
             )
-        missing = _ALLOWED_HANDLER_CALL_FIELDS - set(item.keys())
+        missing = _REQUIRED_HANDLER_CALL_FIELDS - set(item.keys())
         if missing:
             raise _case_error(
                 case_id,
@@ -1312,6 +1408,42 @@ def _validate_handler_calls(
             yaml_path,
             "%s.handler_calls[%d].vars" % (field_path, index),
         )
+        if "write_attempt" in item:
+            _validate_write_attempt(
+                item["write_attempt"],
+                case_id,
+                yaml_path,
+                "%s.handler_calls[%d].write_attempt" % (field_path, index),
+            )
+
+
+def _validate_write_attempt(
+    value: Any, case_id: str, yaml_path: str, field_path: str
+) -> None:
+    if not isinstance(value, dict):
+        raise _case_error(case_id, yaml_path, "%s must be a mapping" % field_path)
+    unknown = set(value.keys()) - _ALLOWED_WRITE_ATTEMPT_FIELDS
+    if unknown:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s has unknown fields: %r" % (field_path, sorted(unknown)),
+        )
+    for field_name in ("name", "error_type"):
+        if field_name in value and not isinstance(value[field_name], str):
+            raise _case_error(
+                case_id, yaml_path, "%s.%s must be a string" % (field_path, field_name)
+            )
+    if "name" not in value:
+        raise _case_error(case_id, yaml_path, "%s.name is required" % field_path)
+    if "value" not in value:
+        raise _case_error(case_id, yaml_path, "%s.value is required" % field_path)
+    if "succeeded" not in value or not isinstance(value["succeeded"], bool):
+        raise _case_error(
+            case_id, yaml_path, "%s.succeeded must be a boolean" % field_path
+        )
+    if "vars" in value:
+        _validate_vars_mapping(value["vars"], case_id, yaml_path, field_path + ".vars")
 
 
 def _validate_abstract_handler_errors(
@@ -1364,6 +1496,46 @@ def _validate_abstract_handler_errors(
                 "%s.abstract_handler_errors[%d].match_kind requires message"
                 % (field_path, index),
             )
+
+
+def _validate_error_info(
+    expect: Mapping[str, Any], case_id: str, yaml_path: str, field_path: str
+) -> None:
+    if "error_state" in expect and not isinstance(expect["error_state"], bool):
+        raise _case_error(
+            case_id, yaml_path, "%s.error_state must be a boolean" % field_path
+        )
+    if "error_info" not in expect:
+        return
+    if expect["error_info"] is None:
+        return
+    item = expect["error_info"]
+    if not isinstance(item, dict):
+        raise _case_error(
+            case_id, yaml_path, "%s.error_info must be a mapping" % field_path
+        )
+    unknown = set(item.keys()) - _ALLOWED_ERROR_INFO_FIELDS
+    if unknown:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s.error_info has unknown fields: %r" % (field_path, sorted(unknown)),
+        )
+    for field_name in ("action", "type", "message"):
+        if field_name in item and not isinstance(item[field_name], str):
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.error_info.%s must be a string" % (field_path, field_name),
+            )
+    if item.get("match_kind", "substring") not in {"substring", "regex"}:
+        raise _case_error(
+            case_id, yaml_path, "%s.error_info.match_kind is invalid" % field_path
+        )
+    if "match_kind" in item and "message" not in item:
+        raise _case_error(
+            case_id, yaml_path, "%s.error_info.match_kind requires message" % field_path
+        )
 
 
 def _validate_path_segments(
@@ -1424,6 +1596,8 @@ def _validate_expect(
             "abstract_handler_errors",
             "handler_calls",
             "warnings",
+            "error_state",
+            "error_info",
         }
         overlap = generated_only_fields & set(expect.keys())
         if overlap:
@@ -1454,6 +1628,7 @@ def _validate_expect(
     _validate_warnings(expect, case_id, yaml_path, field_path)
     _validate_handler_calls(expect, case_id, yaml_path, field_path)
     _validate_abstract_handler_errors(expect, case_id, yaml_path, field_path)
+    _validate_error_info(expect, case_id, yaml_path, field_path)
 
 
 def _validate_source(source: Any, case_id: str, yaml_path: str) -> None:
@@ -1590,12 +1765,47 @@ def _validate_handlers(
                 yaml_path,
                 "handlers[%d].behavior is invalid: %r" % (index, item["behavior"]),
             )
-        if item["behavior"] == "record_call" and "exception" in item:
+        if item["behavior"] != "raise_error" and "exception" in item:
             raise _case_error(
                 case_id,
                 yaml_path,
                 "handlers[%d].exception is only allowed for raise_error" % index,
             )
+        if item["behavior"] != "record_var_write_attempt" and "write" in item:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "handlers[%d].write is only allowed for record_var_write_attempt"
+                % index,
+            )
+        if item["behavior"] == "record_var_write_attempt":
+            write_data = item.get("write")
+            if not isinstance(write_data, dict):
+                raise _case_error(
+                    case_id, yaml_path, "handlers[%d].write must be a mapping" % index
+                )
+            unknown_write = set(write_data.keys()) - _ALLOWED_HANDLER_WRITE_FIELDS
+            if unknown_write:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "handlers[%d].write has unknown fields: %r"
+                    % (index, sorted(unknown_write)),
+                )
+            if "name" not in write_data:
+                raise _case_error(
+                    case_id, yaml_path, "handlers[%d].write.name is required" % index
+                )
+            if not isinstance(write_data["name"], str):
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "handlers[%d].write.name must be a string" % index,
+                )
+            if "value" not in write_data:
+                raise _case_error(
+                    case_id, yaml_path, "handlers[%d].write.value is required" % index
+                )
         exception_data = item.get("exception")
         if item["behavior"] == "raise_error":
             if exception_data is None:

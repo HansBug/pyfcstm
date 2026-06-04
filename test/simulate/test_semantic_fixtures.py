@@ -16,7 +16,7 @@ from test.testings.simulate_semantics import (
 def test_all_semantic_fixtures_load():
     cases = iter_semantic_cases()
 
-    assert len(cases) >= 81
+    assert len(cases) >= 84
     assert {case.id for case in cases}
 
 
@@ -140,6 +140,47 @@ def _set_generated_alignment(data):
             "handlers\\[0\\].exception.type is invalid",
         ),
         (
+            lambda data: data.update(
+                {
+                    "handlers": [
+                        {
+                            "action": "Root.Init",
+                            "behavior": "record_var_write_attempt",
+                        }
+                    ]
+                }
+            ),
+            "handlers\\[0\\].write must be a mapping",
+        ),
+        (
+            lambda data: data.update(
+                {
+                    "handlers": [
+                        {
+                            "action": "Root.Init",
+                            "behavior": "record_var_write_attempt",
+                            "write": {"name": "x", "value": 1, "extra": True},
+                        }
+                    ]
+                }
+            ),
+            "handlers\\[0\\].write has unknown fields",
+        ),
+        (
+            lambda data: data.update(
+                {
+                    "handlers": [
+                        {
+                            "action": "Root.Init",
+                            "behavior": "record_var_write_attempt",
+                            "write": {"value": 1},
+                        }
+                    ]
+                }
+            ),
+            "handlers\\[0\\].write.name is required",
+        ),
+        (
             lambda data: (
                 _set_generated_alignment(data)
                 or data.update(
@@ -259,6 +300,43 @@ def _set_generated_alignment(data):
                 {"handler_calls": [{"action": "Root.Init"}]}
             ),
             "handler_calls\\[0\\] missing fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {
+                    "handler_calls": [
+                        {
+                            "action": "Root.Init",
+                            "state": "Root",
+                            "stage": "enter",
+                            "vars": {},
+                            "write_attempt": {
+                                "name": "x",
+                                "value": 1,
+                                "succeeded": "no",
+                            },
+                        }
+                    ]
+                }
+            ),
+            "write_attempt.succeeded must be a boolean",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"error_state": "true"}),
+            "error_state must be a boolean",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {"error_info": {"message": "boom", "match_kind": "glob"}}
+            ),
+            "error_info.match_kind is invalid",
+        ),
+        (
+            lambda data: (
+                _set_generated_alignment(data)
+                or data["steps"][0]["expect"].update({"error_state": False})
+            ),
+            "fields are not allowed for generated alignment",
         ),
         (
             lambda data: data["steps"][0]["expect"].update(

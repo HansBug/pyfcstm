@@ -87,6 +87,11 @@ def _set_generated_alignment(data):
     data["runners"] = ["simulation", "generated_python_alignment"]
 
 
+def _set_model_build_expectation(data, raises):
+    data.pop("steps", None)
+    data["model_build"] = {"expect": {"raises": raises}}
+
+
 @pytest.mark.unittest
 @pytest.mark.parametrize(
     ["mutate", "message"],
@@ -95,7 +100,7 @@ def _set_generated_alignment(data):
         (lambda data: data["source"].pop("fcstm"), "source.fcstm is required"),
         (
             lambda data: data.update({"commands": []}),
-            "exactly one of steps or commands is required",
+            "exactly one of model_build, steps, or commands is required",
         ),
         (
             lambda data: data.update({"handlers": "Root.Init"}),
@@ -211,6 +216,37 @@ def _set_generated_alignment(data):
             "expected_failure is reserved",
         ),
         (lambda data: data.update({"runners": ["unknown"]}), "unknown runners"),
+        (
+            lambda data: _set_model_build_expectation(data, {"type": "UnknownError"}),
+            "model_build.expect.raises.type is unknown",
+        ),
+        (
+            lambda data: (
+                _set_model_build_expectation(data, {"type": "ModelValidationError"})
+                or data.update(
+                    {"runners": ["simulation", "generated_python_alignment"]}
+                )
+            ),
+            "model_build is only supported by simulation-only cases",
+        ),
+        (
+            lambda data: (
+                _set_model_build_expectation(data, {"type": "ModelValidationError"})
+                or data.update({"runners": ["cli_command"]})
+            ),
+            "model_build is only supported by simulation-only cases",
+        ),
+        (
+            lambda data: (
+                _set_model_build_expectation(data, {"type": "ModelValidationError"})
+                or data.update({"steps": []})
+            ),
+            "exactly one of model_build, steps, or commands is required",
+        ),
+        (
+            lambda data: data.update({"model_build": {"expect": {"return": None}}}),
+            "model_build.expect has unknown fields",
+        ),
         (
             lambda data: data["steps"][0]["expect"].update({"unknown_expect": True}),
             "unknown fields",

@@ -23,6 +23,7 @@ from pyfcstm.simulate import (
     SimulationRuntimeExpressionError,
 )
 from pyfcstm.template import extract_template
+from pyfcstm.utils.validate import ModelValidationError
 
 
 FIXTURE_ROOT = os.path.abspath(
@@ -39,6 +40,7 @@ _ALLOWED_TOP_LEVEL_FIELDS = {
     "runners",
     "initial",
     "runtime_options",
+    "model_build",
     "steps",
     "commands",
     "handlers",
@@ -108,6 +110,8 @@ _ALLOWED_CLI_RUNTIME_FIELDS = {
     "cycle_count",
 }
 _ALLOWED_CYCLE_FIELDS = {"events"}
+_ALLOWED_MODEL_BUILD_FIELDS = {"expect"}
+_ALLOWED_MODEL_BUILD_EXPECT_FIELDS = {"raises"}
 _ALLOWED_STACK_FIELDS = {"path", "mode"}
 _ALLOWED_RAISES_FIELDS = {
     "type",
@@ -136,6 +140,7 @@ _ALLOWED_ABSTRACT_HANDLER_ERROR_FIELDS = {"action", "type", "message", "match_ki
 _ALLOWED_ERROR_INFO_FIELDS = {"action", "type", "message", "match_kind"}
 _CLI_OUTPUT_FIELDS = ("output_contains", "output_not_contains", "error_contains")
 _EXCEPTION_TYPES = {
+    "ModelValidationError": ModelValidationError,
     "SimulationRuntimeDfsError": SimulationRuntimeDfsError,
     "SimulationRuntimeEventError": SimulationRuntimeEventError,
     "SimulationRuntimeExpressionError": SimulationRuntimeExpressionError,
@@ -828,6 +833,23 @@ def build_state_machine_from_case(case: SemanticCase):
     return _parse_dsl(case.dsl_code)
 
 
+def run_model_build_case(case: SemanticCase) -> None:
+    """Run a semantic fixture that expects model construction diagnostics."""
+    model_build = case.data["model_build"]
+    expect = model_build["expect"]
+    try:
+        build_state_machine_from_case(case)
+    except ModelValidationError as err:
+        # ModelValidationError: model-build fixtures intentionally assert
+        # documented construction diagnostics through the same exception
+        # matcher as runtime steps.
+        _assert_exception(err, expect, case, "model_build.expect.raises")
+    else:
+        raise AssertionError(
+            "%s model_build expected exception %r" % (case.id, expect["raises"])
+        )
+
+
 def _initial_kwargs(case: SemanticCase) -> Dict[str, Any]:
     initial = case.data.get("initial") or {}
     kwargs = {}
@@ -902,7 +924,7 @@ def _register_fixture_handlers(
             value = write_data["value"]
 
             def write_attempt_handler(
-                    ctx, handler_calls=calls, var_name=name, var_value=value
+                ctx, handler_calls=calls, var_name=name, var_value=value
             ):
                 handler_calls.append(
                     _handler_var_write_record(ctx, var_name, var_value)
@@ -1117,6 +1139,9 @@ def _build_simulation_runtime(case: SemanticCase) -> SimulationRuntime:
 
 def run_simulation_case(case: SemanticCase, caplog: Any = None) -> None:
     """Run a semantic fixture against :class:`SimulationRuntime`."""
+    if "model_build" in case.data:
+        run_model_build_case(case)
+        return
     runtime = _build_simulation_runtime(case)
     handler_calls = _register_fixture_handlers(runtime, case)
     for index, step in enumerate(case.data.get("steps") or []):
@@ -1781,6 +1806,45 @@ def _validate_expect(
     _validate_error_info(expect, case_id, yaml_path, field_path)
 
 
+def _validate_model_build(
+    model_build: Any, case_id: str, yaml_path: str, runners: Sequence[str]
+) -> None:
+    if model_build is None:
+        return
+    if tuple(runners) != ("simulation",):
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "model_build is only supported by simulation-only cases",
+        )
+    if not isinstance(model_build, dict):
+        raise _case_error(case_id, yaml_path, "model_build must be a mapping")
+    unknown = set(model_build.keys()) - _ALLOWED_MODEL_BUILD_FIELDS
+    if unknown:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "model_build has unknown fields: %r" % sorted(unknown),
+        )
+    expect = model_build.get("expect")
+    if not isinstance(expect, dict):
+        raise _case_error(case_id, yaml_path, "model_build.expect must be a mapping")
+    _validate_expect(
+        expect,
+        case_id,
+        yaml_path,
+        "model_build.expect",
+        runners,
+        allowed_fields=_ALLOWED_MODEL_BUILD_EXPECT_FIELDS,
+    )
+    if "raises" not in expect:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "model_build.expect.raises is required",
+        )
+
+
 def _validate_source(source: Any, case_id: str, yaml_path: str) -> None:
     if not isinstance(source, dict):
         raise _case_error(case_id, yaml_path, "source must be a mapping")
@@ -2099,15 +2163,19 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
         )
     _validate_runtime_options(data.get("runtime_options"), case_id, yaml_path, runners)
     _validate_handlers(data.get("handlers"), case_id, yaml_path, runners)
+    _validate_model_build(data.get("model_build"), case_id, yaml_path, runners)
+    has_model_build = "model_build" in data
     has_steps = "steps" in data
     has_commands = "commands" in data
-    if has_steps == has_commands:
+    if sum(1 for item in (has_model_build, has_steps, has_commands) if item) != 1:
         raise _case_error(
-            case_id, yaml_path, "exactly one of steps or commands is required"
+            case_id,
+            yaml_path,
+            "exactly one of model_build, steps, or commands is required",
         )
     if "cli_command" in runners and not has_commands:
         raise _case_error(case_id, yaml_path, "cli_command cases require commands")
-    if "cli_command" not in runners and not has_steps:
+    if "cli_command" not in runners and not has_steps and not has_model_build:
         raise _case_error(case_id, yaml_path, "runtime cases require steps")
     if "expected_failure" in data:
         raise _case_error(
@@ -2166,9 +2234,7 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
                     raise _case_error(
                         case_id, yaml_path, "%s.expect is required" % field_path
                     )
-                _validate_cycle_data(
-                    step.get("cycle"), case_id, yaml_path, field_path
-                )
+                _validate_cycle_data(step.get("cycle"), case_id, yaml_path, field_path)
                 _validate_expect(
                     step["expect"], case_id, yaml_path, field_path + ".expect", runners
                 )

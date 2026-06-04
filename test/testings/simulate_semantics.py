@@ -159,6 +159,13 @@ class SemanticCase:
         return tuple(self.data["runners"])
 
 
+@dataclass(frozen=True)
+class _FixtureEventLike:
+    """Event-like cycle input used by semantic fixture runners."""
+
+    path_name: str
+
+
 def _case_error(case_id: str, yaml_path: str, message: str) -> SemanticCaseError:
     return SemanticCaseError("%s (%s): %s" % (case_id, yaml_path, message))
 
@@ -640,16 +647,39 @@ def _capture_warnings_if_needed(expect: Mapping[str, Any]):
         yield None
 
 
-def _step_events(
-    cycle_data: Any, case: SemanticCase, field_path: str
-) -> Optional[List[Any]]:
+def _event_input_from_fixture_item(
+    item: Any, case: SemanticCase, field_path: str
+) -> Any:
+    if isinstance(item, str):
+        return item
+    if isinstance(item, dict):
+        if set(item.keys()) != {"event_like"}:
+            raise _case_error(
+                case.id,
+                case.yaml_path,
+                "%s event descriptor must contain only event_like" % field_path,
+            )
+        path_name = item["event_like"]
+        if not isinstance(path_name, str):
+            raise _case_error(
+                case.id,
+                case.yaml_path,
+                "%s.event_like must be a string" % field_path,
+            )
+        return _FixtureEventLike(path_name=path_name)
+    return item
+
+
+def _step_events(cycle_data: Any, case: SemanticCase, field_path: str) -> Any:
     if cycle_data in (None, {}):
         return None
+    if isinstance(cycle_data, str):
+        return cycle_data
     if not isinstance(cycle_data, dict):
         raise _case_error(
             case.id,
             case.yaml_path,
-            "%s.cycle must be a mapping, null, or omitted" % field_path,
+            "%s.cycle must be a mapping, string, null, or omitted" % field_path,
         )
     events = cycle_data.get("events")
     if events is None:
@@ -660,7 +690,14 @@ def _step_events(
             case.yaml_path,
             "%s.cycle.events must be a list or null" % field_path,
         )
-    return list(events)
+    return [
+        _event_input_from_fixture_item(
+            item,
+            case,
+            "%s.cycle.events[%d]" % (field_path, index),
+        )
+        for index, item in enumerate(events)
+    ]
 
 
 def _run_step(
@@ -1719,6 +1756,71 @@ def _validate_runtime_options(
         )
 
 
+def _validate_cycle_event_item(
+    item: Any, case_id: str, yaml_path: str, field_path: str
+) -> None:
+    if isinstance(item, str):
+        return
+    if not isinstance(item, dict):
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s must be a string or event-like descriptor" % field_path,
+        )
+    if set(item.keys()) != {"event_like"}:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s event descriptor must contain only event_like" % field_path,
+        )
+    if not isinstance(item["event_like"], str):
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s.event_like must be a string" % field_path,
+        )
+
+
+def _validate_cycle_data(
+    cycle_data: Any, case_id: str, yaml_path: str, field_path: str
+) -> None:
+    if cycle_data in (None, {}):
+        return
+    if isinstance(cycle_data, str):
+        return
+    if not isinstance(cycle_data, dict):
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s.cycle must be a mapping, string, or null" % field_path,
+        )
+    unknown_cycle = set(cycle_data.keys()) - _ALLOWED_CYCLE_FIELDS
+    if unknown_cycle:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s.cycle has unknown fields: %r" % (field_path, sorted(unknown_cycle)),
+        )
+    if "events" not in cycle_data:
+        return
+    events = cycle_data["events"]
+    if events is None:
+        return
+    if not isinstance(events, list):
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s.cycle.events must be a list or null" % field_path,
+        )
+    for event_index, item in enumerate(events):
+        _validate_cycle_event_item(
+            item,
+            case_id,
+            yaml_path,
+            "%s.cycle.events[%d]" % (field_path, event_index),
+        )
+
+
 def _validate_handlers(
     handlers: Any, case_id: str, yaml_path: str, runners: Sequence[str]
 ) -> None:
@@ -1951,30 +2053,9 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
                     raise _case_error(
                         case_id, yaml_path, "%s.expect is required" % field_path
                     )
-                cycle_data = step.get("cycle")
-                if cycle_data not in (None, {}) and not isinstance(cycle_data, dict):
-                    raise _case_error(
-                        case_id,
-                        yaml_path,
-                        "%s.cycle must be a mapping or null" % field_path,
-                    )
-                if isinstance(cycle_data, dict):
-                    unknown_cycle = set(cycle_data.keys()) - _ALLOWED_CYCLE_FIELDS
-                    if unknown_cycle:
-                        raise _case_error(
-                            case_id,
-                            yaml_path,
-                            "%s.cycle has unknown fields: %r"
-                            % (field_path, sorted(unknown_cycle)),
-                        )
-                    if "events" in cycle_data:
-                        events = cycle_data["events"]
-                        if events is not None and not isinstance(events, list):
-                            raise _case_error(
-                                case_id,
-                                yaml_path,
-                                "%s.cycle.events must be a list or null" % field_path,
-                            )
+                _validate_cycle_data(
+                    step.get("cycle"), case_id, yaml_path, field_path
+                )
                 _validate_expect(
                     step["expect"], case_id, yaml_path, field_path + ".expect", runners
                 )

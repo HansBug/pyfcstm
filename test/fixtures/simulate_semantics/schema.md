@@ -155,9 +155,16 @@ steps:
       return: null
 ```
 
-`cycle` may be `{}`, `null`, or a mapping with only the `events` field.
-`events` may be `null` or a list. Bare string event input is deliberately not
-supported by this schema version, because string-vs-list cycle input is tracked separately.
+`cycle` may be `{}`, `null`, a bare event-path string, or a mapping with
+only the `events` field. A bare string such as `cycle: Root.A.Go` is passed
+unchanged as a single `runtime.cycle("Root.A.Go")` input so fixtures can cover
+string-vs-list API boundaries.
+
+`events` may be `null` or a list. Each list item may be either an event-path
+string or an event-like descriptor with exactly one `event_like` key, for
+example `{event_like: Root.A.Go}`. The runner converts that descriptor into a
+local object exposing `path_name = "Root.A.Go"` and passes the object to the
+runtime under test.
 
 Event strings are passed through unchanged. The corpus covers existing event
 path forms such as full paths (`Root.A.Go`), relative paths (`go`),

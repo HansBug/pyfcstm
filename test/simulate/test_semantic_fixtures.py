@@ -377,6 +377,40 @@ def _set_generated_alignment(data):
             "cycle has unknown fields",
         ),
         (
+            lambda data: data["steps"][0].update({"cycle": 12}),
+            "cycle must be a mapping, string, or null",
+        ),
+        (
+            lambda data: data["steps"][0].update({"cycle": []}),
+            "cycle must be a mapping, string, or null",
+        ),
+        (
+            lambda data: data["steps"][0]["cycle"].update({"events": "Root.A.Go"}),
+            "cycle.events must be a list or null",
+        ),
+        (
+            lambda data: data["steps"][0]["cycle"].update({"events": [7]}),
+            r"cycle.events\[0\] must be a string or event-like descriptor",
+        ),
+        (
+            lambda data: data["steps"][0]["cycle"].update(
+                {"events": [{"event_like": "Root.A.Go", "extra": True}]}
+            ),
+            r"cycle.events\[0\] event descriptor must contain only event_like",
+        ),
+        (
+            lambda data: data["steps"][0]["cycle"].update(
+                {"events": [{"unknown": "Root.A.Go"}]}
+            ),
+            r"cycle.events\[0\] event descriptor must contain only event_like",
+        ),
+        (
+            lambda data: data["steps"][0]["cycle"].update(
+                {"events": [{"event_like": 12}]}
+            ),
+            r"cycle.events\[0\].event_like must be a string",
+        ),
+        (
             lambda data: data["steps"][0]["expect"].update({"logs": {"containz": []}}),
             "logs has unknown fields",
         ),

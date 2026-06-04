@@ -107,7 +107,14 @@ _ALLOWED_CLI_RUNTIME_FIELDS = {
 }
 _ALLOWED_CYCLE_FIELDS = {"events"}
 _ALLOWED_STACK_FIELDS = {"path", "mode"}
-_ALLOWED_RAISES_FIELDS = {"type", "match", "match_kind"}
+_ALLOWED_RAISES_FIELDS = {
+    "type",
+    "match",
+    "match_kind",
+    "cause_type",
+    "cause_match",
+    "cause_match_kind",
+}
 _ALLOWED_LOG_FIELDS = {"contains", "not_contains"}
 _ALLOWED_LOG_ITEM_FIELDS = {"level", "message", "match_kind"}
 _ALLOWED_RUNTIME_OPTION_FIELDS = {"abstract_error_mode"}
@@ -526,6 +533,33 @@ def _assert_warnings(
             )
 
 
+def _assert_text_matches(
+    text: str,
+    match_text: str,
+    match_kind: str,
+    case: SemanticCase,
+    field_path: str,
+    target: str,
+) -> None:
+    if match_kind == "substring":
+        matched = match_text in text
+    elif match_kind == "regex":
+        matched = re.search(match_text, text) is not None
+    else:
+        raise _case_error(
+            case.id,
+            case.yaml_path,
+            "%s.%s has invalid match_kind %r" % (field_path, target, match_kind),
+        )
+    assert matched, "%s %s %s %r did not match %r" % (
+        case.id,
+        field_path,
+        target,
+        text,
+        match_text,
+    )
+
+
 def _assert_exception(
     exc: BaseException, expect: Mapping[str, Any], case: SemanticCase, field_path: str
 ) -> None:
@@ -542,24 +576,45 @@ def _assert_exception(
         )
     )
     if "match" in raises:
-        text = str(exc)
-        match_text = str(raises["match"])
-        match_kind = raises.get("match_kind", "substring")
-        if match_kind == "substring":
-            matched = match_text in text
-        elif match_kind == "regex":
-            matched = re.search(match_text, text) is not None
-        else:
-            raise _case_error(
-                case.id,
-                case.yaml_path,
-                "%s.raises has invalid match_kind %r" % (field_path, match_kind),
-            )
-        assert matched, "%s %s exception message %r did not match %r" % (
+        _assert_text_matches(
+            str(exc),
+            str(raises["match"]),
+            raises.get("match_kind", "substring"),
+            case,
+            field_path,
+            "exception message",
+        )
+    if "cause_type" in raises:
+        cause = exc.__cause__
+        assert cause is not None, "%s %s expected exception cause %r" % (
             case.id,
             field_path,
-            text,
-            match_text,
+            raises["cause_type"],
+        )
+        assert type(cause).__name__ == raises["cause_type"], (
+            "%s %s exception cause type mismatch: %s != %s: %s"
+            % (
+                case.id,
+                field_path,
+                type(cause).__name__,
+                raises["cause_type"],
+                cause,
+            )
+        )
+    if "cause_match" in raises:
+        cause = exc.__cause__
+        assert cause is not None, "%s %s expected exception cause message %r" % (
+            case.id,
+            field_path,
+            raises["cause_match"],
+        )
+        _assert_text_matches(
+            str(cause),
+            str(raises["cause_match"]),
+            raises.get("cause_match_kind", "substring"),
+            case,
+            field_path,
+            "exception cause message",
         )
 
 
@@ -892,6 +947,46 @@ class _GeneratedPythonAlignmentRuntime:
                     gen_exc,
                 )
             )
+            assert str(sim_exc) == str(gen_exc), (
+                "cycle(events=%r) exception message mismatch for DSL:\n%s\nsimulation=%s: %s\ngenerated=%s: %s"
+                % (
+                    events,
+                    self._dsl_code,
+                    type(sim_exc).__name__,
+                    sim_exc,
+                    type(gen_exc).__name__,
+                    gen_exc,
+                )
+            )
+            sim_cause = sim_exc.__cause__
+            gen_cause = gen_exc.__cause__
+            assert (sim_cause is None) == (gen_cause is None), (
+                "cycle(events=%r) exception cause presence mismatch for DSL:\n%s\nsimulation=%r\ngenerated=%r"
+                % (events, self._dsl_code, sim_cause, gen_cause)
+            )
+            if sim_cause is not None and gen_cause is not None:
+                assert type(sim_cause).__name__ == type(gen_cause).__name__, (
+                    "cycle(events=%r) exception cause type mismatch for DSL:\n%s\nsimulation=%s: %s\ngenerated=%s: %s"
+                    % (
+                        events,
+                        self._dsl_code,
+                        type(sim_cause).__name__,
+                        sim_cause,
+                        type(gen_cause).__name__,
+                        gen_cause,
+                    )
+                )
+                assert str(sim_cause) == str(gen_cause), (
+                    "cycle(events=%r) exception cause message mismatch for DSL:\n%s\nsimulation=%s: %s\ngenerated=%s: %s"
+                    % (
+                        events,
+                        self._dsl_code,
+                        type(sim_cause).__name__,
+                        sim_cause,
+                        type(gen_cause).__name__,
+                        gen_cause,
+                    )
+                )
             raise sim_exc
         assert sim_result == gen_result, (
             "cycle(events=%r) return mismatch for DSL:\n%s\nsimulation=%r, generated=%r"
@@ -1114,6 +1209,24 @@ def _validate_raises(
     if raises.get("match_kind", "substring") not in {"substring", "regex"}:
         raise _case_error(
             case_id, yaml_path, "%s.raises.match_kind is invalid" % field_path
+        )
+    if "cause_type" in raises and not isinstance(raises["cause_type"], str):
+        raise _case_error(
+            case_id, yaml_path, "%s.raises.cause_type must be a string" % field_path
+        )
+    if "cause_match" in raises and not isinstance(raises["cause_match"], str):
+        raise _case_error(
+            case_id, yaml_path, "%s.raises.cause_match must be a string" % field_path
+        )
+    if raises.get("cause_match_kind", "substring") not in {"substring", "regex"}:
+        raise _case_error(
+            case_id, yaml_path, "%s.raises.cause_match_kind is invalid" % field_path
+        )
+    if "cause_match_kind" in raises and "cause_match" not in raises:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s.raises.cause_match_kind requires cause_match" % field_path,
         )
 
 

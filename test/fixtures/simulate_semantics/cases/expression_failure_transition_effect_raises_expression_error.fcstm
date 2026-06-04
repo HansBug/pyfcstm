@@ -1,0 +1,10 @@
+def int counter = 1;
+def int sink = 0;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B effect {
+        sink = counter / 0;
+    }
+}

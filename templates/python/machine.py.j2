@@ -640,7 +640,14 @@ class {{ machine_class_name(model) }}:
         if transition["effect"] is not None:
             getattr(self, transition["effect"])(vars_)
 
-    def _select_transition(self, stack, vars_, event_names, validate_stoppable=True):
+    def _select_transition(
+        self,
+        stack,
+        vars_,
+        event_names,
+        validate_stoppable=True,
+        force_validate=False,
+    ):
         if not stack:
             return None
         state_path = stack[-1]["state"]
@@ -649,7 +656,9 @@ class {{ machine_class_name(model) }}:
             transition = self._TRANSITIONS[transition_id]
             if not self._transition_is_enabled(transition, event_names, vars_):
                 continue
-            if validate_stoppable and self._is_stoppable_state(state_path):
+            if validate_stoppable and (
+                self._is_stoppable_state(state_path) or force_validate
+            ):
                 if not self._validate_transition(
                     stack, vars_, transition_id, event_names
                 ):
@@ -691,18 +700,52 @@ class {{ machine_class_name(model) }}:
         for transition_id in self._STATE_INFO[current_path]["initial_transition_ids"]:
             transition = self._TRANSITIONS[transition_id]
             if self._transition_is_enabled(transition, event_names, vars_):
-                self._execute_transition_effect(
-                    transition, vars_, is_validation_mode=is_validation_mode
-                )
-                self._enter_state(
+                if not self._validate_initial_transition(
+                    stack, vars_, transition_id, event_names
+                ):
+                    continue
+                self._execute_initial_transition_on_context(
                     stack,
-                    transition["target"],
                     vars_,
+                    transition_id,
                     event_names,
                     is_validation_mode=is_validation_mode,
                 )
                 return True
         return False
+
+    def _execute_initial_transition_on_context(
+        self, stack, vars_, transition_id, event_names, is_validation_mode=False
+    ):
+        transition = self._TRANSITIONS[transition_id]
+        self._execute_transition_effect(
+            transition, vars_, is_validation_mode=is_validation_mode
+        )
+        self._enter_state(
+            stack,
+            transition["target"],
+            vars_,
+            event_names,
+            is_validation_mode=is_validation_mode,
+        )
+
+    def _validate_initial_transition(self, stack, vars_, transition_id, event_names):
+        sim_stack = self._clone_stack(stack)
+        sim_vars = dict(vars_)
+        self._execute_initial_transition_on_context(
+            sim_stack,
+            sim_vars,
+            transition_id,
+            event_names,
+            is_validation_mode=True,
+        )
+        success, _ = self._run_cycle_on_context(
+            sim_stack,
+            sim_vars,
+            event_names,
+            is_validation_mode=True,
+        )
+        return success
 
     def _finalize_exit_to_parent(self, stack, vars_, is_validation_mode=False):
         if not stack:
@@ -710,6 +753,16 @@ class {{ machine_class_name(model) }}:
 
         parent_path = stack[-1]["state"]
         if parent_path == self._ROOT_STATE_PATH:
+            self._execute_actions(
+                self._STATE_INFO[parent_path]["during_after_actions"],
+                vars_,
+                is_validation_mode=is_validation_mode,
+            )
+            self._execute_actions(
+                self._STATE_INFO[parent_path]["exit_actions"],
+                vars_,
+                is_validation_mode=is_validation_mode,
+            )
             stack[:] = []
             return True
 
@@ -767,7 +820,7 @@ class {{ machine_class_name(model) }}:
             sim_vars,
             event_names,
             ended=ended,
-            validate_post_child_exit=False,
+            validate_post_child_exit=True,
             is_validation_mode=True,
         )
         return success
@@ -872,6 +925,7 @@ class {{ machine_class_name(model) }}:
                     vars_,
                     event_names,
                     validate_stoppable=validate_post_child_exit,
+                    force_validate=validate_post_child_exit,
                 )
                 if transition_id is None:
                     return False, False

@@ -638,6 +638,39 @@ E_PSEUDO_NOT_LEAF:
         }
     }
 
+E_NAMED_FUNCTION_REF_CYCLE:
+  severity: error
+  span_object: named_action_declaration
+  description: >-
+    A lifecycle action `ref` chain forms a cycle and therefore never reaches
+    a concrete or abstract action implementation.
+  refs:
+    ref_path:
+      type: str
+      required: true
+      description: Dot-separated action path where cycle validation started.
+    cycle_path:
+      type: str
+      required: true
+      description: Dot-separated action path chain that closes the cycle.
+    reason:
+      type: str
+      required: true
+      description: Short tag describing the failure.
+      enum: ['action_ref_cycle']
+  for_llm:
+    summary: >-
+      An ``enter ref ...`` / ``exit ref ...`` / ``during ref ...`` clause
+      ultimately points back to itself through one or more named actions.
+    recommended_actions:
+      - kind: break_ref_cycle
+        target: action_ref
+        rationale: >-
+          Replace one link in the cycle with a concrete action block or an
+          abstract action declaration so the reference chain terminates.
+    do_not:
+      - "Do not execute or render cyclic lifecycle references; reject the model before runtime execution."
+
 E_NAMED_FUNCTION_REF_NOT_FOUND:
   severity: error
   span_object: named_action_declaration

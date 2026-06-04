@@ -1843,6 +1843,13 @@ def _validate_model_build(
             yaml_path,
             "model_build.expect.raises is required",
         )
+    raises = expect["raises"]
+    if raises.get("type") != "ModelValidationError":
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "model_build.expect.raises.type must be ModelValidationError",
+        )
 
 
 def _validate_source(source: Any, case_id: str, yaml_path: str) -> None:

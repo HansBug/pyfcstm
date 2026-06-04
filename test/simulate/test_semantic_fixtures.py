@@ -221,6 +221,12 @@ def _set_model_build_expectation(data, raises):
             "model_build.expect.raises.type is unknown",
         ),
         (
+            lambda data: _set_model_build_expectation(
+                data, {"type": "SimulationRuntimeDfsError"}
+            ),
+            "model_build.expect.raises.type must be ModelValidationError",
+        ),
+        (
             lambda data: (
                 _set_model_build_expectation(data, {"type": "ModelValidationError"})
                 or data.update(

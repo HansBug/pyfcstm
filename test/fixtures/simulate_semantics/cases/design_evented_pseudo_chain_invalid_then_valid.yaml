@@ -1,0 +1,59 @@
+schema_version: 1
+id: design_evented_pseudo_chain_invalid_then_valid
+title: 4 19 evented pseudo chain invalid then valid
+source:
+  fcstm: design_evented_pseudo_chain_invalid_then_valid.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_19_evented_pseudo_chain_invalid_then_valid
+  - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_19_evented_pseudo_chain_invalid_then_valid
+  assertion_types:
+  - ended
+  - return
+  - state
+  - vars
+categories:
+- design_example
+- pseudo_chain
+- runtime
+- template_alignment
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      counter: 1
+    ended: false
+    return: null
+- cycle:
+    events:
+    - Root.A.GoB
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      counter: 2
+    ended: false
+    return: null
+- cycle:
+    events:
+    - Root.A.GoB
+    - Root.B.P1.Event
+  expect:
+    state:
+    - Root
+    - B
+    - B1
+    vars:
+      counter: 112
+    ended: false
+    return: null

@@ -1,0 +1,59 @@
+schema_version: 1
+id: design_validation_init_transition_requires_event
+title: 4 4 validation init transition requires event
+source:
+  fcstm: design_validation_init_transition_requires_event.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_4_validation_init_transition_requires_event
+  - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_4_validation_init_transition_requires_event
+  assertion_types:
+  - ended
+  - return
+  - state
+  - vars
+categories:
+- design_example
+- runtime
+- template_alignment
+- validation
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      counter: 1
+    ended: false
+    return: null
+- cycle:
+    events:
+    - Root.A.GoB
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      counter: 2
+    ended: false
+    return: null
+- cycle:
+    events:
+    - Root.A.GoB
+    - Root.B.Start
+  expect:
+    state:
+    - Root
+    - B
+    - B1
+    vars:
+      counter: 12
+    ended: false
+    return: null

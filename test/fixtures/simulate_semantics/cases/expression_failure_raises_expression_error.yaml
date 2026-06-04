@@ -1,0 +1,33 @@
+schema_version: 1
+id: expression_failure_raises_expression_error
+title: 4 200 dsl expression failure raises expression error
+source:
+  fcstm: expression_failure_raises_expression_error.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_200_dsl_expression_failure_raises_expression_error
+  assertion_types:
+  - ended
+  - exception
+  - state
+  - vars
+categories:
+- runtime
+- scenario_example
+runners:
+- simulation
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    raises:
+      type: SimulationRuntimeExpressionError
+      match: operation assignment to 'counter'
+      match_kind: substring
+    state:
+    - Root
+    vars:
+      counter: 1
+    ended: false

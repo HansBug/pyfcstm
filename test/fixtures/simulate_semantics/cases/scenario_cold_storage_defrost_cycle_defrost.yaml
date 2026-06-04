@@ -1,0 +1,98 @@
+schema_version: 1
+id: scenario_cold_storage_defrost_cycle_defrost
+title: 4 105 cold storage defrost cycle
+source:
+  fcstm: scenario_cold_storage_defrost_cycle_defrost.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_105_cold_storage_defrost_cycle
+  - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_105_cold_storage_defrost_cycle
+  assertion_types:
+  - ended
+  - return
+  - state
+  - vars
+categories:
+- runtime
+- scenario_example
+- template_alignment
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - Cooling
+    vars:
+      frost: 2
+      drip_ticks: 0
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - Cooling
+    vars:
+      frost: 4
+      drip_ticks: 0
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - Cooling
+    vars:
+      frost: 6
+      drip_ticks: 0
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - DefrostCycle
+    - Defrost
+    vars:
+      frost: 1
+      drip_ticks: 0
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - DefrostCycle
+    - Defrost
+    vars:
+      frost: -4
+      drip_ticks: 0
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - DefrostCycle
+    - Drip
+    vars:
+      frost: 0
+      drip_ticks: 1
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - Cooling
+    vars:
+      frost: 2
+      drip_ticks: 0
+    ended: false
+    return: null

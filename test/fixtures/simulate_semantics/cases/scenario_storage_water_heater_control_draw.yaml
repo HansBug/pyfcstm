@@ -1,0 +1,97 @@
+schema_version: 1
+id: scenario_storage_water_heater_control_draw
+title: 4 101 storage water heater control
+source:
+  fcstm: scenario_storage_water_heater_control_draw.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_101_storage_water_heater_control
+  - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_101_storage_water_heater_control
+  assertion_types:
+  - ended
+  - return
+  - state
+  - vars
+categories:
+- runtime
+- scenario_example
+- template_alignment
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - Standby
+    vars:
+      water_temp: 54
+      draw_count: 0
+    ended: false
+    return: null
+- cycle:
+    events:
+    - Root.Standby.HotWaterDraw
+  expect:
+    state:
+    - Root
+    - Standby
+    vars:
+      water_temp: 45
+      draw_count: 1
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - Heating
+    vars:
+      water_temp: 49
+      draw_count: 1
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - Heating
+    vars:
+      water_temp: 53
+      draw_count: 1
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - Heating
+    vars:
+      water_temp: 57
+      draw_count: 1
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - Heating
+    vars:
+      water_temp: 61
+      draw_count: 1
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - Standby
+    vars:
+      water_temp: 60
+      draw_count: 1
+    ended: false
+    return: null

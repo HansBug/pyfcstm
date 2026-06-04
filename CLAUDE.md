@@ -13,9 +13,17 @@ Vibe coding is fine for quick exploration, but once you touch repository code yo
 - Every generated piece of code must be readable, explainable, testable, and revertible by a human.
 - Don't blindly accept AI output; review it the same way you would review a human teammate's commit.
 - Stick to the existing architecture, naming, tests, and tooling — don't start a parallel style of your own.
-- Name modules, functions, classes, tests, and docs for the concrete behavior or domain concept they implement, not
-  for temporary project-management labels such as PR slice IDs, roadmap phases, or plan bullets. A reader should be
-  able to understand what something does without knowing the execution plan that introduced it.
+- Name modules, functions, classes, tests, fixtures, docstrings, pydoc text, and generated artifacts for the concrete
+  behavior or domain concept they implement, not for temporary project-management labels such as PR slice IDs, roadmap
+  phases, or plan bullets. A reader should be able to understand what something does without knowing the execution plan
+  that introduced it.
+- Keep workflow metadata out of code and API surfaces: do not put PR numbers, issue IDs, roadmap stages/phases, review
+  rounds, or rollout slice names into identifiers, schema field names, runtime messages, test ids, or pydoc/docstrings.
+  If Markdown documentation genuinely needs to reference a concrete workflow item, use an explicit hyperlink such as
+  `[PR #123](https://github.com/HansBug/pyfcstm/pull/123)` or
+  `[issue #456](https://github.com/HansBug/pyfcstm/issues/456)`.
+  Domain terms such as lifecycle stage names or control-system phase variables remain acceptable when they describe the
+  modeled behavior rather than the implementation workflow.
 - Keep Python and JavaScript unit tests strictly independent. Python tests may use fixtures and literals under `test/`,
   but must not call Node.js, jsfcstm, or resources outside the Python test tree. jsfcstm tests may use fixtures and
   literals under `editors/jsfcstm/test/`, but must not call Python code or the repository-level `test/` tree. Either
@@ -96,8 +104,8 @@ make unittest MIN_COVERAGE=80                        # With minimum coverage
 make unittest WORKERS=4                              # With parallel workers
 
 # Run a single test file or function directly:
-pytest test/simulate/test_runtime.py -v
-pytest test/simulate/test_runtime.py::TestClassName::test_method -v
+pytest test/simulate/test_semantic_fixtures.py -v
+pytest test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture -v
 
 # Fast path: skip native-toolchain template tests (test/template/c, test/template/c_poll)
 # which invoke real cmake/cc per case and consume ~85% of unittest wall time.

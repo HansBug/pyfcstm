@@ -1,0 +1,14 @@
+def int counter = 0;
+state Root {
+    state A {
+        during {
+            counter = counter + 1;
+        }
+        exit {
+            counter = counter + 100;
+        }
+    }
+
+    [*] -> A;
+    A -> [*] : if [counter >= 3];
+}

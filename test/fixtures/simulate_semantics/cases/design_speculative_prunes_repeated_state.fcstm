@@ -1,0 +1,23 @@
+def int counter = 0;
+state Root {
+    state A {
+        during {
+            counter = counter + 1;
+        }
+    }
+
+    state B {
+        during {
+            counter = counter + 10;
+        }
+    }
+
+    state Sink {
+        state Dead;
+        [*] -> Dead : if [counter < 0];
+    }
+
+    [*] -> A;
+    A -> Sink :: Go;
+    A -> B :: Go;
+}

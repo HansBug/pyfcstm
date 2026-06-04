@@ -4,6 +4,7 @@ import importlib.util
 import logging
 import os
 import re
+import warnings
 from contextlib import contextmanager
 from dataclasses import dataclass
 from tempfile import TemporaryDirectory
@@ -37,6 +38,7 @@ _ALLOWED_TOP_LEVEL_FIELDS = {
     "categories",
     "runners",
     "initial",
+    "runtime_options",
     "steps",
     "commands",
     "handlers",
@@ -73,6 +75,9 @@ _ALLOWED_EXPECT_FIELDS = {
     "return",
     "raises",
     "logs",
+    "warnings",
+    "handler_calls",
+    "abstract_handler_errors",
 }
 _ALLOWED_INITIAL_EXPECT_FIELDS = {
     "state",
@@ -105,6 +110,17 @@ _ALLOWED_STACK_FIELDS = {"path", "mode"}
 _ALLOWED_RAISES_FIELDS = {"type", "match", "match_kind"}
 _ALLOWED_LOG_FIELDS = {"contains", "not_contains"}
 _ALLOWED_LOG_ITEM_FIELDS = {"level", "message", "match_kind"}
+_ALLOWED_RUNTIME_OPTION_FIELDS = {"abstract_error_mode"}
+_ALLOWED_ABSTRACT_ERROR_MODES = {"raise", "log"}
+_ALLOWED_HANDLER_FIELDS = {"action", "behavior", "exception"}
+_ALLOWED_HANDLER_BEHAVIORS = {"record_call", "raise_error"}
+_ALLOWED_HANDLER_EXCEPTION_FIELDS = {"type", "message"}
+_ALLOWED_HANDLER_EXCEPTION_TYPES = {"ValueError"}
+_ALLOWED_WARNING_FIELDS = {"contains", "not_contains", "count"}
+_ALLOWED_WARNING_ITEM_FIELDS = {"category", "message", "match_kind"}
+_ALLOWED_WARNING_CATEGORIES = {"UserWarning"}
+_ALLOWED_HANDLER_CALL_FIELDS = {"action", "state", "stage", "vars"}
+_ALLOWED_ABSTRACT_HANDLER_ERROR_FIELDS = {"action", "type", "message", "match_kind"}
 _CLI_OUTPUT_FIELDS = ("output_contains", "output_not_contains", "error_contains")
 _EXCEPTION_TYPES = {
     "SimulationRuntimeDfsError": SimulationRuntimeDfsError,
@@ -203,8 +219,108 @@ def _runtime_stack(runtime: Any) -> List[Tuple[Tuple[str, ...], str]]:
     return [(tuple(path), mode) for path, mode in runtime.brief_stack]
 
 
-def _assert_runtime_expectation(
+def _assert_handler_calls(
+    expect: Mapping[str, Any],
+    handler_calls: Optional[Sequence[Mapping[str, Any]]],
+    case: SemanticCase,
+    field_path: str,
+) -> None:
+    if "handler_calls" not in expect:
+        return
+    if handler_calls is None:
+        raise _case_error(
+            case.id,
+            case.yaml_path,
+            "%s.handler_calls requires registered fixture handlers" % field_path,
+        )
+    expected_calls = [dict(item) for item in expect["handler_calls"]]
+    actual_calls = [dict(item) for item in handler_calls]
+    assert actual_calls == expected_calls, "%s %s handler_calls mismatch: %r != %r" % (
+        case.id,
+        field_path,
+        actual_calls,
+        expected_calls,
+    )
+
+
+def _assert_abstract_handler_errors(
     runtime: Any, expect: Mapping[str, Any], case: SemanticCase, field_path: str
+) -> None:
+    if "abstract_handler_errors" not in expect:
+        return
+    expected_errors = expect["abstract_handler_errors"]
+    actual_errors = [
+        {
+            "action": action_path,
+            "type": type(error).__name__,
+            "message": str(error),
+        }
+        for action_path, error in runtime.abstract_handler_errors
+    ]
+    assert len(actual_errors) == len(expected_errors), (
+        "%s %s abstract_handler_errors length mismatch: %r != %r"
+        % (
+            case.id,
+            field_path,
+            actual_errors,
+            expected_errors,
+        )
+    )
+    for index, expected in enumerate(expected_errors):
+        actual = actual_errors[index]
+        if "action" in expected:
+            assert actual["action"] == expected["action"], (
+                "%s %s abstract_handler_errors[%d].action mismatch: %r != %r"
+                % (
+                    case.id,
+                    field_path,
+                    index,
+                    actual["action"],
+                    expected["action"],
+                )
+            )
+        if "type" in expected:
+            assert actual["type"] == expected["type"], (
+                "%s %s abstract_handler_errors[%d].type mismatch: %r != %r"
+                % (
+                    case.id,
+                    field_path,
+                    index,
+                    actual["type"],
+                    expected["type"],
+                )
+            )
+        if "message" in expected:
+            match_kind = expected.get("match_kind", "substring")
+            if match_kind == "substring":
+                matched = expected["message"] in actual["message"]
+            elif match_kind == "regex":
+                matched = re.search(expected["message"], actual["message"]) is not None
+            else:
+                raise _case_error(
+                    case.id,
+                    case.yaml_path,
+                    "%s.abstract_handler_errors[%d].match_kind is invalid"
+                    % (field_path, index),
+                )
+            assert matched, (
+                "%s %s abstract_handler_errors[%d].message mismatch: %r did not match %r"
+                % (
+                    case.id,
+                    field_path,
+                    index,
+                    actual["message"],
+                    expected["message"],
+                )
+            )
+
+
+def _assert_runtime_expectation(
+    runtime: Any,
+    expect: Mapping[str, Any],
+    case: SemanticCase,
+    field_path: str,
+    handler_calls: Optional[Sequence[Mapping[str, Any]]] = None,
 ) -> None:
     if "ended" in expect:
         actual_ended = bool(getattr(runtime, "is_ended"))
@@ -291,6 +407,9 @@ def _assert_runtime_expectation(
             )
         )
 
+    _assert_handler_calls(expect, handler_calls, case, field_path)
+    _assert_abstract_handler_errors(runtime, expect, case, field_path)
+
 
 def _assert_logs(
     expect: Mapping[str, Any], caplog: Any, case: SemanticCase, field_path: str
@@ -344,6 +463,62 @@ def _assert_logs(
             )
 
 
+def _warning_matches(item: Mapping[str, Any], warning_item: Any) -> bool:
+    category = item.get("category")
+    if category is not None and warning_item.category.__name__ != category:
+        return False
+    message = str(item["message"])
+    warning_message = str(warning_item.message)
+    match_kind = item.get("match_kind", "substring")
+    if match_kind == "substring":
+        return message in warning_message
+    if match_kind == "regex":
+        return re.search(message, warning_message) is not None
+    return False
+
+
+def _assert_warnings(
+    expect: Mapping[str, Any],
+    warning_records: Optional[Sequence[Any]],
+    case: SemanticCase,
+    field_path: str,
+) -> None:
+    warning_expect = expect.get("warnings")
+    if warning_expect is None:
+        return
+    if warning_records is None:
+        raise _case_error(
+            case.id,
+            case.yaml_path,
+            "%s.warnings requires warning capture" % field_path,
+        )
+    rendered = [
+        "%s:%s" % (record.category.__name__, record.message)
+        for record in warning_records
+    ]
+    if "count" in warning_expect:
+        assert len(warning_records) == warning_expect["count"], (
+            "%s %s warnings count mismatch: %r != %r; records=%r"
+            % (
+                case.id,
+                field_path,
+                len(warning_records),
+                warning_expect["count"],
+                rendered,
+            )
+        )
+    for group_name, should_exist in (("contains", True), ("not_contains", False)):
+        for item in warning_expect.get(group_name, []) or []:
+            found = any(_warning_matches(item, record) for record in warning_records)
+            assert found is should_exist, "%s %s warning %s %r failed; records=%r" % (
+                case.id,
+                field_path,
+                group_name,
+                item,
+                rendered,
+            )
+
+
 def _assert_exception(
     exc: BaseException, expect: Mapping[str, Any], case: SemanticCase, field_path: str
 ) -> None:
@@ -393,6 +568,16 @@ def _capture_logs_if_needed(expect: Mapping[str, Any], caplog: Any):
         yield
 
 
+@contextmanager
+def _capture_warnings_if_needed(expect: Mapping[str, Any]):
+    if "warnings" in expect:
+        with warnings.catch_warnings(record=True) as records:
+            warnings.simplefilter("always")
+            yield records
+    else:
+        yield None
+
+
 def _step_events(
     cycle_data: Any, case: SemanticCase, field_path: str
 ) -> Optional[List[Any]]:
@@ -422,41 +607,57 @@ def _run_step(
     case: SemanticCase,
     index: int,
     caplog: Any = None,
+    handler_calls: Optional[Sequence[Mapping[str, Any]]] = None,
 ) -> None:
     field_path = "steps[%d]" % index
     if "expect_initial" in step:
         expect = step["expect_initial"]
         _assert_runtime_expectation(
-            runtime, expect, case, field_path + ".expect_initial"
+            runtime,
+            expect,
+            case,
+            field_path + ".expect_initial",
+            handler_calls=handler_calls,
         )
         return
 
     expect = step.get("expect") or {}
     events = _step_events(step.get("cycle", {}), case, field_path)
     with _capture_logs_if_needed(expect, caplog):
-        if "raises" in expect:
-            try:
-                runtime.cycle(events)
-            except Exception as err:
-                # Runtime/generator errors intentionally propagate through the
-                # fixture contract; expected semantic errors are matched here.
-                _assert_exception(err, expect, case, field_path + ".expect.raises")
+        with _capture_warnings_if_needed(expect) as warning_records:
+            if "raises" in expect:
+                try:
+                    runtime.cycle(events)
+                except Exception as err:
+                    # Runtime/generator errors intentionally propagate through the
+                    # fixture contract; expected semantic errors are matched here.
+                    _assert_exception(err, expect, case, field_path + ".expect.raises")
+                else:
+                    raise AssertionError(
+                        "%s %s expected exception %r"
+                        % (case.id, field_path, expect["raises"])
+                    )
             else:
-                raise AssertionError(
-                    "%s %s expected exception %r"
-                    % (case.id, field_path, expect["raises"])
-                )
-        else:
-            result = runtime.cycle(events)
-            if "return" in expect:
-                assert result == expect["return"], "%s %s return mismatch: %r != %r" % (
-                    case.id,
-                    field_path,
-                    result,
-                    expect["return"],
-                )
-    _assert_runtime_expectation(runtime, expect, case, field_path + ".expect")
+                result = runtime.cycle(events)
+                if "return" in expect:
+                    assert result == expect["return"], (
+                        "%s %s return mismatch: %r != %r"
+                        % (
+                            case.id,
+                            field_path,
+                            result,
+                            expect["return"],
+                        )
+                    )
+    _assert_runtime_expectation(
+        runtime,
+        expect,
+        case,
+        field_path + ".expect",
+        handler_calls=handler_calls,
+    )
     _assert_logs(expect, caplog, case, field_path + ".expect")
+    _assert_warnings(expect, warning_records, case, field_path + ".expect")
 
 
 def _strip_ansi(text: str) -> str:
@@ -481,6 +682,52 @@ def _initial_kwargs(case: SemanticCase) -> Dict[str, Any]:
     if initial.get("vars") is not None:
         kwargs["initial_vars"] = dict(initial["vars"])
     return kwargs
+
+
+def _simulation_kwargs(case: SemanticCase) -> Dict[str, Any]:
+    kwargs = _initial_kwargs(case)
+    kwargs.update(dict(case.data.get("runtime_options") or {}))
+    return kwargs
+
+
+def _handler_call_record(ctx: Any) -> Dict[str, Any]:
+    return {
+        "action": ctx.action_name,
+        "state": ctx.get_full_state_path(),
+        "stage": ctx.action_stage,
+        "vars": dict(ctx.vars),
+    }
+
+
+def _register_fixture_handlers(
+    runtime: SimulationRuntime, case: SemanticCase
+) -> List[Mapping[str, Any]]:
+    calls = []
+    for handler_data in case.data.get("handlers") or []:
+        action_path = handler_data["action"]
+        behavior = handler_data["behavior"]
+        if behavior == "record_call":
+
+            def record_handler(ctx, handler_calls=calls):
+                handler_calls.append(_handler_call_record(ctx))
+
+            runtime.register_abstract_handler(action_path, record_handler)
+        elif behavior == "raise_error":
+            exception_data = handler_data.get("exception") or {}
+            message = exception_data.get("message", "fixture handler error")
+
+            def raising_handler(ctx, handler_calls=calls, error_message=message):
+                handler_calls.append(_handler_call_record(ctx))
+                raise ValueError(error_message)
+
+            runtime.register_abstract_handler(action_path, raising_handler)
+        else:
+            raise _case_error(
+                case.id,
+                case.yaml_path,
+                "handlers behavior is invalid: %r" % behavior,
+            )
+    return calls
 
 
 class _GeneratedPythonAlignmentRuntime:
@@ -636,20 +883,29 @@ def _build_generated_runtime(case: SemanticCase) -> Any:
 
 def _build_simulation_runtime(case: SemanticCase) -> SimulationRuntime:
     return SimulationRuntime(
-        build_state_machine_from_case(case), **_initial_kwargs(case)
+        build_state_machine_from_case(case), **_simulation_kwargs(case)
     )
 
 
 def run_simulation_case(case: SemanticCase, caplog: Any = None) -> None:
     """Run a semantic fixture against :class:`SimulationRuntime`."""
     runtime = _build_simulation_runtime(case)
+    handler_calls = _register_fixture_handlers(runtime, case)
     for index, step in enumerate(case.data.get("steps") or []):
-        _run_step(runtime, step, case, index, caplog=caplog)
+        _run_step(
+            runtime,
+            step,
+            case,
+            index,
+            caplog=caplog,
+            handler_calls=handler_calls,
+        )
 
 
 def run_generated_python_alignment_case(case: SemanticCase, caplog: Any = None) -> None:
     """Run a semantic fixture against simulation and generated Python runtimes."""
     simulation_runtime = _build_simulation_runtime(case)
+    _register_fixture_handlers(simulation_runtime, case)
     generated_runtime = _build_generated_runtime(case)
     runtime = _GeneratedPythonAlignmentRuntime(
         simulation_runtime, generated_runtime, case.dsl_code
@@ -929,6 +1185,187 @@ def _validate_logs(
                 )
 
 
+def _validate_warnings(
+    expect: Mapping[str, Any], case_id: str, yaml_path: str, field_path: str
+) -> None:
+    warning_expect = expect.get("warnings")
+    if warning_expect is None:
+        return
+    if not isinstance(warning_expect, dict):
+        raise _case_error(
+            case_id, yaml_path, "%s.warnings must be a mapping" % field_path
+        )
+    unknown = set(warning_expect.keys()) - _ALLOWED_WARNING_FIELDS
+    if unknown:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s.warnings has unknown fields: %r" % (field_path, sorted(unknown)),
+        )
+    if "count" in warning_expect:
+        count = warning_expect["count"]
+        if not isinstance(count, int) or count < 0:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.warnings.count must be a non-negative integer" % field_path,
+            )
+    for group_name in ("contains", "not_contains"):
+        group_items = warning_expect.get(group_name, []) or []
+        if not isinstance(group_items, list):
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.warnings.%s must be a list" % (field_path, group_name),
+            )
+        for index, item in enumerate(group_items):
+            if not isinstance(item, dict):
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "%s.warnings.%s[%d] must be a mapping"
+                    % (field_path, group_name, index),
+                )
+            unknown_item = set(item.keys()) - _ALLOWED_WARNING_ITEM_FIELDS
+            if unknown_item:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "%s.warnings.%s[%d] has unknown fields: %r"
+                    % (field_path, group_name, index, sorted(unknown_item)),
+                )
+            if "message" not in item:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "%s.warnings.%s[%d].message is required"
+                    % (field_path, group_name, index),
+                )
+            if not isinstance(item["message"], str):
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "%s.warnings.%s[%d].message must be a string"
+                    % (field_path, group_name, index),
+                )
+            if item.get("match_kind", "substring") not in {"substring", "regex"}:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "%s.warnings.%s[%d].match_kind is invalid"
+                    % (field_path, group_name, index),
+                )
+            category = item.get("category")
+            if category is not None and category not in _ALLOWED_WARNING_CATEGORIES:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "%s.warnings.%s[%d].category is invalid: %r"
+                    % (field_path, group_name, index, category),
+                )
+
+
+def _validate_handler_calls(
+    expect: Mapping[str, Any], case_id: str, yaml_path: str, field_path: str
+) -> None:
+    if "handler_calls" not in expect:
+        return
+    calls = expect["handler_calls"]
+    if not isinstance(calls, list):
+        raise _case_error(
+            case_id, yaml_path, "%s.handler_calls must be a list" % field_path
+        )
+    for index, item in enumerate(calls):
+        if not isinstance(item, dict):
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.handler_calls[%d] must be a mapping" % (field_path, index),
+            )
+        unknown = set(item.keys()) - _ALLOWED_HANDLER_CALL_FIELDS
+        if unknown:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.handler_calls[%d] has unknown fields: %r"
+                % (field_path, index, sorted(unknown)),
+            )
+        missing = _ALLOWED_HANDLER_CALL_FIELDS - set(item.keys())
+        if missing:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.handler_calls[%d] missing fields: %r"
+                % (field_path, index, sorted(missing)),
+            )
+        for field_name in ("action", "state", "stage"):
+            if not isinstance(item[field_name], str):
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "%s.handler_calls[%d].%s must be a string"
+                    % (field_path, index, field_name),
+                )
+        _validate_vars_mapping(
+            item["vars"],
+            case_id,
+            yaml_path,
+            "%s.handler_calls[%d].vars" % (field_path, index),
+        )
+
+
+def _validate_abstract_handler_errors(
+    expect: Mapping[str, Any], case_id: str, yaml_path: str, field_path: str
+) -> None:
+    if "abstract_handler_errors" not in expect:
+        return
+    errors = expect["abstract_handler_errors"]
+    if not isinstance(errors, list):
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s.abstract_handler_errors must be a list" % field_path,
+        )
+    for index, item in enumerate(errors):
+        if not isinstance(item, dict):
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.abstract_handler_errors[%d] must be a mapping"
+                % (field_path, index),
+            )
+        unknown = set(item.keys()) - _ALLOWED_ABSTRACT_HANDLER_ERROR_FIELDS
+        if unknown:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.abstract_handler_errors[%d] has unknown fields: %r"
+                % (field_path, index, sorted(unknown)),
+            )
+        for field_name in ("action", "type", "message"):
+            if field_name in item and not isinstance(item[field_name], str):
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "%s.abstract_handler_errors[%d].%s must be a string"
+                    % (field_path, index, field_name),
+                )
+        if item.get("match_kind", "substring") not in {"substring", "regex"}:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.abstract_handler_errors[%d].match_kind is invalid"
+                % (field_path, index),
+            )
+        if "match_kind" in item and "message" not in item:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.abstract_handler_errors[%d].match_kind requires message"
+                % (field_path, index),
+            )
+
+
 def _validate_path_segments(
     value: Any, case_id: str, yaml_path: str, field_path: str
 ) -> None:
@@ -982,6 +1419,20 @@ def _validate_expect(
             yaml_path,
             "%s.cycle_count is not allowed for generated alignment" % field_path,
         )
+    if "generated_python_alignment" in runners:
+        generated_only_fields = {
+            "abstract_handler_errors",
+            "handler_calls",
+            "warnings",
+        }
+        overlap = generated_only_fields & set(expect.keys())
+        if overlap:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s fields are not allowed for generated alignment: %r"
+                % (field_path, sorted(overlap)),
+            )
     if "state" in expect:
         _validate_path_segments(
             expect["state"], case_id, yaml_path, field_path + ".state"
@@ -1000,6 +1451,9 @@ def _validate_expect(
     _validate_stack(expect, case_id, yaml_path, field_path)
     _validate_raises(expect, case_id, yaml_path, field_path)
     _validate_logs(expect, case_id, yaml_path, field_path)
+    _validate_warnings(expect, case_id, yaml_path, field_path)
+    _validate_handler_calls(expect, case_id, yaml_path, field_path)
+    _validate_abstract_handler_errors(expect, case_id, yaml_path, field_path)
 
 
 def _validate_source(source: Any, case_id: str, yaml_path: str) -> None:
@@ -1058,6 +1512,128 @@ def _validate_initial(initial: Any, case_id: str, yaml_path: str) -> None:
         _validate_vars_mapping(initial.get("vars"), case_id, yaml_path, "initial.vars")
 
 
+def _validate_runtime_options(
+    options: Any, case_id: str, yaml_path: str, runners: Sequence[str]
+) -> None:
+    if options is None:
+        return
+    if "simulation" not in runners or "generated_python_alignment" in runners:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "runtime_options are only supported by simulation-only cases",
+        )
+    if not isinstance(options, dict):
+        raise _case_error(case_id, yaml_path, "runtime_options must be a mapping")
+    unknown = set(options.keys()) - _ALLOWED_RUNTIME_OPTION_FIELDS
+    if unknown:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "runtime_options has unknown fields: %r" % sorted(unknown),
+        )
+    if (
+        "abstract_error_mode" in options
+        and options["abstract_error_mode"] not in _ALLOWED_ABSTRACT_ERROR_MODES
+    ):
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "runtime_options.abstract_error_mode is invalid: %r"
+            % options["abstract_error_mode"],
+        )
+
+
+def _validate_handlers(
+    handlers: Any, case_id: str, yaml_path: str, runners: Sequence[str]
+) -> None:
+    if handlers is None:
+        return
+    if "simulation" not in runners or "generated_python_alignment" in runners:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "handlers are only supported by simulation-only cases",
+        )
+    if not isinstance(handlers, list):
+        raise _case_error(case_id, yaml_path, "handlers must be a list")
+    for index, item in enumerate(handlers):
+        if not isinstance(item, dict):
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "handlers[%d] must be a mapping" % index,
+            )
+        unknown = set(item.keys()) - _ALLOWED_HANDLER_FIELDS
+        if unknown:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "handlers[%d] has unknown fields: %r" % (index, sorted(unknown)),
+            )
+        for field_name in ("action", "behavior"):
+            if field_name not in item:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "handlers[%d].%s is required" % (index, field_name),
+                )
+            if not isinstance(item[field_name], str):
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "handlers[%d].%s must be a string" % (index, field_name),
+                )
+        if item["behavior"] not in _ALLOWED_HANDLER_BEHAVIORS:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "handlers[%d].behavior is invalid: %r" % (index, item["behavior"]),
+            )
+        if item["behavior"] == "record_call" and "exception" in item:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "handlers[%d].exception is only allowed for raise_error" % index,
+            )
+        exception_data = item.get("exception")
+        if item["behavior"] == "raise_error":
+            if exception_data is None:
+                exception_data = {}
+            if not isinstance(exception_data, dict):
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "handlers[%d].exception must be a mapping" % index,
+                )
+            unknown_exception = (
+                set(exception_data.keys()) - _ALLOWED_HANDLER_EXCEPTION_FIELDS
+            )
+            if unknown_exception:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "handlers[%d].exception has unknown fields: %r"
+                    % (index, sorted(unknown_exception)),
+                )
+            exception_type = exception_data.get("type", "ValueError")
+            if exception_type not in _ALLOWED_HANDLER_EXCEPTION_TYPES:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "handlers[%d].exception.type is invalid: %r"
+                    % (index, exception_type),
+                )
+            if "message" in exception_data and not isinstance(
+                exception_data["message"], str
+            ):
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "handlers[%d].exception.message must be a string" % index,
+                )
+
+
 def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
     case_id = str(data.get("id", "<unknown>"))
     unknown = set(data.keys()) - _ALLOWED_TOP_LEVEL_FIELDS
@@ -1096,6 +1672,8 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
         raise _case_error(
             case_id, yaml_path, "cli_command cannot be mixed with other runners"
         )
+    _validate_runtime_options(data.get("runtime_options"), case_id, yaml_path, runners)
+    _validate_handlers(data.get("handlers"), case_id, yaml_path, runners)
     has_steps = "steps" in data
     has_commands = "commands" in data
     if has_steps == has_commands:
@@ -1106,12 +1684,6 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
         raise _case_error(case_id, yaml_path, "cli_command cases require commands")
     if "cli_command" not in runners and not has_steps:
         raise _case_error(case_id, yaml_path, "runtime cases require steps")
-    if "handlers" in data:
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "handlers is reserved for abstract-handler fixture extensions",
-        )
     if "expected_failure" in data:
         raise _case_error(
             case_id,

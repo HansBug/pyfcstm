@@ -45,7 +45,7 @@ Use this checklist before deleting or replacing any inline original test:
 - The YAML cycle/event sequence matches the original call sequence exactly.
 - Event input strings are not rewritten to a different path form.
 - Every helper assertion and every bare assertion has a YAML equivalent.
-- `caplog` warnings use `logs`.
+- Runtime log assertions use `logs`; Python warning assertions use `warnings`.
 - `brief_stack` assertions use `stack`.
 - `set(runtime.vars.keys())` and temporary-variable non-leakage use
   `vars_keys` and/or `vars_absent`.
@@ -53,6 +53,8 @@ Use this checklist before deleting or replacing any inline original test:
   rollback state/vars assertions when the original checked them.
 - CLI tests keep output assertions under `output_contains` /
   `output_not_contains` / `error_contains`.
+- Abstract-handler callbacks use `handlers` plus `handler_calls`; log-mode
+  handler error metadata uses `abstract_handler_errors`.
 - Python API shape tests that YAML cannot represent, such as tuple or State
   object hot-start inputs, stay as dedicated Python tests.
 
@@ -126,6 +128,9 @@ inline files are removed.
 | `event_path_mixed_formats_relative` | simulation, generated_python_alignment | ended, return, state, vars | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_203_flexible_path_mixed_formats`<br>`test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_203_flexible_path_mixed_formats` |
 | `event_path_parent_relative` | simulation, generated_python_alignment | ended, return, state, vars | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_201_flexible_path_parent_relative`<br>`test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_201_flexible_path_parent_relative` |
 | `expression_failure_raises_expression_error` | simulation | ended, exception, state, vars | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_200_dsl_expression_failure_raises_expression_error` |
+| `failed_cycle_rolls_back_logged_abstract_handler_errors` | simulation | abstract_handler_errors, cycle_count, ended, handler_calls, return, stack, state, vars | [issue #143 comment](https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614012639) |
+| `failed_initial_cycle_preserves_root_entry_lifecycle` | simulation | cycle_count, ended, return, stack, state, vars | [issue #143 comment](https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614005134) |
+| `failed_initial_cycle_skips_abstract_handler_callbacks` | simulation | cycle_count, ended, handler_calls, return, stack, state, vars | [issue #143 comment](https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614005134) |
 | `hot_start_composite_state_with_init` | simulation | initial, state, vars, stack, return, ended | `test/simulate/test_hot_start.py::TestHotStartCompositeState::test_hot_start_from_composite_state_with_init` |
 | `hot_start_leaf_state` | simulation | initial, state, vars, stack, return, ended | `test/simulate/test_hot_start.py::TestHotStartLeafState::test_hot_start_from_leaf_state_string_path` |
 | `hot_start_skips_enter_actions` | simulation | initial, state, vars, return, ended | `test/simulate/test_hot_start.py::TestHotStartWithLifecycleActions::test_hot_start_skips_enter_actions` |
@@ -140,6 +145,7 @@ inline files are removed.
 | `if_blocks_during_temp_reassigned` | simulation, generated_python_alignment | state, vars, return, ended | `test/simulate/test_runtime.py::TestIfBlockRuntime::test_if_blocks_in_during_actions`<br>`test/template/python/test_runtime_alignment.py::TestIfBlockRuntime::test_if_blocks_in_during_actions` |
 | `if_blocks_during_then_without_else` | simulation, generated_python_alignment | state, vars, return, ended | `test/simulate/test_runtime.py::TestIfBlockRuntime::test_if_blocks_in_during_actions`<br>`test/template/python/test_runtime_alignment.py::TestIfBlockRuntime::test_if_blocks_in_during_actions` |
 | `if_blocks_exit_effect_enter_actions` | simulation, generated_python_alignment | state, vars, return, ended | `test/simulate/test_runtime.py::TestIfBlockRuntime::test_if_blocks_in_exit_effect_and_enter_actions`<br>`test/template/python/test_runtime_alignment.py::TestIfBlockRuntime::test_if_blocks_in_exit_effect_and_enter_actions` |
+| `rejected_transition_candidate_defers_anonymous_warning` | simulation | cycle_count, ended, return, stack, state, vars, warnings | [issue #143 comment](https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614148256) |
 | `scenario_ac_charger_session_control_normal` | simulation, generated_python_alignment | ended, return, state, vars | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_103_ac_charger_session_control`<br>`test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_103_ac_charger_session_control` |
 | `scenario_ac_charger_session_control_unplug` | simulation, generated_python_alignment | ended, return, state, vars | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_103_ac_charger_session_control`<br>`test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_103_ac_charger_session_control` |
 | `scenario_ats_mains_generator_transfer_outage` | simulation, generated_python_alignment | ended, return, state, vars | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_104_ats_mains_generator_transfer`<br>`test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_104_ats_mains_generator_transfer` |

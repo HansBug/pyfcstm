@@ -27,9 +27,10 @@ with a diagnostic containing the case id and YAML path.
 | `categories` | yes | Non-empty list from the allowed category set. |
 | `runners` | yes | Non-empty list from the allowed runner set. |
 | `initial` | no | Runtime construction state and vars. |
+| `runtime_options` | no | Simulation-only runtime options such as abstract-handler error mode. |
 | `steps` | conditional | Required for runtime/alignment runners. Mutually exclusive with `commands`. |
 | `commands` | conditional | Required for CLI runner. Mutually exclusive with `steps`. |
-| `handlers` | reserved | Reserved for future abstract-handler fixture extensions. |
+| `handlers` | no | Simulation-only abstract-handler fixtures for recording calls or raising errors. |
 | `expected_failure` | reserved | Reserved for inactive regression fixtures that should not run in the main corpus. |
 
 Allowed categories:
@@ -56,6 +57,62 @@ Allowed runners:
 
 `cli_command` must be the only runner in a case. Runtime/alignment cases use
 `steps`; CLI cases use `commands`.
+
+`runtime_options` and `handlers` are accepted only for simulation-only cases.
+They are rejected when `generated_python_alignment` is present, because the
+generated Python runtime runner intentionally covers the shared public runtime
+surface and does not install Python callback handlers.
+
+## Runtime options
+
+```yaml
+runtime_options:
+  abstract_error_mode: log
+```
+
+Allowed fields:
+
+- `abstract_error_mode`: `raise` or `log`, passed to
+  `SimulationRuntime(..., abstract_error_mode=...)`.
+
+Unknown runtime option fields are rejected. Add new options deliberately in the
+schema and loader tests instead of silently accepting ignored data.
+
+## Abstract-handler fixtures
+
+Handlers let simulation-only cases express callback side effects in YAML:
+
+```yaml
+handlers:
+  - action: Root.RootInit
+    behavior: record_call
+  - action: Root.A.Boom
+    behavior: raise_error
+    exception:
+      type: ValueError
+      message: boom
+```
+
+Allowed handler behaviors:
+
+- `record_call`: registers a handler that appends a call record.
+- `raise_error`: registers a handler that appends a call record and then raises
+  the configured exception.
+
+Handler call records have this shape:
+
+```yaml
+action: Root.RootInit
+state: Root
+stage: enter
+vars:
+  x: 0
+```
+
+Only `ValueError` is currently supported for `raise_error`, because the fixture
+corpus only needs a deterministic user-handler exception class for simulator
+rollback semantics. If another exception family is needed, extend the allowed
+set together with schema-negative tests.
 
 ## Runtime steps
 
@@ -106,6 +163,9 @@ parent-relative paths (`.go`), and root-relative paths (`/go`).
 | `return` | Expected `cycle()` return value. |
 | `raises` | Expected exception class name and optional message match. |
 | `logs` | Step-local `caplog` assertions. |
+| `warnings` | Step-local Python warning assertions. Simulation-only. |
+| `handler_calls` | Exact accumulated fixture-handler call records. Simulation-only. |
+| `abstract_handler_errors` | Expected `runtime.abstract_handler_errors` records. Simulation-only. |
 
 Allowed stack modes are `active` and `init_wait`.
 
@@ -159,6 +219,54 @@ includes the case id, step index, expected message, level, and actual records in
 failure messages. `logs` only allows `contains` and `not_contains`; each log
 matcher only allows `level`, `message`, and `match_kind`.
 
+## Warnings
+
+```yaml
+expect:
+  warnings:
+    count: 1
+    contains:
+      - category: UserWarning
+        message: Root.Bad.<unnamed>
+        match_kind: substring
+    not_contains:
+      - category: UserWarning
+        message: validation-only
+        match_kind: substring
+```
+
+Warnings are captured per step only when `warnings` is present. `count`, when
+present, asserts the exact number of warning records emitted during that step.
+`contains` and `not_contains` use the same `substring` / `regex` match policy as
+logs. The only allowed category name in this schema version is `UserWarning`.
+
+## Handler calls and handler errors
+
+```yaml
+expect:
+  handler_calls:
+    - action: Root.RootInit
+      state: Root
+      stage: enter
+      vars:
+        x: 0
+  abstract_handler_errors:
+    - action: Root.A.Boom
+      type: ValueError
+      message: boom
+      match_kind: substring
+```
+
+`handler_calls` is an exact accumulated-list assertion over the fixture handlers
+registered by the top-level `handlers` field. Use `handler_calls: []` to prove a
+failed speculative execution did not invoke any handler.
+
+`abstract_handler_errors` matches the public
+`SimulationRuntime.abstract_handler_errors` list. Each item may assert `action`,
+`type`, and `message`; `message` supports `substring` or `regex` via
+`match_kind`. Use `abstract_handler_errors: []` to prove failed rollback did not
+leave committed error metadata.
+
 ## Generated Python alignment runner
 
 `generated_python_alignment` builds a `SimulationRuntime` and a generated Python
@@ -178,7 +286,9 @@ at construction time and after every step:
 Even when YAML does not contain an explicit `stack` assertion, the alignment
 runner compares both stacks internally. `cycle_count` is rejected for generated
 alignment cases because the generated runtime does not expose it as a public
-contract.
+contract. `runtime_options`, `handlers`, `warnings`, `handler_calls`, and
+`abstract_handler_errors` are also rejected for generated alignment cases in
+this schema version.
 
 ## CLI command cases
 
@@ -210,6 +320,6 @@ strings. `should_exit`, when present, must be a boolean.
 
 ## Reserved fields
 
-`handlers`, `expected_failure`, `error_state`, and `error_info` are intentionally
-not active in this schema version. Any extension that needs them must update this
-schema and the loader tests rather than silently accepting ignored data.
+`expected_failure`, `error_state`, and `error_info` are intentionally not active
+in this schema version. Any extension that needs them must update this schema
+and the loader tests rather than silently accepting ignored data.

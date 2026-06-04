@@ -40,7 +40,7 @@ _ALLOWED_TOP_LEVEL_FIELDS = {
     "steps",
     "commands",
     "handlers",
-    "xfail_current",
+    "expected_failure",
 }
 _ALLOWED_SOURCE_FIELDS = {"fcstm"}
 _ALLOWED_ORIGIN_FIELDS = {"files", "docs", "assertion_types", "notes"}
@@ -1106,11 +1106,17 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
         raise _case_error(case_id, yaml_path, "cli_command cases require commands")
     if "cli_command" not in runners and not has_steps:
         raise _case_error(case_id, yaml_path, "runtime cases require steps")
-    if data.get("handlers"):
-        raise _case_error(case_id, yaml_path, "handlers is reserved in PR-0 fixtures")
-    if data.get("xfail_current"):
+    if "handlers" in data:
         raise _case_error(
-            case_id, yaml_path, "xfail_current is reserved in PR-0 active fixtures"
+            case_id,
+            yaml_path,
+            "handlers is reserved for abstract-handler fixture extensions",
+        )
+    if "expected_failure" in data:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "expected_failure is reserved for inactive regression fixtures",
         )
     if has_steps:
         if not isinstance(data["steps"], list):

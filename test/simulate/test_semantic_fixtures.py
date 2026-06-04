@@ -93,6 +93,14 @@ def _set_cli_expectation(data, expect):
             lambda data: data.update({"commands": []}),
             "exactly one of steps or commands is required",
         ),
+        (
+            lambda data: data.update({"handlers": []}),
+            "handlers is reserved",
+        ),
+        (
+            lambda data: data.update({"expected_failure": {"reason": "known bug"}}),
+            "expected_failure is reserved",
+        ),
         (lambda data: data.update({"runners": ["unknown"]}), "unknown runners"),
         (
             lambda data: data["steps"][0]["expect"].update({"unknown_expect": True}),

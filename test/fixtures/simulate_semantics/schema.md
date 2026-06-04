@@ -29,8 +29,8 @@ with a diagnostic containing the case id and YAML path.
 | `initial` | no | Runtime construction state and vars. |
 | `steps` | conditional | Required for runtime/alignment runners. Mutually exclusive with `commands`. |
 | `commands` | conditional | Required for CLI runner. Mutually exclusive with `steps`. |
-| `handlers` | reserved | PR-0 rejects active handler specs. |
-| `xfail_current` | reserved | PR-0 rejects active xfail bug reproductions. |
+| `handlers` | reserved | Reserved for future abstract-handler fixture extensions. |
+| `expected_failure` | reserved | Reserved for inactive regression fixtures that should not run in the main corpus. |
 
 Allowed categories:
 
@@ -85,7 +85,7 @@ steps:
 
 `cycle` may be `{}`, `null`, or a mapping with only the `events` field.
 `events` may be `null` or a list. Bare string event input is deliberately not
-supported in PR-0, because string-vs-list cycle input is tracked separately.
+supported by this schema version, because string-vs-list cycle input is tracked separately.
 
 Event strings are passed through unchanged. The corpus covers existing event
 path forms such as full paths (`Root.A.Go`), relative paths (`go`),
@@ -127,7 +127,7 @@ expect:
   ended: false
 ```
 
-Allowed exception type names in PR-0 are:
+Allowed exception type names are:
 
 - `SimulationRuntimeDfsError`
 - `SimulationRuntimeEventError`
@@ -210,6 +210,6 @@ strings. `should_exit`, when present, must be a boolean.
 
 ## Reserved fields
 
-`handlers`, `xfail_current`, `error_state`, and `error_info` are intentionally
-not active in PR-0. If a later PR needs them, it must update this schema and the
-loader tests rather than silently accepting ignored data.
+`handlers`, `expected_failure`, `error_state`, and `error_info` are intentionally
+not active in this schema version. Any extension that needs them must update this
+schema and the loader tests rather than silently accepting ignored data.

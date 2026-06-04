@@ -5,8 +5,10 @@ semantics into data files.  Each case lives in `cases/<id>.fcstm` plus
 `cases/<id>.yaml` and is executed by helpers in
 `test/testings/simulate_semantics.py`.
 
-PR-0 is a fixture/test-harness change only. It does not change production
-runtime semantics and does not activate known bug reproductions from issue #143.
+This corpus is a fixture/test-harness change only. It does not change production
+runtime semantics and does not activate known simulator bug reproductions. The
+tracking context is [issue #143](https://github.com/HansBug/pyfcstm/issues/143)
+and [PR #145](https://github.com/HansBug/pyfcstm/pull/145).
 
 ## How to run
 
@@ -68,7 +70,8 @@ The table below is generated from the current YAML metadata and is intended to
 make anti-drift review straightforward. `origin.files` points to the original
 inline tests that supplied each fixture's semantics; fully migrated runtime and
 Python-template alignment tests are now executed through the fixture runners, so
-those origin paths may be visible only through git history / PR diff after the
+those origin paths may be visible only through repository history or the
+[migration pull request](https://github.com/HansBug/pyfcstm/pull/145) after the
 inline files are removed.
 
 | Fixture id | Runners | Assertion types | Origin files |

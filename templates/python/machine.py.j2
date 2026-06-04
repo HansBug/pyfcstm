@@ -99,9 +99,9 @@ Original DSL Source::
 {{ (model.to_ast_node() | string) | indent(4, true) }}
 """
 
-import math
+import math  # noqa: F401 - rendered DSL math expressions may use this module.
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Tuple, Union
 
 
 Number = Union[int, float]
@@ -187,6 +187,13 @@ _EVENT_PATH_SET = set(_EVENT_PATHS)
 
 class SimulationRuntimeDfsError(RuntimeError):
     """Raised when speculative validation exceeds the generated runtime safety limit."""
+
+    pass
+
+
+
+class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
+    """Raised when a DSL guard or action expression fails during execution."""
 
     pass
 
@@ -607,6 +614,18 @@ class {{ machine_class_name(model) }}:
             return True
         return transition["event_path"] in event_names
 
+    def _evaluate_runtime_expr(self, fn, usage):
+        try:
+            return fn()
+        except (ValueError, ArithmeticError) as err:
+            # ValueError: math domain errors or invalid numeric operations
+            # raised while evaluating a user's DSL expression.
+            # ArithmeticError: division by zero, overflow, or other numeric
+            # runtime failure while evaluating a user's DSL expression.
+            raise SimulationRuntimeExpressionError(
+                "%s evaluation failed: %s" % (usage, err)
+            ) from err
+
     def _transition_matches_guard(self, transition, vars_):
         if transition["guard"] is None:
             return True
@@ -794,7 +813,8 @@ class {{ machine_class_name(model) }}:
             if len(self._create_structural_signature(stack)) > max_structural_depth:
                 raise SimulationRuntimeDfsError(
                     "Speculative DFS exceeded the structural stack-depth safety limit "
-                    "(%s) without reaching a stoppable state or pruning."
+                    "(%s) without reaching a stoppable state or pruning; "
+                    "the state machine likely contains an invalid unbounded nesting chain."
                     % (max_structural_depth,)
                 )
 
@@ -976,7 +996,7 @@ class {{ machine_class_name(model) }}:
         """
         scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
-{{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
 {% endif %}
@@ -1029,7 +1049,7 @@ class {{ machine_class_name(model) }}:
         """
         scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
-{{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
 {% endif %}
@@ -1082,7 +1102,7 @@ class {{ machine_class_name(model) }}:
         """
         scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
-{{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
 {% endif %}
@@ -1137,7 +1157,7 @@ class {{ machine_class_name(model) }}:
         """
         scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
-{{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
 {% endif %}
@@ -1192,7 +1212,7 @@ class {{ machine_class_name(model) }}:
         """
         scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
-{{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
 {% endif %}
@@ -1247,7 +1267,7 @@ class {{ machine_class_name(model) }}:
         """
         scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
-{{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
 {% endif %}
@@ -1302,7 +1322,7 @@ class {{ machine_class_name(model) }}:
         """
         scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
-{{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
 {% endif %}
@@ -1320,7 +1340,12 @@ class {{ machine_class_name(model) }}:
 {{ (transition.to_ast_node() | string) | indent(12, true) }}
         """
         scope = vars_ if vars_ is not None else self._vars
-        return bool({{ transition.guard.to_ast_node() | expr_render(style='python_scope_expr') }})
+        return bool(
+            self._evaluate_runtime_expr(
+                lambda: {{ transition.guard.to_ast_node() | expr_render(style='python_scope_expr') }},
+                "transition guard",
+            )
+        )
 
 {% endif %}
 {% if transition.effects %}
@@ -1333,7 +1358,7 @@ class {{ machine_class_name(model) }}:
 {{ (transition.to_ast_node() | string) | indent(12, true) }}
         """
         scope = vars_ if vars_ is not None else self._vars
-{{ transition.effects | stmts_render(style='python', indent='    ', level=2) }}
+{{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=2) }}
 
 {% endif %}
 {% endfor %}
@@ -1348,7 +1373,12 @@ class {{ machine_class_name(model) }}:
 {{ (transition.to_ast_node() | string) | indent(12, true) }}
         """
         scope = vars_ if vars_ is not None else self._vars
-        return bool({{ transition.guard.to_ast_node() | expr_render(style='python_scope_expr') }})
+        return bool(
+            self._evaluate_runtime_expr(
+                lambda: {{ transition.guard.to_ast_node() | expr_render(style='python_scope_expr') }},
+                "transition guard",
+            )
+        )
 
 {% endif %}
 {% if transition.effects %}
@@ -1361,7 +1391,7 @@ class {{ machine_class_name(model) }}:
 {{ (transition.to_ast_node() | string) | indent(12, true) }}
         """
         scope = vars_ if vars_ is not None else self._vars
-{{ transition.effects | stmts_render(style='python', indent='    ', level=2) }}
+{{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=2) }}
 
 {% endif %}
 {% endfor %}

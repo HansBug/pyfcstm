@@ -18,5 +18,6 @@
 - 默认输出 `machine.py`、`README.md`、`README_zh.md`
 - 内置状态元数据、cycle 逻辑、hot start、abstract hook 扩展点与抽象处理器注册
 - 仅依赖 Python 标准库
-- 生成代码默认风格尽量贴近 `ruff format`
+- 生成的 `machine.py` 默认应通过 `ruff check`
+- 生成的 `machine.py` 默认应在 `ruff format --check` 下保持稳定
 - abstract hook 的命名有利于 DSL 用户借助 IDE 补全快速定位

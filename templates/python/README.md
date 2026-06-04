@@ -19,5 +19,6 @@ Current properties:
 - emits `machine.py`, `README.md`, and `README_zh.md`
 - embeds state metadata, cycle logic, hot start handling, and subclass hook points for abstract actions
 - depends only on the Python standard library
-- keeps generated output close to `ruff format` defaults
+- keeps generated `machine.py` output lint-clean under `ruff check`
+- keeps generated `machine.py` output stable under `ruff format --check`
 - exposes abstract hook names that are easy to discover through IDE completion

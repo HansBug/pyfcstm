@@ -255,6 +255,42 @@ def _set_generated_alignment(data):
         ),
         (
             lambda data: (
+                data["steps"][0]["expect"].pop("return")
+                or data["steps"][0]["expect"].update(
+                    {"raises": {"type": "ValueError", "cause_type": 1}}
+                )
+            ),
+            "raises.cause_type must be a string",
+        ),
+        (
+            lambda data: (
+                data["steps"][0]["expect"].pop("return")
+                or data["steps"][0]["expect"].update(
+                    {"raises": {"type": "ValueError", "cause_match": 1}}
+                )
+            ),
+            "raises.cause_match must be a string",
+        ),
+        (
+            lambda data: (
+                data["steps"][0]["expect"].pop("return")
+                or data["steps"][0]["expect"].update(
+                    {"raises": {"type": "ValueError", "cause_match_kind": "bad"}}
+                )
+            ),
+            "raises.cause_match_kind is invalid",
+        ),
+        (
+            lambda data: (
+                data["steps"][0]["expect"].pop("return")
+                or data["steps"][0]["expect"].update(
+                    {"raises": {"type": "ValueError", "cause_match_kind": "regex"}}
+                )
+            ),
+            "raises.cause_match_kind requires cause_match",
+        ),
+        (
+            lambda data: (
                 _set_generated_alignment(data)
                 or data["steps"][0]["expect"].update({"cycle_count": 1})
             ),

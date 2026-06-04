@@ -301,6 +301,9 @@ Mandatory completion rule for built-in template work:
 
 - Treat formatter convergence as part of correctness, not optional polish.
 - The generated target-language artifacts must be acceptable to the corresponding formatter defaults for that language.
+- For the built-in `python` template specifically, every emitted `machine.py` should be designed to pass both
+  `ruff check` and `ruff format --check` in the representative template tests. Do not treat "ruff can rewrite it" as
+  sufficient; generated Python should be lint-clean and formatter-stable without users editing the generated file.
 - Template-facing documentation artifacts that ship with the generated output, especially generated `README.md` / `README_zh.md` files and their embedded code snippets, must also be kept formatter-friendly for the relevant language and text formatter set.
 - For template changes, "done" means the generated outputs have converged under the intended formatter flow. If the formatter still wants to rewrite the emitted code or the generated usage examples materially, the template work is not complete yet.
 - When adding or changing a multi-language built-in template, explicitly design the generated code shape and README examples so they stabilize under the formatter set listed above instead of relying on hand-aligned formatting.
@@ -1169,6 +1172,9 @@ For built-in template work, the current design bar is defined by the `python` te
 - Preserve naming clarity for generated extension points so DSL authors can map states, actions, and abstract behavior back to code quickly, ideally with IDE completion support.
 - Keep generated code readable and inspectable. Generated runtimes are product artifacts, not opaque intermediate blobs.
 - Ensure the final generated code, generated support files, and generated README examples are written so the corresponding formatter flow reaches a stable end state. Template work that has not reached formatter convergence is not complete.
+- For changes to `templates/python/`, verify representative generated `machine.py` outputs with both `ruff check` and
+  `ruff format --check`; if ruff reports lint diagnostics or would reformat the generated Python, the template change
+  is not ready.
 - When adding a new built-in template, update all of the following together: `templates/<name>/`, packaged template assets, CLI/template metadata, maintainer docs, generated docs if applicable, and the corresponding tests.
 
 ### Testing Strategy

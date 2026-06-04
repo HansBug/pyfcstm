@@ -229,6 +229,39 @@ class TestRenderOperationStatements:
             '    )'
         )
 
+    def test_stmts_render_python_style_keeps_blank_template_lines_empty(self):
+        statements = parse_with_grammar_entry(
+            """
+        if [counter > 0] {
+            counter = counter + 1;
+        }
+        """,
+            entry_name="operational_statement_set",
+        )
+
+        rendered = render_stmt_nodes(
+            statements,
+            lang_style='python',
+            state_vars=['counter'],
+            ext_configs={
+                'assign': (
+                    '{{ target }} = wrap(\n'
+                    '\n'
+                    '    lambda: {{ expr }},\n'
+                    ')'
+                ),
+            },
+        )
+
+        assert rendered == (
+            'if scope["counter"] > 0:\n'
+            '    scope["counter"] = wrap(\n'
+            '\n'
+            '        lambda: scope["counter"] + 1,\n'
+            '    )'
+        )
+        assert '\n    \n' not in rendered
+
     @pytest.mark.parametrize(
         ['lang_style', 'expected'],
         [

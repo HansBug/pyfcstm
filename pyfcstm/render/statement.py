@@ -351,7 +351,7 @@ def _indent_rendered_text(text: str, indent: str, level: int) -> str:
     :rtype: str
     """
     prefix = indent * level
-    return '\n'.join(prefix + line if line else prefix for line in text.splitlines())
+    return '\n'.join(prefix + line if line else line for line in text.splitlines())
 
 
 def _merge_numeric_types(type_a: Optional[str], type_b: Optional[str]) -> Optional[str]:

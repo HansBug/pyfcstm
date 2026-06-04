@@ -81,8 +81,24 @@ class BatchProcessor:
         """
         self.runtime = runtime
         self.state_machine = state_machine if state_machine is not None else runtime.state_machine
-        self.command_processor = CommandProcessor(runtime, state_machine=self.state_machine, use_color=use_color)
+        self.command_processor = CommandProcessor(
+            runtime,
+            state_machine=self.state_machine,
+            use_color=use_color,
+            runtime_replaced_callback=self._replace_runtime,
+        )
         self.output_func = output_func or create_cross_platform_output_func()
+
+    def _replace_runtime(self, runtime) -> None:
+        """
+        Synchronize the batch-level runtime reference after command rebuilds.
+
+        :param runtime: Replacement runtime created by the command processor.
+        :type runtime: SimulationRuntime
+        :return: ``None``.
+        :rtype: None
+        """
+        self.runtime = runtime
 
     def execute_commands(self, command_string: str) -> None:
         """

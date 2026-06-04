@@ -1,0 +1,5 @@
+state System {
+    state A;
+    [*] -> A;
+    A -> [*];
+}

@@ -7,7 +7,7 @@ state machine simulator.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional, Tuple, Dict, Any, Callable
 
 from ...simulate import (
     SimulationRuntimeDfsError,
@@ -15,6 +15,7 @@ from ...simulate import (
     SimulationRuntimeExpressionError,
 )
 from .display import StateDisplay
+from .events import get_current_event_display_items
 from .logging import configure_simulate_cli_logger
 
 
@@ -155,7 +156,13 @@ class CommandProcessor:
     :vartype log_level: LogLevel
     """
 
-    def __init__(self, runtime, state_machine=None, use_color: bool = True):
+    def __init__(
+            self,
+            runtime,
+            state_machine=None,
+            use_color: bool = True,
+            runtime_replaced_callback: Optional[Callable[[Any], None]] = None,
+    ):
         """
         Initialize the command processor.
 
@@ -165,12 +172,19 @@ class CommandProcessor:
         :type state_machine: StateMachine, optional
         :param use_color: Whether to use ANSI colors, defaults to True
         :type use_color: bool, optional
+        :param runtime_replaced_callback: Callback invoked after init/clear rebuilds runtime.
+        :type runtime_replaced_callback: Callable[[SimulationRuntime], None], optional
         """
         self.runtime = runtime
         self.state_machine = state_machine if state_machine is not None else runtime.state_machine
+        self._runtime_replaced_callback = runtime_replaced_callback
         self.settings = Settings()
         self.settings.color = use_color
         self.display = StateDisplay(use_color=use_color, logger=runtime.logger)
+        if self.runtime.history_size is None:
+            self._apply_history_size_setting()
+        else:
+            self.settings.history_size = self.runtime.history_size
 
         configure_simulate_cli_logger(self.runtime.logger, use_color=use_color)
 
@@ -190,6 +204,48 @@ class CommandProcessor:
             LogLevel.OFF: logging.CRITICAL + 10,  # Higher than CRITICAL to disable all
         }
         self.runtime.logger.setLevel(level_map[self.settings.log_level])
+
+    def _apply_history_size_setting(self) -> None:
+        """
+        Synchronize the session history-size setting into the active runtime.
+
+        ``Settings.history_size`` is the command-layer value shown to users by
+        ``setting history_size``.  The runtime must use the same value so the
+        displayed setting and actual history retention cannot drift apart.
+
+        :return: ``None``.
+        :rtype: None
+        """
+        self.runtime.history_size = self.settings.history_size if self.settings.history_size > 0 else None
+        if self.runtime.history_size is not None and len(self.runtime.history) > self.runtime.history_size:
+            self.runtime.history = self.runtime.history[-self.runtime.history_size:]
+
+    def _replace_runtime(self, runtime) -> None:
+        """
+        Replace the active runtime and notify outer owners.
+
+        :param runtime: Newly constructed runtime.
+        :type runtime: SimulationRuntime
+        :return: ``None``.
+        :rtype: None
+        """
+        self.runtime = runtime
+        self.display = StateDisplay(use_color=self.settings.color, logger=runtime.logger)
+        configure_simulate_cli_logger(runtime.logger, use_color=self.settings.color)
+        self._sync_log_level()
+        if self._runtime_replaced_callback is not None:
+            self._runtime_replaced_callback(runtime)
+
+    def create_completer(self):
+        """
+        Create a completer bound to the current runtime.
+
+        :return: Simulation completer for this processor's runtime.
+        :rtype: pyfcstm.entry.simulate.completer.SimulationCompleter
+        """
+        from .completer import SimulationCompleter
+
+        return SimulationCompleter(self.runtime)
 
     def process(self, user_input: str) -> CommandResult:
         """
@@ -351,17 +407,13 @@ class CommandProcessor:
                 self.state_machine,
                 initial_state=state_path,
                 initial_vars=initial_vars if initial_vars else None,
-                abstract_error_mode=self.runtime._abstract_error_mode,
+                abstract_error_mode=self.runtime.abstract_error_mode,
                 history_size=self.runtime.history_size
             )
+            self.runtime.copy_session_configuration_to(new_runtime)
 
             # Replace runtime
-            self.runtime = new_runtime
-
-            # Reconfigure display with new runtime logger
-            self.display = StateDisplay(use_color=self.settings.color, logger=new_runtime.logger)
-            configure_simulate_cli_logger(new_runtime.logger, use_color=self.settings.color)
-            self._sync_log_level()
+            self._replace_runtime(new_runtime)
 
             return CommandResult(
                 f"Initialized from state: {state_path}\n" +
@@ -428,49 +480,55 @@ class CommandProcessor:
         :return: Command result with table
         :rtype: CommandResult
         """
-        # Get starting cycle count
-        start_cycle = self.runtime.cycle_count
-
-        # Collect data for all cycles
+        # Collect data for cycles that actually advance the runtime.  If the
+        # runtime has already ended before the command starts, keep one actual
+        # terminated row for user feedback but do not fabricate extra cycles.
+        var_names = sorted(self.runtime.vars.keys())
         table_data = []
+        if self.runtime.is_ended:
+            table_data.append([self.runtime.cycle_count, "(terminated)"] + [
+                self.runtime.vars[var_name] for var_name in var_names
+            ])
+
         for i in range(count):
             if self.settings.log_level == LogLevel.DEBUG:
-                self.display.log(f"Executing cycle {i+1}/{count} with events: {event_list if event_list else 'none'}", "debug")
+                self.display.log(
+                    f"Executing cycle {i + 1}/{count} with events: {event_list if event_list else 'none'}",
+                    "debug",
+                )
 
+            cycle_count_before = self.runtime.cycle_count
+            was_ended = self.runtime.is_ended
             self.runtime.cycle(event_list if event_list else None)
+            if was_ended and self.runtime.cycle_count == cycle_count_before:
+                break
 
-            # Collect state and variables
             try:
                 state_path = '.'.join(self.runtime.current_state.path)
             except (AttributeError, IndexError):
+                # AttributeError: a non-standard runtime-like object exposed no
+                # current_state path; IndexError: SimulationRuntime.current_state
+                # raises after termination.
                 state_path = "(terminated)"
 
-            # Use actual cycle count from runtime
-            cycle_num = start_cycle + i + 1
-            row = [cycle_num, state_path]
-            # Add variable values
+            row = [self.runtime.cycle_count, state_path]
             for var_name in sorted(self.runtime.vars.keys()):
                 row.append(self.runtime.vars[var_name])
 
             table_data.append(row)
+            if self.runtime.is_ended:
+                break
 
-        # Prepare table headers
         headers = ['Cycle', 'State']
-        var_names = sorted(self.runtime.vars.keys())
         headers.extend(var_names)
 
-        # Filter rows if count >= 20
-        if count >= 20:
-            display_data = table_data[:10] + table_data[-10:]
-            # Add separator row
+        if count >= 20 and len(table_data) > 20:
             separator_row = ['...'] * len(headers)
             display_data = table_data[:10] + [separator_row] + table_data[-10:]
         else:
             display_data = table_data
 
-        # Generate table using our custom formatter
         table_str = self.display.format_table(headers, display_data, var_names)
-
         return CommandResult(table_str)
 
     def _handle_clear(self) -> CommandResult:
@@ -482,7 +540,14 @@ class CommandProcessor:
         """
         # Recreate the runtime to reset state
         from ...simulate import SimulationRuntime
-        self.runtime = SimulationRuntime(self.runtime.state_machine)
+
+        new_runtime = SimulationRuntime(
+            self.runtime.state_machine,
+            abstract_error_mode=self.runtime.abstract_error_mode,
+            history_size=self.runtime.history_size,
+        )
+        self.runtime.copy_session_configuration_to(new_runtime)
+        self._replace_runtime(new_runtime)
         if self.settings.log_level in [LogLevel.DEBUG, LogLevel.INFO]:
             self.display.log("State machine reset to initial state", "info")
         return CommandResult(self.display.format_current_state(self.runtime))
@@ -628,11 +693,7 @@ Keyboard shortcuts (interactive mode):
                 # Sync log level with runtime logger
                 self._sync_log_level()
             elif key == 'history_size':
-                # Update runtime history size
-                self.runtime.history_size = self.settings.history_size if self.settings.history_size > 0 else None
-                # Trim existing history to new size
-                if self.runtime.history_size is not None and len(self.runtime.history) > self.runtime.history_size:
-                    self.runtime.history = self.runtime.history[-self.runtime.history_size:]
+                self._apply_history_size_setting()
 
             return CommandResult(f"Setting updated: {key} = {value}")
         except (KeyError, ValueError) as e:
@@ -645,33 +706,7 @@ Keyboard shortcuts (interactive mode):
         :return: List of (full_path, short_name) tuples
         :rtype: List[Tuple[str, Optional[str]]]
         """
-        if self.runtime.is_ended:
-            return []
-        if not self.runtime.current_state:
-            return []
-
-        current_state = self.runtime.current_state
-        current_state_name = current_state.name
-        events = []
-        seen_events = set()
-
-        # Check parent's transitions for transitions from current state
-        if current_state.parent:
-            parent = current_state.parent
-            for transition in parent.transitions:
-                # Check if this transition is from the current state
-                if transition.from_state == current_state_name and transition.event:
-                    event_path = '.'.join(transition.event.state_path) + '.' + transition.event.name
-                    if event_path not in seen_events:
-                        seen_events.add(event_path)
-                        # Add full path and short name
-                        short_name = transition.event.name
-                        if short_name != event_path:
-                            events.append((event_path, short_name))
-                        else:
-                            events.append((event_path, None))
-
-        return events
+        return get_current_event_display_items(self.runtime)
 
     def _handle_export(self, args: List[str]) -> CommandResult:
         """

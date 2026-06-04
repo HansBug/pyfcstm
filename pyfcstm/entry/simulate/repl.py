@@ -10,7 +10,6 @@ from pathlib import Path
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggest, Suggestion
-from prompt_toolkit.document import Document
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.styles import Style
 
@@ -118,7 +117,12 @@ class SimulationREPL:
         """
         self.runtime = runtime
         self.state_machine = state_machine if state_machine is not None else runtime.state_machine
-        self.command_processor = CommandProcessor(runtime, state_machine=self.state_machine, use_color=use_color)
+        self.command_processor = CommandProcessor(
+            runtime,
+            state_machine=self.state_machine,
+            use_color=use_color,
+            runtime_replaced_callback=self._replace_runtime,
+        )
         self.history = self._get_history()
         self.completer = SimulationCompleter(runtime)
         self.session = PromptSession(
@@ -128,6 +132,19 @@ class SimulationREPL:
             enable_history_search=True,
             style=self._get_style(),
         )
+
+    def _replace_runtime(self, runtime) -> None:
+        """
+        Synchronize REPL-owned runtime references after command rebuilds.
+
+        :param runtime: Replacement runtime created by the command processor.
+        :type runtime: SimulationRuntime
+        :return: ``None``.
+        :rtype: None
+        """
+        self.runtime = runtime
+        if hasattr(self, 'completer'):
+            self.completer.runtime = runtime
 
     def _get_history(self) -> FileHistory:
         """

@@ -28,8 +28,9 @@ with a diagnostic containing the case id and YAML path.
 | `runners` | yes | Non-empty list from the allowed runner set. |
 | `initial` | no | Runtime construction state and vars. |
 | `runtime_options` | no | Simulation-only runtime options such as abstract-handler error mode. |
-| `steps` | conditional | Required for runtime/alignment runners. Mutually exclusive with `commands`. |
-| `commands` | conditional | Required for CLI runner. Mutually exclusive with `steps`. |
+| `model_build` | conditional | Simulation-only model-construction diagnostic expectation. Mutually exclusive with `steps` and `commands`. |
+| `steps` | conditional | Required for runtime/alignment runners. Mutually exclusive with `model_build` and `commands`. |
+| `commands` | conditional | Required for CLI runner. Mutually exclusive with `model_build` and `steps`. |
 | `handlers` | no | Simulation-only abstract-handler fixtures for recording calls or raising errors. |
 | `expected_failure` | reserved | Reserved for inactive regression fixtures that should not run in the main corpus. |
 
@@ -56,7 +57,9 @@ Allowed runners:
 - `cli_command`
 
 `cli_command` must be the only runner in a case. Runtime/alignment cases use
-`steps`; CLI cases use `commands`.
+`steps`; CLI cases use `commands`; model-construction diagnostic cases use
+`model_build`. Exactly one of `model_build`, `steps`, or `commands` must be
+present.
 
 `runtime_options` and `handlers` are accepted only for simulation-only cases.
 They are rejected when `generated_python_alignment` is present, because the
@@ -77,6 +80,30 @@ Allowed fields:
 
 Unknown runtime option fields are rejected. Add new options deliberately in the
 schema and loader tests instead of silently accepting ignored data.
+
+## Model construction diagnostics
+
+`model_build` lets a simulation-only case assert that parsing and model
+construction fail before a `SimulationRuntime` is created:
+
+```yaml
+runners: [simulation]
+model_build:
+  expect:
+    raises:
+      type: ModelValidationError
+      match: 'Action reference cycle: Root.A -> Root.A'
+      match_kind: substring
+```
+
+Allowed fields:
+
+- `model_build.expect.raises`: required exception expectation.
+
+`model_build` is intentionally restricted to `runners: [simulation]`. It cannot
+be combined with `generated_python_alignment` or `cli_command`, because those
+runners require a successfully built model. It is also mutually exclusive with
+`steps` and `commands`.
 
 ## Abstract-handler fixtures
 
@@ -213,6 +240,7 @@ expect:
 
 Allowed exception type names are:
 
+- `ModelValidationError`
 - `SimulationRuntimeDfsError`
 - `SimulationRuntimeEventError`
 - `SimulationRuntimeExpressionError`

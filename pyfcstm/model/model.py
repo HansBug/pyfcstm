@@ -57,7 +57,6 @@ from ..dsl import node as dsl_nodes, INIT_STATE, EXIT_STATE
 from ..utils.validate import (
     ModelDiagnostic,
     ModelLookupError,
-    ModelValidationError,
     ModelValueError,
     Span,
 )
@@ -87,26 +86,26 @@ def _node_span(node) -> Optional[Span]:
     # pass through this path, and PR-D2 will decide which missing spans are
     # diagnostic-contract gaps. Keep the missing-span case observable as
     # ``None`` instead of manufacturing an imprecise fallback.
-    return getattr(node, '_span', None)
+    return getattr(node, "_span", None)
 
 
 def _event_origin_from_id(
-        event_id: dsl_nodes.ChainID,
-        event_scope: Optional[str] = None,
-        source_state: Optional[str] = None,
+    event_id: dsl_nodes.ChainID,
+    event_scope: Optional[str] = None,
+    source_state: Optional[str] = None,
 ) -> str:
     """Infer the event trigger scope preserved by the DSL listener."""
     if event_scope is not None:
         return event_scope
     if event_id.is_absolute:
-        return 'absolute'
+        return "absolute"
     if (
-            source_state is not None
-            and len(event_id.path) == 2
-            and event_id.path[0] == source_state
+        source_state is not None
+        and len(event_id.path) == 2
+        and event_id.path[0] == source_state
     ):
-        return 'local'
-    return 'chain'
+        return "local"
+    return "chain"
 
 
 @dataclass
@@ -262,7 +261,7 @@ class Event:
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
-        self.origins = list(self.origins or (['declared'] if self.declared else []))
+        self.origins = list(self.origins or (["declared"] if self.declared else []))
 
     @property
     def path(self) -> Tuple[str, ...]:
@@ -1525,7 +1524,7 @@ class State(AstExportable, PlantUMLExportable):
             )
 
             if not self.is_leaf_state:
-                print(f" {{", file=sf)
+                print(" {", file=sf)
 
                 # Check if we should expand substates or collapse them
                 should_expand_substates = (
@@ -1623,7 +1622,7 @@ class State(AstExportable, PlantUMLExportable):
                         trans_text = tf.getvalue()
                     print(indent(trans_text, prefix="    "), file=sf)
 
-                print(f"}}", file=sf, end="")
+                print("}", file=sf, end="")
 
             # Show lifecycle actions if enabled (skip if collapse_empty_states is True and state is empty)
             should_show_actions = not (
@@ -1701,10 +1700,10 @@ class State(AstExportable, PlantUMLExportable):
             yield from substate.walk_states()
 
     def resolve_event(
-            self,
-            event_ref: str,
-            *,
-            collect_into: Optional[DiagnosticSink] = None,
+        self,
+        event_ref: str,
+        *,
+        collect_into: Optional[DiagnosticSink] = None,
     ) -> Optional[Event]:
         """
         Resolve an event reference string to an existing Event object in the state hierarchy.
@@ -1776,22 +1775,22 @@ class State(AstExportable, PlantUMLExportable):
         # relative form ("local"). The empty-ref case has no meaningful
         # scope yet — we default to ``'local'`` for refs purposes.
         if not event_ref:
-            scope = 'local'
-        elif event_ref.startswith('/'):
-            scope = 'absolute'
-        elif event_ref.startswith('.'):
-            scope = 'chain'
+            scope = "local"
+        elif event_ref.startswith("/"):
+            scope = "absolute"
+        elif event_ref.startswith("."):
+            scope = "chain"
         else:
-            scope = 'local'
+            scope = "local"
 
         def _fail_invalid(reason: str, message: str) -> None:
             _emit_or_raise(
                 collect_into,
                 ModelDiagnostic(
-                    code='E_EVENT_REF_INVALID',
-                    severity='error',
+                    code="E_EVENT_REF_INVALID",
+                    severity="error",
                     message=message,
-                    refs={'event_ref': event_ref, 'reason': reason},
+                    refs={"event_ref": event_ref, "reason": reason},
                 ),
                 exc_cls=ModelValueError,
             )
@@ -1800,20 +1799,20 @@ class State(AstExportable, PlantUMLExportable):
             _emit_or_raise(
                 collect_into,
                 ModelDiagnostic(
-                    code='E_EVENT_NOT_FOUND',
-                    severity='error',
+                    code="E_EVENT_NOT_FOUND",
+                    severity="error",
                     message=message,
                     refs={
-                        'event_ref': event_ref,
-                        'scope': scope,
-                        'searched_from': searched_from,
+                        "event_ref": event_ref,
+                        "scope": scope,
+                        "searched_from": searched_from,
                     },
                 ),
                 exc_cls=ModelLookupError,
             )
 
         if not event_ref:
-            _fail_invalid('empty', "Event reference cannot be empty")
+            _fail_invalid("empty", "Event reference cannot be empty")
             return None
 
         # Determine the target state path and event name based on reference type
@@ -1825,7 +1824,9 @@ class State(AstExportable, PlantUMLExportable):
             # Remove leading '/' and resolve from root
             relative_path = event_ref[1:]
             if not relative_path:
-                _fail_invalid('bare_slash', "Absolute event reference cannot be just '/'")
+                _fail_invalid(
+                    "bare_slash", "Absolute event reference cannot be just '/'"
+                )
                 return None
 
             # Find root state
@@ -1837,7 +1838,7 @@ class State(AstExportable, PlantUMLExportable):
             path_parts = relative_path.split(".")
             if not all(path_parts):
                 _fail_invalid(
-                    'invalid_absolute',
+                    "invalid_absolute",
                     f"Invalid absolute event reference: {event_ref!r}",
                 )
                 return None
@@ -1859,7 +1860,7 @@ class State(AstExportable, PlantUMLExportable):
             remaining_path = event_ref[dot_count:]
             if not remaining_path:
                 _fail_invalid(
-                    'trailing_dots',
+                    "trailing_dots",
                     f"Parent-relative event reference cannot end with dots: {event_ref!r}",
                 )
                 return None
@@ -1875,7 +1876,7 @@ class State(AstExportable, PlantUMLExportable):
             path_parts = remaining_path.split(".")
             if not all(path_parts):
                 _fail_invalid(
-                    'invalid_relative',
+                    "invalid_relative",
                     f"Invalid parent-relative event reference: {event_ref!r}",
                 )
                 return None
@@ -1885,7 +1886,7 @@ class State(AstExportable, PlantUMLExportable):
             for _ in range(dot_count):
                 if current_state.parent is None:
                     _fail_invalid(
-                        'beyond_root',
+                        "beyond_root",
                         f"Parent-relative event reference {event_ref!r} goes beyond root state "
                         f"(current state: {'.'.join(self.path)}, tried to go up {dot_count} levels)",
                     )
@@ -1900,7 +1901,7 @@ class State(AstExportable, PlantUMLExportable):
             path_parts = event_ref.split(".")
             if not all(path_parts):
                 _fail_invalid(
-                    'invalid_relative',
+                    "invalid_relative",
                     f"Invalid relative event reference: {event_ref!r}",
                 )
                 return None
@@ -1921,7 +1922,7 @@ class State(AstExportable, PlantUMLExportable):
                 _fail_not_found(
                     f"State {'.'.join(target_state_path[: i + 1])!r} not found in hierarchy "
                     f"while resolving event reference {event_ref!r}",
-                    searched_from='.'.join(self.path),
+                    searched_from=".".join(self.path),
                 )
                 return None
             current_state = current_state.substates[state_name]
@@ -1931,7 +1932,7 @@ class State(AstExportable, PlantUMLExportable):
             _fail_not_found(
                 f"Event {event_name!r} not found in state {'.'.join(target_state_path)!r} "
                 f"while resolving event reference {event_ref!r}",
-                searched_from='.'.join(self.path),
+                searched_from=".".join(self.path),
             )
             return None
 
@@ -2130,10 +2131,10 @@ class StateMachine(AstExportable, PlantUMLExportable):
         yield from self.root_state.walk_states()
 
     def resolve_event(
-            self,
-            event_path: str,
-            *,
-            collect_into: Optional[DiagnosticSink] = None,
+        self,
+        event_path: str,
+        *,
+        collect_into: Optional[DiagnosticSink] = None,
     ) -> Optional[Event]:
         """
         Resolve a full event path to an existing Event object in the state machine.
@@ -2177,14 +2178,15 @@ class StateMachine(AstExportable, PlantUMLExportable):
             >>> event.name
             'error'
         """
+
         def _fail_invalid(reason: str, message: str) -> None:
             _emit_or_raise(
                 collect_into,
                 ModelDiagnostic(
-                    code='E_EVENT_REF_INVALID',
-                    severity='error',
+                    code="E_EVENT_REF_INVALID",
+                    severity="error",
                     message=message,
-                    refs={'event_ref': event_path, 'reason': reason},
+                    refs={"event_ref": event_path, "reason": reason},
                 ),
                 exc_cls=ModelValueError,
             )
@@ -2193,34 +2195,34 @@ class StateMachine(AstExportable, PlantUMLExportable):
             _emit_or_raise(
                 collect_into,
                 ModelDiagnostic(
-                    code='E_EVENT_NOT_FOUND',
-                    severity='error',
+                    code="E_EVENT_NOT_FOUND",
+                    severity="error",
                     message=message,
                     refs={
-                        'event_ref': event_path,
-                        'scope': 'absolute',
-                        'searched_from': searched_from,
+                        "event_ref": event_path,
+                        "scope": "absolute",
+                        "searched_from": searched_from,
                     },
                 ),
                 exc_cls=ModelLookupError,
             )
 
         if not event_path:
-            _fail_invalid('empty', "Event path cannot be empty")
+            _fail_invalid("empty", "Event path cannot be empty")
             return None
 
         # Split the path into components
         path_parts = event_path.split(".")
         if not all(path_parts):
             _fail_invalid(
-                'invalid_absolute',
+                "invalid_absolute",
                 f"Invalid event path: {event_path!r} (contains empty parts)",
             )
             return None
 
         if len(path_parts) < 2:
             _fail_invalid(
-                'invalid_absolute',
+                "invalid_absolute",
                 f"Invalid event path: {event_path!r} "
                 f"(must contain at least state name and event name)",
             )
@@ -2250,7 +2252,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
                     f"State '{state_name}' not found in state "
                     f"'{'.'.join(state_path_parts[:i])}' "
                     f"while resolving event path {event_path!r}",
-                    searched_from='.'.join(state_path_parts[:i]),
+                    searched_from=".".join(state_path_parts[:i]),
                 )
                 return None
             current_state = current_state.substates[state_name]
@@ -2261,7 +2263,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
                 f"Event '{event_name}' not found in state "
                 f"'{'.'.join(state_path_parts)}' "
                 f"while resolving event path {event_path!r}",
-                searched_from='.'.join(state_path_parts),
+                searched_from=".".join(state_path_parts),
             )
             return None
 
@@ -2345,16 +2347,18 @@ def parse_dsl_node_to_state_machine(
             )
             d_define_spans[def_item.name] = _node_span(def_item)
         else:
-            sink.emit(ModelDiagnostic(
-                code='E_DUPLICATE_VAR',
-                severity='error',
-                message=f"Duplicated variable definition - {def_item}.",
-                span=getattr(def_item, '_span', None),
-                refs={
-                    'var_name': def_item.name,
-                    'previous_span': d_define_spans.get(def_item.name),
-                },
-            ))
+            sink.emit(
+                ModelDiagnostic(
+                    code="E_DUPLICATE_VAR",
+                    severity="error",
+                    message=f"Duplicated variable definition - {def_item}.",
+                    span=getattr(def_item, "_span", None),
+                    refs={
+                        "var_name": def_item.name,
+                        "previous_span": d_define_spans.get(def_item.name),
+                    },
+                )
+            )
 
     def _collect_block_local_names(
         op_nodes: List[dsl_nodes.OperationalStatement],
@@ -2424,7 +2428,9 @@ def parse_dsl_node_to_state_machine(
         state_path: Optional[str] = None,
         block_local_names: Optional[Set[str]] = None,
     ) -> OperationStatement:
-        block_local_names = block_local_names if block_local_names is not None else set()
+        block_local_names = (
+            block_local_names if block_local_names is not None else set()
+        )
         if isinstance(op_item, dsl_nodes.OperationAssignment):
             operation_val = parse_expr_node_to_expr(op_item.expr)
             unknown_vars = []
@@ -2441,22 +2447,24 @@ def parse_dsl_node_to_state_machine(
                 # this block are "real" undefineds and leave the flag
                 # off per schema default.
                 is_temporary = unknown_var in block_local_names
-                sink.emit(ModelDiagnostic(
-                    code='E_UNDEFINED_VAR',
-                    severity='error',
-                    message=(
-                        f"{unknown_var_message} {unknown_var} "
-                        f"in transition:\n{owner_node}"
-                    ),
-                    span=getattr(owner_node, '_span', None),
-                    refs={
-                        'var_name': unknown_var,
-                        'referenced_in': referenced_in,
-                        'state_path': state_path,
-                        'expr_text': str(op_item.expr),
-                        'is_temporary': is_temporary,
-                    },
-                ))
+                sink.emit(
+                    ModelDiagnostic(
+                        code="E_UNDEFINED_VAR",
+                        severity="error",
+                        message=(
+                            f"{unknown_var_message} {unknown_var} "
+                            f"in transition:\n{owner_node}"
+                        ),
+                        span=getattr(owner_node, "_span", None),
+                        refs={
+                            "var_name": unknown_var,
+                            "referenced_in": referenced_in,
+                            "state_path": state_path,
+                            "expr_text": str(op_item.expr),
+                            "is_temporary": is_temporary,
+                        },
+                    )
+                )
 
             operation = Operation(
                 var_name=op_item.name,
@@ -2491,7 +2499,9 @@ def parse_dsl_node_to_state_machine(
         state_path: Optional[str] = None,
         block_local_names: Optional[Set[str]] = None,
     ) -> IfBlock:
-        block_local_names = block_local_names if block_local_names is not None else set()
+        block_local_names = (
+            block_local_names if block_local_names is not None else set()
+        )
         base_available_vars = set(available_vars)
         branches = []
         for branch in if_node.branches:
@@ -2508,22 +2518,24 @@ def parse_dsl_node_to_state_machine(
                 for unknown_var in unknown_vars:
                     # I-i: see _parse_operation_statement.
                     is_temporary = unknown_var in block_local_names
-                    sink.emit(ModelDiagnostic(
-                        code='E_UNDEFINED_VAR',
-                        severity='error',
-                        message=(
-                            f"{unknown_var_message} {unknown_var} "
-                            f"in transition:\n{owner_node}"
-                        ),
-                        span=getattr(owner_node, '_span', None),
-                        refs={
-                            'var_name': unknown_var,
-                            'referenced_in': referenced_in,
-                            'state_path': state_path,
-                            'expr_text': str(branch.condition),
-                            'is_temporary': is_temporary,
-                        },
-                    ))
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_UNDEFINED_VAR",
+                            severity="error",
+                            message=(
+                                f"{unknown_var_message} {unknown_var} "
+                                f"in transition:\n{owner_node}"
+                            ),
+                            span=getattr(owner_node, "_span", None),
+                            refs={
+                                "var_name": unknown_var,
+                                "referenced_in": referenced_in,
+                                "state_path": state_path,
+                                "expr_text": str(branch.condition),
+                                "is_temporary": is_temporary,
+                            },
+                        )
+                    )
 
             branch_available_vars = set(base_available_vars)
             branch_statements = _parse_operation_block(
@@ -2557,22 +2569,24 @@ def parse_dsl_node_to_state_machine(
                 d_substates[subnode.name] = _recursive_build_states(
                     subnode, current_path=current_path
                 )
-                substate_first_spans[subnode.name] = getattr(subnode, '_span', None)
+                substate_first_spans[subnode.name] = getattr(subnode, "_span", None)
             else:
-                sink.emit(ModelDiagnostic(
-                    code='E_DUPLICATE_STATE',
-                    severity='error',
-                    message=(
-                        f"Duplicate state name in namespace "
-                        f"{'.'.join(current_path)!r}:\n{subnode}"
-                    ),
-                    span=getattr(subnode, '_span', None),
-                    refs={
-                        'state_name': subnode.name,
-                        'parent_path': '.'.join(current_path),
-                        'previous_span': substate_first_spans.get(subnode.name),
-                    },
-                ))
+                sink.emit(
+                    ModelDiagnostic(
+                        code="E_DUPLICATE_STATE",
+                        severity="error",
+                        message=(
+                            f"Duplicate state name in namespace "
+                            f"{'.'.join(current_path)!r}:\n{subnode}"
+                        ),
+                        span=getattr(subnode, "_span", None),
+                        refs={
+                            "state_name": subnode.name,
+                            "parent_path": ".".join(current_path),
+                            "previous_span": substate_first_spans.get(subnode.name),
+                        },
+                    )
+                )
 
         named_functions = {}
         on_enters = []
@@ -2584,7 +2598,7 @@ def parse_dsl_node_to_state_machine(
                     "Unknown enter operation variable",
                     "enter",
                     enter_item,
-                    state_path='.'.join(current_path),
+                    state_path=".".join(current_path),
                 )
                 on_stage = OnStage(
                     stage="enter",
@@ -2639,20 +2653,22 @@ def parse_dsl_node_to_state_machine(
                         # initial declaration so collect/strict modes resolve
                         # ``ref X`` identically (strict raises before the
                         # overwrite would have happened).
-                        sink.emit(ModelDiagnostic(
-                            code='E_DUPLICATE_FUNCTION_NAME',
-                            severity='error',
-                            message=(
-                                f"Duplicate function name {on_stage.name!r} "
-                                f"in state:\n{node}"
-                            ),
-                            span=getattr(enter_item, '_span', None),
-                            refs={
-                                'function_name': on_stage.name,
-                                'state_path': '.'.join(current_path),
-                                'stage': 'enter',
-                            },
-                        ))
+                        sink.emit(
+                            ModelDiagnostic(
+                                code="E_DUPLICATE_FUNCTION_NAME",
+                                severity="error",
+                                message=(
+                                    f"Duplicate function name {on_stage.name!r} "
+                                    f"in state:\n{node}"
+                                ),
+                                span=getattr(enter_item, "_span", None),
+                                refs={
+                                    "function_name": on_stage.name,
+                                    "state_path": ".".join(current_path),
+                                    "stage": "enter",
+                                },
+                            )
+                        )
                     else:
                         named_functions[on_stage.name] = on_stage
                 on_enters.append(on_stage)
@@ -2660,36 +2676,40 @@ def parse_dsl_node_to_state_machine(
         on_durings = []
         for during_item in node.durings:
             if not d_substates and during_item.aspect is not None:
-                sink.emit(ModelDiagnostic(
-                    code='E_DURING_ASPECT_INVALID',
-                    severity='error',
-                    message=(
-                        f"For leaf state {node.name!r}, during cannot assign "
-                        f"aspect {during_item.aspect!r}:\n{during_item}"
-                    ),
-                    span=getattr(during_item, '_span', None),
-                    refs={
-                        'state_path': '.'.join(current_path),
-                        'state_kind': 'leaf',
-                        'aspect': during_item.aspect,
-                    },
-                ))
+                sink.emit(
+                    ModelDiagnostic(
+                        code="E_DURING_ASPECT_INVALID",
+                        severity="error",
+                        message=(
+                            f"For leaf state {node.name!r}, during cannot assign "
+                            f"aspect {during_item.aspect!r}:\n{during_item}"
+                        ),
+                        span=getattr(during_item, "_span", None),
+                        refs={
+                            "state_path": ".".join(current_path),
+                            "state_kind": "leaf",
+                            "aspect": during_item.aspect,
+                        },
+                    )
+                )
             if d_substates and during_item.aspect is None:
-                sink.emit(ModelDiagnostic(
-                    code='E_DURING_ASPECT_INVALID',
-                    severity='error',
-                    message=(
-                        f"For composite state {node.name!r}, during must "
-                        f"assign aspect to either 'before' or 'after':\n"
-                        f"{during_item}"
-                    ),
-                    span=getattr(during_item, '_span', None),
-                    refs={
-                        'state_path': '.'.join(current_path),
-                        'state_kind': 'composite',
-                        'aspect': None,
-                    },
-                ))
+                sink.emit(
+                    ModelDiagnostic(
+                        code="E_DURING_ASPECT_INVALID",
+                        severity="error",
+                        message=(
+                            f"For composite state {node.name!r}, during must "
+                            f"assign aspect to either 'before' or 'after':\n"
+                            f"{during_item}"
+                        ),
+                        span=getattr(during_item, "_span", None),
+                        refs={
+                            "state_path": ".".join(current_path),
+                            "state_kind": "composite",
+                            "aspect": None,
+                        },
+                    )
+                )
 
             on_stage = None
             if isinstance(during_item, dsl_nodes.DuringOperations):
@@ -2698,7 +2718,7 @@ def parse_dsl_node_to_state_machine(
                     "Unknown during operation variable",
                     "during",
                     during_item,
-                    state_path='.'.join(current_path),
+                    state_path=".".join(current_path),
                 )
                 on_stage = OnStage(
                     stage="during",
@@ -2749,20 +2769,22 @@ def parse_dsl_node_to_state_machine(
             if on_stage is not None:
                 if on_stage.name:
                     if on_stage.name in named_functions:
-                        sink.emit(ModelDiagnostic(
-                            code='E_DUPLICATE_FUNCTION_NAME',
-                            severity='error',
-                            message=(
-                                f"Duplicate function name {on_stage.name!r} "
-                                f"in state:\n{node}"
-                            ),
-                            span=getattr(during_item, '_span', None),
-                            refs={
-                                'function_name': on_stage.name,
-                                'state_path': '.'.join(current_path),
-                                'stage': 'during',
-                            },
-                        ))
+                        sink.emit(
+                            ModelDiagnostic(
+                                code="E_DUPLICATE_FUNCTION_NAME",
+                                severity="error",
+                                message=(
+                                    f"Duplicate function name {on_stage.name!r} "
+                                    f"in state:\n{node}"
+                                ),
+                                span=getattr(during_item, "_span", None),
+                                refs={
+                                    "function_name": on_stage.name,
+                                    "state_path": ".".join(current_path),
+                                    "stage": "during",
+                                },
+                            )
+                        )
                     else:
                         named_functions[on_stage.name] = on_stage
                 on_durings.append(on_stage)
@@ -2776,7 +2798,7 @@ def parse_dsl_node_to_state_machine(
                     "Unknown exit operation variable",
                     "exit",
                     exit_item,
-                    state_path='.'.join(current_path),
+                    state_path=".".join(current_path),
                 )
                 on_stage = OnStage(
                     stage="exit",
@@ -2827,20 +2849,22 @@ def parse_dsl_node_to_state_machine(
             if on_stage is not None:
                 if on_stage.name:
                     if on_stage.name in named_functions:
-                        sink.emit(ModelDiagnostic(
-                            code='E_DUPLICATE_FUNCTION_NAME',
-                            severity='error',
-                            message=(
-                                f"Duplicate function name {on_stage.name!r} "
-                                f"in state:\n{node}"
-                            ),
-                            span=getattr(exit_item, '_span', None),
-                            refs={
-                                'function_name': on_stage.name,
-                                'state_path': '.'.join(current_path),
-                                'stage': 'exit',
-                            },
-                        ))
+                        sink.emit(
+                            ModelDiagnostic(
+                                code="E_DUPLICATE_FUNCTION_NAME",
+                                severity="error",
+                                message=(
+                                    f"Duplicate function name {on_stage.name!r} "
+                                    f"in state:\n{node}"
+                                ),
+                                span=getattr(exit_item, "_span", None),
+                                refs={
+                                    "function_name": on_stage.name,
+                                    "state_path": ".".join(current_path),
+                                    "stage": "exit",
+                                },
+                            )
+                        )
                     else:
                         named_functions[on_stage.name] = on_stage
                 on_exits.append(on_stage)
@@ -2852,22 +2876,24 @@ def parse_dsl_node_to_state_machine(
             # descendant leaf). On a leaf state there is nothing to fan
             # into, so the aspect is invalid.
             if not d_substates:
-                sink.emit(ModelDiagnostic(
-                    code='E_DURING_ASPECT_INVALID',
-                    severity='error',
-                    message=(
-                        f"For leaf state {node.name!r}, ``>> during "
-                        f"{during_aspect_item.aspect}`` aspect actions "
-                        f"need at least one descendant leaf:\n"
-                        f"{during_aspect_item}"
-                    ),
-                    span=getattr(during_aspect_item, '_span', None),
-                    refs={
-                        'state_path': '.'.join(current_path),
-                        'state_kind': 'leaf',
-                        'aspect': during_aspect_item.aspect,
-                    },
-                ))
+                sink.emit(
+                    ModelDiagnostic(
+                        code="E_DURING_ASPECT_INVALID",
+                        severity="error",
+                        message=(
+                            f"For leaf state {node.name!r}, ``>> during "
+                            f"{during_aspect_item.aspect}`` aspect actions "
+                            f"need at least one descendant leaf:\n"
+                            f"{during_aspect_item}"
+                        ),
+                        span=getattr(during_aspect_item, "_span", None),
+                        refs={
+                            "state_path": ".".join(current_path),
+                            "state_kind": "leaf",
+                            "aspect": during_aspect_item.aspect,
+                        },
+                    )
+                )
             on_aspect = None
             if isinstance(during_aspect_item, dsl_nodes.DuringAspectOperations):
                 during_operations = _parse_operation_block(
@@ -2875,7 +2901,7 @@ def parse_dsl_node_to_state_machine(
                     "Unknown during aspect variable",
                     "during_aspect",
                     during_aspect_item,
-                    state_path='.'.join(current_path),
+                    state_path=".".join(current_path),
                 )
                 on_aspect = OnAspect(
                     stage="during",
@@ -2926,20 +2952,22 @@ def parse_dsl_node_to_state_machine(
             if on_aspect is not None:
                 if on_aspect.name:
                     if on_aspect.name in named_functions:
-                        sink.emit(ModelDiagnostic(
-                            code='E_DUPLICATE_FUNCTION_NAME',
-                            severity='error',
-                            message=(
-                                f"Duplicate function name {on_aspect.name!r} "
-                                f"in state:\n{node}"
-                            ),
-                            span=getattr(during_aspect_item, '_span', None),
-                            refs={
-                                'function_name': on_aspect.name,
-                                'state_path': '.'.join(current_path),
-                                'stage': 'during_aspect',
-                            },
-                        ))
+                        sink.emit(
+                            ModelDiagnostic(
+                                code="E_DUPLICATE_FUNCTION_NAME",
+                                severity="error",
+                                message=(
+                                    f"Duplicate function name {on_aspect.name!r} "
+                                    f"in state:\n{node}"
+                                ),
+                                span=getattr(during_aspect_item, "_span", None),
+                                refs={
+                                    "function_name": on_aspect.name,
+                                    "state_path": ".".join(current_path),
+                                    "stage": "during_aspect",
+                                },
+                            )
+                        )
                     else:
                         named_functions[on_aspect.name] = on_aspect
                 on_during_aspects.append(on_aspect)
@@ -2951,7 +2979,7 @@ def parse_dsl_node_to_state_machine(
                 extra_name=event.extra_name,
                 state_path=current_path,
                 declared=True,
-                origins=['declared'],
+                origins=["declared"],
                 _span=_node_span(event),
             )
 
@@ -2970,18 +2998,20 @@ def parse_dsl_node_to_state_machine(
             _span=_node_span(node),
         )
         if my_state.is_pseudo and not my_state.is_leaf_state:
-            sink.emit(ModelDiagnostic(
-                code='E_PSEUDO_NOT_LEAF',
-                severity='error',
-                message=(
-                    f"Pseudo state {'.'.join(current_path)} must be a leaf "
-                    f"state:\n{node}"
-                ),
-                span=getattr(node, '_span', None),
-                refs={
-                    'state_path': '.'.join(current_path),
-                },
-            ))
+            sink.emit(
+                ModelDiagnostic(
+                    code="E_PSEUDO_NOT_LEAF",
+                    severity="error",
+                    message=(
+                        f"Pseudo state {'.'.join(current_path)} must be a leaf "
+                        f"state:\n{node}"
+                    ),
+                    span=getattr(node, "_span", None),
+                    refs={
+                        "state_path": ".".join(current_path),
+                    },
+                )
+            )
         for func_item in [
             *my_state.on_enters,
             *my_state.on_durings,
@@ -3020,19 +3050,21 @@ def parse_dsl_node_to_state_machine(
             else:
                 from_state = f_transnode.from_state
                 if from_state not in current_state.substates:
-                    sink.emit(ModelDiagnostic(
-                        code='E_FORCED_TRANSITION_EXPANSION',
-                        severity='error',
-                        message=(
-                            f"Unknown from state {from_state!r} of force "
-                            f"transition:\n{f_transnode}"
-                        ),
-                        span=getattr(f_transnode, '_span', None),
-                        refs={
-                            'original_raw': str(f_transnode),
-                            'reason': 'src_not_found',
-                        },
-                    ))
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_FORCED_TRANSITION_EXPANSION",
+                            severity="error",
+                            message=(
+                                f"Unknown from state {from_state!r} of force "
+                                f"transition:\n{f_transnode}"
+                            ),
+                            span=getattr(f_transnode, "_span", None),
+                            refs={
+                                "original_raw": str(f_transnode),
+                                "reason": "src_not_found",
+                            },
+                        )
+                    )
                     unresolved = True
 
             if f_transnode.to_state is dsl_nodes.EXIT_STATE:
@@ -3040,19 +3072,21 @@ def parse_dsl_node_to_state_machine(
             else:
                 to_state = f_transnode.to_state
                 if to_state not in current_state.substates:
-                    sink.emit(ModelDiagnostic(
-                        code='E_FORCED_TRANSITION_EXPANSION',
-                        severity='error',
-                        message=(
-                            f"Unknown to state {to_state!r} of force "
-                            f"transition:\n{f_transnode}"
-                        ),
-                        span=getattr(f_transnode, '_span', None),
-                        refs={
-                            'original_raw': str(f_transnode),
-                            'reason': 'tgt_not_found',
-                        },
-                    ))
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_FORCED_TRANSITION_EXPANSION",
+                            severity="error",
+                            message=(
+                                f"Unknown to state {to_state!r} of force "
+                                f"transition:\n{f_transnode}"
+                            ),
+                            span=getattr(f_transnode, "_span", None),
+                            refs={
+                                "original_raw": str(f_transnode),
+                                "reason": "tgt_not_found",
+                            },
+                        )
+                    )
                     unresolved = True
 
             if unresolved:
@@ -3061,9 +3095,7 @@ def parse_dsl_node_to_state_machine(
             my_event_id, trans_event = None, None
             if f_transnode.event_id is not None:
                 my_event_id = f_transnode.event_id
-                source_state = (
-                    from_state if isinstance(from_state, str) else None
-                )
+                source_state = from_state if isinstance(from_state, str) else None
                 origin = _event_origin_from_id(
                     my_event_id,
                     f_transnode.event_scope,
@@ -3086,23 +3118,25 @@ def parse_dsl_node_to_state_machine(
                     if seg in start_state.substates:
                         start_state = start_state.substates[seg]
                     else:
-                        sink.emit(ModelDiagnostic(
-                            code='E_MISSING_STATE',
-                            severity='error',
-                            message=(
-                                f"Cannot find state "
-                                f"{'.'.join((*base_path, *my_event_id.path[:-1]))} "
-                                f"for transition:\n{f_transnode}"
-                            ),
-                            span=getattr(f_transnode, '_span', None),
-                            refs={
-                                'state_path': '.'.join(
-                                    (*base_path, *my_event_id.path[:-1])
+                        sink.emit(
+                            ModelDiagnostic(
+                                code="E_MISSING_STATE",
+                                severity="error",
+                                message=(
+                                    f"Cannot find state "
+                                    f"{'.'.join((*base_path, *my_event_id.path[:-1]))} "
+                                    f"for transition:\n{f_transnode}"
                                 ),
-                                'referenced_from': '.'.join(current_path),
-                                'reason': 'event_path_not_found',
-                            },
-                        ))
+                                span=getattr(f_transnode, "_span", None),
+                                refs={
+                                    "state_path": ".".join(
+                                        (*base_path, *my_event_id.path[:-1])
+                                    ),
+                                    "referenced_from": ".".join(current_path),
+                                    "reason": "event_path_not_found",
+                                },
+                            )
+                        )
                         path_resolved = False
                         break
 
@@ -3128,46 +3162,55 @@ def parse_dsl_node_to_state_machine(
                     if var.name not in d_defines:
                         unknown_vars.append(var.name)
                 for unknown_var in unknown_vars:
-                    sink.emit(ModelDiagnostic(
-                        code='E_UNDEFINED_VAR',
-                        severity='error',
-                        message=(
-                            f"Unknown guard variable "
-                            f"{unknown_var} in force "
-                            f"transition:\n{f_transnode}"
-                        ),
-                        span=getattr(f_transnode, '_span', None),
-                        refs={
-                            'var_name': unknown_var,
-                            'referenced_in': 'guard',
-                            'state_path': '.'.join(current_path),
-                            'expr_text': str(f_transnode.condition_expr),
-                        },
-                    ))
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_UNDEFINED_VAR",
+                            severity="error",
+                            message=(
+                                f"Unknown guard variable "
+                                f"{unknown_var} in force "
+                                f"transition:\n{f_transnode}"
+                            ),
+                            span=getattr(f_transnode, "_span", None),
+                            refs={
+                                "var_name": unknown_var,
+                                "referenced_in": "guard",
+                                "state_path": ".".join(current_path),
+                                "expr_text": str(f_transnode.condition_expr),
+                            },
+                        )
+                    )
 
             if id(f_transnode) in local_force_ids:
                 if from_state is dsl_nodes.ALL:
-                    source_path = '*'
+                    source_path = "*"
                     expansion_count = len(node.substates)
                 else:
-                    source_path = '.'.join((*current_path, from_state))
+                    source_path = ".".join((*current_path, from_state))
                     expansion_count = 1
-                forced_transition_declarations.append({
-                    'state_path': '.'.join(current_path),
-                    'from_path': source_path,
-                    'to_path': (
-                        '[*]' if to_state is dsl_nodes.EXIT_STATE
-                        else '.'.join((*current_path, to_state))
-                    ),
-                    'event': trans_event.path_name if trans_event is not None else None,
-                    'event_scope': (
-                        f_transnode.event_scope if trans_event is not None else None
-                    ),
-                    'guard': str(condition_expr) if condition_expr is not None else None,
-                    'original_raw': str(f_transnode),
-                    'expansion_count': expansion_count,
-                    'span': _node_span(f_transnode),
-                })
+                forced_transition_declarations.append(
+                    {
+                        "state_path": ".".join(current_path),
+                        "from_path": source_path,
+                        "to_path": (
+                            "[*]"
+                            if to_state is dsl_nodes.EXIT_STATE
+                            else ".".join((*current_path, to_state))
+                        ),
+                        "event": trans_event.path_name
+                        if trans_event is not None
+                        else None,
+                        "event_scope": (
+                            f_transnode.event_scope if trans_event is not None else None
+                        ),
+                        "guard": str(condition_expr)
+                        if condition_expr is not None
+                        else None,
+                        "original_raw": str(f_transnode),
+                        "expansion_count": expansion_count,
+                        "span": _node_span(f_transnode),
+                    }
+                )
 
             force_transition_tuples_to_inherit.append(
                 (
@@ -3178,7 +3221,7 @@ def parse_dsl_node_to_state_machine(
                     condition_expr,
                     guard,
                     f_transnode.event_scope,
-                    getattr(f_transnode, 'source_raw', None) or str(f_transnode),
+                    getattr(f_transnode, "source_raw", None) or str(f_transnode),
                     _node_span(f_transnode),
                 )
             )
@@ -3257,57 +3300,64 @@ def parse_dsl_node_to_state_machine(
                 to_state = transnode.to_state
 
             if src_unknown and tgt_unknown:
-                sink.emit(ModelDiagnostic(
-                    code='E_DANGLING_TRANSITION',
-                    severity='error',
-                    message=(
-                        f"Unknown from state {from_state!r} and "
-                        f"unknown to state {to_state!r} of "
-                        f"transition:\n{transnode}"
-                    ),
-                    span=getattr(transnode, '_span', None),
-                    refs={
-                        'src': str(transnode.from_state),
-                        'tgt': str(transnode.to_state),
-                        'reason': 'both_not_found',
-                    },
-                ))
+                sink.emit(
+                    ModelDiagnostic(
+                        code="E_DANGLING_TRANSITION",
+                        severity="error",
+                        message=(
+                            f"Unknown from state {from_state!r} and "
+                            f"unknown to state {to_state!r} of "
+                            f"transition:\n{transnode}"
+                        ),
+                        span=getattr(transnode, "_span", None),
+                        refs={
+                            "src": str(transnode.from_state),
+                            "tgt": str(transnode.to_state),
+                            "reason": "both_not_found",
+                        },
+                    )
+                )
             elif src_unknown:
-                sink.emit(ModelDiagnostic(
-                    code='E_DANGLING_TRANSITION',
-                    severity='error',
-                    message=(
-                        f"Unknown from state {from_state!r} of "
-                        f"transition:\n{transnode}"
-                    ),
-                    span=getattr(transnode, '_span', None),
-                    refs={
-                        'src': str(transnode.from_state),
-                        'tgt': (
-                            None if transnode.to_state is dsl_nodes.EXIT_STATE
-                            else str(transnode.to_state)
+                sink.emit(
+                    ModelDiagnostic(
+                        code="E_DANGLING_TRANSITION",
+                        severity="error",
+                        message=(
+                            f"Unknown from state {from_state!r} of "
+                            f"transition:\n{transnode}"
                         ),
-                        'reason': 'src_not_found',
-                    },
-                ))
+                        span=getattr(transnode, "_span", None),
+                        refs={
+                            "src": str(transnode.from_state),
+                            "tgt": (
+                                None
+                                if transnode.to_state is dsl_nodes.EXIT_STATE
+                                else str(transnode.to_state)
+                            ),
+                            "reason": "src_not_found",
+                        },
+                    )
+                )
             elif tgt_unknown:
-                sink.emit(ModelDiagnostic(
-                    code='E_DANGLING_TRANSITION',
-                    severity='error',
-                    message=(
-                        f"Unknown to state {to_state!r} of "
-                        f"transition:\n{transnode}"
-                    ),
-                    span=getattr(transnode, '_span', None),
-                    refs={
-                        'src': (
-                            None if transnode.from_state is dsl_nodes.INIT_STATE
-                            else str(transnode.from_state)
+                sink.emit(
+                    ModelDiagnostic(
+                        code="E_DANGLING_TRANSITION",
+                        severity="error",
+                        message=(
+                            f"Unknown to state {to_state!r} of transition:\n{transnode}"
                         ),
-                        'tgt': str(transnode.to_state),
-                        'reason': 'tgt_not_found',
-                    },
-                ))
+                        span=getattr(transnode, "_span", None),
+                        refs={
+                            "src": (
+                                None
+                                if transnode.from_state is dsl_nodes.INIT_STATE
+                                else str(transnode.from_state)
+                            ),
+                            "tgt": str(transnode.to_state),
+                            "reason": "tgt_not_found",
+                        },
+                    )
+                )
 
             trans_event, guard = None, None
             event_scope = None
@@ -3335,23 +3385,25 @@ def parse_dsl_node_to_state_machine(
                     if seg in start_state.substates:
                         start_state = start_state.substates[seg]
                     else:
-                        sink.emit(ModelDiagnostic(
-                            code='E_MISSING_STATE',
-                            severity='error',
-                            message=(
-                                f"Cannot find state "
-                                f"{'.'.join((*base_path, *transnode.event_id.path[:-1]))} "
-                                f"for transition:\n{transnode}"
-                            ),
-                            span=getattr(transnode, '_span', None),
-                            refs={
-                                'state_path': '.'.join(
-                                    (*base_path, *transnode.event_id.path[:-1])
+                        sink.emit(
+                            ModelDiagnostic(
+                                code="E_MISSING_STATE",
+                                severity="error",
+                                message=(
+                                    f"Cannot find state "
+                                    f"{'.'.join((*base_path, *transnode.event_id.path[:-1]))} "
+                                    f"for transition:\n{transnode}"
                                 ),
-                                'referenced_from': '.'.join(current_path),
-                                'reason': 'event_path_not_found',
-                            },
-                        ))
+                                span=getattr(transnode, "_span", None),
+                                refs={
+                                    "state_path": ".".join(
+                                        (*base_path, *transnode.event_id.path[:-1])
+                                    ),
+                                    "referenced_from": ".".join(current_path),
+                                    "reason": "event_path_not_found",
+                                },
+                            )
+                        )
                         path_resolved = False
                         break
 
@@ -3385,29 +3437,31 @@ def parse_dsl_node_to_state_machine(
                     if var.name not in d_defines:
                         unknown_vars.append(var.name)
                 for unknown_var in unknown_vars:
-                    sink.emit(ModelDiagnostic(
-                        code='E_UNDEFINED_VAR',
-                        severity='error',
-                        message=(
-                            f"Unknown guard variable "
-                            f"{unknown_var} in "
-                            f"transition:\n{transnode}"
-                        ),
-                        span=getattr(transnode, '_span', None),
-                        refs={
-                            'var_name': unknown_var,
-                            'referenced_in': 'guard',
-                            'state_path': '.'.join(current_path),
-                            'expr_text': str(transnode.condition_expr),
-                        },
-                    ))
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_UNDEFINED_VAR",
+                            severity="error",
+                            message=(
+                                f"Unknown guard variable "
+                                f"{unknown_var} in "
+                                f"transition:\n{transnode}"
+                            ),
+                            span=getattr(transnode, "_span", None),
+                            refs={
+                                "var_name": unknown_var,
+                                "referenced_in": "guard",
+                                "state_path": ".".join(current_path),
+                                "expr_text": str(transnode.condition_expr),
+                            },
+                        )
+                    )
 
             post_operations = _parse_operation_block(
                 transnode.post_operations,
                 "Unknown transition operation variable",
                 "effect",
                 transnode,
-                state_path='.'.join(current_path),
+                state_path=".".join(current_path),
             )
 
             transition = Transition(
@@ -3422,19 +3476,21 @@ def parse_dsl_node_to_state_machine(
             transitions.append(transition)
 
         if current_state.substates and not has_entry_trans:
-            sink.emit(ModelDiagnostic(
-                code='E_INITIAL_TRANSITION_INVALID',
-                severity='error',
-                message=(
-                    f"At least 1 entry transition should be assigned in "
-                    f"non-leaf state {node.name!r}:\n{node}"
-                ),
-                span=getattr(node, '_span', None),
-                refs={
-                    'composite_path': '.'.join(current_path),
-                    'reason': 'missing_entry',
-                },
-            ))
+            sink.emit(
+                ModelDiagnostic(
+                    code="E_INITIAL_TRANSITION_INVALID",
+                    severity="error",
+                    message=(
+                        f"At least 1 entry transition should be assigned in "
+                        f"non-leaf state {node.name!r}:\n{node}"
+                    ),
+                    span=getattr(node, "_span", None),
+                    refs={
+                        "composite_path": ".".join(current_path),
+                        "reason": "missing_entry",
+                    },
+                )
+            )
 
         for func_item in [
             *current_state.on_enters,
@@ -3451,24 +3507,26 @@ def parse_dsl_node_to_state_machine(
                         # nodes don't carry their own spans yet, so fall back
                         # to the owning state's span. State-level anchoring
                         # is imprecise but vastly better than line 1.
-                        sink.emit(ModelDiagnostic(
-                            code='E_NAMED_FUNCTION_REF_NOT_FOUND',
-                            severity='error',
-                            message=(
-                                f"Cannot find state "
-                                f"{'.'.join(func_item.ref_state_path[: i + 1])} "
-                                f"under state "
-                                f"{'.'.join(func_item.ref_state_path[:i])}, "
-                                f"so cannot resolve reference "
-                                f"{'.'.join(func_item.ref_state_path)!r}."
-                            ),
-                            span=getattr(node, '_span', None),
-                            refs={
-                                'ref_path': '.'.join(func_item.ref_state_path),
-                                'reason': 'state_not_found',
-                                'missing_segment': segment,
-                            },
-                        ))
+                        sink.emit(
+                            ModelDiagnostic(
+                                code="E_NAMED_FUNCTION_REF_NOT_FOUND",
+                                severity="error",
+                                message=(
+                                    f"Cannot find state "
+                                    f"{'.'.join(func_item.ref_state_path[: i + 1])} "
+                                    f"under state "
+                                    f"{'.'.join(func_item.ref_state_path[:i])}, "
+                                    f"so cannot resolve reference "
+                                    f"{'.'.join(func_item.ref_state_path)!r}."
+                                ),
+                                span=getattr(node, "_span", None),
+                                refs={
+                                    "ref_path": ".".join(func_item.ref_state_path),
+                                    "reason": "state_not_found",
+                                    "missing_segment": segment,
+                                },
+                            )
+                        )
                         walk_failed = True
                         break
                     state = state.substates[segment]
@@ -3477,20 +3535,22 @@ def parse_dsl_node_to_state_machine(
 
                 segment = func_item.ref_state_path[-1]
                 if segment not in state.named_functions:
-                    sink.emit(ModelDiagnostic(
-                        code='E_NAMED_FUNCTION_REF_NOT_FOUND',
-                        severity='error',
-                        message=(
-                            f"Cannot find named function {segment!r} under "
-                            f"state:\n{state.to_ast_node()}"
-                        ),
-                        span=getattr(node, '_span', None),
-                        refs={
-                            'ref_path': '.'.join(func_item.ref_state_path),
-                            'reason': 'named_function_not_found',
-                            'missing_segment': segment,
-                        },
-                    ))
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_NAMED_FUNCTION_REF_NOT_FOUND",
+                            severity="error",
+                            message=(
+                                f"Cannot find named function {segment!r} under "
+                                f"state:\n{state.to_ast_node()}"
+                            ),
+                            span=getattr(node, "_span", None),
+                            refs={
+                                "ref_path": ".".join(func_item.ref_state_path),
+                                "reason": "named_function_not_found",
+                                "missing_segment": segment,
+                            },
+                        )
+                    )
                     continue
                 func_item.ref = state.named_functions[segment]
                 assert func_item.ref.state_path == func_item.ref_state_path
@@ -3501,6 +3561,49 @@ def parse_dsl_node_to_state_machine(
     _recursive_finish_states(
         dnode.root_state, current_state=root_state, current_path=()
     )
+
+    def _iter_lifecycle_actions(state: State) -> Iterator[Union[OnStage, OnAspect]]:
+        for func_item in [
+            *state.on_enters,
+            *state.on_durings,
+            *state.on_exits,
+            *state.on_during_aspects,
+        ]:
+            yield func_item
+        for substate in state.substates.values():
+            for func_item in _iter_lifecycle_actions(substate):
+                yield func_item
+
+    def _validate_action_ref_cycles() -> None:
+        for root_func in _iter_lifecycle_actions(root_state):
+            seen_by_id = {}
+            chain = []
+            func_item = root_func
+            while func_item.ref is not None:
+                func_id = id(func_item)
+                if func_id in seen_by_id:
+                    cycle_items = chain[seen_by_id[func_id] :] + [func_item]
+                    cycle_path = " -> ".join(item.func_name for item in cycle_items)
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_NAMED_FUNCTION_REF_CYCLE",
+                            severity="error",
+                            message=f"Action reference cycle: {cycle_path}",
+                            span=getattr(func_item, "_span", None),
+                            refs={
+                                "ref_path": root_func.func_name,
+                                "cycle_path": cycle_path,
+                                "reason": "action_ref_cycle",
+                            },
+                        )
+                    )
+                    break
+                seen_by_id[func_id] = len(chain)
+                chain.append(func_item)
+                func_item = func_item.ref
+
+    _validate_action_ref_cycles()
+
     machine = StateMachine(
         defines=d_defines,
         root_state=root_state,

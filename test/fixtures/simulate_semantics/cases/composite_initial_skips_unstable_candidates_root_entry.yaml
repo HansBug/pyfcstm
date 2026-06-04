@@ -1,0 +1,44 @@
+schema_version: 1
+id: composite_initial_skips_unstable_candidates_root_entry
+title: Composite initial skips unstable candidates from root entry
+source:
+  fcstm: composite_initial_skips_unstable_candidates_root_entry.fcstm
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614352350
+  assertion_types:
+  - ended
+  - return
+  - stack
+  - state
+  - vars
+categories:
+- runtime
+- template_alignment
+- lifecycle
+- validation
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - Good
+    vars:
+      x: 1
+      marker: 1
+    ended: false
+    return: null
+    stack:
+    - path:
+      - Root
+      mode: init_wait
+    - path:
+      - Root
+      - Good
+      mode: active

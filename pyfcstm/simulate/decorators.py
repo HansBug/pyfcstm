@@ -30,10 +30,7 @@ Example::
     >>> runtime.register_handlers_from_object(handlers)
 """
 
-from typing import Callable, Optional, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .context import ReadOnlyExecutionContext
+from typing import Callable, Optional
 
 # Attribute name used to store handler metadata on decorated methods
 _HANDLER_METADATA_ATTR = '__abstract_handler_metadata__'

@@ -1,0 +1,25 @@
+def int trace = 0;
+state Root {
+    state System {
+        state A {
+            during { trace = trace + 1; }
+            exit { trace = trace * 10 + 2; }
+        }
+        [*] -> A;
+        A -> [*] :: Exit effect { trace = trace * 10 + 3; }
+    }
+
+    state Bad {
+        state Dead;
+        [*] -> Dead : if [false];
+    }
+
+    state Good {
+        state B { during { trace = trace * 10 + 5; } }
+        [*] -> B;
+    }
+
+    [*] -> System;
+    System -> Bad :: Switch effect { trace = trace * 10 + 4; }
+    System -> Good :: Switch effect { trace = trace * 10 + 6; }
+}

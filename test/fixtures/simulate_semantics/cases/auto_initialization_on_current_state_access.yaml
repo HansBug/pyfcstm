@@ -1,0 +1,109 @@
+schema_version: 1
+id: auto_initialization_on_current_state_access
+title: Current state access observes root before first cycle
+source:
+  fcstm: auto_initialization_on_current_state_access.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_auto_initialization_on_current_state_access
+  - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_auto_initialization_on_current_state_access
+  assertion_types:
+  - initial
+  - stack
+  - state
+  - vars
+  - return
+  - ended
+categories:
+- runtime
+- template_alignment
+- lifecycle
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- expect_initial:
+    state:
+    - System
+    vars:
+      counter: 0
+    ended: false
+    stack:
+    - path:
+      - System
+      mode: init_wait
+- cycle: {}
+  expect:
+    state:
+    - System
+    - Idle
+    vars:
+      counter: 1
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - System
+    - Idle
+    vars:
+      counter: 2
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - System
+    - Idle
+    vars:
+      counter: 3
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - System
+    - Idle
+    vars:
+      counter: 4
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - System
+    - Idle
+    vars:
+      counter: 5
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - System
+    - Active
+    vars:
+      counter: 15
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - System
+    - Active
+    vars:
+      counter: 25
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - System
+    - Active
+    vars:
+      counter: 35
+    ended: false
+    return: null

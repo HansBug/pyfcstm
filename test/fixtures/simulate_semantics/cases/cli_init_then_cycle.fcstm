@@ -1,0 +1,7 @@
+def int counter = 0;
+state System {
+    state Active {
+        during { counter = counter + 10; }
+    }
+    [*] -> Active;
+}

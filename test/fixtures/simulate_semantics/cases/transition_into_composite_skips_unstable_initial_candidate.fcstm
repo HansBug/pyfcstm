@@ -1,0 +1,16 @@
+def int x = 0;
+def int marker = 0;
+state Root {
+    state A { during { x = x + 1; } }
+    state Parent {
+        state Bad {
+            state Dead;
+            [*] -> Dead : if [false];
+        }
+        state Good { during { x = x + 100; } }
+        [*] -> Bad effect { marker = marker + 10; };
+        [*] -> Good effect { marker = marker + 1; };
+    }
+    [*] -> A;
+    A -> Parent :: Go;
+}

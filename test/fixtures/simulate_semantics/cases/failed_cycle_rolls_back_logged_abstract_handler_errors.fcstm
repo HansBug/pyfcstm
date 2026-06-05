@@ -1,0 +1,8 @@
+def int x = 0;
+state Root {
+    pseudo state A {
+        during abstract Boom;
+    }
+
+    [*] -> A;
+}

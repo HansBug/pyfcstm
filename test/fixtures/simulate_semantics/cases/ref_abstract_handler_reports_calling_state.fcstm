@@ -1,0 +1,11 @@
+state Root {
+    state Library {
+        enter abstract Shared;
+    }
+
+    state A {
+        enter ref /Library.Shared;
+    }
+
+    [*] -> A;
+}

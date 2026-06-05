@@ -1,0 +1,32 @@
+schema_version: 1
+id: hot_start_rejects_unstable_pseudo_leaf
+title: Hot start rejects a pseudo leaf that cannot stabilize
+source:
+  fcstm: hot_start_rejects_unstable_pseudo_leaf.fcstm
+origin:
+  files:
+  - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
+  - test/template/python/test_semantic_fixture_alignment.py::test_generated_python_alignment_semantic_fixture
+  assertion_types:
+  - constructor_exception
+  notes:
+  - The pseudo state's during action may run only in an isolated preflight clone.
+categories:
+- runtime
+- hot_start
+- validation
+- pseudo_chain
+- template_alignment
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: Root.P
+  vars:
+    x: 0
+  expect:
+    raises:
+      type: ValueError
+      match: "Hot start target 'Root.P' cannot reach a stoppable state"
+      match_kind: substring
+steps: []

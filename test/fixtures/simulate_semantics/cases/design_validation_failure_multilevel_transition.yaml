@@ -1,0 +1,66 @@
+schema_version: 1
+id: design_validation_failure_multilevel_transition
+title: 4 12 validation failure multilevel transition
+source:
+  fcstm: design_validation_failure_multilevel_transition.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_12_validation_failure_multilevel_transition
+  - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_12_validation_failure_multilevel_transition
+  assertion_types:
+  - ended
+  - return
+  - state
+  - vars
+categories:
+- design_example
+- runtime
+- template_alignment
+- validation
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      counter: 1
+      flag: 0
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      counter: 2
+      flag: 0
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      counter: 3
+      flag: 0
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      counter: 4
+      flag: 0
+    ended: false
+    return: null

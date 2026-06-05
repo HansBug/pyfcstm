@@ -1,0 +1,23 @@
+def int before_count = 0;
+def int during_count = 0;
+def int after_count = 0;
+state Root {
+    >> during before {
+        before_count = before_count + 1;
+    }
+
+    >> during after {
+        after_count = after_count + 1;
+    }
+
+    state A {
+        during { during_count = during_count + 1; }
+    }
+
+    state B {
+        during { during_count = during_count + 10; }
+    }
+
+    [*] -> A;
+    A -> B :: Go;
+}

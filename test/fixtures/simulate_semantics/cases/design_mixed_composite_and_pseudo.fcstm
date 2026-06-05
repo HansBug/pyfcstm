@@ -1,0 +1,31 @@
+def int counter = 0;
+state Root {
+    state A {
+        during {
+            counter = counter + 1;
+        }
+    }
+
+    state B {
+        pseudo state P {
+            enter {
+                counter = counter + 10;
+            }
+        }
+
+        state C {
+            state C1 {
+                during {
+                    counter = counter + 100;
+                }
+            }
+            [*] -> C1;
+        }
+
+        [*] -> P;
+        P -> C;
+    }
+
+    [*] -> A;
+    A -> B :: GoB;
+}

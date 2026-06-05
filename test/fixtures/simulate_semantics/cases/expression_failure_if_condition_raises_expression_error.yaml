@@ -1,0 +1,30 @@
+schema_version: 1
+id: expression_failure_if_condition_raises_expression_error
+title: if block condition expression failure raises expression error
+source:
+  fcstm: expression_failure_if_condition_raises_expression_error.fcstm
+origin:
+  files:
+  - test/fixtures/simulate_semantics/cases/expression_failure_if_condition_raises_expression_error.fcstm
+  assertion_types:
+  - exception
+categories:
+- runtime
+- template_alignment
+- if_blocks
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    raises:
+      type: SimulationRuntimeExpressionError
+      match: 'if-block condition evaluation failed: division by zero'
+      match_kind: substring
+      cause_type: ZeroDivisionError
+      cause_match: 'division by zero'
+      cause_match_kind: substring

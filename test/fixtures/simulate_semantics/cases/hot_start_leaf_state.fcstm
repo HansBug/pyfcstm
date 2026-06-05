@@ -1,0 +1,11 @@
+def int counter = 0;
+state System {
+    state Idle {
+        during { counter = counter + 1; }
+    }
+    state Active {
+        during { counter = counter + 10; }
+    }
+    [*] -> Idle;
+    Idle -> Active :: Start;
+}

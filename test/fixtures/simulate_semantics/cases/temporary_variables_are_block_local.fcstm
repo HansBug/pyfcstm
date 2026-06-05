@@ -1,0 +1,22 @@
+def int x = 0;
+def int y = 0;
+state Root {
+    state A {
+        during {
+            tmp = x + 1;
+            x = tmp;
+        }
+    }
+    state B {
+        enter {
+            tmp = x + y;
+            y = tmp + 1;
+        }
+    }
+
+    [*] -> A;
+    A -> B :: Go effect {
+        tmp = x + 10;
+        x = tmp;
+    };
+}

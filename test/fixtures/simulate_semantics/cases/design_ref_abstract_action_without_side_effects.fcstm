@@ -1,0 +1,21 @@
+def int trace = 0;
+state Root {
+    enter abstract PlatformInit;
+
+    state A {
+        enter ref /PlatformInit;
+        during {
+            trace = trace + 1;
+        }
+    }
+
+    state B {
+        enter ref /PlatformInit;
+        during {
+            trace = trace + 10;
+        }
+    }
+
+    [*] -> A;
+    A -> B :: Go;
+}

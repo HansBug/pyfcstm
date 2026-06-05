@@ -1,0 +1,14 @@
+def int x = 0;
+state Root {
+    enter {
+        x = x + 1;
+    }
+
+    state A {
+        during {
+            x = x + 10;
+        }
+    }
+
+    [*] -> A :: Start;
+}

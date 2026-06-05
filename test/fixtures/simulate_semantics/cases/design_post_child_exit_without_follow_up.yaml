@@ -1,0 +1,81 @@
+schema_version: 1
+id: design_post_child_exit_without_follow_up
+title: 4 28 post child exit without follow up transition
+source:
+  fcstm: design_post_child_exit_without_follow_up.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_28_post_child_exit_without_follow_up_transition
+  - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_28_post_child_exit_without_follow_up_transition
+  assertion_types:
+  - ended
+  - logs
+  - return
+  - stack
+  - state
+  - vars
+categories:
+- design_example
+- runtime
+- template_alignment
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    vars:
+      phase: 0
+      trace: 0
+    ended: false
+    return: null
+    stack:
+    - path:
+      - Root
+      mode: init_wait
+    logs:
+      contains:
+      - level: WARNING
+        message: Unable to reach a stoppable state
+        match_kind: substring
+- cycle: {}
+  expect:
+    state:
+    - Root
+    vars:
+      phase: 0
+      trace: 0
+    ended: false
+    return: null
+    stack:
+    - path:
+      - Root
+      mode: init_wait
+    logs:
+      contains:
+      - level: WARNING
+        message: Unable to reach a stoppable state
+        match_kind: substring
+- cycle: {}
+  expect:
+    state:
+    - Root
+    vars:
+      phase: 0
+      trace: 0
+    ended: false
+    return: null
+    stack:
+    - path:
+      - Root
+      mode: init_wait
+    logs:
+      contains:
+      - level: WARNING
+        message: Unable to reach a stoppable state
+        match_kind: substring

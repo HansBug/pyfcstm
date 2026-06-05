@@ -1,0 +1,40 @@
+schema_version: 1
+id: event_path_invalid_raises_event_error
+title: 4 200 invalid event path raises event error
+source:
+  fcstm: event_path_invalid_raises_event_error.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_200_invalid_event_path_raises_event_error
+  assertion_types:
+  - ended
+  - exception
+  - stack
+  - state
+  - vars
+categories:
+- event_paths
+- runtime
+- scenario_example
+runners:
+- simulation
+initial:
+  state: null
+  vars: null
+steps:
+- cycle:
+    events:
+    - Missing
+  expect:
+    raises:
+      type: SimulationRuntimeEventError
+      match: Cannot resolve event path 'Missing'
+      match_kind: substring
+    state:
+    - Root
+    vars: {}
+    ended: false
+    stack:
+    - path:
+      - Root
+      mode: init_wait

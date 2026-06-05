@@ -1,0 +1,47 @@
+schema_version: 1
+id: design_exit_to_parent_invalid
+title: 4 17 exit to parent invalid
+source:
+  fcstm: design_exit_to_parent_invalid.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_17_exit_to_parent_invalid
+  - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_17_exit_to_parent_invalid
+  assertion_types:
+  - ended
+  - return
+  - state
+  - vars
+categories:
+- design_example
+- runtime
+- template_alignment
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - System
+    - A
+    vars:
+      counter: 1
+    ended: false
+    return: null
+- cycle:
+    events:
+    - Root.System.A.GoP
+  expect:
+    state:
+    - Root
+    - System
+    - A
+    vars:
+      counter: 2
+    ended: false
+    return: null

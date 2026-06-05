@@ -1,0 +1,43 @@
+schema_version: 1
+id: design_aspect_actions
+title: 4 5 aspect actions
+source:
+  fcstm: design_aspect_actions.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_5_aspect_actions
+  - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_5_aspect_actions
+  assertion_types:
+  - ended
+  - return
+  - state
+  - vars
+categories:
+- design_example
+- runtime
+- template_alignment
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      trace: 123
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      trace: 123123
+    ended: false
+    return: null

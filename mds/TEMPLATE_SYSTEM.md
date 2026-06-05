@@ -57,7 +57,7 @@
 - `pyfcstm/render/statement.py` 已落地，`stmt_render` / `stmts_render` 已是正式能力，不再是待实现方案
 - render 层当前内建 statement style 已覆盖 `dsl`、`c`、`cpp`、`python`、`java`、`js`、`ts`、`rust`、`go`
 - builtin `python` 模板已作为参考实现落在 `templates/python/`
-- `test/template/python/test_runtime.py` 与 `test/template/python/test_runtime_alignment.py` 已形成生成物测试与运行时语义对齐测试
+- `test/template/python/test_runtime.py` 与 `test/template/python/test_semantic_fixture_alignment.py` 已形成生成物测试与共享 fixture 运行时语义对齐测试
 - `docs/source/tutorials/render/index.rst` 与 `docs/source/tutorials/render/index_zh.rst` 已改为围绕模板系统主线，而不是只围绕 builtin `python` 模板本身
 
 ### 1.2 当前阶段的核心目标

@@ -1,0 +1,59 @@
+schema_version: 1
+id: design_exit_to_parent_then_event_transition
+title: 4 17 1 exit to parent then event transition
+source:
+  fcstm: design_exit_to_parent_then_event_transition.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_17_1_exit_to_parent_then_event_transition
+  - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_17_1_exit_to_parent_then_event_transition
+  assertion_types:
+  - ended
+  - return
+  - state
+  - vars
+categories:
+- design_example
+- runtime
+- template_alignment
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - System
+    - A
+    vars:
+      counter: 1
+    ended: false
+    return: null
+- cycle:
+    events:
+    - Root.System.A.GoP
+  expect:
+    state:
+    - Root
+    - System
+    - A
+    vars:
+      counter: 2
+    ended: false
+    return: null
+- cycle:
+    events:
+    - Root.System.A.GoP
+    - Root.System.ToB
+  expect:
+    state:
+    - Root
+    - B
+    vars:
+      counter: 112
+    ended: false
+    return: null

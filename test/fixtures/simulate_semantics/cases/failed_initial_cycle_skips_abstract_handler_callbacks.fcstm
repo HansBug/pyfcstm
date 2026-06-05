@@ -1,0 +1,8 @@
+def int x = 0;
+state Root {
+    enter abstract RootInit;
+
+    state A;
+
+    [*] -> A :: Start;
+}

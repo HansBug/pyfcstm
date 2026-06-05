@@ -13,9 +13,17 @@ Vibe coding is fine for quick exploration, but once you touch repository code yo
 - Every generated piece of code must be readable, explainable, testable, and revertible by a human.
 - Don't blindly accept AI output; review it the same way you would review a human teammate's commit.
 - Stick to the existing architecture, naming, tests, and tooling — don't start a parallel style of your own.
-- Name modules, functions, classes, tests, and docs for the concrete behavior or domain concept they implement, not
-  for temporary project-management labels such as PR slice IDs, roadmap phases, or plan bullets. A reader should be
-  able to understand what something does without knowing the execution plan that introduced it.
+- Name modules, functions, classes, tests, fixtures, docstrings, pydoc text, and generated artifacts for the concrete
+  behavior or domain concept they implement, not for temporary project-management labels such as PR slice IDs, roadmap
+  phases, or plan bullets. A reader should be able to understand what something does without knowing the execution plan
+  that introduced it.
+- Keep workflow metadata out of code and API surfaces: do not put PR numbers, issue IDs, roadmap stages/phases, review
+  rounds, or rollout slice names into identifiers, schema field names, runtime messages, test ids, or pydoc/docstrings.
+  If Markdown documentation genuinely needs to reference a concrete workflow item, use an explicit hyperlink such as
+  `[PR #123](https://github.com/HansBug/pyfcstm/pull/123)` or
+  `[issue #456](https://github.com/HansBug/pyfcstm/issues/456)`.
+  Domain terms such as lifecycle stage names or control-system phase variables remain acceptable when they describe the
+  modeled behavior rather than the implementation workflow.
 - Keep Python and JavaScript unit tests strictly independent. Python tests may use fixtures and literals under `test/`,
   but must not call Node.js, jsfcstm, or resources outside the Python test tree. jsfcstm tests may use fixtures and
   literals under `editors/jsfcstm/test/`, but must not call Python code or the repository-level `test/` tree. Either
@@ -96,8 +104,8 @@ make unittest MIN_COVERAGE=80                        # With minimum coverage
 make unittest WORKERS=4                              # With parallel workers
 
 # Run a single test file or function directly:
-pytest test/simulate/test_runtime.py -v
-pytest test/simulate/test_runtime.py::TestClassName::test_method -v
+pytest test/simulate/test_semantic_fixtures.py -v
+pytest test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture -v
 
 # Fast path: skip native-toolchain template tests (test/template/c, test/template/c_poll)
 # which invoke real cmake/cc per case and consume ~85% of unittest wall time.
@@ -293,6 +301,9 @@ Mandatory completion rule for built-in template work:
 
 - Treat formatter convergence as part of correctness, not optional polish.
 - The generated target-language artifacts must be acceptable to the corresponding formatter defaults for that language.
+- For the built-in `python` template specifically, every emitted `machine.py` should be designed to pass both
+  `ruff check` and `ruff format --check` in the representative template tests. Do not treat "ruff can rewrite it" as
+  sufficient; generated Python should be lint-clean and formatter-stable without users editing the generated file.
 - Template-facing documentation artifacts that ship with the generated output, especially generated `README.md` / `README_zh.md` files and their embedded code snippets, must also be kept formatter-friendly for the relevant language and text formatter set.
 - For template changes, "done" means the generated outputs have converged under the intended formatter flow. If the formatter still wants to rewrite the emitted code or the generated usage examples materially, the template work is not complete yet.
 - When adding or changing a multi-language built-in template, explicitly design the generated code shape and README examples so they stabilize under the formatter set listed above instead of relying on hand-aligned formatting.
@@ -1161,6 +1172,9 @@ For built-in template work, the current design bar is defined by the `python` te
 - Preserve naming clarity for generated extension points so DSL authors can map states, actions, and abstract behavior back to code quickly, ideally with IDE completion support.
 - Keep generated code readable and inspectable. Generated runtimes are product artifacts, not opaque intermediate blobs.
 - Ensure the final generated code, generated support files, and generated README examples are written so the corresponding formatter flow reaches a stable end state. Template work that has not reached formatter convergence is not complete.
+- For changes to `templates/python/`, verify representative generated `machine.py` outputs with both `ruff check` and
+  `ruff format --check`; if ruff reports lint diagnostics or would reformat the generated Python, the template change
+  is not ready.
 - When adding a new built-in template, update all of the following together: `templates/<name>/`, packaged template assets, CLI/template metadata, maintainer docs, generated docs if applicable, and the corresponding tests.
 
 ### Testing Strategy
@@ -1178,6 +1192,14 @@ For built-in template work, the current design bar is defined by the `python` te
   jsfcstm tests invoking Python), and do not rely on build artifacts from the other side.
 - Unit tests may import the production code under test and use production assets through the public runtime/build
   entry points, but test-only data, helper scripts, and golden outputs must live in the corresponding test tree.
+- Unit tests under `test/` should keep production `pyfcstm/` behavior as the primary code under test, with
+  test-tree files acting as fixtures, helpers, schemas, harnesses, and expected data for that behavior.
+  It is acceptable to test fixture loaders, schema validation, and harness behavior when those checks protect
+  production-behavior fixture execution or prevent test-semantics drift. Do not add pytest cases whose primary
+  assertion target is only test-tree documentation or maintenance metadata, such as README inventory tables or
+  migration indexes. If fixture inventories, test documentation, or other test-tree maintenance data need executable
+  validation, put that check in a maintenance command outside the unit-test suite (for example under `tools/`) and run
+  it explicitly.
 - Shared test utilities and fixtures in `test/testings/`
 - Sample DSL files in `test/testfile/sample_codes/` (auto-generate tests via `make sample`)
 - Negative cases in `test/testfile/sample_neg_codes/`

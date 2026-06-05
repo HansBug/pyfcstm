@@ -1,0 +1,16 @@
+def int x = 0;
+def int y = 0;
+def int flag = 0;
+def int mode = 0;
+state Root {
+    state A {
+        during {
+
+if [flag == 1] {
+    x = x + 10;
+}
+x = x + 1;
+        }
+    }
+    [*] -> A;
+}

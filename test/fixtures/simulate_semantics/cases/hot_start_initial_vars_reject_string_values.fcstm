@@ -1,0 +1,8 @@
+def int counter = 0;
+def float temp = 1.5;
+state Root {
+    state A {
+        during { counter = counter + 1; temp = temp + 0.5; }
+    }
+    [*] -> A;
+}

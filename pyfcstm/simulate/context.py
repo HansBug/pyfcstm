@@ -18,7 +18,8 @@ Example::
 """
 
 from dataclasses import dataclass
-from typing import Dict, Union, Tuple
+from types import MappingProxyType
+from typing import Mapping, Union, Tuple
 
 
 @dataclass(frozen=True)
@@ -32,8 +33,8 @@ class ReadOnlyExecutionContext:
 
     :param state_path: Current active state path from root to leaf
     :type state_path: Tuple[str, ...]
-    :param vars: Snapshot of current variable values (immutable copy)
-    :type vars: Dict[str, Union[int, float]]
+    :param vars: Snapshot of current variable values (immutable mapping copy)
+    :type vars: Mapping[str, Union[int, float]]
     :param action_name: Full path name of the abstract action being executed
     :type action_name: str
     :param action_stage: Lifecycle stage ('enter', 'during', 'exit')
@@ -54,9 +55,18 @@ class ReadOnlyExecutionContext:
     """
 
     state_path: Tuple[str, ...]
-    vars: Dict[str, Union[int, float]]
+    vars: Mapping[str, Union[int, float]]
     action_name: str
     action_stage: str
+
+    def __post_init__(self) -> None:
+        """
+        Freeze the variable snapshot mapping.
+
+        :return: ``None``.
+        :rtype: None
+        """
+        object.__setattr__(self, "vars", MappingProxyType(dict(self.vars)))
 
     def get_var(self, name: str) -> Union[int, float]:
         """

@@ -1,0 +1,23 @@
+def int soc = 70;
+def int sessions = 0;
+state Root {
+    state Idle;
+
+    state Charging {
+        during {
+            soc = soc + 10;
+        }
+    }
+
+    state Complete;
+
+    [*] -> Idle;
+    Idle -> Charging :: PlugIn;
+    Charging -> Complete : if [soc >= 100];
+    Charging -> Idle :: Unplug effect {
+        sessions = sessions + 1;
+    };
+    Complete -> Idle :: Unplug effect {
+        sessions = sessions + 1;
+    };
+}

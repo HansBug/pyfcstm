@@ -11,6 +11,8 @@ from typing import Iterable
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.document import Document
 
+from .events import get_current_event_completion_items
+
 
 class SimulationCompleter(Completer):
     """
@@ -93,23 +95,23 @@ class SimulationCompleter(Completer):
 
                 # Also suggest events
                 events = self._get_current_events()
-                for event in events:
+                for event, display_meta in events:
                     if event.startswith(prefix):
                         yield Completion(
                             event,
                             start_position=-len(prefix),
-                            display_meta='event name'
+                            display_meta=display_meta
                         )
             else:
                 # After count or additional events
                 prefix = words[-1] if not text.endswith(' ') else ''
                 events = self._get_current_events()
-                for event in events:
+                for event, display_meta in events:
                     if event.startswith(prefix):
                         yield Completion(
                             event,
                             start_position=-len(prefix),
-                            display_meta='event name'
+                            display_meta=display_meta
                         )
 
         # init command - complete with state paths and variable assignments
@@ -368,26 +370,7 @@ class SimulationCompleter(Completer):
         :return: List of event names
         :rtype: list
         """
-        if not self.runtime.current_state:
-            return []
-
-        current_state = self.runtime.current_state
-        current_state_name = current_state.name
-        events = set()
-
-        # Check parent's transitions for transitions from current state
-        if current_state.parent:
-            parent = current_state.parent
-            for transition in parent.transitions:
-                # Check if this transition is from the current state
-                if transition.from_state == current_state_name and transition.event:
-                    # Add full path
-                    event_path = '.'.join(transition.event.state_path) + '.' + transition.event.name
-                    events.add(event_path)
-                    # Add short name
-                    events.add(transition.event.name)
-
-        return sorted(events)
+        return get_current_event_completion_items(self.runtime)
 
     def _get_command_help(self, cmd: str) -> str:
         """

@@ -1,0 +1,19 @@
+def int counter = 0;
+state Root {
+    event global_reset;
+    state System {
+        state A {
+            during {
+                counter = counter + 1;
+            }
+        }
+        state B {
+            during {
+                counter = counter + 10;
+            }
+        }
+        [*] -> A;
+        A -> B : /global_reset;
+    }
+    [*] -> System;
+}

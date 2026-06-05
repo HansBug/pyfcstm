@@ -1,0 +1,259 @@
+def int counter = 0;
+state Root {
+    state A {
+        during {
+            counter = counter + 1;
+        }
+    }
+    state Deep {
+        state L0 {
+            [*] -> L1;
+            state L1 {
+                [*] -> L2;
+                state L2 {
+                    [*] -> L3;
+                    state L3 {
+                        [*] -> L4;
+                        state L4 {
+                            [*] -> L5;
+                            state L5 {
+                                [*] -> L6;
+                                state L6 {
+                                    [*] -> L7;
+                                    state L7 {
+                                        [*] -> L8;
+                                        state L8 {
+                                            [*] -> L9;
+                                            state L9 {
+                                                [*] -> L10;
+                                                state L10 {
+                                                    [*] -> L11;
+                                                    state L11 {
+                                                        [*] -> L12;
+                                                        state L12 {
+                                                            [*] -> L13;
+                                                            state L13 {
+                                                                [*] -> L14;
+                                                                state L14 {
+                                                                    [*] -> L15;
+                                                                    state L15 {
+                                                                        [*] -> L16;
+                                                                        state L16 {
+                                                                            [*] -> L17;
+                                                                            state L17 {
+                                                                                [*] -> L18;
+                                                                                state L18 {
+                                                                                    [*] -> L19;
+                                                                                    state L19 {
+                                                                                        [*] -> L20;
+                                                                                        state L20 {
+                                                                                            [*] -> L21;
+                                                                                            state L21 {
+                                                                                                [*] -> L22;
+                                                                                                state L22 {
+                                                                                                    [*] -> L23;
+                                                                                                    state L23 {
+                                                                                                        [*] -> L24;
+                                                                                                        state L24 {
+                                                                                                            [*] -> L25;
+                                                                                                            state L25 {
+                                                                                                                [*] -> L26;
+                                                                                                                state L26 {
+                                                                                                                    [*] -> L27;
+                                                                                                                    state L27 {
+                                                                                                                        [*] -> L28;
+                                                                                                                        state L28 {
+                                                                                                                            [*] -> L29;
+                                                                                                                            state L29 {
+                                                                                                                                [*] -> L30;
+                                                                                                                                state L30 {
+                                                                                                                                    [*] -> L31;
+                                                                                                                                    state L31 {
+                                                                                                                                        [*] -> L32;
+                                                                                                                                        state L32 {
+                                                                                                                                            [*] -> L33;
+                                                                                                                                            state L33 {
+                                                                                                                                                [*] -> L34;
+                                                                                                                                                state L34 {
+                                                                                                                                                    [*] -> L35;
+                                                                                                                                                    state L35 {
+                                                                                                                                                        [*] -> L36;
+                                                                                                                                                        state L36 {
+                                                                                                                                                            [*] -> L37;
+                                                                                                                                                            state L37 {
+                                                                                                                                                                [*] -> L38;
+                                                                                                                                                                state L38 {
+                                                                                                                                                                    [*] -> L39;
+                                                                                                                                                                    state L39 {
+                                                                                                                                                                        [*] -> L40;
+                                                                                                                                                                        state L40 {
+                                                                                                                                                                            [*] -> L41;
+                                                                                                                                                                            state L41 {
+                                                                                                                                                                                [*] -> L42;
+                                                                                                                                                                                state L42 {
+                                                                                                                                                                                    [*] -> L43;
+                                                                                                                                                                                    state L43 {
+                                                                                                                                                                                        [*] -> L44;
+                                                                                                                                                                                        state L44 {
+                                                                                                                                                                                            [*] -> L45;
+                                                                                                                                                                                            state L45 {
+                                                                                                                                                                                                [*] -> L46;
+                                                                                                                                                                                                state L46 {
+                                                                                                                                                                                                    [*] -> L47;
+                                                                                                                                                                                                    state L47 {
+                                                                                                                                                                                                        [*] -> L48;
+                                                                                                                                                                                                        state L48 {
+                                                                                                                                                                                                            [*] -> L49;
+                                                                                                                                                                                                            state L49 {
+                                                                                                                                                                                                                [*] -> L50;
+                                                                                                                                                                                                                state L50 {
+                                                                                                                                                                                                                    [*] -> L51;
+                                                                                                                                                                                                                    state L51 {
+                                                                                                                                                                                                                        [*] -> L52;
+                                                                                                                                                                                                                        state L52 {
+                                                                                                                                                                                                                            [*] -> L53;
+                                                                                                                                                                                                                            state L53 {
+                                                                                                                                                                                                                                [*] -> L54;
+                                                                                                                                                                                                                                state L54 {
+                                                                                                                                                                                                                                    [*] -> L55;
+                                                                                                                                                                                                                                    state L55 {
+                                                                                                                                                                                                                                        [*] -> L56;
+                                                                                                                                                                                                                                        state L56 {
+                                                                                                                                                                                                                                            [*] -> L57;
+                                                                                                                                                                                                                                            state L57 {
+                                                                                                                                                                                                                                                [*] -> L58;
+                                                                                                                                                                                                                                                state L58 {
+                                                                                                                                                                                                                                                    [*] -> L59;
+                                                                                                                                                                                                                                                    state L59 {
+                                                                                                                                                                                                                                                        [*] -> L60;
+                                                                                                                                                                                                                                                        state L60 {
+                                                                                                                                                                                                                                                            [*] -> L61;
+                                                                                                                                                                                                                                                            state L61 {
+                                                                                                                                                                                                                                                                [*] -> L62;
+                                                                                                                                                                                                                                                                state L62 {
+                                                                                                                                                                                                                                                                    [*] -> L63;
+                                                                                                                                                                                                                                                                    state L63 {
+                                                                                                                                                                                                                                                                        [*] -> L64;
+                                                                                                                                                                                                                                                                        state L64 {
+                                                                                                                                                                                                                                                                            [*] -> L65;
+                                                                                                                                                                                                                                                                            state L65 {
+                                                                                                                                                                                                                                                                                [*] -> L66;
+                                                                                                                                                                                                                                                                                state L66 {
+                                                                                                                                                                                                                                                                                    [*] -> L67;
+                                                                                                                                                                                                                                                                                    state L67 {
+                                                                                                                                                                                                                                                                                        [*] -> L68;
+                                                                                                                                                                                                                                                                                        state L68 {
+                                                                                                                                                                                                                                                                                            [*] -> L69;
+                                                                                                                                                                                                                                                                                            state L69 {
+                                                                                                                                                                                                                                                                                                [*] -> L70;
+                                                                                                                                                                                                                                                                                                state L70 {
+                                                                                                                                                                                                                                                                                                    [*] -> L71;
+                                                                                                                                                                                                                                                                                                    state L71 {
+                                                                                                                                                                                                                                                                                                        [*] -> L72;
+                                                                                                                                                                                                                                                                                                        state L72 {
+                                                                                                                                                                                                                                                                                                            [*] -> L73;
+                                                                                                                                                                                                                                                                                                            state L73 {
+                                                                                                                                                                                                                                                                                                                [*] -> L74;
+                                                                                                                                                                                                                                                                                                                state L74 {
+                                                                                                                                                                                                                                                                                                                    [*] -> L75;
+                                                                                                                                                                                                                                                                                                                    state L75 {
+                                                                                                                                                                                                                                                                                                                        [*] -> L76;
+                                                                                                                                                                                                                                                                                                                        state L76 {
+                                                                                                                                                                                                                                                                                                                            [*] -> L77;
+                                                                                                                                                                                                                                                                                                                            state L77 {
+                                                                                                                                                                                                                                                                                                                                [*] -> L78;
+                                                                                                                                                                                                                                                                                                                                state L78 {
+                                                                                                                                                                                                                                                                                                                                    [*] -> L79;
+                                                                                                                                                                                                                                                                                                                                    state L79 {
+                                                                                                                                                                                                                                                                                                                                        [*] -> L80;
+                                                                                                                                                                                                                                                                                                                                        state L80 {
+                                                                                                                                                                                                                                                                                                                                            during {
+                                                                                                                                                                                                                                                                                                                                                counter = counter + 1;
+                                                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                }
+                                                                                                                                                                                                            }
+                                                                                                                                                                                                        }
+                                                                                                                                                                                                    }
+                                                                                                                                                                                                }
+                                                                                                                                                                                            }
+                                                                                                                                                                                        }
+                                                                                                                                                                                    }
+                                                                                                                                                                                }
+                                                                                                                                                                            }
+                                                                                                                                                                        }
+                                                                                                                                                                    }
+                                                                                                                                                                }
+                                                                                                                                                            }
+                                                                                                                                                        }
+                                                                                                                                                    }
+                                                                                                                                                }
+                                                                                                                                            }
+                                                                                                                                        }
+                                                                                                                                    }
+                                                                                                                                }
+                                                                                                                            }
+                                                                                                                        }
+                                                                                                                    }
+                                                                                                                }
+                                                                                                            }
+                                                                                                        }
+                                                                                                    }
+                                                                                                }
+                                                                                            }
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        [*] -> L0;
+    }
+
+    [*] -> A;
+    A -> Deep :: Go;
+}

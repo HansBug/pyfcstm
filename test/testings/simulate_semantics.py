@@ -1987,6 +1987,18 @@ def _validate_initial(
         _validate_vars_mapping(initial.get("vars"), case_id, yaml_path, "initial.vars")
     if "expect" not in initial:
         return
+    if initial.get("state") is None:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "initial.expect requires initial.state",
+        )
+    if initial.get("vars") is None:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "initial.expect requires initial.vars",
+        )
     if "cli_command" in runners:
         raise _case_error(
             case_id,

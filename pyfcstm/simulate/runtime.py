@@ -742,11 +742,13 @@ class SimulationRuntime:
         """
         Validate that a hot-start target can reach a stable boundary.
 
-        The runtime constructs hot-start stacks without executing enter actions.
-        This preflight clones the constructed stack and current variables, then
-        advances that clone with no events in validation mode. The real runtime
-        therefore remains at the requested target state and no lifecycle or
-        abstract-handler side effects from the preflight are committed.
+        A non-pseudo leaf target is already a stable boundary, so validation
+        succeeds without executing the leaf's first-cycle ``during`` actions.
+        Other targets are checked by cloning the constructed stack and current
+        variables, then advancing that clone with no events in validation mode.
+        The real runtime therefore remains at the requested target state and no
+        lifecycle or abstract-handler side effects from the preflight are
+        committed.
 
         :param target_state: Target state selected by the user.
         :type target_state: State
@@ -754,6 +756,9 @@ class SimulationRuntime:
         :rtype: None
         :raises ValueError: If the target cannot reach a stoppable state or end.
         """
+        if target_state.is_stoppable:
+            return
+
         validation_stack = self._clone_stack(self.stack)
         validation_vars = copy.deepcopy(self.vars)
         success, _ = self._run_cycle_on_context(

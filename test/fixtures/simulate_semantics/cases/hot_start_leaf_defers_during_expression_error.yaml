@@ -1,0 +1,34 @@
+schema_version: 1
+id: hot_start_leaf_defers_during_expression_error
+title: Hot start leaf defers during expression errors until the first cycle
+source:
+  fcstm: hot_start_leaf_defers_during_expression_error.fcstm
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/pull/153#issuecomment-4627323375
+  assertion_types:
+  - exception
+  notes:
+  - A non-pseudo leaf target is already stoppable, so construction must not run its first-cycle during action.
+categories:
+- runtime
+- hot_start
+- validation
+- template_alignment
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: Root.A
+  vars:
+    x: 0
+steps:
+- cycle: {}
+  expect:
+    raises:
+      type: SimulationRuntimeExpressionError
+      match: "operation assignment to 'x' evaluation failed: division by zero"
+      match_kind: substring
+      cause_type: ZeroDivisionError
+      cause_match: 'division by zero'
+      cause_match_kind: substring

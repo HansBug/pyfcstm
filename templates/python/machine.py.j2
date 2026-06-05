@@ -465,6 +465,9 @@ class {{ machine_class_name(model) }}:
         return stack
 
     def _validate_hot_start_stack(self, target_path):
+        if self._is_stoppable_state(target_path):
+            return
+
         validation_stack = self._clone_stack(self._stack)
         validation_vars = dict(self._vars)
         success, _ = self._run_cycle_on_context(

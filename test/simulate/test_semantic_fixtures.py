@@ -12,6 +12,50 @@ from test.testings.simulate_semantics import (
 )
 
 
+def _readme_migration_index_case_ids():
+    readme_path = os.path.join(
+        os.path.dirname(__file__),
+        os.pardir,
+        "fixtures",
+        "simulate_semantics",
+        "README.md",
+    )
+    with open(readme_path, encoding="utf-8") as file:
+        readme_lines = file.read().splitlines()
+
+    start_index = readme_lines.index("## Current migration index") + 1
+    end_index = next(
+        (
+            index
+            for index in range(start_index, len(readme_lines))
+            if readme_lines[index].startswith("## ")
+        ),
+        len(readme_lines),
+    )
+    case_ids = []
+    for line in readme_lines[start_index:end_index]:
+        if not line.startswith("| `"):
+            continue
+        first_cell = line.split("|", 2)[1].strip()
+        if first_cell.startswith("`") and first_cell.endswith("`"):
+            case_ids.append(first_cell[1:-1])
+    return set(case_ids)
+
+
+@pytest.mark.unittest
+def test_semantic_fixture_readme_index_matches_cases():
+    cases = iter_semantic_cases()
+
+    readme_case_ids = _readme_migration_index_case_ids()
+    fixture_case_ids = {case.id for case in cases}
+
+    missing_from_readme = fixture_case_ids - readme_case_ids
+    extra_in_readme = readme_case_ids - fixture_case_ids
+
+    assert not missing_from_readme
+    assert not extra_in_readme
+
+
 @pytest.mark.unittest
 def test_all_semantic_fixtures_load():
     cases = iter_semantic_cases()

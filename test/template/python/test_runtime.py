@@ -380,8 +380,8 @@ class TestPythonBuiltinTemplate:
             assert hook_map == {'Root.PlatformInit': '_abstract_hook_Root_PlatformInit'}
             assert calls == [
                 ('Root.PlatformInit', 'enter', 'Root'),
-                ('Root.PlatformInit', 'enter', 'Root'),
-                ('Root.PlatformInit', 'enter', 'Root'),
+                ('Root.PlatformInit', 'enter', 'Root.A'),
+                ('Root.PlatformInit', 'enter', 'Root.B'),
             ]
 
     def test_generated_readme_documents_usage_and_abstract_hooks(self):
@@ -447,7 +447,7 @@ class TestPythonBuiltinTemplate:
                 elif isinstance(node, ast.ImportFrom):
                     imported_modules.add(node.module)
 
-            assert imported_modules <= {'__future__', 'math', 'dataclasses', 'typing'}
+            assert imported_modules <= {'__future__', 'math', 'dataclasses', 'types', 'typing'}
             assert 'msvcrt' not in source
             assert 'fcntl' not in source
             assert 'subprocess' not in source

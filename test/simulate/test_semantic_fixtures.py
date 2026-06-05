@@ -187,12 +187,12 @@ def _set_model_build_expectation(data, raises):
         ),
         (
             lambda data: (
-                _set_generated_alignment(data)
+                data.update({"runners": ["generated_python_alignment"]})
                 or data.update(
                     {"handlers": [{"action": "Root.Init", "behavior": "record_call"}]}
                 )
             ),
-            "handlers are only supported by simulation-only cases",
+            "handlers require the simulation runner",
         ),
         (
             lambda data: data.update({"runtime_options": {"unknown": "value"}}),
@@ -405,13 +405,6 @@ def _set_model_build_expectation(data, raises):
                 )
             ),
             "raises.cause_match_kind requires cause_match",
-        ),
-        (
-            lambda data: (
-                _set_generated_alignment(data)
-                or data["steps"][0]["expect"].update({"cycle_count": 1})
-            ),
-            "cycle_count is not allowed for generated alignment",
         ),
         (
             lambda data: (

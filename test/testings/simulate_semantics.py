@@ -962,47 +962,36 @@ def _handler_var_write_record(ctx: Any, name: str, value: Any) -> Dict[str, Any]
     return record
 
 
+def _run_fixture_handler(
+    handler_data: Mapping[str, Any], ctx: Any, calls: List[Mapping[str, Any]]
+) -> None:
+    behavior = handler_data["behavior"]
+    if behavior == "record_call":
+        calls.append(_handler_call_record(ctx))
+    elif behavior == "raise_error":
+        exception_data = handler_data.get("exception") or {}
+        calls.append(_handler_call_record(ctx))
+        raise ValueError(exception_data.get("message", "fixture handler error"))
+    elif behavior == "record_var_write_attempt":
+        write_data = handler_data["write"]
+        calls.append(
+            _handler_var_write_record(ctx, write_data["name"], write_data["value"])
+        )
+    else:
+        raise ValueError("handlers behavior is invalid: %r" % behavior)
+
+
 def _register_fixture_handlers(
     runtime: SimulationRuntime, case: SemanticCase
 ) -> List[Mapping[str, Any]]:
     calls = []
     for handler_data in case.data.get("handlers") or []:
         action_path = handler_data["action"]
-        behavior = handler_data["behavior"]
-        if behavior == "record_call":
 
-            def record_handler(ctx, handler_calls=calls):
-                handler_calls.append(_handler_call_record(ctx))
+        def fixture_handler(ctx, item=handler_data, handler_calls=calls):
+            _run_fixture_handler(item, ctx, handler_calls)
 
-            runtime.register_abstract_handler(action_path, record_handler)
-        elif behavior == "raise_error":
-            exception_data = handler_data.get("exception") or {}
-            message = exception_data.get("message", "fixture handler error")
-
-            def raising_handler(ctx, handler_calls=calls, error_message=message):
-                handler_calls.append(_handler_call_record(ctx))
-                raise ValueError(error_message)
-
-            runtime.register_abstract_handler(action_path, raising_handler)
-        elif behavior == "record_var_write_attempt":
-            write_data = handler_data["write"]
-            name = write_data["name"]
-            value = write_data["value"]
-
-            def write_attempt_handler(
-                ctx, handler_calls=calls, var_name=name, var_value=value
-            ):
-                handler_calls.append(
-                    _handler_var_write_record(ctx, var_name, var_value)
-                )
-
-            runtime.register_abstract_handler(action_path, write_attempt_handler)
-        else:
-            raise _case_error(
-                case.id,
-                case.yaml_path,
-                "handlers behavior is invalid: %r" % behavior,
-            )
+        runtime.register_abstract_handler(action_path, fixture_handler)
     return calls
 
 
@@ -1075,6 +1064,22 @@ class _GeneratedPythonAlignmentRuntime:
                 gen_stack,
             )
         )
+        sim_cycle_count = self._simulation_runtime.cycle_count
+        gen_cycle_count = self._generated_runtime.cycle_count
+        assert sim_cycle_count == gen_cycle_count, (
+            "%s: cycle_count mismatch for DSL:\n%s\nsimulation=%r, generated=%r"
+            % (
+                when,
+                self._dsl_code,
+                sim_cycle_count,
+                gen_cycle_count,
+            )
+        )
+
+    @property
+    def cycle_count(self) -> int:
+        self._assert_aligned("cycle_count access")
+        return self._simulation_runtime.cycle_count
 
     @property
     def vars(self) -> Mapping[str, Any]:
@@ -1180,7 +1185,9 @@ class _GeneratedPythonAlignmentRuntime:
         return sim_result
 
 
-def _build_generated_runtime(case: SemanticCase) -> Any:
+def _build_generated_runtime(
+    case: SemanticCase, handler_calls: Optional[List[Mapping[str, Any]]] = None
+) -> Any:
     model = build_state_machine_from_case(case)
     with TemporaryDirectory() as template_td:
         template_dir = extract_template("python", template_td)
@@ -1194,6 +1201,30 @@ def _build_generated_runtime(case: SemanticCase) -> Any:
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
             machine_cls = getattr(module, "%sMachine" % model.root_state.name)
+            if case.data.get("handlers"):
+                generated_calls = handler_calls if handler_calls is not None else []
+                hook_handlers = {}
+                hook_map = machine_cls.get_abstract_hook_map()
+                for handler_data in case.data.get("handlers") or []:
+                    hook_name = hook_map[handler_data["action"]]
+                    hook_handlers.setdefault(hook_name, []).append(handler_data)
+
+                attrs = {}
+                for hook_name, handler_items in hook_handlers.items():
+
+                    def fixture_hook(
+                        self,
+                        ctx,
+                        items=tuple(handler_items),
+                        calls=generated_calls,
+                    ):
+                        for item in items:
+                            _run_fixture_handler(item, ctx, calls)
+
+                    attrs[hook_name] = fixture_hook
+                machine_cls = type(
+                    "%sFixtureHandlers" % machine_cls.__name__, (machine_cls,), attrs
+                )
             return machine_cls(**_initial_kwargs(case))
 
 
@@ -1235,14 +1266,28 @@ def run_generated_python_alignment_case(case: SemanticCase, caplog: Any = None) 
         _assert_aligned_constructor_failure(case)
         return
     simulation_runtime = _build_simulation_runtime(case)
-    _register_fixture_handlers(simulation_runtime, case)
-    generated_runtime = _build_generated_runtime(case)
+    simulation_handler_calls = _register_fixture_handlers(simulation_runtime, case)
+    generated_handler_calls = []
+    generated_runtime = _build_generated_runtime(
+        case, handler_calls=generated_handler_calls
+    )
     runtime = _GeneratedPythonAlignmentRuntime(
         simulation_runtime, generated_runtime, case.dsl_code
     )
     runtime._assert_aligned("initial build")
     for index, step in enumerate(case.data.get("steps") or []):
-        _run_step(runtime, step, case, index, caplog=caplog)
+        _run_step(
+            runtime,
+            step,
+            case,
+            index,
+            caplog=caplog,
+            handler_calls=simulation_handler_calls,
+        )
+        assert simulation_handler_calls == generated_handler_calls, (
+            "%s steps[%d] handler call mismatch: simulation=%r, generated=%r"
+            % (case.id, index, simulation_handler_calls, generated_handler_calls)
+        )
 
 
 def run_cli_command_case(case: SemanticCase) -> None:
@@ -1837,21 +1882,14 @@ def _validate_expect(
             yaml_path,
             "%s has unknown fields: %r" % (field_path, sorted(unknown)),
         )
-    if "generated_python_alignment" in runners and "cycle_count" in expect:
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "%s.cycle_count is not allowed for generated alignment" % field_path,
-        )
     if "generated_python_alignment" in runners:
-        generated_only_fields = {
+        unsupported_generated_alignment_fields = {
             "abstract_handler_errors",
-            "handler_calls",
             "warnings",
             "error_state",
             "error_info",
         }
-        overlap = generated_only_fields & set(expect.keys())
+        overlap = unsupported_generated_alignment_fields & set(expect.keys())
         if overlap:
             raise _case_error(
                 case_id,
@@ -2122,11 +2160,11 @@ def _validate_handlers(
 ) -> None:
     if handlers is None:
         return
-    if "simulation" not in runners or "generated_python_alignment" in runners:
+    if "simulation" not in runners:
         raise _case_error(
             case_id,
             yaml_path,
-            "handlers are only supported by simulation-only cases",
+            "handlers require the simulation runner",
         )
     if not isinstance(handlers, list):
         raise _case_error(case_id, yaml_path, "handlers must be a list")

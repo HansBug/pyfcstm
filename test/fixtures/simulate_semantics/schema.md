@@ -31,7 +31,7 @@ with a diagnostic containing the case id and YAML path.
 | `model_build` | conditional | Simulation-only model-construction diagnostic expectation. Mutually exclusive with `steps` and `commands`. |
 | `steps` | conditional | Required for runtime/alignment runners. Mutually exclusive with `model_build` and `commands`. |
 | `commands` | conditional | Required for CLI runner. Mutually exclusive with `model_build` and `steps`. |
-| `handlers` | no | Simulation-only abstract-handler fixtures for recording calls or raising errors. |
+| `handlers` | no | Abstract-handler fixtures for recording calls or raising errors. Requires the `simulation` runner and may also be used for generated Python alignment. |
 | `expected_failure` | reserved | Reserved for inactive regression fixtures that should not run in the main corpus. |
 
 Allowed categories:
@@ -61,10 +61,10 @@ Allowed runners:
 `model_build`. Exactly one of `model_build`, `steps`, or `commands` must be
 present.
 
-`runtime_options` and `handlers` are accepted only for simulation-only cases.
-They are rejected when `generated_python_alignment` is present, because the
-generated Python runtime runner intentionally covers the shared public runtime
-surface and does not install Python callback handlers.
+`runtime_options` is accepted only for simulation-only cases. `handlers`
+requires the `simulation` runner. When `generated_python_alignment` is also
+present, the same handler behavior is installed into both runtimes so callback
+context and side-effect isolation stay aligned.
 
 ## Runtime construction diagnostics
 
@@ -150,7 +150,8 @@ runners require a successfully built model. It is also mutually exclusive with
 
 ## Abstract-handler fixtures
 
-Handlers let simulation-only cases express callback side effects in YAML:
+Handlers let cases with the `simulation` runner express callback side effects
+in YAML:
 
 ```yaml
 handlers:
@@ -251,7 +252,7 @@ parent-relative paths (`.go`), and root-relative paths (`/go`).
 | `vars_absent` | Variables that must not be present. |
 | `ended` | Expected `runtime.is_ended`. |
 | `stack` | Expected `brief_stack`, with `path` list and `mode`. |
-| `cycle_count` | Simulation/CLI-only cycle count assertion. Rejected for generated alignment cases. |
+| `cycle_count` | Runtime cycle count assertion. For generated alignment cases the generated runtime must expose the same count. |
 | `return` | Expected `cycle()` return value. |
 | `raises` | Expected exception class name and optional message match. |
 | `logs` | Step-local `caplog` assertions. |
@@ -359,8 +360,10 @@ expect:
 ```
 
 `handler_calls` is an exact accumulated-list assertion over the fixture handlers
-registered by the top-level `handlers` field. Use `handler_calls: []` to prove a
-failed speculative execution did not invoke any handler.
+registered by the top-level `handlers` field. For generated alignment cases,
+the helper also asserts that simulation and generated callback records match.
+Use `handler_calls: []` to prove a failed speculative execution did not invoke
+any handler.
 
 When a handler call includes `write_attempt`, the record asserts the attempted
 variable name, attempted value, success flag, optional exception type, and the
@@ -390,15 +393,17 @@ at construction time and after every step:
 - variables
 - current state path
 - `brief_stack`
+- `cycle_count`
 - `cycle()` return value
 - exception class names for expected exception paths
 
 Even when YAML does not contain an explicit `stack` assertion, the alignment
-runner compares both stacks internally. `cycle_count` is rejected for generated
-alignment cases because the generated runtime does not expose it as a public
-contract. `runtime_options`, `handlers`, `warnings`, `handler_calls`,
-`abstract_handler_errors`, `error_state`, and `error_info` are also rejected for
-generated alignment cases in this schema version.
+runner compares both stacks internally. `runtime_options`, `warnings`,
+`abstract_handler_errors`, `error_state`, and `error_info` are rejected for
+generated alignment cases in this schema version. `handlers` and
+`handler_calls` are allowed when the fixture also includes `simulation`; the
+same fixture handlers are installed in both runtimes and their call records must
+match.
 
 For constructor diagnostics, the alignment runner builds both runtimes and
 requires matching exception class names and messages before applying the

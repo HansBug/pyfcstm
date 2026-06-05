@@ -17,10 +17,12 @@ origin:
   - Tracks failed-initial-cycle rollback of root entry lifecycle state.
 categories:
 - runtime
+- template_alignment
 - validation
 - lifecycle
 runners:
 - simulation
+- generated_python_alignment
 initial:
   state: null
   vars: null

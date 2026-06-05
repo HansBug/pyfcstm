@@ -24,6 +24,7 @@
     "hook_method": {{ abstract_hook_method_name(resolved.item) | tojson if resolved.item.is_abstract else "None" }},
     "action_name": {{ resolved.item.func_name | tojson }},
     "action_stage": {{ resolved.item.stage | tojson }},
+    "context_state_path": {{ py_tuple(state.path) }},
     "owner_state_path": {{ py_tuple(resolved.item.parent.path) }},
     "dsl_snippet": {{ (resolved.item.to_ast_node() | string) | tojson }},
 }
@@ -101,7 +102,8 @@ Original DSL Source::
 
 import math  # noqa: F401 - rendered DSL math expressions may use this module.
 from dataclasses import dataclass
-from typing import Dict, Tuple, Union
+from types import MappingProxyType
+from typing import Mapping, Tuple, Union
 
 
 Number = Union[int, float]
@@ -207,7 +209,7 @@ class ReadOnlyExecutionContext:
     :param state_path: Owning action state path.
     :type state_path: Tuple[str, ...]
     :param vars: Snapshot of machine variables.
-    :type vars: Dict[str, Number]
+    :type vars: Mapping[str, Number]
     :param action_name: Full action path.
     :type action_name: str
     :param action_stage: Lifecycle stage.
@@ -215,9 +217,12 @@ class ReadOnlyExecutionContext:
     """
 
     state_path: Tuple[str, ...]
-    vars: Dict[str, Number]
+    vars: Mapping[str, Number]
     action_name: str
     action_stage: str
+
+    def __post_init__(self):
+        object.__setattr__(self, "vars", MappingProxyType(dict(self.vars)))
 
     def get_var(self, name):
         return self.vars[name]
@@ -361,6 +366,7 @@ class {{ machine_class_name(model) }}:
 
         self._ended = False
         self._entered_root = initial_state is not None
+        self.cycle_count = 0
         if initial_state is None:
             self._stack = [{"state": self._ROOT_STATE_PATH, "mode": "init_wait"}]
         else:
@@ -596,7 +602,7 @@ class {{ machine_class_name(model) }}:
         if is_validation_mode:
             return
         ctx = ReadOnlyExecutionContext(
-            state_path=action["owner_state_path"],
+            state_path=action["context_state_path"],
             vars=dict(vars_),
             action_name=action["action_name"],
             action_stage=action["action_stage"],
@@ -989,21 +995,44 @@ class {{ machine_class_name(model) }}:
         snapshot_entered_root = self._entered_root
         snapshot_ended = self._ended
 
-        sim_stack = self._clone_stack(self._stack)
-        sim_vars = dict(self._vars)
-        sim_entered_root = self._entered_root
-        sim_ended = self._ended
+        validation_stack = self._clone_stack(snapshot_stack)
+        validation_vars = dict(snapshot_vars)
+        validation_entered_root = snapshot_entered_root
+        validation_ended = snapshot_ended
 
-        if not sim_entered_root:
-            sim_ended = self._initialize_context(sim_stack, sim_vars, event_names)
-            sim_entered_root = True
+        if not validation_entered_root:
+            validation_ended = self._initialize_context(
+                validation_stack,
+                validation_vars,
+                event_names,
+                is_validation_mode=True,
+            )
+            validation_entered_root = True
 
-        success, sim_ended = self._run_cycle_on_context(
-            sim_stack,
-            sim_vars,
+        success, validation_ended = self._run_cycle_on_context(
+            validation_stack,
+            validation_vars,
             event_names,
-            ended=sim_ended,
+            ended=validation_ended,
+            is_validation_mode=True,
         )
+
+        if success:
+            sim_stack = self._clone_stack(snapshot_stack)
+            sim_vars = dict(snapshot_vars)
+            sim_entered_root = snapshot_entered_root
+            sim_ended = snapshot_ended
+
+            if not sim_entered_root:
+                sim_ended = self._initialize_context(sim_stack, sim_vars, event_names)
+                sim_entered_root = True
+
+            success, sim_ended = self._run_cycle_on_context(
+                sim_stack,
+                sim_vars,
+                event_names,
+                ended=sim_ended,
+            )
 
         if success:
             self._stack = [] if sim_ended else sim_stack
@@ -1011,16 +1040,16 @@ class {{ machine_class_name(model) }}:
             self.variables = self._vars
             self._entered_root = sim_entered_root
             self._ended = sim_ended
+            self.cycle_count += 1
         else:
             self._vars = snapshot_vars
             self.variables = self._vars
             self._ended = snapshot_ended
             if not snapshot_entered_root and not snapshot_ended:
                 self._stack = self._create_root_rollback_stack()
-                self._entered_root = True
             else:
                 self._stack = snapshot_stack
-                self._entered_root = snapshot_entered_root
+            self._entered_root = snapshot_entered_root
 
         if self._ended or not self._stack:
             self._ended = True

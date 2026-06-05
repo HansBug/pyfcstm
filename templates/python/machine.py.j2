@@ -34,7 +34,7 @@
 [
 {%- for id_, item in items %}
 {{ render_action_entry(state, item, method_kind, id_) | indent(16, true) }},
-{% endfor %}
+{%- endfor %}
             ]
 {%- else -%}
 []

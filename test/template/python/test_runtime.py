@@ -425,6 +425,8 @@ class TestPythonBuiltinTemplate:
         dsl_code = """
         def int counter = 0;
         state Root {
+            enter { counter = counter + 1; }
+            enter abstract RootInit;
             state Idle {
                 during { counter = counter + 1; }
             }

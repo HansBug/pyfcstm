@@ -1192,12 +1192,14 @@ For built-in template work, the current design bar is defined by the `python` te
   jsfcstm tests invoking Python), and do not rely on build artifacts from the other side.
 - Unit tests may import the production code under test and use production assets through the public runtime/build
   entry points, but test-only data, helper scripts, and golden outputs must live in the corresponding test tree.
-- Unit tests under `test/` should keep the code under test limited to production `pyfcstm/` behavior and production
-  assets reached through `pyfcstm` public entry points. Treat files under `test/` as inputs, fixtures, helpers, and
-  expected data only; do not add pytest cases whose primary assertion target is test-tree metadata, README inventories,
-  helper implementation details, or other non-`pyfcstm/` repository paths. If fixture inventories, test documentation,
-  or other test-tree maintenance data need executable validation, put that check in a maintenance command outside the
-  unit-test suite (for example under `tools/`) and run it explicitly.
+- Unit tests under `test/` should keep production `pyfcstm/` behavior as the primary code under test, with
+  test-tree files acting as fixtures, helpers, schemas, harnesses, and expected data for that behavior.
+  It is acceptable to test fixture loaders, schema validation, and harness behavior when those checks protect
+  production-behavior fixture execution or prevent test-semantics drift. Do not add pytest cases whose primary
+  assertion target is only test-tree documentation or maintenance metadata, such as README inventory tables or
+  migration indexes. If fixture inventories, test documentation, or other test-tree maintenance data need executable
+  validation, put that check in a maintenance command outside the unit-test suite (for example under `tools/`) and run
+  it explicitly.
 - Shared test utilities and fixtures in `test/testings/`
 - Sample DSL files in `test/testfile/sample_codes/` (auto-generate tests via `make sample`)
 - Negative cases in `test/testfile/sample_neg_codes/`

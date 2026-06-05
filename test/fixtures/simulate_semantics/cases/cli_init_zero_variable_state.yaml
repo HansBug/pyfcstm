@@ -1,0 +1,39 @@
+schema_version: 1
+id: cli_init_zero_variable_state
+title: CLI init treats an empty variable snapshot as complete
+source:
+  fcstm: cli_init_zero_variable_state.fcstm
+origin:
+  files:
+  - test/simulate/test_semantic_fixtures.py::test_cli_command_semantic_fixture
+  assertion_types:
+  - cli_output
+  - state
+  - vars_exact
+  - ended
+  notes:
+  - Covers zero-variable hot start through the command processor.
+categories:
+- runtime
+- hot_start
+- cli
+runners:
+- cli_command
+initial:
+  state: null
+  vars: null
+commands:
+- input: init Root.A
+  expect:
+    output_contains:
+    - 'Initialized from state: Root.A'
+    - Root.A
+    output_not_contains:
+    - Initialization failed
+    - Error
+    runtime:
+      state:
+      - Root
+      - A
+      vars_exact: {}
+      ended: false

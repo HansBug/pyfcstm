@@ -109,6 +109,8 @@ _ALLOWED_CLI_RUNTIME_FIELDS = {
     "stack",
     "cycle_count",
 }
+_ALLOWED_INITIAL_FIELDS = {"state", "vars", "expect"}
+_ALLOWED_INITIAL_CONSTRUCTOR_EXPECT_FIELDS = {"raises"}
 _ALLOWED_CYCLE_FIELDS = {"events"}
 _ALLOWED_MODEL_BUILD_FIELDS = {"expect"}
 _ALLOWED_MODEL_BUILD_EXPECT_FIELDS = {"raises"}
@@ -146,6 +148,7 @@ _EXCEPTION_TYPES = {
     "SimulationRuntimeExpressionError": SimulationRuntimeExpressionError,
     "ValueError": ValueError,
 }
+_CONSTRUCTOR_EXCEPTION_TYPES = tuple(_EXCEPTION_TYPES.values())
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
@@ -850,6 +853,69 @@ def run_model_build_case(case: SemanticCase) -> None:
         )
 
 
+def _initial_constructor_expect(case: SemanticCase) -> Optional[Mapping[str, Any]]:
+    initial = case.data.get("initial") or {}
+    expect = initial.get("expect")
+    if expect is None:
+        return None
+    return expect
+
+
+def _initial_constructor_expect_data(initial: Any) -> bool:
+    return isinstance(initial, dict) and "expect" in initial
+
+
+def _capture_construction(build_runtime):
+    try:
+        return build_runtime(), None
+    except _CONSTRUCTOR_EXCEPTION_TYPES as err:
+        # Each class in _CONSTRUCTOR_EXCEPTION_TYPES is an allowed semantic
+        # diagnostic in fixture ``raises`` matchers. Unexpected exceptions
+        # propagate and fail the test as implementation bugs.
+        return None, err
+
+
+def _assert_constructor_failure(build_runtime, expect, case: SemanticCase) -> None:
+    runtime, err = _capture_construction(build_runtime)
+    assert runtime is None, "%s initial.expect.raises unexpectedly built runtime" % (
+        case.id,
+    )
+    assert err is not None, "%s initial.expect.raises expected exception %r" % (
+        case.id,
+        expect["raises"],
+    )
+    _assert_exception(err, expect, case, "initial.expect.raises")
+
+
+def _assert_aligned_constructor_failure(case: SemanticCase) -> None:
+    expect = _initial_constructor_expect(case)
+    _, simulation_err = _capture_construction(lambda: _build_simulation_runtime(case))
+    _, generated_err = _capture_construction(lambda: _build_generated_runtime(case))
+
+    assert simulation_err is not None, (
+        "%s initial.expect.raises expected SimulationRuntime construction failure %r"
+        % (case.id, expect["raises"])
+    )
+    assert generated_err is not None, (
+        "%s initial.expect.raises expected generated Python construction failure %r"
+        % (case.id, expect["raises"])
+    )
+    assert type(simulation_err).__name__ == type(generated_err).__name__, (
+        "%s constructor exception type mismatch: simulation=%s generated=%s"
+        % (
+            case.id,
+            type(simulation_err).__name__,
+            type(generated_err).__name__,
+        )
+    )
+    assert str(simulation_err) == str(generated_err), (
+        "%s constructor exception message mismatch: simulation=%s generated=%s"
+        % (case.id, simulation_err, generated_err)
+    )
+    _assert_exception(simulation_err, expect, case, "initial.expect.raises")
+    _assert_exception(generated_err, expect, case, "initial.expect.raises")
+
+
 def _initial_kwargs(case: SemanticCase) -> Dict[str, Any]:
     initial = case.data.get("initial") or {}
     kwargs = {}
@@ -1142,6 +1208,14 @@ def run_simulation_case(case: SemanticCase, caplog: Any = None) -> None:
     if "model_build" in case.data:
         run_model_build_case(case)
         return
+    initial_expect = _initial_constructor_expect(case)
+    if initial_expect is not None:
+        _assert_constructor_failure(
+            lambda: _build_simulation_runtime(case),
+            initial_expect,
+            case,
+        )
+        return
     runtime = _build_simulation_runtime(case)
     handler_calls = _register_fixture_handlers(runtime, case)
     for index, step in enumerate(case.data.get("steps") or []):
@@ -1157,6 +1231,9 @@ def run_simulation_case(case: SemanticCase, caplog: Any = None) -> None:
 
 def run_generated_python_alignment_case(case: SemanticCase, caplog: Any = None) -> None:
     """Run a semantic fixture against simulation and generated Python runtimes."""
+    if _initial_constructor_expect(case) is not None:
+        _assert_aligned_constructor_failure(case)
+        return
     simulation_runtime = _build_simulation_runtime(case)
     _register_fixture_handlers(simulation_runtime, case)
     generated_runtime = _build_generated_runtime(case)
@@ -1890,12 +1967,14 @@ def _validate_origin(origin: Any, case_id: str, yaml_path: str) -> None:
             )
 
 
-def _validate_initial(initial: Any, case_id: str, yaml_path: str) -> None:
+def _validate_initial(
+    initial: Any, case_id: str, yaml_path: str, runners: Sequence[str]
+) -> None:
     if initial is None:
         return
     if not isinstance(initial, dict):
         raise _case_error(case_id, yaml_path, "initial must be a mapping")
-    unknown_initial = set(initial.keys()) - {"state", "vars"}
+    unknown_initial = set(initial.keys()) - _ALLOWED_INITIAL_FIELDS
     if unknown_initial:
         raise _case_error(
             case_id,
@@ -1906,6 +1985,39 @@ def _validate_initial(initial: Any, case_id: str, yaml_path: str) -> None:
         raise _case_error(case_id, yaml_path, "initial.state must be a string or null")
     if initial.get("vars") is not None:
         _validate_vars_mapping(initial.get("vars"), case_id, yaml_path, "initial.vars")
+    if "expect" not in initial:
+        return
+    if initial.get("state") is None:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "initial.expect requires initial.state",
+        )
+    if initial.get("vars") is None:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "initial.expect requires initial.vars",
+        )
+    if "cli_command" in runners:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "initial.expect is not supported for cli_command cases",
+        )
+    expect = initial["expect"]
+    if not isinstance(expect, dict):
+        raise _case_error(case_id, yaml_path, "initial.expect must be a mapping")
+    _validate_expect(
+        expect,
+        case_id,
+        yaml_path,
+        "initial.expect",
+        runners,
+        allowed_fields=_ALLOWED_INITIAL_CONSTRUCTOR_EXPECT_FIELDS,
+    )
+    if "raises" not in expect:
+        raise _case_error(case_id, yaml_path, "initial.expect.raises is required")
 
 
 def _validate_runtime_options(
@@ -2147,7 +2259,6 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
         raise _case_error(case_id, yaml_path, "id must match YAML file name")
     _validate_source(data.get("source"), case_id, yaml_path)
     _validate_origin(data.get("origin"), case_id, yaml_path)
-    _validate_initial(data.get("initial"), case_id, yaml_path)
     categories = data.get("categories")
     if not isinstance(categories, list) or not categories:
         raise _case_error(case_id, yaml_path, "categories must be a non-empty list")
@@ -2168,6 +2279,7 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
         raise _case_error(
             case_id, yaml_path, "cli_command cannot be mixed with other runners"
         )
+    _validate_initial(data.get("initial"), case_id, yaml_path, runners)
     _validate_runtime_options(data.get("runtime_options"), case_id, yaml_path, runners)
     _validate_handlers(data.get("handlers"), case_id, yaml_path, runners)
     _validate_model_build(data.get("model_build"), case_id, yaml_path, runners)
@@ -2190,6 +2302,22 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
             yaml_path,
             "expected_failure is reserved for inactive regression fixtures",
         )
+    has_initial_constructor_expect = _initial_constructor_expect_data(
+        data.get("initial")
+    )
+    if has_initial_constructor_expect:
+        if not has_steps:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "initial.expect.raises cases require empty steps",
+            )
+        if data["steps"]:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "initial.expect.raises cases require empty steps",
+            )
     if has_steps:
         if not isinstance(data["steps"], list):
             raise _case_error(case_id, yaml_path, "steps must be a list")

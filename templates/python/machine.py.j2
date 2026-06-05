@@ -252,7 +252,9 @@ class {{ machine_class_name(model) }}:
 
     DSL_SOURCE = _DSL_SOURCE
     STATE_PATHS = _STATE_PATHS
-{% if define_items | length == 1 -%}
+{% if define_items | length == 0 -%}
+{{ 'VARIABLE_NAMES = ()' | indent(4, true) }}
+{% elif define_items | length == 1 -%}
 {{ ('VARIABLE_NAMES = (' ~ (define_items[0].name | tojson) ~ ',)') | indent(4, true) }}
 {% else -%}
 {% set variable_name_lines = namespace(items=['VARIABLE_NAMES = (']) -%}
@@ -327,11 +329,15 @@ class {{ machine_class_name(model) }}:
 {% endfor %}
 {% endfor %}
     }
-    _VAR_TYPES = {
+{% if define_items | length == 0 -%}
+{{ '_VAR_TYPES = {}' | indent(4, true) }}
+{% else -%}
+{{ '_VAR_TYPES = {' | indent(4, true) }}
 {% for def_item in define_items %}
         {{ def_item.name | tojson }}: {{ def_item.type | tojson }},
 {% endfor %}
     }
+{% endif %}
 
     def __init__(self, initial_state=None, initial_vars=None):
         """

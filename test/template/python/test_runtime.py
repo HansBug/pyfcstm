@@ -422,86 +422,103 @@ class TestPythonBuiltinTemplate:
             assert '修改状态机持久变量' in readme_zh
 
     def test_generated_machine_source_stays_platform_neutral_and_python37_compatible(self):
-        dsl_code = """
-        def int counter = 0;
-        state Root {
-            enter { }
-            enter { counter = counter + 1; }
-            enter abstract RootInit;
-            during before { }
-            during after { }
-            >> during before { }
-            >> during after { }
-            state Choice {
-                state Bad {
-                    state Dead;
-                    [*] -> Dead : if [counter < 0];
-                }
-                state First;
-                state Second;
-                [*] -> Bad : if [counter < 0];
-                [*] -> First;
-                [*] -> Second;
-            }
-            state Idle {
+        dsl_codes = [
+            """
+            def int counter = 0;
+            state Root {
                 enter { }
-                during { counter = counter + 1; }
-                exit { }
+                enter { counter = counter + 1; }
+                enter abstract RootInit;
+                during before { }
+                during after { }
+                >> during before { }
+                >> during after { }
+                state Choice {
+                    state Bad {
+                        state Dead;
+                        [*] -> Dead : if [counter < 0];
+                    }
+                    state First;
+                    state Second;
+                    [*] -> Bad : if [counter < 0];
+                    [*] -> First;
+                    [*] -> Second;
+                }
+                state Idle {
+                    enter { }
+                    during { counter = counter + 1; }
+                    exit { }
+                }
+                state Waiting;
+                state Done;
+                [*] -> Idle;
+                Idle -> Waiting :: Pause;
+                Idle -> Done :: Finish;
+                Waiting -> Done : if [false];
             }
-            state Waiting;
-            state Done;
-            [*] -> Idle;
-            Idle -> Waiting :: Pause;
-            Idle -> Done :: Finish;
-            Waiting -> Done : if [false];
-        }
-        """
+            """,
+            """
+            state Root {
+                state A;
+                [*] -> A;
+            }
+            """,
+        ]
 
-        with _render_python_artifacts(dsl_code) as artifacts:
-            with open(artifacts['machine_file'], 'r', encoding='utf-8') as f:
-                source = f.read()
+        try:
+            from ruff import find_ruff_bin
+        except ImportError:
+            # from ruff import find_ruff_bin: Ruff is absent from the
+            # active test environment, so formatter convergence cannot run.
+            pytest.skip('ruff is not installed in this test environment')
+        try:
+            ruff_executable = find_ruff_bin()
+        except FileNotFoundError:
+            # find_ruff_bin(): the installed Ruff wrapper package cannot
+            # locate its bundled CLI binary in this test environment.
+            pytest.skip('ruff binary is not available in this test environment')
 
-            if sys.version_info >= (3, 8):
-                tree = ast.parse(source, feature_version=(3, 7))
-            else:
-                tree = ast.parse(source)
-            imported_modules = set()
-            for node in tree.body:
-                if isinstance(node, ast.Import):
-                    imported_modules.update(alias.name for alias in node.names)
-                elif isinstance(node, ast.ImportFrom):
-                    imported_modules.add(node.module)
+        for index, dsl_code in enumerate(dsl_codes):
+            with _render_python_artifacts(
+                dsl_code, module_name='generated_python_source_%d' % index
+            ) as artifacts:
+                with open(artifacts['machine_file'], 'r', encoding='utf-8') as f:
+                    source = f.read()
 
-            assert imported_modules <= {'__future__', 'math', 'dataclasses', 'types', 'typing'}
-            assert 'msvcrt' not in source
-            assert 'fcntl' not in source
-            assert 'subprocess' not in source
-            assert 'pathlib' not in source
+                if sys.version_info >= (3, 8):
+                    tree = ast.parse(source, feature_version=(3, 7))
+                else:
+                    tree = ast.parse(source)
+                imported_modules = set()
+                for node in tree.body:
+                    if isinstance(node, ast.Import):
+                        imported_modules.update(alias.name for alias in node.names)
+                    elif isinstance(node, ast.ImportFrom):
+                        imported_modules.add(node.module)
 
-            try:
-                from ruff import find_ruff_bin
-            except ImportError:
-                # from ruff import find_ruff_bin: Ruff is absent from the
-                # active test environment, so formatter convergence cannot run.
-                pytest.skip('ruff is not installed in this test environment')
-            try:
-                ruff_executable = find_ruff_bin()
-            except FileNotFoundError:
-                # find_ruff_bin(): the installed Ruff wrapper package cannot
-                # locate its bundled CLI binary in this test environment.
-                pytest.skip('ruff binary is not available in this test environment')
+                assert imported_modules <= {
+                    '__future__',
+                    'math',
+                    'dataclasses',
+                    'types',
+                    'typing',
+                }
+                assert 'msvcrt' not in source
+                assert 'fcntl' not in source
+                assert 'subprocess' not in source
+                assert 'pathlib' not in source
 
-            subprocess.run(
-                [ruff_executable, 'check', artifacts['machine_file']],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            subprocess.run(
-                [ruff_executable, 'format', '--check', artifacts['machine_file']],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
+                subprocess.run(
+                    [ruff_executable, 'check', artifacts['machine_file']],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                subprocess.run(
+                    [ruff_executable, 'format', '--check', artifacts['machine_file']],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )

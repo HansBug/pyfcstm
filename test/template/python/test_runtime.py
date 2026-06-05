@@ -425,12 +425,35 @@ class TestPythonBuiltinTemplate:
         dsl_code = """
         def int counter = 0;
         state Root {
+            enter { }
             enter { counter = counter + 1; }
             enter abstract RootInit;
-            state Idle {
-                during { counter = counter + 1; }
+            during before { }
+            during after { }
+            >> during before { }
+            >> during after { }
+            state Choice {
+                state Bad {
+                    state Dead;
+                    [*] -> Dead : if [counter < 0];
+                }
+                state First;
+                state Second;
+                [*] -> Bad : if [counter < 0];
+                [*] -> First;
+                [*] -> Second;
             }
+            state Idle {
+                enter { }
+                during { counter = counter + 1; }
+                exit { }
+            }
+            state Waiting;
+            state Done;
             [*] -> Idle;
+            Idle -> Waiting :: Pause;
+            Idle -> Done :: Finish;
+            Waiting -> Done : if [false];
         }
         """
 

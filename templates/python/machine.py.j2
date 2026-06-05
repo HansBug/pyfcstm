@@ -282,12 +282,24 @@ class {{ machine_class_name(model) }}:
             "during_after_actions": {{ render_action_entries(state, state.list_on_durings(aspect="after", with_ids=True), "during_after") }},
             "aspect_before_actions": {{ render_action_entries(state, state.list_on_during_aspects(aspect="before", with_ids=True), "aspect_before") }},
             "aspect_after_actions": {{ render_action_entries(state, state.list_on_during_aspects(aspect="after", with_ids=True), "aspect_after") }},
-            "initial_transition_ids": [{%- for transition in state.init_transitions %}
+{% if state.init_transitions %}
+            "initial_transition_ids": [
+{% for transition in state.init_transitions %}
                 {{ init_transition_id(state, loop.index) | tojson }},
-            {% endfor -%}],
-            "transition_ids": [{%- for transition in state.transitions_from %}
+{% endfor %}
+            ],
+{% else %}
+            "initial_transition_ids": [],
+{% endif %}
+{% if state.transitions_from %}
+            "transition_ids": [
+{% for transition in state.transitions_from %}
                 {{ normal_transition_id(state, loop.index) | tojson }},
-            {% endfor -%}],
+{% endfor %}
+            ],
+{% else %}
+            "transition_ids": [],
+{% endif %}
         },
 {% endfor %}
     }
@@ -1103,8 +1115,8 @@ class {{ machine_class_name(model) }}:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
+        scope = vars_ if vars_ is not None else self._vars
 {{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
@@ -1156,8 +1168,8 @@ class {{ machine_class_name(model) }}:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
+        scope = vars_ if vars_ is not None else self._vars
 {{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
@@ -1209,8 +1221,8 @@ class {{ machine_class_name(model) }}:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
+        scope = vars_ if vars_ is not None else self._vars
 {{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
@@ -1264,8 +1276,8 @@ class {{ machine_class_name(model) }}:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
+        scope = vars_ if vars_ is not None else self._vars
 {{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
@@ -1319,8 +1331,8 @@ class {{ machine_class_name(model) }}:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
+        scope = vars_ if vars_ is not None else self._vars
 {{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
@@ -1374,8 +1386,8 @@ class {{ machine_class_name(model) }}:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
+        scope = vars_ if vars_ is not None else self._vars
 {{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
@@ -1429,8 +1441,8 @@ class {{ machine_class_name(model) }}:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
+        scope = vars_ if vars_ is not None else self._vars
 {{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
@@ -1451,7 +1463,7 @@ class {{ machine_class_name(model) }}:
         scope = vars_ if vars_ is not None else self._vars
         return bool(
             self._evaluate_runtime_expr(
-                lambda: {{ transition.guard.to_ast_node() | expr_render(style='python_scope_expr') }},
+                lambda scope=scope: {{ transition.guard.to_ast_node() | expr_render(style='python_scope_expr') }},
                 "transition guard",
             )
         )
@@ -1484,7 +1496,7 @@ class {{ machine_class_name(model) }}:
         scope = vars_ if vars_ is not None else self._vars
         return bool(
             self._evaluate_runtime_expr(
-                lambda: {{ transition.guard.to_ast_node() | expr_render(style='python_scope_expr') }},
+                lambda scope=scope: {{ transition.guard.to_ast_node() | expr_render(style='python_scope_expr') }},
                 "transition guard",
             )
         )

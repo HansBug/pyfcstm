@@ -254,6 +254,41 @@ def _set_model_build_expectation(data, raises):
             "model_build.expect has unknown fields",
         ),
         (
+            lambda data: data["initial"].update({"unexpected": True}),
+            "initial has unknown fields",
+        ),
+        (
+            lambda data: data["initial"].update({"expect": {"return": None}}),
+            "initial.expect has unknown fields",
+        ),
+        (
+            lambda data: data["initial"].update(
+                {"expect": {"raises": {"type": "UnknownError"}}}
+            ),
+            "initial.expect.raises.type is unknown",
+        ),
+        (
+            lambda data: (
+                _set_cli_expectation(data, {"output_contains": ["Commands"]})
+                or data.update(
+                    {
+                        "initial": {
+                            "state": "Root.A",
+                            "vars": {},
+                            "expect": {"raises": {"type": "ValueError"}},
+                        }
+                    }
+                )
+            ),
+            "initial.expect is not supported for cli_command cases",
+        ),
+        (
+            lambda data: data["initial"].update(
+                {"expect": {"raises": {"type": "ValueError"}}}
+            ),
+            "initial.expect.raises cases require empty steps",
+        ),
+        (
             lambda data: data["steps"][0]["expect"].update({"unknown_expect": True}),
             "unknown fields",
         ),

@@ -1,0 +1,6 @@
+def int x = 0;
+state Root {
+    pseudo state P { during { x = x + 1; } }
+    state A;
+    [*] -> A;
+}

@@ -390,13 +390,12 @@ class CommandProcessor:
             initial_vars[var_name] = var_value
 
         # Validate that all variables are provided
-        if initial_vars:
-            missing_vars = set(self.runtime.vars.keys()) - set(initial_vars.keys())
-            if missing_vars:
-                return CommandResult(
-                    f"Error: All variables must be provided. Missing: {sorted(missing_vars)}\n"
-                    f"Available variables: {sorted(self.runtime.vars.keys())}"
-                )
+        missing_vars = set(self.runtime.vars.keys()) - set(initial_vars.keys())
+        if missing_vars:
+            return CommandResult(
+                f"Error: All variables must be provided. Missing: {sorted(missing_vars)}\n"
+                f"Available variables: {sorted(self.runtime.vars.keys())}"
+            )
 
         # Create new runtime with hot start
         try:
@@ -406,7 +405,7 @@ class CommandProcessor:
             new_runtime = SimulationRuntime(
                 self.state_machine,
                 initial_state=state_path,
-                initial_vars=initial_vars if initial_vars else None,
+                initial_vars=initial_vars,
                 abstract_error_mode=self.runtime.abstract_error_mode,
                 history_size=self.runtime.history_size
             )

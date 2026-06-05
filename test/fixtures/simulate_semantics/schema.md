@@ -66,6 +66,46 @@ They are rejected when `generated_python_alignment` is present, because the
 generated Python runtime runner intentionally covers the shared public runtime
 surface and does not install Python callback handlers.
 
+## Runtime construction diagnostics
+
+`initial` normally provides optional runtime construction inputs:
+
+```yaml
+initial:
+  state: Root.A
+  vars:
+    counter: 0
+```
+
+When construction itself is expected to fail, `initial.expect.raises` records
+the constructor-time diagnostic. This shape is supported by `simulation` and
+`generated_python_alignment` runners:
+
+```yaml
+runners: [simulation, generated_python_alignment]
+initial:
+  state: Root.A
+  vars:
+    counter: "0"
+  expect:
+    raises:
+      type: ValueError
+      match: "initial_vars['counter'] must be int or float"
+      match_kind: substring
+steps: []
+```
+
+Allowed fields:
+
+- `initial.state`: state path string or `null`.
+- `initial.vars`: full variable snapshot mapping or `null`.
+- `initial.expect.raises`: required constructor exception expectation.
+
+Construction-diagnostic cases must use `steps: []`; executable steps are
+rejected so that constructor failures cannot silently skip later assertions.
+`initial.expect` is rejected for `cli_command` cases because CLI diagnostics
+belong under `commands[].expect`.
+
 ## Runtime options
 
 ```yaml
@@ -356,6 +396,10 @@ alignment cases because the generated runtime does not expose it as a public
 contract. `runtime_options`, `handlers`, `warnings`, `handler_calls`,
 `abstract_handler_errors`, `error_state`, and `error_info` are also rejected for
 generated alignment cases in this schema version.
+
+For constructor diagnostics, the alignment runner builds both runtimes and
+requires matching exception class names and messages before applying the
+`initial.expect.raises` matcher.
 
 ## CLI command cases
 

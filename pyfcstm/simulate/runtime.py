@@ -543,7 +543,14 @@ class SimulationRuntime:
 
                 # Type checking and conversion
                 define = self.state_machine.defines[name]
-                if define.type == "int" and isinstance(value, float):
+                if type(value) is bool:
+                    raise ValueError(f"initial_vars[{name!r}] must not be bool")
+                if type(value) not in (int, float):
+                    raise ValueError(
+                        f"initial_vars[{name!r}] must be int or float, "
+                        f"got {type(value).__name__}"
+                    )
+                if define.type == "int" and type(value) is float:
                     if value != int(value):
                         raise ValueError(
                             f"Variable '{name}' is int type, cannot assign float {value}"
@@ -564,6 +571,7 @@ class SimulationRuntime:
 
             # Build hot start stack
             self.stack = self._build_hot_start_stack(target_state)
+            self._validate_hot_start_stack(target_state)
             self._initialized = True
         else:
             # Default mode: start from root state
@@ -729,6 +737,36 @@ class SimulationRuntime:
                     stack.append(_Frame(state, "active"))
 
         return stack
+
+    def _validate_hot_start_stack(self, target_state: State) -> None:
+        """
+        Validate that a hot-start target can reach a stable boundary.
+
+        The runtime constructs hot-start stacks without executing enter actions.
+        This preflight clones the constructed stack and current variables, then
+        advances that clone with no events in validation mode. The real runtime
+        therefore remains at the requested target state and no lifecycle or
+        abstract-handler side effects from the preflight are committed.
+
+        :param target_state: Target state selected by the user.
+        :type target_state: State
+        :return: ``None``.
+        :rtype: None
+        :raises ValueError: If the target cannot reach a stoppable state or end.
+        """
+        validation_stack = self._clone_stack(self.stack)
+        validation_vars = copy.deepcopy(self.vars)
+        success, _ = self._run_cycle_on_context(
+            validation_stack,
+            validation_vars,
+            {},
+            is_validation_mode=True,
+        )
+        if not success:
+            target_path = ".".join(target_state.path)
+            raise ValueError(
+                f"Hot start target '{target_path}' cannot reach a stoppable state"
+            )
 
     def _parse_event(self, event: Any) -> Event:
         """

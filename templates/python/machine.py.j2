@@ -343,7 +343,14 @@ class {{ machine_class_name(model) }}:
                     "initial_vars contains unknown variables: %s" % sorted(extra_vars)
                 )
             for name, value in initial_vars.items():
-                if self._VAR_TYPES[name] == "int" and isinstance(value, float):
+                if type(value) is bool:
+                    raise ValueError("initial_vars[%r] must not be bool" % (name,))
+                if type(value) not in (int, float):
+                    raise ValueError(
+                        "initial_vars[%r] must be int or float, got %s"
+                        % (name, type(value).__name__)
+                    )
+                if self._VAR_TYPES[name] == "int" and type(value) is float:
                     if value != int(value):
                         raise ValueError(
                             "Variable %r is int type, cannot assign float %r"
@@ -364,6 +371,7 @@ class {{ machine_class_name(model) }}:
             self._stack = self._build_hot_start_stack(
                 self._normalize_state_path(initial_state)
             )
+            self._validate_hot_start_stack(self._normalize_state_path(initial_state))
 
     @property
     def vars(self):
@@ -455,6 +463,21 @@ class {{ machine_class_name(model) }}:
             else:
                 stack.append({"state": state_path, "mode": "active"})
         return stack
+
+    def _validate_hot_start_stack(self, target_path):
+        validation_stack = self._clone_stack(self._stack)
+        validation_vars = dict(self._vars)
+        success, _ = self._run_cycle_on_context(
+            validation_stack,
+            validation_vars,
+            set(),
+            is_validation_mode=True,
+        )
+        if not success:
+            target_display = ".".join(self._STATE_INFO[target_path]["path"])
+            raise ValueError(
+                "Hot start target %r cannot reach a stoppable state" % (target_display,)
+            )
 
     @staticmethod
     def _clone_stack(stack):

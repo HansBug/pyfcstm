@@ -375,9 +375,9 @@ cond_primary_expression
         # parenExprCond
     | bool_literal
         # literalExprCond
-    | num_expression op=(LT | GT | LE | GE) num_expression_no_caret
+    | num_expression op=(LT | GT | LE | GE) num_expression
         # binaryExprFromNumCond
-    | num_expression op=(EQ | NE) num_expression_no_caret
+    | num_expression op=(EQ | NE) num_expression
         # binaryExprFromNumCond
     ;
 

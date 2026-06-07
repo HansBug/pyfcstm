@@ -389,10 +389,10 @@ def serializedATN():
         buf.write("T+\2\u0307\u0304\3\2\2\2\u0307\u0306\3\2\2\2\u0308S\3")
         buf.write("\2\2\2\u0309\u030a\7\63\2\2\u030a\u030b\5D#\2\u030b\u030c")
         buf.write("\7\64\2\2\u030c\u0317\3\2\2\2\u030d\u0317\5X-\2\u030e")
-        buf.write('\u030f\5@!\2\u030f\u0310\t\16\2\2\u0310\u0311\5B"\2\u0311')
+        buf.write("\u030f\5@!\2\u030f\u0310\t\16\2\2\u0310\u0311\5@!\2\u0311")
         buf.write("\u0317\3\2\2\2\u0312\u0313\5@!\2\u0313\u0314\t\17\2\2")
-        buf.write('\u0314\u0315\5B"\2\u0315\u0317\3\2\2\2\u0316\u0309\3')
-        buf.write("\2\2\2\u0316\u030d\3\2\2\2\u0316\u030e\3\2\2\2\u0316\u0312")
+        buf.write("\u0314\u0315\5@!\2\u0315\u0317\3\2\2\2\u0316\u0309\3\2")
+        buf.write("\2\2\u0316\u030d\3\2\2\2\u0316\u030e\3\2\2\2\u0316\u0312")
         buf.write("\3\2\2\2\u0317U\3\2\2\2\u0318\u0319\t\20\2\2\u0319W\3")
         buf.write("\2\2\2\u031a\u031b\t\21\2\2\u031bY\3\2\2\2\u031c\u031d")
         buf.write("\t\22\2\2\u031d[\3\2\2\2\u031e\u0320\78\2\2\u031f\u031e")
@@ -6780,13 +6780,11 @@ class GrammarParser(Parser):
             self.op = None  # Token
             self.copyFrom(ctx)
 
-        def num_expression(self):
-            return self.getTypedRuleContext(GrammarParser.Num_expressionContext, 0)
-
-        def num_expression_no_caret(self):
-            return self.getTypedRuleContext(
-                GrammarParser.Num_expression_no_caretContext, 0
-            )
+        def num_expression(self, i: int = None):
+            if i is None:
+                return self.getTypedRuleContexts(GrammarParser.Num_expressionContext)
+            else:
+                return self.getTypedRuleContext(GrammarParser.Num_expressionContext, i)
 
         def LT(self):
             return self.getToken(GrammarParser.LT, 0)
@@ -6911,7 +6909,7 @@ class GrammarParser(Parser):
                     self._errHandler.reportMatch(self)
                     self.consume()
                 self.state = 782
-                self.num_expression_no_caret(0)
+                self.num_expression(0)
                 pass
 
             elif la_ == 4:
@@ -6928,7 +6926,7 @@ class GrammarParser(Parser):
                     self._errHandler.reportMatch(self)
                     self.consume()
                 self.state = 786
-                self.num_expression_no_caret(0)
+                self.num_expression(0)
                 pass
 
         except RecognitionException as re:

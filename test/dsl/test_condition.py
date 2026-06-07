@@ -2,7 +2,12 @@ import itertools
 
 import pytest
 
-from pyfcstm.dsl import parse_condition, GrammarParseError, SyntaxFailError
+from pyfcstm.dsl import (
+    parse_condition,
+    GrammarParseError,
+    SyntaxFailError,
+    AmbiguityError,
+)
 from pyfcstm.dsl.node import *
 
 
@@ -44,6 +49,25 @@ _COND_CANONICAL_OP = {
 }
 
 _COND_ATOM_NAMES = tuple("abcdefghijklmnopqrstuvwxyz")
+
+_NUM_COMPARE_OPERATORS = ("<", ">", "<=", ">=", "==", "!=")
+
+_NUMERIC_OPERAND_SHAPES = (
+    "name",
+    "integer",
+    "paren_name",
+    "unary_name",
+    "bitwise_pair",
+    "paren_bitwise_pair",
+    "bitwise_chain",
+)
+
+_NUMERIC_CARET_BOUNDARY_SHAPES = (
+    "name",
+    "bitwise_pair",
+    "paren_bitwise_pair",
+    "bitwise_chain",
+)
 
 
 def _cond_atom(name):
@@ -123,6 +147,92 @@ def _simple_ternary_expr():
         value_true=_cond_atom("b"),
         value_false=_cond_atom("c"),
     )
+
+
+def _name_expr(name):
+    return Name(name=name)
+
+
+def _binary_expr(left, op, right):
+    return BinaryOp(expr1=left, op=op, expr2=right)
+
+
+def _numeric_operand(shape, names, raw="1"):
+    if shape == "name":
+        return names[0], _name_expr(names[0])
+    elif shape == "integer":
+        return raw, Integer(raw=raw)
+    elif shape == "paren_name":
+        return f"({names[0]})", Paren(expr=_name_expr(names[0]))
+    elif shape == "unary_name":
+        return f"-{names[0]}", UnaryOp(op="-", expr=_name_expr(names[0]))
+    elif shape == "bitwise_pair":
+        return (
+            f"{names[0]} ^ {names[1]}",
+            _binary_expr(_name_expr(names[0]), "^", _name_expr(names[1])),
+        )
+    elif shape == "paren_bitwise_pair":
+        return (
+            f"({names[0]} ^ {names[1]})",
+            Paren(expr=_binary_expr(_name_expr(names[0]), "^", _name_expr(names[1]))),
+        )
+    elif shape == "bitwise_chain":
+        return (
+            f"{names[0]} ^ {names[1]} ^ {names[2]}",
+            _binary_expr(
+                _binary_expr(_name_expr(names[0]), "^", _name_expr(names[1])),
+                "^",
+                _name_expr(names[2]),
+            ),
+        )
+    else:
+        raise ValueError(f"Unknown numeric operand shape: {shape!r}")
+
+
+def _numeric_comparison_text_and_expr(
+    op,
+    left_shape="bitwise_pair",
+    right_shape="bitwise_pair",
+    left_names=("a", "b", "c"),
+    right_names=("d", "e", "f"),
+    left_raw="1",
+    right_raw="2",
+):
+    left_text, left_expr = _numeric_operand(left_shape, left_names, left_raw)
+    right_text, right_expr = _numeric_operand(right_shape, right_names, right_raw)
+    return (
+        f"{left_text} {op} {right_text}",
+        _binary_expr(left_expr, op, right_expr),
+    )
+
+
+def _two_numeric_comparisons_text_and_expr(
+    left_op,
+    right_op,
+    left_left_shape,
+    left_right_shape,
+    right_left_shape,
+    right_right_shape,
+):
+    left_text, left_expr = _numeric_comparison_text_and_expr(
+        left_op,
+        left_left_shape,
+        left_right_shape,
+        left_names=("a", "b", "c"),
+        right_names=("d", "e", "f"),
+        left_raw="1",
+        right_raw="2",
+    )
+    right_text, right_expr = _numeric_comparison_text_and_expr(
+        right_op,
+        right_left_shape,
+        right_right_shape,
+        left_names=("g", "h", "i"),
+        right_names=("j", "k", "l"),
+        left_raw="3",
+        right_raw="4",
+    )
+    return left_text, left_expr, right_text, right_expr
 
 
 @pytest.mark.unittest
@@ -1749,6 +1859,123 @@ class TestDSLCondition:
                 expr2=Integer(raw="6"),
             )
         )
+
+    @pytest.mark.parametrize(
+        ["op", "left_shape", "right_shape"],
+        itertools.product(
+            _NUM_COMPARE_OPERATORS,
+            _NUMERIC_OPERAND_SHAPES,
+            _NUMERIC_OPERAND_SHAPES,
+        ),
+        ids=lambda item: item,
+    )
+    def test_numeric_comparison_accepts_bitwise_caret_in_all_operand_shapes(
+        self, op, left_shape, right_shape
+    ):
+        input_text, expected = _numeric_comparison_text_and_expr(
+            op, left_shape, right_shape
+        )
+        assert parse_condition(input_text) == Condition(expr=expected)
+
+    @pytest.mark.parametrize(
+        [
+            "left_op",
+            "right_op",
+            "left_left_shape",
+            "left_right_shape",
+            "right_left_shape",
+            "right_right_shape",
+        ],
+        itertools.product(
+            _NUM_COMPARE_OPERATORS,
+            _NUM_COMPARE_OPERATORS,
+            _NUMERIC_CARET_BOUNDARY_SHAPES,
+            _NUMERIC_CARET_BOUNDARY_SHAPES,
+            _NUMERIC_CARET_BOUNDARY_SHAPES,
+            _NUMERIC_CARET_BOUNDARY_SHAPES,
+        ),
+        ids=lambda item: item,
+    )
+    def test_cond_keyword_xor_separates_numeric_caret_comparisons_exhaustively(
+        self,
+        left_op,
+        right_op,
+        left_left_shape,
+        left_right_shape,
+        right_left_shape,
+        right_right_shape,
+    ):
+        left_text, left_expr, right_text, right_expr = (
+            _two_numeric_comparisons_text_and_expr(
+                left_op,
+                right_op,
+                left_left_shape,
+                left_right_shape,
+                right_left_shape,
+                right_right_shape,
+            )
+        )
+
+        assert parse_condition(f"{left_text} xor {right_text}") == Condition(
+            expr=_binary_expr(left_expr, "xor", right_expr)
+        )
+
+    @pytest.mark.parametrize(
+        [
+            "left_op",
+            "right_op",
+            "left_left_shape",
+            "left_right_shape",
+            "right_left_shape",
+            "right_right_shape",
+        ],
+        itertools.product(
+            _NUM_COMPARE_OPERATORS,
+            _NUM_COMPARE_OPERATORS,
+            _NUMERIC_CARET_BOUNDARY_SHAPES,
+            _NUMERIC_CARET_BOUNDARY_SHAPES,
+            _NUMERIC_CARET_BOUNDARY_SHAPES,
+            _NUMERIC_CARET_BOUNDARY_SHAPES,
+        ),
+        ids=lambda item: item,
+    )
+    def test_parenthesized_cond_caret_separates_numeric_caret_comparisons_exhaustively(
+        self,
+        left_op,
+        right_op,
+        left_left_shape,
+        left_right_shape,
+        right_left_shape,
+        right_right_shape,
+    ):
+        left_text, left_expr, right_text, right_expr = (
+            _two_numeric_comparisons_text_and_expr(
+                left_op,
+                right_op,
+                left_left_shape,
+                left_right_shape,
+                right_left_shape,
+                right_right_shape,
+            )
+        )
+
+        assert parse_condition(f"({left_text}) ^ ({right_text})") == Condition(
+            expr=_binary_expr(Paren(left_expr), "xor", Paren(right_expr))
+        )
+
+    @pytest.mark.parametrize(
+        ["left_op", "right_op"],
+        itertools.product(_NUM_COMPARE_OPERATORS, _NUM_COMPARE_OPERATORS),
+        ids=lambda item: item,
+    )
+    def test_unparenthesized_caret_between_numeric_caret_comparisons_is_ambiguous(
+        self, left_op, right_op
+    ):
+        input_text = f"a {left_op} b ^ c ^ d {right_op} e"
+        with pytest.raises(GrammarParseError) as ei:
+            parse_condition(input_text)
+
+        assert any(isinstance(error, AmbiguityError) for error in ei.value.errors)
 
     def test_cond_logical_operator_precedence_and_right_associativity(self):
         assert parse_condition("a > 0 => b > 0 => c > 0") == Condition(

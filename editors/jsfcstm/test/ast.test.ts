@@ -47,6 +47,28 @@ const COND_CANONICAL_OP: Record<string, string> = {
 
 const COND_ATOM_NAMES = 'abcdefghijklmnopqrstuvwxyz'.split('');
 
+const NUM_COMPARE_OPERATORS = ['<', '>', '<=', '>=', '==', '!='] as const;
+
+const NUMERIC_OPERAND_SHAPES = [
+    'name',
+    'integer',
+    'paren_name',
+    'unary_name',
+    'bitwise_pair',
+    'paren_bitwise_pair',
+    'bitwise_chain',
+] as const;
+
+const NUMERIC_CARET_BOUNDARY_SHAPES = [
+    'name',
+    'bitwise_pair',
+    'paren_bitwise_pair',
+    'bitwise_chain',
+] as const;
+
+type NumericOperandShape = typeof NUMERIC_OPERAND_SHAPES[number];
+type NumericCaretBoundaryShape = typeof NUMERIC_CARET_BOUNDARY_SHAPES[number];
+
 function canonicalCondOp(operator: string): string {
     return COND_CANONICAL_OP[operator] || operator;
 }
@@ -153,6 +175,154 @@ function simpleTernaryExpression(): Record<string, unknown> {
     };
 }
 
+function nameExpression(name: string): Record<string, unknown> {
+    return {
+        pyNodeType: 'Name',
+        name,
+    };
+}
+
+function integerLiteral(raw: string): Record<string, unknown> {
+    return {
+        pyNodeType: 'Integer',
+        raw,
+    };
+}
+
+function binaryExpression(
+    expr1: Record<string, unknown>,
+    op: string,
+    expr2: Record<string, unknown>,
+): Record<string, unknown> {
+    return {
+        pyNodeType: 'BinaryOp',
+        expr1,
+        op,
+        expr2,
+    };
+}
+
+function parenthesizedExpression(expr: Record<string, unknown>): Record<string, unknown> {
+    return {
+        pyNodeType: 'Paren',
+        expr,
+    };
+}
+
+function unaryExpression(op: string, expr: Record<string, unknown>): Record<string, unknown> {
+    return {
+        pyNodeType: 'UnaryOp',
+        op,
+        expr,
+    };
+}
+
+function numericOperand(
+    shape: NumericOperandShape | NumericCaretBoundaryShape,
+    names: readonly string[],
+    raw = '1',
+): {text: string; expected: Record<string, unknown>} {
+    switch (shape) {
+        case 'name':
+            return {
+                text: names[0],
+                expected: nameExpression(names[0]),
+            };
+        case 'integer':
+            return {
+                text: raw,
+                expected: integerLiteral(raw),
+            };
+        case 'paren_name':
+            return {
+                text: `(${names[0]})`,
+                expected: parenthesizedExpression(nameExpression(names[0])),
+            };
+        case 'unary_name':
+            return {
+                text: `-${names[0]}`,
+                expected: unaryExpression('-', nameExpression(names[0])),
+            };
+        case 'bitwise_pair':
+            return {
+                text: `${names[0]} ^ ${names[1]}`,
+                expected: binaryExpression(nameExpression(names[0]), '^', nameExpression(names[1])),
+            };
+        case 'paren_bitwise_pair':
+            return {
+                text: `(${names[0]} ^ ${names[1]})`,
+                expected: parenthesizedExpression(
+                    binaryExpression(nameExpression(names[0]), '^', nameExpression(names[1]))
+                ),
+            };
+        case 'bitwise_chain':
+            return {
+                text: `${names[0]} ^ ${names[1]} ^ ${names[2]}`,
+                expected: binaryExpression(
+                    binaryExpression(nameExpression(names[0]), '^', nameExpression(names[1])),
+                    '^',
+                    nameExpression(names[2])
+                ),
+            };
+    }
+}
+
+function numericComparisonTextAndExpr(
+    op: string,
+    leftShape: NumericOperandShape | NumericCaretBoundaryShape = 'bitwise_pair',
+    rightShape: NumericOperandShape | NumericCaretBoundaryShape = 'bitwise_pair',
+    leftNames: readonly string[] = ['a', 'b', 'c'],
+    rightNames: readonly string[] = ['d', 'e', 'f'],
+    leftRaw = '1',
+    rightRaw = '2',
+): {text: string; expected: Record<string, unknown>} {
+    const left = numericOperand(leftShape, leftNames, leftRaw);
+    const right = numericOperand(rightShape, rightNames, rightRaw);
+    return {
+        text: `${left.text} ${op} ${right.text}`,
+        expected: binaryExpression(left.expected, op, right.expected),
+    };
+}
+
+function twoNumericComparisonsTextAndExpr(
+    leftOp: string,
+    rightOp: string,
+    leftLeftShape: NumericCaretBoundaryShape,
+    leftRightShape: NumericCaretBoundaryShape,
+    rightLeftShape: NumericCaretBoundaryShape,
+    rightRightShape: NumericCaretBoundaryShape,
+): {
+    leftText: string;
+    leftExpected: Record<string, unknown>;
+    rightText: string;
+    rightExpected: Record<string, unknown>;
+} {
+    const left = numericComparisonTextAndExpr(
+        leftOp,
+        leftLeftShape,
+        leftRightShape,
+        ['a', 'b', 'c'],
+        ['d', 'e', 'f'],
+        '1',
+        '2',
+    );
+    const right = numericComparisonTextAndExpr(
+        rightOp,
+        rightLeftShape,
+        rightRightShape,
+        ['g', 'h', 'i'],
+        ['j', 'k', 'l'],
+        '3',
+        '4',
+    );
+    return {
+        leftText: left.text,
+        leftExpected: left.expected,
+        rightText: right.text,
+        rightExpected: right.expected,
+    };
+}
+
 function normalizeCondExpression(expression: Record<string, any>): Record<string, unknown> {
     switch (expression.pyNodeType) {
         case 'BinaryOp':
@@ -168,6 +338,12 @@ function normalizeCondExpression(expression: Record<string, any>): Record<string
                 cond: normalizeCondExpression(expression.cond),
                 value_true: normalizeCondExpression(expression.value_true),
                 value_false: normalizeCondExpression(expression.value_false),
+            };
+        case 'UnaryOp':
+            return {
+                pyNodeType: 'UnaryOp',
+                op: expression.op,
+                expr: normalizeCondExpression(expression.expr),
             };
         case 'Paren':
             return {
@@ -740,6 +916,109 @@ describe('jsfcstm AST condition operator precedence', () => {
                         expected: expectedConditionTernary(condOps, trueOps, falseOps),
                         message: `ternary slots: ${condOp} ? ${trueOp} : ${falseOp}`,
                     });
+                }
+            }
+        }
+        await assertGuardExpressionCases(cases);
+    });
+
+    it('accepts bitwise caret inside every numeric comparison operand shape', async function () {
+        this.timeout(30000);
+
+        const cases: GuardExpressionCase[] = [];
+        for (const op of NUM_COMPARE_OPERATORS) {
+            for (const leftShape of NUMERIC_OPERAND_SHAPES) {
+                for (const rightShape of NUMERIC_OPERAND_SHAPES) {
+                    const item = numericComparisonTextAndExpr(op, leftShape, rightShape);
+                    cases.push({
+                        guard: item.text,
+                        expected: item.expected,
+                        message: `numeric comparison: ${op} ${leftShape} ${rightShape}`,
+                    });
+                }
+            }
+        }
+        await assertGuardExpressionCases(cases);
+    });
+
+    it('uses keyword xor to separate numeric-caret comparisons exhaustively', async function () {
+        this.timeout(45000);
+
+        const cases: GuardExpressionCase[] = [];
+        for (const leftOp of NUM_COMPARE_OPERATORS) {
+            for (const rightOp of NUM_COMPARE_OPERATORS) {
+                for (const leftLeftShape of NUMERIC_CARET_BOUNDARY_SHAPES) {
+                    for (const leftRightShape of NUMERIC_CARET_BOUNDARY_SHAPES) {
+                        for (const rightLeftShape of NUMERIC_CARET_BOUNDARY_SHAPES) {
+                            for (const rightRightShape of NUMERIC_CARET_BOUNDARY_SHAPES) {
+                                const item = twoNumericComparisonsTextAndExpr(
+                                    leftOp,
+                                    rightOp,
+                                    leftLeftShape,
+                                    leftRightShape,
+                                    rightLeftShape,
+                                    rightRightShape,
+                                );
+                                cases.push({
+                                    guard: `${item.leftText} xor ${item.rightText}`,
+                                    expected: binaryExpression(item.leftExpected, 'xor', item.rightExpected),
+                                    message: [
+                                        'keyword xor numeric boundary',
+                                        leftOp,
+                                        rightOp,
+                                        leftLeftShape,
+                                        leftRightShape,
+                                        rightLeftShape,
+                                        rightRightShape,
+                                    ].join(' '),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        await assertGuardExpressionCases(cases);
+    });
+
+    it('uses parenthesized caret to separate numeric-caret comparisons exhaustively', async function () {
+        this.timeout(45000);
+
+        const cases: GuardExpressionCase[] = [];
+        for (const leftOp of NUM_COMPARE_OPERATORS) {
+            for (const rightOp of NUM_COMPARE_OPERATORS) {
+                for (const leftLeftShape of NUMERIC_CARET_BOUNDARY_SHAPES) {
+                    for (const leftRightShape of NUMERIC_CARET_BOUNDARY_SHAPES) {
+                        for (const rightLeftShape of NUMERIC_CARET_BOUNDARY_SHAPES) {
+                            for (const rightRightShape of NUMERIC_CARET_BOUNDARY_SHAPES) {
+                                const item = twoNumericComparisonsTextAndExpr(
+                                    leftOp,
+                                    rightOp,
+                                    leftLeftShape,
+                                    leftRightShape,
+                                    rightLeftShape,
+                                    rightRightShape,
+                                );
+                                cases.push({
+                                    guard: `(${item.leftText}) ^ (${item.rightText})`,
+                                    expected: binaryExpression(
+                                        parenthesizedExpression(item.leftExpected),
+                                        'xor',
+                                        parenthesizedExpression(item.rightExpected)
+                                    ),
+                                    message: [
+                                        'parenthesized caret numeric boundary',
+                                        leftOp,
+                                        rightOp,
+                                        leftLeftShape,
+                                        leftRightShape,
+                                        rightLeftShape,
+                                        rightRightShape,
+                                    ].join(' '),
+                                });
+                            }
+                        }
+                    }
                 }
             }
         }

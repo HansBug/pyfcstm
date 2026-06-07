@@ -201,6 +201,25 @@ class CollectingErrorListener {
             severity: 'error',
         });
     }
+
+    reportAmbiguity(): void {
+        this.errors.push({
+            line: 0,
+            column: 0,
+            message: 'Ambiguous syntax - add parentheses to make condition precedence explicit.',
+            severity: 'error',
+        });
+    }
+
+    reportAttemptingFullContext(): void {
+        // ANTLR emits this during normal adaptive prediction for some valid
+        // condition expressions; it is not a syntax error.
+    }
+
+    reportContextSensitivity(): void {
+        // Same diagnostic channel as full-context prediction, not a hard parse
+        // failure for editor/parser consumers.
+    }
 }
 
 export class FcstmParser {

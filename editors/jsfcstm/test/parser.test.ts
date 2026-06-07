@@ -116,6 +116,9 @@ describe('jsfcstm parser real grammar coverage', () => {
         'state Root { state A; state B; A -> B : if [a > 0 iff b > 0]; }',
         'state Root { state A; state B; A -> B : if [1 + 2 * 3 < 10]; }',
         'state Root { state A; state B; A -> B : if [1 << 2 == 4]; }',
+        'state Root { state A; state B; A -> B : if [6 == 5 ^ 3]; }',
+        'state Root { state A; state B; A -> B : if [a ^ b == c ^ d]; }',
+        'state Root { state A; state B; A -> B : if [(a ^ b > c ^ d) ^ (e ^ f > g ^ h)]; }',
         'state Root { enter { sine = sin(pi / 2); logarithm = log(100); absolute = abs(-5); rounded = round(3.7); } }',
         'state Root { exit { bitwise_mix = (5 & 3) | (2 << 1); nested = ((2 + 3) * (4 - 1)) / 2; func_nest = sin(cos(pi)); complex_func = log(abs(sin(pi) + 5)); } }',
         'state WorkflowState named "Main Workflow" { enter { x = 10; } state SubState; event ProcessComplete named "Processing Completed"; event ErrorOccurred; }',
@@ -183,6 +186,11 @@ describe('jsfcstm parser real grammar coverage', () => {
             name: 'numeric operand rejected for iff guard',
             inputText: 'state Root { state A; state B; A -> B : if [true iff 1]; }',
             expectedMessage: /syntax|token|operator/i,
+        },
+        {
+            name: 'ambiguous caret between numeric-caret comparisons requires parentheses',
+            inputText: 'state Root { state A; state B; A -> B : if [a > b ^ c ^ d > e]; }',
+            expectedMessage: /ambiguous|parentheses/i,
         },
         {
             name: 'missing equals in variable definition',

@@ -662,6 +662,57 @@ describe('jsfcstm AST builder', () => {
                                 }),
                             ]),
                             createNode('Operational_statementContext', [
+                                createNode('Operational_assignmentContext', [
+                                    createNode('Num_literalContext', [], {
+                                        start: createToken('42', 1, 0),
+                                        stop: createToken('42', 1, 1),
+                                        getText() {
+                                            return '42';
+                                        },
+                                    }),
+                                ], {
+                                    start: createToken('number_value', 1, 0),
+                                    stop: createToken(';', 1, 16),
+                                    getText() {
+                                        return 'number_value=42;';
+                                    },
+                                }),
+                            ]),
+                            createNode('Operational_statementContext', [
+                                createNode('Operational_assignmentContext', [
+                                    createNode('Bool_literalContext', [], {
+                                        start: createToken('false', 1, 0),
+                                        stop: createToken('false', 1, 4),
+                                        getText() {
+                                            return 'false';
+                                        },
+                                    }),
+                                ], {
+                                    start: createToken('bool_value', 1, 0),
+                                    stop: createToken(';', 1, 17),
+                                    getText() {
+                                        return 'bool_value=false;';
+                                    },
+                                }),
+                            ]),
+                            createNode('Operational_statementContext', [
+                                createNode('Operational_assignmentContext', [
+                                    createNode('Math_constContext', [], {
+                                        start: createToken('pi', 1, 0),
+                                        stop: createToken('pi', 1, 1),
+                                        getText() {
+                                            return 'pi';
+                                        },
+                                    }),
+                                ], {
+                                    start: createToken('constant_value', 1, 0),
+                                    stop: createToken(';', 1, 18),
+                                    getText() {
+                                        return 'constant_value=pi;';
+                                    },
+                                }),
+                            ]),
+                            createNode('Operational_statementContext', [
                                 createNode('If_statementContext', [
                                     createNode('LiteralExprCondContext', [
                                         createNode('Bool_literalContext', [], {
@@ -763,11 +814,35 @@ describe('jsfcstm AST builder', () => {
         assert.equal(ast?.rootState?.statements.length, 2);
         assert.equal(ast?.rootState?.enters[0].operationsList[0].kind, 'assignmentStatement');
         assert.equal(ast?.rootState?.enters[0].operationsList[0].expr.pyNodeType, 'Name');
-        assert.equal(ast?.rootState?.enters[0].operationsList[1].kind, 'ifStatement');
-        assert.equal(ast?.rootState?.enters[0].operationsList[1].branches[0].statements.length, 0);
+        assert.equal(ast?.rootState?.enters[0].operationsList[1].expr.pyNodeType, 'Integer');
+        assert.equal(ast?.rootState?.enters[0].operationsList[1].expr.raw, '42');
+        assert.equal(ast?.rootState?.enters[0].operationsList[2].expr.pyNodeType, 'Boolean');
+        assert.equal(ast?.rootState?.enters[0].operationsList[2].expr.raw, 'false');
+        assert.equal(ast?.rootState?.enters[0].operationsList[3].expr.pyNodeType, 'Constant');
+        assert.equal(ast?.rootState?.enters[0].operationsList[3].expr.raw, 'pi');
+        assert.equal(ast?.rootState?.enters[0].operationsList[4].kind, 'ifStatement');
+        assert.equal(ast?.rootState?.enters[0].operationsList[4].branches[0].statements.length, 0);
         assert.equal(ast?.rootState?.imports[0].mappings.length, 1);
 
         assert.equal(packageModule.buildAstFromTree(null as unknown as packageModule.ParseTreeNode, document), null);
+    });
+
+    it('rethrows non-Error parser failures from parseAstDocument', async () => {
+        const parser = packageModule.getParser();
+        const document = createDocument('state Root;', '/tmp/non-error-parser-failure.fcstm');
+        const original = parser.parseTree;
+        parser.parseTree = async () => {
+            throw 'raw parser failure';
+        };
+
+        try {
+            await assert.rejects(
+                () => packageModule.parseAstDocument(document),
+                error => error === 'raw parser failure',
+            );
+        } finally {
+            parser.parseTree = original;
+        }
     });
 
     it('covers remaining action pyNodeType variants for enter/exit/during-aspect nodes', async () => {

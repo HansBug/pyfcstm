@@ -267,7 +267,7 @@ function buildExpressionType(nodeName: string): 'init' | 'num' | 'cond' {
     ) {
         return 'num';
     }
-    if (nodeName === 'Bool_literalContext') {
+    if (nodeName === 'Bool_literalContext' || nodeName === 'ConditionalCStyleCondNumContext') {
         return 'cond';
     }
     if (nodeName.endsWith('CondContext')) {
@@ -614,7 +614,10 @@ function buildExpression(
     }
 
     if (/ConditionalCStyle/.test(nodeName)) {
-        const condition = buildExpression(childContexts[0], document);
+        let condition = buildExpression(childContexts[0], document);
+        if (expressionType === 'cond' && condition.pyNodeType === 'Paren') {
+            condition = condition.expr;
+        }
         const whenTrue = buildExpression(childContexts[1], document);
         const whenFalse = buildExpression(childContexts[2], document);
         return {

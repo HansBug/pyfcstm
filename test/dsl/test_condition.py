@@ -43,6 +43,8 @@ _COND_CANONICAL_OP = {
     "implies": "=>",
 }
 
+_COND_ATOM_NAMES = tuple("abcdefghijklmnopqrstuvwxyz")
+
 
 def _cond_atom(name):
     return BinaryOp(expr1=Name(name=name), op=">", expr2=Integer(raw="0"))
@@ -52,8 +54,10 @@ def _canonical_cond_op(op):
     return _COND_CANONICAL_OP.get(op, op)
 
 
-def _expected_cond_chain(operators):
-    values = [_cond_atom("a")]
+def _expected_cond_chain(operators, names=None):
+    if names is None:
+        names = _COND_ATOM_NAMES[: len(operators) + 1]
+    values = [_cond_atom(names[0])]
     ops = []
 
     def reduce_once():
@@ -62,7 +66,7 @@ def _expected_cond_chain(operators):
         left = values.pop()
         values.append(BinaryOp(left, _canonical_cond_op(op), right))
 
-    for op, value in zip(operators, (_cond_atom(name) for name in ("b", "c", "d"))):
+    for op, value in zip(operators, (_cond_atom(name) for name in names[1:])):
         while ops:
             top = ops[-1]
             incoming_precedence = _COND_PRIORITY[op]
@@ -84,13 +88,41 @@ def _expected_cond_chain(operators):
     return values[0]
 
 
-def _condition_chain_text(operators):
-    names = ("a", "b", "c", "d")
+def _condition_chain_text(operators, names=None):
+    if names is None:
+        names = _COND_ATOM_NAMES[: len(operators) + 1]
     parts = [f"{names[0]} > 0"]
     for op, name in zip(operators, names[1:]):
         parts.append(op)
         parts.append(f"{name} > 0")
     return " ".join(parts)
+
+
+def _cond_chain_names(offset, operators):
+    return _COND_ATOM_NAMES[offset : offset + len(operators) + 1]
+
+
+def _condition_ternary_text(cond_ops, true_ops, false_ops):
+    cond_text = _condition_chain_text(cond_ops, _cond_chain_names(0, cond_ops))
+    true_text = _condition_chain_text(true_ops, _cond_chain_names(8, true_ops))
+    false_text = _condition_chain_text(false_ops, _cond_chain_names(16, false_ops))
+    return f"{cond_text} ? {true_text} : {false_text}"
+
+
+def _expected_condition_ternary(cond_ops, true_ops, false_ops):
+    return ConditionalOp(
+        cond=_expected_cond_chain(cond_ops, _cond_chain_names(0, cond_ops)),
+        value_true=_expected_cond_chain(true_ops, _cond_chain_names(8, true_ops)),
+        value_false=_expected_cond_chain(false_ops, _cond_chain_names(16, false_ops)),
+    )
+
+
+def _simple_ternary_expr():
+    return ConditionalOp(
+        cond=_cond_atom("a"),
+        value_true=_cond_atom("b"),
+        value_false=_cond_atom("c"),
+    )
 
 
 @pytest.mark.unittest
@@ -1790,7 +1822,7 @@ class TestDSLCondition:
         ["operators"],
         [
             (operators,)
-            for length in range(1, 4)
+            for length in range(1, 5)
             for operators in itertools.product(_COND_PRIORITY_OPERATORS, repeat=length)
         ],
         ids=lambda item: "_".join(item),
@@ -1798,6 +1830,55 @@ class TestDSLCondition:
     def test_cond_logical_operator_precedence_all_short_chains(self, operators):
         assert parse_condition(_condition_chain_text(operators)) == Condition(
             expr=_expected_cond_chain(operators)
+        )
+
+    @pytest.mark.parametrize(
+        ["cond_op", "true_op", "false_op"],
+        itertools.product(
+            _COND_PRIORITY_OPERATORS,
+            _COND_PRIORITY_OPERATORS,
+            _COND_PRIORITY_OPERATORS,
+        ),
+        ids=lambda item: item,
+    )
+    def test_cond_ternary_precedence_all_operator_slots(
+        self, cond_op, true_op, false_op
+    ):
+        cond_ops = (cond_op,)
+        true_ops = (true_op,)
+        false_ops = (false_op,)
+        assert parse_condition(
+            _condition_ternary_text(cond_ops, true_ops, false_ops)
+        ) == Condition(
+            expr=_expected_condition_ternary(cond_ops, true_ops, false_ops)
+        )
+
+    @pytest.mark.parametrize(
+        ["op"],
+        [(op,) for op in _COND_PRIORITY_OPERATORS],
+        ids=lambda item: item,
+    )
+    def test_parenthesized_cond_ternary_can_bind_inside_binary_left_operand(self, op):
+        assert parse_condition(f"(a > 0 ? b > 0 : c > 0) {op} d > 0") == Condition(
+            expr=BinaryOp(
+                expr1=Paren(expr=_simple_ternary_expr()),
+                op=_canonical_cond_op(op),
+                expr2=_cond_atom("d"),
+            )
+        )
+
+    @pytest.mark.parametrize(
+        ["op"],
+        [(op,) for op in _COND_PRIORITY_OPERATORS],
+        ids=lambda item: item,
+    )
+    def test_parenthesized_cond_ternary_can_bind_inside_binary_right_operand(self, op):
+        assert parse_condition(f"d > 0 {op} (a > 0 ? b > 0 : c > 0)") == Condition(
+            expr=BinaryOp(
+                expr1=_cond_atom("d"),
+                op=_canonical_cond_op(op),
+                expr2=Paren(expr=_simple_ternary_expr()),
+            )
         )
 
     @pytest.mark.parametrize(

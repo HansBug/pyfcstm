@@ -683,10 +683,13 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.ConditionalCStyleCondNumContext
         """
         super().exitConditionalCStyleCondNum(ctx)
+        cond = self.nodes[ctx.cond_implies_expression()]
+        if isinstance(cond, Paren):
+            cond = cond.expr
         self.nodes[ctx] = ConditionalOp(
-            cond=self.nodes[ctx.cond_expression(0)],
-            value_true=self.nodes[ctx.cond_expression(1)],
-            value_false=self.nodes[ctx.cond_expression(2)],
+            cond=cond,
+            value_true=self.nodes[ctx.cond_expression(0)],
+            value_false=self.nodes[ctx.cond_expression(1)],
         )
 
     def exitDef_assignment(self, ctx: GrammarParser.Def_assignmentContext) -> None:

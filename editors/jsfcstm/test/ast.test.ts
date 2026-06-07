@@ -45,6 +45,8 @@ const COND_CANONICAL_OP: Record<string, string> = {
     implies: '=>',
 };
 
+const COND_ATOM_NAMES = 'abcdefghijklmnopqrstuvwxyz'.split('');
+
 function canonicalCondOp(operator: string): string {
     return COND_CANONICAL_OP[operator] || operator;
 }
@@ -58,8 +60,11 @@ function condAtom(name: string): Record<string, unknown> {
     };
 }
 
-function expectedCondChain(operators: readonly string[]): Record<string, unknown> {
-    const values = [condAtom('a')];
+function expectedCondChain(
+    operators: readonly string[],
+    names = COND_ATOM_NAMES.slice(0, operators.length + 1),
+): Record<string, unknown> {
+    const values = [condAtom(names[0])];
     const ops: string[] = [];
 
     function reduceOnce(): void {
@@ -89,7 +94,7 @@ function expectedCondChain(operators: readonly string[]): Record<string, unknown
             reduceOnce();
         }
         ops.push(op);
-        values.push(condAtom(['b', 'c', 'd'][index]));
+        values.push(condAtom(names[index + 1]));
     });
 
     while (ops.length > 0) {
@@ -100,13 +105,52 @@ function expectedCondChain(operators: readonly string[]): Record<string, unknown
     return values[0];
 }
 
-function condChainText(operators: readonly string[]): string {
-    const names = ['a', 'b', 'c', 'd'];
+function condChainText(
+    operators: readonly string[],
+    names = COND_ATOM_NAMES.slice(0, operators.length + 1),
+): string {
     const parts = [`${names[0]} > 0`];
     operators.forEach((operator, index) => {
         parts.push(operator, `${names[index + 1]} > 0`);
     });
     return parts.join(' ');
+}
+
+function condChainNames(offset: number, operators: readonly string[]): string[] {
+    return COND_ATOM_NAMES.slice(offset, offset + operators.length + 1);
+}
+
+function conditionTernaryText(
+    condOps: readonly string[],
+    trueOps: readonly string[],
+    falseOps: readonly string[],
+): string {
+    const condition = condChainText(condOps, condChainNames(0, condOps));
+    const whenTrue = condChainText(trueOps, condChainNames(8, trueOps));
+    const whenFalse = condChainText(falseOps, condChainNames(16, falseOps));
+    return `${condition} ? ${whenTrue} : ${whenFalse}`;
+}
+
+function expectedConditionTernary(
+    condOps: readonly string[],
+    trueOps: readonly string[],
+    falseOps: readonly string[],
+): Record<string, unknown> {
+    return {
+        pyNodeType: 'ConditionalOp',
+        cond: expectedCondChain(condOps, condChainNames(0, condOps)),
+        value_true: expectedCondChain(trueOps, condChainNames(8, trueOps)),
+        value_false: expectedCondChain(falseOps, condChainNames(16, falseOps)),
+    };
+}
+
+function simpleTernaryExpression(): Record<string, unknown> {
+    return {
+        pyNodeType: 'ConditionalOp',
+        cond: condAtom('a'),
+        value_true: condAtom('b'),
+        value_false: condAtom('c'),
+    };
 }
 
 function normalizeCondExpression(expression: Record<string, any>): Record<string, unknown> {
@@ -117,6 +161,18 @@ function normalizeCondExpression(expression: Record<string, any>): Record<string
                 expr1: normalizeCondExpression(expression.expr1),
                 op: expression.op,
                 expr2: normalizeCondExpression(expression.expr2),
+            };
+        case 'ConditionalOp':
+            return {
+                pyNodeType: 'ConditionalOp',
+                cond: normalizeCondExpression(expression.cond),
+                value_true: normalizeCondExpression(expression.value_true),
+                value_false: normalizeCondExpression(expression.value_false),
+            };
+        case 'Paren':
+            return {
+                pyNodeType: 'Paren',
+                expr: normalizeCondExpression(expression.expr),
             };
         case 'Name':
             return {
@@ -135,7 +191,7 @@ function normalizeCondExpression(expression: Record<string, any>): Record<string
 
 function condOperatorChains(): string[][] {
     const chains: string[][] = [];
-    for (let length = 1; length <= 3; length += 1) {
+    for (let length = 1; length <= 4; length += 1) {
         function visit(prefix: string[]): void {
             if (prefix.length === length) {
                 chains.push(prefix);
@@ -148,6 +204,56 @@ function condOperatorChains(): string[][] {
         visit([]);
     }
     return chains;
+}
+
+type GuardExpressionCase = {
+    guard: string;
+    expected: Record<string, unknown>;
+    message: string;
+};
+
+async function assertGuardExpressionCases(cases: readonly GuardExpressionCase[]): Promise<void> {
+    const batchSize = 256;
+    for (let offset = 0; offset < cases.length; offset += batchSize) {
+        const batch = cases.slice(offset, offset + batchSize);
+        const document = createDocument([
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            ...batch.map(item => `    A -> B : if [${item.guard}];`),
+            '}',
+        ].join('\n'), `/tmp/ast-cond-precedence-${offset}.fcstm`);
+
+        const ast = await packageModule.parseAstDocument(document);
+        const transitions = ast?.rootState?.transitions || [];
+        assert.equal(transitions.length, batch.length);
+
+        batch.forEach((item, index) => {
+            const expression = transitions[index].condition_expr;
+            assert.ok(expression, item.message);
+            assert.deepEqual(
+                normalizeCondExpression(expression as unknown as Record<string, any>),
+                item.expected,
+                item.message,
+            );
+        });
+    }
+}
+
+async function parseGuardExpression(guard: string): Promise<Record<string, unknown>> {
+    const document = createDocument([
+        'state Root {',
+        '    state A;',
+        '    state B;',
+        `    A -> B : if [${guard}];`,
+        '}',
+    ].join('\n'), '/tmp/ast-cond-precedence.fcstm');
+
+    const ast = await packageModule.parseAstDocument(document);
+    const expression = ast?.rootState?.transitions[0].condition_expr;
+
+    assert.ok(expression);
+    return normalizeCondExpression(expression as unknown as Record<string, any>);
 }
 
 describe('jsfcstm AST builder', () => {
@@ -608,25 +714,71 @@ describe('jsfcstm AST builder', () => {
 });
 
 describe('jsfcstm AST condition operator precedence', () => {
-    for (const operators of condOperatorChains()) {
-        it(`parses condition operator chain: ${operators.join(' ')}`, async () => {
-            const guard = condChainText(operators);
-            const document = createDocument([
-                'state Root {',
-                '    state A;',
-                '    state B;',
-                `    A -> B : if [${guard}];`,
-                '}',
-            ].join('\n'), `/tmp/ast-cond-${operators.join('-')}.fcstm`);
+    it('parses all condition operator chains up to four operators', async function () {
+        this.timeout(30000);
 
-            const ast = await packageModule.parseAstDocument(document);
-            const expression = ast?.rootState?.transitions[0].condition_expr;
+        await assertGuardExpressionCases(condOperatorChains().map(operators => ({
+            guard: condChainText(operators),
+            expected: expectedCondChain(operators),
+            message: `operator chain: ${operators.join(' ')}`,
+        })));
+    });
 
-            assert.ok(expression);
+    it('parses ternary condition, true branch, and false branch operator slots exhaustively', async function () {
+        this.timeout(30000);
+
+        const cases: GuardExpressionCase[] = [];
+        for (const condOp of COND_PRIORITY_OPERATORS) {
+            for (const trueOp of COND_PRIORITY_OPERATORS) {
+                for (const falseOp of COND_PRIORITY_OPERATORS) {
+                    const condOps = [condOp];
+                    const trueOps = [trueOp];
+                    const falseOps = [falseOp];
+                    const guard = conditionTernaryText(condOps, trueOps, falseOps);
+                    cases.push({
+                        guard,
+                        expected: expectedConditionTernary(condOps, trueOps, falseOps),
+                        message: `ternary slots: ${condOp} ? ${trueOp} : ${falseOp}`,
+                    });
+                }
+            }
+        }
+        await assertGuardExpressionCases(cases);
+    });
+
+    it('keeps parenthesized ternary expressions as binary left operands for every condition operator', async () => {
+        for (const op of COND_PRIORITY_OPERATORS) {
             assert.deepEqual(
-                normalizeCondExpression(expression as unknown as Record<string, any>),
-                expectedCondChain(operators),
+                await parseGuardExpression(`(a > 0 ? b > 0 : c > 0) ${op} d > 0`),
+                {
+                    pyNodeType: 'BinaryOp',
+                    expr1: {
+                        pyNodeType: 'Paren',
+                        expr: simpleTernaryExpression(),
+                    },
+                    op: canonicalCondOp(op),
+                    expr2: condAtom('d'),
+                },
+                `parenthesized ternary as left operand: ${op}`,
             );
-        });
-    }
+        }
+    });
+
+    it('keeps parenthesized ternary expressions as binary right operands for every condition operator', async () => {
+        for (const op of COND_PRIORITY_OPERATORS) {
+            assert.deepEqual(
+                await parseGuardExpression(`d > 0 ${op} (a > 0 ? b > 0 : c > 0)`),
+                {
+                    pyNodeType: 'BinaryOp',
+                    expr1: condAtom('d'),
+                    op: canonicalCondOp(op),
+                    expr2: {
+                        pyNodeType: 'Paren',
+                        expr: simpleTernaryExpression(),
+                    },
+                },
+                `parenthesized ternary as right operand: ${op}`,
+            );
+        }
+    });
 });

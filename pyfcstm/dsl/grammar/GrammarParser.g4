@@ -322,7 +322,7 @@ cond_expression
     ;
 
 cond_ternary_expression
-    : LPAREN cond_expression RPAREN QUESTION cond_expression COLON cond_expression
+    : cond_implies_expression QUESTION cond_expression COLON cond_expression
         # conditionalCStyleCondNum
     | cond_implies_expression
         # passTernaryExprCond

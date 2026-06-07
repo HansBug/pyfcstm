@@ -300,22 +300,6 @@ num_expression
         # conditionalCStyleExprNum
     ;
 
-num_expression_no_caret
-    : LPAREN num_expression RPAREN
-    | num_literal
-    | ID
-    | math_const
-    | op=(PLUS | MINUS) num_expression_no_caret
-    | <assoc=right> num_expression_no_caret op=POW num_expression_no_caret
-    | num_expression_no_caret op=(STAR | SLASH | PERCENT) num_expression_no_caret
-    | num_expression_no_caret op=(PLUS | MINUS) num_expression_no_caret
-    | num_expression_no_caret op=(SHIFT_LEFT | SHIFT_RIGHT) num_expression_no_caret
-    | num_expression_no_caret op=AMP num_expression_no_caret
-    | num_expression_no_caret op=PIPE num_expression_no_caret
-    | func_name=UFUNC_NAME LPAREN num_expression_no_caret RPAREN
-    | <assoc=right> LPAREN cond_expression RPAREN QUESTION num_expression_no_caret COLON num_expression_no_caret
-    ;
-
 cond_expression
     : cond_ternary_expression
         # passExprCond

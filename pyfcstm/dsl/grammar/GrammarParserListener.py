@@ -577,18 +577,6 @@ class GrammarParserListener(ParseTreeListener):
     def exitIdExprNum(self, ctx: GrammarParser.IdExprNumContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#num_expression_no_caret.
-    def enterNum_expression_no_caret(
-        self, ctx: GrammarParser.Num_expression_no_caretContext
-    ):
-        pass
-
-    # Exit a parse tree produced by GrammarParser#num_expression_no_caret.
-    def exitNum_expression_no_caret(
-        self, ctx: GrammarParser.Num_expression_no_caretContext
-    ):
-        pass
-
     # Enter a parse tree produced by GrammarParser#passExprCond.
     def enterPassExprCond(self, ctx: GrammarParser.PassExprCondContext):
         pass

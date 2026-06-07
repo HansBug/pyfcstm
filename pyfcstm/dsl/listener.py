@@ -412,54 +412,6 @@ class GrammarParseListener(GrammarListener):
         super().exitLiteralExprCond(ctx)
         self.nodes[ctx] = self.nodes[ctx.bool_literal()]
 
-    def exitNum_expression_no_caret(
-        self, ctx: GrammarParser.Num_expression_no_caretContext
-    ) -> None:
-        """
-        Build a numeric expression node from the condition-side no-caret helper.
-
-        :param ctx: Parse context for the numeric expression helper.
-        :type ctx: GrammarParser.Num_expression_no_caretContext
-        """
-        super().exitNum_expression_no_caret(ctx)
-        operands = [
-            self.nodes[child]
-            for child in _ctx_node_children(ctx)
-            if child in self.nodes
-        ]
-
-        if ctx.func_name:
-            if len(operands) != 1:
-                raise KeyError(ctx)
-            self.nodes[ctx] = UFunc(func=ctx.func_name.text, expr=operands[0])
-        elif ctx.QUESTION():
-            if len(operands) != 3:
-                raise KeyError(ctx)
-            self.nodes[ctx] = ConditionalOp(
-                cond=operands[0],
-                value_true=operands[1],
-                value_false=operands[2],
-            )
-        elif ctx.op:
-            if len(operands) == 1:
-                self.nodes[ctx] = UnaryOp(op=ctx.op.text, expr=operands[0])
-            elif len(operands) == 2:
-                self.nodes[ctx] = BinaryOp(
-                    expr1=operands[0],
-                    op=ctx.op.text,
-                    expr2=operands[1],
-                )
-            else:
-                raise KeyError(ctx)
-        elif ctx.num_expression():
-            self.nodes[ctx] = Paren(self.nodes[ctx.num_expression()])
-        elif ctx.ID():
-            self.nodes[ctx] = Name(ctx.getText())
-        elif len(operands) == 1:
-            self.nodes[ctx] = operands[0]
-        else:
-            raise KeyError(ctx)
-
     def exitNum_literal(self, ctx: GrammarParser.Num_literalContext) -> None:
         """
         Build a numeric literal node (integer, float, or hex integer).

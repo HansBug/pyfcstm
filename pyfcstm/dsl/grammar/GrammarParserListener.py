@@ -577,6 +577,122 @@ class GrammarParserListener(ParseTreeListener):
     def exitIdExprNum(self, ctx: GrammarParser.IdExprNumContext):
         pass
 
+    # Enter a parse tree produced by GrammarParser#num_expression_no_caret.
+    def enterNum_expression_no_caret(
+        self, ctx: GrammarParser.Num_expression_no_caretContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#num_expression_no_caret.
+    def exitNum_expression_no_caret(
+        self, ctx: GrammarParser.Num_expression_no_caretContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#passExprCond.
+    def enterPassExprCond(self, ctx: GrammarParser.PassExprCondContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#passExprCond.
+    def exitPassExprCond(self, ctx: GrammarParser.PassExprCondContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#conditionalCStyleCondNum.
+    def enterConditionalCStyleCondNum(
+        self, ctx: GrammarParser.ConditionalCStyleCondNumContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#conditionalCStyleCondNum.
+    def exitConditionalCStyleCondNum(
+        self, ctx: GrammarParser.ConditionalCStyleCondNumContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#passTernaryExprCond.
+    def enterPassTernaryExprCond(self, ctx: GrammarParser.PassTernaryExprCondContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#passTernaryExprCond.
+    def exitPassTernaryExprCond(self, ctx: GrammarParser.PassTernaryExprCondContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#passImpliesExprCond.
+    def enterPassImpliesExprCond(self, ctx: GrammarParser.PassImpliesExprCondContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#passImpliesExprCond.
+    def exitPassImpliesExprCond(self, ctx: GrammarParser.PassImpliesExprCondContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#binaryExprImpliesCond.
+    def enterBinaryExprImpliesCond(
+        self, ctx: GrammarParser.BinaryExprImpliesCondContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#binaryExprImpliesCond.
+    def exitBinaryExprImpliesCond(
+        self, ctx: GrammarParser.BinaryExprImpliesCondContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#binaryExprOrCond.
+    def enterBinaryExprOrCond(self, ctx: GrammarParser.BinaryExprOrCondContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#binaryExprOrCond.
+    def exitBinaryExprOrCond(self, ctx: GrammarParser.BinaryExprOrCondContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#passOrExprCond.
+    def enterPassOrExprCond(self, ctx: GrammarParser.PassOrExprCondContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#passOrExprCond.
+    def exitPassOrExprCond(self, ctx: GrammarParser.PassOrExprCondContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#passXorExprCond.
+    def enterPassXorExprCond(self, ctx: GrammarParser.PassXorExprCondContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#passXorExprCond.
+    def exitPassXorExprCond(self, ctx: GrammarParser.PassXorExprCondContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#binaryExprXorCond.
+    def enterBinaryExprXorCond(self, ctx: GrammarParser.BinaryExprXorCondContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#binaryExprXorCond.
+    def exitBinaryExprXorCond(self, ctx: GrammarParser.BinaryExprXorCondContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#passAndExprCond.
+    def enterPassAndExprCond(self, ctx: GrammarParser.PassAndExprCondContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#passAndExprCond.
+    def exitPassAndExprCond(self, ctx: GrammarParser.PassAndExprCondContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#binaryExprAndCond.
+    def enterBinaryExprAndCond(self, ctx: GrammarParser.BinaryExprAndCondContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#binaryExprAndCond.
+    def exitBinaryExprAndCond(self, ctx: GrammarParser.BinaryExprAndCondContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#passEqualityExprCond.
+    def enterPassEqualityExprCond(self, ctx: GrammarParser.PassEqualityExprCondContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#passEqualityExprCond.
+    def exitPassEqualityExprCond(self, ctx: GrammarParser.PassEqualityExprCondContext):
+        pass
+
     # Enter a parse tree produced by GrammarParser#binaryExprFromCondCond.
     def enterBinaryExprFromCondCond(
         self, ctx: GrammarParser.BinaryExprFromCondCondContext
@@ -589,32 +705,20 @@ class GrammarParserListener(ParseTreeListener):
     ):
         pass
 
-    # Enter a parse tree produced by GrammarParser#binaryExprCond.
-    def enterBinaryExprCond(self, ctx: GrammarParser.BinaryExprCondContext):
-        pass
-
-    # Exit a parse tree produced by GrammarParser#binaryExprCond.
-    def exitBinaryExprCond(self, ctx: GrammarParser.BinaryExprCondContext):
-        pass
-
-    # Enter a parse tree produced by GrammarParser#binaryExprFromNumCond.
-    def enterBinaryExprFromNumCond(
-        self, ctx: GrammarParser.BinaryExprFromNumCondContext
-    ):
-        pass
-
-    # Exit a parse tree produced by GrammarParser#binaryExprFromNumCond.
-    def exitBinaryExprFromNumCond(
-        self, ctx: GrammarParser.BinaryExprFromNumCondContext
-    ):
-        pass
-
     # Enter a parse tree produced by GrammarParser#unaryExprCond.
     def enterUnaryExprCond(self, ctx: GrammarParser.UnaryExprCondContext):
         pass
 
     # Exit a parse tree produced by GrammarParser#unaryExprCond.
     def exitUnaryExprCond(self, ctx: GrammarParser.UnaryExprCondContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#passUnaryExprCond.
+    def enterPassUnaryExprCond(self, ctx: GrammarParser.PassUnaryExprCondContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#passUnaryExprCond.
+    def exitPassUnaryExprCond(self, ctx: GrammarParser.PassUnaryExprCondContext):
         pass
 
     # Enter a parse tree produced by GrammarParser#parenExprCond.
@@ -633,15 +737,15 @@ class GrammarParserListener(ParseTreeListener):
     def exitLiteralExprCond(self, ctx: GrammarParser.LiteralExprCondContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#conditionalCStyleCondNum.
-    def enterConditionalCStyleCondNum(
-        self, ctx: GrammarParser.ConditionalCStyleCondNumContext
+    # Enter a parse tree produced by GrammarParser#binaryExprFromNumCond.
+    def enterBinaryExprFromNumCond(
+        self, ctx: GrammarParser.BinaryExprFromNumCondContext
     ):
         pass
 
-    # Exit a parse tree produced by GrammarParser#conditionalCStyleCondNum.
-    def exitConditionalCStyleCondNum(
-        self, ctx: GrammarParser.ConditionalCStyleCondNumContext
+    # Exit a parse tree produced by GrammarParser#binaryExprFromNumCond.
+    def exitBinaryExprFromNumCond(
+        self, ctx: GrammarParser.BinaryExprFromNumCondContext
     ):
         pass
 

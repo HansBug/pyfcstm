@@ -58,6 +58,11 @@ const BINARY_OPERATOR_ALIASES: Record<string, string> = {
     or: '||',
 };
 
+const COND_BINARY_OPERATOR_ALIASES: Record<string, string> = {
+    implies: '=>',
+    '^': 'xor',
+};
+
 interface ParseTreeContext extends ParseTreeNode {
     from_state?: { text?: string };
     to_state?: { text?: string };
@@ -72,6 +77,7 @@ interface ParseTreeContext extends ParseTreeNode {
     selector_items?: Array<{ text?: string }>;
     op?: { text?: string };
     isabs?: { text?: string };
+    num_expression?: () => ParseTreeContext;
 }
 
 function nodeText(node: ParseTreeNode | undefined): string {
@@ -254,6 +260,16 @@ function buildExpressionType(nodeName: string): 'init' | 'num' | 'cond' {
     if (nodeName.endsWith('InitContext')) {
         return 'init';
     }
+    if (
+        nodeName === 'Num_expression_no_caretContext' ||
+        nodeName === 'Num_literalContext' ||
+        nodeName === 'Math_constContext'
+    ) {
+        return 'num';
+    }
+    if (nodeName === 'Bool_literalContext') {
+        return 'cond';
+    }
     if (nodeName.endsWith('CondContext')) {
         return 'cond';
     }
@@ -278,7 +294,13 @@ function canonicalizeUnaryOperator(operator: string): string {
     return UNARY_OPERATOR_ALIASES[operator] || operator;
 }
 
-function canonicalizeBinaryOperator(operator: string): string {
+function canonicalizeBinaryOperator(
+    operator: string,
+    expressionType: 'init' | 'num' | 'cond'
+): string {
+    if (expressionType === 'cond') {
+        return COND_BINARY_OPERATOR_ALIASES[operator] || BINARY_OPERATOR_ALIASES[operator] || operator;
+    }
     return BINARY_OPERATOR_ALIASES[operator] || operator;
 }
 
@@ -350,6 +372,138 @@ function buildExpression(
     const expressionType = buildExpressionType(nodeName);
     const childContexts = contextChildren(node);
 
+    if (/^Pass.*ExprCondContext$/.test(nodeName)) {
+        return buildExpression(childContexts[0], document);
+    }
+
+    if (nodeName === 'Num_literalContext' || nodeName === 'Bool_literalContext') {
+        return {
+            kind: 'expression',
+            pyNodeType: inferLiteralPyNodeType(text, expressionType),
+            expressionKind: 'literal',
+            expressionType,
+            range,
+            text,
+            literalType: expressionType === 'cond' ? 'boolean' : 'number',
+            valueText: text,
+            raw: text,
+        } as FcstmAstLiteralExpression;
+    }
+
+    if (nodeName === 'Math_constContext') {
+        return {
+            kind: 'expression',
+            pyNodeType: 'Constant',
+            expressionKind: 'mathConst',
+            expressionType,
+            range,
+            text,
+            name: text,
+            raw: text,
+        } as FcstmAstMathConstExpression;
+    }
+
+    if (nodeName === 'Num_expression_no_caretContext') {
+        const expressionChildren = childContexts.map(child => buildExpression(child, document));
+        const hasParenthesizedNumericChild = childContexts.length === 1 &&
+            childContexts[0].constructor?.name?.endsWith('NumContext') &&
+            text.startsWith('(') &&
+            text.endsWith(')');
+        if (node.func_name) {
+            const argument = expressionChildren[0];
+            const functionName = tokenText(node.func_name);
+            return {
+                kind: 'expression',
+                pyNodeType: 'UFunc',
+                expressionKind: 'function',
+                expressionType,
+                range,
+                text,
+                functionName,
+                func: functionName,
+                argument,
+                expr: argument,
+            } as FcstmAstFunctionExpression;
+        }
+        if (text.includes('?')) {
+            const [condition, whenTrue, whenFalse] = expressionChildren;
+            return {
+                kind: 'expression',
+                pyNodeType: 'ConditionalOp',
+                expressionKind: 'conditional',
+                expressionType,
+                range,
+                text,
+                condition,
+                cond: condition,
+                whenTrue,
+                valueTrue: whenTrue,
+                value_true: whenTrue,
+                whenFalse,
+                valueFalse: whenFalse,
+                value_false: whenFalse,
+            } as FcstmAstConditionalExpression;
+        }
+        if (node.op) {
+            const operator = tokenText(node.op);
+            if (expressionChildren.length === 1) {
+                const operand = expressionChildren[0];
+                return {
+                    kind: 'expression',
+                    pyNodeType: 'UnaryOp',
+                    expressionKind: 'unary',
+                    expressionType,
+                    range,
+                    text,
+                    operator,
+                    op: operator,
+                    operand,
+                    expr: operand,
+                } as FcstmAstUnaryExpression;
+            }
+            const [left, right] = expressionChildren;
+            return {
+                kind: 'expression',
+                pyNodeType: 'BinaryOp',
+                expressionKind: 'binary',
+                expressionType,
+                range,
+                text,
+                operator,
+                op: operator,
+                left,
+                expr1: left,
+                right,
+                expr2: right,
+            } as FcstmAstBinaryExpression;
+        }
+        if (hasParenthesizedNumericChild && expressionChildren.length === 1) {
+            const expression = expressionChildren[0];
+            return {
+                kind: 'expression',
+                pyNodeType: 'Paren',
+                expressionKind: 'parenthesized',
+                expressionType,
+                range,
+                text,
+                expression,
+                expr: expression,
+            } as FcstmAstParenthesizedExpression;
+        }
+        if (expressionChildren.length === 1) {
+            return expressionChildren[0];
+        }
+        return {
+            kind: 'expression',
+            pyNodeType: 'Name',
+            expressionKind: 'identifier',
+            expressionType,
+            range,
+            text,
+            name: text,
+        } as FcstmAstIdentifierExpression;
+    }
+
     if (/ParenExpr/.test(nodeName)) {
         const expression = buildExpression(childContexts[0], document);
         return {
@@ -407,7 +561,7 @@ function buildExpression(
 
     if (/UnaryExpr/.test(nodeName)) {
         const operator = canonicalizeUnaryOperator(tokenText(node.op));
-        const operand = buildExpression(childContexts[0], document);
+        const operand = buildExpression(childContexts[childContexts.length - 1], document);
         return {
             kind: 'expression',
             pyNodeType: 'UnaryOp',
@@ -425,7 +579,7 @@ function buildExpression(
     if (/BinaryExpr/.test(nodeName)) {
         const left = buildExpression(childContexts[0], document);
         const right = buildExpression(childContexts[1], document);
-        const operator = canonicalizeBinaryOperator(tokenText(node.op));
+        const operator = canonicalizeBinaryOperator(tokenText(node.op), expressionType);
         return {
             kind: 'expression',
             pyNodeType: 'BinaryOp',

@@ -1,7 +1,96 @@
+import itertools
+
 import pytest
 
 from pyfcstm.dsl import parse_condition, GrammarParseError, SyntaxFailError
 from pyfcstm.dsl.node import *
+
+
+_COND_PRIORITY_OPERATORS = (
+    "==",
+    "!=",
+    "iff",
+    "&&",
+    "and",
+    "xor",
+    "^",
+    "||",
+    "or",
+    "=>",
+    "implies",
+)
+
+_COND_PRIORITY = {
+    "==": 50,
+    "!=": 50,
+    "iff": 50,
+    "&&": 40,
+    "and": 40,
+    "xor": 30,
+    "^": 30,
+    "||": 20,
+    "or": 20,
+    "=>": 10,
+    "implies": 10,
+}
+
+_COND_RIGHT_ASSOC = {"=>", "implies"}
+
+_COND_CANONICAL_OP = {
+    "and": "&&",
+    "or": "||",
+    "^": "xor",
+    "implies": "=>",
+}
+
+
+def _cond_atom(name):
+    return BinaryOp(expr1=Name(name=name), op=">", expr2=Integer(raw="0"))
+
+
+def _canonical_cond_op(op):
+    return _COND_CANONICAL_OP.get(op, op)
+
+
+def _expected_cond_chain(operators):
+    values = [_cond_atom("a")]
+    ops = []
+
+    def reduce_once():
+        op = ops.pop()
+        right = values.pop()
+        left = values.pop()
+        values.append(BinaryOp(left, _canonical_cond_op(op), right))
+
+    for op, value in zip(operators, (_cond_atom(name) for name in ("b", "c", "d"))):
+        while ops:
+            top = ops[-1]
+            incoming_precedence = _COND_PRIORITY[op]
+            top_precedence = _COND_PRIORITY[top]
+            if op in _COND_RIGHT_ASSOC:
+                should_reduce = incoming_precedence < top_precedence
+            else:
+                should_reduce = incoming_precedence <= top_precedence
+            if not should_reduce:
+                break
+            reduce_once()
+        ops.append(op)
+        values.append(value)
+
+    while ops:
+        reduce_once()
+
+    assert len(values) == 1
+    return values[0]
+
+
+def _condition_chain_text(operators):
+    names = ("a", "b", "c", "d")
+    parts = [f"{names[0]} > 0"]
+    for op, name in zip(operators, names[1:]):
+        parts.append(op)
+        parts.append(f"{name} > 0")
+    return " ".join(parts)
 
 
 @pytest.mark.unittest
@@ -1560,10 +1649,156 @@ class TestDSLCondition:
                 "(a > 1)!= (a<1)",
                 "(a > 1) != (a < 1)",
             ),  # comparison between boolean expressions
+            ("true => false", "True => False"),
+            ("true implies false", "True => False"),
+            ("true xor false", "True xor False"),
+            ("true ^ false", "True xor False"),
+            ("true iff false", "True iff False"),
+            ("a > 0 ^ b > 0", "a > 0 xor b > 0"),
+            ("(a > 0) ^ (b > 0)", "(a > 0) xor (b > 0)"),
+            ("a > 0 && b > 0 => c > 0", "a > 0 && b > 0 => c > 0"),
+            ("a > 0 || b > 0 => c > 0", "a > 0 || b > 0 => c > 0"),
+            (
+                "a > 0 && b > 0 xor c > 0",
+                "a > 0 && b > 0 xor c > 0",
+            ),
+            (
+                "a > 0 xor b > 0 || c > 0",
+                "a > 0 xor b > 0 || c > 0",
+            ),
+            (
+                "a > 0 iff b > 0 && c > 0",
+                "a > 0 iff b > 0 && c > 0",
+            ),
         ],
     )
     def test_positive_cases_str(self, input_text, expected_str):
         assert str(parse_condition(input_text)) == expected_str
+
+    def test_cond_logical_operator_ast_canonicalization(self):
+        assert parse_condition("true => false") == Condition(
+            expr=BinaryOp(
+                expr1=Boolean(raw="true"), op="=>", expr2=Boolean(raw="false")
+            )
+        )
+        assert parse_condition("true implies false") == Condition(
+            expr=BinaryOp(
+                expr1=Boolean(raw="true"), op="=>", expr2=Boolean(raw="false")
+            )
+        )
+        assert parse_condition("true xor false") == Condition(
+            expr=BinaryOp(
+                expr1=Boolean(raw="true"), op="xor", expr2=Boolean(raw="false")
+            )
+        )
+        assert parse_condition("true ^ false") == Condition(
+            expr=BinaryOp(
+                expr1=Boolean(raw="true"), op="xor", expr2=Boolean(raw="false")
+            )
+        )
+        assert parse_condition("true iff false") == Condition(
+            expr=BinaryOp(
+                expr1=Boolean(raw="true"), op="iff", expr2=Boolean(raw="false")
+            )
+        )
+
+    def test_cond_xor_keeps_numeric_bitwise_xor_separate(self):
+        assert parse_condition("a > 0 ^ b > 0") == Condition(
+            expr=BinaryOp(
+                expr1=BinaryOp(expr1=Name(name="a"), op=">", expr2=Integer(raw="0")),
+                op="xor",
+                expr2=BinaryOp(expr1=Name(name="b"), op=">", expr2=Integer(raw="0")),
+            )
+        )
+        assert parse_condition("5 ^ 3 == 6") == Condition(
+            expr=BinaryOp(
+                expr1=BinaryOp(expr1=Integer(raw="5"), op="^", expr2=Integer(raw="3")),
+                op="==",
+                expr2=Integer(raw="6"),
+            )
+        )
+
+    def test_cond_logical_operator_precedence_and_right_associativity(self):
+        assert parse_condition("a > 0 => b > 0 => c > 0") == Condition(
+            expr=BinaryOp(
+                expr1=BinaryOp(expr1=Name(name="a"), op=">", expr2=Integer(raw="0")),
+                op="=>",
+                expr2=BinaryOp(
+                    expr1=BinaryOp(
+                        expr1=Name(name="b"), op=">", expr2=Integer(raw="0")
+                    ),
+                    op="=>",
+                    expr2=BinaryOp(
+                        expr1=Name(name="c"), op=">", expr2=Integer(raw="0")
+                    ),
+                ),
+            )
+        )
+        assert parse_condition("a > 0 && b > 0 xor c > 0") == Condition(
+            expr=BinaryOp(
+                expr1=BinaryOp(
+                    expr1=BinaryOp(
+                        expr1=Name(name="a"), op=">", expr2=Integer(raw="0")
+                    ),
+                    op="&&",
+                    expr2=BinaryOp(
+                        expr1=Name(name="b"), op=">", expr2=Integer(raw="0")
+                    ),
+                ),
+                op="xor",
+                expr2=BinaryOp(expr1=Name(name="c"), op=">", expr2=Integer(raw="0")),
+            )
+        )
+        assert parse_condition("a > 0 xor b > 0 || c > 0") == Condition(
+            expr=BinaryOp(
+                expr1=BinaryOp(
+                    expr1=BinaryOp(
+                        expr1=Name(name="a"), op=">", expr2=Integer(raw="0")
+                    ),
+                    op="xor",
+                    expr2=BinaryOp(
+                        expr1=Name(name="b"), op=">", expr2=Integer(raw="0")
+                    ),
+                ),
+                op="||",
+                expr2=BinaryOp(expr1=Name(name="c"), op=">", expr2=Integer(raw="0")),
+            )
+        )
+        assert parse_condition("a > 0 iff b > 0 && c > 0") == Condition(
+            expr=BinaryOp(
+                expr1=BinaryOp(
+                    expr1=BinaryOp(
+                        expr1=Name(name="a"), op=">", expr2=Integer(raw="0")
+                    ),
+                    op="iff",
+                    expr2=BinaryOp(
+                        expr1=Name(name="b"), op=">", expr2=Integer(raw="0")
+                    ),
+                ),
+                op="&&",
+                expr2=BinaryOp(expr1=Name(name="c"), op=">", expr2=Integer(raw="0")),
+            )
+        )
+
+    def test_cond_xor_is_not_a_global_binary_alias(self):
+        from pyfcstm.model.expr import BinaryOp as ModelBinaryOp
+
+        assert BinaryOp.__aliases__.get("^") is None
+        assert ModelBinaryOp.__aliases__.get("^") is None
+
+    @pytest.mark.parametrize(
+        ["operators"],
+        [
+            (operators,)
+            for length in range(1, 4)
+            for operators in itertools.product(_COND_PRIORITY_OPERATORS, repeat=length)
+        ],
+        ids=lambda item: "_".join(item),
+    )
+    def test_cond_logical_operator_precedence_all_short_chains(self, operators):
+        assert parse_condition(_condition_chain_text(operators)) == Condition(
+            expr=_expected_cond_chain(operators)
+        )
 
     @pytest.mark.parametrize(
         ["input_text"],
@@ -1638,6 +1873,10 @@ class TestDSLCondition:
             ("(1 < 2) && (3 > ) || (5 == 5)",),
             ("sin(pi/2) * cos() > sqrt(4) / 2",),
             ("true && false || & true",),
+            ("x > 0 -> y > 0",),
+            ("true xor 1",),
+            ("1 => true",),
+            ("true iff 1",),
         ],
     )
     def test_negative_cases(self, input_text):

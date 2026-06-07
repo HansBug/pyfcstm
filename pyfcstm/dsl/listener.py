@@ -42,6 +42,20 @@ from ..utils import format_multiline_comment
 from ..utils.validate import Span
 
 
+_COND_BINARY_OP_ALIASES = {
+    "implies": "=>",
+    "^": "xor",
+}
+
+
+def _canonical_cond_binary_op(op: str) -> str:
+    return _COND_BINARY_OP_ALIASES.get(op, op)
+
+
+def _ctx_node_children(ctx):
+    return getattr(ctx, "children", []) or []
+
+
 def _ctx_span(ctx) -> Span:
     """
     Build a 1-based :class:`Span` covering an ANTLR4 parse context.
@@ -223,12 +237,40 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.BinaryExprFromNumCondContext
         """
         super().exitBinaryExprFromNumCond(ctx)
+        operands = [
+            self.nodes[child]
+            for child in _ctx_node_children(ctx)
+            if child in self.nodes
+        ]
+        if len(operands) != 2:
+            raise KeyError(ctx)
         node = BinaryOp(
-            expr1=self.nodes[ctx.num_expression(0)],
+            expr1=operands[0],
             op=ctx.op.text,
-            expr2=self.nodes[ctx.num_expression(1)],
+            expr2=operands[1],
         )
         self.nodes[ctx] = node
+
+    def _exit_pass_expression(self, ctx) -> None:
+        for child in _ctx_node_children(ctx):
+            if child in self.nodes:
+                self.nodes[ctx] = self.nodes[child]
+                return
+        raise KeyError(ctx)
+
+    def _exit_cond_binary_expression(self, ctx) -> None:
+        operands = [
+            self.nodes[child]
+            for child in _ctx_node_children(ctx)
+            if child in self.nodes
+        ]
+        if len(operands) != 2:
+            raise KeyError(ctx)
+        self.nodes[ctx] = BinaryOp(
+            expr1=operands[0],
+            op=_canonical_cond_binary_op(ctx.op.text),
+            expr2=operands[1],
+        )
 
     def exitBinaryExprFromCondCond(
         self, ctx: GrammarParser.BinaryExprFromCondCondContext
@@ -239,28 +281,54 @@ class GrammarParseListener(GrammarListener):
         :param ctx: Parse context for the binary condition-to-condition expression.
         :type ctx: GrammarParser.BinaryExprFromCondCondContext
         """
-        super().exitBinaryExprFromNumCond(ctx)
-        node = BinaryOp(
-            expr1=self.nodes[ctx.cond_expression(0)],
-            op=ctx.op.text,
-            expr2=self.nodes[ctx.cond_expression(1)],
-        )
-        self.nodes[ctx] = node
+        super().exitBinaryExprFromCondCond(ctx)
+        self._exit_cond_binary_expression(ctx)
 
-    def exitBinaryExprCond(self, ctx: GrammarParser.BinaryExprCondContext) -> None:
+    def exitBinaryExprAndCond(
+        self, ctx: GrammarParser.BinaryExprAndCondContext
+    ) -> None:
         """
         Build a binary conditional expression node.
 
         :param ctx: Parse context for the binary conditional expression.
-        :type ctx: GrammarParser.BinaryExprCondContext
+        :type ctx: GrammarParser.BinaryExprAndCondContext
         """
-        super().exitBinaryExprCond(ctx)
-        node = BinaryOp(
-            expr1=self.nodes[ctx.cond_expression(0)],
-            op=ctx.op.text,
-            expr2=self.nodes[ctx.cond_expression(1)],
-        )
-        self.nodes[ctx] = node
+        super().exitBinaryExprAndCond(ctx)
+        self._exit_cond_binary_expression(ctx)
+
+    def exitBinaryExprXorCond(
+        self, ctx: GrammarParser.BinaryExprXorCondContext
+    ) -> None:
+        """
+        Build a binary conditional expression node.
+
+        :param ctx: Parse context for the binary conditional expression.
+        :type ctx: GrammarParser.BinaryExprXorCondContext
+        """
+        super().exitBinaryExprXorCond(ctx)
+        self._exit_cond_binary_expression(ctx)
+
+    def exitBinaryExprOrCond(self, ctx: GrammarParser.BinaryExprOrCondContext) -> None:
+        """
+        Build a binary conditional expression node.
+
+        :param ctx: Parse context for the binary conditional expression.
+        :type ctx: GrammarParser.BinaryExprOrCondContext
+        """
+        super().exitBinaryExprOrCond(ctx)
+        self._exit_cond_binary_expression(ctx)
+
+    def exitBinaryExprImpliesCond(
+        self, ctx: GrammarParser.BinaryExprImpliesCondContext
+    ) -> None:
+        """
+        Build a binary conditional expression node.
+
+        :param ctx: Parse context for the binary conditional expression.
+        :type ctx: GrammarParser.BinaryExprImpliesCondContext
+        """
+        super().exitBinaryExprImpliesCond(ctx)
+        self._exit_cond_binary_expression(ctx)
 
     def exitUnaryExprCond(self, ctx: GrammarParser.UnaryExprCondContext) -> None:
         """
@@ -270,11 +338,58 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.UnaryExprCondContext
         """
         super().exitUnaryExprCond(ctx)
+        operands = [
+            self.nodes[child]
+            for child in _ctx_node_children(ctx)
+            if child in self.nodes
+        ]
+        if len(operands) != 1:
+            raise KeyError(ctx)
         node = UnaryOp(
             op=ctx.op.text,
-            expr=self.nodes[ctx.cond_expression()],
+            expr=operands[0],
         )
         self.nodes[ctx] = node
+
+    def exitPassExprCond(self, ctx: GrammarParser.PassExprCondContext) -> None:
+        super().exitPassExprCond(ctx)
+        self._exit_pass_expression(ctx)
+
+    def exitPassTernaryExprCond(
+        self, ctx: GrammarParser.PassTernaryExprCondContext
+    ) -> None:
+        super().exitPassTernaryExprCond(ctx)
+        self._exit_pass_expression(ctx)
+
+    def exitPassImpliesExprCond(
+        self, ctx: GrammarParser.PassImpliesExprCondContext
+    ) -> None:
+        super().exitPassImpliesExprCond(ctx)
+        self._exit_pass_expression(ctx)
+
+    def exitPassOrExprCond(self, ctx: GrammarParser.PassOrExprCondContext) -> None:
+        super().exitPassOrExprCond(ctx)
+        self._exit_pass_expression(ctx)
+
+    def exitPassXorExprCond(self, ctx: GrammarParser.PassXorExprCondContext) -> None:
+        super().exitPassXorExprCond(ctx)
+        self._exit_pass_expression(ctx)
+
+    def exitPassAndExprCond(self, ctx: GrammarParser.PassAndExprCondContext) -> None:
+        super().exitPassAndExprCond(ctx)
+        self._exit_pass_expression(ctx)
+
+    def exitPassEqualityExprCond(
+        self, ctx: GrammarParser.PassEqualityExprCondContext
+    ) -> None:
+        super().exitPassEqualityExprCond(ctx)
+        self._exit_pass_expression(ctx)
+
+    def exitPassUnaryExprCond(
+        self, ctx: GrammarParser.PassUnaryExprCondContext
+    ) -> None:
+        super().exitPassUnaryExprCond(ctx)
+        self._exit_pass_expression(ctx)
 
     def exitParenExprCond(self, ctx: GrammarParser.ParenExprCondContext) -> None:
         """
@@ -296,6 +411,54 @@ class GrammarParseListener(GrammarListener):
         """
         super().exitLiteralExprCond(ctx)
         self.nodes[ctx] = self.nodes[ctx.bool_literal()]
+
+    def exitNum_expression_no_caret(
+        self, ctx: GrammarParser.Num_expression_no_caretContext
+    ) -> None:
+        """
+        Build a numeric expression node from the condition-side no-caret helper.
+
+        :param ctx: Parse context for the numeric expression helper.
+        :type ctx: GrammarParser.Num_expression_no_caretContext
+        """
+        super().exitNum_expression_no_caret(ctx)
+        operands = [
+            self.nodes[child]
+            for child in _ctx_node_children(ctx)
+            if child in self.nodes
+        ]
+
+        if ctx.func_name:
+            if len(operands) != 1:
+                raise KeyError(ctx)
+            self.nodes[ctx] = UFunc(func=ctx.func_name.text, expr=operands[0])
+        elif ctx.QUESTION():
+            if len(operands) != 3:
+                raise KeyError(ctx)
+            self.nodes[ctx] = ConditionalOp(
+                cond=operands[0],
+                value_true=operands[1],
+                value_false=operands[2],
+            )
+        elif ctx.op:
+            if len(operands) == 1:
+                self.nodes[ctx] = UnaryOp(op=ctx.op.text, expr=operands[0])
+            elif len(operands) == 2:
+                self.nodes[ctx] = BinaryOp(
+                    expr1=operands[0],
+                    op=ctx.op.text,
+                    expr2=operands[1],
+                )
+            else:
+                raise KeyError(ctx)
+        elif ctx.num_expression():
+            self.nodes[ctx] = Paren(self.nodes[ctx.num_expression()])
+        elif ctx.ID():
+            self.nodes[ctx] = Name(ctx.getText())
+        elif len(operands) == 1:
+            self.nodes[ctx] = operands[0]
+        else:
+            raise KeyError(ctx)
 
     def exitNum_literal(self, ctx: GrammarParser.Num_literalContext) -> None:
         """
@@ -672,8 +835,10 @@ class GrammarParseListener(GrammarListener):
             if ctx.operational_statement_set()
             else [],
             event_scope=(
-                'absolute' if event_id is not None and event_id.is_absolute
-                else 'chain' if event_id is not None
+                "absolute"
+                if event_id is not None and event_id.is_absolute
+                else "chain"
+                if event_id is not None
                 else None
             ),
         )
@@ -693,10 +858,10 @@ class GrammarParseListener(GrammarListener):
         event_id = None
         if ctx.chain_id():
             event_id = self.nodes[ctx.chain_id()]
-            event_scope = 'absolute' if event_id.is_absolute else 'chain'
+            event_scope = "absolute" if event_id.is_absolute else "chain"
         elif ctx.from_id:
             event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
-            event_scope = 'local'
+            event_scope = "local"
         else:
             event_scope = None
         node = TransitionDefinition(
@@ -727,10 +892,10 @@ class GrammarParseListener(GrammarListener):
         event_id = None
         if ctx.chain_id():
             event_id = self.nodes[ctx.chain_id()]
-            event_scope = 'absolute' if event_id.is_absolute else 'chain'
+            event_scope = "absolute" if event_id.is_absolute else "chain"
         elif ctx.from_id:
             event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
-            event_scope = 'local'
+            event_scope = "local"
         else:
             event_scope = None
         node = TransitionDefinition(
@@ -1116,10 +1281,10 @@ class GrammarParseListener(GrammarListener):
         event_id = None
         if ctx.chain_id():
             event_id = self.nodes[ctx.chain_id()]
-            event_scope = 'absolute' if event_id.is_absolute else 'chain'
+            event_scope = "absolute" if event_id.is_absolute else "chain"
         elif ctx.from_id:
             event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
-            event_scope = 'local'
+            event_scope = "local"
         else:
             event_scope = None
         node = ForceTransitionDefinition(
@@ -1147,10 +1312,10 @@ class GrammarParseListener(GrammarListener):
         event_id = None
         if ctx.chain_id():
             event_id = self.nodes[ctx.chain_id()]
-            event_scope = 'absolute' if event_id.is_absolute else 'chain'
+            event_scope = "absolute" if event_id.is_absolute else "chain"
         elif ctx.from_id:
             event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
-            event_scope = 'local'
+            event_scope = "local"
         else:
             event_scope = None
         node = ForceTransitionDefinition(
@@ -1183,9 +1348,11 @@ class GrammarParseListener(GrammarListener):
             if ctx.cond_expression()
             else None,
             event_scope=(
-                'absolute'
+                "absolute"
                 if ctx.chain_id() and self.nodes[ctx.chain_id()].is_absolute
-                else 'chain' if ctx.chain_id() else None
+                else "chain"
+                if ctx.chain_id()
+                else None
             ),
         )
         node._span = _ctx_span(ctx)
@@ -1209,9 +1376,11 @@ class GrammarParseListener(GrammarListener):
             if ctx.cond_expression()
             else None,
             event_scope=(
-                'absolute'
+                "absolute"
                 if ctx.chain_id() and self.nodes[ctx.chain_id()].is_absolute
-                else 'chain' if ctx.chain_id() else None
+                else "chain"
+                if ctx.chain_id()
+                else None
             ),
         )
         node._span = _ctx_span(ctx)

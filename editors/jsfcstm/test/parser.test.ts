@@ -109,6 +109,11 @@ describe('jsfcstm parser real grammar coverage', () => {
         'state Root { enter { if [x > 0] { y = 1; } else if [x == 0] { y = 0; } else { y = -1; } } }',
         'state Root { during { if [mode == 0] { if [temp > 80] { level = 3; } else { level = 1; } } else { level = 0; } z = y + 1; } }',
         'state Root { state A; state B; A -> B : if [true && false || true]; }',
+        'state Root { state A; state B; A -> B : if [a > 0 => b > 0]; }',
+        'state Root { state A; state B; A -> B : if [a > 0 implies b > 0]; }',
+        'state Root { state A; state B; A -> B : if [a > 0 xor b > 0]; }',
+        'state Root { state A; state B; A -> B : if [a > 0 ^ b > 0]; }',
+        'state Root { state A; state B; A -> B : if [a > 0 iff b > 0]; }',
         'state Root { state A; state B; A -> B : if [1 + 2 * 3 < 10]; }',
         'state Root { state A; state B; A -> B : if [1 << 2 == 4]; }',
         'state Root { enter { sine = sin(pi / 2); logarithm = log(100); absolute = abs(-5); rounded = round(3.7); } }',
@@ -163,6 +168,21 @@ describe('jsfcstm parser real grammar coverage', () => {
             name: 'invalid transition operator',
             inputText: 'state Root { state A; state B; A => B; }',
             expectedMessage: /operator|->/i,
+        },
+        {
+            name: 'numeric operand rejected for xor guard',
+            inputText: 'state Root { state A; state B; A -> B : if [true xor 1]; }',
+            expectedMessage: /syntax|token|operator/i,
+        },
+        {
+            name: 'numeric antecedent rejected for implication guard',
+            inputText: 'state Root { state A; state B; A -> B : if [1 => true]; }',
+            expectedMessage: /syntax|token|operator/i,
+        },
+        {
+            name: 'numeric operand rejected for iff guard',
+            inputText: 'state Root { state A; state B; A -> B : if [true iff 1]; }',
+            expectedMessage: /syntax|token|operator/i,
         },
         {
             name: 'missing equals in variable definition',

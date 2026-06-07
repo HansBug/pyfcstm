@@ -197,4 +197,49 @@ py.runPyAlignmentCases('jsfcstm AST pyfcstm alignment: transitions', [
             ],
         })),
     },
+    {
+        name: 'guard logical operator aliases align with pyfcstm',
+        text: py.lines(
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    A -> B : if [a > 0 implies b > 0];',
+            '    B -> A : if [a > 0 ^ b > 0];',
+            '    A -> [*] : if [a > 0 iff b > 0 && c > 0];',
+            '}'
+        ),
+        expected: py.program(py.rootState({
+            substates: [
+                py.state('A'),
+                py.state('B'),
+            ],
+            transitions: [
+                py.transition('A', 'B', {
+                    condition_expr: py.binary(
+                        py.binary(py.nameExpr('a'), '>', py.intLiteral('0')),
+                        '=>',
+                        py.binary(py.nameExpr('b'), '>', py.intLiteral('0'))
+                    ),
+                }),
+                py.transition('B', 'A', {
+                    condition_expr: py.binary(
+                        py.binary(py.nameExpr('a'), '>', py.intLiteral('0')),
+                        'xor',
+                        py.binary(py.nameExpr('b'), '>', py.intLiteral('0'))
+                    ),
+                }),
+                py.transition('A', py.EXIT_STATE, {
+                    condition_expr: py.binary(
+                        py.binary(
+                            py.binary(py.nameExpr('a'), '>', py.intLiteral('0')),
+                            'iff',
+                            py.binary(py.nameExpr('b'), '>', py.intLiteral('0'))
+                        ),
+                        '&&',
+                        py.binary(py.nameExpr('c'), '>', py.intLiteral('0'))
+                    ),
+                }),
+            ],
+        })),
+    },
 ]);

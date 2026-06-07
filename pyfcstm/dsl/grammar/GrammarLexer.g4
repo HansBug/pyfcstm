@@ -68,6 +68,9 @@ TAU_CONST: 'tau';
 AND_KW: 'and';
 OR_KW: 'or';
 NOT_KW: 'not';
+IMPLIES_KW: 'implies';
+IFF_KW: 'iff';
+XOR_KW: 'xor';
 
 INIT_MARKER: '[*]';
 POW: '**';
@@ -79,6 +82,7 @@ EQ: '==';
 NE: '!=';
 LOGICAL_AND: '&&';
 LOGICAL_OR: '||';
+IMPLIES: '=>';
 DECLARE_ASSIGN: ':=';
 COLONCOLON: '::';
 ARROW: '->';

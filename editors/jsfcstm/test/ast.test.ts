@@ -8,6 +8,148 @@ import {
     packageModule,
 } from './support';
 
+const COND_PRIORITY_OPERATORS = [
+    '==',
+    '!=',
+    'iff',
+    '&&',
+    'and',
+    'xor',
+    '^',
+    '||',
+    'or',
+    '=>',
+    'implies',
+] as const;
+
+const COND_PRIORITY: Record<string, number> = {
+    '==': 50,
+    '!=': 50,
+    iff: 50,
+    '&&': 40,
+    and: 40,
+    xor: 30,
+    '^': 30,
+    '||': 20,
+    or: 20,
+    '=>': 10,
+    implies: 10,
+};
+
+const COND_RIGHT_ASSOC = new Set(['=>', 'implies']);
+
+const COND_CANONICAL_OP: Record<string, string> = {
+    and: '&&',
+    or: '||',
+    '^': 'xor',
+    implies: '=>',
+};
+
+function canonicalCondOp(operator: string): string {
+    return COND_CANONICAL_OP[operator] || operator;
+}
+
+function condAtom(name: string): Record<string, unknown> {
+    return {
+        pyNodeType: 'BinaryOp',
+        op: '>',
+        expr1: {pyNodeType: 'Name', name},
+        expr2: {pyNodeType: 'Integer', raw: '0'},
+    };
+}
+
+function expectedCondChain(operators: readonly string[]): Record<string, unknown> {
+    const values = [condAtom('a')];
+    const ops: string[] = [];
+
+    function reduceOnce(): void {
+        const op = ops.pop();
+        const right = values.pop();
+        const left = values.pop();
+        assert.ok(op);
+        assert.ok(left);
+        assert.ok(right);
+        values.push({
+            pyNodeType: 'BinaryOp',
+            expr1: left,
+            op: canonicalCondOp(op),
+            expr2: right,
+        });
+    }
+
+    operators.forEach((op, index) => {
+        while (ops.length > 0) {
+            const top = ops[ops.length - 1];
+            const incomingPrecedence = COND_PRIORITY[op];
+            const topPrecedence = COND_PRIORITY[top];
+            const shouldReduce = COND_RIGHT_ASSOC.has(op)
+                ? incomingPrecedence < topPrecedence
+                : incomingPrecedence <= topPrecedence;
+            if (!shouldReduce) break;
+            reduceOnce();
+        }
+        ops.push(op);
+        values.push(condAtom(['b', 'c', 'd'][index]));
+    });
+
+    while (ops.length > 0) {
+        reduceOnce();
+    }
+
+    assert.equal(values.length, 1);
+    return values[0];
+}
+
+function condChainText(operators: readonly string[]): string {
+    const names = ['a', 'b', 'c', 'd'];
+    const parts = [`${names[0]} > 0`];
+    operators.forEach((operator, index) => {
+        parts.push(operator, `${names[index + 1]} > 0`);
+    });
+    return parts.join(' ');
+}
+
+function normalizeCondExpression(expression: Record<string, any>): Record<string, unknown> {
+    switch (expression.pyNodeType) {
+        case 'BinaryOp':
+            return {
+                pyNodeType: 'BinaryOp',
+                expr1: normalizeCondExpression(expression.expr1),
+                op: expression.op,
+                expr2: normalizeCondExpression(expression.expr2),
+            };
+        case 'Name':
+            return {
+                pyNodeType: 'Name',
+                name: expression.name,
+            };
+        case 'Integer':
+            return {
+                pyNodeType: 'Integer',
+                raw: expression.raw,
+            };
+        default:
+            throw new Error(`Unexpected expression node: ${expression.pyNodeType}`);
+    }
+}
+
+function condOperatorChains(): string[][] {
+    const chains: string[][] = [];
+    for (let length = 1; length <= 3; length += 1) {
+        function visit(prefix: string[]): void {
+            if (prefix.length === length) {
+                chains.push(prefix);
+                return;
+            }
+            for (const operator of COND_PRIORITY_OPERATORS) {
+                visit([...prefix, operator]);
+            }
+        }
+        visit([]);
+    }
+    return chains;
+}
+
 describe('jsfcstm AST builder', () => {
     it('builds a structured AST for variables, actions, forced transitions, and imports', async () => {
         const document = createDocument([
@@ -463,4 +605,28 @@ describe('jsfcstm AST builder', () => {
         assert.equal(ast?.rootState?.substates.length, 0);
         assert.equal(ast?.rootState?.imports.length, 1);
     });
+});
+
+describe('jsfcstm AST condition operator precedence', () => {
+    for (const operators of condOperatorChains()) {
+        it(`parses condition operator chain: ${operators.join(' ')}`, async () => {
+            const guard = condChainText(operators);
+            const document = createDocument([
+                'state Root {',
+                '    state A;',
+                '    state B;',
+                `    A -> B : if [${guard}];`,
+                '}',
+            ].join('\n'), `/tmp/ast-cond-${operators.join('-')}.fcstm`);
+
+            const ast = await packageModule.parseAstDocument(document);
+            const expression = ast?.rootState?.transitions[0].condition_expr;
+
+            assert.ok(expression);
+            assert.deepEqual(
+                normalizeCondExpression(expression as unknown as Record<string, any>),
+                expectedCondChain(operators),
+            );
+        });
+    }
 });

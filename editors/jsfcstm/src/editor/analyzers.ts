@@ -88,10 +88,14 @@ const EXPR_PRECEDENCE: Record<string, number> = {
     '>=': 20,
     '==': 20,
     '!=': 20,
+    'iff': 20,
     '&&': 15,
     'and': 15,
+    'xor': 13,
     '||': 10,
     'or': 10,
+    '=>': 7,
+    'implies': 7,
     '?:': 5,
 };
 const HEX_RADIX = 16;
@@ -100,6 +104,7 @@ const BINARY_RADIX = 2;
 function canonicalBinaryOperator(op: string): string {
     if (op === 'and') return '&&';
     if (op === 'or') return '||';
+    if (op === 'implies') return '=>';
     return op;
 }
 
@@ -1282,7 +1287,19 @@ type TypeCategory = 'numeric' | 'boolean' | 'unknown';
 const ARITH_BINARY_OPS = new Set(['+', '-', '*', '/', '%', '**']);
 const BITWISE_BINARY_OPS = new Set(['&', '|', '^', '<<', '>>']);
 const COMPARISON_OPS = new Set(['==', '!=', '<', '<=', '>', '>=', '<>']);
-const LOGICAL_BINARY_OPS = new Set(['&&', '||', 'and', 'or', 'AND', 'OR']);
+const LOGICAL_BINARY_OPS = new Set([
+    '&&',
+    '||',
+    '=>',
+    'xor',
+    'iff',
+    'and',
+    'or',
+    'implies',
+    'AND',
+    'OR',
+    'IMPLIES',
+]);
 
 function isLogicalUnaryOp(op: string | undefined): boolean {
     if (!op) return false;

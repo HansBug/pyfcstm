@@ -300,25 +300,85 @@ num_expression
         # conditionalCStyleExprNum
     ;
 
+num_expression_no_caret
+    : LPAREN num_expression RPAREN
+    | num_literal
+    | ID
+    | math_const
+    | op=(PLUS | MINUS) num_expression_no_caret
+    | <assoc=right> num_expression_no_caret op=POW num_expression_no_caret
+    | num_expression_no_caret op=(STAR | SLASH | PERCENT) num_expression_no_caret
+    | num_expression_no_caret op=(PLUS | MINUS) num_expression_no_caret
+    | num_expression_no_caret op=(SHIFT_LEFT | SHIFT_RIGHT) num_expression_no_caret
+    | num_expression_no_caret op=AMP num_expression_no_caret
+    | num_expression_no_caret op=PIPE num_expression_no_caret
+    | func_name=UFUNC_NAME LPAREN num_expression_no_caret RPAREN
+    | <assoc=right> LPAREN cond_expression RPAREN QUESTION num_expression_no_caret COLON num_expression_no_caret
+    ;
+
 cond_expression
+    : cond_ternary_expression
+        # passExprCond
+    ;
+
+cond_ternary_expression
+    : LPAREN cond_expression RPAREN QUESTION cond_expression COLON cond_expression
+        # conditionalCStyleCondNum
+    | cond_implies_expression
+        # passTernaryExprCond
+    ;
+
+cond_implies_expression
+    : cond_or_expression
+        # passImpliesExprCond
+    | cond_or_expression op=(IMPLIES | IMPLIES_KW) cond_implies_expression
+        # binaryExprImpliesCond
+    ;
+
+cond_or_expression
+    : cond_xor_expression
+        # passOrExprCond
+    | cond_or_expression op=(LOGICAL_OR | OR_KW) cond_xor_expression
+        # binaryExprOrCond
+    ;
+
+cond_xor_expression
+    : cond_and_expression
+        # passXorExprCond
+    | cond_xor_expression op=(XOR_KW | CARET) cond_and_expression
+        # binaryExprXorCond
+    ;
+
+cond_and_expression
+    : cond_equality_expression
+        # passAndExprCond
+    | cond_and_expression op=(LOGICAL_AND | AND_KW) cond_equality_expression
+        # binaryExprAndCond
+    ;
+
+cond_equality_expression
+    : cond_unary_expression
+        # passEqualityExprCond
+    | cond_equality_expression op=(EQ | NE | IFF_KW) cond_unary_expression
+        # binaryExprFromCondCond
+    ;
+
+cond_unary_expression
+    : op=(BANG | NOT_KW) cond_unary_expression
+        # unaryExprCond
+    | cond_primary_expression
+        # passUnaryExprCond
+    ;
+
+cond_primary_expression
     : LPAREN cond_expression RPAREN
         # parenExprCond
     | bool_literal
         # literalExprCond
-    | op=(BANG | NOT_KW) cond_expression
-        # unaryExprCond
-    | num_expression op=(LT | GT | LE | GE) num_expression
+    | num_expression op=(LT | GT | LE | GE) num_expression_no_caret
         # binaryExprFromNumCond
-    | num_expression op=(EQ | NE) num_expression
+    | num_expression op=(EQ | NE) num_expression_no_caret
         # binaryExprFromNumCond
-    | cond_expression op=(EQ | NE) cond_expression
-        # binaryExprFromCondCond
-    | cond_expression op=(LOGICAL_AND | AND_KW) cond_expression
-        # binaryExprCond
-    | cond_expression op=(LOGICAL_OR | OR_KW) cond_expression
-        # binaryExprCond
-    | <assoc=right> LPAREN cond_expression RPAREN QUESTION cond_expression COLON cond_expression
-        # conditionalCStyleCondNum
     ;
 
 num_literal

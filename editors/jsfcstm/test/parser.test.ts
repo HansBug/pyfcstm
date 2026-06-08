@@ -189,22 +189,22 @@ describe('jsfcstm parser real grammar coverage', () => {
         {
             name: 'unparenthesized caret between comparison conditions is rejected',
             inputText: 'state Root { state A; state B; A -> B : if [a > 0 ^ b > 0]; }',
-            expectedMessage: /syntax|token|operator|bracket/i,
+            expectedMessage: /numeric bitwise xor.*use "xor"/i,
         },
         {
             name: 'parenthesized caret between comparison conditions is rejected',
             inputText: 'state Root { state A; state B; A -> B : if [(a > 0) ^ (b > 0)]; }',
-            expectedMessage: /syntax|token|operator|bracket/i,
+            expectedMessage: /numeric bitwise xor.*use "xor"/i,
         },
         {
             name: 'caret between boolean literals is rejected',
             inputText: 'state Root { state A; state B; A -> B : if [true ^ false]; }',
-            expectedMessage: /syntax|token|operator|bracket/i,
+            expectedMessage: /numeric bitwise xor.*use "xor"/i,
         },
         {
             name: 'caret between numeric-caret comparisons is rejected',
             inputText: 'state Root { state A; state B; A -> B : if [a > b ^ c ^ d > e]; }',
-            expectedMessage: /syntax|token|operator|ambiguous|parentheses|bracket/i,
+            expectedMessage: /numeric bitwise xor.*use "xor"/i,
         },
         {
             name: 'missing equals in variable definition',

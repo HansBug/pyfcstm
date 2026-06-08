@@ -157,6 +157,7 @@ state Root {
     A -> A : if [a > 0 xor b > 0 && c > 0 iff d > 0];
     B -> B : if [a > 0 && (b > 0 xor c > 0)];
     B -> B : if [a > 0 implies e > 0];
+    A -> B : if [a > 0 => b > 0 => c > 0];
 }
 `));
             const guards = report.transitions
@@ -168,6 +169,7 @@ state Root {
                 'a > 0 xor b > 0 && c > 0 iff (d > 0)',
                 'a > 0 && (b > 0 xor c > 0)',
                 'a > 0 => e > 0',
+                'a > 0 => b > 0 => c > 0',
             ]);
         });
 

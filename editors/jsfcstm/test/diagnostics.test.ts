@@ -73,11 +73,18 @@ describe('jsfcstm diagnostics', () => {
         assert.equal(legalDiagnostics.some(item => item.severity === 'error'), false);
 
         const caretDocument = createDocument(
-            'state Root { state A; state B; A -> B : if [true ^ false]; }',
+            'def int a = 0; def int b = 0; state Root { state A; state B; A -> B : if [a > 0 ^ b > 0]; }',
             '/tmp/condition-caret-diagnostic.fcstm'
         );
         const caretDiagnostics = await packageModule.collectDocumentDiagnostics(caretDocument);
         assert.ok(caretDiagnostics.some(item => /numeric bitwise xor.*use "xor"/i.test(item.message)));
+
+        const boolCaretDocument = createDocument(
+            'state Root { state A; state B; A -> B : if [true ^ false]; }',
+            '/tmp/condition-bool-caret-diagnostic.fcstm'
+        );
+        const boolCaretDiagnostics = await packageModule.collectDocumentDiagnostics(boolCaretDocument);
+        assert.ok(boolCaretDiagnostics.some(item => /numeric bitwise xor.*use "xor"/i.test(item.message)));
 
         const conditionArrowDocument = createDocument(
             'state Root { state A; state B; A -> B : if [true -> false]; }',

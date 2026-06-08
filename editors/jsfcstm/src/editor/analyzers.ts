@@ -95,7 +95,6 @@ const EXPR_PRECEDENCE: Record<string, number> = {
     '||': 10,
     'or': 10,
     '=>': 7,
-    'implies': 7,
     '?:': 5,
 };
 const HEX_RADIX = 16;

@@ -5,35 +5,6 @@ from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model.expr import *
 
 
-def _positive_var_expr(name):
-    return BinaryOp(x=Variable(name=name), op=">", y=Integer(value=0))
-
-
-def _and_expr(left, right):
-    return BinaryOp(x=left, op="&&", y=right)
-
-
-def _or_expr(left, right):
-    return BinaryOp(x=left, op="||", y=right)
-
-
-def _complex_conditional_lowest_precedence_expr():
-    return ConditionalOp(
-        cond=_or_expr(
-            _and_expr(_positive_var_expr("a"), _positive_var_expr("b")),
-            _and_expr(_positive_var_expr("c"), _positive_var_expr("d")),
-        ),
-        if_true=_and_expr(
-            _or_expr(_positive_var_expr("e"), _positive_var_expr("f")),
-            _or_expr(_positive_var_expr("g"), _positive_var_expr("h")),
-        ),
-        if_false=_or_expr(
-            _and_expr(_positive_var_expr("i"), _positive_var_expr("j")),
-            _and_expr(_positive_var_expr("k"), _positive_var_expr("l")),
-        ),
-    )
-
-
 @pytest.mark.unittest
 class TestModelExpr:
     @pytest.mark.parametrize(
@@ -887,7 +858,67 @@ class TestModelExpr:
             # Equality comparison of equality comparisons
             (
                 "(a > 0 && b > 0) || (c > 0 && d > 0) ? (e > 0 || f > 0) && (g > 0 || h > 0) : (i > 0 && j > 0) || (k > 0 && l > 0)",
-                _complex_conditional_lowest_precedence_expr(),
+                BinaryOp(
+                    x=BinaryOp(
+                        x=BinaryOp(x=Variable(name="a"), op=">", y=Integer(value=0)),
+                        op="&&",
+                        y=BinaryOp(x=Variable(name="b"), op=">", y=Integer(value=0)),
+                    ),
+                    op="||",
+                    y=ConditionalOp(
+                        cond=BinaryOp(
+                            x=BinaryOp(
+                                x=Variable(name="c"), op=">", y=Integer(value=0)
+                            ),
+                            op="&&",
+                            y=BinaryOp(
+                                x=Variable(name="d"), op=">", y=Integer(value=0)
+                            ),
+                        ),
+                        if_true=BinaryOp(
+                            x=BinaryOp(
+                                x=BinaryOp(
+                                    x=Variable(name="e"), op=">", y=Integer(value=0)
+                                ),
+                                op="||",
+                                y=BinaryOp(
+                                    x=Variable(name="f"), op=">", y=Integer(value=0)
+                                ),
+                            ),
+                            op="&&",
+                            y=BinaryOp(
+                                x=BinaryOp(
+                                    x=Variable(name="g"), op=">", y=Integer(value=0)
+                                ),
+                                op="||",
+                                y=BinaryOp(
+                                    x=Variable(name="h"), op=">", y=Integer(value=0)
+                                ),
+                            ),
+                        ),
+                        if_false=BinaryOp(
+                            x=BinaryOp(
+                                x=BinaryOp(
+                                    x=Variable(name="i"), op=">", y=Integer(value=0)
+                                ),
+                                op="&&",
+                                y=BinaryOp(
+                                    x=Variable(name="j"), op=">", y=Integer(value=0)
+                                ),
+                            ),
+                            op="||",
+                            y=BinaryOp(
+                                x=BinaryOp(
+                                    x=Variable(name="k"), op=">", y=Integer(value=0)
+                                ),
+                                op="&&",
+                                y=BinaryOp(
+                                    x=Variable(name="l"), op=">", y=Integer(value=0)
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
             ),
             # Conditional expression with complex conditions
             (
@@ -1501,7 +1532,7 @@ class TestModelExpr:
             # Equality comparison of equality comparisons
             (
                 "(a > 0 && b > 0) || (c > 0 && d > 0) ? (e > 0 || f > 0) && (g > 0 || h > 0) : (i > 0 && j > 0) || (k > 0 && l > 0)",
-                "(a > 0 && b > 0 || c > 0 && d > 0) ? (e > 0 || f > 0) && (g > 0 || h > 0) : i > 0 && j > 0 || k > 0 && l > 0",
+                "a > 0 && b > 0 || ((c > 0 && d > 0) ? (e > 0 || f > 0) && (g > 0 || h > 0) : i > 0 && j > 0 || k > 0 && l > 0)",
             ),
             # Conditional expression with complex conditions
             (
@@ -3266,7 +3297,7 @@ class TestModelExpr:
                 98,
                 -80,
                 -5,
-                False,
+                True,
             ),
             # c is even if a and b are both even or both odd, otherwise c is odd
             (
@@ -4568,3 +4599,4 @@ class TestModelExpr:
         expr = (x > 0).if_then_else(1, 0)
         assert isinstance(expr, ConditionalOp)
         assert expr(x=1) == 1
+

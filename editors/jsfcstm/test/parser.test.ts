@@ -112,7 +112,7 @@ describe('jsfcstm parser real grammar coverage', () => {
         'state Root { state A; state B; A -> B : if [a > 0 => b > 0]; }',
         'state Root { state A; state B; A -> B : if [a > 0 implies b > 0]; }',
         'state Root { state A; state B; A -> B : if [a > 0 xor b > 0]; }',
-        'state Root { state A; state B; A -> B : if [a > 0 ^ b > 0]; }',
+        'state Root { state A; state B; A -> B : if [(a > 0) ^ (b > 0)]; }',
         'state Root { state A; state B; A -> B : if [a > 0 iff b > 0]; }',
         'state Root { state A; state B; A -> B : if [1 + 2 * 3 < 10]; }',
         'state Root { state A; state B; A -> B : if [1 << 2 == 4]; }',
@@ -188,9 +188,14 @@ describe('jsfcstm parser real grammar coverage', () => {
             expectedMessage: /syntax|token|operator/i,
         },
         {
+            name: 'unparenthesized caret between comparison conditions is rejected',
+            inputText: 'state Root { state A; state B; A -> B : if [a > 0 ^ b > 0]; }',
+            expectedMessage: /syntax|token|operator|bracket/i,
+        },
+        {
             name: 'ambiguous caret between numeric-caret comparisons requires parentheses',
             inputText: 'state Root { state A; state B; A -> B : if [a > b ^ c ^ d > e]; }',
-            expectedMessage: /ambiguous|parentheses/i,
+            expectedMessage: /syntax|token|operator|ambiguous|parentheses|bracket/i,
         },
         {
             name: 'missing equals in variable definition',

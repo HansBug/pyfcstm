@@ -563,14 +563,9 @@ class CollectingErrorListener(ErrorListener):
         :raises GrammarParseError: If any errors were collected during parsing,
             with detailed error messages.
         """
-        blocking_errors = [
-            error for error in self.errors
-            if not isinstance(error, (FullContextAttemptError, ContextSensitivityError))
-        ]
-
-        if blocking_errors:
+        if self.errors:
             # Filter out cascading errors to provide clearer diagnostics
-            filtered_errors = self._filter_cascading_errors(blocking_errors)
+            filtered_errors = self._filter_cascading_errors(self.errors)
             raise GrammarParseError(filtered_errors)
 
     @staticmethod

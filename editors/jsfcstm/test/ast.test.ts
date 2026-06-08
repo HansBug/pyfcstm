@@ -15,7 +15,6 @@ const COND_PRIORITY_OPERATORS = [
     '&&',
     'and',
     'xor',
-    '^',
     '||',
     'or',
     '=>',
@@ -29,7 +28,6 @@ const COND_PRIORITY: Record<string, number> = {
     '&&': 40,
     and: 40,
     xor: 30,
-    '^': 30,
     '||': 20,
     or: 20,
     '=>': 10,
@@ -41,7 +39,6 @@ const COND_RIGHT_ASSOC = new Set(['=>', 'implies']);
 const COND_CANONICAL_OP: Record<string, string> = {
     and: '&&',
     or: '||',
-    '^': 'xor',
     implies: '=>',
 };
 
@@ -150,7 +147,7 @@ function conditionTernaryText(
     const condition = condChainText(condOps, condChainNames(0, condOps));
     const whenTrue = condChainText(trueOps, condChainNames(8, trueOps));
     const whenFalse = condChainText(falseOps, condChainNames(16, falseOps));
-    return `${condition} ? ${whenTrue} : ${whenFalse}`;
+    return `(${condition}) ? ${whenTrue} : ${whenFalse}`;
 }
 
 function expectedConditionTernary(
@@ -358,6 +355,11 @@ function normalizeCondExpression(expression: Record<string, any>): Record<string
         case 'Integer':
             return {
                 pyNodeType: 'Integer',
+                raw: expression.raw,
+            };
+        case 'Boolean':
+            return {
+                pyNodeType: 'Boolean',
                 raw: expression.raw,
             };
         default:
@@ -1100,10 +1102,29 @@ describe('jsfcstm AST condition operator precedence', () => {
         await assertGuardExpressionCases(cases);
     });
 
+    it('normalizes caret only for boolean literals or explicit parenthesized conditions', async () => {
+        assert.deepEqual(
+            await parseGuardExpression('true ^ false'),
+            binaryExpression(
+                {pyNodeType: 'Boolean', raw: 'true'},
+                'xor',
+                {pyNodeType: 'Boolean', raw: 'false'},
+            ),
+        );
+        assert.deepEqual(
+            await parseGuardExpression('(a > 0) ^ (b > 0)'),
+            binaryExpression(
+                parenthesizedExpression(condAtom('a')),
+                'xor',
+                parenthesizedExpression(condAtom('b')),
+            ),
+        );
+    });
+
     it('keeps parenthesized ternary expressions as binary left operands for every condition operator', async () => {
         for (const op of COND_PRIORITY_OPERATORS) {
             assert.deepEqual(
-                await parseGuardExpression(`(a > 0 ? b > 0 : c > 0) ${op} d > 0`),
+                await parseGuardExpression(`((a > 0) ? b > 0 : c > 0) ${op} d > 0`),
                 {
                     pyNodeType: 'BinaryOp',
                     expr1: {
@@ -1121,7 +1142,7 @@ describe('jsfcstm AST condition operator precedence', () => {
     it('keeps parenthesized ternary expressions as binary right operands for every condition operator', async () => {
         for (const op of COND_PRIORITY_OPERATORS) {
             assert.deepEqual(
-                await parseGuardExpression(`d > 0 ${op} (a > 0 ? b > 0 : c > 0)`),
+                await parseGuardExpression(`d > 0 ${op} ((a > 0) ? b > 0 : c > 0)`),
                 {
                     pyNodeType: 'BinaryOp',
                     expr1: condAtom('d'),

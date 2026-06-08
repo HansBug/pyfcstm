@@ -6,7 +6,6 @@ from pyfcstm.dsl import (
     parse_condition,
     GrammarParseError,
     SyntaxFailError,
-    AmbiguityError,
 )
 from pyfcstm.dsl.node import *
 
@@ -18,7 +17,6 @@ _COND_PRIORITY_OPERATORS = (
     "&&",
     "and",
     "xor",
-    "^",
     "||",
     "or",
     "=>",
@@ -32,7 +30,6 @@ _COND_PRIORITY = {
     "&&": 40,
     "and": 40,
     "xor": 30,
-    "^": 30,
     "||": 20,
     "or": 20,
     "=>": 10,
@@ -44,7 +41,6 @@ _COND_RIGHT_ASSOC = {"=>", "implies"}
 _COND_CANONICAL_OP = {
     "and": "&&",
     "or": "||",
-    "^": "xor",
     "implies": "=>",
 }
 
@@ -130,7 +126,7 @@ def _condition_ternary_text(cond_ops, true_ops, false_ops):
     cond_text = _condition_chain_text(cond_ops, _cond_chain_names(0, cond_ops))
     true_text = _condition_chain_text(true_ops, _cond_chain_names(8, true_ops))
     false_text = _condition_chain_text(false_ops, _cond_chain_names(16, false_ops))
-    return f"{cond_text} ? {true_text} : {false_text}"
+    return f"({cond_text}) ? {true_text} : {false_text}"
 
 
 def _expected_condition_ternary(cond_ops, true_ops, false_ops):
@@ -1796,7 +1792,6 @@ class TestDSLCondition:
             ("true xor false", "True xor False"),
             ("true ^ false", "True xor False"),
             ("true iff false", "True iff False"),
-            ("a > 0 ^ b > 0", "a > 0 xor b > 0"),
             ("(a > 0) ^ (b > 0)", "(a > 0) xor (b > 0)"),
             ("a > 0 && b > 0 => c > 0", "a > 0 && b > 0 => c > 0"),
             ("a > 0 || b > 0 => c > 0", "a > 0 || b > 0 => c > 0"),
@@ -1845,11 +1840,19 @@ class TestDSLCondition:
         )
 
     def test_cond_xor_keeps_numeric_bitwise_xor_separate(self):
-        assert parse_condition("a > 0 ^ b > 0") == Condition(
+        assert parse_condition("(a > 0) ^ (b > 0)") == Condition(
             expr=BinaryOp(
-                expr1=BinaryOp(expr1=Name(name="a"), op=">", expr2=Integer(raw="0")),
+                expr1=Paren(
+                    expr=BinaryOp(
+                        expr1=Name(name="a"), op=">", expr2=Integer(raw="0")
+                    )
+                ),
                 op="xor",
-                expr2=BinaryOp(expr1=Name(name="b"), op=">", expr2=Integer(raw="0")),
+                expr2=Paren(
+                    expr=BinaryOp(
+                        expr1=Name(name="b"), op=">", expr2=Integer(raw="0")
+                    )
+                ),
             )
         )
         assert parse_condition("5 ^ 3 == 6") == Condition(
@@ -1968,14 +1971,14 @@ class TestDSLCondition:
         itertools.product(_NUM_COMPARE_OPERATORS, _NUM_COMPARE_OPERATORS),
         ids=lambda item: item,
     )
-    def test_unparenthesized_caret_between_numeric_caret_comparisons_is_ambiguous(
+    def test_unparenthesized_caret_between_numeric_caret_comparisons_is_rejected(
         self, left_op, right_op
     ):
         input_text = f"a {left_op} b ^ c ^ d {right_op} e"
         with pytest.raises(GrammarParseError) as ei:
             parse_condition(input_text)
 
-        assert any(isinstance(error, AmbiguityError) for error in ei.value.errors)
+        assert any(isinstance(error, SyntaxFailError) for error in ei.value.errors)
 
     def test_cond_logical_operator_precedence_and_right_associativity(self):
         assert parse_condition("a > 0 => b > 0 => c > 0") == Condition(
@@ -2086,7 +2089,7 @@ class TestDSLCondition:
         ids=lambda item: item,
     )
     def test_parenthesized_cond_ternary_can_bind_inside_binary_left_operand(self, op):
-        assert parse_condition(f"(a > 0 ? b > 0 : c > 0) {op} d > 0") == Condition(
+        assert parse_condition(f"((a > 0) ? b > 0 : c > 0) {op} d > 0") == Condition(
             expr=BinaryOp(
                 expr1=Paren(expr=_simple_ternary_expr()),
                 op=_canonical_cond_op(op),
@@ -2100,7 +2103,7 @@ class TestDSLCondition:
         ids=lambda item: item,
     )
     def test_parenthesized_cond_ternary_can_bind_inside_binary_right_operand(self, op):
-        assert parse_condition(f"d > 0 {op} (a > 0 ? b > 0 : c > 0)") == Condition(
+        assert parse_condition(f"d > 0 {op} ((a > 0) ? b > 0 : c > 0)") == Condition(
             expr=BinaryOp(
                 expr1=_cond_atom("d"),
                 op=_canonical_cond_op(op),

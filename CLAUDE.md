@@ -573,11 +573,16 @@ counter = 10 + 5;                              // Arithmetic: +, -, *, /, **, %
 flags = 0xFF & 0x0F;                           // Bitwise: &, |, ^, <<, >>
 result = (x > 10) ? 1 : 0;                    // Ternary: only way to convert bool→arithmetic
 StateA -> StateB : if [counter >= 10 && temp < 30];   // Guards: >=, <, ==, !=, &&, ||, !
+StateA -> StateB : if [x > 0 => y > 0];               // implication; 'implies' is also valid
+StateA -> StateB : if [manual != 0 xor auto != 0];    // boolean exclusive-or; numeric ^ stays bitwise
+StateA -> StateB : if [open != 0 iff closed == 0];    // boolean equivalence
 StateA -> StateB : if [flag1 or flag2];               // 'and', 'or', 'not' keywords also valid
 result = sin(angle);                           // Function calls
 
 // ERROR: result = (x > 10);    // Cannot assign boolean to variable
 // ERROR: if [counter];         // Cannot use arithmetic as condition
+// ERROR: if [true ^ false];    // Boolean xor must use 'xor'; ^ is numeric bitwise xor
+// ERROR: if [x > 0 -> y > 0];  // Implication uses => or implies; -> is transition syntax
 // CORRECT: result = (x > 10) ? 1 : 0;
 // CORRECT: StateA -> StateB : if [counter > 0];
 ```

@@ -1069,8 +1069,9 @@ DSL 支持三种指定事件作用域的方式：
 **支持的运算符：**
 
 - **比较**：``<``、``>``、``<=``、``>=``、``==``、``!=``
-- **逻辑**：``&&``、``||``、``!``、``and``、``or``、``not``
-- **位运算**：``&``、``|``、``^``
+- **逻辑**：``!``、``not``、``&&``、``and``、``xor``、``||``、``or``、``=>``、``implies``
+- **布尔等价**：``iff``\ （等价于布尔 ``==``）
+- **数值位运算操作数**：``&``、``|``、``^`` 可出现在守卫中被比较的算术表达式里
 - **算术**：``+``、``-``、``*``、``/``、``%``、``**``
 
 **示例：**
@@ -1086,11 +1087,24 @@ DSL 支持三种指定事件作用域的方式：
    // 逻辑 OR
    LowPower -> Critical : if [temperature > 80 || error_count > 5];
 
+   // 蕴含
+   Armed -> Ready : if [manual_override == 0 => sensor_ok != 0];
+
+   // 布尔异或
+   Manual -> Auto : if [manual_mode != 0 xor auto_mode != 0];
+
+   // 布尔等价
+   Open -> Closed : if [open_limit != 0 iff closed_limit == 0];
+
    // 位运算
    Charging -> Normal : if [(battery_level >= 90) && (charging_state & 0x01)];
 
    // 复杂表达式
    StateA -> StateB : if [(temp > 25.0) && (flags & 0xFF) == 0x01];
+
+``^`` 仍然是数值位异或运算符，不是 ``cond_expression`` 中的布尔异或写法；
+布尔异或请写 ``xor``。同样，``->`` 只表示状态转换箭头，不是守卫条件中的
+蕴含运算符。
 
 转换效果
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1411,12 +1425,17 @@ DSL 支持用于数学和逻辑操作的全面表达式类型：
 
 .. code-block:: fcstm
 
-   init_expression ::= conditional_expression
-   num_expression ::= conditional_expression
-   cond_expression ::= conditional_expression
-   conditional_expression ::= logical_or_expression ['?' expression ':' expression]
-   logical_or_expression ::= logical_and_expression [('||' | 'or') logical_and_expression]*
-   logical_and_expression ::= bitwise_or_expression [('&&' | 'and') bitwise_or_expression]*
+   init_expression ::= num_literal | math_const | unary_numeric | binary_numeric | func_call
+   num_expression ::= num_literal | ID | math_const | unary_numeric | binary_numeric | func_call
+                    | '(' cond_expression ')' '?' num_expression ':' num_expression
+   cond_expression ::= '(' cond_expression ')' '?' cond_expression ':' cond_expression
+                     | implication_expression
+   implication_expression ::= logical_or_expression [('=>' | 'implies') implication_expression]
+   logical_or_expression ::= logical_xor_expression [('||' | 'or') logical_xor_expression]*
+   logical_xor_expression ::= logical_and_expression ['xor' logical_and_expression]*
+   logical_and_expression ::= condition_equality_expression [('&&' | 'and') condition_equality_expression]*
+   condition_equality_expression ::= comparison_expression [('==' | '!=' | 'iff') comparison_expression]*
+   comparison_expression ::= num_expression ('<' | '>' | '<=' | '>=' | '==' | '!=') num_expression
    bitwise_or_expression ::= bitwise_xor_expression ['|' bitwise_xor_expression]*
    bitwise_xor_expression ::= bitwise_and_expression ['^' bitwise_and_expression]*
    bitwise_and_expression ::= equality_expression ['&' equality_expression]*
@@ -1428,6 +1447,9 @@ DSL 支持用于数学和逻辑操作的全面表达式类型：
    power_expression ::= unary_expression ['**' unary_expression]*
    unary_expression ::= ['+' | '-' | '!' | 'not'] primary_expression
    primary_expression ::= literal | variable | function_call | '(' expression ')'
+
+``=>`` / ``implies`` 是右结合：``A => B => C`` 表示 ``A => (B => C)``。
+``xor`` 是左结合的布尔异或链，不表示多个输入中恰好一个为真。
 
 字面量值
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1482,13 +1504,16 @@ DSL 支持用于数学和逻辑操作的全面表达式类型：
 
 - **一元**：``!``、``not`` - 逻辑非
 - **二元**：``&&``、``and`` - 逻辑与
+- **二元**：``xor`` - 布尔异或
 - **二元**：``||``、``or`` - 逻辑或
+- **二元**：``=>``、``implies`` - 布尔蕴含
+- **二元**：``iff`` - 布尔等价
 
 **位运算符：**
 
 - **位与**：``&``
 - **位或**：``|``
-- **位异或**：``^``
+- **位异或**：``^``\ （仅用于数值；布尔异或请使用 ``xor``）
 - **左移**：``<<``
 - **右移**：``>>``
 
@@ -1529,6 +1554,8 @@ DSL 支持用于数学和逻辑操作的全面表达式类型：
    // 错误：不能使用算术表达式作为条件
    StateA -> StateB : if [counter]; // 语法错误：布尔上下文中的算术
    StateA -> StateB : if [x + 5];   // 语法错误：布尔上下文中的算术
+   StateA -> StateB : if [true ^ false];  // 语法错误：布尔异或必须使用 xor
+   StateA -> StateB : if [x > 0 -> y > 0];  // 语法错误：蕴含使用 =>
 
 **正确用法：**
 
@@ -1541,10 +1568,14 @@ DSL 支持用于数学和逻辑操作的全面表达式类型：
    // 在守卫条件中使用比较运算符
    StateA -> StateB : if [counter > 0];    // 有效：比较返回布尔值
    StateA -> StateB : if [x + 5 > 10];     // 有效：比较中的算术
+   StateA -> StateB : if [x > 0 => y > 0]; // 有效：蕴含
+   StateA -> StateB : if [manual != 0 xor auto != 0]; // 有效：布尔异或
+   StateA -> StateB : if [open_limit != 0 iff closed_limit == 0]; // 有效：布尔等价
 
    // 位运算在算术上下文中工作
    result = flags & 0x01;           // 有效：位运算返回算术值
    StateA -> StateB : if [(flags & 0x01) != 0];  // 有效：比较位运算结果
+   StateA -> StateB : if [(flags ^ 0xFF) == 0];  // 有效：数值位异或
 
 .. tip::
    **为什么这很重要：**

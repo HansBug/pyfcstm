@@ -1069,8 +1069,9 @@ Guard conditions are boolean expressions that control whether a transition can f
 **Supported Operators:**
 
 - **Comparison**: ``<``, ``>``, ``<=``, ``>=``, ``==``, ``!=``
-- **Logical**: ``&&``, ``||``, ``!``, ``and``, ``or``, ``not``
-- **Bitwise**: ``&``, ``|``, ``^``
+- **Logical**: ``!``, ``not``, ``&&``, ``and``, ``xor``, ``||``, ``or``, ``=>``, ``implies``
+- **Boolean equivalence**: ``iff`` (equivalent to boolean ``==``)
+- **Bitwise numeric operands**: ``&``, ``|``, ``^`` inside arithmetic expressions that are compared in the guard
 - **Arithmetic**: ``+``, ``-``, ``*``, ``/``, ``%``, ``**``
 
 **Examples:**
@@ -1086,11 +1087,25 @@ Guard conditions are boolean expressions that control whether a transition can f
    // Logical OR
    LowPower -> Critical : if [temperature > 80 || error_count > 5];
 
+   // Implication
+   Armed -> Ready : if [manual_override == 0 => sensor_ok != 0];
+
+   // Boolean exclusive-or
+   Manual -> Auto : if [manual_mode != 0 xor auto_mode != 0];
+
+   // Boolean equivalence
+   Open -> Closed : if [open_limit != 0 iff closed_limit == 0];
+
    // Bitwise operations
    Charging -> Normal : if [(battery_level >= 90) && (charging_state & 0x01)];
 
    // Complex expression
    StateA -> StateB : if [(temp > 25.0) && (flags & 0xFF) == 0x01];
+
+``^`` remains a numeric bitwise XOR operator. It is not a boolean XOR spelling in
+``cond_expression``; write ``xor`` for boolean exclusive-or. Likewise, ``->`` is
+only the state-transition arrow and is not an implication operator inside
+guards.
 
 Transition Effects
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1420,12 +1435,17 @@ The DSL supports comprehensive expression types for mathematical and logical ope
 
 .. code-block:: fcstm
 
-   init_expression ::= conditional_expression
-   num_expression ::= conditional_expression
-   cond_expression ::= conditional_expression
-   conditional_expression ::= logical_or_expression ['?' expression ':' expression]
-   logical_or_expression ::= logical_and_expression [('||' | 'or') logical_and_expression]*
-   logical_and_expression ::= bitwise_or_expression [('&&' | 'and') bitwise_or_expression]*
+   init_expression ::= num_literal | math_const | unary_numeric | binary_numeric | func_call
+   num_expression ::= num_literal | ID | math_const | unary_numeric | binary_numeric | func_call
+                    | '(' cond_expression ')' '?' num_expression ':' num_expression
+   cond_expression ::= '(' cond_expression ')' '?' cond_expression ':' cond_expression
+                     | implication_expression
+   implication_expression ::= logical_or_expression [('=>' | 'implies') implication_expression]
+   logical_or_expression ::= logical_xor_expression [('||' | 'or') logical_xor_expression]*
+   logical_xor_expression ::= logical_and_expression ['xor' logical_and_expression]*
+   logical_and_expression ::= condition_equality_expression [('&&' | 'and') condition_equality_expression]*
+   condition_equality_expression ::= comparison_expression [('==' | '!=' | 'iff') comparison_expression]*
+   comparison_expression ::= num_expression ('<' | '>' | '<=' | '>=' | '==' | '!=') num_expression
    bitwise_or_expression ::= bitwise_xor_expression ['|' bitwise_xor_expression]*
    bitwise_xor_expression ::= bitwise_and_expression ['^' bitwise_and_expression]*
    bitwise_and_expression ::= equality_expression ['&' equality_expression]*
@@ -1437,6 +1457,10 @@ The DSL supports comprehensive expression types for mathematical and logical ope
    power_expression ::= unary_expression ['**' unary_expression]*
    unary_expression ::= ['+' | '-' | '!' | 'not'] primary_expression
    primary_expression ::= literal | variable | function_call | '(' expression ')'
+
+``=>`` / ``implies`` is right-associative: ``A => B => C`` means
+``A => (B => C)``. ``xor`` is a left-associative boolean exclusive-or chain; it
+is not an exactly-one-of-many operator.
 
 Literal Values
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1491,13 +1515,16 @@ Operators
 
 - **Unary**: ``!``, ``not`` - Logical NOT
 - **Binary**: ``&&``, ``and`` - Logical AND
+- **Binary**: ``xor`` - Boolean exclusive-or
 - **Binary**: ``||``, ``or`` - Logical OR
+- **Binary**: ``=>``, ``implies`` - Boolean implication
+- **Binary**: ``iff`` - Boolean equivalence
 
 **Bitwise Operators:**
 
 - **Bitwise AND**: ``&``
 - **Bitwise OR**: ``|``
-- **Bitwise XOR**: ``^``
+- **Bitwise XOR**: ``^`` (numeric only; use ``xor`` for boolean exclusive-or)
 - **Left Shift**: ``<<``
 - **Right Shift**: ``>>``
 
@@ -1538,6 +1565,8 @@ Arithmetic vs Logical Expression Separation
    // ERROR: Cannot use arithmetic expression as condition
    StateA -> StateB : if [counter]; // Syntax error: arithmetic in boolean context
    StateA -> StateB : if [x + 5];   // Syntax error: arithmetic in boolean context
+   StateA -> StateB : if [true ^ false];  // Syntax error: boolean XOR must use xor
+   StateA -> StateB : if [x > 0 -> y > 0];  // Syntax error: implication uses =>
 
 **Correct Usage:**
 
@@ -1550,10 +1579,14 @@ Arithmetic vs Logical Expression Separation
    // Use comparison operators in guard conditions
    StateA -> StateB : if [counter > 0];    // Valid: comparison returns boolean
    StateA -> StateB : if [x + 5 > 10];     // Valid: arithmetic in comparison
+   StateA -> StateB : if [x > 0 => y > 0]; // Valid: implication
+   StateA -> StateB : if [manual != 0 xor auto != 0]; // Valid: boolean XOR
+   StateA -> StateB : if [open_limit != 0 iff closed_limit == 0]; // Valid: equivalence
 
    // Bitwise operations work in arithmetic context
    result = flags & 0x01;           // Valid: bitwise returns arithmetic value
    StateA -> StateB : if [(flags & 0x01) != 0];  // Valid: compare bitwise result
+   StateA -> StateB : if [(flags ^ 0xFF) == 0];  // Valid: numeric bitwise XOR
 
 .. tip::
    **Why This Matters:**

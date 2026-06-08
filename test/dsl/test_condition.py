@@ -1790,9 +1790,7 @@ class TestDSLCondition:
             ("true => false", "True => False"),
             ("true implies false", "True => False"),
             ("true xor false", "True xor False"),
-            ("true ^ false", "True xor False"),
             ("true iff false", "True iff False"),
-            ("(a > 0) ^ (b > 0)", "(a > 0) xor (b > 0)"),
             ("a > 0 && b > 0 => c > 0", "a > 0 && b > 0 => c > 0"),
             ("a > 0 || b > 0 => c > 0", "a > 0 || b > 0 => c > 0"),
             (
@@ -1828,11 +1826,6 @@ class TestDSLCondition:
                 expr1=Boolean(raw="true"), op="xor", expr2=Boolean(raw="false")
             )
         )
-        assert parse_condition("true ^ false") == Condition(
-            expr=BinaryOp(
-                expr1=Boolean(raw="true"), op="xor", expr2=Boolean(raw="false")
-            )
-        )
         assert parse_condition("true iff false") == Condition(
             expr=BinaryOp(
                 expr1=Boolean(raw="true"), op="iff", expr2=Boolean(raw="false")
@@ -1840,7 +1833,7 @@ class TestDSLCondition:
         )
 
     def test_cond_xor_keeps_numeric_bitwise_xor_separate(self):
-        assert parse_condition("(a > 0) ^ (b > 0)") == Condition(
+        assert parse_condition("(a > 0) xor (b > 0)") == Condition(
             expr=BinaryOp(
                 expr1=Paren(
                     expr=BinaryOp(
@@ -1942,7 +1935,7 @@ class TestDSLCondition:
         ),
         ids=lambda item: item,
     )
-    def test_parenthesized_cond_caret_separates_numeric_caret_comparisons_exhaustively(
+    def test_parenthesized_cond_caret_between_numeric_caret_comparisons_is_rejected(
         self,
         left_op,
         right_op,
@@ -1962,9 +1955,10 @@ class TestDSLCondition:
             )
         )
 
-        assert parse_condition(f"({left_text}) ^ ({right_text})") == Condition(
-            expr=_binary_expr(Paren(left_expr), "xor", Paren(right_expr))
-        )
+        with pytest.raises(GrammarParseError) as ei:
+            parse_condition(f"({left_text}) ^ ({right_text})")
+
+        assert any(isinstance(error, SyntaxFailError) for error in ei.value.errors)
 
     @pytest.mark.parametrize(
         ["left_op", "right_op"],
@@ -2188,6 +2182,9 @@ class TestDSLCondition:
             ("true xor 1",),
             ("1 => true",),
             ("true iff 1",),
+            ("true ^ false",),
+            ("(a > 0) ^ (b > 0)",),
+            ("a > 0 ^ b > 0",),
         ],
     )
     def test_negative_cases(self, input_text):

@@ -645,14 +645,6 @@ class GrammarParserListener(ParseTreeListener):
     ):
         pass
 
-    # Enter a parse tree produced by GrammarParser#cond_caret_atom.
-    def enterCond_caret_atom(self, ctx: GrammarParser.Cond_caret_atomContext):
-        pass
-
-    # Exit a parse tree produced by GrammarParser#cond_caret_atom.
-    def exitCond_caret_atom(self, ctx: GrammarParser.Cond_caret_atomContext):
-        pass
-
     # Enter a parse tree produced by GrammarParser#num_literal.
     def enterNum_literal(self, ctx: GrammarParser.Num_literalContext):
         pass

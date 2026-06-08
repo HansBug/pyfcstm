@@ -44,7 +44,6 @@ from ..utils.validate import Span
 
 _COND_BINARY_OP_ALIASES = {
     "implies": "=>",
-    "^": "xor",
 }
 
 
@@ -271,13 +270,11 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.BinaryExprCondContext
         """
         super().exitBinaryExprCond(ctx)
-        if ctx.cond_caret_atom():
-            expr1 = self.nodes[ctx.cond_expression(0)]
-            expr2 = self.nodes[ctx.cond_caret_atom()]
-        else:
-            expr1 = self.nodes[ctx.cond_expression(0)]
-            expr2 = self.nodes[ctx.cond_expression(1)]
-        self._exit_cond_binary_expression(ctx, expr1=expr1, expr2=expr2)
+        self._exit_cond_binary_expression(
+            ctx,
+            expr1=self.nodes[ctx.cond_expression(0)],
+            expr2=self.nodes[ctx.cond_expression(1)],
+        )
 
     def exitUnaryExprCond(self, ctx: GrammarParser.UnaryExprCondContext) -> None:
         """
@@ -292,12 +289,6 @@ class GrammarParseListener(GrammarListener):
             expr=self.nodes[ctx.cond_expression()],
         )
         self.nodes[ctx] = node
-
-    def exitCond_caret_atom(self, ctx: GrammarParser.Cond_caret_atomContext) -> None:
-        if ctx.bool_literal():
-            self.nodes[ctx] = self.nodes[ctx.bool_literal()]
-        else:
-            self.nodes[ctx] = Paren(self.nodes[ctx.cond_expression()])
 
     def exitParenExprCond(self, ctx: GrammarParser.ParenExprCondContext) -> None:
         """

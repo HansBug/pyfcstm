@@ -204,7 +204,7 @@ py.runPyAlignmentCases('jsfcstm AST pyfcstm alignment: transitions', [
             '    state A;',
             '    state B;',
             '    A -> B : if [a > 0 implies b > 0];',
-            '    B -> A : if [(a > 0) ^ (b > 0)];',
+            '    B -> A : if [a > 0 xor b > 0];',
             '    A -> [*] : if [a > 0 iff b > 0 && c > 0];',
             '}'
         ),
@@ -223,9 +223,9 @@ py.runPyAlignmentCases('jsfcstm AST pyfcstm alignment: transitions', [
                 }),
                 py.transition('B', 'A', {
                     condition_expr: py.binary(
-                        py.paren(py.binary(py.nameExpr('a'), '>', py.intLiteral('0'))),
+                        py.binary(py.nameExpr('a'), '>', py.intLiteral('0')),
                         'xor',
-                        py.paren(py.binary(py.nameExpr('b'), '>', py.intLiteral('0')))
+                        py.binary(py.nameExpr('b'), '>', py.intLiteral('0'))
                     ),
                 }),
                 py.transition('A', py.EXIT_STATE, {

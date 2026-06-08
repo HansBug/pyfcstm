@@ -60,7 +60,6 @@ const BINARY_OPERATOR_ALIASES: Record<string, string> = {
 
 const COND_BINARY_OPERATOR_ALIASES: Record<string, string> = {
     implies: '=>',
-    '^': 'xor',
 };
 
 interface ParseTreeContext extends ParseTreeNode {
@@ -266,9 +265,6 @@ function buildExpressionType(nodeName: string): 'init' | 'num' | 'cond' {
     if (nodeName === 'Bool_literalContext' || nodeName === 'ConditionalCStyleCondNumContext') {
         return 'cond';
     }
-    if (nodeName === 'Cond_caret_atomContext') {
-        return 'cond';
-    }
     if (nodeName.endsWith('CondContext')) {
         return 'cond';
     }
@@ -400,23 +396,6 @@ function buildExpression(
             name: text,
             raw: text,
         } as FcstmAstMathConstExpression;
-    }
-
-    if (nodeName === 'Cond_caret_atomContext') {
-        const expression = buildExpression(childContexts[0], document);
-        if (childContexts[0]?.constructor?.name === 'Bool_literalContext') {
-            return expression;
-        }
-        return {
-            kind: 'expression',
-            pyNodeType: 'Paren',
-            expressionKind: 'parenthesized',
-            expressionType,
-            range,
-            text,
-            expression,
-            expr: expression,
-        } as FcstmAstParenthesizedExpression;
     }
 
     if (/ParenExpr/.test(nodeName)) {

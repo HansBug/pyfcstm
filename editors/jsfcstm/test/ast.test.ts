@@ -434,6 +434,49 @@ async function parseGuardExpression(guard: string): Promise<Record<string, unkno
     return normalizeCondExpression(expression as unknown as Record<string, any>);
 }
 
+async function assertGuardParseFails(guard: string, message: string): Promise<void> {
+    const document = createDocument([
+        'state Root {',
+        '    state A;',
+        '    state B;',
+        `    A -> B : if [${guard}];`,
+        '}',
+    ].join('\n'), '/tmp/ast-cond-negative.fcstm');
+
+    const result = await packageModule.getParser().parse(document.getText());
+    assert.equal(result.success, false, message);
+    assert.ok(result.errors.length > 0, message);
+}
+
+async function assertGuardParseFailsInBatches(
+    guards: readonly string[],
+    messagePrefix: string,
+): Promise<void> {
+    const batchSize = 256;
+    for (let offset = 0; offset < guards.length; offset += batchSize) {
+        const batch = guards.slice(offset, offset + batchSize);
+        const document = createDocument([
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            ...batch.map(guard => `    A -> B : if [${guard}];`),
+            '}',
+        ].join('\n'), `/tmp/ast-cond-negative-${offset}.fcstm`);
+
+        const result = await packageModule.getParser().parse(document.getText());
+        assert.equal(result.success, false, `${messagePrefix} batch ${offset}`);
+
+        const errorLines = new Set(result.errors.map(error => error.line));
+        batch.forEach((_guard, index) => {
+            const line = 3 + index;
+            assert.ok(
+                errorLines.has(line),
+                `${messagePrefix} batch ${offset} guard ${offset + index}`,
+            );
+        });
+    }
+}
+
 describe('jsfcstm AST builder', () => {
     it('builds a structured AST for variables, actions, forced transitions, and imports', async () => {
         const document = createDocument([
@@ -1058,10 +1101,10 @@ describe('jsfcstm AST condition operator precedence', () => {
         await assertGuardExpressionCases(cases);
     });
 
-    it('uses parenthesized caret to separate numeric-caret comparisons exhaustively', async function () {
+    it('rejects parenthesized condition caret between numeric-caret comparisons exhaustively', async function () {
         this.timeout(45000);
 
-        const cases: GuardExpressionCase[] = [];
+        const cases: string[] = [];
         for (const leftOp of NUM_COMPARE_OPERATORS) {
             for (const rightOp of NUM_COMPARE_OPERATORS) {
                 for (const leftLeftShape of NUMERIC_CARET_BOUNDARY_SHAPES) {
@@ -1076,49 +1119,21 @@ describe('jsfcstm AST condition operator precedence', () => {
                                     rightLeftShape,
                                     rightRightShape,
                                 );
-                                cases.push({
-                                    guard: `(${item.leftText}) ^ (${item.rightText})`,
-                                    expected: binaryExpression(
-                                        parenthesizedExpression(item.leftExpected),
-                                        'xor',
-                                        parenthesizedExpression(item.rightExpected)
-                                    ),
-                                    message: [
-                                        'parenthesized caret numeric boundary',
-                                        leftOp,
-                                        rightOp,
-                                        leftLeftShape,
-                                        leftRightShape,
-                                        rightLeftShape,
-                                        rightRightShape,
-                                    ].join(' '),
-                                });
+                                cases.push(`(${item.leftText}) ^ (${item.rightText})`);
                             }
                         }
                     }
                 }
             }
         }
-        await assertGuardExpressionCases(cases);
+
+        await assertGuardParseFailsInBatches(cases, 'parenthesized condition caret');
     });
 
-    it('normalizes caret only for boolean literals or explicit parenthesized conditions', async () => {
-        assert.deepEqual(
-            await parseGuardExpression('true ^ false'),
-            binaryExpression(
-                {pyNodeType: 'Boolean', raw: 'true'},
-                'xor',
-                {pyNodeType: 'Boolean', raw: 'false'},
-            ),
-        );
-        assert.deepEqual(
-            await parseGuardExpression('(a > 0) ^ (b > 0)'),
-            binaryExpression(
-                parenthesizedExpression(condAtom('a')),
-                'xor',
-                parenthesizedExpression(condAtom('b')),
-            ),
-        );
+    it('rejects condition caret spellings', async () => {
+        await assertGuardParseFails('true ^ false', 'boolean literal caret is not condition xor');
+        await assertGuardParseFails('(a > 0) ^ (b > 0)', 'parenthesized condition caret is not condition xor');
+        await assertGuardParseFails('a > 0 ^ b > 0', 'unparenthesized condition caret is not condition xor');
     });
 
     it('keeps parenthesized ternary expressions as binary left operands for every condition operator', async () => {

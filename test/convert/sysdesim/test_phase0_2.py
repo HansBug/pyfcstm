@@ -10,6 +10,7 @@ import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.dsl import node as dsl_nodes
+from pyfcstm.convert.sysdesim import convert as sysdesim_convert
 from pyfcstm.convert.sysdesim import (
     build_machine_ast,
     convert_sysdesim_xml_to_ast,
@@ -1706,6 +1707,136 @@ def test_phase2_rejects_init_pseudostate_targeting_final_state(tmp_path: Path):
         NotImplementedError, match=r"init pseudostate.*FinalState target"
     ):
         convert_sysdesim_xml_to_ast(str(xml_file))
+
+
+def _make_transition_fallback_machine(
+    source: IrVertex,
+    target: IrVertex,
+    transition: IrTransition,
+) -> IrMachine:
+    """Build a normalized-enough IR machine for direct transition fallback tests."""
+    root_region = IrRegion(
+        region_id="region_root",
+        owner_state_id=None,
+        vertices=[source, target],
+        transitions=[transition],
+    )
+    machine = IrMachine(
+        machine_id="machine_1",
+        name="Fallback",
+        root_region=root_region,
+        safe_name="Fallback",
+        display_name="Fallback",
+    )
+    machine.rebuild_indexes()
+    return machine
+
+
+def test_phase2_rejects_init_pseudostate_targeting_non_state_non_final_vertex():
+    """The init fallback should reject targets that are neither states nor FinalState."""
+    machine = _make_transition_fallback_machine(
+        IrVertex(
+            vertex_id="init_1",
+            vertex_type="pseudostate",
+            raw_name="",
+            safe_name=None,
+            parent_region_id="region_root",
+        ),
+        IrVertex(
+            vertex_id="join_1",
+            vertex_type="pseudostate",
+            raw_name="Join",
+            safe_name="Join",
+            parent_region_id="region_root",
+        ),
+        IrTransition(
+            transition_id="tx_init_to_join",
+            source_id="init_1",
+            target_id="join_1",
+            trigger_kind="none",
+            trigger_ref_id=None,
+            guard_expr_raw=None,
+        ),
+    )
+
+    with pytest.raises(NotImplementedError, match="init pseudostate targeting states"):
+        sysdesim_convert._build_transition(
+            machine,
+            machine.get_transition("tx_init_to_join"),
+            sysdesim_convert._AstBuildContext(),
+        )
+
+
+def test_phase2_rejects_state_to_final_target_with_region_mismatch_in_transition_fallback():
+    """The Phase2 final-target fallback must not lower region-mismatched edges."""
+    machine = _make_transition_fallback_machine(
+        IrVertex(
+            vertex_id="state_idle",
+            vertex_type="state",
+            raw_name="Idle",
+            safe_name="Idle",
+            parent_region_id="region_source",
+        ),
+        IrVertex(
+            vertex_id="final_done",
+            vertex_type="final",
+            raw_name="",
+            safe_name=None,
+            parent_region_id="region_target",
+        ),
+        IrTransition(
+            transition_id="tx_region_mismatch_final",
+            source_id="state_idle",
+            target_id="final_done",
+            trigger_kind="none",
+            trigger_ref_id=None,
+            guard_expr_raw=None,
+        ),
+    )
+
+    with pytest.raises(
+        NotImplementedError, match="cross-level transitions targeting FinalState"
+    ):
+        sysdesim_convert._build_transition(
+            machine,
+            machine.get_transition("tx_region_mismatch_final"),
+            sysdesim_convert._AstBuildContext(),
+        )
+
+
+def test_phase2_rejects_state_to_non_state_non_final_target_in_transition_fallback():
+    """The state transition fallback should reject non-state targets except FinalState."""
+    machine = _make_transition_fallback_machine(
+        IrVertex(
+            vertex_id="state_idle",
+            vertex_type="state",
+            raw_name="Idle",
+            safe_name="Idle",
+            parent_region_id="region_root",
+        ),
+        IrVertex(
+            vertex_id="choice_1",
+            vertex_type="pseudostate",
+            raw_name="Choice",
+            safe_name="Choice",
+            parent_region_id="region_root",
+        ),
+        IrTransition(
+            transition_id="tx_state_to_choice",
+            source_id="state_idle",
+            target_id="choice_1",
+            trigger_kind="none",
+            trigger_ref_id=None,
+            guard_expr_raw=None,
+        ),
+    )
+
+    with pytest.raises(NotImplementedError, match="leaf state to FinalState target"):
+        sysdesim_convert._build_transition(
+            machine,
+            machine.get_transition("tx_state_to_choice"),
+            sysdesim_convert._AstBuildContext(),
+        )
 
 
 def test_phase2_rejects_composite_source_final_target_without_force_lowering(

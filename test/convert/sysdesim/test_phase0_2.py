@@ -1,6 +1,7 @@
 """Unit tests for the SysDeSim phase0-2 conversion pipeline."""
 
 import inspect
+import re
 from dataclasses import fields
 from pathlib import Path
 from textwrap import dedent
@@ -9,6 +10,7 @@ import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.dsl import node as dsl_nodes
+from pyfcstm.convert.sysdesim import convert as sysdesim_convert
 from pyfcstm.convert.sysdesim import (
     build_machine_ast,
     convert_sysdesim_xml_to_ast,
@@ -32,7 +34,6 @@ from pyfcstm.convert.sysdesim.ir import (
     IrVariable,
     IrVertex,
 )
-from pyfcstm.model import expr as model_expr
 from pyfcstm.model.model import StateMachine, parse_dsl_node_to_state_machine
 
 pytestmark = pytest.mark.unittest
@@ -79,6 +80,33 @@ def _assert_dsl_code_loads_to_state_machine(dsl_code: str) -> StateMachine:
     """Assert that DSL text can be parsed and loaded into the public StateMachine model."""
     parsed_program = parse_with_grammar_entry(dsl_code, entry_name="state_machine_dsl")
     return _assert_program_loads_to_state_machine(parsed_program)
+
+
+def _assert_ast_has_exit_transition(
+    state: dsl_nodes.StateDefinition,
+    from_state: str,
+    *,
+    event_id: str = None,
+    guard_text: str = None,
+) -> dsl_nodes.TransitionDefinition:
+    """Assert that a state contains exactly one transition to the FCSTM exit state."""
+    matches = [
+        transition
+        for transition in state.transitions
+        if transition.from_state == from_state
+        and transition.to_state is dsl_nodes.EXIT_STATE
+    ]
+    assert len(matches) == 1
+    transition = matches[0]
+    assert (str(transition.event_id) if transition.event_id is not None else None) == (
+        event_id
+    )
+    assert (
+        str(transition.condition_expr)
+        if transition.condition_expr is not None
+        else None
+    ) == guard_text
+    return transition
 
 
 def test_phase0_can_parse_graph_structure_and_events(tmp_path: Path):
@@ -1421,6 +1449,446 @@ def test_convert_sysdesim_xml_to_dsl_runs_end_to_end(tmp_path: Path):
     )
 
 
+def test_phase2_real_model2_lowers_same_level_final_target_to_exit_state():
+    """The real model2.xml sample should lower a same-level FinalState target to ``[*]``."""
+    xml_file = (
+        Path(__file__).resolve().parents[2]
+        / "testfile/sysdesim/final_state_same_level_model2.xml"
+    )
+
+    dsl_code = _normalize_newlines(convert_sysdesim_xml_to_dsl(str(xml_file)))
+    program = convert_sysdesim_xml_to_ast(str(xml_file))
+    validate_program_roundtrip(program)
+
+    assert re.search(r"\bSS\s*->\s*\[\*\]\s*;", dsl_code)
+    assert "__sysdesim_final_" not in dsl_code
+    assert "_rJto4GCxEfGqsb6wf6ZObA" not in dsl_code
+    assert "state Done" not in dsl_code
+    _assert_ast_has_exit_transition(program.root_state, "SS")
+
+
+def test_phase2_lowers_none_trigger_final_target_to_exit_state(tmp_path: Path):
+    """A leaf state transition to a same-level FinalState should become ``-> [*]``."""
+    xml_file = _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Final Target" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Final Target">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_idle"/>
+                  <transition xmi:type="uml:Transition" xmi:id="tx_finish" source="state_idle" target="final_done"/>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                  <subvertex xmi:type="uml:FinalState" xmi:id="final_done" name="Done"/>
+                </region>
+              </ownedBehavior>
+            </packagedElement>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+    )
+
+    dsl_code = _normalize_newlines(convert_sysdesim_xml_to_dsl(str(xml_file)))
+    program = convert_sysdesim_xml_to_ast(str(xml_file))
+    validate_program_roundtrip(program)
+
+    expected_dsl = dedent(
+        """\
+        state FinalTarget named 'Final Target' {
+            state Idle;
+            [*] -> Idle;
+            Idle -> [*];
+        }"""
+    )
+    assert dsl_code == expected_dsl
+    assert _normalize_newlines(str(program)) == expected_dsl
+    assert "state Done" not in dsl_code
+    _assert_ast_has_exit_transition(program.root_state, "Idle")
+
+
+def test_phase2_lowers_guarded_final_target_to_exit_state(tmp_path: Path):
+    """A guard-only transition to FinalState should keep its guard on ``-> [*]``."""
+    xml_file = _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Final Target" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Final Target">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_idle"/>
+                  <transition xmi:type="uml:Transition" xmi:id="tx_finish" source="state_idle" target="final_done">
+                    <ownedRule xmi:type="uml:Constraint" xmi:id="finish_guard_rule">
+                      <specification xmi:type="uml:OpaqueExpression" xmi:id="finish_guard_expr">
+                        <body> count &gt; 0 </body>
+                      </specification>
+                    </ownedRule>
+                  </transition>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                  <subvertex xmi:type="uml:FinalState" xmi:id="final_done" name="Done"/>
+                </region>
+              </ownedBehavior>
+              <ownedAttribute xmi:type="uml:Property" xmi:id="var_count" name="count" type="primitive_int">
+                <defaultValue xmi:type="uml:LiteralInteger" xmi:id="var_count_default" value="0"/>
+              </ownedAttribute>
+            </packagedElement>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+    )
+
+    dsl_code = _normalize_newlines(convert_sysdesim_xml_to_dsl(str(xml_file)))
+    program = convert_sysdesim_xml_to_ast(str(xml_file))
+    validate_program_roundtrip(program)
+
+    assert "def int count = 0;" in dsl_code
+    assert "Idle -> [*] : if [count > 0];" in dsl_code
+    _assert_ast_has_exit_transition(program.root_state, "Idle", guard_text="count > 0")
+
+
+def test_phase2_lowers_signal_final_target_to_exit_state(tmp_path: Path):
+    """A signal transition to FinalState should keep the signal on ``-> [*]``."""
+    xml_file = _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Final Target" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Final Target">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_idle"/>
+                  <transition xmi:type="uml:Transition" xmi:id="tx_finish" source="state_idle" target="final_done">
+                    <trigger xmi:type="uml:Trigger" xmi:id="trigger_go" event="signal_event_go"/>
+                  </transition>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                  <subvertex xmi:type="uml:FinalState" xmi:id="final_done" name="Done"/>
+                </region>
+              </ownedBehavior>
+            </packagedElement>
+            <packagedElement xmi:type="uml:Signal" xmi:id="signal_go" name="Go"/>
+            <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_event_go" name="" signal="signal_go"/>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+    )
+
+    dsl_code = _normalize_newlines(convert_sysdesim_xml_to_dsl(str(xml_file)))
+    program = convert_sysdesim_xml_to_ast(str(xml_file))
+    validate_program_roundtrip(program)
+
+    expected_dsl = dedent(
+        """\
+        state FinalTarget named 'Final Target' {
+            state Idle;
+            event GO named 'Go';
+            [*] -> Idle;
+            Idle -> [*] : /GO;
+        }"""
+    )
+    assert dsl_code == expected_dsl
+    assert _normalize_newlines(str(program)) == expected_dsl
+    _assert_ast_has_exit_transition(program.root_state, "Idle", event_id="/GO")
+
+
+def test_phase2_rejects_signal_guard_final_target_without_expanding_scope(
+    tmp_path: Path,
+):
+    """Signal+guard transitions remain unsupported even when targeting FinalState."""
+    xml_file = _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Final Target" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Final Target">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_idle"/>
+                  <transition xmi:type="uml:Transition" xmi:id="tx_finish" source="state_idle" target="final_done">
+                    <trigger xmi:type="uml:Trigger" xmi:id="trigger_go" event="signal_event_go"/>
+                    <ownedRule xmi:type="uml:Constraint" xmi:id="finish_guard_rule">
+                      <specification xmi:type="uml:OpaqueExpression" xmi:id="finish_guard_expr">
+                        <body> count &gt; 0 </body>
+                      </specification>
+                    </ownedRule>
+                  </transition>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                  <subvertex xmi:type="uml:FinalState" xmi:id="final_done" name="Done"/>
+                </region>
+              </ownedBehavior>
+              <ownedAttribute xmi:type="uml:Property" xmi:id="var_count" name="count" type="primitive_int">
+                <defaultValue xmi:type="uml:LiteralInteger" xmi:id="var_count_default" value="0"/>
+              </ownedAttribute>
+            </packagedElement>
+            <packagedElement xmi:type="uml:Signal" xmi:id="signal_go" name="Go"/>
+            <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_event_go" name="" signal="signal_go"/>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+    )
+
+    with pytest.raises(NotImplementedError, match="both signal and guard"):
+        convert_sysdesim_xml_to_ast(str(xml_file))
+
+
+def test_phase2_rejects_final_state_source_transition(tmp_path: Path):
+    """A FinalState source transition should fail with a clear message."""
+    xml_file = _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Final Source" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Final Source">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_idle"/>
+                  <transition xmi:type="uml:Transition" xmi:id="tx_finish" source="final_done" target="state_after"/>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                  <subvertex xmi:type="uml:FinalState" xmi:id="final_done" name="Done"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_after" name="After"/>
+                </region>
+              </ownedBehavior>
+            </packagedElement>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+    )
+
+    with pytest.raises(NotImplementedError, match="FinalState source"):
+        convert_sysdesim_xml_to_ast(str(xml_file))
+
+
+def test_phase2_rejects_init_pseudostate_targeting_final_state(tmp_path: Path):
+    """An init pseudostate must not target FinalState directly in FS-1."""
+    xml_file = _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Init Final" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Init Final">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="final_done"/>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                  <subvertex xmi:type="uml:FinalState" xmi:id="final_done" name="Done"/>
+                </region>
+              </ownedBehavior>
+            </packagedElement>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+    )
+
+    with pytest.raises(
+        NotImplementedError, match=r"init pseudostate.*FinalState target"
+    ):
+        convert_sysdesim_xml_to_ast(str(xml_file))
+
+
+def _make_transition_fallback_machine(
+    source: IrVertex,
+    target: IrVertex,
+    transition: IrTransition,
+) -> IrMachine:
+    """Build a normalized-enough IR machine for direct transition fallback tests."""
+    root_region = IrRegion(
+        region_id="region_root",
+        owner_state_id=None,
+        vertices=[source, target],
+        transitions=[transition],
+    )
+    machine = IrMachine(
+        machine_id="machine_1",
+        name="Fallback",
+        root_region=root_region,
+        safe_name="Fallback",
+        display_name="Fallback",
+    )
+    machine.rebuild_indexes()
+    return machine
+
+
+def test_phase2_rejects_init_pseudostate_targeting_non_state_non_final_vertex():
+    """The init fallback should reject targets that are neither states nor FinalState."""
+    machine = _make_transition_fallback_machine(
+        IrVertex(
+            vertex_id="init_1",
+            vertex_type="pseudostate",
+            raw_name="",
+            safe_name=None,
+            parent_region_id="region_root",
+        ),
+        IrVertex(
+            vertex_id="join_1",
+            vertex_type="pseudostate",
+            raw_name="Join",
+            safe_name="Join",
+            parent_region_id="region_root",
+        ),
+        IrTransition(
+            transition_id="tx_init_to_join",
+            source_id="init_1",
+            target_id="join_1",
+            trigger_kind="none",
+            trigger_ref_id=None,
+            guard_expr_raw=None,
+        ),
+    )
+
+    with pytest.raises(NotImplementedError, match="init pseudostate targeting states"):
+        sysdesim_convert._build_transition(
+            machine,
+            machine.get_transition("tx_init_to_join"),
+            sysdesim_convert._AstBuildContext(),
+        )
+
+
+def test_phase2_rejects_state_to_final_target_with_region_mismatch_in_transition_fallback():
+    """The Phase2 final-target fallback must not lower region-mismatched edges."""
+    machine = _make_transition_fallback_machine(
+        IrVertex(
+            vertex_id="state_idle",
+            vertex_type="state",
+            raw_name="Idle",
+            safe_name="Idle",
+            parent_region_id="region_source",
+        ),
+        IrVertex(
+            vertex_id="final_done",
+            vertex_type="final",
+            raw_name="",
+            safe_name=None,
+            parent_region_id="region_target",
+        ),
+        IrTransition(
+            transition_id="tx_region_mismatch_final",
+            source_id="state_idle",
+            target_id="final_done",
+            trigger_kind="none",
+            trigger_ref_id=None,
+            guard_expr_raw=None,
+        ),
+    )
+
+    with pytest.raises(
+        NotImplementedError, match="cross-level transitions targeting FinalState"
+    ):
+        sysdesim_convert._build_transition(
+            machine,
+            machine.get_transition("tx_region_mismatch_final"),
+            sysdesim_convert._AstBuildContext(),
+        )
+
+
+def test_phase2_rejects_state_to_non_state_non_final_target_in_transition_fallback():
+    """The state transition fallback should reject non-state targets except FinalState."""
+    machine = _make_transition_fallback_machine(
+        IrVertex(
+            vertex_id="state_idle",
+            vertex_type="state",
+            raw_name="Idle",
+            safe_name="Idle",
+            parent_region_id="region_root",
+        ),
+        IrVertex(
+            vertex_id="choice_1",
+            vertex_type="pseudostate",
+            raw_name="Choice",
+            safe_name="Choice",
+            parent_region_id="region_root",
+        ),
+        IrTransition(
+            transition_id="tx_state_to_choice",
+            source_id="state_idle",
+            target_id="choice_1",
+            trigger_kind="none",
+            trigger_ref_id=None,
+            guard_expr_raw=None,
+        ),
+    )
+
+    with pytest.raises(NotImplementedError, match="leaf state to FinalState target"):
+        sysdesim_convert._build_transition(
+            machine,
+            machine.get_transition("tx_state_to_choice"),
+            sysdesim_convert._AstBuildContext(),
+        )
+
+
+def test_phase2_rejects_composite_source_final_target_without_force_lowering(
+    tmp_path: Path,
+):
+    """Composite-source FinalState transitions should not be lowered as force transitions."""
+    xml_file = _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Composite Final" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Composite Final">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_init_root" source="init_root" target="state_outer"/>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_outer" name="Outer">
+                    <region xmi:type="uml:Region" xmi:id="region_outer" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init_outer" source="init_outer" target="state_h"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_finish" source="state_h" target="final_done">
+                        <trigger xmi:type="uml:Trigger" xmi:id="trigger_go" event="signal_event_go"/>
+                      </transition>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_outer"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_h" name="H">
+                        <region xmi:type="uml:Region" xmi:id="region_h" name="">
+                          <transition xmi:type="uml:Transition" xmi:id="tx_init_h" source="init_h" target="state_inner"/>
+                          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_h"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_inner" name="Inner"/>
+                        </region>
+                      </subvertex>
+                      <subvertex xmi:type="uml:FinalState" xmi:id="final_done" name="Done"/>
+                    </region>
+                  </subvertex>
+                </region>
+              </ownedBehavior>
+            </packagedElement>
+            <packagedElement xmi:type="uml:Signal" xmi:id="signal_go" name="Go"/>
+            <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_event_go" name="" signal="signal_go"/>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+    )
+
+    with pytest.raises(
+        NotImplementedError, match=r"composite source.*FinalState target"
+    ):
+        convert_sysdesim_xml_to_ast(str(xml_file))
+
+
 class TestSysDeSimCoverageScenarios:
     def test_phase0_load_parses_type_default_and_machine_selection_variants(
         self, tmp_path: Path
@@ -2454,29 +2922,6 @@ class TestSysDeSimCoverageScenarios:
             </xmi:XMI>
             """,
                 "both signal and guard",
-            ),
-            (
-                """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <xmi:XMI xmi:version="20131001"
-                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
-                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
-              <uml:Model xmi:id="model_1" name="model">
-                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Final Target" classifierBehavior="machine_1">
-                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Final Target">
-                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
-                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_idle"/>
-                      <transition xmi:type="uml:Transition" xmi:id="tx_finish" source="state_idle" target="final_1"/>
-                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
-                      <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
-                      <subvertex xmi:type="uml:FinalState" xmi:id="final_1" name="Done"/>
-                    </region>
-                  </ownedBehavior>
-                </packagedElement>
-              </uml:Model>
-            </xmi:XMI>
-            """,
-                "state-to-state transitions",
             ),
         ],
     )

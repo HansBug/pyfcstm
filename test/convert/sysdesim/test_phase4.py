@@ -412,7 +412,37 @@ def test_phase4_ancestor_target_cross_level_transition_is_still_rejected(tmp_pat
               </uml:Model>
             </xmi:XMI>
             """,
-            "state-to-state cross-level transitions",
+            "cross-level transitions targeting FinalState",
+        ),
+        (
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Cross Final Source" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Cross Final Source">
+                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_parent"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_cross_final_source" source="final_source" target="state_ready"/>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_parent" name="Parent">
+                        <region xmi:type="uml:Region" xmi:id="region_parent" name="">
+                          <transition xmi:type="uml:Transition" xmi:id="tx_parent_init" source="init_parent" target="state_source"/>
+                          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_parent"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_source" name="Source"/>
+                          <subvertex xmi:type="uml:FinalState" xmi:id="final_source" name=""/>
+                        </region>
+                      </subvertex>
+                      <subvertex xmi:type="uml:State" xmi:id="state_ready" name="Ready"/>
+                    </region>
+                  </ownedBehavior>
+                </packagedElement>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+            "cross-level transitions from FinalState source",
         ),
         (
             """

@@ -180,6 +180,11 @@ def expr_to_z3(expr: Expr, z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]) -
             )
             return left | right
         elif expr.op == '^':
+            if z3.is_bool(left) or z3.is_bool(right):
+                raise ValueError(
+                    f"Bitwise XOR (^) requires non-boolean operands, "
+                    f"got {left.sort()} and {right.sort()}"
+                )
             warnings.warn(
                 f"Bitwise XOR (^) on Z3 Int types has limited support. "
                 f"For full bitwise operation support, consider using Z3 BitVec types. "

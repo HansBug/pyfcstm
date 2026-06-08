@@ -438,14 +438,24 @@ class TestExecuteOperations:
         for name in var_names:
             assert_z3_expr_equal(new_exprs[name], expected_exprs[name])
 
-    def test_execute_if_block_supports_condition_logical_operators(self):
+    @pytest.mark.parametrize(
+        'condition, false_inputs, true_inputs',
+        [
+            ('(x > 0) => (y > 0)', {'x': 1, 'y': 0}, {'x': -1, 'y': 0}),
+            ('(x > 0) xor (y > 0)', {'x': 1, 'y': 1}, {'x': 1, 'y': 0}),
+            ('(x > 0) iff (y > 0)', {'x': 1, 'y': 0}, {'x': 1, 'y': 1}),
+        ],
+    )
+    def test_execute_if_block_supports_condition_logical_operators(
+        self, condition, false_inputs, true_inputs
+    ):
         statements = parse_operations(
-            """
-            if [(x > 0) => (y > 0)] {
+            f"""
+            if [{condition}] {{
                 result = 1;
-            } else {
+            }} else {{
                 result = 0;
-            }
+            }}
             """,
             allowed_vars=['x', 'y', 'result'],
         )
@@ -456,13 +466,13 @@ class TestExecuteOperations:
         assert_symbolic_outputs(
             var_exprs,
             new_exprs,
-            {'x': 1, 'y': 0},
+            false_inputs,
             {'result': 0},
         )
         assert_symbolic_outputs(
             var_exprs,
             new_exprs,
-            {'x': -1, 'y': 0},
+            true_inputs,
             {'result': 1},
         )
 

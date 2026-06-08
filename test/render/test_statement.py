@@ -160,12 +160,22 @@ class TestRenderOperationStatements:
             '    scope["counter"] = fallback'
         )
 
-    def test_stmts_render_python_style_supports_condition_logical_operators(self):
+    @pytest.mark.parametrize(
+        'condition, expected_condition',
+        [
+            ('(a > 0) => (b > 0)', '((not ((scope["a"] > 0))) or ((scope["b"] > 0)))'),
+            ('a > 0 xor b > 0', '((scope["a"] > 0) != (scope["b"] > 0))'),
+            ('a > 0 iff b > 0', '((scope["a"] > 0) == (scope["b"] > 0))'),
+        ],
+    )
+    def test_stmts_render_python_style_supports_condition_logical_operators(
+        self, condition, expected_condition
+    ):
         statements = parse_with_grammar_entry(
-            """
-        if [a > 0 iff b > 0] {
+            f"""
+        if [{condition}] {{
             a = 1;
-        }
+        }}
         """,
             entry_name="operational_statement_set",
         )
@@ -177,9 +187,11 @@ class TestRenderOperationStatements:
         )
 
         assert rendered == (
-            'if ((scope["a"] > 0) == (scope["b"] > 0)):\n'
+            f'if {expected_condition}:\n'
             '    scope["a"] = 1'
         )
+        assert '=>' not in rendered
+        assert ' xor ' not in rendered
         assert ' iff ' not in rendered
 
     def test_stmts_render_python_style_indents_multiline_templates(self):

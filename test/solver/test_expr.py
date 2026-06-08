@@ -239,6 +239,14 @@ class TestExprToZ3:
         with pytest.raises(ValueError, match='Boolean operands required'):
             expr_to_z3(expr, z3_vars)
 
+    def test_bitwise_caret_rejects_boolean_operands(self):
+        """Test solver does not treat bitwise caret as condition bool xor."""
+        expr = BinaryOp(x=Variable('a'), op='^', y=Variable('b'))
+        z3_vars = {'a': z3.Bool('a'), 'b': z3.Bool('b')}
+
+        with pytest.raises(ValueError, match=r'Bitwise XOR \(\^\) requires non-boolean operands'):
+            expr_to_z3(expr, z3_vars)
+
     # Note: Bitwise operators are not supported on Z3 Int types
     # They require BitVec types which is a different approach
     # Skipping bitwise operator tests

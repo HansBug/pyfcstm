@@ -49,17 +49,28 @@ _DSL_STYLE = {
     'Name': '{{ node.name }}',
     'UnaryOp': '{{ node.op }}{{ node.expr | expr_render }}',
     'BinaryOp': '{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}',
+    'BinaryOp(=>)': '{{ node.expr1 | expr_render }} => {{ node.expr2 | expr_render }}',
+    'BinaryOp(xor)': '{{ node.expr1 | expr_render }} xor {{ node.expr2 | expr_render }}',
+    'BinaryOp(iff)': '{{ node.expr1 | expr_render }} iff {{ node.expr2 | expr_render }}',
     'ConditionalOp': '({{ node.cond | expr_render }}) ? {{ node.value_true | expr_render }} : {{ node.value_false | expr_render }}',
+}
+
+_C_LIKE_COND_STYLE = {
+    'BinaryOp(=>)': '((!({{ node.expr1 | expr_render }})) || ({{ node.expr2 | expr_render }}))',
+    'BinaryOp(xor)': '(({{ node.expr1 | expr_render }}) != ({{ node.expr2 | expr_render }}))',
+    'BinaryOp(iff)': '(({{ node.expr1 | expr_render }}) == ({{ node.expr2 | expr_render }}))',
 }
 
 _C_STYLE = {
     **_DSL_STYLE,
+    **_C_LIKE_COND_STYLE,
     'Boolean': '{{ (1 if node.value else 0) | hex }}',
     'BinaryOp(**)': 'pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})',
 }
 
 _CPP_STYLE = {
     **_DSL_STYLE,
+    **_C_LIKE_COND_STYLE,
     'Boolean': '{{ "true" if node.value else "false" }}',
     'UFunc': 'std::{{ node.func }}({{ node.expr | expr_render }})',
     'BinaryOp(**)': 'std::pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})',
@@ -92,6 +103,9 @@ _PY_STYLE = {
     'UFunc(round)': 'round({{ node.expr | expr_render }})',
     'UFunc(trunc)': 'math.trunc({{ node.expr | expr_render }})',
     'UnaryOp(!)': 'not {{ node.expr | expr_render }}',
+    'BinaryOp(=>)': '((not ({{ node.expr1 | expr_render }})) or ({{ node.expr2 | expr_render }}))',
+    'BinaryOp(xor)': '(({{ node.expr1 | expr_render }}) != ({{ node.expr2 | expr_render }}))',
+    'BinaryOp(iff)': '(({{ node.expr1 | expr_render }}) == ({{ node.expr2 | expr_render }}))',
     'BinaryOp(&&)': '{{ node.expr1 | expr_render }} and {{ node.expr2 | expr_render }}',
     'BinaryOp(||)': '{{ node.expr1 | expr_render }} or {{ node.expr2 | expr_render }}',
     'ConditionalOp': '{{ node.value_true | expr_render }} if {{ node.cond | expr_render }} else {{ node.value_false | expr_render }}',
@@ -99,6 +113,7 @@ _PY_STYLE = {
 
 _JAVA_STYLE = {
     **_DSL_STYLE,
+    **_C_LIKE_COND_STYLE,
     'Boolean': '{{ "true" if node.value else "false" }}',
     'Constant': '{{ "Math.PI" if node.value == "pi" else ("Math.E" if node.value == "e" else ("(2.0 * Math.PI)" if node.value == "tau" else node.value | repr)) }}',
     'UFunc': 'Math.{{ node.func }}({{ node.expr | expr_render }})',
@@ -109,6 +124,7 @@ _JAVA_STYLE = {
 
 _JS_STYLE = {
     **_DSL_STYLE,
+    **_C_LIKE_COND_STYLE,
     'Boolean': '{{ "true" if node.value else "false" }}',
     'Constant': '{{ "Math.PI" if node.value == "pi" else ("Math.E" if node.value == "e" else ("(2 * Math.PI)" if node.value == "tau" else node.value | repr)) }}',
     'UFunc': 'Math.{{ node.func }}({{ node.expr | expr_render }})',
@@ -121,6 +137,7 @@ _TS_STYLE = {
 
 _RUST_STYLE = {
     **_DSL_STYLE,
+    **_C_LIKE_COND_STYLE,
     'Boolean': '{{ "true" if node.value else "false" }}',
     'Constant': '{{ "std::f64::consts::PI" if node.value == "pi" else ("std::f64::consts::E" if node.value == "e" else ("std::f64::consts::TAU" if node.value == "tau" else node.value | repr)) }}',
     'UFunc(abs)': '({{ node.expr | expr_render }}).abs()',
@@ -139,6 +156,7 @@ _RUST_STYLE = {
 
 _GO_STYLE = {
     **_DSL_STYLE,
+    **_C_LIKE_COND_STYLE,
     'Boolean': '{{ "true" if node.value else "false" }}',
     'Constant': '{{ "math.Pi" if node.value == "pi" else ("math.E" if node.value == "e" else ("(2 * math.Pi)" if node.value == "tau" else node.value | repr)) }}',
     'UFunc(abs)': '{{ go_abs_expr(node.expr | expr_render, node.expr) }}',
@@ -258,7 +276,7 @@ def _infer_expr_type(node: dsl_nodes.Expr) -> Optional[str]:
     if isinstance(node, dsl_nodes.BinaryOp):
         if node.op in {'<<', '>>', '&', '^', '|'}:
             return 'int'
-        if node.op in {'&&', '||', '==', '!=', '<', '<=', '>', '>='}:  # pragma: no cover
+        if node.op in {'&&', '||', '=>', 'xor', 'iff', '==', '!=', '<', '<=', '>', '>='}:  # pragma: no cover
             # These BinaryOp operators produce boolean results and only
             # appear in boolean contexts (guard / ConditionalOp cond) per
             # the grammar -- the same reason the ``!`` UnaryOp branch

@@ -160,6 +160,28 @@ class TestRenderOperationStatements:
             '    scope["counter"] = fallback'
         )
 
+    def test_stmts_render_python_style_supports_condition_logical_operators(self):
+        statements = parse_with_grammar_entry(
+            """
+        if [a > 0 iff b > 0] {
+            a = 1;
+        }
+        """,
+            entry_name="operational_statement_set",
+        )
+
+        rendered = render_stmt_nodes(
+            statements,
+            lang_style='python',
+            state_vars=['a', 'b'],
+        )
+
+        assert rendered == (
+            'if ((scope["a"] > 0) == (scope["b"] > 0)):\n'
+            '    scope["a"] = 1'
+        )
+        assert ' iff ' not in rendered
+
     def test_stmts_render_python_style_indents_multiline_templates(self):
         statements = parse_with_grammar_entry(
             """

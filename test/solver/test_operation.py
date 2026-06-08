@@ -438,6 +438,34 @@ class TestExecuteOperations:
         for name in var_names:
             assert_z3_expr_equal(new_exprs[name], expected_exprs[name])
 
+    def test_execute_if_block_supports_condition_logical_operators(self):
+        statements = parse_operations(
+            """
+            if [(x > 0) => (y > 0)] {
+                result = 1;
+            } else {
+                result = 0;
+            }
+            """,
+            allowed_vars=['x', 'y', 'result'],
+        )
+        var_exprs = {'x': z3.Int('x'), 'y': z3.Int('y'), 'result': z3.Int('result')}
+
+        new_exprs = execute_operations(statements, var_exprs)
+
+        assert_symbolic_outputs(
+            var_exprs,
+            new_exprs,
+            {'x': 1, 'y': 0},
+            {'result': 0},
+        )
+        assert_symbolic_outputs(
+            var_exprs,
+            new_exprs,
+            {'x': -1, 'y': 0},
+            {'result': 1},
+        )
+
     def test_execute_branch_local_temp_does_not_leak(self):
         """Test branch-local temporary expressions do not appear in final output."""
         statements = parse_operations("""

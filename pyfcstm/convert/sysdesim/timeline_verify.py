@@ -781,10 +781,7 @@ def _build_machine_trace(
             occurrence_symbol = "tau__{alias}__{step_id}__{index}".format(
                 alias=output.output_name, step_id=step.step_id, index=auto_index
             )
-            previous_cycle_count = runtime.cycle_count
             runtime.cycle([])
-            if not runtime.is_ended and runtime.cycle_count == previous_cycle_count:
-                break
             to_state_path = _runtime_state_path(runtime)
             auto_occurrences.append(
                 SysDeSimTimelineAutoOccurrence(

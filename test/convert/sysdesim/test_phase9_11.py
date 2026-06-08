@@ -12,6 +12,7 @@ from pyfcstm.convert.sysdesim import (
     build_sysdesim_phase9_report,
     solve_sysdesim_state_coexistence,
 )
+from pyfcstm.convert.sysdesim.timeline_verify import _state_seen_in_trace
 
 pytestmark = pytest.mark.unittest
 
@@ -974,7 +975,9 @@ def test_phase10_does_not_record_failed_unclosed_child_final_auto(
         "TimelineUnclosedChildFinal.Parent.Done",
         "TimelineUnclosedChildFinal.Parent.Done",
     ]
+
     assert all(step.auto_occurrences == () for step in trace.steps)
+    assert not _state_seen_in_trace(trace, "[*]")
     assert [
         (item.source_step_id, item.state_path, item.start_symbol, item.end_symbol)
         for item in trace.state_windows

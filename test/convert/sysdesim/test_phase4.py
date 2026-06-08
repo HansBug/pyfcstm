@@ -16,6 +16,7 @@ from pyfcstm.convert.sysdesim import (
     normalize_machine,
     validate_program_roundtrip,
 )
+from pyfcstm.convert.sysdesim.ir import IrMachine, IrRegion, IrTransition, IrVertex
 from pyfcstm.dsl import node as dsl_nodes
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model.model import StateMachine, parse_dsl_node_to_state_machine
@@ -93,6 +94,18 @@ def _assert_single_integer_assignment(
     assert operation.name == name
     assert isinstance(operation.expr, dsl_nodes.Integer)
     assert operation.expr.raw == raw
+
+
+def _lower_manual_cross_level_transition(
+    machine: IrMachine,
+    transition_id: str,
+) -> sysdesim_convert._AstBuildContext:
+    """Lower one manually built cross-level transition and return its context."""
+    context = sysdesim_convert._AstBuildContext()
+    sysdesim_convert._lower_cross_level_transition(
+        machine, machine.get_transition(transition_id), context
+    )
+    return context
 
 
 def _minimal_cross_level_final_xml(
@@ -734,6 +747,289 @@ def test_phase4_lowers_time_triggered_cross_level_final_target_to_exit_chain(
     assert str(final_hop.condition_expr) == f"{route_flag_name} > 0"
     assert "Leaf -> [*] : if " in dsl_code
     assert "state __sysdesim_final_" not in dsl_code
+
+
+def test_phase4_lowers_cross_level_final_target_owned_by_ancestor_region(
+    tmp_path: Path,
+):
+    """A leaf may target a FinalState owned by one of its ancestor regions."""
+    xml_file = _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Ancestor Final Exit" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Ancestor Final Exit">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_init_root" source="init_root" target="state_parent"/>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_parent" name="Parent">
+                    <region xmi:type="uml:Region" xmi:id="region_parent" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init_parent" source="init_parent" target="state_mid"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_ancestor_finish" source="state_leaf" target="final_parent"/>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_parent"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_mid" name="Mid">
+                        <region xmi:type="uml:Region" xmi:id="region_mid" name="">
+                          <transition xmi:type="uml:Transition" xmi:id="tx_init_mid" source="init_mid" target="state_leaf"/>
+                          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_mid"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_leaf" name="Leaf"/>
+                        </region>
+                      </subvertex>
+                      <subvertex xmi:type="uml:FinalState" xmi:id="final_parent" name=""/>
+                    </region>
+                  </subvertex>
+                </region>
+              </ownedBehavior>
+            </packagedElement>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+    )
+    machine = normalize_machine(load_sysdesim_machine(str(xml_file)))
+    route_flag_name = sysdesim_convert._make_route_flag_name(
+        machine, machine.get_transition("tx_ancestor_finish")
+    )
+
+    program = build_machine_ast(machine)
+    validate_program_roundtrip(program)
+    parent_state = _find_substate(program.root_state, "Parent")
+    mid_state = _find_substate(parent_state, "Mid")
+    first_hop = _find_transition(mid_state, "Leaf", dsl_nodes.EXIT_STATE)
+    final_hop = _find_transition(parent_state, "Mid", dsl_nodes.EXIT_STATE)
+
+    _assert_single_integer_assignment(first_hop, route_flag_name, "1")
+    assert str(final_hop.condition_expr) == f"{route_flag_name} > 0"
+    _assert_single_integer_assignment(final_hop, route_flag_name, "0")
+
+
+def test_phase4_internal_lowering_rejects_non_state_source_before_state_target():
+    """Direct lowering should reject malformed public IR with non-state sources."""
+    root_region = IrRegion(
+        region_id="region_root",
+        owner_state_id=None,
+        vertices=[
+            IrVertex(
+                vertex_id="join_source",
+                vertex_type="pseudostate",
+                raw_name="Join",
+                safe_name="Join",
+                parent_region_id="region_root",
+            ),
+            IrVertex(
+                vertex_id="state_target",
+                vertex_type="state",
+                raw_name="Target",
+                safe_name="Target",
+                parent_region_id="region_root",
+            ),
+        ],
+        transitions=[
+            IrTransition(
+                transition_id="tx_non_state_source",
+                source_id="join_source",
+                target_id="state_target",
+                trigger_kind="none",
+                trigger_ref_id=None,
+                guard_expr_raw=None,
+            )
+        ],
+    )
+    machine = IrMachine(
+        machine_id="machine_manual",
+        name="Manual",
+        root_region=root_region,
+        safe_name="Manual",
+    )
+
+    with pytest.raises(NotImplementedError, match="state-to-state cross-level"):
+        _lower_manual_cross_level_transition(machine, "tx_non_state_source")
+
+
+def test_phase4_internal_lowering_rejects_composite_source_to_final():
+    """Direct lowering should reject composite-source FinalState transitions."""
+    root_region = IrRegion(
+        region_id="region_root",
+        owner_state_id=None,
+        vertices=[
+            IrVertex(
+                vertex_id="state_parent",
+                vertex_type="state",
+                raw_name="Parent",
+                safe_name="Parent",
+                parent_region_id="region_root",
+                is_composite=True,
+            ),
+            IrVertex(
+                vertex_id="final_root",
+                vertex_type="final",
+                raw_name="",
+                safe_name="__sysdesim_final_root",
+                parent_region_id="region_root",
+            ),
+        ],
+        transitions=[
+            IrTransition(
+                transition_id="tx_composite_to_final",
+                source_id="state_parent",
+                target_id="final_root",
+                trigger_kind="none",
+                trigger_ref_id=None,
+                guard_expr_raw=None,
+            )
+        ],
+    )
+    machine = IrMachine(
+        machine_id="machine_manual",
+        name="Manual",
+        root_region=root_region,
+        safe_name="Manual",
+    )
+
+    with pytest.raises(NotImplementedError, match=r"composite source.*FinalState"):
+        _lower_manual_cross_level_transition(machine, "tx_composite_to_final")
+
+
+def test_phase4_internal_lowering_rejects_empty_state_path_for_final_target(
+    monkeypatch,
+):
+    """Direct lowering should fail loudly if a malformed IR loses the source path."""
+    root_region = IrRegion(
+        region_id="region_root",
+        owner_state_id=None,
+        vertices=[
+            IrVertex(
+                vertex_id="state_source",
+                vertex_type="state",
+                raw_name="Source",
+                safe_name="Source",
+                parent_region_id="region_root",
+            ),
+            IrVertex(
+                vertex_id="final_root",
+                vertex_type="final",
+                raw_name="",
+                safe_name="__sysdesim_final_root",
+                parent_region_id="region_root",
+            ),
+        ],
+        transitions=[
+            IrTransition(
+                transition_id="tx_empty_path",
+                source_id="state_source",
+                target_id="final_root",
+                trigger_kind="none",
+                trigger_ref_id=None,
+                guard_expr_raw=None,
+            )
+        ],
+    )
+    machine = IrMachine(
+        machine_id="machine_manual",
+        name="Manual",
+        root_region=root_region,
+        safe_name="Manual",
+    )
+    monkeypatch.setattr(machine, "state_id_path", lambda _vertex_id: ())
+
+    with pytest.raises(NotImplementedError, match="leaf-source cross-level FinalState"):
+        _lower_manual_cross_level_transition(machine, "tx_empty_path")
+
+
+def test_phase4_internal_lowering_rejects_final_owned_by_source_without_child():
+    """Direct lowering should reject malformed source-owned final targets."""
+    child_region = IrRegion(
+        region_id="region_source",
+        owner_state_id="state_source",
+        vertices=[
+            IrVertex(
+                vertex_id="final_owned",
+                vertex_type="final",
+                raw_name="",
+                safe_name="__sysdesim_final_owned",
+                parent_region_id="region_source",
+            )
+        ],
+    )
+    root_region = IrRegion(
+        region_id="region_root",
+        owner_state_id=None,
+        vertices=[
+            IrVertex(
+                vertex_id="state_source",
+                vertex_type="state",
+                raw_name="Source",
+                safe_name="Source",
+                parent_region_id="region_root",
+                regions=[child_region],
+                is_composite=False,
+            ),
+        ],
+        transitions=[
+            IrTransition(
+                transition_id="tx_source_owned_final",
+                source_id="state_source",
+                target_id="final_owned",
+                trigger_kind="none",
+                trigger_ref_id=None,
+                guard_expr_raw=None,
+            )
+        ],
+    )
+    machine = IrMachine(
+        machine_id="machine_manual",
+        name="Manual",
+        root_region=root_region,
+        safe_name="Manual",
+    )
+
+    with pytest.raises(NotImplementedError, match="nested leaf-source"):
+        _lower_manual_cross_level_transition(machine, "tx_source_owned_final")
+
+
+def test_phase4_internal_lowering_rejects_non_state_non_final_target():
+    """Direct lowering should reject malformed public IR with unsupported targets."""
+    root_region = IrRegion(
+        region_id="region_root",
+        owner_state_id=None,
+        vertices=[
+            IrVertex(
+                vertex_id="state_source",
+                vertex_type="state",
+                raw_name="Source",
+                safe_name="Source",
+                parent_region_id="region_root",
+            ),
+            IrVertex(
+                vertex_id="choice_target",
+                vertex_type="pseudostate",
+                raw_name="Choice",
+                safe_name="Choice",
+                parent_region_id="region_root",
+            ),
+        ],
+        transitions=[
+            IrTransition(
+                transition_id="tx_non_state_target",
+                source_id="state_source",
+                target_id="choice_target",
+                trigger_kind="none",
+                trigger_ref_id=None,
+                guard_expr_raw=None,
+            )
+        ],
+    )
+    machine = IrMachine(
+        machine_id="machine_manual",
+        name="Manual",
+        root_region=root_region,
+        safe_name="Manual",
+    )
+
+    with pytest.raises(NotImplementedError, match="state-to-state cross-level"):
+        _lower_manual_cross_level_transition(machine, "tx_non_state_target")
 
 
 def test_phase4_rejects_signal_guard_cross_level_final_target_without_expanding_scope(

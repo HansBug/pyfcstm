@@ -4694,6 +4694,29 @@ class TestModelExpr:
         assert pytest.approx(right_natural) == right_reparsed
         assert pytest.approx(left_grouped) == left_reparsed
 
+    def test_expr_power_to_ast_node_associativity_round_trip(self):
+        """Test right-associative power parentheses in model exports."""
+        right_natural = BinaryOp(
+            x=Integer(value=2),
+            op="**",
+            y=BinaryOp(x=Integer(value=3), op="**", y=Integer(value=2)),
+        )
+        assert right_natural() == 512
+        assert str(right_natural.to_ast_node()) == "2 ** 3 ** 2"
+
+        left_grouped = BinaryOp(
+            x=BinaryOp(x=Integer(value=2), op="**", y=Integer(value=3)),
+            op="**",
+            y=Integer(value=2),
+        )
+        assert left_grouped() == 64
+        assert str(left_grouped.to_ast_node()) == "(2 ** 3) ** 2"
+
+        right_reparsed = parse_expr_from_string(str(right_natural), mode="numeric")
+        left_reparsed = parse_expr_from_string(str(left_grouped), mode="numeric")
+        assert pytest.approx(right_natural) == right_reparsed
+        assert pytest.approx(left_grouped) == left_reparsed
+
     def test_expr_new_logical_unknown_operator_still_fails(self):
         """Test that unknown logical operators still fail at eval/export time."""
         expr = BinaryOp(Boolean(True), op="<=>", y=Boolean(False))

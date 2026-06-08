@@ -1191,6 +1191,7 @@ _OP_PRECEDENCE = {
 }
 
 _RIGHT_ASSOCIATIVE_BINARY_OPS = {
+    "**",
     "=>",
 }
 

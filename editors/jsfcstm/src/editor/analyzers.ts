@@ -91,11 +91,10 @@ const EXPR_PRECEDENCE: Record<string, number> = {
     'iff': 20,
     '&&': 15,
     'and': 15,
-    'xor': 13,
+    'xor': 12,
     '||': 10,
     'or': 10,
     '=>': 7,
-    'implies': 7,
     '?:': 5,
 };
 const HEX_RADIX = 16;

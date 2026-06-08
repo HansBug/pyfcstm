@@ -69,7 +69,92 @@ function formatTokenText(tokenText: string | undefined): string {
     return JSON.stringify(tokenText);
 }
 
-function normalizeSyntaxMessage(message: string, tokenText?: string): string {
+const CONDITION_CARET_MESSAGE = 'Invalid condition operator "^": "^" is numeric bitwise xor; use "xor" for boolean exclusive-or in guard conditions.';
+const CONDITION_ARROW_MESSAGE = 'Invalid condition operator "->": use "=>" or "implies" for boolean implication; "->" is only for transitions.';
+
+function guardBodyOnLine(lineText: string | undefined, column: number | undefined): string | null {
+    if (!lineText) {
+        return null;
+    }
+
+    const end = column == null
+        ? lineText.length
+        : Math.max(0, Math.min(lineText.length, column + 1));
+    const prefix = lineText.slice(0, end);
+    const pattern = /\bif\s*\[/g;
+    let match: RegExpExecArray | null;
+    let start: number | null = null;
+
+    while ((match = pattern.exec(prefix)) !== null) {
+        start = match.index + match[0].length;
+    }
+
+    if (start == null) {
+        return null;
+    }
+
+    const rest = lineText.slice(start);
+    const close = rest.indexOf(']');
+    return close === -1 ? rest : rest.slice(0, close);
+}
+
+function stripOuterParens(text: string): string {
+    let value = text.trim();
+    while (value.startsWith('(') && value.endsWith(')')) {
+        value = value.slice(1, -1).trim();
+    }
+    return value;
+}
+
+function isSimpleBoolLikeAtom(text: string): boolean {
+    const value = stripOuterParens(text)
+        .replace(/^(?:!|not\b)\s*/i, '')
+        .trim();
+    return /^(?:true|false|[a-zA-Z_][a-zA-Z0-9_]*)$/i.test(value);
+}
+
+function containsConditionOperator(text: string): boolean {
+    return /(?:==|!=|<=|>=|<|>|&&|\|\||=>|\band\b|\bor\b|\bimplies\b|\bxor\b|\biff\b)/i.test(text);
+}
+
+function hasConditionLevelCaret(guardBody: string): boolean {
+    for (let index = guardBody.indexOf('^'); index !== -1; index = guardBody.indexOf('^', index + 1)) {
+        const left = guardBody.slice(0, index);
+        const right = guardBody.slice(index + 1);
+        if (
+            (containsConditionOperator(left) && containsConditionOperator(right))
+            || (isSimpleBoolLikeAtom(left) && isSimpleBoolLikeAtom(right))
+        ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function isConditionCaretError(
+    message: string,
+    tokenText: string | undefined,
+    lineText: string | undefined,
+    column: number | undefined
+): boolean {
+    if (tokenText === '^') {
+        return true;
+    }
+
+    const guardBody = guardBodyOnLine(lineText, column);
+    return !!(
+        guardBody
+        && hasConditionLevelCaret(guardBody)
+        && /expecting '\]'|missing '\]'|mismatched input|no viable alternative at input/i.test(message)
+    );
+}
+
+function normalizeSyntaxMessage(
+    message: string,
+    tokenText?: string,
+    lineText?: string,
+    column?: number
+): string {
     if (
         tokenText === '[*]'
         && /no viable alternative at input 'state[^']*\[\*\]'/i.test(message)
@@ -91,6 +176,12 @@ function normalizeSyntaxMessage(message: string, tokenText?: string): string {
     }
 
     if (/missing '\]'|expecting '\]'|missing RBRACK|expecting RBRACK/i.test(message)) {
+        if (isConditionCaretError(message, tokenText, lineText, column)) {
+            return CONDITION_CARET_MESSAGE;
+        }
+        if (tokenText === '->') {
+            return CONDITION_ARROW_MESSAGE;
+        }
         return 'Missing closing bracket in guard condition.';
     }
 
@@ -139,6 +230,10 @@ function normalizeSyntaxMessage(message: string, tokenText?: string): string {
     }
 
     if (/no viable alternative at input/i.test(message)) {
+        if (isConditionCaretError(message, tokenText, lineText, column)) {
+            return CONDITION_CARET_MESSAGE;
+        }
+
         if (tokenText) {
             const tokenLower = tokenText.toLowerCase();
             const stateMatches = tokenLower.match(/state/g);
@@ -155,7 +250,7 @@ function normalizeSyntaxMessage(message: string, tokenText?: string): string {
                 return 'Missing semicolon after state definition';
             }
 
-            if (tokenText.includes('=')) {
+            if (tokenText.includes('=>')) {
                 return 'Invalid operator - use \'->\' for transitions, not \'=>\'';
             }
 
@@ -178,9 +273,11 @@ function normalizeSyntaxMessage(message: string, tokenText?: string): string {
 
 class CollectingErrorListener {
     private readonly errors: ParseError[];
+    private readonly lines: string[];
 
-    constructor(errors: ParseError[]) {
+    constructor(errors: ParseError[], sourceText = '') {
         this.errors = errors;
+        this.lines = sourceText.split(/\r\n|\r|\n/);
     }
 
     syntaxError(
@@ -192,7 +289,12 @@ class CollectingErrorListener {
         _e: unknown
     ): void {
         const tokenText = offendingSymbol?.text;
-        const normalizedMessage = normalizeSyntaxMessage(msg, tokenText);
+        const normalizedMessage = normalizeSyntaxMessage(
+            msg,
+            tokenText,
+            this.lines[line - 1],
+            column
+        );
 
         this.errors.push({
             line: line - 1,
@@ -251,7 +353,7 @@ export class FcstmParser {
 
         try {
             const errors: ParseError[] = [];
-            const errorListener = new CollectingErrorListener(errors);
+            const errorListener = new CollectingErrorListener(errors, text);
             const input = new antlr4.InputStream(text);
             const lexer = new this.modules.GrammarLexer(input);
             lexer.removeErrorListeners();
@@ -292,7 +394,7 @@ export class FcstmParser {
 
         try {
             const errors: ParseError[] = [];
-            const errorListener = new CollectingErrorListener(errors);
+            const errorListener = new CollectingErrorListener(errors, text);
             const input = new antlr4.InputStream(text);
             const lexer = new this.modules.GrammarLexer(input);
             lexer.removeErrorListeners();

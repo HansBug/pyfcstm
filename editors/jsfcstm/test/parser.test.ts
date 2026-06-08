@@ -189,22 +189,22 @@ describe('jsfcstm parser real grammar coverage', () => {
         {
             name: 'unparenthesized caret between comparison conditions is rejected',
             inputText: 'state Root { state A; state B; A -> B : if [a > 0 ^ b > 0]; }',
-            expectedMessage: /syntax|token|operator|bracket/i,
+            expectedMessage: /numeric bitwise xor.*use "xor"/i,
         },
         {
             name: 'parenthesized caret between comparison conditions is rejected',
             inputText: 'state Root { state A; state B; A -> B : if [(a > 0) ^ (b > 0)]; }',
-            expectedMessage: /syntax|token|operator|bracket/i,
+            expectedMessage: /numeric bitwise xor.*use "xor"/i,
         },
         {
             name: 'caret between boolean literals is rejected',
             inputText: 'state Root { state A; state B; A -> B : if [true ^ false]; }',
-            expectedMessage: /syntax|token|operator|bracket/i,
+            expectedMessage: /numeric bitwise xor.*use "xor"/i,
         },
         {
             name: 'caret between numeric-caret comparisons is rejected',
             inputText: 'state Root { state A; state B; A -> B : if [a > b ^ c ^ d > e]; }',
-            expectedMessage: /syntax|token|operator|ambiguous|parentheses|bracket/i,
+            expectedMessage: /numeric bitwise xor.*use "xor"/i,
         },
         {
             name: 'missing equals in variable definition',
@@ -248,6 +248,7 @@ describe('jsfcstm parser error normalization branches', () => {
         name: string;
         error: SyntheticSyntaxError;
         expected: string;
+        sourceText?: string;
     }> = [
         {
             name: 'special [*] missing semicolon pattern',
@@ -281,6 +282,33 @@ describe('jsfcstm parser error normalization branches', () => {
             name: 'missing closing bracket',
             error: {message: "missing ']'", tokenText: ';'},
             expected: 'Missing closing bracket in guard condition.',
+        },
+        {
+            name: 'missing closing bracket outside source range',
+            error: {message: "missing ']'", tokenText: ';', line: 9},
+            expected: 'Missing closing bracket in guard condition.',
+        },
+        {
+            name: 'missing closing bracket at condition caret',
+            error: {message: "missing ']'", tokenText: '^'},
+            expected: 'Invalid condition operator "^": "^" is numeric bitwise xor; use "xor" for boolean exclusive-or in guard conditions.',
+        },
+        {
+            name: 'missing closing bracket for simple condition caret spelling',
+            error: {message: "missing ']'", tokenText: ';', column: 62},
+            sourceText: 'state Root { state A; state B; A -> B : if [flag1 ^ flag2]; }',
+            expected: 'Invalid condition operator "^": "^" is numeric bitwise xor; use "xor" for boolean exclusive-or in guard conditions.',
+        },
+        {
+            name: 'missing closing bracket for parenthesized simple condition caret spelling',
+            error: {message: "missing ']'", tokenText: ';', column: 66},
+            sourceText: 'state Root { state A; state B; A -> B : if [(flag1) ^ (flag2)]; }',
+            expected: 'Invalid condition operator "^": "^" is numeric bitwise xor; use "xor" for boolean exclusive-or in guard conditions.',
+        },
+        {
+            name: 'missing closing bracket at condition arrow',
+            error: {message: "missing ']'", tokenText: '->'},
+            expected: 'Invalid condition operator "->": use "=>" or "implies" for boolean implication; "->" is only for transitions.',
         },
         {
             name: 'missing closing brace at eof',
@@ -383,6 +411,12 @@ describe('jsfcstm parser error normalization branches', () => {
             expected: 'Invalid operator - use \'->\' for transitions, not \'=>\'',
         },
         {
+            name: 'no viable alternative for comparison condition caret spelling',
+            error: {message: 'no viable alternative at input', tokenText: ';', column: 68},
+            sourceText: 'state Root { state A; state B; A -> B : if [a > 0 ^ b > 0]; }',
+            expected: 'Invalid condition operator "^": "^" is numeric bitwise xor; use "xor" for boolean exclusive-or in guard conditions.',
+        },
+        {
             name: 'no viable alternative missing abstract terminator',
             error: {message: 'no viable alternative at input', tokenText: 'abstractInit}'},
             expected: 'Missing semicolon after abstract function or reference definition',
@@ -412,7 +446,7 @@ describe('jsfcstm parser error normalization branches', () => {
     for (const testCase of cases) {
         it(`maps ${testCase.name}`, async () => {
             const parser = createParserWithSyntheticErrors([testCase.error]);
-            const result = await parser.parse('ignored');
+            const result = await parser.parse(testCase.sourceText ?? 'ignored');
 
             assert.equal(result.success, false);
             assert.equal(result.errors.length, 1);

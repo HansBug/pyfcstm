@@ -1436,7 +1436,7 @@ function getOperationBlockKeywords(): FcstmCompletionItem[] {
 }
 
 function getGuardBodyKeywords(): FcstmCompletionItem[] {
-    return pickKeywordItems(['and', 'or', 'not', 'true', 'false']);
+    return pickKeywordItems(['and', 'or', 'not', 'implies', 'xor', 'iff', 'true', 'false']);
 }
 
 function getPostTransitionTargetKeywords(): FcstmCompletionItem[] {

@@ -2,6 +2,7 @@ import pytest
 import warnings
 
 from pyfcstm.dsl import parse_with_grammar_entry
+import pyfcstm.model.expr as model_expr
 from pyfcstm.model.expr import *
 
 
@@ -4600,3 +4601,126 @@ class TestModelExpr:
         assert isinstance(expr, ConditionalOp)
         assert expr(x=1) == 1
 
+    @pytest.mark.parametrize(
+        ["op", "left_value", "right_value", "expected_value", "expected_op"],
+        [
+            ("=>", True, True, True, "=>"),
+            ("=>", True, False, False, "=>"),
+            ("=>", False, True, True, "=>"),
+            ("=>", False, False, True, "=>"),
+            ("implies", True, True, True, "=>"),
+            ("implies", True, False, False, "=>"),
+            ("implies", False, True, True, "=>"),
+            ("implies", False, False, True, "=>"),
+            ("xor", True, True, False, "xor"),
+            ("xor", True, False, True, "xor"),
+            ("xor", False, True, True, "xor"),
+            ("xor", False, False, False, "xor"),
+            ("iff", True, True, True, "iff"),
+            ("iff", True, False, False, "iff"),
+            ("iff", False, True, False, "iff"),
+            ("iff", False, False, True, "iff"),
+        ],
+    )
+    def test_expr_new_logical_operator_truth_tables(
+        self, op, left_value, right_value, expected_value, expected_op
+    ):
+        """Test model-level truth tables for new logical binary operators."""
+        expr = BinaryOp(
+            x=Boolean(value=left_value),
+            op=op,
+            y=Boolean(value=right_value),
+        )
+        assert expr.op == expected_op
+        assert expr() is expected_value
+
+    def test_expr_new_logical_operator_precedence_and_aliases(self):
+        """Test precedence and alias boundaries for new logical operators."""
+        precedence = model_expr._OP_PRECEDENCE
+        assert precedence["=="] == precedence["!="] == precedence["iff"]
+        assert precedence["iff"] > precedence["&&"]
+        assert precedence["&&"] > precedence["xor"]
+        assert precedence["xor"] > precedence["||"]
+        assert precedence["||"] > precedence["=>"]
+        assert precedence["=>"] > precedence["?:"]
+
+        assert BinaryOp(Boolean(True), op="implies", y=Boolean(False)).op == "=>"
+        assert BinaryOp(Boolean(True), op="xor", y=Boolean(False)).op == "xor"
+        assert BinaryOp(Boolean(True), op="iff", y=Boolean(False)).op == "iff"
+        assert "^" not in BinaryOp.__aliases__
+
+        numeric_xor = BinaryOp(Integer(value=5), op="^", y=Integer(value=3))
+        assert numeric_xor.op == "^"
+        assert numeric_xor() == 6
+        assert str(numeric_xor.to_ast_node()) == "5 ^ 3"
+
+    @pytest.mark.parametrize(
+        ["expr_text", "expected_text"],
+        [
+            ("a > 0 => b > 0 => c > 0", "a > 0 => b > 0 => c > 0"),
+            ("a > 0 implies b > 0", "a > 0 => b > 0"),
+            ("(a > 0 => b > 0) => c > 0", "(a > 0 => b > 0) => c > 0"),
+            ("a > 0 => (b > 0 => c > 0)", "a > 0 => b > 0 => c > 0"),
+            ("a > 0 && b > 0 xor c > 0", "a > 0 && b > 0 xor c > 0"),
+            ("a > 0 xor b > 0 || c > 0", "a > 0 xor b > 0 || c > 0"),
+            ("a > 0 == b > 0 iff c > 0", "a > 0 == (b > 0) iff (c > 0)"),
+            ("a > 0 != b > 0 iff c > 0", "a > 0 != (b > 0) iff (c > 0)"),
+            ("a > 0 iff b > 0 == c > 0", "a > 0 iff (b > 0) == (c > 0)"),
+            ("a > 0 iff b > 0 != c > 0", "a > 0 iff (b > 0) != (c > 0)"),
+        ],
+    )
+    def test_expr_new_logical_operator_round_trip(self, expr_text, expected_text):
+        """Test model round-trip for new logical operator precedence."""
+        expr = parse_expr_from_string(expr_text, mode="logical")
+        assert str(expr.to_ast_node()) == expected_text
+
+        reparsed = parse_expr_from_string(str(expr.to_ast_node()), mode="logical")
+        assert pytest.approx(expr) == reparsed
+
+    def test_expr_implication_to_ast_node_associativity(self):
+        """Test right-associative implication parentheses in model exports."""
+        a = Variable(name="a") > 0
+        b = Variable(name="b") > 0
+        c = Variable(name="c") > 0
+
+        right_natural = BinaryOp(x=a, op="=>", y=BinaryOp(x=b, op="=>", y=c))
+        assert str(right_natural.to_ast_node()) == "a > 0 => b > 0 => c > 0"
+
+        left_grouped = BinaryOp(x=BinaryOp(x=a, op="=>", y=b), op="=>", y=c)
+        assert str(left_grouped.to_ast_node()) == "(a > 0 => b > 0) => c > 0"
+
+        right_reparsed = parse_expr_from_string(str(right_natural), mode="logical")
+        left_reparsed = parse_expr_from_string(str(left_grouped), mode="logical")
+        assert pytest.approx(right_natural) == right_reparsed
+        assert pytest.approx(left_grouped) == left_reparsed
+
+    def test_expr_power_to_ast_node_associativity_round_trip(self):
+        """Test right-associative power parentheses in model exports."""
+        right_natural = BinaryOp(
+            x=Integer(value=2),
+            op="**",
+            y=BinaryOp(x=Integer(value=3), op="**", y=Integer(value=2)),
+        )
+        assert right_natural() == 512
+        assert str(right_natural.to_ast_node()) == "2 ** 3 ** 2"
+
+        left_grouped = BinaryOp(
+            x=BinaryOp(x=Integer(value=2), op="**", y=Integer(value=3)),
+            op="**",
+            y=Integer(value=2),
+        )
+        assert left_grouped() == 64
+        assert str(left_grouped.to_ast_node()) == "(2 ** 3) ** 2"
+
+        right_reparsed = parse_expr_from_string(str(right_natural), mode="numeric")
+        left_reparsed = parse_expr_from_string(str(left_grouped), mode="numeric")
+        assert pytest.approx(right_natural) == right_reparsed
+        assert pytest.approx(left_grouped) == left_reparsed
+
+    def test_expr_new_logical_unknown_operator_still_fails(self):
+        """Test that unknown logical operators still fail at eval/export time."""
+        expr = BinaryOp(Boolean(True), op="<=>", y=Boolean(False))
+        with pytest.raises(KeyError):
+            expr()
+        with pytest.raises(KeyError):
+            expr.to_ast_node()

@@ -1176,15 +1176,22 @@ _OP_PRECEDENCE = {
     ">=": 20,
     "==": 20,
     "!=": 20,
+    "iff": 20,
 
     # Logical operators
     "&&": 15,
     "and": 15,
+    "xor": 12,
     "||": 10,
     "or": 10,
+    "=>": 7,
 
     # Conditional/ternary operator (C-style)
     "?:": 5
+}
+
+_RIGHT_ASSOCIATIVE_BINARY_OPS = {
+    "=>",
 }
 
 _OP_FUNCTIONS = {
@@ -1214,8 +1221,11 @@ _OP_FUNCTIONS = {
     "!=": operator.ne,
     "&&": lambda x, y: bool(x) and bool(y),
     "and": lambda x, y: bool(x) and bool(y),
+    "xor": lambda x, y: bool(x) != bool(y),
     "||": lambda x, y: bool(x) or bool(y),
     "or": lambda x, y: bool(x) or bool(y),
+    "=>": lambda x, y: (not bool(x)) or bool(y),
+    "iff": lambda x, y: bool(x) == bool(y),
 
     # Ternary operator
     "?:": lambda condition, true_value, false_value: true_value if condition else false_value
@@ -1257,6 +1267,7 @@ class BinaryOp(Op):
     __aliases__ = {
         'and': '&&',
         'or': '||',
+        'implies': '=>',
     }
 
     x: Expr
@@ -1312,13 +1323,17 @@ class BinaryOp(Op):
         left_need_paren = False
         if isinstance(self.x, Op):
             left_pre = _OP_PRECEDENCE[self.x.op_mark]
-            if left_pre < my_pre:
+            if self.op_mark in _RIGHT_ASSOCIATIVE_BINARY_OPS:
+                left_need_paren = left_pre <= my_pre
+            elif left_pre < my_pre:
                 left_need_paren = True
 
         right_need_paren = False
         if isinstance(self.y, Op):
             right_pre = _OP_PRECEDENCE[self.y.op_mark]
-            if right_pre <= my_pre:
+            if self.op_mark in _RIGHT_ASSOCIATIVE_BINARY_OPS:
+                right_need_paren = right_pre < my_pre
+            elif right_pre <= my_pre:
                 right_need_paren = True
 
         left_term = self.x.to_ast_node()

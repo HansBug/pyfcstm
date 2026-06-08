@@ -283,6 +283,16 @@ describe('jsfcstm parser error normalization branches', () => {
             expected: 'Missing closing bracket in guard condition.',
         },
         {
+            name: 'missing closing bracket at condition caret',
+            error: {message: "missing ']'", tokenText: '^'},
+            expected: 'Invalid condition operator "^": "^" is numeric bitwise xor; use "xor" for boolean exclusive-or in guard conditions.',
+        },
+        {
+            name: 'missing closing bracket at condition arrow',
+            error: {message: "missing ']'", tokenText: '->'},
+            expected: 'Invalid condition operator "->": use "=>" or "implies" for boolean implication; "->" is only for transitions.',
+        },
+        {
             name: 'missing closing brace at eof',
             error: {message: "missing '}'", tokenText: '<EOF>'},
             expected: 'Missing closing brace - check for unclosed state definitions or action blocks',

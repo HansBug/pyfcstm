@@ -91,6 +91,12 @@ function normalizeSyntaxMessage(message: string, tokenText?: string): string {
     }
 
     if (/missing '\]'|expecting '\]'|missing RBRACK|expecting RBRACK/i.test(message)) {
+        if (tokenText === '^') {
+            return 'Invalid condition operator "^": "^" is numeric bitwise xor; use "xor" for boolean exclusive-or in guard conditions.';
+        }
+        if (tokenText === '->') {
+            return 'Invalid condition operator "->": use "=>" or "implies" for boolean implication; "->" is only for transitions.';
+        }
         return 'Missing closing bracket in guard condition.';
     }
 

@@ -37,22 +37,22 @@ export const HOVER_DOCS: Record<string, FcstmHoverDoc> = {
     '=>': {
         title: 'Logical Implication',
         description: 'Boolean implication: A => B is true when A is false or B is true, equivalent to not A or B.',
-        example: '```fcstm\nStateA -> StateB : if [sensor_ready => command_valid];\n```'
+        example: '```fcstm\nStateA -> StateB : if [sensor_ready != 0 => command_valid != 0];\n```'
     },
     'implies': {
         title: 'Logical Implication',
         description: 'Keyword spelling of boolean implication. It has the same semantics as =>.',
-        example: '```fcstm\nStateA -> StateB : if [sensor_ready implies command_valid];\n```'
+        example: '```fcstm\nStateA -> StateB : if [sensor_ready != 0 implies command_valid != 0];\n```'
     },
     'xor': {
         title: 'Logical Exclusive-Or',
         description: 'Boolean exclusive-or. Exactly one side of A xor B must be true.',
-        example: '```fcstm\nStateA -> StateB : if [manual_mode xor auto_mode];\n```'
+        example: '```fcstm\nStateA -> StateB : if [manual_mode != 0 xor auto_mode != 0];\n```'
     },
     'iff': {
         title: 'Logical Equivalence',
         description: 'Boolean equivalence. A iff B is true when both sides have the same truth value.',
-        example: '```fcstm\nStateA -> StateB : if [open_limit iff !closed_limit];\n```'
+        example: '```fcstm\nStateA -> StateB : if [open_limit != 0 iff closed_limit == 0];\n```'
     },
     '^': {
         title: 'Numeric Bitwise XOR',

@@ -84,6 +84,36 @@ describe('jsfcstm hover support', () => {
         assert.match(hoverModule.HOVER_DOCS['^'].description, /numeric bitwise xor/i);
     });
 
+    it('keeps logical operator hover examples valid under the current condition grammar', async () => {
+        const docs = [
+            hoverModule.HOVER_DOCS['=>'],
+            hoverModule.HOVER_DOCS.implies,
+            hoverModule.HOVER_DOCS.xor,
+            hoverModule.HOVER_DOCS.iff,
+        ];
+        const examples = docs.map(doc => {
+            const match = doc.example?.match(/```fcstm\n([\s\S]*)\n```/);
+            assert.ok(match, `missing fcstm example for ${doc.title}`);
+            return match[1];
+        });
+        const dsl = [
+            'def int sensor_ready = 0;',
+            'def int command_valid = 0;',
+            'def int manual_mode = 0;',
+            'def int auto_mode = 0;',
+            'def int open_limit = 0;',
+            'def int closed_limit = 0;',
+            'state Root {',
+            '    state StateA;',
+            '    state StateB;',
+            '    [*] -> StateA;',
+            ...examples.map(example => `    ${example}`),
+            '}',
+        ].join('\n');
+        const result = await packageModule.getParser().parse(dsl);
+        assert.deepEqual(result.errors, []);
+    });
+
     it('returns null when an operator hover entry is intentionally unavailable', () => {
         const original = hoverModule.HOVER_DOCS['::'];
         (hoverModule.HOVER_DOCS as Record<string, typeof original | undefined>)['::'] = undefined;

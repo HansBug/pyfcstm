@@ -74,7 +74,6 @@ const OP_PRECEDENCE: Record<string, number> = {
     '||': 10,
     'or': 10,
     '=>': 7,
-    'implies': 7,
     '?:': 5,
 };
 

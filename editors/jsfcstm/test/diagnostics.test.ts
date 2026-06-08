@@ -77,7 +77,14 @@ describe('jsfcstm diagnostics', () => {
             '/tmp/condition-caret-diagnostic.fcstm'
         );
         const caretDiagnostics = await packageModule.collectDocumentDiagnostics(caretDocument);
-        assert.ok(caretDiagnostics.some(item => /unexpected token|invalid syntax|bracket/i.test(item.message)));
+        assert.ok(caretDiagnostics.some(item => /numeric bitwise xor.*use "xor"/i.test(item.message)));
+
+        const conditionArrowDocument = createDocument(
+            'state Root { state A; state B; A -> B : if [true -> false]; }',
+            '/tmp/condition-arrow-diagnostic.fcstm'
+        );
+        const conditionArrowDiagnostics = await packageModule.collectDocumentDiagnostics(conditionArrowDocument);
+        assert.ok(conditionArrowDiagnostics.some(item => /use "=>" or "implies".*"->" is only for transitions/i.test(item.message)));
 
         const transitionDocument = createDocument(
             'state Root { state A; state B; A => B; }',

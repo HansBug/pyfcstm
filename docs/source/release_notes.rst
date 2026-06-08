@@ -13,7 +13,8 @@ conditions and other boolean expression sites:
 - ``A xor B`` expresses boolean exclusive-or. Chained ``xor`` is a
   left-associative boolean parity chain, not an exactly-one-of-many operator.
 - ``A iff B`` expresses boolean equivalence and is the readable spelling of
-  boolean equality.
+  boolean equality. Chained ``iff`` expressions use the same boolean equality
+  precedence layer as ``==`` and ``!=``.
 
 Compatibility Notes
 -------------------

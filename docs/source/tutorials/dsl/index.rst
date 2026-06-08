@@ -1097,7 +1097,7 @@ Guard conditions are boolean expressions that control whether a transition can f
    Open -> Closed : if [open_limit != 0 iff closed_limit == 0];
 
    // Bitwise operations
-   Charging -> Normal : if [(battery_level >= 90) && (charging_state & 0x01)];
+   Charging -> Normal : if [(battery_level >= 90) && ((charging_state & 0x01) != 0)];
 
    // Complex expression
    StateA -> StateB : if [(temp > 25.0) && (flags & 0xFF) == 0x01];
@@ -1444,7 +1444,9 @@ The DSL supports comprehensive expression types for mathematical and logical ope
    logical_or_expression ::= logical_xor_expression [('||' | 'or') logical_xor_expression]*
    logical_xor_expression ::= logical_and_expression ['xor' logical_and_expression]*
    logical_and_expression ::= condition_equality_expression [('&&' | 'and') condition_equality_expression]*
-   condition_equality_expression ::= comparison_expression [('==' | '!=' | 'iff') comparison_expression]*
+   condition_equality_expression ::= condition_atom [('==' | '!=' | 'iff') condition_atom]*
+   condition_atom ::= bool_literal | comparison_expression | '(' cond_expression ')'
+                    | ('!' | 'not') cond_expression
    comparison_expression ::= num_expression ('<' | '>' | '<=' | '>=' | '==' | '!=') num_expression
    bitwise_or_expression ::= bitwise_xor_expression ['|' bitwise_xor_expression]*
    bitwise_xor_expression ::= bitwise_and_expression ['^' bitwise_and_expression]*
@@ -1460,7 +1462,10 @@ The DSL supports comprehensive expression types for mathematical and logical ope
 
 ``=>`` / ``implies`` is right-associative: ``A => B => C`` means
 ``A => (B => C)``. ``xor`` is a left-associative boolean exclusive-or chain; it
-is not an exactly-one-of-many operator.
+is not an exactly-one-of-many operator. ``iff`` has the same precedence layer as
+boolean ``==`` and ``!=``; parenthesize complex operands when an equality or
+equivalence side contains lower-precedence operators such as ``&&``, ``xor``,
+``||``, or ``=>``.
 
 Literal Values
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1660,7 +1665,7 @@ Conditional expressions use ternary operator syntax for inline conditional logic
    level = (temp > 30) ? 3 : ((temp > 20) ? 2 : 1);
 
    // With complex conditions
-   value = (counter >= 10 && flags & 0x01) ? 100 : 0;
+   value = (counter >= 10 && ((flags & 0x01) != 0)) ? 100 : 0;
 
    // With expressions in branches
    result = (mode == 1) ? (base * 2) : (base / 2);

@@ -1097,7 +1097,7 @@ DSL 支持三种指定事件作用域的方式：
    Open -> Closed : if [open_limit != 0 iff closed_limit == 0];
 
    // 位运算
-   Charging -> Normal : if [(battery_level >= 90) && (charging_state & 0x01)];
+   Charging -> Normal : if [(battery_level >= 90) && ((charging_state & 0x01) != 0)];
 
    // 复杂表达式
    StateA -> StateB : if [(temp > 25.0) && (flags & 0xFF) == 0x01];
@@ -1434,7 +1434,9 @@ DSL 支持用于数学和逻辑操作的全面表达式类型：
    logical_or_expression ::= logical_xor_expression [('||' | 'or') logical_xor_expression]*
    logical_xor_expression ::= logical_and_expression ['xor' logical_and_expression]*
    logical_and_expression ::= condition_equality_expression [('&&' | 'and') condition_equality_expression]*
-   condition_equality_expression ::= comparison_expression [('==' | '!=' | 'iff') comparison_expression]*
+   condition_equality_expression ::= condition_atom [('==' | '!=' | 'iff') condition_atom]*
+   condition_atom ::= bool_literal | comparison_expression | '(' cond_expression ')'
+                    | ('!' | 'not') cond_expression
    comparison_expression ::= num_expression ('<' | '>' | '<=' | '>=' | '==' | '!=') num_expression
    bitwise_or_expression ::= bitwise_xor_expression ['|' bitwise_xor_expression]*
    bitwise_xor_expression ::= bitwise_and_expression ['^' bitwise_and_expression]*
@@ -1449,7 +1451,9 @@ DSL 支持用于数学和逻辑操作的全面表达式类型：
    primary_expression ::= literal | variable | function_call | '(' expression ')'
 
 ``=>`` / ``implies`` 是右结合：``A => B => C`` 表示 ``A => (B => C)``。
-``xor`` 是左结合的布尔异或链，不表示多个输入中恰好一个为真。
+``xor`` 是左结合的布尔异或链，不表示多个输入中恰好一个为真。``iff``
+与布尔 ``==``、``!=`` 位于同一优先级层；如果等价或相等关系的一侧包含
+``&&``、``xor``、``||``、``=>`` 等更低优先级运算符，请使用括号明确分组。
 
 字面量值
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1649,7 +1653,7 @@ DSL 提供了广泛的数学函数支持：
    level = (temp > 30) ? 3 : ((temp > 20) ? 2 : 1);
 
    // 使用复杂条件
-   value = (counter >= 10 && flags & 0x01) ? 100 : 0;
+   value = (counter >= 10 && ((flags & 0x01) != 0)) ? 100 : 0;
 
    // 分支中使用表达式
    result = (mode == 1) ? (base * 2) : (base / 2);

@@ -1,5 +1,6 @@
 import pytest
 
+from pyfcstm.dsl import node as dsl_nodes
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model.expr import parse_expr_node_to_expr
 from pyfcstm.render import create_env, render_expr_node, create_expr_render_template
@@ -412,6 +413,21 @@ class TestRenderExprNode:
 
         assert result == expected
         assert eval(result) == eval(expected)
+
+    def test_python_condition_operand_wraps_direct_conditional_node(self, new_env):
+        ast_node = dsl_nodes.BinaryOp(
+            expr1=dsl_nodes.ConditionalOp(
+                cond=dsl_nodes.Boolean('true'),
+                value_true=dsl_nodes.Boolean('false'),
+                value_false=dsl_nodes.Boolean('true'),
+            ),
+            op='==',
+            expr2=dsl_nodes.Boolean('false'),
+        )
+        result = render_expr_node(ast_node, lang_style='python', env=new_env)
+
+        assert result == '(False if True else True) == False'
+        assert eval(result) is True
 
     @pytest.mark.parametrize(
         'expr_text',

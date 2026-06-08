@@ -412,7 +412,7 @@ def test_phase4_ancestor_target_cross_level_transition_is_still_rejected(tmp_pat
               </uml:Model>
             </xmi:XMI>
             """,
-            "state-to-state cross-level transitions",
+            "cross-level transitions targeting FinalState",
         ),
         (
             """

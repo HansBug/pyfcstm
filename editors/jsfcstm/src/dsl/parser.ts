@@ -155,7 +155,7 @@ function normalizeSyntaxMessage(message: string, tokenText?: string): string {
                 return 'Missing semicolon after state definition';
             }
 
-            if (tokenText.includes('=')) {
+            if (tokenText.includes('=>')) {
                 return 'Invalid operator - use \'->\' for transitions, not \'=>\'';
             }
 

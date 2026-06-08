@@ -141,6 +141,36 @@ state Root {
             );
         });
 
+        it('normalizes condition logical operators without losing required parentheses', async () => {
+            const report = inspectModel(await buildMachine(`
+def int a = 0;
+def int b = 0;
+def int c = 0;
+def int d = 0;
+def int e = 0;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B : if [(a > 0 => b > 0) => c > 0];
+    B -> A : if [!(a > 0 => b > 0)];
+    A -> A : if [a > 0 xor b > 0 && c > 0 iff d > 0];
+    B -> B : if [a > 0 && (b > 0 xor c > 0)];
+    B -> B : if [a > 0 implies e > 0];
+}
+`));
+            const guards = report.transitions
+                .filter(t => t.guard !== null)
+                .map(t => t.guard);
+            assert.deepEqual(guards, [
+                '(a > 0 => b > 0) => c > 0',
+                '!(a > 0 => b > 0)',
+                'a > 0 xor b > 0 && c > 0 iff (d > 0)',
+                'a > 0 && (b > 0 xor c > 0)',
+                'a > 0 => e > 0',
+            ]);
+        });
+
         it('captures qualified event names with local scope', async () => {
             const report = inspectModel(await buildMachine(SIMPLE_DSL));
             const withEvent = report.transitions.filter(t => t.event !== null);

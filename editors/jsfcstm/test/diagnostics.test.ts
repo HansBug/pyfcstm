@@ -55,4 +55,47 @@ describe('jsfcstm diagnostics', () => {
         const diagnostics = await packageModule.collectDocumentDiagnostics(document);
         assert.ok(diagnostics.some(item => /cannot be resolved/i.test(item.message)));
     });
+
+    it('keeps condition logical operator diagnostics on the intended side of the DSL boundary', async () => {
+        const legalDocument = createDocument([
+            'def int a = 0;',
+            'def int b = 0;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B : if [a > 0 => b > 0];',
+            '    B -> A : if [a > 0 xor b > 0];',
+            '    A -> A : if [a > 0 iff b > 0];',
+            '}',
+        ].join('\n'), '/tmp/legal-logical-diagnostics.fcstm');
+        const legalDiagnostics = await packageModule.collectDocumentDiagnostics(legalDocument);
+        assert.equal(legalDiagnostics.some(item => item.severity === 'error'), false);
+
+        const caretDocument = createDocument(
+            'state Root { state A; state B; A -> B : if [true ^ false]; }',
+            '/tmp/condition-caret-diagnostic.fcstm'
+        );
+        const caretDiagnostics = await packageModule.collectDocumentDiagnostics(caretDocument);
+        assert.ok(caretDiagnostics.some(item => /unexpected token|invalid syntax|bracket/i.test(item.message)));
+
+        const transitionDocument = createDocument(
+            'state Root { state A; state B; A => B; }',
+            '/tmp/transition-implication-diagnostic.fcstm'
+        );
+        const transitionDiagnostics = await packageModule.collectDocumentDiagnostics(transitionDocument);
+        assert.ok(transitionDiagnostics.some(item => /use '->' for transitions, not '=>'/i.test(item.message)));
+
+        const numericDocument = createDocument([
+            'def int x = 0;',
+            'def int a = 0;',
+            'def int b = 0;',
+            'state Root {',
+            '    state A { enter { x = a ^ b; } }',
+            '    [*] -> A;',
+            '}',
+        ].join('\n'), '/tmp/numeric-caret-diagnostic.fcstm');
+        const numericDiagnostics = await packageModule.collectDocumentDiagnostics(numericDocument);
+        assert.equal(numericDiagnostics.some(item => item.severity === 'error'), false);
+    });
 });

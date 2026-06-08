@@ -34,6 +34,31 @@ export type FcstmHoverResult =
  * Built-in hover documentation table for FCSTM operators and keywords.
  */
 export const HOVER_DOCS: Record<string, FcstmHoverDoc> = {
+    '=>': {
+        title: 'Logical Implication',
+        description: 'Boolean implication: A => B is true when A is false or B is true, equivalent to not A or B.',
+        example: '```fcstm\nStateA -> StateB : if [sensor_ready => command_valid];\n```'
+    },
+    'implies': {
+        title: 'Logical Implication',
+        description: 'Keyword spelling of boolean implication. It has the same semantics as =>.',
+        example: '```fcstm\nStateA -> StateB : if [sensor_ready implies command_valid];\n```'
+    },
+    'xor': {
+        title: 'Logical Exclusive-Or',
+        description: 'Boolean exclusive-or. Exactly one side of A xor B must be true.',
+        example: '```fcstm\nStateA -> StateB : if [manual_mode xor auto_mode];\n```'
+    },
+    'iff': {
+        title: 'Logical Equivalence',
+        description: 'Boolean equivalence. A iff B is true when both sides have the same truth value.',
+        example: '```fcstm\nStateA -> StateB : if [open_limit iff !closed_limit];\n```'
+    },
+    '^': {
+        title: 'Numeric Bitwise XOR',
+        description: 'Numeric bitwise XOR. It is not a condition-level bool xor; use xor in guard conditions.',
+        example: '```fcstm\neffect { flags = flags ^ mask; }\n```'
+    },
     '::': {
         title: 'Local Event Scope',
         description: 'Creates an event scoped to the source state. Each source state gets its own event instance.',
@@ -195,7 +220,7 @@ function findOperatorAtPosition(text: string, column: number, operator: string):
  * Resolve a hover documentation entry from a single line of FCSTM source text.
  */
 export function findHoverInfo(text: string, column: number, word: string): FcstmHoverDoc | null {
-    const operators = ['::', '>> during before', '>> during after', 'during before', 'during after'];
+    const operators = ['::', '=>', '^', '>> during before', '>> during after', 'during before', 'during after'];
     for (const operator of operators) {
         const index = findOperatorAtPosition(text, column, operator);
         if (index !== -1) {

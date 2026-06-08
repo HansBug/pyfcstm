@@ -58,11 +58,15 @@ statement, block-form import mappings, wildcard selectors, and target templates.
 The Pygments lexer and the TextMate / VSCode grammar are kept aligned and share
 the same validation checkpoints in `editors/validate.py`.
 
-**Keywords:** `state`, `pseudo`, `import`, `as`, `named`, `def`, `event`, `enter`, `during`, `exit`, `before`, `after`, `abstract`, `ref`, `effect`, `if`, `else`, `and`, `or`, `not`
+**Keywords:** `state`, `pseudo`, `import`, `as`, `named`, `def`, `event`, `enter`, `during`, `exit`, `before`, `after`, `abstract`, `ref`, `effect`, `if`, `else`, `and`, `or`, `not`, `implies`, `xor`, `iff`
 
 **Types:** `int`, `float`
 
-**Operators:** `->`, `>>`, `::`, `:`, `/`, `!`, `**`, `<<`, `>>`, `+`, `-`, `*`, `/`, `%`, `&`, `|`, `^`, `~`, `<`, `>`, `<=`, `>=`, `==`, `!=`, `&&`, `||`, `?`
+**Operators:** `->`, `=>`, `>>`, `::`, `:`, `/`, `!`, `**`, `<<`, `>>`, `+`, `-`, `*`, `/`, `%`, `&`, `|`, `^`, `~`, `<`, `>`, `<=`, `>=`, `==`, `!=`, `&&`, `||`, `?`
+
+`^` is numeric bitwise xor. Boolean exclusive-or in guard conditions is spelled
+with the `xor` keyword; `->` remains transition syntax, so implication uses
+`=>` or `implies`.
 
 **Literals:** integers (`123`), hex (`0xFF`), floats (`3.14`, `1e-5`), booleans (`True`, `False`), strings (`"text"`, `'text'`), math constants (`pi`, `E`, `tau`)
 

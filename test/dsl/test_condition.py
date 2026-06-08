@@ -2042,6 +2042,28 @@ class TestDSLCondition:
         assert BinaryOp.__aliases__.get("^") is None
         assert ModelBinaryOp.__aliases__.get("^") is None
 
+    def test_cond_logical_operator_final_acceptance_smoke(self):
+        assert str(parse_condition("x > 0 implies y > 0")) == "x > 0 => y > 0"
+        assert str(parse_condition("x > 0 => y > 0 => z > 0")) == (
+            "x > 0 => y > 0 => z > 0"
+        )
+        assert str(parse_condition("manual != 0 xor auto != 0")) == (
+            "manual != 0 xor auto != 0"
+        )
+        assert str(parse_condition("open_limit != 0 iff closed_limit == 0")) == (
+            "open_limit != 0 iff closed_limit == 0"
+        )
+        assert str(parse_condition("5 ^ 3 == 6")) == "5 ^ 3 == 6"
+
+        for input_text in (
+            "true ^ false",
+            "(x > 0) ^ (y > 0)",
+            "x > 0 ^ y > 0",
+            "x > 0 -> y > 0",
+        ):
+            with pytest.raises(GrammarParseError):
+                parse_condition(input_text)
+
     @pytest.mark.parametrize(
         ["operators"],
         [

@@ -445,7 +445,7 @@ Keywords
 
 **Action Keywords:** ``abstract``, ``ref``, ``effect``
 
-**Conditional Keywords:** ``if``, ``and``, ``or``, ``not``
+**Conditional Keywords:** ``if``, ``and``, ``or``, ``not``, ``implies``, ``xor``, ``iff``
 
 Types
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -461,9 +461,12 @@ Operators
 
 **Bitwise Operators:** ``&``, ``|``, ``^``, ``~``, ``<<``, ``>>``
 
+``^`` is highlighted as a numeric bitwise XOR operator. It is not a boolean XOR
+spelling in guard conditions; use the ``xor`` keyword for boolean exclusive-or.
+
 **Comparison Operators:** ``<``, ``>``, ``<=``, ``>=``, ``==``, ``!=``
 
-**Logical Operators:** ``&&``, ``||``, ``!``
+**Logical Operators:** ``!``, ``&&``, ``||``, ``=>``, ``and``, ``or``, ``not``, ``implies``, ``xor``, ``iff``
 
 **Ternary Operator:** ``?``, ``:``
 

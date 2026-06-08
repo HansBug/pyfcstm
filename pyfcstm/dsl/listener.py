@@ -42,6 +42,15 @@ from ..utils import format_multiline_comment
 from ..utils.validate import Span
 
 
+_COND_BINARY_OP_ALIASES = {
+    "implies": "=>",
+}
+
+
+def _canonical_cond_binary_op(op: str) -> str:
+    return _COND_BINARY_OP_ALIASES.get(op, op)
+
+
 def _ctx_span(ctx) -> Span:
     """
     Build a 1-based :class:`Span` covering an ANTLR4 parse context.
@@ -230,6 +239,13 @@ class GrammarParseListener(GrammarListener):
         )
         self.nodes[ctx] = node
 
+    def _exit_cond_binary_expression(self, ctx, expr1, expr2) -> None:
+        self.nodes[ctx] = BinaryOp(
+            expr1=expr1,
+            op=_canonical_cond_binary_op(ctx.op.text),
+            expr2=expr2,
+        )
+
     def exitBinaryExprFromCondCond(
         self, ctx: GrammarParser.BinaryExprFromCondCondContext
     ) -> None:
@@ -239,13 +255,12 @@ class GrammarParseListener(GrammarListener):
         :param ctx: Parse context for the binary condition-to-condition expression.
         :type ctx: GrammarParser.BinaryExprFromCondCondContext
         """
-        super().exitBinaryExprFromNumCond(ctx)
-        node = BinaryOp(
+        super().exitBinaryExprFromCondCond(ctx)
+        self._exit_cond_binary_expression(
+            ctx,
             expr1=self.nodes[ctx.cond_expression(0)],
-            op=ctx.op.text,
             expr2=self.nodes[ctx.cond_expression(1)],
         )
-        self.nodes[ctx] = node
 
     def exitBinaryExprCond(self, ctx: GrammarParser.BinaryExprCondContext) -> None:
         """
@@ -255,12 +270,11 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.BinaryExprCondContext
         """
         super().exitBinaryExprCond(ctx)
-        node = BinaryOp(
+        self._exit_cond_binary_expression(
+            ctx,
             expr1=self.nodes[ctx.cond_expression(0)],
-            op=ctx.op.text,
             expr2=self.nodes[ctx.cond_expression(1)],
         )
-        self.nodes[ctx] = node
 
     def exitUnaryExprCond(self, ctx: GrammarParser.UnaryExprCondContext) -> None:
         """

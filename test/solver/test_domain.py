@@ -291,6 +291,55 @@ class TestTranslateExprDomain:
         assert result.failure.kind == "not_implemented"
         assert "sin" in result.failure.reason
 
+    def test_reachable_true_conditional_branch_failure_is_structured(self):
+        """Failures in the reachable true branch keep feasibility metadata."""
+        from pyfcstm.solver.domain import translate_expr_domain
+
+        flag = z3.Bool("flag")
+        x = z3.Real("x")
+        expr = Variable("flag").select(UFunc("sin", Variable("x")), Integer(1))
+
+        result = translate_expr_domain(expr, {"flag": flag, "x": x})
+
+        assert result.z3_expr is None
+        assert result.failure is not None
+        assert result.failure.kind == "not_implemented"
+        assert [item.status for item in result.feasibility_checks[:2]] == ["sat", "sat"]
+
+    def test_conditional_condition_failure_is_returned_directly(self):
+        """A failed condition cannot manufacture either value branch."""
+        from pyfcstm.solver.domain import translate_expr_domain
+
+        result = translate_expr_domain(
+            Variable("missing").select(Integer(1), Integer(0)),
+            {},
+        )
+
+        assert result.z3_expr is None
+        assert result.failure is not None
+        assert result.failure.kind == "value_error"
+        assert "missing" in result.failure.reason
+
+    def test_conditional_type_error_from_negated_selector_is_structured(
+        self,
+        monkeypatch,
+    ):
+        """Malformed selector negation is normalized as a pure failure."""
+        from pyfcstm.solver import domain
+        from pyfcstm.solver.domain import translate_expr_domain
+
+        def reject_not(_expr):
+            raise TypeError("selector cannot be negated")
+
+        monkeypatch.setattr(domain.z3, "Not", reject_not)
+
+        result = translate_expr_domain(Boolean(True).select(Integer(1), Integer(0)), {})
+
+        assert result.z3_expr is None
+        assert result.failure is not None
+        assert result.failure.kind == "type_error"
+        assert "selector cannot be negated" in result.failure.reason
+
     def test_non_boolean_conditional_condition_is_structured_failure(self):
         """Malformed ternary conditions are returned as pure translation failures."""
         from pyfcstm.solver.domain import translate_expr_domain
@@ -414,6 +463,153 @@ class TestTranslateExprDomain:
         assert result.failure is not None
         assert result.failure.kind == "value_error"
         assert "missing" in result.failure.reason
+
+    @pytest.mark.parametrize(
+        "err, kind",
+        [
+            (NotImplementedError("leaf not implemented"), "not_implemented"),
+            (TypeError("leaf type mismatch"), "type_error"),
+            (z3.Z3Exception("leaf z3 mismatch"), "z3_error"),
+        ],
+    )
+    def test_leaf_translation_expected_exceptions_are_structured(
+        self,
+        monkeypatch,
+        err,
+        kind,
+    ):
+        """Expected leaf translation errors become pure failure metadata."""
+        from pyfcstm.solver import domain
+        from pyfcstm.solver.domain import translate_expr_domain
+
+        def reject_expr(_expr, _z3_vars):
+            raise err
+
+        monkeypatch.setattr(domain, "expr_to_z3", reject_expr)
+
+        result = translate_expr_domain(Integer(1), {})
+
+        assert result.z3_expr is None
+        assert result.failure is not None
+        assert result.failure.kind == kind
+        assert result.failure.reason == str(err)
+
+    @pytest.mark.parametrize(
+        "err, kind",
+        [
+            (TypeError("unary type mismatch"), "type_error"),
+            (z3.Z3Exception("unary z3 mismatch"), "z3_error"),
+        ],
+    )
+    def test_unary_apply_expected_exceptions_are_structured(
+        self,
+        monkeypatch,
+        err,
+        kind,
+    ):
+        """Expected unary application errors keep child domain constraints."""
+        from pyfcstm.solver import domain
+        from pyfcstm.solver.domain import translate_expr_domain
+
+        def reject_unary(_op, _operand):
+            raise err
+
+        monkeypatch.setattr(domain, "_apply_unary_z3", reject_unary)
+        result = translate_expr_domain(UnaryOp("-", Integer(1)), {})
+
+        assert result.z3_expr is None
+        assert result.failure is not None
+        assert result.failure.kind == kind
+        assert result.failure.reason == str(err)
+
+    def test_unary_child_failure_short_circuits(self):
+        """A failed unary operand is returned before applying the operator."""
+        from pyfcstm.solver.domain import translate_expr_domain
+
+        result = translate_expr_domain(UnaryOp("-", Variable("missing")), {})
+
+        assert result.z3_expr is None
+        assert result.failure is not None
+        assert result.failure.kind == "value_error"
+        assert "missing" in result.failure.reason
+
+    @pytest.mark.parametrize(
+        "err, kind",
+        [
+            (TypeError("divisor cannot compare"), "type_error"),
+            (z3.Z3Exception("divisor z3 mismatch"), "z3_error"),
+        ],
+    )
+    def test_divisor_compare_expected_exceptions_are_structured(
+        self,
+        monkeypatch,
+        err,
+        kind,
+    ):
+        """Divisor-domain comparison failures are structured and local."""
+        from pyfcstm.solver import domain
+        from pyfcstm.solver.domain import ExprDomain, translate_expr_domain
+
+        class BadDivisor(Expr):
+            pass
+
+        class RaisingComparison:
+            def __ne__(self, _other):
+                raise err
+
+        original_translate = domain._translate_expr_domain
+
+        def translate_with_bad_divisor(expr, z3_vars, **kwargs):
+            if isinstance(expr, BadDivisor):
+                return ExprDomain(
+                    z3_expr=RaisingComparison(),
+                    assumptions=tuple(kwargs["assumptions"]),
+                )
+            return original_translate(expr, z3_vars, **kwargs)
+
+        monkeypatch.setattr(domain, "_translate_expr_domain", translate_with_bad_divisor)
+
+        result = translate_expr_domain(BinaryOp(Integer(1), "/", BadDivisor()), {})
+
+        assert result.z3_expr is None
+        assert result.failure is not None
+        assert result.failure.kind == kind
+        assert result.failure.reason == str(err)
+
+    def test_sqrt_operand_compare_z3_exception_is_structured(self, monkeypatch):
+        """Sqrt-domain comparison Z3 failures are normalized."""
+        from pyfcstm.solver import domain
+        from pyfcstm.solver.domain import ExprDomain, translate_expr_domain
+
+        class BadSqrtOperand(Expr):
+            pass
+
+        class RaisingComparison:
+            def __ge__(self, _other):
+                raise z3.Z3Exception("sqrt z3 mismatch")
+
+        original_translate = domain._translate_expr_domain
+
+        def translate_with_bad_sqrt_operand(expr, z3_vars, **kwargs):
+            if isinstance(expr, BadSqrtOperand):
+                return ExprDomain(
+                    z3_expr=RaisingComparison(),
+                    assumptions=tuple(kwargs["assumptions"]),
+                )
+            return original_translate(expr, z3_vars, **kwargs)
+
+        monkeypatch.setattr(
+            domain,
+            "_translate_expr_domain",
+            translate_with_bad_sqrt_operand,
+        )
+
+        result = translate_expr_domain(UFunc("sqrt", BadSqrtOperand()), {})
+
+        assert result.z3_expr is None
+        assert result.failure is not None
+        assert result.failure.kind == "z3_error"
+        assert result.failure.reason == "sqrt z3 mismatch"
 
     def test_unsupported_expression_object_is_structured_failure(self):
         """Unknown expression subclasses fail loudly as pure solver data."""

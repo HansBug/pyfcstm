@@ -1491,6 +1491,8 @@ def _root_initial_path_context(
 def _build_init_constraints_or_result(
     variables: Sequence[VarDefine],
     z3_vars: _Z3Vars,
+    *,
+    smt_timeout_ms: Optional[int] = None,
 ) -> Tuple[Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]:
     """Build constraints pinning variables to their DSL initial values.
 
@@ -1498,14 +1500,30 @@ def _build_init_constraints_or_result(
     :type variables: Sequence[VarDefine]
     :param z3_vars: Z3 variable mapping.
     :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+    :type smt_timeout_ms: Optional[int], optional
     :return: Pair of constraints and optional failure result.
     :rtype: Tuple[Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]
     """
     constraints: List[z3.ExprRef] = []
     for variable in variables:
-        init_value, result = _expr_to_z3_or_result(variable.init, z3_vars)
+        init_value, init_domains, result = _expr_z3_and_domains_or_result(
+            variable.init,
+            z3_vars,
+            context_constraints=constraints,
+            smt_timeout_ms=smt_timeout_ms,
+        )
         if result is not None:
             return None, result
+        if init_domains:
+            result = _definedness_feasibility_or_result(
+                [*constraints, *init_domains],
+                reason="Initializer runtime definedness constraints are unsatisfiable.",
+                smt_timeout_ms=smt_timeout_ms,
+            )
+            if result is not None:
+                return None, result
+            constraints.extend(init_domains)
         constraints.append(z3_vars[variable.name] == init_value)
     return tuple(constraints), None
 
@@ -1755,7 +1773,11 @@ def forced_guard_unsat_under_init(
         return AlgorithmResult(kind="sat")
 
     z3_vars = _z3_vars(variables)
-    init_constraints, result = _build_init_constraints_or_result(variables, z3_vars)
+    init_constraints, result = _build_init_constraints_or_result(
+        variables,
+        z3_vars,
+        smt_timeout_ms=smt_timeout_ms,
+    )
     if result is not None:
         return result
     guard_z3, guard_domains, result = _expr_z3_and_domains_or_result(
@@ -2693,7 +2715,11 @@ def enter_postcondition_implies_during_precondition(
         return AlgorithmResult(kind="sat")
 
     z3_vars = _z3_vars(variables)
-    init_constraints, result = _build_init_constraints_or_result(variables, z3_vars)
+    init_constraints, result = _build_init_constraints_or_result(
+        variables,
+        z3_vars,
+        smt_timeout_ms=smt_timeout_ms,
+    )
     if result is not None:
         return result
 
@@ -2827,13 +2853,28 @@ def composite_init_guards_incomplete(
         event_vars: Dict[str, z3.BoolRef] = {}
         triggers: List[z3.ExprRef] = []
         per_composite_failed = False
+        init_constraints, result = _build_init_constraints_or_result(
+            variables,
+            z3_vars,
+            smt_timeout_ms=smt_timeout_ms,
+        )
+        if result is not None:
+            first_indeterminate_result = _first_indeterminate(
+                first_indeterminate_result,
+                result.kind,
+                result.reason,
+            )
+            continue
         type_constraints = _build_type_constraints(variables, z3_vars)
         for transition in init_transitions:
             trigger, trigger_domains, result = _transition_trigger_or_result(
                 transition,
                 z3_vars,
                 event_vars,
-                context_constraints=type_constraints,
+                context_constraints=[
+                    *init_constraints,
+                    *type_constraints,
+                ],
                 smt_timeout_ms=smt_timeout_ms,
             )
             if result is not None:
@@ -2855,6 +2896,7 @@ def composite_init_guards_incomplete(
         sat_result = is_sat(
             [
                 no_coverage,
+                *init_constraints,
                 *type_constraints,
             ],
             timeout_ms=smt_timeout_ms,

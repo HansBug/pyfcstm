@@ -276,6 +276,28 @@ def test_initializer_translation_failure_is_undecidable_skip():
     assert result.kind == "undecidable_skip"
 
 
+def test_initializer_runtime_undefined_is_undecidable_skip():
+    """Initializer runtime-domain failures are checked after translation."""
+    machine = parse_machine(
+        """
+        def int x = 1 / 0;
+        state System {
+            state A;
+            [*] -> A;
+        }
+        """
+    )
+
+    constraints, result = smt_local._build_init_constraints_or_result(
+        variables(machine),
+        {"x": smt_local.z3.Int("x")},
+    )
+
+    assert constraints is None
+    assert result.kind == "undecidable_skip"
+    assert result.reason == "Initializer runtime definedness constraints are unsatisfiable."
+
+
 def test_guard_translation_failure_is_normalized():
     """Guard translation failure propagates through guard helper."""
     transition = Transition(
@@ -1444,6 +1466,23 @@ class TestDeadGuard:
         assert result.kind == "undecidable_skip"
         assert "runtime definedness" in result.reason
 
+    def test_runtime_undefined_initializer_does_not_affect_dead_guard(self):
+        machine = parse_machine(
+            """
+            def int x = 1 / 0;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B : if [x == 0];
+            }
+            """
+        )
+
+        result = dead_guard(root_transition(machine), variables(machine))
+
+        assert result == AlgorithmResult(kind="sat")
+
     def test_non_linear_variable_multiplication_runs_full_power(self):
         machine = parse_machine(
             """
@@ -1509,6 +1548,23 @@ class TestGuardTautology:
                 state B;
                 [*] -> A;
                 A -> B : if [x > 0];
+            }
+            """
+        )
+
+        result = guard_tautology(root_transition(machine), variables(machine))
+
+        assert result == AlgorithmResult(kind="sat")
+
+    def test_runtime_undefined_initializer_does_not_affect_guard_tautology(self):
+        machine = parse_machine(
+            """
+            def int x = 1 / 0;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B : if [x == 0];
             }
             """
         )
@@ -1659,6 +1715,30 @@ class TestForcedGuardUnsatUnderInit:
 
         assert result.kind == "undecidable_skip"
         assert "runtime definedness" in result.reason
+
+    def test_runtime_undefined_initializer_is_undecidable(self):
+        machine = parse_machine(
+            """
+            def int x = 1 / 0;
+            state System {
+                state A {
+                    state Sub1;
+                    state Sub2;
+                    [*] -> Sub1;
+                    Sub1 -> Sub2;
+                }
+                state B;
+                [*] -> A;
+                !A -> B : if [x == 0];
+            }
+            """
+        )
+        transition = transition_by_guard(machine, "x == 0")
+
+        result = forced_guard_unsat_under_init(transition, variables(machine))
+
+        assert result.kind == "undecidable_skip"
+        assert result.reason == "Initializer runtime definedness constraints are unsatisfiable."
 
     def test_does_not_trigger_when_forced_guard_true_at_init(self):
         machine = parse_machine(
@@ -3047,6 +3127,30 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         assert result.kind == "unsat"
         diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
         assert diag["data"]["branch_taken"] == "false"
+
+    def test_runtime_undefined_initializer_is_undecidable(self):
+        machine = parse_machine(
+            """
+            def int mode = 1 / 0;
+            def int x = 0;
+            state System {
+                state Idle {
+                    during { x = (mode > 0) ? 10 : 20; }
+                }
+                [*] -> Idle;
+            }
+            """
+        )
+        state = machine.root_state.substates["Idle"]
+
+        result = enter_postcondition_implies_during_precondition(
+            state, variables(machine)
+        )
+
+        assert result.kind == "undecidable_skip"
+        assert result.reason == (
+            "Initializer runtime definedness constraints are unsatisfiable."
+        )
 
     def test_triggers_when_enter_determines_during_ternary_true_branch(self):
         machine = parse_machine(
@@ -5097,6 +5201,26 @@ class TestCompositeInitGuardsIncomplete:
         result = composite_init_guards_incomplete(machine, variables(machine))
 
         assert result == AlgorithmResult(kind="unsat")
+
+    def test_runtime_undefined_initializer_is_undecidable(self):
+        machine = parse_machine(
+            """
+            def int x = 1 / 0;
+            state Root {
+                state A;
+                state B;
+                [*] -> A : if [x > 0];
+                [*] -> B : if [x <= 0];
+            }
+            """
+        )
+
+        result = composite_init_guards_incomplete(machine, variables(machine))
+
+        assert result.kind == "undecidable_skip"
+        assert result.reason == (
+            "Initializer runtime definedness constraints are unsatisfiable."
+        )
 
     def test_timeout_propagates_when_no_diagnostic_exists(self, monkeypatch):
         machine = parse_machine(

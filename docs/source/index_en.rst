@@ -122,6 +122,7 @@ Tutorials
     tutorials/visualization/index
     tutorials/cli/index
     tutorials/grammar/index
+    tutorials/sysdesim/index
 
 * :doc:`tutorials/installation/index`
 * :doc:`tutorials/structure/index`
@@ -131,6 +132,7 @@ Tutorials
 * :doc:`tutorials/visualization/index`
 * :doc:`tutorials/cli/index`
 * :doc:`tutorials/grammar/index`
+* :doc:`tutorials/sysdesim/index`
 
 Best Practice
 -------------------------

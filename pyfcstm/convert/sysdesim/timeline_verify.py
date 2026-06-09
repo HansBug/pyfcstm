@@ -53,6 +53,7 @@ _TIME_UNITS = {
 }
 _INITIAL_TIME_SYMBOL = "t00"
 _INITIAL_SOURCE_STEP_ID = "initial"
+_ENDED_STATE_PATH = "[*]"
 
 
 @dataclass(frozen=True)
@@ -599,10 +600,33 @@ def _coerce_runtime_input(define_type: str, value_text: str) -> object:
 
 def _current_auto_transition(runtime: SimulationRuntime):
     """Return the first unconditional outgoing transition of the current leaf state."""
-    for transition in runtime.current_state.transitions_from:
+    if runtime.is_ended:
+        return None
+    current_state = runtime.current_state
+    for transition in current_state.transitions_from:
         if transition.event is None and transition.guard is None:
+            # Intentional SimulationRuntime-internal coupling: Phase10 needs to
+            # mirror ``cycle([])`` transition selection without actually
+            # probing with a real cycle, because a rejected auto transition
+            # would otherwise still run leaf ``during`` actions and mutate the
+            # imported trace.  Keep this guard aligned with
+            # ``SimulationRuntime._select_transition(validate_stoppable=True)``.
+            if current_state.is_stoppable and not runtime._validate_transition(
+                runtime.stack,
+                runtime.vars,
+                transition,
+                {},
+            ):
+                continue
             return transition
     return None
+
+
+def _runtime_state_path(runtime: SimulationRuntime) -> str:
+    """Return the current runtime state path, or the ended sentinel."""
+    if runtime.is_ended:
+        return _ENDED_STATE_PATH
+    return ".".join(runtime.current_state.path)
 
 
 def _build_state_windows(
@@ -668,6 +692,14 @@ def _build_state_windows(
                 )
             )
         else:
+            if (
+                current.pre_state_path == _ENDED_STATE_PATH
+                and current.post_state_path == _ENDED_STATE_PATH
+            ):
+                # Once the machine has already ended, avoid creating repeated
+                # ``[*]`` -> ``[*]`` open-interval windows that could make the
+                # ended sentinel look like a queryable ordinary state.
+                continue
             windows.append(
                 SysDeSimTimelineStateWindow(
                     machine_alias=machine_alias,
@@ -714,7 +746,7 @@ def _build_machine_trace(
             runtime.vars[local_name] = float("nan")
 
     runtime.cycle([])
-    initial_state_path = ".".join(runtime.current_state.path)
+    initial_state_path = _runtime_state_path(runtime)
     initial_vars = tuple(
         (name, _format_runtime_number(value))
         for name, value in sorted(runtime.vars.items())
@@ -722,7 +754,7 @@ def _build_machine_trace(
 
     trace_steps = []
     for index, step in enumerate(scenario.steps):
-        pre_state_path = ".".join(runtime.current_state.path)
+        pre_state_path = _runtime_state_path(runtime)
         applied_inputs = []
         for action in step.actions:
             if not isinstance(action, SysDeSimTimelineScenarioSetInputAction):
@@ -737,8 +769,9 @@ def _build_machine_trace(
             applied_inputs.append((action.input_name, local_name, action.value_text))
 
         bound_event_path = _resolve_bound_event(step, binding)
-        runtime.cycle([bound_event_path] if bound_event_path else [])
-        post_state_path = ".".join(runtime.current_state.path)
+        if not runtime.is_ended:
+            runtime.cycle([bound_event_path] if bound_event_path else [])
+        post_state_path = _runtime_state_path(runtime)
 
         auto_occurrences = []
         right_emit_step_id = _find_next_emit_step_id(scenario.steps, index)
@@ -752,13 +785,13 @@ def _build_machine_trace(
             auto_transition = _current_auto_transition(runtime)
             if auto_transition is None:
                 break
-            from_state_path = ".".join(runtime.current_state.path)
+            from_state_path = _runtime_state_path(runtime)
             auto_index += 1
             occurrence_symbol = "tau__{alias}__{step_id}__{index}".format(
                 alias=output.output_name, step_id=step.step_id, index=auto_index
             )
             runtime.cycle([])
-            to_state_path = ".".join(runtime.current_state.path)
+            to_state_path = _runtime_state_path(runtime)
             auto_occurrences.append(
                 SysDeSimTimelineAutoOccurrence(
                     machine_alias=output.output_name,
@@ -776,6 +809,8 @@ def _build_machine_trace(
                     ),
                 )
             )
+            if runtime.is_ended:
+                break
 
         trace_steps.append(
             SysDeSimTimelineStepExecution(
@@ -783,7 +818,7 @@ def _build_machine_trace(
                 time_symbol=step.time_symbol,
                 pre_state_path=pre_state_path,
                 post_state_path=post_state_path,
-                stabilized_state_path=".".join(runtime.current_state.path),
+                stabilized_state_path=_runtime_state_path(runtime),
                 bound_event_path=bound_event_path,
                 applied_inputs=tuple(applied_inputs),
                 auto_occurrences=tuple(auto_occurrences),
@@ -1090,6 +1125,8 @@ def _state_seen_in_trace(
     state_path: str,
 ) -> bool:
     """Return whether one state appears anywhere in the imported trace."""
+    if state_path == _ENDED_STATE_PATH:
+        return False
     if trace.initial_state_path == state_path:
         return True
     if any(
@@ -1433,9 +1470,7 @@ def _build_witness_steps(
                 # mirrors the ``-->Sig13`` outbound notation below.
                 actions.append("{}<--".format(action.event_name))
             elif isinstance(action, SysDeSimTimelineScenarioSetInputAction):
-                actions.append(
-                    "{}={}".format(action.input_name, action.value_text)
-                )
+                actions.append("{}={}".format(action.input_name, action.value_text))
         for note in step.notes:
             if isinstance(note, str) and note.startswith("outbound_signal="):
                 signal = note.split("=", 1)[1].strip()
@@ -1470,9 +1505,7 @@ def _render_scenario_actions(
         if isinstance(action, SysDeSimTimelineScenarioEmitAction):
             rendered.append("{}<--".format(action.event_name))
         elif isinstance(action, SysDeSimTimelineScenarioSetInputAction):
-            rendered.append(
-                "{}={}".format(action.input_name, action.value_text)
-            )
+            rendered.append("{}={}".format(action.input_name, action.value_text))
     for note in notes:
         if isinstance(note, str) and note.startswith("outbound_signal="):
             signal = note.split("=", 1)[1].strip()
@@ -1950,6 +1983,141 @@ def solve_sysdesim_state_coexistence(
     )
 
 
+def _output_contains_source_path(
+    output: SysDeSimPhase9Output, source_path: Tuple[str, ...]
+) -> bool:
+    """Return whether one Phase9 output contains the XML source state path."""
+    if not source_path:
+        return False
+    state_by_path = {
+        tuple(state.path): state for state in output.machine.walk_states()
+    }
+    for state in output.machine.walk_states():
+        path = tuple(state.path)
+        if path[-len(source_path) :] == source_path:
+            return True
+        if len(path) < len(source_path):
+            continue
+        suffix_paths = [
+            path[:index]
+            for index in range(
+                len(path) - len(source_path) + 1, len(path) + 1
+            )
+        ]
+        labels = []
+        complete = True
+        for item_path in suffix_paths:
+            item = state_by_path.get(tuple(item_path))
+            if item is None:
+                complete = False
+                break
+            labels.append(str(getattr(item, "extra_name", None) or item.name))
+        if complete and tuple(labels) == source_path:
+            return True
+    return False
+
+
+def build_sysdesim_termination_summary(
+    phase10_report: SysDeSimPhase10Report,
+) -> List[Dict[str, object]]:
+    """Build user-facing XML FinalState termination summary rows.
+
+    The returned list is the stable ``report["phase10"]["termination"]``
+    contract. It is derived from existing Phase7/8 graph data and Phase10
+    traces only; it does not alter runtime execution semantics.
+    """
+    final_edges = [
+        edge
+        for edge in phase10_report.phase9_report.phase78_report.machine_graph
+        if getattr(edge, "target_vertex_type", None) == "final"
+    ]
+    if not final_edges:
+        return []
+
+    traces_by_alias = {trace.machine_alias: trace for trace in phase10_report.traces}
+    summaries: List[Dict[str, object]] = []
+    for edge in final_edges:
+        matched_aliases = [
+            output.output_name
+            for output in phase10_report.phase9_report.outputs
+            if _output_contains_source_path(output, edge.source_path)
+        ]
+        if not matched_aliases:
+            matched_aliases = [trace.machine_alias for trace in phase10_report.traces]
+        for alias in matched_aliases:
+            trace = traces_by_alias.get(alias)
+            ended_step_ids: List[str] = []
+            if trace is not None:
+                for step in trace.steps:
+                    if (
+                        step.post_state_path == _ENDED_STATE_PATH
+                        or step.stabilized_state_path == _ENDED_STATE_PATH
+                    ):
+                        ended_step_ids.append(step.step_id)
+            summaries.append(
+                {
+                    "machine_alias": alias,
+                    "source_path": list(edge.source_path),
+                    "target_id": edge.target_id,
+                    "target_path": list(edge.target_path),
+                    "target_vertex_type": edge.target_vertex_type,
+                    "transition_ids": list(edge.transition_ids),
+                    "reached": bool(ended_step_ids),
+                    "ended_step_ids": ended_step_ids,
+                }
+            )
+    return summaries
+
+
+def format_sysdesim_termination_summary_lines(
+    termination: Iterable[Dict[str, object]],
+) -> List[str]:
+    """Format termination rows for overlay banners and CLI stdout."""
+    lines: List[str] = []
+    for item in termination:
+        machine_alias = str(item.get("machine_alias") or "?")
+        target_id = str(item.get("target_id") or "?")
+        transition_ids = item.get("transition_ids") or []
+        if isinstance(transition_ids, (list, tuple)):
+            transition_text = (
+                ", ".join(str(value) for value in transition_ids) or "?"
+            )
+        else:
+            transition_text = str(transition_ids)
+        ended_steps = item.get("ended_step_ids") or []
+        if isinstance(ended_steps, (list, tuple)):
+            step_text = ", ".join(str(value) for value in ended_steps)
+        else:
+            step_text = str(ended_steps)
+        source_path = item.get("source_path") or []
+        if isinstance(source_path, (list, tuple)):
+            source_text = ".".join(str(value) for value in source_path) or "?"
+        else:
+            source_text = str(source_path)
+        if item.get("reached"):
+            lines.append(
+                "已终止: {alias} reached [*] at {steps} via transition "
+                "{tx} -> XML FinalState {target} from {source}.".format(
+                    alias=machine_alias,
+                    steps=step_text or "?",
+                    tx=transition_text,
+                    target=target_id,
+                    source=source_text,
+                )
+            )
+        else:
+            lines.append(
+                "未触发终止: {alias} has XML FinalState {target} via "
+                "transition {tx} from {source}.".format(
+                    alias=machine_alias,
+                    target=target_id,
+                    tx=transition_text,
+                    source=source_text,
+                )
+            )
+    return lines
+
+
 def build_sysdesim_timeline_import_report(
     xml_path: str,
     machine_name: Optional[str] = None,
@@ -2038,6 +2206,7 @@ def build_sysdesim_timeline_import_report(
             "bindings": [asdict(item) for item in phase10_report.bindings],
             "traces": [asdict(item) for item in phase10_report.traces],
             "diagnostics": list(phase10_report.diagnostics),
+            "termination": build_sysdesim_termination_summary(phase10_report),
         },
     }
 
@@ -2111,6 +2280,8 @@ __all__ = [
     "build_sysdesim_state_coexistence_timeline_report",
     "build_sysdesim_phase9_report",
     "build_sysdesim_phase10_report",
+    "build_sysdesim_termination_summary",
     "build_sysdesim_timeline_import_report",
+    "format_sysdesim_termination_summary_lines",
     "solve_sysdesim_state_coexistence",
 ]

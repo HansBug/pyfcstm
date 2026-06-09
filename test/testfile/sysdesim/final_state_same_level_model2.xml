@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xmi:XMI xmi:version="20131001" xmlns:xmi="http://www.omg.org/spec/XMI/20131001" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:Blocks="http://www.ht0003.com/sds/sysml/1.6/SysML/Blocks" xmlns:DiagramRepresentation="http://www.ht0003.com/sds/1.0.0/DiagramRepresentation" xmlns:Diagrams="http://www.ht0003.com/sds/1.0.0/Diagrams" xmlns:domain="http://www.sysdesim.arch/uml2/stereotype" xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML" xsi:schemaLocation="http://www.ht0003.com/sds/sysml/1.6/SysML/Blocks http://www.ht0003.com/sds/sysml/1.6/SysML#//blocks">
+  <uml:Model xmi:id="1780562895625__IHHPkF_yEfG4KaDTdrs0Xg" name="model">
+    <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRkF_yEfG4KaDTdrs0Xg" source="SDSDiagram"/>
+    <ownedComment xmi:type="uml:Comment" xmi:id="1780562896169__IMTRkV_yEfG4KaDTdrs0Xg">
+      <body>Author:win7.&amp;#10;Created:Thu Jun 04 16:48:15 CST 2026.&amp;#10;Comment:新建项目工程.&amp;#10;</body>
+    </ownedComment>
+    <packagedElement xmi:type="uml:Class" xmi:id="_TT_J4GCxEfGqsb6wf6ZObA" name="A"/>
+    <packagedElement xmi:type="uml:Class" xmi:id="_UpiAgGCxEfGqsb6wf6ZObA" name="B"/>
+    <packagedElement xmi:type="uml:Collaboration" xmi:id="_WV1KQGCxEfGqsb6wf6ZObA" name="model1" classifierBehavior="_WV-7QGCxEfGqsb6wf6ZObA">
+      <ownedBehavior xmi:type="uml:Interaction" xmi:id="_WV-7QGCxEfGqsb6wf6ZObA" name="model1">
+        <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="_WWWHoGCxEfGqsb6wf6ZObA" source="SDSDiagram">
+          <contents xmi:type="Diagrams:SDSDiagram" xmi:id="_WWYj4GCxEfGqsb6wf6ZObA" name="model1" context="_WV-7QGCxEfGqsb6wf6ZObA" ownerOfDiagram="_WV-7QGCxEfGqsb6wf6ZObA" notationId="51cd6cc0-5c83-45d7-bd32-4df54e7d2944.dgm" kindId="SysML Sequence Diagram">
+            <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="_WWYj4WCxEfGqsb6wf6ZObA" source="SDSDiagram">
+              <contents xmi:type="DiagramRepresentation:DiagramRepresentation" xmi:id="_WWZK8GCxEfGqsb6wf6ZObA" type="SysML Sequence Diagram" usedObjects="_WV-7QGCxEfGqsb6wf6ZObA _ZKsekGCxEfGqsb6wf6ZObA _ZgRF8GCxEfGqsb6wf6ZObA _uN_5QGCxEfGqsb6wf6ZObA _uOQX8GCxEfGqsb6wf6ZObA _uOaI8GCxEfGqsb6wf6ZObA _xrOOEGCxEfGqsb6wf6ZObA _xrTtoGCxEfGqsb6wf6ZObA _xrYmIGCxEfGqsb6wf6ZObA">
+                <binaryObject xmi:type="DiagramRepresentation:StreamIdentityBinaryObject" xmi:id="_WWbnMGCxEfGqsb6wf6ZObA" streamContentID="51cd6cc0-5c83-45d7-bd32-4df54e7d2944"/>
+              </contents>
+            </eAnnotations>
+            <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="_WWcOQGCxEfGqsb6wf6ZObA" source="http://www.sysdesim.arch/uml2/stereotype">
+              <contents xmi:type="domain:StereotypeInstance" xmi:id="_WWcOQWCxEfGqsb6wf6ZObA" base="_WWYj4GCxEfGqsb6wf6ZObA">
+                <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_xTmxMK7dEeu2qI_7PGwqxg"/>
+              </contents>
+            </eAnnotations>
+          </contents>
+        </eAnnotations>
+        <ownedAttribute xmi:type="uml:Property" xmi:id="_ZK1ogGCxEfGqsb6wf6ZObA" name="" type="_TT_J4GCxEfGqsb6wf6ZObA"/>
+        <ownedAttribute xmi:type="uml:Property" xmi:id="_ZgV-cGCxEfGqsb6wf6ZObA" name="" type="_UpiAgGCxEfGqsb6wf6ZObA"/>
+        <lifeline xmi:type="uml:Lifeline" xmi:id="_ZKsekGCxEfGqsb6wf6ZObA" name="" represents="_ZK1ogGCxEfGqsb6wf6ZObA" coveredBy="_uN_5QGCxEfGqsb6wf6ZObA _uRJT4GCxEfGqsb6wf6ZObA _xrOOEGCxEfGqsb6wf6ZObA _xrkMUGCxEfGqsb6wf6ZObA"/>
+        <lifeline xmi:type="uml:Lifeline" xmi:id="_ZgRF8GCxEfGqsb6wf6ZObA" name="" represents="_ZgV-cGCxEfGqsb6wf6ZObA" coveredBy="_uOQX8GCxEfGqsb6wf6ZObA _uRD0UGCxEfGqsb6wf6ZObA _xrTtoGCxEfGqsb6wf6ZObA _xriXIGCxEfGqsb6wf6ZObA"/>
+        <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_uRJT4GCxEfGqsb6wf6ZObA" name="sendEvent" covered="_ZKsekGCxEfGqsb6wf6ZObA" message="_uOaI8GCxEfGqsb6wf6ZObA"/>
+        <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_uRD0UGCxEfGqsb6wf6ZObA" name="receiveEvent" covered="_ZgRF8GCxEfGqsb6wf6ZObA" message="_uOaI8GCxEfGqsb6wf6ZObA"/>
+        <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_xrkMUGCxEfGqsb6wf6ZObA" name="sendEvent" covered="_ZKsekGCxEfGqsb6wf6ZObA" message="_xrYmIGCxEfGqsb6wf6ZObA"/>
+        <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_xriXIGCxEfGqsb6wf6ZObA" name="receiveEvent" covered="_ZgRF8GCxEfGqsb6wf6ZObA" message="_xrYmIGCxEfGqsb6wf6ZObA"/>
+        <fragment xmi:type="uml:BehaviorExecutionSpecification" xmi:id="_uN_5QGCxEfGqsb6wf6ZObA" name="" covered="_ZKsekGCxEfGqsb6wf6ZObA" start="_uRJT4GCxEfGqsb6wf6ZObA"/>
+        <fragment xmi:type="uml:BehaviorExecutionSpecification" xmi:id="_uOQX8GCxEfGqsb6wf6ZObA" name="" covered="_ZgRF8GCxEfGqsb6wf6ZObA" start="_uRD0UGCxEfGqsb6wf6ZObA"/>
+        <fragment xmi:type="uml:BehaviorExecutionSpecification" xmi:id="_xrOOEGCxEfGqsb6wf6ZObA" name="" covered="_ZKsekGCxEfGqsb6wf6ZObA" start="_xrkMUGCxEfGqsb6wf6ZObA"/>
+        <fragment xmi:type="uml:BehaviorExecutionSpecification" xmi:id="_xrTtoGCxEfGqsb6wf6ZObA" name="" covered="_ZgRF8GCxEfGqsb6wf6ZObA" start="_xriXIGCxEfGqsb6wf6ZObA"/>
+        <message xmi:type="uml:Message" xmi:id="_uOaI8GCxEfGqsb6wf6ZObA" name="" messageSort="asynchCall" receiveEvent="_uRD0UGCxEfGqsb6wf6ZObA" sendEvent="_uRJT4GCxEfGqsb6wf6ZObA" signature="_b9CqYGCxEfGqsb6wf6ZObA"/>
+        <message xmi:type="uml:Message" xmi:id="_xrYmIGCxEfGqsb6wf6ZObA" name="" messageSort="asynchCall" receiveEvent="_xriXIGCxEfGqsb6wf6ZObA" sendEvent="_xrkMUGCxEfGqsb6wf6ZObA" signature="_eOzRoGCxEfGqsb6wf6ZObA"/>
+      </ownedBehavior>
+    </packagedElement>
+    <packagedElement xmi:type="uml:Signal" xmi:id="_b9CqYGCxEfGqsb6wf6ZObA" name="C"/>
+    <packagedElement xmi:type="uml:Signal" xmi:id="_eOzRoGCxEfGqsb6wf6ZObA" name="D"/>
+    <packagedElement xmi:type="uml:StateMachine" xmi:id="_fj3AEGCxEfGqsb6wf6ZObA" name="model1">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="_fkAKAGCxEfGqsb6wf6ZObA" source="SDSDiagram">
+        <contents xmi:type="Diagrams:SDSDiagram" xmi:id="_fkAKAWCxEfGqsb6wf6ZObA" name="model1" context="_fj3AEGCxEfGqsb6wf6ZObA" ownerOfDiagram="_fj3AEGCxEfGqsb6wf6ZObA" notationId="27bc1efb-cfb7-40da-b5ae-e82faf03c21e.dgm" kindId="SysML State Machine Diagram">
+          <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="_fkAKAmCxEfGqsb6wf6ZObA" source="SDSDiagram">
+            <contents xmi:type="DiagramRepresentation:DiagramRepresentation" xmi:id="_fkAKA2CxEfGqsb6wf6ZObA" type="SysML State Machine Diagram" usedObjects="_fnRgcGCxEfGqsb6wf6ZObA _fo-JkGCxEfGqsb6wf6ZObA _fqGK8GCxEfGqsb6wf6ZObA _icDVMGCxEfGqsb6wf6ZObA _m5M18GCxEfGqsb6wf6ZObA _obJw4GCxEfGqsb6wf6ZObA _qV93wGCxEfGqsb6wf6ZObA _rJto4GCxEfGqsb6wf6ZObA _rpn4AGCxEfGqsb6wf6ZObA">
+              <binaryObject xmi:type="DiagramRepresentation:StreamIdentityBinaryObject" xmi:id="_fkAKBWCxEfGqsb6wf6ZObA" streamContentID="27bc1efb-cfb7-40da-b5ae-e82faf03c21e"/>
+            </contents>
+          </eAnnotations>
+          <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="_fkAKBmCxEfGqsb6wf6ZObA" source="http://www.sysdesim.arch/uml2/stereotype">
+            <contents xmi:type="domain:StereotypeInstance" xmi:id="_fkAKB2CxEfGqsb6wf6ZObA" base="_fkAKAWCxEfGqsb6wf6ZObA">
+              <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_xTmxMK7dEeu2qI_7PGwqxg"/>
+            </contents>
+          </eAnnotations>
+        </contents>
+      </eAnnotations>
+      <region xmi:type="uml:Region" xmi:id="_fkAKBGCxEfGqsb6wf6ZObA" name="">
+        <transition xmi:type="uml:Transition" xmi:id="_fqGK8GCxEfGqsb6wf6ZObA" name="" source="_fnRgcGCxEfGqsb6wf6ZObA" target="_fo-JkGCxEfGqsb6wf6ZObA"/>
+        <transition xmi:type="uml:Transition" xmi:id="_m5M18GCxEfGqsb6wf6ZObA" name="" source="_fo-JkGCxEfGqsb6wf6ZObA" target="_icDVMGCxEfGqsb6wf6ZObA">
+          <trigger xmi:type="uml:Trigger" xmi:id="_n6mBgGCxEfGqsb6wf6ZObA" name="" event="_n6tWQGCxEfGqsb6wf6ZObA"/>
+        </transition>
+        <transition xmi:type="uml:Transition" xmi:id="_qV93wGCxEfGqsb6wf6ZObA" name="" source="_icDVMGCxEfGqsb6wf6ZObA" target="_obJw4GCxEfGqsb6wf6ZObA">
+          <trigger xmi:type="uml:Trigger" xmi:id="_qy7gkGCxEfGqsb6wf6ZObA" name="" event="_qzC1UGCxEfGqsb6wf6ZObA"/>
+        </transition>
+        <transition xmi:type="uml:Transition" xmi:id="_rpn4AGCxEfGqsb6wf6ZObA" name="" source="_obJw4GCxEfGqsb6wf6ZObA" target="_rJto4GCxEfGqsb6wf6ZObA"/>
+        <subvertex xmi:type="uml:Pseudostate" xmi:id="_fnRgcGCxEfGqsb6wf6ZObA"/>
+        <subvertex xmi:type="uml:State" xmi:id="_fo-JkGCxEfGqsb6wf6ZObA" name="QQ"/>
+        <subvertex xmi:type="uml:State" xmi:id="_icDVMGCxEfGqsb6wf6ZObA" name="KK"/>
+        <subvertex xmi:type="uml:State" xmi:id="_obJw4GCxEfGqsb6wf6ZObA" name="SS"/>
+        <subvertex xmi:type="uml:FinalState" xmi:id="_rJto4GCxEfGqsb6wf6ZObA" name=""/>
+      </region>
+    </packagedElement>
+    <packagedElement xmi:type="uml:SignalEvent" xmi:id="_n6tWQGCxEfGqsb6wf6ZObA" name="" signal="_b9CqYGCxEfGqsb6wf6ZObA"/>
+    <packagedElement xmi:type="uml:SignalEvent" xmi:id="_qzC1UGCxEfGqsb6wf6ZObA" name="" signal="_eOzRoGCxEfGqsb6wf6ZObA"/>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTRkl_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRk1_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="http://www.eclipse.org/uml2/5.0.0/UML/Profile/Standard#/"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRlF_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTRlV_yEfG4KaDTdrs0Xg" base="1780562896169__IMTRkl_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://UML_PROFILES/Standard.profile.uml#_1"/>
+    </profileApplication>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTRll_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRl1_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_MVcY4A6vEey0yZHOgXORCw"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRmF_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTRmV_yEfG4KaDTdrs0Xg" base="1780562896169__IMTRll_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_qB6okHV_EeuLv4CJTW7N3w"/>
+    </profileApplication>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTRml_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRm1_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="pathmap://UML_PROFILES/SimulationProfile.profile.uml#_0JguYADOEey2osNp1BFDrQ"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRnF_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTRnV_yEfG4KaDTdrs0Xg" base="1780562896169__IMTRml_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://UML_PROFILES/SimulationProfile.profile.uml#_7NGXkOkBEeudKb4gifbFSQ"/>
+    </profileApplication>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTRnl_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRn1_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="pathmap://UML_PROFILES/UIPrototypingProfile.profile.uml#_wMX_oO3kEeufv-wepAOgeA"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRoF_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTRoV_yEfG4KaDTdrs0Xg" base="1780562896169__IMTRnl_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://UML_PROFILES/UIPrototypingProfile.profile.uml#_layK4Ok6EeuRueHEtlfuZQ"/>
+    </profileApplication>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTRol_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRo1_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="pathmap://UML_PROFILES/DependencyMatrix.profile.uml#_tWAbgPZgEeuqpMQQX6G9NA"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRpF_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTRpV_yEfG4KaDTdrs0Xg" base="1780562896169__IMTRol_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://UML_PROFILES/DependencyMatrix.profile.uml#_qB6okHV_EeuLv4CJTW7N3w"/>
+    </profileApplication>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTRpl_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRp1_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="http://www.ht0003.com/sds/sysml/1.6/SysML#/"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRqF_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTRqV_yEfG4KaDTdrs0Xg" base="1780562896169__IMTRpl_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://SysML16_PROFILES/SysML.profile.uml#SysML"/>
+    </profileApplication>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTRql_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRq1_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="http://www.ht0003.com/sds/sysml/1.6/SysML#//activities"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRrF_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTRrV_yEfG4KaDTdrs0Xg" base="1780562896169__IMTRql_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://SysML16_PROFILES/SysML.profile.uml#SysML.package_packagedElement_Activities"/>
+    </profileApplication>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTRrl_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRr1_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="http://www.ht0003.com/sds/sysml/1.6/SysML#//allocations"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRsF_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTRsV_yEfG4KaDTdrs0Xg" base="1780562896169__IMTRrl_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://SysML16_PROFILES/SysML.profile.uml#SysML.package_packagedElement_Allocations"/>
+    </profileApplication>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTRsl_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRs1_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="http://www.ht0003.com/sds/sysml/1.6/SysML#//blocks"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRtF_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTRtV_yEfG4KaDTdrs0Xg" base="1780562896169__IMTRsl_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://SysML16_PROFILES/SysML.profile.uml#SysML.package_packagedElement_Blocks"/>
+    </profileApplication>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTRtl_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRt1_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="http://www.ht0003.com/sds/sysml/1.6/SysML#//constraintblocks"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRuF_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTRuV_yEfG4KaDTdrs0Xg" base="1780562896169__IMTRtl_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://SysML16_PROFILES/SysML.profile.uml#SysML.package_packagedElement_ConstraintBlocks"/>
+    </profileApplication>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTRul_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRu1_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="http://www.ht0003.com/sds/sysml/1.6/SysML#//deprecatedelements"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRvF_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTRvV_yEfG4KaDTdrs0Xg" base="1780562896169__IMTRul_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://SysML16_PROFILES/SysML.profile.uml#SysML.package_packagedElement_DeprecatedElements"/>
+    </profileApplication>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTRvl_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRv1_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="http://www.ht0003.com/sds/sysml/1.6/SysML#//modelelements"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRwF_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTRwV_yEfG4KaDTdrs0Xg" base="1780562896169__IMTRvl_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://SysML16_PROFILES/SysML.profile.uml#SysML.package_packagedElement_ModelElements"/>
+    </profileApplication>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTRwl_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRw1_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="http://www.ht0003.com/sds/sysml/1.6/SysML#//portsandflows"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRxF_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTRxV_yEfG4KaDTdrs0Xg" base="1780562896169__IMTRwl_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://SysML16_PROFILES/SysML.profile.uml#SysML.package_packagedElement_Ports_u0026Flows"/>
+    </profileApplication>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTRxl_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRx1_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="http://www.ht0003.com/sds/sysml/1.6/SysML#//requirements"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRyF_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTRyV_yEfG4KaDTdrs0Xg" base="1780562896169__IMTRxl_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://SysML16_PROFILES/SysML.profile.uml#SysML.package_packagedElement_Requirements"/>
+    </profileApplication>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTRyl_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRy1_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="pathmap://SysML16_PROFILES/sysml-extensions.profile.uml#_nWzR8PsdEeuOLcOGxqRZFA"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRzF_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTRzV_yEfG4KaDTdrs0Xg" base="1780562896169__IMTRyl_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://SysML16_PROFILES/sysml-extensions.profile.uml#_OY018LLmEeuf5bOSuACxqQ"/>
+    </profileApplication>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTRzl_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTRz1_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="pathmap://SysML16_PROFILES/SACustomizationForSysML.profile.uml#_73qvAEJ_EfCDQNDQ_BpU2w"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTR0F_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTR0V_yEfG4KaDTdrs0Xg" base="1780562896169__IMTRzl_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://SysML16_PROFILES/SACustomizationForSysML.profile.uml#_8XSLkEJxEfCTGugH4uwNrg"/>
+    </profileApplication>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTR0l_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTR01_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="pathmap://SysML16_PROFILES/SACustomizationForSysML.profile.uml#_732VMEJ_EfCDQNDQ_BpU2w"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTR1F_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTR1V_yEfG4KaDTdrs0Xg" base="1780562896169__IMTR0l_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://SysML16_PROFILES/SACustomizationForSysML.profile.uml#_kDzkIEJyEfCTGugH4uwNrg"/>
+    </profileApplication>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTR1l_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTR11_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="pathmap://UML2_PROFILES/Validation_Profile.profile.uml#_HeGzEI-iEfCytOfVhK1VBQ"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTR2F_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTR2V_yEfG4KaDTdrs0Xg" base="1780562896169__IMTR1l_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://UML2_PROFILES/Validation_Profile.profile.uml#_11_5_f720368_1159529670215_231387_1"/>
+    </profileApplication>
+    <profileApplication xmi:type="uml:ProfileApplication" xmi:id="1780562896169__IMTR2l_yEfG4KaDTdrs0Xg">
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTR21_yEfG4KaDTdrs0Xg" source="http://www.eclipse.org/uml2/2.0.0/UML">
+        <references xmi:type="ecore:EPackage" href="pathmap://SysML16_PROFILES/SACustomizationForRequirements.profile.uml#_C9sQcbPUEfC9Jfe_fp8AhA"/>
+      </eAnnotations>
+      <eAnnotations xmi:type="ecore:EAnnotation" xmi:id="1780562896169__IMTR3F_yEfG4KaDTdrs0Xg" source="http://www.sysdesim.arch/uml2/stereotype">
+        <contents xmi:type="domain:StereotypeInstance" xmi:id="1780562896169__IMTR3V_yEfG4KaDTdrs0Xg" base="1780562896169__IMTR2l_yEfG4KaDTdrs0Xg">
+          <type xmi:type="uml:Stereotype" href="pathmap://UML_PROFILES/SDSProfile.profile.uml#_zouKwHV_EeuLv4CJTW7N3w"/>
+        </contents>
+      </eAnnotations>
+      <appliedProfile xmi:type="uml:Profile" href="pathmap://SysML16_PROFILES/SACustomizationForRequirements.profile.uml#_18_0beta_8f90291_1391001597107_586303_6259"/>
+    </profileApplication>
+  </uml:Model>
+  <Blocks:Block xmi:id="_TVHyUGCxEfGqsb6wf6ZObA" base_Class="_TT_J4GCxEfGqsb6wf6ZObA"/>
+  <Blocks:Block xmi:id="_Up_TgGCxEfGqsb6wf6ZObA" base_Class="_UpiAgGCxEfGqsb6wf6ZObA"/>
+</xmi:XMI>

@@ -2227,13 +2227,9 @@ def _lower_cross_level_transition(
     """
     source = machine.get_vertex(transition.source_id)
     target = machine.get_vertex(transition.target_id)
-    if source.vertex_type != "state" or target.vertex_type != "state":
+    if source.vertex_type == "final":
         raise NotImplementedError(
-            f"Phase4 only supports state-to-state cross-level transitions: {transition.transition_id}"
-        )
-    if source.is_composite:
-        raise NotImplementedError(
-            f"Phase4 only supports leaf-source cross-level transitions: {transition.transition_id}"
+            f"Phase4 does not support cross-level transitions from FinalState source: {transition.transition_id}"
         )
     if transition.trigger_kind == "signal" and transition.guard_expr_ir is not None:
         raise NotImplementedError(
@@ -2243,12 +2239,115 @@ def _lower_cross_level_transition(
         raise NotImplementedError(
             f"Phase4 only supports signal/none/time cross-level transitions: {transition.transition_id}"
         )
+    if source.vertex_type != "state":
+        raise NotImplementedError(
+            f"Phase4 only supports state-to-state cross-level transitions: {transition.transition_id}"
+        )
+    if source.is_composite:
+        if target.vertex_type == "final":
+            raise NotImplementedError(
+                f"Phase4 does not support composite source to FinalState target transitions: {transition.transition_id}"
+            )
+        raise NotImplementedError(
+            f"Phase4 only supports leaf-source cross-level transitions: {transition.transition_id}"
+        )
     if (
         transition.trigger_kind == "time"
         and transition.transition_id not in context.time_transitions_by_id
     ):  # pragma: no cover
         raise RuntimeError(
             f"Missing lowered time-transition metadata: {transition.transition_id}"
+        )
+
+    route_flag_name = _make_route_flag_name(machine, transition)
+    route_flag_guard = _build_route_flag_guard_expr(route_flag_name)
+    if transition.trigger_kind == "time":
+        first_hop_guard_expr = context.time_transitions_by_id[
+            transition.transition_id
+        ].guard_expr
+    else:
+        first_hop_guard_expr = transition.guard_expr_ir
+
+    if target.vertex_type == "final":
+        source_path = machine.state_id_path(transition.source_id)
+        if not source_path:
+            raise NotImplementedError(
+                f"Phase4 only supports leaf-source cross-level FinalState transitions: {transition.transition_id}"
+            )
+        final_owner_region = machine.get_region(target.parent_region_id)
+        final_owner_state_id = final_owner_region.owner_state_id
+        if final_owner_state_id is None:
+            direct_child_index = 0
+            final_scope_id = machine.machine_id
+        else:
+            try:
+                owner_index = source_path.index(final_owner_state_id)
+            except ValueError:
+                raise NotImplementedError(
+                    "Phase4 does not support cross-level FinalState target outside source subtree: "
+                    f"{transition.transition_id}"
+                )
+            direct_child_index = owner_index + 1
+            final_scope_id = final_owner_state_id
+        if direct_child_index >= len(source_path):
+            raise NotImplementedError(
+                f"Phase4 only supports nested leaf-source cross-level FinalState transitions: {transition.transition_id}"
+            )
+
+        context.route_flag_names_in_order.append(route_flag_name)
+        first_hop_transition = dsl_nodes.TransitionDefinition(
+            from_state=source.safe_name,
+            to_state=dsl_nodes.EXIT_STATE,
+            event_id=_build_signal_event_id(machine, transition)
+            if transition.trigger_kind == "signal"
+            else None,
+            condition_expr=first_hop_guard_expr,
+            post_operations=[
+                dsl_nodes.OperationAssignment(route_flag_name, dsl_nodes.Integer("1"))
+            ],
+        )
+        source_scope_id = _scope_state_id_for_region(machine, source.parent_region_id)
+        if transition.trigger_kind == "time":
+            _append_timeout_transition(context, source_scope_id, first_hop_transition)
+        else:
+            _append_regular_transition(context, source_scope_id, first_hop_transition)
+
+        for state_id in reversed(source_path[direct_child_index + 1 : -1]):
+            _append_prepended_transition(
+                context,
+                _scope_state_id_for_region(
+                    machine, machine.get_vertex(state_id).parent_region_id
+                ),
+                dsl_nodes.TransitionDefinition(
+                    from_state=machine.get_vertex(state_id).safe_name,
+                    to_state=dsl_nodes.EXIT_STATE,
+                    event_id=None,
+                    condition_expr=route_flag_guard,
+                    post_operations=[],
+                ),
+            )
+
+        direct_child_id = source_path[direct_child_index]
+        _append_prepended_transition(
+            context,
+            final_scope_id,
+            dsl_nodes.TransitionDefinition(
+                from_state=machine.get_vertex(direct_child_id).safe_name,
+                to_state=dsl_nodes.EXIT_STATE,
+                event_id=None,
+                condition_expr=route_flag_guard,
+                post_operations=[
+                    dsl_nodes.OperationAssignment(
+                        route_flag_name, dsl_nodes.Integer("0")
+                    )
+                ],
+            ),
+        )
+        return
+
+    if target.vertex_type != "state":
+        raise NotImplementedError(
+            f"Phase4 only supports state-to-state cross-level transitions: {transition.transition_id}"
         )
 
     source_path = machine.state_id_path(transition.source_id)
@@ -2264,17 +2363,9 @@ def _lower_cross_level_transition(
 
     source_branch_id = source_suffix_path[0]
     target_branch_id = target_suffix_path[0]
-    route_flag_name = _make_route_flag_name(machine, transition)
-    route_flag_guard = _build_route_flag_guard_expr(route_flag_name)
     first_hop_target_state_id = (
         target_branch_id if source_branch_id == transition.source_id else None
     )
-    if transition.trigger_kind == "time":
-        first_hop_guard_expr = context.time_transitions_by_id[
-            transition.transition_id
-        ].guard_expr
-    else:
-        first_hop_guard_expr = transition.guard_expr_ir
 
     context.route_flag_names_in_order.append(route_flag_name)
     first_hop_transition = dsl_nodes.TransitionDefinition(
@@ -2550,6 +2641,10 @@ def _build_transition(
         if (
             source.vertex_type != "state" or target.vertex_type != "state"
         ):  # pragma: no cover
+            if source.vertex_type == "state" and target.vertex_type == "final":
+                raise NotImplementedError(
+                    f"Phase3 does not support uml:TimeEvent transitions targeting FinalState: {transition.transition_id}"
+                )
             raise NotImplementedError(
                 f"Phase3 only supports state-to-state uml:TimeEvent transitions: {transition.transition_id}"
             )
@@ -2569,6 +2664,14 @@ def _build_transition(
             f"Phase2 does not support transitions with both signal and guard: {transition.transition_id}"
         )
     if source.vertex_type == "pseudostate":
+        if target.vertex_type == "final":
+            raise NotImplementedError(
+                f"Phase2 does not support init pseudostate targeting FinalState target: {transition.transition_id}"
+            )
+        if target.vertex_type != "state":
+            raise NotImplementedError(
+                f"Phase2 only supports init pseudostate targeting states: {transition.transition_id}"
+            )
         return dsl_nodes.TransitionDefinition(
             from_state=dsl_nodes.INIT_STATE,
             to_state=target.safe_name,
@@ -2577,7 +2680,11 @@ def _build_transition(
             post_operations=[],
         )
 
-    if source.vertex_type != "state" or target.vertex_type != "state":
+    if source.vertex_type == "final":
+        raise NotImplementedError(
+            f"Phase2 does not support FinalState source transitions: {transition.transition_id}"
+        )
+    if source.vertex_type != "state":
         raise NotImplementedError(
             f"Phase2 only supports init pseudostate and state-to-state transitions: {transition.transition_id}"
         )
@@ -2587,6 +2694,27 @@ def _build_transition(
         if transition.trigger_kind == "signal"
         else None
     )
+
+    if target.vertex_type == "final":
+        if source.is_composite:
+            raise NotImplementedError(
+                f"Phase2 does not support composite source to FinalState target transitions: {transition.transition_id}"
+            )
+        if source.parent_region_id != target.parent_region_id:
+            raise NotImplementedError(
+                f"Phase2 does not support cross-level transitions targeting FinalState: {transition.transition_id}"
+            )
+        return dsl_nodes.TransitionDefinition(
+            from_state=source.safe_name,
+            to_state=dsl_nodes.EXIT_STATE,
+            event_id=event_id,
+            condition_expr=transition.guard_expr_ir,
+            post_operations=[],
+        )
+    if target.vertex_type != "state":
+        raise NotImplementedError(
+            f"Phase2 only supports init pseudostate, state-to-state transitions, and leaf state to FinalState target transitions: {transition.transition_id}"
+        )
 
     return dsl_nodes.TransitionDefinition(
         from_state=source.safe_name,

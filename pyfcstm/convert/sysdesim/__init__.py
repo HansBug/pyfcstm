@@ -130,7 +130,9 @@ from .timeline_verify import (
     build_sysdesim_state_coexistence_timeline_report,
     build_sysdesim_phase10_report,
     build_sysdesim_phase9_report,
+    build_sysdesim_termination_summary,
     build_sysdesim_timeline_import_report,
+    format_sysdesim_termination_summary_lines,
     solve_sysdesim_state_coexistence,
 )
 from .timeline_plantuml import (
@@ -206,6 +208,7 @@ __all__ = [
     "build_sysdesim_phase56_report",
     "build_sysdesim_phase9_report",
     "build_sysdesim_phase78_report",
+    "build_sysdesim_termination_summary",
     "build_sysdesim_timeline_plantuml",
     "build_sysdesim_timeline_plantuml_from_xml",
     "build_sysdesim_state_coexistence_constraint_preview",
@@ -216,6 +219,7 @@ __all__ = [
     "convert_sysdesim_xml_to_dsls",
     "emit_program",
     "extract_sysdesim_interactions",
+    "format_sysdesim_termination_summary_lines",
     "load_sysdesim_machine",
     "load_sysdesim_raw_xmi",
     "load_sysdesim_xml",

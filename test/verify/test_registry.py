@@ -37,12 +37,12 @@ GROUP3_BMC_PLACEHOLDERS = (
 ALL_ALGORITHMS = GROUP1_TOPOLOGY + GROUP2_SMT_LOCAL + GROUP3_BMC_PLACEHOLDERS
 
 
-def test_registry_contains_exactly_all_pr_a_algorithms_in_stable_order():
+def test_registry_contains_exactly_all_verify_algorithms_in_stable_order():
     assert tuple(REGISTRY) == ALL_ALGORITHMS
     assert len(REGISTRY) == 19
 
 
-def test_registry_keys_match_meta_names_and_pr_a4_impl_state():
+def test_registry_keys_match_meta_names_and_raw_impl_state():
     assert not hasattr(REGISTRY, "__setitem__")
     assert len(set(REGISTRY)) == len(REGISTRY)
     for name, meta in REGISTRY.items():

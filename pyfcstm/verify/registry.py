@@ -4,17 +4,18 @@ from types import MappingProxyType
 from typing import Callable, Mapping, Optional, Tuple
 
 from . import topology
-from .taxonomy import CallCountScaling, FallbackUnknownRisk, VerifyAlgorithmMeta
-from .smt_local import (
-    composite_init_guards_incomplete,
+from .algorithms.effect import effect_contradicts_guard, effect_no_op_under_guard
+from .algorithms.guard import (
     dead_guard,
-    effect_contradicts_guard,
-    effect_no_op_under_guard,
-    enter_postcondition_implies_during_precondition,
     forced_guard_unsat_under_init,
     guard_tautology,
+)
+from .algorithms.lifecycle import enter_postcondition_implies_during_precondition
+from .algorithms.transition import (
+    composite_init_guards_incomplete,
     transition_shadowed_by_predecessor,
 )
+from .taxonomy import CallCountScaling, FallbackUnknownRisk, VerifyAlgorithmMeta
 
 
 def _structural(

@@ -43,9 +43,9 @@ def _validate_max_call_count_scaling(maximum: CallCountScaling) -> None:
 
 def _call_count_allows(value: CallCountScaling, maximum: CallCountScaling) -> bool:
     if value == "linear_in_leaves" and maximum == "linear_in_transitions":
-        # PR-A1's inspect matrix treats all smt_linear local checks as part of
-        # the recommended default budget. Leaf-linear checks are still rejected
-        # by stricter limits such as ``linear_in_states``.
+        # The inspect matrix treats all smt_linear local checks as part of the
+        # recommended default budget. Leaf-linear checks are still rejected by
+        # stricter limits such as ``linear_in_states``.
         return True
     return _order_allows(CALL_COUNT_SCALING_ORDER, value, maximum)
 

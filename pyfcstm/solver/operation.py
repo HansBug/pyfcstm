@@ -465,6 +465,20 @@ def _branch_status(
     return _normalize_solver_status(result.kind)
 
 
+def _merge_branch_env(
+    base_env: _Z3Env,
+    merge_names: Sequence[str],
+    branch_results: Sequence[Tuple[z3.ExprRef, Mapping[str, _Z3Expr]]],
+) -> _Z3Env:
+    merged_env = dict(base_env)
+    for name in merge_names:
+        merged_value = base_env[name]
+        for selector, result_env in reversed(branch_results):
+            merged_value = z3.If(selector, result_env[name], merged_value)
+        merged_env[name] = merged_value
+    return merged_env
+
+
 def _execute_operation_statements_domain(
     statements: Sequence[OperationStatement],
     env: _Z3Env,
@@ -776,7 +790,7 @@ def _execute_if_block_domain(
             step_index = branch_result.next_step
             if branch_result.failure is not None:
                 return _ExecutionResult(
-                    env=base_env,
+                    env=_merge_branch_env(base_env, merge_names, branch_results),
                     definedness_constraints=tuple(all_domains),
                     steps=tuple(steps),
                     branches=tuple(branches),
@@ -787,12 +801,7 @@ def _execute_if_block_domain(
         if branch.condition is not None:
             prefix_selectors.append(z3.Not(condition_expr))
 
-    merged_env = dict(base_env)
-    for name in merge_names:
-        merged_value = base_env[name]
-        for selector, result_env in reversed(branch_results):
-            merged_value = z3.If(selector, result_env[name], merged_value)
-        merged_env[name] = merged_value
+    merged_env = _merge_branch_env(base_env, merge_names, branch_results)
 
     return _ExecutionResult(
         env=merged_env,

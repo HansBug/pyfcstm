@@ -934,6 +934,37 @@ class TestExecuteOperationsDomain:
         assert execution.steps == ()
         assert_z3_expr_equal(execution.env["y"], y)
 
+    def test_branch_body_failure_preserves_partial_branch_env(self):
+        """A branch body failure returns the work environment at the failure point."""
+        x, y, z, w = z3.Ints("x y z w")
+        statements = parse_operations(
+            """
+            if [x > 0] {
+                y = 1;
+                z = missing;
+            } else {
+                y = 2;
+            }
+            w = 3;
+            """,
+            allowed_vars=None,
+        )
+
+        execution = execute_operations_domain(
+            statements,
+            {"x": x, "y": y, "z": z, "w": w},
+            path_conditions=(x > 0,),
+        )
+
+        assert execution.failure is not None
+        assert execution.failure.kind == "value_error"
+        assert len(execution.steps) == 1
+        assert len(execution.branches) == 1
+        assert execution.branches[0].failure is execution.failure
+        assert_z3_expr_equal(execution.branches[0].result_env["y"], z3.IntVal(1))
+        assert_constraints_reject((x > 0,), execution.env["y"] != 1)
+        assert_z3_expr_equal(execution.env["w"], w)
+
     def test_unreachable_elif_condition_is_not_translated(self):
         """An unreachable elif condition cannot leak unsupported functions."""
         x = z3.Int("x")

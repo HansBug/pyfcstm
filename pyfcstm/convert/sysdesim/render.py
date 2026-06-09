@@ -48,6 +48,8 @@ from .timeline import (
 from .timeline_verify import (
     SysDeSimPhase10Report,
     build_sysdesim_phase10_report,
+    build_sysdesim_termination_summary,
+    format_sysdesim_termination_summary_lines,
 )
 
 
@@ -347,6 +349,8 @@ def _shorten_state_path(state_path: str) -> str:
     """
     if not isinstance(state_path, str) or not state_path:
         return ""
+    if state_path == "[*]":
+        return "已终止"
     if ".Control." in state_path:
         return state_path.split(".Control.", 1)[1]
     if state_path.endswith(".Control"):
@@ -618,6 +622,11 @@ def build_overlay_from_diagnostics(
     """
     diagnostics = list(diagnostics or ())
     summary_lines = list(summary_lines or ())
+    summary_lines.extend(
+        format_sysdesim_termination_summary_lines(
+            build_sysdesim_termination_summary(phase10_report)
+        )
+    )
 
     error_count = sum(1 for d in diagnostics if (d.level or "").lower() == "error")
     warning_count = sum(

@@ -11,7 +11,10 @@ from click.testing import CliRunner
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.entry import pyfcstmcli
 from pyfcstm.model.model import StateMachine, parse_dsl_node_to_state_machine
-from test.convert.sysdesim.test_phase9_11 import _build_parallel_timeline_xml
+from test.convert.sysdesim.test_phase9_11 import (
+    _build_parallel_timeline_xml,
+    _build_same_level_final_timeline_xml,
+)
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -1444,6 +1447,67 @@ def test_validate_render_diagram_emits_overlay_with_summary_lines(tmp_path: Path
     assert ">co<" in text
     # v3: time column header is the leftmost cell of the table.
     assert ">t<" in text
+
+
+@pytest.mark.unittest
+def test_validate_final_state_report_and_render_show_termination(tmp_path: Path):
+    """``validate`` writes fixed termination schema and visible final provenance."""
+    xml_file = _build_same_level_final_timeline_xml(tmp_path)
+    out_svg = tmp_path / "final_validate.svg"
+    report_file = tmp_path / "final_validate.json"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "--no-static-check",
+            "-i",
+            str(xml_file),
+            "--render-diagram",
+            str(out_svg),
+            "--report-file",
+            str(report_file),
+        ],
+        color=False,
+    )
+    output = _strip_ansi(result.output)
+    assert result.exit_code == 0, result.output
+    assert "Termination" in output
+    assert "已终止" in output
+    assert "TimelineEnded" in output
+    assert "tx_end" in output
+    assert "final_root" in output
+    assert "__sysdesim_final_" not in output
+
+    report = json.loads(report_file.read_text(encoding="utf-8"))
+    termination = report["phase10"]["termination"]
+    assert isinstance(termination, list)
+    assert termination
+    row = termination[0]
+    assert set(row) >= {
+        "machine_alias",
+        "source_path",
+        "target_id",
+        "target_path",
+        "target_vertex_type",
+        "transition_ids",
+        "reached",
+        "ended_step_ids",
+    }
+    assert row["machine_alias"] == "TimelineEnded"
+    assert row["source_path"] == ["Idle"]
+    assert row["target_id"] == "final_root"
+    assert row["target_vertex_type"] == "final"
+    assert row["transition_ids"] == ["tx_end"]
+    assert row["reached"] is True
+    assert row["ended_step_ids"]
+    assert "__sysdesim_final_" not in report_file.read_text(encoding="utf-8")
+
+    svg = out_svg.read_text(encoding="utf-8")
+    assert "已终止" in svg
+    assert "final_root" in svg
+    assert "tx_end" in svg
+    assert "__sysdesim_final_" not in svg
 
 
 @pytest.mark.unittest

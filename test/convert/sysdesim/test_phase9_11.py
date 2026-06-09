@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from textwrap import dedent
+from types import SimpleNamespace
 
 import pytest
 
@@ -10,9 +11,15 @@ from pyfcstm.convert.sysdesim import (
     build_sysdesim_state_coexistence_timeline_report,
     build_sysdesim_phase10_report,
     build_sysdesim_phase9_report,
+    build_sysdesim_termination_summary,
+    build_sysdesim_timeline_import_report,
+    format_sysdesim_termination_summary_lines,
     solve_sysdesim_state_coexistence,
 )
-from pyfcstm.convert.sysdesim.timeline_verify import _state_seen_in_trace
+from pyfcstm.convert.sysdesim.timeline_verify import (
+    _output_contains_source_path,
+    _state_seen_in_trace,
+)
 
 pytestmark = pytest.mark.unittest
 
@@ -985,3 +992,123 @@ def test_phase10_does_not_record_failed_unclosed_child_final_auto(
         ("initial", "TimelineUnclosedChildFinal.Parent.Idle", "t00", "t01"),
         ("s01", "TimelineUnclosedChildFinal.Parent.Done", "t01", "t02"),
     ]
+
+
+def test_final_state_termination_summary_uses_trace_alias_when_no_output_matches():
+    """FinalState rows should still report a trace when source matching fails."""
+
+    class FakeMachine:
+        """Minimal machine stub exposing the ``walk_states`` contract."""
+
+        def walk_states(self):
+            """Return one unrelated state so source-path matching fails."""
+            return [
+                SimpleNamespace(
+                    path=("Root", "Other"),
+                    name="Other",
+                    extra_name=None,
+                )
+            ]
+
+    phase10_report = SimpleNamespace(
+        phase9_report=SimpleNamespace(
+            phase78_report=SimpleNamespace(
+                machine_graph=[
+                    SimpleNamespace(
+                        source_path=("NoSuchSource",),
+                        target_id="final_root",
+                        target_path=("Root",),
+                        target_vertex_type="final",
+                        transition_ids=("tx_end",),
+                    )
+                ],
+            ),
+            outputs=(
+                SimpleNamespace(
+                    output_name="NoMatchOutput",
+                    machine=FakeMachine(),
+                ),
+            ),
+        ),
+        traces=(
+            SimpleNamespace(
+                machine_alias="TraceOnlyOutput",
+                steps=(
+                    SimpleNamespace(
+                        step_id="s01",
+                        post_state_path="[*]",
+                        stabilized_state_path="[*]",
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    summary = build_sysdesim_termination_summary(phase10_report)
+
+    assert summary == [
+        {
+            "machine_alias": "TraceOnlyOutput",
+            "source_path": ["NoSuchSource"],
+            "target_id": "final_root",
+            "target_path": ["Root"],
+            "target_vertex_type": "final",
+            "transition_ids": ["tx_end"],
+            "reached": True,
+            "ended_step_ids": ["s01"],
+        }
+    ]
+
+
+def test_final_state_termination_formatter_accepts_scalar_defensive_fields():
+    """Formatter should degrade predictably for scalar report fields."""
+    lines = format_sysdesim_termination_summary_lines(
+        [
+            {
+                "machine_alias": "MachineA",
+                "source_path": "Root.Idle",
+                "target_id": "final_root",
+                "transition_ids": "tx_end",
+                "ended_step_ids": "s01",
+                "reached": False,
+            }
+        ]
+    )
+
+    assert lines == [
+        "未触发终止: MachineA has XML FinalState final_root via "
+        "transition tx_end from Root.Idle."
+    ]
+
+
+def test_output_contains_source_path_handles_empty_and_incomplete_paths():
+    """Source-path matching should reject empty and incomplete fake machines."""
+
+    class IncompleteMachine:
+        """Machine stub missing the parent path for its only leaf state."""
+
+        def walk_states(self):
+            """Return only the leaf, forcing a missing-parent lookup."""
+            return [
+                SimpleNamespace(
+                    path=("Root", "Parent", "Leaf"),
+                    name="Leaf",
+                    extra_name="LeafLabel",
+                )
+            ]
+
+    output = SimpleNamespace(machine=IncompleteMachine())
+
+    assert not _output_contains_source_path(output, ())
+    assert not _output_contains_source_path(output, ("ParentLabel", "LeafLabel"))
+
+
+def test_timeline_import_report_rejects_partial_phase11_query(tmp_path: Path):
+    """Phase11 query arguments should be provided as an all-or-nothing group."""
+    xml_file = _build_same_level_final_timeline_xml(tmp_path)
+
+    with pytest.raises(ValueError):
+        build_sysdesim_timeline_import_report(
+            str(xml_file),
+            left_machine_alias="TimelineEnded",
+        )

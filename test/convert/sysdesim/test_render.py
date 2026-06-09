@@ -14,7 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from pyfcstm.convert.sysdesim import build_sysdesim_phase10_report
+from pyfcstm.convert.sysdesim import (
+    build_sysdesim_phase10_report,
+    build_sysdesim_timeline_import_report,
+)
 from pyfcstm.convert.sysdesim import render as render_module
 from pyfcstm.convert.sysdesim.ir import IrDiagnostic
 from pyfcstm.convert.sysdesim.render import (
@@ -40,6 +43,13 @@ def _png_dimensions(data: bytes) -> tuple:
 def _build_parallel_timeline_xml(tmp_path: Path) -> Path:
     """Reuse the canonical phase9_11 fixture for renderer tests."""
     from test.convert.sysdesim.test_phase9_11 import _build_parallel_timeline_xml as _orig
+
+    return _orig(tmp_path)
+
+
+def _build_same_level_final_timeline_xml(tmp_path: Path) -> Path:
+    """Reuse the compact FinalState fixture for renderer tests."""
+    from test.convert.sysdesim.test_phase9_11 import _build_same_level_final_timeline_xml as _orig
 
     return _orig(tmp_path)
 
@@ -741,3 +751,86 @@ def test_render_overlay_state_cells_highlight_first_coexistence(tmp_path: Path):
     decorated = render_sysdesim_timeline_svg(phase10_report=phase10, overlay=overlay)
     # First-coexistence cell uses the "good" severity green (#1f8b3a).
     assert "#1f8b3a" in decorated
+
+
+@pytest.mark.unittest
+def test_overlay_state_cells_show_ended_label_for_final_state(tmp_path: Path):
+    """The state table displays runtime ended sentinel as a user label."""
+    xml_file = _build_same_level_final_timeline_xml(tmp_path)
+    phase10 = build_sysdesim_phase10_report(str(xml_file))
+    overlay = build_overlay_from_diagnostics(
+        phase10_report=phase10, diagnostics=[], include_state_cells=True
+    )
+    assert overlay is not None
+    machine_columns = [
+        index
+        for index, column in enumerate(overlay["state_columns"])
+        if column["kind"] == "machine"
+    ]
+    assert machine_columns
+    machine_cells = [
+        row["cells"][index]
+        for row in overlay["step_states"]
+        for index in machine_columns
+    ]
+    assert "已终止" in machine_cells
+    assert "[*]" not in machine_cells
+    assert "__sysdesim_final_" not in repr(overlay)
+
+
+@pytest.mark.unittest
+def test_render_overlay_final_state_summary_visible_in_svg(tmp_path: Path):
+    """SVG overlay surfaces ended state and original XML FinalState provenance."""
+    xml_file = _build_same_level_final_timeline_xml(tmp_path)
+    phase10 = build_sysdesim_phase10_report(str(xml_file))
+    overlay = build_overlay_from_diagnostics(
+        phase10_report=phase10, diagnostics=[], include_state_cells=True
+    )
+    svg = render_sysdesim_timeline_svg(phase10_report=phase10, overlay=overlay)
+    assert "已终止" in svg
+    assert "final_root" in svg
+    assert "tx_end" in svg
+    assert "__sysdesim_final_" not in svg
+    assert "SigEnd" in svg
+
+
+@pytest.mark.unittest
+def test_render_overlay_final_state_summary_png_path(tmp_path: Path):
+    """PNG rendering accepts the same termination overlay payload."""
+    xml_file = _build_same_level_final_timeline_xml(tmp_path)
+    phase10 = build_sysdesim_phase10_report(str(xml_file))
+    overlay = build_overlay_from_diagnostics(
+        phase10_report=phase10, diagnostics=[], include_state_cells=True
+    )
+    png = render_sysdesim_timeline_png(phase10_report=phase10, overlay=overlay)
+    assert png[:8] == _PNG_MAGIC
+    width, height = _png_dimensions(png)
+    assert width > 0
+    assert height > 0
+
+
+@pytest.mark.unittest
+def test_real_cross_level_final_state_render_summary_smoke():
+    """The real cross-level fixture reports and renders termination without leaks."""
+    xml_file = Path("test/testfile/sysdesim/final_state_cross_level_model0608.xml")
+    phase10 = build_sysdesim_phase10_report(str(xml_file))
+    final_edges = [
+        item
+        for item in phase10.phase9_report.phase78_report.machine_graph
+        if item.target_vertex_type == "final"
+    ]
+    assert final_edges
+    report = build_sysdesim_timeline_import_report(str(xml_file))
+    termination = report["phase10"]["termination"]
+    assert termination
+    assert any(item["target_vertex_type"] == "final" for item in termination)
+    assert any(item["reached"] and item["ended_step_ids"] for item in termination)
+    overlay = build_overlay_from_diagnostics(
+        phase10_report=phase10, diagnostics=[], include_state_cells=True
+    )
+    svg = render_sysdesim_timeline_svg(phase10_report=phase10, overlay=overlay)
+    assert "已终止" in svg
+    assert final_edges[0].target_id in svg
+    assert "__sysdesim_final_" not in svg
+    assert "__sysdesim_final_" not in repr(overlay)
+    assert "__sysdesim_final_" not in repr(report)

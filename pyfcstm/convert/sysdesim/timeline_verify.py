@@ -53,6 +53,7 @@ _TIME_UNITS = {
 }
 _INITIAL_TIME_SYMBOL = "t00"
 _INITIAL_SOURCE_STEP_ID = "initial"
+_ENDED_STATE_PATH = "[*]"
 
 
 @dataclass(frozen=True)
@@ -599,10 +600,33 @@ def _coerce_runtime_input(define_type: str, value_text: str) -> object:
 
 def _current_auto_transition(runtime: SimulationRuntime):
     """Return the first unconditional outgoing transition of the current leaf state."""
-    for transition in runtime.current_state.transitions_from:
+    if runtime.is_ended:
+        return None
+    current_state = runtime.current_state
+    for transition in current_state.transitions_from:
         if transition.event is None and transition.guard is None:
+            # Intentional SimulationRuntime-internal coupling: Phase10 needs to
+            # mirror ``cycle([])`` transition selection without actually
+            # probing with a real cycle, because a rejected auto transition
+            # would otherwise still run leaf ``during`` actions and mutate the
+            # imported trace.  Keep this guard aligned with
+            # ``SimulationRuntime._select_transition(validate_stoppable=True)``.
+            if current_state.is_stoppable and not runtime._validate_transition(
+                runtime.stack,
+                runtime.vars,
+                transition,
+                {},
+            ):
+                continue
             return transition
     return None
+
+
+def _runtime_state_path(runtime: SimulationRuntime) -> str:
+    """Return the current runtime state path, or the ended sentinel."""
+    if runtime.is_ended:
+        return _ENDED_STATE_PATH
+    return ".".join(runtime.current_state.path)
 
 
 def _build_state_windows(
@@ -668,6 +692,14 @@ def _build_state_windows(
                 )
             )
         else:
+            if (
+                current.pre_state_path == _ENDED_STATE_PATH
+                and current.post_state_path == _ENDED_STATE_PATH
+            ):
+                # Once the machine has already ended, avoid creating repeated
+                # ``[*]`` -> ``[*]`` open-interval windows that could make the
+                # ended sentinel look like a queryable ordinary state.
+                continue
             windows.append(
                 SysDeSimTimelineStateWindow(
                     machine_alias=machine_alias,
@@ -714,7 +746,7 @@ def _build_machine_trace(
             runtime.vars[local_name] = float("nan")
 
     runtime.cycle([])
-    initial_state_path = ".".join(runtime.current_state.path)
+    initial_state_path = _runtime_state_path(runtime)
     initial_vars = tuple(
         (name, _format_runtime_number(value))
         for name, value in sorted(runtime.vars.items())
@@ -722,7 +754,7 @@ def _build_machine_trace(
 
     trace_steps = []
     for index, step in enumerate(scenario.steps):
-        pre_state_path = ".".join(runtime.current_state.path)
+        pre_state_path = _runtime_state_path(runtime)
         applied_inputs = []
         for action in step.actions:
             if not isinstance(action, SysDeSimTimelineScenarioSetInputAction):
@@ -737,8 +769,9 @@ def _build_machine_trace(
             applied_inputs.append((action.input_name, local_name, action.value_text))
 
         bound_event_path = _resolve_bound_event(step, binding)
-        runtime.cycle([bound_event_path] if bound_event_path else [])
-        post_state_path = ".".join(runtime.current_state.path)
+        if not runtime.is_ended:
+            runtime.cycle([bound_event_path] if bound_event_path else [])
+        post_state_path = _runtime_state_path(runtime)
 
         auto_occurrences = []
         right_emit_step_id = _find_next_emit_step_id(scenario.steps, index)
@@ -752,13 +785,13 @@ def _build_machine_trace(
             auto_transition = _current_auto_transition(runtime)
             if auto_transition is None:
                 break
-            from_state_path = ".".join(runtime.current_state.path)
+            from_state_path = _runtime_state_path(runtime)
             auto_index += 1
             occurrence_symbol = "tau__{alias}__{step_id}__{index}".format(
                 alias=output.output_name, step_id=step.step_id, index=auto_index
             )
             runtime.cycle([])
-            to_state_path = ".".join(runtime.current_state.path)
+            to_state_path = _runtime_state_path(runtime)
             auto_occurrences.append(
                 SysDeSimTimelineAutoOccurrence(
                     machine_alias=output.output_name,
@@ -776,6 +809,8 @@ def _build_machine_trace(
                     ),
                 )
             )
+            if runtime.is_ended:
+                break
 
         trace_steps.append(
             SysDeSimTimelineStepExecution(
@@ -783,7 +818,7 @@ def _build_machine_trace(
                 time_symbol=step.time_symbol,
                 pre_state_path=pre_state_path,
                 post_state_path=post_state_path,
-                stabilized_state_path=".".join(runtime.current_state.path),
+                stabilized_state_path=_runtime_state_path(runtime),
                 bound_event_path=bound_event_path,
                 applied_inputs=tuple(applied_inputs),
                 auto_occurrences=tuple(auto_occurrences),
@@ -1090,6 +1125,8 @@ def _state_seen_in_trace(
     state_path: str,
 ) -> bool:
     """Return whether one state appears anywhere in the imported trace."""
+    if state_path == _ENDED_STATE_PATH:
+        return False
     if trace.initial_state_path == state_path:
         return True
     if any(
@@ -1433,9 +1470,7 @@ def _build_witness_steps(
                 # mirrors the ``-->Sig13`` outbound notation below.
                 actions.append("{}<--".format(action.event_name))
             elif isinstance(action, SysDeSimTimelineScenarioSetInputAction):
-                actions.append(
-                    "{}={}".format(action.input_name, action.value_text)
-                )
+                actions.append("{}={}".format(action.input_name, action.value_text))
         for note in step.notes:
             if isinstance(note, str) and note.startswith("outbound_signal="):
                 signal = note.split("=", 1)[1].strip()
@@ -1470,9 +1505,7 @@ def _render_scenario_actions(
         if isinstance(action, SysDeSimTimelineScenarioEmitAction):
             rendered.append("{}<--".format(action.event_name))
         elif isinstance(action, SysDeSimTimelineScenarioSetInputAction):
-            rendered.append(
-                "{}={}".format(action.input_name, action.value_text)
-            )
+            rendered.append("{}={}".format(action.input_name, action.value_text))
     for note in notes:
         if isinstance(note, str) and note.startswith("outbound_signal="):
             signal = note.split("=", 1)[1].strip()

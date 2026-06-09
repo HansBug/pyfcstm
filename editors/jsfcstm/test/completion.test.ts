@@ -116,6 +116,43 @@ describe('jsfcstm completion support', () => {
         assert.ok(actionItems.some(item => item.label === 'Root.ResetCounter' && item.kind === 'function'));
     });
 
+    it('offers condition logical operators only inside guard expressions', async () => {
+        const guardDocument = createDocument([
+            'def int a = 0;',
+            'def int b = 0;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B : if [a > 0 ',
+            '}',
+        ].join('\n'), '/tmp/guard-logical-completion.fcstm');
+        const guardItems = await packageModule.collectCompletionItems(guardDocument, {
+            line: 6,
+            character: guardDocument.lineAt(6).text.length,
+        });
+        const guardLabels = new Set(guardItems.map(item => item.label));
+        assert.equal(guardLabels.has('implies'), true);
+        assert.equal(guardLabels.has('xor'), true);
+        assert.equal(guardLabels.has('iff'), true);
+        assert.equal(guardLabels.has('^'), false);
+        assert.equal(guardLabels.has('->'), false);
+
+        const numericDocument = createDocument([
+            'def int a = 0;',
+            'def int b = ',
+            'state Root;',
+        ].join('\n'), '/tmp/numeric-completion.fcstm');
+        const numericItems = await packageModule.collectCompletionItems(numericDocument, {
+            line: 1,
+            character: numericDocument.lineAt(1).text.length,
+        });
+        const numericLabels = new Set(numericItems.map(item => item.label));
+        assert.equal(numericLabels.has('implies'), false);
+        assert.equal(numericLabels.has('xor'), false);
+        assert.equal(numericLabels.has('iff'), false);
+    });
+
     it('limits scoped state, event, and import alias completions to visible lookup scopes', async () => {
         const document = createDocument([
             'state Root {',

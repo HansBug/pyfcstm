@@ -132,6 +132,18 @@ Tutorials
 * :doc:`tutorials/cli/index`
 * :doc:`tutorials/grammar/index`
 
+Release Notes
+-------------------------
+
+.. toctree::
+    :maxdepth: 1
+    :caption: Release Notes
+    :hidden:
+
+    release_notes
+
+* :doc:`release_notes`
+
 Best Practice
 -------------------------
 

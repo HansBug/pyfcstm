@@ -8,6 +8,475 @@ import {
     packageModule,
 } from './support';
 
+const COND_PRIORITY_OPERATORS = [
+    '==',
+    '!=',
+    'iff',
+    '&&',
+    'and',
+    'xor',
+    '||',
+    'or',
+    '=>',
+    'implies',
+] as const;
+
+const COND_PRIORITY: Record<string, number> = {
+    '==': 50,
+    '!=': 50,
+    iff: 50,
+    '&&': 40,
+    and: 40,
+    xor: 30,
+    '||': 20,
+    or: 20,
+    '=>': 10,
+    implies: 10,
+};
+
+const COND_RIGHT_ASSOC = new Set(['=>', 'implies']);
+
+const COND_CANONICAL_OP: Record<string, string> = {
+    and: '&&',
+    or: '||',
+    implies: '=>',
+};
+
+const COND_ATOM_NAMES = 'abcdefghijklmnopqrstuvwxyz'.split('');
+
+const NUM_COMPARE_OPERATORS = ['<', '>', '<=', '>=', '==', '!='] as const;
+
+const NUMERIC_OPERAND_SHAPES = [
+    'name',
+    'integer',
+    'paren_name',
+    'unary_name',
+    'bitwise_pair',
+    'paren_bitwise_pair',
+    'bitwise_chain',
+] as const;
+
+const NUMERIC_CARET_BOUNDARY_SHAPES = [
+    'name',
+    'bitwise_pair',
+    'paren_bitwise_pair',
+    'bitwise_chain',
+] as const;
+
+type NumericOperandShape = typeof NUMERIC_OPERAND_SHAPES[number];
+type NumericCaretBoundaryShape = typeof NUMERIC_CARET_BOUNDARY_SHAPES[number];
+
+function canonicalCondOp(operator: string): string {
+    return COND_CANONICAL_OP[operator] || operator;
+}
+
+function condAtom(name: string): Record<string, unknown> {
+    return {
+        pyNodeType: 'BinaryOp',
+        op: '>',
+        expr1: {pyNodeType: 'Name', name},
+        expr2: {pyNodeType: 'Integer', raw: '0'},
+    };
+}
+
+function expectedCondChain(
+    operators: readonly string[],
+    names = COND_ATOM_NAMES.slice(0, operators.length + 1),
+): Record<string, unknown> {
+    const values = [condAtom(names[0])];
+    const ops: string[] = [];
+
+    function reduceOnce(): void {
+        const op = ops.pop();
+        const right = values.pop();
+        const left = values.pop();
+        assert.ok(op);
+        assert.ok(left);
+        assert.ok(right);
+        values.push({
+            pyNodeType: 'BinaryOp',
+            expr1: left,
+            op: canonicalCondOp(op),
+            expr2: right,
+        });
+    }
+
+    operators.forEach((op, index) => {
+        while (ops.length > 0) {
+            const top = ops[ops.length - 1];
+            const incomingPrecedence = COND_PRIORITY[op];
+            const topPrecedence = COND_PRIORITY[top];
+            const shouldReduce = COND_RIGHT_ASSOC.has(op)
+                ? incomingPrecedence < topPrecedence
+                : incomingPrecedence <= topPrecedence;
+            if (!shouldReduce) break;
+            reduceOnce();
+        }
+        ops.push(op);
+        values.push(condAtom(names[index + 1]));
+    });
+
+    while (ops.length > 0) {
+        reduceOnce();
+    }
+
+    assert.equal(values.length, 1);
+    return values[0];
+}
+
+function condChainText(
+    operators: readonly string[],
+    names = COND_ATOM_NAMES.slice(0, operators.length + 1),
+): string {
+    const parts = [`${names[0]} > 0`];
+    operators.forEach((operator, index) => {
+        parts.push(operator, `${names[index + 1]} > 0`);
+    });
+    return parts.join(' ');
+}
+
+function condChainNames(offset: number, operators: readonly string[]): string[] {
+    return COND_ATOM_NAMES.slice(offset, offset + operators.length + 1);
+}
+
+function conditionTernaryText(
+    condOps: readonly string[],
+    trueOps: readonly string[],
+    falseOps: readonly string[],
+): string {
+    const condition = condChainText(condOps, condChainNames(0, condOps));
+    const whenTrue = condChainText(trueOps, condChainNames(8, trueOps));
+    const whenFalse = condChainText(falseOps, condChainNames(16, falseOps));
+    return `(${condition}) ? ${whenTrue} : ${whenFalse}`;
+}
+
+function expectedConditionTernary(
+    condOps: readonly string[],
+    trueOps: readonly string[],
+    falseOps: readonly string[],
+): Record<string, unknown> {
+    return {
+        pyNodeType: 'ConditionalOp',
+        cond: expectedCondChain(condOps, condChainNames(0, condOps)),
+        value_true: expectedCondChain(trueOps, condChainNames(8, trueOps)),
+        value_false: expectedCondChain(falseOps, condChainNames(16, falseOps)),
+    };
+}
+
+function simpleTernaryExpression(): Record<string, unknown> {
+    return {
+        pyNodeType: 'ConditionalOp',
+        cond: condAtom('a'),
+        value_true: condAtom('b'),
+        value_false: condAtom('c'),
+    };
+}
+
+function nameExpression(name: string): Record<string, unknown> {
+    return {
+        pyNodeType: 'Name',
+        name,
+    };
+}
+
+function integerLiteral(raw: string): Record<string, unknown> {
+    return {
+        pyNodeType: 'Integer',
+        raw,
+    };
+}
+
+function binaryExpression(
+    expr1: Record<string, unknown>,
+    op: string,
+    expr2: Record<string, unknown>,
+): Record<string, unknown> {
+    return {
+        pyNodeType: 'BinaryOp',
+        expr1,
+        op,
+        expr2,
+    };
+}
+
+function parenthesizedExpression(expr: Record<string, unknown>): Record<string, unknown> {
+    return {
+        pyNodeType: 'Paren',
+        expr,
+    };
+}
+
+function unaryExpression(op: string, expr: Record<string, unknown>): Record<string, unknown> {
+    return {
+        pyNodeType: 'UnaryOp',
+        op,
+        expr,
+    };
+}
+
+function numericOperand(
+    shape: NumericOperandShape | NumericCaretBoundaryShape,
+    names: readonly string[],
+    raw = '1',
+): {text: string; expected: Record<string, unknown>} {
+    switch (shape) {
+        case 'name':
+            return {
+                text: names[0],
+                expected: nameExpression(names[0]),
+            };
+        case 'integer':
+            return {
+                text: raw,
+                expected: integerLiteral(raw),
+            };
+        case 'paren_name':
+            return {
+                text: `(${names[0]})`,
+                expected: parenthesizedExpression(nameExpression(names[0])),
+            };
+        case 'unary_name':
+            return {
+                text: `-${names[0]}`,
+                expected: unaryExpression('-', nameExpression(names[0])),
+            };
+        case 'bitwise_pair':
+            return {
+                text: `${names[0]} ^ ${names[1]}`,
+                expected: binaryExpression(nameExpression(names[0]), '^', nameExpression(names[1])),
+            };
+        case 'paren_bitwise_pair':
+            return {
+                text: `(${names[0]} ^ ${names[1]})`,
+                expected: parenthesizedExpression(
+                    binaryExpression(nameExpression(names[0]), '^', nameExpression(names[1]))
+                ),
+            };
+        case 'bitwise_chain':
+            return {
+                text: `${names[0]} ^ ${names[1]} ^ ${names[2]}`,
+                expected: binaryExpression(
+                    binaryExpression(nameExpression(names[0]), '^', nameExpression(names[1])),
+                    '^',
+                    nameExpression(names[2])
+                ),
+            };
+    }
+}
+
+function numericComparisonTextAndExpr(
+    op: string,
+    leftShape: NumericOperandShape | NumericCaretBoundaryShape = 'bitwise_pair',
+    rightShape: NumericOperandShape | NumericCaretBoundaryShape = 'bitwise_pair',
+    leftNames: readonly string[] = ['a', 'b', 'c'],
+    rightNames: readonly string[] = ['d', 'e', 'f'],
+    leftRaw = '1',
+    rightRaw = '2',
+): {text: string; expected: Record<string, unknown>} {
+    const left = numericOperand(leftShape, leftNames, leftRaw);
+    const right = numericOperand(rightShape, rightNames, rightRaw);
+    return {
+        text: `${left.text} ${op} ${right.text}`,
+        expected: binaryExpression(left.expected, op, right.expected),
+    };
+}
+
+function twoNumericComparisonsTextAndExpr(
+    leftOp: string,
+    rightOp: string,
+    leftLeftShape: NumericCaretBoundaryShape,
+    leftRightShape: NumericCaretBoundaryShape,
+    rightLeftShape: NumericCaretBoundaryShape,
+    rightRightShape: NumericCaretBoundaryShape,
+): {
+    leftText: string;
+    leftExpected: Record<string, unknown>;
+    rightText: string;
+    rightExpected: Record<string, unknown>;
+} {
+    const left = numericComparisonTextAndExpr(
+        leftOp,
+        leftLeftShape,
+        leftRightShape,
+        ['a', 'b', 'c'],
+        ['d', 'e', 'f'],
+        '1',
+        '2',
+    );
+    const right = numericComparisonTextAndExpr(
+        rightOp,
+        rightLeftShape,
+        rightRightShape,
+        ['g', 'h', 'i'],
+        ['j', 'k', 'l'],
+        '3',
+        '4',
+    );
+    return {
+        leftText: left.text,
+        leftExpected: left.expected,
+        rightText: right.text,
+        rightExpected: right.expected,
+    };
+}
+
+function normalizeCondExpression(expression: Record<string, any>): Record<string, unknown> {
+    switch (expression.pyNodeType) {
+        case 'BinaryOp':
+            return {
+                pyNodeType: 'BinaryOp',
+                expr1: normalizeCondExpression(expression.expr1),
+                op: expression.op,
+                expr2: normalizeCondExpression(expression.expr2),
+            };
+        case 'ConditionalOp':
+            return {
+                pyNodeType: 'ConditionalOp',
+                cond: normalizeCondExpression(expression.cond),
+                value_true: normalizeCondExpression(expression.value_true),
+                value_false: normalizeCondExpression(expression.value_false),
+            };
+        case 'UnaryOp':
+            return {
+                pyNodeType: 'UnaryOp',
+                op: expression.op,
+                expr: normalizeCondExpression(expression.expr),
+            };
+        case 'Paren':
+            return {
+                pyNodeType: 'Paren',
+                expr: normalizeCondExpression(expression.expr),
+            };
+        case 'Name':
+            return {
+                pyNodeType: 'Name',
+                name: expression.name,
+            };
+        case 'Integer':
+            return {
+                pyNodeType: 'Integer',
+                raw: expression.raw,
+            };
+        case 'Boolean':
+            return {
+                pyNodeType: 'Boolean',
+                raw: expression.raw,
+            };
+        default:
+            throw new Error(`Unexpected expression node: ${expression.pyNodeType}`);
+    }
+}
+
+function condOperatorChains(): string[][] {
+    const chains: string[][] = [];
+    for (let length = 1; length <= 4; length += 1) {
+        function visit(prefix: string[]): void {
+            if (prefix.length === length) {
+                chains.push(prefix);
+                return;
+            }
+            for (const operator of COND_PRIORITY_OPERATORS) {
+                visit([...prefix, operator]);
+            }
+        }
+        visit([]);
+    }
+    return chains;
+}
+
+type GuardExpressionCase = {
+    guard: string;
+    expected: Record<string, unknown>;
+    message: string;
+};
+
+async function assertGuardExpressionCases(cases: readonly GuardExpressionCase[]): Promise<void> {
+    const batchSize = 256;
+    for (let offset = 0; offset < cases.length; offset += batchSize) {
+        const batch = cases.slice(offset, offset + batchSize);
+        const document = createDocument([
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            ...batch.map(item => `    A -> B : if [${item.guard}];`),
+            '}',
+        ].join('\n'), `/tmp/ast-cond-precedence-${offset}.fcstm`);
+
+        const ast = await packageModule.parseAstDocument(document);
+        const transitions = ast?.rootState?.transitions || [];
+        assert.equal(transitions.length, batch.length);
+
+        batch.forEach((item, index) => {
+            const expression = transitions[index].condition_expr;
+            assert.ok(expression, item.message);
+            assert.deepEqual(
+                normalizeCondExpression(expression as unknown as Record<string, any>),
+                item.expected,
+                item.message,
+            );
+        });
+    }
+}
+
+async function parseGuardExpression(guard: string): Promise<Record<string, unknown>> {
+    const document = createDocument([
+        'state Root {',
+        '    state A;',
+        '    state B;',
+        `    A -> B : if [${guard}];`,
+        '}',
+    ].join('\n'), '/tmp/ast-cond-precedence.fcstm');
+
+    const ast = await packageModule.parseAstDocument(document);
+    const expression = ast?.rootState?.transitions[0].condition_expr;
+
+    assert.ok(expression);
+    return normalizeCondExpression(expression as unknown as Record<string, any>);
+}
+
+async function assertGuardParseFails(guard: string, message: string): Promise<void> {
+    const document = createDocument([
+        'state Root {',
+        '    state A;',
+        '    state B;',
+        `    A -> B : if [${guard}];`,
+        '}',
+    ].join('\n'), '/tmp/ast-cond-negative.fcstm');
+
+    const result = await packageModule.getParser().parse(document.getText());
+    assert.equal(result.success, false, message);
+    assert.ok(result.errors.length > 0, message);
+}
+
+async function assertGuardParseFailsInBatches(
+    guards: readonly string[],
+    messagePrefix: string,
+): Promise<void> {
+    const batchSize = 256;
+    for (let offset = 0; offset < guards.length; offset += batchSize) {
+        const batch = guards.slice(offset, offset + batchSize);
+        const document = createDocument([
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            ...batch.map(guard => `    A -> B : if [${guard}];`),
+            '}',
+        ].join('\n'), `/tmp/ast-cond-negative-${offset}.fcstm`);
+
+        const result = await packageModule.getParser().parse(document.getText());
+        assert.equal(result.success, false, `${messagePrefix} batch ${offset}`);
+
+        const errorLines = new Set(result.errors.map(error => error.line));
+        batch.forEach((_guard, index) => {
+            const line = 3 + index;
+            assert.ok(
+                errorLines.has(line),
+                `${messagePrefix} batch ${offset} guard ${offset + index}`,
+            );
+        });
+    }
+}
+
 describe('jsfcstm AST builder', () => {
     it('builds a structured AST for variables, actions, forced transitions, and imports', async () => {
         const document = createDocument([
@@ -238,6 +707,57 @@ describe('jsfcstm AST builder', () => {
                                 }),
                             ]),
                             createNode('Operational_statementContext', [
+                                createNode('Operational_assignmentContext', [
+                                    createNode('Num_literalContext', [], {
+                                        start: createToken('42', 1, 0),
+                                        stop: createToken('42', 1, 1),
+                                        getText() {
+                                            return '42';
+                                        },
+                                    }),
+                                ], {
+                                    start: createToken('number_value', 1, 0),
+                                    stop: createToken(';', 1, 16),
+                                    getText() {
+                                        return 'number_value=42;';
+                                    },
+                                }),
+                            ]),
+                            createNode('Operational_statementContext', [
+                                createNode('Operational_assignmentContext', [
+                                    createNode('Bool_literalContext', [], {
+                                        start: createToken('false', 1, 0),
+                                        stop: createToken('false', 1, 4),
+                                        getText() {
+                                            return 'false';
+                                        },
+                                    }),
+                                ], {
+                                    start: createToken('bool_value', 1, 0),
+                                    stop: createToken(';', 1, 17),
+                                    getText() {
+                                        return 'bool_value=false;';
+                                    },
+                                }),
+                            ]),
+                            createNode('Operational_statementContext', [
+                                createNode('Operational_assignmentContext', [
+                                    createNode('Math_constContext', [], {
+                                        start: createToken('pi', 1, 0),
+                                        stop: createToken('pi', 1, 1),
+                                        getText() {
+                                            return 'pi';
+                                        },
+                                    }),
+                                ], {
+                                    start: createToken('constant_value', 1, 0),
+                                    stop: createToken(';', 1, 18),
+                                    getText() {
+                                        return 'constant_value=pi;';
+                                    },
+                                }),
+                            ]),
+                            createNode('Operational_statementContext', [
                                 createNode('If_statementContext', [
                                     createNode('LiteralExprCondContext', [
                                         createNode('Bool_literalContext', [], {
@@ -339,11 +859,35 @@ describe('jsfcstm AST builder', () => {
         assert.equal(ast?.rootState?.statements.length, 2);
         assert.equal(ast?.rootState?.enters[0].operationsList[0].kind, 'assignmentStatement');
         assert.equal(ast?.rootState?.enters[0].operationsList[0].expr.pyNodeType, 'Name');
-        assert.equal(ast?.rootState?.enters[0].operationsList[1].kind, 'ifStatement');
-        assert.equal(ast?.rootState?.enters[0].operationsList[1].branches[0].statements.length, 0);
+        assert.equal(ast?.rootState?.enters[0].operationsList[1].expr.pyNodeType, 'Integer');
+        assert.equal(ast?.rootState?.enters[0].operationsList[1].expr.raw, '42');
+        assert.equal(ast?.rootState?.enters[0].operationsList[2].expr.pyNodeType, 'Boolean');
+        assert.equal(ast?.rootState?.enters[0].operationsList[2].expr.raw, 'false');
+        assert.equal(ast?.rootState?.enters[0].operationsList[3].expr.pyNodeType, 'Constant');
+        assert.equal(ast?.rootState?.enters[0].operationsList[3].expr.raw, 'pi');
+        assert.equal(ast?.rootState?.enters[0].operationsList[4].kind, 'ifStatement');
+        assert.equal(ast?.rootState?.enters[0].operationsList[4].branches[0].statements.length, 0);
         assert.equal(ast?.rootState?.imports[0].mappings.length, 1);
 
         assert.equal(packageModule.buildAstFromTree(null as unknown as packageModule.ParseTreeNode, document), null);
+    });
+
+    it('rethrows non-Error parser failures from parseAstDocument', async () => {
+        const parser = packageModule.getParser();
+        const document = createDocument('state Root;', '/tmp/non-error-parser-failure.fcstm');
+        const original = parser.parseTree;
+        parser.parseTree = async () => {
+            throw 'raw parser failure';
+        };
+
+        try {
+            await assert.rejects(
+                () => packageModule.parseAstDocument(document),
+                error => error === 'raw parser failure',
+            );
+        } finally {
+            parser.parseTree = original;
+        }
     });
 
     it('covers remaining action pyNodeType variants for enter/exit/during-aspect nodes', async () => {
@@ -462,5 +1006,169 @@ describe('jsfcstm AST builder', () => {
         assert.equal(ast?.rootState?.composite, true);
         assert.equal(ast?.rootState?.substates.length, 0);
         assert.equal(ast?.rootState?.imports.length, 1);
+    });
+});
+
+describe('jsfcstm AST condition operator precedence', () => {
+    it('parses all condition operator chains up to four operators', async function () {
+        this.timeout(30000);
+
+        await assertGuardExpressionCases(condOperatorChains().map(operators => ({
+            guard: condChainText(operators),
+            expected: expectedCondChain(operators),
+            message: `operator chain: ${operators.join(' ')}`,
+        })));
+    });
+
+    it('parses ternary condition, true branch, and false branch operator slots exhaustively', async function () {
+        this.timeout(30000);
+
+        const cases: GuardExpressionCase[] = [];
+        for (const condOp of COND_PRIORITY_OPERATORS) {
+            for (const trueOp of COND_PRIORITY_OPERATORS) {
+                for (const falseOp of COND_PRIORITY_OPERATORS) {
+                    const condOps = [condOp];
+                    const trueOps = [trueOp];
+                    const falseOps = [falseOp];
+                    const guard = conditionTernaryText(condOps, trueOps, falseOps);
+                    cases.push({
+                        guard,
+                        expected: expectedConditionTernary(condOps, trueOps, falseOps),
+                        message: `ternary slots: ${condOp} ? ${trueOp} : ${falseOp}`,
+                    });
+                }
+            }
+        }
+        await assertGuardExpressionCases(cases);
+    });
+
+    it('accepts bitwise caret inside every numeric comparison operand shape', async function () {
+        this.timeout(30000);
+
+        const cases: GuardExpressionCase[] = [];
+        for (const op of NUM_COMPARE_OPERATORS) {
+            for (const leftShape of NUMERIC_OPERAND_SHAPES) {
+                for (const rightShape of NUMERIC_OPERAND_SHAPES) {
+                    const item = numericComparisonTextAndExpr(op, leftShape, rightShape);
+                    cases.push({
+                        guard: item.text,
+                        expected: item.expected,
+                        message: `numeric comparison: ${op} ${leftShape} ${rightShape}`,
+                    });
+                }
+            }
+        }
+        await assertGuardExpressionCases(cases);
+    });
+
+    it('uses keyword xor to separate numeric-caret comparisons exhaustively', async function () {
+        this.timeout(45000);
+
+        const cases: GuardExpressionCase[] = [];
+        for (const leftOp of NUM_COMPARE_OPERATORS) {
+            for (const rightOp of NUM_COMPARE_OPERATORS) {
+                for (const leftLeftShape of NUMERIC_CARET_BOUNDARY_SHAPES) {
+                    for (const leftRightShape of NUMERIC_CARET_BOUNDARY_SHAPES) {
+                        for (const rightLeftShape of NUMERIC_CARET_BOUNDARY_SHAPES) {
+                            for (const rightRightShape of NUMERIC_CARET_BOUNDARY_SHAPES) {
+                                const item = twoNumericComparisonsTextAndExpr(
+                                    leftOp,
+                                    rightOp,
+                                    leftLeftShape,
+                                    leftRightShape,
+                                    rightLeftShape,
+                                    rightRightShape,
+                                );
+                                cases.push({
+                                    guard: `${item.leftText} xor ${item.rightText}`,
+                                    expected: binaryExpression(item.leftExpected, 'xor', item.rightExpected),
+                                    message: [
+                                        'keyword xor numeric boundary',
+                                        leftOp,
+                                        rightOp,
+                                        leftLeftShape,
+                                        leftRightShape,
+                                        rightLeftShape,
+                                        rightRightShape,
+                                    ].join(' '),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        await assertGuardExpressionCases(cases);
+    });
+
+    it('rejects parenthesized condition caret between numeric-caret comparisons exhaustively', async function () {
+        this.timeout(45000);
+
+        const cases: string[] = [];
+        for (const leftOp of NUM_COMPARE_OPERATORS) {
+            for (const rightOp of NUM_COMPARE_OPERATORS) {
+                for (const leftLeftShape of NUMERIC_CARET_BOUNDARY_SHAPES) {
+                    for (const leftRightShape of NUMERIC_CARET_BOUNDARY_SHAPES) {
+                        for (const rightLeftShape of NUMERIC_CARET_BOUNDARY_SHAPES) {
+                            for (const rightRightShape of NUMERIC_CARET_BOUNDARY_SHAPES) {
+                                const item = twoNumericComparisonsTextAndExpr(
+                                    leftOp,
+                                    rightOp,
+                                    leftLeftShape,
+                                    leftRightShape,
+                                    rightLeftShape,
+                                    rightRightShape,
+                                );
+                                cases.push(`(${item.leftText}) ^ (${item.rightText})`);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        await assertGuardParseFailsInBatches(cases, 'parenthesized condition caret');
+    });
+
+    it('rejects condition caret spellings', async () => {
+        await assertGuardParseFails('true ^ false', 'boolean literal caret is not condition xor');
+        await assertGuardParseFails('(a > 0) ^ (b > 0)', 'parenthesized condition caret is not condition xor');
+        await assertGuardParseFails('a > 0 ^ b > 0', 'unparenthesized condition caret is not condition xor');
+    });
+
+    it('keeps parenthesized ternary expressions as binary left operands for every condition operator', async () => {
+        for (const op of COND_PRIORITY_OPERATORS) {
+            assert.deepEqual(
+                await parseGuardExpression(`((a > 0) ? b > 0 : c > 0) ${op} d > 0`),
+                {
+                    pyNodeType: 'BinaryOp',
+                    expr1: {
+                        pyNodeType: 'Paren',
+                        expr: simpleTernaryExpression(),
+                    },
+                    op: canonicalCondOp(op),
+                    expr2: condAtom('d'),
+                },
+                `parenthesized ternary as left operand: ${op}`,
+            );
+        }
+    });
+
+    it('keeps parenthesized ternary expressions as binary right operands for every condition operator', async () => {
+        for (const op of COND_PRIORITY_OPERATORS) {
+            assert.deepEqual(
+                await parseGuardExpression(`d > 0 ${op} ((a > 0) ? b > 0 : c > 0)`),
+                {
+                    pyNodeType: 'BinaryOp',
+                    expr1: condAtom('d'),
+                    op: canonicalCondOp(op),
+                    expr2: {
+                        pyNodeType: 'Paren',
+                        expr: simpleTernaryExpression(),
+                    },
+                },
+                `parenthesized ternary as right operand: ${op}`,
+            );
+        }
     });
 });

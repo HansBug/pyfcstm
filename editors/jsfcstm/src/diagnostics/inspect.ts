@@ -67,12 +67,17 @@ const OP_PRECEDENCE: Record<string, number> = {
     '>=': 20,
     '==': 20,
     '!=': 20,
+    'iff': 20,
     '&&': 15,
     'and': 15,
+    'xor': 12,
     '||': 10,
     'or': 10,
+    '=>': 7,
     '?:': 5,
 };
+
+const RIGHT_ASSOCIATIVE_BINARY_OPS = new Set(['**', '=>']);
 
 /**
  * Per-state structural summary.
@@ -707,6 +712,7 @@ function walkStmtFloatLiteralAssignments(
 function canonicalBinaryOperator(op: string): string {
     if (op === 'and') return '&&';
     if (op === 'or') return '||';
+    if (op === 'implies') return '=>';
     return op;
 }
 
@@ -813,12 +819,20 @@ function formatExpr(expr: Expr): string {
         const myPrecedence = OP_PRECEDENCE[op];
         let left = formatExpr(expr.x);
         const leftPrecedence = exprPrecedence(expr.x);
-        if (leftPrecedence !== null && leftPrecedence < myPrecedence) {
+        if (leftPrecedence !== null && (
+            RIGHT_ASSOCIATIVE_BINARY_OPS.has(op)
+                ? leftPrecedence <= myPrecedence
+                : leftPrecedence < myPrecedence
+        )) {
             left = `(${left})`;
         }
         let right = formatExpr(expr.y);
         const rightPrecedence = exprPrecedence(expr.y);
-        if (rightPrecedence !== null && rightPrecedence <= myPrecedence) {
+        if (rightPrecedence !== null && (
+            RIGHT_ASSOCIATIVE_BINARY_OPS.has(op)
+                ? rightPrecedence < myPrecedence
+                : rightPrecedence <= myPrecedence
+        )) {
             right = `(${right})`;
         }
         return `${left} ${op} ${right}`;

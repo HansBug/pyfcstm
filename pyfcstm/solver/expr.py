@@ -44,6 +44,29 @@ from ..model.expr import (
 from ..model.model import StateMachine, VarDefine
 
 
+def _require_bool_operands(
+        op: str,
+        left: Union[z3.ArithRef, z3.BoolRef],
+        right: Union[z3.ArithRef, z3.BoolRef],
+) -> None:
+    """
+    Validate that a logical binary operator received boolean Z3 operands.
+
+    :param op: Binary operator mark.
+    :type op: str
+    :param left: Left Z3 operand.
+    :type left: Union[z3.ArithRef, z3.BoolRef]
+    :param right: Right Z3 operand.
+    :type right: Union[z3.ArithRef, z3.BoolRef]
+    :raises ValueError: If either operand is not a Z3 boolean expression.
+    """
+    if not z3.is_bool(left) or not z3.is_bool(right):
+        raise ValueError(
+            f"Boolean operands required for operator '{op}', "
+            f"got {left.sort()} and {right.sort()}"
+        )
+
+
 def expr_to_z3(expr: Expr, z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]) -> Union[z3.ArithRef, z3.BoolRef]:
     """
     Convert a pyfcstm expression to a Z3 solver expression.
@@ -157,6 +180,11 @@ def expr_to_z3(expr: Expr, z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]) -
             )
             return left | right
         elif expr.op == '^':
+            if z3.is_bool(left) or z3.is_bool(right):
+                raise ValueError(
+                    f"Bitwise XOR (^) requires non-boolean operands, "
+                    f"got {left.sort()} and {right.sort()}"
+                )
             warnings.warn(
                 f"Bitwise XOR (^) on Z3 Int types has limited support. "
                 f"For full bitwise operation support, consider using Z3 BitVec types. "
@@ -201,6 +229,16 @@ def expr_to_z3(expr: Expr, z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]) -
             return z3.And(left, right)
         elif expr.op in ('||', 'or'):
             return z3.Or(left, right)
+        elif expr.op == '=>':
+            _require_bool_operands(expr.op, left, right)
+            return z3.Implies(left, right)
+        elif expr.op == 'xor':
+            _require_bool_operands(expr.op, left, right)
+            return z3.Xor(left, right)
+        elif expr.op == 'iff':
+            _require_bool_operands(expr.op, left, right)
+            # For BoolRef operands, equality is boolean equivalence in Z3.
+            return left == right
 
         else:
             raise ValueError(f"Unsupported binary operator: {expr.op}")

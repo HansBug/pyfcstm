@@ -16,6 +16,8 @@ describe('jsfcstm hover support', () => {
         const chainEventLine = 'StateA -> StateB :ChainEvent;';
         const absoluteEventLine = 'StateA -> StateB : /GlobalEvent;';
         const pseudoStateLine = '[*] -> Root;';
+        const implicationLine = 'if [a > 0 => b > 0]';
+        const bitwiseLine = 'effect { x = a ^ b; }';
 
         assert.equal(
             packageModule.findHoverInfo(localEventLine, localEventLine.indexOf('::'), '')?.title,
@@ -53,6 +55,22 @@ describe('jsfcstm hover support', () => {
             packageModule.findHoverInfo('state Root;', 2, 'state')?.title,
             'State Definition'
         );
+        assert.equal(
+            packageModule.findHoverInfo(implicationLine, implicationLine.indexOf('=>'), '')?.title,
+            'Logical Implication'
+        );
+        assert.equal(
+            packageModule.findHoverInfo('if [a > 0 xor b > 0]', 12, 'xor')?.title,
+            'Logical Exclusive-Or'
+        );
+        assert.equal(
+            packageModule.findHoverInfo('if [a > 0 iff b > 0]', 12, 'iff')?.title,
+            'Logical Equivalence'
+        );
+        assert.equal(
+            packageModule.findHoverInfo(bitwiseLine, bitwiseLine.indexOf('^'), '')?.title,
+            'Numeric Bitwise XOR'
+        );
         assert.equal(packageModule.findHoverInfo('prefix :: suffix', 1, ''), null);
         assert.equal(packageModule.findHoverInfo('plain text', 0, ''), null);
         assert.equal(packageModule.findHoverInfo('state Root;', 5, ''), null);
@@ -62,6 +80,38 @@ describe('jsfcstm hover support', () => {
         assert.equal(hoverModule.HOVER_DOCS.import.title, 'Import Statement');
         assert.equal(hoverModule.HOVER_DOCS['::'].title, 'Local Event Scope');
         assert.equal(hoverModule.HOVER_DOCS.effect.title, 'Transition Effect');
+        assert.match(hoverModule.HOVER_DOCS['=>'].description, /not A or B/i);
+        assert.match(hoverModule.HOVER_DOCS['^'].description, /numeric bitwise xor/i);
+    });
+
+    it('keeps logical operator hover examples valid under the current condition grammar', async () => {
+        const docs = [
+            hoverModule.HOVER_DOCS['=>'],
+            hoverModule.HOVER_DOCS.implies,
+            hoverModule.HOVER_DOCS.xor,
+            hoverModule.HOVER_DOCS.iff,
+        ];
+        const examples = docs.map(doc => {
+            const match = doc.example?.match(/```fcstm\n([\s\S]*)\n```/);
+            assert.ok(match, `missing fcstm example for ${doc.title}`);
+            return match[1];
+        });
+        const dsl = [
+            'def int sensor_ready = 0;',
+            'def int command_valid = 0;',
+            'def int manual_mode = 0;',
+            'def int auto_mode = 0;',
+            'def int open_limit = 0;',
+            'def int closed_limit = 0;',
+            'state Root {',
+            '    state StateA;',
+            '    state StateB;',
+            '    [*] -> StateA;',
+            ...examples.map(example => `    ${example}`),
+            '}',
+        ].join('\n');
+        const result = await packageModule.getParser().parse(dsl);
+        assert.deepEqual(result.errors, []);
     });
 
     it('returns null when an operator hover entry is intentionally unavailable', () => {

@@ -179,14 +179,14 @@ class FcstmLexer(RegexLexer):
     )
 
     _ANALYSIS_TOKEN_PATTERN = re.compile(
-        r'\[\s*\*\s*\]|->|::|>>|<=|>=|==|!=|&&|\|\||\*\*|'
+        r'\[\s*\*\s*\]|->|=>|::|>>|<=|>=|==|!=|&&|\|\||\*\*|'
         r'[A-Za-z_][A-Za-z0-9_]*|[0-9]+(?:\.[0-9]+)?|[{}()\[\];,./:+\-*!=?<>]'
     )
     _ANALYSIS_IDENTIFIER_PATTERN = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
     _ANALYSIS_RESERVED_WORDS = frozenset((
         'abstract', 'after', 'as', 'before', 'def', 'during', 'effect', 'enter',
         'else', 'event', 'exit', 'float', 'if', 'import', 'int', 'named',
-        'pseudo', 'ref', 'state',
+        'implies', 'iff', 'pseudo', 'ref', 'state', 'xor',
     ))
     _ANALYSIS_LIFECYCLE_KEYWORDS = frozenset(('enter', 'during', 'exit'))
 
@@ -224,7 +224,7 @@ class FcstmLexer(RegexLexer):
 
             # Keywords - logical operators (word form)
             (words((
-                'and', 'or', 'not',
+                'and', 'or', 'not', 'implies', 'xor', 'iff',
             ), suffix=r'\b'), Operator.Word),
 
             # Boolean literals
@@ -250,6 +250,9 @@ class FcstmLexer(RegexLexer):
 
             # Transition arrow
             (r'->', Operator),
+
+            # Logical implication
+            (r'=>', Operator),
 
             # Pseudo-state markers
             (r'\[\*\]', Keyword.Pseudo),

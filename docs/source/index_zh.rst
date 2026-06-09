@@ -134,6 +134,18 @@ pyfcstm 遵循三阶段流水线：
 * :doc:`tutorials/cli/index_zh`
 * :doc:`tutorials/grammar/index_zh`
 
+版本说明
+-------------------------
+
+.. toctree::
+    :maxdepth: 1
+    :caption: 版本说明
+    :hidden:
+
+    release_notes_zh
+
+* :doc:`release_notes_zh`
+
 最佳实践
 -------------------------
 

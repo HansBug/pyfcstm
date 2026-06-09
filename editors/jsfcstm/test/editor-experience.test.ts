@@ -36,6 +36,17 @@ function decodeSemanticTokens(tokens: {data: number[]}, legend: {tokenTypes: str
     return decoded;
 }
 
+function tokenTextsByType(
+    documentText: string,
+    decoded: DecodedSemanticToken[],
+    type: string
+): Set<string> {
+    const lines = documentText.split('\n');
+    return new Set(decoded
+        .filter(item => item.type === type)
+        .map(item => (lines[item.line] || '').slice(item.character, item.character + item.length)));
+}
+
 describe('jsfcstm editor experience helpers', () => {
     it('collects folding ranges from AST regions and multiline comments, with comment fallback', async () => {
         const graph = packageModule.getWorkspaceGraph();
@@ -179,7 +190,7 @@ describe('jsfcstm editor experience helpers', () => {
             '    event Tick;',
             '}',
         ].join('\n'));
-        const document = createDocument([
+        const documentText = [
             '/* block',
             'comment */',
             'def int counter = 0;',
@@ -192,13 +203,18 @@ describe('jsfcstm editor experience helpers', () => {
             '    }',
             '    event Start named "Go";',
             '    Child -> Worker :: Start;',
+            '    Child -> Child : if [counter > 0 => counter > 1 xor counter > 2 iff counter != 3];',
+            '    Child -> Child : if [counter > 0 implies counter < 10];',
             '}',
-        ].join('\n'), filePath);
+        ].join('\n');
+        const document = createDocument(documentText, filePath);
         const legend = packageModule.getFcstmSemanticTokensLegend();
 
         const tokens = await packageModule.collectSemanticTokens(document);
         const decoded = decodeSemanticTokens(tokens, legend);
         const types = new Set(decoded.map(item => item.type));
+        const operators = tokenTextsByType(documentText, decoded, 'operator');
+        const keywords = tokenTextsByType(documentText, decoded, 'keyword');
 
         assert.deepEqual(legend.tokenTypes, [
             'keyword',
@@ -222,5 +238,9 @@ describe('jsfcstm editor experience helpers', () => {
         assert.ok(types.has('function'));
         assert.ok(types.has('variable'));
         assert.ok(types.has('property'));
+        assert.equal(operators.has('=>'), true);
+        assert.equal(keywords.has('implies'), true);
+        assert.equal(keywords.has('xor'), true);
+        assert.equal(keywords.has('iff'), true);
     });
 });

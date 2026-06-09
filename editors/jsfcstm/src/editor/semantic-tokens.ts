@@ -54,10 +54,13 @@ const KEYWORDS = [
     'and',
     'or',
     'not',
+    'implies',
+    'xor',
+    'iff',
 ];
 
 const TYPES = ['int', 'float'];
-const OPERATORS = ['::', '->', '>>', ':', '/', '[*]'];
+const OPERATORS = ['::', '->', '=>', '>>', ':', '/', '[*]'];
 const KEYWORD_RE = /\b[A-Za-z_][A-Za-z0-9_]*\b/g;
 const STRING_RE = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g;
 

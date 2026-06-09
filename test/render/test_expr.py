@@ -1,7 +1,9 @@
 import pytest
 
+from pyfcstm.dsl import node as dsl_nodes
 from pyfcstm.dsl import parse_with_grammar_entry
-from pyfcstm.render import create_env, render_expr_node
+from pyfcstm.model.expr import parse_expr_node_to_expr
+from pyfcstm.render import create_env, render_expr_node, create_expr_render_template
 
 
 @pytest.fixture
@@ -326,6 +328,143 @@ class TestRenderExprNode:
             input_value, lang_style=lang_type, ext_configs=ext_configs, env=new_env
         )
         assert result == expected_result
+
+    @pytest.mark.parametrize(
+        'lang_style, expr_text, expected',
+        [
+            ('dsl', 'true => false', 'True => False'),
+            ('c', 'true => false', '((!(0x1)) || (0x0))'),
+            ('cpp', 'true => false', '((!(true)) || (false))'),
+            ('java', 'true => false', '((!(true)) || (false))'),
+            ('js', 'true => false', '((!(true)) || (false))'),
+            ('ts', 'true => false', '((!(true)) || (false))'),
+            ('rust', 'true => false', '((!(true)) || (false))'),
+            ('go', 'true => false', '((!(true)) || (false))'),
+            ('python', 'true => false', '((not (True)) or (False))'),
+            ('dsl', 'true xor false', 'True xor False'),
+            ('c', 'true xor false', '((0x1) != (0x0))'),
+            ('cpp', 'true xor false', '((true) != (false))'),
+            ('java', 'true xor false', '((true) != (false))'),
+            ('js', 'true xor false', '((true) != (false))'),
+            ('ts', 'true xor false', '((true) != (false))'),
+            ('rust', 'true xor false', '((true) != (false))'),
+            ('go', 'true xor false', '((true) != (false))'),
+            ('python', 'true xor false', '((True) != (False))'),
+            ('dsl', 'true iff false', 'True iff False'),
+            ('c', 'true iff false', '((0x1) == (0x0))'),
+            ('cpp', 'true iff false', '((true) == (false))'),
+            ('java', 'true iff false', '((true) == (false))'),
+            ('js', 'true iff false', '((true) == (false))'),
+            ('ts', 'true iff false', '((true) == (false))'),
+            ('rust', 'true iff false', '((true) == (false))'),
+            ('go', 'true iff false', '((true) == (false))'),
+            ('python', 'true iff false', '((True) == (False))'),
+        ],
+    )
+    def test_render_expr_node_for_condition_logical_operators(
+        self, lang_style, expr_text, expected, new_env
+    ):
+        ast_node = parse_with_grammar_entry(expr_text, entry_name='generic_expression')
+        result = render_expr_node(ast_node, lang_style=lang_style, env=new_env)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        'lang_style',
+        ['c', 'cpp', 'java', 'js', 'ts', 'rust', 'go', 'python'],
+    )
+    def test_non_dsl_styles_do_not_leak_condition_logical_operators(
+        self, lang_style, new_env
+    ):
+        ast_node = parse_with_grammar_entry(
+            '(true => false) xor (false iff true)',
+            entry_name='generic_expression',
+        )
+        result = render_expr_node(ast_node, lang_style=lang_style, env=new_env)
+
+        assert '=>' not in result
+        assert ' xor ' not in result
+        assert ' iff ' not in result
+
+    @pytest.mark.parametrize('lang_style', ['dsl', 'c', 'cpp', 'java', 'js', 'ts', 'rust', 'go', 'python'])
+    def test_condition_logical_operator_templates_are_operator_specific(self, lang_style):
+        templates = create_expr_render_template(lang_style)
+
+        assert 'BinaryOp(=>)' in templates
+        assert 'BinaryOp(xor)' in templates
+        assert 'BinaryOp(iff)' in templates
+        assert 'BinaryOp(^)' not in templates
+
+    @pytest.mark.parametrize(
+        'expr_text, expected',
+        [
+            ('true iff false == false', '(((True) == (False))) == False'),
+            ('true iff false != true', '(((True) == (False))) != True'),
+            ('false => true && false', '((not (False)) or (True and False))'),
+            ('(false => true) && false', '(((not (False)) or (True))) and False'),
+            ('!true == false', '(not True) == False'),
+            ('((true) ? false : true) == false', '(False if True else True) == False'),
+        ],
+    )
+    def test_python_condition_logical_rendering_keeps_parent_expression_semantics(
+        self, expr_text, expected, new_env
+    ):
+        ast_node = parse_with_grammar_entry(expr_text, entry_name='generic_expression')
+        result = render_expr_node(ast_node, lang_style='python', env=new_env)
+
+        assert result == expected
+        assert eval(result) == eval(expected)
+
+    def test_python_condition_operand_wraps_direct_conditional_node(self, new_env):
+        ast_node = dsl_nodes.BinaryOp(
+            expr1=dsl_nodes.ConditionalOp(
+                cond=dsl_nodes.Boolean('true'),
+                value_true=dsl_nodes.Boolean('false'),
+                value_false=dsl_nodes.Boolean('true'),
+            ),
+            op='==',
+            expr2=dsl_nodes.Boolean('false'),
+        )
+        result = render_expr_node(ast_node, lang_style='python', env=new_env)
+
+        assert result == '(False if True else True) == False'
+        assert eval(result) is True
+
+    @pytest.mark.parametrize(
+        'expr_text',
+        [
+            'a > 0 iff b > 0 == c > 0',
+            'a > 0 == b > 0 iff c > 0',
+            'a > 0 xor b > 0 == c > 0',
+            'a > 0 != b > 0 xor c > 0',
+        ],
+    )
+    def test_python_condition_logical_rendering_matches_model_for_comparison_chains(
+        self, expr_text, new_env
+    ):
+        ast_node = parse_with_grammar_entry(expr_text, entry_name='generic_expression')
+        result = render_expr_node(ast_node, lang_style='python', env=new_env)
+        model_expr = parse_expr_node_to_expr(ast_node)
+
+        for a in (-1, 1):
+            for b in (-1, 1):
+                for c in (-1, 1):
+                    scope = {'a': a, 'b': b, 'c': c}
+                    assert eval(result, {}, scope) == model_expr(**scope)
+
+    @pytest.mark.parametrize('lang_style', ['dsl', 'c', 'cpp', 'java', 'js', 'ts', 'rust', 'go', 'python'])
+    def test_numeric_caret_renderer_remains_bitwise_xor(self, lang_style, new_env):
+        ast_node = parse_with_grammar_entry('x ^ y', entry_name='generic_expression')
+        result = render_expr_node(ast_node, lang_style=lang_style, env=new_env)
+
+        assert result == 'x ^ y'
+
+    @pytest.mark.parametrize('expr_text', ['true => false', 'true xor false', 'true iff false'])
+    def test_infer_expr_type_for_condition_logical_operators(self, expr_text):
+        from pyfcstm.render.expr import _infer_expr_type
+
+        ast_node = parse_with_grammar_entry(expr_text, entry_name='generic_expression')
+
+        assert _infer_expr_type(ast_node) == 'int'
 
 
 @pytest.mark.unittest

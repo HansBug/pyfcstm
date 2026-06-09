@@ -2853,7 +2853,7 @@ def composite_init_guards_incomplete(
         event_vars: Dict[str, z3.BoolRef] = {}
         triggers: List[z3.ExprRef] = []
         per_composite_failed = False
-        init_constraints, result = _build_init_constraints_or_result(
+        _, result = _build_init_constraints_or_result(
             variables,
             z3_vars,
             smt_timeout_ms=smt_timeout_ms,
@@ -2871,10 +2871,7 @@ def composite_init_guards_incomplete(
                 transition,
                 z3_vars,
                 event_vars,
-                context_constraints=[
-                    *init_constraints,
-                    *type_constraints,
-                ],
+                context_constraints=type_constraints,
                 smt_timeout_ms=smt_timeout_ms,
             )
             if result is not None:
@@ -2896,7 +2893,6 @@ def composite_init_guards_incomplete(
         sat_result = is_sat(
             [
                 no_coverage,
-                *init_constraints,
                 *type_constraints,
             ],
             timeout_ms=smt_timeout_ms,

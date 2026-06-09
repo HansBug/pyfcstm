@@ -298,6 +298,70 @@ def test_initializer_runtime_undefined_is_undecidable_skip():
     assert result.reason == "Initializer runtime definedness constraints are unsatisfiable."
 
 
+def test_initializer_satisfiable_runtime_domain_constraints_are_kept():
+    """Valid initializer domain constraints remain in the init context."""
+    machine = parse_machine(
+        """
+        def int x = 1 / 2;
+        state System {
+            state A;
+            [*] -> A;
+        }
+        """
+    )
+
+    constraints, result = smt_local._build_init_constraints_or_result(
+        variables(machine),
+        {"x": smt_local.z3.Int("x")},
+    )
+
+    assert result is None
+    assert constraints is not None
+    constraint_text = {str(item) for item in constraints}
+    assert "2 != 0" in constraint_text
+    assert "x == 1/2" in constraint_text
+
+
+def test_initializer_domain_checks_include_prior_initializers(monkeypatch):
+    """Later initializer domain checks see prior initializer constraints."""
+    machine = parse_machine(
+        """
+        def int x = 1 / 2;
+        def int y = 3 / 4;
+        state System {
+            state A;
+            [*] -> A;
+        }
+        """
+    )
+    calls = []
+    original = smt_local._definedness_feasibility_or_result
+
+    def record_constraints(constraints, *, reason, smt_timeout_ms=None):
+        calls.append(tuple(str(item) for item in constraints))
+        return original(
+            constraints,
+            reason=reason,
+            smt_timeout_ms=smt_timeout_ms,
+        )
+
+    monkeypatch.setattr(
+        smt_local,
+        "_definedness_feasibility_or_result",
+        record_constraints,
+    )
+
+    constraints, result = smt_local._build_init_constraints_or_result(
+        variables(machine),
+        {"x": smt_local.z3.Int("x"), "y": smt_local.z3.Int("y")},
+    )
+
+    assert result is None
+    assert constraints is not None
+    assert calls[0] == ("2 != 0",)
+    assert calls[1] == ("2 != 0", "x == 1/2", "4 != 0")
+
+
 def test_guard_translation_failure_is_normalized():
     """Guard translation failure propagates through guard helper."""
     transition = Transition(
@@ -5052,6 +5116,24 @@ class TestCompositeInitGuardsIncomplete:
         assert result.kind == "sat"
         assert_single_diag(result, "W_COMPOSITE_INIT_INCOMPLETE")
 
+    def test_initializer_value_does_not_narrow_guard_coverage_gap(self):
+        machine = parse_machine(
+            """
+            def int x = 1;
+            state Root {
+                state A;
+                state B;
+                [*] -> A : if [x > 0];
+                [*] -> B : if [x < 0];
+            }
+            """
+        )
+
+        result = composite_init_guards_incomplete(machine, variables(machine))
+
+        assert result.kind == "sat"
+        assert_single_diag(result, "W_COMPOSITE_INIT_INCOMPLETE")
+
     def test_init_events_with_underscore_path_boundary_use_distinct_witness_bools(self):
         machine = parse_machine(
             """
@@ -5299,7 +5381,7 @@ class TestCompositeInitGuardsIncomplete:
     def test_nested_composite_reports_nested_state(self):
         machine = parse_machine(
             """
-            def int x = 0;
+            def int x = 1;
             state Root {
                 state Outer {
                     state Inner1;

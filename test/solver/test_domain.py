@@ -1,5 +1,6 @@
 """Tests for solver-layer expression runtime-domain translation."""
 
+import warnings
 from dataclasses import FrozenInstanceError
 from typing import List, cast
 
@@ -248,6 +249,53 @@ class TestTranslateExprDomain:
         assert str(z3.simplify(result.z3_expr)) == "2"
         assert result.definedness_constraints == ()
 
+    def test_sibling_definedness_prunes_later_conditional_branch(self):
+        """Earlier eager operands constrain later sibling branch feasibility."""
+        from pyfcstm.solver.domain import translate_expr_domain
+
+        x = z3.Int("x")
+        y = z3.Real("y")
+        expr = BinaryOp(
+            BinaryOp(Integer(1), "/", Variable("x")),
+            "+",
+            BinaryOp(Variable("x"), "==", Integer(0)).select(
+                UFunc("sin", Variable("y")),
+                Integer(0),
+            ),
+        )
+
+        result = translate_expr_domain(expr, {"x": x, "y": y})
+
+        assert result.failure is None
+        assert result.z3_expr is not None
+        assert [str(item.constraint) for item in result.definedness_constraints] == [
+            "x != 0"
+        ]
+        assert [
+            (str(item.selector), item.status) for item in result.feasibility_checks
+        ] == [("0 == x", "unsat"), ("Not(0 == x)", "sat")]
+
+    def test_binary_right_failure_keeps_left_definedness(self):
+        """Right-side failures preserve constraints from already evaluated left."""
+        from pyfcstm.solver.domain import translate_expr_domain
+
+        x = z3.Int("x")
+        result = translate_expr_domain(
+            BinaryOp(
+                BinaryOp(Integer(1), "/", Variable("x")),
+                "+",
+                Variable("missing"),
+            ),
+            {"x": x},
+        )
+
+        assert result.z3_expr is None
+        assert result.failure is not None
+        assert result.failure.kind == "value_error"
+        assert [str(item.constraint) for item in result.definedness_constraints] == [
+            "x != 0"
+        ]
+
     def test_pruning_can_be_disabled_for_research_callers(self):
         """Disabling pruning translates both branches and exposes branch failures."""
         from pyfcstm.solver.domain import translate_expr_domain
@@ -453,6 +501,34 @@ class TestTranslateExprDomain:
         assert result.assumptions == (flag == z3.BoolVal(True),)
         assert not hasattr(result, "path_conditions")
 
+    def test_expr_constraints_are_currently_empty_extension_slot(self):
+        """Expression constraints are reserved by the current translator."""
+        from pyfcstm.solver.domain import translate_expr_domain
+
+        x, y = z3.Ints("x y")
+        result = translate_expr_domain(
+            BinaryOp(BinaryOp(Variable("x"), "/", Variable("y")), "+", Integer(1)),
+            {"x": x, "y": y},
+        )
+
+        assert result.failure is None
+        assert result.expr_constraints == ()
+
+    def test_domain_warning_location_points_to_caller(self):
+        """Operation warnings point to the caller instead of solver internals."""
+        from pyfcstm.solver.domain import translate_expr_domain
+
+        x = z3.Int("x")
+        expr = BinaryOp(Integer(2), "**", Variable("x"))
+
+        with warnings.catch_warnings(record=True) as records:
+            warnings.simplefilter("always")
+            translate_expr_domain(expr, {"x": x})
+
+        assert len(records) == 1
+        assert "variable exponent" in str(records[0].message).lower()
+        assert records[0].filename == __file__
+
     def test_expected_translation_failure_has_no_z3_value(self):
         """Failure and translated value are mutually exclusive."""
         from pyfcstm.solver.domain import translate_expr_domain
@@ -463,6 +539,13 @@ class TestTranslateExprDomain:
         assert result.failure is not None
         assert result.failure.kind == "value_error"
         assert "missing" in result.failure.reason
+
+    def test_unlisted_translation_exception_type_is_not_reclassified(self):
+        """Only documented exception classes are normalized."""
+        from pyfcstm.solver.domain import _failure_from_exception
+
+        with pytest.raises(AssertionError, match="RuntimeError"):
+            _failure_from_exception(RuntimeError("unexpected"), None)
 
     @pytest.mark.parametrize(
         "err, kind",
@@ -511,7 +594,7 @@ class TestTranslateExprDomain:
         from pyfcstm.solver import domain
         from pyfcstm.solver.domain import translate_expr_domain
 
-        def reject_unary(_op, _operand):
+        def reject_unary(_op, _operand, **_kwargs):
             raise err
 
         monkeypatch.setattr(domain, "_apply_unary_z3", reject_unary)

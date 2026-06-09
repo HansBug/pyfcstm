@@ -86,6 +86,8 @@ def _apply_binary_z3(
     right: Union[z3.ArithRef, z3.BoolRef],
     left_expr: Expr,
     right_expr: Expr,
+    *,
+    warning_stacklevel: int = 2,
 ) -> Union[z3.ArithRef, z3.BoolRef]:
     """Apply a DSL binary operator to already translated Z3 operands."""
     if op == "+":
@@ -114,14 +116,14 @@ def _apply_binary_z3(
                 "Z3's nonlinear arithmetic solver has limited support for this pattern. "
                 "Consider using alternative formulations or constraints if possible.",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=warning_stacklevel,
             )
         elif right_is_var:
             warnings.warn(
                 "Power operation with variable exponent (constant ** x) may be slow in Z3. "
                 "Performance depends on the solver's ability to handle exponential constraints.",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=warning_stacklevel,
             )
         # x ** constant is generally fine, no warning needed
 
@@ -135,7 +137,7 @@ def _apply_binary_z3(
             "For full bitwise operation support, consider using Z3 BitVec types. "
             "The operation may not work as expected for negative numbers.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=warning_stacklevel,
         )
         return left & right
     elif op == "|":
@@ -144,7 +146,7 @@ def _apply_binary_z3(
             "For full bitwise operation support, consider using Z3 BitVec types. "
             "The operation may not work as expected for negative numbers.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=warning_stacklevel,
         )
         return left | right
     elif op == "^":
@@ -153,7 +155,7 @@ def _apply_binary_z3(
             "For full bitwise operation support, consider using Z3 BitVec types. "
             "The operation may not work as expected for negative numbers.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=warning_stacklevel,
         )
         return left ^ right
     elif op == "<<":
@@ -161,7 +163,7 @@ def _apply_binary_z3(
             "Left shift (<<) on Z3 Int types has limited support. "
             "For full bitwise operation support, consider using Z3 BitVec types.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=warning_stacklevel,
         )
         return left << right
     elif op == ">>":
@@ -169,7 +171,7 @@ def _apply_binary_z3(
             "Right shift (>>) on Z3 Int types has limited support. "
             "For full bitwise operation support, consider using Z3 BitVec types.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=warning_stacklevel,
         )
         return left >> right
 
@@ -200,6 +202,8 @@ def _apply_binary_z3(
 def _apply_unary_z3(
     op: str,
     operand: Union[z3.ArithRef, z3.BoolRef],
+    *,
+    warning_stacklevel: int = 2,
 ) -> Union[z3.ArithRef, z3.BoolRef]:
     """Apply a DSL unary operator to an already translated Z3 operand."""
     if op == "-":
@@ -212,7 +216,7 @@ def _apply_unary_z3(
             "For full bitwise operation support, consider using Z3 BitVec types. "
             "The operation may not work as expected.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=warning_stacklevel,
         )
         return ~operand
     elif op in ("!", "not"):
@@ -399,12 +403,19 @@ def expr_to_z3(
     elif isinstance(expr, BinaryOp):
         left = expr_to_z3(expr.x, z3_vars)
         right = expr_to_z3(expr.y, z3_vars)
-        return _apply_binary_z3(expr.op, left, right, expr.x, expr.y)
+        return _apply_binary_z3(
+            expr.op,
+            left,
+            right,
+            expr.x,
+            expr.y,
+            warning_stacklevel=3,
+        )
 
     # Handle unary operators
     elif isinstance(expr, UnaryOp):
         operand = expr_to_z3(expr.x, z3_vars)
-        return _apply_unary_z3(expr.op, operand)
+        return _apply_unary_z3(expr.op, operand, warning_stacklevel=3)
 
     # Handle conditional expressions (ternary operator)
     elif isinstance(expr, ConditionalOp):

@@ -9,7 +9,7 @@ when to add the returned definedness constraints to a solver.
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import z3
 
@@ -70,7 +70,11 @@ class BranchFeasibility:
 
 @dataclass(frozen=True)
 class ExprDomain:
-    """Domain-aware translation result for one expression."""
+    """Domain-aware translation result for one expression.
+
+    ``expr_constraints`` is reserved for future solver-only value constraints.
+    The current translator does not populate it; every path returns ``()``.
+    """
 
     z3_expr: Optional[_Z3Expr]
     expr_constraints: Tuple[z3.ExprRef, ...] = ()
@@ -91,7 +95,9 @@ def _failure_from_exception(
         return TranslationFailure("value_error", str(err), source=source)
     if isinstance(err, TypeError):
         return TranslationFailure("type_error", str(err), source=source)
-    return TranslationFailure("z3_error", str(err), source=source)
+    if isinstance(err, z3.Z3Exception):
+        return TranslationFailure("z3_error", str(err), source=source)
+    raise AssertionError(f"Unexpected translation exception: {type(err).__name__}") from err
 
 
 def _failure_result(
@@ -137,7 +143,7 @@ def _expr_to_z3_or_failure(
 
 
 def _apply_or_failure(
-    func,
+    func: Callable[[], _Z3Expr],
     source: Optional[DomainSource],
 ) -> Tuple[Optional[_Z3Expr], Optional[TranslationFailure]]:
     """Run a Z3 operation and normalize only documented failure classes."""
@@ -247,13 +253,27 @@ def _translate_expr_domain(
             expr.y,
             z3_vars,
             assumptions=assumptions,
-            path_conditions=path_conditions,
+            path_conditions=(
+                *path_conditions,
+                *_constraint_exprs(left.definedness_constraints),
+            ),
             source=source,
             prune_unreachable=prune_unreachable,
             timeout_ms=timeout_ms,
         )
         if right.failure is not None:
-            return right
+            return _failure_result(
+                right.failure,
+                assumptions=assumptions,
+                definedness_constraints=(
+                    *left.definedness_constraints,
+                    *right.definedness_constraints,
+                ),
+                feasibility_checks=(
+                    *left.feasibility_checks,
+                    *right.feasibility_checks,
+                ),
+            )
 
         domains = [*left.definedness_constraints, *right.definedness_constraints]
         if expr.op in ("/", "%"):
@@ -281,6 +301,7 @@ def _translate_expr_domain(
                 right.z3_expr,
                 expr.x,
                 expr.y,
+                warning_stacklevel=6,
             ),
             source,
         )
@@ -308,7 +329,11 @@ def _translate_expr_domain(
         if operand.failure is not None:
             return operand
         z3_expr, failure = _apply_or_failure(
-            lambda: _apply_unary_z3(expr.op, operand.z3_expr),
+            lambda: _apply_unary_z3(
+                expr.op,
+                operand.z3_expr,
+                warning_stacklevel=6,
+            ),
             source,
         )
         return _with_parts(

@@ -5,6 +5,8 @@ from textwrap import dedent
 import pytest
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
+from pyfcstm.solver.domain import BranchFeasibility, ExprDomain, TranslationFailure
+from pyfcstm.solver.operation import OperationExecution, OperationFailure
 from pyfcstm.verify import smt_local
 from pyfcstm.verify.registry import REGISTRY
 from pyfcstm.verify.smt_local import (
@@ -31,7 +33,7 @@ from pyfcstm.model.model import (
 
 pytestmark = pytest.mark.unittest
 
-GROUP2_SMT_LOCAL = (
+SMT_LOCAL_ALGORITHMS = (
     "dead_guard",
     "guard_tautology",
     "forced_guard_unsat_under_init",
@@ -167,10 +169,13 @@ def test_expected_operation_translation_failures_are_normalized():
 def test_expr_translation_not_implemented_is_undecidable_skip(monkeypatch):
     """Unsupported function translation is normalized as undecidable."""
 
-    def raise_not_implemented(*args, **kwargs):
-        raise NotImplementedError("unsupported function")
+    def fail_translation(*args, **kwargs):
+        return ExprDomain(
+            z3_expr=None,
+            failure=TranslationFailure("not_implemented", "unsupported function"),
+        )
 
-    monkeypatch.setattr(smt_local, "expr_to_z3", raise_not_implemented)
+    monkeypatch.setattr(smt_local, "translate_expr_domain", fail_translation)
 
     value, result = smt_local._expr_to_z3_or_result(
         Variable("x"),
@@ -181,13 +186,53 @@ def test_expr_translation_not_implemented_is_undecidable_skip(monkeypatch):
     assert result.kind == "undecidable_skip"
 
 
+def test_expr_translation_unknown_feasibility_is_unknown(monkeypatch):
+    """Unknown branch feasibility is normalized as an unknown result."""
+
+    def translate_with_unknown_branch(*args, **kwargs):
+        return ExprDomain(
+            z3_expr=smt_local.z3.IntVal(1),
+            feasibility_checks=(
+                BranchFeasibility(
+                    selector=smt_local.z3.BoolVal(True),
+                    status="unknown",
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(smt_local, "translate_expr_domain", translate_with_unknown_branch)
+
+    value, result = smt_local._expr_to_z3_or_result(
+        Variable("x"),
+        {"x": smt_local.z3.Int("x")},
+    )
+
+    assert value is None
+    assert result.kind == "unknown"
+
+
+def test_operation_execution_success_returns_new_environment():
+    """Successful operation execution returns the updated symbolic environment."""
+    value, result = smt_local._execute_operations_or_result(
+        [Operation(var_name="x", expr=Integer(1))],
+        {"x": smt_local.z3.Int("x")},
+    )
+
+    assert result is None
+    assert str(value["x"]) == "1"
+
+
 def test_operation_translation_not_implemented_is_undecidable_skip(monkeypatch):
     """Operation execution normalizes unsupported functions as undecidable."""
 
-    def raise_not_implemented(*args, **kwargs):
-        raise NotImplementedError("unsupported function")
+    def fail_execution(*args, **kwargs):
+        return OperationExecution(
+            env={},
+            visible_names=(),
+            failure=OperationFailure("not_implemented", "unsupported function"),
+        )
 
-    monkeypatch.setattr(smt_local, "execute_operations", raise_not_implemented)
+    monkeypatch.setattr(smt_local, "execute_operations_domain", fail_execution)
 
     value, result = smt_local._execute_operations_or_result(
         [Operation(var_name="x", expr=Integer(1))],
@@ -201,10 +246,14 @@ def test_operation_translation_not_implemented_is_undecidable_skip(monkeypatch):
 def test_operation_translation_z3_exception_is_undecidable_skip(monkeypatch):
     """Z3 operation-domain failures are normalized as undecidable skips."""
 
-    def raise_z3_exception(*args, **kwargs):
-        raise smt_local.z3.Z3Exception("bad sort")
+    def fail_execution(*args, **kwargs):
+        return OperationExecution(
+            env={},
+            visible_names=(),
+            failure=OperationFailure("z3_error", "bad sort"),
+        )
 
-    monkeypatch.setattr(smt_local, "execute_operations", raise_z3_exception)
+    monkeypatch.setattr(smt_local, "execute_operations_domain", fail_execution)
 
     value, result = smt_local._execute_operations_or_result(
         [Operation(var_name="x", expr=Integer(1))],
@@ -218,10 +267,17 @@ def test_operation_translation_z3_exception_is_undecidable_skip(monkeypatch):
 def test_expected_operation_type_failures_are_normalized(monkeypatch):
     """Documented operation type failures become undecidable skips."""
 
-    def raise_type_error(*args, **kwargs):
-        raise TypeError("unsupported symbolic operation")
+    def fail_execution(*args, **kwargs):
+        return OperationExecution(
+            env={},
+            visible_names=(),
+            failure=OperationFailure(
+                "type_error",
+                "unsupported symbolic operation",
+            ),
+        )
 
-    monkeypatch.setattr(smt_local, "execute_operations", raise_type_error)
+    monkeypatch.setattr(smt_local, "execute_operations_domain", fail_execution)
 
     value, result = smt_local._execute_operations_or_result(
         [Operation(var_name="x", expr=Integer(1))],
@@ -921,17 +977,6 @@ def test_operation_prefix_collection_propagates_if_merge_failure_after_branch_sc
             ]
         )
     ]
-    calls = []
-    real_execute = smt_local.execute_operations
-
-    def fail_only_during_final_merge(operations_arg, z3_vars):
-        calls.append(operations_arg)
-        if len(calls) == 1:
-            raise ValueError("synthetic merge failure")
-        return real_execute(operations_arg, z3_vars)
-
-    monkeypatch.setattr(smt_local, "execute_operations", fail_only_during_final_merge)
-
     condition_points, result = smt_local._execute_operation_prefix_conditions_or_result(
         operations,
         {"x": smt_local.z3.Int("x")},
@@ -940,7 +985,6 @@ def test_operation_prefix_collection_propagates_if_merge_failure_after_branch_sc
     assert result is None
     assert condition_points is not None
     assert [point.condition for point in condition_points] == [condition]
-    assert calls == []
 
 
 def test_operation_prefix_collection_records_else_domain_constraints():
@@ -1383,8 +1427,30 @@ def test_event_bool_name_is_injective_for_underscore_and_path_boundaries():
     assert smt_local._event_bool_name(flat) != smt_local._event_bool_name(nested)
 
 
-def test_group2_registry_impls_are_real_function_pointers():
-    """Every PR-A4 registry entry points at its raw implementation."""
+def test_smt_local_registry_impls_live_in_algorithm_modules():
+    """Every SMT-local registry entry points at the split algorithm module."""
+    expected_modules = {
+        "dead_guard": "pyfcstm.verify.algorithms.guard",
+        "guard_tautology": "pyfcstm.verify.algorithms.guard",
+        "forced_guard_unsat_under_init": "pyfcstm.verify.algorithms.guard",
+        "effect_no_op_under_guard": "pyfcstm.verify.algorithms.effect",
+        "effect_contradicts_guard": "pyfcstm.verify.algorithms.effect",
+        "transition_shadowed_by_predecessor": (
+            "pyfcstm.verify.algorithms.transition"
+        ),
+        "enter_postcondition_implies_during_precondition": (
+            "pyfcstm.verify.algorithms.lifecycle"
+        ),
+        "composite_init_guards_incomplete": "pyfcstm.verify.algorithms.transition",
+    }
+
+    for name in SMT_LOCAL_ALGORITHMS:
+        assert REGISTRY[name].impl.__name__ == name
+        assert REGISTRY[name].impl.__module__ == expected_modules[name]
+
+
+def test_smt_local_keeps_legacy_algorithm_imports():
+    """Legacy smt_local imports remain callable during the migration."""
     expected_impls = {
         "dead_guard": dead_guard,
         "guard_tautology": guard_tautology,
@@ -1398,20 +1464,46 @@ def test_group2_registry_impls_are_real_function_pointers():
         "composite_init_guards_incomplete": composite_init_guards_incomplete,
     }
 
-    for name in GROUP2_SMT_LOCAL:
-        assert REGISTRY[name].impl is expected_impls[name]
+    for name, impl in expected_impls.items():
+        assert getattr(smt_local, name) is impl
 
 
-def test_group2_algorithms_default_to_unbounded_solver_timeout():
-    """Raw PR-A4 functions follow the PR-A2 ``None`` timeout contract."""
+def test_smt_local_algorithms_default_to_unbounded_solver_timeout():
+    """Raw SMT-local functions keep the ``None`` timeout contract."""
     import inspect
 
-    for name in GROUP2_SMT_LOCAL:
+    for name in SMT_LOCAL_ALGORITHMS:
         default = (
             inspect.signature(REGISTRY[name].impl).parameters["smt_timeout_ms"].default
         )
 
         assert default is None
+
+
+def test_split_encoding_modules_reexport_expected_helpers():
+    """Split encoding modules expose the same helper objects as the shim."""
+    from pyfcstm.verify.encoding import expr, guard, initial, lifecycle
+    from pyfcstm.verify.encoding import operation, trigger
+
+    expected = {
+        expr._expr_to_z3_or_result: smt_local._expr_to_z3_or_result,
+        expr._expr_z3_and_domains_or_result: (
+            smt_local._expr_z3_and_domains_or_result
+        ),
+        guard._guard_z3_or_result: smt_local._guard_z3_or_result,
+        initial._build_init_constraints_or_result: (
+            smt_local._build_init_constraints_or_result
+        ),
+        initial._root_initial_path_contexts: smt_local._root_initial_path_contexts,
+        lifecycle._concrete_during_operations: smt_local._concrete_during_operations,
+        operation._execute_operations_or_result: (
+            smt_local._execute_operations_or_result
+        ),
+        trigger._transition_trigger_or_result: smt_local._transition_trigger_or_result,
+    }
+
+    for split_helper, core_helper in expected.items():
+        assert split_helper is core_helper
 
 
 def test_first_indeterminate_keeps_first_relevant_outcome():
@@ -5089,10 +5181,16 @@ class TestCompositeInitGuardsIncomplete:
             """
         )
 
-        def fail_guard_translation(expr, z3_vars):
-            raise ValueError("synthetic init guard failure")
+        def fail_guard_translation(*args, **kwargs):
+            return ExprDomain(
+                z3_expr=None,
+                failure=TranslationFailure(
+                    "value_error",
+                    "synthetic init guard failure",
+                ),
+            )
 
-        monkeypatch.setattr(smt_local, "expr_to_z3", fail_guard_translation)
+        monkeypatch.setattr(smt_local, "translate_expr_domain", fail_guard_translation)
 
         result = composite_init_guards_incomplete(machine, variables(machine))
 

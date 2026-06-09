@@ -4,8 +4,8 @@ Formal verification algorithm taxonomy for pyfcstm.
 This module defines the metadata contract used by :mod:`pyfcstm.verify`
 to classify verification algorithms before they are implemented or wired
 into diagnostics. The taxonomy is intentionally independent from
-``pyfcstm.diagnostics`` so Track A can evolve without depending on the
-Layer 2 inspect surface.
+``pyfcstm.diagnostics`` so raw verification metadata can evolve without
+depending on the inspect surface.
 """
 
 from dataclasses import dataclass

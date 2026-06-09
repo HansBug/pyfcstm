@@ -605,6 +605,12 @@ def _current_auto_transition(runtime: SimulationRuntime):
     current_state = runtime.current_state
     for transition in current_state.transitions_from:
         if transition.event is None and transition.guard is None:
+            # Intentional SimulationRuntime-internal coupling: Phase10 needs to
+            # mirror ``cycle([])`` transition selection without actually
+            # probing with a real cycle, because a rejected auto transition
+            # would otherwise still run leaf ``during`` actions and mutate the
+            # imported trace.  Keep this guard aligned with
+            # ``SimulationRuntime._select_transition(validate_stoppable=True)``.
             if current_state.is_stoppable and not runtime._validate_transition(
                 runtime.stack,
                 runtime.vars,
@@ -690,6 +696,9 @@ def _build_state_windows(
                 current.pre_state_path == _ENDED_STATE_PATH
                 and current.post_state_path == _ENDED_STATE_PATH
             ):
+                # Once the machine has already ended, avoid creating repeated
+                # ``[*]`` -> ``[*]`` open-interval windows that could make the
+                # ended sentinel look like a queryable ordinary state.
                 continue
             windows.append(
                 SysDeSimTimelineStateWindow(

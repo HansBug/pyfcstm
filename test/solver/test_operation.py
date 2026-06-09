@@ -873,6 +873,40 @@ class TestExecuteOperationsDomain:
         assert execution.steps == ()
         assert_z3_expr_equal(execution.env["y"], y)
 
+    def test_elif_condition_failure_preserves_prior_branch_env(self):
+        """A failing elif condition keeps earlier successful branch environments."""
+        x = z3.Int("x")
+        a = z3.Real("a")
+        y = z3.Int("y")
+        w = z3.Int("w")
+        statements = parse_operations(
+            """
+            if [x > 0] {
+                y = 1;
+            } else if [sin(a) > 0] {
+                y = 2;
+            } else {
+                y = 3;
+            }
+            w = 4;
+            """,
+            allowed_vars=None,
+        )
+
+        execution = execute_operations_domain(
+            statements, {"x": x, "a": a, "y": y, "w": w}
+        )
+
+        assert execution.failure is not None
+        assert execution.failure.kind == "not_implemented"
+        assert len(execution.steps) == 1
+        assert len(execution.branches) == 1
+        assert execution.branches[0].failure is None
+        assert_z3_expr_equal(execution.branches[0].result_env["y"], z3.IntVal(1))
+        assert_constraints_reject((x > 0,), execution.env["y"] != 1)
+        assert_constraints_reject((x <= 0,), execution.env["y"] != y)
+        assert_z3_expr_equal(execution.env["w"], w)
+
     def test_nested_if_definedness_keeps_outer_path_prefix(self):
         """Nested branch body domains are guarded by every active selector."""
         flag, x, y, z = z3.Ints("flag x y z")
@@ -1229,6 +1263,41 @@ class TestExecuteOperationsDomain:
         assert execution.failure.kind == "non_bool_condition"
         assert execution.failure.translation_failure is None
         assert execution.steps == ()
+
+    def test_elif_non_bool_condition_preserves_prior_branch_env(self):
+        """A non-Boolean elif condition keeps earlier successful branch envs."""
+        statement = IfBlock(
+            branches=[
+                IfBlockBranch(
+                    condition=BinaryOp(Variable("x"), ">", Integer(0)),
+                    statements=[Operation(var_name="y", expr=Integer(1))],
+                ),
+                IfBlockBranch(
+                    condition=Variable("x"),
+                    statements=[Operation(var_name="y", expr=Integer(2))],
+                ),
+                IfBlockBranch(
+                    condition=None,
+                    statements=[Operation(var_name="y", expr=Integer(3))],
+                ),
+            ]
+        )
+        x = z3.Int("x")
+        y = z3.Int("y")
+        w = z3.Int("w")
+
+        execution = execute_operations_domain(statement, {"x": x, "y": y, "w": w})
+
+        assert execution.failure is not None
+        assert execution.failure.kind == "non_bool_condition"
+        assert execution.failure.translation_failure is None
+        assert len(execution.steps) == 1
+        assert len(execution.branches) == 1
+        assert execution.branches[0].failure is None
+        assert_z3_expr_equal(execution.branches[0].result_env["y"], z3.IntVal(1))
+        assert_constraints_reject((x > 0,), execution.env["y"] != 1)
+        assert_constraints_reject((x <= 0,), execution.env["y"] != y)
+        assert_z3_expr_equal(execution.env["w"], w)
 
     def test_unsupported_statement_is_operation_failure_kind(self):
         """Unknown operation statements use the stable operation-layer kind."""

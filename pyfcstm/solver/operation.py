@@ -698,7 +698,7 @@ def _execute_if_block_domain(
             local_domains.extend(condition_domains)
             if condition_result.failure is not None:
                 return _ExecutionResult(
-                    env=base_env,
+                    env=_merge_branch_env(base_env, merge_names, branch_results),
                     definedness_constraints=tuple(all_domains),
                     steps=tuple(steps),
                     branches=tuple(branches),
@@ -709,7 +709,7 @@ def _execute_if_block_domain(
                 )
             if not z3.is_bool(condition_result.z3_expr):
                 return _ExecutionResult(
-                    env=base_env,
+                    env=_merge_branch_env(base_env, merge_names, branch_results),
                     definedness_constraints=tuple(all_domains),
                     steps=tuple(steps),
                     branches=tuple(branches),

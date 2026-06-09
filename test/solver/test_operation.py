@@ -673,6 +673,99 @@ class TestExecuteOperationsDomain:
         assert len(execution.steps) == 2
         assert_z3_expr_equal(execution.env["z"], execution.env["x"])
 
+    def test_dead_execution_point_skips_later_assignment_translation(self):
+        """A later assignment is skipped once prior domains make the path dead."""
+        statements = parse_operations(
+            """
+            x = 1 / y;
+            z = sin(a);
+            """,
+            allowed_vars=None,
+        )
+        x = z3.Int("x")
+        y = z3.Int("y")
+        z = z3.Int("z")
+        a = z3.Real("a")
+
+        execution = execute_operations_domain(
+            statements,
+            {"x": x, "y": y, "z": z, "a": a},
+            path_conditions=(y == 0,),
+        )
+
+        assert execution.failure is None
+        assert len(execution.steps) == 1
+        assert execution.branches == ()
+        assert_z3_expr_equal(execution.env["z"], z)
+        assert_constraints_reject(
+            [item.constraint for item in execution.definedness_constraints],
+            y == 0,
+        )
+
+    def test_dead_execution_point_skips_later_if_condition_translation(self):
+        """A later if-block is skipped when the whole execution point is dead."""
+        statements = parse_operations(
+            """
+            x = 1 / y;
+            if [sin(a) > 0] {
+                z = 1;
+            } else {
+                z = 2;
+            }
+            """,
+            allowed_vars=None,
+        )
+        x = z3.Int("x")
+        y = z3.Int("y")
+        z = z3.Int("z")
+        a = z3.Real("a")
+
+        execution = execute_operations_domain(
+            statements,
+            {"x": x, "y": y, "z": z, "a": a},
+            path_conditions=(y == 0,),
+        )
+
+        assert execution.failure is None
+        assert len(execution.steps) == 1
+        assert execution.branches == ()
+        assert_z3_expr_equal(execution.env["z"], z)
+        assert_constraints_reject(
+            [item.constraint for item in execution.definedness_constraints],
+            y == 0,
+        )
+
+    def test_dead_execution_point_unknown_status_does_not_skip(self, monkeypatch):
+        """Unknown reachability at a statement boundary must not prune execution."""
+        from pyfcstm.solver import operation
+        from pyfcstm.solver.logical import SatResult
+
+        def always_unknown(constraints, *, timeout_ms=None, get_model=False):
+            return SatResult(kind="unknown")
+
+        monkeypatch.setattr(operation, "is_sat", always_unknown)
+        statements = parse_operations(
+            """
+            x = 1 / y;
+            z = sin(a);
+            """,
+            allowed_vars=None,
+        )
+        x = z3.Int("x")
+        y = z3.Int("y")
+        z = z3.Int("z")
+        a = z3.Real("a")
+
+        execution = execute_operations_domain(
+            statements,
+            {"x": x, "y": y, "z": z, "a": a},
+            path_conditions=(y == 0,),
+        )
+
+        assert execution.failure is not None
+        assert execution.failure.kind == "not_implemented"
+        assert len(execution.steps) == 1
+
     def test_reachable_failure_stops_after_preserving_previous_definedness(self):
         """The first reachable translation failure stops later statements."""
         statements = parse_operations(
@@ -875,6 +968,90 @@ class TestExecuteOperationsDomain:
         assert execution.branches[1].failure is None
         assert_constraints_allow([], x > 0, execution.env["y"] == 1)
 
+    def test_arrival_unsat_elif_selector_keeps_current_condition_metadata(self):
+        """An arrival-unsat elif still records its full effective selector."""
+        x, y = z3.Ints("x y")
+        statements = parse_operations(
+            """
+            if [x > 0] {
+                y = 1;
+            } else if [x <= 0] {
+                y = 2;
+            } else if [x == 5] {
+                y = 3;
+            }
+            """,
+            allowed_vars=["x", "y"],
+        )
+
+        execution = execute_operations_domain(statements, {"x": x, "y": y})
+
+        assert execution.failure is None
+        assert [branch.status for branch in execution.branches] == [
+            "sat",
+            "sat",
+            "unsat",
+        ]
+        assert_z3_expr_equivalent(
+            execution.branches[2].selector,
+            z3.And(z3.Not(x > 0), z3.Not(x <= 0), x == 5),
+        )
+        assert execution.branches[2].result_env is None
+
+    @pytest.mark.parametrize(
+        ["failure_factory", "metadata_expr"],
+        [
+            (lambda: ValueError("metadata value failure"), None),
+            (lambda: TypeError("metadata type failure"), None),
+            (lambda: z3.Z3Exception("metadata z3 failure"), None),
+            (None, z3.IntVal(1)),
+        ],
+    )
+    def test_arrival_unsat_elif_metadata_failure_falls_back_to_arrival_selector(
+        self, monkeypatch, failure_factory, metadata_expr
+    ):
+        """Metadata-only condition translation failures do not leak from dead elif."""
+        from pyfcstm.solver import operation
+
+        x, y = z3.Ints("x y")
+        dead_condition = Integer(1)
+        statement = IfBlock(
+            branches=[
+                IfBlockBranch(
+                    condition=BinaryOp(Variable("x"), ">", Integer(0)),
+                    statements=[Operation(var_name="y", expr=Integer(1))],
+                ),
+                IfBlockBranch(
+                    condition=BinaryOp(Variable("x"), "<=", Integer(0)),
+                    statements=[Operation(var_name="y", expr=Integer(2))],
+                ),
+                IfBlockBranch(
+                    condition=dead_condition,
+                    statements=[Operation(var_name="y", expr=Integer(3))],
+                ),
+            ]
+        )
+        original_expr_to_z3 = operation.expr_to_z3
+
+        def patched_expr_to_z3(expr, env):
+            if expr is dead_condition:
+                if failure_factory is not None:
+                    raise failure_factory()
+                return metadata_expr
+            return original_expr_to_z3(expr, env)
+
+        monkeypatch.setattr(operation, "expr_to_z3", patched_expr_to_z3)
+
+        execution = execute_operations_domain(statement, {"x": x, "y": y})
+
+        assert execution.failure is None
+        assert execution.branches[2].status == "unsat"
+        assert_z3_expr_equivalent(
+            execution.branches[2].selector,
+            z3.And(z3.Not(x > 0), z3.Not(x <= 0)),
+        )
+        assert execution.branches[2].result_env is None
+
     def test_unreachable_branch_is_recorded_without_execution_or_failure(self):
         """Pruned branches stay auditable while their statements are not executed."""
         x = z3.Int("x")
@@ -969,7 +1146,10 @@ class TestExecuteOperationsDomain:
         )
 
         assert execution.failure is None
-        assert len(calls) == 2
+        assert calls
+        assert all(
+            timeout_ms == 17 and not get_model for _, timeout_ms, get_model in calls
+        )
         assert {branch.status for branch in execution.branches} == {"unknown"}
         assert_constraints_allow([], flag > 0, execution.env["y"] == 1)
         assert_constraints_allow([], flag <= 0, execution.env["y"] == 0)

@@ -373,6 +373,50 @@ def _normalize_solver_status(status: str) -> str:
     return status if status in ("sat", "unsat") else "unknown"
 
 
+def _execution_point_status(
+    *,
+    assumptions: Sequence[z3.ExprRef],
+    path_conditions: Sequence[z3.ExprRef],
+    definedness_constraints: Sequence[DomainConstraint],
+    prune_unreachable: bool,
+    timeout_ms: Optional[int],
+) -> str:
+    if not prune_unreachable:
+        return "sat"
+    result = is_sat(
+        (
+            *assumptions,
+            *path_conditions,
+            *_constraint_exprs(definedness_constraints),
+        ),
+        timeout_ms=timeout_ms,
+    )
+    return _normalize_solver_status(result.kind)
+
+
+def _condition_expr_for_metadata(expr, env: _Z3Env) -> Optional[z3.ExprRef]:
+    try:
+        condition_expr = expr_to_z3(expr, env)
+    except NotImplementedError:
+        # NotImplementedError: expr_to_z3 raises this for supported expression
+        # nodes whose math function is intentionally unsupported by Z3.
+        return None
+    except ValueError:
+        # ValueError: expr_to_z3 raises this for unknown variables, unknown
+        # operators, and unsupported expression object types.
+        return None
+    except TypeError:
+        # TypeError: Python/Z3 operator overloads can reject malformed operand
+        # combinations before Z3 wraps the failure.
+        return None
+    except z3.Z3Exception:
+        # Z3Exception: Z3 rejects sort/operator-domain mismatches.
+        return None
+    if not z3.is_bool(condition_expr):
+        return None
+    return condition_expr
+
+
 def _translate_operation_expr(
     expr,
     env: _Z3Env,
@@ -441,6 +485,16 @@ def _execute_operation_statements_domain(
     step_index = step_start
 
     for statement in statements:
+        point_status = _execution_point_status(
+            assumptions=assumptions,
+            path_conditions=path_conditions,
+            definedness_constraints=current_domains,
+            prune_unreachable=prune_unreachable,
+            timeout_ms=timeout_ms,
+        )
+        if point_status == "unsat":
+            break
+
         if isinstance(statement, Operation):
             before = dict(current_env)
             step_source = (
@@ -588,18 +642,28 @@ def _execute_if_block_domain(
                     timeout_ms=timeout_ms,
                 )
                 if arrival_status == "unsat":
+                    condition_expr = _condition_expr_for_metadata(
+                        branch.condition, base_env
+                    )
+                    selector = (
+                        _and_expr((*prefix_selectors, condition_expr))
+                        if condition_expr is not None
+                        else _and_expr(tuple(prefix_selectors))
+                    )
                     branches.append(
                         OperationBranch(
                             branch_id=branch_id,
                             branch_kind=branch_kind,
-                            selector=_and_expr(tuple(prefix_selectors)),
-                            path_conditions=arrival_conditions,
+                            selector=selector,
+                            path_conditions=(*path_conditions, selector),
                             status="unsat",
                             result_env=None,
                             definedness_constraints=(),
                             failure=None,
                         )
                     )
+                    if condition_expr is not None:
+                        prefix_selectors.append(z3.Not(condition_expr))
                     continue
 
             condition_result = _translate_operation_expr(

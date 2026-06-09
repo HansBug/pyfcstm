@@ -124,6 +124,7 @@ pyfcstm 遵循三阶段流水线：
     tutorials/visualization/index_zh
     tutorials/cli/index_zh
     tutorials/grammar/index_zh
+    tutorials/sysdesim/index_zh
 
 * :doc:`tutorials/installation/index_zh`
 * :doc:`tutorials/structure/index_zh`
@@ -133,6 +134,7 @@ pyfcstm 遵循三阶段流水线：
 * :doc:`tutorials/visualization/index_zh`
 * :doc:`tutorials/cli/index_zh`
 * :doc:`tutorials/grammar/index_zh`
+* :doc:`tutorials/sysdesim/index_zh`
 
 最佳实践
 -------------------------

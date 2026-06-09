@@ -73,6 +73,7 @@ from ..convert.sysdesim.timeline import (
 from ..convert.sysdesim.timeline_verify import (
     SysDeSimPhase10Report,
     build_sysdesim_phase10_report,
+    format_sysdesim_termination_summary_lines,
 )
 
 
@@ -1060,6 +1061,16 @@ def _emit_sysdesim_validate_summary(
                 state=trace["initial_state_path"],
             )
         )
+    termination = phase10.get("termination") or []
+    termination_lines = format_sysdesim_termination_summary_lines(termination)
+    if termination_lines:
+        click.echo(
+            "  {label}:".format(
+                label=click.style("Termination", fg="white", bold=True),
+            )
+        )
+        for line in termination_lines:
+            click.echo("    " + line)
 
     if not has_state_query:
         click.echo(

@@ -1983,6 +1983,141 @@ def solve_sysdesim_state_coexistence(
     )
 
 
+def _output_contains_source_path(
+    output: SysDeSimPhase9Output, source_path: Tuple[str, ...]
+) -> bool:
+    """Return whether one Phase9 output contains the XML source state path."""
+    if not source_path:
+        return False
+    state_by_path = {
+        tuple(state.path): state for state in output.machine.walk_states()
+    }
+    for state in output.machine.walk_states():
+        path = tuple(state.path)
+        if path[-len(source_path) :] == source_path:
+            return True
+        if len(path) < len(source_path):
+            continue
+        suffix_paths = [
+            path[:index]
+            for index in range(
+                len(path) - len(source_path) + 1, len(path) + 1
+            )
+        ]
+        labels = []
+        complete = True
+        for item_path in suffix_paths:
+            item = state_by_path.get(tuple(item_path))
+            if item is None:
+                complete = False
+                break
+            labels.append(str(getattr(item, "extra_name", None) or item.name))
+        if complete and tuple(labels) == source_path:
+            return True
+    return False
+
+
+def build_sysdesim_termination_summary(
+    phase10_report: SysDeSimPhase10Report,
+) -> List[Dict[str, object]]:
+    """Build user-facing XML FinalState termination summary rows.
+
+    The returned list is the stable ``report["phase10"]["termination"]``
+    contract. It is derived from existing Phase7/8 graph data and Phase10
+    traces only; it does not alter runtime execution semantics.
+    """
+    final_edges = [
+        edge
+        for edge in phase10_report.phase9_report.phase78_report.machine_graph
+        if getattr(edge, "target_vertex_type", None) == "final"
+    ]
+    if not final_edges:
+        return []
+
+    traces_by_alias = {trace.machine_alias: trace for trace in phase10_report.traces}
+    summaries: List[Dict[str, object]] = []
+    for edge in final_edges:
+        matched_aliases = [
+            output.output_name
+            for output in phase10_report.phase9_report.outputs
+            if _output_contains_source_path(output, edge.source_path)
+        ]
+        if not matched_aliases:
+            matched_aliases = [trace.machine_alias for trace in phase10_report.traces]
+        for alias in matched_aliases:
+            trace = traces_by_alias.get(alias)
+            ended_step_ids: List[str] = []
+            if trace is not None:
+                for step in trace.steps:
+                    if (
+                        step.post_state_path == _ENDED_STATE_PATH
+                        or step.stabilized_state_path == _ENDED_STATE_PATH
+                    ):
+                        ended_step_ids.append(step.step_id)
+            summaries.append(
+                {
+                    "machine_alias": alias,
+                    "source_path": list(edge.source_path),
+                    "target_id": edge.target_id,
+                    "target_path": list(edge.target_path),
+                    "target_vertex_type": edge.target_vertex_type,
+                    "transition_ids": list(edge.transition_ids),
+                    "reached": bool(ended_step_ids),
+                    "ended_step_ids": ended_step_ids,
+                }
+            )
+    return summaries
+
+
+def format_sysdesim_termination_summary_lines(
+    termination: Iterable[Dict[str, object]],
+) -> List[str]:
+    """Format termination rows for overlay banners and CLI stdout."""
+    lines: List[str] = []
+    for item in termination:
+        machine_alias = str(item.get("machine_alias") or "?")
+        target_id = str(item.get("target_id") or "?")
+        transition_ids = item.get("transition_ids") or []
+        if isinstance(transition_ids, (list, tuple)):
+            transition_text = (
+                ", ".join(str(value) for value in transition_ids) or "?"
+            )
+        else:
+            transition_text = str(transition_ids)
+        ended_steps = item.get("ended_step_ids") or []
+        if isinstance(ended_steps, (list, tuple)):
+            step_text = ", ".join(str(value) for value in ended_steps)
+        else:
+            step_text = str(ended_steps)
+        source_path = item.get("source_path") or []
+        if isinstance(source_path, (list, tuple)):
+            source_text = ".".join(str(value) for value in source_path) or "?"
+        else:
+            source_text = str(source_path)
+        if item.get("reached"):
+            lines.append(
+                "已终止: {alias} reached [*] at {steps} via transition "
+                "{tx} -> XML FinalState {target} from {source}.".format(
+                    alias=machine_alias,
+                    steps=step_text or "?",
+                    tx=transition_text,
+                    target=target_id,
+                    source=source_text,
+                )
+            )
+        else:
+            lines.append(
+                "未触发终止: {alias} has XML FinalState {target} via "
+                "transition {tx} from {source}.".format(
+                    alias=machine_alias,
+                    target=target_id,
+                    tx=transition_text,
+                    source=source_text,
+                )
+            )
+    return lines
+
+
 def build_sysdesim_timeline_import_report(
     xml_path: str,
     machine_name: Optional[str] = None,
@@ -2071,6 +2206,7 @@ def build_sysdesim_timeline_import_report(
             "bindings": [asdict(item) for item in phase10_report.bindings],
             "traces": [asdict(item) for item in phase10_report.traces],
             "diagnostics": list(phase10_report.diagnostics),
+            "termination": build_sysdesim_termination_summary(phase10_report),
         },
     }
 
@@ -2144,6 +2280,8 @@ __all__ = [
     "build_sysdesim_state_coexistence_timeline_report",
     "build_sysdesim_phase9_report",
     "build_sysdesim_phase10_report",
+    "build_sysdesim_termination_summary",
     "build_sysdesim_timeline_import_report",
+    "format_sysdesim_termination_summary_lines",
     "solve_sysdesim_state_coexistence",
 ]

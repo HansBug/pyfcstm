@@ -568,7 +568,7 @@ def _execute_if_block_domain(
 
     for index, branch in enumerate(if_block.branches):
         branch_kind = (
-            "if" if index == 0 else ("else" if branch.condition is None else "elif")
+            "else" if branch.condition is None else ("if" if index == 0 else "elif")
         )
         branch_id = str(index)
         arrival_conditions = (*path_conditions, *prefix_selectors)

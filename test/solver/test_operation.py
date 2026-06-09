@@ -178,6 +178,22 @@ class TestParseOperations:
         with pytest.raises(GrammarParseError):
             parse_operations("x = ;")
 
+    def test_parse_unknown_statement_node_raises(self, monkeypatch):
+        """Unexpected DSL operation nodes are rejected explicitly."""
+        from pyfcstm.solver import operation
+
+        class UnknownStatementNode:
+            pass
+
+        monkeypatch.setattr(
+            operation,
+            "parse_with_grammar_entry",
+            lambda code, entry: [UnknownStatementNode()],
+        )
+
+        with pytest.raises(TypeError, match="Unknown operational statement node type"):
+            operation.parse_operations("ignored")
+
     def test_parse_missing_semicolon(self):
         """Test parsing with missing semicolon."""
         with pytest.raises(GrammarParseError):
@@ -555,6 +571,13 @@ class TestExecuteOperations:
             z3.If(var_exprs["x"] > 0, var_exprs["x"] + 11, var_exprs["x"] + 1),
         )
 
+    def test_execute_unknown_statement_type_raises(self):
+        """The legacy executor still raises on unsupported statement objects."""
+        x = z3.Int("x")
+
+        with pytest.raises(TypeError, match="Unknown operation statement type"):
+            execute_operations(OperationStatement(), {"x": x})
+
 
 @pytest.mark.unittest
 class TestExecuteOperationsDomain:
@@ -601,6 +624,26 @@ class TestExecuteOperationsDomain:
                 status="unsat",
                 failure=OperationFailure(kind="value_error", reason="bad branch"),
             )
+
+    def test_else_only_branch_uses_true_selector(self):
+        """A degenerate else-only block uses a true branch selector."""
+        y = z3.Int("y")
+        statement = IfBlock(
+            branches=[
+                IfBlockBranch(
+                    condition=None,
+                    statements=[Operation(var_name="y", expr=Integer(1))],
+                ),
+            ]
+        )
+
+        execution = execute_operations_domain(statement, {"y": y})
+
+        assert execution.failure is None
+        assert len(execution.branches) == 1
+        assert execution.branches[0].branch_kind == "else"
+        assert z3.is_true(z3.simplify(execution.branches[0].selector))
+        assert_z3_expr_equal(execution.env["y"], z3.IntVal(1))
 
     def test_sequential_definedness_prunes_later_unreachable_branch(self):
         """Earlier domain constraints guide later conditional expression pruning."""
@@ -713,6 +756,30 @@ class TestExecuteOperationsDomain:
         assert failing_execution.failure is None
         assert_constraints_reject(failing_constraints, x == 0)
 
+    def test_reachable_condition_translation_failure_stops_execution(self):
+        """A reachable condition translation failure stops before branch bodies."""
+        a = z3.Real("a")
+        y = z3.Int("y")
+        statements = parse_operations(
+            """
+            if [sin(a) > 0] {
+                y = 1;
+            } else {
+                y = 0;
+            }
+            """,
+            allowed_vars=["a", "y"],
+        )
+
+        execution = execute_operations_domain(statements, {"a": a, "y": y})
+
+        assert execution.failure is not None
+        assert execution.failure.kind == "not_implemented"
+        assert execution.failure.translation_failure is not None
+        assert execution.branches == ()
+        assert execution.steps == ()
+        assert_z3_expr_equal(execution.env["y"], y)
+
     def test_nested_if_definedness_keeps_outer_path_prefix(self):
         """Nested branch body domains are guarded by every active selector."""
         flag, x, y, z = z3.Ints("flag x y z")
@@ -744,6 +811,35 @@ class TestExecuteOperationsDomain:
         assert_constraints_allow(constraints, x <= 0, x == y)
         assert_constraints_allow(constraints, x > 0, flag <= 0, x == y)
         assert_constraints_reject(constraints, x > 0, flag > 0, x == y)
+
+    def test_reachable_branch_body_failure_is_recorded_on_branch(self):
+        """A branch body failure is kept on the executed branch record."""
+        x = z3.Int("x")
+        y = z3.Int("y")
+        statements = parse_operations(
+            """
+            if [x > 0] {
+                y = missing;
+            } else {
+                y = 0;
+            }
+            """,
+            allowed_vars=None,
+        )
+
+        execution = execute_operations_domain(
+            statements,
+            {"x": x, "y": y},
+            path_conditions=(x > 0,),
+        )
+
+        assert execution.failure is not None
+        assert execution.failure.kind == "value_error"
+        assert len(execution.branches) == 1
+        assert execution.branches[0].branch_kind == "if"
+        assert execution.branches[0].failure is execution.failure
+        assert execution.steps == ()
+        assert_z3_expr_equal(execution.env["y"], y)
 
     def test_unreachable_elif_condition_is_not_translated(self):
         """An unreachable elif condition cannot leak unsupported functions."""
@@ -878,6 +974,32 @@ class TestExecuteOperationsDomain:
         assert_constraints_allow([], flag > 0, execution.env["y"] == 1)
         assert_constraints_allow([], flag <= 0, execution.env["y"] == 0)
 
+    def test_prune_unreachable_false_keeps_contradictory_branches(self):
+        """Disabling pruning keeps branches even under contradictory paths."""
+        x = z3.Int("x")
+        y = z3.Int("y")
+        statements = parse_operations(
+            """
+            if [x > 0] {
+                y = 1;
+            } else {
+                y = 0;
+            }
+            """,
+            allowed_vars=["x", "y"],
+        )
+
+        execution = execute_operations_domain(
+            statements,
+            {"x": x, "y": y},
+            path_conditions=(x <= 0,),
+            prune_unreachable=False,
+        )
+
+        assert execution.failure is None
+        assert [branch.status for branch in execution.branches] == ["sat", "sat"]
+        assert_constraints_allow([], x <= 0, execution.env["y"] == 0)
+
     def test_non_bool_condition_is_operation_failure_kind(self):
         """Operation-layer condition type failures use a stable kind."""
         statement = IfBlock(
@@ -923,15 +1045,20 @@ class TestExecuteOperationsDomain:
             allowed_vars=["x", "y"],
         )
         execution = execute_operations_domain(statements, {"x": x, "y": y})
+        manual_constraint = DomainConstraint(z3.BoolVal(True))
 
         merged = merge_operation_definedness(
+            manual_constraint,
             execution,
             execution.steps[:1],
             execution.branches[0],
         )
 
         assert len(merged) >= len(execution.definedness_constraints)
+        assert manual_constraint in merged
         assert all(hasattr(item, "constraint") for item in merged)
+        with pytest.raises(TypeError, match="Unsupported operation definedness item"):
+            merge_operation_definedness([object()])
         with pytest.raises(TypeError, match="Unsupported operation definedness item"):
             merge_operation_definedness(object())
 

@@ -9,6 +9,15 @@ The helpers treat ``timeout_ms=None`` as the no-timeout path and do not configur
 Z3's ``timeout`` parameter in that case.  Any non-``None`` value is forwarded to
 Z3 unchanged.  Callers that need a bounded resource policy must validate their
 own budget before calling these infrastructure helpers.
+
+Example::
+
+    >>> import z3
+    >>> x = z3.Int("x")
+    >>> is_sat([x == 1]).kind
+    'sat'
+    >>> is_valid(x == x).kind
+    'sat'
 """
 
 from dataclasses import dataclass
@@ -34,6 +43,14 @@ class SatResult:
     :param model: Z3 model for satisfiable :func:`is_sat` calls when explicitly
         requested, defaults to ``None``.
     :type model: Optional[z3.ModelRef], optional
+
+    Example::
+
+        >>> result = SatResult(kind="unsat")
+        >>> result.kind
+        'unsat'
+        >>> result.model is None
+        True
     """
 
     kind: Literal["sat", "unsat", "unknown", "timeout"]
@@ -50,6 +67,14 @@ def _check_solver(solver: z3.Solver, *, get_model: bool = False) -> SatResult:
     :type get_model: bool, optional
     :return: Normalized solver result.
     :rtype: SatResult
+
+    Example::
+
+        >>> import z3
+        >>> solver = z3.Solver()
+        >>> solver.add(z3.Int("x") == 1)
+        >>> _check_solver(solver).kind
+        'sat'
     """
     result = solver.check()
     if result == z3.sat:
@@ -114,6 +139,15 @@ def is_valid(formula: z3.ExprRef, *, timeout_ms: Optional[int] = None) -> SatRes
     :type timeout_ms: Optional[int], optional
     :return: Validity result.
     :rtype: SatResult
+
+    Example::
+
+        >>> import z3
+        >>> x = z3.Int("x")
+        >>> is_valid(x == x).kind
+        'sat'
+        >>> is_valid(x > 0).kind
+        'unsat'
     """
     negated_formula = cast(z3.ExprRef, z3.Not(formula))
     negated = is_sat([negated_formula], timeout_ms=timeout_ms)
@@ -142,6 +176,15 @@ def is_overlap(
     :return: ``'sat'`` if the formulas overlap, ``'unsat'`` if they are
         disjoint, or an indeterminate solver result.
     :rtype: SatResult
+
+    Example::
+
+        >>> import z3
+        >>> x = z3.Int("x")
+        >>> is_overlap(x > 0, x < 2).kind
+        'sat'
+        >>> is_overlap(x > 0, x < 0).kind
+        'unsat'
     """
     overlap_formula = cast(z3.ExprRef, z3.And(formula_a, formula_b))
     return is_sat([overlap_formula], timeout_ms=timeout_ms)

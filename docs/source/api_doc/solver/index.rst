@@ -9,6 +9,7 @@ pyfcstm.solver
 .. toctree::
     :maxdepth: 3
 
+    domain
     expr
     logical
     operation

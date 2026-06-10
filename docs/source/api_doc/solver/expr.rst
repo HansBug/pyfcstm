@@ -6,6 +6,12 @@ pyfcstm.solver.expr
 .. automodule:: pyfcstm.solver.expr
 
 
+python\_round\_to\_z3
+-----------------------------------------------------
+
+.. autofunction:: python_round_to_z3
+
+
 expr\_to\_z3
 -----------------------------------------------------
 

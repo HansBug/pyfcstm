@@ -6,6 +6,31 @@ to classify verification algorithms before they are implemented or wired
 into diagnostics. The taxonomy is intentionally independent from
 ``pyfcstm.diagnostics`` so raw verification metadata can evolve without
 depending on the inspect surface.
+
+Example::
+
+    >>> from pyfcstm.verify.taxonomy import VerifyAlgorithmMeta
+    >>> meta = VerifyAlgorithmMeta(
+    ...     name="demo",
+    ...     description="Demo metadata.",
+    ...     closedness="closed",
+    ...     complexity_tier="structural",
+    ...     smt_logic=None,
+    ...     formula_size_scaling="none",
+    ...     call_count_scaling="one",
+    ...     incremental=False,
+    ...     fallback_unknown_risk="none",
+    ...     recommended_tactic=None,
+    ...     quantifier_alternation_depth=0,
+    ...     max_bitwidth=None,
+    ...     theory_combination=(),
+    ...     verification_scope="topological_only",
+    ...     dominant_dim=("states",),
+    ...     diagnostic_codes=(),
+    ...     impl=None,
+    ... )
+    >>> meta.name, meta.closedness
+    ('demo', 'closed')
 """
 
 from dataclasses import dataclass
@@ -132,6 +157,30 @@ class VerifyAlgorithmMeta:
     :type diagnostic_codes: Tuple[str, ...]
     :param impl: Implementation callable, or ``None`` while the algorithm is pending.
     :type impl: Optional[Callable]
+
+    Example::
+
+        >>> meta = VerifyAlgorithmMeta(
+        ...     name="topological_reachable_set",
+        ...     description="Compute reachable states.",
+        ...     closedness="closed",
+        ...     complexity_tier="structural",
+        ...     smt_logic=None,
+        ...     formula_size_scaling="none",
+        ...     call_count_scaling="linear_in_states",
+        ...     incremental=False,
+        ...     fallback_unknown_risk="none",
+        ...     recommended_tactic=None,
+        ...     quantifier_alternation_depth=0,
+        ...     max_bitwidth=None,
+        ...     theory_combination=(),
+        ...     verification_scope="topological_only",
+        ...     dominant_dim=("states",),
+        ...     diagnostic_codes=("W_UNREACHABLE_STATE",),
+        ...     impl=None,
+        ... )
+        >>> meta.diagnostic_codes
+        ('W_UNREACHABLE_STATE',)
     """
 
     name: str

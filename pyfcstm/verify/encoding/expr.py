@@ -1,4 +1,23 @@
-"""Expression definedness encoding helpers."""
+"""Expression definedness encoding helpers.
+
+This thin module exposes the expression-related helpers implemented in
+:mod:`pyfcstm.verify.encoding._core`.  Algorithm modules import from this topic
+module when they need guard expression values, ternary condition points, or
+runtime-definedness constraints.
+
+Example::
+
+    >>> import z3
+    >>> from pyfcstm.model.expr import BinaryOp, Variable
+    >>> from pyfcstm.verify.encoding.expr import _expr_z3_and_domains_or_result
+    >>> x, y = z3.Ints("x y")
+    >>> value, domains, result = _expr_z3_and_domains_or_result(
+    ...     BinaryOp(Variable("x"), "/", Variable("y")),
+    ...     {"x": x, "y": y},
+    ... )
+    >>> value, domains, result
+    (x/y, (y != 0,), None)
+"""
 
 from ._core import (
     _ConditionPoint,

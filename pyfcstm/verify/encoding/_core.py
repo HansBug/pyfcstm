@@ -9,6 +9,18 @@ adapter layer.
 The functions intentionally return lightweight dictionaries instead of
 ``ModelDiagnostic`` objects so the raw verification layer stays independent
 from diagnostics presentation concerns.
+
+Example::
+
+    >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+    >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+    >>> from pyfcstm.verify.encoding._core import _z3_vars
+    >>> code = "def int x = 0; state Root { state A; [*] -> A; }"
+    >>> machine = parse_dsl_node_to_state_machine(
+    ...     parse_with_grammar_entry(code, "state_machine_dsl")
+    ... )
+    >>> sorted(_z3_vars(tuple(machine.defines.values())))
+    ['x']
 """
 
 from __future__ import annotations
@@ -62,7 +74,30 @@ is_sat = _solver_is_sat
 
 @dataclass(frozen=True)
 class _ConditionPoint:
-    """Condition expression with its symbolic store and path predicates."""
+    """Condition expression with its symbolic store and path predicates.
+
+    :param condition: Model expression used as a branch or ternary condition.
+    :type condition: Expr
+    :param z3_vars: Symbolic environment visible at the condition point.
+    :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :param path_conditions: Predicates needed to reach the condition, defaults
+        to ``()``.
+    :type path_conditions: Tuple[z3.ExprRef, ...], optional
+    :param source: Human-readable condition source, defaults to
+        ``"expression"``.
+    :type source: str, optional
+    :param z3_condition: Already translated Boolean condition, defaults to
+        ``None``.
+    :type z3_condition: Optional[z3.ExprRef], optional
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.model.expr import Boolean
+        >>> point = _ConditionPoint(Boolean(True), {"x": z3.Int("x")})
+        >>> point.source
+        'expression'
+    """
 
     condition: "Expr"
     z3_vars: _Z3Vars
@@ -73,7 +108,22 @@ class _ConditionPoint:
 
 @dataclass(frozen=True)
 class _InitialPathContext:
-    """One feasible root-to-leaf initial path symbolic context."""
+    """One feasible root-to-leaf initial path symbolic context.
+
+    :param transitions: Initial transitions selected along the path.
+    :type transitions: Tuple[Transition, ...]
+    :param constraints: Path constraints that make those transitions selected.
+    :type constraints: Tuple[z3.ExprRef, ...]
+    :param operations: Entry and effect operations executed before the leaf's
+        first during block.
+    :type operations: Tuple[OperationStatement, ...]
+
+    Example::
+
+        >>> context = _InitialPathContext((), (), ())
+        >>> context.transitions
+        ()
+    """
 
     transitions: Tuple["Transition", ...]
     constraints: Tuple[z3.ExprRef, ...]
@@ -82,7 +132,26 @@ class _InitialPathContext:
 
 @dataclass(frozen=True)
 class _InitialPathSearchContext:
-    """Search state used while enumerating root initial path alternatives."""
+    """Search state used while enumerating root initial path alternatives.
+
+    :param transitions: Initial transitions selected so far.
+    :type transitions: Tuple[Transition, ...]
+    :param constraints: Solver constraints accumulated so far.
+    :type constraints: Tuple[z3.ExprRef, ...]
+    :param operations: Operations accumulated so far.
+    :type operations: Tuple[OperationStatement, ...]
+    :param z3_vars: Current symbolic variable environment.
+    :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :param domain_constraints: Runtime-definedness constraints accumulated so
+        far.
+    :type domain_constraints: Tuple[z3.ExprRef, ...]
+
+    Example::
+
+        >>> context = _InitialPathSearchContext((), (), (), {}, ())
+        >>> context.z3_vars
+        {}
+    """
 
     transitions: Tuple["Transition", ...]
     constraints: Tuple[z3.ExprRef, ...]
@@ -92,35 +161,80 @@ class _InitialPathSearchContext:
 
 
 def _dsl_nodes():
-    """Import DSL node sentinels lazily to keep registry import lightweight."""
+    """Import DSL node sentinels lazily to keep registry import lightweight.
+
+    :return: DSL node module.
+    :rtype: module
+
+    Example::
+
+        >>> _dsl_nodes().INIT_STATE is _dsl_nodes().INIT_STATE
+        True
+    """
     from pyfcstm.dsl import node as dsl_nodes
 
     return dsl_nodes
 
 
 def _conditional_op_type():
-    """Import ``ConditionalOp`` lazily for runtime ``isinstance`` checks."""
+    """Import ``ConditionalOp`` lazily for runtime ``isinstance`` checks.
+
+    :return: Conditional-expression class.
+    :rtype: type
+
+    Example::
+
+        >>> _conditional_op_type().__name__
+        'ConditionalOp'
+    """
     from pyfcstm.model.expr import ConditionalOp
 
     return ConditionalOp
 
 
 def _variable_type():
-    """Import ``Variable`` lazily for runtime ``isinstance`` checks."""
+    """Import ``Variable`` lazily for runtime ``isinstance`` checks.
+
+    :return: Variable-expression class.
+    :rtype: type
+
+    Example::
+
+        >>> _variable_type().__name__
+        'Variable'
+    """
     from pyfcstm.model.expr import Variable
 
     return Variable
 
 
 def _operation_type():
-    """Import ``Operation`` lazily for runtime ``isinstance`` checks."""
+    """Import ``Operation`` lazily for runtime ``isinstance`` checks.
+
+    :return: Operation statement class.
+    :rtype: type
+
+    Example::
+
+        >>> _operation_type().__name__
+        'Operation'
+    """
     from pyfcstm.model.model import Operation
 
     return Operation
 
 
 def _if_block_type():
-    """Import ``IfBlock`` lazily for runtime ``isinstance`` checks."""
+    """Import ``IfBlock`` lazily for runtime ``isinstance`` checks.
+
+    :return: If-block statement class.
+    :rtype: type
+
+    Example::
+
+        >>> _if_block_type().__name__
+        'IfBlock'
+    """
     from pyfcstm.model.model import IfBlock
 
     return IfBlock
@@ -133,6 +247,11 @@ def _state_path(state: Optional[State]) -> Optional[str]:
     :type state: Optional[State]
     :return: Dot-separated path.
     :rtype: Optional[str]
+
+    Example::
+
+        >>> _state_path(None) is None
+        True
     """
     if state is None:
         return None
@@ -143,8 +262,16 @@ def _state_name(value) -> str:
     """Return a readable transition endpoint name.
 
     :param value: Transition endpoint value.
+    :type value: object
     :return: Endpoint name.
     :rtype: str
+
+    Example::
+
+        >>> _state_name(_dsl_nodes().INIT_STATE)
+        '[*]'
+        >>> _state_name("A")
+        'A'
     """
     if value is _dsl_nodes().INIT_STATE:
         return "[*]"
@@ -160,6 +287,17 @@ def _event_name(transition: Transition) -> Optional[str]:
     :type transition: Transition
     :return: Event path.
     :rtype: Optional[str]
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; state B; [*] -> A; A -> B :: Go; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> _event_name(machine.root_state.transitions[1])
+        'Root.A.Go'
     """
     if transition.event is None:
         return None
@@ -173,6 +311,17 @@ def _transition_payload(transition: Transition) -> dict:
     :type transition: Transition
     :return: Transition payload.
     :rtype: dict
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; state B; [*] -> A; A -> B : if [x > 0]; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> _transition_payload(machine.root_state.transitions[1])["guard"]
+        'x > 0'
     """
     return {
         "parent": _state_path(transition.parent),
@@ -191,12 +340,39 @@ def _z3_vars(variables: Sequence[VarDefine]) -> _Z3Vars:
     :type variables: Sequence[VarDefine]
     :return: Variable-name to Z3 expression mapping.
     :rtype: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> _z3_vars(tuple(machine.defines.values()))["x"]
+        x
     """
     return _solver_create_z3_vars_from_models(list(variables))
 
 
 def _domain_failure_result(domain: ExprDomain) -> Optional[AlgorithmResult]:
-    """Convert a solver-layer expression failure into a raw result."""
+    """Convert a solver-layer expression failure into a raw result.
+
+    :param domain: Solver-layer domain-aware expression result.
+    :type domain: ExprDomain
+    :return: Raw algorithm result for failures or unknown reachability, or
+        ``None`` when the expression is usable.
+    :rtype: Optional[AlgorithmResult]
+
+    Example::
+
+        >>> from pyfcstm.solver.domain import ExprDomain, TranslationFailure
+        >>> result = _domain_failure_result(
+        ...     ExprDomain(None, failure=TranslationFailure("value_error", "bad"))
+        ... )
+        >>> result.kind
+        'undecidable_skip'
+    """
     if domain.failure is not None:
         return _skip_result("undecidable_skip", domain.failure.reason)
     for check in domain.feasibility_checks:
@@ -221,6 +397,11 @@ def _build_type_constraints(
     :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
     :return: Type-domain constraints.
     :rtype: Tuple[z3.ExprRef, ...]
+
+    Example::
+
+        >>> _build_type_constraints((), {})
+        ()
     """
     _ = variables, z3_vars
     return ()
@@ -238,6 +419,17 @@ def _expr_to_z3_or_result(
     :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
     :return: Pair of translated expression and optional failure result.
     :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.model.expr import BinaryOp, Integer, Variable
+        >>> expr = BinaryOp(Variable("x"), "+", Integer(1))
+        >>> value, result = _expr_to_z3_or_result(expr, {"x": z3.Int("x")})
+        >>> result is None
+        True
+        >>> value
+        x + 1
     """
     domain = translate_expr_domain(expr, z3_vars, prune_unreachable=False)
     result = _domain_failure_result(domain)
@@ -258,6 +450,17 @@ def _execute_operations_or_result(
     :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
     :return: Pair of post-state environment and optional failure result.
     :rtype: Tuple[Optional[Dict[str, Union[z3.ArithRef, z3.BoolRef]]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.solver.operation import parse_operations
+        >>> ops = parse_operations("x = x + 1;", ["x"])
+        >>> env, result = _execute_operations_or_result(ops, {"x": z3.IntVal(1)})
+        >>> result is None
+        True
+        >>> z3.simplify(env["x"])
+        2
     """
     execution = execute_operations_domain(list(operations), dict(z3_vars))
     if execution.failure is not None:
@@ -283,6 +486,15 @@ def _binary_z3_or_result(
     :type right: Union[z3.ArithRef, z3.BoolRef]
     :return: Translated Z3 expression and optional normalized failure.
     :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> value, result = _binary_z3_or_result("+", z3.IntVal(1), z3.IntVal(2))
+        >>> result is None
+        True
+        >>> value
+        1 + 2
     """
     try:
         if op == "+":
@@ -347,6 +559,15 @@ def _unary_z3_or_result(
     :type operand: Union[z3.ArithRef, z3.BoolRef]
     :return: Translated Z3 expression and optional normalized failure.
     :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> value, result = _unary_z3_or_result("-", z3.IntVal(2))
+        >>> result is None
+        True
+        >>> z3.simplify(value)
+        -2
     """
     try:
         if op == "-":
@@ -381,6 +602,15 @@ def _ufunc_z3_or_result(
     :type operand: Union[z3.ArithRef, z3.BoolRef]
     :return: Translated Z3 expression and optional normalized failure.
     :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> value, result = _ufunc_z3_or_result("abs", z3.IntVal(-2))
+        >>> result is None
+        True
+        >>> z3.simplify(value)
+        2
     """
     try:
         if func == "abs":
@@ -468,6 +698,22 @@ def _expr_conditions_and_z3_or_result(
     :type domain_constraints: Optional[List[z3.ExprRef]], optional
     :return: Condition points, translated expression, or normalized failure.
     :rtype: Tuple[Optional[Tuple[_ConditionPoint, ...]], Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.model.expr import BinaryOp, Variable
+        >>> x, y = z3.Ints("x y")
+        >>> domains = []
+        >>> points, value, result = _expr_conditions_and_z3_or_result(
+        ...     BinaryOp(Variable("x"), "/", Variable("y")),
+        ...     {"x": x, "y": y},
+        ...     domain_constraints=domains,
+        ... )
+        >>> points, value, result
+        ((), x/y, None)
+        >>> domains
+        [y != 0]
     """
     from pyfcstm.model.expr import BinaryOp, Boolean, Float, Integer, UFunc, UnaryOp
 
@@ -684,6 +930,18 @@ def _expr_z3_and_domains_or_result(
     :return: Z3 expression, runtime-definedness constraints, or a normalized
         algorithm result.
     :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.model.expr import BinaryOp, Variable
+        >>> x, y = z3.Ints("x y")
+        >>> value, domains, result = _expr_z3_and_domains_or_result(
+        ...     BinaryOp(Variable("x"), "/", Variable("y")),
+        ...     {"x": x, "y": y},
+        ... )
+        >>> value, domains, result
+        (x/y, (y != 0,), None)
     """
     domain_constraints: List[z3.ExprRef] = []
     _, z3_expr, result = _expr_conditions_and_z3_or_result(
@@ -715,6 +973,13 @@ def _definedness_feasibility_or_result(
     :type smt_timeout_ms: Optional[int], optional
     :return: ``None`` when feasible, otherwise an algorithm result.
     :rtype: Optional[AlgorithmResult]
+
+    Example::
+
+        >>> import z3
+        >>> x = z3.Int("x")
+        >>> _definedness_feasibility_or_result((x != x,), reason="bad").kind
+        'undecidable_skip'
     """
     sat_result = is_sat(constraints, timeout_ms=smt_timeout_ms)
     if sat_result.kind == "sat":
@@ -746,6 +1011,12 @@ def _path_reachability_or_result(
     :type smt_timeout_ms: Optional[int], optional
     :return: Reachability flag, or an indeterminate algorithm result.
     :rtype: Tuple[Optional[bool], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> _path_reachability_or_result((), (z3.BoolVal(False),))
+        (False, None)
     """
     if context_constraints is None:
         return True, None
@@ -774,6 +1045,14 @@ def _append_expr_domain_constraints(
     :type target_constraints: List[z3.ExprRef]
     :return: ``None``.
     :rtype: None
+
+    Example::
+
+        >>> import z3
+        >>> target = []
+        >>> _append_expr_domain_constraints((z3.Int("x") != 0,), target)
+        >>> target
+        [x != 0]
     """
     if source_constraints:
         target_constraints.extend(source_constraints)
@@ -818,6 +1097,24 @@ def _execute_operation_prefix_conditions_and_vars_or_result(
         constraints, or an algorithm result when symbolic prefix execution
         cannot be expressed.
     :rtype: Tuple[Optional[Tuple[_ConditionPoint, ...]], Optional[Dict[str, Union[z3.ArithRef, z3.BoolRef]]], Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.solver.operation import parse_operations
+        >>> x, y = z3.Ints("x y")
+        >>> ops = parse_operations(
+        ...     "if [x > 0] { y = 1; } else { y = 2; }",
+        ...     ["x", "y"],
+        ... )
+        >>> points, env, domains, result = (
+        ...     _execute_operation_prefix_conditions_and_vars_or_result(
+        ...         ops,
+        ...         {"x": x, "y": y},
+        ...     )
+        ... )
+        >>> len(points), env["y"], domains, result
+        (1, If(0 < x, 1, 2), (), None)
     """
     points: List[_ConditionPoint] = []
     current_vars = dict(z3_vars)
@@ -1041,6 +1338,18 @@ def _execute_operation_prefix_conditions_or_result(
     :return: Condition points, or an algorithm result when symbolic prefix
         execution cannot be expressed.
     :rtype: Tuple[Optional[Tuple[_ConditionPoint, ...]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.solver.operation import parse_operations
+        >>> ops = parse_operations("if [x > 0] { y = 1; }", ["x", "y"])
+        >>> points, result = _execute_operation_prefix_conditions_or_result(
+        ...     ops,
+        ...     {"x": z3.Int("x"), "y": z3.Int("y")},
+        ... )
+        >>> len(points), result is None
+        (1, True)
     """
     points, _, _, result = _execute_operation_prefix_conditions_and_vars_or_result(
         operations,
@@ -1080,6 +1389,22 @@ def _transition_trigger_or_result(
     :return: Trigger expression, runtime-definedness constraints, and optional
         failure result.
     :rtype: Tuple[Optional[z3.ExprRef], Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; state B; [*] -> A; A -> B :: Go; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> trigger, domains, result = _transition_trigger_or_result(
+        ...     machine.root_state.transitions[1],
+        ...     {"x": z3.Int("x")},
+        ... )
+        >>> trigger, domains, result
+        (__event__4:Root1:A2:Go, (), None)
     """
     parts: List[z3.ExprRef] = []
     domain_constraints: List[z3.ExprRef] = []
@@ -1149,6 +1474,24 @@ def _root_initial_path_contexts(
         ``None`` context tuple without a result means ``state`` is not selected
         by any feasible root first-enabled initial path.
     :rtype: Tuple[Optional[Tuple[_InitialPathContext, ...]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> contexts, result = _root_initial_path_contexts(
+        ...     machine.root_state.substates["A"],
+        ...     tuple(machine.defines.values()),
+        ...     {"x": z3.Int("x")},
+        ...     (),
+        ... )
+        >>> len(contexts), result is None
+        (1, True)
     """
     path = _state_path_from_root(state)
     if len(path) <= 1:
@@ -1366,6 +1709,24 @@ def _root_initial_path_context(
         optional algorithm result.  A ``None`` transition tuple without a result
         means the state is not selected by the root first-enabled initial path.
     :rtype: Tuple[Optional[Tuple[Transition, ...]], Optional[Tuple[z3.ExprRef, ...]], Optional[List[OperationStatement]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> transitions, constraints, operations, result = _root_initial_path_context(
+        ...     machine.root_state.substates["A"],
+        ...     tuple(machine.defines.values()),
+        ...     {"x": z3.Int("x")},
+        ...     (),
+        ... )
+        >>> len(transitions), constraints, operations, result
+        (1, (True,), [], None)
     """
     contexts, result = _root_initial_path_contexts(
         state,
@@ -1403,6 +1764,21 @@ def _build_init_constraints_or_result(
     :type smt_timeout_ms: Optional[int], optional
     :return: Pair of constraints and optional failure result.
     :rtype: Tuple[Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> _build_init_constraints_or_result(
+        ...     tuple(machine.defines.values()),
+        ...     {"x": z3.Int("x")},
+        ... )
+        ((0 == x,), None)
     """
     constraints: List[z3.ExprRef] = []
     for variable in variables:
@@ -1453,6 +1829,21 @@ def _guard_z3_or_result(
     :return: Guard Z3 expression, variable mapping, runtime-definedness
         constraints, and optional failure result.
     :rtype: tuple
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; state B; [*] -> A; A -> B : if [x > 0]; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> guard, z3_vars, domains, result = _guard_z3_or_result(
+        ...     machine.root_state.transitions[1],
+        ...     tuple(machine.defines.values()),
+        ... )
+        >>> guard, sorted(z3_vars), domains, result
+        (0 < x, ['x'], (), None)
     """
     z3_vars = _z3_vars(variables)
     if context_constraints is None:
@@ -1475,6 +1866,12 @@ def _is_self_assign(statement: OperationStatement) -> bool:
     :type statement: OperationStatement
     :return: Whether the statement is a self-assignment.
     :rtype: bool
+
+    Example::
+
+        >>> from pyfcstm.solver.operation import parse_operations
+        >>> _is_self_assign(parse_operations("x = x;", ["x"])[0])
+        True
     """
     return (
         isinstance(statement, _operation_type())
@@ -1492,6 +1889,12 @@ def _is_syntactically_self_assign_only(
     :type operations: Sequence[OperationStatement]
     :return: Whether the block is only self-assignments.
     :rtype: bool
+
+    Example::
+
+        >>> from pyfcstm.solver.operation import parse_operations
+        >>> _is_syntactically_self_assign_only(parse_operations("x = x;", ["x"]))
+        True
     """
     return bool(operations) and all(
         _is_self_assign(statement) for statement in operations
@@ -1513,6 +1916,11 @@ def _first_indeterminate(
     :type reason: Optional[str]
     :return: Existing or new aggregate result.
     :rtype: Optional[AlgorithmResult]
+
+    Example::
+
+        >>> _first_indeterminate(None, "unknown", "solver said unknown")
+        AlgorithmResult(kind='unknown', diagnostics=(), reason='solver said unknown')
     """
     if current is not None:
         return current
@@ -1548,6 +1956,23 @@ def _effect_guard_context_or_result(
     :type smt_timeout_ms: Optional[int], optional
     :return: Guard expression, type constraints, or an algorithm result.
     :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; state B; [*] -> A; A -> B : if [x > 0]; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> guard, constraints, result = _effect_guard_context_or_result(
+        ...     machine.root_state.transitions[1],
+        ...     tuple(machine.defines.values()),
+        ...     {"x": z3.Int("x")},
+        ... )
+        >>> guard, constraints, result
+        (0 < x, (), None)
     """
     if transition.guard is None:
         guard_z3 = z3.BoolVal(True)
@@ -1615,6 +2040,24 @@ def _execute_effects_under_guard_or_result(
     :return: Post-effect variables, runtime definedness constraints, or an
         algorithm result when execution cannot be expressed.
     :rtype: Tuple[Optional[Dict[str, Union[z3.ArithRef, z3.BoolRef]]], Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; state B; [*] -> A; A -> B effect { x = x + 1; }; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> env, domains, result = _execute_effects_under_guard_or_result(
+        ...     machine.root_state.transitions[1],
+        ...     {"x": z3.Int("x")},
+        ...     z3.BoolVal(True),
+        ...     (),
+        ... )
+        >>> env["x"], domains, result
+        (x + 1, (), None)
     """
     execution = execute_operations_domain(
         list(transition.effects),
@@ -1663,8 +2106,20 @@ def _iter_ordered_outgoing(
 
     :param machine: State machine to inspect.
     :type machine: StateMachine
+    :return: Iterable of source states and their ordered outgoing transitions.
     :yield: Source state and transitions in model order.
     :rtype: Iterable[Tuple[State, List[Transition]]]
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; state B; [*] -> A; A -> B; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> [(state.name, len(transitions)) for state, transitions in _iter_ordered_outgoing(machine)]
+        [('A', 1)]
     """
     states_by_parent_and_name: Dict[Tuple[Tuple[str, ...], str], State] = {}
     for state in machine.walk_states():
@@ -1698,6 +2153,17 @@ def _state_has_definite_stable_entry(state: State) -> bool:
     :type state: State
     :return: Whether entry is definitely validation-stable.
     :rtype: bool
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> _state_has_definite_stable_entry(machine.root_state.substates["A"])
+        True
     """
     if state.is_stoppable:
         return True
@@ -1730,6 +2196,18 @@ def _transition_has_definite_stable_continuation(
     :type transition: Transition
     :return: Whether the transition has a locally proven stable continuation.
     :rtype: bool
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; state B; [*] -> A; A -> B; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> source = machine.root_state.substates["A"]
+        >>> _transition_has_definite_stable_continuation(source, machine.root_state.transitions[1])
+        True
     """
     parent = source.parent
     if transition.to_state is _dsl_nodes().EXIT_STATE:
@@ -1757,6 +2235,17 @@ def _action_operations(
     :type actions: Sequence[Union[OnStage, OnAspect]]
     :return: Flattened concrete operation statements.
     :rtype: List[OperationStatement]
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A { enter { x = x + 1; } } [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> _action_operations(machine.root_state.substates["A"].on_enters)[0].var_name
+        'x'
     """
     operations: List[OperationStatement] = []
     for action in actions:
@@ -1772,8 +2261,16 @@ def _conditional_conditions_from_expr(expr: Expr) -> Iterable[Expr]:
 
     :param expr: Expression to scan.
     :type expr: Expr
+    :return: Iterable of ternary condition expressions.
     :yield: Ternary condition expressions.
     :rtype: Iterable[Expr]
+
+    Example::
+
+        >>> from pyfcstm.model.expr import BinaryOp, ConditionalOp, Integer, Variable
+        >>> expr = ConditionalOp(BinaryOp(Variable("x"), ">", Integer(0)), Integer(1), Integer(2))
+        >>> [str(item) for item in _conditional_conditions_from_expr(expr)]
+        ['x > 0']
     """
     if isinstance(expr, _conditional_op_type()):
         yield expr.cond
@@ -1788,8 +2285,16 @@ def _conditional_conditions_from_operations(
 
     :param operations: Operation statements to scan.
     :type operations: Sequence[OperationStatement]
+    :return: Iterable of conditional expressions found in operation blocks.
     :yield: Conditional expressions.
     :rtype: Iterable[Expr]
+
+    Example::
+
+        >>> from pyfcstm.solver.operation import parse_operations
+        >>> ops = parse_operations("x = (x > 0) ? 1 : 2;", ["x"])
+        >>> [str(item) for item in _conditional_conditions_from_operations(ops)]
+        ['x > 0']
     """
     for statement in operations:
         if isinstance(statement, _operation_type()):
@@ -1814,6 +2319,17 @@ def _concrete_during_operations(state: State) -> List[OperationStatement]:
     :type state: State
     :return: Flattened concrete operation statements.
     :rtype: List[OperationStatement]
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A { during { x = x + 2; } } [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> _concrete_during_operations(machine.root_state.substates["A"])[0].var_name
+        'x'
     """
     return _action_operations(
         [action for _, action in state.iter_on_during_aspect_recursively()]
@@ -1827,6 +2343,17 @@ def _state_path_from_root(state: State) -> Tuple[State, ...]:
     :type state: State
     :return: Root-to-state path.
     :rtype: Tuple[State, ...]
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> [state.name for state in _state_path_from_root(machine.root_state.substates["A"])]
+        ['Root', 'A']
     """
     path = []
     current = state
@@ -1849,6 +2376,17 @@ def _root_initial_path_transitions(state: State) -> Optional[Tuple[Transition, .
     :type state: State
     :return: Initial transition chain, or ``None`` when no such chain exists.
     :rtype: Optional[Tuple[Transition, ...]]
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> len(_root_initial_path_transitions(machine.root_state.substates["A"]))
+        1
     """
     path = _state_path_from_root(state)
     transitions: List[Transition] = []
@@ -1870,6 +2408,17 @@ def _is_root_initial_leaf(state: State) -> bool:
     :type state: State
     :return: Whether the root-to-leaf path is initial-transition-only.
     :rtype: bool
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> _is_root_initial_leaf(machine.root_state.substates["A"])
+        True
     """
     return _root_initial_path_transitions(state) is not None
 
@@ -1906,6 +2455,32 @@ def _enter_condition_descriptors_for_context(
     :return: Determined ``(condition, source, branch_taken)`` descriptors or an
         indeterminate algorithm result.
     :rtype: Tuple[Optional[Set[Tuple[str, str, str]]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = (
+        ...     "def int x = 0; "
+        ...     "state Root { state A { enter { x = x + 1; } during { x = x + 2; } } [*] -> A; }"
+        ... )
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> state = machine.root_state.substates["A"]
+        >>> context = _InitialPathContext((), (), tuple(_action_operations(state.on_enters)))
+        >>> descriptors, result = _enter_condition_descriptors_for_context(
+        ...     state,
+        ...     tuple(machine.defines.values()),
+        ...     {"x": z3.Int("x")},
+        ...     (z3.Int("x") == 0,),
+        ...     (),
+        ...     _concrete_during_operations(state),
+        ...     context,
+        ... )
+        >>> descriptors, result
+        (set(), None)
     """
     _ = variables, state
     context_constraints = [
@@ -2034,6 +2609,17 @@ def _event_bool_name(transition: Transition) -> str:
     :type transition: Transition
     :return: Event boolean name.
     :rtype: str
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; state B; [*] -> A; A -> B :: Go; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> _event_bool_name(machine.root_state.transitions[1])
+        '__event__4:Root1:A2:Go'
     """
     if transition.event is None:
         return "__event__anonymous"

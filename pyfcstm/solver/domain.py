@@ -5,6 +5,19 @@ the Z3 value expression.  Z3 arithmetic operators are total, while FCSTM
 runtime expression evaluation is not: division by zero, modulo by zero, and
 square root of a negative value are runtime-domain failures.  Callers decide
 when to add the returned definedness constraints to a solver.
+
+Example::
+
+    >>> import z3
+    >>> from pyfcstm.model.expr import BinaryOp, Integer, Variable
+    >>> from pyfcstm.solver.domain import translate_expr_domain
+    >>> # Division produces both a value expression and a divisor guard.
+    >>> expr = BinaryOp(x=Variable("x"), op="/", y=Integer(2))
+    >>> result = translate_expr_domain(expr, {"x": z3.Int("x")})
+    >>> result.failure is None
+    True
+    >>> len(result.definedness_constraints)
+    1
 """
 
 from collections.abc import Iterable
@@ -34,7 +47,30 @@ _Z3Vars = Dict[str, _Z3Expr]
 
 @dataclass(frozen=True)
 class DomainSource:
-    """Pure source metadata for domain constraints and failures."""
+    """Pure source metadata for domain constraints and failures.
+
+    This object records where a solver-layer runtime-definedness constraint or
+    translation failure came from without importing verification or diagnostics
+    types.  All fields are optional so callers can attach only the provenance
+    they know at the current expression point.
+
+    :param label: Human-readable source label, defaults to ``None``.
+    :type label: Optional[str], optional
+    :param step: Operation-step index associated with the source, defaults to
+        ``None``.
+    :type step: Optional[int], optional
+    :param snapshot: Name of the symbolic snapshot, defaults to ``None``.
+    :type snapshot: Optional[str], optional
+    :param prefix_id: Path or branch prefix identifier, defaults to ``None``.
+    :type prefix_id: Optional[str], optional
+
+    Example::
+
+        >>> # Callers attach only the source fields they know.
+        >>> source = DomainSource(label="guard", step=0)
+        >>> source.label
+        'guard'
+    """
 
     label: Optional[str] = None
     step: Optional[int] = None
@@ -44,7 +80,24 @@ class DomainSource:
 
 @dataclass(frozen=True)
 class DomainConstraint:
-    """Runtime-definedness constraint plus optional source metadata."""
+    """Runtime-definedness constraint plus optional source metadata.
+
+    :param constraint: Z3 predicate that must hold for FCSTM runtime expression
+        evaluation to be defined.
+    :type constraint: z3.ExprRef
+    :param source: Optional source metadata for diagnostics or evidence,
+        defaults to ``None``.
+    :type source: Optional[DomainSource], optional
+
+    Example::
+
+        >>> import z3
+        >>> x = z3.Int("x")
+        >>> # The constraint records the runtime precondition for a divisor.
+        >>> item = DomainConstraint(x != 0, DomainSource(label="divisor"))
+        >>> item.source.label
+        'divisor'
+    """
 
     constraint: z3.ExprRef
     source: Optional[DomainSource] = None
@@ -52,7 +105,23 @@ class DomainConstraint:
 
 @dataclass(frozen=True)
 class TranslationFailure:
-    """Expected expression translation failure in pure solver-layer form."""
+    """Expected expression translation failure in pure solver-layer form.
+
+    :param kind: Normalized failure kind such as ``"not_implemented"`` or
+        ``"z3_error"``.
+    :type kind: str
+    :param reason: Human-readable failure reason.
+    :type reason: str
+    :param source: Optional source metadata, defaults to ``None``.
+    :type source: Optional[DomainSource], optional
+
+    Example::
+
+        >>> # Failures remain pure solver-layer data without verify imports.
+        >>> failure = TranslationFailure("value_error", "bad expression")
+        >>> failure.kind
+        'value_error'
+    """
 
     kind: str
     reason: str
@@ -61,7 +130,24 @@ class TranslationFailure:
 
 @dataclass(frozen=True)
 class BranchFeasibility:
-    """Recorded branch reachability query for conditional expressions."""
+    """Recorded branch reachability query for conditional expressions.
+
+    :param selector: Z3 predicate selecting the branch.
+    :type selector: z3.ExprRef
+    :param status: Normalized reachability status: ``"sat"``, ``"unsat"``,
+        or ``"unknown"``.
+    :type status: str
+    :param source: Optional source metadata, defaults to ``None``.
+    :type source: Optional[DomainSource], optional
+
+    Example::
+
+        >>> import z3
+        >>> # A satisfiable selector means the branch may contribute evidence.
+        >>> check = BranchFeasibility(z3.BoolVal(True), "sat")
+        >>> check.status
+        'sat'
+    """
 
     selector: z3.ExprRef
     status: str
@@ -74,6 +160,32 @@ class ExprDomain:
 
     ``expr_constraints`` is reserved for future solver-only value constraints.
     The current translator does not populate it; every path returns ``()``.
+
+    :param z3_expr: Translated Z3 value expression, or ``None`` when
+        translation failed.
+    :type z3_expr: Optional[Union[z3.ArithRef, z3.BoolRef]]
+    :param expr_constraints: Solver-only constraints associated with the value
+        expression, defaults to ``()``.
+    :type expr_constraints: Tuple[z3.ExprRef, ...], optional
+    :param assumptions: Caller-supplied facts preserved on the result, defaults
+        to ``()``.
+    :type assumptions: Tuple[z3.ExprRef, ...], optional
+    :param definedness_constraints: Runtime-definedness constraints that must
+        hold before using :attr:`z3_expr`, defaults to ``()``.
+    :type definedness_constraints: Tuple[DomainConstraint, ...], optional
+    :param failure: Expected translation failure, defaults to ``None``.
+    :type failure: Optional[TranslationFailure], optional
+    :param feasibility_checks: Branch reachability checks performed while
+        pruning conditional expressions, defaults to ``()``.
+    :type feasibility_checks: Tuple[BranchFeasibility, ...], optional
+
+    Example::
+
+        >>> import z3
+        >>> # A minimal successful result only needs a translated value.
+        >>> result = ExprDomain(z3.IntVal(1))
+        >>> result.z3_expr
+        1
     """
 
     z3_expr: Optional[_Z3Expr]
@@ -88,7 +200,29 @@ def _failure_from_exception(
     err: Union[NotImplementedError, ValueError, TypeError, z3.Z3Exception],
     source: Optional[DomainSource],
 ) -> TranslationFailure:
-    """Convert an expected translation exception to a pure failure object."""
+    """Convert an expected translation exception to a pure failure object.
+
+    :param err: Expected exception raised by expression translation or Z3
+        operator construction.
+    :type err: Union[NotImplementedError, ValueError, TypeError, z3.Z3Exception]
+    :param source: Optional source metadata attached to the failure.
+    :type source: Optional[DomainSource]
+    :return: Normalized translation failure.
+    :rtype: TranslationFailure
+    :raises AssertionError: If called with an exception class outside the
+        documented expected set.
+
+    Example::
+
+        >>> failure = _failure_from_exception(
+        ...     ValueError("missing variable"),
+        ...     DomainSource(label="guard"),
+        ... )
+        >>> failure.kind
+        'value_error'
+        >>> failure.source.label
+        'guard'
+    """
     if isinstance(err, NotImplementedError):
         return TranslationFailure("not_implemented", str(err), source=source)
     if isinstance(err, ValueError):
@@ -107,7 +241,32 @@ def _failure_result(
     definedness_constraints: Sequence[DomainConstraint] = (),
     feasibility_checks: Sequence[BranchFeasibility] = (),
 ) -> ExprDomain:
-    """Build a failed expression-domain result."""
+    """Build a failed expression-domain result.
+
+    :param failure: Normalized translation failure.
+    :type failure: TranslationFailure
+    :param assumptions: Caller-known facts to preserve on the result.
+    :type assumptions: Sequence[z3.ExprRef]
+    :param definedness_constraints: Runtime-definedness constraints collected
+        before the failure, defaults to ``()``.
+    :type definedness_constraints: Sequence[DomainConstraint], optional
+    :param feasibility_checks: Branch reachability checks collected before the
+        failure, defaults to ``()``.
+    :type feasibility_checks: Sequence[BranchFeasibility], optional
+    :return: Failed expression-domain result.
+    :rtype: ExprDomain
+
+    Example::
+
+        >>> result = _failure_result(
+        ...     TranslationFailure("value_error", "bad expression"),
+        ...     assumptions=(),
+        ... )
+        >>> result.z3_expr is None
+        True
+        >>> result.failure.kind
+        'value_error'
+    """
     return ExprDomain(
         z3_expr=None,
         assumptions=tuple(assumptions),
@@ -122,7 +281,30 @@ def _expr_to_z3_or_failure(
     z3_vars: _Z3Vars,
     source: Optional[DomainSource],
 ) -> Tuple[Optional[_Z3Expr], Optional[TranslationFailure]]:
-    """Translate through ``expr_to_z3`` and normalize expected failures."""
+    """Translate through ``expr_to_z3`` and normalize expected failures.
+
+    :param expr: Expression to translate.
+    :type expr: pyfcstm.model.expr.Expr
+    :param z3_vars: Variable-name to Z3 expression mapping.
+    :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :param source: Optional source metadata for any expected failure.
+    :type source: Optional[DomainSource]
+    :return: Pair of translated expression and normalized failure.
+    :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[TranslationFailure]]
+
+    Example::
+
+        >>> from pyfcstm.model.expr import Variable
+        >>> value, failure = _expr_to_z3_or_failure(
+        ...     Variable("x"),
+        ...     {"x": z3.Int("x")},
+        ...     DomainSource(label="expr"),
+        ... )
+        >>> value
+        x
+        >>> failure is None
+        True
+    """
     try:
         return expr_to_z3(expr, z3_vars), None
     except NotImplementedError as err:
@@ -146,7 +328,23 @@ def _apply_or_failure(
     func: Callable[[], _Z3Expr],
     source: Optional[DomainSource],
 ) -> Tuple[Optional[_Z3Expr], Optional[TranslationFailure]]:
-    """Run a Z3 operation and normalize only documented failure classes."""
+    """Run a Z3 operation and normalize only documented failure classes.
+
+    :param func: Zero-argument callable that builds the Z3 expression.
+    :type func: Callable[[], Union[z3.ArithRef, z3.BoolRef]]
+    :param source: Optional source metadata for any expected failure.
+    :type source: Optional[DomainSource]
+    :return: Pair of translated expression and normalized failure.
+    :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[TranslationFailure]]
+
+    Example::
+
+        >>> value, failure = _apply_or_failure(lambda: z3.IntVal(1) + 2, None)
+        >>> value
+        1 + 2
+        >>> failure is None
+        True
+    """
     try:
         return func(), None
     except NotImplementedError as err:
@@ -171,7 +369,32 @@ def _with_parts(
     failure: Optional[TranslationFailure] = None,
     feasibility_checks: Sequence[BranchFeasibility] = (),
 ) -> ExprDomain:
-    """Build an expression-domain result from collected pieces."""
+    """Build an expression-domain result from collected pieces.
+
+    :param z3_expr: Translated Z3 value expression, or ``None``.
+    :type z3_expr: Optional[Union[z3.ArithRef, z3.BoolRef]]
+    :param assumptions: Caller-known facts to preserve on the result.
+    :type assumptions: Sequence[z3.ExprRef]
+    :param definedness_constraints: Runtime-definedness constraints collected
+        during translation, defaults to ``()``.
+    :type definedness_constraints: Sequence[DomainConstraint], optional
+    :param failure: Optional normalized translation failure, defaults to
+        ``None``.
+    :type failure: Optional[TranslationFailure], optional
+    :param feasibility_checks: Branch reachability checks collected during
+        translation, defaults to ``()``.
+    :type feasibility_checks: Sequence[BranchFeasibility], optional
+    :return: Expression-domain result.
+    :rtype: ExprDomain
+
+    Example::
+
+        >>> result = _with_parts(z3.IntVal(1), assumptions=())
+        >>> result.z3_expr
+        1
+        >>> result.definedness_constraints
+        ()
+    """
     return ExprDomain(
         z3_expr=z3_expr,
         assumptions=tuple(assumptions),
@@ -182,7 +405,19 @@ def _with_parts(
 
 
 def _constraint_exprs(items: Sequence[DomainConstraint]) -> Tuple[z3.ExprRef, ...]:
-    """Return raw Z3 constraints from domain constraint objects."""
+    """Return raw Z3 constraints from domain constraint objects.
+
+    :param items: Runtime-definedness constraint objects.
+    :type items: Sequence[DomainConstraint]
+    :return: Raw Z3 predicates in the same order.
+    :rtype: Tuple[z3.ExprRef, ...]
+
+    Example::
+
+        >>> constraint = DomainConstraint(z3.Int("x") != 0)
+        >>> tuple(str(item) for item in _constraint_exprs((constraint,)))
+        ('x != 0',)
+    """
     return tuple(item.constraint for item in items)
 
 
@@ -195,7 +430,38 @@ def _branch_feasibility(
     source: Optional[DomainSource],
     timeout_ms: Optional[int],
 ) -> BranchFeasibility:
-    """Check whether one conditional value branch is reachable."""
+    """Check whether one conditional value branch is reachable.
+
+    :param selector: Z3 predicate selecting the conditional value branch.
+    :type selector: z3.ExprRef
+    :param assumptions: Caller-known facts to add to the reachability query.
+    :type assumptions: Sequence[z3.ExprRef]
+    :param path_conditions: Predicates needed to reach the conditional.
+    :type path_conditions: Sequence[z3.ExprRef]
+    :param condition_domains: Runtime-definedness constraints for the
+        conditional selector.
+    :type condition_domains: Sequence[DomainConstraint]
+    :param source: Optional source metadata for the recorded check.
+    :type source: Optional[DomainSource]
+    :param timeout_ms: Optional solver timeout in milliseconds.
+    :type timeout_ms: Optional[int]
+    :return: Recorded branch feasibility status.
+    :rtype: BranchFeasibility
+
+    Example::
+
+        >>> x = z3.Int("x")
+        >>> result = _branch_feasibility(
+        ...     x > 0,
+        ...     assumptions=(x == 1,),
+        ...     path_conditions=(),
+        ...     condition_domains=(),
+        ...     source=None,
+        ...     timeout_ms=None,
+        ... )
+        >>> result.status
+        'sat'
+    """
     result = is_sat(
         (
             *assumptions,
@@ -219,7 +485,45 @@ def _translate_expr_domain(
     prune_unreachable: bool,
     timeout_ms: Optional[int],
 ) -> ExprDomain:
-    """Recursive implementation for domain-aware expression translation."""
+    """Recursively translate an expression with runtime-definedness metadata.
+
+    :param expr: Expression to translate.
+    :type expr: pyfcstm.model.expr.Expr
+    :param z3_vars: Variable-name to Z3 expression mapping.
+    :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :param assumptions: Caller-known facts preserved on the result.
+    :type assumptions: Sequence[z3.ExprRef]
+    :param path_conditions: Predicates needed to reach the current expression.
+    :type path_conditions: Sequence[z3.ExprRef]
+    :param source: Optional source metadata for constraints and failures.
+    :type source: Optional[DomainSource]
+    :param prune_unreachable: Whether to skip conditional value branches proved
+        unreachable.
+    :type prune_unreachable: bool
+    :param timeout_ms: Optional solver timeout for branch reachability checks.
+    :type timeout_ms: Optional[int]
+    :return: Domain-aware expression translation.
+    :rtype: ExprDomain
+
+    Example::
+
+        >>> from pyfcstm.model.expr import BinaryOp, Integer, Variable
+        >>> x = z3.Int("x")
+        >>> expr = BinaryOp(Variable("x"), "/", Integer(2))
+        >>> result = _translate_expr_domain(
+        ...     expr,
+        ...     {"x": x},
+        ...     assumptions=(),
+        ...     path_conditions=(),
+        ...     source=None,
+        ...     prune_unreachable=True,
+        ...     timeout_ms=None,
+        ... )
+        >>> result.failure is None
+        True
+        >>> len(result.definedness_constraints)
+        1
+    """
     if isinstance(expr, (Integer, Float, Boolean, Variable)):
         z3_expr, failure = _expr_to_z3_or_failure(expr, z3_vars, source)
         if failure is not None:
@@ -406,7 +710,45 @@ def _translate_conditional_domain(
     prune_unreachable: bool,
     timeout_ms: Optional[int],
 ) -> ExprDomain:
-    """Translate a conditional expression with runtime short-circuit semantics."""
+    """Translate a conditional expression with runtime short-circuit semantics.
+
+    :param expr: Conditional expression to translate.
+    :type expr: ConditionalOp
+    :param z3_vars: Variable-name to Z3 expression mapping.
+    :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :param assumptions: Caller-known facts preserved on the result.
+    :type assumptions: Sequence[z3.ExprRef]
+    :param path_conditions: Predicates needed to reach the conditional.
+    :type path_conditions: Sequence[z3.ExprRef]
+    :param source: Optional source metadata for constraints and failures.
+    :type source: Optional[DomainSource]
+    :param prune_unreachable: Whether to skip value branches proved
+        unreachable.
+    :type prune_unreachable: bool
+    :param timeout_ms: Optional solver timeout for branch reachability checks.
+    :type timeout_ms: Optional[int]
+    :return: Domain-aware conditional translation.
+    :rtype: ExprDomain
+
+    Example::
+
+        >>> from pyfcstm.model.expr import ConditionalOp, Integer, Variable
+        >>> x = z3.Int("x")
+        >>> expr = ConditionalOp(Variable("x") > Integer(0), Integer(1), Integer(2))
+        >>> result = _translate_conditional_domain(
+        ...     expr,
+        ...     {"x": x},
+        ...     assumptions=(),
+        ...     path_conditions=(),
+        ...     source=None,
+        ...     prune_unreachable=True,
+        ...     timeout_ms=None,
+        ... )
+        >>> result.failure is None
+        True
+        >>> len(result.feasibility_checks)
+        2
+    """
     condition = _translate_expr_domain(
         expr.cond,
         z3_vars,
@@ -583,7 +925,7 @@ def translate_expr_domain(
     """Translate an expression and return runtime-definedness metadata.
 
     :param expr: Expression to translate.
-    :type expr: Expr
+    :type expr: pyfcstm.model.expr.Expr
     :param z3_vars: Symbolic variable mapping.
     :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
     :param assumptions: Caller-known facts preserved on the result.
@@ -600,6 +942,18 @@ def translate_expr_domain(
     :type timeout_ms: Optional[int], optional
     :return: Domain-aware expression translation.
     :rtype: ExprDomain
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.model.expr import BinaryOp, Integer, Variable
+        >>> # Runtime-definedness stays separate from the Z3 value expression.
+        >>> expr = BinaryOp(x=Variable("x"), op="/", y=Integer(3))
+        >>> result = translate_expr_domain(expr, {"x": z3.Int("x")})
+        >>> result.failure is None
+        True
+        >>> bool(result.definedness_constraints)
+        True
     """
     return _translate_expr_domain(
         expr,
@@ -617,6 +971,21 @@ def merge_definedness_constraints(*items) -> Tuple[DomainConstraint, ...]:
 
     Each returned constraint must hold at the evaluation point.  The helper does
     not run a solver and does not remove contradictory constraints.
+
+    :param items: Domain constraints, :class:`ExprDomain` objects, or iterables
+        of domain constraints to flatten.
+    :type items: object
+    :return: Domain constraints in source order.
+    :rtype: Tuple[DomainConstraint, ...]
+    :raises TypeError: If any item is not a supported domain-constraint shape.
+
+    Example::
+
+        >>> import z3
+        >>> # Flattening preserves the exact constraint object supplied.
+        >>> item = DomainConstraint(z3.Int("x") != 0)
+        >>> merge_definedness_constraints(item) == (item,)
+        True
     """
     merged: List[DomainConstraint] = []
     for item in items:

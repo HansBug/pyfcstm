@@ -7,9 +7,7 @@ from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.solver.domain import BranchFeasibility, ExprDomain, TranslationFailure
 from pyfcstm.solver.operation import OperationExecution, OperationFailure
-from pyfcstm.verify import smt_local
-from pyfcstm.verify.registry import REGISTRY
-from pyfcstm.verify.smt_local import (
+from pyfcstm.verify import (
     AlgorithmResult,
     composite_init_guards_incomplete,
     dead_guard,
@@ -20,6 +18,8 @@ from pyfcstm.verify.smt_local import (
     guard_tautology,
     transition_shadowed_by_predecessor,
 )
+from pyfcstm.verify.encoding import _core as encoding_core
+from pyfcstm.verify.registry import REGISTRY
 from pyfcstm.model.expr import BinaryOp, Boolean, Integer, Variable
 from pyfcstm.model.model import (
     Event,
@@ -77,7 +77,7 @@ def transition_by_guard(machine, text):
 
 def timeout_result(*args, **kwargs):
     """Deterministic timeout result for monkeypatched solver helpers."""
-    return smt_local.AlgorithmResult(kind="timeout")
+    return encoding_core.AlgorithmResult(kind="timeout")
 
 
 def sat_timeout_result(*args, **kwargs):
@@ -111,7 +111,7 @@ def test_raw_transition_payload_covers_root_transition_without_event():
         }
         """
     )
-    payload = smt_local._transition_payload(machine.root_state.transitions_from[0])
+    payload = encoding_core._transition_payload(machine.root_state.transitions_from[0])
 
     assert payload["parent"] is None
     assert payload["from_state"] == "System"
@@ -129,7 +129,7 @@ def test_raw_transition_payload_includes_guard_text():
         effects=[],
     )
 
-    payload = smt_local._transition_payload(transition)
+    payload = encoding_core._transition_payload(transition)
 
     assert payload["guard"] == "x && True"
 
@@ -137,14 +137,14 @@ def test_raw_transition_payload_includes_guard_text():
 def test_expected_expression_translation_failures_are_normalized():
     """Known expression-to-Z3 failures become algorithm results, not crashes."""
     x = Variable("x")
-    missing_value, missing_result = smt_local._expr_to_z3_or_result(x, {})
-    bad_op_value, bad_op_result = smt_local._expr_to_z3_or_result(
+    missing_value, missing_result = encoding_core._expr_to_z3_or_result(x, {})
+    bad_op_value, bad_op_result = encoding_core._expr_to_z3_or_result(
         BinaryOp(x, "@", Integer(1)),
-        {"x": smt_local.z3.Int("x")},
+        {"x": encoding_core.z3.Int("x")},
     )
-    real_mod_value, real_mod_result = smt_local._expr_to_z3_or_result(
+    real_mod_value, real_mod_result = encoding_core._expr_to_z3_or_result(
         BinaryOp(x, "%", Integer(2)),
-        {"x": smt_local.z3.Real("x")},
+        {"x": encoding_core.z3.Real("x")},
     )
 
     assert missing_value is None
@@ -157,9 +157,9 @@ def test_expected_expression_translation_failures_are_normalized():
 
 def test_expected_operation_translation_failures_are_normalized():
     """Operation symbolic execution normalizes expression translation failures."""
-    value, result = smt_local._execute_operations_or_result(
+    value, result = encoding_core._execute_operations_or_result(
         [Operation(var_name="x", expr=Variable("missing"))],
-        {"x": smt_local.z3.Int("x")},
+        {"x": encoding_core.z3.Int("x")},
     )
 
     assert value is None
@@ -175,11 +175,11 @@ def test_expr_translation_not_implemented_is_undecidable_skip(monkeypatch):
             failure=TranslationFailure("not_implemented", "unsupported function"),
         )
 
-    monkeypatch.setattr(smt_local, "translate_expr_domain", fail_translation)
+    monkeypatch.setattr(encoding_core, "translate_expr_domain", fail_translation)
 
-    value, result = smt_local._expr_to_z3_or_result(
+    value, result = encoding_core._expr_to_z3_or_result(
         Variable("x"),
-        {"x": smt_local.z3.Int("x")},
+        {"x": encoding_core.z3.Int("x")},
     )
 
     assert value is None
@@ -191,20 +191,20 @@ def test_expr_translation_unknown_feasibility_is_unknown(monkeypatch):
 
     def translate_with_unknown_branch(*args, **kwargs):
         return ExprDomain(
-            z3_expr=smt_local.z3.IntVal(1),
+            z3_expr=encoding_core.z3.IntVal(1),
             feasibility_checks=(
                 BranchFeasibility(
-                    selector=smt_local.z3.BoolVal(True),
+                    selector=encoding_core.z3.BoolVal(True),
                     status="unknown",
                 ),
             ),
         )
 
-    monkeypatch.setattr(smt_local, "translate_expr_domain", translate_with_unknown_branch)
+    monkeypatch.setattr(encoding_core, "translate_expr_domain", translate_with_unknown_branch)
 
-    value, result = smt_local._expr_to_z3_or_result(
+    value, result = encoding_core._expr_to_z3_or_result(
         Variable("x"),
-        {"x": smt_local.z3.Int("x")},
+        {"x": encoding_core.z3.Int("x")},
     )
 
     assert value is None
@@ -213,9 +213,9 @@ def test_expr_translation_unknown_feasibility_is_unknown(monkeypatch):
 
 def test_operation_execution_success_returns_new_environment():
     """Successful operation execution returns the updated symbolic environment."""
-    value, result = smt_local._execute_operations_or_result(
+    value, result = encoding_core._execute_operations_or_result(
         [Operation(var_name="x", expr=Integer(1))],
-        {"x": smt_local.z3.Int("x")},
+        {"x": encoding_core.z3.Int("x")},
     )
 
     assert result is None
@@ -232,11 +232,11 @@ def test_operation_translation_not_implemented_is_undecidable_skip(monkeypatch):
             failure=OperationFailure("not_implemented", "unsupported function"),
         )
 
-    monkeypatch.setattr(smt_local, "execute_operations_domain", fail_execution)
+    monkeypatch.setattr(encoding_core, "execute_operations_domain", fail_execution)
 
-    value, result = smt_local._execute_operations_or_result(
+    value, result = encoding_core._execute_operations_or_result(
         [Operation(var_name="x", expr=Integer(1))],
-        {"x": smt_local.z3.Int("x")},
+        {"x": encoding_core.z3.Int("x")},
     )
 
     assert value is None
@@ -253,11 +253,11 @@ def test_operation_translation_z3_exception_is_undecidable_skip(monkeypatch):
             failure=OperationFailure("z3_error", "bad sort"),
         )
 
-    monkeypatch.setattr(smt_local, "execute_operations_domain", fail_execution)
+    monkeypatch.setattr(encoding_core, "execute_operations_domain", fail_execution)
 
-    value, result = smt_local._execute_operations_or_result(
+    value, result = encoding_core._execute_operations_or_result(
         [Operation(var_name="x", expr=Integer(1))],
-        {"x": smt_local.z3.Int("x")},
+        {"x": encoding_core.z3.Int("x")},
     )
 
     assert value is None
@@ -277,11 +277,11 @@ def test_expected_operation_type_failures_are_normalized(monkeypatch):
             ),
         )
 
-    monkeypatch.setattr(smt_local, "execute_operations_domain", fail_execution)
+    monkeypatch.setattr(encoding_core, "execute_operations_domain", fail_execution)
 
-    value, result = smt_local._execute_operations_or_result(
+    value, result = encoding_core._execute_operations_or_result(
         [Operation(var_name="x", expr=Integer(1))],
-        {"x": smt_local.z3.Int("x")},
+        {"x": encoding_core.z3.Int("x")},
     )
 
     assert value is None
@@ -302,9 +302,9 @@ def test_init_constraint_translation_failure_is_normalized():
     var_def = next(iter(machine.defines.values()))
     var_def.init = Variable("missing")
 
-    value, result = smt_local._build_init_constraints_or_result(
+    value, result = encoding_core._build_init_constraints_or_result(
         variables(machine),
-        {"x": smt_local.z3.Int("x")},
+        {"x": encoding_core.z3.Int("x")},
     )
 
     assert value is None
@@ -323,9 +323,9 @@ def test_initializer_translation_failure_is_undecidable_skip():
         """
     )
 
-    constraints, result = smt_local._build_init_constraints_or_result(
+    constraints, result = encoding_core._build_init_constraints_or_result(
         variables(machine),
-        {"flags": smt_local.z3.Int("flags")},
+        {"flags": encoding_core.z3.Int("flags")},
     )
 
     assert constraints is None
@@ -344,9 +344,9 @@ def test_initializer_runtime_undefined_is_undecidable_skip():
         """
     )
 
-    constraints, result = smt_local._build_init_constraints_or_result(
+    constraints, result = encoding_core._build_init_constraints_or_result(
         variables(machine),
-        {"x": smt_local.z3.Int("x")},
+        {"x": encoding_core.z3.Int("x")},
     )
 
     assert constraints is None
@@ -366,9 +366,9 @@ def test_initializer_satisfiable_runtime_domain_constraints_are_kept():
         """
     )
 
-    constraints, result = smt_local._build_init_constraints_or_result(
+    constraints, result = encoding_core._build_init_constraints_or_result(
         variables(machine),
-        {"x": smt_local.z3.Int("x")},
+        {"x": encoding_core.z3.Int("x")},
     )
 
     assert result is None
@@ -391,7 +391,7 @@ def test_initializer_domain_checks_include_prior_initializers(monkeypatch):
         """
     )
     calls = []
-    original = smt_local._definedness_feasibility_or_result
+    original = encoding_core._definedness_feasibility_or_result
 
     def record_constraints(constraints, *, reason, smt_timeout_ms=None):
         calls.append(tuple(str(item) for item in constraints))
@@ -402,14 +402,14 @@ def test_initializer_domain_checks_include_prior_initializers(monkeypatch):
         )
 
     monkeypatch.setattr(
-        smt_local,
+        encoding_core,
         "_definedness_feasibility_or_result",
         record_constraints,
     )
 
-    constraints, result = smt_local._build_init_constraints_or_result(
+    constraints, result = encoding_core._build_init_constraints_or_result(
         variables(machine),
-        {"x": smt_local.z3.Int("x"), "y": smt_local.z3.Int("y")},
+        {"x": encoding_core.z3.Int("x"), "y": encoding_core.z3.Int("y")},
     )
 
     assert result is None
@@ -428,7 +428,7 @@ def test_guard_translation_failure_is_normalized():
         effects=[],
     )
 
-    guard, z3_vars, guard_domains, result = smt_local._guard_z3_or_result(
+    guard, z3_vars, guard_domains, result = encoding_core._guard_z3_or_result(
         transition, ()
     )
 
@@ -505,7 +505,7 @@ def test_lifecycle_action_collection_skips_abstract_actions():
     )
     state = machine.root_state.substates["A"]
 
-    assert smt_local._action_operations(state.on_enters) == []
+    assert encoding_core._action_operations(state.on_enters) == []
 
 
 def test_conditional_collection_includes_if_block_conditions():
@@ -522,7 +522,7 @@ def test_conditional_collection_includes_if_block_conditions():
         )
     ]
 
-    assert tuple(smt_local._conditional_conditions_from_operations(operations)) == (
+    assert tuple(encoding_core._conditional_conditions_from_operations(operations)) == (
         condition,
     )
 
@@ -541,7 +541,7 @@ def test_conditional_collection_includes_nested_ternary_conditions():
         )
     ]
 
-    assert tuple(smt_local._conditional_conditions_from_operations(operations)) == (
+    assert tuple(encoding_core._conditional_conditions_from_operations(operations)) == (
         outer_condition,
         inner_condition,
     )
@@ -550,18 +550,18 @@ def test_conditional_collection_includes_nested_ternary_conditions():
 def test_path_sensitive_operator_helpers_normalize_z3_exceptions():
     """Helper-level Z3 sort failures are normalized as undecidable skips."""
 
-    _, binary_result = smt_local._binary_z3_or_result(
+    _, binary_result = encoding_core._binary_z3_or_result(
         "&&",
-        smt_local.z3.IntVal(1),
-        smt_local.z3.BoolVal(True),
+        encoding_core.z3.IntVal(1),
+        encoding_core.z3.BoolVal(True),
     )
-    _, unary_result = smt_local._unary_z3_or_result("!", smt_local.z3.IntVal(1))
+    _, unary_result = encoding_core._unary_z3_or_result("!", encoding_core.z3.IntVal(1))
 
     class BadOperand:
         def __ge__(self, other):
-            raise smt_local.z3.Z3Exception("synthetic Z3 ufunc failure")
+            raise encoding_core.z3.Z3Exception("synthetic Z3 ufunc failure")
 
-    _, ufunc_result = smt_local._ufunc_z3_or_result("abs", BadOperand())
+    _, ufunc_result = encoding_core._ufunc_z3_or_result("abs", BadOperand())
 
     assert binary_result.kind == "undecidable_skip"
     assert unary_result.kind == "undecidable_skip"
@@ -570,13 +570,13 @@ def test_path_sensitive_operator_helpers_normalize_z3_exceptions():
 
 def test_path_sensitive_ufunc_helper_covers_round_fallback_and_type_error():
     """Synthetic ufunc edge cases stay normalized for private helper callers."""
-    round_value, round_result = smt_local._ufunc_z3_or_result(
+    round_value, round_result = encoding_core._ufunc_z3_or_result(
         "round",
-        smt_local.z3.BoolVal(True),
+        encoding_core.z3.BoolVal(True),
     )
-    abs_value, abs_result = smt_local._ufunc_z3_or_result(
+    abs_value, abs_result = encoding_core._ufunc_z3_or_result(
         "abs",
-        smt_local.z3.BoolVal(True),
+        encoding_core.z3.BoolVal(True),
     )
 
     assert round_value is not None
@@ -587,8 +587,8 @@ def test_path_sensitive_ufunc_helper_covers_round_fallback_and_type_error():
 
 def test_path_sensitive_ufunc_helper_matches_python_round_half_even():
     """The path-sensitive round helper matches Python's half-even semantics."""
-    operand = smt_local.z3.Real("x")
-    rounded, result = smt_local._ufunc_z3_or_result("round", operand)
+    operand = encoding_core.z3.Real("x")
+    rounded, result = encoding_core._ufunc_z3_or_result("round", operand)
 
     assert result is None
     for raw_value, expected in [
@@ -599,17 +599,17 @@ def test_path_sensitive_ufunc_helper_matches_python_round_half_even():
         ("3.6", 4),
         ("-3.6", -4),
     ]:
-        solver = smt_local.z3.Solver()
-        solver.add(operand == smt_local.z3.RealVal(raw_value), rounded != expected)
+        solver = encoding_core.z3.Solver()
+        solver.add(operand == encoding_core.z3.RealVal(raw_value), rounded != expected)
 
-        assert solver.check() == smt_local.z3.unsat
+        assert solver.check() == encoding_core.z3.unsat
 
 
 def test_path_sensitive_ufunc_helper_reports_bad_sqrt_sort():
     """The ufunc helper covers direct unsupported sqrt operands."""
-    sqrt_value, sqrt_result = smt_local._ufunc_z3_or_result(
+    sqrt_value, sqrt_result = encoding_core._ufunc_z3_or_result(
         "sqrt",
-        smt_local.z3.BoolVal(True),
+        encoding_core.z3.BoolVal(True),
     )
 
     assert sqrt_value is None
@@ -621,8 +621,8 @@ def test_path_sensitive_expression_translator_supports_all_base_node_shapes():
     from pyfcstm.model.expr import Float, UFunc, UnaryOp
 
     z3_vars = {
-        "x": smt_local.z3.Int("x"),
-        "y": smt_local.z3.Int("y"),
+        "x": encoding_core.z3.Int("x"),
+        "y": encoding_core.z3.Int("y"),
     }
     expressions = [
         BinaryOp(Variable("x"), "+", Integer(1)),
@@ -658,7 +658,7 @@ def test_path_sensitive_expression_translator_supports_all_base_node_shapes():
     ]
 
     for expr in expressions:
-        points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+        points, z3_expr, result = encoding_core._expr_conditions_and_z3_or_result(
             expr,
             z3_vars,
         )
@@ -672,7 +672,7 @@ def test_path_sensitive_expression_translator_normalizes_unsupported_shapes():
     """Unsupported path-sensitive conversion cases return undecidable skips."""
     from pyfcstm.model.expr import UFunc, UnaryOp
 
-    z3_vars = {"x": smt_local.z3.Int("x")}
+    z3_vars = {"x": encoding_core.z3.Int("x")}
     expressions = [
         BinaryOp(Variable("x"), "@", Integer(1)),
         BinaryOp(Variable("x"), "&", Integer(1)),
@@ -699,7 +699,7 @@ def test_path_sensitive_expression_translator_normalizes_unsupported_shapes():
     ]
 
     for expr in expressions:
-        z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+        z3_expr, result = encoding_core._expr_conditions_and_z3_or_result(
             expr,
             z3_vars,
         )[1:]
@@ -717,9 +717,9 @@ def test_path_sensitive_expression_translator_handles_empty_reachable_ternary(
     def always_unsat(*args, **kwargs):
         return SatResult(kind="unsat")
 
-    monkeypatch.setattr(smt_local, "is_sat", always_unsat)
+    monkeypatch.setattr(encoding_core, "is_sat", always_unsat)
 
-    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+    points, z3_expr, result = encoding_core._expr_conditions_and_z3_or_result(
         Boolean(True).select(Integer(1), Integer(2)),
         {},
         context_constraints=(),
@@ -744,9 +744,9 @@ def test_path_sensitive_expression_translator_propagates_false_path_unknown(
             return SatResult(kind="unknown")
         return SatResult(kind="sat")
 
-    monkeypatch.setattr(smt_local, "is_sat", sat_then_unknown)
+    monkeypatch.setattr(encoding_core, "is_sat", sat_then_unknown)
 
-    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+    points, z3_expr, result = encoding_core._expr_conditions_and_z3_or_result(
         Boolean(True).select(Integer(1), Integer(2)),
         {},
         context_constraints=(),
@@ -764,11 +764,11 @@ def test_path_sensitive_expression_translator_normalizes_if_merge_failure(
     """A Z3 failure while merging two reachable ternary branches is normalized."""
 
     def raise_z3_exception(*args, **kwargs):
-        raise smt_local.z3.Z3Exception("synthetic if merge failure")
+        raise encoding_core.z3.Z3Exception("synthetic if merge failure")
 
-    monkeypatch.setattr(smt_local.z3, "If", raise_z3_exception)
+    monkeypatch.setattr(encoding_core.z3, "If", raise_z3_exception)
 
-    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+    points, z3_expr, result = encoding_core._expr_conditions_and_z3_or_result(
         Boolean(True).select(Integer(1), Integer(2)),
         {},
     )
@@ -780,7 +780,7 @@ def test_path_sensitive_expression_translator_normalizes_if_merge_failure(
 
 def test_path_sensitive_expression_translator_normalizes_non_boolean_logic_left():
     """Malformed logical operands are normalized after both sides are translated."""
-    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+    points, z3_expr, result = encoding_core._expr_conditions_and_z3_or_result(
         BinaryOp(Integer(1), "&&", Boolean(True)),
         {},
     )
@@ -793,9 +793,9 @@ def test_path_sensitive_expression_translator_normalizes_non_boolean_logic_left(
 def test_path_sensitive_expression_translator_wraps_reachable_branch_domains():
     """Reachable ternary value-branch domain constraints are path-qualified."""
     domain_constraints = []
-    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+    points, z3_expr, result = encoding_core._expr_conditions_and_z3_or_result(
         Boolean(True).select(BinaryOp(Variable("x"), "/", Integer(2)), Integer(0)),
-        {"x": smt_local.z3.Int("x")},
+        {"x": encoding_core.z3.Int("x")},
         domain_constraints=domain_constraints,
     )
 
@@ -808,9 +808,9 @@ def test_path_sensitive_expression_translator_wraps_reachable_branch_domains():
 def test_path_sensitive_expression_translator_wraps_false_branch_domains():
     """False value-branch domain constraints are path-qualified too."""
     domain_constraints = []
-    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+    points, z3_expr, result = encoding_core._expr_conditions_and_z3_or_result(
         Boolean(True).select(Integer(0), BinaryOp(Variable("x"), "/", Integer(2))),
-        {"x": smt_local.z3.Int("x")},
+        {"x": encoding_core.z3.Int("x")},
         domain_constraints=domain_constraints,
     )
 
@@ -822,7 +822,7 @@ def test_path_sensitive_expression_translator_wraps_false_branch_domains():
 
 def test_path_sensitive_expression_translator_denominator_failure_is_normalized():
     """Malformed denominator domain checks are undecidable, not crashes."""
-    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+    points, z3_expr, result = encoding_core._expr_conditions_and_z3_or_result(
         BinaryOp(Integer(1), "/", Boolean(True)),
         {},
     )
@@ -834,7 +834,7 @@ def test_path_sensitive_expression_translator_denominator_failure_is_normalized(
 
 def test_path_sensitive_expression_translator_propagates_rhs_failure():
     """Logical RHS translation is not skipped by symbolic short-circuit rules."""
-    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+    points, z3_expr, result = encoding_core._expr_conditions_and_z3_or_result(
         BinaryOp(Boolean(True), "&&", BinaryOp(Boolean(True), "<<", Boolean(False))),
         {},
     )
@@ -848,7 +848,7 @@ def test_path_sensitive_expression_translator_propagates_unary_child_failure():
     """Unary expressions propagate unsupported child translation results."""
     from pyfcstm.model.expr import UnaryOp
 
-    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+    points, z3_expr, result = encoding_core._expr_conditions_and_z3_or_result(
         UnaryOp("-", BinaryOp(Boolean(True), "<<", Boolean(False))),
         {},
     )
@@ -861,7 +861,7 @@ def test_path_sensitive_expression_translator_propagates_unary_child_failure():
 def test_path_sensitive_expression_translator_rejects_unknown_expr_type():
     """Unknown expression objects are normalized as undecidable skips."""
 
-    points, z3_expr, result = smt_local._expr_conditions_and_z3_or_result(
+    points, z3_expr, result = encoding_core._expr_conditions_and_z3_or_result(
         object(),
         {},
     )
@@ -893,14 +893,14 @@ def test_operation_prefix_collection_updates_after_if_block():
             expr=ternary_condition.select(Integer(10), Integer(20)),
         ),
     ]
-    z3_vars = smt_local._z3_vars(
+    z3_vars = encoding_core._z3_vars(
         [
             VarDefine("mode", "int", Integer(0)),
             VarDefine("x", "int", Integer(0)),
         ]
     )
 
-    condition_points, result = smt_local._execute_operation_prefix_conditions_or_result(
+    condition_points, result = encoding_core._execute_operation_prefix_conditions_or_result(
         operations,
         z3_vars,
     )
@@ -931,9 +931,9 @@ def test_operation_prefix_collection_propagates_branch_body_failure():
         )
     ]
 
-    condition_points, result = smt_local._execute_operation_prefix_conditions_or_result(
+    condition_points, result = encoding_core._execute_operation_prefix_conditions_or_result(
         operations,
-        {"x": smt_local.z3.Int("x")},
+        {"x": encoding_core.z3.Int("x")},
     )
 
     assert condition_points is None
@@ -953,9 +953,9 @@ def test_operation_prefix_collection_propagates_if_merge_failure():
         )
     ]
 
-    condition_points, result = smt_local._execute_operation_prefix_conditions_or_result(
+    condition_points, result = encoding_core._execute_operation_prefix_conditions_or_result(
         operations,
-        {"x": smt_local.z3.Int("x")},
+        {"x": encoding_core.z3.Int("x")},
     )
 
     assert condition_points is None
@@ -977,9 +977,9 @@ def test_operation_prefix_collection_propagates_if_merge_failure_after_branch_sc
             ]
         )
     ]
-    condition_points, result = smt_local._execute_operation_prefix_conditions_or_result(
+    condition_points, result = encoding_core._execute_operation_prefix_conditions_or_result(
         operations,
-        {"x": smt_local.z3.Int("x")},
+        {"x": encoding_core.z3.Int("x")},
     )
 
     assert result is None
@@ -1006,9 +1006,9 @@ def test_operation_prefix_collection_records_else_domain_constraints():
     ]
 
     _, _, domain_constraints, result = (
-        smt_local._execute_operation_prefix_conditions_and_vars_or_result(
+        encoding_core._execute_operation_prefix_conditions_and_vars_or_result(
             operations,
-            {"x": smt_local.z3.Int("x")},
+            {"x": encoding_core.z3.Int("x")},
         )
     )
 
@@ -1036,9 +1036,9 @@ def test_operation_prefix_collection_records_branch_domain_constraints():
     ]
 
     _, _, domain_constraints, result = (
-        smt_local._execute_operation_prefix_conditions_and_vars_or_result(
+        encoding_core._execute_operation_prefix_conditions_and_vars_or_result(
             operations,
-            {"x": smt_local.z3.Int("x")},
+            {"x": encoding_core.z3.Int("x")},
         )
     )
 
@@ -1049,9 +1049,9 @@ def test_operation_prefix_collection_records_branch_domain_constraints():
 def test_operation_prefix_collection_records_plain_assignment_domain_constraints():
     """Plain operation expression domain constraints are collected."""
     _, _, domain_constraints, result = (
-        smt_local._execute_operation_prefix_conditions_and_vars_or_result(
+        encoding_core._execute_operation_prefix_conditions_and_vars_or_result(
             [Operation("x", BinaryOp(Variable("x"), "/", Integer(2)))],
-            {"x": smt_local.z3.Int("x")},
+            {"x": encoding_core.z3.Int("x")},
         )
     )
 
@@ -1085,9 +1085,9 @@ def test_operation_prefix_collection_qualifies_branch_condition_domains():
     ]
 
     _, _, domain_constraints, result = (
-        smt_local._execute_operation_prefix_conditions_and_vars_or_result(
+        encoding_core._execute_operation_prefix_conditions_and_vars_or_result(
             operations,
-            {"x": smt_local.z3.Int("x")},
+            {"x": encoding_core.z3.Int("x")},
         )
     )
 
@@ -1100,7 +1100,7 @@ def test_operation_prefix_collection_qualifies_branch_condition_domains():
 
 def test_branch_condition_definedness_unsat_in_context_is_undecidable():
     """Unrunnable branch conditions stop path-sensitive operation execution."""
-    z3_vars = {"x": smt_local.z3.Int("x")}
+    z3_vars = {"x": encoding_core.z3.Int("x")}
     operations = [
         IfBlock(
             branches=[
@@ -1116,7 +1116,7 @@ def test_branch_condition_definedness_unsat_in_context_is_undecidable():
         )
     ]
 
-    _, _, _, result = smt_local._execute_operation_prefix_conditions_and_vars_or_result(
+    _, _, _, result = encoding_core._execute_operation_prefix_conditions_and_vars_or_result(
         operations,
         z3_vars,
         context_constraints=[z3_vars["x"] == 0],
@@ -1128,17 +1128,17 @@ def test_branch_condition_definedness_unsat_in_context_is_undecidable():
 
 def test_definedness_feasibility_helper_handles_sat_and_timeout(monkeypatch):
     """The shared definedness helper preserves feasible and indeterminate cases."""
-    feasible = smt_local._definedness_feasibility_or_result(
-        [smt_local.z3.BoolVal(True)],
+    feasible = encoding_core._definedness_feasibility_or_result(
+        [encoding_core.z3.BoolVal(True)],
         reason="unused",
     )
 
     assert feasible is None
 
-    monkeypatch.setattr(smt_local, "is_sat", sat_timeout_result)
+    monkeypatch.setattr(encoding_core, "is_sat", sat_timeout_result)
 
-    timeout = smt_local._definedness_feasibility_or_result(
-        [smt_local.z3.BoolVal(True)],
+    timeout = encoding_core._definedness_feasibility_or_result(
+        [encoding_core.z3.BoolVal(True)],
         reason="unused",
         smt_timeout_ms=1,
     )
@@ -1148,9 +1148,9 @@ def test_definedness_feasibility_helper_handles_sat_and_timeout(monkeypatch):
 
 def test_operation_prefix_collection_rejects_unknown_statement_type():
     """Unknown operation statement objects are normalized as undecidable."""
-    condition_points, result = smt_local._execute_operation_prefix_conditions_or_result(
+    condition_points, result = encoding_core._execute_operation_prefix_conditions_or_result(
         [object()],
-        {"x": smt_local.z3.Int("x")},
+        {"x": encoding_core.z3.Int("x")},
     )
 
     assert condition_points is None
@@ -1167,7 +1167,7 @@ def test_transition_trigger_builds_private_event_bool_when_no_mapping_given():
         effects=[],
     )
 
-    trigger, trigger_domains, result = smt_local._transition_trigger_or_result(
+    trigger, trigger_domains, result = encoding_core._transition_trigger_or_result(
         transition, {}
     )
 
@@ -1187,9 +1187,9 @@ def test_initial_path_guard_definedness_unsat_is_undecidable():
         }
         """
     )
-    z3_vars = smt_local._z3_vars(variables(machine))
+    z3_vars = encoding_core._z3_vars(variables(machine))
 
-    transitions, constraints, operations, result = smt_local._root_initial_path_context(
+    transitions, constraints, operations, result = encoding_core._root_initial_path_context(
         machine.root_state.substates["Idle"],
         variables(machine),
         z3_vars,
@@ -1214,8 +1214,8 @@ def test_root_initial_context_handles_root_state_directly():
         """
     )
 
-    z3_vars = smt_local._z3_vars(variables(machine))
-    transitions, constraints, operations, result = smt_local._root_initial_path_context(
+    z3_vars = encoding_core._z3_vars(variables(machine))
+    transitions, constraints, operations, result = encoding_core._root_initial_path_context(
         machine.root_state,
         variables(machine),
         z3_vars,
@@ -1239,9 +1239,9 @@ def test_root_initial_path_context_returns_empty_for_unselected_leaf():
         }
         """
     )
-    z3_vars = smt_local._z3_vars(variables(machine))
+    z3_vars = encoding_core._z3_vars(variables(machine))
 
-    transitions, constraints, operations, result = smt_local._root_initial_path_context(
+    transitions, constraints, operations, result = encoding_core._root_initial_path_context(
         machine.root_state.substates["Active"],
         variables(machine),
         z3_vars,
@@ -1313,16 +1313,16 @@ def test_definite_stable_entry_helper_is_conservative_for_edge_shapes():
     parent_without_init.transitions = []
     exit_parent = exit_init_machine.root_state.substates["Parent"]
     missing_target_parent = missing_target_machine.root_state.substates["Parent"]
-    exit_parent.init_transitions[0].to_state = smt_local._dsl_nodes().EXIT_STATE
+    exit_parent.init_transitions[0].to_state = encoding_core._dsl_nodes().EXIT_STATE
     missing_target_parent.init_transitions[0].to_state = "Missing"
 
     stable_parent = stable_machine.root_state.substates["Parent"]
 
-    assert smt_local._state_has_definite_stable_entry(stable_parent)
-    assert not smt_local._state_has_definite_stable_entry(pseudo)
-    assert not smt_local._state_has_definite_stable_entry(parent_without_init)
-    assert not smt_local._state_has_definite_stable_entry(exit_parent)
-    assert not smt_local._state_has_definite_stable_entry(missing_target_parent)
+    assert encoding_core._state_has_definite_stable_entry(stable_parent)
+    assert not encoding_core._state_has_definite_stable_entry(pseudo)
+    assert not encoding_core._state_has_definite_stable_entry(parent_without_init)
+    assert not encoding_core._state_has_definite_stable_entry(exit_parent)
+    assert not encoding_core._state_has_definite_stable_entry(missing_target_parent)
 
 
 def test_transition_stable_continuation_helper_covers_exit_and_bad_targets():
@@ -1340,14 +1340,14 @@ def test_transition_stable_continuation_helper_covers_exit_and_bad_targets():
     state_a = machine.root_state.substates["A"]
     exit_transition = Transition(
         from_state="A",
-        to_state=smt_local._dsl_nodes().EXIT_STATE,
+        to_state=encoding_core._dsl_nodes().EXIT_STATE,
         event=None,
         guard=None,
         effects=[],
     )
     root_exit_transition = Transition(
         from_state="System",
-        to_state=smt_local._dsl_nodes().EXIT_STATE,
+        to_state=encoding_core._dsl_nodes().EXIT_STATE,
         event=None,
         guard=None,
         effects=[],
@@ -1361,22 +1361,22 @@ def test_transition_stable_continuation_helper_covers_exit_and_bad_targets():
     )
     non_string_transition = Transition(
         from_state="A",
-        to_state=smt_local._dsl_nodes().INIT_STATE,
+        to_state=encoding_core._dsl_nodes().INIT_STATE,
         event=None,
         guard=None,
         effects=[],
     )
 
-    assert smt_local._transition_has_definite_stable_continuation(
+    assert encoding_core._transition_has_definite_stable_continuation(
         state_a, exit_transition
     )
-    assert not smt_local._transition_has_definite_stable_continuation(
+    assert not encoding_core._transition_has_definite_stable_continuation(
         machine.root_state, root_exit_transition
     )
-    assert not smt_local._transition_has_definite_stable_continuation(
+    assert not encoding_core._transition_has_definite_stable_continuation(
         state_a, bad_target_transition
     )
-    assert not smt_local._transition_has_definite_stable_continuation(
+    assert not encoding_core._transition_has_definite_stable_continuation(
         state_a, non_string_transition
     )
 
@@ -1394,15 +1394,15 @@ def test_root_initial_leaf_helper_identifies_global_initial_path():
         """
     )
 
-    assert smt_local._is_root_initial_leaf(machine.root_state.substates["Idle"])
-    assert not smt_local._is_root_initial_leaf(machine.root_state.substates["Active"])
+    assert encoding_core._is_root_initial_leaf(machine.root_state.substates["Idle"])
+    assert not encoding_core._is_root_initial_leaf(machine.root_state.substates["Active"])
 
 
 def test_event_bool_name_falls_back_for_anonymous_transition():
     """Internal event-bool naming has a deterministic anonymous fallback."""
     transition = Transition("A", "B", event=None, guard=None, effects=[])
 
-    assert smt_local._event_bool_name(transition) == "__event__anonymous"
+    assert encoding_core._event_bool_name(transition) == "__event__anonymous"
 
 
 def test_event_bool_name_is_injective_for_underscore_and_path_boundaries():
@@ -1422,12 +1422,12 @@ def test_event_bool_name_is_injective_for_underscore_and_path_boundaries():
         effects=[],
     )
 
-    assert smt_local._event_bool_name(flat) == "__event__1:S4:A__B"
-    assert smt_local._event_bool_name(nested) == "__event__1:S1:A1:B"
-    assert smt_local._event_bool_name(flat) != smt_local._event_bool_name(nested)
+    assert encoding_core._event_bool_name(flat) == "__event__1:S4:A__B"
+    assert encoding_core._event_bool_name(nested) == "__event__1:S1:A1:B"
+    assert encoding_core._event_bool_name(flat) != encoding_core._event_bool_name(nested)
 
 
-def test_smt_local_registry_impls_live_in_algorithm_modules():
+def test_verify_registry_impls_live_in_algorithm_modules():
     """Every SMT-local registry entry points at the split algorithm module."""
     expected_modules = {
         "dead_guard": "pyfcstm.verify.algorithms.guard",
@@ -1449,8 +1449,10 @@ def test_smt_local_registry_impls_live_in_algorithm_modules():
         assert REGISTRY[name].impl.__module__ == expected_modules[name]
 
 
-def test_smt_local_keeps_legacy_algorithm_imports():
-    """Legacy smt_local imports remain callable during the migration."""
+def test_verify_top_level_exports_algorithm_imports():
+    """Core verification algorithms are public at package top level."""
+    import pyfcstm.verify as verify
+
     expected_impls = {
         "dead_guard": dead_guard,
         "guard_tautology": guard_tautology,
@@ -1465,11 +1467,11 @@ def test_smt_local_keeps_legacy_algorithm_imports():
     }
 
     for name, impl in expected_impls.items():
-        assert getattr(smt_local, name) is impl
+        assert getattr(verify, name) is impl
 
 
-def test_smt_local_algorithms_default_to_unbounded_solver_timeout():
-    """Raw SMT-local functions keep the ``None`` timeout contract."""
+def test_raw_smt_scope_algorithms_default_to_unbounded_solver_timeout():
+    """Raw SMT-scope functions keep the ``None`` timeout contract."""
     import inspect
 
     for name in SMT_LOCAL_ALGORITHMS:
@@ -1486,20 +1488,20 @@ def test_split_encoding_modules_reexport_expected_helpers():
     from pyfcstm.verify.encoding import operation, trigger
 
     expected = {
-        expr._expr_to_z3_or_result: smt_local._expr_to_z3_or_result,
+        expr._expr_to_z3_or_result: encoding_core._expr_to_z3_or_result,
         expr._expr_z3_and_domains_or_result: (
-            smt_local._expr_z3_and_domains_or_result
+            encoding_core._expr_z3_and_domains_or_result
         ),
-        guard._guard_z3_or_result: smt_local._guard_z3_or_result,
+        guard._guard_z3_or_result: encoding_core._guard_z3_or_result,
         initial._build_init_constraints_or_result: (
-            smt_local._build_init_constraints_or_result
+            encoding_core._build_init_constraints_or_result
         ),
-        initial._root_initial_path_contexts: smt_local._root_initial_path_contexts,
-        lifecycle._concrete_during_operations: smt_local._concrete_during_operations,
+        initial._root_initial_path_contexts: encoding_core._root_initial_path_contexts,
+        lifecycle._concrete_during_operations: encoding_core._concrete_during_operations,
         operation._execute_operations_or_result: (
-            smt_local._execute_operations_or_result
+            encoding_core._execute_operations_or_result
         ),
-        trigger._transition_trigger_or_result: smt_local._transition_trigger_or_result,
+        trigger._transition_trigger_or_result: encoding_core._transition_trigger_or_result,
     }
 
     for split_helper, core_helper in expected.items():
@@ -1508,11 +1510,11 @@ def test_split_encoding_modules_reexport_expected_helpers():
 
 def test_first_indeterminate_keeps_first_relevant_outcome():
     """Aggregate helper ignores definite results after first indeterminate."""
-    current = smt_local._first_indeterminate(None, "sat")
-    current = smt_local._first_indeterminate(current, "unknown", "first")
+    current = encoding_core._first_indeterminate(None, "sat")
+    current = encoding_core._first_indeterminate(current, "unknown", "first")
 
     assert current == AlgorithmResult(kind="unknown", reason="first")
-    assert smt_local._first_indeterminate(current, "timeout", "later") is current
+    assert encoding_core._first_indeterminate(current, "timeout", "later") is current
 
 
 class TestDeadGuard:
@@ -1579,7 +1581,7 @@ class TestDeadGuard:
             }
             """
         )
-        monkeypatch.setattr(smt_local, "is_sat", sat_timeout_result)
+        monkeypatch.setattr(encoding_core, "is_sat", sat_timeout_result)
 
         result = dead_guard(
             root_transition(machine), variables(machine), smt_timeout_ms=1
@@ -1741,7 +1743,7 @@ class TestGuardTautology:
             }
             """
         )
-        monkeypatch.setattr(smt_local, "is_sat", sat_timeout_result)
+        monkeypatch.setattr(encoding_core, "is_sat", sat_timeout_result)
 
         result = guard_tautology(
             root_transition(machine), variables(machine), smt_timeout_ms=1
@@ -1938,7 +1940,7 @@ class TestForcedGuardUnsatUnderInit:
             }
             """
         )
-        monkeypatch.setattr(smt_local, "is_sat", sat_timeout_result)
+        monkeypatch.setattr(encoding_core, "is_sat", sat_timeout_result)
 
         result = forced_guard_unsat_under_init(
             transition_by_guard(machine, "counter > threshold"),
@@ -2136,7 +2138,7 @@ class TestEffectNoOpUnderGuard:
             }
             """
         )
-        monkeypatch.setattr(smt_local, "is_sat", sat_timeout_result)
+        monkeypatch.setattr(encoding_core, "is_sat", sat_timeout_result)
 
         result = effect_no_op_under_guard(root_transition(machine), variables(machine))
 
@@ -2195,7 +2197,7 @@ class TestEffectNoOpUnderGuard:
             calls.append(args)
             return sat_unknown_result(*args, **kwargs)
 
-        monkeypatch.setattr(smt_local, "is_sat", feasible_unknown)
+        monkeypatch.setattr(encoding_core, "is_sat", feasible_unknown)
 
         result = effect_no_op_under_guard(root_transition(machine), variables(machine))
 
@@ -2270,8 +2272,8 @@ class TestEffectNoOpUnderGuard:
             """
         )
         transition = root_transition(machine)
-        z3_vars = smt_local._z3_vars(variables(machine))
-        guard_z3, type_constraints, result = smt_local._effect_guard_context_or_result(
+        z3_vars = encoding_core._z3_vars(variables(machine))
+        guard_z3, type_constraints, result = encoding_core._effect_guard_context_or_result(
             transition,
             variables(machine),
             z3_vars,
@@ -2283,12 +2285,12 @@ class TestEffectNoOpUnderGuard:
             return (), dict(z3_vars), (z3_vars["x"] != 0,), None
 
         monkeypatch.setattr(
-            smt_local,
+            encoding_core,
             "_execute_operation_prefix_conditions_and_vars_or_result",
             defer_effect_domains,
         )
 
-        after_vars, domains, result = smt_local._execute_effects_under_guard_or_result(
+        after_vars, domains, result = encoding_core._execute_effects_under_guard_or_result(
             transition,
             z3_vars,
             guard_z3,
@@ -2320,7 +2322,7 @@ class TestEffectNoOpUnderGuard:
             return {}, (), None
 
         monkeypatch.setattr(
-            smt_local,
+            encoding_core,
             "_execute_effects_under_guard_or_result",
             drop_effect_variable,
         )
@@ -2446,7 +2448,7 @@ class TestEffectContradictsGuard:
                 return SatResult(kind="sat")
             return SatResult(kind="timeout")
 
-        monkeypatch.setattr(smt_local, "is_sat", feasible_then_timeout)
+        monkeypatch.setattr(encoding_core, "is_sat", feasible_then_timeout)
 
         result = effect_contradicts_guard(root_transition(machine), variables(machine))
 
@@ -2551,7 +2553,7 @@ class TestEffectContradictsGuard:
             return {}, (), None
 
         monkeypatch.setattr(
-            smt_local,
+            encoding_core,
             "_execute_effects_under_guard_or_result",
             drop_guard_variable,
         )
@@ -2581,7 +2583,7 @@ class TestEffectContradictsGuard:
             calls.append(args)
             return sat_unknown_result(*args, **kwargs)
 
-        monkeypatch.setattr(smt_local, "is_sat", feasible_unknown)
+        monkeypatch.setattr(encoding_core, "is_sat", feasible_unknown)
 
         result = effect_contradicts_guard(root_transition(machine), variables(machine))
 
@@ -2695,7 +2697,7 @@ class TestEffectContradictsGuard:
             """
         )
         calls = []
-        real_is_sat = smt_local.is_sat
+        real_is_sat = encoding_core.is_sat
 
         def timeout_on_definedness_implication(*args, **kwargs):
             from pyfcstm.solver.logical import SatResult
@@ -2705,7 +2707,7 @@ class TestEffectContradictsGuard:
                 return SatResult(kind="timeout")
             return real_is_sat(*args, **kwargs)
 
-        monkeypatch.setattr(smt_local, "is_sat", timeout_on_definedness_implication)
+        monkeypatch.setattr(encoding_core, "is_sat", timeout_on_definedness_implication)
 
         result = effect_contradicts_guard(root_transition(machine), variables(machine))
 
@@ -2843,7 +2845,7 @@ class TestTransitionShadowedByPredecessor:
                 return SatResult(kind="unsat")
             return sat_unknown_result(*args, **kwargs)
 
-        monkeypatch.setattr(smt_local, "is_sat", shadow_unsat_then_trigger_unknown)
+        monkeypatch.setattr(encoding_core, "is_sat", shadow_unsat_then_trigger_unknown)
 
         result = transition_shadowed_by_predecessor(machine, variables(machine))
 
@@ -2877,7 +2879,7 @@ class TestTransitionShadowedByPredecessor:
                 return SatResult(kind="unsat")
             return sat_timeout_result(*args, **kwargs)
 
-        monkeypatch.setattr(smt_local, "is_sat", shadow_unsat_then_trigger_timeout)
+        monkeypatch.setattr(encoding_core, "is_sat", shadow_unsat_then_trigger_timeout)
 
         result = transition_shadowed_by_predecessor(machine, variables(machine))
 
@@ -2956,7 +2958,7 @@ class TestTransitionShadowedByPredecessor:
             }
             """
         )
-        monkeypatch.setattr(smt_local, "is_sat", sat_timeout_result)
+        monkeypatch.setattr(encoding_core, "is_sat", sat_timeout_result)
 
         result = transition_shadowed_by_predecessor(machine, variables(machine))
 
@@ -3037,7 +3039,7 @@ class TestTransitionShadowedByPredecessor:
             """
         )
         calls = []
-        real_translate = smt_local._expr_conditions_and_z3_or_result
+        real_translate = encoding_core._expr_conditions_and_z3_or_result
 
         def fail_on_second_guard(expr, *args, **kwargs):
             if str(expr) == "x <= 5":
@@ -3053,7 +3055,7 @@ class TestTransitionShadowedByPredecessor:
             return real_translate(expr, *args, **kwargs)
 
         monkeypatch.setattr(
-            smt_local,
+            encoding_core,
             "_expr_conditions_and_z3_or_result",
             fail_on_second_guard,
         )
@@ -3080,7 +3082,7 @@ class TestTransitionShadowedByPredecessor:
             """
         )
         calls = []
-        real_translate = smt_local._expr_conditions_and_z3_or_result
+        real_translate = encoding_core._expr_conditions_and_z3_or_result
 
         def fail_when_prior_guard_is_translated(expr, *args, **kwargs):
             if isinstance(expr, BinaryOp) and str(expr) == "x > 0":
@@ -3096,7 +3098,7 @@ class TestTransitionShadowedByPredecessor:
             return real_translate(expr, *args, **kwargs)
 
         monkeypatch.setattr(
-            smt_local,
+            encoding_core,
             "_expr_conditions_and_z3_or_result",
             fail_when_prior_guard_is_translated,
         )
@@ -3370,7 +3372,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
             """
         )
         state = machine.root_state.substates["Idle"]
-        monkeypatch.setattr(smt_local, "is_sat", sat_timeout_result)
+        monkeypatch.setattr(encoding_core, "is_sat", sat_timeout_result)
 
         result = enter_postcondition_implies_during_precondition(
             state,
@@ -3455,7 +3457,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
             """
         )
         state = machine.root_state.substates["Idle"]
-        monkeypatch.setattr(smt_local, "is_sat", sat_timeout_result)
+        monkeypatch.setattr(encoding_core, "is_sat", sat_timeout_result)
 
         result = enter_postcondition_implies_during_precondition(
             state, variables(machine)
@@ -3586,7 +3588,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
             calls.append(args)
             return sat_unknown_result(*args, **kwargs)
 
-        monkeypatch.setattr(smt_local, "is_sat", context_unknown)
+        monkeypatch.setattr(encoding_core, "is_sat", context_unknown)
 
         result = enter_postcondition_implies_during_precondition(
             state, variables(machine)
@@ -3619,7 +3621,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
 
             return SatResult(kind="sat")
 
-        monkeypatch.setattr(smt_local, "is_sat", context_unknown_then_sat)
+        monkeypatch.setattr(encoding_core, "is_sat", context_unknown_then_sat)
 
         result = enter_postcondition_implies_during_precondition(
             state, variables(machine)
@@ -3657,7 +3659,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
                 return SatResult(kind="unsat")
             return SatResult(kind="sat")
 
-        monkeypatch.setattr(smt_local, "is_sat", context_unknown_then_sat)
+        monkeypatch.setattr(encoding_core, "is_sat", context_unknown_then_sat)
 
         result = enter_postcondition_implies_during_precondition(
             state, variables(machine)
@@ -3691,7 +3693,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
                 return sat_unknown_result(*args, **kwargs)
             return SatResult(kind="sat")
 
-        monkeypatch.setattr(smt_local, "is_sat", path_unknown_after_context)
+        monkeypatch.setattr(encoding_core, "is_sat", path_unknown_after_context)
 
         result = enter_postcondition_implies_during_precondition(
             state, variables(machine)
@@ -3724,7 +3726,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
                 return sat_timeout_result(*args, **kwargs)
             return SatResult(kind="sat")
 
-        monkeypatch.setattr(smt_local, "is_sat", path_timeout_after_context)
+        monkeypatch.setattr(encoding_core, "is_sat", path_timeout_after_context)
 
         result = enter_postcondition_implies_during_precondition(
             state, variables(machine)
@@ -3757,7 +3759,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
                 return SatResult(kind="unsat")
             return SatResult(kind="sat")
 
-        monkeypatch.setattr(smt_local, "is_sat", path_unsat_after_context)
+        monkeypatch.setattr(encoding_core, "is_sat", path_unsat_after_context)
 
         result = enter_postcondition_implies_during_precondition(
             state, variables(machine)
@@ -3793,7 +3795,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
                 return SatResult(kind="unsat")
             return SatResult(kind="sat")
 
-        monkeypatch.setattr(smt_local, "is_sat", path_unsat_after_context)
+        monkeypatch.setattr(encoding_core, "is_sat", path_unsat_after_context)
 
         result = enter_postcondition_implies_during_precondition(
             state, variables(machine)
@@ -3848,7 +3850,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
 
             return SatResult(kind="unsat" if len(calls) == 4 else "sat")
 
-        monkeypatch.setattr(smt_local, "is_sat", context_unsat_then_sat)
+        monkeypatch.setattr(encoding_core, "is_sat", context_unsat_then_sat)
 
         result = enter_postcondition_implies_during_precondition(
             state, variables(machine)
@@ -3955,7 +3957,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
                 return SatResult(kind="unsat")
             return SatResult(kind="sat")
 
-        monkeypatch.setattr(smt_local, "is_sat", branch_timeout_after_context)
+        monkeypatch.setattr(encoding_core, "is_sat", branch_timeout_after_context)
 
         result = enter_postcondition_implies_during_precondition(
             state, variables(machine)
@@ -3997,7 +3999,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
                 return SatResult(kind="unsat")
             return SatResult(kind="sat")
 
-        monkeypatch.setattr(smt_local, "is_sat", second_branch_timeout_after_context)
+        monkeypatch.setattr(encoding_core, "is_sat", second_branch_timeout_after_context)
 
         result = enter_postcondition_implies_during_precondition(
             state, variables(machine)
@@ -4027,9 +4029,9 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         def missing_condition_point(*args, **kwargs):
             return (
                 (
-                    smt_local._ConditionPoint(
+                    encoding_core._ConditionPoint(
                         BinaryOp(Variable("missing"), "==", Integer(1)),
-                        smt_local._z3_vars(variables(machine)),
+                        encoding_core._z3_vars(variables(machine)),
                     ),
                 ),
                 None,
@@ -4037,10 +4039,10 @@ class TestEnterPostconditionImpliesDuringPrecondition:
 
         def missing_condition_point_with_vars(*args, **kwargs):
             condition_points, result = missing_condition_point(*args, **kwargs)
-            return condition_points, smt_local._z3_vars(variables(machine)), (), result
+            return condition_points, encoding_core._z3_vars(variables(machine)), (), result
 
         monkeypatch.setattr(
-            smt_local,
+            encoding_core,
             "_execute_operation_prefix_conditions_and_vars_or_result",
             missing_condition_point_with_vars,
         )
@@ -4080,7 +4082,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         def always_unknown(*args, **kwargs):
             return sat_unknown_result(*args, **kwargs)
 
-        monkeypatch.setattr(smt_local, "is_sat", always_unknown)
+        monkeypatch.setattr(encoding_core, "is_sat", always_unknown)
 
         result = enter_postcondition_implies_during_precondition(
             state, variables(machine)
@@ -4800,7 +4802,7 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         def both_branches_feasible(constraints, **kwargs):
             return SatResult(kind="sat")
 
-        monkeypatch.setattr(smt_local, "is_sat", both_branches_feasible)
+        monkeypatch.setattr(encoding_core, "is_sat", both_branches_feasible)
 
         result = enter_postcondition_implies_during_precondition(
             state, variables(machine)
@@ -5190,7 +5192,7 @@ class TestCompositeInitGuardsIncomplete:
                 ),
             )
 
-        monkeypatch.setattr(smt_local, "translate_expr_domain", fail_guard_translation)
+        monkeypatch.setattr(encoding_core, "translate_expr_domain", fail_guard_translation)
 
         result = composite_init_guards_incomplete(machine, variables(machine))
 
@@ -5339,7 +5341,7 @@ class TestCompositeInitGuardsIncomplete:
             calls.append(args)
             return sat_timeout_result(*args, **kwargs)
 
-        monkeypatch.setattr(smt_local, "is_sat", timeout_once)
+        monkeypatch.setattr(encoding_core, "is_sat", timeout_once)
 
         result = composite_init_guards_incomplete(machine, variables(machine))
 
@@ -5414,7 +5416,7 @@ class TestCompositeInitGuardsIncomplete:
             }
             """
         )
-        monkeypatch.setattr(smt_local, "is_sat", sat_timeout_result)
+        monkeypatch.setattr(encoding_core, "is_sat", sat_timeout_result)
 
         result = composite_init_guards_incomplete(machine, variables(machine))
 

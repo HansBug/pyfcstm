@@ -1,4 +1,19 @@
-"""Algorithm registry for :mod:`pyfcstm.verify`."""
+"""Algorithm registry for :mod:`pyfcstm.verify`.
+
+The registry maps stable algorithm names to
+:class:`pyfcstm.verify.taxonomy.VerifyAlgorithmMeta` entries.  Implemented
+structural and SMT-local algorithms carry callables; planned bounded-search
+entries stay present with ``impl=None`` so downstream policy can expose the
+future surface without running it automatically.
+
+Example::
+
+    >>> from pyfcstm.verify.registry import REGISTRY
+    >>> REGISTRY["dead_guard"].impl.__name__
+    'dead_guard'
+    >>> REGISTRY["bounded_reachability"].impl is None
+    True
+"""
 
 from types import MappingProxyType
 from typing import Callable, Mapping, Optional, Tuple
@@ -25,6 +40,40 @@ def _structural(
     diagnostic_codes: Tuple[str, ...] = (),
     dominant_dim: Tuple[str, ...] = ("states", "transitions"),
 ) -> VerifyAlgorithmMeta:
+    """Build metadata for a closed structural topology algorithm.
+
+    Structural algorithms do not use SMT and are safe for automatic inspect
+    gating when their call-count scaling fits the selected budget.  The
+    implementation callable is resolved from :mod:`pyfcstm.verify.topology`
+    using ``name``.
+
+    :param name: Registry key and topology function name.
+    :type name: str
+    :param description: Human-readable algorithm summary.
+    :type description: str
+    :param call_count_scaling: Inspect call-count scaling class.
+    :type call_count_scaling: CallCountScaling
+    :param diagnostic_codes: Diagnostic codes emitted by integration layers,
+        defaults to ``()``.
+    :type diagnostic_codes: Tuple[str, ...], optional
+    :param dominant_dim: Dominant model dimensions for cost explanations,
+        defaults to ``("states", "transitions")``.
+    :type dominant_dim: Tuple[str, ...], optional
+    :return: Fully populated metadata entry.
+    :rtype: VerifyAlgorithmMeta
+
+    Example::
+
+        >>> meta = _structural(
+        ...     "topological_reachable_set",
+        ...     "Compute reachable leaves.",
+        ...     "linear_in_states",
+        ... )
+        >>> meta.complexity_tier
+        'structural'
+        >>> meta.smt_logic is None
+        True
+    """
     return VerifyAlgorithmMeta(
         name=name,
         description=description,
@@ -56,6 +105,48 @@ def _smt_local(
     dominant_dim: Tuple[str, ...] = ("E", "vars"),
     impl: Optional[Callable] = None,
 ) -> VerifyAlgorithmMeta:
+    """Build metadata for a closed local-SMT verification algorithm.
+
+    Local-SMT algorithms translate bounded per-element FCSTM facts into
+    quantifier-free linear integer/real arithmetic.  They are closed algorithms:
+    callers do not need to supply a target query, but the solver may still
+    return ``unknown`` or ``timeout`` for individual formulas.
+
+    :param name: Registry key and public algorithm name.
+    :type name: str
+    :param description: Human-readable algorithm summary.
+    :type description: str
+    :param call_count_scaling: Inspect call-count scaling class.
+    :type call_count_scaling: CallCountScaling
+    :param diagnostic_codes: Diagnostic codes emitted by the raw algorithm.
+    :type diagnostic_codes: Tuple[str, ...]
+    :param fallback_unknown_risk: Risk of an inconclusive fallback, defaults to
+        ``"medium"``.
+    :type fallback_unknown_risk: FallbackUnknownRisk, optional
+    :param incremental: Whether the implementation can reuse solver context,
+        defaults to ``False``.
+    :type incremental: bool, optional
+    :param dominant_dim: Dominant model dimensions for cost explanations,
+        defaults to ``("E", "vars")``.
+    :type dominant_dim: Tuple[str, ...], optional
+    :param impl: Implementation callable, defaults to ``None``.
+    :type impl: Optional[Callable], optional
+    :return: Fully populated metadata entry.
+    :rtype: VerifyAlgorithmMeta
+
+    Example::
+
+        >>> meta = _smt_local(
+        ...     "dead_guard",
+        ...     "Detect unreachable guards.",
+        ...     "linear_in_transitions",
+        ...     ("W_DEAD_GUARD",),
+        ... )
+        >>> meta.smt_logic
+        'QF_LIRA'
+        >>> meta.verification_scope
+        'smt_local'
+    """
     return VerifyAlgorithmMeta(
         name=name,
         description=description,
@@ -80,6 +171,27 @@ def _smt_local(
 def _composite_init_guards_incomplete(
     impl: Optional[Callable] = None,
 ) -> VerifyAlgorithmMeta:
+    """Build metadata for composite initial-transition coverage.
+
+    This factory is separate from :func:`_smt_local` because the composite
+    coverage formula grows linearly with the number of initial transitions in a
+    composite state, while most other local-SMT entries use constant-size
+    formulas per checked transition.
+
+    :param impl: Implementation callable, defaults to ``None``.
+    :type impl: Optional[Callable], optional
+    :return: Fully populated metadata entry for
+        :func:`pyfcstm.verify.composite_init_guards_incomplete`.
+    :rtype: VerifyAlgorithmMeta
+
+    Example::
+
+        >>> meta = _composite_init_guards_incomplete()
+        >>> meta.formula_size_scaling
+        'linear'
+        >>> meta.diagnostic_codes
+        ('W_COMPOSITE_INIT_INCOMPLETE',)
+    """
     return VerifyAlgorithmMeta(
         name="composite_init_guards_incomplete",
         description=(
@@ -112,6 +224,43 @@ def _bmc_placeholder(
     incremental: bool = True,
     dominant_dim: Tuple[str, ...] = ("depth", "vars", "events", "branching"),
 ) -> VerifyAlgorithmMeta:
+    """Build metadata for a planned bounded-model-checking algorithm.
+
+    BMC entries are intentionally placeholders with ``impl=None``.  They remain
+    in the registry so planning, documentation, and inspect gating can expose
+    the future query surface without accidentally running search algorithms in
+    automatic inspect flows.
+
+    :param name: Registry key and planned algorithm name.
+    :type name: str
+    :param description: Human-readable algorithm summary.
+    :type description: str
+    :param call_count_scaling: Planned call-count scaling class.
+    :type call_count_scaling: CallCountScaling
+    :param fallback_unknown_risk: Risk of inconclusive fallback, defaults to
+        ``"medium"``.
+    :type fallback_unknown_risk: FallbackUnknownRisk, optional
+    :param incremental: Whether the future implementation should support
+        incremental solving, defaults to ``True``.
+    :type incremental: bool, optional
+    :param dominant_dim: Dominant model dimensions for cost explanations,
+        defaults to ``("depth", "vars", "events", "branching")``.
+    :type dominant_dim: Tuple[str, ...], optional
+    :return: Placeholder metadata entry.
+    :rtype: VerifyAlgorithmMeta
+
+    Example::
+
+        >>> meta = _bmc_placeholder(
+        ...     "bounded_reachability",
+        ...     "Query bounded reachability.",
+        ...     "k_unrollings",
+        ... )
+        >>> meta.closedness
+        'queried'
+        >>> meta.impl is None
+        True
+    """
     return VerifyAlgorithmMeta(
         name=name,
         description=description,
@@ -134,6 +283,24 @@ def _bmc_placeholder(
 
 
 def _build_registry() -> Mapping[str, VerifyAlgorithmMeta]:
+    """Build the immutable verify algorithm metadata mapping.
+
+    The returned mapping keeps structural algorithms first, implemented
+    local-SMT algorithms next, and planned BMC placeholders last.  Registry
+    order is intentionally stable because inspect adapters iterate over the
+    mapping in declaration order.
+
+    :return: Mapping from algorithm name to metadata.
+    :rtype: Mapping[str, VerifyAlgorithmMeta]
+
+    Example::
+
+        >>> registry = _build_registry()
+        >>> "dead_guard" in registry
+        True
+        >>> registry["bounded_reachability"].impl is None
+        True
+    """
     return {
         "topological_reachable_set": _structural(
             "topological_reachable_set",

@@ -8,7 +8,7 @@ and mathematical functions.
 
 The module contains the following main components:
 
-* :func:`expr_to_z3` - Convert a pyfcstm Expr to a Z3 expression
+* :func:`expr_to_z3` - Convert a pyfcstm model expression to a Z3 expression
 * :func:`create_z3_vars_from_models` - Create Z3 variables from model objects
 
 Example::
@@ -62,6 +62,16 @@ def python_round_to_z3(operand: Union[z3.ArithRef, z3.BoolRef]) -> z3.ArithRef:
     :type operand: Union[z3.ArithRef, z3.BoolRef]
     :return: Rounded integer expression.
     :rtype: z3.ArithRef
+
+    Example::
+
+        >>> import z3
+        >>> x = z3.Real("x")
+        >>> rounded = python_round_to_z3(x)
+        >>> solver = z3.Solver()
+        >>> solver.add(x == z3.RealVal("2.5"), rounded != 2)
+        >>> solver.check()
+        unsat
     """
     if z3.is_int(operand):
         return operand
@@ -89,7 +99,36 @@ def _apply_binary_z3(
     *,
     warning_stacklevel: int = 2,
 ) -> Union[z3.ArithRef, z3.BoolRef]:
-    """Apply a DSL binary operator to already translated Z3 operands."""
+    """Apply a DSL binary operator to already translated Z3 operands.
+
+    This helper performs only operator dispatch.  Caller-side translation is
+    responsible for building runtime-definedness constraints such as
+    non-zero divisors.
+
+    :param op: DSL binary operator.
+    :type op: str
+    :param left: Translated left operand.
+    :type left: Union[z3.ArithRef, z3.BoolRef]
+    :param right: Translated right operand.
+    :type right: Union[z3.ArithRef, z3.BoolRef]
+    :param left_expr: Original left expression node used for warning policy.
+    :type left_expr: pyfcstm.model.expr.Expr
+    :param right_expr: Original right expression node used for warning policy.
+    :type right_expr: pyfcstm.model.expr.Expr
+    :param warning_stacklevel: Stack level for warnings, defaults to ``2``.
+    :type warning_stacklevel: int, optional
+    :return: Z3 expression for the binary operation.
+    :rtype: Union[z3.ArithRef, z3.BoolRef]
+    :raises ValueError: If ``op`` is not supported.
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.model.expr import Integer
+        >>> value = _apply_binary_z3("+", z3.IntVal(1), z3.IntVal(2), Integer(1), Integer(2))
+        >>> value
+        1 + 2
+    """
     if op == "+":
         return left + right
     elif op == "-":
@@ -205,7 +244,26 @@ def _apply_unary_z3(
     *,
     warning_stacklevel: int = 2,
 ) -> Union[z3.ArithRef, z3.BoolRef]:
-    """Apply a DSL unary operator to an already translated Z3 operand."""
+    """Apply a DSL unary operator to an already translated Z3 operand.
+
+    :param op: DSL unary operator.
+    :type op: str
+    :param operand: Translated operand.
+    :type operand: Union[z3.ArithRef, z3.BoolRef]
+    :param warning_stacklevel: Stack level for warnings, defaults to ``2``.
+    :type warning_stacklevel: int, optional
+    :return: Z3 expression for the unary operation.
+    :rtype: Union[z3.ArithRef, z3.BoolRef]
+    :raises ValueError: If ``op`` is not supported.
+
+    Example::
+
+        >>> import z3
+        >>> _apply_unary_z3("-", z3.IntVal(3))
+        -3
+        >>> _apply_unary_z3("!", z3.BoolVal(False))
+        Not(False)
+    """
     if op == "-":
         return -operand
     elif op == "+":
@@ -229,7 +287,24 @@ def _apply_ufunc_z3(
     func: str,
     operand: Union[z3.ArithRef, z3.BoolRef],
 ) -> Union[z3.ArithRef, z3.BoolRef]:
-    """Apply a supported unary math function to a Z3 operand."""
+    """Apply a supported unary math function to a Z3 operand.
+
+    :param func: Supported unary function name.
+    :type func: str
+    :param operand: Translated operand.
+    :type operand: Union[z3.ArithRef, z3.BoolRef]
+    :return: Z3 expression for the unary function.
+    :rtype: Union[z3.ArithRef, z3.BoolRef]
+    :raises NotImplementedError: If ``func`` is intentionally unsupported.
+
+    Example::
+
+        >>> import z3
+        >>> _apply_ufunc_z3("abs", z3.Int("x"))
+        If(x >= 0, x, -x)
+        >>> _apply_ufunc_z3("sign", z3.IntVal(-3))
+        If(-3 == 0, 0, If(-3 > 0, 1, -1))
+    """
     # Absolute value and sign functions
     if func == "abs":
         # Use conditional expression for absolute value
@@ -361,7 +436,7 @@ def expr_to_z3(
     operators, logical operators, conditional expressions, and mathematical functions.
 
     :param expr: The pyfcstm expression to convert
-    :type expr: Expr
+    :type expr: pyfcstm.model.expr.Expr
     :param z3_vars: Dictionary mapping variable names to Z3 expression objects
     :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
     :return: The equivalent Z3 expression
@@ -455,7 +530,9 @@ def create_z3_vars_from_models(
 
     Example::
 
-        >>> from pyfcstm.model.model import VarDefine, StateMachine, State
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> from pyfcstm.model.model import VarDefine
         >>> from pyfcstm.model.expr import Integer, Float
         >>>
         >>> # From a list of VarDefine
@@ -473,11 +550,14 @@ def create_z3_vars_from_models(
         >>> 'x' in z3_vars
         True
         >>>
-        >>> # From a StateMachine
-        >>> root_state = State(name='System', parent=None, is_pseudo=False,
-        ...                    display_name=None, comment=None)
-        >>> sm = StateMachine(variables=var_defs, root_state=root_state, global_events=[])
-        >>> z3_vars = create_z3_vars_from_models(sm)
+        >>> # From a StateMachine parsed through the public DSL pipeline.
+        >>> source = '''
+        ... def int counter = 0;
+        ... state System;
+        ... '''
+        >>> ast = parse_with_grammar_entry(source, "state_machine_dsl")
+        >>> machine = parse_dsl_node_to_state_machine(ast)
+        >>> z3_vars = create_z3_vars_from_models(machine)
         >>> 'counter' in z3_vars
         True
     """

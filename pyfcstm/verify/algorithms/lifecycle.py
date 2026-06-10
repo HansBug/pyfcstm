@@ -1,4 +1,29 @@
-"""Lifecycle-focused SMT-local verification algorithms."""
+"""Lifecycle-focused SMT-local verification algorithms.
+
+This module checks first-cycle relationships between lifecycle actions.  The
+current raw algorithm focuses on the entry path into a leaf state and the first
+``during`` chain that can run immediately after entry.  Public callers should
+normally import the algorithm from :mod:`pyfcstm.verify`.
+
+Algorithm map:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Function
+     - Formula shape
+     - Diagnostic
+   * - :func:`enter_postcondition_implies_during_precondition`
+     - Branch-condition determinacy after root initial entry and concrete
+       ``enter`` actions.
+     - ``I_ENTER_DURING_CONTRADICT``
+
+Example::
+
+    >>> from pyfcstm.verify import enter_postcondition_implies_during_precondition
+    >>> callable(enter_postcondition_implies_during_precondition)
+    True
+"""
 
 from __future__ import annotations
 
@@ -16,7 +41,42 @@ def enter_postcondition_implies_during_precondition(
     *,
     smt_timeout_ms: Optional[int] = None,
 ) -> AlgorithmResult:
-    """Detect first-cycle during conditions determined by enter-time values.
+    r"""Detect first-cycle during conditions determined by enter-time values.
+
+    This algorithm detects first-cycle ``during`` branch conditions whose truth
+    value is already fixed by declaration initializers, root initial-transition
+    effects, and concrete ``enter`` actions along every feasible root initial
+    entry path into the leaf state.  It is a local first-cycle check: it does
+    not unroll repeated cycles and it skips pseudo states, composite states,
+    abstract lifecycle actions, and leaves without concrete ``during`` logic.
+
+    Let ``C`` be the set of feasible initial-entry contexts for leaf state
+    ``s``.  Each context ``c`` produces a post-entry symbolic store ``V_c``.
+    For a first-cycle branch condition ``p``, the algorithm asks whether each
+    context proves one branch direction:
+
+    .. math::
+
+       \forall c \in C.\quad
+       \operatorname{unsat}(A_c \land \lnot p(V_c))
+       \;\lor\;
+       \operatorname{unsat}(A_c \land p(V_c))
+
+    The implementation reports only conditions whose descriptor is common to
+    all feasible contexts, so a diagnostic means the same condition is
+    determined regardless of which root initial branch reached the state.
+
+    Result semantics:
+
+    * ``kind == "unsat"`` means at least one first-cycle condition has a fixed
+      branch direction after entry and diagnostics carry
+      ``I_ENTER_DURING_CONTRADICT``.
+    * ``kind == "sat"`` means no common first-cycle condition is proven fixed,
+      or the state is outside the algorithm scope.
+    * ``kind == "unknown"`` or ``"timeout"`` means a solver query was
+      inconclusive and no deterministic diagnostic was emitted.
+    * ``kind == "undecidable_skip"`` means entry-path or operation translation
+      could not provide sound first-cycle evidence.
 
     :param state: State to inspect.
     :type state: State
@@ -26,6 +86,57 @@ def enter_postcondition_implies_during_precondition(
     :type smt_timeout_ms: Optional[int], optional
     :return: Algorithm result.
     :rtype: AlgorithmResult
+
+    Example::
+
+        >>> from textwrap import dedent
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> from pyfcstm.verify import enter_postcondition_implies_during_precondition
+        >>> def parse_machine(source):
+        ...     ast = parse_with_grammar_entry(dedent(source), "state_machine_dsl")
+        ...     return parse_dsl_node_to_state_machine(ast)
+        >>> def variables(machine):
+        ...     return tuple(machine.defines.values())
+        >>> # A.enter sets x = 1, so the first-cycle during condition is true.
+        >>> machine = parse_machine('''
+        ... def int x = 0;
+        ... state System {
+        ...     state A {
+        ...         enter { x = 1; }
+        ...         during {
+        ...             if [x > 0] { x = x + 1; } else { x = x - 1; }
+        ...         }
+        ...     }
+        ...     [*] -> A;
+        ... }
+        ... ''')
+        >>> state_a = machine.root_state.substates["A"]
+        >>> result = enter_postcondition_implies_during_precondition(
+        ...     state_a,
+        ...     variables(machine),
+        ... )
+        >>> result.kind
+        'unsat'
+        >>> result.diagnostics[0]["code"]
+        'I_ENTER_DURING_CONTRADICT'
+        >>> result.diagnostics[0]["data"]["branch_taken"]
+        'true'
+        >>> # A leaf without concrete during operations is outside the scope.
+        >>> machine = parse_machine('''
+        ... def int x = 0;
+        ... state System {
+        ...     state A {
+        ...         enter { x = 1; }
+        ...     }
+        ...     [*] -> A;
+        ... }
+        ... ''')
+        >>> enter_postcondition_implies_during_precondition(
+        ...     machine.root_state.substates["A"],
+        ...     variables(machine),
+        ... ).kind
+        'sat'
     """
     from pyfcstm.verify.encoding._core import (
         AlgorithmResult,

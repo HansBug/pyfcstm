@@ -117,6 +117,12 @@ class LeafLevelGraph:
 
         :return: ``None``.
         :rtype: None
+
+        Example::
+
+            >>> graph = LeafLevelGraph(nodes=("Root.A",), edges={"Root.A": ()})
+            >>> type(graph.edges).__name__
+            'mappingproxy'
         """
         object.__setattr__(self, "edges", MappingProxyType(dict(self.edges)))
 
@@ -187,23 +193,117 @@ class InevitabilityReport:
 
 
 def _state_path(state: State) -> str:
+    """Return the dotted path for a model state.
+
+    :param state: State whose root-to-node path should be rendered.
+    :type state: State
+    :return: Dotted state path.
+    :rtype: str
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> ast = parse_with_grammar_entry("state Root;", "state_machine_dsl")
+        >>> machine = parse_dsl_node_to_state_machine(ast)
+        >>> _state_path(machine.root_state)
+        'Root'
+    """
     return ".".join(state.path)
 
 
 def _leaf_states(machine: StateMachine) -> Tuple[State, ...]:
+    """Return every leaf state in model traversal order.
+
+    :param machine: State machine to inspect.
+    :type machine: StateMachine
+    :return: Leaf states yielded by :meth:`StateMachine.walk_states`.
+    :rtype: Tuple[State, ...]
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> source = '''
+        ... state Root {
+        ...     state A;
+        ...     state B;
+        ...     [*] -> A;
+        ... }
+        ... '''
+        >>> ast = parse_with_grammar_entry(source, "state_machine_dsl")
+        >>> machine = parse_dsl_node_to_state_machine(ast)
+        >>> tuple(_state_path(state) for state in _leaf_states(machine))
+        ('Root.A', 'Root.B')
+    """
     return tuple(state for state in machine.walk_states() if state.is_leaf_state)
 
 
 def _dedupe_sorted(items: Iterable[str]) -> Tuple[str, ...]:
+    """Return unique strings in deterministic sorted order.
+
+    :param items: String items that may contain duplicates.
+    :type items: Iterable[str]
+    :return: Sorted tuple with duplicates removed.
+    :rtype: Tuple[str, ...]
+
+    Example::
+
+        >>> _dedupe_sorted(["b", "a", "b"])
+        ('a', 'b')
+    """
     return tuple(sorted(set(items)))
 
 
 def _successors(edges: Mapping[str, Tuple[str, ...]], node: str) -> Tuple[str, ...]:
+    """Return graph successors for ``node`` with a total empty default.
+
+    :param edges: Mapping from node path to successor node paths.
+    :type edges: Mapping[str, Tuple[str, ...]]
+    :param node: Node to query.
+    :type node: str
+    :return: Successor tuple, or ``()`` when ``node`` is absent.
+    :rtype: Tuple[str, ...]
+
+    Example::
+
+        >>> _successors({"A": ("B",)}, "A")
+        ('B',)
+        >>> _successors({"A": ("B",)}, "missing")
+        ()
+    """
     return edges.get(node, tuple())
 
 
 def _project_target(parent_state: State, target: object) -> Tuple[str, ...]:
-    """Project a transition target into leaf-level graph successors."""
+    """Project a transition target into leaf-level graph successors.
+
+    :param parent_state: State that owns the transition target.
+    :type parent_state: State
+    :param target: Transition target, either a substate name or
+        :data:`EXIT_STATE`.
+    :type target: object
+    :return: Leaf-level successor paths reached by taking the target.
+    :rtype: Tuple[str, ...]
+    :raises TypeError: If ``target`` is not an FCSTM transition endpoint shape.
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> source = '''
+        ... state Root {
+        ...     state A;
+        ...     state B;
+        ...     [*] -> A;
+        ... }
+        ... '''
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(source, "state_machine_dsl")
+        ... )
+        >>> _project_target(machine.root_state, "B")
+        ('Root.B',)
+    """
     if target is EXIT_STATE:
         if parent_state.is_root_state:
             return (EXIT_ROOT_SINK,)
@@ -231,7 +331,22 @@ def _project_target(parent_state: State, target: object) -> Tuple[str, ...]:
 
 
 def _initial_leaf_targets(state: State) -> Tuple[str, ...]:
-    """Project entering ``state`` to the leaves reached by initial descent."""
+    """Project entering ``state`` to the leaves reached by initial descent.
+
+    :param state: State being entered by a transition or root initialization.
+    :type state: State
+    :return: Leaf paths reached after following initial transitions.
+    :rtype: Tuple[str, ...]
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> ast = parse_with_grammar_entry("state Root { state A; [*] -> A; }", "state_machine_dsl")
+        >>> machine = parse_dsl_node_to_state_machine(ast)
+        >>> _initial_leaf_targets(machine.root_state)
+        ('Root.A',)
+    """
     if state.is_leaf_state:
         return (_state_path(state),)
 
@@ -316,6 +431,24 @@ def _closure_from(
     edges: Mapping[str, Tuple[str, ...]],
     starts: Iterable[str],
 ) -> Set[str]:
+    """Return the directed reachability closure from start nodes.
+
+    The traversal is breadth-first and treats missing edge entries as nodes
+    with no outgoing successors, matching the helper's use on projected graph
+    views and reverse graph views.
+
+    :param edges: Mapping from node path to successor node paths.
+    :type edges: Mapping[str, Tuple[str, ...]]
+    :param starts: Initial nodes for the closure.
+    :type starts: Iterable[str]
+    :return: Set containing all reachable nodes, including the starts.
+    :rtype: Set[str]
+
+    Example::
+
+        >>> sorted(_closure_from({"A": ("B",), "B": ("C",)}, ["A"]))
+        ['A', 'B', 'C']
+    """
     seen: Set[str] = set()
     queue: Deque[str] = deque(starts)
     while queue:
@@ -420,6 +553,24 @@ def unreachable_states(machine: StateMachine) -> Tuple[str, ...]:
 def _scc_components(
     nodes: Sequence[str], edges: Mapping[str, Tuple[str, ...]]
 ) -> Tuple[Tuple[str, ...], ...]:
+    """Return strongly connected components using an iterative Kosaraju pass.
+
+    Components are sorted internally and the returned tuple is sorted for
+    deterministic tests and diagnostics.  The synthetic root-exit sink is not
+    included unless the caller includes it in ``nodes``.
+
+    :param nodes: Graph nodes to decompose.
+    :type nodes: Sequence[str]
+    :param edges: Directed graph edges.
+    :type edges: Mapping[str, Tuple[str, ...]]
+    :return: Sorted strongly connected components.
+    :rtype: Tuple[Tuple[str, ...], ...]
+
+    Example::
+
+        >>> _scc_components(("A", "B", "C"), {"A": ("B",), "B": ("A",)})
+        (('A', 'B'), ('C',))
+    """
     node_set = set(nodes)
     ordered_nodes = sorted(node_set)
     visited: Set[str] = set()
@@ -480,6 +631,27 @@ def _is_cyclic_component(
     component: Tuple[str, ...],
     edges: Mapping[str, Tuple[str, ...]],
 ) -> bool:
+    """Return whether an SCC represents a non-trivial cycle.
+
+    A component with multiple nodes is cyclic by definition.  A singleton is
+    cyclic only when it has a self-loop.
+
+    :param component: Strongly connected component to classify.
+    :type component: Tuple[str, ...]
+    :param edges: Directed graph edges.
+    :type edges: Mapping[str, Tuple[str, ...]]
+    :return: ``True`` if the component contains a cycle.
+    :rtype: bool
+
+    Example::
+
+        >>> _is_cyclic_component(("A", "B"), {})
+        True
+        >>> _is_cyclic_component(("A",), {"A": ("A",)})
+        True
+        >>> _is_cyclic_component(("A",), {"A": ("B",)})
+        False
+    """
     if len(component) > 1:
         return True
     if len(component) == 0:  # pragma: no cover
@@ -534,12 +706,53 @@ def _root_reachable_leaf_paths(
     machine: StateMachine,
     graph: LeafLevelGraph,
 ) -> Set[str]:
+    """Return leaf paths reachable from the root initial descent.
+
+    :param machine: State machine that produced ``graph``.
+    :type machine: StateMachine
+    :param graph: Leaf-level macro graph for ``machine``.
+    :type graph: LeafLevelGraph
+    :return: Root-reachable leaf paths, excluding the root-exit sink.
+    :rtype: Set[str]
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> source = '''
+        ... state Root {
+        ...     state A;
+        ...     [*] -> A;
+        ... }
+        ... '''
+        >>> ast = parse_with_grammar_entry(source, "state_machine_dsl")
+        >>> machine = parse_dsl_node_to_state_machine(ast)
+        >>> graph = build_leaf_level_macro_graph(machine)
+        >>> sorted(_root_reachable_leaf_paths(machine, graph))
+        ['Root.A']
+    """
     reachable = _closure_from(graph.edges, _initial_leaf_targets(machine.root_state))
     reachable.discard(EXIT_ROOT_SINK)
     return reachable
 
 
 def _nodes_that_can_reach_sink(graph: LeafLevelGraph) -> Set[str]:
+    """Return graph nodes that can reach the synthetic root-exit sink.
+
+    :param graph: Leaf-level macro graph.
+    :type graph: LeafLevelGraph
+    :return: Node paths with at least one path to :data:`EXIT_ROOT_SINK`.
+    :rtype: Set[str]
+
+    Example::
+
+        >>> graph = LeafLevelGraph(
+        ...     nodes=("A", "B"),
+        ...     edges={"A": ("B",), "B": (EXIT_ROOT_SINK,), EXIT_ROOT_SINK: ()},
+        ... )
+        >>> sorted(_nodes_that_can_reach_sink(graph))
+        ['A', 'B']
+    """
     reverse_edges: Dict[str, Set[str]] = {node: set() for node in graph.nodes}
     reverse_edges[EXIT_ROOT_SINK] = set()
     for source, targets in graph.edges.items():
@@ -668,6 +881,28 @@ def _root_reachable_initial_state_paths(
     machine: StateMachine,
     graph: LeafLevelGraph,
 ) -> Set[str]:
+    """Return composite paths whose initial transitions are root-reachable.
+
+    The result contains the root state and any composite state whose initial
+    leaf targets intersect the root-reachable leaf set.
+
+    :param machine: State machine that produced ``graph``.
+    :type machine: StateMachine
+    :param graph: Leaf-level macro graph for ``machine``.
+    :type graph: LeafLevelGraph
+    :return: Dotted paths of root-reachable initial-transition owners.
+    :rtype: Set[str]
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> ast = parse_with_grammar_entry("state Root;", "state_machine_dsl")
+        >>> machine = parse_dsl_node_to_state_machine(ast)
+        >>> graph = build_leaf_level_macro_graph(machine)
+        >>> sorted(_root_reachable_initial_state_paths(machine, graph))
+        ['Root']
+    """
     reachable_leaves = _root_reachable_leaf_paths(machine, graph)
     reachable_paths = {_state_path(machine.root_state)}
 
@@ -683,11 +918,60 @@ def _root_reachable_boundary_state_paths(
     machine: StateMachine,
     graph: LeafLevelGraph,
 ) -> Set[str]:
+    """Return composite boundary states reachable through leaf exits.
+
+    Parent-level outgoing transitions are considered selectable only when a
+    reachable descendant leaf explicitly exits to that composite boundary.  This
+    helper computes those boundary paths for event-consumer reachability.
+
+    :param machine: State machine that produced ``graph``.
+    :type machine: StateMachine
+    :param graph: Leaf-level macro graph for ``machine``.
+    :type graph: LeafLevelGraph
+    :return: Composite state paths reachable as leaf-exit boundaries.
+    :rtype: Set[str]
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> source = '''
+        ... state Root {
+        ...     state Parent {
+        ...         state A;
+        ...         [*] -> A;
+        ...         A -> [*];
+        ...     }
+        ...     state Done;
+        ...     [*] -> Parent;
+        ...     Parent -> Done;
+        ... }
+        ... '''
+        >>> ast = parse_with_grammar_entry(source, "state_machine_dsl")
+        >>> machine = parse_dsl_node_to_state_machine(ast)
+        >>> graph = build_leaf_level_macro_graph(machine)
+        >>> sorted(_root_reachable_boundary_state_paths(machine, graph))
+        ['Root.Parent']
+    """
     reachable_leaves = _root_reachable_leaf_paths(machine, graph)
     boundary_paths: Set[str] = set()
     queue: Deque[State] = deque()
 
     def add_boundary(state: State) -> None:
+        """Record a boundary state once and queue it for upward bubbling.
+
+        :param state: Composite boundary state reached by a descendant exit.
+        :type state: State
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> # This nested helper is exercised through
+            >>> # _root_reachable_boundary_state_paths().
+            >>> True
+            True
+        """
         state_path = _state_path(state)
         if state_path in boundary_paths:
             return
@@ -721,6 +1005,39 @@ def _event_consumer_reachability(
     machine: StateMachine,
     graph: LeafLevelGraph,
 ) -> Dict[str, List[bool]]:
+    """Return reachability booleans for every used event consumer.
+
+    Each event maps to one boolean per transition that consumes the event.
+    Initial-transition consumers are checked against reachable composite entry
+    points, leaf-source consumers against reachable active leaves, and
+    composite-source consumers against reachable leaf-exit boundaries.
+
+    :param machine: State machine that produced ``graph``.
+    :type machine: StateMachine
+    :param graph: Leaf-level macro graph for ``machine``.
+    :type graph: LeafLevelGraph
+    :return: Mapping from qualified event name to consumer-source reachability
+        flags.
+    :rtype: Dict[str, List[bool]]
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> source = '''
+        ... state Root {
+        ...     event Go;
+        ...     state A;
+        ...     [*] -> A;
+        ...     A -> A : Go;
+        ... }
+        ... '''
+        >>> ast = parse_with_grammar_entry(source, "state_machine_dsl")
+        >>> machine = parse_dsl_node_to_state_machine(ast)
+        >>> graph = build_leaf_level_macro_graph(machine)
+        >>> _event_consumer_reachability(machine, graph)
+        {'Root.Go': [True]}
+    """
     active_leaves = _root_reachable_leaf_paths(machine, graph)
     init_sources = _root_reachable_initial_state_paths(machine, graph)
     boundary_sources = _root_reachable_boundary_state_paths(machine, graph)

@@ -1,4 +1,33 @@
-"""Transition-focused SMT-local verification algorithms."""
+"""Transition-focused SMT-local verification algorithms.
+
+This module checks relationships between multiple transitions rather than a
+single guard or effect.  The algorithms still use local, quantifier-free SMT
+queries; they do not unroll runtime execution over multiple cycles.  Public
+callers should normally import these functions from :mod:`pyfcstm.verify`.
+
+Algorithm map:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Function
+     - Formula shape
+     - Diagnostic
+   * - :func:`transition_shadowed_by_predecessor`
+     - Feasibility of a later outgoing trigger while every earlier same-source
+       trigger is disabled.
+     - ``W_TRANSITION_SHADOWED``
+   * - :func:`composite_init_guards_incomplete`
+     - Existence of an input valuation not covered by any initial-transition
+       trigger.
+     - ``W_COMPOSITE_INIT_INCOMPLETE``
+
+Example::
+
+    >>> from pyfcstm.verify import transition_shadowed_by_predecessor
+    >>> callable(transition_shadowed_by_predecessor)
+    True
+"""
 
 from __future__ import annotations
 
@@ -16,7 +45,41 @@ def transition_shadowed_by_predecessor(
     *,
     smt_timeout_ms: Optional[int] = None,
 ) -> AlgorithmResult:
-    """Detect outgoing transitions shadowed by earlier transitions.
+    r"""Detect outgoing transitions shadowed by earlier transitions.
+
+    FCSTM transition order matters for transitions with the same source state:
+    an earlier enabled transition prevents later outgoing transitions from
+    being selected.  This algorithm groups ordered outgoing transitions by
+    source, translates each event/guard trigger into a predicate, and asks
+    whether a later trigger can ever be enabled after all prior triggers are
+    disabled.
+
+    For a source state with ordered outgoing transitions
+    ``t_1, ..., t_n``, let ``H_i(V, E)`` be the trigger predicate for
+    transition ``t_i`` over model variables ``V`` and synthetic event booleans
+    ``E``.  For candidate transition ``t_j``, the shadowing witness query is:
+
+    .. math::
+
+       \exists V,E.\ T(V) \land D(V,E)
+       \land H_j(V,E) \land \bigwedge_{i<j} \lnot H_i(V,E)
+
+    If the query is unsatisfiable and ``H_j`` itself is satisfiable, then every
+    defined candidate valuation is covered by prior triggers and ``t_j`` is
+    shadowed.  The implementation also avoids deterministic diagnostics when
+    predecessor continuation through stoppable composite validation is not
+    locally proven stable.
+
+    Result semantics:
+
+    * ``kind == "unsat"`` means one or more later transitions are shadowed and
+      diagnostics carry ``W_TRANSITION_SHADOWED``.
+    * ``kind == "sat"`` means every checked later transition has a remaining
+      candidate valuation or there are no ordered outgoing competitors.
+    * ``kind == "unknown"`` or ``"timeout"`` means at least one relevant SMT
+      query was inconclusive and no deterministic diagnostic was emitted.
+    * ``kind == "undecidable_skip"`` means translation, definedness, or stable
+      continuation evidence was insufficient for a sound shadowing result.
 
     :param machine: State machine to inspect.
     :type machine: StateMachine
@@ -26,6 +89,50 @@ def transition_shadowed_by_predecessor(
     :type smt_timeout_ms: Optional[int], optional
     :return: Algorithm result.
     :rtype: AlgorithmResult
+
+    Example::
+
+        >>> from textwrap import dedent
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> from pyfcstm.verify import transition_shadowed_by_predecessor
+        >>> def parse_machine(source):
+        ...     ast = parse_with_grammar_entry(dedent(source), "state_machine_dsl")
+        ...     return parse_dsl_node_to_state_machine(ast)
+        >>> def variables(machine):
+        ...     return tuple(machine.defines.values())
+        >>> # The second A-source transition is never considered after A -> B.
+        >>> machine = parse_machine('''
+        ... state System {
+        ...     state A;
+        ...     state B;
+        ...     state C;
+        ...     [*] -> A;
+        ...     A -> B;
+        ...     A -> C;
+        ... }
+        ... ''')
+        >>> result = transition_shadowed_by_predecessor(machine, variables(machine))
+        >>> result.kind
+        'unsat'
+        >>> result.diagnostics[0]["code"]
+        'W_TRANSITION_SHADOWED'
+        >>> result.diagnostics[0]["data"]["reason"]
+        'unconditional_catchall'
+        >>> # Disjoint guards leave a candidate valuation for each transition.
+        >>> machine = parse_machine('''
+        ... def int x = 0;
+        ... state System {
+        ...     state A;
+        ...     state B;
+        ...     state C;
+        ...     [*] -> A;
+        ...     A -> B : if [x < 0];
+        ...     A -> C : if [x > 0];
+        ... }
+        ... ''')
+        >>> transition_shadowed_by_predecessor(machine, variables(machine)).kind
+        'sat'
     """
     from pyfcstm.verify.encoding._core import (
         AlgorithmResult,
@@ -226,11 +333,37 @@ def composite_init_guards_incomplete(
     *,
     smt_timeout_ms: Optional[int] = None,
 ) -> AlgorithmResult:
-    """Detect composite states whose initial transitions do not cover inputs.
+    r"""Detect composite states whose initial transitions do not cover inputs.
 
     The result ``kind`` follows the witness query: ``'sat'`` means a coverage
     gap was found and diagnostics were emitted, while ``'unsat'`` means the
     initial-transition triggers cover all modeled inputs.
+
+    A composite state with only guarded or event-triggered initial transitions
+    may fail to choose an initial child for some valuation.  This algorithm
+    checks each composite state's initial transitions and searches for a model
+    variable and event input assignment that disables all initial-transition
+    triggers.
+
+    For a composite state with initial transitions ``i_1, ..., i_n``, let
+    ``H_k(V, E)`` be the trigger predicate for initial transition ``i_k``.
+    The gap query is:
+
+    .. math::
+
+       \exists V,E.\ T(V) \land \lnot \bigvee_{k=1}^{n} H_k(V,E)
+
+    Result semantics:
+
+    * ``kind == "sat"`` means the query found an uncovered valuation and the
+      diagnostics carry ``W_COMPOSITE_INIT_INCOMPLETE`` with a witness model
+      when Z3 provided one.
+    * ``kind == "unsat"`` means every checked composite initial-transition set
+      covers all modeled variable and event inputs.
+    * ``kind == "unknown"`` or ``"timeout"`` means a query was inconclusive
+      and no coverage diagnostic was emitted for that composite.
+    * ``kind == "undecidable_skip"`` means trigger translation or definedness
+      evidence was insufficient for a sound coverage decision.
 
     :param machine: State machine to inspect.
     :type machine: StateMachine
@@ -240,6 +373,45 @@ def composite_init_guards_incomplete(
     :type smt_timeout_ms: Optional[int], optional
     :return: Algorithm result.
     :rtype: AlgorithmResult
+
+    Example::
+
+        >>> from textwrap import dedent
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> from pyfcstm.verify import composite_init_guards_incomplete
+        >>> def parse_machine(source):
+        ...     ast = parse_with_grammar_entry(dedent(source), "state_machine_dsl")
+        ...     return parse_dsl_node_to_state_machine(ast)
+        >>> def variables(machine):
+        ...     return tuple(machine.defines.values())
+        >>> # x = 0 disables both guarded initial transitions, so a gap exists.
+        >>> machine = parse_machine('''
+        ... def int x = 0;
+        ... state System {
+        ...     state A;
+        ...     state B;
+        ...     [*] -> A : if [x > 0];
+        ...     [*] -> B : if [x < 0];
+        ... }
+        ... ''')
+        >>> result = composite_init_guards_incomplete(machine, variables(machine))
+        >>> result.kind
+        'sat'
+        >>> result.diagnostics[0]["code"]
+        'W_COMPOSITE_INIT_INCOMPLETE'
+        >>> # The pair x >= 0 and x < 0 covers every integer input.
+        >>> machine = parse_machine('''
+        ... def int x = 0;
+        ... state System {
+        ...     state A;
+        ...     state B;
+        ...     [*] -> A : if [x >= 0];
+        ...     [*] -> B : if [x < 0];
+        ... }
+        ... ''')
+        >>> composite_init_guards_incomplete(machine, variables(machine)).kind
+        'unsat'
     """
     from pyfcstm.verify.encoding._core import (
         AlgorithmResult,

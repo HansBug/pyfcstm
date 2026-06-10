@@ -1,0 +1,52 @@
+def int phase = 0;
+def int trace = 0;
+state Root {
+    >> during before {
+        trace = trace + 1;
+    }
+
+    >> during after {
+        trace = trace + 100000;
+    }
+
+    state System1 {
+        >> during before {
+            trace = trace + 10;
+        }
+
+        >> during after {
+            trace = trace + 10000;
+        }
+
+        state A {
+            during {
+                phase = phase + 1;
+                trace = trace + 100;
+            }
+        }
+
+        [*] -> A;
+        A -> [*] : if [phase >= 3];
+    }
+
+    state System2 {
+        >> during before {
+            trace = trace + 1000;
+        }
+
+        >> during after {
+            trace = trace + 1000000;
+        }
+
+        state B {
+            during {
+                trace = trace + 10000;
+            }
+        }
+
+        [*] -> B : if [phase >= 7];
+    }
+
+    [*] -> System1;
+    System1 -> System2 : if [phase >= 5];
+}

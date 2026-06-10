@@ -1,0 +1,36 @@
+def int frost = 0;
+def int drip_ticks = 0;
+state Root {
+    state Cooling {
+        during {
+            frost = frost + 2;
+        }
+    }
+
+    state DefrostCycle {
+        state Defrost {
+            during {
+                frost = frost - 5;
+            }
+        }
+
+        state Drip {
+            during {
+                drip_ticks = drip_ticks + 1;
+            }
+        }
+
+        [*] -> Defrost;
+        Defrost -> Drip : if [frost <= 0] effect {
+            frost = 0;
+            drip_ticks = 0;
+        };
+        Drip -> [*] : if [drip_ticks >= 1];
+    }
+
+    [*] -> Cooling;
+    Cooling -> DefrostCycle : if [frost >= 6];
+    DefrostCycle -> Cooling effect {
+        drip_ticks = 0;
+    };
+}

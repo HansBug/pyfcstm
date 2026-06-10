@@ -8,6 +8,61 @@ describe('jsfcstm analyzers and code actions', () => {
         packageModule.getWorkspaceGraph().clearOverlays();
     });
 
+    function rangeOf(text: string, needle: string) {
+        const lines = text.split('\n');
+        for (let line = 0; line < lines.length; line += 1) {
+            const column = lines[line].indexOf(needle);
+            if (column >= 0) {
+                return packageModule.createRange(line, column, line, column + needle.length);
+            }
+        }
+        throw new Error(`needle not found: ${needle}`);
+    }
+
+    function applySingleEdit(text: string, edit: {range: {start: {line: number; character: number}; end: {line: number; character: number}}; newText: string}): string {
+        function offsetAt(position: {line: number; character: number}): number {
+            const lines = text.split('\n');
+            if (position.line >= lines.length) {
+                return text.length;
+            }
+            let offset = 0;
+            for (let line = 0; line < position.line; line += 1) {
+                offset += lines[line].length + 1;
+            }
+            return offset + Math.min(position.character, lines[position.line].length);
+        }
+        const start = offsetAt(edit.range.start);
+        const end = offsetAt(edit.range.end);
+        return `${text.slice(0, start)}${edit.newText}${text.slice(end)}`;
+    }
+
+    async function assertParses(text: string, filePath: string): Promise<void> {
+        const document = createDocument(text, filePath);
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        assert.equal(
+            diagnostics.some(item => item.severity === 'error'),
+            false,
+            `expected edited DSL to parse and semantically validate, got ${JSON.stringify(diagnostics)}`,
+        );
+    }
+
+    async function inspectDiagnosticsAsEditorDiagnostics(text: string, filePath: string) {
+        const document = createDocument(text, filePath);
+        const ast = await packageModule.parseAstDocument(document);
+        const machine = packageModule.buildStateMachineModel(ast);
+        assert.ok(machine, 'expected state-machine model');
+        const report = packageModule.inspectModel(machine);
+        const fullRange = packageModule.createRange(0, 0, document.lineCount - 1, document.lineAt(document.lineCount - 1).text.length);
+        return report.diagnostics.map(item => ({
+            range: fullRange,
+            message: item.message,
+            severity: item.severity,
+            source: 'fcstm',
+            code: item.code,
+            data: item.refs,
+        }));
+    }
+
     it('reports semantic analyzer diagnostics for unreachable states, dead transitions, unused events, mappings, and unresolved refs', async () => {
         const dir = trackTempDir('jsfcstm-analyzers-');
         const hostFile = path.join(dir, 'host.fcstm');
@@ -153,6 +208,893 @@ describe('jsfcstm analyzers and code actions', () => {
         // The action list may be empty (no matching code) - the important
         // property is that the analyzer produced a targeted diagnostic at all.
         assert.ok(Array.isArray(actions));
+    });
+
+    it('applies suggested-fix delete actions for unreferenced variable definitions', async () => {
+        const text = [
+            'def int unused = 0;',
+            'def int driver = 0;',
+            'state Root {',
+            '    state Idle;',
+            '    state Done;',
+            '    [*] -> Idle;',
+            '    Idle -> Done : if [driver > 0];',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-delete-var.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
+        const diag = diagnostics.find(item => item.code === 'W_UNREFERENCED_VAR');
+        assert.ok(diag, 'expected W_UNREFERENCED_VAR suggested fix diagnostic');
+
+        const actions = await packageModule.collectCodeActions(document, diag.range, [diag]);
+        const action = actions.find(item => /declaration-only variable/.test(item.title));
+        assert.ok(action, `expected delete suggested-fix action, got ${JSON.stringify(actions)}`);
+        const edit = Object.values(action.edit?.changes || {}).flat()[0];
+        assert.equal(edit.newText, '');
+        const updated = applySingleEdit(text, edit);
+        assert.equal(updated.includes('def int unused = 0;'), false);
+        await assertParses(updated, filePath);
+    });
+
+    it('applies suggested-fix delete actions for effect self assignments', async () => {
+        const text = [
+            'def int x = 0;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B effect {',
+            '        x = x;',
+            '    };',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-delete-effect.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
+        const diag = diagnostics.find(item => item.code === 'W_EFFECT_SELF_ASSIGN');
+        assert.ok(diag, 'expected W_EFFECT_SELF_ASSIGN suggested fix diagnostic');
+
+        const actions = await packageModule.collectCodeActions(document, diag.range, [diag]);
+        const action = actions.find(item => /self-assignment/.test(item.title));
+        assert.ok(action, `expected delete self-assignment action, got ${JSON.stringify(actions)}`);
+        const edit = Object.values(action.edit?.changes || {}).flat()[0];
+        assert.equal(edit.newText, '');
+        const updated = applySingleEdit(text, edit);
+        assert.equal(updated.includes('x = x;'), false);
+        await assertParses(updated, filePath);
+    });
+
+    it('applies suggested-fix delete actions for nested effect self assignments', async () => {
+        const text = [
+            'def int x = 0;',
+            'def int enabled = 1;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B effect {',
+            '        if [enabled > 0] {',
+            '            x = x;',
+            '        }',
+            '    };',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-delete-nested-effect.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
+        const diag = diagnostics.find(item => item.code === 'W_EFFECT_SELF_ASSIGN');
+        assert.ok(diag, 'expected W_EFFECT_SELF_ASSIGN suggested fix diagnostic inside nested if');
+
+        const actions = await packageModule.collectCodeActions(document, diag.range, [diag]);
+        const action = actions.find(item => /self-assignment/.test(item.title));
+        assert.ok(action, `expected nested delete self-assignment action, got ${JSON.stringify(actions)}`);
+        const edit = Object.values(action.edit?.changes || {}).flat()[0];
+        assert.equal(edit.newText, '');
+        const updated = applySingleEdit(text, edit);
+        assert.equal(updated.includes('x = x;'), false);
+        assert.ok(updated.includes('if [enabled > 0]'));
+        await assertParses(updated, filePath);
+    });
+
+    it('does not offer self-assignment delete when the effect occurrence is ambiguous', async () => {
+        const text = [
+            'def int x = 0;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    state C;',
+            '    [*] -> A;',
+            '    A -> B effect {',
+            '        x = x;',
+            '    };',
+            '    A -> C effect {',
+            '        x = x;',
+            '    };',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-delete-effect-ambiguous.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
+        const selfAssigns = diagnostics.filter(item => item.code === 'W_EFFECT_SELF_ASSIGN');
+        assert.equal(selfAssigns.length, 2);
+        assert.equal(
+            selfAssigns.every(item => packageModule.suggestedFixFromDiagnostic(item) === null),
+            true,
+        );
+
+        const actions = await packageModule.collectCodeActions(
+            document,
+            packageModule.createRange(0, 0, document.lineCount - 1, document.lineAt(document.lineCount - 1).text.length),
+            selfAssigns,
+        );
+        assert.equal(
+            actions.some(item => /self-assignment/.test(item.title)),
+            false,
+        );
+    });
+
+    it('does not offer self-assignment delete for duplicate occurrences inside one effect', async () => {
+        const text = [
+            'def int x = 0;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B effect {',
+            '        x = x;',
+            '        x = x;',
+            '    };',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-delete-effect-duplicate.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
+        const selfAssigns = diagnostics.filter(item => item.code === 'W_EFFECT_SELF_ASSIGN');
+        assert.equal(selfAssigns.length, 2);
+        assert.equal(
+            selfAssigns.every(item => packageModule.suggestedFixFromDiagnostic(item) === null),
+            true,
+        );
+
+        const actions = await packageModule.collectCodeActions(
+            document,
+            packageModule.createRange(0, 0, document.lineCount - 1, document.lineAt(document.lineCount - 1).text.length),
+            selfAssigns,
+        );
+        assert.equal(
+            actions.some(item => /self-assignment/.test(item.title)),
+            false,
+        );
+    });
+
+    it('applies suggested-fix insert actions for deadlock leaves', async () => {
+        const text = [
+            'state Root {',
+            '    state Idle;',
+            '    [*] -> Idle;',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-insert-deadlock.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
+        const diag = diagnostics.find(item => (
+            item.code === 'W_DEADLOCK_LEAF' &&
+            item.data?.state_path === 'Root.Idle'
+        ));
+        assert.ok(diag, 'expected W_DEADLOCK_LEAF suggested fix diagnostic');
+
+        const actions = await packageModule.collectCodeActions(document, diag.range, [diag]);
+        const action = actions.find(item => /exit transition/.test(item.title));
+        assert.ok(action, `expected insert deadlock action, got ${JSON.stringify(actions)}`);
+        const edit = Object.values(action.edit?.changes || {}).flat()[0];
+        assert.match(edit.newText, /Idle -> \[\*\];\n/);
+        const updated = applySingleEdit(text, edit);
+        await assertParses(updated, filePath);
+        const followup = await inspectDiagnosticsAsEditorDiagnostics(updated, filePath);
+        assert.equal(
+            followup.some(item => item.code === 'W_DEADLOCK_LEAF' && item.data?.state_path === 'Root.Idle'),
+            false,
+        );
+    });
+
+    it('applies suggested-fix insert actions for missing unconditional initial transitions', async () => {
+        const text = [
+            'def int ready = 0;',
+            'state Root {',
+            '    state Idle;',
+            '    [*] -> Idle : if [ready > 0];',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-insert-initial.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
+        const diag = diagnostics.find(item => item.code === 'W_INITIAL_UNCONDITIONAL_MISSING');
+        assert.ok(diag, 'expected W_INITIAL_UNCONDITIONAL_MISSING suggested fix diagnostic');
+
+        const actions = await packageModule.collectCodeActions(document, diag.range, [diag]);
+        const action = actions.find(item => /fallback entry transition/.test(item.title));
+        assert.ok(action, `expected insert initial action, got ${JSON.stringify(actions)}`);
+        const edit = Object.values(action.edit?.changes || {}).flat()[0];
+        assert.match(edit.newText, /\[\*\] -> Idle;\n/);
+        const updated = applySingleEdit(text, edit);
+        assert.ok(
+            updated.indexOf('[*] -> Idle : if [ready > 0];') < updated.indexOf('[*] -> Idle;'),
+            'fallback entry transition must stay after existing guarded initial transitions',
+        );
+        await assertParses(updated, filePath);
+        const followup = await inspectDiagnosticsAsEditorDiagnostics(updated, filePath);
+        assert.equal(
+            followup.some(item => item.code === 'W_INITIAL_UNCONDITIONAL_MISSING'),
+            false,
+        );
+    });
+
+    it('keeps fallback initial transition after existing guarded initial transitions', async () => {
+        const text = [
+            'def int ready = 1;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> B : if [ready > 0];',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-insert-initial-fallback-order.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
+        const diag = diagnostics.find(item => item.code === 'W_INITIAL_UNCONDITIONAL_MISSING');
+        assert.ok(diag, 'expected W_INITIAL_UNCONDITIONAL_MISSING suggested fix diagnostic');
+
+        const actions = await packageModule.collectCodeActions(document, diag.range, [diag]);
+        const action = actions.find(item => /fallback entry transition/.test(item.title));
+        assert.ok(action, `expected insert initial action, got ${JSON.stringify(actions)}`);
+        const edit = Object.values(action.edit?.changes || {}).flat()[0];
+        const updated = applySingleEdit(text, edit);
+        assert.ok(
+            updated.indexOf('[*] -> B : if [ready > 0];') < updated.indexOf('[*] -> A;'),
+            'fallback entry transition must not outrank existing guarded initial transition',
+        );
+        await assertParses(updated, filePath);
+    });
+
+    it('uses a non-pseudo child for missing unconditional initial quick fixes', async () => {
+        const text = [
+            'def int ready = 1;',
+            'state Root {',
+            '    pseudo state Choice;',
+            '    state A;',
+            '    [*] -> A : if [ready > 0];',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-initial-skip-pseudo.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
+        const diag = diagnostics.find(item => item.code === 'W_INITIAL_UNCONDITIONAL_MISSING');
+        assert.ok(diag, 'expected W_INITIAL_UNCONDITIONAL_MISSING suggested fix diagnostic');
+        assert.equal(diag.data?.first_child_name, 'A');
+        assert.match(JSON.stringify(diag.data?.suggested_fix), /\[\*\] -> A;/);
+
+        const actions = await packageModule.collectCodeActions(document, rangeOf(text, 'Root'), []);
+        const action = actions.find(item => /fallback entry transition/.test(item.title));
+        assert.ok(action, `expected fallback initial action, got ${JSON.stringify(actions)}`);
+        const edit = Object.values(action.edit?.changes || {}).flat()[0];
+        assert.match(edit.newText, /\[\*\] -> A;\n/);
+        const updated = applySingleEdit(text, edit);
+        await assertParses(updated, filePath);
+    });
+
+    it('omits missing unconditional initial quick fixes when every child is pseudo', async () => {
+        const text = [
+            'def int ready = 1;',
+            'state Root {',
+            '    pseudo state Choice;',
+            '    [*] -> Choice : if [ready > 0];',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-initial-only-pseudo-no-fix.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
+        const diag = diagnostics.find(item => item.code === 'W_INITIAL_UNCONDITIONAL_MISSING');
+        assert.ok(diag, 'expected W_INITIAL_UNCONDITIONAL_MISSING diagnostic');
+        assert.equal(packageModule.suggestedFixFromDiagnostic(diag), null);
+
+        const actions = await packageModule.collectCodeActions(document, rangeOf(text, 'Root'), []);
+        assert.equal(
+            actions.some(item => /fallback entry transition/.test(item.title)),
+            false,
+        );
+    });
+
+    it('does not offer declaration delete when an unreferenced variable is still read', async () => {
+        const text = [
+            'def int unused = 0;',
+            'def int driver = 0;',
+            'state Root {',
+            '    state Idle {',
+            '        enter { temp = unused + 1; }',
+            '    }',
+            '    state Done;',
+            '    [*] -> Idle;',
+            '    Idle -> Done : if [driver > 0];',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-read-var-no-delete.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
+        const diag = diagnostics.find(item => item.code === 'W_UNREFERENCED_VAR');
+        assert.ok(diag, 'expected W_UNREFERENCED_VAR diagnostic');
+        assert.equal(packageModule.suggestedFixFromDiagnostic(diag), null);
+
+        const actions = await packageModule.collectCodeActions(document, diag.range, [diag]);
+        assert.equal(
+            actions.some(item => /variable declaration/.test(item.title)),
+            false,
+        );
+    });
+
+    it('does not trust stale or forged client-supplied suggested-fix payloads', async () => {
+        const text = [
+            'def int used = 0;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B : if [used > 0];',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-stale-client-payload.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = [
+            {
+                range: rangeOf(text, 'used > 0'),
+                message: 'Stale unreferenced variable diagnostic.',
+                severity: 'warning' as const,
+                source: 'fcstm',
+                code: 'W_UNREFERENCED_VAR',
+                data: {
+                    var_name: 'used',
+                    definition_delete_anchor: 'used',
+                    suggested_fix: {
+                        kind: 'delete',
+                        target: 'variable_definition',
+                        anchor: {type: 'ref', ref: 'refs.definition_delete_anchor'},
+                        text: '',
+                        rationale: 'Remove declaration-only variable.',
+                    },
+                },
+            },
+            {
+                range: rangeOf(text, 'used > 0'),
+                message: 'Forged guard range diagnostic.',
+                severity: 'warning' as const,
+                source: 'fcstm',
+                code: 'W_GUARD_CONST_TRUE',
+                data: {
+                    guard_span: packageModule.createRange(0, 0, 1, 0),
+                    suggested_fix: {
+                        kind: 'delete',
+                        target: 'transition_guard',
+                        anchor: {type: 'ref', ref: 'refs.guard_span'},
+                        text: '',
+                        rationale: 'Remove forged range.',
+                    },
+                },
+            },
+        ];
+
+        const actions = await packageModule.collectCodeActions(
+            document,
+            rangeOf(text, 'used > 0'),
+            diagnostics,
+        );
+        assert.equal(
+            actions.some(item => /declaration-only variable|forged range/.test(item.title)),
+            false,
+        );
+    });
+
+    it('does not let forged client diagnostic ranges unlock current suggested fixes', async () => {
+        const text = [
+            'state Root {',
+            '    state Idle;',
+            '    [*] -> Idle;',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-forged-real-key-range.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const deadlockDiagnostic = diagnostics.find(item => item.code === 'W_DEADLOCK_LEAF');
+        assert.ok(deadlockDiagnostic, `expected W_DEADLOCK_LEAF, got ${JSON.stringify(diagnostics)}`);
+        const forgedDiagnostic = {
+            ...deadlockDiagnostic,
+            range: rangeOf(text, 'Root'),
+        };
+
+        const actions = await packageModule.collectCodeActions(
+            document,
+            forgedDiagnostic.range,
+            [forgedDiagnostic],
+        );
+        assert.equal(
+            actions.some(item => /exit transition/.test(item.title)),
+            false,
+        );
+    });
+
+    it('keeps current suggested fixes available when client diagnostics omit suggested-fix payloads', async () => {
+        const text = [
+            'state Root {',
+            '    state Idle;',
+            '    [*] -> Idle;',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-stripped-client-payload.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const deadlockDiagnostic = diagnostics.find(item => item.code === 'W_DEADLOCK_LEAF');
+        assert.ok(deadlockDiagnostic, `expected W_DEADLOCK_LEAF, got ${JSON.stringify(diagnostics)}`);
+        const strippedDiagnostic = {
+            ...deadlockDiagnostic,
+            data: {...deadlockDiagnostic.data},
+        };
+        delete strippedDiagnostic.data.suggested_fix;
+        assert.equal(
+            packageModule.diagnosticKey(deadlockDiagnostic),
+            packageModule.diagnosticKey(strippedDiagnostic),
+        );
+
+        const actions = await packageModule.collectCodeActions(
+            document,
+            strippedDiagnostic.range,
+            [strippedDiagnostic],
+        );
+        assert.equal(
+            actions.some(item => /exit transition/.test(item.title)),
+            true,
+        );
+    });
+
+    it('keys diagnostics by stable identity refs instead of suggested-fix payload details', () => {
+        const first = {
+            range: packageModule.createRange(0, 0, 0, 1),
+            message: 'first',
+            severity: 'warning' as const,
+            source: 'fcstm',
+            code: 'W_DEADLOCK_LEAF',
+            data: {
+                state_path: 'Root.Idle',
+                parent_path: 'Root',
+                reason: 'no_outgoing_transition',
+                suggested_fix: {
+                    kind: 'insert',
+                    target: 'deadlock_leaf_exit_transition',
+                    anchor: {type: 'ref', ref: 'refs.parent_path'},
+                    text: 'Idle -> [*];\n',
+                    rationale: 'Add old text.',
+                },
+            },
+        };
+        const second = {
+            range: packageModule.createRange(3, 0, 3, 1),
+            message: 'second',
+            severity: 'warning' as const,
+            source: 'fcstm',
+            code: 'W_DEADLOCK_LEAF',
+            data: {
+                suggested_fix: {
+                    rationale: 'Add new text.',
+                    text: 'Idle -> [*];\n',
+                    anchor: {ref: 'refs.parent_path', type: 'ref'},
+                    target: 'deadlock_leaf_exit_transition',
+                    kind: 'insert',
+                },
+                reason: 'no_outgoing_transition',
+                parent_path: 'Root',
+                state_path: 'Root.Idle',
+            },
+        };
+        const differentState = {
+            ...second,
+            data: {
+                ...second.data,
+                state_path: 'Root.Other',
+            },
+        };
+
+        assert.equal(packageModule.diagnosticKey(first), packageModule.diagnosticKey(second));
+        assert.notEqual(packageModule.diagnosticKey(first), packageModule.diagnosticKey(differentState));
+    });
+
+    it('does not offer declaration delete when duplicate variables make the occurrence ambiguous', async () => {
+        const text = [
+            'def int x = 0;',
+            'def int x = 1;',
+            'def int driver = 0;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B : if [driver > 0];',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-duplicate-var-no-delete.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+
+        const actions = await packageModule.collectCodeActions(
+            document,
+            packageModule.createRange(0, 0, document.lineCount - 1, document.lineAt(document.lineCount - 1).text.length),
+            diagnostics,
+        );
+        assert.equal(
+            actions.some(item => /declaration-only variable/.test(item.title)),
+            false,
+        );
+    });
+
+    it('does not offer self-assignment delete for initial transition effects', async () => {
+        const text = [
+            'def int x = 0;',
+            'state Root {',
+            '    state A;',
+            '    [*] -> A effect {',
+            '        x = x;',
+            '    };',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-initial-effect-no-fix.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
+        const diag = diagnostics.find(item => item.code === 'W_EFFECT_SELF_ASSIGN');
+        assert.ok(diag, 'expected W_EFFECT_SELF_ASSIGN diagnostic for initial effect');
+        assert.equal(packageModule.suggestedFixFromDiagnostic(diag), null);
+
+        const actions = await packageModule.collectCodeActions(
+            document,
+            packageModule.createRange(0, 0, document.lineCount - 1, document.lineAt(document.lineCount - 1).text.length),
+            [diag],
+        );
+        assert.equal(
+            actions.some(item => /self-assignment/.test(item.title)),
+            false,
+        );
+    });
+
+    it('does not offer deadlock leaf insertion for a root leaf state', async () => {
+        const text = 'state Root;';
+        const filePath = '/tmp/root-deadlock-no-fix.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
+        const diag = diagnostics.find(item => item.code === 'W_DEADLOCK_LEAF');
+        assert.ok(diag, 'expected W_DEADLOCK_LEAF diagnostic');
+        assert.equal(packageModule.suggestedFixFromDiagnostic(diag), null);
+
+        const actions = await packageModule.collectCodeActions(document, diag.range, [diag]);
+        assert.equal(
+            actions.some(item => /exit transition/.test(item.title)),
+            false,
+        );
+    });
+
+    it('keeps suggested-fix insertions valid inside single-line composite states', async () => {
+        const deadlockText = 'state Root { state Idle; [*] -> Idle; }';
+        const deadlockPath = '/tmp/single-line-deadlock-fix.fcstm';
+        const deadlockDocument = createDocument(deadlockText, deadlockPath);
+        const deadlockDiagnostics = await inspectDiagnosticsAsEditorDiagnostics(deadlockText, deadlockPath);
+        const deadlock = deadlockDiagnostics.find(item => item.code === 'W_DEADLOCK_LEAF');
+        assert.ok(deadlock, 'expected W_DEADLOCK_LEAF diagnostic');
+        const deadlockActions = await packageModule.collectCodeActions(
+            deadlockDocument,
+            deadlock.range,
+            [deadlock],
+        );
+        const deadlockAction = deadlockActions.find(item => /exit transition/.test(item.title));
+        assert.ok(deadlockAction, `expected deadlock action, got ${JSON.stringify(deadlockActions)}`);
+        const deadlockEdit = Object.values(deadlockAction.edit?.changes || {}).flat()[0];
+        const deadlockUpdated = applySingleEdit(deadlockText, deadlockEdit);
+        assert.ok(deadlockUpdated.includes('Idle -> [*];'));
+        await assertParses(deadlockUpdated, deadlockPath);
+
+        const initialText = [
+            'def int ready = 0;',
+            'state Root { state Idle; [*] -> Idle : if [ready > 0]; }',
+        ].join('\n');
+        const initialPath = '/tmp/single-line-initial-fix.fcstm';
+        const initialDocument = createDocument(initialText, initialPath);
+        const initialDiagnostics = await inspectDiagnosticsAsEditorDiagnostics(initialText, initialPath);
+        const initial = initialDiagnostics.find(item => item.code === 'W_INITIAL_UNCONDITIONAL_MISSING');
+        assert.ok(initial, 'expected W_INITIAL_UNCONDITIONAL_MISSING diagnostic');
+        const initialActions = await packageModule.collectCodeActions(
+            initialDocument,
+            initial.range,
+            [initial],
+        );
+        const initialAction = initialActions.find(item => /fallback entry transition/.test(item.title));
+        assert.ok(initialAction, `expected initial action, got ${JSON.stringify(initialActions)}`);
+        const initialEdit = Object.values(initialAction.edit?.changes || {}).flat()[0];
+        const initialUpdated = applySingleEdit(initialText, initialEdit);
+        assert.ok(initialUpdated.includes('[*] -> Idle;'));
+        assert.ok(
+            initialUpdated.indexOf('[*] -> Idle : if [ready > 0];') < initialUpdated.indexOf('[*] -> Idle;'),
+            'fallback entry transition must stay after the guarded transition in single-line composites',
+        );
+        await assertParses(initialUpdated, initialPath);
+    });
+
+    it('provides design-health suggested-fix actions from published inspect diagnostics', async () => {
+        const text = [
+            'def int unused = 0;',
+            'def int driver = 0;',
+            'state Root {',
+            '    state Idle;',
+            '    state Done;',
+            '    [*] -> Idle;',
+            '    Idle -> Done : if [driver > 0];',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/editor-design-suggested-fix.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        assert.equal(
+            diagnostics.some(item => item.code === 'W_UNREFERENCED_VAR' || item.code === 'W_DEADLOCK_LEAF'),
+            true,
+        );
+
+        const actions = await packageModule.collectCodeActions(
+            document,
+            rangeOf(text, 'unused'),
+            diagnostics,
+        );
+        assert.ok(actions.some(item => /declaration-only variable/.test(item.title)));
+    });
+
+    it('provides design-health insert actions from issue ranges without prepublished diagnostics', async () => {
+        const deadlockText = [
+            'state Root {',
+            '    state Idle;',
+            '    [*] -> Idle;',
+            '}',
+        ].join('\n');
+        const deadlockPath = '/tmp/editor-design-deadlock-issue-range.fcstm';
+        const deadlockDocument = createDocument(deadlockText, deadlockPath);
+        const deadlockDiagnostics = await packageModule.collectDocumentDiagnostics(deadlockDocument);
+        const deadlockActions = await packageModule.collectCodeActions(
+            deadlockDocument,
+            rangeOf(deadlockText, 'Idle'),
+            deadlockDiagnostics,
+        );
+        assert.ok(deadlockActions.some(item => /exit transition/.test(item.title)));
+
+        const initialText = [
+            'def int ready = 0;',
+            'state Root {',
+            '    state Idle;',
+            '    [*] -> Idle : if [ready > 0];',
+            '}',
+        ].join('\n');
+        const initialPath = '/tmp/editor-design-initial-issue-range.fcstm';
+        const initialDocument = createDocument(initialText, initialPath);
+        const initialDiagnostics = await packageModule.collectDocumentDiagnostics(initialDocument);
+        const rootActions = await packageModule.collectCodeActions(
+            initialDocument,
+            rangeOf(initialText, 'Root'),
+            initialDiagnostics,
+        );
+        assert.ok(rootActions.some(item => /fallback entry transition/.test(item.title)));
+        const guardedInitialActions = await packageModule.collectCodeActions(
+            initialDocument,
+            rangeOf(initialText, '[*] -> Idle : if'),
+            initialDiagnostics,
+        );
+        assert.ok(guardedInitialActions.some(item => /fallback entry transition/.test(item.title)));
+    });
+
+    it('provides design-health insert actions from published diagnostic ranges', async () => {
+        const deadlockText = [
+            'state Root {',
+            '    state Idle;',
+            '    [*] -> Idle;',
+            '}',
+        ].join('\n');
+        const deadlockPath = '/tmp/editor-design-deadlock-published-range.fcstm';
+        const deadlockDocument = createDocument(deadlockText, deadlockPath);
+        const deadlockDiagnostics = await packageModule.collectDocumentDiagnostics(deadlockDocument);
+        const deadlockDiagnostic = deadlockDiagnostics.find(item => item.code === 'W_DEADLOCK_LEAF');
+        assert.ok(deadlockDiagnostic, `expected W_DEADLOCK_LEAF, got ${JSON.stringify(deadlockDiagnostics)}`);
+
+        const actions = await packageModule.collectCodeActions(
+            deadlockDocument,
+            deadlockDiagnostic.range,
+            [deadlockDiagnostic],
+        );
+        assert.ok(actions.some(item => /exit transition/.test(item.title)));
+    });
+
+    it('plans synthetic suggested-fix replace edits from span-backed diagnostic payloads', async () => {
+        const text = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B : if [true];',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-replace-guard.fcstm';
+        const document = createDocument(text, filePath);
+        const guardRange = rangeOf(text, ' : if [true]');
+        const diagnostic = {
+            range: guardRange,
+            message: 'Guard is statically true.',
+            severity: 'warning' as const,
+            source: 'fcstm',
+            code: 'W_GUARD_CONST_TRUE',
+            data: {
+                guard_span: guardRange,
+                folded_value: true,
+                suggested_fix: {
+                    kind: 'replace',
+                    target: 'transition_guard',
+                    anchor: {type: 'ref', ref: 'refs.guard_span'},
+                    text: '',
+                    rationale: 'Remove the redundant constant-true guard.',
+                },
+            },
+        };
+
+        const semantic = await packageModule.getWorkspaceGraph().getSemanticDocument(document);
+        assert.ok(semantic);
+
+        const plan = packageModule.planSuggestedFixEdit(document, semantic, diagnostic);
+        assert.ok(plan, 'expected replace guard edit plan');
+        assert.equal(plan.newText, '');
+        const updated = applySingleEdit(text, plan);
+        assert.equal(updated.includes(': if [true]'), false);
+        assert.ok(updated.includes('A -> B;'));
+        await assertParses(updated, filePath);
+    });
+
+    it('plans synthetic nested suggested-fix edits with one-based span anchors', async () => {
+        const text = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B;',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-nested-span.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostic = {
+            range: rangeOf(text, 'A -> B'),
+            message: 'Synthetic insertion.',
+            severity: 'warning' as const,
+            source: 'fcstm',
+            code: 'W_SYNTHETIC_INSERT',
+            data: {
+                refs: {
+                    transition_span: {
+                        line: 5,
+                        column: 11,
+                        end_line: 5,
+                        end_column: 11,
+                    },
+                    suggested_fix: {
+                        kind: 'insert',
+                        target: 'transition_suffix',
+                        anchor: {type: 'ref', ref: 'refs.transition_span'},
+                        text: ' : Go',
+                        rationale: 'Add a trigger before the semicolon.',
+                    },
+                },
+            },
+        };
+        const semantic = await packageModule.getWorkspaceGraph().getSemanticDocument(document);
+        assert.ok(semantic);
+
+        const plannedRange = packageModule.suggestedFixDiagnosticRange(document, semantic, diagnostic);
+        assert.deepEqual(plannedRange, packageModule.createRange(4, 10, 4, 10));
+
+        const plan = packageModule.planSuggestedFixEdit(document, semantic, diagnostic);
+        assert.ok(plan, 'expected nested insert edit plan');
+        const updated = applySingleEdit(text, plan);
+        assert.ok(updated.includes('A -> B : Go;'));
+        await assertParses(updated, filePath);
+    });
+
+    it('ignores malformed or unanchored suggested-fix payloads', async () => {
+        const text = [
+            'def int used = 0;',
+            'state Root {',
+            '    state A;',
+            '    [*] -> A;',
+            '    A -> [*] : if [used > 0];',
+            '}',
+        ].join('\n');
+        const filePath = '/tmp/suggested-invalid.fcstm';
+        const document = createDocument(text, filePath);
+        const diagnostics = [
+            {
+                range: rangeOf(text, 'def int used'),
+                message: 'Missing variable target.',
+                severity: 'warning' as const,
+                source: 'fcstm',
+                code: 'W_UNREFERENCED_VAR',
+                data: {
+                    var_name: 'missing',
+                    suggested_fix: {
+                        kind: 'delete',
+                        target: 'variable_definition',
+                        anchor: {type: 'ref', ref: 'refs.var_name'},
+                        text: '',
+                        rationale: 'Remove missing variable.',
+                    },
+                },
+            },
+            {
+                range: rangeOf(text, 'A -> [*]'),
+                message: 'Malformed payload.',
+                severity: 'warning' as const,
+                source: 'fcstm',
+                code: 'W_BAD_PAYLOAD',
+                data: {
+                    suggested_fix: {
+                        kind: 'move',
+                        target: 'transition',
+                        anchor: {type: 'ref', ref: 'refs.transition_span'},
+                        text: '',
+                        rationale: 'Invalid kind.',
+                    },
+                },
+            },
+            {
+                range: rangeOf(text, 'A -> [*]'),
+                message: 'Missing anchor.',
+                severity: 'warning' as const,
+                source: 'fcstm',
+                code: 'W_MISSING_ANCHOR',
+                data: {
+                    suggested_fix: {
+                        kind: 'insert',
+                        target: 'transition_suffix',
+                        anchor: {type: 'ref', ref: 'refs.transition_span'},
+                        text: ' : Go',
+                        rationale: 'Add missing anchor trigger.',
+                    },
+                },
+            },
+            {
+                range: rangeOf(text, 'A -> [*]'),
+                message: 'Invalid anchor.',
+                severity: 'warning' as const,
+                source: 'fcstm',
+                code: 'W_INVALID_ANCHOR',
+                data: {
+                    transition_span: 'not-a-span',
+                    suggested_fix: {
+                        kind: 'insert',
+                        target: 'transition_suffix',
+                        anchor: {type: 'ref', ref: 'refs.transition_span'},
+                        text: ' : Go',
+                        rationale: 'Add invalid anchor trigger.',
+                    },
+                },
+            },
+        ];
+
+        assert.equal(packageModule.suggestedFixFromDiagnostic(diagnostics[1]), null);
+        const actions = await packageModule.collectCodeActions(
+            document,
+            packageModule.createRange(0, 0, 5, 1),
+            diagnostics,
+        );
+        assert.equal(
+            actions.some(item => /Remove missing variable|Invalid kind|missing anchor trigger|invalid anchor trigger/.test(item.title)),
+            false,
+        );
+        assert.equal(packageModule.renderSuggestedFix(
+            'W_INITIAL_UNCONDITIONAL_MISSING',
+            {composite_path: 'Root', existing_conditional_count: 1},
+        ), null);
     });
 
     it('does not flag undefined variables in transitions that are legitimate state names', async () => {

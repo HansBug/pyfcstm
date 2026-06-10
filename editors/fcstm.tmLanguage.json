@@ -177,7 +177,7 @@
         },
         {
           "name": "keyword.operator.word.fcstm",
-          "match": "\\b(and|or|not)\\b"
+          "match": "\\b(and|or|not|implies|xor|iff)\\b"
         }
       ]
     },
@@ -190,6 +190,10 @@
         {
           "name": "keyword.operator.transition.fcstm",
           "match": "->"
+        },
+        {
+          "name": "keyword.operator.logical.fcstm",
+          "match": "=>"
         },
         {
           "name": "punctuation.separator.mapping.fcstm",

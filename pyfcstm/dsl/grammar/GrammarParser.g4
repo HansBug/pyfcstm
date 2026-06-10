@@ -311,11 +311,15 @@ cond_expression
         # binaryExprFromNumCond
     | num_expression op=(EQ | NE) num_expression
         # binaryExprFromNumCond
-    | cond_expression op=(EQ | NE) cond_expression
+    | cond_expression op=(EQ | NE | IFF_KW) cond_expression
         # binaryExprFromCondCond
     | cond_expression op=(LOGICAL_AND | AND_KW) cond_expression
         # binaryExprCond
+    | cond_expression op=XOR_KW cond_expression
+        # binaryExprCond
     | cond_expression op=(LOGICAL_OR | OR_KW) cond_expression
+        # binaryExprCond
+    | <assoc=right> cond_expression op=(IMPLIES | IMPLIES_KW) cond_expression
         # binaryExprCond
     | <assoc=right> LPAREN cond_expression RPAREN QUESTION cond_expression COLON cond_expression
         # conditionalCStyleCondNum

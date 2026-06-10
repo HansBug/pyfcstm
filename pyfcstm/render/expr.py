@@ -49,17 +49,33 @@ _DSL_STYLE = {
     'Name': '{{ node.name }}',
     'UnaryOp': '{{ node.op }}{{ node.expr | expr_render }}',
     'BinaryOp': '{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}',
+    'BinaryOp(=>)': '{{ node.expr1 | expr_render }} => {{ node.expr2 | expr_render }}',
+    'BinaryOp(xor)': '{{ node.expr1 | expr_render }} xor {{ node.expr2 | expr_render }}',
+    'BinaryOp(iff)': '{{ node.expr1 | expr_render }} iff {{ node.expr2 | expr_render }}',
     'ConditionalOp': '({{ node.cond | expr_render }}) ? {{ node.value_true | expr_render }} : {{ node.value_false | expr_render }}',
+}
+
+_C_LIKE_COND_STYLE = {
+    'BinaryOp(=>)': '((!({{ node.expr1 | expr_render }})) || ({{ node.expr2 | expr_render }}))',
+    'BinaryOp(xor)': '(({{ node.expr1 | expr_render }}) != ({{ node.expr2 | expr_render }}))',
+    'BinaryOp(iff)': '(({{ node.expr1 | expr_render }}) == ({{ node.expr2 | expr_render }}))',
+}
+
+_PY_CONDITION_OPS = {
+    '&&', 'and', '||', 'or', '=>', 'xor', 'iff',
+    '==', '!=', '<', '<=', '>', '>=',
 }
 
 _C_STYLE = {
     **_DSL_STYLE,
+    **_C_LIKE_COND_STYLE,
     'Boolean': '{{ (1 if node.value else 0) | hex }}',
     'BinaryOp(**)': 'pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})',
 }
 
 _CPP_STYLE = {
     **_DSL_STYLE,
+    **_C_LIKE_COND_STYLE,
     'Boolean': '{{ "true" if node.value else "false" }}',
     'UFunc': 'std::{{ node.func }}({{ node.expr | expr_render }})',
     'BinaryOp(**)': 'std::pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})',
@@ -92,6 +108,11 @@ _PY_STYLE = {
     'UFunc(round)': 'round({{ node.expr | expr_render }})',
     'UFunc(trunc)': 'math.trunc({{ node.expr | expr_render }})',
     'UnaryOp(!)': 'not {{ node.expr | expr_render }}',
+    'BinaryOp(==)': '{{ py_condition_operand(node.expr1 | expr_render, node.expr1) }} == {{ py_condition_operand(node.expr2 | expr_render, node.expr2) }}',
+    'BinaryOp(!=)': '{{ py_condition_operand(node.expr1 | expr_render, node.expr1) }} != {{ py_condition_operand(node.expr2 | expr_render, node.expr2) }}',
+    'BinaryOp(=>)': '((not ({{ node.expr1 | expr_render }})) or ({{ node.expr2 | expr_render }}))',
+    'BinaryOp(xor)': '(({{ node.expr1 | expr_render }}) != ({{ node.expr2 | expr_render }}))',
+    'BinaryOp(iff)': '(({{ node.expr1 | expr_render }}) == ({{ node.expr2 | expr_render }}))',
     'BinaryOp(&&)': '{{ node.expr1 | expr_render }} and {{ node.expr2 | expr_render }}',
     'BinaryOp(||)': '{{ node.expr1 | expr_render }} or {{ node.expr2 | expr_render }}',
     'ConditionalOp': '{{ node.value_true | expr_render }} if {{ node.cond | expr_render }} else {{ node.value_false | expr_render }}',
@@ -99,6 +120,7 @@ _PY_STYLE = {
 
 _JAVA_STYLE = {
     **_DSL_STYLE,
+    **_C_LIKE_COND_STYLE,
     'Boolean': '{{ "true" if node.value else "false" }}',
     'Constant': '{{ "Math.PI" if node.value == "pi" else ("Math.E" if node.value == "e" else ("(2.0 * Math.PI)" if node.value == "tau" else node.value | repr)) }}',
     'UFunc': 'Math.{{ node.func }}({{ node.expr | expr_render }})',
@@ -109,6 +131,7 @@ _JAVA_STYLE = {
 
 _JS_STYLE = {
     **_DSL_STYLE,
+    **_C_LIKE_COND_STYLE,
     'Boolean': '{{ "true" if node.value else "false" }}',
     'Constant': '{{ "Math.PI" if node.value == "pi" else ("Math.E" if node.value == "e" else ("(2 * Math.PI)" if node.value == "tau" else node.value | repr)) }}',
     'UFunc': 'Math.{{ node.func }}({{ node.expr | expr_render }})',
@@ -121,6 +144,7 @@ _TS_STYLE = {
 
 _RUST_STYLE = {
     **_DSL_STYLE,
+    **_C_LIKE_COND_STYLE,
     'Boolean': '{{ "true" if node.value else "false" }}',
     'Constant': '{{ "std::f64::consts::PI" if node.value == "pi" else ("std::f64::consts::E" if node.value == "e" else ("std::f64::consts::TAU" if node.value == "tau" else node.value | repr)) }}',
     'UFunc(abs)': '({{ node.expr | expr_render }}).abs()',
@@ -139,6 +163,7 @@ _RUST_STYLE = {
 
 _GO_STYLE = {
     **_DSL_STYLE,
+    **_C_LIKE_COND_STYLE,
     'Boolean': '{{ "true" if node.value else "false" }}',
     'Constant': '{{ "math.Pi" if node.value == "pi" else ("math.E" if node.value == "e" else ("(2 * math.Pi)" if node.value == "tau" else node.value | repr)) }}',
     'UFunc(abs)': '{{ go_abs_expr(node.expr | expr_render, node.expr) }}',
@@ -216,6 +241,23 @@ def _merge_numeric_types(type_a: Optional[str], type_b: Optional[str]) -> Option
     return next(iter(known))  # pragma: no cover
 
 
+def _py_condition_operand(expr_text: str, node: dsl_nodes.Expr) -> str:
+    """
+    Wrap Python comparison operands that are themselves condition expressions.
+
+    Python chains adjacent comparisons (``a == b > c``), while the FCSTM AST
+    is already explicit. Parenthesizing condition-valued operands prevents a
+    rendered child comparison from being absorbed into the parent comparison.
+    """
+    if isinstance(node, dsl_nodes.BinaryOp) and node.op in _PY_CONDITION_OPS:
+        return f'({expr_text})'
+    if isinstance(node, dsl_nodes.UnaryOp) and node.op in {'!', 'not'}:
+        return f'({expr_text})'
+    if isinstance(node, dsl_nodes.ConditionalOp):
+        return f'({expr_text})'
+    return expr_text
+
+
 def _infer_expr_type(node: dsl_nodes.Expr) -> Optional[str]:
     """
     Infer a coarse DSL numeric type for one expression node.
@@ -258,7 +300,7 @@ def _infer_expr_type(node: dsl_nodes.Expr) -> Optional[str]:
     if isinstance(node, dsl_nodes.BinaryOp):
         if node.op in {'<<', '>>', '&', '^', '|'}:
             return 'int'
-        if node.op in {'&&', '||', '==', '!=', '<', '<=', '>', '>='}:  # pragma: no cover
+        if node.op in {'&&', '||', '=>', 'xor', 'iff', '==', '!=', '<', '<=', '>', '>='}:
             # These BinaryOp operators produce boolean results and only
             # appear in boolean contexts (guard / ConditionalOp cond) per
             # the grammar -- the same reason the ``!`` UnaryOp branch
@@ -291,6 +333,7 @@ def _create_base_env(env: Optional[jinja2.Environment] = None) -> jinja2.Environ
     """
     if env is not None:
         env.globals.setdefault('expr_infer_type', _infer_expr_type)
+        env.globals.setdefault('py_condition_operand', _py_condition_operand)
         env.globals.setdefault('go_expr_type', lambda node: 'float64' if _infer_expr_type(node) == 'float' else 'int')
         env.globals.setdefault(
             'go_abs_expr',
@@ -302,6 +345,7 @@ def _create_base_env(env: Optional[jinja2.Environment] = None) -> jinja2.Environ
         return env
     env = add_settings_for_env(jinja2.Environment())
     env.globals['expr_infer_type'] = _infer_expr_type
+    env.globals['py_condition_operand'] = _py_condition_operand
     env.globals['go_expr_type'] = lambda node: 'float64' if _infer_expr_type(node) == 'float' else 'int'
     env.globals['go_abs_expr'] = lambda expr_text, node: (
         f'int(math.Abs(float64({expr_text})))'
@@ -344,6 +388,7 @@ def fn_expr_render(node: Union[float, int, dict, dsl_nodes.Expr, Any],
         'True'
 
     """
+    env = _create_base_env(env)
     if isinstance(node, dsl_nodes.Expr):
         if isinstance(node, (dsl_nodes.Float, dsl_nodes.Integer, dsl_nodes.Boolean, dsl_nodes.Constant,
                              dsl_nodes.HexInt, dsl_nodes.Paren, dsl_nodes.Name, dsl_nodes.ConditionalOp)) \

@@ -523,6 +523,44 @@ class TestExecuteOperations:
         for name in var_names:
             assert_z3_expr_equal(new_exprs[name], expected_exprs[name])
 
+    @pytest.mark.parametrize(
+        'condition, false_inputs, true_inputs',
+        [
+            ('(x > 0) => (y > 0)', {'x': 1, 'y': 0}, {'x': -1, 'y': 0}),
+            ('(x > 0) xor (y > 0)', {'x': 1, 'y': 1}, {'x': 1, 'y': 0}),
+            ('(x > 0) iff (y > 0)', {'x': 1, 'y': 0}, {'x': 1, 'y': 1}),
+        ],
+    )
+    def test_execute_if_block_supports_condition_logical_operators(
+        self, condition, false_inputs, true_inputs
+    ):
+        statements = parse_operations(
+            f"""
+            if [{condition}] {{
+                result = 1;
+            }} else {{
+                result = 0;
+            }}
+            """,
+            allowed_vars=['x', 'y', 'result'],
+        )
+        var_exprs = {'x': z3.Int('x'), 'y': z3.Int('y'), 'result': z3.Int('result')}
+
+        new_exprs = execute_operations(statements, var_exprs)
+
+        assert_symbolic_outputs(
+            var_exprs,
+            new_exprs,
+            false_inputs,
+            {'result': 0},
+        )
+        assert_symbolic_outputs(
+            var_exprs,
+            new_exprs,
+            true_inputs,
+            {'result': 1},
+        )
+
     def test_execute_branch_local_temp_does_not_leak(self):
         """Test branch-local temporary expressions do not appear in final output."""
         statements = parse_operations(

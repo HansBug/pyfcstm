@@ -5,6 +5,10 @@
 # Each entry documents:
 #   - `severity`       — 'error', 'warning', or 'info'
 #   - `description`    — human-readable explanation of when this code fires
+#   - `span_object`    — semantic object identified by the primary problem
+#                        span/range for this code. Implementations may differ
+#                        in precision (identifier vs containing statement),
+#                        but the source slice must still hit this object.
 #   - `refs`           — payload schema for `ModelDiagnostic.refs`. Each
 #                        field declares its type, whether it is required,
 #                        and a short description. Field names are part of
@@ -17,7 +21,7 @@
 # Allowed `refs.*.type` tokens (must mirror `_ALLOWED_REF_TYPES` in
 # codes.py — that tuple is the single source of truth, this comment block
 # is documentation; a test asserts the two stay aligned):
-#   str | str_or_null | int | int_or_null | float | number | bool | Span | list[str]
+#   str | str_or_null | int | int_or_null | float | number | bool | dict | Span | list[str] | list[Span]
 #
 # Adding a new code: append a new top-level entry here AND add a fixture
 # test that triggers it from a real DSL snippet. The loader in `codes.py`
@@ -25,6 +29,7 @@
 
 E_UNDEFINED_VAR:
   severity: error
+  span_object: expression
   description: >-
     A guard, effect, or lifecycle-action block references a name that was
     never declared with a top-level `def` statement.
@@ -97,6 +102,7 @@ E_UNDEFINED_VAR:
 
 E_DUPLICATE_VAR:
   severity: error
+  span_object: variable_declaration
   description: >-
     A top-level `def` statement re-declares an identifier that was already
     defined earlier in the file.
@@ -134,6 +140,7 @@ E_DUPLICATE_VAR:
 
 E_MISSING_STATE:
   severity: error
+  span_object: state_identifier
   description: >-
     A transition target references a state path that cannot be resolved
     in the surrounding hierarchy.
@@ -179,6 +186,7 @@ E_MISSING_STATE:
 
 E_DUPLICATE_STATE:
   severity: error
+  span_object: state_identifier
   description: Two states share the same name within the same parent scope.
   refs:
     state_name:
@@ -217,6 +225,7 @@ E_DUPLICATE_STATE:
 
 E_EVENT_REF_INVALID:
   severity: error
+  span_object: event_declaration
   emit_tier: lookup_api
   description: >-
     The textual form of an event reference is syntactically invalid (e.g.
@@ -264,6 +273,7 @@ E_EVENT_REF_INVALID:
 
 E_EVENT_NOT_FOUND:
   severity: error
+  span_object: event_declaration
   emit_tier: lookup_api
   description: >-
     An event reference parses correctly but does not resolve to any event
@@ -312,6 +322,7 @@ E_EVENT_NOT_FOUND:
 
 E_DANGLING_TRANSITION:
   severity: error
+  span_object: transition
   description: >-
     A transition cannot resolve either its source or its target.
   refs:
@@ -356,6 +367,7 @@ E_DANGLING_TRANSITION:
 
 E_TYPE_MISMATCH:
   severity: error
+  span_object: expression
   emit_tier: partial_static_pipeline
   description: >-
     A guard, effect, or assignment uses an expression whose type does not
@@ -400,6 +412,7 @@ E_TYPE_MISMATCH:
 
 E_FORCED_TRANSITION_EXPANSION:
   severity: error
+  span_object: transition
   description: >-
     A forced transition (`!State -> ...` or `!*`) cannot be expanded
     because the source or target reference is invalid.
@@ -443,6 +456,7 @@ E_FORCED_TRANSITION_EXPANSION:
 
 E_INITIAL_TRANSITION_INVALID:
   severity: error
+  span_object: transition
   description: >-
     A composite state either lacks an entry transition (`[*] -> child`) or
     declares one whose target is not a direct child of the composite.
@@ -481,6 +495,7 @@ E_INITIAL_TRANSITION_INVALID:
 
 E_DUPLICATE_FUNCTION_NAME:
   severity: error
+  span_object: named_action_declaration
   description: >-
     Two named lifecycle actions (enter / during / exit / during-aspect) within
     the same state share the same name. Named actions are referenced via
@@ -527,6 +542,7 @@ E_DUPLICATE_FUNCTION_NAME:
 
 E_DURING_ASPECT_INVALID:
   severity: error
+  span_object: lifecycle_action
   description: >-
     A `during` block is declared inconsistently with the host state's
     leaf/composite kind. Leaf states must use `during { ... }` without an
@@ -584,6 +600,7 @@ E_DURING_ASPECT_INVALID:
 
 E_PSEUDO_NOT_LEAF:
   severity: error
+  span_object: state_identifier
   description: >-
     A state was declared with the `pseudo` keyword but has nested
     substates. Pseudo states must be leaves: they skip ancestor
@@ -621,8 +638,42 @@ E_PSEUDO_NOT_LEAF:
         }
     }
 
+E_NAMED_FUNCTION_REF_CYCLE:
+  severity: error
+  span_object: named_action_declaration
+  description: >-
+    A lifecycle action `ref` chain forms a cycle and therefore never reaches
+    a concrete or abstract action implementation.
+  refs:
+    ref_path:
+      type: str
+      required: true
+      description: Dot-separated action path where cycle validation started.
+    cycle_path:
+      type: str
+      required: true
+      description: Dot-separated action path chain that closes the cycle.
+    reason:
+      type: str
+      required: true
+      description: Short tag describing the failure.
+      enum: ['action_ref_cycle']
+  for_llm:
+    summary: >-
+      An ``enter ref ...`` / ``exit ref ...`` / ``during ref ...`` clause
+      ultimately points back to itself through one or more named actions.
+    recommended_actions:
+      - kind: break_ref_cycle
+        target: action_ref
+        rationale: >-
+          Replace one link in the cycle with a concrete action block or an
+          abstract action declaration so the reference chain terminates.
+    do_not:
+      - "Do not execute or render cyclic lifecycle references; reject the model before runtime execution."
+
 E_NAMED_FUNCTION_REF_NOT_FOUND:
   severity: error
+  span_object: named_action_declaration
   description: >-
     A `ref` lifecycle action could not resolve its target named action.
     Either the path walks through a state that does not exist, or the final
@@ -683,6 +734,7 @@ E_NAMED_FUNCTION_REF_NOT_FOUND:
 
 E_IMPORT_NOT_FOUND:
   severity: error
+  span_object: import_statement
   capability: pure_static
   description: >-
     An ``import`` statement points at a source file that cannot be found,
@@ -774,6 +826,7 @@ E_IMPORT_NOT_FOUND:
 
 E_IMPORT_CIRCULAR:
   severity: error
+  span_object: import_statement
   capability: pure_static
   description: >-
     A cycle was detected while resolving ``import`` statements between
@@ -824,6 +877,7 @@ E_IMPORT_CIRCULAR:
 
 E_IMPORT_ALIAS_CONFLICT:
   severity: error
+  span_object: import_statement
   capability: pure_static
   description: >-
     An ``import`` alias clashes with an existing child state (or with
@@ -870,6 +924,7 @@ E_IMPORT_ALIAS_CONFLICT:
 
 E_IMPORT_DUPLICATE_MAPPING:
   severity: error
+  span_object: import_statement
   capability: pure_static
   description: >-
     Two or more mapping clauses under the same ``import { ... }`` block
@@ -929,6 +984,7 @@ E_IMPORT_DUPLICATE_MAPPING:
 
 E_IMPORT_MAPPING_INVALID:
   severity: error
+  span_object: import_statement
   capability: pure_static
   description: >-
     An import-mapping clause refers to a source name that does not exist
@@ -1002,6 +1058,7 @@ E_IMPORT_MAPPING_INVALID:
 
 W_UNREACHABLE_STATE:
   severity: warning
+  span_object: state_identifier
   capability: pure_static
   description: >-
     A state is not reachable from the model's root entry path via any
@@ -1034,13 +1091,15 @@ W_UNREACHABLE_STATE:
 
 W_GUARD_CONST_FALSE:
   severity: warning
+  span_object: guard_expression
   capability: const_fold
   description: >-
-    A transition's guard condition matches the current minimal
-    constant-false patterns, so the transition can never fire. This
-    analyzer currently recognizes ``false`` / ``0`` and simple signed
-    decimal integer equality checks such as ``1 == 0``; it is not a
-    complete constant-folding engine.
+    A transition's guard condition folds to the boolean literal
+    ``false`` using the built-in constant folder, so the transition can
+    never fire. The folder is intentionally side-effect free: it handles
+    literal-only boolean, comparison, arithmetic, bitwise, unary, and
+    ternary expressions, but does not evaluate variables, functions,
+    solvers, or runtime state.
   refs:
     transition_span:
       type: Span
@@ -1050,6 +1109,30 @@ W_GUARD_CONST_FALSE:
       type: bool
       required: true
       description: Constant-folded guard value (always ``false``).
+    from_path:
+      type: str
+      required: false
+      description: Source state path of the transition, or ``[*]`` for an initial transition.
+    to_path:
+      type: str
+      required: false
+      description: Target state path of the transition, or ``[*]`` for an exit transition.
+    guard_text:
+      type: str
+      required: false
+      description: >-
+        Normalized guard expression text used to disambiguate spanless
+        inspect diagnostics. Pyfcstm and jsfcstm both render this with the
+        shared inspect expression format: canonical boolean/operator spelling,
+        decimal integer literals, and normalized spacing.
+    transition_index:
+      type: int
+      required: false
+      description: >-
+        Zero-based index in parent-first model transition order, including
+        expanded forced transitions at their declaring state before ordinary
+        transitions and descendant-state transitions. This is used only as a
+        source-range disambiguation hint when spans are unavailable.
   for_llm:
     summary: >-
       The transition's guard is statically known to be ``false`` and the
@@ -1063,16 +1146,137 @@ W_GUARD_CONST_FALSE:
         rationale: Remove the transition if it was placeholder / debug.
     do_not:
       - "Do not silently remove the guard — that would change the semantics."
+  emit_tier: static_pipeline
   example_dsl: |
     state Root {
         state A;
         state B;
         [*] -> A;
-        A -> B : if [false];
+        A -> B : if [(0x0F & 0xF0) != 0];
+    }
+
+W_GUARD_CONST_TRUE:
+  severity: warning
+  span_object: guard_expression
+  capability: const_fold
+  description: >-
+    A transition's guard condition folds to the boolean literal ``true``
+    using the built-in constant folder, so the guard is redundant for
+    all runtime states covered by that literal-only expression.
+  refs:
+    transition_span:
+      type: Span
+      required: false
+      description: Source span of the transition declaration.
+    guard_span:
+      type: Span
+      required: false
+      description: >-
+        Source span of the removable guard suffix, including the leading
+        trigger separator when needed. This is reserved for future emitters
+        that can provide a stable guard-only span; the current inspect
+        emitters intentionally omit it.
+    folded_value:
+      type: bool
+      required: true
+      description: Constant-folded guard value (always ``true``).
+    from_path:
+      type: str
+      required: false
+      description: Source state path of the transition, or ``[*]`` for an initial transition.
+    to_path:
+      type: str
+      required: false
+      description: Target state path of the transition, or ``[*]`` for an exit transition.
+    guard_text:
+      type: str
+      required: false
+      description: >-
+        Normalized guard expression text used to disambiguate spanless
+        inspect diagnostics. Pyfcstm and jsfcstm both render this with the
+        shared inspect expression format: canonical boolean/operator spelling,
+        decimal integer literals, and normalized spacing.
+    transition_index:
+      type: int
+      required: false
+      description: >-
+        Zero-based index in parent-first model transition order, including
+        expanded forced transitions at their declaring state before ordinary
+        transitions and descendant-state transitions. This is used only as a
+        source-range disambiguation hint when spans are unavailable.
+  for_llm:
+    summary: >-
+      The transition's guard is statically known to be ``true`` and does
+      not constrain the transition.
+    recommended_actions:
+      - kind: remove_guard
+        target: transition
+        rationale: Remove the guard if the transition is meant to be unconditional.
+      - kind: fix_guard
+        target: transition
+        rationale: Rewrite the guard if it was intended to depend on runtime state.
+    do_not:
+      - "Do not add a dummy variable dependency only to silence the diagnostic."
+  emit_tier: static_pipeline
+  example_dsl: |
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [(1 + 2) == 3];
+    }
+
+W_DURING_CONST_ASSIGN:
+  severity: warning
+  span_object: lifecycle_action
+  capability: const_fold
+  description: >-
+    A concrete ``during`` action assigns a variable to the same
+    literal-only numeric value every cycle. The analyzer only checks the
+    direct statements in ordinary ``during { ... }`` blocks; it skips
+    abstract actions, refs, composite ``during before`` / ``during after``
+    actions, aspect actions, functions, variables, and nested control
+    flow.
+  refs:
+    state_path:
+      type: str
+      required: true
+      description: Dotted path of the state that owns the during action.
+    var_name:
+      type: str
+      required: true
+      description: Variable assigned by the constant during statement.
+    value:
+      type: number
+      required: true
+      description: JSON-stable numeric value assigned on every cycle.
+  for_llm:
+    summary: >-
+      The during block writes the same constant numeric value on every
+      cycle, which often indicates initialization logic was placed in
+      ``during`` instead of ``enter``.
+    recommended_actions:
+      - kind: move_to_enter
+        target: action
+        rationale: Move the assignment to ``enter`` if it should run once on state entry.
+      - kind: rewrite_expression
+        target: assignment
+        rationale: Use runtime state in the expression if the value should evolve each cycle.
+    do_not:
+      - "Do not suppress the warning by adding a meaningless arithmetic no-op."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int counter = 0;
+    state Root {
+        state Idle {
+            during { counter = (2 + 3) * 4; }
+        }
+        [*] -> Idle;
     }
 
 W_UNUSED_EVENT:
   severity: warning
+  span_object: event_declaration
   capability: pure_static
   description: >-
     An ``event`` declaration is never referenced by any transition.
@@ -1110,6 +1314,7 @@ W_UNUSED_EVENT:
 
 W_DEADLOCK_LEAF:
   severity: warning
+  span_object: state_identifier
   capability: pure_static
   description: >-
     A non-pseudo leaf state has no outgoing transition.
@@ -1118,11 +1323,27 @@ W_DEADLOCK_LEAF:
       type: str
       required: true
       description: Dotted path of the deadlocking leaf state.
+    parent_path:
+      type: str
+      required: false
+      description: >-
+        Dotted path of the leaf state's parent. Present only when an
+        exit-transition quick-fix can be inserted inside a parent state.
     reason:
       type: str
       required: true
       description: Why the leaf is considered a deadlock.
       enum: ['no_outgoing_transition']
+    suggested_fix:
+      type: dict
+      required: false
+      description: Structured quick-fix payload for adding a parent exit transition.
+  suggested_fix:
+    kind: insert
+    target: deadlock_leaf_exit_transition
+    anchor_ref: refs.parent_path
+    text_template: "{state_name} -> [*];\n"
+    rationale: Add an exit transition so the leaf can finish its parent state.
   for_llm:
     summary: >-
       This leaf state has no outgoing transition, so once the machine
@@ -1145,6 +1366,7 @@ W_DEADLOCK_LEAF:
 
 W_INITIAL_UNCONDITIONAL_MISSING:
   severity: warning
+  span_object: composite_block
   capability: pure_static
   description: >-
     A composite state has no unconditional ``[*] -> child`` entry
@@ -1159,6 +1381,22 @@ W_INITIAL_UNCONDITIONAL_MISSING:
       type: int
       required: true
       description: Number of existing initial transitions that are not unconditional.
+    first_child_name:
+      type: str
+      required: false
+      description: >-
+        First declared non-pseudo child state name used as the fallback
+        insertion target.
+    suggested_fix:
+      type: dict
+      required: false
+      description: Structured quick-fix payload for inserting an unconditional entry transition.
+  suggested_fix:
+    kind: insert
+    target: unconditional_initial_transition
+    anchor_ref: refs.composite_path
+    text_template: "[*] -> {first_child_name};\n"
+    rationale: Add an unconditional fallback entry transition for the composite state.
   for_llm:
     summary: >-
       The composite state can fail to choose an initial child because no
@@ -1182,6 +1420,7 @@ W_INITIAL_UNCONDITIONAL_MISSING:
 
 W_FORCED_NEVER_EXPANDS:
   severity: warning
+  span_object: transition
   capability: pure_static
   description: >-
     A forced transition declaration has no concrete child state in its
@@ -1219,6 +1458,7 @@ W_FORCED_NEVER_EXPANDS:
 
 W_DEAD_NAMED_ACTION:
   severity: warning
+  span_object: named_action_declaration
   capability: pure_static
   description: >-
     A named action belongs to an unreachable state and is not referenced
@@ -1253,8 +1493,154 @@ W_DEAD_NAMED_ACTION:
         [*] -> A;
     }
 
+W_UNREFERENCED_VAR:
+  severity: warning
+  span_object: variable_declaration
+  capability: pure_static
+  description: >-
+    A variable cannot affect any transition guard either directly or
+    through the action/effect use-def graph, and no abstract action is
+    visible that might use it outside the DSL.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: Variable name.
+    init_value:
+      type: str
+      required: true
+      description: Source text of the initial value.
+    definition_delete_anchor:
+      type: str
+      required: false
+      description: >-
+        Variable name repeated only when the declaration has no DSL reads
+        or writes, so deleting the declaration alone is a safe quick-fix.
+    suggested_fix:
+      type: dict
+      required: false
+      description: Structured quick-fix payload for removing the variable definition.
+  suggested_fix:
+    kind: delete
+    target: variable_definition
+    anchor_ref: refs.definition_delete_anchor
+    text_template: ""
+    rationale: Remove the declaration-only variable because it has no DSL reads or writes.
+  for_llm:
+    summary: >-
+      This variable does not participate in model decisions. It is dead
+      from the DSL's guard-affect data-flow perspective.
+    recommended_actions:
+      - kind: remove_variable
+        target: variable_definition
+        rationale: Remove the variable and related writes if it was speculative scaffolding.
+      - kind: connect_to_guard
+        target: guard_or_assignment
+        rationale: Add the missing data-flow path if the variable should affect a transition decision.
+    do_not:
+      - "Do not add a dummy guard reference only to silence the diagnostic."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int unused = 0;
+    def int ready = 0;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [ready > 0];
+    }
+
+I_UNREFERENCED_VAR_MAYBE_ABSTRACT:
+  severity: info
+  span_object: variable_declaration
+  capability: pure_static
+  description: >-
+    A variable cannot affect any transition guard through DSL data-flow,
+    but at least one visible abstract action may use it outside the DSL.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: Variable name.
+    abstract_actions_in_scope:
+      type: list[str]
+      required: true
+      description: >-
+        Abstract action owners that may access the variable. FCSTM
+        variables are global, so this is the full machine abstract-action
+        inventory.
+  for_llm:
+    summary: >-
+      This variable is unused by DSL guard-affect data-flow, but abstract
+      action implementations may still use it.
+    recommended_actions:
+      - kind: inspect_abstract_action
+        target: abstract_action
+        rationale: Check the external implementation before removing the variable.
+      - kind: remove_variable
+        target: variable_definition
+        rationale: Remove it only if the abstract action does not need it.
+    do_not:
+      - "Do not remove the variable without checking the abstract implementation."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int maybe_external = 0;
+    def int ready = 0;
+    state Root {
+        state A { enter abstract ExternalHook; }
+        state B;
+        [*] -> A;
+        A -> B : if [ready > 0];
+    }
+
+W_GUARD_VARS_NEVER_CHANGE:
+  severity: warning
+  span_object: guard_expression
+  capability: pure_static
+  description: >-
+    A transition guard reads variables that are never changed by any
+    lifecycle action or transition effect, so the guard only depends on
+    initial values.
+  refs:
+    from_path:
+      type: str
+      required: true
+      description: Source state path of the transition, or [*] for an entry marker.
+    to_path:
+      type: str
+      required: true
+      description: Target state path of the transition, or [*] for an exit marker.
+    guard_vars:
+      type: list[str]
+      required: true
+      description: Guard variables that never change.
+  for_llm:
+    summary: >-
+      This guard is controlled only by initial variable values. If those
+      values never change, the transition condition is effectively fixed.
+    recommended_actions:
+      - kind: add_write
+        target: action_or_effect
+        rationale: Add the missing state update if the guard should evolve at runtime.
+      - kind: simplify_guard
+        target: transition
+        rationale: Simplify or remove the guard if the initial value is intentional.
+    do_not:
+      - "Do not add a meaningless self-assignment; it does not model a real change."
+      - "Do not rewrite the guard to a meaningless constant only to silence this diagnostic."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int ready = 0;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [ready > 0];
+    }
+
 W_UNWRITTEN_READ_VAR:
   severity: warning
+  span_object: variable_declaration
   capability: pure_static
   description: >-
     A variable is read in guards or actions but is never written by any
@@ -1297,6 +1683,7 @@ W_UNWRITTEN_READ_VAR:
 
 W_WRITE_ONLY_VAR:
   severity: warning
+  span_object: variable_declaration
   capability: pure_static
   description: >-
     A variable is written by actions or effects but is never read by any
@@ -1332,6 +1719,7 @@ W_WRITE_ONLY_VAR:
 
 W_REDUNDANT_TRANSITION:
   severity: warning
+  span_object: transition
   capability: pure_static
   description: >-
     Multiple transitions share the same source, target, event, guard, and
@@ -1347,9 +1735,17 @@ W_REDUNDANT_TRANSITION:
       required: true
       description: Dotted target state path.
     duplicate_spans:
-      type: list[str]
+      type: list[Span]
       required: true
-      description: Stable labels for duplicate transition declarations when source spans are unavailable.
+      description: Source spans for the duplicate transition declarations, using null for declarations whose span is unavailable.
+    transition_index:
+      type: int
+      required: false
+      description: >-
+        Zero-based index in parent-first model transition order, including
+        expanded forced transitions at their declaring state before ordinary
+        transitions and descendant-state transitions. This is used only as a
+        source-range disambiguation hint when spans are unavailable.
   for_llm:
     summary: >-
       These transitions are indistinguishable by source, target, event,
@@ -1375,6 +1771,7 @@ W_REDUNDANT_TRANSITION:
 
 W_SELF_TRANSITION_NOP:
   severity: warning
+  span_object: transition
   capability: pure_static
   description: >-
     A leaf self transition has no event, guard, effect, own lifecycle action,
@@ -1384,6 +1781,26 @@ W_SELF_TRANSITION_NOP:
       type: str
       required: true
       description: Dotted path of the state with the no-op self transition.
+    from_path:
+      type: str
+      required: false
+      description: Dotted source state path.
+    to_path:
+      type: str
+      required: false
+      description: Dotted target state path.
+    transition_span:
+      type: Span
+      required: false
+      description: Source span of the no-op self transition when available.
+    transition_index:
+      type: int
+      required: false
+      description: >-
+        Zero-based index in parent-first model transition order, including
+        expanded forced transitions at their declaring state before ordinary
+        transitions and descendant-state transitions. This is used only as a
+        source-range disambiguation hint when spans are unavailable.
   for_llm:
     summary: >-
       The transition points from a state to itself and has no trigger,
@@ -1408,13 +1825,14 @@ W_SELF_TRANSITION_NOP:
 
 W_EFFECT_SELF_ASSIGN:
   severity: warning
+  span_object: effect_statement
   capability: pure_static
   description: >-
     An effect statement assigns a variable directly to itself.
   refs:
     state_path:
       type: str
-      required: false
+      required: true
       description: Source state path when known.
     transition_span:
       type: Span
@@ -1424,6 +1842,31 @@ W_EFFECT_SELF_ASSIGN:
       type: str
       required: true
       description: Variable assigned to itself.
+    effect_self_assign_anchor:
+      type: str
+      required: false
+      description: >-
+        Variable name repeated only when the self-assignment occurrence
+        can be uniquely mapped back to a non-initial effect statement for
+        the same source state and variable.
+    suggested_fix:
+      type: dict
+      required: false
+      description: Structured quick-fix payload for removing the no-op effect statement.
+    transition_index:
+      type: int
+      required: false
+      description: >-
+        Zero-based index in parent-first model transition order, including
+        expanded forced transitions at their declaring state before ordinary
+        transitions and descendant-state transitions. This is used only as a
+        source-range disambiguation hint when spans are unavailable.
+  suggested_fix:
+    kind: delete
+    target: effect_self_assign_statement
+    anchor_ref: refs.effect_self_assign_anchor
+    text_template: ""
+    rationale: Remove the no-op self-assignment statement.
   for_llm:
     summary: >-
       The assignment does not change model state and is likely dead code.
@@ -1448,6 +1891,7 @@ W_EFFECT_SELF_ASSIGN:
 
 W_FORCED_OVERRIDES_NORMAL:
   severity: warning
+  span_object: transition
   capability: pure_static
   description: >-
     A forced transition expands to the same source, target, event, and
@@ -1461,11 +1905,11 @@ W_FORCED_OVERRIDES_NORMAL:
       type: str
       required: true
       description: Dotted target state path.
-    forced_span:
+    forced_declaration_span:
       type: Span
       required: false
       description: Source span of the forced transition when available.
-    normal_span:
+    normal_transition_span:
       type: Span
       required: false
       description: Source span of the normal transition when available.
@@ -1494,6 +1938,7 @@ W_FORCED_OVERRIDES_NORMAL:
 
 W_SHADOWED_EVENT:
   severity: warning
+  span_object: event_declaration
   capability: pure_static
   description: >-
     A local event name shadows a chain or absolute event with the same
@@ -1537,6 +1982,7 @@ W_SHADOWED_EVENT:
 
 W_NAMED_ACTION_SHADOWS_ANCESTOR:
   severity: warning
+  span_object: named_action_declaration
   capability: pure_static
   description: >-
     A named lifecycle action reuses the same function name as an
@@ -1579,6 +2025,7 @@ W_NAMED_ACTION_SHADOWS_ANCESTOR:
 
 W_LITERAL_TYPE_NARROWING:
   severity: warning
+  span_object: expression
   capability: pure_static
   description: >-
     An ``int`` variable is initialized or assigned directly from a
@@ -1621,6 +2068,7 @@ W_LITERAL_TYPE_NARROWING:
 
 W_ASPECT_NO_DESCENDANT_LEAF:
   severity: warning
+  span_object: lifecycle_action
   capability: pure_static
   description: >-
     A ``>> during`` aspect is attached to a state with no descendant
@@ -1658,6 +2106,7 @@ W_ASPECT_NO_DESCENDANT_LEAF:
 
 W_HIGH_VAR_TO_LEAF_RATIO:
   severity: warning
+  span_object: composite_block
   capability: pure_static
   description: >-
     The number of variables is high relative to the number of non-pseudo
@@ -1702,6 +2151,7 @@ W_HIGH_VAR_TO_LEAF_RATIO:
 
 W_DEEP_HIERARCHY:
   severity: warning
+  span_object: state_identifier
   capability: pure_static
   description: >-
     The state hierarchy exceeds the configured maximum depth.
@@ -1741,6 +2191,7 @@ W_DEEP_HIERARCHY:
 
 W_LARGE_COMPOSITE:
   severity: warning
+  span_object: composite_block
   capability: pure_static
   description: >-
     A composite state has more direct children than the configured
@@ -1781,6 +2232,7 @@ W_LARGE_COMPOSITE:
 
 I_TRANSITION_TO_SELF_VIA_PARENT:
   severity: info
+  span_object: transition
   capability: pure_static
   description: >-
     A composite state transitions to itself, which can intentionally
@@ -1819,6 +2271,7 @@ I_TRANSITION_TO_SELF_VIA_PARENT:
 
 I_TRANSITION_NEVER_EVENT_TRIGGERED:
   severity: info
+  span_object: transition
   capability: pure_static
   description: >-
     A normal transition has no event and no guard, so it is an
@@ -1836,6 +2289,14 @@ I_TRANSITION_NEVER_EVENT_TRIGGERED:
       type: Span
       required: false
       description: Source span of the transition when available.
+    transition_index:
+      type: int
+      required: false
+      description: >-
+        Zero-based index in parent-first model transition order, including
+        expanded forced transitions at their declaring state before ordinary
+        transitions and descendant-state transitions. This is used only as a
+        source-range disambiguation hint when spans are unavailable.
   for_llm:
     summary: >-
       The transition is not event-triggered and has no guard. This may

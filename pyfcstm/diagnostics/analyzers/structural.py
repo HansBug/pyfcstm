@@ -50,22 +50,23 @@ def _aspect_no_descendant_leaf_warnings(states) -> List[ModelDiagnostic]:
         if descendant_leaf_count > 0:
             continue
         if state.aspect_before:
-            diagnostics.append(_aspect_no_descendant_leaf_diagnostic(state.path, 'before'))
+            diagnostics.append(_aspect_no_descendant_leaf_diagnostic(state, 'before'))
         if state.aspect_after:
-            diagnostics.append(_aspect_no_descendant_leaf_diagnostic(state.path, 'after'))
+            diagnostics.append(_aspect_no_descendant_leaf_diagnostic(state, 'after'))
     return diagnostics
 
 
-def _aspect_no_descendant_leaf_diagnostic(state_path, aspect) -> ModelDiagnostic:
+def _aspect_no_descendant_leaf_diagnostic(state, aspect) -> ModelDiagnostic:
     return ModelDiagnostic(
         code='W_ASPECT_NO_DESCENDANT_LEAF',
         severity='warning',
         message=(
-            f'Composite state {state_path!r} declares >> during '
+            f'Composite state {state.path!r} declares >> during '
             f'{aspect} but has no descendant non-pseudo leaf state.'
         ),
+        span=state.span,
         refs={
-            'composite_path': state_path,
+            'composite_path': state.path,
             'aspect': aspect,
         },
     )
@@ -84,18 +85,27 @@ def _deadlock_leaf_warnings(states, transitions) -> List[ModelDiagnostic]:
             continue
         diagnostics.append(ModelDiagnostic(
             code='W_DEADLOCK_LEAF',
+            span=state.span,
             severity='warning',
             message=f'Leaf state {state.path!r} has no outgoing transition.',
-            refs={
-                'state_path': state.path,
-                'reason': 'no_outgoing_transition',
-            },
+            refs=_deadlock_leaf_refs(state),
         ))
     return diagnostics
 
 
+def _deadlock_leaf_refs(state) -> Dict[str, str]:
+    refs = {
+        'state_path': state.path,
+        'reason': 'no_outgoing_transition',
+    }
+    if state.parent_path is not None:
+        refs['parent_path'] = state.parent_path
+    return refs
+
+
 def _initial_unconditional_missing_warnings(states) -> List[ModelDiagnostic]:
     diagnostics: List[ModelDiagnostic] = []
+    states_by_path = {state.path: state for state in states}
     for state in states:
         if not state.is_composite:
             continue
@@ -105,19 +115,32 @@ def _initial_unconditional_missing_warnings(states) -> List[ModelDiagnostic]:
         ]
         if unconditional:
             continue
+        refs = {
+            'composite_path': state.path,
+            'existing_conditional_count': len(state.initial_targets),
+        }
+        first_child_name = _first_child_name(state, states_by_path)
+        if first_child_name is not None:
+            refs['first_child_name'] = first_child_name
         diagnostics.append(ModelDiagnostic(
             code='W_INITIAL_UNCONDITIONAL_MISSING',
+            span=state.span,
             severity='warning',
             message=(
                 f'Composite state {state.path!r} has no unconditional '
                 '[*] entry transition.'
             ),
-            refs={
-                'composite_path': state.path,
-                'existing_conditional_count': len(state.initial_targets),
-            },
+            refs=refs,
         ))
     return diagnostics
+
+
+def _first_child_name(state, states_by_path) -> Optional[str]:
+    for child_path in state.substates:
+        child = states_by_path.get(child_path)
+        if child is not None and not child.is_pseudo:
+            return child_path.rsplit('.', 1)[-1]
+    return None
 
 
 def _forced_never_expands_warnings(forced_transitions) -> List[ModelDiagnostic]:
@@ -127,6 +150,7 @@ def _forced_never_expands_warnings(forced_transitions) -> List[ModelDiagnostic]:
             continue
         diagnostics.append(ModelDiagnostic(
             code='W_FORCED_NEVER_EXPANDS',
+            span=item.span,
             severity='warning',
             message=(
                 f'Forced transition {item.original_raw!r} declares no '
@@ -166,6 +190,7 @@ def _dead_named_action_warnings(
             continue
         diagnostics.append(ModelDiagnostic(
             code='W_DEAD_NAMED_ACTION',
+            span=action.span,
             severity='warning',
             message=f'Named action {action.signature!r} is unreachable and unreferenced.',
             refs={

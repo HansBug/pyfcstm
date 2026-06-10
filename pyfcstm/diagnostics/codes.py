@@ -101,6 +101,27 @@ _ALLOWED_EMIT_TIERS = (
     'partial_static_pipeline',
 )
 
+_ALLOWED_SUGGESTED_FIX_KINDS = ('insert', 'delete', 'replace')
+
+#: Allowed values for the optional ``span_object`` field on a code entry.
+#: The field documents which semantic source object the primary
+#: ``ModelDiagnostic.span`` identifies. The initial issue #133 PR-E
+#: vocabulary covers the common problem objects plus current import,
+#: variable, and expression diagnostics that already carry source spans.
+_ALLOWED_SPAN_OBJECTS = (
+    'state_identifier',
+    'transition',
+    'guard_expression',
+    'effect_statement',
+    'composite_block',
+    'named_action_declaration',
+    'event_declaration',
+    'variable_declaration',
+    'expression',
+    'lifecycle_action',
+    'import_statement',
+)
+
 #: Required keys for the ``for_llm`` payload when present on a code.
 #: ``summary`` is a one-line description aimed at downstream LLM consumers;
 #: ``recommended_actions`` is a list of dicts describing concrete fixes;
@@ -125,8 +146,10 @@ _ALLOWED_REF_TYPES = (
     'float',
     'number',
     'bool',
+    'dict',
     'Span',
     'list[str]',
+    'list[Span]',
 )
 
 
@@ -199,6 +222,31 @@ class ForLlmSpec:
 
 
 @dataclass(frozen=True)
+class SuggestedFixSpec:
+    """Structured auto-fix metadata declared by ``codes.yaml``.
+
+    :param kind: Edit operation kind: ``insert``, ``delete``, or ``replace``.
+    :type kind: str
+    :param target: Semantic target kind, such as ``variable_definition``.
+    :type target: str
+    :param anchor_ref: Reference to a field in the emitted refs payload,
+        written as ``refs.<field>``.
+    :type anchor_ref: str
+    :param text_template: Optional edit text template. ``insert`` and
+        ``replace`` use it; ``delete`` normally leaves it empty.
+    :type text_template: str
+    :param rationale: Short reason suitable for LLM/UI display.
+    :type rationale: str
+    """
+
+    kind: str
+    target: str
+    anchor_ref: str
+    text_template: str
+    rationale: str
+
+
+@dataclass(frozen=True)
 class CodeSpec:
     """
     Full specification for a single diagnostic code.
@@ -239,6 +287,10 @@ class CodeSpec:
         field explicit so dispatchers can register handlers based on
         the actual emit channel.
     :type emit_tier: str, optional
+    :param span_object: Semantic source object identified by the primary
+        diagnostic span. Repository entries declare this to make source-slice
+        assertions and downstream UI behavior explicit.
+    :type span_object: str, optional
     """
 
     code: str
@@ -249,6 +301,8 @@ class CodeSpec:
     capability: str = 'pure_static'
     for_llm: Optional[ForLlmSpec] = None
     emit_tier: str = 'static_pipeline'
+    suggested_fix: Optional[SuggestedFixSpec] = None
+    span_object: Optional[str] = None
 
     def required_fields(self) -> List[str]:
         """
@@ -400,6 +454,8 @@ def _validate_code(path: str, code: str, raw: Any) -> CodeSpec:
         ))
 
     for_llm = _validate_for_llm(path, code, raw.get('for_llm'))
+    suggested_fix = _validate_suggested_fix(path, code, raw.get('suggested_fix'))
+    span_object = _validate_span_object(path, code, raw.get('span_object'))
 
     return CodeSpec(
         code=code,
@@ -410,6 +466,75 @@ def _validate_code(path: str, code: str, raw: Any) -> CodeSpec:
         capability=capability,
         for_llm=for_llm,
         emit_tier=emit_tier,
+        suggested_fix=suggested_fix,
+        span_object=span_object,
+    )
+
+
+def _validate_span_object(path: str, code: str, raw: Any) -> Optional[str]:
+    if raw is None:
+        return None
+    if raw not in _ALLOWED_SPAN_OBJECTS:
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} has invalid span_object {raw!r}.",
+            f"Allowed: {_ALLOWED_SPAN_OBJECTS}.",
+        ))
+    return raw
+
+
+def _validate_suggested_fix(path: str, code: str, raw: Any) -> Optional[SuggestedFixSpec]:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} 'suggested_fix' must be a mapping when present,",
+            f"got {type(raw).__name__}.",
+        ))
+
+    kind = raw.get('kind')
+    if kind not in _ALLOWED_SUGGESTED_FIX_KINDS:
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} 'suggested_fix.kind' must be one of",
+            f"{_ALLOWED_SUGGESTED_FIX_KINDS!r}, got {kind!r}.",
+        ))
+
+    target = raw.get('target')
+    if not isinstance(target, str) or not target.strip():
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} 'suggested_fix.target' must be a non-empty string.",
+        ))
+
+    anchor_ref = raw.get('anchor_ref')
+    if not isinstance(anchor_ref, str) or not anchor_ref.startswith('refs.'):
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} 'suggested_fix.anchor_ref' must be a refs.<field> string.",
+        ))
+
+    text_template = raw.get('text_template', '')
+    if not isinstance(text_template, str):
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} 'suggested_fix.text_template' must be a string.",
+        ))
+
+    rationale = raw.get('rationale')
+    if not isinstance(rationale, str) or not rationale.strip():
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} 'suggested_fix.rationale' must be a non-empty string.",
+        ))
+
+    return SuggestedFixSpec(
+        kind=kind,
+        target=target.strip(),
+        anchor_ref=anchor_ref,
+        text_template=text_template,
+        rationale=rationale.strip(),
     )
 
 

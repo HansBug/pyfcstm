@@ -8,6 +8,9 @@ import type {
     TransitionInfo,
     VariableInfo,
 } from '../inspect';
+import type {StateMachine} from '../../model/runtime';
+import {refsWithSuggestedFix} from '../suggested-fix';
+import {collectConstFoldWarnings} from './const-fold';
 import {collectDataFlowWarnings} from './data-flow';
 import {collectNamingWarnings} from './naming';
 import {collectRedundancyWarnings} from './redundancy';
@@ -27,15 +30,16 @@ export function collectDesignHealthWarnings(
     reachabilityGraph: Record<string, string[]>,
     rootStatePath?: string,
     thresholds?: ThresholdOptions,
+    machine?: StateMachine,
 ): ModelDiagnosticJson[] {
     const thresholdOptions = thresholds ?? {
         deepHierarchyThreshold: 6,
         largeCompositeThreshold: 12,
         varToLeafRatioThreshold: 2.0,
     };
-    return [
+    const diagnostics = [
         ...collectUnreachableStateDiagnostics(states, reachabilityGraph, rootStatePath),
-        ...collectGuardConstFalseDiagnostics(transitions),
+        ...(machine ? collectConstFoldWarnings(machine) : collectGuardConstFalseDiagnostics(transitions)),
         ...collectUnusedEventDiagnostics(events),
         ...collectStructuralWarnings(
             states,
@@ -48,10 +52,14 @@ export function collectDesignHealthWarnings(
         ...collectThresholdWarnings(states, metrics, thresholdOptions),
         ...collectNamingWarnings(actions),
         ...collectTypeWarnings(variables),
-        ...collectDataFlowWarnings(variables),
+        ...collectDataFlowWarnings(variables, machine),
         ...collectRedundancyWarnings(transitions, events, states),
         ...collectTransitionInfos(states, transitions),
     ];
+    return diagnostics.map(diag => ({
+        ...diag,
+        refs: refsWithSuggestedFix(diag.code, diag.refs),
+    }));
 }
 
 function collectUnreachableStateDiagnostics(
@@ -86,7 +94,14 @@ function collectGuardConstFalseDiagnostics(transitions: TransitionInfo[]): Model
             severity: 'warning',
             message: `Transition ${JSON.stringify(transition.from_path)} -> ${JSON.stringify(transition.to_path)} has a guard that is statically false.`,
             span: null,
-            refs: {transition_span: null, folded_value: false},
+            refs: {
+                transition_span: null,
+                folded_value: false,
+                from_path: transition.from_path,
+                to_path: transition.to_path,
+                guard_text: transition.guard,
+                transition_index: transition.transition_index,
+            },
         });
     }
     return out;

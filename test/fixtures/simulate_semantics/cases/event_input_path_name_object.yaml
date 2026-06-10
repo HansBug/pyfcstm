@@ -1,0 +1,49 @@
+schema_version: 1
+id: event_input_path_name_object
+title: path_name event-like object input is accepted
+source:
+  fcstm: event_input_path_name_object.fcstm
+origin:
+  files:
+  - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
+  - test/template/python/test_semantic_fixture_alignment.py::test_generated_python_alignment_semantic_fixture
+  docs:
+  - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614288612
+  assertion_types:
+  - ended
+  - return
+  - state
+  - vars
+  notes:
+  - Covers event-like objects exposing path_name.
+categories:
+- event_paths
+- runtime
+- template_alignment
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      x: 1
+    ended: false
+    return: null
+- cycle:
+    events:
+    - event_like: Root.A.Go
+  expect:
+    state:
+    - Root
+    - B
+    vars:
+      x: 11
+    ended: false
+    return: null

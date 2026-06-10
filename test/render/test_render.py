@@ -200,6 +200,44 @@ class TestRenderRender:
 
         assert rendered == 'vars_["counter"] >= 1'
 
+    def test_renderer_expr_render_seeds_python_condition_helpers(self):
+        ast_node = parse_with_grammar_entry(
+            """
+        def int a = 0;
+        def int b = 0;
+        def int c = 0;
+        state Root {
+            state A;
+            [*] -> A : if [a > 0 iff b > 0 == c > 0];
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+        model = parse_dsl_node_to_state_machine(ast_node)
+
+        with TemporaryDirectory() as template_dir:
+            with open(os.path.join(template_dir, 'config.yaml'), 'w') as f:
+                f.write(
+                    "expr_styles:\n"
+                    "  python_names:\n"
+                    "    base_lang: python\n"
+                    "    Name: \"{{ node.name }}\"\n"
+                )
+            with open(os.path.join(template_dir, 'expr.txt.j2'), 'w') as f:
+                f.write(
+                    "{{ model.root_state.init_transitions[0].guard.to_ast_node() "
+                    "| expr_render(style='python_names') }}"
+                )
+
+            renderer = StateMachineCodeRenderer(template_dir)
+
+            with TemporaryDirectory() as output_dir:
+                renderer.render(model=model, output_dir=output_dir)
+                with open(os.path.join(output_dir, 'expr.txt'), 'r') as f:
+                    rendered = f.read()
+
+        assert eval(rendered, {}, {'a': 1, 'b': -1, 'c': 0}) is True
+
     def test_renderer_injects_default_state_vars_and_var_types_for_default_cpp_stmt_rendering(self):
         ast_node = parse_with_grammar_entry(
             """

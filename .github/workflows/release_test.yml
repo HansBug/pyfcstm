@@ -2,6 +2,23 @@ name: Release Test
 
 on:
   push:
+    paths:
+      # Source code & assets that ship in the package
+      - 'pyfcstm/**'
+      - 'editors/jsfcstm/**'
+      - 'editors/vscode/**'
+      - 'editors/fcstm.tmLanguage.json'
+      - 'templates/**'
+      - 'tools/**'
+      # Build & packaging manifests
+      - 'setup.py'
+      - 'setup.cfg'
+      - 'pyproject.toml'
+      - 'MANIFEST.in'
+      - 'requirements*.txt'
+      - 'Makefile'
+      # This workflow itself
+      - '.github/workflows/release_test.yml'
   workflow_dispatch:
 
 jobs:

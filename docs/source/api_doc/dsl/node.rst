@@ -278,7 +278,7 @@ ForceTransitionDefinition
 -----------------------------------------------------
 
 .. autoclass:: ForceTransitionDefinition
-    :members: __str__,from_state,to_state,event_id,condition_expr,event_scope
+    :members: __str__,from_state,to_state,event_id,condition_expr,event_scope,source_raw
 
 
 StateDefinition

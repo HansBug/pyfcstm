@@ -35,14 +35,14 @@ TransitionInfo
 -----------------------------------------------------
 
 .. autoclass:: TransitionInfo
-    :members: from_path,to_path,event,event_scope,guard,effect,effect_self_assigns,is_forced,forced_origin
+    :members: from_path,to_path,event,event_scope,guard,effect,effect_self_assigns,is_forced,forced_origin,transition_index
 
 
 VariableInfo
 -----------------------------------------------------
 
 .. autoclass:: VariableInfo
-    :members: name,type,init_value,read_in_states,written_in_states,read_in_guards,written_in_effects,participates_directly,participates_indirectly,abstract_actions_in_scope,float_literal_assignments
+    :members: name,type,init_value,read_in_states,written_in_states,read_in_guards,written_in_effects,affects_guard_directly,affects_guard_indirectly,abstract_actions_in_scope,float_literal_assignments
 
 
 EventInfo

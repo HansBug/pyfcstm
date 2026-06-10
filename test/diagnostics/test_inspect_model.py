@@ -13,6 +13,7 @@ import os
 
 import pytest
 
+import pyfcstm.diagnostics.inspect as inspect_module
 from pyfcstm.diagnostics import (
     ActionInfo,
     DEFAULT_DEEP_HIERARCHY_THRESHOLD,
@@ -33,9 +34,29 @@ from pyfcstm.model import parse_dsl_node_to_state_machine
 from ._schema_check import assert_all_diags_match_schema
 
 
+def _assert_has_span(value):
+    assert value is not None
+    assert value.line >= 1
+    assert value.column >= 1
+
+
 def _parse(src):
     ast = parse_with_grammar_entry(src, 'state_machine_dsl')
     return parse_dsl_node_to_state_machine(ast)
+
+
+def _slice_by_span(source, span):
+    lines = source.split('\n')
+    end_line = span.end_line or span.line
+    end_column = span.end_column or span.column
+    if end_line == span.line:
+        return lines[span.line - 1][span.column - 1:end_column - 1]
+
+    pieces = [lines[span.line - 1][span.column - 1:]]
+    for index in range(span.line, end_line - 1):
+        pieces.append(lines[index])
+    pieces.append(lines[end_line - 1][:end_column - 1])
+    return '\n'.join(pieces)
 
 
 def _by_path(infos):
@@ -113,7 +134,7 @@ class TestInspectModelBasic:
     def test_transition_guard_text(self, report):
         guarded = [t for t in report.transitions if t.guard is not None]
         assert len(guarded) == 1
-        assert 'counter' in guarded[0].guard
+        assert guarded[0].guard == 'counter > 0'
 
     def test_transition_event_qualified(self, report):
         with_event = [t for t in report.transitions if t.event is not None]
@@ -130,11 +151,14 @@ class TestInspectModelBasic:
         assert 'Root.Active' in counter.written_in_states
         # guard read should also be captured
         assert any('Root.Idle' == fp for fp, _ in counter.read_in_guards)
+        assert counter.affects_guard_directly is True
+        assert counter.affects_guard_indirectly is False
         # ``temp`` has no participation in this DSL.
         temp = vars_by_name['temp']
         assert temp.read_in_states == tuple()
         assert temp.written_in_states == tuple()
-        assert temp.participates_directly is False
+        assert temp.affects_guard_directly is False
+        assert temp.affects_guard_indirectly is False
 
     def test_event_payload(self, report):
         events_by_name = {e.qualified_name: e for e in report.events}
@@ -275,44 +299,119 @@ class TestInspectModelToJson:
         assert isinstance(payload['variables'][0]['read_in_states'], list)
 
     def test_to_json_diagnostics_empty_for_clean_model(self, report):
-        assert report.to_json()['diagnostics'] == []
+        clean = """
+        def int counter = 0;
+        state Root {
+            state Idle;
+            state Active { during { counter = counter + 1; } }
+            [*] -> Idle;
+            Idle -> Active : if [counter > 0];
+            Active -> Idle :: Pause;
+        }
+        """
+        assert inspect_model(_parse(clean)).to_json()['diagnostics'] == []
 
 
 @pytest.mark.unittest
 class TestSchemaJsonValidates:
     """Verify the schema.json contract validates a real inspection."""
 
-    def test_schema_exists(self):
-        path = os.path.join(
+    @staticmethod
+    def _schema_path():
+        return os.path.join(
             os.path.dirname(__file__), '..', '..',
             'pyfcstm', 'diagnostics', 'schema.json',
         )
-        assert os.path.exists(path)
+
+    @staticmethod
+    def _load_schema():
+        with open(TestSchemaJsonValidates._schema_path(), 'r', encoding='utf-8') as f:
+            return json.load(f)
+
+    def test_schema_exists(self):
+        assert os.path.exists(self._schema_path())
 
     def test_schema_is_valid_json(self):
-        path = os.path.join(
-            os.path.dirname(__file__), '..', '..',
-            'pyfcstm', 'diagnostics', 'schema.json',
-        )
-        with open(path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        data = self._load_schema()
         assert data['title'] == 'ModelInspect'
+
+    def test_schema_local_refs_resolve(self):
+        schema = self._load_schema()
+        refs = []
+
+        def walk(node):
+            if isinstance(node, dict):
+                ref = node.get('$ref')
+                if isinstance(ref, str):
+                    refs.append(ref)
+                for value in node.values():
+                    walk(value)
+            elif isinstance(node, list):
+                for value in node:
+                    walk(value)
+
+        walk(schema)
+        assert refs
+        for ref in refs:
+            assert ref.startswith('#/'), f'non-local schema ref is unsupported: {ref!r}'
+            target = schema
+            for raw_part in ref[2:].split('/'):
+                part = raw_part.replace('~1', '/').replace('~0', '~')
+                assert isinstance(target, dict), f'{ref!r} resolves through non-object'
+                assert part in target, f'{ref!r} cannot resolve missing part {part!r}'
+                target = target[part]
 
     def test_schema_validates_simple_inspect(self):
         # Light-weight structural validation rather than pulling in
         # jsonschema as a hard test dep — verify each required top-level
         # key from the schema is present in the inspect output.
-        path = os.path.join(
-            os.path.dirname(__file__), '..', '..',
-            'pyfcstm', 'diagnostics', 'schema.json',
-        )
-        with open(path, 'r', encoding='utf-8') as f:
-            schema = json.load(f)
+        schema = self._load_schema()
         required = set(schema['required'])
         payload = inspect_model(_parse(SIMPLE_DSL)).to_json()
         assert required.issubset(set(payload.keys())), (
             f'missing keys: {required - set(payload.keys())}'
         )
+
+    def test_schema_documents_span_contract(self):
+        schema = self._load_schema()
+        span_def = schema['definitions']['Span']
+        span_text = json.dumps(span_def, sort_keys=True)
+        assert '1-based' in span_text
+        assert 'end-exclusive' in span_text
+        assert 'line' in span_def['required']
+        assert 'column' in span_def['required']
+        assert 'end_line' in span_def['required']
+        assert 'end_column' in span_def['required']
+
+        diagnostic_span = schema['definitions']['ModelDiagnostic']['properties']['span']
+        assert {'$ref': '#/definitions/Span'} in diagnostic_span['oneOf']
+
+        refs_schema = schema['definitions']['ModelDiagnostic']['properties']['refs']
+        refs_text = json.dumps(refs_schema, sort_keys=True)
+        assert '<object>_span' in refs_text
+        assert 'list[Span]' in refs_text
+
+    def test_diagnostics_readme_documents_range_layers(self):
+        readme_path = os.path.join(
+            os.path.dirname(__file__), '..', '..',
+            'pyfcstm', 'diagnostics', 'README.md',
+        )
+        assert os.path.exists(readme_path)
+        with open(readme_path, 'r', encoding='utf-8') as f:
+            text = f.read()
+
+        for required in [
+            'problem range',
+            'fix-edit range',
+            'related range',
+            'Span',
+            '<object>_span',
+            '1-based',
+            'end-exclusive',
+            'LSP Range',
+            '0-based',
+        ]:
+            assert required in text
 
 
 @pytest.mark.unittest
@@ -663,6 +762,364 @@ state Root {
 
 
 @pytest.mark.unittest
+class TestInspectModelGuardAffectDataFlow:
+    """Layer-0 use-def closure behind guard-affect participation flags."""
+
+    def test_use_def_graph_tracks_nested_branch_conditions(self):
+        from pyfcstm.diagnostics.analyzers.use_def import build_use_def_graph
+
+        dsl = """
+        def int x = 0;
+        def int y = 0;
+        def int z = 0;
+        def int flag = 0;
+        def int dedupe = 0;
+        state Root {
+            state Active {
+                during {
+                    dedupe = x + x;
+                    if [x >= 10] {
+                        if [x % 2 == 0] {
+                            y = x + 10;
+                        } else {
+                            y = x + 12;
+                            z = x * y - 2;
+                        }
+                    } else if [flag > 0] {
+                        z = y + flag;
+                    } else {
+                        z = y - 10;
+                        x = x + 2;
+                    }
+                }
+            }
+            [*] -> Active;
+        }
+        """
+        graph = build_use_def_graph(_parse(dsl))
+
+        assert ('x', 'y') in graph.edges
+        assert ('x', 'z') in graph.edges
+        assert ('y', 'z') in graph.edges
+        assert ('flag', 'z') in graph.edges
+        assert ('x', 'x') in graph.edges
+        assert ('flag', 'x') in graph.edges
+
+    def test_collect_expr_variables_rejects_unknown_expr_subclass(self):
+        from pyfcstm.diagnostics.analyzers.use_def import collect_expr_variables
+        from pyfcstm.model.expr import Expr
+
+        class UnknownExpr(Expr):
+            pass
+
+        with pytest.raises(TypeError, match='UnknownExpr'):
+            collect_expr_variables(UnknownExpr())
+
+    def test_build_use_def_graph_rejects_unknown_statement_subclass(self):
+        from types import SimpleNamespace
+
+        from pyfcstm.diagnostics.analyzers.use_def import build_use_def_graph
+        from pyfcstm.model.model import OperationStatement
+
+        class UnknownStatement(OperationStatement):
+            pass
+
+        machine = SimpleNamespace(
+            walk_states=lambda: [SimpleNamespace(
+                on_enters=[SimpleNamespace(
+                    is_abstract=False,
+                    operations=[UnknownStatement()],
+                )],
+                on_durings=[],
+                on_exits=[],
+                on_during_aspects=[],
+                transitions=[],
+            )],
+        )
+
+        with pytest.raises(TypeError, match='UnknownStatement'):
+            build_use_def_graph(machine)
+
+    def test_variable_info_marks_direct_and_indirect_guard_affect(self):
+        dsl = """
+        def int source = 0;
+        def int middle = 0;
+        def int guard_value = 0;
+        def int direct = 0;
+        def int ternary_only = 0;
+        def int unused = 0;
+        state Root {
+            state Idle {
+                during {
+                    middle = source + 1;
+                    guard_value = middle;
+                    unused = (ternary_only > 0) ? 1 : 2;
+                }
+            }
+            state Done;
+            [*] -> Idle : if [direct > 0];
+            Idle -> Done : if [guard_value > 0];
+            Done -> [*] : if [direct > 1];
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        variables = {v.name: v for v in report.variables}
+
+        assert variables['direct'].affects_guard_directly is True
+        assert variables['direct'].affects_guard_indirectly is False
+        assert variables['guard_value'].affects_guard_directly is True
+        assert variables['guard_value'].affects_guard_indirectly is False
+        assert variables['middle'].affects_guard_directly is False
+        assert variables['middle'].affects_guard_indirectly is True
+        assert variables['source'].affects_guard_directly is False
+        assert variables['source'].affects_guard_indirectly is True
+        assert variables['ternary_only'].affects_guard_directly is False
+        assert variables['ternary_only'].affects_guard_indirectly is False
+        assert variables['unused'].affects_guard_directly is False
+        assert variables['unused'].affects_guard_indirectly is False
+
+
+@pytest.mark.unittest
+class TestInspectModelGuardAffectDiagnostics:
+    """Diagnostics whose trigger is the guard-affect closure."""
+
+    @staticmethod
+    def _diagnostics_by_code(dsl):
+        report = inspect_model(_parse(dsl))
+        assert_all_diags_match_schema(report.diagnostics, context='guard-affect-data-flow')
+        out = {}
+        for diag in report.diagnostics:
+            out.setdefault(diag.code, []).append(diag)
+        return out
+
+    def test_unreferenced_variable_without_abstract_action_is_warning(self):
+        by_code = self._diagnostics_by_code("""
+        def int unused = 0;
+        def int driver = 0;
+        state Root {
+            state Idle;
+            state Done;
+            [*] -> Idle;
+            Idle -> Done : if [driver > 0];
+        }
+        """)
+
+        unused_refs = by_code['W_UNREFERENCED_VAR'][0].refs
+        assert unused_refs['var_name'] == 'unused'
+        assert unused_refs['init_value'] == '0'
+        assert unused_refs['definition_delete_anchor'] == 'unused'
+        assert unused_refs['suggested_fix'] == {
+            'kind': 'delete',
+            'target': 'variable_definition',
+            'anchor': {'type': 'ref', 'ref': 'refs.definition_delete_anchor'},
+            'text': '',
+            'rationale': 'Remove the declaration-only variable because it has no DSL reads or writes.',
+        }
+        assert set(unused_refs) == {
+            'var_name',
+            'init_value',
+            'definition_delete_anchor',
+            'suggested_fix',
+        }
+        assert 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT' not in by_code
+
+    def test_unreferenced_variable_fix_is_omitted_when_variable_is_read(self):
+        by_code = self._diagnostics_by_code("""
+        def int unused = 0;
+        def int driver = 0;
+        state Root {
+            state Idle {
+                enter { temp = unused + 1; }
+            }
+            state Done;
+            [*] -> Idle;
+            Idle -> Done : if [driver > 0];
+        }
+        """)
+
+        unused_refs = by_code['W_UNREFERENCED_VAR'][0].refs
+        assert unused_refs == {
+            'var_name': 'unused',
+            'init_value': '0',
+        }
+
+    def test_structural_suggested_fixes_are_attached_to_safe_insertions(self):
+        by_code = self._diagnostics_by_code("""
+        state Root {
+            state Idle;
+            [*] -> Idle : if [true];
+        }
+        """)
+
+        deadlock_fix = by_code['W_DEADLOCK_LEAF'][0].refs['suggested_fix']
+        assert by_code['W_DEADLOCK_LEAF'][0].refs['parent_path'] == 'Root'
+        assert deadlock_fix == {
+            'kind': 'insert',
+            'target': 'deadlock_leaf_exit_transition',
+            'anchor': {'type': 'ref', 'ref': 'refs.parent_path'},
+            'text': 'Idle -> [*];\n',
+            'rationale': (
+                'Add an exit transition so the leaf can finish its parent state.'
+            ),
+        }
+
+        initial_refs = by_code['W_INITIAL_UNCONDITIONAL_MISSING'][0].refs
+        assert initial_refs['first_child_name'] == 'Idle'
+        assert initial_refs['suggested_fix'] == {
+            'kind': 'insert',
+            'target': 'unconditional_initial_transition',
+            'anchor': {'type': 'ref', 'ref': 'refs.composite_path'},
+            'text': '[*] -> Idle;\n',
+            'rationale': (
+                'Add an unconditional fallback entry transition for the '
+                'composite state.'
+            ),
+        }
+
+    def test_initial_fallback_suggested_fix_skips_pseudo_first_child(self):
+        by_code = self._diagnostics_by_code("""
+        def int ready = 1;
+        state Root {
+            pseudo state Choice;
+            state A;
+            [*] -> A : if [ready > 0];
+        }
+        """)
+
+        initial_refs = by_code['W_INITIAL_UNCONDITIONAL_MISSING'][0].refs
+        assert initial_refs['first_child_name'] == 'A'
+        assert initial_refs['suggested_fix']['text'] == '[*] -> A;\n'
+
+    def test_initial_fallback_suggested_fix_is_omitted_for_only_pseudo_children(self):
+        by_code = self._diagnostics_by_code("""
+        def int ready = 1;
+        state Root {
+            pseudo state Choice;
+            [*] -> Choice : if [ready > 0];
+        }
+        """)
+
+        initial_refs = by_code['W_INITIAL_UNCONDITIONAL_MISSING'][0].refs
+        assert initial_refs == {
+            'composite_path': 'Root',
+            'existing_conditional_count': 1,
+        }
+
+    def test_root_deadlock_leaf_fix_is_omitted(self):
+        by_code = self._diagnostics_by_code("""
+        state Root;
+        """)
+
+        deadlock_refs = by_code['W_DEADLOCK_LEAF'][0].refs
+        assert deadlock_refs == {
+            'state_path': 'Root',
+            'reason': 'no_outgoing_transition',
+        }
+
+    def test_const_true_transition_refs_include_source_span(self):
+        by_code = self._diagnostics_by_code("""
+        state Root {
+            state Idle;
+            state Done;
+            [*] -> Idle;
+            Idle -> Done : if [(1 + 2) == 3];
+        }
+        """)
+
+        const_true_refs = by_code['W_GUARD_CONST_TRUE'][0].refs
+        _assert_has_span(const_true_refs['transition_span'])
+        assert const_true_refs == {
+            'transition_span': const_true_refs['transition_span'],
+            'folded_value': True,
+            'from_path': 'Root.Idle',
+            'to_path': 'Root.Done',
+            'guard_text': '1 + 2 == 3',
+            'transition_index': 1,
+        }
+
+    def test_unreferenced_variable_with_abstract_action_is_info(self):
+        by_code = self._diagnostics_by_code("""
+        def int maybe_external = 0;
+        def int driver = 0;
+        state Root {
+            state Idle { enter abstract ExternalHook; }
+            state Done;
+            [*] -> Idle;
+            Idle -> Done : if [driver > 0];
+        }
+        """)
+
+        assert by_code['I_UNREFERENCED_VAR_MAYBE_ABSTRACT'][0].refs == {
+            'var_name': 'maybe_external',
+            'abstract_actions_in_scope': ['Root.Idle:<abstract>'],
+        }
+        assert 'W_UNREFERENCED_VAR' not in by_code
+
+    def test_indirect_guard_dependency_is_not_reported_as_unreferenced(self):
+        by_code = self._diagnostics_by_code("""
+        def int source = 0;
+        def int guard_value = 0;
+        state Root {
+            state Idle { during { guard_value = source + 1; } }
+            state Done;
+            [*] -> Idle;
+            Idle -> Done : if [guard_value > 0];
+        }
+        """)
+
+        variable_codes = [
+            diag for diags in by_code.values() for diag in diags
+            if diag.refs.get('var_name') == 'source'
+        ]
+        variable_codes = [diag.code for diag in variable_codes]
+        assert 'W_UNREFERENCED_VAR' not in variable_codes
+        assert 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT' not in variable_codes
+        assert variable_codes == ['W_UNWRITTEN_READ_VAR']
+
+    def test_guard_vars_never_change_is_per_transition(self):
+        by_code = self._diagnostics_by_code("""
+        def int stable = 0;
+        def int changing = 0;
+        state Root {
+            state Idle { during { changing = changing + 1; } }
+            state StableBlocked;
+            state DynamicAllowed;
+            [*] -> Idle;
+            Idle -> StableBlocked : if [stable > 0];
+            Idle -> DynamicAllowed : if [changing > 0];
+        }
+        """)
+
+        assert [diag.refs for diag in by_code['W_GUARD_VARS_NEVER_CHANGE']] == [{
+            'from_path': 'Root.Idle',
+            'to_path': 'Root.StableBlocked',
+            'guard_vars': ['stable'],
+        }]
+
+    def test_write_only_branch_remains_available_for_affecting_payload(self):
+        from pyfcstm.diagnostics.analyzers.data_flow import collect_data_flow_warnings
+
+        variable = VariableInfo(
+            name='write_only',
+            type='int',
+            init_value='0',
+            read_in_states=tuple(),
+            written_in_states=('Root.Idle',),
+            read_in_guards=tuple(),
+            written_in_effects=tuple(),
+            affects_guard_directly=True,
+            affects_guard_indirectly=False,
+            abstract_actions_in_scope=tuple(),
+            float_literal_assignments=tuple(),
+        )
+
+        assert [diag.refs for diag in collect_data_flow_warnings([variable])] == [{
+            'var_name': 'write_only',
+            'written_states': ['Root.Idle'],
+        }]
+
+
+@pytest.mark.unittest
 class TestInspectModelToJsonRoundtrip:
     """Tighter to_json() guarantees beyond the smoke tests above."""
 
@@ -882,7 +1339,9 @@ class TestInspectModelExtendedCoverage:
         }
         const_false = next(d for d in diagnostics if d.code == 'W_GUARD_CONST_FALSE')
         assert const_false.refs['folded_value'] is False
-        assert const_false.refs['transition_span'] is None
+        _assert_has_span(const_false.refs['transition_span'])
+        assert const_false.refs['from_path'] == 'Root.Active'
+        assert const_false.refs['to_path'] == 'Root.Blocked'
         unreachable = next(d for d in diagnostics if d.code == 'W_UNREACHABLE_STATE')
         assert unreachable.refs == {'state_path': 'Root.Orphan'}
 
@@ -895,6 +1354,125 @@ class TestInspectModelExtendedCoverage:
         )
         assert unused_payload['is_declared'] is True
         assert unused_payload['is_used'] is False
+
+    def test_implicit_event_info_uses_transition_span(self):
+        dsl = """
+        state Root {
+            state Idle;
+            state Active;
+            [*] -> Idle;
+            Idle -> Active : Go;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        event = next(e for e in report.events if e.qualified_name == 'Root.Go')
+
+        assert event.is_declared is False
+        assert event.is_used is True
+        _assert_has_span(event.span)
+        assert 'Idle -> Active : Go' in _slice_by_span(dsl, event.span)
+
+    def test_event_lookup_returns_none_for_unknown_qualified_name(self):
+        machine = _parse("""
+        state Root {
+            state Idle;
+            [*] -> Idle;
+        }
+        """)
+
+        assert inspect_module._find_event_by_qualified_name(
+            machine, 'Root.MissingEvent'
+        ) is None
+
+    def test_const_fold_guard_true_and_false_and_during_assign(self):
+        dsl = """
+        def int stable = 0;
+        def int dynamic = 0;
+        def int wide = 0;
+        def float powered = 0.0;
+        state Root {
+            state Idle {
+                during { stable = (2 + 3) * 4; }
+                during { dynamic = dynamic + 1; }
+                during { wide = 0xFFFFFFFF & 0xFFFFFFFF; }
+                during { powered = 2.0 ** 3; }
+            }
+            state Active;
+            state Blocked;
+            state WideTrue;
+            state ModuloTrue;
+            state PowerTrue;
+            [*] -> Idle;
+            Idle -> Active : if [(1 + 2) == 3];
+            Active -> Blocked : if [(0x0F & 0xF0) != 0];
+            Blocked -> WideTrue : if [(0xFFFFFFFF & 0xFFFFFFFF) == 4294967295];
+            WideTrue -> ModuloTrue : if [(-7 % 4) == 1];
+            ModuloTrue -> PowerTrue : if [(2.0 ** 3) == 8.0];
+        }
+        """
+        diagnostics = list(inspect_model(_parse(dsl)).diagnostics)
+        codes = [d.code for d in diagnostics]
+        assert codes.count('W_GUARD_CONST_TRUE') == 4
+        assert codes.count('W_GUARD_CONST_FALSE') == 1
+        assert codes.count('W_DURING_CONST_ASSIGN') == 3
+
+        const_true = next(d for d in diagnostics if d.code == 'W_GUARD_CONST_TRUE')
+        _assert_has_span(const_true.refs['transition_span'])
+        assert const_true.refs == {
+            'transition_span': const_true.refs['transition_span'],
+            'folded_value': True,
+            'from_path': 'Root.Idle',
+            'to_path': 'Root.Active',
+            'guard_text': '1 + 2 == 3',
+            'transition_index': 1,
+        }
+        const_false = next(d for d in diagnostics if d.code == 'W_GUARD_CONST_FALSE')
+        _assert_has_span(const_false.refs['transition_span'])
+        assert const_false.refs == {
+            'transition_span': const_false.refs['transition_span'],
+            'folded_value': False,
+            'from_path': 'Root.Active',
+            'to_path': 'Root.Blocked',
+            'guard_text': '15 & 240 != 0',
+            'transition_index': 2,
+        }
+        during_refs = sorted(
+            (d.refs for d in diagnostics if d.code == 'W_DURING_CONST_ASSIGN'),
+            key=lambda item: item['var_name'],
+        )
+        assert during_refs == [
+            {'state_path': 'Root.Idle', 'var_name': 'powered', 'value': 8},
+            {'state_path': 'Root.Idle', 'var_name': 'stable', 'value': 20},
+            {'state_path': 'Root.Idle', 'var_name': 'wide', 'value': 4294967295},
+        ]
+
+        from ._schema_check import assert_all_diags_match_schema
+        assert_all_diags_match_schema(diagnostics, context='const-fold-inspect')
+
+    def test_const_fold_skips_variables_functions_and_structural_during_actions(self):
+        dsl = """
+        def int counter = 0;
+        def float angle = 0.0;
+        state Root {
+            state Wrapper {
+                during before { counter = 5; }
+                >> during before { counter = 6; }
+                state Idle {
+                    during { counter = counter + 1; }
+                    during { angle = sin(0.0); }
+                }
+                state Active;
+                [*] -> Idle;
+                Idle -> Active : if [counter > 0];
+            }
+            [*] -> Wrapper;
+        }
+        """
+        diagnostics = list(inspect_model(_parse(dsl)).diagnostics)
+        codes = [d.code for d in diagnostics]
+        assert 'W_GUARD_CONST_TRUE' not in codes
+        assert 'W_GUARD_CONST_FALSE' not in codes
+        assert 'W_DURING_CONST_ASSIGN' not in codes
 
     def test_function_signature_for_ref_actions(self):
         # ``_function_signature`` has an ``is_ref`` branch that exposes
@@ -960,6 +1538,28 @@ class TestInspectModelRedundancySemantics:
             if d.code == 'W_REDUNDANT_TRANSITION'
         ] == []
 
+    def test_redundant_transition_refs_include_each_duplicate_span(self):
+        dsl = """
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B;
+            A -> B;
+            A -> B;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert_all_diags_match_schema(report.diagnostics, context='redundant-transition-spans')
+        diag = next(d for d in report.diagnostics if d.code == 'W_REDUNDANT_TRANSITION')
+
+        duplicate_spans = diag.refs['duplicate_spans']
+        assert len(duplicate_spans) == 3
+        assert diag.span == duplicate_spans[0]
+        sliced = [_slice_by_span(dsl, span) for span in duplicate_spans]
+        assert sliced == ['A -> B;', 'A -> B;', 'A -> B;']
+        assert [span.line for span in duplicate_spans] == [6, 7, 8]
+
     def test_self_transition_with_lifecycle_action_is_not_noop(self):
         dsl = """
         def int counter = 0;
@@ -1008,14 +1608,91 @@ class TestInspectModelRedundancySemantics:
         }
         """
         report = inspect_model(_parse(dsl))
-        assert [
+        refs = [
             d.refs for d in report.diagnostics
             if d.code == 'W_EFFECT_SELF_ASSIGN'
-        ] == [{
-            'state_path': 'Root.A',
-            'transition_span': None,
+        ]
+        assert len(refs) == 1
+        assert refs[0]['state_path'] == 'Root.A'
+        _assert_has_span(refs[0]['transition_span'])
+        assert refs[0]['var_name'] == 'x'
+        assert refs[0]['effect_self_assign_anchor'] == 'x'
+        assert refs[0]['suggested_fix'] == {
+            'kind': 'delete',
+            'target': 'effect_self_assign_statement',
+            'anchor': {'type': 'ref', 'ref': 'refs.effect_self_assign_anchor'},
+            'text': '',
+            'rationale': 'Remove the no-op self-assignment statement.',
+        }
+
+    def test_effect_self_assignment_fix_is_omitted_when_occurrence_is_ambiguous(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            state C;
+            [*] -> A;
+            A -> B effect { x = x; };
+            A -> C effect { x = x; };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        refs = [
+            d.refs for d in report.diagnostics
+            if d.code == 'W_EFFECT_SELF_ASSIGN'
+        ]
+        assert len(refs) == 2
+        assert all(ref['state_path'] == 'Root.A' for ref in refs)
+        assert all(ref['var_name'] == 'x' for ref in refs)
+        assert all('effect_self_assign_anchor' not in ref for ref in refs)
+        assert all('suggested_fix' not in ref for ref in refs)
+
+    def test_duplicate_self_assignments_in_one_effect_do_not_get_fix(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B effect {
+                x = x;
+                x = x;
+            };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        refs = [
+            d.refs for d in report.diagnostics
+            if d.code == 'W_EFFECT_SELF_ASSIGN'
+        ]
+        assert len(refs) == 2
+        assert all('effect_self_assign_anchor' not in ref for ref in refs)
+        assert all('suggested_fix' not in ref for ref in refs)
+
+    def test_initial_transition_self_assignment_does_not_get_fix(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            [*] -> A effect {
+                x = x;
+            };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        refs = [
+            d.refs for d in report.diagnostics
+            if d.code == 'W_EFFECT_SELF_ASSIGN'
+        ]
+        assert len(refs) == 1
+        _assert_has_span(refs[0]['transition_span'])
+        assert refs[0] == {
+            'state_path': '[*]',
+            'transition_span': refs[0]['transition_span'],
             'var_name': 'x',
-        }]
+            'transition_index': 0,
+        }
 
 
 @pytest.mark.unittest
@@ -1103,8 +1780,12 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
             [*] -> A;
         }
         """
+        with pytest.raises(TypeError, match='deep_hierarchy_threshold'):
+            inspect_model(_parse(dsl), deep_hierarchy_threshold=True)
         with pytest.raises(ValueError, match='deep_hierarchy_threshold'):
             inspect_model(_parse(dsl), deep_hierarchy_threshold=0.5)
+        with pytest.raises(TypeError, match='large_composite_threshold'):
+            inspect_model(_parse(dsl), large_composite_threshold='bad')
         with pytest.raises(ValueError, match='large_composite_threshold'):
             inspect_model(_parse(dsl), large_composite_threshold=2.5)
 
@@ -1119,6 +1800,8 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
             inspect_model(_parse(dsl), var_to_leaf_ratio_threshold=True)
         with pytest.raises(ValueError, match='var_to_leaf_ratio_threshold'):
             inspect_model(_parse(dsl), var_to_leaf_ratio_threshold=float('nan'))
+        with pytest.raises(TypeError, match='var_to_leaf_ratio_threshold'):
+            inspect_model(_parse(dsl), var_to_leaf_ratio_threshold='bad')
 
     def test_integer_threshold_options_accept_integer_valued_float(self):
         dsl = """
@@ -1197,6 +1880,46 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
             'source_expr': '2.25',
         }
 
+    def test_literal_type_narrowing_keeps_deduped_assignment_spans_aligned(self):
+        dsl = """
+        def int truncated = 0;
+        state Root {
+            state A {
+                during {
+                    truncated = 2.25;
+                    truncated = 2.25;
+                    truncated = 3.5;
+                }
+            }
+            [*] -> A;
+        }
+        """
+        diagnostics = self._diagnostics_by_code(dsl)['W_LITERAL_TYPE_NARROWING']
+        by_expr = {diag.refs['source_expr']: diag for diag in diagnostics}
+
+        assert set(by_expr) == {'2.25', '3.5'}
+        assert 'truncated = 2.25;' in _slice_by_span(dsl, by_expr['2.25'].span)
+        assert 'truncated = 3.5;' in _slice_by_span(dsl, by_expr['3.5'].span)
+
+    def test_literal_type_narrowing_for_int_transition_effect_assignment(self):
+        dsl = """
+        def int truncated = 0;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B effect { truncated = 2.25; };
+        }
+        """
+        diag = self._diagnostics_by_code(dsl)['W_LITERAL_TYPE_NARROWING'][0]
+        assert diag.refs == {
+            'var_name': 'truncated',
+            'target_type': 'int',
+            'source_expr': '2.25',
+        }
+        _assert_has_span(diag.span)
+        assert 'truncated = 2.25' in _slice_by_span(dsl, diag.span)
+
     def test_aspect_no_descendant_leaf(self):
         dsl = """
         state Root {
@@ -1209,6 +1932,20 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
         assert diag.refs == {
             'composite_path': 'Root',
             'aspect': 'before',
+        }
+
+    def test_after_aspect_no_descendant_leaf(self):
+        dsl = """
+        state Root {
+            pseudo state Marker;
+            [*] -> Marker;
+            >> during after { }
+        }
+        """
+        diag = self._diagnostics_by_code(dsl)['W_ASPECT_NO_DESCENDANT_LEAF'][0]
+        assert diag.refs == {
+            'composite_path': 'Root',
+            'aspect': 'after',
         }
 
     def test_transition_to_self_via_parent_info(self):
@@ -1240,8 +1977,93 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
         """
         diag = self._diagnostics_by_code(dsl)['I_TRANSITION_NEVER_EVENT_TRIGGERED'][0]
         assert diag.severity == 'info'
+        _assert_has_span(diag.refs['transition_span'])
         assert diag.refs == {
             'from_path': 'Root.A',
             'to_path': 'Root.B',
-            'transition_span': None,
+            'transition_span': diag.refs['transition_span'],
+            'transition_index': 1,
         }
+
+
+@pytest.mark.unittest
+def test_inspect_guard_text_is_shared_normalized_format():
+    report = inspect_model(_parse("""
+    state Root {
+        state Idle;
+        state Blocked;
+        [*] -> Idle;
+        Idle -> Blocked : if [(0x0F & 0xF0) != 0];
+    }
+    """))
+    transition = next(item for item in report.transitions if item.guard is not None)
+    diagnostic = next(item for item in report.diagnostics if item.code == 'W_GUARD_CONST_FALSE')
+
+    assert transition.guard == '15 & 240 != 0'
+    assert diagnostic.refs['guard_text'] == '15 & 240 != 0'
+
+
+@pytest.mark.unittest
+def test_forced_transition_indexes_include_declaring_state_expansions_before_descendants():
+    report = inspect_model(_parse("""
+    state Root {
+        state A {
+            state X;
+            state Y;
+            [*] -> X;
+            X -> Y;
+            X -> Y;
+        }
+        state B;
+        [*] -> A;
+        !A -> B :: Fatal;
+        A -> B : if [false];
+    }
+    """))
+
+    assert [
+        (transition.transition_index, transition.from_path, transition.to_path, transition.is_forced)
+        for transition in report.transitions
+    ] == [
+        (0, 'Root.A', 'Root.B', True),
+        (1, '[*]', 'Root.A', False),
+        (2, 'Root.A', 'Root.B', False),
+        (3, 'Root.A.X', '[*]', True),
+        (4, 'Root.A.Y', '[*]', True),
+        (5, '[*]', 'Root.A.X', False),
+        (6, 'Root.A.X', 'Root.A.Y', False),
+        (7, 'Root.A.X', 'Root.A.Y', False),
+    ]
+
+
+@pytest.mark.unittest
+def test_nested_transition_indexes_follow_parent_first_model_order():
+    from pyfcstm.diagnostics import inspect_model
+    from pyfcstm.dsl import parse_with_grammar_entry
+    from pyfcstm.model import parse_dsl_node_to_state_machine
+
+    source = """
+    state Root {
+        state A {
+            state X;
+            state Y;
+            [*] -> X;
+            X -> Y;
+            X -> Y;
+        }
+        [*] -> A;
+    }
+    """
+    report = inspect_model(parse_dsl_node_to_state_machine(
+        parse_with_grammar_entry(source, 'state_machine_dsl'),
+    ))
+
+    assert [
+        (transition.transition_index, transition.from_path, transition.to_path)
+        for transition in report.transitions
+    ] == [
+        (0, '[*]', 'Root.A'),
+        (1, '[*]', 'Root.A.X'),
+        (2, 'Root.A.X', 'Root.A.Y'),
+        (3, 'Root.A.X', 'Root.A.Y'),
+    ]

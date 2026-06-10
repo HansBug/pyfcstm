@@ -1,0 +1,12 @@
+def int counter = 0;
+def int divisor = 0;
+state Root {
+    state A {
+        during {
+            if [1 / divisor > 0] {
+                counter = 1;
+            }
+        }
+    }
+    [*] -> A;
+}

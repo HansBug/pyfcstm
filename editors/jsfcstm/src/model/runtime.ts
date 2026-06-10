@@ -1,6 +1,11 @@
 /**
  * Runtime model classes for jsfcstm.
  *
+ * ``transitionIndex`` / ``transition_index`` are diagnostic-only source-range
+ * disambiguation hints. They count transitions in the same model order used by
+ * inspect analyzers, including expanded forced transitions; they are not part
+ * of the executable state-machine semantics.
+ *
  * The builder first creates raw serializable objects. This module hydrates
  * those raw shapes into stable runtime classes whose property and method
  * surface intentionally follows ``pyfcstm.model`` closely enough for users who
@@ -864,6 +869,8 @@ export class Transition extends ModelNode {
     declared_in_state_path: string[];
     triggerScope?: 'local' | 'chain' | 'absolute';
     trigger_scope?: 'local' | 'chain' | 'absolute';
+    transitionIndex?: number;
+    transition_index?: number;
     protected parentState?: State;
 
     constructor(raw: RawFcstmModelTransition, event: Event | undefined, guard: Expr | undefined, effects: OperationStatement[]) {
@@ -889,6 +896,8 @@ export class Transition extends ModelNode {
         this.declared_in_state_path = this.declaredInStatePath;
         this.triggerScope = raw.triggerScope;
         this.trigger_scope = raw.trigger_scope;
+        this.transitionIndex = raw.transitionIndex;
+        this.transition_index = raw.transition_index ?? raw.transitionIndex;
     }
 
     /**

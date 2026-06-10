@@ -42,6 +42,15 @@ from ..utils import format_multiline_comment
 from ..utils.validate import Span
 
 
+_COND_BINARY_OP_ALIASES = {
+    "implies": "=>",
+}
+
+
+def _canonical_cond_binary_op(op: str) -> str:
+    return _COND_BINARY_OP_ALIASES.get(op, op)
+
+
 def _ctx_span(ctx) -> Span:
     """
     Build a 1-based :class:`Span` covering an ANTLR4 parse context.
@@ -230,6 +239,13 @@ class GrammarParseListener(GrammarListener):
         )
         self.nodes[ctx] = node
 
+    def _exit_cond_binary_expression(self, ctx, expr1, expr2) -> None:
+        self.nodes[ctx] = BinaryOp(
+            expr1=expr1,
+            op=_canonical_cond_binary_op(ctx.op.text),
+            expr2=expr2,
+        )
+
     def exitBinaryExprFromCondCond(
         self, ctx: GrammarParser.BinaryExprFromCondCondContext
     ) -> None:
@@ -239,13 +255,12 @@ class GrammarParseListener(GrammarListener):
         :param ctx: Parse context for the binary condition-to-condition expression.
         :type ctx: GrammarParser.BinaryExprFromCondCondContext
         """
-        super().exitBinaryExprFromNumCond(ctx)
-        node = BinaryOp(
+        super().exitBinaryExprFromCondCond(ctx)
+        self._exit_cond_binary_expression(
+            ctx,
             expr1=self.nodes[ctx.cond_expression(0)],
-            op=ctx.op.text,
             expr2=self.nodes[ctx.cond_expression(1)],
         )
-        self.nodes[ctx] = node
 
     def exitBinaryExprCond(self, ctx: GrammarParser.BinaryExprCondContext) -> None:
         """
@@ -255,12 +270,11 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.BinaryExprCondContext
         """
         super().exitBinaryExprCond(ctx)
-        node = BinaryOp(
+        self._exit_cond_binary_expression(
+            ctx,
             expr1=self.nodes[ctx.cond_expression(0)],
-            op=ctx.op.text,
             expr2=self.nodes[ctx.cond_expression(1)],
         )
-        self.nodes[ctx] = node
 
     def exitUnaryExprCond(self, ctx: GrammarParser.UnaryExprCondContext) -> None:
         """
@@ -797,23 +811,31 @@ class GrammarParseListener(GrammarListener):
         conditions = list(ctx.cond_expression())
         blocks = list(ctx.operation_block())
 
-        branches = [
-            OperationIfBranch(
+        branches = []
+        for condition, block in zip(conditions, blocks[: len(conditions)]):
+            branch = OperationIfBranch(
                 condition=self.nodes[condition],
                 statements=self.nodes[block],
             )
-            for condition, block in zip(conditions, blocks[: len(conditions)])
-        ]
+            # Branch spans intentionally cover the executable operation block.
+            # The condition text remains covered by the parent OperationIf span;
+            # expression-level guard spans are a separate diagnostic contract.
+            branch._span = _ctx_span(block)
+            branches.append(branch)
 
         if len(blocks) > len(conditions):
-            branches.append(
-                OperationIfBranch(
-                    condition=None,
-                    statements=self.nodes[blocks[-1]],
-                )
+            branch = OperationIfBranch(
+                condition=None,
+                statements=self.nodes[blocks[-1]],
             )
+            # Keep else-branch semantics aligned with condition branches: the
+            # branch span points at the executable block, not the ``else`` token.
+            branch._span = _ctx_span(blocks[-1])
+            branches.append(branch)
 
-        self.nodes[ctx] = OperationIf(branches=branches)
+        node = OperationIf(branches=branches)
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitOperational_statement_set(
         self, ctx: GrammarParser.Operational_statement_setContext
@@ -870,10 +892,12 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.Operation_assignmentContext
         """
         super().exitOperation_assignment(ctx)
-        self.nodes[ctx] = OperationAssignment(
+        node = OperationAssignment(
             name=str(ctx.ID()),
             expr=self.nodes[ctx.num_expression()],
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitEnterOperations(self, ctx: GrammarParser.EnterOperationsContext) -> None:
         """
@@ -883,12 +907,14 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.EnterOperationsContext
         """
         super().exitEnterOperations(ctx)
-        self.nodes[ctx] = EnterOperations(
+        node = EnterOperations(
             name=ctx.func_name.text if ctx.func_name else None,
             operations=self.nodes[ctx.operational_statement_set()]
             if ctx.operational_statement_set()
             else [],
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitEnterAbstractFunc(
         self, ctx: GrammarParser.EnterAbstractFuncContext
@@ -900,10 +926,12 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.EnterAbstractFuncContext
         """
         super().exitEnterAbstractFunc(ctx)
-        self.nodes[ctx] = EnterAbstractFunction(
+        node = EnterAbstractFunction(
             name=ctx.func_name.text if ctx.func_name else None,
             doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitEnterRefFunc(self, ctx: GrammarParser.EnterRefFuncContext) -> None:
         """
@@ -913,10 +941,12 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.EnterRefFuncContext
         """
         super().exitEnterRefFunc(ctx)
-        self.nodes[ctx] = EnterRefFunction(
+        node = EnterRefFunction(
             name=ctx.func_name.text if ctx.func_name else None,
             ref=self.nodes[ctx.chain_id()],
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitExitOperations(self, ctx: GrammarParser.ExitOperationsContext) -> None:
         """
@@ -926,12 +956,14 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.ExitOperationsContext
         """
         super().exitExitOperations(ctx)
-        self.nodes[ctx] = ExitOperations(
+        node = ExitOperations(
             name=ctx.func_name.text if ctx.func_name else None,
             operations=self.nodes[ctx.operational_statement_set()]
             if ctx.operational_statement_set()
             else [],
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitExitAbstractFunc(self, ctx: GrammarParser.ExitAbstractFuncContext) -> None:
         """
@@ -941,10 +973,12 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.ExitAbstractFuncContext
         """
         super().exitExitAbstractFunc(ctx)
-        self.nodes[ctx] = ExitAbstractFunction(
+        node = ExitAbstractFunction(
             name=ctx.func_name.text if ctx.func_name else None,
             doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitExitRefFunc(self, ctx: GrammarParser.ExitRefFuncContext) -> None:
         """
@@ -954,10 +988,12 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.ExitRefFuncContext
         """
         super().exitExitRefFunc(ctx)
-        self.nodes[ctx] = ExitRefFunction(
+        node = ExitRefFunction(
             name=ctx.func_name.text if ctx.func_name else None,
             ref=self.nodes[ctx.chain_id()],
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitDuringOperations(self, ctx: GrammarParser.DuringOperationsContext) -> None:
         """
@@ -967,13 +1003,15 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.DuringOperationsContext
         """
         super().exitDuringOperations(ctx)
-        self.nodes[ctx] = DuringOperations(
+        node = DuringOperations(
             name=ctx.func_name.text if ctx.func_name else None,
             aspect=ctx.aspect.text if ctx.aspect else None,
             operations=self.nodes[ctx.operational_statement_set()]
             if ctx.operational_statement_set()
             else [],
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitDuringAbstractFunc(
         self, ctx: GrammarParser.DuringAbstractFuncContext
@@ -985,11 +1023,13 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.DuringAbstractFuncContext
         """
         super().exitDuringAbstractFunc(ctx)
-        self.nodes[ctx] = DuringAbstractFunction(
+        node = DuringAbstractFunction(
             name=ctx.func_name.text if ctx.func_name else None,
             aspect=ctx.aspect.text if ctx.aspect else None,
             doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitDuringRefFunc(self, ctx: GrammarParser.DuringRefFuncContext) -> None:
         """
@@ -999,11 +1039,13 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.DuringRefFuncContext
         """
         super().exitDuringRefFunc(ctx)
-        self.nodes[ctx] = DuringRefFunction(
+        node = DuringRefFunction(
             name=ctx.func_name.text if ctx.func_name else None,
             aspect=ctx.aspect.text if ctx.aspect else None,
             ref=self.nodes[ctx.chain_id()],
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitGeneric_expression(
         self, ctx: GrammarParser.Generic_expressionContext
@@ -1029,13 +1071,15 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.DuringAspectOperationsContext
         """
         super().exitDuringAspectOperations(ctx)
-        self.nodes[ctx] = DuringAspectOperations(
+        node = DuringAspectOperations(
             name=ctx.func_name.text if ctx.func_name else None,
             aspect=ctx.aspect.text if ctx.aspect else None,
             operations=self.nodes[ctx.operational_statement_set()]
             if ctx.operational_statement_set()
             else [],
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitDuringAspectAbstractFunc(
         self, ctx: GrammarParser.DuringAspectAbstractFuncContext
@@ -1047,11 +1091,13 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.DuringAspectAbstractFuncContext
         """
         super().exitDuringAspectAbstractFunc(ctx)
-        self.nodes[ctx] = DuringAspectAbstractFunction(
+        node = DuringAspectAbstractFunction(
             name=ctx.func_name.text if ctx.func_name else None,
             aspect=ctx.aspect.text if ctx.aspect else None,
             doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitDuringAspectRefFunc(
         self, ctx: GrammarParser.DuringAspectRefFuncContext
@@ -1063,11 +1109,13 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.DuringAspectRefFuncContext
         """
         super().exitDuringAspectRefFunc(ctx)
-        self.nodes[ctx] = DuringAspectRefFunction(
+        node = DuringAspectRefFunction(
             name=ctx.func_name.text if ctx.func_name else None,
             aspect=ctx.aspect.text if ctx.aspect else None,
             ref=self.nodes[ctx.chain_id()],
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitNormalForceTransitionDefinition(
         self, ctx: GrammarParser.NormalForceTransitionDefinitionContext
@@ -1191,12 +1239,14 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.Event_definitionContext
         """
         super().exitEvent_definition(ctx)
-        self.nodes[ctx] = EventDefinition(
+        node = EventDefinition(
             name=ctx.event_name.text,
             extra_name=_parse_string_literal(ctx.extra_name.text)
             if ctx.extra_name
             else None,
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitImport_mapping_statement(
         self, ctx: GrammarParser.Import_mapping_statementContext

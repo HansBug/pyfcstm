@@ -1,0 +1,64 @@
+schema_version: 1
+id: hot_start_skips_enter_actions
+title: Hot start skips enter actions
+source:
+  fcstm: hot_start_skips_enter_actions.fcstm
+origin:
+  files:
+  - test/simulate/test_hot_start.py::TestHotStartWithLifecycleActions::test_hot_start_skips_enter_actions
+  assertion_types:
+  - initial
+  - state
+  - vars
+  - return
+  - ended
+categories:
+- runtime
+- hot_start
+- lifecycle
+runners:
+- simulation
+initial:
+  state: Root.A
+  vars:
+    enter_count: 0
+    during_count: 0
+steps:
+- expect_initial:
+    state:
+    - Root
+    - A
+    vars:
+      enter_count: 0
+      during_count: 0
+    ended: false
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      enter_count: 0
+      during_count: 1
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      enter_count: 0
+      during_count: 2
+    ended: false
+    return: null
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      enter_count: 0
+      during_count: 3
+    ended: false
+    return: null

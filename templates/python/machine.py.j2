@@ -24,6 +24,7 @@
     "hook_method": {{ abstract_hook_method_name(resolved.item) | tojson if resolved.item.is_abstract else "None" }},
     "action_name": {{ resolved.item.func_name | tojson }},
     "action_stage": {{ resolved.item.stage | tojson }},
+    "context_state_path": {{ py_tuple(state.path) }},
     "owner_state_path": {{ py_tuple(resolved.item.parent.path) }},
     "dsl_snippet": {{ (resolved.item.to_ast_node() | string) | tojson }},
 }
@@ -33,7 +34,7 @@
 [
 {%- for id_, item in items %}
 {{ render_action_entry(state, item, method_kind, id_) | indent(16, true) }},
-{% endfor %}
+{%- endfor %}
             ]
 {%- else -%}
 []
@@ -99,9 +100,10 @@ Original DSL Source::
 {{ (model.to_ast_node() | string) | indent(4, true) }}
 """
 
-import math
+import math  # noqa: F401 - rendered DSL math expressions may use this module.
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
+from types import MappingProxyType
+from typing import Mapping, Tuple, Union
 
 
 Number = Union[int, float]
@@ -192,6 +194,13 @@ class SimulationRuntimeDfsError(RuntimeError):
 
 
 
+class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
+    """Raised when a DSL guard or action expression fails during execution."""
+
+    pass
+
+
+
 @dataclass(frozen=True)
 class ReadOnlyExecutionContext:
     """
@@ -200,7 +209,7 @@ class ReadOnlyExecutionContext:
     :param state_path: Owning action state path.
     :type state_path: Tuple[str, ...]
     :param vars: Snapshot of machine variables.
-    :type vars: Dict[str, Number]
+    :type vars: Mapping[str, Number]
     :param action_name: Full action path.
     :type action_name: str
     :param action_stage: Lifecycle stage.
@@ -208,9 +217,12 @@ class ReadOnlyExecutionContext:
     """
 
     state_path: Tuple[str, ...]
-    vars: Dict[str, Number]
+    vars: Mapping[str, Number]
     action_name: str
     action_stage: str
+
+    def __post_init__(self):
+        object.__setattr__(self, "vars", MappingProxyType(dict(self.vars)))
 
     def get_var(self, name):
         return self.vars[name]
@@ -240,7 +252,9 @@ class {{ machine_class_name(model) }}:
 
     DSL_SOURCE = _DSL_SOURCE
     STATE_PATHS = _STATE_PATHS
-{% if define_items | length == 1 -%}
+{% if define_items | length == 0 -%}
+{{ 'VARIABLE_NAMES = ()' | indent(4, true) }}
+{% elif define_items | length == 1 -%}
 {{ ('VARIABLE_NAMES = (' ~ (define_items[0].name | tojson) ~ ',)') | indent(4, true) }}
 {% else -%}
 {% set variable_name_lines = namespace(items=['VARIABLE_NAMES = (']) -%}
@@ -270,12 +284,24 @@ class {{ machine_class_name(model) }}:
             "during_after_actions": {{ render_action_entries(state, state.list_on_durings(aspect="after", with_ids=True), "during_after") }},
             "aspect_before_actions": {{ render_action_entries(state, state.list_on_during_aspects(aspect="before", with_ids=True), "aspect_before") }},
             "aspect_after_actions": {{ render_action_entries(state, state.list_on_during_aspects(aspect="after", with_ids=True), "aspect_after") }},
-            "initial_transition_ids": [{%- for transition in state.init_transitions %}
+{% if state.init_transitions %}
+            "initial_transition_ids": [
+{% for transition in state.init_transitions %}
                 {{ init_transition_id(state, loop.index) | tojson }},
-            {% endfor -%}],
-            "transition_ids": [{%- for transition in state.transitions_from %}
+{% endfor %}
+            ],
+{% else %}
+            "initial_transition_ids": [],
+{% endif %}
+{% if state.transitions_from %}
+            "transition_ids": [
+{% for transition in state.transitions_from %}
                 {{ normal_transition_id(state, loop.index) | tojson }},
-            {% endfor -%}],
+{% endfor %}
+            ],
+{% else %}
+            "transition_ids": [],
+{% endif %}
         },
 {% endfor %}
     }
@@ -303,11 +329,15 @@ class {{ machine_class_name(model) }}:
 {% endfor %}
 {% endfor %}
     }
-    _VAR_TYPES = {
+{% if define_items | length == 0 -%}
+{{ '_VAR_TYPES = {}' | indent(4, true) }}
+{% else -%}
+{{ '_VAR_TYPES = {' | indent(4, true) }}
 {% for def_item in define_items %}
         {{ def_item.name | tojson }}: {{ def_item.type | tojson }},
 {% endfor %}
     }
+{% endif %}
 
     def __init__(self, initial_state=None, initial_vars=None):
         """
@@ -336,7 +366,14 @@ class {{ machine_class_name(model) }}:
                     "initial_vars contains unknown variables: %s" % sorted(extra_vars)
                 )
             for name, value in initial_vars.items():
-                if self._VAR_TYPES[name] == "int" and isinstance(value, float):
+                if type(value) is bool:
+                    raise ValueError("initial_vars[%r] must not be bool" % (name,))
+                if type(value) not in (int, float):
+                    raise ValueError(
+                        "initial_vars[%r] must be int or float, got %s"
+                        % (name, type(value).__name__)
+                    )
+                if self._VAR_TYPES[name] == "int" and type(value) is float:
                     if value != int(value):
                         raise ValueError(
                             "Variable %r is int type, cannot assign float %r"
@@ -347,6 +384,7 @@ class {{ machine_class_name(model) }}:
 
         self._ended = False
         self._entered_root = initial_state is not None
+        self.cycle_count = 0
         if initial_state is None:
             self._stack = [{"state": self._ROOT_STATE_PATH, "mode": "init_wait"}]
         else:
@@ -357,6 +395,7 @@ class {{ machine_class_name(model) }}:
             self._stack = self._build_hot_start_stack(
                 self._normalize_state_path(initial_state)
             )
+            self._validate_hot_start_stack(self._normalize_state_path(initial_state))
 
     @property
     def vars(self):
@@ -448,6 +487,24 @@ class {{ machine_class_name(model) }}:
             else:
                 stack.append({"state": state_path, "mode": "active"})
         return stack
+
+    def _validate_hot_start_stack(self, target_path):
+        if self._is_stoppable_state(target_path):
+            return
+
+        validation_stack = self._clone_stack(self._stack)
+        validation_vars = dict(self._vars)
+        success, _ = self._run_cycle_on_context(
+            validation_stack,
+            validation_vars,
+            set(),
+            is_validation_mode=True,
+        )
+        if not success:
+            target_display = ".".join(self._STATE_INFO[target_path]["path"])
+            raise ValueError(
+                "Hot start target %r cannot reach a stoppable state" % (target_display,)
+            )
 
     @staticmethod
     def _clone_stack(stack):
@@ -563,7 +620,7 @@ class {{ machine_class_name(model) }}:
         if is_validation_mode:
             return
         ctx = ReadOnlyExecutionContext(
-            state_path=action["owner_state_path"],
+            state_path=action["context_state_path"],
             vars=dict(vars_),
             action_name=action["action_name"],
             action_stage=action["action_stage"],
@@ -607,6 +664,18 @@ class {{ machine_class_name(model) }}:
             return True
         return transition["event_path"] in event_names
 
+    def _evaluate_runtime_expr(self, fn, usage):
+        try:
+            return fn()
+        except (ValueError, ArithmeticError) as err:
+            # ValueError: math domain errors or invalid numeric operations
+            # raised while evaluating a user's DSL expression.
+            # ArithmeticError: division by zero, overflow, or other numeric
+            # runtime failure while evaluating a user's DSL expression.
+            raise SimulationRuntimeExpressionError(
+                "%s evaluation failed: %s" % (usage, err)
+            ) from err
+
     def _transition_matches_guard(self, transition, vars_):
         if transition["guard"] is None:
             return True
@@ -621,7 +690,14 @@ class {{ machine_class_name(model) }}:
         if transition["effect"] is not None:
             getattr(self, transition["effect"])(vars_)
 
-    def _select_transition(self, stack, vars_, event_names, validate_stoppable=True):
+    def _select_transition(
+        self,
+        stack,
+        vars_,
+        event_names,
+        validate_stoppable=True,
+        force_validate=False,
+    ):
         if not stack:
             return None
         state_path = stack[-1]["state"]
@@ -630,7 +706,9 @@ class {{ machine_class_name(model) }}:
             transition = self._TRANSITIONS[transition_id]
             if not self._transition_is_enabled(transition, event_names, vars_):
                 continue
-            if validate_stoppable and self._is_stoppable_state(state_path):
+            if validate_stoppable and (
+                self._is_stoppable_state(state_path) or force_validate
+            ):
                 if not self._validate_transition(
                     stack, vars_, transition_id, event_names
                 ):
@@ -672,18 +750,52 @@ class {{ machine_class_name(model) }}:
         for transition_id in self._STATE_INFO[current_path]["initial_transition_ids"]:
             transition = self._TRANSITIONS[transition_id]
             if self._transition_is_enabled(transition, event_names, vars_):
-                self._execute_transition_effect(
-                    transition, vars_, is_validation_mode=is_validation_mode
-                )
-                self._enter_state(
+                if not self._validate_initial_transition(
+                    stack, vars_, transition_id, event_names
+                ):
+                    continue
+                self._execute_initial_transition_on_context(
                     stack,
-                    transition["target"],
                     vars_,
+                    transition_id,
                     event_names,
                     is_validation_mode=is_validation_mode,
                 )
                 return True
         return False
+
+    def _execute_initial_transition_on_context(
+        self, stack, vars_, transition_id, event_names, is_validation_mode=False
+    ):
+        transition = self._TRANSITIONS[transition_id]
+        self._execute_transition_effect(
+            transition, vars_, is_validation_mode=is_validation_mode
+        )
+        self._enter_state(
+            stack,
+            transition["target"],
+            vars_,
+            event_names,
+            is_validation_mode=is_validation_mode,
+        )
+
+    def _validate_initial_transition(self, stack, vars_, transition_id, event_names):
+        sim_stack = self._clone_stack(stack)
+        sim_vars = dict(vars_)
+        self._execute_initial_transition_on_context(
+            sim_stack,
+            sim_vars,
+            transition_id,
+            event_names,
+            is_validation_mode=True,
+        )
+        success, _ = self._run_cycle_on_context(
+            sim_stack,
+            sim_vars,
+            event_names,
+            is_validation_mode=True,
+        )
+        return success
 
     def _finalize_exit_to_parent(self, stack, vars_, is_validation_mode=False):
         if not stack:
@@ -691,6 +803,16 @@ class {{ machine_class_name(model) }}:
 
         parent_path = stack[-1]["state"]
         if parent_path == self._ROOT_STATE_PATH:
+            self._execute_actions(
+                self._STATE_INFO[parent_path]["during_after_actions"],
+                vars_,
+                is_validation_mode=is_validation_mode,
+            )
+            self._execute_actions(
+                self._STATE_INFO[parent_path]["exit_actions"],
+                vars_,
+                is_validation_mode=is_validation_mode,
+            )
             stack[:] = []
             return True
 
@@ -748,7 +870,7 @@ class {{ machine_class_name(model) }}:
             sim_vars,
             event_names,
             ended=ended,
-            validate_post_child_exit=False,
+            validate_post_child_exit=True,
             is_validation_mode=True,
         )
         return success
@@ -794,7 +916,8 @@ class {{ machine_class_name(model) }}:
             if len(self._create_structural_signature(stack)) > max_structural_depth:
                 raise SimulationRuntimeDfsError(
                     "Speculative DFS exceeded the structural stack-depth safety limit "
-                    "(%s) without reaching a stoppable state or pruning."
+                    "(%s) without reaching a stoppable state or pruning; "
+                    "the state machine likely contains an invalid unbounded nesting chain."
                     % (max_structural_depth,)
                 )
 
@@ -852,6 +975,7 @@ class {{ machine_class_name(model) }}:
                     vars_,
                     event_names,
                     validate_stoppable=validate_post_child_exit,
+                    force_validate=validate_post_child_exit,
                 )
                 if transition_id is None:
                     return False, False
@@ -889,21 +1013,44 @@ class {{ machine_class_name(model) }}:
         snapshot_entered_root = self._entered_root
         snapshot_ended = self._ended
 
-        sim_stack = self._clone_stack(self._stack)
-        sim_vars = dict(self._vars)
-        sim_entered_root = self._entered_root
-        sim_ended = self._ended
+        validation_stack = self._clone_stack(snapshot_stack)
+        validation_vars = dict(snapshot_vars)
+        validation_entered_root = snapshot_entered_root
+        validation_ended = snapshot_ended
 
-        if not sim_entered_root:
-            sim_ended = self._initialize_context(sim_stack, sim_vars, event_names)
-            sim_entered_root = True
+        if not validation_entered_root:
+            validation_ended = self._initialize_context(
+                validation_stack,
+                validation_vars,
+                event_names,
+                is_validation_mode=True,
+            )
+            validation_entered_root = True
 
-        success, sim_ended = self._run_cycle_on_context(
-            sim_stack,
-            sim_vars,
+        success, validation_ended = self._run_cycle_on_context(
+            validation_stack,
+            validation_vars,
             event_names,
-            ended=sim_ended,
+            ended=validation_ended,
+            is_validation_mode=True,
         )
+
+        if success:
+            sim_stack = self._clone_stack(snapshot_stack)
+            sim_vars = dict(snapshot_vars)
+            sim_entered_root = snapshot_entered_root
+            sim_ended = snapshot_ended
+
+            if not sim_entered_root:
+                sim_ended = self._initialize_context(sim_stack, sim_vars, event_names)
+                sim_entered_root = True
+
+            success, sim_ended = self._run_cycle_on_context(
+                sim_stack,
+                sim_vars,
+                event_names,
+                ended=sim_ended,
+            )
 
         if success:
             self._stack = [] if sim_ended else sim_stack
@@ -911,16 +1058,16 @@ class {{ machine_class_name(model) }}:
             self.variables = self._vars
             self._entered_root = sim_entered_root
             self._ended = sim_ended
+            self.cycle_count += 1
         else:
             self._vars = snapshot_vars
             self.variables = self._vars
             self._ended = snapshot_ended
             if not snapshot_entered_root and not snapshot_ended:
                 self._stack = self._create_root_rollback_stack()
-                self._entered_root = True
             else:
                 self._stack = snapshot_stack
-                self._entered_root = snapshot_entered_root
+            self._entered_root = snapshot_entered_root
 
         if self._ended or not self._stack:
             self._ended = True
@@ -974,9 +1121,9 @@ class {{ machine_class_name(model) }}:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
-{{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
+        scope = vars_ if vars_ is not None else self._vars
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
 {% endif %}
@@ -1027,9 +1174,9 @@ class {{ machine_class_name(model) }}:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
-{{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
+        scope = vars_ if vars_ is not None else self._vars
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
 {% endif %}
@@ -1080,9 +1227,9 @@ class {{ machine_class_name(model) }}:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
-{{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
+        scope = vars_ if vars_ is not None else self._vars
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
 {% endif %}
@@ -1135,9 +1282,9 @@ class {{ machine_class_name(model) }}:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
-{{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
+        scope = vars_ if vars_ is not None else self._vars
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
 {% endif %}
@@ -1190,9 +1337,9 @@ class {{ machine_class_name(model) }}:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
-{{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
+        scope = vars_ if vars_ is not None else self._vars
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
 {% endif %}
@@ -1245,9 +1392,9 @@ class {{ machine_class_name(model) }}:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
-{{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
+        scope = vars_ if vars_ is not None else self._vars
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
 {% endif %}
@@ -1300,9 +1447,9 @@ class {{ machine_class_name(model) }}:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
-{{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
+        scope = vars_ if vars_ is not None else self._vars
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 {% else %}
         pass
 {% endif %}
@@ -1320,7 +1467,12 @@ class {{ machine_class_name(model) }}:
 {{ (transition.to_ast_node() | string) | indent(12, true) }}
         """
         scope = vars_ if vars_ is not None else self._vars
-        return bool({{ transition.guard.to_ast_node() | expr_render(style='python_scope_expr') }})
+        return bool(
+            self._evaluate_runtime_expr(
+                lambda scope=scope: {{ transition.guard.to_ast_node() | expr_render(style='python_scope_expr') }},
+                "transition guard",
+            )
+        )
 
 {% endif %}
 {% if transition.effects %}
@@ -1333,7 +1485,7 @@ class {{ machine_class_name(model) }}:
 {{ (transition.to_ast_node() | string) | indent(12, true) }}
         """
         scope = vars_ if vars_ is not None else self._vars
-{{ transition.effects | stmts_render(style='python', indent='    ', level=2) }}
+{{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=2) }}
 
 {% endif %}
 {% endfor %}
@@ -1348,7 +1500,12 @@ class {{ machine_class_name(model) }}:
 {{ (transition.to_ast_node() | string) | indent(12, true) }}
         """
         scope = vars_ if vars_ is not None else self._vars
-        return bool({{ transition.guard.to_ast_node() | expr_render(style='python_scope_expr') }})
+        return bool(
+            self._evaluate_runtime_expr(
+                lambda scope=scope: {{ transition.guard.to_ast_node() | expr_render(style='python_scope_expr') }},
+                "transition guard",
+            )
+        )
 
 {% endif %}
 {% if transition.effects %}
@@ -1361,7 +1518,7 @@ class {{ machine_class_name(model) }}:
 {{ (transition.to_ast_node() | string) | indent(12, true) }}
         """
         scope = vars_ if vars_ is not None else self._vars
-{{ transition.effects | stmts_render(style='python', indent='    ', level=2) }}
+{{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=2) }}
 
 {% endif %}
 {% endfor %}

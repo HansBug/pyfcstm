@@ -62,7 +62,9 @@ export function toLspDiagnostic(item: FcstmDiagnostic): Diagnostic {
         message: item.message,
         severity: item.severity === 'error'
             ? DiagnosticSeverity.Error
-            : DiagnosticSeverity.Warning,
+            : item.severity === 'info'
+                ? DiagnosticSeverity.Information
+                : DiagnosticSeverity.Warning,
         source: item.source,
         code: item.code,
         data: item.data,

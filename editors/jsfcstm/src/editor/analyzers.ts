@@ -17,7 +17,7 @@ import type {
     FcstmAstUnaryExpression,
 } from '../ast';
 import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticTransition} from '../semantics';
-import {FcstmDiagnostic, TextDocumentLike} from '../utils/text';
+import {FcstmDiagnostic, rangeIsEmptyOrInvalid, TextDocumentLike} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {findIdentifierRange} from './ranges';
 
@@ -57,12 +57,260 @@ export const FCSTM_DIAGNOSTIC_CODES = {
     unreachableState: 'W_UNREACHABLE_STATE',
     guardConstFalse: 'W_GUARD_CONST_FALSE',
     unusedEvent: 'W_UNUSED_EVENT',
+    guardConstTrue: 'W_GUARD_CONST_TRUE',
+    deadlockLeaf: 'W_DEADLOCK_LEAF',
+    initialUnconditionalMissing: 'W_INITIAL_UNCONDITIONAL_MISSING',
+    unreferencedVar: 'W_UNREFERENCED_VAR',
+    effectSelfAssign: 'W_EFFECT_SELF_ASSIGN',
 } as const;
+
+
+const EXPR_PRECEDENCE: Record<string, number> = {
+    'function_call': 90,
+    'unary+': 80,
+    'unary-': 80,
+    '!': 80,
+    'not': 80,
+    '**': 70,
+    '*': 60,
+    '/': 60,
+    '%': 60,
+    '+': 50,
+    '-': 50,
+    '<<': 40,
+    '>>': 40,
+    '&': 35,
+    '^': 30,
+    '|': 25,
+    '<': 20,
+    '>': 20,
+    '<=': 20,
+    '>=': 20,
+    '==': 20,
+    '!=': 20,
+    'iff': 20,
+    '&&': 15,
+    'and': 15,
+    'xor': 12,
+    '||': 10,
+    'or': 10,
+    '=>': 7,
+    '?:': 5,
+};
+const HEX_RADIX = 16;
+const BINARY_RADIX = 2;
+
+function canonicalBinaryOperator(op: string): string {
+    if (op === 'and') return '&&';
+    if (op === 'or') return '||';
+    if (op === 'implies') return '=>';
+    return op;
+}
+
+function canonicalUnaryOperator(op: string): string {
+    return op === 'not' ? '!' : op;
+}
+
+function unaryPrecedenceKey(op: string): string {
+    const canonical = canonicalUnaryOperator(op);
+    return canonical === '+' || canonical === '-' ? `unary${canonical}` : canonical;
+}
+
+function normalizeDecimalDigits(raw: string): string {
+    const normalized = raw.replace(/^0+/, '');
+    return normalized.length > 0 ? normalized : '0';
+}
+
+function addSmallDecimal(raw: string, value: number): string {
+    if (value === 0) return raw;
+    let carry = value;
+    const out: string[] = [];
+    for (let index = raw.length - 1; index >= 0; index -= 1) {
+        const total = Number(raw[index]) + carry;
+        out.push(String(total % 10));
+        carry = Math.floor(total / 10);
+    }
+    while (carry > 0) {
+        out.push(String(carry % 10));
+        carry = Math.floor(carry / 10);
+    }
+    return out.reverse().join('');
+}
+
+function multiplySmallDecimal(raw: string, factor: number): string {
+    if (raw === '0' || factor === 0) return '0';
+    let carry = 0;
+    const out: string[] = [];
+    for (let index = raw.length - 1; index >= 0; index -= 1) {
+        const total = Number(raw[index]) * factor + carry;
+        out.push(String(total % 10));
+        carry = Math.floor(total / 10);
+    }
+    while (carry > 0) {
+        out.push(String(carry % 10));
+        carry = Math.floor(carry / 10);
+    }
+    return out.reverse().join('');
+}
+
+function convertRadixDigitsToDecimal(digits: string, radix: number): string {
+    let value = '0';
+    for (const char of digits.toLowerCase()) {
+        const digit = parseInt(char, radix);
+        value = addSmallDecimal(multiplySmallDecimal(value, radix), digit);
+    }
+    return value;
+}
+
+function numericAstText(expression: FcstmAstLiteralExpression): string {
+    const raw = expression.valueText.trim();
+    if (/^\d+$/.test(raw)) return normalizeDecimalDigits(raw);
+    if (/^0[xX][0-9a-fA-F]+$/.test(raw)) {
+        return convertRadixDigitsToDecimal(raw.slice(2), HEX_RADIX);
+    }
+    if (/^0[bB][01]+$/.test(raw)) {
+        return convertRadixDigitsToDecimal(raw.slice(2), BINARY_RADIX);
+    }
+    const value = Number(raw);
+    if (expression.pyNodeType === 'Float') {
+        return Number.isInteger(value) ? `${value}.0` : String(value);
+    }
+    return String(Math.trunc(value));
+}
+
+function astExprPrecedence(expression: FcstmAstExpression): number | null {
+    if (expression.expressionKind === 'binary') {
+        return EXPR_PRECEDENCE[canonicalBinaryOperator(expression.op)] ?? null;
+    }
+    if (expression.expressionKind === 'conditional') return EXPR_PRECEDENCE['?:'];
+    if (expression.expressionKind === 'unary') return EXPR_PRECEDENCE[unaryPrecedenceKey(expression.op)] ?? null;
+    return null;
+}
+
+function astExprText(expression: FcstmAstExpression | undefined): string | null {
+    if (!expression) return null;
+    switch (expression.expressionKind) {
+        case 'literal':
+            return expression.literalType === 'boolean'
+                ? expression.valueText.toLowerCase()
+                : numericAstText(expression);
+        case 'identifier':
+            return expression.name;
+        case 'mathConst':
+            return expression.name;
+        case 'parenthesized':
+            return astExprText(expression.expression);
+        case 'function': {
+            const argument = astExprText(expression.argument);
+            return argument === null ? null : `${expression.functionName}(${argument})`;
+        }
+        case 'unary': {
+            const op = canonicalUnaryOperator(expression.op);
+            const myPrecedence = EXPR_PRECEDENCE[unaryPrecedenceKey(expression.op)];
+            let value = astExprText(expression.operand);
+            if (value === null) return null;
+            const valuePrecedence = astExprPrecedence(expression.operand);
+            if (valuePrecedence !== null && valuePrecedence <= myPrecedence) {
+                value = `(${value})`;
+            }
+            return `${op}${value}`;
+        }
+        case 'binary': {
+            const op = canonicalBinaryOperator(expression.op);
+            const myPrecedence = EXPR_PRECEDENCE[op];
+            let left = astExprText(expression.left);
+            let right = astExprText(expression.right);
+            if (left === null || right === null) return null;
+            const leftPrecedence = astExprPrecedence(expression.left);
+            if (leftPrecedence !== null && leftPrecedence < myPrecedence) {
+                left = `(${left})`;
+            }
+            const rightPrecedence = astExprPrecedence(expression.right);
+            if (rightPrecedence !== null && rightPrecedence <= myPrecedence) {
+                right = `(${right})`;
+            }
+            return `${left} ${op} ${right}`;
+        }
+        case 'conditional': {
+            const myPrecedence = EXPR_PRECEDENCE['?:'];
+            const condition = astExprText(expression.condition);
+            let whenTrue = astExprText(expression.whenTrue);
+            let whenFalse = astExprText(expression.whenFalse);
+            if (condition === null || whenTrue === null || whenFalse === null) return null;
+            const truePrecedence = astExprPrecedence(expression.whenTrue);
+            if (truePrecedence !== null && truePrecedence <= myPrecedence) {
+                whenTrue = `(${whenTrue})`;
+            }
+            const falsePrecedence = astExprPrecedence(expression.whenFalse);
+            if (falsePrecedence !== null && falsePrecedence <= myPrecedence) {
+                whenFalse = `(${whenFalse})`;
+            }
+            return `(${condition}) ? ${whenTrue} : ${whenFalse}`;
+        }
+    }
+}
 
 function isFalseLiteral(expression: FcstmAstExpression): boolean {
     return expression.expressionKind === 'literal'
         && expression.literalType === 'boolean'
         && /^(false|False)$/i.test(expression.valueText);
+}
+
+function dottedPath(path: readonly string[] | undefined): string | null {
+    return path && path.length > 0 ? path.join('.') : null;
+}
+
+function transitionDiagnosticEndpointPaths(
+    transition: FcstmSemanticTransition,
+): {from_path?: string; to_path?: string} {
+    if (transition.forced && transition.expandedTransitions.length === 1) {
+        const [expanded] = transition.expandedTransitions;
+        const fromPath = dottedPath(expanded.sourceStatePath);
+        const toPath = expanded.targetKind === 'exit'
+            ? '[*]'
+            : dottedPath(expanded.targetStatePath);
+        return {
+            ...(fromPath ? {from_path: fromPath} : {}),
+            ...(toPath ? {to_path: toPath} : {}),
+        };
+    }
+
+    const fromPath = transition.sourceKind === 'init'
+        ? '[*]'
+        : dottedPath(transition.sourceStatePath) ?? transition.sourceStateName ?? null;
+    const toPath = transition.targetKind === 'exit'
+        ? '[*]'
+        : dottedPath(transition.targetStatePath) ?? transition.targetStateName ?? null;
+    return {
+        ...(fromPath ? {from_path: fromPath} : {}),
+        ...(toPath ? {to_path: toPath} : {}),
+    };
+}
+
+function transitionModelOrderIndex(transition: FcstmSemanticTransition): number | null {
+    const rawIndex = transition.ast.transitionIndex;
+    if (typeof rawIndex === 'number' && Number.isInteger(rawIndex)) return rawIndex;
+
+    if (!Array.isArray(transition.ast.transitionIndexRefs)) return null;
+    if (transition.forced && transition.expandedTransitions.length === 1) {
+        const [expanded] = transition.expandedTransitions;
+        const match = transition.ast.transitionIndexRefs.find(ref => (
+            typeof ref.index === 'number' &&
+            (typeof ref.fromPath !== 'string' || ref.fromPath === dottedPath(expanded.sourceStatePath)) &&
+            (typeof ref.toPath !== 'string' || ref.toPath === (
+                expanded.targetKind === 'exit' ? '[*]' : dottedPath(expanded.targetStatePath)
+            ))
+        ));
+        return typeof match?.index === 'number' ? match.index : null;
+    }
+
+    const endpoints = transitionDiagnosticEndpointPaths(transition);
+    const match = transition.ast.transitionIndexRefs.find(ref => (
+        typeof ref.index === 'number' &&
+        (typeof ref.fromPath !== 'string' || ref.fromPath === endpoints.from_path) &&
+        (typeof ref.toPath !== 'string' || ref.toPath === endpoints.to_path)
+    ));
+    return typeof match?.index === 'number' ? match.index : null;
 }
 
 function toFileUri(document: TextDocumentLike): string {
@@ -314,7 +562,10 @@ function addTransitionDiagnostics(
         if (sourceUnreachable || (transition.guard && isFalseLiteral(transition.guard))) {
             const sourceState = semantic.states.find(item => item.identity.id === transition.sourceStateId);
             diagnostics.push({
-                range: transition.range,
+                // For forced expansions, ``transition.guard`` still points at
+                // the original forced declaration guard, so this range anchors
+                // literal-false warnings to the authored guard expression.
+                range: !sourceUnreachable && transition.guard ? transition.guard.range : transition.range,
                 message: sourceUnreachable
                     ? `Transition ${JSON.stringify(transition.ast.text)} is dead because its source state is unreachable.`
                     : `Transition ${JSON.stringify(transition.ast.text)} is dead because its guard is always false.`,
@@ -322,7 +573,11 @@ function addTransitionDiagnostics(
                 source: 'fcstm',
                 code: FCSTM_DIAGNOSTIC_CODES.guardConstFalse,
                 data: {
+                    transition_span: null,
                     folded_value: false,
+                    guard_text: astExprText(transition.guard),
+                    transition_index: transitionModelOrderIndex(transition),
+                    ...transitionDiagnosticEndpointPaths(transition),
                 },
                 relatedInformation: sourceState
                     ? [{
@@ -448,6 +703,9 @@ function pushIdentifierDiagnostic(
     severity: 'error' | 'warning' | 'info' = 'error',
     data?: Record<string, unknown>
 ): void {
+    if (identifier.name.length === 0 || rangeIsEmptyOrInvalid(identifier.range)) {
+        return;
+    }
     // M2 (PR #115 final review): inject ``var_name`` from the
     // identifier itself so every E_UNDEFINED_VAR / E_DUPLICATE_VAR
     // emit carries the schema-required field without each caller
@@ -966,20 +1224,11 @@ function addInitialTransitionInvalidDiagnostics(
     }
 }
 
-export async function collectSemanticAnalysisDiagnostics(
-    document: TextDocumentLike
-): Promise<FcstmDiagnostic[]> {
+export function collectSemanticAnalysisDiagnosticsFromSemantic(
+    semantic: FcstmSemanticDocument,
+    document: TextDocumentLike,
+): FcstmDiagnostic[] {
     const diagnostics: FcstmDiagnostic[] = [];
-    const semantic = await getWorkspaceGraph().getSemanticDocument(document);
-    // Defensive: callers always invoke against documents with a
-    // semantic analysis available; this guard exists for hypothetical
-    // future async paths.
-    /* c8 ignore start */
-    if (!semantic) {
-        return diagnostics;
-    }
-    /* c8 ignore stop */
-
     addImportMappingDiagnostics(semantic, document, diagnostics);
     addUnreachableStateDiagnostics(semantic, document, diagnostics);
     addTransitionDiagnostics(semantic, document, diagnostics);
@@ -993,6 +1242,22 @@ export async function collectSemanticAnalysisDiagnostics(
     addInitialTransitionInvalidDiagnostics(semantic, document, diagnostics);
     addTypeMismatchDiagnostics(semantic, document, diagnostics);
     return diagnostics;
+}
+
+export async function collectSemanticAnalysisDiagnostics(
+    document: TextDocumentLike
+): Promise<FcstmDiagnostic[]> {
+    const semantic = await getWorkspaceGraph().getSemanticDocument(document);
+    // Defensive: callers always invoke against documents with a
+    // semantic analysis available; this guard exists for hypothetical
+    // future async paths.
+    /* c8 ignore start */
+    if (!semantic) {
+        return [];
+    }
+    /* c8 ignore stop */
+
+    return collectSemanticAnalysisDiagnosticsFromSemantic(semantic, document);
 }
 
 // -------------------------------------------------------------------------
@@ -1021,7 +1286,19 @@ type TypeCategory = 'numeric' | 'boolean' | 'unknown';
 const ARITH_BINARY_OPS = new Set(['+', '-', '*', '/', '%', '**']);
 const BITWISE_BINARY_OPS = new Set(['&', '|', '^', '<<', '>>']);
 const COMPARISON_OPS = new Set(['==', '!=', '<', '<=', '>', '>=', '<>']);
-const LOGICAL_BINARY_OPS = new Set(['&&', '||', 'and', 'or', 'AND', 'OR']);
+const LOGICAL_BINARY_OPS = new Set([
+    '&&',
+    '||',
+    '=>',
+    'xor',
+    'iff',
+    'and',
+    'or',
+    'implies',
+    'AND',
+    'OR',
+    'IMPLIES',
+]);
 
 function isLogicalUnaryOp(op: string | undefined): boolean {
     if (!op) return false;
@@ -1083,16 +1360,20 @@ function emitTypeMismatch(
     expected: TypeCategory,
     actual: TypeCategory,
 ): void {
+    const exprText = (expr as {text?: string}).text ?? '';
+    if (exprText.length === 0 || rangeIsEmptyOrInvalid(expr.range)) {
+        return;
+    }
     diagnostics.push({
         range: expr.range,
-        message: `Type mismatch: expected ${expected} expression, got ${actual} (${JSON.stringify((expr as {text?: string}).text ?? '')}).`,
+        message: `Type mismatch: expected ${expected} expression, got ${actual} (${JSON.stringify(exprText)}).`,
         severity: 'error',
         source: 'fcstm',
         code: FCSTM_DIAGNOSTIC_CODES.typeMismatch,
         data: {
             expected,
             actual,
-            expr_text: (expr as {text?: string}).text ?? '',
+            expr_text: exprText,
         },
     });
 }

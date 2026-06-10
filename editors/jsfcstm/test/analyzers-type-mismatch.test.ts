@@ -152,6 +152,15 @@ describe('analyzers / inferExpressionCategory', () => {
         assert.equal(inferExpressionCategory(logical), 'boolean');
     });
 
+    it('classifies implication, xor, and iff as logical binary ops', () => {
+        const left = mkLiteral('boolean', 'true');
+        const right = mkLiteral('boolean', 'false');
+
+        assert.equal(inferExpressionCategory(mkBinary('=>', left, right)), 'boolean');
+        assert.equal(inferExpressionCategory(mkBinary('xor', left, right)), 'boolean');
+        assert.equal(inferExpressionCategory(mkBinary('iff', left, right)), 'boolean');
+    });
+
     it('classifies unary ops by operator', () => {
         const neg = mkUnary('-', mkLiteral('number', '5'));
         assert.equal(inferExpressionCategory(neg), 'numeric');
@@ -216,6 +225,25 @@ describe('analyzers / checkExpression', () => {
             diagnostics,
         );
         assert.ok(diagnostics.some(d => d.code === 'E_TYPE_MISMATCH' && d.data?.expected === 'boolean' && d.data?.actual === 'numeric'));
+    });
+
+    it('requires boolean operands for implication, xor, and iff', () => {
+        for (const operator of ['=>', 'xor', 'iff']) {
+            const diagnostics: Array<{code?: string; data?: Record<string, unknown>}> = [];
+            checkExpression(
+                mkBinary(operator, mkLiteral('number', '1'), mkLiteral('boolean', 'true')),
+                'boolean',
+                diagnostics,
+            );
+            assert.ok(
+                diagnostics.some(d =>
+                    d.code === 'E_TYPE_MISMATCH' &&
+                    d.data?.expected === 'boolean' &&
+                    d.data?.actual === 'numeric',
+                ),
+                `expected ${operator} to reject numeric operands`
+            );
+        }
     });
 
     it('catches mismatched ternary condition', () => {

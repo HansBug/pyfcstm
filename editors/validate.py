@@ -266,6 +266,10 @@ state System named "System State Machine" {
         // Logical operators in guards
         Active -> Processing : if [counter > 10 && temperature < 30.0];
         Active -> Processing : if [counter > 10 || temperature > 30.0];
+        Active -> Processing : if [counter > 10 => temperature < 30.0];
+        Active -> Processing : if [counter > 10 implies temperature < 30.0];
+        Active -> Processing : if [counter > 10 xor temperature < 30.0];
+        Active -> Processing : if [counter > 10 iff temperature < 30.0];
         Active -> Processing : if [!false];
         Active -> Processing : if [counter > 10 and temperature < 30.0];
         Active -> Processing : if [counter > 10 or temperature > 30.0];
@@ -440,11 +444,14 @@ SHARED_CHECKPOINT_SPECS: List[Dict[str, Any]] = [
     },
     {
         'name': 'Keywords - Logical (word form)',
-        'description': 'and, or, not keywords',
+        'description': 'and, or, not, implies, xor, iff keywords',
         'items': [
             SharedExpectation('and', Token.Operator.Word, 'keywords', 'keyword.operator.word.fcstm'),
             SharedExpectation('or', Token.Operator.Word, 'keywords', 'keyword.operator.word.fcstm'),
             SharedExpectation('not', Token.Operator.Word, 'keywords', 'keyword.operator.word.fcstm'),
+            SharedExpectation('implies', Token.Operator.Word, 'keywords', 'keyword.operator.word.fcstm'),
+            SharedExpectation('xor', Token.Operator.Word, 'keywords', 'keyword.operator.word.fcstm'),
+            SharedExpectation('iff', Token.Operator.Word, 'keywords', 'keyword.operator.word.fcstm'),
         ],
     },
     {
@@ -496,10 +503,11 @@ SHARED_CHECKPOINT_SPECS: List[Dict[str, Any]] = [
     },
     {
         'name': 'Operators - Logical (symbol form)',
-        'description': '&&, || operators',
+        'description': '&&, ||, => operators',
         'items': [
             SharedExpectation('&&', Token.Operator, 'operators', 'keyword.operator.logical.fcstm'),
             SharedExpectation('||', Token.Operator, 'operators', 'keyword.operator.logical.fcstm'),
+            SharedExpectation('=>', Token.Operator, 'operators', 'keyword.operator.logical.fcstm'),
         ],
     },
     {
@@ -871,6 +879,7 @@ def _validate_textmate_structure(grammar: Dict[str, Any], vscode_copy: Dict[str,
     expected_operator_order = [
         '>>',
         '->',
+        '=>',
         ',',
         '\\{|\\}',
         '\\[\\*\\]',

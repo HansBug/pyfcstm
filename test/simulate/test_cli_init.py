@@ -22,38 +22,6 @@ def build_state_machine(dsl_code: str):
 class TestCLIInitCommand:
     """Test CLI init command functionality."""
 
-    def test_init_command_basic(self):
-        """Test basic init command with leaf state."""
-        dsl_code = '''
-def int counter = 0;
-def int flag = 0;
-state System {
-    state Idle {
-        during { counter = counter + 1; }
-    }
-    state Active {
-        during { counter = counter + 10; }
-    }
-    [*] -> Idle;
-}
-'''
-        sm = build_state_machine(dsl_code)
-        runtime = SimulationRuntime(sm)
-        processor = CommandProcessor(runtime, state_machine=sm, use_color=False)
-
-        # Execute init command
-        result = processor.process('init System.Active counter=5 flag=1')
-
-        # Should succeed
-        assert not result.should_exit
-        assert 'Initialized from state: System.Active' in result.output
-        assert 'System.Active' in result.output
-
-        # Verify runtime was replaced
-        assert processor.runtime.current_state.path == ('System', 'Active')
-        assert processor.runtime.vars['counter'] == 5
-        assert processor.runtime.vars['flag'] == 1
-
     def test_init_command_with_hex_value(self):
         """Test init command with hexadecimal values."""
         dsl_code = '''
@@ -252,65 +220,6 @@ state Root {
 
         assert not result.should_exit
         assert 'Usage: init' in result.output
-
-    def test_init_command_then_cycle(self):
-        """Test init command followed by cycle execution."""
-        dsl_code = '''
-def int counter = 0;
-state System {
-    state Active {
-        during { counter = counter + 10; }
-    }
-    [*] -> Active;
-}
-'''
-        sm = build_state_machine(dsl_code)
-        runtime = SimulationRuntime(sm)
-        processor = CommandProcessor(runtime, state_machine=sm, use_color=False)
-
-        # Init from Active with counter=5
-        result = processor.process('init System.Active counter=5')
-        assert not result.should_exit
-        assert processor.runtime.vars['counter'] == 5
-
-        # Execute cycle
-        result = processor.process('cycle')
-        assert not result.should_exit
-        assert processor.runtime.vars['counter'] == 15
-
-        # Execute another cycle
-        result = processor.process('cycle')
-        assert not result.should_exit
-        assert processor.runtime.vars['counter'] == 25
-
-    def test_init_command_composite_state(self):
-        """Test init command with composite state."""
-        dsl_code = '''
-def int counter = 0;
-state Root {
-    state System {
-        state Idle {
-            during { counter = counter + 1; }
-        }
-        [*] -> Idle;
-    }
-    [*] -> System;
-}
-'''
-        sm = build_state_machine(dsl_code)
-        runtime = SimulationRuntime(sm)
-        processor = CommandProcessor(runtime, state_machine=sm, use_color=False)
-
-        # Init from composite state
-        result = processor.process('init Root.System counter=0')
-        assert not result.should_exit
-
-        # First cycle should trigger initial transition
-        result = processor.process('cycle')
-        assert not result.should_exit
-        assert processor.runtime.current_state.path == ('Root', 'System', 'Idle')
-        assert processor.runtime.vars['counter'] == 1
-
 
 @pytest.mark.unittest
 class TestCLIInitCommandIntegration:

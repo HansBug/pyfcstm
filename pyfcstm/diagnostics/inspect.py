@@ -19,7 +19,7 @@ The module exposes the following dataclasses:
 * :class:`StateInfo` — per-state structural summary
 * :class:`TransitionInfo` — per-transition structural summary
 * :class:`VariableInfo` — per-variable structural summary plus
-  participation flags used by ``W_UNREFERENCED_VAR``
+  guard-affect flags used by ``W_UNREFERENCED_VAR``
 * :class:`EventInfo` — per-event structural summary
 * :class:`ModelMetrics` — aggregate counts and ratios
 * :class:`ModelInspect` — top-level container including diagnostics
@@ -49,11 +49,15 @@ import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
-from .analyzers import collect_design_health_warnings
-from ..utils.validate import ModelDiagnostic
+from .analyzers import (
+    build_use_def_graph,
+    collect_design_health_warnings,
+    collect_expr_variables,
+)
+from ..utils.validate import ModelDiagnostic, Span
 
 if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
-    from ..model.expr import Expr
+    from ..model.expr import Expr, Float, Integer
     from ..model.model import (
         OperationStatement,
         OnAspect,
@@ -66,6 +70,45 @@ if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
 DEFAULT_DEEP_HIERARCHY_THRESHOLD = 6
 DEFAULT_LARGE_COMPOSITE_THRESHOLD = 12
 DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD = 2.0
+
+# PR-D2 span contract guard: analyzer diagnostics should carry a real
+# source span by default. Any future code that intentionally cannot point to
+# one source object must be listed here and covered by
+# test/diagnostics/test_inspect_span_contract.py.
+KNOWN_SPANLESS_CODES = frozenset()
+
+
+_OP_PRECEDENCE = {
+    'function_call': 90,
+    'unary+': 80,
+    'unary-': 80,
+    '!': 80,
+    'not': 80,
+    '**': 70,
+    '*': 60,
+    '/': 60,
+    '%': 60,
+    '+': 50,
+    '-': 50,
+    '<<': 40,
+    '>>': 40,
+    '&': 35,
+    '^': 30,
+    '|': 25,
+    '<': 20,
+    '>': 20,
+    '<=': 20,
+    '>=': 20,
+    '==': 20,
+    '!=': 20,
+    '&&': 15,
+    'and': 15,
+    '||': 10,
+    'or': 10,
+    '?:': 5,
+}
+
+_FLOAT_EPSILON = 1e-10
 
 
 @dataclass(frozen=True)
@@ -126,6 +169,7 @@ class StateInfo:
     aspect_before: Tuple[str, ...]
     aspect_after: Tuple[str, ...]
     has_abstract_action: bool
+    span: Optional['Span'] = None
 
 
 @dataclass(frozen=True)
@@ -145,14 +189,23 @@ class TransitionInfo:
     :param event_scope: ``'local'``, ``'chain'``, ``'absolute'``, or
         ``None`` when there is no event.
     :type event_scope: Optional[str]
-    :param guard: Source text of the guard expression, or ``None``.
+    :param guard: Normalized guard expression text, or ``None``.
+        Pyfcstm and jsfcstm share this inspect expression format so
+        downstream range resolution can treat ``guard_text`` as a stable
+        disambiguation hint.
     :type guard: Optional[str]
     :param effect: Source text of the effect block, or ``None``.
     :type effect: Optional[str]
     :param effect_self_assigns: Variable names assigned to themselves
         anywhere inside the transition effect block, including nested
-        ``if`` branches.
+        ``if`` branches. Duplicate names are preserved so quick-fix
+        emitters can detect ambiguous occurrences.
     :type effect_self_assigns: Tuple[str, ...]
+    :param effect_self_assign_spans: Source spans for the self-assign
+        statements listed in ``effect_self_assigns``. The order matches
+        ``effect_self_assigns`` and uses ``None`` when a statement has no
+        source span, preventing later spans from shifting to earlier names.
+    :type effect_self_assign_spans: Tuple[Optional[pyfcstm.utils.validate.Span], ...]
     :param is_forced: ``True`` when the transition was expanded from a
         ``!``-prefixed forced transition.
     :type is_forced: bool
@@ -160,6 +213,12 @@ class TransitionInfo:
         ``!X -> Y`` declaration when ``is_forced`` is ``True``, otherwise
         ``None``.
     :type forced_origin: Optional[str]
+    :param transition_index: Zero-based index in parent-first model
+        transition order, including expanded forced transitions at their
+        declaring state before ordinary transitions and descendant-state
+        transitions. Downstream tooling may use this as a best-effort
+        source-range disambiguation hint when spans are not available.
+    :type transition_index: Optional[int]
     """
 
     from_path: str
@@ -171,14 +230,18 @@ class TransitionInfo:
     effect_self_assigns: Tuple[str, ...]
     is_forced: bool
     forced_origin: Optional[str]
+    transition_index: Optional[int]
+    span: Optional['Span'] = None
+    effect_spans: Tuple['Span', ...] = field(default_factory=tuple)
+    effect_self_assign_spans: Tuple[Optional['Span'], ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
 class VariableInfo:
     """
-    Structural summary of a variable definition plus participation flags.
+    Structural summary of a variable definition plus guard-affect flags.
 
-    The ``participates_directly`` and ``participates_indirectly`` flags
+    The ``affects_guard_directly`` and ``affects_guard_indirectly`` flags
     are precomputed here so that unreferenced-variable diagnostics can
     be expressed as a one-line filter against this object.
 
@@ -200,20 +263,18 @@ class VariableInfo:
     :param written_in_effects: Tuples ``(from_path, to_path)`` of
         transitions whose effect block writes this variable.
     :type written_in_effects: Tuple[Tuple[str, str], ...]
-    :param participates_directly: ``True`` when the variable is read by
-        at least one guard, transition effect, or action operation.
-    :type participates_directly: bool
-    :param participates_indirectly: ``True`` when the variable is not
-        directly referenced but is transitively reachable through
-        write-then-read data dependency across blocks. The current
-        inspect implementation keeps this field as ``False`` for
-        variables that lack any read.
-    :type participates_indirectly: bool
+    :param affects_guard_directly: ``True`` when the variable is read by
+        at least one transition guard.
+    :type affects_guard_directly: bool
+    :param affects_guard_indirectly: ``True`` when the variable reaches
+        a transition guard through the conservative use-def graph.
+    :type affects_guard_indirectly: bool
     :param abstract_actions_in_scope: Function names of abstract actions
-        whose enclosing state is on the ancestor chain or sub-tree of
-        any state that touches this variable. Downstream diagnostics can
-        use this to distinguish high-confidence unused variables from
-        variables that may be touched by abstract behavior.
+        that may access this variable. FCSTM variables are global, so any
+        abstract action in the machine is conservatively visible here.
+        Downstream diagnostics can use this to distinguish high-confidence
+        unused variables from variables that may be touched by abstract
+        behavior.
     :type abstract_actions_in_scope: Tuple[str, ...]
     :param float_literal_assignments: Source text of float literal
         assignments to this variable from lifecycle actions or transition
@@ -228,10 +289,12 @@ class VariableInfo:
     written_in_states: Tuple[str, ...]
     read_in_guards: Tuple[Tuple[str, str], ...]
     written_in_effects: Tuple[Tuple[str, str], ...]
-    participates_directly: bool
-    participates_indirectly: bool
+    affects_guard_directly: bool
+    affects_guard_indirectly: bool
     abstract_actions_in_scope: Tuple[str, ...]
     float_literal_assignments: Tuple[str, ...] = field(default_factory=tuple)
+    span: Optional['Span'] = None
+    float_literal_assignment_spans: Tuple[Optional['Span'], ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -260,6 +323,7 @@ class EventInfo:
     used_by: Tuple[Tuple[str, str], ...]
     is_declared: bool
     is_used: bool
+    span: Optional['Span'] = None
 
 
 @dataclass(frozen=True)
@@ -274,6 +338,7 @@ class ActionInfo:
     is_ref: bool
     ref_target: Optional[str]
     is_attached: bool
+    span: Optional['Span'] = None
 
 
 @dataclass(frozen=True)
@@ -288,6 +353,7 @@ class ForcedTransitionInfo:
     guard: Optional[str]
     original_raw: str
     expansion_count: int
+    span: Optional['Span'] = None
 
 
 @dataclass(frozen=True)
@@ -456,16 +522,120 @@ def _transition_endpoint(parent_state: Any, marker_or_name: Any, is_source: bool
     # exists for future AST extensions and never fires today.
 
 
+def _canonical_binary_operator(op: str) -> str:
+    if op == 'and':
+        return '&&'
+    if op == 'or':
+        return '||'
+    return op
+
+
+def _canonical_unary_operator(op: str) -> str:
+    return '!' if op == 'not' else op
+
+
+def _unary_precedence_key(op: str) -> str:
+    canonical = _canonical_unary_operator(op)
+    return f'unary{canonical}' if canonical in {'+', '-'} else canonical
+
+
+def _expr_precedence(expr: 'Expr') -> Optional[int]:
+    from ..model.expr import BinaryOp, ConditionalOp, UnaryOp
+
+    if isinstance(expr, BinaryOp):
+        return _OP_PRECEDENCE.get(_canonical_binary_operator(expr.op))
+    if isinstance(expr, ConditionalOp):
+        return _OP_PRECEDENCE['?:']
+    if isinstance(expr, UnaryOp):
+        return _OP_PRECEDENCE.get(_unary_precedence_key(expr.op))
+    return None
+
+
+def _integer_text(expr: 'Integer') -> str:
+    return str(int(expr.value))
+
+
+def _float_text(expr: 'Float') -> str:
+    if abs(expr.value - math.pi) < _FLOAT_EPSILON:
+        return 'pi'
+    if abs(expr.value - math.e) < _FLOAT_EPSILON:
+        return 'E'
+    if abs(expr.value - math.tau) < _FLOAT_EPSILON:
+        return 'tau'
+    if float(expr.value).is_integer():
+        return f'{int(expr.value)}.0'
+    return str(expr.value)
+
+
 def _expr_text(expr: Optional['Expr']) -> Optional[str]:
     if expr is None:
         return None
+    from ..model.expr import (
+        BinaryOp,
+        Boolean,
+        ConditionalOp,
+        Float,
+        Integer,
+        UFunc,
+        UnaryOp,
+        Variable,
+    )
+
+    if isinstance(expr, Integer):
+        return _integer_text(expr)
+    if isinstance(expr, Float):
+        return _float_text(expr)
+    if isinstance(expr, Boolean):
+        return 'true' if expr.value else 'false'
+    if isinstance(expr, Variable):
+        return expr.name
+    if isinstance(expr, UFunc):
+        argument = _expr_text(expr.x)
+        return None if argument is None else f'{expr.func}({argument})'
+    if isinstance(expr, UnaryOp):
+        op = _canonical_unary_operator(expr.op)
+        my_precedence = _OP_PRECEDENCE[_unary_precedence_key(expr.op)]
+        value = _expr_text(expr.x)
+        if value is None:
+            return None
+        value_precedence = _expr_precedence(expr.x)
+        if value_precedence is not None and value_precedence <= my_precedence:
+            value = f'({value})'
+        return f'{op}{value}'
+    if isinstance(expr, BinaryOp):
+        op = _canonical_binary_operator(expr.op)
+        my_precedence = _OP_PRECEDENCE[op]
+        left = _expr_text(expr.x)
+        right = _expr_text(expr.y)
+        if left is None or right is None:
+            return None
+        left_precedence = _expr_precedence(expr.x)
+        if left_precedence is not None and left_precedence < my_precedence:
+            left = f'({left})'
+        right_precedence = _expr_precedence(expr.y)
+        if right_precedence is not None and right_precedence <= my_precedence:
+            right = f'({right})'
+        return f'{left} {op} {right}'
+    if isinstance(expr, ConditionalOp):
+        my_precedence = _OP_PRECEDENCE['?:']
+        condition = _expr_text(expr.cond)
+        when_true = _expr_text(expr.if_true)
+        when_false = _expr_text(expr.if_false)
+        if condition is None or when_true is None or when_false is None:
+            return None
+        true_precedence = _expr_precedence(expr.if_true)
+        if true_precedence is not None and true_precedence <= my_precedence:
+            when_true = f'({when_true})'
+        false_precedence = _expr_precedence(expr.if_false)
+        if false_precedence is not None and false_precedence <= my_precedence:
+            when_false = f'({when_false})'
+        return f'({condition}) ? {when_true} : {when_false}'
+
     try:
         return str(expr.to_ast_node())
-    except Exception:  # pragma: no cover
-        # Defensive: grammar-emitted Expr.to_ast_node always succeeds.
-        # The try/except guards against future Expr subclasses whose
-        # to_ast_node could fail; keep as fail-soft so inspection
-        # never crashes the IDE / CLI.
+    except (AttributeError, TypeError, ValueError):  # pragma: no cover
+        # AttributeError: non-model Expr-like object; TypeError/ValueError:
+        # future expression implementations with invalid AST conversion.
         return None
 
 
@@ -476,9 +646,9 @@ def _effects_text(effects: List['OperationStatement']) -> Optional[str]:
     for stmt in effects:
         try:
             parts.append(str(stmt.to_ast_node()))
-        except Exception:  # pragma: no cover
-            # Defensive: see ``_expr_text`` — grammar-emitted stmts
-            # always serialize.
+        except (AttributeError, TypeError, ValueError):  # pragma: no cover
+            # AttributeError: non-model statement-like object; TypeError/ValueError:
+            # future statement implementations with invalid AST conversion.
             continue
     if not parts:  # pragma: no cover
         # Unreachable while ``except`` above is unreachable. Belt-and-
@@ -492,38 +662,7 @@ def _walk_expr_variables(expr: Optional['Expr']) -> List[str]:
     """Return variable names read by ``expr`` in left-to-right order."""
     if expr is None:
         return []
-    seen: List[str] = []
-    _walk_expr_collect(expr, seen)
-    return seen
-
-
-def _walk_expr_collect(expr: 'Expr', out: List[str]) -> None:
-    from ..model.expr import (
-        BinaryOp,
-        ConditionalOp,
-        UFunc,
-        UnaryOp,
-        Variable,
-    )
-    if isinstance(expr, Variable):
-        out.append(expr.name)
-        return
-    # Constants have no children.
-    if isinstance(expr, UnaryOp):
-        _walk_expr_collect(expr.x, out)
-        return
-    if isinstance(expr, BinaryOp):
-        _walk_expr_collect(expr.x, out)
-        _walk_expr_collect(expr.y, out)
-        return
-    if isinstance(expr, ConditionalOp):
-        _walk_expr_collect(expr.cond, out)
-        _walk_expr_collect(expr.if_true, out)
-        _walk_expr_collect(expr.if_false, out)
-        return
-    if isinstance(expr, UFunc):
-        _walk_expr_collect(expr.x, out)
-        return
+    return list(collect_expr_variables(expr))
 
 
 def _walk_stmt_reads_writes(
@@ -551,13 +690,14 @@ def _effect_self_assigns(effects: List['OperationStatement']) -> Tuple[str, ...]
     out: List[str] = []
     for stmt in effects:
         _walk_stmt_self_assigns(stmt, out)
-    seen = set()
-    deduped: List[str] = []
-    for name in out:
-        if name not in seen:
-            seen.add(name)
-            deduped.append(name)
-    return tuple(deduped)
+    return tuple(out)
+
+
+def _effect_self_assign_spans(effects: List['OperationStatement']) -> Tuple[Optional['Span'], ...]:
+    out: List[Optional['Span']] = []
+    for stmt in effects:
+        _walk_stmt_self_assign_spans(stmt, out)
+    return tuple(out)
 
 
 def _walk_stmt_self_assigns(stmt: 'OperationStatement', out: List[str]) -> None:
@@ -573,20 +713,36 @@ def _walk_stmt_self_assigns(stmt: 'OperationStatement', out: List[str]) -> None:
                 _walk_stmt_self_assigns(inner, out)
 
 
+def _walk_stmt_self_assign_spans(stmt: 'OperationStatement', out: List[Optional['Span']]) -> None:
+    from ..model.expr import Variable
+    from ..model.model import IfBlock, Operation
+    if isinstance(stmt, Operation):
+        if isinstance(stmt.expr, Variable) and stmt.expr.name == stmt.var_name:
+            out.append(getattr(stmt, '_span', None))
+        return
+    if isinstance(stmt, IfBlock):
+        for branch in stmt.branches:
+            for inner in branch.statements:
+                _walk_stmt_self_assign_spans(inner, out)
+
+
 def _walk_stmt_float_literal_assignments(
         stmt: 'OperationStatement',
         out: Dict[str, List[str]],
+        spans: Optional[Dict[str, List[Optional[Span]]]] = None,
 ) -> None:
     from ..model.expr import Float
     from ..model.model import IfBlock, Operation
     if isinstance(stmt, Operation):
         if isinstance(stmt.expr, Float):
             out.setdefault(stmt.var_name, []).append(_expr_text(stmt.expr) or '')
+            if spans is not None:
+                spans.setdefault(stmt.var_name, []).append(getattr(stmt, '_span', None))
         return
     if isinstance(stmt, IfBlock):
         for branch in stmt.branches:
             for inner in branch.statements:
-                _walk_stmt_float_literal_assignments(inner, out)
+                _walk_stmt_float_literal_assignments(inner, out, spans)
 
 
 def _stage_function_label(stage_item: 'OnStage') -> str:
@@ -751,12 +907,14 @@ def _build_state_infos(machine: 'StateMachine') -> Tuple[StateInfo, ...]:
             aspect_before=asp_before,
             aspect_after=asp_after,
             has_abstract_action=has_abstract,
+            span=getattr(state, '_span', None),
         ))
     return tuple(out)
 
 
 def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ...]:
     out: List[TransitionInfo] = []
+    transition_index = 0
     for state in machine.walk_states():
         for transition in state.transitions:
             from_path = _transition_endpoint(state, transition.from_state, is_source=True)
@@ -780,7 +938,16 @@ def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ..
                 effect_self_assigns=_effect_self_assigns(transition.effects),
                 is_forced=is_forced,
                 forced_origin=forced_origin,
+                transition_index=transition_index,
+                span=getattr(transition, '_span', None),
+                effect_spans=tuple(
+                    span
+                    for span in (getattr(effect, '_span', None) for effect in transition.effects)
+                    if span is not None
+                ),
+                effect_self_assign_spans=_effect_self_assign_spans(transition.effects),
             ))
+            transition_index += 1
     return tuple(out)
 
 
@@ -819,12 +986,16 @@ def _build_variable_infos(
     var_float_literal_assignments: Dict[str, List[str]] = {
         name: [] for name in machine.defines
     }
+    var_float_literal_assignment_spans: Dict[str, List[Optional[Span]]] = {
+        name: [] for name in machine.defines
+    }
     state_lookup: Dict[str, StateInfo] = {s.path: s for s in states}
 
     for state in machine.walk_states():
         path = _state_path(state)
         reads, writes = _collect_action_reads_writes(state)
         float_assigns: Dict[str, List[str]] = {}
+        float_assign_spans: Dict[str, List[Optional[Span]]] = {}
         for collection in (
                 state.on_enters,
                 state.on_durings,
@@ -833,7 +1004,7 @@ def _build_variable_infos(
         ):
             for action in collection:
                 for stmt in action.operations:
-                    _walk_stmt_float_literal_assignments(stmt, float_assigns)
+                    _walk_stmt_float_literal_assignments(stmt, float_assigns, float_assign_spans)
         for var_name in reads:
             if var_name in var_reads_by_state:
                 var_reads_by_state[var_name].append(path)
@@ -843,6 +1014,7 @@ def _build_variable_infos(
         for var_name, assignments in float_assigns.items():
             if var_name in var_float_literal_assignments:
                 var_float_literal_assignments[var_name].extend(assignments)
+                var_float_literal_assignment_spans[var_name].extend(float_assign_spans.get(var_name, []))
 
         for transition in state.transitions:
             from_path = _transition_endpoint(state, transition.from_state, is_source=True)
@@ -855,7 +1027,8 @@ def _build_variable_infos(
                 lwrites: List[str] = []
                 _walk_stmt_reads_writes(stmt, lreads, lwrites)
                 lfloat_assigns: Dict[str, List[str]] = {}
-                _walk_stmt_float_literal_assignments(stmt, lfloat_assigns)
+                lfloat_assign_spans: Dict[str, List[Optional[Span]]] = {}
+                _walk_stmt_float_literal_assignments(stmt, lfloat_assigns, lfloat_assign_spans)
                 for v in lreads:
                     if v in var_reads_by_state:
                         var_reads_by_state[v].append(from_path)
@@ -865,6 +1038,7 @@ def _build_variable_infos(
                 for v, assignments in lfloat_assigns.items():
                     if v in var_float_literal_assignments:
                         var_float_literal_assignments[v].extend(assignments)
+                        var_float_literal_assignment_spans[v].extend(lfloat_assign_spans.get(v, []))
 
     # Stable, deduped sequences for the public payload.
     def _dedupe_ordered(seq: List[str]) -> Tuple[str, ...]:
@@ -885,15 +1059,39 @@ def _build_variable_infos(
                 out.append(x)
         return tuple(out)
 
+    def _dedupe_float_assignment_pairs(
+            exprs: List[str],
+            spans: List[Optional[Span]],
+    ) -> Tuple[Tuple[str, ...], Tuple[Optional[Span], ...]]:
+        seen = set()
+        out_exprs: List[str] = []
+        out_spans: List[Optional[Span]] = []
+        for index, expr in enumerate(exprs):
+            if expr in seen:
+                continue
+            seen.add(expr)
+            out_exprs.append(expr)
+            out_spans.append(spans[index] if index < len(spans) else None)
+        return tuple(out_exprs), tuple(out_spans)
+
+    use_def_graph = build_use_def_graph(machine)
+    direct_guard_vars = {
+        name for name, entries in var_read_guards.items()
+        if entries
+    }
+    indirect_guard_vars = set(use_def_graph.affecting_variables(direct_guard_vars))
+
     out: List[VariableInfo] = []
     for name, var_define in machine.defines.items():
         read_states = _dedupe_ordered(var_reads_by_state[name])
         written_states = _dedupe_ordered(var_writes_by_state[name])
         read_guards = _dedupe_pairs(var_read_guards[name])
         written_effects = _dedupe_pairs(var_written_effects[name])
-        participates_directly = bool(read_states or read_guards)
-        abstract_actions = _abstract_actions_in_scope(state_lookup, read_states, written_states)
-        float_assignments = _dedupe_ordered(var_float_literal_assignments[name])
+        abstract_actions = _abstract_actions_in_scope(state_lookup)
+        float_assignments, float_assignment_spans = _dedupe_float_assignment_pairs(
+            var_float_literal_assignments[name],
+            var_float_literal_assignment_spans[name],
+        )
         out.append(VariableInfo(
             name=name,
             type=var_define.type,
@@ -902,39 +1100,27 @@ def _build_variable_infos(
             written_in_states=written_states,
             read_in_guards=read_guards,
             written_in_effects=written_effects,
-            participates_directly=participates_directly,
-            participates_indirectly=False,
+            affects_guard_directly=name in direct_guard_vars,
+            affects_guard_indirectly=(
+                name not in direct_guard_vars and name in indirect_guard_vars
+            ),
             abstract_actions_in_scope=abstract_actions,
             float_literal_assignments=float_assignments,
+            span=getattr(var_define, '_span', None),
+            float_literal_assignment_spans=float_assignment_spans,
         ))
     return tuple(out)
 
 
 def _abstract_actions_in_scope(
         state_lookup: Dict[str, StateInfo],
-        read_states: Tuple[str, ...],
-        written_states: Tuple[str, ...],
 ) -> Tuple[str, ...]:
-    """Return abstract action labels visible from any touching state."""
-    touched = set(read_states) | set(written_states)
-    if not touched:
-        # Variable touches no state — declared but unused. There is no
-        # abstract-action scope to inspect from here.
-        return tuple()
-    out: List[str] = []
-    for path in sorted(touched):
-        info = state_lookup.get(path)
-        if info is None:  # pragma: no cover
-            # Defensive: ``touched`` paths come from VariableInfo
-            # read_in_states / written_in_states, which are populated
-            # only with paths that exist in state_lookup. Unreachable
-            # in the current pipeline; kept as a safety net.
-            continue
-        if info.has_abstract_action:
-            label = f'{info.path}:<abstract>'
-            if label not in out:
-                out.append(label)
-    return tuple(out)
+    """Return abstract action labels that can see global variables."""
+    return tuple(
+        f'{info.path}:<abstract>'
+        for info in sorted(state_lookup.values(), key=lambda item: item.path)
+        if info.has_abstract_action
+    )
 
 
 def _build_event_infos(machine: 'StateMachine', transitions: Tuple[TransitionInfo, ...]) -> Tuple[EventInfo, ...]:
@@ -970,14 +1156,24 @@ def _build_event_infos(machine: 'StateMachine', transitions: Tuple[TransitionInf
     out: List[EventInfo] = []
     for qn in sorted(set(event_users.keys()) | set(event_declared.keys())):
         used_by = tuple(event_users.get(qn, []))
+        event_obj = _find_event_by_qualified_name(machine, qn)
         out.append(EventInfo(
             qualified_name=qn,
             scope=event_scope.get(qn, 'absolute'),
             used_by=used_by,
             is_declared=event_declared.get(qn, False),
             is_used=bool(used_by),
+            span=getattr(event_obj, '_span', None) if event_obj is not None else None,
         ))
     return tuple(out)
+
+
+def _find_event_by_qualified_name(machine: 'StateMachine', qualified_name: str):
+    for state in machine.walk_states():
+        for event in state.events.values():
+            if event.path_name == qualified_name:
+                return event
+    return None
 
 
 def _scope_from_event_origins(origins: List[str]) -> str:
@@ -1015,6 +1211,7 @@ def _build_action_infos(machine: 'StateMachine') -> Tuple[ActionInfo, ...]:
                     is_ref=action.is_ref,
                     ref_target=ref_target,
                     is_attached=True,
+                    span=getattr(action, '_span', None),
                 ))
     return tuple(out)
 
@@ -1040,6 +1237,7 @@ def _build_forced_transition_infos(machine: 'StateMachine') -> Tuple[ForcedTrans
             ),
             original_raw=str(item.get('original_raw', '')),
             expansion_count=int(item.get('expansion_count', 0)),
+            span=item.get('span'),
         ))
     return tuple(out)
 
@@ -1295,6 +1493,7 @@ def inspect_model(
             deep_hierarchy_threshold=deep_hierarchy_threshold,
             large_composite_threshold=large_composite_threshold,
             var_to_leaf_ratio_threshold=var_to_leaf_ratio_threshold,
+            machine=machine,
         )),
     )
 
@@ -1327,6 +1526,12 @@ def _to_json_dataclass(obj: Any) -> Any:
         return {
             name: _to_json_dataclass(getattr(obj, name))
             for name in obj.__dataclass_fields__
+            if name not in {
+                'span',
+                'effect_spans',
+                'effect_self_assign_spans',
+                'float_literal_assignment_spans',
+            }
         }
     if isinstance(obj, tuple):
         return [_to_json_dataclass(x) for x in obj]
@@ -1370,10 +1575,7 @@ def _to_json_inspect(report: ModelInspect) -> Dict[str, Any]:
 
 def _diagnostic_to_json(d: ModelDiagnostic) -> Dict[str, Any]:
     span = None
-    if d.span is not None:  # pragma: no cover
-        # Current design-health diagnostics are spanless, but the JSON
-        # contract already supports spans for diagnostics that can be
-        # anchored precisely.
+    if d.span is not None:
         span = {
             'line': d.span.line,
             'column': d.span.column,
@@ -1385,5 +1587,5 @@ def _diagnostic_to_json(d: ModelDiagnostic) -> Dict[str, Any]:
         'severity': d.severity,
         'message': d.message,
         'span': span,
-        'refs': dict(d.refs),
+        'refs': _to_json_dataclass(d.refs),
     }

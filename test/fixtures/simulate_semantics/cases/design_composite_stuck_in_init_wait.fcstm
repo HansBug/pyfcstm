@@ -1,0 +1,23 @@
+def int phase = 0;
+def int trace = 0;
+state Root {
+    state System {
+        enter {
+            trace = trace + 1;
+        }
+        during before {
+            trace = trace + 10;
+        }
+
+        state A {
+            during {
+                phase = phase + 1;
+                trace = trace + 100;
+            }
+        }
+
+        [*] -> A : if [phase >= 3];
+    }
+
+    [*] -> System;
+}

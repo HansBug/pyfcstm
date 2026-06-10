@@ -30,11 +30,15 @@ import {
     Variable,
 } from '../model/runtime';
 import {collectDesignHealthWarnings} from './analyzers';
+import {buildUseDefGraph, collectExprVariables} from './analyzers/use-def';
 import type {RawFcstmModelForcedTransition} from '../model/raw';
+import type {TextRange} from '../utils/text';
 
 const INIT_MARK = '[*]';
 const EXIT_MARK = '[*]';
 const FLOAT_EPSILON = 1e-10;
+const HEX_RADIX = 16;
+const BINARY_RADIX = 2;
 
 export const DEFAULT_DEEP_HIERARCHY_THRESHOLD = 6;
 export const DEFAULT_LARGE_COMPOSITE_THRESHOLD = 12;
@@ -63,12 +67,17 @@ const OP_PRECEDENCE: Record<string, number> = {
     '>=': 20,
     '==': 20,
     '!=': 20,
+    'iff': 20,
     '&&': 15,
     'and': 15,
+    'xor': 12,
     '||': 10,
     'or': 10,
+    '=>': 7,
     '?:': 5,
 };
+
+const RIGHT_ASSOCIATIVE_BINARY_OPS = new Set(['**', '=>']);
 
 /**
  * Per-state structural summary.
@@ -110,10 +119,20 @@ export interface TransitionInfo {
     event_scope: 'local' | 'chain' | 'absolute' | null;
     guard: string | null;
     effect: string | null;
+    // Duplicate names are preserved so suggested-fix emitters can detect
+    // ambiguous occurrences for the same source state and variable.
     effect_self_assigns: string[];
     is_forced: boolean;
     forced_origin: string | null;
+    transition_index: number | null;
+    /**
+     * Non-enumerable editor-only source range for analyzer-to-editor
+     * handoff. It is intentionally omitted from ``toJson()`` output and from
+     * the shared schema; PR-E will formalize public span fields separately.
+     */
+    __sourceRange?: TextRange;
 }
+
 
 /**
  * Per-variable structural summary plus participation flags.
@@ -126,8 +145,8 @@ export interface VariableInfo {
     written_in_states: string[];
     read_in_guards: Array<[string, string]>;
     written_in_effects: Array<[string, string]>;
-    participates_directly: boolean;
-    participates_indirectly: boolean;
+    affects_guard_directly: boolean;
+    affects_guard_indirectly: boolean;
     abstract_actions_in_scope: string[];
     float_literal_assignments: string[];
 }
@@ -215,18 +234,29 @@ export interface ModelInspect {
 }
 
 /**
+ * 1-based, end-exclusive pyfcstm diagnostic source span.
+ */
+export interface ModelSpanJson {
+    line: number;
+    column: number;
+    end_line: number | null;
+    end_column: number | null;
+}
+
+/**
  * JSON-shaped diagnostic payload used inside :class:`ModelInspect`.
  */
 export interface ModelDiagnosticJson {
     code: string;
     severity: 'error' | 'warning' | 'info';
     message: string;
-    span: {
-        start_line: number;
-        start_col: number;
-        end_line: number;
-        end_col: number;
-    } | null;
+    /**
+     * Primary problem source span. Pyfcstm-origin spans use 1-based,
+     * end-exclusive coordinates; jsfcstm-origin diagnostics normally keep
+     * ``span`` null and expose editor ``TextRange`` values in refs while the
+     * editor layer converts both forms via ``spanToRange``.
+     */
+    span: ModelSpanJson | null;
     refs: Record<string, unknown>;
 }
 
@@ -284,6 +314,7 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
                 largeCompositeThreshold,
                 varToLeafRatioThreshold,
             },
+            machine,
         ),
     };
 }
@@ -432,7 +463,7 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
     const out: TransitionInfo[] = [];
     for (const state of machine.allStates) {
         for (const t of state.transitions) {
-            out.push({
+            const info: TransitionInfo = {
                 from_path: transitionEndpoint(state.path, t.fromState, true),
                 to_path: transitionEndpoint(state.path, t.toState, false),
                 event: t.event ? t.event.pathName : null,
@@ -442,7 +473,15 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
                 effect_self_assigns: effectSelfAssigns(t.effects),
                 is_forced: !!t.forced,
                 forced_origin: t.forced ? t.text : null,
+                transition_index: typeof t.transitionIndex === 'number' ? t.transitionIndex : null,
+            };
+            Object.defineProperty(info, '__sourceRange', {
+                value: t.range,
+                enumerable: false,
+                configurable: false,
+                writable: false,
             });
+            out.push(info);
         }
     }
     return out;
@@ -540,6 +579,14 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
         return out;
     };
 
+    const useDefGraph = buildUseDefGraph(machine);
+    const directGuardVars = new Set(
+        Object.entries(readGuards)
+            .filter(([, entries]) => entries.length > 0)
+            .map(([name]) => name),
+    );
+    const indirectGuardVars = new Set(useDefGraph.affectingVariables(directGuardVars));
+
     const out: VariableInfo[] = [];
     for (const name of Object.keys(machine.defines)) {
         const def = machine.defines[name];
@@ -547,7 +594,6 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
         const writtenStates = dedupe(writesByState[name]);
         const readGuardEntries = dedupePairs(readGuards[name]);
         const writtenEffectEntries = dedupePairs(writtenEffects[name]);
-        const participatesDirectly = readStates.length > 0 || readGuardEntries.length > 0;
         const abstractActions = abstractActionsInScope(
             stateLookup,
             readStates,
@@ -561,8 +607,8 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
             written_in_states: writtenStates,
             read_in_guards: readGuardEntries,
             written_in_effects: writtenEffectEntries,
-            participates_directly: participatesDirectly,
-            participates_indirectly: false,
+            affects_guard_directly: directGuardVars.has(name),
+            affects_guard_indirectly: !directGuardVars.has(name) && indirectGuardVars.has(name),
             abstract_actions_in_scope: abstractActions,
             float_literal_assignments: dedupe(floatLiteralAssignments[name]),
         });
@@ -595,41 +641,7 @@ function collectActionReadsWrites(state: {
 
 function walkExprVariables(expr: Expr | null | undefined): string[] {
     if (!expr) return [];
-    const out: string[] = [];
-    walkExprCollect(expr, out);
-    return out;
-}
-
-function walkExprCollect(expr: Expr, out: string[]): void {
-    const anyExpr = expr as unknown as {
-        pyModelType: string;
-        name?: string;
-        x?: Expr;
-        y?: Expr;
-        cond?: Expr;
-        ifTrue?: Expr;
-        ifFalse?: Expr;
-    };
-    switch (anyExpr.pyModelType) {
-        case 'Variable':
-            if (anyExpr.name) out.push(anyExpr.name);
-            return;
-        case 'UnaryOp':
-        case 'UFunc':
-            if (anyExpr.x) walkExprCollect(anyExpr.x, out);
-            return;
-        case 'BinaryOp':
-            if (anyExpr.x) walkExprCollect(anyExpr.x, out);
-            if (anyExpr.y) walkExprCollect(anyExpr.y, out);
-            return;
-        case 'ConditionalOp':
-            if (anyExpr.cond) walkExprCollect(anyExpr.cond, out);
-            if (anyExpr.ifTrue) walkExprCollect(anyExpr.ifTrue, out);
-            if (anyExpr.ifFalse) walkExprCollect(anyExpr.ifFalse, out);
-            return;
-        default:
-            return;
-    }
+    return collectExprVariables(expr);
 }
 
 function walkStmtReadsWrites(
@@ -659,7 +671,7 @@ function effectSelfAssigns(effects: OperationStatement[] | undefined): string[] 
     for (const stmt of effects ?? []) {
         walkStmtSelfAssigns(stmt, out);
     }
-    return Array.from(new Set(out));
+    return out;
 }
 
 function walkStmtSelfAssigns(stmt: OperationStatement, out: string[]): void {
@@ -700,6 +712,7 @@ function walkStmtFloatLiteralAssignments(
 function canonicalBinaryOperator(op: string): string {
     if (op === 'and') return '&&';
     if (op === 'or') return '||';
+    if (op === 'implies') return '=>';
     return op;
 }
 
@@ -769,10 +782,10 @@ function integerText(expr: Integer): string {
     const raw = expr.text.trim();
     if (/^\d+$/.test(raw)) return normalizeDecimalDigits(raw);
     if (/^0[xX][0-9a-fA-F]+$/.test(raw)) {
-        return convertRadixDigitsToDecimal(raw.slice(2), 16);
+        return convertRadixDigitsToDecimal(raw.slice(2), HEX_RADIX);
     }
     if (/^0[bB][01]+$/.test(raw)) {
-        return convertRadixDigitsToDecimal(raw.slice(2), 2);
+        return convertRadixDigitsToDecimal(raw.slice(2), BINARY_RADIX);
     }
     return String(Math.trunc(expr.value));
 }
@@ -806,12 +819,20 @@ function formatExpr(expr: Expr): string {
         const myPrecedence = OP_PRECEDENCE[op];
         let left = formatExpr(expr.x);
         const leftPrecedence = exprPrecedence(expr.x);
-        if (leftPrecedence !== null && leftPrecedence < myPrecedence) {
+        if (leftPrecedence !== null && (
+            RIGHT_ASSOCIATIVE_BINARY_OPS.has(op)
+                ? leftPrecedence <= myPrecedence
+                : leftPrecedence < myPrecedence
+        )) {
             left = `(${left})`;
         }
         let right = formatExpr(expr.y);
         const rightPrecedence = exprPrecedence(expr.y);
-        if (rightPrecedence !== null && rightPrecedence <= myPrecedence) {
+        if (rightPrecedence !== null && (
+            RIGHT_ASSOCIATIVE_BINARY_OPS.has(op)
+                ? rightPrecedence < myPrecedence
+                : rightPrecedence <= myPrecedence
+        )) {
             right = `(${right})`;
         }
         return `${left} ${op} ${right}`;
@@ -862,7 +883,7 @@ function statementText(stmt: OperationStatement): string {
     return stmt.text;
 }
 
-function exprText(expr: Expr | null | undefined): string | null {
+export function exprText(expr: Expr | null | undefined): string | null {
     return expr ? formatExpr(expr) : null;
 }
 
@@ -877,14 +898,13 @@ function abstractActionsInScope(
     readStates: string[],
     writtenStates: string[],
 ): string[] {
-    const touched = new Set<string>([...readStates, ...writtenStates]);
-    if (touched.size === 0) return [];
+    void readStates;
+    void writtenStates;
     const out: string[] = [];
-    for (const path of Array.from(touched).sort()) {
+    for (const path of Object.keys(stateLookup).sort()) {
         const info = stateLookup[path];
         if (!info || !info.has_abstract_action) continue;
-        const label = `${info.path}:<abstract>`;
-        if (!out.includes(label)) out.push(label);
+        out.push(`${info.path}:<abstract>`);
     }
     return out;
 }

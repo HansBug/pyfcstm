@@ -53,6 +53,7 @@ provides the rendering engine and model API, while you provide the target-langua
     - [Example DSL Code](#3-example-dsl-code-traffic-light-example)
 - [DSL Syntax Overview](#dsl-syntax-overview)
 - [Template System](#code-generation-template-system)
+- [Static Diagnostics — Code List](#static-diagnostics-codes)
 - [Use Cases](#use-cases)
 - [Documentation](#documentation)
 - [Contributing](#contribution--support)
@@ -72,6 +73,10 @@ pyfcstm aims to provide a complete solution from conceptual design to code imple
 | **PlantUML Integration**        | Directly converts DSL files into **PlantUML** code, with preset detail levels and fine-grained visualization options.                | Facilitates design review and documentation generation.                                                        | [Visualization Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/visualization/index.html)            |
 | **Simulation Runtime**          | Runs FCSTM models directly in Python or from an interactive CLI REPL / batch executor.                                                | Lets you validate behavior before committing to generated code.                                                | [Simulation Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/simulation/index.html)                  |
 | **Syntax Highlighting**         | Includes FCSTM syntax highlighting for Pygments and editor integrations, including a VS Code extension in this repository.            | Improves authoring, documentation, and review workflows around `.fcstm` files.                                 | [Syntax Highlighting Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/grammar/index.html)            |
+| **Structured Diagnostics**      | `pyfcstm.diagnostics` ships **46 diagnostic codes** (19 errors / 24 warnings / 3 infos) covering parse errors, design-health issues (deadlock, unreachable, redundant transitions, const-folded guards, etc.), and Layer 0 use-def dataflow analysis. | Replace ad-hoc regex / message scraping with a stable structured API; codes carry `for_llm` payloads to drive LLM-assisted repair. | [Diagnostics Code List](#static-diagnostics-codes) |
+| **`inspect_model()` API**       | One-call structured view of a state machine: states / transitions / variables / events / metrics + reachability graph + var dataflow + aspect impact map + diagnostics. Round-trippable via `to_json()` against a published JSON schema. | Drop-in replacement for hand-written model walkers; single source of truth for downstream tooling.             | [inspect_model API](https://pyfcstm.readthedocs.io/en/latest/api_doc/diagnostics/inspect.html)                |
+| **Suggested-Fix + VS Code Quick-Fix** | Selected diagnostics carry a `suggested_fix` payload (kind / anchor / text template) that the VS Code extension consumes as auto-apply quick-fixes; each fix is parse-back-verified. | Auto-fix loop for both humans and LLM agents; no regex patching. | [VS Code Extension](https://pyfcstm.readthedocs.io/en/latest/tutorials/editor/index.html) |
+| **Cross-End Parity (py / js)**  | Python `inspect_model().diagnostics` and `@pyfcstm/jsfcstm` `inspectModel().diagnostics` emit byte-equivalent sets (normalized `code + severity + refs`), locked by cross-end parity tests. | Same diagnostics surface in CLI tooling, server-side processors, and browser-based editors / language servers. | [Cross-End Parity](https://pyfcstm.readthedocs.io/en/latest/api_doc/diagnostics/parity.html) |
 
 ## Installation
 
@@ -253,6 +258,70 @@ with open('diagram.puml', 'w', encoding='utf-8') as f:
 # 6. Export back to DSL text
 print(str(model.to_ast_node()))
 ```
+
+#### Inspect a Model and Read Structured Diagnostics
+
+```python
+from pyfcstm.diagnostics import inspect_model
+
+# Reuse the `model` object from the previous example.
+report = inspect_model(model)
+
+# 1. Structured view: states, transitions, variables, events, metrics,
+#    plus reachability_graph / var_dataflow / aspect_impact_map / action_ref_graph.
+for variable in report.variables:
+    print(
+        variable.name,
+        'reads:', variable.read_in_guards,
+        'writes:', variable.written_in_effects,
+        'affects guard (direct/indirect):',
+        variable.affects_guard_directly, variable.affects_guard_indirectly,
+    )
+
+# 2. Diagnostics: 46 codes (19 E / 24 W / 3 I), structured + LLM-friendly.
+for diag in report.diagnostics:
+    print(f'[{diag.severity}] {diag.code}: {diag.message}')
+    if diag.refs.get('suggested_fix'):
+        print('  quick-fix:', diag.refs['suggested_fix'])
+
+# 3. Round-trip to JSON (stable schema, see pyfcstm/diagnostics/schema.json).
+import json
+json.dumps(report.to_json(), indent=2)
+```
+
+**Real-world showcase.** The following DSL is the kind of LLM-generated input pyfcstm catches in one pass — five
+distinct issues across parse, dataflow, redundancy, and structural buckets:
+
+```fcstm
+def int counter = 0;          // written but never read       → W_WRITE_ONLY_VAR
+def int unused = 0;           // doesn't affect any guard     → W_UNREFERENCED_VAR
+def int ready  = 0;           // read in guard, never written → W_UNWRITTEN_READ_VAR + W_GUARD_VARS_NEVER_CHANGE
+
+state Root {
+    state A;
+    state B;
+    state Orphan;             //                              → W_UNREACHABLE_STATE
+    [*] -> A;
+    A -> B : if [ready > 0];  // guard vars never change      → W_GUARD_VARS_NEVER_CHANGE
+    A -> B : if [ready > 0];  // duplicate of the above       → W_REDUNDANT_TRANSITION
+    B -> A effect { counter = counter; };  //                 → W_EFFECT_SELF_ASSIGN
+}
+```
+
+```python
+from pyfcstm.dsl import parse_with_grammar_entry
+from pyfcstm.model import parse_dsl_node_to_state_machine
+from pyfcstm.diagnostics import inspect_model
+
+dsl = open('buggy.fcstm').read()
+model = parse_dsl_node_to_state_machine(parse_with_grammar_entry(dsl, 'state_machine_dsl'))
+report = inspect_model(model)
+for d in report.diagnostics:
+    print(f'{d.severity:7} {d.code:30} {d.message}')
+```
+
+The full catalog of codes (with minimal triggering DSL for each) is documented under
+[Static Diagnostics — Code List](#static-diagnostics-codes) further down.
 
 #### Render Code and Simulate in Python
 
@@ -606,6 +675,77 @@ void {{ state.name }}_enter() {
 **More Information**:
 See [Template Syntax Deep Analysis](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html) for a
 comprehensive guide on template development.
+
+## Static Diagnostics — Code List <a name="static-diagnostics-codes"></a>
+
+Calling `inspect_model(machine).diagnostics` on a parsed model returns a list of `ModelDiagnostic` objects. As of
+v0.4.0 the catalog covers **46 codes — 19 errors / 24 warnings / 3 infos**, all produced statically with no SMT
+backend. Every code is reachable from the minimal DSL snippet in the right-hand column; see
+[`pyfcstm/diagnostics/codes.yaml`](pyfcstm/diagnostics/codes.yaml) for full per-code metadata (refs schema,
+`for_llm` payload, suggested-fix template, parity flags).
+
+#### Errors (`E_*`) — model is invalid, must fix (19)
+
+| Code | What it catches | Minimal DSL example |
+|------|-----------------|---------------------|
+| `E_UNDEFINED_VAR` | A guard, effect, or lifecycle-action block references a name that was never declared with a top-level `def`. | `def int x = 0; state Root { state A; state B; A -> B : if [unknown_var > 0]; }` |
+| `E_DUPLICATE_VAR` | A top-level `def` re-declares an identifier defined earlier in the file. | `def int x = 0; def int x = 1; state Root { state A; }` |
+| `E_MISSING_STATE` | A transition target references a state path that cannot be resolved in the surrounding hierarchy. | `state Root { state A; A -> NoSuch; }` |
+| `E_DUPLICATE_STATE` | Two states share the same name within the same parent scope. | `state Root { state A; state A; }` |
+| `E_EVENT_REF_INVALID` | The textual form of an event reference is syntactically invalid. | `state Root { state A; state B; A -> B : /; }` |
+| `E_EVENT_NOT_FOUND` | An event reference parses correctly but does not resolve to any event defined in the targeted scope. | `state Root { state A; state B; A -> B :: NoEvent; }` |
+| `E_DANGLING_TRANSITION` | A transition cannot resolve either its source or its target. | `state Root { state A; NoSuch -> A; }` |
+| `E_TYPE_MISMATCH` | A guard, effect, or assignment mixes the arithmetic and boolean expression categories. | `def int x = 0; state Root { state A; state B; A -> B : if [x]; }` |
+| `E_FORCED_TRANSITION_EXPANSION` | A forced transition (`!State -> ...` or `!*`) cannot be expanded because the source or target is unresolved. | `state Root { state A; !NoSuch -> A; }` |
+| `E_INITIAL_TRANSITION_INVALID` | A composite state either lacks an entry transition (`[*] -> child`) or declares one targeting a non-direct child. | `state Root { state Outer { state Inner; } }` |
+| `E_DUPLICATE_FUNCTION_NAME` | Two named lifecycle actions within the same state share the same name. | `state Root { state A { enter Foo { } enter Foo { } } }` |
+| `E_DURING_ASPECT_INVALID` | A `during` block is declared inconsistently with the host state's leaf/composite kind. | `state Root { state A { during before { } } }` |
+| `E_PSEUDO_NOT_LEAF` | A state was declared with the `pseudo` keyword but has nested substates. | `state Root { pseudo state Outer { state Inner; [*] -> Inner; } }` |
+| `E_NAMED_FUNCTION_REF_NOT_FOUND` | A `ref` lifecycle action could not resolve its target named action. | `state Root { state A { enter ref NoSuch.NoSuch; } }` |
+| `E_IMPORT_NOT_FOUND` | An `import` statement points at a source file that cannot be found, read, or parsed. | `state System { import "missing.fcstm" as Sub; }` |
+| `E_IMPORT_CIRCULAR` | A cycle was detected while resolving `import` statements between two or more state-machine source files. | `# a.fcstm state A { import "b.fcstm" as B; } # b.fcstm state B { import "a.fcstm" as A; }` |
+| `E_IMPORT_ALIAS_CONFLICT` | An `import` alias clashes with an existing child state (or another import alias) under the same composite. | `state System { state Worker; import "worker.fcstm" as Worker; }` |
+| `E_IMPORT_DUPLICATE_MAPPING` | Two or more mapping clauses under the same `import { ... }` block target the same imported name. | `state System { import "sub.fcstm" as Sub { def x = a; def x = b; } }` |
+| `E_IMPORT_MAPPING_INVALID` | An import-mapping clause refers to a source name that does not exist in the imported machine. | `state System { import "sub.fcstm" as Sub { def x = no_such_var; } }` |
+
+#### Warnings (`W_*`) — high-confidence design-health issues (24)
+
+| Code | What it catches | Minimal DSL example |
+|------|-----------------|---------------------|
+| `W_UNREACHABLE_STATE` | A state is not reachable from the model's root entry path via any sequence of normal or forced transitions. | `state Root { state Idle; state Orphan; [*] -> Idle; }` |
+| `W_GUARD_CONST_FALSE` | A transition guard folds to literal `false` via the built-in constant folder — transition never fires. | `state Root { state A; state B; [*] -> A; A -> B : if [(0x0F & 0xF0) != 0]; }` |
+| `W_GUARD_CONST_TRUE` | A transition guard folds to literal `true` via the built-in constant folder — transition always fires. | `state Root { state A; state B; [*] -> A; A -> B : if [(1 + 2) == 3]; }` |
+| `W_DURING_CONST_ASSIGN` | A concrete `during` action assigns a variable to the same literal-only numeric value every cycle. | `def int counter = 0; state Root { state Idle { during { counter = (2 + 3) * 4; } } [*] -> Idle; }` |
+| `W_UNUSED_EVENT` | An `event` declaration is never referenced by any transition. | `state Root { event Unused; state A; state B; [*] -> A; A -> B :: SomethingElse; }` |
+| `W_DEADLOCK_LEAF` | A non-pseudo leaf state has no outgoing transition. | `state Root { state A; [*] -> A; }` |
+| `W_INITIAL_UNCONDITIONAL_MISSING` | A composite state has no unconditional `[*] -> child` entry transition. | `def int ready = 0; state Root { state A; [*] -> A : if [ready > 0]; }` |
+| `W_FORCED_NEVER_EXPANDS` | A forced transition declaration has no concrete child state in its scope to expand from. | `state Root { state A { !* -> [*]; } [*] -> A; }` |
+| `W_DEAD_NAMED_ACTION` | A named action belongs to an unreachable state and is not referenced by any reachable action ref. | `state Root { state A; state B { enter Cleanup {} } [*] -> A; }` |
+| `W_UNREFERENCED_VAR` | (Layer 0) A variable cannot affect any transition guard either directly or through the use-def graph, with no abstract action in scope. | `def int unused = 0; def int ready = 0; state Root { state A; state B; [*] -> A; A -> B : if [ready > 0]; }` |
+| `W_GUARD_VARS_NEVER_CHANGE` | A transition guard reads variables that are never changed by any lifecycle action or transition effect. | `def int ready = 0; state Root { state A; state B; [*] -> A; A -> B : if [ready > 0]; }` |
+| `W_UNWRITTEN_READ_VAR` | A variable is read in guards or actions but is never written by any lifecycle action or transition effect. | `def int ready = 0; state Root { state A; state B; [*] -> A; A -> B : if [ready > 0]; }` |
+| `W_WRITE_ONLY_VAR` | A variable is written by actions or effects but is never read by any guard, action, or effect. | `def int counter = 0; state Root { state A { during { counter = 1; } } [*] -> A; }` |
+| `W_REDUNDANT_TRANSITION` | Multiple transitions share the same source, target, event, guard, and effect. | `state Root { state A; state B; [*] -> A; A -> B :: Go; A -> B :: Go; }` |
+| `W_SELF_TRANSITION_NOP` | A leaf self-transition has no event, guard, effect, lifecycle action, or ancestor aspect action. | `state Root { state A; [*] -> A; A -> A; }` |
+| `W_EFFECT_SELF_ASSIGN` | An effect statement assigns a variable directly to itself. | `def int x = 0; state Root { state A; state B; [*] -> A; A -> B effect { x = x; } }` |
+| `W_FORCED_OVERRIDES_NORMAL` | A forced transition expands to the same source, target, event, and guard as an existing normal transition. | `state Root { state A; state B; [*] -> A; A -> B :: Go; !A -> B :: Go; }` |
+| `W_SHADOWED_EVENT` | A local event name shadows a chain or absolute event with the same leaf name. | `state Root { event Tick; state A; state B; [*] -> A; A -> B : Tick; B -> A :: Tick; }` |
+| `W_NAMED_ACTION_SHADOWS_ANCESTOR` | A named lifecycle action reuses the same function name as an ancestor-scoped named action. | `state Root { enter Sync { } state Child { enter Sync { } } [*] -> Child; }` |
+| `W_LITERAL_TYPE_NARROWING` | An `int` variable is initialized or assigned directly from a floating-point literal (silent truncation). | `def int truncated = 3.5; state Root { state A; [*] -> A; }` |
+| `W_ASPECT_NO_DESCENDANT_LEAF` | A `>> during` aspect is attached to a state with no descendant non-pseudo leaf states. | `state Root { pseudo state Marker; [*] -> Marker; >> during before { } }` |
+| `W_HIGH_VAR_TO_LEAF_RATIO` | The number of variables is high relative to the number of non-pseudo leaf states (fact-flag bloat heuristic). | `def int a = 0; def int b = 0; def int c = 0; state Root { state A; [*] -> A; }` |
+| `W_DEEP_HIERARCHY` | The state hierarchy exceeds the configured maximum depth. | `state Root { state A { state B { state C; [*] -> C; } [*] -> B; } [*] -> A; }` |
+| `W_LARGE_COMPOSITE` | A composite state has more direct children than the configured threshold. | `state Root { state A; state B; state C; [*] -> A; }` |
+
+#### Infos (`I_*`) — observations that may be intentional (3)
+
+| Code | What it observes | Minimal DSL example |
+|------|------------------|---------------------|
+| `I_UNREFERENCED_VAR_MAYBE_ABSTRACT` | A variable cannot affect any transition guard through DSL data-flow, but at least one visible abstract action may use it externally. | `def int maybe_external = 0; def int ready = 0; state Root { state A { enter abstract ExternalHook; } state B; [*] -> A; A -> B : if [ready > 0]; }` |
+| `I_TRANSITION_TO_SELF_VIA_PARENT` | A composite state transitions to itself, intentionally forcing a re-entry through child initialization. | `state Root { state Active { state Leaf; [*] -> Leaf; } [*] -> Active; Active -> Active; }` |
+| `I_TRANSITION_NEVER_EVENT_TRIGGERED` | A normal transition has no event and no guard — an unconditional fall-through. | `state Root { state A; state B; [*] -> A; A -> B; }` |
+
+> **Configurable thresholds.** `inspect_model(machine, *, deep_hierarchy_threshold=6, large_composite_threshold=12, var_to_leaf_ratio_threshold=2.0)` accepts override knobs for the three threshold-based warnings (`W_DEEP_HIERARCHY` / `W_LARGE_COMPOSITE` / `W_HIGH_VAR_TO_LEAF_RATIO`). jsfcstm `inspectModel(model, { deepHierarchyThreshold, largeCompositeThreshold, varToLeafRatioThreshold })` mirrors the same defaults.
 
 ## Use Cases
 

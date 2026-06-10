@@ -1,0 +1,13 @@
+def int phase = 0;
+def int trace = 0;
+state Root {
+    state A {
+        during {
+            phase = phase + 1;
+            trace = trace + 10;
+        }
+    }
+
+    [*] -> A;
+    A -> [*] : if [phase >= 2];
+}

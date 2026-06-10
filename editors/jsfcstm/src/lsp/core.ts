@@ -675,7 +675,11 @@ export class FcstmLanguageServerCore {
         const actions = await collectCodeActions(document, range, diagnostics.map(item => ({
             range: item.range,
             message: item.message,
-            severity: item.severity === 1 ? 'error' : 'warning',
+            severity: item.severity === 1
+                ? 'error'
+                : item.severity === 3
+                    ? 'info'
+                    : 'warning',
             source: item.source || 'fcstm',
             code: item.code ? String(item.code) : undefined,
             data: item.data as Record<string, unknown> | undefined,

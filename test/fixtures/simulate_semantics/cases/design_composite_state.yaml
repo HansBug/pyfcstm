@@ -1,0 +1,58 @@
+schema_version: 1
+id: design_composite_state
+title: 4 2 composite state
+source:
+  fcstm: design_composite_state.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_2_composite_state
+  - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_2_composite_state
+  assertion_types:
+  - ended
+  - return
+  - state
+  - vars
+categories:
+- design_example
+- runtime
+- template_alignment
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      counter: 1
+    ended: false
+    return: null
+- cycle:
+    events:
+    - Root.A.GoB
+  expect:
+    state:
+    - Root
+    - B
+    - B1
+    vars:
+      counter: 11
+    ended: false
+    return: null
+- cycle:
+    events:
+    - Root.B.B1.Next
+  expect:
+    state:
+    - Root
+    - B
+    - B2
+    vars:
+      counter: 111
+    ended: false
+    return: null

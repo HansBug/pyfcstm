@@ -105,7 +105,17 @@ from ..utils.logging import get_logger
 from ..utils.validate import ModelLookupError, ModelValueError
 
 from ..dsl import EXIT_STATE
-from ..model import Event, IfBlock, OnAspect, OnStage, Operation, OperationStatement, State, StateMachine, Transition
+from ..model import (
+    Event,
+    IfBlock,
+    OnAspect,
+    OnStage,
+    Operation,
+    OperationStatement,
+    State,
+    StateMachine,
+    Transition,
+)
 from .context import ReadOnlyExecutionContext
 
 
@@ -184,6 +194,17 @@ class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
     The class keeps legacy ``ValueError`` / ``ArithmeticError`` catch
     compatibility while giving command-line callers a precise exception to
     handle without swallowing abstract-handler or internal runtime defects.
+    """
+
+
+class SimulationRuntimeActionReferenceError(RuntimeError):
+    """
+    Raised when lifecycle action references cannot be resolved safely.
+
+    Valid models resolve every lifecycle action ``ref`` chain to a concrete or
+    abstract action before runtime execution. This exception is a defensive
+    runtime guard for inconsistent or manually-mutated models that contain a
+    cyclic action-reference graph.
     """
 
 
@@ -346,12 +367,12 @@ class SimulationRuntime:
     """
 
     def __init__(
-            self,
-            state_machine: StateMachine,
-            abstract_error_mode: Literal['raise', 'log'] = 'raise',
-            history_size: Optional[int] = None,
-            initial_state: Optional[Union[str, Tuple[str, ...], State]] = None,
-            initial_vars: Optional[Dict[str, Union[int, float]]] = None
+        self,
+        state_machine: StateMachine,
+        abstract_error_mode: Literal["raise", "log"] = "raise",
+        history_size: Optional[int] = None,
+        initial_state: Optional[Union[str, Tuple[str, ...], State]] = None,
+        initial_vars: Optional[Dict[str, Union[int, float]]] = None,
     ):
         """
         Initialize the simulation runtime with a state machine model.
@@ -464,15 +485,19 @@ class SimulationRuntime:
            states, the runtime will automatically attempt initial transitions
            to find a stoppable leaf state during the first cycle.
         """
+        if abstract_error_mode not in ("raise", "log"):
+            raise ValueError("abstract_error_mode must be 'raise' or 'log'")
         self.state_machine = state_machine
         self.stack: List[_Frame] = []
         self.vars: Dict[str, Union[int, float]] = {}
         self.cycle_count: int = 0  # Track number of cycles executed
-        self.history_size: Optional[int] = history_size  # Maximum history entries (None = unlimited)
+        self.history_size: Optional[int] = (
+            history_size  # Maximum history entries (None = unlimited)
+        )
         self.history: List[Dict] = []  # Execution history
 
         # Initialize logger
-        self.logger = get_logger('pyfcstm.simulate')
+        self.logger = get_logger("pyfcstm.simulate")
 
         for name, define in self.state_machine.defines.items():
             self.vars[name] = define.init(**self.vars)
@@ -481,13 +506,15 @@ class SimulationRuntime:
         self._ended = False
 
         # Abstract handler registry: action_path -> list of handlers
-        self._abstract_handlers: Dict[str, List[Callable[[ReadOnlyExecutionContext], None]]] = {}
+        self._abstract_handlers: Dict[
+            str, List[Callable[[ReadOnlyExecutionContext], None]]
+        ] = {}
 
         # Track warned anonymous abstracts to avoid duplicate warnings
         self._warned_anonymous_abstracts: set = set()
 
         # Error handling mode for abstract handlers
-        self._abstract_error_mode: Literal['raise', 'log'] = abstract_error_mode
+        self._abstract_error_mode: Literal["raise", "log"] = abstract_error_mode
 
         # Track abstract handler errors (only used in 'log' mode)
         self._abstract_handler_errors: List[Tuple[str, Exception]] = []
@@ -516,7 +543,14 @@ class SimulationRuntime:
 
                 # Type checking and conversion
                 define = self.state_machine.defines[name]
-                if define.type == 'int' and isinstance(value, float):
+                if type(value) is bool:
+                    raise ValueError(f"initial_vars[{name!r}] must not be bool")
+                if type(value) not in (int, float):
+                    raise ValueError(
+                        f"initial_vars[{name!r}] must be int or float, "
+                        f"got {type(value).__name__}"
+                    )
+                if define.type == "int" and type(value) is float:
                     if value != int(value):
                         raise ValueError(
                             f"Variable '{name}' is int type, cannot assign float {value}"
@@ -537,10 +571,11 @@ class SimulationRuntime:
 
             # Build hot start stack
             self.stack = self._build_hot_start_stack(target_state)
+            self._validate_hot_start_stack(target_state)
             self._initialized = True
         else:
             # Default mode: start from root state
-            self.stack.append(_Frame(self.state_machine.root_state, 'init_wait'))
+            self.stack.append(_Frame(self.state_machine.root_state, "init_wait"))
 
     def _state_belongs_to_machine(self, state: State) -> bool:
         """
@@ -569,8 +604,7 @@ class SimulationRuntime:
         return current is self.state_machine.root_state
 
     def _resolve_initial_state(
-            self,
-            state_ref: Union[str, Tuple[str, ...], State]
+        self, state_ref: Union[str, Tuple[str, ...], State]
     ) -> State:
         """
         Resolve an initial state reference to a State object.
@@ -612,7 +646,7 @@ class SimulationRuntime:
         if isinstance(state_ref, str):
             if not state_ref:
                 raise ValueError("State path cannot be empty")
-            path = tuple(state_ref.split('.'))
+            path = tuple(state_ref.split("."))
         elif isinstance(state_ref, tuple):
             path = state_ref
         else:
@@ -688,30 +722,68 @@ class SimulationRuntime:
         # Build stack with appropriate modes
         stack = []
         for i, state in enumerate(path_states):
-            is_target = (i == len(path_states) - 1)
+            is_target = i == len(path_states) - 1
 
             if state.is_leaf_state:
                 # Leaf state: active (will execute during on first cycle)
-                stack.append(_Frame(state, 'active'))
+                stack.append(_Frame(state, "active"))
             else:
                 # Composite state
                 if is_target:
                     # Target composite state: init_wait (trigger DFS)
-                    stack.append(_Frame(state, 'init_wait'))
+                    stack.append(_Frame(state, "init_wait"))
                 else:
                     # Ancestor composite state: active (child running)
-                    stack.append(_Frame(state, 'active'))
+                    stack.append(_Frame(state, "active"))
 
         return stack
 
-    def _parse_event(self, event: Union[str, Event]) -> Event:
+    def _validate_hot_start_stack(self, target_state: State) -> None:
+        """
+        Validate that a hot-start target can reach a stable boundary.
+
+        A non-pseudo leaf target is already a stable boundary, so validation
+        succeeds without executing the leaf's first-cycle ``during`` actions.
+        Other targets are checked by cloning the constructed stack and current
+        variables, then advancing that clone with no events in validation mode.
+        The real runtime therefore remains at the requested target state and no
+        lifecycle or abstract-handler side effects from the preflight are
+        committed.
+
+        :param target_state: Target state selected by the user.
+        :type target_state: State
+        :return: ``None``.
+        :rtype: None
+        :raises ValueError: If the target cannot reach a stoppable state or end.
+        """
+        if target_state.is_stoppable:
+            return
+
+        validation_stack = self._clone_stack(self.stack)
+        validation_vars = copy.deepcopy(self.vars)
+        success, _ = self._run_cycle_on_context(
+            validation_stack,
+            validation_vars,
+            {},
+            is_validation_mode=True,
+        )
+        if not success:
+            target_path = ".".join(target_state.path)
+            raise ValueError(
+                f"Hot start target '{target_path}' cannot reach a stoppable state"
+            )
+
+    def _parse_event(self, event: Any) -> Event:
         """
         Resolve an event reference into a concrete event object.
 
-        This method accepts either an event object (returned as-is) or a
-        dot-separated event path string. String paths are resolved using
-        intelligent resolution that supports both StateMachine and State
-        resolve_event methods for maximum flexibility.
+        This method accepts an event object (returned as-is), a dot-separated
+        event path string, or an event-like object exposing a ``path_name``
+        attribute. Event-like inputs are resolved by passing their ``path_name``
+        value through the same string path resolver used for direct string
+        inputs. String paths are resolved using intelligent resolution that
+        supports both StateMachine and State resolve_event methods for maximum
+        flexibility.
 
         **Path Resolution Strategy**:
 
@@ -731,11 +803,13 @@ class SimulationRuntime:
         - **Parent-relative**: ``.error`` or ``..system.error`` (State.resolve_event)
         - **Absolute**: ``/global.shutdown`` (State.resolve_event from root)
 
-        :param event: Event object or dot-separated event path string.
-        :type event: Union[str, Event]
+        :param event: Event object, dot-separated event path string, or
+            event-like object exposing ``path_name``.
+        :type event: Any
         :return: The resolved event instance.
         :rtype: Event
-        :raises TypeError: If ``event`` is neither a string nor an :class:`Event`.
+        :raises TypeError: If ``event`` is neither a string, an :class:`Event`,
+            nor an event-like object exposing a string ``path_name``.
         :raises SimulationRuntimeEventError: If the user-supplied event path
             cannot be resolved by any supported method.
 
@@ -784,7 +858,15 @@ class SimulationRuntime:
         """
         if isinstance(event, Event):
             return event
-        elif isinstance(event, str):
+        if not isinstance(event, str) and hasattr(event, "path_name"):
+            path_name = getattr(event, "path_name")
+            if not isinstance(path_name, str):
+                raise TypeError(
+                    "Event-like object path_name must be str, got "
+                    f"{type(path_name)!r} - {path_name!r}."
+                )
+            event = path_name
+        if isinstance(event, str):
             from .utils import is_state_resolve_event_path
 
             # Check if runtime has ended (no current state)
@@ -829,8 +911,7 @@ class SimulationRuntime:
                             f"failed with both StateMachine.resolve_event and State.resolve_event. "
                             f"Last error: {e}"
                         ) from e
-        else:
-            raise TypeError(f'Unknown event type {type(event)!r} - {event!r}.')
+        raise TypeError(f"Unknown event type {type(event)!r} - {event!r}.")
 
     @staticmethod
     def _clone_stack(stack: List[_Frame]) -> List[_Frame]:
@@ -849,29 +930,54 @@ class SimulationRuntime:
         """
         return [_Frame(frame.state, frame.mode) for frame in stack]
 
-    def _normalize_events(self, events: Optional[List[Union[str, Event]]]) -> Tuple[List[Event], Dict[str, Event]]:
+    @staticmethod
+    def _is_single_event_input(events: Any) -> bool:
+        """Return whether ``events`` is one event value rather than a collection."""
+        return isinstance(events, (str, Event))
+
+    def _iter_event_inputs(self, events: Any) -> List[Any]:
+        """Normalize the public ``cycle(events=...)`` shape into event items."""
+        if events is None:
+            return []
+        if self._is_single_event_input(events):
+            return [events]
+        try:
+            return list(events)
+        except TypeError as e:
+            # TypeError: list(events) raises when the caller supplied a
+            # non-iterable object that is not one of the supported single-event
+            # shapes. Surface the same public unsupported-event diagnostic that
+            # item-level parsing uses.
+            raise TypeError(f"Unknown event type {type(events)!r} - {events!r}.") from e
+
+    def _normalize_events(self, events: Any) -> Tuple[List[Event], Dict[str, Event]]:
         """
         Normalize user-provided events into object and lookup forms.
 
-        The runtime accepts both event objects and string paths. This helper
-        resolves them into concrete :class:`Event` instances and also builds a
-        dictionary keyed by :attr:`Event.path_name` so transition
-        matching can perform constant-time membership checks.
+        The runtime accepts event objects, string paths, and iterables
+        containing event objects, string paths, or event-like objects exposing
+        ``path_name``. Bare strings and model event objects are treated as
+        single events, not as generic iterables. This helper resolves inputs
+        into concrete :class:`Event` instances and also builds a dictionary keyed
+        by :attr:`Event.path_name` so transition matching can perform
+        constant-time membership checks.
 
         :param events: Raw event inputs for the current execution attempt.
-        :type events: Optional[List[Union[str, Event]]]
+        :type events: Any
         :return: A pair containing the resolved event list and a name-indexed mapping.
         :rtype: Tuple[List[Event], Dict[str, Event]]
         """
-        event_objects = [self._parse_event(event) for event in list(events or [])]
+        event_objects = [
+            self._parse_event(event) for event in self._iter_event_inputs(events)
+        ]
         d_events = {event.path_name: event for event in event_objects}
         return event_objects, d_events
 
     def _execute_transition_effect(
-            self,
-            transition: Transition,
-            vars_: Dict[str, Union[int, float]],
-            is_validation_mode: bool = False
+        self,
+        transition: Transition,
+        vars_: Dict[str, Union[int, float]],
+        is_validation_mode: bool = False,
     ) -> None:
         """
         Apply a transition's effect operations to a variable mapping.
@@ -902,19 +1008,19 @@ class SimulationRuntime:
             transition.effects,
             vars_,
             validation_message=(
-                f'[VALIDATION] Execute transition effect for {transition.from_state} -> {transition.to_state}'
+                f"[VALIDATION] Execute transition effect for {transition.from_state} -> {transition.to_state}"
             ),
-            execute_message=f'Execute transition effect for {transition.from_state} -> {transition.to_state}',
+            execute_message=f"Execute transition effect for {transition.from_state} -> {transition.to_state}",
             is_validation_mode=is_validation_mode,
         )
 
     def _execute_operation_block(
-            self,
-            operations: List[OperationStatement],
-            vars_: Dict[str, Union[int, float]],
-            validation_message: str,
-            execute_message: str,
-            is_validation_mode: bool = False,
+        self,
+        operations: List[OperationStatement],
+        vars_: Dict[str, Union[int, float]],
+        validation_message: str,
+        execute_message: str,
+        is_validation_mode: bool = False,
     ) -> None:
         """
         Execute a single operation block with block-local temporary variables.
@@ -957,13 +1063,13 @@ class SimulationRuntime:
         if not is_validation_mode:
             new_vars = {name: vars_[name] for name in global_var_names}
             changes = self._format_var_changes(old_vars, new_vars)
-            self.logger.info(f'{execute_message}{changes}')
+            self.logger.info(f"{execute_message}{changes}")
 
     def _execute_operation_statements(
-            self,
-            statements: List[OperationStatement],
-            scope: Dict[str, Union[int, float]],
-            is_validation_mode: bool = False,
+        self,
+        statements: List[OperationStatement],
+        scope: Dict[str, Union[int, float]],
+        is_validation_mode: bool = False,
     ) -> None:
         """
         Execute a sequence of operation statements inside one local scope.
@@ -988,10 +1094,10 @@ class SimulationRuntime:
             )
 
     def _execute_operation_statement(
-            self,
-            statement: OperationStatement,
-            scope: Dict[str, Union[int, float]],
-            is_validation_mode: bool = False,
+        self,
+        statement: OperationStatement,
+        scope: Dict[str, Union[int, float]],
+        is_validation_mode: bool = False,
     ) -> None:
         """
         Execute one operation statement inside the supplied local scope.
@@ -1021,11 +1127,13 @@ class SimulationRuntime:
 
         if isinstance(statement, IfBlock):
             for branch in statement.branches:
-                if branch.condition is not None and not bool(self._evaluate_runtime_expr(
+                if branch.condition is not None and not bool(
+                    self._evaluate_runtime_expr(
                         branch.condition,
                         scope,
-                        usage='if-block condition',
-                )):
+                        usage="if-block condition",
+                    )
+                ):
                     continue
 
                 visible_names = tuple(scope.keys())
@@ -1040,14 +1148,14 @@ class SimulationRuntime:
                 break
             return
 
-        raise TypeError(f'Unknown operation statement type {type(statement)!r}.')
+        raise TypeError(f"Unknown operation statement type {type(statement)!r}.")
 
     @staticmethod
     def _evaluate_runtime_expr(
-            expr,
-            scope: Dict[str, Union[int, float]],
-            *,
-            usage: str,
+        expr,
+        scope: Dict[str, Union[int, float]],
+        *,
+        usage: str,
     ) -> Any:
         """
         Evaluate a DSL expression and normalize numeric user-data failures.
@@ -1069,9 +1177,9 @@ class SimulationRuntime:
             ) from e
 
     def _format_var_changes(
-            self,
-            old_vars: Dict[str, Union[int, float]],
-            new_vars: Dict[str, Union[int, float]],
+        self,
+        old_vars: Dict[str, Union[int, float]],
+        new_vars: Dict[str, Union[int, float]],
     ) -> str:
         """
         Format variable changes as a single inline string.
@@ -1098,10 +1206,10 @@ class SimulationRuntime:
         return ""
 
     def _execute_func(
-            self,
-            func: Union[OnStage, OnAspect],
-            vars_: Dict[str, Union[int, float]],
-            is_validation_mode: bool = False
+        self,
+        func: Union[OnStage, OnAspect],
+        vars_: Dict[str, Union[int, float]],
+        is_validation_mode: bool = False,
     ) -> None:
         """
         Execute a lifecycle or aspect action against a variable mapping.
@@ -1127,9 +1235,28 @@ class SimulationRuntime:
         :return: ``None``.
         :rtype: None
         """
+        # Preserve the caller state before resolving ``ref`` chains.
+        # Model construction assigns a parent state for lifecycle actions.
+        calling_state_path = func.parent.path
+
+        seen_actions = []
+        seen_action_ids = set()
         while func.ref is not None:
+            if id(func) in seen_action_ids:
+                cycle_start = next(
+                    index
+                    for index, item in enumerate(seen_actions)
+                    if id(item) == id(func)
+                )
+                cycle_items = seen_actions[cycle_start:] + [func]
+                cycle_path = " -> ".join(item.func_name for item in cycle_items)
+                raise SimulationRuntimeActionReferenceError(
+                    "Action reference cycle during execution: %s" % cycle_path
+                )
+            seen_action_ids.add(id(func))
+            seen_actions.append(func)
             new_func = func.ref
-            self.logger.debug(f'Function {func.func_name} -> {new_func.func_name}.')
+            self.logger.debug(f"Function {func.func_name} -> {new_func.func_name}.")
             func = new_func
 
         if func.is_abstract:
@@ -1137,24 +1264,29 @@ class SimulationRuntime:
 
             # Check if this is an anonymous abstract (no name)
             if func.name is None:
+                if is_validation_mode:
+                    self.logger.debug(
+                        f"[VALIDATION] Skip anonymous abstract function {func_path}"
+                    )
+                    return
+
                 # Generate a unique key for this anonymous abstract
                 anonymous_key = id(func)
 
-                # Warn only once per anonymous abstract
+                # Warn only once per anonymous abstract during committed execution.
                 if anonymous_key not in self._warned_anonymous_abstracts:
                     warnings.warn(
-                        f'Abstract action at {func_path} has no name. '
-                        f'Named abstract actions are strongly recommended for handler registration. '
-                        f'Add a name like: {func.stage} abstract YourFunctionName',
+                        f"Abstract action at {func_path} has no name. "
+                        f"Named abstract actions are strongly recommended for handler registration. "
+                        f"Add a name like: {func.stage} abstract YourFunctionName",
                         UserWarning,
-                        stacklevel=2
+                        stacklevel=2,
                     )
                     self._warned_anonymous_abstracts.add(anonymous_key)
 
-                if is_validation_mode:
-                    self.logger.debug(f'[VALIDATION] Skip anonymous abstract function {func_path}')
-                else:
-                    self.logger.info(f'Execute anonymous abstract function {func_path} (no handlers supported)')
+                self.logger.info(
+                    f"Execute anonymous abstract function {func_path} (no handlers supported)"
+                )
                 return
 
             # Named abstract - check for handlers
@@ -1163,34 +1295,43 @@ class SimulationRuntime:
             # Validation mode: skip execution even if handlers exist
             if is_validation_mode:
                 if handlers:
-                    self.logger.debug(f'[VALIDATION] Skip abstract function {func_path} '
-                                      f'({len(handlers)} handler(s) registered but not executed in validation mode)')
+                    self.logger.debug(
+                        f"[VALIDATION] Skip abstract function {func_path} "
+                        f"({len(handlers)} handler(s) registered but not executed in validation mode)"
+                    )
                 else:
-                    self.logger.debug(f'[VALIDATION] Skip abstract function {func_path} (no handlers registered)')
+                    self.logger.debug(
+                        f"[VALIDATION] Skip abstract function {func_path} (no handlers registered)"
+                    )
                 return
 
             # Real execution mode: check if handlers are registered
             if not handlers:
-                self.logger.info(f'Skip abstract function {func_path} (no handlers registered)')
+                self.logger.info(
+                    f"Skip abstract function {func_path} (no handlers registered)"
+                )
                 return
 
             # Has registered handlers - this is real execution mode
-            self.logger.info(f'Execute abstract function {func_path} '
-                             f'with {len(handlers)} handler(s)')
+            self.logger.info(
+                f"Execute abstract function {func_path} with {len(handlers)} handler(s)"
+            )
 
             # Create read-only context
             # func.parent is always set during state machine construction
             ctx = ReadOnlyExecutionContext(
-                state_path=func.parent.path,
-                vars=dict(vars_),  # Frozen copy
+                state_path=calling_state_path,
+                vars=dict(vars_),
                 action_name=func_path,
-                action_stage=func.stage
+                action_stage=func.stage,
             )
 
             # Execute all handlers in order
             for idx, handler in enumerate(handlers):
                 try:
-                    self.logger.debug(f'Executing handler {idx + 1}/{len(handlers)} for {func_path}')
+                    self.logger.debug(
+                        f"Executing handler {idx + 1}/{len(handlers)} for {func_path}"
+                    )
                     handler(ctx)
                 except Exception as e:
                     # Broad catch by design: ``handler`` is user-registered
@@ -1204,28 +1345,34 @@ class SimulationRuntime:
                     #     ``_abstract_handler_errors`` and logs the failure.
                     # ``BaseException`` (KeyboardInterrupt, SystemExit) is
                     # intentionally *not* caught.
-                    if self._abstract_error_mode == 'raise':
+                    if self._abstract_error_mode == "raise":
                         # Raise mode: set error state and re-raise
                         self._is_error_state = True
                         self._error_info = (func_path, e)
-                        self.logger.error(f'Abstract handler {idx + 1} for {func_path} raised exception: {e}')
+                        self.logger.error(
+                            f"Abstract handler {idx + 1} for {func_path} raised exception: {e}"
+                        )
                         raise
                     else:
                         # Log mode: record error and continue
                         self._abstract_handler_errors.append((func_path, e))
-                        self.logger.error(f'Abstract handler {idx + 1} for {func_path} raised exception '
-                                          f'(continuing in log mode): {e}')
+                        self.logger.error(
+                            f"Abstract handler {idx + 1} for {func_path} raised exception "
+                            f"(continuing in log mode): {e}"
+                        )
         else:
             # Concrete function with operations
             self._execute_operation_block(
                 func.operations or [],
                 vars_,
-                validation_message=f'[VALIDATION] Execute function {func.func_name}',
-                execute_message=f'Execute function {func.func_name}',
+                validation_message=f"[VALIDATION] Execute function {func.func_name}",
+                execute_message=f"Execute function {func.func_name}",
                 is_validation_mode=is_validation_mode,
             )
 
-    def _transition_matches_event(self, transition: Transition, d_events: Dict[str, Event]) -> bool:
+    def _transition_matches_event(
+        self, transition: Transition, d_events: Dict[str, Event]
+    ) -> bool:
         """
         Check whether a transition's event requirement is satisfied.
 
@@ -1244,7 +1391,9 @@ class SimulationRuntime:
             return True
         return transition.event.path_name in d_events
 
-    def _transition_matches_guard(self, transition: Transition, vars_: Dict[str, Union[int, float]]) -> bool:
+    def _transition_matches_guard(
+        self, transition: Transition, vars_: Dict[str, Union[int, float]]
+    ) -> bool:
         """
         Evaluate a transition's guard against a variable mapping.
 
@@ -1260,17 +1409,19 @@ class SimulationRuntime:
         """
         if transition.guard is None:
             return True
-        return bool(self._evaluate_runtime_expr(
-            transition.guard,
-            vars_,
-            usage='transition guard',
-        ))
+        return bool(
+            self._evaluate_runtime_expr(
+                transition.guard,
+                vars_,
+                usage="transition guard",
+            )
+        )
 
     def _transition_is_enabled(
-            self,
-            transition: Transition,
-            d_events: Dict[str, Event],
-            vars_: Dict[str, Union[int, float]],
+        self,
+        transition: Transition,
+        d_events: Dict[str, Event],
+        vars_: Dict[str, Union[int, float]],
     ) -> bool:
         """
         Check whether a transition is enabled in an arbitrary execution context.
@@ -1288,14 +1439,15 @@ class SimulationRuntime:
         :return: ``True`` if the transition is enabled in the supplied context.
         :rtype: bool
         """
-        return self._transition_matches_event(transition, d_events) and self._transition_matches_guard(transition,
-                                                                                                       vars_)
+        return self._transition_matches_event(
+            transition, d_events
+        ) and self._transition_matches_guard(transition, vars_)
 
     def _run_leaf_during(
-            self,
-            state: State,
-            vars_: Dict[str, Union[int, float]],
-            is_validation_mode: bool = False
+        self,
+        state: State,
+        vars_: Dict[str, Union[int, float]],
+        is_validation_mode: bool = False,
     ) -> None:
         """
         Execute the complete during chain for a leaf state.
@@ -1320,12 +1472,12 @@ class SimulationRuntime:
             self._execute_func(func, vars_, is_validation_mode=is_validation_mode)
 
     def _enter_state(
-            self,
-            stack: List[_Frame],
-            state: State,
-            vars_: Dict[str, Union[int, float]],
-            d_events: Dict[str, Event],
-            is_validation_mode: bool = False
+        self,
+        stack: List[_Frame],
+        state: State,
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+        is_validation_mode: bool = False,
     ) -> None:
         """
         Enter a state and perform its immediate entry-time semantics.
@@ -1350,33 +1502,38 @@ class SimulationRuntime:
         :return: ``None``.
         :rtype: None
         """
-        stack.append(_Frame(state, 'active'))
+        stack.append(_Frame(state, "active"))
         for on_enter in state.on_enters:
             self._execute_func(on_enter, vars_, is_validation_mode=is_validation_mode)
 
         if state.is_leaf_state:
             self._run_leaf_during(state, vars_, is_validation_mode=is_validation_mode)
-            stack[-1].mode = 'after_entry'
+            stack[-1].mode = "after_entry"
         else:
-            for on_during_before in state.list_on_durings(aspect='before'):
-                self._execute_func(on_during_before, vars_, is_validation_mode=is_validation_mode)
-            stack[-1].mode = 'init_wait'
-            self._attempt_init_transition(stack, vars_, d_events, is_validation_mode=is_validation_mode)
+            for on_during_before in state.list_on_durings(aspect="before"):
+                self._execute_func(
+                    on_during_before, vars_, is_validation_mode=is_validation_mode
+                )
+            stack[-1].mode = "init_wait"
+            self._attempt_init_transition(
+                stack, vars_, d_events, is_validation_mode=is_validation_mode
+            )
 
     def _attempt_init_transition(
-            self,
-            stack: List[_Frame],
-            vars_: Dict[str, Union[int, float]],
-            d_events: Dict[str, Event],
-            is_validation_mode: bool = False
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+        is_validation_mode: bool = False,
     ) -> bool:
         """
         Attempt to follow a composite state's initial transition.
 
         Only the current stack-top composite state is considered. The runtime
         scans its ``init_transitions`` in declaration order and enters the target
-        substate of the first enabled transition. If no initial transition is
-        enabled, the composite state remains in ``'init_wait'`` mode.
+        substate of the first enabled transition that can reach a stable
+        continuation. If no initial transition is enabled and stable, the
+        composite state remains in ``'init_wait'`` mode.
 
         :param stack: Execution stack to inspect and mutate.
         :type stack: List[_Frame]
@@ -1397,17 +1554,120 @@ class SimulationRuntime:
 
         for transition in state.init_transitions:
             if self._transition_is_enabled(transition, d_events, vars_):
-                self._execute_transition_effect(transition, vars_, is_validation_mode=is_validation_mode)
-                target_state = state.substates[transition.to_state]
-                self._enter_state(stack, target_state, vars_, d_events, is_validation_mode=is_validation_mode)
+                if not self._validate_initial_transition(
+                    stack,
+                    vars_,
+                    transition,
+                    d_events,
+                ):
+                    current_state_path = ".".join(state.path)
+                    self.logger.debug(
+                        f"[VALIDATION] DFS validation rejected initial transition "
+                        f"{current_state_path} -> {transition.to_state}"
+                    )
+                    continue
+                self._execute_initial_transition_on_context(
+                    stack,
+                    vars_,
+                    transition,
+                    d_events,
+                    is_validation_mode=is_validation_mode,
+                )
                 return True
         return False
 
+    def _execute_initial_transition_on_context(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        transition: Transition,
+        d_events: Dict[str, Event],
+        is_validation_mode: bool = False,
+    ) -> None:
+        """
+        Execute one enabled initial transition on the supplied context.
+
+        The stack top must be the composite state that owns ``transition``.
+        Transition effects run before the target child is entered, matching the
+        normal transition ordering.
+
+        :param stack: Execution stack to mutate.
+        :type stack: List[_Frame]
+        :param vars_: Variable mapping to mutate.
+        :type vars_: Dict[str, Union[int, float]]
+        :param transition: Initial transition to execute.
+        :type transition: Transition
+        :param d_events: Active events for the current execution attempt.
+        :type d_events: Dict[str, Event]
+        :param is_validation_mode: Whether this is validation mode.
+        :type is_validation_mode: bool
+        :return: ``None``.
+        :rtype: None
+        """
+        state = stack[-1].state
+        self._execute_transition_effect(
+            transition,
+            vars_,
+            is_validation_mode=is_validation_mode,
+        )
+        target_state = state.substates[transition.to_state]
+        self._enter_state(
+            stack,
+            target_state,
+            vars_,
+            d_events,
+            is_validation_mode=is_validation_mode,
+        )
+
+    def _validate_initial_transition(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        transition: Transition,
+        d_events: Dict[str, Event],
+    ) -> bool:
+        """
+        Validate that an initial transition can reach a stable continuation.
+
+        Validation clones both stack and variables, applies the candidate
+        initial transition, and then advances the cloned context until it either
+        reaches a stoppable state, terminates, or proves unable to stabilize.
+        Candidate effects and nested entry actions therefore remain isolated
+        until a stable initial transition is selected for the real context.
+
+        :param stack: Current execution stack.
+        :type stack: List[_Frame]
+        :param vars_: Current variable mapping.
+        :type vars_: Dict[str, Union[int, float]]
+        :param transition: Candidate initial transition to validate.
+        :type transition: Transition
+        :param d_events: Active events for the current execution attempt.
+        :type d_events: Dict[str, Event]
+        :return: ``True`` if the initial transition leads to a valid continuation.
+        :rtype: bool
+        """
+        sim_stack = self._clone_stack(stack)
+        sim_vars = copy.deepcopy(vars_)
+        self._execute_initial_transition_on_context(
+            sim_stack,
+            sim_vars,
+            transition,
+            d_events,
+            is_validation_mode=True,
+        )
+        success, _ = self._run_cycle_on_context(
+            sim_stack,
+            sim_vars,
+            d_events,
+            is_validation_mode=True,
+        )
+        return success
+
     def _finalize_exit_to_parent(
-            self,
-            stack: List[_Frame],
-            vars_: Dict[str, Union[int, float]],
-            is_validation_mode: bool = False
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        is_validation_mode: bool = False,
     ) -> bool:
         """
         Complete an ``[*]`` exit after the current state has been popped.
@@ -1432,21 +1692,35 @@ class SimulationRuntime:
 
         parent = stack[-1].state
         if parent.is_root_state:
+            for on_during_after in parent.list_on_durings(aspect="after"):
+                self._execute_func(
+                    on_during_after,
+                    vars_,
+                    is_validation_mode=is_validation_mode,
+                )
+            for on_exit in parent.on_exits:
+                self._execute_func(
+                    on_exit,
+                    vars_,
+                    is_validation_mode=is_validation_mode,
+                )
             stack.clear()
             return True
 
-        for on_during_after in parent.list_on_durings(aspect='after'):
-            self._execute_func(on_during_after, vars_, is_validation_mode=is_validation_mode)
-        stack[-1].mode = 'post_child_exit'
+        for on_during_after in parent.list_on_durings(aspect="after"):
+            self._execute_func(
+                on_during_after, vars_, is_validation_mode=is_validation_mode
+            )
+        stack[-1].mode = "post_child_exit"
         return False
 
     def _execute_transition_on_context(
-            self,
-            stack: List[_Frame],
-            vars_: Dict[str, Union[int, float]],
-            transition: Transition,
-            d_events: Dict[str, Event],
-            is_validation_mode: bool = False
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        transition: Transition,
+        d_events: Dict[str, Event],
+        is_validation_mode: bool = False,
     ) -> bool:
         """
         Execute one transition against a supplied execution context.
@@ -1470,66 +1744,73 @@ class SimulationRuntime:
         :rtype: bool
         """
         current_state = stack[-1].state
-        target_desc = '[*]' if transition.to_state == EXIT_STATE else transition.to_state
-        current_state_path = '.'.join(current_state.path)
+        target_desc = (
+            "[*]" if transition.to_state == EXIT_STATE else transition.to_state
+        )
+        current_state_path = ".".join(current_state.path)
 
         if is_validation_mode:
             self.logger.debug(
-                f'[VALIDATION] Execute transition: '
-                f'{current_state_path} -> {target_desc} '
-                f'(event={transition.event.path_name if transition.event else "none"})'
+                f"[VALIDATION] Execute transition: "
+                f"{current_state_path} -> {target_desc} "
+                f"(event={transition.event.path_name if transition.event else 'none'})"
             )
         else:
             self.logger.info(
-                f'Execute transition: '
-                f'{current_state_path} -> {target_desc} '
-                f'(event={transition.event.path_name if transition.event else "none"})'
+                f"Execute transition: "
+                f"{current_state_path} -> {target_desc} "
+                f"(event={transition.event.path_name if transition.event else 'none'})"
             )
 
         for on_exit in current_state.on_exits:
             self._execute_func(on_exit, vars_, is_validation_mode=is_validation_mode)
 
-        self._execute_transition_effect(transition, vars_, is_validation_mode=is_validation_mode)
+        self._execute_transition_effect(
+            transition, vars_, is_validation_mode=is_validation_mode
+        )
         stack.pop()
 
         if transition.to_state == EXIT_STATE:
-            ended = self._finalize_exit_to_parent(stack, vars_, is_validation_mode=is_validation_mode)
-            current_state_path = '.'.join(current_state.path)
+            ended = self._finalize_exit_to_parent(
+                stack, vars_, is_validation_mode=is_validation_mode
+            )
+            current_state_path = ".".join(current_state.path)
             if is_validation_mode:
                 self.logger.debug(
-                    f'[VALIDATION] Transition completed: '
-                    f'{current_state_path} -> [*], ended={ended}'
+                    f"[VALIDATION] Transition completed: "
+                    f"{current_state_path} -> [*], ended={ended}"
                 )
             else:
                 self.logger.debug(
-                    f'Transition completed: '
-                    f'{current_state_path} -> [*], ended={ended}'
+                    f"Transition completed: {current_state_path} -> [*], ended={ended}"
                 )
             return ended
 
         target_state = current_state.parent.substates[transition.to_state]
-        self._enter_state(stack, target_state, vars_, d_events, is_validation_mode=is_validation_mode)
-        current_state_path = '.'.join(current_state.path)
-        target_state_path = '.'.join(target_state.path)
+        self._enter_state(
+            stack, target_state, vars_, d_events, is_validation_mode=is_validation_mode
+        )
+        current_state_path = ".".join(current_state.path)
+        target_state_path = ".".join(target_state.path)
         if is_validation_mode:
             self.logger.debug(
-                f'[VALIDATION] Transition completed: '
-                f'{current_state_path} -> {target_state_path}'
+                f"[VALIDATION] Transition completed: "
+                f"{current_state_path} -> {target_state_path}"
             )
         else:
             self.logger.debug(
-                f'Transition completed: '
-                f'{current_state_path} -> {target_state_path}'
+                f"Transition completed: {current_state_path} -> {target_state_path}"
             )
         return False
 
     def _select_transition(
-            self,
-            stack: List[_Frame],
-            vars_: Dict[str, Union[int, float]],
-            d_events: Dict[str, Event],
-            *,
-            validate_stoppable: bool = True,
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+        *,
+        validate_stoppable: bool = True,
+        force_validate: bool = False,
     ) -> Optional[Transition]:
         """
         Select the next executable transition for the current stack-top state.
@@ -1549,6 +1830,9 @@ class SimulationRuntime:
         :param validate_stoppable: Whether stoppable-source transitions should be
             recursively validated.
         :type validate_stoppable: bool
+        :param force_validate: Whether enabled transitions should be validated
+            even when their source state is not stoppable.
+        :type force_validate: bool
         :return: The first acceptable transition, or ``None``.
         :rtype: Optional[Transition]
         """
@@ -1558,28 +1842,28 @@ class SimulationRuntime:
         for transition in current_state.transitions_from:
             if not self._transition_is_enabled(transition, d_events, vars_):
                 continue
-            if validate_stoppable and current_state.is_stoppable:
+            if validate_stoppable and (current_state.is_stoppable or force_validate):
                 if not self._validate_transition(stack, vars_, transition, d_events):
-                    current_state_path = '.'.join(current_state.path)
+                    current_state_path = ".".join(current_state.path)
                     self.logger.debug(
-                        f'[VALIDATION] DFS validation rejected transition {current_state_path} -> {transition.to_state}'
+                        f"[VALIDATION] DFS validation rejected transition {current_state_path} -> {transition.to_state}"
                     )
                     continue
-            current_state_path = '.'.join(current_state.path)
+            current_state_path = ".".join(current_state.path)
             self.logger.debug(
-                f'Transition selected: '
-                f'{current_state_path} -> {transition.to_state} '
-                f'(event={transition.event.path_name if transition.event else "none"})'
+                f"Transition selected: "
+                f"{current_state_path} -> {transition.to_state} "
+                f"(event={transition.event.path_name if transition.event else 'none'})"
             )
             return transition
         return None
 
     def _validate_transition(
-            self,
-            stack: List[_Frame],
-            vars_: Dict[str, Union[int, float]],
-            transition: Transition,
-            d_events: Dict[str, Event],
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        transition: Transition,
+        d_events: Dict[str, Event],
     ) -> bool:
         """
         Validate that taking a transition can reach a stable continuation.
@@ -1608,15 +1892,17 @@ class SimulationRuntime:
         """
         sim_stack = self._clone_stack(stack)
         sim_vars = copy.deepcopy(vars_)
-        stack_repr = [('.'.join(frame.state.path), frame.mode) for frame in stack]
+        stack_repr = [(".".join(frame.state.path), frame.mode) for frame in stack]
         self.logger.debug(
-            f'[VALIDATION] DFS validation start for transition {transition.from_state} -> {transition.to_state} '
-            f'with stack={stack_repr} vars={vars_}'
+            f"[VALIDATION] DFS validation start for transition {transition.from_state} -> {transition.to_state} "
+            f"with stack={stack_repr} vars={vars_}"
         )
-        ended = self._execute_transition_on_context(sim_stack, sim_vars, transition, d_events, is_validation_mode=True)
+        ended = self._execute_transition_on_context(
+            sim_stack, sim_vars, transition, d_events, is_validation_mode=True
+        )
         if ended:
             self.logger.debug(
-                f'[VALIDATION] DFS validation success for transition {transition.from_state} -> {transition.to_state}: runtime ended'
+                f"[VALIDATION] DFS validation success for transition {transition.from_state} -> {transition.to_state}: runtime ended"
             )
             return True
 
@@ -1625,22 +1911,24 @@ class SimulationRuntime:
             sim_vars,
             d_events,
             ended=ended,
-            validate_post_child_exit=False,
+            validate_post_child_exit=True,
             is_validation_mode=True,
         )
-        sim_stack_repr = [('.'.join(frame.state.path), frame.mode) for frame in sim_stack]
+        sim_stack_repr = [
+            (".".join(frame.state.path), frame.mode) for frame in sim_stack
+        ]
         self.logger.debug(
-            f'[VALIDATION] DFS validation result for transition {transition.from_state} -> {transition.to_state}: '
-            f'success={success}, stack={sim_stack_repr}, vars={sim_vars}'
+            f"[VALIDATION] DFS validation result for transition {transition.from_state} -> {transition.to_state}: "
+            f"success={success}, stack={sim_stack_repr}, vars={sim_vars}"
         )
         return success
 
     def _initialize_context(
-            self,
-            stack: List[_Frame],
-            vars_: Dict[str, Union[int, float]],
-            d_events: Dict[str, Event],
-            is_validation_mode: bool = False
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+        is_validation_mode: bool = False,
     ) -> bool:
         """
         Initialize an arbitrary execution context from the root state.
@@ -1661,7 +1949,13 @@ class SimulationRuntime:
         :rtype: bool
         """
         stack.clear()
-        self._enter_state(stack, self.state_machine.root_state, vars_, d_events, is_validation_mode=is_validation_mode)
+        self._enter_state(
+            stack,
+            self.state_machine.root_state,
+            vars_,
+            d_events,
+            is_validation_mode=is_validation_mode,
+        )
         return len(stack) == 0
 
     def _create_root_rollback_stack(self) -> List[_Frame]:
@@ -1675,12 +1969,12 @@ class SimulationRuntime:
         :return: Single-frame stack rooted at the state machine root.
         :rtype: List[_Frame]
         """
-        return [_Frame(self.state_machine.root_state, 'init_wait')]
+        return [_Frame(self.state_machine.root_state, "init_wait")]
 
     @staticmethod
     def _create_execution_signature(
-            stack: List[_Frame],
-            vars_: Dict[str, Union[int, float]],
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
     ) -> Tuple[Tuple[Tuple[str, ...], str], Tuple[Tuple[str, Union[int, float]], ...]]:
         """
         Build a hashable execution signature for DFS pruning.
@@ -1702,7 +1996,9 @@ class SimulationRuntime:
         return stack_signature, vars_signature
 
     @staticmethod
-    def _create_structural_signature(stack: List[_Frame]) -> Tuple[Tuple[Tuple[str, ...], str], ...]:
+    def _create_structural_signature(
+        stack: List[_Frame],
+    ) -> Tuple[Tuple[Tuple[str, ...], str], ...]:
         """
         Build a stack-shape signature for deep-search protection.
 
@@ -1718,14 +2014,14 @@ class SimulationRuntime:
         return tuple((frame.state.path, frame.mode) for frame in stack)
 
     def _run_cycle_on_context(
-            self,
-            stack: List[_Frame],
-            vars_: Dict[str, Union[int, float]],
-            d_events: Dict[str, Event],
-            *,
-            ended: bool = False,
-            validate_post_child_exit: bool = True,
-            is_validation_mode: bool = False
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+        *,
+        ended: bool = False,
+        validate_post_child_exit: bool = True,
+        is_validation_mode: bool = False,
     ) -> Tuple[bool, bool]:
         """
         Advance a full cycle on an arbitrary execution context.
@@ -1767,10 +2063,12 @@ class SimulationRuntime:
 
         while not ended:
             if is_validation_mode:
-                stack_repr = [('.'.join(frame.state.path), frame.mode) for frame in stack]
+                stack_repr = [
+                    (".".join(frame.state.path), frame.mode) for frame in stack
+                ]
                 self.logger.debug(
-                    f'[VALIDATION] DFS step {steps_taken + 1}: stack={stack_repr}, '
-                    f'vars={vars_}, ended={ended}'
+                    f"[VALIDATION] DFS step {steps_taken + 1}: stack={stack_repr}, "
+                    f"vars={vars_}, ended={ended}"
                 )
             if not stack:
                 ended = True
@@ -1778,22 +2076,24 @@ class SimulationRuntime:
 
             signature = self._create_execution_signature(stack, vars_)
             if signature in seen_signatures:
-                self.logger.debug('[VALIDATION] Pruned repeated speculative execution state during DFS validation.')
+                self.logger.debug(
+                    "[VALIDATION] Pruned repeated speculative execution state during DFS validation."
+                )
                 return False, False
             seen_signatures.add(signature)
 
             structural_signature = self._create_structural_signature(stack)
             if len(structural_signature) > max_structural_depth:
                 raise SimulationRuntimeDfsError(
-                    'Speculative DFS exceeded the structural stack-depth safety limit '
-                    f'({max_structural_depth}) without reaching a stoppable state or pruning; '
-                    'the state machine likely contains an invalid unbounded nesting chain.'
+                    "Speculative DFS exceeded the structural stack-depth safety limit "
+                    f"({max_structural_depth}) without reaching a stoppable state or pruning; "
+                    "the state machine likely contains an invalid unbounded nesting chain."
                 )
 
             if steps_taken >= max_steps:
                 self.logger.debug(
-                    '[VALIDATION] Speculative DFS reached the step safety limit (%s) without convergence; '
-                    'treating the path as invalid continuation.',
+                    "[VALIDATION] Speculative DFS reached the step safety limit (%s) without convergence; "
+                    "treating the path as invalid continuation.",
                     max_steps,
                 )
                 return False, False
@@ -1802,8 +2102,8 @@ class SimulationRuntime:
             state = frame.state
 
             if state.is_leaf_state:
-                if frame.mode == 'after_entry':
-                    frame.mode = 'active'
+                if frame.mode == "after_entry":
+                    frame.mode = "active"
                     if state.is_stoppable:
                         return True, False
                     steps_taken += 1
@@ -1811,37 +2111,51 @@ class SimulationRuntime:
 
                 transition = self._select_transition(stack, vars_, d_events)
                 if transition is not None:
-                    ended = self._execute_transition_on_context(stack, vars_, transition, d_events,
-                                                                is_validation_mode=is_validation_mode)
+                    ended = self._execute_transition_on_context(
+                        stack,
+                        vars_,
+                        transition,
+                        d_events,
+                        is_validation_mode=is_validation_mode,
+                    )
                     steps_taken += 1
                     if ended:
                         return True, True
                     continue
 
-                self._run_leaf_during(state, vars_, is_validation_mode=is_validation_mode)
-                frame.mode = 'after_entry'
+                self._run_leaf_during(
+                    state, vars_, is_validation_mode=is_validation_mode
+                )
+                frame.mode = "after_entry"
                 steps_taken += 1
                 continue
 
-            if frame.mode == 'init_wait':
-                progressed = self._attempt_init_transition(stack, vars_, d_events,
-                                                           is_validation_mode=is_validation_mode)
+            if frame.mode == "init_wait":
+                progressed = self._attempt_init_transition(
+                    stack, vars_, d_events, is_validation_mode=is_validation_mode
+                )
                 steps_taken += 1
                 if not progressed:
                     return False, False
                 continue
 
-            if frame.mode == 'post_child_exit':
+            if frame.mode == "post_child_exit":
                 transition = self._select_transition(
                     stack,
                     vars_,
                     d_events,
                     validate_stoppable=validate_post_child_exit,
+                    force_validate=validate_post_child_exit,
                 )
                 if transition is None:
                     return False, False
-                ended = self._execute_transition_on_context(stack, vars_, transition, d_events,
-                                                            is_validation_mode=is_validation_mode)
+                ended = self._execute_transition_on_context(
+                    stack,
+                    vars_,
+                    transition,
+                    d_events,
+                    is_validation_mode=is_validation_mode,
+                )
                 steps_taken += 1
                 if ended:
                     return True, True
@@ -1851,7 +2165,7 @@ class SimulationRuntime:
 
         return True, True
 
-    def cycle(self, events: List[Union[str, Event]] = None):
+    def cycle(self, events: Any = None):
         """
         Execute a full runtime cycle until reaching a stable boundary.
 
@@ -1874,9 +2188,12 @@ class SimulationRuntime:
 
         **Event Handling**:
 
-        Events can be provided as either event objects or dot-separated path
-        strings. Multiple events can be active simultaneously, allowing complex
-        transition chains to execute in a single cycle.
+        Events can be provided as event objects, dot-separated path strings, or
+        iterables containing event objects, path strings, and event-like objects
+        exposing ``path_name``. A bare string is treated as one event path, not
+        as an iterable of characters. Multiple events can be active
+        simultaneously, allowing complex transition chains to execute in a
+        single cycle.
 
         **Flexible Event Path Formats**:
 
@@ -1911,9 +2228,11 @@ class SimulationRuntime:
         - For initial cycle: Pin runtime at root boundary in ``init_wait`` mode
         - All side effects from failed validation are discarded
 
-        :param events: Events available for the current cycle. Can be event
-            objects or dot-separated path strings.
-        :type events: List[Union[str, Event]], optional
+        :param events: Events available for the current cycle. Can be a single
+            event object, a dot-separated path string, or an iterable containing
+            event objects, path strings, and event-like objects exposing
+            ``path_name``.
+        :type events: Any, optional
         :return: ``None``.
         :rtype: None
 
@@ -1943,7 +2262,7 @@ class SimulationRuntime:
             ('System', 'Idle')
             >>> runtime.vars['counter']
             1
-            >>> runtime.cycle(['System.Idle.Start'])  # Transition to Active
+            >>> runtime.cycle('System.Idle.Start')  # Transition to Active
             >>> runtime.current_state.path
             ('System', 'Active')
 
@@ -2076,30 +2395,67 @@ class SimulationRuntime:
            :class:`SimulationRuntimeDfsError` is raised. This indicates an
            invalid state machine with unbounded execution chains.
         """
-        _, d_events = self._normalize_events(events)
-        if self._ended:
-            self.logger.warning('Runtime already ended, cycle ignored.')
+        if self._is_error_state:
+            self.logger.warning(
+                "Runtime in error state, cycle ignored. Check error_info."
+            )
             return
 
+        if self._ended:
+            self.logger.warning("Runtime already ended, cycle ignored.")
+            return
+
+        event_objects, d_events = self._normalize_events(events)
+
         # Log cycle start
-        event_names = [e.path_name if isinstance(e, Event) else e for e in (events or [])]
-        self.logger.info(f'Cycle {self.cycle_count + 1} starting with events: {event_names if event_names else "none"}')
+        event_names = [event.path_name for event in event_objects]
+        self.logger.info(
+            f"Cycle {self.cycle_count + 1} starting with events: "
+            f"{event_names if event_names else 'none'}"
+        )
 
         snapshot_stack = self._clone_stack(self.stack)
         snapshot_vars = copy.deepcopy(self.vars)
         snapshot_initialized = self._initialized
         snapshot_ended = self._ended
+        snapshot_warned_anonymous = set(self._warned_anonymous_abstracts)
+        snapshot_handler_errors = list(self._abstract_handler_errors)
 
-        sim_stack = self._clone_stack(self.stack)
-        sim_vars = copy.deepcopy(self.vars)
-        sim_initialized = self._initialized
-        sim_ended = self._ended
+        validation_stack = self._clone_stack(snapshot_stack)
+        validation_vars = copy.deepcopy(snapshot_vars)
+        validation_initialized = snapshot_initialized
+        validation_ended = snapshot_ended
 
-        if not sim_initialized:
-            sim_ended = self._initialize_context(sim_stack, sim_vars, d_events)
-            sim_initialized = True
+        if not validation_initialized:
+            validation_ended = self._initialize_context(
+                validation_stack,
+                validation_vars,
+                d_events,
+                is_validation_mode=True,
+            )
+            validation_initialized = True
 
-        success, sim_ended = self._run_cycle_on_context(sim_stack, sim_vars, d_events, ended=sim_ended)
+        success, validation_ended = self._run_cycle_on_context(
+            validation_stack,
+            validation_vars,
+            d_events,
+            ended=validation_ended,
+            is_validation_mode=True,
+        )
+
+        if success:
+            sim_stack = self._clone_stack(snapshot_stack)
+            sim_vars = copy.deepcopy(snapshot_vars)
+            sim_initialized = snapshot_initialized
+            sim_ended = snapshot_ended
+
+            if not sim_initialized:
+                sim_ended = self._initialize_context(sim_stack, sim_vars, d_events)
+                sim_initialized = True
+
+            success, sim_ended = self._run_cycle_on_context(
+                sim_stack, sim_vars, d_events, ended=sim_ended
+            )
 
         if success:
             self.stack = [] if sim_ended else sim_stack
@@ -2112,16 +2468,20 @@ class SimulationRuntime:
             # Record history entry
             # Get current state path
             try:
-                state_path = '.'.join(self.current_state.path) if self.current_state else "(terminated)"
+                state_path = (
+                    ".".join(self.current_state.path)
+                    if self.current_state
+                    else "(terminated)"
+                )
             except (AttributeError, IndexError):
                 state_path = "(terminated)"
 
             # Create history entry
             history_entry = {
-                'cycle': self.cycle_count,
-                'state': state_path,
-                'vars': copy.deepcopy(self.vars),
-                'events': event_names
+                "cycle": self.cycle_count,
+                "state": state_path,
+                "vars": copy.deepcopy(self.vars),
+                "events": event_names,
             }
 
             # Add to history and maintain size limit
@@ -2131,30 +2491,36 @@ class SimulationRuntime:
 
             # Log successful cycle completion with variable changes
             changes = self._format_var_changes(old_vars, self.vars)
-            current_values = ', '.join(f'{name}={value}' for name, value in sorted(self.vars.items()))
+            current_values = ", ".join(
+                f"{name}={value}" for name, value in sorted(self.vars.items())
+            )
             self.logger.info(
-                f'Cycle {self.cycle_count} completed successfully - State: {state_path}{changes}; '
-                f'current values: state={state_path}, vars={{ {current_values} }}'
+                f"Cycle {self.cycle_count} completed successfully - State: {state_path}{changes}; "
+                f"current values: state={state_path}, vars={{ {current_values} }}"
             )
         else:
             self.vars = snapshot_vars
             self._ended = snapshot_ended
+            self._warned_anonymous_abstracts = snapshot_warned_anonymous
+            self._abstract_handler_errors = snapshot_handler_errors
             if not snapshot_initialized and not snapshot_ended:
                 self.stack = self._create_root_rollback_stack()
-                self._initialized = True
             else:
                 self.stack = snapshot_stack
-                self._initialized = snapshot_initialized
+            self._initialized = snapshot_initialized
             self.logger.warning(
-                f'Cycle {self.cycle_count + 1} failed - Unable to reach a stoppable state, changes rolled back')
+                f"Cycle {self.cycle_count + 1} failed - Unable to reach a stoppable state, changes rolled back"
+            )
 
         if self._ended or not self.stack:
             self._ended = True
             self.stack = []
-            self.logger.info(f'Runtime ended at cycle {self.cycle_count}')
+            self.logger.info(f"Runtime ended at cycle {self.cycle_count}")
         else:
             current_state_path = ".".join(self.current_state.path)
-            self.logger.debug(f'Cycle {self.cycle_count} - Current state: {current_state_path}, Vars: {self.vars}')
+            self.logger.debug(
+                f"Cycle {self.cycle_count} - Current state: {current_state_path}, Vars: {self.vars}"
+            )
 
     @property
     def current_state(self) -> State:
@@ -2204,9 +2570,7 @@ class SimulationRuntime:
         """
         if not self.stack:
             if self._ended:
-                raise IndexError(
-                    "Cannot access current_state: runtime has ended."
-                )
+                raise IndexError("Cannot access current_state: runtime has ended.")
             else:
                 raise IndexError(
                     "Cannot access current_state: runtime has not been initialized. "
@@ -2383,10 +2747,40 @@ class SimulationRuntime:
         """
         return list(self._abstract_handler_errors)
 
+    @property
+    def abstract_error_mode(self) -> Literal['raise', 'log']:
+        """
+        Return the configured abstract-handler error mode.
+
+        :return: Abstract-handler error mode, either ``'raise'`` or ``'log'``.
+        :rtype: Literal['raise', 'log']
+        """
+        return self._abstract_error_mode
+
+    def copy_session_configuration_to(self, runtime: 'SimulationRuntime') -> None:
+        """
+        Copy session-level configuration into another runtime instance.
+
+        Command-line ``init`` and ``clear`` rebuild a runtime while preserving
+        the user's session-level configuration. This helper copies only that
+        configuration: history retention, abstract-handler error mode, and
+        registered abstract handlers. Execution history, warning records, and
+        error-state diagnostics are intentionally not copied.
+
+        :param runtime: Target runtime that should receive session settings.
+        :type runtime: SimulationRuntime
+        :return: ``None``.
+        :rtype: None
+        """
+        runtime.history_size = self.history_size
+        runtime._abstract_error_mode = self._abstract_error_mode
+        runtime._abstract_handlers = {
+            action_path: list(handlers)
+            for action_path, handlers in self._abstract_handlers.items()
+        }
+
     def register_abstract_handler(
-            self,
-            action_path: str,
-            handler: Callable[[ReadOnlyExecutionContext], None]
+        self, action_path: str, handler: Callable[[ReadOnlyExecutionContext], None]
     ) -> None:
         """
         Register a Python function to handle an abstract action.
@@ -2421,13 +2815,15 @@ class SimulationRuntime:
             self._abstract_handlers[action_path] = []
 
         self._abstract_handlers[action_path].append(handler)
-        self.logger.debug(f'Registered handler for abstract action {action_path} '
-                          f'(total handlers: {len(self._abstract_handlers[action_path])})')
+        self.logger.debug(
+            f"Registered handler for abstract action {action_path} "
+            f"(total handlers: {len(self._abstract_handlers[action_path])})"
+        )
 
     def unregister_abstract_handler(
-            self,
-            action_path: str,
-            handler: Optional[Callable[[ReadOnlyExecutionContext], None]] = None
+        self,
+        action_path: str,
+        handler: Optional[Callable[[ReadOnlyExecutionContext], None]] = None,
     ) -> int:
         """
         Unregister abstract handler(s) for an action.
@@ -2458,13 +2854,17 @@ class SimulationRuntime:
             # Remove all handlers
             count = len(self._abstract_handlers[action_path])
             del self._abstract_handlers[action_path]
-            self.logger.debug(f'Removed all {count} handlers for abstract action {action_path}')
+            self.logger.debug(
+                f"Removed all {count} handlers for abstract action {action_path}"
+            )
             return count
         else:
             # Remove specific handler
             handlers = self._abstract_handlers[action_path]
             original_count = len(handlers)
-            self._abstract_handlers[action_path] = [h for h in handlers if h is not handler]
+            self._abstract_handlers[action_path] = [
+                h for h in handlers if h is not handler
+            ]
             removed_count = original_count - len(self._abstract_handlers[action_path])
 
             # Clean up empty list
@@ -2472,7 +2872,9 @@ class SimulationRuntime:
                 del self._abstract_handlers[action_path]
 
             if removed_count > 0:
-                self.logger.debug(f'Removed {removed_count} handler(s) for abstract action {action_path}')
+                self.logger.debug(
+                    f"Removed {removed_count} handler(s) for abstract action {action_path}"
+                )
 
             return removed_count
 
@@ -2488,13 +2890,17 @@ class SimulationRuntime:
             >>> count = runtime.clear_all_abstract_handlers()
             >>> print(f"Cleared {count} handlers")
         """
-        total_count = sum(len(handlers) for handlers in self._abstract_handlers.values())
+        total_count = sum(
+            len(handlers) for handlers in self._abstract_handlers.values()
+        )
         self._abstract_handlers.clear()
         self._warned_anonymous_abstracts.clear()
-        self.logger.debug(f'Cleared all {total_count} abstract handlers')
+        self.logger.debug(f"Cleared all {total_count} abstract handlers")
         return total_count
 
-    def get_abstract_handlers(self, action_path: str) -> List[Callable[[ReadOnlyExecutionContext], None]]:
+    def get_abstract_handlers(
+        self, action_path: str
+    ) -> List[Callable[[ReadOnlyExecutionContext], None]]:
         """
         Get all registered handlers for an abstract action.
 
@@ -2524,7 +2930,10 @@ class SimulationRuntime:
             >>> if runtime.has_abstract_handlers("System.Active.InitHardware"):
             ...     print("Handlers registered")
         """
-        return action_path in self._abstract_handlers and len(self._abstract_handlers[action_path]) > 0
+        return (
+            action_path in self._abstract_handlers
+            and len(self._abstract_handlers[action_path]) > 0
+        )
 
     def register_handlers_from_object(self, obj: object) -> int:
         """
@@ -2581,7 +2990,7 @@ class SimulationRuntime:
         # Iterate through all attributes of the object
         for name in dir(obj):
             # Skip private/magic methods
-            if name.startswith('_'):
+            if name.startswith("_"):
                 continue
 
             try:
@@ -2601,8 +3010,12 @@ class SimulationRuntime:
             # Register the bound method
             self.register_abstract_handler(action_path, attr)
             registered_count += 1
-            self.logger.debug(f'Registered method {name} from {obj.__class__.__name__} '
-                              f'for action {action_path}')
+            self.logger.debug(
+                f"Registered method {name} from {obj.__class__.__name__} "
+                f"for action {action_path}"
+            )
 
-        self.logger.info(f'Registered {registered_count} handler(s) from {obj.__class__.__name__}')
+        self.logger.info(
+            f"Registered {registered_count} handler(s) from {obj.__class__.__name__}"
+        )
         return registered_count

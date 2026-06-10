@@ -1,0 +1,28 @@
+def int x = 0;
+def int flag = 0;
+state Root {
+    state A {
+        exit {
+            if [flag == 0] {
+                x = x + 1;
+            }
+        }
+    }
+
+    state B {
+        enter {
+            if [flag == 0] {
+                x = x + 10;
+            }
+        }
+    }
+
+    [*] -> A;
+    A -> B :: Go effect {
+        if [flag == 0] {
+            x = x + 100;
+        } else {
+            x = x + 1000;
+        }
+    };
+}

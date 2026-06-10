@@ -57,6 +57,9 @@ class Span:
 
     All coordinates are 1-based. ``end_line`` / ``end_column`` are optional;
     when omitted the span is treated as pointing at a single source position.
+    When present, ``end_column`` is end-exclusive: it points one column past
+    the final covered character, matching the DSL listener's source-slice
+    contract.
 
     :param line: 1-based source line where the diagnostic anchor begins.
     :type line: int
@@ -65,8 +68,8 @@ class Span:
     :param end_line: 1-based source line where the diagnostic anchor ends,
         defaults to ``None``.
     :type end_line: int, optional
-    :param end_column: 1-based source column where the diagnostic anchor ends,
-        defaults to ``None``.
+    :param end_column: 1-based end-exclusive source column where the
+        diagnostic anchor ends, defaults to ``None``.
     :type end_column: int, optional
 
     Example::

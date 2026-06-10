@@ -58,6 +58,27 @@ describe('jsfcstm formatter', () => {
         assert.equal(format(input), expected);
     });
 
+    it('keeps condition logical operators as stable single tokens', () => {
+        const input = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    A -> B :if[a>0=>b>0 xor c>0&&d>0 iff e>0];',
+            '    B -> A :if[a>0 implies b>0];',
+            '}',
+        ].join('\n');
+        const expected = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    A -> B : if [a > 0 => b > 0 xor c > 0 && d > 0 iff e > 0];',
+            '    B -> A : if [a > 0 implies b > 0];',
+            '}',
+        ].join('\n');
+        assert.equal(format(input), expected);
+        assert.equal(format(expected), expected);
+    });
+
     it('honors the requested indent size while still using spaces', () => {
         const input = [
             'state Root {',

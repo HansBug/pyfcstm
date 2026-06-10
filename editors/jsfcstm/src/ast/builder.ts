@@ -58,6 +58,10 @@ const BINARY_OPERATOR_ALIASES: Record<string, string> = {
     or: '||',
 };
 
+const COND_BINARY_OPERATOR_ALIASES: Record<string, string> = {
+    implies: '=>',
+};
+
 interface ParseTreeContext extends ParseTreeNode {
     from_state?: { text?: string };
     to_state?: { text?: string };
@@ -72,6 +76,7 @@ interface ParseTreeContext extends ParseTreeNode {
     selector_items?: Array<{ text?: string }>;
     op?: { text?: string };
     isabs?: { text?: string };
+    num_expression?: () => ParseTreeContext;
 }
 
 function nodeText(node: ParseTreeNode | undefined): string {
@@ -254,6 +259,12 @@ function buildExpressionType(nodeName: string): 'init' | 'num' | 'cond' {
     if (nodeName.endsWith('InitContext')) {
         return 'init';
     }
+    if (nodeName === 'Num_literalContext' || nodeName === 'Math_constContext') {
+        return 'num';
+    }
+    if (nodeName === 'Bool_literalContext' || nodeName === 'ConditionalCStyleCondNumContext') {
+        return 'cond';
+    }
     if (nodeName.endsWith('CondContext')) {
         return 'cond';
     }
@@ -278,7 +289,13 @@ function canonicalizeUnaryOperator(operator: string): string {
     return UNARY_OPERATOR_ALIASES[operator] || operator;
 }
 
-function canonicalizeBinaryOperator(operator: string): string {
+function canonicalizeBinaryOperator(
+    operator: string,
+    expressionType: 'init' | 'num' | 'cond'
+): string {
+    if (expressionType === 'cond') {
+        return COND_BINARY_OPERATOR_ALIASES[operator] || BINARY_OPERATOR_ALIASES[operator] || operator;
+    }
     return BINARY_OPERATOR_ALIASES[operator] || operator;
 }
 
@@ -350,6 +367,37 @@ function buildExpression(
     const expressionType = buildExpressionType(nodeName);
     const childContexts = contextChildren(node);
 
+    if (/^Pass.*ExprCondContext$/.test(nodeName)) {
+        return buildExpression(childContexts[0], document);
+    }
+
+    if (nodeName === 'Num_literalContext' || nodeName === 'Bool_literalContext') {
+        return {
+            kind: 'expression',
+            pyNodeType: inferLiteralPyNodeType(text, expressionType),
+            expressionKind: 'literal',
+            expressionType,
+            range,
+            text,
+            literalType: expressionType === 'cond' ? 'boolean' : 'number',
+            valueText: text,
+            raw: text,
+        } as FcstmAstLiteralExpression;
+    }
+
+    if (nodeName === 'Math_constContext') {
+        return {
+            kind: 'expression',
+            pyNodeType: 'Constant',
+            expressionKind: 'mathConst',
+            expressionType,
+            range,
+            text,
+            name: text,
+            raw: text,
+        } as FcstmAstMathConstExpression;
+    }
+
     if (/ParenExpr/.test(nodeName)) {
         const expression = buildExpression(childContexts[0], document);
         return {
@@ -407,7 +455,7 @@ function buildExpression(
 
     if (/UnaryExpr/.test(nodeName)) {
         const operator = canonicalizeUnaryOperator(tokenText(node.op));
-        const operand = buildExpression(childContexts[0], document);
+        const operand = buildExpression(childContexts[childContexts.length - 1], document);
         return {
             kind: 'expression',
             pyNodeType: 'UnaryOp',
@@ -425,7 +473,7 @@ function buildExpression(
     if (/BinaryExpr/.test(nodeName)) {
         const left = buildExpression(childContexts[0], document);
         const right = buildExpression(childContexts[1], document);
-        const operator = canonicalizeBinaryOperator(tokenText(node.op));
+        const operator = canonicalizeBinaryOperator(tokenText(node.op), expressionType);
         return {
             kind: 'expression',
             pyNodeType: 'BinaryOp',
@@ -460,7 +508,10 @@ function buildExpression(
     }
 
     if (/ConditionalCStyle/.test(nodeName)) {
-        const condition = buildExpression(childContexts[0], document);
+        let condition = buildExpression(childContexts[0], document);
+        if (expressionType === 'cond' && condition.pyNodeType === 'Paren') {
+            condition = condition.expr;
+        }
         const whenTrue = buildExpression(childContexts[1], document);
         const whenFalse = buildExpression(childContexts[2], document);
         return {

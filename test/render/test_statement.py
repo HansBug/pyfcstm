@@ -161,6 +161,142 @@ class TestRenderOperationStatements:
         )
 
     @pytest.mark.parametrize(
+        'condition, expected_condition',
+        [
+            ('(a > 0) => (b > 0)', '((not ((scope["a"] > 0))) or ((scope["b"] > 0)))'),
+            ('a > 0 xor b > 0', '((scope["a"] > 0) != (scope["b"] > 0))'),
+            ('a > 0 iff b > 0', '((scope["a"] > 0) == (scope["b"] > 0))'),
+        ],
+    )
+    def test_stmts_render_python_style_supports_condition_logical_operators(
+        self, condition, expected_condition
+    ):
+        statements = parse_with_grammar_entry(
+            f"""
+        if [{condition}] {{
+            a = 1;
+        }}
+        """,
+            entry_name="operational_statement_set",
+        )
+
+        rendered = render_stmt_nodes(
+            statements,
+            lang_style='python',
+            state_vars=['a', 'b'],
+        )
+
+        assert rendered == (
+            f'if {expected_condition}:\n'
+            '    scope["a"] = 1'
+        )
+        assert '=>' not in rendered
+        assert ' xor ' not in rendered
+        assert ' iff ' not in rendered
+
+    def test_stmts_render_python_style_indents_multiline_templates(self):
+        statements = parse_with_grammar_entry(
+            """
+        if [counter > 0] {
+            counter = counter + 1;
+        } else if [counter < 0] {
+            tmp = 1;
+            counter = tmp;
+        } else {
+            counter = 0;
+        }
+        """,
+            entry_name="operational_statement_set",
+        )
+
+        rendered = render_stmt_nodes(
+            statements,
+            lang_style='python',
+            state_vars=['counter'],
+            ext_configs={
+                'assign': (
+                    '{{ target }} = wrap(\n'
+                    '    lambda: {{ expr }},\n'
+                    '    "assignment: {{ name }}",\n'
+                    ')'
+                ),
+                'if': (
+                    'if wrap(\n'
+                    '    lambda: {{ condition }},\n'
+                    '    "if-block",\n'
+                    '):'
+                ),
+                'elif': (
+                    'elif wrap(\n'
+                    '    lambda: {{ condition }},\n'
+                    '    "elif-block",\n'
+                    '):'
+                ),
+            },
+        )
+
+        assert rendered == (
+            'if wrap(\n'
+            '    lambda: scope["counter"] > 0,\n'
+            '    "if-block",\n'
+            '):\n'
+            '    scope["counter"] = wrap(\n'
+            '        lambda: scope["counter"] + 1,\n'
+            '        "assignment: counter",\n'
+            '    )\n'
+            'elif wrap(\n'
+            '    lambda: scope["counter"] < 0,\n'
+            '    "elif-block",\n'
+            '):\n'
+            '    tmp = wrap(\n'
+            '        lambda: 1,\n'
+            '        "assignment: tmp",\n'
+            '    )\n'
+            '    scope["counter"] = wrap(\n'
+            '        lambda: tmp,\n'
+            '        "assignment: counter",\n'
+            '    )\n'
+            'else:\n'
+            '    scope["counter"] = wrap(\n'
+            '        lambda: 0,\n'
+            '        "assignment: counter",\n'
+            '    )'
+        )
+
+    def test_stmts_render_python_style_keeps_blank_template_lines_empty(self):
+        statements = parse_with_grammar_entry(
+            """
+        if [counter > 0] {
+            counter = counter + 1;
+        }
+        """,
+            entry_name="operational_statement_set",
+        )
+
+        rendered = render_stmt_nodes(
+            statements,
+            lang_style='python',
+            state_vars=['counter'],
+            ext_configs={
+                'assign': (
+                    '{{ target }} = wrap(\n'
+                    '\n'
+                    '    lambda: {{ expr }},\n'
+                    ')'
+                ),
+            },
+        )
+
+        assert rendered == (
+            'if scope["counter"] > 0:\n'
+            '    scope["counter"] = wrap(\n'
+            '\n'
+            '        lambda: scope["counter"] + 1,\n'
+            '    )'
+        )
+        assert '\n    \n' not in rendered
+
+    @pytest.mark.parametrize(
         ['lang_style', 'expected'],
         [
             (

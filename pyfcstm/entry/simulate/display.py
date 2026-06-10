@@ -137,7 +137,11 @@ class StateDisplay:
         lines.append(self._colorize("Available Events:", 'blue'))
 
         for full_path, short_name in events:
-            if short_name:
+            if short_name == "post-exit continuation":
+                full_colored = self._colorize(full_path, 'cyan')
+                label_colored = self._colorize(short_name, 'yellow')
+                lines.append(f"  • {full_colored} ({label_colored})")
+            elif short_name:
                 full_colored = self._colorize(full_path, 'cyan')
                 short_colored = self._colorize(short_name, 'green')
                 lines.append(f"  • {short_colored} ({full_colored})")
@@ -262,5 +266,4 @@ class StateDisplay:
             lines.append(''.join(row_parts))
 
         return '\n'.join(lines)
-
 

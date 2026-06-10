@@ -131,3 +131,18 @@ export async function withPatchedProperty<T extends object, K extends keyof T, R
         }
     }
 }
+
+export function sliceByRange(
+    text: string,
+    range: {start: {line: number; character: number}; end: {line: number; character: number}}
+): string {
+    const lines = text.split('\n');
+    if (range.start.line === range.end.line) {
+        return (lines[range.start.line] ?? '').slice(range.start.character, range.end.character);
+    }
+    return [
+        (lines[range.start.line] ?? '').slice(range.start.character),
+        ...lines.slice(range.start.line + 1, range.end.line),
+        (lines[range.end.line] ?? '').slice(0, range.end.character),
+    ].join('\n');
+}

@@ -177,6 +177,77 @@ class TestExprToZ3:
         solver.add(z3_vars['x'] == 150)
         assert solver.check() == z3.sat
 
+    @pytest.mark.parametrize(
+        'op, lhs, rhs',
+        [
+            ('=>', False, False),
+            ('=>', False, True),
+            ('=>', True, False),
+            ('=>', True, True),
+            ('xor', False, False),
+            ('xor', False, True),
+            ('xor', True, False),
+            ('xor', True, True),
+            ('iff', False, False),
+            ('iff', False, True),
+            ('iff', True, False),
+            ('iff', True, True),
+        ],
+    )
+    def test_condition_logical_operators_match_model_truth_table(self, op, lhs, rhs):
+        """Test new condition logical operators against model evaluation."""
+        expr = BinaryOp(x=Boolean(lhs), op=op, y=Boolean(rhs))
+        expected = expr()
+
+        result = expr_to_z3(expr, {})
+        simplified = z3.simplify(result)
+
+        assert z3.is_bool(simplified)
+        assert z3.is_true(simplified) if expected else z3.is_false(simplified)
+
+    @pytest.mark.parametrize(
+        'op, expected_true_assignments',
+        [
+            ('=>', [(False, False), (False, True), (True, True)]),
+            ('xor', [(False, True), (True, False)]),
+            ('iff', [(False, False), (True, True)]),
+        ],
+    )
+    def test_condition_logical_operators_are_satisfiable_as_expected(
+        self, op, expected_true_assignments
+    ):
+        """Test Z3 satisfiability for new condition logical operators."""
+        z3_vars = {'a': z3.Bool('a'), 'b': z3.Bool('b')}
+        expr = BinaryOp(x=Variable('a'), op=op, y=Variable('b'))
+        result = expr_to_z3(expr, z3_vars)
+
+        for lhs in (False, True):
+            for rhs in (False, True):
+                solver = z3.Solver()
+                solver.add(z3_vars['a'] == lhs)
+                solver.add(z3_vars['b'] == rhs)
+                solver.add(result)
+
+                expected = (lhs, rhs) in expected_true_assignments
+                assert solver.check() == (z3.sat if expected else z3.unsat)
+
+    @pytest.mark.parametrize('op', ['=>', 'xor', 'iff'])
+    def test_condition_logical_operators_reject_numeric_operands(self, op):
+        """Test new condition logical operators do not coerce numeric Z3 terms."""
+        z3_vars = {'x': z3.Int('x'), 'y': z3.Int('y')}
+        expr = BinaryOp(x=Variable('x'), op=op, y=Variable('y'))
+
+        with pytest.raises(ValueError, match='Boolean operands required'):
+            expr_to_z3(expr, z3_vars)
+
+    def test_bitwise_caret_rejects_boolean_operands(self):
+        """Test solver does not treat bitwise caret as condition bool xor."""
+        expr = BinaryOp(x=Variable('a'), op='^', y=Variable('b'))
+        z3_vars = {'a': z3.Bool('a'), 'b': z3.Bool('b')}
+
+        with pytest.raises(ValueError, match=r'Bitwise XOR \(\^\) requires non-boolean operands'):
+            expr_to_z3(expr, z3_vars)
+
     # Note: Bitwise operators are not supported on Z3 Int types
     # They require BitVec types which is a different approach
     # Skipping bitwise operator tests

@@ -27,7 +27,11 @@ _TYPE_PREDICATES = {
         isinstance(v, (int, float)) and not isinstance(v, bool)
     ),
     'bool': lambda v: isinstance(v, bool),
+    'dict': lambda v: isinstance(v, dict),
     'list[str]': lambda v: isinstance(v, list) and all(isinstance(item, str) for item in v),
+    'list[Span]': lambda v: isinstance(v, list) and all(
+        item is None or hasattr(item, 'line') for item in v
+    ),
     'Span': lambda v: v is None or hasattr(v, 'line'),
     'str_or_null': lambda v: v is None or isinstance(v, str),
     'int_or_null': lambda v: v is None or (isinstance(v, int) and not isinstance(v, bool)),
@@ -101,6 +105,36 @@ def assert_refs_match_schema(diag: ModelDiagnostic, *, context: str = '') -> Non
             f'has runtime type {type(value).__name__}, expected schema '
             f'type {field_spec.type!r}'
         )
+        if field_name == 'suggested_fix' and value is not None:
+            _assert_suggested_fix_payload(value, prefix=prefix, code=diag.code)
+
+
+def _assert_suggested_fix_payload(value, *, prefix: str, code: str) -> None:
+    assert isinstance(value, dict), (
+        f'{prefix}{code} refs[\'suggested_fix\'] must be a dict payload'
+    )
+    assert value.get('kind') in {'insert', 'delete', 'replace'}, (
+        f'{prefix}{code} suggested_fix.kind invalid: {value.get("kind")!r}'
+    )
+    assert isinstance(value.get('target'), str) and value.get('target'), (
+        f'{prefix}{code} suggested_fix.target must be non-empty string'
+    )
+    anchor = value.get('anchor')
+    assert isinstance(anchor, dict), (
+        f'{prefix}{code} suggested_fix.anchor must be a dict'
+    )
+    assert anchor.get('type') == 'ref', (
+        f'{prefix}{code} suggested_fix.anchor.type must be ref'
+    )
+    assert isinstance(anchor.get('ref'), str) and anchor.get('ref', '').startswith('refs.'), (
+        f'{prefix}{code} suggested_fix.anchor.ref must be refs.<field>'
+    )
+    assert isinstance(value.get('text'), str), (
+        f'{prefix}{code} suggested_fix.text must be string'
+    )
+    assert isinstance(value.get('rationale'), str) and value.get('rationale'), (
+        f'{prefix}{code} suggested_fix.rationale must be non-empty string'
+    )
 
 
 def assert_all_diags_match_schema(

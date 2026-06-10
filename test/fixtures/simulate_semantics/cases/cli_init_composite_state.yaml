@@ -1,0 +1,56 @@
+schema_version: 1
+id: cli_init_composite_state
+title: CLI init command initializes a composite state then cycles to its child
+source:
+  fcstm: cli_init_composite_state.fcstm
+origin:
+  files:
+  - test/simulate/test_cli_init.py::TestCLIInitCommand::test_init_command_composite_state
+  assertion_types:
+  - cli_output
+  - state
+  - vars
+  - stack
+  - cycle_count
+  - ended
+categories:
+- runtime
+- hot_start
+- cli
+runners:
+- cli_command
+initial:
+  state: null
+  vars: null
+commands:
+- input: init Root.System counter=0
+  expect:
+    output_contains:
+    - 'Initialized from state: Root.System'
+    runtime:
+      state:
+      - Root
+      - System
+      vars:
+        counter: 0
+      ended: false
+      cycle_count: 0
+      stack:
+      - path:
+        - Root
+        mode: active
+      - path:
+        - Root
+        - System
+        mode: init_wait
+- input: cycle
+  expect:
+    runtime:
+      state:
+      - Root
+      - System
+      - Idle
+      vars:
+        counter: 1
+      ended: false
+      cycle_count: 1

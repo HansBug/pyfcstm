@@ -1,4 +1,5 @@
-import type {EventInfo, ModelDiagnosticJson, StateInfo, TransitionInfo} from '../inspect';
+import type {EventInfo, ModelDiagnosticJson, ModelSpanJson, StateInfo, TransitionInfo} from '../inspect';
+import type {TextRange} from '../../utils/text';
 
 export function collectRedundancyWarnings(
     transitions: TransitionInfo[],
@@ -34,16 +35,17 @@ function transitionBehaviorKey(transition: TransitionInfo): string {
 }
 
 function collectRedundantTransitionWarnings(transitions: TransitionInfo[]): ModelDiagnosticJson[] {
-    const groups = new Map<string, TransitionInfo[]>();
-    for (const transition of transitions) {
+    const groups = new Map<string, Array<{transition: TransitionInfo; index: number}>>();
+    for (let index = 0; index < transitions.length; index += 1) {
+        const transition = transitions[index];
         if (transition.from_path === '[*]') continue;
         const key = transitionBehaviorKey(transition);
-        groups.set(key, [...(groups.get(key) ?? []), transition]);
+        groups.set(key, [...(groups.get(key) ?? []), {transition, index}]);
     }
     const out: ModelDiagnosticJson[] = [];
     for (const items of groups.values()) {
         if (items.length < 2) continue;
-        const first = items[0];
+        const first = items[0].transition;
         out.push({
             code: 'W_REDUNDANT_TRANSITION',
             severity: 'warning',
@@ -52,7 +54,8 @@ function collectRedundantTransitionWarnings(transitions: TransitionInfo[]): Mode
             refs: {
                 from_path: first.from_path,
                 to_path: first.to_path,
-                duplicate_spans: items.map((item, index) => `${item.from_path}->${item.to_path}#${index + 1}`),
+                duplicate_spans: items.map(item => sourceSpan(item.transition)),
+                transition_index: items[0].transition.transition_index,
             },
         });
     }
@@ -71,7 +74,13 @@ function collectSelfTransitionNopWarnings(transitions: TransitionInfo[], states:
             severity: 'warning',
             message: `Self transition on ${JSON.stringify(transition.from_path)} has no trigger, guard, effect, or re-entry lifecycle behavior.`,
             span: null,
-            refs: {state_path: transition.from_path},
+            refs: {
+                state_path: transition.from_path,
+                from_path: transition.from_path,
+                to_path: transition.to_path,
+                transition_span: null,
+                transition_index: transition.transition_index,
+            },
         });
     }
     return out;
@@ -100,19 +109,34 @@ function isLifecycleFreeLeaf(statePath: string, statesByPath: Map<string, StateI
 }
 
 function collectEffectSelfAssignWarnings(transitions: TransitionInfo[]): ModelDiagnosticJson[] {
+    const counts = new Map<string, number>();
+    for (const transition of transitions) {
+        for (const varName of transition.effect_self_assigns) {
+            const key = JSON.stringify([transition.from_path, varName]);
+            counts.set(key, (counts.get(key) ?? 0) + 1);
+        }
+    }
     const out: ModelDiagnosticJson[] = [];
     for (const transition of transitions) {
         for (const varName of transition.effect_self_assigns) {
+            const refs: Record<string, unknown> = {
+                state_path: transition.from_path,
+                transition_span: null,
+                var_name: varName,
+                transition_index: transition.transition_index,
+            };
+            if (
+                transition.from_path !== '[*]' &&
+                counts.get(JSON.stringify([transition.from_path, varName])) === 1
+            ) {
+                refs.effect_self_assign_anchor = varName;
+            }
             out.push({
                 code: 'W_EFFECT_SELF_ASSIGN',
                 severity: 'warning',
                 message: `Transition effect assigns ${JSON.stringify(varName)} to itself.`,
                 span: null,
-                refs: {
-                    state_path: transition.from_path,
-                    transition_span: null,
-                    var_name: varName,
-                },
+                refs,
             });
         }
     }
@@ -120,10 +144,19 @@ function collectEffectSelfAssignWarnings(transitions: TransitionInfo[]): ModelDi
 }
 
 function collectForcedOverridesNormalWarnings(transitions: TransitionInfo[]): ModelDiagnosticJson[] {
-    const normal = new Set(transitions.filter(t => !t.is_forced).map(transitionTriggerKey));
+    const normal = new Map<string, TransitionInfo>();
+    for (const transition of transitions) {
+        if (transition.is_forced) continue;
+        const key = transitionTriggerKey(transition);
+        if (!normal.has(key)) {
+            normal.set(key, transition);
+        }
+    }
     const out: ModelDiagnosticJson[] = [];
     for (const transition of transitions) {
-        if (!transition.is_forced || !normal.has(transitionTriggerKey(transition))) continue;
+        if (!transition.is_forced) continue;
+        const normalTransition = normal.get(transitionTriggerKey(transition));
+        if (!normalTransition) continue;
         out.push({
             code: 'W_FORCED_OVERRIDES_NORMAL',
             severity: 'warning',
@@ -132,12 +165,27 @@ function collectForcedOverridesNormalWarnings(transitions: TransitionInfo[]): Mo
             refs: {
                 from_path: transition.from_path,
                 to_path: transition.to_path,
-                forced_span: null,
-                normal_span: null,
+                forced_declaration_span: sourceSpan(transition),
+                normal_transition_span: sourceSpan(normalTransition),
             },
         });
     }
     return out;
+}
+
+function sourceSpan(transition: TransitionInfo): ModelSpanJson | null {
+    const range = sourceRange(transition);
+    if (!range) return null;
+    return {
+        line: range.start.line + 1,
+        column: range.start.character + 1,
+        end_line: range.end.line + 1,
+        end_column: range.end.character + 1,
+    };
+}
+
+function sourceRange(transition: TransitionInfo): TextRange | null {
+    return transition.__sourceRange ?? null;
 }
 
 function collectShadowedEventWarnings(events: EventInfo[]): ModelDiagnosticJson[] {

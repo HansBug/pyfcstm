@@ -1,11 +1,15 @@
 import {pathToFileURL} from 'node:url';
 
+import {inspectModel} from '../diagnostics';
+import {buildStateMachineModel} from '../model';
 import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticVariable} from '../semantics';
 import {FcstmDiagnostic, TextDocumentLike, TextRange, createRange} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {FCSTM_DIAGNOSTIC_CODES} from './analyzers';
-import {rangeIntersects} from './ranges';
+import {collectInspectDiagnosticsFromItems, diagnosticKey} from './diagnostics';
+import {findIdentifierRange, rangeIntersects} from './ranges';
 import type {FcstmWorkspaceEdit} from './references';
+import {planSuggestedFixEdit, suggestedFixFromDiagnostic} from './suggested-fixes';
 
 export type FcstmCodeActionKind = 'quickfix' | 'refactor.rename';
 
@@ -116,7 +120,9 @@ export async function collectCodeActions(
     range: TextRange,
     diagnostics: FcstmDiagnostic[] = []
 ): Promise<FcstmCodeAction[]> {
-    const semantic = await getWorkspaceGraph().getSemanticDocument(document);
+    const snapshot = await getWorkspaceGraph().buildSnapshotForDocument(document);
+    const node = snapshot.nodes[snapshot.rootFile];
+    const semantic = node?.semantic;
     /* c8 ignore start */
     // Defensive: code-action provider only invokes against parsed
     // documents in the workspace graph; semantic is always present.
@@ -126,9 +132,90 @@ export async function collectCodeActions(
     /* c8 ignore stop */
 
     const actions: FcstmCodeAction[] = [];
-    const relevantDiagnostics = diagnostics.filter(item => rangeIntersects(item.range, range));
+    const relevantDiagnostics = diagnostics.filter(item => (
+        !suggestedFixFromDiagnostic(item) && rangeIntersects(item.range, range)
+    ));
+    const localModel = semantic ? buildStateMachineModel(semantic) : null;
+    if (localModel) {
+        const existing = new Set<string>();
+        const inspectDiagnostics = inspectModel(localModel).diagnostics;
+        const serverSuggestedKeysAtRange = new Set(
+            collectInspectDiagnosticsFromItems(document, semantic, inspectDiagnostics, [], {rangeMode: 'fix-edit'})
+                .filter(diagnostic => (
+                    suggestedFixFromDiagnostic(diagnostic) &&
+                    rangeIntersects(diagnostic.range, range)
+                ))
+                .map(diagnosticKey),
+        );
+        for (const item of inspectDiagnostics) {
+            const suggestedFix = item.refs?.suggested_fix;
+            if (
+                item.code !== 'W_INITIAL_UNCONDITIONAL_MISSING' ||
+                typeof item.refs?.composite_path !== 'string' ||
+                typeof suggestedFix !== 'object' ||
+                suggestedFix === null
+            ) {
+                continue;
+            }
+            const composite = semantic.states.find(state => (
+                state.identity.qualifiedName === item.refs.composite_path
+            ));
+            if (!composite) continue;
+            const transitionHit = semantic.transitions.some(transition => {
+                if (transition.sourceKind !== 'init' || transition.ownerStateId !== composite.identity.id) {
+                    return false;
+                }
+                return rangeIntersects(transition.range, range) || rangeIntersects(
+                    findIdentifierRange(document, transition.targetStateName, transition.range, {preferLast: true}),
+                    range,
+                );
+            });
+            if (transitionHit) {
+                serverSuggestedKeysAtRange.add(diagnosticKey({
+                    range: composite.range,
+                    message: item.message,
+                    severity: item.severity,
+                    source: 'fcstm',
+                    code: item.code,
+                    data: item.refs,
+                }));
+            }
+        }
+        for (const diagnostic of collectInspectDiagnosticsFromItems(
+            document,
+            semantic,
+            inspectDiagnostics,
+            [],
+            {rangeMode: 'problem'},
+        )) {
+            if (!suggestedFixFromDiagnostic(diagnostic)) continue;
+            const key = diagnosticKey(diagnostic);
+            // Suggested-fix diagnostics can have two useful server-derived
+            // ranges: the problem-object range and the fix-edit range. Never
+            // use client-supplied suggested_fix payloads as authorization
+            // for either range.
+            if (!rangeIntersects(diagnostic.range, range) && !serverSuggestedKeysAtRange.has(key)) continue;
+            if (existing.has(key)) continue;
+            existing.add(key);
+            relevantDiagnostics.push(diagnostic);
+        }
+    }
 
     for (const diagnostic of relevantDiagnostics) {
+        const suggestedFix = suggestedFixFromDiagnostic(diagnostic);
+        if (suggestedFix) {
+            const plan = planSuggestedFixEdit(document, semantic, diagnostic);
+            if (plan) {
+                actions.push({
+                    title: `${suggestedFix.rationale} (${diagnostic.code ?? 'suggested fix'})`,
+                    kind: 'quickfix',
+                    diagnostics: [diagnostic],
+                    edit: createWorkspaceEdit(document, plan.range, plan.newText),
+                });
+            }
+            continue;
+        }
+
         if (diagnostic.code === FCSTM_DIAGNOSTIC_CODES.importNotFound) {
             const importItem = findImportByRange(semantic, diagnostic.range);
             if (importItem) {

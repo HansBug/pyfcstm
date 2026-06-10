@@ -1,0 +1,29 @@
+def int warmup = 0;
+def int transfer_count = 0;
+state Root {
+    state OnMains {
+        during {
+            warmup = 0;
+        }
+    }
+
+    state StartingGen {
+        during {
+            warmup = warmup + 1;
+        }
+    }
+
+    state OnGenerator;
+
+    [*] -> OnMains;
+    OnMains -> StartingGen :: GridFail effect {
+        warmup = 0;
+    };
+    StartingGen -> OnGenerator : if [warmup >= 2] effect {
+        transfer_count = transfer_count + 1;
+    };
+    OnGenerator -> OnMains :: GridRestore effect {
+        transfer_count = transfer_count + 1;
+        warmup = 0;
+    };
+}

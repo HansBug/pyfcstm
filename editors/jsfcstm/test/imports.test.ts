@@ -228,9 +228,15 @@ describe('jsfcstm import workspace support', () => {
             + '}\n',
             hostFile,
         );
-        // Successful import should produce no diagnostics on either end.
+        // Successful import should produce no blocking import/semantic errors.
+        // collectDocumentDiagnostics also surfaces inspectModel W/I
+        // design-health diagnostics, so warnings are no longer evidence of
+        // import failure.
         const diagnostics = await packageModule.collectDocumentDiagnostics(document);
-        assert.deepEqual(diagnostics, [],
-            `expected clean import, got ${JSON.stringify(diagnostics)}`);
+        assert.deepEqual(
+            diagnostics.filter(item => item.severity === 'error'),
+            [],
+            `expected clean import, got ${JSON.stringify(diagnostics)}`,
+        );
     });
 });

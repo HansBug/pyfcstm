@@ -1,0 +1,7 @@
+def int x = 0;
+state Root {
+    state A {
+        during { x = 1 / x; }
+    }
+    [*] -> A;
+}

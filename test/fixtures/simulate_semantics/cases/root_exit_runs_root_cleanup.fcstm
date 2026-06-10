@@ -1,0 +1,16 @@
+def int trace = 0;
+state Root {
+    enter { trace = trace * 10 + 1; }
+    during before { trace = trace * 10 + 2; }
+    during after { trace = trace * 10 + 8; }
+    exit { trace = trace * 10 + 9; }
+
+    state A {
+        enter { trace = trace * 10 + 3; }
+        during { trace = trace * 10 + 4; }
+        exit { trace = trace * 10 + 5; }
+    }
+
+    [*] -> A;
+    A -> [*] :: Stop effect { trace = trace * 10 + 6; }
+}

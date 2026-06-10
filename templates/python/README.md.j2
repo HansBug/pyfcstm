@@ -158,6 +158,32 @@ except SimulationRuntimeDfsError as err:
     print(err)
 ```
 
+### `SimulationRuntimeExpressionError`
+
+Raised when a DSL guard, action assignment, transition effect, or `if` block
+condition fails while evaluating a numeric DSL expression. The generated runtime
+keeps this exception local to `machine.py`; it has the same class name as the
+simulation runtime error so alignment tests and user diagnostics can compare the
+stable boundary without importing `pyfcstm`.
+
+The message includes the DSL usage, for example
+`operation assignment to 'counter' evaluation failed: division by zero`, and the
+original Python exception is preserved as `__cause__`.
+
+Example:
+
+```python
+from machine import SimulationRuntimeExpressionError, {{ machine_class_name(model) }}
+
+machine = {{ machine_class_name(model) }}()
+
+try:
+    machine.cycle()
+except SimulationRuntimeExpressionError as err:
+    print(err)
+    print(type(err.__cause__).__name__)
+```
+
 ### `ReadOnlyExecutionContext`
 
 This object is passed into every abstract hook.

@@ -222,11 +222,16 @@ def _structural_refs_from_example(code: str) -> dict:
         }
     if code == "W_EVENT_UNREACHABLE_EMIT":
         event_name = topology.event_emission_to_consumer_reachable(machine)[0]
+        graph = topology.build_leaf_level_macro_graph(machine)
+        reachability = topology._event_consumer_reachability(machine, graph)
+        unreachable_consumers = [
+            reachable for reachable in reachability[event_name] if not reachable
+        ]
         return {
             "algorithm_name": "event_emission_to_consumer_reachable",
             "verification_scope": "topological_only",
             "event_name": event_name,
-            "consumer_count": 1,
+            "consumer_count": len(unreachable_consumers),
         }
     raise AssertionError(f"unexpected structural verify code {code!r}")
 
@@ -299,6 +304,18 @@ def test_verify_refs_contract_is_backed_by_real_dsl_evidence(code):
     spec = CODE_REGISTRY[code]
     diag = _diag(code, spec.severity, _refs_for_code(code))
     assert_refs_match_schema(diag, context=code)
+
+
+def test_event_unreachable_emit_consumer_count_comes_from_topology_evidence():
+    refs = _structural_refs_from_example("W_EVENT_UNREACHABLE_EMIT")
+    machine = _parse(CODE_REGISTRY["W_EVENT_UNREACHABLE_EMIT"].example_dsl)
+    graph = topology.build_leaf_level_macro_graph(machine)
+    reachability = topology._event_consumer_reachability(machine, graph)
+    event_reachability = reachability[refs["event_name"]]
+    unreachable_count = sum(1 for reachable in event_reachability if not reachable)
+
+    assert unreachable_count == 2
+    assert refs["consumer_count"] == unreachable_count
 
 
 def test_json_schema_keeps_verify_refs_extensible_via_codes_yaml_contract():

@@ -2,8 +2,8 @@
 Loader for the structured diagnostic code registry.
 
 This module loads ``codes.yaml`` (the single source of truth for diagnostic
-codes emitted by :mod:`pyfcstm.model`) at import time and exposes the parsed
-table as :data:`CODE_REGISTRY`. Downstream consumers — including the
+codes emitted by pyfcstm diagnostic pipelines) at import time and exposes the
+parsed table as :data:`CODE_REGISTRY`. Downstream consumers — including the
 ``research_ideas`` LLM agent loop, IDE integrations, and the future
 ``jsfcstm`` visualization layer — can mirror this registry to drive their
 own dispatch logic without depending on exception message text.
@@ -26,7 +26,7 @@ The module contains:
    ``_ALLOWED_REF_TYPES`` and ``_ALLOWED_SEVERITIES`` are documentation-level
    enumerations used to validate the YAML schema. They do **not** enforce
    runtime ``isinstance`` checks on emitted ``ModelDiagnostic.refs`` values
-   — type-checking refs payloads at emit time is the emitter's responsibility
+   — type-checking refs payloads at emit time is the emitter's responsibility.
    The schema's job is to give downstream tooling a contract to mirror, not
    to act as a runtime type system.
 

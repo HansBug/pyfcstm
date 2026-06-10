@@ -2514,9 +2514,11 @@ W_EVENT_UNREACHABLE_EMIT:
     state System {
         event Panic;
         state A;
-        state Lost;
+        state LostA;
+        state LostB;
         [*] -> A;
-        Lost -> A : Panic;
+        LostA -> A : Panic;
+        LostB -> A : Panic;
     }
 
 W_DEAD_GUARD:

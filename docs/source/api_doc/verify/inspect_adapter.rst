@@ -12,6 +12,13 @@ pyfcstm.verify.inspect\_adapter
 .. autodata:: __all__
 
 
+InspectRunResult
+-----------------------------------------------------
+
+.. autoclass:: InspectRunResult
+    :members: algorithm_name,complexity_tier,smt_logic,verification_scope,diagnostic_codes,result_kind,diagnostics,reason,raw_result
+
+
 InspectAccessForbiddenError
 -----------------------------------------------------
 
@@ -28,3 +35,9 @@ iter\_inspect\_eligible
 -----------------------------------------------------
 
 .. autofunction:: iter_inspect_eligible
+
+
+run\_inspect\_algorithms
+-----------------------------------------------------
+
+.. autofunction:: run_inspect_algorithms

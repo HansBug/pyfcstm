@@ -25,6 +25,10 @@ Module map:
    * - Inspect gating
      - :func:`eligible_for_inspect`, :func:`iter_inspect_eligible`
      - Decide which raw algorithms may be used by automatic inspect workflows.
+   * - Inspect execution
+     - :class:`InspectRunResult`, :func:`run_inspect_algorithms`
+     - Execute inspect-eligible algorithms and preserve normalized raw results
+       for later diagnostics conversion.
    * - Taxonomy
      - :class:`VerifyAlgorithmMeta` and the ``Literal`` aliases
      - Describe algorithm complexity, theory, scope, and fallback risk.
@@ -52,9 +56,11 @@ from .algorithms import (
     transition_shadowed_by_predecessor,
 )
 from .inspect_adapter import (
+    InspectRunResult,
     InspectAccessForbiddenError,
     eligible_for_inspect,
     iter_inspect_eligible,
+    run_inspect_algorithms,
 )
 from .registry import REGISTRY
 from .result import AlgorithmResult, ResultKind
@@ -82,6 +88,7 @@ __all__ = [
     "FallbackUnknownRisk",
     "FormulaSizeScaling",
     "InspectAccessForbiddenError",
+    "InspectRunResult",
     "SMTLogic",
     "ResultKind",
     "VerificationScope",
@@ -95,5 +102,6 @@ __all__ = [
     "forced_guard_unsat_under_init",
     "guard_tautology",
     "iter_inspect_eligible",
+    "run_inspect_algorithms",
     "transition_shadowed_by_predecessor",
 ]

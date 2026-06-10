@@ -5,7 +5,7 @@ automatic inspect runs under a bounded complexity and call-count policy.  It
 also executes eligible algorithms and normalizes their raw results without
 importing diagnostics presentation code.
 
-Example::
+Examples::
 
     >>> from pyfcstm.dsl import parse_with_grammar_entry
     >>> from pyfcstm.model import parse_dsl_node_to_state_machine
@@ -84,10 +84,12 @@ class InspectRunResult:
     """Normalized output for one inspect-adapter algorithm run.
 
     The adapter returns one instance per registry algorithm, not one instance
-    per raw diagnostic.  Structural algorithms keep their graph-oriented raw
-    payload in :attr:`raw_result`.  SMT-local algorithms expose raw diagnostic
-    dictionaries through :attr:`diagnostics` while preserving their original
-    :class:`AlgorithmResult` or per-element result tuple.
+    per raw diagnostic. Structural algorithms keep their graph-oriented raw
+    payload in :attr:`raw_result`; their :attr:`result_kind` records that the
+    structural run completed rather than replacing the structural payload.
+    SMT-local algorithms expose raw diagnostic dictionaries through
+    :attr:`diagnostics` while preserving their original :class:`AlgorithmResult`
+    or per-element result tuple.
 
     :param algorithm_name: Registry name of the executed algorithm.
     :type algorithm_name: str
@@ -113,7 +115,7 @@ class InspectRunResult:
         inspect or diagnostics conversion.
     :type raw_result: object
 
-    Example::
+    Examples::
 
         >>> result = InspectRunResult(
         ...     algorithm_name="topological_reachable_set",
@@ -144,7 +146,7 @@ class InspectRunResult:
 class InspectAccessForbiddenError(ValueError):
     """Raised when a forbidden inspect complexity tier is requested.
 
-    Example::
+    Examples::
 
         >>> raise InspectAccessForbiddenError("blocked")
         Traceback (most recent call last):
@@ -170,7 +172,7 @@ def _order_allows(order, value, maximum):
         ``maximum``.
     :rtype: bool
 
-    Example::
+    Examples::
 
         >>> _order_allows(("low", "high"), "low", "high")
         True
@@ -197,7 +199,7 @@ def _validate_max_complexity_tier(maximum: ComplexityTier) -> None:
     :raises InspectAccessForbiddenError: If ``maximum`` is unknown or requests
         the forbidden ``"bmc_search"`` tier.
 
-    Example::
+    Examples::
 
         >>> _validate_max_complexity_tier("structural")
         >>> _validate_max_complexity_tier("bmc_search")
@@ -225,7 +227,7 @@ def _validate_max_call_count_scaling(maximum: CallCountScaling) -> None:
     :raises InspectAccessForbiddenError: If ``maximum`` is outside the automatic
         inspect ordering.
 
-    Example::
+    Examples::
 
         >>> _validate_max_call_count_scaling("linear_in_transitions")
         >>> _validate_max_call_count_scaling("k_unrollings")
@@ -256,7 +258,7 @@ def _call_count_allows(value: CallCountScaling, maximum: CallCountScaling) -> bo
     :return: ``True`` if the scaling class is allowed by the inspect budget.
     :rtype: bool
 
-    Example::
+    Examples::
 
         >>> _call_count_allows("linear_in_leaves", "linear_in_transitions")
         True
@@ -292,7 +294,7 @@ def eligible_for_inspect(
         ``'bmc_search'`` or if either inspect limit is outside the automatic
         inspect ordering.
 
-    Example::
+    Examples::
 
         >>> from pyfcstm.verify.registry import REGISTRY
         >>> eligible_for_inspect(REGISTRY["topological_reachable_set"])
@@ -333,7 +335,7 @@ def iter_inspect_eligible(
     :yield: Eligible metadata entries in registry order.
     :rtype: Iterator[VerifyAlgorithmMeta]
 
-    Example::
+    Examples::
 
         >>> names = [meta.name for meta in iter_inspect_eligible()]
         >>> names[:2]
@@ -359,7 +361,7 @@ def _variables_for(machine) -> Tuple[object, ...]:
     :return: Variable definitions in source order.
     :rtype: Tuple[object, ...]
 
-    Example::
+    Examples::
 
         >>> from pyfcstm.dsl import parse_with_grammar_entry
         >>> from pyfcstm.model import parse_dsl_node_to_state_machine
@@ -380,7 +382,7 @@ def _iter_model_transitions(machine) -> Iterator[object]:
     :yield: Transition objects in model traversal order.
     :rtype: Iterator[object]
 
-    Example::
+    Examples::
 
         >>> from pyfcstm.dsl import parse_with_grammar_entry
         >>> from pyfcstm.model import parse_dsl_node_to_state_machine
@@ -409,7 +411,7 @@ def _iter_model_leaf_states(machine) -> Iterator[object]:
     :yield: Leaf state objects in model traversal order.
     :rtype: Iterator[object]
 
-    Example::
+    Examples::
 
         >>> from pyfcstm.dsl import parse_with_grammar_entry
         >>> from pyfcstm.model import parse_dsl_node_to_state_machine
@@ -437,7 +439,7 @@ def _missing_impl_result(meta: VerifyAlgorithmMeta) -> InspectRunResult:
     :return: Normalized skip result.
     :rtype: InspectRunResult
 
-    Example::
+    Examples::
 
         >>> from pyfcstm.verify.registry import REGISTRY
         >>> result = _missing_impl_result(REGISTRY["bounded_reachability"])
@@ -468,7 +470,7 @@ def _first_indeterminate(results: Sequence[AlgorithmResult]) -> Optional[Algorit
         ``None`` when all results are definite.
     :rtype: Optional[AlgorithmResult]
 
-    Example::
+    Examples::
 
         >>> _first_indeterminate((AlgorithmResult("sat"), AlgorithmResult("unknown", reason="u"))).reason
         'u'
@@ -482,8 +484,9 @@ def _first_indeterminate(results: Sequence[AlgorithmResult]) -> Optional[Algorit
 def _aggregate_algorithm_results(results: Sequence[AlgorithmResult]) -> AlgorithmResult:
     """Aggregate per-element raw results into one algorithm-level result.
 
-    Inconclusive outcomes dominate deterministic outcomes because PR-B3 must be
-    able to disclose that at least one checked element could not be decided.
+    Inconclusive outcomes dominate deterministic outcomes because later
+    diagnostics conversion must be able to disclose that at least one checked
+    element could not be decided.
     When all checked elements are definite, diagnostics decide whether the
     aggregate is ``sat`` or ``unsat``: emitting algorithms use ``unsat`` or
     ``sat`` according to their own raw contract, while an empty run is a
@@ -494,7 +497,7 @@ def _aggregate_algorithm_results(results: Sequence[AlgorithmResult]) -> Algorith
     :return: Aggregated raw result.
     :rtype: AlgorithmResult
 
-    Example::
+    Examples::
 
         >>> _aggregate_algorithm_results((AlgorithmResult("sat"),)).kind
         'sat'
@@ -516,8 +519,9 @@ def _aggregate_algorithm_results(results: Sequence[AlgorithmResult]) -> Algorith
         )
 
     if diagnostics:
-        finding = next(result for result in results if result.diagnostics)
-        return AlgorithmResult(kind=finding.kind, diagnostics=diagnostics)
+        for result in results:
+            if result.diagnostics:
+                return AlgorithmResult(kind=result.kind, diagnostics=diagnostics)
 
     if all(result.kind == "unsat" for result in results):
         return AlgorithmResult(kind="unsat")
@@ -536,8 +540,12 @@ def _normalize_algorithm_result(
     :type raw_result: object
     :return: Normalized inspect-adapter result.
     :rtype: InspectRunResult
+    :raises TypeError: If an SMT-local algorithm returns a payload that is not
+        an :class:`AlgorithmResult` or a tuple of :class:`AlgorithmResult`
+        values. Structural algorithms may return plain topology payloads and
+        keep them in ``raw_result``.
 
-    Example::
+    Examples::
 
         >>> from pyfcstm.verify.registry import REGISTRY
         >>> result = _normalize_algorithm_result(
@@ -549,13 +557,28 @@ def _normalize_algorithm_result(
     """
     if isinstance(raw_result, AlgorithmResult):
         algorithm_result = raw_result
-    elif (
-        isinstance(raw_result, tuple)
-        and all(isinstance(item, AlgorithmResult) for item in raw_result)
-    ):
+    elif meta.complexity_tier == "structural":
+        algorithm_result = AlgorithmResult(kind="sat")
+    elif isinstance(raw_result, tuple):
+        for index, item in enumerate(raw_result):
+            if not isinstance(item, AlgorithmResult):
+                raise TypeError(
+                    "algorithm {name!r} returned tuple item {index} with "
+                    "unexpected type {actual!r}; expected AlgorithmResult".format(
+                        name=meta.name,
+                        index=index,
+                        actual=type(item).__name__,
+                    )
+                )
         algorithm_result = _aggregate_algorithm_results(raw_result)
     else:
-        algorithm_result = AlgorithmResult(kind="sat")
+        raise TypeError(
+            "algorithm {name!r} returned unexpected raw result type {actual!r}; "
+            "expected AlgorithmResult or Tuple[AlgorithmResult, ...]".format(
+                name=meta.name,
+                actual=type(raw_result).__name__,
+            )
+        )
 
     return InspectRunResult(
         algorithm_name=meta.name,
@@ -581,8 +604,9 @@ def _run_smt_algorithm(meta: VerifyAlgorithmMeta, machine, smt_timeout_ms):
     :type smt_timeout_ms: Optional[int]
     :return: Raw result value from the algorithm or per-element aggregate input.
     :rtype: object
+    :raises ValueError: If an SMT-local algorithm has no inspect dispatch rule.
 
-    Example::
+    Examples::
 
         >>> from pyfcstm.dsl import parse_with_grammar_entry
         >>> from pyfcstm.model import parse_dsl_node_to_state_machine
@@ -617,7 +641,11 @@ def _run_smt_algorithm(meta: VerifyAlgorithmMeta, machine, smt_timeout_ms):
             variables,
             smt_timeout_ms=smt_timeout_ms,
         )
-    return meta.impl(machine, variables, smt_timeout_ms=smt_timeout_ms)
+    raise ValueError(
+        "algorithm {name!r} has no inspect dispatch rule; register it as "
+        "transition-level, lifecycle-leaf-level, or machine-level before "
+        "enabling automatic inspect execution".format(name=meta.name)
+    )
 
 
 def _run_algorithm(meta: VerifyAlgorithmMeta, machine, smt_timeout_ms):
@@ -631,8 +659,9 @@ def _run_algorithm(meta: VerifyAlgorithmMeta, machine, smt_timeout_ms):
     :type smt_timeout_ms: Optional[int]
     :return: Raw algorithm return value.
     :rtype: object
+    :raises ValueError: If an SMT-local algorithm has no inspect dispatch rule.
 
-    Example::
+    Examples::
 
         >>> from pyfcstm.dsl import parse_with_grammar_entry
         >>> from pyfcstm.model import parse_dsl_node_to_state_machine
@@ -682,8 +711,11 @@ def run_inspect_algorithms(
     :rtype: Tuple[InspectRunResult, ...]
     :raises InspectAccessForbiddenError: If either inspect limit is outside the
         automatic inspect ordering.
+    :raises TypeError: If an SMT-local algorithm returns an unexpected raw
+        result payload.
+    :raises ValueError: If an SMT-local algorithm has no inspect dispatch rule.
 
-    Example::
+    Examples::
 
         >>> from pyfcstm.dsl import parse_with_grammar_entry
         >>> from pyfcstm.model import parse_dsl_node_to_state_machine

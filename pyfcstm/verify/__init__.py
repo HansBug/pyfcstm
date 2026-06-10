@@ -37,7 +37,7 @@ Module map:
      - Shared FCSTM-to-SMT encoding helpers used by algorithm implementations;
        callers normally should not import this package directly.
 
-Example::
+Examples::
 
     >>> from pyfcstm.verify import REGISTRY, dead_guard
     >>> # The public top-level algorithm is the same callable registered here.

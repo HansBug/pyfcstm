@@ -258,8 +258,8 @@ def test_run_inspect_algorithms_passes_timeout_only_to_smt_algorithms():
             diagnostic_codes=("W_STRUCT",),
             impl=structural_impl,
         ),
-        "smt_demo": _meta(
-            name="smt_demo",
+        "composite_init_guards_incomplete": _meta(
+            name="composite_init_guards_incomplete",
             complexity_tier="smt_linear",
             smt_logic="QF_LIRA",
             verification_scope="smt_local",
@@ -282,7 +282,7 @@ def test_run_inspect_algorithms_passes_timeout_only_to_smt_algorithms():
     ]
     assert tuple(result.algorithm_name for result in results) == (
         "structural_demo",
-        "smt_demo",
+        "composite_init_guards_incomplete",
     )
     smt_result = results[1]
     assert smt_result.result_kind == "timeout"
@@ -303,8 +303,8 @@ def test_run_inspect_algorithms_none_timeout_is_preserved_for_smt_algorithms():
         return AlgorithmResult(kind="unknown", reason="solver said unknown")
 
     registry = {
-        "smt_demo": _meta(
-            name="smt_demo",
+        "composite_init_guards_incomplete": _meta(
+            name="composite_init_guards_incomplete",
             complexity_tier="smt_linear",
             smt_logic="QF_LIRA",
             verification_scope="smt_local",
@@ -322,6 +322,101 @@ def test_run_inspect_algorithms_none_timeout_is_preserved_for_smt_algorithms():
     assert seen == [None]
     assert result.result_kind == "unknown"
     assert result.reason == "solver said unknown"
+
+
+def test_run_inspect_algorithms_keeps_structural_plain_payloads():
+    raw_payload = ("Root", "Root.A")
+
+    def structural_impl(machine):
+        return raw_payload
+
+    registry = {
+        "structural_demo": _meta(
+            name="structural_demo",
+            complexity_tier="structural",
+            smt_logic=None,
+            verification_scope="topological_only",
+            impl=structural_impl,
+        )
+    }
+
+    result = run_inspect_algorithms(_machine(), registry=registry)[0]
+
+    assert result.result_kind == "sat"
+    assert result.raw_result is raw_payload
+
+
+def test_run_inspect_algorithms_rejects_invalid_machine_level_smt_payload():
+    def smt_impl(machine, variables, *, smt_timeout_ms=None):
+        return "bad"
+
+    registry = {
+        "composite_init_guards_incomplete": _meta(
+            name="composite_init_guards_incomplete",
+            complexity_tier="smt_linear",
+            smt_logic="QF_LIRA",
+            verification_scope="smt_local",
+            impl=smt_impl,
+        )
+    }
+
+    with pytest.raises(TypeError, match="unexpected raw result type 'str'"):
+        run_inspect_algorithms(
+            _machine(),
+            max_complexity_tier="smt_linear",
+            registry=registry,
+        )
+
+
+def test_run_inspect_algorithms_rejects_invalid_smt_tuple_item():
+    def smt_impl(machine, variables, *, smt_timeout_ms=None):
+        return (
+            AlgorithmResult(
+                kind="unsat",
+                diagnostics=({"code": "W_FAKE", "data": {"state": "Root"}},),
+            ),
+            "bad",
+        )
+
+    registry = {
+        "composite_init_guards_incomplete": _meta(
+            name="composite_init_guards_incomplete",
+            complexity_tier="smt_linear",
+            smt_logic="QF_LIRA",
+            verification_scope="smt_local",
+            diagnostic_codes=("W_FAKE",),
+            impl=smt_impl,
+        )
+    }
+
+    with pytest.raises(TypeError, match="tuple item 1"):
+        run_inspect_algorithms(
+            _machine(),
+            max_complexity_tier="smt_linear",
+            registry=registry,
+        )
+
+
+def test_run_inspect_algorithms_rejects_unknown_smt_dispatch_rule():
+    def smt_impl(machine, variables, *, smt_timeout_ms=None):
+        return AlgorithmResult(kind="sat")
+
+    registry = {
+        "custom_smt": _meta(
+            name="custom_smt",
+            complexity_tier="smt_linear",
+            smt_logic="QF_LIRA",
+            verification_scope="smt_local",
+            impl=smt_impl,
+        )
+    }
+
+    with pytest.raises(ValueError, match="no inspect dispatch rule"):
+        run_inspect_algorithms(
+            _machine(),
+            max_complexity_tier="smt_linear",
+            registry=registry,
+        )
 
 
 def test_run_inspect_algorithms_keeps_diagnostics_when_one_element_times_out():

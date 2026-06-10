@@ -1,0 +1,45 @@
+{
+  "case_count": 1,
+  "guide_metadata": {
+    "byte_size": 9595,
+    "chapter_count": 15,
+    "line_count": 338,
+    "pyfcstm_version": "0.4.1",
+    "resource_name": "fcstm_grammar_guide.md",
+    "sha256": "1508e493b210348b06ec0d4b033c643a1a50e465530b568c701555174e0cb859"
+  },
+  "mode": "live",
+  "passed_count": 1,
+  "reports": [
+    {
+      "diagnostics": "",
+      "evaluated_at": "20260610T161532Z",
+      "failure_category": "passed",
+      "fixture_id": "vtol_mission_supervision",
+      "fixture_path": "llm_grammar_guide_evals/fixtures/vtol_mission_supervision.nl.md",
+      "guide_sha256": "1508e493b210348b06ec0d4b033c643a1a50e465530b568c701555174e0cb859",
+      "mode": "live",
+      "model_output_path": "llm_grammar_guide_evals/outputs/codex/vtol_mission_supervision/model.fcstm",
+      "provider": "codex",
+      "provider_command": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "provider_stderr_size": 14187,
+      "provider_stderr_tail": "           command_active = 0;\n        }\n    }\n\n    state SlowDown {\n        enter { slow_down_count = slow_down_count + 1; }\n    }\n\n    state MissionMode {\n        [*] -> ParseCommand;\n\n        enter {\n            mission_active = 1;\n            command_active = 0;\n        }\n\n        state ParseCommand;\n        state FlyHome {\n            enter { fly_home_request = 0; }\n        }\n        state SearchAndTrackObject {\n            enter { search_track_request = 0; }\n        }\n        state ExecuteMissionLeg;\n        state HoldPosition;\n\n        ParseCommand -> FlyHome : if [fly_home_request > 0 || data_link_ok == 0];\n        ParseCommand -> SearchAndTrackObject : if [search_track_request > 0 && data_link_ok > 0];\n        ParseCommand -> ExecuteMissionLeg : if [fly_home_request == 0 && search_track_request == 0 && data_link_ok > 0];\n        FlyHome -> ParseCommand :: FlyHomeComplete;\n        SearchAndTrackObject -> ParseCommand :: SearchTrackComplete;\n        ExecuteMissionLeg -> ParseCommand :: MissionLegComplete;\n        ExecuteMissionLeg -> HoldPosition : if [data_link_ok == 0];\n        HoldPosition -> ParseCommand : if [data_link_ok > 0];\n    }\n\n    state CommandMode {\n        [*] -> DirectCommand;\n\n        enter {\n            command_active = 1;\n            mission_active = 0;\n        }\n\n        state DirectCommand;\n        state PayloadOverride;\n        state OperatorOverride;\n\n        DirectCommand -> PayloadOverride : if [payload_direct_command > 0];\n        DirectCommand -> OperatorOverride : if [operator_direct_command > 0];\n        PayloadOverride -> DirectCommand :: PayloadCommandComplete;\n        OperatorOverride -> DirectCommand :: OperatorCommandComplete;\n    }\n\n    StandBy -> MissionMode :: StartMission;\n    StandBy -> CommandMode :: DirectCommandRequested;\n    MissionMode -> CommandMode : if [payload_direct_command > 0 || operator_direct_command > 0];\n    CommandMode -> MissionMode :: ResumeMission;\n}\nhook: Stop\nhook: Stop Completed\ntokens used\n17,761\n",
+      "raw_output_path": "llm_grammar_guide_evals/outputs/codex/vtol_mission_supervision/raw_output.md",
+      "root_state": "VTOLMissionSupervisor",
+      "source_line_count": 85,
+      "success": true
+    }
+  ],
+  "smoke_fixtures": [
+    "traffic_emergency_priority",
+    "distributed_elevator_can",
+    "platooning_join_protocol",
+    "vtol_mission_supervision"
+  ]
+}

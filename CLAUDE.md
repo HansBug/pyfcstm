@@ -402,272 +402,59 @@ aspect-oriented programming via `>> during before/after` actions.
 
 ## DSL Language Reference
 
-The pyfcstm DSL (`.fcstm` files) defines hierarchical finite state machines combining state definitions, transitions,
-events, and expressions.
+The detailed prompt-facing FCSTM language guide now lives in
+[pyfcstm/llm/fcstm_grammar_guide.md](pyfcstm/llm/fcstm_grammar_guide.md). Downstream prompt builders should read it
+through the public API instead of copying long DSL snippets from this file:
 
-### Variable Definitions
-
-Variables must be defined at the top of the file before any state definitions:
-
-```
-def int counter = 0;
-def float temperature = 25.5;
-def int flags = 0xFF;           // Hexadecimal literals supported
-def int mask = 0b1010;          // Binary literals supported
+```python
+from pyfcstm.llm import (
+    get_grammar_guide_prompt_for_llm,
+    get_grammar_guide_prompt_metadata_for_llm,
+    get_grammar_guide_prompt_path_for_llm,
+)
 ```
 
-Supported types: `int`, `float`
+When changing DSL syntax, model semantics, or LLM-facing parse rules, update
+the packaged guide, its Markdown example tests, and the standalone
+[llm_grammar_guide_evals/](llm_grammar_guide_evals/) fixtures or reports when the change affects LLM
+generation behavior.
 
-### State Definitions
+### Quick Reference
 
-```
-state Idle;                              // Simple leaf state
-state Running named "System Running";    // Named leaf state
-pseudo state SpecialState;               // Skips ancestor >> during actions
-
-state Active {                           // Composite state
-    state Processing;
-    state Waiting;
-    [*] -> Processing;                   // Initial transition
-    Processing -> Waiting :: Done;
-}
-```
-
-### Transitions
-
-```
-StateA -> StateB;                              // Simple transition
-StateA -> StateB :: EventName;                 // Local event (source-scoped)
-StateA -> StateB : ChainEvent;                 // Chain event (parent-scoped)
-StateA -> StateB : /GlobalEvent;               // Absolute event (root-scoped)
-[*] -> InitialState;                           // Entry transition
-FinalState -> [*];                             // Exit transition
-Idle -> Active : if [counter >= 10];           // Guard condition
-Idle -> Running effect { counter = 0; }        // With effect block
-StateA -> StateB : if [x > 0] effect { counter = counter + 1; }  // Combined
-```
-
-**Forced Transitions** (syntactic sugar expanding to multiple normal transitions):
-
-```
-!ErrorState -> [*] :: FatalError;     // Expands from ErrorState
-!Running -> SafeMode :: Emergency;    // Expands from Running and all substates
-!* -> ErrorHandler :: GlobalError;    // Expands from ALL substates in current scope
-
-// !* expansion example:
-// state System {
-//   !* -> ErrorHandler :: CriticalError;
-//   state Running { state Processing; state Waiting; }
-//   state Idle;
-// }
-// Expands to: Running -> ErrorHandler; Idle -> ErrorHandler;
-// And inside Running: Processing -> [*]; Waiting -> [*];
-// All share the SAME CriticalError event object
-```
-
-Key rules: Cannot have effect blocks; all expanded transitions share the same event object; propagates recursively.
-
-### Events
-
-```
-event EventName;                            // Simple event definition
-event ErrorOccurred named "Error Occurred"; // With display name for visualization
-```
-
-**Event Scoping**:
-- `::` (local) - scoped to source state: `Parent.StateA.EventName`; each source state has unique event
-- `:` (chain) - scoped to parent state: `Parent.EventName`; siblings in same scope share the event
-- `/` (absolute) - scoped to root state: `Root.EventName`; shared globally across all states
-
-**Event Resolution Example**:
-```
-state System {
-    state ModuleA {
-        state A1;
-        state A2;
-        [*] -> A1;
-        A1 -> A2 :: E;        // System.ModuleA.A1.E  (unique to A1)
-        A1 -> A2 : E;         // System.ModuleA.E     (shared in ModuleA scope)
-        A1 -> A2 : /E;        // System.E             (global)
-    }
-    state ModuleB {
-        state B1;
-        state B2;
-        [*] -> B1;
-        B1 -> B2 :: E;        // System.ModuleB.B1.E  (different from A1's)
-        B1 -> B2 : E;         // System.ModuleB.E     (different from ModuleA's)
-        B1 -> B2 : /E;        // System.E             (SAME as ModuleA's)
-    }
-}
-```
-
-### Lifecycle Actions
-
-```
-state Active {
-    enter { counter = 0; flags = 0xFF; }      // On entering state
-    during { counter = counter + 1; }          // Each cycle while active
-    exit { counter = 0; }                      // On leaving state
-
-    enter abstract InitializeHardware;                    // Abstract (implement in generated code)
-    enter abstract SetupSystem /* doc comment */;         // Abstract with documentation
-    enter UserInit { counter = 0; }                       // Named action (for ref reuse)
-    enter ref StateA.UserInit;                            // Reference to named action
-    exit ref /GlobalCleanup;                              // Reference from root
-}
-
-state Parent {
-    during before { /* runs ONLY on [*]->Child entry */ } // Composite: entry trigger only
-    during after  { /* runs ONLY on Child->[*] exit */ }  // Composite: exit trigger only
-    >> during before { /* aspect: all descendants */ }    // All descendant leaf states
-    >> during after  { /* aspect: all descendants */ }    // All descendant leaf states
-}
-```
-
-`ref` resolves to a previously named lifecycle action (not a state or event reference).
-Relative paths from current state; `/` from root. Use `ref` for sharing behavior; `abstract` for generated code.
-
-### Block-Local Temporary Variables
-
-Concrete operation blocks support temporary variables in:
-
-- `enter { ... }`
-- `during { ... }`
-- `exit { ... }`
-- `effect { ... }`
-
-Rules:
-
-- Assigning to an undeclared name creates a **temporary variable** local to that block
-- The temporary variable can be used by later statements in the same block
-- Using a temporary variable before its first assignment is still invalid
-- When the block finishes, temporary variables are discarded and do not become part of machine state
-- Assigning to an already declared variable still updates the global state variable normally
-
-Example:
-
-```
-def float target_temp = 22.0;
-def float measured_temp = 19.5;
-def float heating_power = 0.0;
-
-state HeatingControl {
-    during {
-        error = target_temp - measured_temp;                  // temporary
-        proportional_power = abs(error) * 15.0;              // temporary
-        heating_power = (error > 0.0) ? proportional_power : 0.0;
-    }
-}
-```
-
-This is useful when a block needs intermediate calculations, but those intermediate values are not
-meaningful persistent state.
-
-### Expression System
-
-**IMPORTANT**: Arithmetic (`num_expression`) and logical (`cond_expression`) are strictly separated. You cannot mix
-them freely. Assignments require arithmetic; guards require boolean; comparison operators bridge the two.
-
-```
-counter = 10 + 5;                              // Arithmetic: +, -, *, /, **, %
-flags = 0xFF & 0x0F;                           // Bitwise: &, |, ^, <<, >>
-result = (x > 10) ? 1 : 0;                    // Ternary: only way to convert bool→arithmetic
-StateA -> StateB : if [counter >= 10 && temp < 30];   // Guards: >=, <, ==, !=, &&, ||, !
-StateA -> StateB : if [x > 0 => y > 0];               // implication; 'implies' is also valid
-StateA -> StateB : if [manual != 0 xor auto != 0];    // boolean exclusive-or; numeric ^ stays bitwise
-StateA -> StateB : if [open != 0 iff closed == 0];    // boolean equivalence
-StateA -> StateB : if [flag1 or flag2];               // 'and', 'or', 'not' keywords also valid
-result = sin(angle);                           // Function calls
-
-// ERROR: result = (x > 10);    // Cannot assign boolean to variable
-// ERROR: if [counter];         // Cannot use arithmetic as condition
-// ERROR: if [true ^ false];    // Boolean xor must use 'xor'; ^ is numeric bitwise xor
-// ERROR: if [x > 0 -> y > 0];  // Implication uses => or implies; -> is transition syntax
-// CORRECT: result = (x > 10) ? 1 : 0;
-// CORRECT: StateA -> StateB : if [counter > 0];
-```
-
-### Complete Example
-
-```
-def int counter = 0;
-def int error_count = 0;
-def float temperature = 25.0;
-
-state System {
-    >> during before { counter = counter + 1; }
-    >> during before abstract GlobalMonitor;
-
-    [*] -> Initializing;
-    !* -> Error :: FatalError;
-
-    state Initializing {
-        enter { counter = 0; error_count = 0; }
-        enter abstract HardwareInit /* Initialize hardware peripherals */
-        exit { temperature = 25.0; }
-    }
-
-    state Running {
-        during before abstract PreProcess;
-        during before { temperature = temperature + 0.1; }
-        during after { }
-
-        state Active { during { counter = counter + 1; } }
-        state Idle;
-
-        [*] -> Active;
-        Active -> Idle :: Pause;
-        Idle -> Active :: Resume;
-    }
-
-    state Error { enter { error_count = error_count + 1; } }
-
-    Initializing -> Running : if [counter >= 10] effect { counter = 0; };
-    Running -> Error : if [temperature > 100.0];
-    Error -> [*] : if [error_count > 5];
-}
-```
-
-### Key DSL Concepts
-
-**Execution Flow Summary**:
-
-- **Entry** (from parent): `State.enter` → `State.during before` → `Child.enter`
-- **During** (each cycle): Aspect `>> during before` → Leaf `during` → Aspect `>> during after`
-- **Exit** (to parent): `Child.exit` → `State.during after` → `State.exit`
-- **Child-to-Child Transition**: `Child1.exit` → (transition effect) → `Child2.enter` (no `during before/after`)
-
-**Aspect Actions (`>> during before/after`)**:
-- Apply to **all descendant leaf states** every cycle
-- Root→leaf order for `before`, leaf→root for `after`
-- Enable cross-cutting concerns (logging, monitoring, validation)
-- Not applied to `pseudo state`
-
-**Composite State Actions (`during before/after` without `>>`)**:
-- `during before`: ONLY when entering composite from parent (`[*] → Child`)
-  - Executes AFTER composite `enter`, BEFORE child `enter`
-  - **NOT triggered** during child-to-child transitions (`Child1 → Child2`)
-- `during after`: ONLY when exiting composite to parent (`Child → [*]`)
-  - Executes AFTER child `exit`, BEFORE composite `exit`
-  - **NOT triggered** during child-to-child transitions
-
-**Leaf State `during`**: Executes every cycle, sandwiched between ancestor aspect actions.
-
-**Event Namespace Resolution**: `::` creates source-state-scoped events; `:` or `/` references parent/root namespaces.
-
-**Detailed Execution Order Scenarios** (for `System.SubSystem.Active` in a composite machine):
-
-**Scenario 1: Initial Entry** (`[*] → SubSystem → [*] → Active`):
-- Entry Phase: `System.enter` → `SubSystem.enter` → `SubSystem.during before` (**triggered**) → `Active.enter`
-- During Phase (each cycle): `System >> during before` → `Active.during` → `System >> during after`
-- Note: `SubSystem.during before/after` do NOT execute during the `during` phase
-
-**Scenario 2: Child-to-Child Transition** (`Active → Idle :: Pause`):
-- Sequence: `Active.exit` → (transition effect) → `Idle.enter`
-- **CRITICAL**: `SubSystem.during before/after` are NOT triggered during child-to-child transitions
-
-**Scenario 3: Exit from Composite State** (`Idle → [*] :: Stop`):
-- Exit Phase: `Idle.exit` → `SubSystem.during after` (**triggered**) → `SubSystem.exit` → `System.exit`
+- Variables must be declared before the single top-level root `state`; current
+  persistent variable types are `int` and `float`.
+- Leaf states use `state Name;`; composite states use `state Name { ... }` and
+  each composite must choose an initial child with `[*] -> Child;`.
+- Transition forms are deliberately narrow: plain transition, event transition,
+  guard transition, and guard-plus-effect transition. Do not combine event
+  syntax and guard syntax on the same transition.
+- Event scopes are `:: EventName` for source-local events, `: EventName` for
+  containing-state events, and `: /GlobalEvent` for root-scoped events.
+- Transitions resolve targets in the current state scope. Do not write an
+  outer-scope transition directly to an inner leaf state that is owned by a
+  composite; put the transition inside the owning composite, or transition to
+  the composite and let its initial transition choose the child.
+- Forced transitions such as `!State -> Target :: Event;` and
+  `!* -> Target :: Event;` expand to multiple normal transitions and cannot
+  have `effect` blocks.
+- Arithmetic (`num_expression`) and logical (`cond_expression`) expressions are
+  separate. Assignments require arithmetic expressions; guards require boolean
+  conditions; comparisons bridge numeric expressions into conditions.
+- Condition operators include `&&` / `and`, `||` / `or`, `!` / `not`, `=>` /
+  `implies`, `xor`, `iff`, and condition equality/inequality. Do not use `->`
+  for implication, and do not use `^` as boolean xor; numeric `^` remains
+  bitwise xor.
+- Concrete `enter` / `during` / `exit` / `effect` blocks may use block-local
+  temporary variables by assigning to a previously undeclared name. The name is
+  local to that block and can only be read after assignment.
+- `enter abstract Name;`, named lifecycle actions, and `ref` are valid lifecycle
+  forms. A `ref` points to a named lifecycle action, not to a state or event.
+- Initial entry through a composite runs composite `enter`, plain
+  `during before`, then child `enter`. A child-to-child transition runs source
+  child `exit`, transition effect, then target child `enter`; plain composite
+  `during before` / `during after` do not wrap child-to-child transitions.
+- `>> during before` and `>> during after` are aspect actions for descendant
+  leaf-state cycles. Plain leaf `during` executes during ordinary active cycles.
 
 ## Python Docstring Style Guide
 

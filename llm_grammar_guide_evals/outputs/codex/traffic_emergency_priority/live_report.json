@@ -1,0 +1,24 @@
+{
+  "diagnostics": "",
+  "evaluated_at": "20260610T161344Z",
+  "failure_category": "passed",
+  "fixture_id": "traffic_emergency_priority",
+  "fixture_path": "llm_grammar_guide_evals/fixtures/traffic_emergency_priority.nl.md",
+  "guide_sha256": "1508e493b210348b06ec0d4b033c643a1a50e465530b568c701555174e0cb859",
+  "mode": "live",
+  "model_output_path": "llm_grammar_guide_evals/outputs/codex/traffic_emergency_priority/model.fcstm",
+  "provider": "codex",
+  "provider_command": [
+    "codex",
+    "exec",
+    "--skip-git-repo-check",
+    "-"
+  ],
+  "provider_returncode": 0,
+  "provider_stderr_size": 16140,
+  "provider_stderr_tail": " && east_ambulance == 0 && south_ambulance > 0];\n    ClassifyTraffic -> WestEmergencyGreen : if [north_ambulance == 0 && east_ambulance == 0 && south_ambulance == 0 && west_ambulance > 0];\n    ClassifyTraffic -> NorthCrowdedGreen : if [north_ambulance == 0 && east_ambulance == 0 && south_ambulance == 0 && west_ambulance == 0 && north_waiting > 10 && east_waiting == 0 && south_waiting == 0 && west_waiting == 0];\n    ClassifyTraffic -> EastCrowdedGreen : if [north_ambulance == 0 && east_ambulance == 0 && south_ambulance == 0 && west_ambulance == 0 && east_waiting > 10 && north_waiting == 0 && south_waiting == 0 && west_waiting == 0];\n    ClassifyTraffic -> SouthCrowdedGreen : if [north_ambulance == 0 && east_ambulance == 0 && south_ambulance == 0 && west_ambulance == 0 && south_waiting > 10 && north_waiting == 0 && east_waiting == 0 && west_waiting == 0];\n    ClassifyTraffic -> WestCrowdedGreen : if [north_ambulance == 0 && east_ambulance == 0 && south_ambulance == 0 && west_ambulance == 0 && west_waiting > 10 && north_waiting == 0 && east_waiting == 0 && south_waiting == 0];\n    ClassifyTraffic -> OrdinaryTraffic : if [north_ambulance == 0 && east_ambulance == 0 && south_ambulance == 0 && west_ambulance == 0 && !(north_waiting > 10 && east_waiting == 0 && south_waiting == 0 && west_waiting == 0) && !(east_waiting > 10 && north_waiting == 0 && south_waiting == 0 && west_waiting == 0) && !(south_waiting > 10 && north_waiting == 0 && east_waiting == 0 && west_waiting == 0) && !(west_waiting > 10 && north_waiting == 0 && east_waiting == 0 && south_waiting == 0)];\n    OrdinaryTraffic -> AcquireImages;\n    NorthEmergencyGreen -> AcquireImages;\n    EastEmergencyGreen -> AcquireImages;\n    SouthEmergencyGreen -> AcquireImages;\n    WestEmergencyGreen -> AcquireImages;\n    NorthCrowdedGreen -> AcquireImages;\n    EastCrowdedGreen -> AcquireImages;\n    SouthCrowdedGreen -> AcquireImages;\n    WestCrowdedGreen -> AcquireImages;\n}\nhook: Stop\nhook: Stop Completed\ntokens used\n12,564\n",
+  "raw_output_path": "llm_grammar_guide_evals/outputs/codex/traffic_emergency_priority/raw_output.md",
+  "root_state": "TrafficEmergencyPriority",
+  "source_line_count": 119,
+  "success": true
+}

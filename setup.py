@@ -30,15 +30,18 @@ group_requirements = {
 with open('README.md', 'r', encoding='utf-8') as f:
     readme = f.read()
 
+package_data = {
+    package_name: ['*.yaml', '*.yml', '*.json', '*.png', '*.zip', '*.g4', '*.tokens', '*.interp']
+    for package_name in find_packages(include=('*'))
+}
+package_data.setdefault('pyfcstm.llm', []).append('*.md')
+
 setup(
     # information
     name=_PACKAGE_NAME,
     version=meta['__VERSION__'],
     packages=find_packages(include=(_MODULE_NAME, "%s.*" % _MODULE_NAME)),
-    package_data={
-        package_name: ['*.yaml', '*.yml', '*.json', '*.png', '*.zip', '*.g4', '*.tokens', '*.interp']
-        for package_name in find_packages(include=('*'))
-    },
+    package_data=package_data,
     description=meta['__DESCRIPTION__'],
     long_description=readme,
     long_description_content_type='text/markdown',

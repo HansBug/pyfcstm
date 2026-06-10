@@ -1,0 +1,43 @@
+{
+  "case_count": 1,
+  "guide_metadata": {
+    "byte_size": 9595,
+    "chapter_count": 15,
+    "line_count": 338,
+    "pyfcstm_version": "0.4.1",
+    "resource_name": "fcstm_grammar_guide.md",
+    "sha256": "1508e493b210348b06ec0d4b033c643a1a50e465530b568c701555174e0cb859"
+  },
+  "mode": "live",
+  "passed_count": 1,
+  "reports": [
+    {
+      "diagnostics": "",
+      "evaluated_at": "20260610T161653Z",
+      "failure_category": "passed",
+      "fixture_id": "distributed_elevator_can",
+      "fixture_path": "llm_grammar_guide_evals/fixtures/distributed_elevator_can.nl.md",
+      "guide_sha256": "1508e493b210348b06ec0d4b033c643a1a50e465530b568c701555174e0cb859",
+      "mode": "live",
+      "model_output_path": "llm_grammar_guide_evals/outputs/claude/distributed_elevator_can/model.fcstm",
+      "provider": "claude",
+      "provider_command": [
+        "claude",
+        "-p"
+      ],
+      "provider_returncode": 0,
+      "provider_stderr_size": 0,
+      "provider_stderr_tail": "",
+      "raw_output_path": "llm_grammar_guide_evals/outputs/claude/distributed_elevator_can/raw_output.md",
+      "root_state": "LiftObject",
+      "source_line_count": 57,
+      "success": true
+    }
+  ],
+  "smoke_fixtures": [
+    "traffic_emergency_priority",
+    "distributed_elevator_can",
+    "platooning_join_protocol",
+    "vtol_mission_supervision"
+  ]
+}

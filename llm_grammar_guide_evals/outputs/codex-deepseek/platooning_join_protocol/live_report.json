@@ -1,0 +1,24 @@
+{
+  "diagnostics": "",
+  "evaluated_at": "20260610T162157Z",
+  "failure_category": "passed",
+  "fixture_id": "platooning_join_protocol",
+  "fixture_path": "llm_grammar_guide_evals/fixtures/platooning_join_protocol.nl.md",
+  "guide_sha256": "1508e493b210348b06ec0d4b033c643a1a50e465530b568c701555174e0cb859",
+  "mode": "live",
+  "model_output_path": "llm_grammar_guide_evals/outputs/codex-deepseek/platooning_join_protocol/model.fcstm",
+  "provider": "codex-deepseek",
+  "provider_command": [
+    "codex-deepseek",
+    "exec",
+    "--skip-git-repo-check",
+    "-"
+  ],
+  "provider_returncode": 0,
+  "provider_stderr_size": 12538,
+  "provider_stderr_tail": "pyfcstm parse and semantic validation.\n\nNatural-language description:\n\nA non-member vehicle joins a platoon by first sending a join request to the\nleader together with the intended platoon position. For a rear join, the leader\ngrants agreement only if the platoon is in normal operation and has not reached\nmaximum length. For a middle join, the leader commands vehicle `X` to increase\nspacing and sends agreement only after a large enough gap has been created.\nAfter receiving agreement, the joining vehicle changes lane, enables automatic\nspeed control in the correct lane, approaches the preceding vehicle, and only\nenables automatic steering when it is sufficiently close. It then sends an\nacknowledgement to the leader. Finally, the leader commands vehicle `X` to\ndecrease spacing back to the normal gap. The controller must forbid lane change\nbefore leader confirmation and forbid steering enablement before the vehicle is\nin the correct lane and close enough.\n\n\nNow return one complete legal .fcstm model.\nhook: SessionStart\nhook: SessionStart Completed\nhook: UserPromptSubmit\nhook: UserPromptSubmit Completed\ncodex\ndef int request_sent = 0;\ndef int agreement_received = 0;\ndef int lane_changed = 0;\ndef int speed_control_on = 0;\ndef int close_enough = 0;\ndef int steering_on = 0;\ndef int ack_sent = 0;\n\nstate PlatoonJoin {\n    [*] -> Cruising;\n\n    state Cruising;\n\n    state Requesting {\n        enter { request_sent = 1; }\n    }\n\n    state Aligning {\n        enter { lane_changed = 1; speed_control_on = 1; }\n    }\n\n    state Approaching;\n\n    state Merging {\n        enter { steering_on = 1; }\n    }\n\n    state Acknowledged {\n        enter { ack_sent = 1; }\n    }\n\n    Cruising -> Requesting :: JoinRequested;\n    Requesting -> Aligning : if [agreement_received > 0];\n    Aligning -> Approaching : if [lane_changed > 0];\n    Approaching -> Merging : if [close_enough > 0 && speed_control_on > 0];\n    Merging -> Acknowledged :: AckSent;\n}\nhook: Stop\nhook: Stop Completed\ntokens used\n4,037\n",
+  "raw_output_path": "llm_grammar_guide_evals/outputs/codex-deepseek/platooning_join_protocol/raw_output.md",
+  "root_state": "PlatoonJoin",
+  "source_line_count": 37,
+  "success": true
+}

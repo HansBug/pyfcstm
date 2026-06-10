@@ -2140,6 +2140,34 @@ class TestInspectModelVerifyIntegration:
             'System.B',
         ]
 
+    def test_enable_verify_reports_deadlock_noexit_with_single_node_scc(self):
+        dsl = """
+        state System {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B;
+        }
+        """
+
+        report = inspect_model(_parse(dsl), enable_verify=True)
+
+        noexit_diag = next(
+            diag for diag in report.diagnostics
+            if diag.code == 'W_TOPOLOGICAL_NOEXIT'
+            and diag.refs['counterexample_kind'] == 'deadlock'
+        )
+        assert noexit_diag.refs == {
+            'algorithm_name': 'topological_finite',
+            'verification_scope': 'topological_only',
+            'representative_state_path': 'System.B',
+            'counterexample_kind': 'deadlock',
+            'scc': ['System.B'],
+        }
+        assert_all_diags_match_schema([noexit_diag], context='verify-deadlock')
+        _assert_has_span(noexit_diag.span)
+        assert 'state B' in _slice_by_span(dsl, noexit_diag.span)
+
     def test_enable_verify_converts_smt_raw_diagnostics(self):
         dsl = """
         def int x = 0;
@@ -2180,6 +2208,92 @@ class TestInspectModelVerifyIntegration:
         assert 'x > 1 && x < 0' in _slice_by_span(dsl, dead_guard.span)
 
     @pytest.mark.parametrize(
+        'raw_diagnostic',
+        [
+            {
+                'code': 'W_DEAD_GUARD',
+                'algorithm_name': 'dead_guard',
+                'data': {
+                    'transition': {
+                        'parent': 'Root',
+                        'from_state': 'Idle',
+                        'event': None,
+                        'guard': 'counter > 0',
+                        'is_forced': False,
+                    },
+                    'verification_scope': 'smt_local',
+                },
+            },
+            {
+                'code': 'W_DEAD_GUARD',
+                'algorithm_name': 'dead_guard',
+                'data': {
+                    'transition': {
+                        'parent': 'Root',
+                        'from_state': 'Idle',
+                        'to_state': 'Active',
+                        'event': None,
+                        'guard': 'counter > 0',
+                        'is_forced': 'false',
+                    },
+                    'verification_scope': 'smt_local',
+                },
+            },
+            {
+                'code': 'W_TRANSITION_SHADOWED',
+                'algorithm_name': 'transition_shadowed_by_predecessor',
+                'data': {
+                    'transition': {
+                        'parent': 'Root',
+                        'from_state': 'Idle',
+                        'to_state': 'Active',
+                        'event': None,
+                        'guard': 'counter > 0',
+                        'is_forced': False,
+                    },
+                    'shadowed_by': ({'parent': 'Root'},),
+                    'reason': 'guard_shadow',
+                    'source': 'Root.Idle',
+                    'verification_scope': 'smt_local',
+                },
+            },
+        ],
+    )
+    def test_malformed_verify_transition_payloads_fail_closed(
+            self,
+            monkeypatch,
+            raw_diagnostic,
+    ):
+        from pyfcstm.verify import InspectRunResult
+
+        def fake_adapter(machine, **kwargs):
+            return (
+                InspectRunResult(
+                    algorithm_name='dead_guard',
+                    complexity_tier='smt_linear',
+                    smt_logic='QF_LIRA',
+                    verification_scope='smt_local',
+                    diagnostic_codes=(raw_diagnostic['code'],),
+                    result_kind='sat',
+                    diagnostics=(raw_diagnostic,),
+                    reason=None,
+                    raw_result=None,
+                ),
+            )
+
+        monkeypatch.setattr(
+            inspect_module,
+            '_run_verify_inspect_algorithms',
+            fake_adapter,
+        )
+
+        report = inspect_model(_parse(SIMPLE_DSL), enable_verify=True)
+
+        assert raw_diagnostic['code'] not in {
+            diag.code for diag in report.diagnostics
+        }
+
+    @pytest.mark.parametrize(
         'kind',
         ['unknown', 'timeout', 'undecidable_skip'],
     )
@@ -2215,6 +2329,56 @@ class TestInspectModelVerifyIntegration:
 
         assert 'W_DEAD_GUARD' not in {diag.code for diag in report.diagnostics}
 
+    @pytest.mark.parametrize(
+        'kind',
+        ['unknown', 'timeout', 'undecidable_skip'],
+    )
+    def test_indeterminate_verify_results_do_not_emit_with_diagnostics(
+            self,
+            monkeypatch,
+            kind,
+    ):
+        from pyfcstm.verify import InspectRunResult
+
+        def fake_adapter(machine, **kwargs):
+            return (
+                InspectRunResult(
+                    algorithm_name='dead_guard',
+                    complexity_tier='smt_linear',
+                    smt_logic='QF_LIRA',
+                    verification_scope='smt_local',
+                    diagnostic_codes=('W_DEAD_GUARD',),
+                    result_kind=kind,
+                    diagnostics=({
+                        'code': 'W_DEAD_GUARD',
+                        'algorithm_name': 'dead_guard',
+                        'data': {
+                            'transition': {
+                                'parent': 'Root',
+                                'from_state': 'Idle',
+                                'to_state': 'Active',
+                                'event': None,
+                                'guard': 'counter > 0',
+                                'is_forced': False,
+                            },
+                            'verification_scope': 'smt_local',
+                        },
+                    },),
+                    reason='partially explored before the solver stopped',
+                    raw_result=None,
+                ),
+            )
+
+        monkeypatch.setattr(
+            inspect_module,
+            '_run_verify_inspect_algorithms',
+            fake_adapter,
+        )
+
+        report = inspect_model(_parse(SIMPLE_DSL), enable_verify=True)
+
+        assert 'W_DEAD_GUARD' not in {diag.code for diag in report.diagnostics}
+
     def test_invalid_verify_complexity_tier_raises_controlled_error(self):
         from pyfcstm.verify import InspectAccessForbiddenError
 
@@ -2223,6 +2387,24 @@ class TestInspectModelVerifyIntegration:
                 _parse(SIMPLE_DSL),
                 enable_verify=True,
                 max_complexity_tier='bmc_search',
+            )
+
+    @pytest.mark.parametrize(
+        ('kwargs', 'message'),
+        [
+            ({'max_complexity_tier': 'unknown_tier'}, 'unknown inspect complexity tier'),
+            ({'max_call_count_scaling': 'k_unrollings'}, 'call-count scaling'),
+            ({'max_call_count_scaling': 'unknown_scaling'}, 'call-count scaling'),
+        ],
+    )
+    def test_invalid_verify_policy_raises_controlled_error(self, kwargs, message):
+        from pyfcstm.verify import InspectAccessForbiddenError
+
+        with pytest.raises(InspectAccessForbiddenError, match=message):
+            inspect_model(
+                _parse(SIMPLE_DSL),
+                enable_verify=True,
+                **kwargs,
             )
 
 

@@ -1462,6 +1462,96 @@ def _transition_summary(payload: Mapping[str, Any]) -> str:
     return '{parent}:{from_state}->{to_state}'.format(**payload)
 
 
+def _verify_transition_payload(payload: Any) -> Optional[Dict[str, Any]]:
+    """Return a validated raw verify transition payload.
+
+    Verify algorithms return diagnostics-layer-free dictionaries. The
+    inspect conversion layer must fail closed when a raw payload is malformed,
+    because the public ``ModelDiagnostic.refs`` schema can only validate the
+    outer ``dict`` type for transition refs.
+
+    :param payload: Raw transition payload to validate.
+    :type payload: Any
+    :return: A defensive copy when the payload is shaped like
+        ``pyfcstm.verify.encoding`` transition data, otherwise ``None``.
+    :rtype: Optional[Dict[str, Any]]
+
+    Examples::
+
+        >>> _verify_transition_payload({
+        ...     'parent': 'Root',
+        ...     'from_state': 'A',
+        ...     'to_state': 'B',
+        ...     'event': None,
+        ...     'guard': 'x > 0',
+        ...     'is_forced': False,
+        ... })['from_state']
+        'A'
+        >>> _verify_transition_payload({'parent': 'Root'}) is None
+        True
+    """
+    if not isinstance(payload, Mapping):
+        return None
+    parent = payload.get('parent')
+    from_state = payload.get('from_state')
+    to_state = payload.get('to_state')
+    event = payload.get('event')
+    guard = payload.get('guard')
+    is_forced = payload.get('is_forced')
+    if not all(isinstance(item, str) for item in (parent, from_state, to_state)):
+        return None
+    if event is not None and not isinstance(event, str):
+        return None
+    if guard is not None and not isinstance(guard, str):
+        return None
+    if not isinstance(is_forced, bool):
+        return None
+    return {
+        'parent': parent,
+        'from_state': from_state,
+        'to_state': to_state,
+        'event': event,
+        'guard': guard,
+        'is_forced': is_forced,
+    }
+
+
+def _verify_transition_summaries(payloads: Any) -> Optional[List[str]]:
+    """Return summaries for a sequence of raw verify transition payloads.
+
+    The conversion fails closed: one malformed item invalidates the entire
+    sequence so the diagnostic cannot present partial evidence as complete.
+
+    :param payloads: Raw transition payload sequence.
+    :type payloads: Any
+    :return: Transition summaries, or ``None`` when the sequence is malformed.
+    :rtype: Optional[List[str]]
+
+    Examples::
+
+        >>> _verify_transition_summaries(({
+        ...     'parent': 'Root',
+        ...     'from_state': 'A',
+        ...     'to_state': 'B',
+        ...     'event': None,
+        ...     'guard': None,
+        ...     'is_forced': False,
+        ... },))
+        ['Root:A->B']
+        >>> _verify_transition_summaries(({'parent': 'Root'},)) is None
+        True
+    """
+    if not isinstance(payloads, (list, tuple)):
+        return None
+    summaries: List[str] = []
+    for raw_item in payloads:
+        item = _verify_transition_payload(raw_item)
+        if item is None:
+            return None
+        summaries.append(_transition_summary(item))
+    return summaries
+
+
 def _state_span_by_path(states: Sequence[StateInfo], state_path: Optional[str]) -> Optional[Span]:
     """Return the source span for a state path.
 
@@ -1567,9 +1657,12 @@ def _transition_matches_payload(info: TransitionInfo, payload: Mapping[str, Any]
         ... })
         True
     """
-    parent = payload.get('parent')
-    from_state = payload.get('from_state')
-    to_state = payload.get('to_state')
+    transition_payload = _verify_transition_payload(payload)
+    if transition_payload is None:
+        return False
+    parent = transition_payload['parent']
+    from_state = transition_payload['from_state']
+    to_state = transition_payload['to_state']
     from_path = '[*]' if from_state == '[*]' else (
         f'{parent}.{from_state}' if parent else from_state
     )
@@ -1579,9 +1672,9 @@ def _transition_matches_payload(info: TransitionInfo, payload: Mapping[str, Any]
     return (
         info.from_path == from_path
         and info.to_path == to_path
-        and info.event == payload.get('event')
-        and info.guard == payload.get('guard')
-        and info.is_forced == bool(payload.get('is_forced'))
+        and info.event == transition_payload['event']
+        and info.guard == transition_payload['guard']
+        and info.is_forced == transition_payload['is_forced']
     )
 
 
@@ -1774,9 +1867,8 @@ def _verify_smt_refs(raw: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
         'verification_scope': data.get('verification_scope'),
     }
 
-    transition = data.get('transition')
-    if isinstance(transition, Mapping):
-        transition_dict = dict(transition)
+    transition_dict = _verify_transition_payload(data.get('transition'))
+    if transition_dict is not None:
         refs['transition'] = transition_dict
         refs['transition_summary'] = _transition_summary(transition_dict)
 
@@ -1784,14 +1876,14 @@ def _verify_smt_refs(raw: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
         refs['scope'] = data.get('scope')
     elif code == 'W_TRANSITION_SHADOWED':
         shadowed_by = data.get('shadowed_by') or ()
+        shadowed_by_summaries = _verify_transition_summaries(shadowed_by)
+        if shadowed_by_summaries is None:
+            return None
         refs.update({
             'source_state_path': data.get('source'),
             'reason': data.get('reason'),
-            'shadowed_by_count': len(shadowed_by),
-            'shadowed_by': [
-                _transition_summary(item) for item in shadowed_by
-                if isinstance(item, Mapping)
-            ],
+            'shadowed_by_count': len(shadowed_by_summaries),
+            'shadowed_by': shadowed_by_summaries,
         })
     elif code == 'I_ENTER_DURING_CONTRADICT':
         refs.update({
@@ -1802,13 +1894,13 @@ def _verify_smt_refs(raw: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
         })
     elif code == 'W_COMPOSITE_INIT_INCOMPLETE':
         init_transitions = data.get('init_transitions') or ()
+        init_transition_summaries = _verify_transition_summaries(init_transitions)
+        if init_transition_summaries is None:
+            return None
         refs.update({
             'composite_path': data.get('state'),
-            'init_transition_count': len(init_transitions),
-            'init_transitions': [
-                _transition_summary(item) for item in init_transitions
-                if isinstance(item, Mapping)
-            ],
+            'init_transition_count': len(init_transition_summaries),
+            'init_transitions': init_transition_summaries,
             'witness': data.get('witness'),
         })
     return refs
@@ -1969,12 +2061,13 @@ def _structural_verify_diagnostics(
         counterexamples = getattr(result.raw_result, 'counterexamples', ())
         for kind, payload in counterexamples:
             representative = payload[0] if isinstance(payload, tuple) else payload
+            scc = list(payload) if isinstance(payload, tuple) else [payload]
             refs = {
                 'algorithm_name': result.algorithm_name,
                 'verification_scope': result.verification_scope,
                 'representative_state_path': representative,
                 'counterexample_kind': kind,
-                'scc': list(payload) if isinstance(payload, tuple) else [],
+                'scc': scc,
             }
             diagnostic = _make_verify_diagnostic(
                 'W_TOPOLOGICAL_NOEXIT',
@@ -2198,8 +2291,9 @@ def _verify_diagnostics_from_results(
 
     SMT-local raw diagnostic dictionaries are consumed directly. Structural
     results are interpreted only for algorithms whose payloads have an
-    explicit conversion. Indeterminate results without raw diagnostics are
-    skipped so ``unknown`` or ``timeout`` does not become a false warning.
+    explicit conversion. Indeterminate results are skipped even when partial
+    raw diagnostics are attached, so ``unknown`` or ``timeout`` does not
+    become a false warning.
 
     :param results: Normalized inspect-adapter results.
     :type results: Sequence[pyfcstm.verify.inspect_adapter.InspectRunResult]
@@ -2233,6 +2327,8 @@ def _verify_diagnostics_from_results(
     """
     diagnostics: List[ModelDiagnostic] = []
     for result in results:
+        if result.result_kind in {'unknown', 'timeout', 'undecidable_skip'}:
+            continue
         if result.diagnostics:
             for raw in result.diagnostics:
                 if not isinstance(raw, Mapping):
@@ -2250,8 +2346,6 @@ def _verify_diagnostics_from_results(
                 )
                 if diagnostic is not None:
                     diagnostics.append(diagnostic)
-            continue
-        if result.result_kind in {'unknown', 'timeout', 'undecidable_skip'}:
             continue
         diagnostics.extend(_structural_verify_diagnostics(result, states, events))
     return tuple(diagnostics)

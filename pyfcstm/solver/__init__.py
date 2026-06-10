@@ -1,47 +1,78 @@
-"""
-Z3 solver integration for pyfcstm expressions.
+"""Public solver helpers for Z3-backed FCSTM analysis.
 
-This module provides utilities for converting pyfcstm expression objects
-to Z3 solver expressions, enabling constraint solving and symbolic execution
-capabilities for state machine models.
+The solver package is the pure symbolic layer shared by verification
+algorithms and future reachability/search work.  It translates model
+expressions and operation blocks into Z3 formulas, but it does not import
+``pyfcstm.verify``, diagnostics, registries, lifecycle rules, or inspect
+policy.  FCSTM runtime semantics that need states, transitions, declaration
+order, or lifecycle phases live in :mod:`pyfcstm.verify`.
 
-The module contains the following main components:
+Module map:
 
-* :func:`expr_to_z3` - Convert pyfcstm expressions to Z3 expressions
-* :func:`create_z3_vars_from_models` - Create Z3 variables from model objects
-* :func:`solve` - Solve Z3 constraint expressions with flexible solution enumeration
-* :class:`SolveResult` - Dataclass containing solve results
-* :func:`parse_operations` - Parse DSL operation code string to list of Operations
-* :func:`execute_operations` - Execute operations on Z3 variable expression dictionary (symbolic execution)
+.. list-table::
+   :header-rows: 1
+
+   * - Module
+     - Public entry
+     - Purpose
+   * - :mod:`pyfcstm.solver.expr`
+     - :func:`expr_to_z3`, :func:`create_z3_vars_from_models`
+     - Translate expressions and declared variables into Z3 values.
+   * - :mod:`pyfcstm.solver.domain`
+     - :func:`translate_expr_domain`,
+       :func:`merge_definedness_constraints`
+     - Return expression values together with runtime-definedness
+       constraints such as non-zero divisors.
+   * - :mod:`pyfcstm.solver.operation`
+     - :func:`parse_operations`, :func:`execute_operations`,
+       ``execute_operations_domain``
+     - Parse and symbolically execute operation blocks, including
+       path-sensitive execution through ``if`` / ``elif`` / ``else``.
+   * - :mod:`pyfcstm.solver.logical`
+     - ``is_sat`` and related query helpers
+     - Wrap small satisfiability, validity, and overlap checks.
+   * - :mod:`pyfcstm.solver.safety`
+     - Optional safety classifiers
+     - Provide advisory classification for downstream policy layers; raw
+       verification algorithms do not use it as a default gate.
+   * - :mod:`pyfcstm.solver.solve`
+     - :func:`solve`, :class:`SolveResult`
+     - Enumerate satisfying assignments for caller-supplied constraints.
 
 Example::
 
-    >>> from pyfcstm.solver import expr_to_z3, create_z3_vars_from_models, solve
-    >>> from pyfcstm.model.expr import Variable, Integer, BinaryOp
     >>> import z3
-    >>>
-    >>> # Create Z3 variables
-    >>> z3_vars = {'x': z3.Int('x'), 'y': z3.Int('y')}
-    >>>
-    >>> # Convert expression to Z3
-    >>> expr = BinaryOp(x=Variable('x'), op='+', y=Integer(5))
+    >>> from pyfcstm.model.expr import BinaryOp, Integer, Variable
+    >>> from pyfcstm.solver import expr_to_z3, solve
+    >>> # The package-level imports keep the historical simple solver API.
+    >>> z3_vars = {"x": z3.Int("x")}
+    >>> expr = BinaryOp(x=Variable("x"), op="+", y=Integer(5))
     >>> z3_expr = expr_to_z3(expr, z3_vars)
-    >>>
-    >>> # Solve constraints
-    >>> result = solve([z3_expr == 10, z3_vars['y'] > 0], max_solutions=5)
+    >>> result = solve([z3_expr == 10], max_solutions=1)
     >>> result.status
     'sat'
-    >>>
-    >>> # Parse and execute operations symbolically
-    >>> from pyfcstm.solver import parse_operations, execute_operations
-    >>> ops = parse_operations("x = x + 2; y = y + x;", allowed_vars=['x', 'y'])
-    >>> x, y = z3.Int('x'), z3.Int('y')
-    >>> var_exprs = {'x': x, 'y': y}
-    >>> new_exprs = execute_operations(ops, var_exprs)
-    >>> # new_exprs['x'] is: x + 2
-    >>> # new_exprs['y'] is: y + (x + 2)
+    >>> result.solutions[0]["x"]
+    5
+
+    >>> from pyfcstm.solver.domain import translate_expr_domain
+    >>> # Domain-aware translation also reports runtime preconditions.
+    >>> div_expr = BinaryOp(x=Variable("x"), op="/", y=Integer(2))
+    >>> domain = translate_expr_domain(div_expr, z3_vars)
+    >>> domain.failure is None
+    True
+    >>> len(domain.definedness_constraints)
+    1
 """
 
 from .expr import expr_to_z3, create_z3_vars_from_models
 from .operation import parse_operations, execute_operations
 from .solve import solve, SolveResult
+
+__all__ = [
+    "SolveResult",
+    "create_z3_vars_from_models",
+    "execute_operations",
+    "expr_to_z3",
+    "parse_operations",
+    "solve",
+]

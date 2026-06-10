@@ -2240,6 +2240,36 @@ class TestInspectModelVerifyIntegration:
                 },
             },
             {
+                'code': 'W_DEAD_GUARD',
+                'algorithm_name': 'dead_guard',
+                'data': {
+                    'transition': {
+                        'parent': 'Root',
+                        'from_state': 'Idle',
+                        'to_state': 'Active',
+                        'event': 123,
+                        'guard': 'counter > 0',
+                        'is_forced': False,
+                    },
+                    'verification_scope': 'smt_local',
+                },
+            },
+            {
+                'code': 'W_DEAD_GUARD',
+                'algorithm_name': 'dead_guard',
+                'data': {
+                    'transition': {
+                        'parent': 'Root',
+                        'from_state': 'Idle',
+                        'to_state': 'Active',
+                        'event': None,
+                        'guard': 123,
+                        'is_forced': False,
+                    },
+                    'verification_scope': 'smt_local',
+                },
+            },
+            {
                 'code': 'W_TRANSITION_SHADOWED',
                 'algorithm_name': 'transition_shadowed_by_predecessor',
                 'data': {
@@ -2292,6 +2322,203 @@ class TestInspectModelVerifyIntegration:
         assert raw_diagnostic['code'] not in {
             diag.code for diag in report.diagnostics
         }
+
+    def test_unmatched_verify_transition_payloads_fail_closed(self, monkeypatch):
+        from pyfcstm.verify import InspectRunResult
+
+        def fake_adapter(machine, **kwargs):
+            return (
+                InspectRunResult(
+                    algorithm_name='dead_guard',
+                    complexity_tier='smt_linear',
+                    smt_logic='QF_LIRA',
+                    verification_scope='smt_local',
+                    diagnostic_codes=('W_DEAD_GUARD',),
+                    result_kind='sat',
+                    diagnostics=({
+                        'code': 'W_DEAD_GUARD',
+                        'algorithm_name': 'dead_guard',
+                        'data': {
+                            'transition': {
+                                'parent': 'Root',
+                                'from_state': 'Idle',
+                                'to_state': 'Missing',
+                                'event': None,
+                                'guard': 'counter > 0',
+                                'is_forced': False,
+                            },
+                            'verification_scope': 'smt_local',
+                        },
+                    },),
+                    reason=None,
+                    raw_result=None,
+                ),
+            )
+
+        monkeypatch.setattr(
+            inspect_module,
+            '_run_verify_inspect_algorithms',
+            fake_adapter,
+        )
+
+        report = inspect_model(_parse(SIMPLE_DSL), enable_verify=True)
+
+        assert 'W_DEAD_GUARD' not in {diag.code for diag in report.diagnostics}
+
+    def test_structural_verify_payloads_without_source_span_fail_closed(
+            self,
+            monkeypatch,
+    ):
+        from pyfcstm.verify import InspectRunResult
+
+        class FinitenessRawResult:
+            counterexamples = (('deadlock', 'Root.Missing'),)
+
+        class InevitabilityRawResult:
+            counterexample_path = ('Root.Missing',)
+
+        def fake_adapter(machine, **kwargs):
+            return (
+                InspectRunResult(
+                    algorithm_name='strongly_connected_components',
+                    complexity_tier='structural',
+                    smt_logic=None,
+                    verification_scope='topological_only',
+                    diagnostic_codes=('I_NONTRIVIAL_SCC',),
+                    result_kind='sat',
+                    diagnostics=(),
+                    reason=None,
+                    raw_result=(('Root.Missing',),),
+                ),
+                InspectRunResult(
+                    algorithm_name='topological_finite',
+                    complexity_tier='structural',
+                    smt_logic=None,
+                    verification_scope='topological_only',
+                    diagnostic_codes=('W_TOPOLOGICAL_NOEXIT',),
+                    result_kind='sat',
+                    diagnostics=(),
+                    reason=None,
+                    raw_result=FinitenessRawResult(),
+                ),
+                InspectRunResult(
+                    algorithm_name='topological_inevitable_terminator',
+                    complexity_tier='structural',
+                    smt_logic=None,
+                    verification_scope='topological_only',
+                    diagnostic_codes=('I_TOPOLOGICAL_NON_TERMINATING',),
+                    result_kind='sat',
+                    diagnostics=(),
+                    reason=None,
+                    raw_result=InevitabilityRawResult(),
+                ),
+                InspectRunResult(
+                    algorithm_name='event_emission_to_consumer_reachable',
+                    complexity_tier='structural',
+                    smt_logic=None,
+                    verification_scope='topological_only',
+                    diagnostic_codes=('W_EVENT_UNREACHABLE_EMIT',),
+                    result_kind='sat',
+                    diagnostics=(),
+                    reason=None,
+                    raw_result=('Root.MissingEvent',),
+                ),
+            )
+
+        monkeypatch.setattr(
+            inspect_module,
+            '_run_verify_inspect_algorithms',
+            fake_adapter,
+        )
+
+        report = inspect_model(_parse(SIMPLE_DSL), enable_verify=True)
+
+        assert {
+            'I_NONTRIVIAL_SCC',
+            'W_TOPOLOGICAL_NOEXIT',
+            'I_TOPOLOGICAL_NON_TERMINATING',
+            'W_EVENT_UNREACHABLE_EMIT',
+        }.isdisjoint({diag.code for diag in report.diagnostics})
+
+    def test_verify_schema_rejects_undeclared_enum_and_type_mismatch(self):
+        valid_refs = {
+            'algorithm_name': 'dead_guard',
+            'verification_scope': 'smt_local',
+            'transition': {
+                'parent': 'Root',
+                'from_state': 'Idle',
+                'to_state': 'Active',
+                'event': None,
+                'guard': 'counter > 0',
+                'is_forced': False,
+            },
+            'transition_summary': 'Root:Idle->Active',
+        }
+
+        assert inspect_module._refs_match_code_schema('W_DEAD_GUARD', valid_refs)
+        assert not inspect_module._refs_match_code_schema(
+            'E_UNDEFINED_VAR',
+            dict(valid_refs),
+        )
+        assert not inspect_module._refs_match_code_schema(
+            'W_DEAD_GUARD',
+            dict(valid_refs, extra='not declared'),
+        )
+        assert not inspect_module._refs_match_code_schema(
+            'W_DEAD_GUARD',
+            dict(valid_refs, verification_scope='topological_only'),
+        )
+        assert not inspect_module._refs_match_code_schema(
+            'W_DEAD_GUARD',
+            dict(valid_refs, transition_summary=123),
+        )
+
+    def test_verify_type_schema_covers_all_declared_tokens(self):
+        true_cases = {
+            'str': 'value',
+            'int': 1,
+            'float': 1.5,
+            'number': 1,
+            'bool': False,
+            'dict': {},
+            'list[str]': ['a', 'b'],
+            'list[Span]': [None],
+            'Span': None,
+            'str_or_null': None,
+            'int_or_null': None,
+            'unknown_future_type': object(),
+        }
+
+        for type_token, value in true_cases.items():
+            field_spec = inspect_module.CodeFieldSpec(
+                name='field',
+                type=type_token,
+                required=True,
+                description='test field',
+            )
+            assert inspect_module._type_matches_schema(value, field_spec)
+
+        false_cases = {
+            'int': True,
+            'float': 1,
+            'number': True,
+            'bool': 0,
+            'dict': [],
+            'list[str]': ['ok', 1],
+            'list[Span]': [object()],
+            'Span': object(),
+            'str_or_null': 1,
+            'int_or_null': True,
+        }
+
+        for type_token, value in false_cases.items():
+            field_spec = inspect_module.CodeFieldSpec(
+                name='field',
+                type=type_token,
+                required=True,
+                description='test field',
+            )
+            assert not inspect_module._type_matches_schema(value, field_spec)
 
     @pytest.mark.parametrize(
         'kind',

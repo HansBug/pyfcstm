@@ -27,7 +27,7 @@ The module exposes the following dataclasses:
 Examples::
 
     >>> from pyfcstm.dsl import parse_with_grammar_entry
-    >>> from pyfcstm.model.parse import parse_dsl_node_to_state_machine
+    >>> from pyfcstm.model import parse_dsl_node_to_state_machine
     >>> from pyfcstm.diagnostics import inspect_model
     >>> source = '''
     ... def int counter = 0;
@@ -478,6 +478,11 @@ class ModelInspect:
 
         Examples::
 
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> ast = parse_with_grammar_entry('state Root;', 'state_machine_dsl')
+            >>> machine = parse_dsl_node_to_state_machine(ast)
+            >>> report = inspect_model(machine)
             >>> report.to_json()['root_state_path']
             'Root'
         """
@@ -2247,6 +2252,10 @@ def _make_verify_diagnostic(
 ) -> Optional[ModelDiagnostic]:
     """Create one ``ModelDiagnostic`` from verified refs.
 
+    Verify diagnostics must bind back to the source object declared by the
+    code registry. A raw verify finding with valid refs but no source object
+    is dropped instead of becoming a public spanless diagnostic.
+
     :param code: Verify-pipeline diagnostic code.
     :type code: str
     :param refs: Candidate refs payload.
@@ -2271,6 +2280,12 @@ def _make_verify_diagnostic(
     if not _refs_match_code_schema(code, refs):
         return None
     spec = CODE_REGISTRY[code]
+    if (
+            spec.span_object is not None
+            and code not in KNOWN_SPANLESS_CODES
+            and span is None
+    ):
+        return None
     return ModelDiagnostic(
         code=code,
         severity=spec.severity,

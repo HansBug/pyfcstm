@@ -20,13 +20,15 @@ Vibe coding is fine for quick exploration, but once you touch repository code yo
 - Keep workflow metadata out of code and API surfaces: do not put PR numbers, issue IDs, roadmap stages/phases, review
   rounds, or rollout slice names into identifiers, schema field names, runtime messages, test ids, or pydoc/docstrings.
   If Markdown documentation genuinely needs to reference a concrete workflow item, use an explicit hyperlink such as
-  `[PR #123](https://github.com/HansBug/pyfcstm/pull/123)` or
-  `[issue #456](https://github.com/HansBug/pyfcstm/issues/456)`.
+  [PR #123](https://github.com/HansBug/pyfcstm/pull/123) or
+  [issue #456](https://github.com/HansBug/pyfcstm/issues/456).
   Domain terms such as lifecycle stage names or control-system phase variables remain acceptable when they describe the
   modeled behavior rather than the implementation workflow.
-- Keep Python and JavaScript unit tests strictly independent. Python tests may use fixtures and literals under `test/`,
+- Keep Python and JavaScript unit tests strictly independent. Python tests may use fixtures and literals under
+  [test/](test/),
   but must not call Node.js, jsfcstm, or resources outside the Python test tree. jsfcstm tests may use fixtures and
-  literals under `editors/jsfcstm/test/`, but must not call Python code or the repository-level `test/` tree. Either
+  literals under [editors/jsfcstm/test/](editors/jsfcstm/test/), but must not call Python code or the repository-level
+  [test/](test/) tree. Either
   side's tests must keep running if the other side's implementation and test directories are removed.
 - After each change, run checks proportional to the risk; nothing that hasn't been verified may be claimed as done.
 - When requirements are unclear, an action is destructive, or you're near a security boundary, stop and surface assumptions and risks before proceeding.
@@ -61,9 +63,15 @@ Broad `except Exception:` (Python) / `} catch {` / `} catch (e) {` (TypeScript /
    }
    ```
 4. **Never silently swallow.** A `} catch {}` with no body, or `except Exception: pass` / `... return None`, is allowed only when the function's contract explicitly says "swallow everything and degrade gracefully" *and* the swallow site logs / records the dropped error somewhere observable. Otherwise the unexpected class becomes a silent CI-passing prod bug.
-5. **Exceptions to the rule (literal exceptions):** the `ModelValidationError` belt-and-braces re-raise in `pyfcstm/model/imports.py` is allowed because it explicitly checks `if not sink.collect: raise` and forwards the structured diagnostics — the broad catch is just a re-entry point, not a swallow. Document the equivalent pattern at any new broad catch you introduce.
+5. **Exceptions to the rule (literal exceptions):** the `ModelValidationError` belt-and-braces re-raise in
+   [pyfcstm/model/imports.py](pyfcstm/model/imports.py) is allowed because it explicitly checks
+   `if not sink.collect: raise` and forwards the structured diagnostics — the broad catch is just a re-entry point, not
+   a swallow. Document the equivalent pattern at any new broad catch you introduce.
 
-Applies to all code in `pyfcstm/`, `editors/jsfcstm/src/`, `editors/vscode/src/`, and any new code under those trees. Auto-generated grammar files (`pyfcstm/dsl/grammar/`, `editors/jsfcstm/src/dsl/grammar/`) are exempt — they are produced by ANTLR.
+Applies to all code in [pyfcstm/](pyfcstm/), [editors/jsfcstm/src/](editors/jsfcstm/src/),
+[editors/vscode/src/](editors/vscode/src/), and any new code under those trees. Auto-generated grammar files
+([pyfcstm/dsl/grammar/](pyfcstm/dsl/grammar/), [editors/jsfcstm/src/dsl/grammar/](editors/jsfcstm/src/dsl/grammar/))
+are exempt — they are produced by ANTLR.
 
 ## Conversation Language
 
@@ -83,12 +91,13 @@ This repository must support cross-platform environments (Windows, mainstream Li
 
 As of 2026-03, the repository is no longer only a generic template experiment. The current codebase already includes:
 
-- Repository-source built-in templates under `templates/`, with `templates/python/` as the reference implementation
-- Packaged built-in template assets under `pyfcstm/template/`, including `index.json`, extraction helpers, and packaged zip assets
+- Repository-source built-in templates under [templates/](templates/), with [templates/python/](templates/python/) as the reference implementation
+- Packaged built-in template assets under [pyfcstm/template/](pyfcstm/template/), including
+  [pyfcstm/template/index.json](pyfcstm/template/index.json), extraction helpers, and packaged zip assets
 - CLI support for both custom template directories and packaged built-in templates via `pyfcstm generate -t ...` and `pyfcstm generate --template python ...`
-- Expression rendering and statement rendering infrastructure under `pyfcstm/render/`, with built-in statement styles for `dsl`, `c`, `cpp`, `python`, `java`, `js`, `ts`, `rust`, and `go`
-- Dedicated template tests under `test/template/`, including generated-runtime tests and runtime-alignment tests for the built-in `python` template
-- A render/template tutorial path in `docs/source/tutorials/render/` that now reflects the current renderer, template packaging, and testing model
+- Expression rendering and statement rendering infrastructure under [pyfcstm/render/](pyfcstm/render/), with built-in statement styles for `dsl`, `c`, `cpp`, `python`, `java`, `js`, `ts`, `rust`, and `go`
+- Dedicated template tests under [test/template/](test/template/), including generated-runtime tests and runtime-alignment tests for the built-in `python` template
+- A render/template tutorial path in [docs/source/tutorials/render/](docs/source/tutorials/render/) that now reflects the current renderer, template packaging, and testing model
 
 When updating repository guidance, do not describe built-in templates, statement rendering, or CLI `--template` support as planned-only features. They are current behavior.
 
@@ -112,17 +121,23 @@ pytest test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
 SKIP_SLOW_TESTS=1 make unittest          # ~24s vs ~174s full local (~7x faster)
 ```
 
-The `SKIP_SLOW_TESTS=1` env var is read by `test/conftest.py`. It auto-skips every test under `test/template/c/` and `test/template/c_poll/` — these are the tests that compile C/C++ via cmake. Use it for iteration cycles that don't touch generated C runtime. The Python template, simulator, model, DSL, render, and verify tests all still run.
+The `SKIP_SLOW_TESTS=1` env var is read by [test/conftest.py](test/conftest.py). It auto-skips every test under
+[test/template/c/](test/template/c/) and [test/template/c_poll/](test/template/c_poll/) — these are the tests that
+compile C/C++ via cmake. Use it for iteration cycles that don't touch generated C runtime. The Python template,
+simulator, model, DSL, render, and verify tests all still run.
 
 ### CI Workflow Commit-Message Triggers
 
-`.github/workflows/test.yml` honors five magic substrings in the **head commit message**. They are checked with GitHub Actions' `contains()`, which is a **plain substring match** — there are no word boundaries, no regex anchors. A natural-language phrase that happens to embed one of these substrings will silently trigger the gate. Always grep your commit message against the table below before pushing.
+[.github/workflows/test.yml](.github/workflows/test.yml) honors five magic substrings in the **head commit message**.
+They are checked with GitHub Actions' `contains()`, which is a **plain substring match** — there are no word boundaries,
+no regex anchors. A natural-language phrase that happens to embed one of these substrings will silently trigger the
+gate. Always grep your commit message against the table below before pushing.
 
 | Substring | Trigger | Effect |
 |---|---|---|
 | `ci skip` | head commit message contains this substring anywhere | Skips both `Code test` (unittest matrix), `jsfcstm test`, and `CLI Build` workflows entirely. Use for docs-only / comment-only commits. |
 | `test skip` | head commit message contains this substring anywhere | Skips both the `Code test` (Python unittest matrix) AND the `jsfcstm test` workflows. `CLI Build` still runs. |
-| `[skip-slow]` | head commit message contains this substring anywhere | Runs the full unittest workflow normally, but injects `SKIP_SLOW_TESTS=1` into the unittest step, which skips `test/template/c` and `test/template/c_poll` (cmake/cc compile tests, ~85% of wall time). Use when iterating on changes that demonstrably can't affect the C/C++ runtime templates. |
+| `[skip-slow]` | head commit message contains this substring anywhere | Runs the full unittest workflow normally, but injects `SKIP_SLOW_TESTS=1` into the unittest step, which skips [test/template/c](test/template/c) and [test/template/c_poll](test/template/c_poll) (cmake/cc compile tests, ~85% of wall time). Use when iterating on changes that demonstrably can't affect the C/C++ runtime templates. |
 | `[python skip]` | head commit message contains this substring anywhere | Skips the `Code test` (Python unittest matrix) AND `CLI Build` jobs. The `jsfcstm test` job still runs. Use for jsfcstm-only changes (TypeScript / mocha updates) where the Python matrix would only burn CI minutes. |
 | `[js skip]` | head commit message contains this substring anywhere | Skips only the `jsfcstm test` workflow. The Python unittest matrix and `CLI Build` still run. Use for Python-only / Makefile changes that obviously can't affect the jsfcstm TypeScript build. |
 
@@ -164,7 +179,7 @@ make docs_auto AUTO_OPTIONS="--model-name deepseek-V3 --param max_tokens=200000"
 
 ```bash
 make antlr        # Download ANTLR jar and setup (requires Java)
-make antlr_build  # Regenerate parser from grammar file after modifying Grammar.g4
+make antlr_build  # Regenerate parser from grammar files after modifying GrammarParser.g4 or GrammarLexer.g4
 ```
 
 ### Sample Test Generation
@@ -318,75 +333,80 @@ Mandatory completion rule for built-in template work:
 
 ### Core Components
 
-**DSL Parsing Pipeline** (`pyfcstm/dsl/`)
+**DSL Parsing Pipeline** ([pyfcstm/dsl/](pyfcstm/dsl/))
 
-- `grammar/Grammar.g4`: ANTLR4 grammar for states, transitions, events, expressions; hierarchical state definitions
-- `parse.py`: Entry point `parse_with_grammar_entry()` for parsing DSL code strings
-- `listener.py`: ANTLR listener constructing AST nodes; visitor pattern for each grammar rule
-- `node.py`: AST node dataclasses with DSL/PlantUML export methods
-- `error.py`: DSL parsing error handling with detailed error messages
+- [grammar/GrammarParser.g4](pyfcstm/dsl/grammar/GrammarParser.g4) and
+  [grammar/GrammarLexer.g4](pyfcstm/dsl/grammar/GrammarLexer.g4): ANTLR4 grammar for states, transitions, events, expressions; hierarchical state definitions
+- [parse.py](pyfcstm/dsl/parse.py): Entry point `parse_with_grammar_entry()` for parsing DSL code strings
+- [listener.py](pyfcstm/dsl/listener.py): ANTLR listener constructing AST nodes; visitor pattern for each grammar rule
+- [node.py](pyfcstm/dsl/node.py): AST node dataclasses with DSL/PlantUML export methods
+- [error.py](pyfcstm/dsl/error.py): DSL parsing error handling with detailed error messages
 
-**Model Layer** (`pyfcstm/model/`)
+**Model Layer** ([pyfcstm/model/](pyfcstm/model/))
 
-- `model.py`: Core classes: `StateMachine`, `State`, `Transition`, `Event`, `Operation`, `VarDefine`, `OnStage`/`OnAspect`
-- `expr.py`: Expression system supporting literals, variables, unary/binary operators, bitwise ops, function calls
-- `base.py`: Base classes `AstExportable` and `PlantUMLExportable`
+- [model.py](pyfcstm/model/model.py): Core classes: `StateMachine`, `State`, `Transition`, `Event`, `Operation`, `VarDefine`, `OnStage`/`OnAspect`
+- [expr.py](pyfcstm/model/expr.py): Expression system supporting literals, variables, unary/binary operators, bitwise ops, function calls
+- [base.py](pyfcstm/model/base.py): Base classes `AstExportable` and `PlantUMLExportable`
 - Model methods: `walk_states()` for traversal, `find_state()` for lookups, export capabilities
 
-**Rendering Engine** (`pyfcstm/render/`)
+**Rendering Engine** ([pyfcstm/render/](pyfcstm/render/))
 
-- `render.py`: `StateMachineCodeRenderer` - loads templates, processes `.j2` files, copies static files, gitignore-style ignores
-- `env.py`: Jinja2 sandboxed environment with custom globals, filters, and tests
-- `expr.py`: Expression rendering for `dsl`, `c`, `cpp`, `python` styles; `{{ expr | expr_render(style='c') }}`
-- `statement.py`: Statement rendering for executable operation blocks; `{{ stmt | stmt_render(style='python') }}` and `{{ action.operations | stmts_render(style='python') }}`
-- `func.py`: `process_item_to_object()` converts config items to Python objects (imports, templates, values)
+- [render.py](pyfcstm/render/render.py): `StateMachineCodeRenderer` - loads templates, processes `.j2` files, copies static files, gitignore-style ignores
+- [env.py](pyfcstm/render/env.py): Jinja2 sandboxed environment with custom globals, filters, and tests
+- [expr.py](pyfcstm/render/expr.py): Expression rendering for `dsl`, `c`, `cpp`, `python` styles; `{{ expr | expr_render(style='c') }}`
+- [statement.py](pyfcstm/render/statement.py): Statement rendering for executable operation blocks; `{{ stmt | stmt_render(style='python') }}` and `{{ action.operations | stmts_render(style='python') }}`
+- [func.py](pyfcstm/render/func.py): `process_item_to_object()` converts config items to Python objects (imports, templates, values)
 
-**Built-In Template Assets** (`templates/`, `pyfcstm/template/`)
+**Built-In Template Assets** ([templates/](templates/), [pyfcstm/template/](pyfcstm/template/))
 
-- `templates/`: Editable built-in template source directories tracked in the repository
-- `templates/python/`: Current reference built-in runtime template; use this as the baseline when designing future language templates
-- `pyfcstm/template/`: Packaged built-in template assets, `index.json`, and extraction helpers such as `extract_template()`
-- `tools/package_templates.py` + `make tpl`: Package repository template sources into distributable built-in template assets
+- [templates/](templates/): Editable built-in template source directories tracked in the repository
+- [templates/python/](templates/python/): Current reference built-in runtime template; use this as the baseline when designing future language templates
+- [pyfcstm/template/](pyfcstm/template/): Packaged built-in template assets,
+  [index.json](pyfcstm/template/index.json), and extraction helpers such as `extract_template()`
+- [tools/package_templates.py](tools/package_templates.py) + `make tpl`: Package repository template sources into distributable built-in template assets
 
-**Simulation Runtime** (`pyfcstm/simulate/`)
+**Simulation Runtime** ([pyfcstm/simulate/](pyfcstm/simulate/))
 
-- `runtime.py`: `SimulationRuntime` for cycle-based execution
+- [runtime.py](pyfcstm/simulate/runtime.py): `SimulationRuntime` for cycle-based execution
   - Execution stack of active states from root to leaf; speculative validation before transitions
   - **Hot Start**: builds frame stack directly to target state without enter actions
     - Leaf states use `'active'` mode; Composite states use `'init_wait'` mode
     - `initial_vars` must provide all variables; DFS finds stoppable paths
     - Safety limits: 1000 steps max, 64 stack depth max
-- `context.py`: Read-only execution context for abstract handlers
-- `decorators.py`: `@abstract_handler` decorator for handler registration
+- [context.py](pyfcstm/simulate/context.py): Read-only execution context for abstract handlers
+- [decorators.py](pyfcstm/simulate/decorators.py): `@abstract_handler` decorator for handler registration
 
-**Constraint Solver** (`pyfcstm/solver/`)
+**Constraint Solver** ([pyfcstm/solver/](pyfcstm/solver/))
 
-- `expr.py`: Translates model expressions into Z3 constraint expressions
-- `solve.py`: Z3-based constraint solving for guard reachability analysis
-- `operation.py`: Converts state machine operations into solver constraints
+- [expr.py](pyfcstm/solver/expr.py): Translates model expressions into Z3 constraint expressions
+- [solve.py](pyfcstm/solver/solve.py): Z3-based constraint solving for guard reachability analysis
+- [operation.py](pyfcstm/solver/operation.py): Converts state machine operations into solver constraints
 - Uses `z3-solver` library; enables static analysis of transition guard satisfiability
 
-**Entry Points** (`pyfcstm/entry/`)
+**Entry Points** ([pyfcstm/entry/](pyfcstm/entry/))
 
-- `cli.py`: Click-based CLI; `pyfcstmcli()` registered as console script
-- `plantuml.py`: PlantUML diagram generation from state machine models
-- `generate.py`: Orchestrates parsing DSL, building model, and rendering with either `--template-dir` or built-in `--template`
-- `dispatch.py`: Command dispatching logic for CLI subcommands
-- `simulate/`: Interactive simulation REPL (sub-package) with `repl.py`, `commands.py`, `completer.py`, `display.py`, `batch.py`, `logging.py`
+- [cli.py](pyfcstm/entry/cli.py): Click-based CLI; `pyfcstmcli()` registered as console script
+- [plantuml.py](pyfcstm/entry/plantuml.py): PlantUML diagram generation from state machine models
+- [generate.py](pyfcstm/entry/generate.py): Orchestrates parsing DSL, building model, and rendering with either `--template-dir` or built-in `--template`
+- [dispatch.py](pyfcstm/entry/dispatch.py): Command dispatching logic for CLI subcommands
+- [simulate/](pyfcstm/entry/simulate/): Interactive simulation REPL (sub-package) with
+  [repl.py](pyfcstm/entry/simulate/repl.py), [commands.py](pyfcstm/entry/simulate/commands.py),
+  [completer.py](pyfcstm/entry/simulate/completer.py), [display.py](pyfcstm/entry/simulate/display.py),
+  [batch.py](pyfcstm/entry/simulate/batch.py), [logging.py](pyfcstm/entry/simulate/logging.py)
 
-**Configuration** (`pyfcstm/config/`)
+**Configuration** ([pyfcstm/config/](pyfcstm/config/))
 
-- `meta.py`: `__VERSION__`, `__TITLE__`, `__DESCRIPTION__`, `__AUTHOR__`, `__AUTHOR_EMAIL__`
+- [meta.py](pyfcstm/config/meta.py): `__VERSION__`, `__TITLE__`, `__DESCRIPTION__`, `__AUTHOR__`, `__AUTHOR_EMAIL__`
 
-**Utilities** (`pyfcstm/utils/`)
+**Utilities** ([pyfcstm/utils/](pyfcstm/utils/))
 
-- `validate.py`: `IValidatable`, `ValidationError`, `ModelValidationError`
-- `text.py`: `normalize()`, `to_identifier()` - converts to `[0-9a-zA-Z_]+` via `unidecode`
-- `doc.py`: `format_multiline_comment()` - cleans `/* */` ANTLR4 comments
-- `safe.py`: `sequence_safe()` - underscore-separated identifier conversion
-- `binary.py`, `decode.py`: Binary detection, `auto_decode()` for encoding handling
-- `jinja2.py`: `add_builtins_to_env()`, `add_settings_for_env()`
-- `json.py`: `IJsonOp` for serialization
+- [validate.py](pyfcstm/utils/validate.py): `IValidatable`, `ValidationError`, `ModelValidationError`
+- [text.py](pyfcstm/utils/text.py): `normalize()`, `to_identifier()` - converts to `[0-9a-zA-Z_]+` via `unidecode`
+- [doc.py](pyfcstm/utils/doc.py): `format_multiline_comment()` - cleans `/* */` ANTLR4 comments
+- [safe.py](pyfcstm/utils/safe.py): `sequence_safe()` - underscore-separated identifier conversion
+- [binary.py](pyfcstm/utils/binary.py), [decode.py](pyfcstm/utils/decode.py): Binary detection, `auto_decode()` for encoding handling
+- [jinja2.py](pyfcstm/utils/jinja2.py): `add_builtins_to_env()`, `add_settings_for_env()`
+- [json.py](pyfcstm/utils/json.py): `IJsonOp` for serialization
 
 ### Key Architectural Patterns
 
@@ -677,7 +697,7 @@ Example::
 For CLI examples, use `$` prefix without `>>>`. For FCSTM DSL in Sphinx docs, use `.. code-block:: fcstm`.
 For including external FCSTM files: `.. literalinclude:: example.fcstm` with `:language: fcstm`.
 
-**Real example from codebase** (`pyfcstm/entry/generate.py`):
+**Real example from codebase** ([pyfcstm/entry/generate.py](pyfcstm/entry/generate.py)):
 ```python
 def generate(input_code_file: str, template_dir: str, output_dir: str, clear_directory: bool) -> None:
     """
@@ -759,7 +779,7 @@ lifecycle actions, guards, effects, composite states, leaf states, aspect action
 
 **Template and Rendering Context**: Document Jinja2 template integration and expression rendering styles when relevant.
 
-**Real example from codebase** (`pyfcstm/render/render.py`):
+**Real example from codebase** ([pyfcstm/render/render.py](pyfcstm/render/render.py)):
 ```python
 class StateMachineCodeRenderer:
     """
@@ -807,7 +827,8 @@ make docs_auto AUTO_OPTIONS="--model-name deepseek-V3 --param max_tokens=200000"
 
 Common `AUTO_OPTIONS`: `--param max_tokens=N`, `--model-name MODEL`, `--no-ignore-module pyfcstm`, `--timeout SECONDS`.
 
-Key file: `.llmconfig.yaml` (gitignored, contains API credentials; copy from `.llmconfig.yaml.example`).
+Key file: `.llmconfig.yaml` (gitignored, contains API credentials; copy from
+[.llmconfig.yaml.example](.llmconfig.yaml.example)).
 
 #### File Structure
 
@@ -846,7 +867,7 @@ pyfcstm/
 - Merge commits should keep the generated style used in history, such as `Merge branch 'main' into dev/...` or
   `Merge pull request #52 from HansBug/dev/fixed`.
 
-See `LLM_DOCS_README.md` for detailed documentation.
+See [pyfcstm/llm/fcstm_grammar_guide.md](pyfcstm/llm/fcstm_grammar_guide.md) for the packaged LLM grammar guide.
 
 ### `gh` / `glab` Identity Rule
 
@@ -912,33 +933,38 @@ Hard rules:
 
 ### ANTLR Grammar Modifications
 
-When modifying `pyfcstm/dsl/grammar/Grammar.g4`:
+When modifying [pyfcstm/dsl/grammar/GrammarParser.g4](pyfcstm/dsl/grammar/GrammarParser.g4) or
+[pyfcstm/dsl/grammar/GrammarLexer.g4](pyfcstm/dsl/grammar/GrammarLexer.g4):
 
 1. Ensure Java is installed
 2. `make antlr` - download ANTLR jar (only needed once)
 3. `make antlr_build` - regenerate parser code
-4. Update `listener.py` and `node.py` if grammar structure changes
+4. Update [pyfcstm/dsl/listener.py](pyfcstm/dsl/listener.py) and [pyfcstm/dsl/node.py](pyfcstm/dsl/node.py) if grammar structure changes
 5. Update syntax highlighting:
-   - `pyfcstm/highlight/pygments_lexer.py` (Pygments lexer, reference implementation)
-   - `editors/fcstm.tmLanguage.json` (TextMate grammar)
+   - [pyfcstm/highlight/pygments_lexer.py](pyfcstm/highlight/pygments_lexer.py) (Pygments lexer, reference implementation)
+   - [editors/fcstm.tmLanguage.json](editors/fcstm.tmLanguage.json) (TextMate grammar)
 6. `python editors/validate.py` - verify all 20+ checkpoints pass (100% required)
 
 **Operator Ordering**: Multi-character operators before single-character ones:
 - `**` before `*`; `<<` before `<`; `<=`, `>=`, `==`, `!=` before `<`, `>`, `!`; `&&`, `||` before `!`
 
-**Adding New Keywords**: Grammar.g4 → `make antlr_build` → update `pygments_lexer.py` (appropriate `words()` group)
-→ update `fcstm.tmLanguage.json` (keywords repository section) → `python editors/validate.py`.
+**Adding New Keywords**: [pyfcstm/dsl/grammar/GrammarParser.g4](pyfcstm/dsl/grammar/GrammarParser.g4) or
+[pyfcstm/dsl/grammar/GrammarLexer.g4](pyfcstm/dsl/grammar/GrammarLexer.g4) → `make antlr_build` →
+update [pyfcstm/highlight/pygments_lexer.py](pyfcstm/highlight/pygments_lexer.py) (appropriate `words()` group) →
+update [editors/fcstm.tmLanguage.json](editors/fcstm.tmLanguage.json) (keywords repository section) →
+`python editors/validate.py`.
 
 ### Template Development
 
 Current built-in template layout and release flow:
 
-- Repository template sources live under `templates/<name>/`
-- Packaged built-in template assets live under `pyfcstm/template/`
+- Repository template sources live under [templates/](templates/)
+- Packaged built-in template assets live under [pyfcstm/template/](pyfcstm/template/)
 - `make tpl` refreshes packaged template zip assets and `index.json`
 - After modifying repository template sources, run `make tpl` before template-related unit tests so the packaged built-in templates used by tests are up to date
 - The CLI extracts built-in templates first, then hands the extracted directory to `StateMachineCodeRenderer`
-- The current reference implementation is `templates/python/`, with tests in `test/template/python/`
+- The current reference implementation is [templates/python/](templates/python/), with tests in
+  [test/template/python/](test/template/python/)
 
 Template directories must contain:
 - `config.yaml`: Defines `expr_styles`, `stmt_styles`, `globals`, `filters`, `tests`, `ignores`
@@ -964,39 +990,39 @@ For built-in template work, the current design bar is defined by the `python` te
 - Preserve naming clarity for generated extension points so DSL authors can map states, actions, and abstract behavior back to code quickly, ideally with IDE completion support.
 - Keep generated code readable and inspectable. Generated runtimes are product artifacts, not opaque intermediate blobs.
 - Ensure the final generated code, generated support files, and generated README examples are written so the corresponding formatter flow reaches a stable end state. Template work that has not reached formatter convergence is not complete.
-- For changes to `templates/python/`, verify representative generated `machine.py` outputs with both `ruff check` and
+- For changes to [templates/python/](templates/python/), verify representative generated `machine.py` outputs with both `ruff check` and
   `ruff format --check`; if ruff reports lint diagnostics or would reformat the generated Python, the template change
   is not ready.
-- When adding a new built-in template, update all of the following together: `templates/<name>/`, packaged template assets, CLI/template metadata, maintainer docs, generated docs if applicable, and the corresponding tests.
+- When adding a new built-in template, update all of the following together: [templates/](templates/), packaged template assets, CLI/template metadata, maintainer docs, generated docs if applicable, and the corresponding tests.
 
 ### Testing Strategy
 
-- Tests in `test/`; use `@pytest.mark.unittest`
+- Tests in [test/](test/); use `@pytest.mark.unittest`
 - Unit tests must not depend on local files ignored by version control (for example, gitignored files).
 - Unit test suites must be strictly self-contained within their owning test tree. Python tests may use fixtures,
-  helpers, and expected data under `test/`, and jsfcstm tests may use fixtures, helpers, and expected data under
-  `editors/jsfcstm/test/`; neither side may read from, execute, import from, or assume the presence of the other
-  side's test tree. A Python unit test must still run if `editors/jsfcstm/` is removed, and a jsfcstm unit test must
-  still run if `test/` is removed.
+  helpers, and expected data under [test/](test/), and jsfcstm tests may use fixtures, helpers, and expected data under
+  [editors/jsfcstm/test/](editors/jsfcstm/test/); neither side may read from, execute, import from, or assume the
+  presence of the other side's test tree. A Python unit test must still run if
+  [editors/jsfcstm/](editors/jsfcstm/) is removed, and a jsfcstm unit test must still run if [test/](test/) is removed.
 - When both Python and jsfcstm need to cover the same behavior, duplicate the DSL text, expected diagnostics,
   snapshots, or fixtures as checked-in literals/files inside each side's own test tree. Do not share unit-test
   fixtures across those trees, do not shell out to the other runtime (for example Python tests invoking Node.js or
   jsfcstm tests invoking Python), and do not rely on build artifacts from the other side.
 - Unit tests may import the production code under test and use production assets through the public runtime/build
   entry points, but test-only data, helper scripts, and golden outputs must live in the corresponding test tree.
-- Unit tests under `test/` should keep production `pyfcstm/` behavior as the primary code under test, with
+- Unit tests under [test/](test/) should keep production [pyfcstm/](pyfcstm/) behavior as the primary code under test, with
   test-tree files acting as fixtures, helpers, schemas, harnesses, and expected data for that behavior.
   It is acceptable to test fixture loaders, schema validation, and harness behavior when those checks protect
   production-behavior fixture execution or prevent test-semantics drift. Do not add pytest cases whose primary
   assertion target is only test-tree documentation or maintenance metadata, such as README inventory tables or
   migration indexes. If fixture inventories, test documentation, or other test-tree maintenance data need executable
-  validation, put that check in a maintenance command outside the unit-test suite (for example under `tools/`) and run
+  validation, put that check in a maintenance command outside the unit-test suite (for example under [tools/](tools/)) and run
   it explicitly.
-- Shared test utilities and fixtures in `test/testings/`
-- Sample DSL files in `test/testfile/sample_codes/` (auto-generate tests via `make sample`)
-- Negative cases in `test/testfile/sample_neg_codes/`
-- Test timeout: 300 seconds (configured in `pytest.ini`)
-- Built-in template coverage lives under `test/template/`
+- Shared test utilities and fixtures in [test/testings/](test/testings/)
+- Sample DSL files in [test/testfile/sample_codes/](test/testfile/sample_codes/) (auto-generate tests via `make sample`)
+- Negative cases in [test/testfile/sample_neg_codes/](test/testfile/sample_neg_codes/)
+- Test timeout: 300 seconds (configured in [pytest.ini](pytest.ini))
+- Built-in template coverage lives under [test/template/](test/template/)
 - For built-in templates, keep at least these layers when applicable:
   renderer/template extraction tests, generated-artifact tests, runtime-alignment tests against `SimulationRuntime`, and CLI path tests for `pyfcstm generate --template ...`
 - For runtime templates that mirror an existing built-in runtime family, treat the reference alignment corpus as the minimum bar. Do not silently drop examples or keep only the easy cases; the final template is not ready until the full intended semantic-alignment set passes.
@@ -1004,9 +1030,10 @@ For built-in template work, the current design bar is defined by the `python` te
 
 ### Dependencies
 
-Core (`requirements.txt`): `antlr4-python3-runtime==4.9.3`, `jinja2>=3`, `pyyaml`, `click>=8`, `hbutils>=0.14.0`,
+Core ([requirements.txt](requirements.txt)): `antlr4-python3-runtime==4.9.3`, `jinja2>=3`, `pyyaml`, `click>=8`, `hbutils>=0.14.0`,
 `pathspec`, `z3-solver<=4.15.4` (constraint solver), `prompt_toolkit>=3.0.0` + `rich>=13,<14` (simulation REPL UI),
-`pygments>=2.10.0` (syntax highlighting), `unidecode`, `chardet`. Development (`requirements-dev.txt`): `ruff`.
+`pygments>=2.10.0` (syntax highlighting), `unidecode`, `chardet`. Development
+([requirements-dev.txt](requirements-dev.txt)): `ruff`.
 
 ### Documentation Editing
 
@@ -1014,11 +1041,12 @@ Core (`requirements.txt`): `antlr4-python3-runtime==4.9.3`, `jinja2>=3`, `pyyaml
 
 #### Documentation Structure
 
-Files in `docs/source/`:
+Files in [docs/source/](docs/source/):
 - `*.rst`/`*.md`: Documentation pages
 - `*.mk`: Makefile fragments for resource generation
-- `conf.py`: Sphinx configuration
-- Subdirectories: `tutorials/`, `information/`, `api_doc/`, etc.
+- [conf.py](docs/source/conf.py): Sphinx configuration
+- Subdirectories include [tutorials/](docs/source/tutorials/), [api_doc/](docs/source/api_doc/),
+  [_static/](docs/source/_static/), and [_templates/](docs/source/_templates/).
 
 #### reST Inline Markup Rules
 
@@ -1103,7 +1131,7 @@ make doc_clean  # Clean Sphinx build output only
 - `*.py.txt`, `*.py.err`, `*.py.exitcode`, `*.py.svg` (from demo scripts)
 - `*.sh.txt`, `*.sh.err`, `*.sh.exitcode` (from shell scripts)
 - `*.result.ipynb` (from `.ipynb`)
-- `docs/source/index.rst` (generated during build—do not edit directly)
+- [docs/source/index.rst](docs/source/index.rst) (generated during build—do not edit directly)
 
 **DO** edit source files:
 - `*.fcstm` for FSM state machines
@@ -1140,7 +1168,7 @@ Requires: `sphinx`, `sphinx-multiversion`, `plantumlcli`, `graphviz` (`dot`), `j
 
 ### Multilingual Documentation Support
 
-Language selection via `READTHEDOCS_LANGUAGE` env var (default `en`). `docs/source/conf.py` copies
+Language selection via `READTHEDOCS_LANGUAGE` env var (default `en`). [docs/source/conf.py](docs/source/conf.py) copies
 `index_<lang>.rst` → `index.rst` at build time. Language codes normalized (`zh-CN`, `zh_CN` → `zh`).
 
 #### File Naming Conventions
@@ -1148,7 +1176,7 @@ Language selection via `READTHEDOCS_LANGUAGE` env var (default `en`). `docs/sour
 - Root level: `index_en.rst`, `index_zh.rst` (sources); `index.rst` (generated—do not edit directly)
 - Subsections: `index.rst` = English default; `index_zh.rst` = Chinese translation
 - Shared resources (images, demos, code) should be language-agnostic (no duplication per language)
-- API docs (`api_doc/`) typically have no language variants
+- API docs ([api_doc/](docs/source/api_doc/)) typically have no language variants
 
 #### Build for Specific Language
 
@@ -1183,7 +1211,7 @@ When translating: preserve all reST directives, file references, and code blocks
 - Test both language builds locally before committing
 
 **DO NOT**:
-- Edit `docs/source/index.rst` directly (generated at build time)
+- Edit [docs/source/index.rst](docs/source/index.rst) directly (generated at build time)
 - Create `index_en.rst` for subsections (use `index.rst` as English default)
 - Duplicate shared resources (images, demos) per language
 - Translate code examples or API documentation (keep language-agnostic)

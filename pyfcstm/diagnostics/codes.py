@@ -27,8 +27,8 @@ The module contains:
    enumerations used to validate the YAML schema. They do **not** enforce
    runtime ``isinstance`` checks on emitted ``ModelDiagnostic.refs`` values
    — type-checking refs payloads at emit time is the emitter's responsibility
-   (see PR-2 of issue #103). The schema's job is to give downstream tooling
-   a contract to mirror, not to act as a runtime type system.
+   The schema's job is to give downstream tooling a contract to mirror, not
+   to act as a runtime type system.
 
 Example::
 
@@ -51,8 +51,8 @@ import yaml
 #: Allowed values for ``severity`` in ``codes.yaml`` entries. Must stay in
 #: sync with the type-token comment block at the top of ``codes.yaml``.
 #:
-#: ``info`` was added in Layer 2 (issue #104) to host ``I_*`` codes for
-#: observations that are likely-legitimate rather than likely-defects.
+#: ``info`` hosts ``I_*`` codes for observations that are likely-legitimate
+#: rather than likely-defects.
 _ALLOWED_SEVERITIES = ('error', 'warning', 'info')
 
 #: Mapping from severity name to the required identifier prefix for codes
@@ -80,9 +80,9 @@ _ALLOWED_CAPABILITIES = (
     'requires_simulation',
 )
 
-#: Allowed values for the ``emit_tier`` field on a code. PR-A-fix I-b
-#: lets the schema explicitly declare which emit pipeline produces a
-#: code so downstream dispatchers can register handlers correctly:
+#: Allowed values for the ``emit_tier`` field on a code. This schema
+#: explicitly declares which emit pipeline produces a code so downstream
+#: dispatchers can register handlers correctly:
 #:
 #: * ``static_pipeline`` — fires during the regular static analysis
 #:   pass (``parse_dsl_node_to_state_machine`` /
@@ -95,19 +95,23 @@ _ALLOWED_CAPABILITIES = (
 #:   on only one end (typically jsfcstm); the other end intentionally
 #:   does not emit. Downstream LLM consumers should not block waiting
 #:   for the missing end to surface this code.
+#: * ``verify_pipeline`` — emitted only by the optional Python verify /
+#:   inspect adapter path. These codes are not part of the default static
+#:   inspect output and are not expected from jsfcstm.
 _ALLOWED_EMIT_TIERS = (
     'static_pipeline',
     'lookup_api',
     'partial_static_pipeline',
+    'verify_pipeline',
 )
 
 _ALLOWED_SUGGESTED_FIX_KINDS = ('insert', 'delete', 'replace')
 
 #: Allowed values for the optional ``span_object`` field on a code entry.
 #: The field documents which semantic source object the primary
-#: ``ModelDiagnostic.span`` identifies. The initial issue #133 PR-E
-#: vocabulary covers the common problem objects plus current import,
-#: variable, and expression diagnostics that already carry source spans.
+#: ``ModelDiagnostic.span`` identifies. The vocabulary covers the common
+#: problem objects plus current import, variable, and expression diagnostics
+#: that already carry source spans.
 _ALLOWED_SPAN_OBJECTS = (
     'state_identifier',
     'transition',
@@ -199,12 +203,11 @@ class ForLlmSpec:
     Structured guidance attached to a diagnostic code for downstream LLM
     consumers.
 
-    Layer 2 (issue #104) requires this for every emitted code — ``E_*``,
-    ``W_*``, and ``I_*`` — so that LLM agent loops can read structured
-    fix recommendations instead of regex-ing the human-readable
-    ``message``. PR-A originally grandfathered the 14 Layer 1 ``E_*``
-    codes; PR-A-fix I-a backfilled them so this field is now expected
-    on every catalogued code.
+    Emitted ``E_*``, ``W_*``, and ``I_*`` codes carry this payload so that
+    LLM agent loops can read structured fix recommendations instead of
+    regex-ing the human-readable ``message``. All catalogued codes are
+    expected to provide this field unless the loader is explicitly handling
+    a forward-compatibility case.
 
     :param summary: One-line description aimed at LLM consumers.
     :type summary: str
@@ -270,8 +273,8 @@ class CodeSpec:
         ``'pure_static'`` for grandfathered Layer 1 codes.
     :type capability: str, optional
     :param for_llm: Structured guidance for downstream LLM consumers.
-        Backfilled across all ``E_*`` codes by PR-A-fix I-a; new codes
-        are expected to ship with one. Still typed as ``Optional`` so
+        Expected on catalogued codes so downstream tooling can consume
+        structured remediation guidance. Still typed as ``Optional`` so
         the loader can tolerate forward-compatibility cases.
     :type for_llm: ForLlmSpec, optional
     :param emit_tier: Which emit pipeline actually fires this code.
@@ -283,9 +286,10 @@ class CodeSpec:
         never produced by the static pipeline. ``'partial_static_pipeline'``
         marks codes whose static-pipeline emit is implemented on one
         end only (typically jsfcstm) — downstream LLM consumers should
-        not block waiting for the missing end. PR-A-fix I-b makes the
-        field explicit so dispatchers can register handlers based on
-        the actual emit channel.
+        not block waiting for the missing end. ``'verify_pipeline'`` marks
+        diagnostics emitted only by optional Python verify integration.
+        The field lets dispatchers register handlers based on the actual
+        emit channel.
     :type emit_tier: str, optional
     :param span_object: Semantic source object identified by the primary
         diagnostic span. Repository entries declare this to make source-slice

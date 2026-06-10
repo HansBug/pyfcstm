@@ -2319,3 +2319,635 @@ I_TRANSITION_NEVER_EVENT_TRIGGERED:
         [*] -> A;
         A -> B;
     }
+
+# ---------------------------------------------------------------------------
+# Verify diagnostics emitted only from the optional Python verify pipeline.
+# ---------------------------------------------------------------------------
+
+I_NONTRIVIAL_SCC:
+  severity: info
+  span_object: state_identifier
+  capability: pure_static
+  emit_tier: verify_pipeline
+  description: >-
+    A non-trivial strongly connected component exists in the guard-agnostic
+    leaf-level topology graph.
+  refs:
+    algorithm_name:
+      type: str
+      required: true
+      description: Verify registry algorithm that produced the raw finding.
+    verification_scope:
+      type: str
+      required: true
+      description: Verify scope for this finding.
+      enum: ['topological_only']
+    representative_state_path:
+      type: str
+      required: true
+      description: One state path from the reported strongly connected component.
+    scc:
+      type: list[str]
+      required: true
+      description: State paths in the non-trivial strongly connected component.
+  for_llm:
+    summary: >-
+      The topology contains a cycle. This is often intentional in state
+      machines, so treat it as a review prompt rather than a direct defect.
+    recommended_actions:
+      - kind: review_cycle
+        target: topology
+        rationale: Confirm the cycle has a deliberate runtime exit or event-driven purpose.
+      - kind: add_exit
+        target: transition
+        rationale: Add an exit path if the component should not be able to loop forever.
+    do_not:
+      - "Do not delete cyclic transitions automatically; cyclic control flow can be valid FCSTM behavior."
+  example_dsl: |
+    state System {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B;
+        B -> A;
+    }
+
+W_TOPOLOGICAL_NOEXIT:
+  severity: warning
+  span_object: state_identifier
+  capability: pure_static
+  emit_tier: verify_pipeline
+  description: >-
+    A root-reachable leaf or cycle has no guard-agnostic route to the root
+    exit sink.
+  refs:
+    algorithm_name:
+      type: str
+      required: true
+      description: Verify registry algorithm that produced the raw finding.
+    verification_scope:
+      type: str
+      required: true
+      description: Verify scope for this finding.
+      enum: ['topological_only']
+    representative_state_path:
+      type: str
+      required: true
+      description: One state path from the no-exit counterexample.
+    counterexample_kind:
+      type: str
+      required: true
+      description: Shape of the topological counterexample.
+      enum: ['trap_cycle', 'deadlock']
+    scc:
+      type: list[str]
+      required: true
+      description: Trap-cycle component paths, or an empty list for a deadlock leaf.
+  for_llm:
+    summary: >-
+      From the current topology, execution can enter a region that has no
+      structural path to terminate at the root exit.
+    recommended_actions:
+      - kind: add_exit_transition
+        target: topology
+        rationale: Add a route from the stuck state or cycle to an exit-capable path.
+      - kind: mark_intentional
+        target: review_note
+        rationale: If the model intentionally never exits, keep the behavior and document it.
+    do_not:
+      - "Do not add an unconditional exit without checking lifecycle and event semantics."
+  example_dsl: |
+    state System {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B;
+    }
+
+I_TOPOLOGICAL_NON_TERMINATING:
+  severity: info
+  span_object: state_identifier
+  capability: pure_static
+  emit_tier: verify_pipeline
+  description: >-
+    The topology does not force all root-reachable executions to eventually
+    reach the root terminator.
+  refs:
+    algorithm_name:
+      type: str
+      required: true
+      description: Verify registry algorithm that produced the raw finding.
+    verification_scope:
+      type: str
+      required: true
+      description: Verify scope for this finding.
+      enum: ['topological_only']
+    representative_state_path:
+      type: str
+      required: true
+      description: One state path from the non-terminating counterexample.
+    counterexample_path:
+      type: list[str]
+      required: true
+      description: Representative cycle or deadlock path reported by topology verify.
+  for_llm:
+    summary: >-
+      The structural graph allows a path that can avoid termination forever.
+      This may be a valid service loop, but it should be reviewed explicitly.
+    recommended_actions:
+      - kind: review_nontermination
+        target: topology
+        rationale: Decide whether the non-terminating path is intended.
+      - kind: add_progress_transition
+        target: transition
+        rationale: Add an exit or progress edge if all executions should eventually finish.
+    do_not:
+      - "Do not treat every loop as a bug; long-running control loops are common state-machine behavior."
+  example_dsl: |
+    state System {
+        state A;
+        [*] -> A;
+        A -> A;
+        A -> [*];
+    }
+
+W_EVENT_UNREACHABLE_EMIT:
+  severity: warning
+  span_object: event_declaration
+  capability: pure_static
+  emit_tier: verify_pipeline
+  description: >-
+    A used event has no consumer source that is reachable in the
+    guard-agnostic topology graph.
+  refs:
+    algorithm_name:
+      type: str
+      required: true
+      description: Verify registry algorithm that produced the raw finding.
+    verification_scope:
+      type: str
+      required: true
+      description: Verify scope for this finding.
+      enum: ['topological_only']
+    event_name:
+      type: str
+      required: true
+      description: Qualified event name whose consumers are unreachable.
+    consumer_count:
+      type: int
+      required: true
+      description: Number of unreachable consumer transitions represented by this finding.
+  for_llm:
+    summary: >-
+      The event is used by transitions, but those transition sources are not
+      reachable from the root entry topology.
+    recommended_actions:
+      - kind: connect_consumer
+        target: transition_source
+        rationale: Add a topology path that reaches the state consuming the event.
+      - kind: remove_dead_event_path
+        target: transition
+        rationale: Remove or rewrite the unreachable event transition if it is dead scaffolding.
+    do_not:
+      - "Do not add an emitter for this event if no reachable state can consume it."
+  example_dsl: |
+    state System {
+        event Panic;
+        state A;
+        state Lost;
+        [*] -> A;
+        Lost -> A : Panic;
+    }
+
+W_DEAD_GUARD:
+  severity: warning
+  span_object: guard_expression
+  capability: requires_solver
+  emit_tier: verify_pipeline
+  description: >-
+    A transition guard is unsatisfiable under model variable type and
+    runtime-definedness constraints.
+  refs:
+    algorithm_name:
+      type: str
+      required: true
+      description: Verify registry algorithm that produced the raw finding.
+    verification_scope:
+      type: str
+      required: true
+      description: Verify scope for this finding.
+      enum: ['smt_local']
+    transition:
+      type: dict
+      required: true
+      description: Raw verify transition payload for the guarded transition.
+    transition_summary:
+      type: str
+      required: true
+      description: Stable human-readable transition summary derived from the raw payload.
+  for_llm:
+    summary: >-
+      SMT proves the guard cannot become true for any valid variable
+      valuation. This differs from W_GUARD_CONST_FALSE, which only reports
+      literal-only guards folded syntactically to false.
+    recommended_actions:
+      - kind: fix_guard
+        target: transition
+        rationale: Relax or correct the contradictory guard condition.
+      - kind: remove_transition
+        target: transition
+        rationale: Remove the transition if the guard intentionally makes it unreachable.
+    do_not:
+      - "Do not replace the guard with true unless the transition really should become unconditional."
+      - "Do not confuse this SMT finding with W_GUARD_CONST_FALSE; variables and runtime-definedness matter here."
+  example_dsl: |
+    def int x = 0;
+    state System {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [x > 1 && x < 0];
+    }
+
+W_GUARD_TAUTOLOGY:
+  severity: warning
+  span_object: guard_expression
+  capability: requires_solver
+  emit_tier: verify_pipeline
+  description: >-
+    A transition guard is true for every variable valuation that satisfies
+    model type and runtime-definedness constraints.
+  refs:
+    algorithm_name:
+      type: str
+      required: true
+      description: Verify registry algorithm that produced the raw finding.
+    verification_scope:
+      type: str
+      required: true
+      description: Verify scope for this finding.
+      enum: ['smt_local']
+    transition:
+      type: dict
+      required: true
+      description: Raw verify transition payload for the guarded transition.
+    transition_summary:
+      type: str
+      required: true
+      description: Stable human-readable transition summary derived from the raw payload.
+  for_llm:
+    summary: >-
+      SMT proves the guard is always true under the modeled variable
+      constraints. This differs from W_GUARD_CONST_TRUE, which only reports
+      literal-only guards folded syntactically to true.
+    recommended_actions:
+      - kind: remove_redundant_guard
+        target: transition
+        rationale: Remove the guard if the transition should be unconditional.
+      - kind: tighten_guard
+        target: transition
+        rationale: Replace the guard if it was intended to restrict when the transition fires.
+    do_not:
+      - "Do not assume every tautological guard is wrong; it may document intent."
+      - "Do not confuse this SMT finding with W_GUARD_CONST_TRUE; variables and runtime-definedness matter here."
+  example_dsl: |
+    def int x = 0;
+    state System {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [x >= 0 || x < 0];
+    }
+
+W_FORCED_GUARD_UNSAT:
+  severity: warning
+  span_object: guard_expression
+  capability: requires_solver
+  emit_tier: verify_pipeline
+  description: >-
+    A forced-transition guard cannot be satisfied under declaration
+    initializer values.
+  refs:
+    algorithm_name:
+      type: str
+      required: true
+      description: Verify registry algorithm that produced the raw finding.
+    verification_scope:
+      type: str
+      required: true
+      description: Verify scope for this finding.
+      enum: ['smt_local']
+    transition:
+      type: dict
+      required: true
+      description: Raw verify transition payload for the forced transition.
+    transition_summary:
+      type: str
+      required: true
+      description: Stable human-readable transition summary derived from the raw payload.
+    scope:
+      type: str
+      required: true
+      description: Initial-value scope used by the verify algorithm.
+      enum: ['dsl_def_init_only']
+  for_llm:
+    summary: >-
+      The forced transition expands structurally, but its guard is false under
+      top-level declaration initializers.
+    recommended_actions:
+      - kind: adjust_initializer
+        target: variable_definition
+        rationale: Change the initializer if the forced transition must be possible at startup.
+      - kind: adjust_forced_guard
+        target: transition
+        rationale: Correct the guard if it does not match the intended forced-transition entry condition.
+    do_not:
+      - "Do not delete the forced transition solely because it is impossible at declaration time; later runtime values may still matter for normal guards."
+  example_dsl: |
+    def int x = 0;
+    state System {
+        state A;
+        state B;
+        [*] -> A;
+        !A -> B : if [x > 0];
+    }
+
+W_EFFECT_SMT_NO_OP:
+  severity: warning
+  span_object: effect_statement
+  capability: requires_solver
+  emit_tier: verify_pipeline
+  description: >-
+    A transition effect leaves all model variables unchanged for every
+    guarded, runtime-defined execution.
+  refs:
+    algorithm_name:
+      type: str
+      required: true
+      description: Verify registry algorithm that produced the raw finding.
+    verification_scope:
+      type: str
+      required: true
+      description: Verify scope for this finding.
+      enum: ['smt_local']
+    transition:
+      type: dict
+      required: true
+      description: Raw verify transition payload for the transition with the effect.
+    transition_summary:
+      type: str
+      required: true
+      description: Stable human-readable transition summary derived from the raw payload.
+  for_llm:
+    summary: >-
+      Symbolic execution proves the effect does not change any persistent
+      model variable when its guard is enabled.
+    recommended_actions:
+      - kind: remove_effect
+        target: effect_block
+        rationale: Remove the effect if it is dead or only placeholder logic.
+      - kind: change_assignment
+        target: effect_statement
+        rationale: Update the effect so it changes the intended persistent variable.
+    do_not:
+      - "Do not report block-local temporary-only changes as state changes; they disappear after the effect block."
+  example_dsl: |
+    def int x = 0;
+    state System {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [x >= 0] effect { x = x + 0; };
+    }
+
+I_EFFECT_GUARD_CONTRADICT:
+  severity: info
+  span_object: effect_statement
+  capability: requires_solver
+  emit_tier: verify_pipeline
+  description: >-
+    A transition effect makes the same transition guard false after every
+    guarded, runtime-defined execution.
+  refs:
+    algorithm_name:
+      type: str
+      required: true
+      description: Verify registry algorithm that produced the raw finding.
+    verification_scope:
+      type: str
+      required: true
+      description: Verify scope for this finding.
+      enum: ['smt_local']
+    transition:
+      type: dict
+      required: true
+      description: Raw verify transition payload for the transition with the effect.
+    transition_summary:
+      type: str
+      required: true
+      description: Stable human-readable transition summary derived from the raw payload.
+  for_llm:
+    summary: >-
+      The effect immediately invalidates the guard that enabled the
+      transition. This may be a deliberate one-shot or latch reset pattern.
+    recommended_actions:
+      - kind: review_one_shot
+        target: transition
+        rationale: Confirm the effect is meant to falsify the enabling guard.
+      - kind: adjust_effect_or_guard
+        target: transition
+        rationale: Change either side if the post-state should still satisfy the guard.
+    do_not:
+      - "Do not treat this info as an automatic defect; guard-reset effects are often intentional."
+  example_dsl: |
+    def int x = 0;
+    state System {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [x > 0] effect { x = 0; };
+    }
+
+W_TRANSITION_SHADOWED:
+  severity: warning
+  span_object: transition
+  capability: requires_solver
+  emit_tier: verify_pipeline
+  description: >-
+    A later outgoing transition is fully covered by earlier same-source
+    triggers and therefore cannot be selected.
+  refs:
+    algorithm_name:
+      type: str
+      required: true
+      description: Verify registry algorithm that produced the raw finding.
+    verification_scope:
+      type: str
+      required: true
+      description: Verify scope for this finding.
+      enum: ['smt_local']
+    transition:
+      type: dict
+      required: true
+      description: Raw verify transition payload for the shadowed transition.
+    transition_summary:
+      type: str
+      required: true
+      description: Stable human-readable transition summary derived from the raw payload.
+    source_state_path:
+      type: str
+      required: true
+      description: Dotted source state path whose outgoing order creates the shadowing.
+    reason:
+      type: str
+      required: true
+      description: Shadowing reason classification.
+      enum: ['guard_shadow', 'duplicate_event', 'unconditional_catchall', 'prior_trigger_cover']
+    shadowed_by_count:
+      type: int
+      required: true
+      description: Number of earlier transitions covering this transition.
+    shadowed_by:
+      type: list[str]
+      required: true
+      description: Stable summaries of earlier transitions that shadow this transition.
+  for_llm:
+    summary: >-
+      Transition ordering means an earlier same-source transition consumes all
+      cases that could have reached this later transition.
+    recommended_actions:
+      - kind: reorder_transitions
+        target: transition_list
+        rationale: Move the more specific transition before the broader predecessor if both are needed.
+      - kind: remove_shadowed_transition
+        target: transition
+        rationale: Remove the later transition if the predecessor intentionally covers all cases.
+    do_not:
+      - "Do not reorder transitions without checking FCSTM first-match semantics."
+  example_dsl: |
+    state System {
+        state A;
+        state B;
+        state C;
+        [*] -> A;
+        A -> B;
+        A -> C;
+    }
+
+I_ENTER_DURING_CONTRADICT:
+  severity: info
+  span_object: lifecycle_action
+  capability: requires_solver
+  emit_tier: verify_pipeline
+  description: >-
+    Entry-time assignments make a first-cycle during branch condition
+    predetermined; the enter postcondition does not leave both during
+    branches feasible.
+  refs:
+    algorithm_name:
+      type: str
+      required: true
+      description: Verify registry algorithm that produced the raw finding.
+    verification_scope:
+      type: str
+      required: true
+      description: Verify scope for this finding.
+      enum: ['smt_local']
+    state_path:
+      type: str
+      required: true
+      description: Dotted leaf state path inspected by the lifecycle algorithm.
+    condition:
+      type: str
+      required: true
+      description: First-cycle during condition proven predetermined.
+    condition_source:
+      type: str
+      required: true
+      description: Source label for the condition inside the during operation block.
+    branch_taken:
+      type: str
+      required: true
+      description: Branch direction forced after entry.
+      enum: ['true', 'false']
+  for_llm:
+    summary: >-
+      After entering the leaf, the first during cycle already has a fixed
+      branch decision. This may be intentional initialization logic, but the
+      branch is not genuinely conditional on the first cycle.
+    recommended_actions:
+      - kind: review_enter_during_relation
+        target: lifecycle_action
+        rationale: Check whether enter assignments intentionally force the first during branch.
+      - kind: adjust_condition_or_enter
+        target: state
+        rationale: Change the enter action or during condition if both branches should remain possible.
+    do_not:
+      - "Do not remove the enter action just to make the first-cycle branch variable; entry side effects may be required."
+  example_dsl: |
+    def int x = 0;
+    state System {
+        state A {
+            enter { x = 1; }
+            during {
+                if [x > 0] { x = x + 1; } else { x = x - 1; }
+            }
+        }
+        [*] -> A;
+    }
+
+W_COMPOSITE_INIT_INCOMPLETE:
+  severity: warning
+  span_object: composite_block
+  capability: requires_solver
+  emit_tier: verify_pipeline
+  description: >-
+    A composite state's initial transitions do not jointly cover all
+    variable and event inputs.
+  refs:
+    algorithm_name:
+      type: str
+      required: true
+      description: Verify registry algorithm that produced the raw finding.
+    verification_scope:
+      type: str
+      required: true
+      description: Verify scope for this finding.
+      enum: ['smt_local']
+    composite_path:
+      type: str
+      required: true
+      description: Dotted composite state path whose initial transitions have a coverage gap.
+    init_transition_count:
+      type: int
+      required: true
+      description: Number of initial transitions considered for the composite.
+    init_transitions:
+      type: list[str]
+      required: true
+      description: Stable summaries of the initial transitions considered.
+    witness:
+      type: str_or_null
+      required: false
+      description: Solver model demonstrating an uncovered input valuation, when available.
+  for_llm:
+    summary: >-
+      There is a variable/event assignment for which none of the composite
+      initial transitions can fire, so entry can get stuck at the composite.
+    recommended_actions:
+      - kind: add_catch_all_initial
+        target: composite_state
+        rationale: Add an unconditional fallback initial transition if one child should be the default.
+      - kind: cover_missing_guard_case
+        target: initial_transition
+        rationale: Adjust guarded initial transitions so their union covers the missing valuation.
+    do_not:
+      - "Do not add overlapping initial transitions without reviewing declaration order and guard intent."
+  example_dsl: |
+    def int x = 0;
+    state System {
+        state A;
+        state B;
+        [*] -> A : if [x > 0];
+        [*] -> B : if [x < 0];
+    }

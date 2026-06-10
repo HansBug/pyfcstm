@@ -548,6 +548,117 @@ def test_run_inspect_algorithms_aggregates_all_unsat_transition_results():
     assert result.diagnostics == ()
 
 
+def test_run_inspect_algorithms_treats_empty_per_element_run_as_no_finding():
+    def smt_impl(transition, variables, *, smt_timeout_ms=None):
+        raise AssertionError("transition-level algorithm should not run")
+
+    registry = {
+        "dead_guard": _meta(
+            name="dead_guard",
+            complexity_tier="smt_linear",
+            smt_logic="QF_LIRA",
+            verification_scope="smt_local",
+            impl=smt_impl,
+        )
+    }
+
+    result = run_inspect_algorithms(
+        _machine("state Root;"),
+        max_complexity_tier="smt_linear",
+        registry=registry,
+    )[0]
+
+    assert result.result_kind == "sat"
+    assert result.diagnostics == ()
+    assert result.raw_result == ()
+
+
+def test_run_inspect_algorithms_aggregates_unsat_findings_before_sat_diagnostics():
+    calls = []
+
+    def smt_impl(transition, variables, *, smt_timeout_ms=None):
+        calls.append(str(transition.from_state))
+        if len(calls) == 1:
+            return AlgorithmResult(
+                kind="sat",
+                diagnostics=({"code": "I_FAKE", "data": {"state": "Root"}},),
+            )
+        return AlgorithmResult(
+            kind="unsat",
+            diagnostics=({"code": "W_FAKE", "data": {"state": "Root.A"}},),
+        )
+
+    registry = {
+        "dead_guard": _meta(
+            name="dead_guard",
+            complexity_tier="smt_linear",
+            smt_logic="QF_LIRA",
+            verification_scope="smt_local",
+            diagnostic_codes=("I_FAKE", "W_FAKE"),
+            impl=smt_impl,
+        )
+    }
+    machine = _machine(
+        """
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B;
+        }
+        """
+    )
+
+    result = run_inspect_algorithms(
+        machine,
+        max_complexity_tier="smt_linear",
+        registry=registry,
+    )[0]
+
+    assert calls == ["INIT_STATE", "A"]
+    assert result.result_kind == "unsat"
+    assert result.diagnostics == (
+        {"code": "I_FAKE", "data": {"state": "Root"}},
+        {"code": "W_FAKE", "data": {"state": "Root.A"}},
+    )
+
+
+def test_run_inspect_algorithms_preserves_sat_diagnostic_kind_without_unsat_findings():
+    def smt_impl(transition, variables, *, smt_timeout_ms=None):
+        return AlgorithmResult(
+            kind="sat",
+            diagnostics=({"code": "I_FAKE", "data": {"state": "Root"}},),
+        )
+
+    registry = {
+        "dead_guard": _meta(
+            name="dead_guard",
+            complexity_tier="smt_linear",
+            smt_logic="QF_LIRA",
+            verification_scope="smt_local",
+            diagnostic_codes=("I_FAKE",),
+            impl=smt_impl,
+        )
+    }
+    machine = _machine(
+        """
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """
+    )
+
+    result = run_inspect_algorithms(
+        machine,
+        max_complexity_tier="smt_linear",
+        registry=registry,
+    )[0]
+
+    assert result.result_kind == "sat"
+    assert result.diagnostics == ({"code": "I_FAKE", "data": {"state": "Root"}},)
+
+
 def test_run_inspect_algorithms_dispatches_leaf_lifecycle_algorithm():
     seen = []
 

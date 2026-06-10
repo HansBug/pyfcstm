@@ -488,9 +488,10 @@ def _aggregate_algorithm_results(results: Sequence[AlgorithmResult]) -> Algorith
     diagnostics conversion must be able to disclose that at least one checked
     element could not be decided.
     When all checked elements are definite, diagnostics decide whether the
-    aggregate is ``sat`` or ``unsat``: emitting algorithms use ``unsat`` or
-    ``sat`` according to their own raw contract, while an empty run is a
-    successful ``sat`` no-finding result.
+    aggregate is ``sat`` or ``unsat``: any ``unsat`` result with diagnostics
+    dominates ``sat`` diagnostics, otherwise emitting algorithms use ``sat``
+    according to their own raw contract.  An empty run is a successful ``sat``
+    no-finding result.
 
     :param results: Per-element raw algorithm results.
     :type results: Sequence[AlgorithmResult]
@@ -503,6 +504,12 @@ def _aggregate_algorithm_results(results: Sequence[AlgorithmResult]) -> Algorith
         'sat'
         >>> _aggregate_algorithm_results((AlgorithmResult("timeout", reason="t"),)).reason
         't'
+        >>> mixed = (
+        ...     AlgorithmResult("sat", diagnostics=({"code": "I_FAKE"},)),
+        ...     AlgorithmResult("unsat", diagnostics=({"code": "W_FAKE"},)),
+        ... )
+        >>> _aggregate_algorithm_results(mixed).kind
+        'unsat'
     """
     if not results:
         return AlgorithmResult(kind="sat")
@@ -519,6 +526,8 @@ def _aggregate_algorithm_results(results: Sequence[AlgorithmResult]) -> Algorith
         )
 
     if diagnostics:
+        if any(result.kind == "unsat" and result.diagnostics for result in results):
+            return AlgorithmResult(kind="unsat", diagnostics=diagnostics)
         for result in results:
             if result.diagnostics:
                 return AlgorithmResult(kind=result.kind, diagnostics=diagnostics)

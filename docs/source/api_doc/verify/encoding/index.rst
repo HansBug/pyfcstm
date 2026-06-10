@@ -1,20 +1,21 @@
-pyfcstm.solver
+pyfcstm.verify.encoding
 ========================================================
 
-.. currentmodule:: pyfcstm.solver
+.. currentmodule:: pyfcstm.verify.encoding
 
-.. automodule:: pyfcstm.solver
+.. automodule:: pyfcstm.verify.encoding
 
 
 .. toctree::
     :maxdepth: 3
 
-    domain
+    _core
     expr
-    logical
+    guard
+    initial
+    lifecycle
     operation
-    safety
-    solve
+    trigger
 
 \_\_all\_\_
 -----------------------------------------------------

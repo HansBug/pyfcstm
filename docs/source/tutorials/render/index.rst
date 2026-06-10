@@ -880,14 +880,19 @@ that serve as real reference implementations.
 Current built-in templates:
 
 - ``python``
+
   - status: current built-in template
   - design position: reference implementation for template-system structure and
     simulator-aligned runtime semantics
+
 - ``c``
+
   - status: current built-in template
   - design position: self-contained generated C runtime with a documented
     public API and stronger focus on deployment/runtime integration
+
 - ``c_poll``
+
   - status: current built-in template
   - design position: self-contained generated C runtime with hook-polled event
     acquisition, intended for scan-cycle and control-loop style integrations

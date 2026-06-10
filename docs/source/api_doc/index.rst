@@ -20,4 +20,5 @@ pyfcstm
     solver/index
     template/index
     utils/index
+    verify/index
 

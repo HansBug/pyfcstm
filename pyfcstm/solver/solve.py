@@ -79,7 +79,7 @@ class SolveResult:
         >>> len(result.solutions)
         2
         >>> print(result)
-        SolveResult(sat, 2 solutions, variables=['x', 'y'])
+        SolveResult(sat, 2 solutions, variables=['x', 'y'], solutions=[{'x': 1, 'y': 9}, {'x': 2, 'y': 8}])
     """
     status: Literal['sat', 'unsat', 'unknown']
     solutions: List[Dict[str, Union[int, float]]]
@@ -274,11 +274,40 @@ def _extract_variables(constraints: List[z3.ExprRef]) -> List[z3.ExprRef]:
     :type constraints: List[z3.ExprRef]
     :return: List of unique variables
     :rtype: List[z3.ExprRef]
+
+    Example::
+
+        >>> import z3
+        >>> x = z3.Int('x')
+        >>> y = z3.Int('y')
+        >>> names = sorted(str(var) for var in _extract_variables([x + y == 1]))
+        >>> names
+        ['x', 'y']
     """
     variables = set()
 
     def collect_vars(expr):
-        """Recursively collect variables from expression."""
+        """Recursively collect variables from expression.
+
+        :param expr: Z3 expression node to scan.
+        :type expr: z3.ExprRef
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> import z3
+            >>> local_vars = set()
+            >>> def example_collect_vars(expr):
+            ...     if z3.is_const(expr) and expr.decl().kind() == z3.Z3_OP_UNINTERPRETED:
+            ...         local_vars.add(expr)
+            ...     else:
+            ...         for child in expr.children():
+            ...             example_collect_vars(child)
+            >>> example_collect_vars(z3.Int('x') + 1)
+            >>> sorted(str(var) for var in local_vars)
+            ['x']
+        """
         if z3.is_const(expr) and expr.decl().kind() == z3.Z3_OP_UNINTERPRETED:
             variables.add(expr)
         else:
@@ -307,6 +336,18 @@ def _solve_single(
     :type var_names: List[str]
     :return: Solve result with at most one solution
     :rtype: SolveResult
+
+    Example::
+
+        >>> import z3
+        >>> x = z3.Int('x')
+        >>> solver = z3.Solver()
+        >>> solver.add(x == 1)
+        >>> result = _solve_single(solver, [x], ['x'])
+        >>> result.status
+        'sat'
+        >>> result.solutions
+        [{'x': 1}]
     """
     check_result = solver.check()
 
@@ -343,6 +384,18 @@ def _solve_multiple(
     :type limit: int
     :return: Solve result with multiple solutions
     :rtype: SolveResult
+
+    Example::
+
+        >>> import z3
+        >>> x = z3.Int('x')
+        >>> solver = z3.Solver()
+        >>> solver.add(x >= 0, x <= 2)
+        >>> result = _solve_multiple(solver, [x], ['x'], 2)
+        >>> result.status
+        'sat'
+        >>> len(result.solutions)
+        2
     """
     solutions = []
 
@@ -396,6 +449,18 @@ def _solve_unlimited(
     :type warn_threshold: int
     :return: Solve result with all found solutions
     :rtype: SolveResult
+
+    Example::
+
+        >>> import z3
+        >>> x = z3.Int('x')
+        >>> solver = z3.Solver()
+        >>> solver.add(x >= 0, x <= 1)
+        >>> result = _solve_unlimited(solver, [x], ['x'], warn_threshold=10)
+        >>> result.status
+        'sat'
+        >>> len(result.solutions)
+        2
     """
     solutions = []
     warned = False
@@ -461,6 +526,17 @@ def _extract_solution(
     :type var_names: List[str]
     :return: Dictionary mapping variable names to values in natsorted order
     :rtype: Dict[str, Union[int, float]]
+
+    Example::
+
+        >>> import z3
+        >>> x = z3.Int('x')
+        >>> solver = z3.Solver()
+        >>> solver.add(x == 3)
+        >>> solver.check()
+        sat
+        >>> _extract_solution(solver.model(), [x], ['x'])
+        {'x': 3}
     """
     solution = {}
 
@@ -507,6 +583,18 @@ def _create_blocking_clause(
     :type variables: List[z3.ExprRef]
     :return: Z3 boolean expression representing the blocking clause
     :rtype: z3.BoolRef
+
+    Example::
+
+        >>> import z3
+        >>> x = z3.Int('x')
+        >>> solver = z3.Solver()
+        >>> solver.add(x == 1)
+        >>> solver.check()
+        sat
+        >>> clause = _create_blocking_clause(solver.model(), [x])
+        >>> str(clause)
+        'Or(1 != x)'
     """
     constraints = []
 

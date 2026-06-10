@@ -11,14 +11,15 @@ import z3
 
 from pyfcstm.model.expr import (
     Integer, Float, Boolean, Variable,
-    BinaryOp, UnaryOp, ConditionalOp, UFunc, parse_expr
+    BinaryOp, UnaryOp, ConditionalOp, UFunc
 )
 from pyfcstm.model.model import VarDefine
 from pyfcstm.dsl.parse import parse_with_grammar_entry
 from pyfcstm.model.model import parse_dsl_node_to_state_machine
 from pyfcstm.solver.expr import (
     expr_to_z3,
-    create_z3_vars_from_models
+    create_z3_vars_from_models,
+    python_round_to_z3,
 )
 
 
@@ -355,6 +356,38 @@ class TestExprToZ3:
         solver.add(result_round == 4)
         solver.add(z3_vars['x'] == z3.RealVal(3.6))
         assert solver.check() == z3.sat
+
+    def test_rounding_functions_accept_boolean_operands(self):
+        """Legacy expression conversion coerces booleans for rounding helpers."""
+        for func in ("floor", "ceil", "trunc"):
+            result = expr_to_z3(UFunc(func=func, x=Boolean(True)), {})
+
+            assert result is not None
+
+    def test_sqrt_rejects_boolean_operand(self):
+        """sqrt reports unsupported Bool operands explicitly."""
+        with pytest.raises(NotImplementedError, match="sqrt requires Real or Int"):
+            expr_to_z3(UFunc(func="sqrt", x=Boolean(True)), {})
+
+    def test_python_round_to_z3_matches_half_even_for_int_and_real(self):
+        """Shared round helper follows Python half-even semantics."""
+        int_operand = z3.Int("round_int_operand")
+        real_operand = z3.Real("round_real_operand")
+
+        assert python_round_to_z3(int_operand) is int_operand
+
+        rounded = python_round_to_z3(real_operand)
+        for raw_value, expected in [
+            ("-2.5", -2),
+            ("-1.5", -2),
+            ("1.5", 2),
+            ("2.5", 2),
+            ("3.6", 4),
+        ]:
+            solver = z3.Solver()
+            solver.add(real_operand == z3.RealVal(raw_value), rounded != expected)
+
+            assert solver.check() == z3.unsat
 
     def test_math_function_sqrt(self):
         """Test square root function."""
@@ -772,7 +805,7 @@ class TestExprToZ3EdgeCases:
         expr_exp = BinaryOp(x=Integer(2), op='**', y=x_var)
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            result_exp = expr_to_z3(expr_exp, z3_vars)
+            assert expr_to_z3(expr_exp, z3_vars) is not None
             assert len(w) == 1
             assert "variable exponent" in str(w[0].message).lower()
 
@@ -780,7 +813,7 @@ class TestExprToZ3EdgeCases:
         expr_both = BinaryOp(x=x_var, op='**', y=y_var)
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            result_both = expr_to_z3(expr_both, z3_vars)
+            assert expr_to_z3(expr_both, z3_vars) is not None
             assert len(w) == 1
             assert "two variables" in str(w[0].message).lower()
 

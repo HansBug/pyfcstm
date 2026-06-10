@@ -10,6 +10,7 @@ that inspect surface.
 
 import json
 import os
+import inspect
 
 import pytest
 
@@ -2001,6 +2002,228 @@ def test_inspect_guard_text_is_shared_normalized_format():
 
     assert transition.guard == '15 & 240 != 0'
     assert diagnostic.refs['guard_text'] == '15 & 240 != 0'
+
+
+@pytest.mark.unittest
+class TestInspectModelVerifyIntegration:
+    """Optional verify integration for inspect_model."""
+
+    def test_verify_parameters_keep_expected_defaults(self):
+        signature = inspect.signature(inspect_model)
+
+        assert signature.parameters['enable_verify'].default is False
+        assert signature.parameters['max_complexity_tier'].default == 'structural'
+        assert (
+            signature.parameters['max_call_count_scaling'].default
+            == 'linear_in_transitions'
+        )
+        assert signature.parameters['smt_timeout_ms'].default is None
+
+    def test_default_inspect_path_does_not_call_verify_adapter(self, monkeypatch):
+        def fail_if_called(*args, **kwargs):
+            raise AssertionError('verify adapter must stay disabled by default')
+
+        monkeypatch.setattr(
+            inspect_module,
+            '_run_verify_inspect_algorithms',
+            fail_if_called,
+        )
+
+        report = inspect_model(_parse(SIMPLE_DSL))
+
+        assert isinstance(report, ModelInspect)
+
+    def test_enable_verify_passes_default_policy_to_adapter(self, monkeypatch):
+        calls = []
+
+        def fake_adapter(machine, **kwargs):
+            calls.append((machine, kwargs))
+            return ()
+
+        monkeypatch.setattr(
+            inspect_module,
+            '_run_verify_inspect_algorithms',
+            fake_adapter,
+        )
+        machine = _parse(SIMPLE_DSL)
+
+        inspect_model(machine, enable_verify=True)
+
+        assert calls == [
+            (
+                machine,
+                {
+                    'max_complexity_tier': 'structural',
+                    'max_call_count_scaling': 'linear_in_transitions',
+                    'smt_timeout_ms': None,
+                },
+            ),
+        ]
+
+    def test_enable_verify_passes_explicit_policy_to_adapter(self, monkeypatch):
+        calls = []
+
+        def fake_adapter(machine, **kwargs):
+            calls.append(kwargs)
+            return ()
+
+        monkeypatch.setattr(
+            inspect_module,
+            '_run_verify_inspect_algorithms',
+            fake_adapter,
+        )
+
+        inspect_model(
+            _parse(SIMPLE_DSL),
+            enable_verify=True,
+            max_complexity_tier='smt_linear',
+            max_call_count_scaling='linear_in_states',
+            smt_timeout_ms=250,
+        )
+
+        assert calls == [
+            {
+                'max_complexity_tier': 'smt_linear',
+                'max_call_count_scaling': 'linear_in_states',
+                'smt_timeout_ms': 250,
+            },
+        ]
+
+    def test_enable_verify_converts_structural_findings(self):
+        dsl = """
+        state System {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B;
+            B -> A;
+        }
+        """
+
+        report = inspect_model(_parse(dsl), enable_verify=True)
+
+        verify_diagnostics = [
+            diag for diag in report.diagnostics
+            if diag.code in {
+                'I_NONTRIVIAL_SCC',
+                'W_TOPOLOGICAL_NOEXIT',
+                'I_TOPOLOGICAL_NON_TERMINATING',
+            }
+        ]
+        assert verify_diagnostics
+        assert_all_diags_match_schema(verify_diagnostics, context='verify-structural')
+        by_code = {diag.code: diag for diag in verify_diagnostics}
+
+        scc_diag = by_code['I_NONTRIVIAL_SCC']
+        assert scc_diag.severity == 'info'
+        assert scc_diag.refs == {
+            'algorithm_name': 'strongly_connected_components',
+            'verification_scope': 'topological_only',
+            'representative_state_path': 'System.A',
+            'scc': ['System.A', 'System.B'],
+        }
+        _assert_has_span(scc_diag.span)
+        assert 'state A' in _slice_by_span(dsl, scc_diag.span)
+
+        noexit_diag = by_code['W_TOPOLOGICAL_NOEXIT']
+        assert noexit_diag.refs['algorithm_name'] == 'topological_finite'
+        assert noexit_diag.refs['counterexample_kind'] == 'trap_cycle'
+        assert noexit_diag.refs['scc'] == ['System.A', 'System.B']
+
+        nonterminating_diag = by_code['I_TOPOLOGICAL_NON_TERMINATING']
+        assert (
+            nonterminating_diag.refs['algorithm_name']
+            == 'topological_inevitable_terminator'
+        )
+        assert nonterminating_diag.refs['counterexample_path'] == [
+            'System.A',
+            'System.B',
+        ]
+
+    def test_enable_verify_converts_smt_raw_diagnostics(self):
+        dsl = """
+        def int x = 0;
+        state System {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B : if [x > 1 && x < 0];
+        }
+        """
+
+        report = inspect_model(
+            _parse(dsl),
+            enable_verify=True,
+            max_complexity_tier='smt_linear',
+        )
+
+        dead_guard = next(
+            diag for diag in report.diagnostics
+            if diag.code == 'W_DEAD_GUARD'
+        )
+        assert dead_guard.severity == 'warning'
+        assert dead_guard.refs == {
+            'algorithm_name': 'dead_guard',
+            'verification_scope': 'smt_local',
+            'transition': {
+                'parent': 'System',
+                'from_state': 'A',
+                'to_state': 'B',
+                'event': None,
+                'guard': 'x > 1 && x < 0',
+                'is_forced': False,
+            },
+            'transition_summary': 'System:A->B',
+        }
+        assert_all_diags_match_schema([dead_guard], context='verify-smt')
+        _assert_has_span(dead_guard.span)
+        assert 'x > 1 && x < 0' in _slice_by_span(dsl, dead_guard.span)
+
+    @pytest.mark.parametrize(
+        'kind',
+        ['unknown', 'timeout', 'undecidable_skip'],
+    )
+    def test_indeterminate_verify_results_do_not_emit_without_diagnostics(
+            self,
+            monkeypatch,
+            kind,
+    ):
+        from pyfcstm.verify import InspectRunResult
+
+        def fake_adapter(machine, **kwargs):
+            return (
+                InspectRunResult(
+                    algorithm_name='dead_guard',
+                    complexity_tier='smt_linear',
+                    smt_logic='QF_LIRA',
+                    verification_scope='smt_local',
+                    diagnostic_codes=('W_DEAD_GUARD',),
+                    result_kind=kind,
+                    diagnostics=(),
+                    reason='not decidable in this test',
+                    raw_result=None,
+                ),
+            )
+
+        monkeypatch.setattr(
+            inspect_module,
+            '_run_verify_inspect_algorithms',
+            fake_adapter,
+        )
+
+        report = inspect_model(_parse(SIMPLE_DSL), enable_verify=True)
+
+        assert 'W_DEAD_GUARD' not in {diag.code for diag in report.diagnostics}
+
+    def test_invalid_verify_complexity_tier_raises_controlled_error(self):
+        from pyfcstm.verify import InspectAccessForbiddenError
+
+        with pytest.raises(InspectAccessForbiddenError, match='bmc_search'):
+            inspect_model(
+                _parse(SIMPLE_DSL),
+                enable_verify=True,
+                max_complexity_tier='bmc_search',
+            )
 
 
 @pytest.mark.unittest

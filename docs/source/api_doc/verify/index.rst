@@ -9,8 +9,11 @@ pyfcstm.verify
 .. toctree::
     :maxdepth: 3
 
+    algorithms/index
+    encoding/index
     inspect_adapter
     registry
+    result
     taxonomy
     topology
 

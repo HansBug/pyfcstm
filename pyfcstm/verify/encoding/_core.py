@@ -1,15 +1,26 @@
-"""SMT-local verification algorithms for FCSTM models.
+"""SMT-local verification encoding helpers for FCSTM models.
 
-This module implements the Track A / PR-A4 algorithms from issue #114.  Raw
-verify algorithms are full-power by default: they do not consult
+Raw verify algorithms are full-power by default: they do not consult
 ``pyfcstm.solver.safety`` or diagnostics/inspect policy gates, and
-``smt_timeout_ms=None`` leaves the underlying solver timeout unset.  Callers
+``smt_timeout_ms=None`` leaves the underlying solver timeout unset. Callers
 that need product-level limits can pass optional budgets or apply policy in an
 adapter layer.
 
 The functions intentionally return lightweight dictionaries instead of
-``ModelDiagnostic`` objects; PR-B1 is responsible for adapting these raw
-algorithm results to the diagnostics layer.
+``ModelDiagnostic`` objects so the raw verification layer stays independent
+from diagnostics presentation concerns.
+
+Example::
+
+    >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+    >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+    >>> from pyfcstm.verify.encoding._core import _z3_vars
+    >>> code = "def int x = 0; state Root { state A; [*] -> A; }"
+    >>> machine = parse_dsl_node_to_state_machine(
+    ...     parse_with_grammar_entry(code, "state_machine_dsl")
+    ... )
+    >>> sorted(_z3_vars(tuple(machine.defines.values())))
+    ['x']
 """
 
 from __future__ import annotations
@@ -27,12 +38,21 @@ from typing import (
     Union,
 )
 
-try:
-    from typing import Literal
-except ImportError:  # pragma: no cover - Python < 3.8 compatibility
-    from typing_extensions import Literal
-
 import z3
+
+from pyfcstm.solver.domain import ExprDomain, translate_expr_domain
+from pyfcstm.solver.expr import (
+    create_z3_vars_from_models as _solver_create_z3_vars_from_models,
+    python_round_to_z3 as _solver_python_round_to_z3,
+)
+from pyfcstm.solver.logical import is_sat as _solver_is_sat
+from pyfcstm.solver.operation import execute_operations_domain
+from pyfcstm.verify.result import (
+    AlgorithmResult,
+    ResultKind,
+    make_diag as _make_diag,
+    skip_result as _skip_result,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - imported only for static checkers
     from pyfcstm.model.expr import Expr
@@ -46,21 +66,38 @@ if TYPE_CHECKING:  # pragma: no cover - imported only for static checkers
         VarDefine,
     )
 
-ResultKind = Literal[
-    "sat",
-    "unsat",
-    "unknown",
-    "timeout",
-    "undecidable_skip",
-]
-
 _Z3Expr = Union[z3.ArithRef, z3.BoolRef]
 _Z3Vars = Dict[str, _Z3Expr]
+
+is_sat = _solver_is_sat
 
 
 @dataclass(frozen=True)
 class _ConditionPoint:
-    """Condition expression with its symbolic store and path predicates."""
+    """Condition expression with its symbolic store and path predicates.
+
+    :param condition: Model expression used as a branch or ternary condition.
+    :type condition: Expr
+    :param z3_vars: Symbolic environment visible at the condition point.
+    :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :param path_conditions: Predicates needed to reach the condition, defaults
+        to ``()``.
+    :type path_conditions: Tuple[z3.ExprRef, ...], optional
+    :param source: Human-readable condition source, defaults to
+        ``"expression"``.
+    :type source: str, optional
+    :param z3_condition: Already translated Boolean condition, defaults to
+        ``None``.
+    :type z3_condition: Optional[z3.ExprRef], optional
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.model.expr import Boolean
+        >>> point = _ConditionPoint(Boolean(True), {"x": z3.Int("x")})
+        >>> point.source
+        'expression'
+    """
 
     condition: "Expr"
     z3_vars: _Z3Vars
@@ -71,7 +108,22 @@ class _ConditionPoint:
 
 @dataclass(frozen=True)
 class _InitialPathContext:
-    """One feasible root-to-leaf initial path symbolic context."""
+    """One feasible root-to-leaf initial path symbolic context.
+
+    :param transitions: Initial transitions selected along the path.
+    :type transitions: Tuple[Transition, ...]
+    :param constraints: Path constraints that make those transitions selected.
+    :type constraints: Tuple[z3.ExprRef, ...]
+    :param operations: Entry and effect operations executed before the leaf's
+        first during block.
+    :type operations: Tuple[OperationStatement, ...]
+
+    Example::
+
+        >>> context = _InitialPathContext((), (), ())
+        >>> context.transitions
+        ()
+    """
 
     transitions: Tuple["Transition", ...]
     constraints: Tuple[z3.ExprRef, ...]
@@ -80,7 +132,26 @@ class _InitialPathContext:
 
 @dataclass(frozen=True)
 class _InitialPathSearchContext:
-    """Search state used while enumerating root initial path alternatives."""
+    """Search state used while enumerating root initial path alternatives.
+
+    :param transitions: Initial transitions selected so far.
+    :type transitions: Tuple[Transition, ...]
+    :param constraints: Solver constraints accumulated so far.
+    :type constraints: Tuple[z3.ExprRef, ...]
+    :param operations: Operations accumulated so far.
+    :type operations: Tuple[OperationStatement, ...]
+    :param z3_vars: Current symbolic variable environment.
+    :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :param domain_constraints: Runtime-definedness constraints accumulated so
+        far.
+    :type domain_constraints: Tuple[z3.ExprRef, ...]
+
+    Example::
+
+        >>> context = _InitialPathSearchContext((), (), (), {}, ())
+        >>> context.z3_vars
+        {}
+    """
 
     transitions: Tuple["Transition", ...]
     constraints: Tuple[z3.ExprRef, ...]
@@ -90,110 +161,83 @@ class _InitialPathSearchContext:
 
 
 def _dsl_nodes():
-    """Import DSL node sentinels lazily to keep registry import lightweight."""
+    """Import DSL node sentinels lazily to keep registry import lightweight.
+
+    :return: DSL node module.
+    :rtype: module
+
+    Example::
+
+        >>> _dsl_nodes().INIT_STATE is _dsl_nodes().INIT_STATE
+        True
+    """
     from pyfcstm.dsl import node as dsl_nodes
 
     return dsl_nodes
 
 
 def _conditional_op_type():
-    """Import ``ConditionalOp`` lazily for runtime ``isinstance`` checks."""
+    """Import ``ConditionalOp`` lazily for runtime ``isinstance`` checks.
+
+    :return: Conditional-expression class.
+    :rtype: type
+
+    Example::
+
+        >>> _conditional_op_type().__name__
+        'ConditionalOp'
+    """
     from pyfcstm.model.expr import ConditionalOp
 
     return ConditionalOp
 
 
 def _variable_type():
-    """Import ``Variable`` lazily for runtime ``isinstance`` checks."""
+    """Import ``Variable`` lazily for runtime ``isinstance`` checks.
+
+    :return: Variable-expression class.
+    :rtype: type
+
+    Example::
+
+        >>> _variable_type().__name__
+        'Variable'
+    """
     from pyfcstm.model.expr import Variable
 
     return Variable
 
 
 def _operation_type():
-    """Import ``Operation`` lazily for runtime ``isinstance`` checks."""
+    """Import ``Operation`` lazily for runtime ``isinstance`` checks.
+
+    :return: Operation statement class.
+    :rtype: type
+
+    Example::
+
+        >>> _operation_type().__name__
+        'Operation'
+    """
     from pyfcstm.model.model import Operation
 
     return Operation
 
 
 def _if_block_type():
-    """Import ``IfBlock`` lazily for runtime ``isinstance`` checks."""
+    """Import ``IfBlock`` lazily for runtime ``isinstance`` checks.
+
+    :return: If-block statement class.
+    :rtype: type
+
+    Example::
+
+        >>> _if_block_type().__name__
+        'IfBlock'
+    """
     from pyfcstm.model.model import IfBlock
 
     return IfBlock
-
-
-def create_z3_vars_from_models(models):
-    """Delegate to :func:`pyfcstm.solver.expr.create_z3_vars_from_models`."""
-    from pyfcstm.solver.expr import create_z3_vars_from_models as impl
-
-    return impl(models)
-
-
-def python_round_to_z3(operand):
-    """Delegate to :func:`pyfcstm.solver.expr.python_round_to_z3`."""
-    from pyfcstm.solver.expr import python_round_to_z3 as impl
-
-    return impl(operand)
-
-
-def expr_to_z3(expr, z3_vars):
-    """Delegate to :func:`pyfcstm.solver.expr.expr_to_z3`."""
-    from pyfcstm.solver.expr import expr_to_z3 as impl
-
-    return impl(expr, z3_vars)
-
-
-def is_sat(constraints, *, timeout_ms=None, get_model=False):
-    """Delegate to :func:`pyfcstm.solver.logical.is_sat`."""
-    from pyfcstm.solver.logical import is_sat as impl
-
-    return impl(constraints, timeout_ms=timeout_ms, get_model=get_model)
-
-
-def execute_operations(operations, z3_vars):
-    """Delegate to :func:`pyfcstm.solver.operation.execute_operations`."""
-    from pyfcstm.solver.operation import execute_operations as impl
-
-    return impl(operations, z3_vars)
-
-
-@dataclass(frozen=True)
-class AlgorithmResult:
-    """Result returned by one SMT-local verification algorithm.
-
-    :param kind: Normalized solver or skip outcome.
-    :type kind: ResultKind
-    :param diagnostics: Raw diagnostic dictionaries produced by the algorithm.
-        These stay diagnostics-layer independent until PR-B1.
-    :type diagnostics: Tuple[dict, ...]
-    :param reason: Optional reason for ``unknown`` / ``timeout`` / skip results,
-        defaults to ``None``.
-    :type reason: Optional[str], optional
-    """
-
-    kind: ResultKind
-    diagnostics: Tuple[dict, ...] = ()
-    reason: Optional[str] = None
-
-
-def _make_diag(code: str, algorithm_name: str, **data) -> dict:
-    """Create a raw verify diagnostic payload.
-
-    :param code: Future diagnostics code.
-    :type code: str
-    :param algorithm_name: Algorithm that emitted the payload.
-    :type algorithm_name: str
-    :param data: Algorithm-specific payload fields.
-    :return: Raw diagnostic dictionary.
-    :rtype: dict
-    """
-    return {
-        "code": code,
-        "algorithm_name": algorithm_name,
-        "data": data,
-    }
 
 
 def _state_path(state: Optional[State]) -> Optional[str]:
@@ -203,6 +247,11 @@ def _state_path(state: Optional[State]) -> Optional[str]:
     :type state: Optional[State]
     :return: Dot-separated path.
     :rtype: Optional[str]
+
+    Example::
+
+        >>> _state_path(None) is None
+        True
     """
     if state is None:
         return None
@@ -213,8 +262,16 @@ def _state_name(value) -> str:
     """Return a readable transition endpoint name.
 
     :param value: Transition endpoint value.
+    :type value: object
     :return: Endpoint name.
     :rtype: str
+
+    Example::
+
+        >>> _state_name(_dsl_nodes().INIT_STATE)
+        '[*]'
+        >>> _state_name("A")
+        'A'
     """
     if value is _dsl_nodes().INIT_STATE:
         return "[*]"
@@ -230,6 +287,17 @@ def _event_name(transition: Transition) -> Optional[str]:
     :type transition: Transition
     :return: Event path.
     :rtype: Optional[str]
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; state B; [*] -> A; A -> B :: Go; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> _event_name(machine.root_state.transitions[1])
+        'Root.A.Go'
     """
     if transition.event is None:
         return None
@@ -243,6 +311,17 @@ def _transition_payload(transition: Transition) -> dict:
     :type transition: Transition
     :return: Transition payload.
     :rtype: dict
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; state B; [*] -> A; A -> B : if [x > 0]; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> _transition_payload(machine.root_state.transitions[1])["guard"]
+        'x > 0'
     """
     return {
         "parent": _state_path(transition.parent),
@@ -254,19 +333,6 @@ def _transition_payload(transition: Transition) -> dict:
     }
 
 
-def _skip_result(kind: ResultKind, reason: Optional[str]) -> AlgorithmResult:
-    """Create a skip or indeterminate result.
-
-    :param kind: Result kind.
-    :type kind: ResultKind
-    :param reason: Optional reason text.
-    :type reason: Optional[str]
-    :return: Algorithm result.
-    :rtype: AlgorithmResult
-    """
-    return AlgorithmResult(kind=kind, diagnostics=(), reason=reason)
-
-
 def _z3_vars(variables: Sequence[VarDefine]) -> _Z3Vars:
     """Create Z3 variables from a generic sequence of variable definitions.
 
@@ -274,8 +340,45 @@ def _z3_vars(variables: Sequence[VarDefine]) -> _Z3Vars:
     :type variables: Sequence[VarDefine]
     :return: Variable-name to Z3 expression mapping.
     :rtype: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> _z3_vars(tuple(machine.defines.values()))["x"]
+        x
     """
-    return create_z3_vars_from_models(list(variables))
+    return _solver_create_z3_vars_from_models(list(variables))
+
+
+def _domain_failure_result(domain: ExprDomain) -> Optional[AlgorithmResult]:
+    """Convert a solver-layer expression failure into a raw result.
+
+    :param domain: Solver-layer domain-aware expression result.
+    :type domain: ExprDomain
+    :return: Raw algorithm result for failures or unknown reachability, or
+        ``None`` when the expression is usable.
+    :rtype: Optional[AlgorithmResult]
+
+    Example::
+
+        >>> from pyfcstm.solver.domain import ExprDomain, TranslationFailure
+        >>> result = _domain_failure_result(
+        ...     ExprDomain(None, failure=TranslationFailure("value_error", "bad"))
+        ... )
+        >>> result.kind
+        'undecidable_skip'
+    """
+    if domain.failure is not None:
+        return _skip_result("undecidable_skip", domain.failure.reason)
+    for check in domain.feasibility_checks:
+        if check.status == "unknown":
+            return _skip_result("unknown", None)
+    return None
 
 
 def _build_type_constraints(
@@ -286,8 +389,7 @@ def _build_type_constraints(
 
     The current solver layer models ``int`` / ``float`` as unbounded
     ``z3.Int`` / ``z3.Real`` values, so no extra constraints are needed.
-    The helper exists to keep PR-A4 formulas aligned with the issue #114
-    pseudo-code and to give future bit-width work a single insertion point.
+    The helper gives future bit-width work a single insertion point.
 
     :param variables: FCSTM variable definitions.
     :type variables: Sequence[VarDefine]
@@ -295,6 +397,11 @@ def _build_type_constraints(
     :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
     :return: Type-domain constraints.
     :rtype: Tuple[z3.ExprRef, ...]
+
+    Example::
+
+        >>> _build_type_constraints((), {})
+        ()
     """
     _ = variables, z3_vars
     return ()
@@ -312,24 +419,23 @@ def _expr_to_z3_or_result(
     :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
     :return: Pair of translated expression and optional failure result.
     :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.model.expr import BinaryOp, Integer, Variable
+        >>> expr = BinaryOp(Variable("x"), "+", Integer(1))
+        >>> value, result = _expr_to_z3_or_result(expr, {"x": z3.Int("x")})
+        >>> result is None
+        True
+        >>> value
+        x + 1
     """
-    try:
-        return expr_to_z3(expr, z3_vars), None
-    except NotImplementedError as err:
-        # NotImplementedError: expr_to_z3 raises this for unsupported math
-        # functions such as logarithms or trigonometric functions.
-        return None, _skip_result("undecidable_skip", str(err))
-    except ValueError as err:
-        # ValueError: expr_to_z3 raises this for unknown variables or operators.
-        return None, _skip_result("undecidable_skip", str(err))
-    except TypeError as err:
-        # TypeError: expr_to_z3 may delegate unsupported Python/Z3 operators
-        # before Z3 creates an expression, for example Int left-shift.
-        return None, _skip_result("undecidable_skip", str(err))
-    except z3.Z3Exception as err:
-        # Z3Exception: Z3 can reject otherwise parsed expressions for sort or
-        # operator-domain mismatches, for example modulo over Real operands.
-        return None, _skip_result("undecidable_skip", str(err))
+    domain = translate_expr_domain(expr, z3_vars, prune_unreachable=False)
+    result = _domain_failure_result(domain)
+    if result is not None:
+        return None, result
+    return domain.z3_expr, None
 
 
 def _execute_operations_or_result(
@@ -344,26 +450,22 @@ def _execute_operations_or_result(
     :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
     :return: Pair of post-state environment and optional failure result.
     :rtype: Tuple[Optional[Dict[str, Union[z3.ArithRef, z3.BoolRef]]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.solver.operation import parse_operations
+        >>> ops = parse_operations("x = x + 1;", ["x"])
+        >>> env, result = _execute_operations_or_result(ops, {"x": z3.IntVal(1)})
+        >>> result is None
+        True
+        >>> z3.simplify(env["x"])
+        2
     """
-    try:
-        return execute_operations(list(operations), dict(z3_vars)), None
-    except NotImplementedError as err:
-        # NotImplementedError: execute_operations delegates expression
-        # translation to expr_to_z3, which raises this for unsupported functions.
-        return None, _skip_result("undecidable_skip", str(err))
-    except ValueError as err:
-        # ValueError: execute_operations delegates to expr_to_z3, which raises
-        # this for unknown variables or unsupported operators.
-        return None, _skip_result("undecidable_skip", str(err))
-    except TypeError as err:
-        # TypeError: execute_operations delegates to expr_to_z3 and can also
-        # surface unsupported Python/Z3 operator combinations before Z3 wraps
-        # them in Z3Exception.
-        return None, _skip_result("undecidable_skip", str(err))
-    except z3.Z3Exception as err:
-        # Z3Exception: Z3 can reject symbolic operation expressions because of
-        # sort/operator-domain mismatches.
-        return None, _skip_result("undecidable_skip", str(err))
+    execution = execute_operations_domain(list(operations), dict(z3_vars))
+    if execution.failure is not None:
+        return None, _skip_result("undecidable_skip", execution.failure.reason)
+    return dict(execution.env), None
 
 
 def _binary_z3_or_result(
@@ -373,8 +475,8 @@ def _binary_z3_or_result(
 ) -> Tuple[Optional[_Z3Expr], Optional[AlgorithmResult]]:
     """Apply a binary operator to already translated Z3 operands.
 
-    This mirrors :func:`pyfcstm.solver.expr.expr_to_z3` for expression trees
-    whose children were translated path-sensitively.
+    This mirrors the solver-layer binary expression semantics for expression
+    trees whose children were translated path-sensitively.
 
     :param op: DSL binary operator.
     :type op: str
@@ -384,6 +486,15 @@ def _binary_z3_or_result(
     :type right: Union[z3.ArithRef, z3.BoolRef]
     :return: Translated Z3 expression and optional normalized failure.
     :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> value, result = _binary_z3_or_result("+", z3.IntVal(1), z3.IntVal(2))
+        >>> result is None
+        True
+        >>> value
+        1 + 2
     """
     try:
         if op == "+":
@@ -448,6 +559,15 @@ def _unary_z3_or_result(
     :type operand: Union[z3.ArithRef, z3.BoolRef]
     :return: Translated Z3 expression and optional normalized failure.
     :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> value, result = _unary_z3_or_result("-", z3.IntVal(2))
+        >>> result is None
+        True
+        >>> z3.simplify(value)
+        -2
     """
     try:
         if op == "-":
@@ -482,6 +602,15 @@ def _ufunc_z3_or_result(
     :type operand: Union[z3.ArithRef, z3.BoolRef]
     :return: Translated Z3 expression and optional normalized failure.
     :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> value, result = _ufunc_z3_or_result("abs", z3.IntVal(-2))
+        >>> result is None
+        True
+        >>> z3.simplify(value)
+        2
     """
     try:
         if func == "abs":
@@ -514,7 +643,7 @@ def _ufunc_z3_or_result(
                 f"sqrt requires Real or Int operand, got {operand.sort()}.",
             )
         if func == "round":
-            return python_round_to_z3(operand), None
+            return _solver_python_round_to_z3(operand), None
         return None, _skip_result(
             "undecidable_skip",
             "Mathematical function {func!r} is not supported in Z3 conversion.".format(
@@ -569,6 +698,22 @@ def _expr_conditions_and_z3_or_result(
     :type domain_constraints: Optional[List[z3.ExprRef]], optional
     :return: Condition points, translated expression, or normalized failure.
     :rtype: Tuple[Optional[Tuple[_ConditionPoint, ...]], Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.model.expr import BinaryOp, Variable
+        >>> x, y = z3.Ints("x y")
+        >>> domains = []
+        >>> points, value, result = _expr_conditions_and_z3_or_result(
+        ...     BinaryOp(Variable("x"), "/", Variable("y")),
+        ...     {"x": x, "y": y},
+        ...     domain_constraints=domains,
+        ... )
+        >>> points, value, result
+        ((), x/y, None)
+        >>> domains
+        [y != 0]
     """
     from pyfcstm.model.expr import BinaryOp, Boolean, Float, Integer, UFunc, UnaryOp
 
@@ -785,6 +930,18 @@ def _expr_z3_and_domains_or_result(
     :return: Z3 expression, runtime-definedness constraints, or a normalized
         algorithm result.
     :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.model.expr import BinaryOp, Variable
+        >>> x, y = z3.Ints("x y")
+        >>> value, domains, result = _expr_z3_and_domains_or_result(
+        ...     BinaryOp(Variable("x"), "/", Variable("y")),
+        ...     {"x": x, "y": y},
+        ... )
+        >>> value, domains, result
+        (x/y, (y != 0,), None)
     """
     domain_constraints: List[z3.ExprRef] = []
     _, z3_expr, result = _expr_conditions_and_z3_or_result(
@@ -816,6 +973,13 @@ def _definedness_feasibility_or_result(
     :type smt_timeout_ms: Optional[int], optional
     :return: ``None`` when feasible, otherwise an algorithm result.
     :rtype: Optional[AlgorithmResult]
+
+    Example::
+
+        >>> import z3
+        >>> x = z3.Int("x")
+        >>> _definedness_feasibility_or_result((x != x,), reason="bad").kind
+        'undecidable_skip'
     """
     sat_result = is_sat(constraints, timeout_ms=smt_timeout_ms)
     if sat_result.kind == "sat":
@@ -847,6 +1011,12 @@ def _path_reachability_or_result(
     :type smt_timeout_ms: Optional[int], optional
     :return: Reachability flag, or an indeterminate algorithm result.
     :rtype: Tuple[Optional[bool], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> _path_reachability_or_result((), (z3.BoolVal(False),))
+        (False, None)
     """
     if context_constraints is None:
         return True, None
@@ -875,6 +1045,14 @@ def _append_expr_domain_constraints(
     :type target_constraints: List[z3.ExprRef]
     :return: ``None``.
     :rtype: None
+
+    Example::
+
+        >>> import z3
+        >>> target = []
+        >>> _append_expr_domain_constraints((z3.Int("x") != 0,), target)
+        >>> target
+        [x != 0]
     """
     if source_constraints:
         target_constraints.extend(source_constraints)
@@ -919,6 +1097,24 @@ def _execute_operation_prefix_conditions_and_vars_or_result(
         constraints, or an algorithm result when symbolic prefix execution
         cannot be expressed.
     :rtype: Tuple[Optional[Tuple[_ConditionPoint, ...]], Optional[Dict[str, Union[z3.ArithRef, z3.BoolRef]]], Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.solver.operation import parse_operations
+        >>> x, y = z3.Ints("x y")
+        >>> ops = parse_operations(
+        ...     "if [x > 0] { y = 1; } else { y = 2; }",
+        ...     ["x", "y"],
+        ... )
+        >>> points, env, domains, result = (
+        ...     _execute_operation_prefix_conditions_and_vars_or_result(
+        ...         ops,
+        ...         {"x": x, "y": y},
+        ...     )
+        ... )
+        >>> len(points), env["y"], domains, result
+        (1, If(0 < x, 1, 2), (), None)
     """
     points: List[_ConditionPoint] = []
     current_vars = dict(z3_vars)
@@ -1142,6 +1338,18 @@ def _execute_operation_prefix_conditions_or_result(
     :return: Condition points, or an algorithm result when symbolic prefix
         execution cannot be expressed.
     :rtype: Tuple[Optional[Tuple[_ConditionPoint, ...]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.solver.operation import parse_operations
+        >>> ops = parse_operations("if [x > 0] { y = 1; }", ["x", "y"])
+        >>> points, result = _execute_operation_prefix_conditions_or_result(
+        ...     ops,
+        ...     {"x": z3.Int("x"), "y": z3.Int("y")},
+        ... )
+        >>> len(points), result is None
+        (1, True)
     """
     points, _, _, result = _execute_operation_prefix_conditions_and_vars_or_result(
         operations,
@@ -1181,6 +1389,22 @@ def _transition_trigger_or_result(
     :return: Trigger expression, runtime-definedness constraints, and optional
         failure result.
     :rtype: Tuple[Optional[z3.ExprRef], Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; state B; [*] -> A; A -> B :: Go; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> trigger, domains, result = _transition_trigger_or_result(
+        ...     machine.root_state.transitions[1],
+        ...     {"x": z3.Int("x")},
+        ... )
+        >>> trigger, domains, result
+        (__event__4:Root1:A2:Go, (), None)
     """
     parts: List[z3.ExprRef] = []
     domain_constraints: List[z3.ExprRef] = []
@@ -1250,6 +1474,24 @@ def _root_initial_path_contexts(
         ``None`` context tuple without a result means ``state`` is not selected
         by any feasible root first-enabled initial path.
     :rtype: Tuple[Optional[Tuple[_InitialPathContext, ...]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> contexts, result = _root_initial_path_contexts(
+        ...     machine.root_state.substates["A"],
+        ...     tuple(machine.defines.values()),
+        ...     {"x": z3.Int("x")},
+        ...     (),
+        ... )
+        >>> len(contexts), result is None
+        (1, True)
     """
     path = _state_path_from_root(state)
     if len(path) <= 1:
@@ -1467,6 +1709,24 @@ def _root_initial_path_context(
         optional algorithm result.  A ``None`` transition tuple without a result
         means the state is not selected by the root first-enabled initial path.
     :rtype: Tuple[Optional[Tuple[Transition, ...]], Optional[Tuple[z3.ExprRef, ...]], Optional[List[OperationStatement]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> transitions, constraints, operations, result = _root_initial_path_context(
+        ...     machine.root_state.substates["A"],
+        ...     tuple(machine.defines.values()),
+        ...     {"x": z3.Int("x")},
+        ...     (),
+        ... )
+        >>> len(transitions), constraints, operations, result
+        (1, (True,), [], None)
     """
     contexts, result = _root_initial_path_contexts(
         state,
@@ -1491,6 +1751,8 @@ def _root_initial_path_context(
 def _build_init_constraints_or_result(
     variables: Sequence[VarDefine],
     z3_vars: _Z3Vars,
+    *,
+    smt_timeout_ms: Optional[int] = None,
 ) -> Tuple[Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]:
     """Build constraints pinning variables to their DSL initial values.
 
@@ -1498,14 +1760,45 @@ def _build_init_constraints_or_result(
     :type variables: Sequence[VarDefine]
     :param z3_vars: Z3 variable mapping.
     :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+    :type smt_timeout_ms: Optional[int], optional
     :return: Pair of constraints and optional failure result.
     :rtype: Tuple[Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> _build_init_constraints_or_result(
+        ...     tuple(machine.defines.values()),
+        ...     {"x": z3.Int("x")},
+        ... )
+        ((0 == x,), None)
     """
     constraints: List[z3.ExprRef] = []
     for variable in variables:
-        init_value, result = _expr_to_z3_or_result(variable.init, z3_vars)
+        init_value, init_domains, result = _expr_z3_and_domains_or_result(
+            variable.init,
+            z3_vars,
+            context_constraints=constraints,
+            smt_timeout_ms=smt_timeout_ms,
+        )
         if result is not None:
             return None, result
+        if init_domains:
+            result = _definedness_feasibility_or_result(
+                [*constraints, *init_domains],
+                reason="Initializer runtime definedness constraints are unsatisfiable.",
+                smt_timeout_ms=smt_timeout_ms,
+            )
+            if result is not None:
+                return None, result
+            constraints.extend(init_domains)
         constraints.append(z3_vars[variable.name] == init_value)
     return tuple(constraints), None
 
@@ -1536,6 +1829,21 @@ def _guard_z3_or_result(
     :return: Guard Z3 expression, variable mapping, runtime-definedness
         constraints, and optional failure result.
     :rtype: tuple
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; state B; [*] -> A; A -> B : if [x > 0]; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> guard, z3_vars, domains, result = _guard_z3_or_result(
+        ...     machine.root_state.transitions[1],
+        ...     tuple(machine.defines.values()),
+        ... )
+        >>> guard, sorted(z3_vars), domains, result
+        (0 < x, ['x'], (), None)
     """
     z3_vars = _z3_vars(variables)
     if context_constraints is None:
@@ -1558,6 +1866,12 @@ def _is_self_assign(statement: OperationStatement) -> bool:
     :type statement: OperationStatement
     :return: Whether the statement is a self-assignment.
     :rtype: bool
+
+    Example::
+
+        >>> from pyfcstm.solver.operation import parse_operations
+        >>> _is_self_assign(parse_operations("x = x;", ["x"])[0])
+        True
     """
     return (
         isinstance(statement, _operation_type())
@@ -1575,6 +1889,12 @@ def _is_syntactically_self_assign_only(
     :type operations: Sequence[OperationStatement]
     :return: Whether the block is only self-assignments.
     :rtype: bool
+
+    Example::
+
+        >>> from pyfcstm.solver.operation import parse_operations
+        >>> _is_syntactically_self_assign_only(parse_operations("x = x;", ["x"]))
+        True
     """
     return bool(operations) and all(
         _is_self_assign(statement) for statement in operations
@@ -1596,6 +1916,11 @@ def _first_indeterminate(
     :type reason: Optional[str]
     :return: Existing or new aggregate result.
     :rtype: Optional[AlgorithmResult]
+
+    Example::
+
+        >>> _first_indeterminate(None, "unknown", "solver said unknown")
+        AlgorithmResult(kind='unknown', diagnostics=(), reason='solver said unknown')
     """
     if current is not None:
         return current
@@ -1604,198 +1929,10 @@ def _first_indeterminate(
     return None
 
 
-def dead_guard(
-    transition: Transition,
-    variables: Sequence[VarDefine],
-    *,
-    smt_timeout_ms: Optional[int] = None,
-) -> AlgorithmResult:
-    """Detect a transition guard that is unsatisfiable.
-
-    This pure-guard variant does not pin variables to DSL declaration
-    initializers.  Use :func:`forced_guard_unsat_under_init` for the separate
-    forced-transition check that additionally evaluates guards under DSL
-    initial values.
-
-    :param transition: Transition to check.
-    :type transition: Transition
-    :param variables: Variable definitions available to the model.
-    :type variables: Sequence[VarDefine]
-    :param smt_timeout_ms: Optional solver timeout in milliseconds.
-        ``None`` is forwarded to the solver helper as no timeout.
-    :type smt_timeout_ms: Optional[int], optional
-    :return: Algorithm result.
-    :rtype: AlgorithmResult
-    """
-    if transition.guard is None:
-        return AlgorithmResult(kind="sat")
-
-    guard_z3, z3_vars, guard_domains, result = _guard_z3_or_result(
-        transition,
-        variables,
-        smt_timeout_ms=smt_timeout_ms,
-    )
-    if result is not None:
-        return result
-    type_constraints = _build_type_constraints(variables, z3_vars)
-    if guard_domains:
-        result = _definedness_feasibility_or_result(
-            [*type_constraints, *guard_domains],
-            reason=(
-                "Transition guard runtime definedness constraints are unsatisfiable."
-            ),
-            smt_timeout_ms=smt_timeout_ms,
-        )
-        if result is not None:
-            return result
-
-    sat_result = is_sat(
-        [
-            guard_z3,
-            *type_constraints,
-            *(guard_domains or ()),
-        ],
-        timeout_ms=smt_timeout_ms,
-    )
-    if sat_result.kind == "unsat":
-        return AlgorithmResult(
-            kind="unsat",
-            diagnostics=(
-                _make_diag(
-                    "W_DEAD_GUARD",
-                    "dead_guard",
-                    transition=_transition_payload(transition),
-                    verification_scope="smt_local",
-                ),
-            ),
-        )
-    return AlgorithmResult(kind=sat_result.kind)
 
 
-def guard_tautology(
-    transition: Transition,
-    variables: Sequence[VarDefine],
-    *,
-    smt_timeout_ms: Optional[int] = None,
-) -> AlgorithmResult:
-    """Detect a transition guard that is valid under all assignments.
-
-    :param transition: Transition to check.
-    :type transition: Transition
-    :param variables: Variable definitions available to the model.
-    :type variables: Sequence[VarDefine]
-    :param smt_timeout_ms: Optional solver timeout in milliseconds.
-    :type smt_timeout_ms: Optional[int], optional
-    :return: Algorithm result.
-    :rtype: AlgorithmResult
-    """
-    if transition.guard is None:
-        return AlgorithmResult(kind="sat")
-
-    guard_z3, z3_vars, guard_domains, result = _guard_z3_or_result(
-        transition,
-        variables,
-        smt_timeout_ms=smt_timeout_ms,
-    )
-    if result is not None:
-        return result
-    type_constraints = _build_type_constraints(variables, z3_vars)
-    if guard_domains:
-        result = _definedness_feasibility_or_result(
-            [*type_constraints, *guard_domains],
-            reason=(
-                "Transition guard runtime definedness constraints are unsatisfiable."
-            ),
-            smt_timeout_ms=smt_timeout_ms,
-        )
-        if result is not None:
-            return result
-
-    sat_result = is_sat(
-        [
-            z3.Not(guard_z3),
-            *type_constraints,
-            *(guard_domains or ()),
-        ],
-        timeout_ms=smt_timeout_ms,
-    )
-    if sat_result.kind == "unsat":
-        return AlgorithmResult(
-            kind="unsat",
-            diagnostics=(
-                _make_diag(
-                    "W_GUARD_TAUTOLOGY",
-                    "guard_tautology",
-                    transition=_transition_payload(transition),
-                    verification_scope="smt_local",
-                ),
-            ),
-        )
-    return AlgorithmResult(kind=sat_result.kind)
 
 
-def forced_guard_unsat_under_init(
-    transition: Transition,
-    variables: Sequence[VarDefine],
-    *,
-    smt_timeout_ms: Optional[int] = None,
-) -> AlgorithmResult:
-    """Detect a forced-transition guard unsatisfiable under initial values.
-
-    :param transition: Transition to check.
-    :type transition: Transition
-    :param variables: Variable definitions available to the model.
-    :type variables: Sequence[VarDefine]
-    :param smt_timeout_ms: Optional solver timeout in milliseconds.
-    :type smt_timeout_ms: Optional[int], optional
-    :return: Algorithm result.
-    :rtype: AlgorithmResult
-    """
-    if not transition.is_forced or transition.guard is None:
-        return AlgorithmResult(kind="sat")
-
-    z3_vars = _z3_vars(variables)
-    init_constraints, result = _build_init_constraints_or_result(variables, z3_vars)
-    if result is not None:
-        return result
-    guard_z3, guard_domains, result = _expr_z3_and_domains_or_result(
-        transition.guard,
-        z3_vars,
-        context_constraints=init_constraints,
-        smt_timeout_ms=smt_timeout_ms,
-    )
-    if result is not None:
-        return result
-    if guard_domains:
-        result = _definedness_feasibility_or_result(
-            [*init_constraints, *(guard_domains or ())],
-            reason=(
-                "Transition guard runtime definedness constraints are "
-                "unsatisfiable under initial values."
-            ),
-            smt_timeout_ms=smt_timeout_ms,
-        )
-        if result is not None:
-            return result
-
-    sat_result = is_sat(
-        [guard_z3, *init_constraints, *(guard_domains or ())],
-        timeout_ms=smt_timeout_ms,
-    )
-    if sat_result.kind == "unsat":
-        return AlgorithmResult(
-            kind="unsat",
-            diagnostics=(
-                _make_diag(
-                    "W_FORCED_GUARD_UNSAT",
-                    "forced_guard_unsat_under_init",
-                    transition=_transition_payload(transition),
-                    scope="dsl_def_init_only",
-                    verification_scope="smt_local",
-                ),
-            ),
-        )
-    return AlgorithmResult(kind=sat_result.kind)
 
 
 def _effect_guard_context_or_result(
@@ -1819,6 +1956,23 @@ def _effect_guard_context_or_result(
     :type smt_timeout_ms: Optional[int], optional
     :return: Guard expression, type constraints, or an algorithm result.
     :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; state B; [*] -> A; A -> B : if [x > 0]; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> guard, constraints, result = _effect_guard_context_or_result(
+        ...     machine.root_state.transitions[1],
+        ...     tuple(machine.defines.values()),
+        ...     {"x": z3.Int("x")},
+        ... )
+        >>> guard, constraints, result
+        (0 < x, (), None)
     """
     if transition.guard is None:
         guard_z3 = z3.BoolVal(True)
@@ -1886,17 +2040,40 @@ def _execute_effects_under_guard_or_result(
     :return: Post-effect variables, runtime definedness constraints, or an
         algorithm result when execution cannot be expressed.
     :rtype: Tuple[Optional[Dict[str, Union[z3.ArithRef, z3.BoolRef]]], Optional[Tuple[z3.ExprRef, ...]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; state B; [*] -> A; A -> B effect { x = x + 1; }; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> env, domains, result = _execute_effects_under_guard_or_result(
+        ...     machine.root_state.transitions[1],
+        ...     {"x": z3.Int("x")},
+        ...     z3.BoolVal(True),
+        ...     (),
+        ... )
+        >>> env["x"], domains, result
+        (x + 1, (), None)
     """
-    _, after_vars, effect_domain_constraints, result = (
-        _execute_operation_prefix_conditions_and_vars_or_result(
-            transition.effects,
-            z3_vars,
-            context_constraints=[guard_z3, *type_constraints],
-            smt_timeout_ms=smt_timeout_ms,
-        )
+    execution = execute_operations_domain(
+        list(transition.effects),
+        dict(z3_vars),
+        assumptions=[guard_z3, *type_constraints],
+        timeout_ms=smt_timeout_ms,
     )
-    if result is not None:
-        return None, None, result
+    if execution.failure is not None:
+        return None, None, _skip_result(
+            "undecidable_skip",
+            execution.failure.reason,
+        )
+    after_vars = dict(execution.env)
+    effect_domain_constraints = tuple(
+        item.constraint for item in execution.definedness_constraints
+    )
 
     defined_effect_context = [
         guard_z3,
@@ -1918,202 +2095,8 @@ def _execute_effects_under_guard_or_result(
     return after_vars, tuple(effect_domain_constraints or ()), None
 
 
-def effect_no_op_under_guard(
-    transition: Transition,
-    variables: Sequence[VarDefine],
-    *,
-    smt_timeout_ms: Optional[int] = None,
-) -> AlgorithmResult:
-    """Detect transition effects that never change model variables.
-
-    Pure syntactic self-assignment blocks such as ``x = x`` are deliberately
-    ignored as a presentation-level no-op rather than reported as SMT no-op
-    diagnostics.
-
-    :param transition: Transition to check.
-    :type transition: Transition
-    :param variables: Variable definitions available to the model.
-    :type variables: Sequence[VarDefine]
-    :param smt_timeout_ms: Optional solver timeout in milliseconds.
-    :type smt_timeout_ms: Optional[int], optional
-    :return: Algorithm result.
-    :rtype: AlgorithmResult
-    """
-    if not transition.effects:
-        return AlgorithmResult(kind="sat")
-    if _is_syntactically_self_assign_only(transition.effects):
-        return AlgorithmResult(kind="sat")
-
-    z3_vars = _z3_vars(variables)
-    guard_z3, type_constraints, result = _effect_guard_context_or_result(
-        transition,
-        variables,
-        z3_vars,
-        smt_timeout_ms=smt_timeout_ms,
-    )
-    if result is not None:
-        return result
-    after_vars, effect_domain_constraints, result = (
-        _execute_effects_under_guard_or_result(
-            transition,
-            z3_vars,
-            guard_z3,
-            type_constraints or (),
-            smt_timeout_ms=smt_timeout_ms,
-        )
-    )
-    if result is not None:
-        return result
-
-    try:
-        changed_disjuncts = [
-            after_vars[variable.name] != z3_vars[variable.name]
-            for variable in variables
-        ]
-    except KeyError as err:
-        # KeyError: the symbolic executor should preserve all model variables;
-        # a missing variable means the effect state cannot be compared.
-        return _skip_result("undecidable_skip", str(err))
-    if not changed_disjuncts:
-        return AlgorithmResult(kind="sat")
-
-    formula = z3.And(
-        guard_z3,
-        z3.Or(*changed_disjuncts),
-        *(type_constraints or ()),
-        *(effect_domain_constraints or ()),
-    )
-    sat_result = is_sat([formula], timeout_ms=smt_timeout_ms)
-    if sat_result.kind == "unsat":
-        return AlgorithmResult(
-            kind="unsat",
-            diagnostics=(
-                _make_diag(
-                    "W_EFFECT_SMT_NO_OP",
-                    "effect_no_op_under_guard",
-                    transition=_transition_payload(transition),
-                    verification_scope="smt_local",
-                ),
-            ),
-        )
-    return AlgorithmResult(kind=sat_result.kind)
 
 
-def effect_contradicts_guard(
-    transition: Transition,
-    variables: Sequence[VarDefine],
-    *,
-    smt_timeout_ms: Optional[int] = None,
-) -> AlgorithmResult:
-    """Detect effects after which the transition guard cannot still hold.
-
-    The post-effect guard counts as still holding only when it is both
-    runtime-defined and true.  If post-state guard definedness is not guaranteed
-    under the pre-guard/effect context, the raw algorithm returns
-    ``undecidable_skip`` instead of emitting a deterministic contradiction.
-
-    :param transition: Transition to check.
-    :type transition: Transition
-    :param variables: Variable definitions available to the model.
-    :type variables: Sequence[VarDefine]
-    :param smt_timeout_ms: Optional solver timeout in milliseconds.
-    :type smt_timeout_ms: Optional[int], optional
-    :return: Algorithm result.
-    :rtype: AlgorithmResult
-    """
-    if transition.guard is None or not transition.effects:
-        return AlgorithmResult(kind="sat")
-
-    z3_vars = _z3_vars(variables)
-    guard_before, type_constraints, result = _effect_guard_context_or_result(
-        transition,
-        variables,
-        z3_vars,
-        smt_timeout_ms=smt_timeout_ms,
-    )
-    if result is not None:
-        return result
-    after_vars, effect_domain_constraints, result = (
-        _execute_effects_under_guard_or_result(
-            transition,
-            z3_vars,
-            guard_before,
-            type_constraints or (),
-            smt_timeout_ms=smt_timeout_ms,
-        )
-    )
-    if result is not None:
-        return result
-    guard_after, guard_after_domains, result = _expr_z3_and_domains_or_result(
-        transition.guard,
-        after_vars,
-        context_constraints=[
-            guard_before,
-            *(type_constraints or ()),
-            *(effect_domain_constraints or ()),
-        ],
-        smt_timeout_ms=smt_timeout_ms,
-    )
-    if result is not None:
-        return result
-    if guard_after_domains:
-        post_context = [
-            guard_before,
-            *(type_constraints or ()),
-            *(effect_domain_constraints or ()),
-        ]
-        result = _definedness_feasibility_or_result(
-            [*post_context, *guard_after_domains],
-            reason=(
-                "Post-effect transition guard runtime definedness "
-                "constraints are unsatisfiable."
-            ),
-            smt_timeout_ms=smt_timeout_ms,
-        )
-        if result is not None:
-            return result
-
-        undefined_post_guard = is_sat(
-            [*post_context, z3.Not(z3.And(*guard_after_domains))],
-            timeout_ms=smt_timeout_ms,
-        )
-        if undefined_post_guard.kind == "sat":
-            return _skip_result(
-                "undecidable_skip",
-                (
-                    "Post-effect transition guard runtime definedness "
-                    "constraints are not guaranteed."
-                ),
-            )
-        if undefined_post_guard.kind != "unsat":
-            return _skip_result(
-                undefined_post_guard.kind,
-                getattr(undefined_post_guard, "reason", None),
-            )
-
-    sat_result = is_sat(
-        [
-            guard_before,
-            guard_after,
-            *(type_constraints or ()),
-            *(effect_domain_constraints or ()),
-            *(guard_after_domains or ()),
-        ],
-        timeout_ms=smt_timeout_ms,
-    )
-    if sat_result.kind == "unsat":
-        return AlgorithmResult(
-            kind="unsat",
-            diagnostics=(
-                _make_diag(
-                    "I_EFFECT_GUARD_CONTRADICT",
-                    "effect_contradicts_guard",
-                    transition=_transition_payload(transition),
-                    verification_scope="smt_local",
-                ),
-            ),
-        )
-    return AlgorithmResult(kind=sat_result.kind)
 
 
 def _iter_ordered_outgoing(
@@ -2123,8 +2106,20 @@ def _iter_ordered_outgoing(
 
     :param machine: State machine to inspect.
     :type machine: StateMachine
+    :return: Iterable of source states and their ordered outgoing transitions.
     :yield: Source state and transitions in model order.
     :rtype: Iterable[Tuple[State, List[Transition]]]
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; state B; [*] -> A; A -> B; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> [(state.name, len(transitions)) for state, transitions in _iter_ordered_outgoing(machine)]
+        [('A', 1)]
     """
     states_by_parent_and_name: Dict[Tuple[Tuple[str, ...], str], State] = {}
     for state in machine.walk_states():
@@ -2158,6 +2153,17 @@ def _state_has_definite_stable_entry(state: State) -> bool:
     :type state: State
     :return: Whether entry is definitely validation-stable.
     :rtype: bool
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> _state_has_definite_stable_entry(machine.root_state.substates["A"])
+        True
     """
     if state.is_stoppable:
         return True
@@ -2190,6 +2196,18 @@ def _transition_has_definite_stable_continuation(
     :type transition: Transition
     :return: Whether the transition has a locally proven stable continuation.
     :rtype: bool
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; state B; [*] -> A; A -> B; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> source = machine.root_state.substates["A"]
+        >>> _transition_has_definite_stable_continuation(source, machine.root_state.transitions[1])
+        True
     """
     parent = source.parent
     if transition.to_state is _dsl_nodes().EXIT_STATE:
@@ -2202,198 +2220,6 @@ def _transition_has_definite_stable_continuation(
     return _state_has_definite_stable_entry(target)
 
 
-def transition_shadowed_by_predecessor(
-    machine: StateMachine,
-    variables: Sequence[VarDefine],
-    *,
-    smt_timeout_ms: Optional[int] = None,
-) -> AlgorithmResult:
-    """Detect outgoing transitions shadowed by earlier transitions.
-
-    :param machine: State machine to inspect.
-    :type machine: StateMachine
-    :param variables: Variable definitions available to the model.
-    :type variables: Sequence[VarDefine]
-    :param smt_timeout_ms: Optional solver timeout in milliseconds.
-    :type smt_timeout_ms: Optional[int], optional
-    :return: Algorithm result.
-    :rtype: AlgorithmResult
-    """
-    diagnostics: List[dict] = []
-    first_indeterminate_result: Optional[AlgorithmResult] = None
-
-    for source, outgoing in _iter_ordered_outgoing(machine):
-        z3_vars = _z3_vars(variables)
-        event_vars: Dict[str, z3.BoolRef] = {}
-        prior_triggers: List[z3.ExprRef] = []
-        prior_domain_constraints: List[z3.ExprRef] = []
-        prior_payloads: List[dict] = []
-        prior_transitions: List[Transition] = []
-        type_constraints = _build_type_constraints(variables, z3_vars)
-
-        for transition in outgoing:
-            trigger, trigger_domains, result = _transition_trigger_or_result(
-                transition,
-                z3_vars,
-                event_vars,
-                context_constraints=type_constraints,
-                smt_timeout_ms=smt_timeout_ms,
-            )
-            if result is not None:
-                first_indeterminate_result = _first_indeterminate(
-                    first_indeterminate_result,
-                    result.kind,
-                    result.reason,
-                )
-                continue
-            if trigger_domains:
-                result = _definedness_feasibility_or_result(
-                    [*type_constraints, *prior_domain_constraints, *trigger_domains],
-                    reason=(
-                        "Transition trigger runtime definedness constraints "
-                        "are unsatisfiable in context."
-                    ),
-                    smt_timeout_ms=smt_timeout_ms,
-                )
-                if result is not None:
-                    first_indeterminate_result = _first_indeterminate(
-                        first_indeterminate_result,
-                        result.kind,
-                        result.reason,
-                    )
-                    break
-
-            current_payload = _transition_payload(transition)
-            if prior_triggers:
-                prior_disabled = tuple(
-                    z3.Not(prior_trigger) for prior_trigger in prior_triggers
-                )
-                formula = z3.And(
-                    trigger,
-                    *prior_disabled,
-                    *prior_domain_constraints,
-                    *type_constraints,
-                )
-                sat_result = is_sat([formula], timeout_ms=smt_timeout_ms)
-                if sat_result.kind == "unsat":
-                    loose_formula = z3.And(
-                        trigger,
-                        *prior_disabled,
-                        *type_constraints,
-                    )
-                    loose_result = is_sat(
-                        [loose_formula],
-                        timeout_ms=smt_timeout_ms,
-                    )
-                    if loose_result.kind == "sat":
-                        first_indeterminate_result = _first_indeterminate(
-                            first_indeterminate_result,
-                            "undecidable_skip",
-                            (
-                                "Prior transition trigger runtime definedness "
-                                "constraints exclude the remaining candidate "
-                                "space."
-                            ),
-                        )
-                        prior_triggers.append(trigger)
-                        prior_domain_constraints.extend(trigger_domains or ())
-                        prior_payloads.append(current_payload)
-                        prior_transitions.append(transition)
-                        continue
-                    if loose_result.kind != "unsat":
-                        first_indeterminate_result = _first_indeterminate(
-                            first_indeterminate_result,
-                            loose_result.kind,
-                            getattr(loose_result, "reason", None),
-                        )
-                        continue
-
-                    trigger_sat = is_sat(
-                        [trigger, *type_constraints, *(trigger_domains or ())],
-                        timeout_ms=smt_timeout_ms,
-                    )
-                    if trigger_sat.kind == "unsat":
-                        # A transition whose own trigger is unsatisfiable
-                        # belongs to dead_guard, not predecessor shadowing.
-                        continue
-                    if trigger_sat.kind != "sat":
-                        first_indeterminate_result = _first_indeterminate(
-                            first_indeterminate_result,
-                            trigger_sat.kind,
-                        )
-                        continue
-
-                    unstable_predecessor = (
-                        source.is_stoppable
-                        and not all(
-                            _transition_has_definite_stable_continuation(
-                                source, item
-                            )
-                            for item in prior_transitions
-                        )
-                    )
-                    if unstable_predecessor:
-                        first_indeterminate_result = _first_indeterminate(
-                            first_indeterminate_result,
-                            "undecidable_skip",
-                            (
-                                "Prior transition trigger coverage does not "
-                                "prove runtime shadowing because a predecessor "
-                                "transition lacks a locally proven stable "
-                                "continuation."
-                            ),
-                        )
-                    else:
-                        has_unconditional_catchall = any(
-                            item["event"] is None and item["guard"] is None
-                            for item in prior_payloads
-                        )
-                        if has_unconditional_catchall:
-                            reason = "unconditional_catchall"
-                        elif (
-                            current_payload["event"] is not None
-                            and current_payload["guard"] is None
-                            and any(
-                                item["event"] == current_payload["event"]
-                                and item["guard"] is None
-                                for item in prior_payloads
-                            )
-                        ):
-                            reason = "duplicate_event"
-                        elif current_payload["guard"] is not None and all(
-                            item["event"] is None and item["guard"] is not None
-                            for item in prior_payloads
-                        ):
-                            reason = "guard_shadow"
-                        else:
-                            reason = "prior_trigger_cover"
-                        diagnostics.append(
-                            _make_diag(
-                                "W_TRANSITION_SHADOWED",
-                                "transition_shadowed_by_predecessor",
-                                transition=current_payload,
-                                shadowed_by=tuple(prior_payloads),
-                                reason=reason,
-                                source=_state_path(source),
-                                verification_scope="smt_local",
-                            )
-                        )
-                else:
-                    first_indeterminate_result = _first_indeterminate(
-                        first_indeterminate_result,
-                        sat_result.kind,
-                    )
-
-            prior_triggers.append(trigger)
-            prior_domain_constraints.extend(trigger_domains or ())
-            prior_payloads.append(current_payload)
-            prior_transitions.append(transition)
-
-    if diagnostics:
-        return AlgorithmResult(kind="unsat", diagnostics=tuple(diagnostics))
-    if first_indeterminate_result is not None:
-        return first_indeterminate_result
-    return AlgorithmResult(kind="sat")
 
 
 def _action_operations(
@@ -2409,6 +2235,17 @@ def _action_operations(
     :type actions: Sequence[Union[OnStage, OnAspect]]
     :return: Flattened concrete operation statements.
     :rtype: List[OperationStatement]
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A { enter { x = x + 1; } } [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> _action_operations(machine.root_state.substates["A"].on_enters)[0].var_name
+        'x'
     """
     operations: List[OperationStatement] = []
     for action in actions:
@@ -2424,8 +2261,16 @@ def _conditional_conditions_from_expr(expr: Expr) -> Iterable[Expr]:
 
     :param expr: Expression to scan.
     :type expr: Expr
+    :return: Iterable of ternary condition expressions.
     :yield: Ternary condition expressions.
     :rtype: Iterable[Expr]
+
+    Example::
+
+        >>> from pyfcstm.model.expr import BinaryOp, ConditionalOp, Integer, Variable
+        >>> expr = ConditionalOp(BinaryOp(Variable("x"), ">", Integer(0)), Integer(1), Integer(2))
+        >>> [str(item) for item in _conditional_conditions_from_expr(expr)]
+        ['x > 0']
     """
     if isinstance(expr, _conditional_op_type()):
         yield expr.cond
@@ -2440,8 +2285,16 @@ def _conditional_conditions_from_operations(
 
     :param operations: Operation statements to scan.
     :type operations: Sequence[OperationStatement]
+    :return: Iterable of conditional expressions found in operation blocks.
     :yield: Conditional expressions.
     :rtype: Iterable[Expr]
+
+    Example::
+
+        >>> from pyfcstm.solver.operation import parse_operations
+        >>> ops = parse_operations("x = (x > 0) ? 1 : 2;", ["x"])
+        >>> [str(item) for item in _conditional_conditions_from_operations(ops)]
+        ['x > 0']
     """
     for statement in operations:
         if isinstance(statement, _operation_type()):
@@ -2466,6 +2319,17 @@ def _concrete_during_operations(state: State) -> List[OperationStatement]:
     :type state: State
     :return: Flattened concrete operation statements.
     :rtype: List[OperationStatement]
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A { during { x = x + 2; } } [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> _concrete_during_operations(machine.root_state.substates["A"])[0].var_name
+        'x'
     """
     return _action_operations(
         [action for _, action in state.iter_on_during_aspect_recursively()]
@@ -2479,6 +2343,17 @@ def _state_path_from_root(state: State) -> Tuple[State, ...]:
     :type state: State
     :return: Root-to-state path.
     :rtype: Tuple[State, ...]
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> [state.name for state in _state_path_from_root(machine.root_state.substates["A"])]
+        ['Root', 'A']
     """
     path = []
     current = state
@@ -2501,6 +2376,17 @@ def _root_initial_path_transitions(state: State) -> Optional[Tuple[Transition, .
     :type state: State
     :return: Initial transition chain, or ``None`` when no such chain exists.
     :rtype: Optional[Tuple[Transition, ...]]
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> len(_root_initial_path_transitions(machine.root_state.substates["A"]))
+        1
     """
     path = _state_path_from_root(state)
     transitions: List[Transition] = []
@@ -2522,6 +2408,17 @@ def _is_root_initial_leaf(state: State) -> bool:
     :type state: State
     :return: Whether the root-to-leaf path is initial-transition-only.
     :rtype: bool
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; [*] -> A; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> _is_root_initial_leaf(machine.root_state.substates["A"])
+        True
     """
     return _root_initial_path_transitions(state) is not None
 
@@ -2558,6 +2455,32 @@ def _enter_condition_descriptors_for_context(
     :return: Determined ``(condition, source, branch_taken)`` descriptors or an
         indeterminate algorithm result.
     :rtype: Tuple[Optional[Set[Tuple[str, str, str]]], Optional[AlgorithmResult]]
+
+    Example::
+
+        >>> import z3
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = (
+        ...     "def int x = 0; "
+        ...     "state Root { state A { enter { x = x + 1; } during { x = x + 2; } } [*] -> A; }"
+        ... )
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> state = machine.root_state.substates["A"]
+        >>> context = _InitialPathContext((), (), tuple(_action_operations(state.on_enters)))
+        >>> descriptors, result = _enter_condition_descriptors_for_context(
+        ...     state,
+        ...     tuple(machine.defines.values()),
+        ...     {"x": z3.Int("x")},
+        ...     (z3.Int("x") == 0,),
+        ...     (),
+        ...     _concrete_during_operations(state),
+        ...     context,
+        ... )
+        >>> descriptors, result
+        (set(), None)
     """
     _ = variables, state
     context_constraints = [
@@ -2672,98 +2595,6 @@ def _enter_condition_descriptors_for_context(
     return descriptors, None
 
 
-def enter_postcondition_implies_during_precondition(
-    state: State,
-    variables: Sequence[VarDefine],
-    *,
-    smt_timeout_ms: Optional[int] = None,
-) -> AlgorithmResult:
-    """Detect first-cycle during conditions determined by enter-time values.
-
-    :param state: State to inspect.
-    :type state: State
-    :param variables: Variable definitions available to the model.
-    :type variables: Sequence[VarDefine]
-    :param smt_timeout_ms: Optional solver timeout in milliseconds.
-    :type smt_timeout_ms: Optional[int], optional
-    :return: Algorithm result.
-    :rtype: AlgorithmResult
-    """
-    if not state.is_leaf_state or state.is_pseudo:
-        return AlgorithmResult(kind="sat")
-
-    z3_vars = _z3_vars(variables)
-    init_constraints, result = _build_init_constraints_or_result(variables, z3_vars)
-    if result is not None:
-        return result
-
-    contexts, result = (
-        _root_initial_path_contexts(
-            state,
-            variables,
-            z3_vars,
-            init_constraints,
-            smt_timeout_ms=smt_timeout_ms,
-        )
-    )
-    if result is not None:
-        return result
-    if contexts is None:
-        return AlgorithmResult(kind="sat")
-
-    first_cycle_operations = _concrete_during_operations(state)
-    if not first_cycle_operations:
-        return AlgorithmResult(kind="sat")
-
-    type_constraints = _build_type_constraints(variables, z3_vars)
-    first_indeterminate_result: Optional[AlgorithmResult] = None
-    common_descriptors: Optional[Set[Tuple[str, str, str]]] = None
-
-    for context in contexts:
-        descriptors, result = _enter_condition_descriptors_for_context(
-            state,
-            variables,
-            z3_vars,
-            init_constraints,
-            type_constraints,
-            first_cycle_operations,
-            context,
-            smt_timeout_ms=smt_timeout_ms,
-        )
-        if result is not None:
-            first_indeterminate_result = _first_indeterminate(
-                first_indeterminate_result,
-                result.kind,
-                result.reason,
-            )
-            common_descriptors = set()
-            continue
-        if common_descriptors is None:
-            common_descriptors = set(descriptors or ())
-        else:
-            common_descriptors &= set(descriptors or ())
-
-    diagnostics: List[dict] = []
-    for condition, condition_source, branch_taken in sorted(
-        common_descriptors or ()
-    ):
-        diagnostics.append(
-            _make_diag(
-                "I_ENTER_DURING_CONTRADICT",
-                "enter_postcondition_implies_during_precondition",
-                state=_state_path(state),
-                condition=condition,
-                condition_source=condition_source,
-                branch_taken=branch_taken,
-                verification_scope="smt_local",
-            )
-        )
-
-    if diagnostics:
-        return AlgorithmResult(kind="unsat", diagnostics=tuple(diagnostics))
-    if first_indeterminate_result is not None:
-        return first_indeterminate_result
-    return AlgorithmResult(kind="sat")
 
 
 def _event_bool_name(transition: Transition) -> str:
@@ -2778,126 +2609,20 @@ def _event_bool_name(transition: Transition) -> str:
     :type transition: Transition
     :return: Event boolean name.
     :rtype: str
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "def int x = 0; state Root { state A; state B; [*] -> A; A -> B :: Go; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> _event_bool_name(machine.root_state.transitions[1])
+        '__event__4:Root1:A2:Go'
     """
     if transition.event is None:
         return "__event__anonymous"
     return "__event__" + "".join(
         f"{len(part)}:{part}" for part in transition.event.path
     )
-
-
-def composite_init_guards_incomplete(
-    machine: StateMachine,
-    variables: Sequence[VarDefine],
-    *,
-    smt_timeout_ms: Optional[int] = None,
-) -> AlgorithmResult:
-    """Detect composite states whose initial transitions do not cover inputs.
-
-    The result ``kind`` follows the witness query: ``'sat'`` means a coverage
-    gap was found and diagnostics were emitted, while ``'unsat'`` means the
-    initial-transition triggers cover all modeled inputs.
-
-    :param machine: State machine to inspect.
-    :type machine: StateMachine
-    :param variables: Variable definitions available to the model.
-    :type variables: Sequence[VarDefine]
-    :param smt_timeout_ms: Optional solver timeout in milliseconds.
-    :type smt_timeout_ms: Optional[int], optional
-    :return: Algorithm result.
-    :rtype: AlgorithmResult
-    """
-    diagnostics: List[dict] = []
-    first_indeterminate_result: Optional[AlgorithmResult] = None
-
-    for state in machine.walk_states():
-        if state.is_leaf_state:
-            continue
-
-        init_transitions = state.init_transitions
-        if not init_transitions:
-            continue
-        if any(
-            transition.guard is None and transition.event is None
-            for transition in init_transitions
-        ):
-            continue
-
-        z3_vars = _z3_vars(variables)
-        event_vars: Dict[str, z3.BoolRef] = {}
-        triggers: List[z3.ExprRef] = []
-        per_composite_failed = False
-        type_constraints = _build_type_constraints(variables, z3_vars)
-        for transition in init_transitions:
-            trigger, trigger_domains, result = _transition_trigger_or_result(
-                transition,
-                z3_vars,
-                event_vars,
-                context_constraints=type_constraints,
-                smt_timeout_ms=smt_timeout_ms,
-            )
-            if result is not None:
-                first_indeterminate_result = _first_indeterminate(
-                    first_indeterminate_result,
-                    result.kind,
-                    result.reason,
-                )
-                per_composite_failed = True
-                break
-            if trigger_domains:
-                trigger = z3.And(trigger, *trigger_domains)
-            triggers.append(trigger)
-
-        if per_composite_failed or not triggers:
-            continue
-
-        no_coverage = z3.Not(z3.Or(*triggers))
-        sat_result = is_sat(
-            [
-                no_coverage,
-                *type_constraints,
-            ],
-            timeout_ms=smt_timeout_ms,
-            get_model=True,
-        )
-        if sat_result.kind == "sat":
-            diagnostics.append(
-                _make_diag(
-                    "W_COMPOSITE_INIT_INCOMPLETE",
-                    "composite_init_guards_incomplete",
-                    state=_state_path(state),
-                    init_transitions=tuple(
-                        _transition_payload(transition)
-                        for transition in init_transitions
-                    ),
-                    witness=str(sat_result.model)
-                    if sat_result.model is not None
-                    else None,
-                    verification_scope="smt_local",
-                )
-            )
-        else:
-            first_indeterminate_result = _first_indeterminate(
-                first_indeterminate_result,
-                sat_result.kind,
-            )
-
-    if diagnostics:
-        return AlgorithmResult(kind="sat", diagnostics=tuple(diagnostics))
-    if first_indeterminate_result is not None:
-        return first_indeterminate_result
-    return AlgorithmResult(kind="unsat")
-
-
-__all__ = [
-    "AlgorithmResult",
-    "ResultKind",
-    "composite_init_guards_incomplete",
-    "dead_guard",
-    "effect_contradicts_guard",
-    "effect_no_op_under_guard",
-    "enter_postcondition_implies_during_precondition",
-    "forced_guard_unsat_under_init",
-    "guard_tautology",
-    "transition_shadowed_by_predecessor",
-]

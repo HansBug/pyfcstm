@@ -4,6 +4,13 @@ The core solver and verify algorithms are intentionally full-power by default:
 they translate the requested expression and let Z3 try the query.  This module
 provides a separate syntactic scanner for callers such as diagnostics adapters
 that want to apply their own policy before invoking those core algorithms.
+
+Example::
+
+    >>> from pyfcstm.model.expr import BinaryOp, Integer, Variable
+    >>> expr = BinaryOp(Variable("x"), "*", Variable("y"))
+    >>> check_expr_safety(expr).reason
+    'nonlinear'
 """
 
 from dataclasses import dataclass
@@ -61,7 +68,15 @@ class SafetyCheck:
     :type reason: Optional[SafetyReason], optional
     :param offending_node: First expression node that triggered the unsafe
         result, defaults to ``None``.
-    :type offending_node: Optional[Expr], optional
+    :type offending_node: Optional[pyfcstm.model.expr.Expr], optional
+
+    Example::
+
+        >>> check = SafetyCheck(safe=False, reason="nonlinear")
+        >>> check.safe
+        False
+        >>> check.reason
+        'nonlinear'
     """
 
     safe: bool
@@ -73,9 +88,17 @@ def _contains_variable(expr: Expr) -> bool:
     """Return whether an expression tree contains at least one variable.
 
     :param expr: Expression to inspect.
-    :type expr: Expr
+    :type expr: pyfcstm.model.expr.Expr
     :return: ``True`` if a :class:`pyfcstm.model.expr.Variable` appears.
     :rtype: bool
+
+    Example::
+
+        >>> from pyfcstm.model.expr import Integer, Variable
+        >>> _contains_variable(Variable("x"))
+        True
+        >>> _contains_variable(Integer(1))
+        False
     """
     return bool(expr.list_variables())
 
@@ -86,9 +109,18 @@ def _unsafe(reason: SafetyReason, offending_node: Expr) -> SafetyCheck:
     :param reason: Safety reason.
     :type reason: SafetyReason
     :param offending_node: Node that caused the result.
-    :type offending_node: Expr
+    :type offending_node: pyfcstm.model.expr.Expr
     :return: Policy rejection result.
     :rtype: SafetyCheck
+
+    Example::
+
+        >>> from pyfcstm.model.expr import Integer
+        >>> result = _unsafe("bitwise", Integer(1))
+        >>> result.safe
+        False
+        >>> result.reason
+        'bitwise'
     """
     return SafetyCheck(safe=False, reason=reason, offending_node=offending_node)
 
@@ -98,10 +130,19 @@ def check_expr_safety(expr: Optional[Expr]) -> SafetyCheck:
 
     :param expr: Expression to scan, or ``None`` for optional missing
         expressions.
-    :type expr: Optional[Expr]
+    :type expr: Optional[pyfcstm.model.expr.Expr]
     :return: Safety-policy result.  The first policy-rejected node in pre-order
         traversal is reported when a hazard is found.
     :rtype: SafetyCheck
+
+    Example::
+
+        >>> from pyfcstm.model.expr import BinaryOp, Integer, Variable
+        >>> check_expr_safety(Integer(1)).safe
+        True
+        >>> expr = BinaryOp(Variable("x"), "*", Variable("y"))
+        >>> check_expr_safety(expr).reason
+        'nonlinear'
     """
     if expr is None:
         return SafetyCheck(safe=True)
@@ -144,6 +185,14 @@ def check_expr_safety_for_effect(ops: Sequence[OperationStatement]) -> SafetyChe
     :return: First policy-rejected expression result, or a safe result if all
         scanned expressions are acceptable.
     :rtype: SafetyCheck
+
+    Example::
+
+        >>> from pyfcstm.model.expr import BinaryOp, Integer, Variable
+        >>> from pyfcstm.model.model import Operation
+        >>> ops = [Operation("x", BinaryOp(Variable("x"), "*", Variable("y")))]
+        >>> check_expr_safety_for_effect(ops).reason
+        'nonlinear'
     """
     for statement in ops:
         if isinstance(statement, Operation):

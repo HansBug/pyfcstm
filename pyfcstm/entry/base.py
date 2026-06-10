@@ -44,6 +44,7 @@ except ImportError:
 import click
 from click.exceptions import ClickException
 
+#: Shared Click context settings used by pyfcstm CLI command groups.
 CONTEXT_SETTINGS = dict(
     help_option_names=['-h', '--help']
 )

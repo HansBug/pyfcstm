@@ -1,20 +1,18 @@
-pyfcstm.solver
+pyfcstm.verify.algorithms
 ========================================================
 
-.. currentmodule:: pyfcstm.solver
+.. currentmodule:: pyfcstm.verify.algorithms
 
-.. automodule:: pyfcstm.solver
+.. automodule:: pyfcstm.verify.algorithms
 
 
 .. toctree::
     :maxdepth: 3
 
-    domain
-    expr
-    logical
-    operation
-    safety
-    solve
+    effect
+    guard
+    lifecycle
+    transition
 
 \_\_all\_\_
 -----------------------------------------------------

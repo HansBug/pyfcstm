@@ -37,7 +37,7 @@ from ..model import parse_dsl_node_to_state_machine
 from ..model.plantuml import PlantUMLOptions
 from ..utils import auto_decode, parse_key_value_pairs
 
-# Type hints for PlantUMLOptions fields
+#: Accepted value types for PlantUML CLI configuration keys.
 PLANTUML_OPTION_TYPES: Dict[str, Union[type, str]] = {
     'detail_level': str,
     'show_variable_definitions': bool,

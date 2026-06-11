@@ -40,8 +40,9 @@ target languages. It specializes in modeling **Hierarchical State Machines (Hare
 Jinja2-based template system, making it ideal for embedded systems, protocol implementations, game AI, workflow
 engines, and complex control logic.
 
-Out of the box, pyfcstm can parse, visualize, and simulate FCSTM state machines. For source-code generation, pyfcstm
-provides the rendering engine and model API, while you provide the target-language template directory.
+Out of the box, pyfcstm can parse, visualize, simulate, inspect, and generate code from FCSTM state machines. For
+source-code generation, pyfcstm ships packaged built-in templates for common starting points and still supports fully
+custom target-language template directories.
 
 ## Table of Contents
 
@@ -68,7 +69,7 @@ pyfcstm aims to provide a complete solution from conceptual design to code imple
 | **FSM DSL**                     | A concise and readable DSL syntax for defining states, nesting, transitions, events, conditions, and effects.                         | Focus on state machine logic, not programming language details.                                                | [DSL Syntax Tutorial](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html)                      |
 | **Hierarchical State Machines** | Supports **nested states** and **composite state** lifecycles (`enter`, `during`, `exit`).                                            | Capable of modeling complex real-time systems and protocols, enhancing maintainability.                        | [DSL Syntax Tutorial - State Definitions](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html)  |
 | **Expression System**           | Built-in mathematical and logical expression parser supporting variable definition, conditional guards, and state effects (`effect`). | Allows defining the state machine's internal data and behavior at the DSL level.                               | [DSL Syntax Tutorial - Expression System](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html)  |
-| **Templated Code Generation**   | Based on the **Jinja2** template engine, rendering the state machine model into target code (e.g., C/C++, Python, Rust).              | Extremely high flexibility, supporting code generation for virtually any programming language.                 | [Template Tutorial](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html)                     |
+| **Templated Code Generation**   | Based on the **Jinja2** template engine, rendering the state machine model into target code through packaged built-in templates or custom template directories. | Use built-in `python`, `c`, and `c_poll` templates as starting points, or generate for virtually any language with your own templates. | [Template Tutorial](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html)                     |
 | **Cross-Language Support**      | Easily enables state machine code generation for embedded or high-performance languages like **C/C++** through the template system.   | Suitable for scenarios where state machine logic needs to be deployed across different platforms or languages. | [Template Tutorial - Expression Styles](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html) |
 | **PlantUML Integration**        | Directly converts DSL files into **PlantUML** code, with preset detail levels and fine-grained visualization options.                | Facilitates design review and documentation generation.                                                        | [Visualization Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/visualization/index.html)            |
 | **Simulation Runtime**          | Runs FCSTM models directly in Python or from an interactive CLI REPL / batch executor.                                                | Lets you validate behavior before committing to generated code.                                                | [Simulation Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/simulation/index.html)                  |
@@ -76,8 +77,8 @@ pyfcstm aims to provide a complete solution from conceptual design to code imple
 | **Structured Diagnostics**      | `pyfcstm.diagnostics` ships **59 diagnostic codes** (20 errors / 32 warnings / 7 infos) covering parse errors, design-health issues (deadlock, unreachable, redundant transitions, const-folded guards, etc.), Layer 0 use-def dataflow analysis, and optional verify-backed checks. | Replace ad-hoc regex / message scraping with a stable structured API; codes carry `for_llm` payloads to drive LLM-assisted repair. | [Diagnostics Code List](#static-diagnostics-codes) |
 | **`inspect_model()` API**       | One-call structured view of a state machine: states / transitions / variables / events / metrics + reachability graph + var dataflow + aspect impact map + diagnostics. Round-trippable via `to_json()` against a published JSON schema. | Drop-in replacement for hand-written model walkers; single source of truth for downstream tooling.             | [inspect_model API](https://pyfcstm.readthedocs.io/en/latest/api_doc/diagnostics/inspect.html)                |
 | **`pyfcstm inspect` CLI**       | Emits the same structured inspect report as stable JSON; verify-backed diagnostics stay disabled unless `--enable-verify` is passed. | Makes diagnostics usable in CI, scripts, and editor tooling without writing Python glue.                       | [CLI Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/cli/index.html)                                |
-| **Suggested-Fix + VS Code Quick-Fix** | Selected diagnostics carry a `suggested_fix` payload (kind / anchor / text template) that the VS Code extension consumes as auto-apply quick-fixes; each fix is parse-back-verified. | Auto-fix loop for both humans and LLM agents; no regex patching. | [VS Code Extension](https://pyfcstm.readthedocs.io/en/latest/tutorials/editor/index.html) |
-| **Cross-End Parity (py / js)**  | Python `inspect_model().diagnostics` and `@pyfcstm/jsfcstm` `inspectModel().diagnostics` emit byte-equivalent sets (normalized `code + severity + refs`), locked by cross-end parity tests. | Same diagnostics surface in CLI tooling, server-side processors, and browser-based editors / language servers. | [Cross-End Parity](https://pyfcstm.readthedocs.io/en/latest/api_doc/diagnostics/parity.html) |
+| **Suggested-Fix + VS Code Quick-Fix** | Selected diagnostics carry a `suggested_fix` payload (kind / anchor / text template) that the VS Code extension consumes as auto-apply quick-fixes; each fix is parse-back-verified. | Auto-fix loop for both humans and LLM agents; no regex patching. | [VS Code Extension](https://pyfcstm.readthedocs.io/en/latest/tutorials/grammar/index.html) |
+| **Cross-End Parity (py / js)**  | Python `inspect_model().diagnostics` and `@pyfcstm/jsfcstm` `inspectModel().diagnostics` emit byte-equivalent sets (normalized `code + severity + refs`), locked by cross-end parity tests. | Same diagnostics surface in CLI tooling, server-side processors, and browser-based editors / language servers. | [Diagnostics Code List](#static-diagnostics-codes) |
 
 ## Installation
 
@@ -213,13 +214,22 @@ In interactive mode, useful commands include `cycle`, `current`, `events`, `hist
 
 #### Templated Code Generation
 
-Use the `generate` subcommand, along with a template directory, to generate target language code:
+Use the `generate` subcommand with either a packaged built-in template or a custom template directory.
+
+Built-in templates are selected with `--template`:
+
+```shell
+pyfcstm generate -i traffic_light.fcstm --template python -o ./generated/python --clear
+```
+
+Custom templates are still supported with `-t/--template-dir`:
 
 ```shell
 pyfcstm generate -i traffic_light.fcstm -t ./templates/c -o ./generated/c --clear
 ```
 
-**Important**: `generate` expects a template directory that you provide. At minimum, that directory should contain a
+Built-in templates currently include `python`, `c`, and `c_poll`; they are packaged from the repository
+`templates/` tree and exposed through `pyfcstm generate --template ...`. A custom template directory must contain a
 `config.yaml`; any `.j2` files are rendered, and non-template files are copied as-is.
 
 ### 2. Using the Python API
@@ -636,8 +646,19 @@ template_directory/
 └── ...                  # Directory structure is preserved
 ```
 
-pyfcstm does not ship a universal built-in code template set. In practice, you prepare a template directory for your
-own runtime/framework and pass it to `pyfcstm generate`.
+pyfcstm ships packaged built-in templates declared in `pyfcstm/template/index.json`, currently `python`, `c`, and
+`c_poll`. Use them when you want a ready reference runtime:
+
+```shell
+pyfcstm generate -i machine.fcstm --template python -o ./out --clear
+```
+
+For project-specific runtime/framework integration, prepare a custom template directory and pass it to
+`pyfcstm generate -t`:
+
+```shell
+pyfcstm generate -i machine.fcstm -t ./template_directory -o ./out --clear
+```
 
 **More Information**:
 See [Template System Architecture Details](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html) for a
@@ -705,7 +726,7 @@ Every code is reachable from the minimal DSL snippet in the right-hand column; s
 [`pyfcstm/diagnostics/codes.yaml`](pyfcstm/diagnostics/codes.yaml) for full per-code metadata (refs schema,
 `for_llm` payload, suggested-fix template, parity flags).
 
-#### Errors (`E_*`) — model is invalid, must fix (19)
+#### Errors (`E_*`) — model is invalid, must fix (20)
 
 | Code | What it catches | Minimal DSL example |
 |------|-----------------|---------------------|
@@ -722,6 +743,7 @@ Every code is reachable from the minimal DSL snippet in the right-hand column; s
 | `E_DUPLICATE_FUNCTION_NAME` | Two named lifecycle actions within the same state share the same name. | `state Root { state A { enter Foo { } enter Foo { } } }` |
 | `E_DURING_ASPECT_INVALID` | A `during` block is declared inconsistently with the host state's leaf/composite kind. | `state Root { state A { during before { } } }` |
 | `E_PSEUDO_NOT_LEAF` | A state was declared with the `pseudo` keyword but has nested substates. | `state Root { pseudo state Outer { state Inner; [*] -> Inner; } }` |
+| `E_NAMED_FUNCTION_REF_CYCLE` | A lifecycle action `ref` chain forms a cycle and never reaches a concrete or abstract action. | `state Root { state A { enter First ref Second; enter Second ref First; } [*] -> A; }` |
 | `E_NAMED_FUNCTION_REF_NOT_FOUND` | A `ref` lifecycle action could not resolve its target named action. | `state Root { state A { enter ref NoSuch.NoSuch; } }` |
 | `E_IMPORT_NOT_FOUND` | An `import` statement points at a source file that cannot be found, read, or parsed. | `state System { import "missing.fcstm" as Sub; }` |
 | `E_IMPORT_CIRCULAR` | A cycle was detected while resolving `import` statements between two or more state-machine source files. | `# a.fcstm state A { import "b.fcstm" as B; } # b.fcstm state B { import "a.fcstm" as A; }` |
@@ -729,7 +751,7 @@ Every code is reachable from the minimal DSL snippet in the right-hand column; s
 | `E_IMPORT_DUPLICATE_MAPPING` | Two or more mapping clauses under the same `import { ... }` block target the same imported name. | `state System { import "sub.fcstm" as Sub { def x = a; def x = b; } }` |
 | `E_IMPORT_MAPPING_INVALID` | An import-mapping clause refers to a source name that does not exist in the imported machine. | `state System { import "sub.fcstm" as Sub { def x = no_such_var; } }` |
 
-#### Warnings (`W_*`) — high-confidence design-health issues (24)
+#### Warnings (`W_*`) — high-confidence design-health issues (32)
 
 | Code | What it catches | Minimal DSL example |
 |------|-----------------|---------------------|
@@ -757,14 +779,26 @@ Every code is reachable from the minimal DSL snippet in the right-hand column; s
 | `W_HIGH_VAR_TO_LEAF_RATIO` | The number of variables is high relative to the number of non-pseudo leaf states (fact-flag bloat heuristic). | `def int a = 0; def int b = 0; def int c = 0; state Root { state A; [*] -> A; }` |
 | `W_DEEP_HIERARCHY` | The state hierarchy exceeds the configured maximum depth. | `state Root { state A { state B { state C; [*] -> C; } [*] -> B; } [*] -> A; }` |
 | `W_LARGE_COMPOSITE` | A composite state has more direct children than the configured threshold. | `state Root { state A; state B; state C; [*] -> A; }` |
+| `W_TOPOLOGICAL_NOEXIT` | A root-reachable leaf or cycle has no guard-agnostic route to the root exit sink. | `state System { state A; state B; [*] -> A; A -> B; }` |
+| `W_EVENT_UNREACHABLE_EMIT` | A used event has no consumer source that is reachable in the guard-agnostic topology graph. | `state System { event Panic; state A; state LostA; state LostB; [*] -> A; LostA -> A : Panic; LostB -> A : Panic; }` |
+| `W_DEAD_GUARD` | SMT proves a transition guard is unsatisfiable under model variable type and runtime-definedness constraints. | `def int x = 0; state System { state A; state B; [*] -> A; A -> B : if [x > 1 && x < 0]; }` |
+| `W_GUARD_TAUTOLOGY` | SMT proves a transition guard is true for every valid variable valuation. | `def int x = 0; state System { state A; state B; [*] -> A; A -> B : if [x >= 0 || x < 0]; }` |
+| `W_FORCED_GUARD_UNSAT` | A forced-transition guard cannot be satisfied under declaration initializer values. | `def int x = 0; state System { state A; state B; [*] -> A; !A -> B : if [x > 0]; }` |
+| `W_EFFECT_SMT_NO_OP` | SMT proves a transition effect leaves all persistent model variables unchanged whenever the transition can run. | `def int x = 0; state System { state A; state B; [*] -> A; A -> B : if [x >= 0] effect { x = x + 0; }; }` |
+| `W_TRANSITION_SHADOWED` | A later outgoing transition is fully covered by earlier same-source triggers and therefore cannot be selected. | `state System { state A; state B; state C; [*] -> A; A -> B; A -> C; }` |
+| `W_COMPOSITE_INIT_INCOMPLETE` | A composite state's initial transitions do not jointly cover all variable and event inputs. | `def int x = 0; state System { state A; state B; [*] -> A : if [x > 0]; [*] -> B : if [x < 0]; }` |
 
-#### Infos (`I_*`) — observations that may be intentional (3)
+#### Infos (`I_*`) — observations that may be intentional (7)
 
 | Code | What it observes | Minimal DSL example |
 |------|------------------|---------------------|
 | `I_UNREFERENCED_VAR_MAYBE_ABSTRACT` | A variable cannot affect any transition guard through DSL data-flow, but at least one visible abstract action may use it externally. | `def int maybe_external = 0; def int ready = 0; state Root { state A { enter abstract ExternalHook; } state B; [*] -> A; A -> B : if [ready > 0]; }` |
 | `I_TRANSITION_TO_SELF_VIA_PARENT` | A composite state transitions to itself, intentionally forcing a re-entry through child initialization. | `state Root { state Active { state Leaf; [*] -> Leaf; } [*] -> Active; Active -> Active; }` |
 | `I_TRANSITION_NEVER_EVENT_TRIGGERED` | A normal transition has no event and no guard — an unconditional fall-through. | `state Root { state A; state B; [*] -> A; A -> B; }` |
+| `I_NONTRIVIAL_SCC` | A non-trivial strongly connected component exists in the guard-agnostic leaf-level topology graph. | `state System { state A; state B; [*] -> A; A -> B; B -> A; }` |
+| `I_TOPOLOGICAL_NON_TERMINATING` | The topology does not force all root-reachable executions to eventually reach the root terminator. | `state System { state A; [*] -> A; A -> A; A -> [*]; }` |
+| `I_EFFECT_GUARD_CONTRADICT` | A transition effect makes the same transition guard false after every guarded, runtime-defined execution. | `def int x = 0; state System { state A; state B; [*] -> A; A -> B : if [x > 0] effect { x = 0; }; }` |
+| `I_ENTER_DURING_CONTRADICT` | Entry-time assignments make a first-cycle `during` branch condition predetermined. | `def int x = 0; state System { state A { enter { x = 1; } during { if [x > 0] { x = x + 1; } else { x = x - 1; } } } [*] -> A; }` |
 
 > **Configurable thresholds.** `inspect_model(machine, *, deep_hierarchy_threshold=6, large_composite_threshold=12, var_to_leaf_ratio_threshold=2.0)` accepts override knobs for the three threshold-based warnings (`W_DEEP_HIERARCHY` / `W_LARGE_COMPOSITE` / `W_HIGH_VAR_TO_LEAF_RATIO`). jsfcstm `inspectModel(model, { deepHierarchyThreshold, largeCompositeThreshold, varToLeafRatioThreshold })` mirrors the same defaults.
 

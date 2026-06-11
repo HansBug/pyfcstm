@@ -90,6 +90,7 @@ def test_semantic_fixture_origin_files_cover_existing_simulate_tests():
     representative_cases = {
         "cycle_result_history_stable_leaf",
         "cycle_result_history_event_transition",
+        "cycle_result_event_accounting",
         "expression_error_preserves_runtime_snapshot",
         "abstract_handler_context_metadata",
     }
@@ -753,25 +754,23 @@ def _set_model_build_expectation(data, raises):
         ),
         (
             lambda data: data["steps"][0]["cycle"].update({"events": [7]}),
-            r"cycle.events\[0\] must be a string or event-like descriptor",
+            r"cycle.events\[0\] must be a string or event descriptor",
         ),
         (
             lambda data: data["steps"][0]["cycle"].update(
-                {"events": [{"event_like": "Root.A.Go", "extra": True}]}
+                {"events": [{"event": "Root.A.Go", "extra": True}]}
             ),
-            r"cycle.events\[0\] event descriptor must contain only event_like",
+            r"cycle.events\[0\] event descriptor must contain only event",
         ),
         (
             lambda data: data["steps"][0]["cycle"].update(
                 {"events": [{"unknown": "Root.A.Go"}]}
             ),
-            r"cycle.events\[0\] event descriptor must contain only event_like",
+            r"cycle.events\[0\] event descriptor must contain only event",
         ),
         (
-            lambda data: data["steps"][0]["cycle"].update(
-                {"events": [{"event_like": 12}]}
-            ),
-            r"cycle.events\[0\].event_like must be a string",
+            lambda data: data["steps"][0]["cycle"].update({"events": [{"event": 12}]}),
+            r"cycle.events\[0\].event must be a string",
         ),
         (
             lambda data: data["steps"][0]["expect"].update({"logs": {"containz": []}}),

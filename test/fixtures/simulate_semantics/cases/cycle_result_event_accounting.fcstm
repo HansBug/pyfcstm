@@ -1,0 +1,10 @@
+def int counter = 0;
+state Root {
+    state A {
+        event Tick;
+        event Noise;
+        during { counter = counter + 1; }
+    }
+    [*] -> A;
+    A -> A :: Tick;
+}

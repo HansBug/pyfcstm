@@ -55,7 +55,8 @@ Basic usage::
     from pyfcstm.simulate import SimulationRuntime
 
     runtime = SimulationRuntime(state_machine)
-    runtime.cycle()  # Execute first cycle
+    result = runtime.cycle()  # Execute first cycle
+    assert result.value is None
     runtime.cycle(['EventName'])  # Execute with events
 
     # Access state and variables
@@ -93,6 +94,7 @@ Abstract handler registration::
 
 import copy
 import warnings
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -179,12 +181,63 @@ class SimulationRuntimeDfsError(RuntimeError):
 
 class SimulationRuntimeEventError(ValueError):
     """
-    Raised when a user-supplied cycle event cannot be resolved.
+    Raised when a user-supplied cycle event input is invalid.
 
     This exception is intentionally narrower than ``LookupError`` so CLI
     callers can report invalid event input without also swallowing internal
-    ``KeyError`` / ``IndexError`` defects from runtime or model state.
+    ``KeyError`` / ``IndexError`` defects from runtime or model state. It is
+    used both for event paths that cannot be resolved and for unsupported
+    public ``cycle(events=...)`` input shapes.
+
+    Example::
+
+        >>> from pyfcstm.simulate import SimulationRuntimeEventError
+        >>> err = SimulationRuntimeEventError("Unsupported event input")
+        >>> "event" in str(err)
+        True
     """
+
+
+@dataclass(frozen=True)
+class CycleResult:
+    """
+    Immutable result returned by one :meth:`SimulationRuntime.cycle` call.
+
+    The result keeps the historical ``None`` return semantics in
+    :attr:`value` while exposing event-accounting metadata for the same cycle.
+    Event fields use resolved :attr:`pyfcstm.model.Event.path_name` strings so
+    callers can compare canonical event identities instead of user-supplied
+    relative paths.
+
+    :param value: Legacy cycle return value, currently always ``None``.
+    :type value: typing.Any
+    :param input_events: Canonical event paths supplied for this cycle, in
+        normalized input order.
+    :type input_events: Tuple[str, ...]
+    :param consumed_events: Canonical event paths for evented transitions that
+        executed during this cycle, in execution order.
+    :type consumed_events: Tuple[str, ...]
+    :param unconsumed_events: Canonical input event paths that did not
+        correspond to an executed evented transition.
+    :type unconsumed_events: Tuple[str, ...]
+
+    Example::
+
+        >>> result = CycleResult(
+        ...     input_events=("Root.A.Go", "Root.A.Noise"),
+        ...     consumed_events=("Root.A.Go",),
+        ...     unconsumed_events=("Root.A.Noise",),
+        ... )
+        >>> result.value is None
+        True
+        >>> result.consumed_events
+        ('Root.A.Go',)
+    """
+
+    value: Any = None
+    input_events: Tuple[str, ...] = ()
+    consumed_events: Tuple[str, ...] = ()
+    unconsumed_events: Tuple[str, ...] = ()
 
 
 class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
@@ -773,145 +826,162 @@ class SimulationRuntime:
                 f"Hot start target '{target_path}' cannot reach a stoppable state"
             )
 
+    def _event_input_error(self, message: str) -> SimulationRuntimeEventError:
+        """
+        Create a public event-input diagnostic for ``cycle(events=...)``.
+
+        The runtime uses this helper so unsupported event values, malformed
+        containers, and unresolved event paths all cross the public API
+        boundary as :class:`SimulationRuntimeEventError` rather than leaking
+        Python-native container or attribute errors.
+
+        :param message: Human-readable diagnostic message.
+        :type message: str
+        :return: A runtime event-input exception.
+        :rtype: SimulationRuntimeEventError
+
+        Example::
+
+            >>> from pyfcstm.simulate import SimulationRuntimeEventError
+            >>> isinstance(SimulationRuntimeEventError("bad event"), ValueError)
+            True
+        """
+        return SimulationRuntimeEventError(message)
+
     def _parse_event(self, event: Any) -> Event:
         """
-        Resolve an event reference into a concrete event object.
+        Resolve a public cycle event input into a model-owned event object.
 
-        This method accepts an event object (returned as-is), a dot-separated
-        event path string, or an event-like object exposing a ``path_name``
-        attribute. Event-like inputs are resolved by passing their ``path_name``
-        value through the same string path resolver used for direct string
-        inputs. String paths are resolved using intelligent resolution that
-        supports both StateMachine and State resolve_event methods for maximum
-        flexibility.
+        Supported inputs are string event paths and :class:`Event` instances
+        that resolve back to the current runtime's state machine. Arbitrary
+        event-like objects exposing ``path_name`` are intentionally rejected so
+        bare values and container elements use the same public input boundary.
 
-        **Path Resolution Strategy**:
-
-        The method uses a smart resolution strategy based on the current runtime
-        state and path syntax:
-
-        1. **If runtime has ended** (no current state): Use StateMachine.resolve_event only
-        2. **If path is definitely State.resolve_event syntax** (starts with ``/`` or ``.``):
-           Use State.resolve_event from current state
-        3. **If path is uncertain** (plain path like ``Root.System.event``):
-           Try StateMachine.resolve_event first, fall back to State.resolve_event if it fails
-
-        **Supported Path Formats**:
-
-        - **Full paths**: ``Root.State1.State2.EventName`` (StateMachine.resolve_event)
-        - **Relative paths**: ``error.critical`` (State.resolve_event from current state)
-        - **Parent-relative**: ``.error`` or ``..system.error`` (State.resolve_event)
-        - **Absolute**: ``/global.shutdown`` (State.resolve_event from root)
-
-        :param event: Event object, dot-separated event path string, or
-            event-like object exposing ``path_name``.
+        :param event: Event path string or model event object.
         :type event: Any
-        :return: The resolved event instance.
+        :return: The resolved event instance owned by this runtime's model.
         :rtype: Event
-        :raises TypeError: If ``event`` is neither a string, an :class:`Event`,
-            nor an event-like object exposing a string ``path_name``.
-        :raises SimulationRuntimeEventError: If the user-supplied event path
-            cannot be resolved by any supported method.
+        :raises SimulationRuntimeEventError: If the input shape is unsupported,
+            the path cannot be resolved, or the object does not belong to this
+            runtime's model.
 
         Example::
 
             >>> from pyfcstm.dsl import parse_with_grammar_entry
             >>> from pyfcstm.model import parse_dsl_node_to_state_machine
             >>> from pyfcstm.simulate import SimulationRuntime
-            >>> dsl_code = '''
-            ... state System {
-            ...     state Idle {
-            ...         event Start;
-            ...     }
-            ...     state Active {
-            ...         event Timeout;
-            ...     }
-            ...     [*] -> Idle;
-            ...     Idle -> Active :: Start;
-            ... }
-            ... '''
+            >>> dsl_code = 'state System { state Idle { event Start; } state Active; [*] -> Idle; Idle -> Active :: Start; }'
             >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
             >>> sm = parse_dsl_node_to_state_machine(ast)
             >>> runtime = SimulationRuntime(sm)
             >>> runtime.cycle()
-            >>> # Full path (StateMachine.resolve_event)
-            >>> event1 = runtime._parse_event('System.Idle.Start')
-            >>> event1.name
-            'Start'
-            >>> # Relative path (State.resolve_event from current state)
-            >>> event2 = runtime._parse_event('Start')
-            >>> event2.name
-            'Start'
-            >>> # Parent-relative path (State.resolve_event)
-            >>> event3 = runtime._parse_event('.Start')
-            >>> event3.name
-            'Start'
-            >>> # Absolute path (State.resolve_event)
-            >>> event4 = runtime._parse_event('/Idle.Start')
-            >>> event4.name
-            'Start'
-
-        .. note::
-           This method is used internally by :meth:`cycle` to normalize the
-           events parameter. Users can pass any supported path format directly
-           to :meth:`cycle` for maximum flexibility.
+            CycleResult(value=None, input_events=(), consumed_events=(), unconsumed_events=())
+            >>> runtime._parse_event('System.Idle.Start').path_name
+            'System.Idle.Start'
         """
         if isinstance(event, Event):
-            return event
-        if not isinstance(event, str) and hasattr(event, "path_name"):
-            path_name = getattr(event, "path_name")
-            if not isinstance(path_name, str):
-                raise TypeError(
-                    "Event-like object path_name must be str, got "
-                    f"{type(path_name)!r} - {path_name!r}."
-                )
-            event = path_name
+            return self._resolve_model_event(event)
         if isinstance(event, str):
-            from .utils import is_state_resolve_event_path
+            return self._resolve_event_path(event)
+        raise self._event_input_error(
+            f"Unsupported event input {event!r} of type {type(event)!r}; "
+            "expected an event path string or a model Event object."
+        )
 
-            # Check if runtime has ended (no current state)
-            has_current_state = len(self.stack) > 0
+    def _resolve_model_event(self, event: Event) -> Event:
+        """
+        Resolve and validate a model event object supplied to ``cycle``.
 
-            # If runtime has ended, only use StateMachine.resolve_event
-            if not has_current_state:
-                try:
-                    return self.state_machine.resolve_event(event)
-                except (ModelValueError, ModelLookupError) as e:
-                    # ModelValueError/ModelLookupError: the user-supplied event
-                    # path is malformed or does not exist in the current model.
-                    raise SimulationRuntimeEventError(str(e)) from e
+        Event objects are accepted only when their canonical path resolves to
+        the same object in the current runtime's state machine. This keeps the
+        public boundary deterministic without attempting cross-model remapping.
 
-            # Check if path is definitely State.resolve_event syntax
-            is_definitely_state_path = is_state_resolve_event_path(event)
+        :param event: Event object supplied by the caller.
+        :type event: Event
+        :return: The matching event object from this runtime's state machine.
+        :rtype: Event
+        :raises SimulationRuntimeEventError: If the event path is unknown or
+            resolves to a different event object.
 
-            if is_definitely_state_path:
-                # Use State.resolve_event from current state
-                try:
-                    return self.current_state.resolve_event(event)
-                except (ModelValueError, ModelLookupError) as e:
-                    # ModelValueError/ModelLookupError: the user-supplied event
-                    # path is malformed or does not exist in the current state.
-                    raise SimulationRuntimeEventError(str(e)) from e
-            else:
-                # Uncertain path - try StateMachine first, then State
-                try:
-                    return self.state_machine.resolve_event(event)
-                except (ModelValueError, ModelLookupError):
-                    # ModelValueError/ModelLookupError: the path was not valid
-                    # as a full event path, so try resolving from current state.
-                    # Fall back to State.resolve_event
-                    try:
-                        return self.current_state.resolve_event(event)
-                    except (ModelValueError, ModelLookupError) as e:
-                        # ModelValueError/ModelLookupError: the same
-                        # user-supplied path also failed state-relative lookup.
-                        # Both methods failed - raise informative error
-                        raise SimulationRuntimeEventError(
-                            f"Cannot resolve event path {event!r}: "
-                            f"failed with both StateMachine.resolve_event and State.resolve_event. "
-                            f"Last error: {e}"
-                        ) from e
-        raise TypeError(f"Unknown event type {type(event)!r} - {event!r}.")
+        Example::
+
+            >>> from pyfcstm.model import Event
+            >>> event = Event(name="Go", state_path=("Root", "A"))
+            >>> event.path_name
+            'Root.A.Go'
+        """
+        try:
+            resolved = self.state_machine.resolve_event(event.path_name)
+        except (ModelValueError, ModelLookupError) as err:
+            # ModelValueError/ModelLookupError: the caller supplied an Event
+            # object whose canonical path is malformed or absent from this
+            # runtime's state machine.
+            raise self._event_input_error(
+                f"Event object {event!r} does not resolve in this runtime: {err}"
+            ) from err
+        if resolved is not event:
+            raise self._event_input_error(
+                f"Event object {event!r} is not owned by this runtime's state machine."
+            )
+        return resolved
+
+    def _resolve_event_path(self, event: str) -> Event:
+        """
+        Resolve a string event path using runtime-relative lookup rules.
+
+        The resolver first honors definitely state-relative path syntax
+        (leading ``/`` or ``.``). Ambiguous paths try full state-machine lookup
+        before falling back to the current state, matching the historical
+        ``cycle`` event-path behavior.
+
+        :param event: Event path string supplied by the caller.
+        :type event: str
+        :return: The resolved event object.
+        :rtype: Event
+        :raises SimulationRuntimeEventError: If no supported lookup can resolve
+            the path.
+
+        Example::
+
+            >>> isinstance('Root.A.Go', str)
+            True
+        """
+        from .utils import is_state_resolve_event_path
+
+        has_current_state = len(self.stack) > 0
+        if not has_current_state:
+            try:
+                return self.state_machine.resolve_event(event)
+            except (ModelValueError, ModelLookupError) as err:
+                # ModelValueError/ModelLookupError: the user-supplied event
+                # path is malformed or absent from the model.
+                raise self._event_input_error(str(err)) from err
+
+        if is_state_resolve_event_path(event):
+            try:
+                return self.current_state.resolve_event(event)
+            except (ModelValueError, ModelLookupError) as err:
+                # ModelValueError/ModelLookupError: the user-supplied
+                # state-relative path is malformed or absent from the current
+                # state scope.
+                raise self._event_input_error(str(err)) from err
+
+        try:
+            return self.state_machine.resolve_event(event)
+        except (ModelValueError, ModelLookupError):
+            # ModelValueError/ModelLookupError: the path was not a valid full
+            # state-machine event path, so try current-state lookup before
+            # surfacing a single public diagnostic.
+            try:
+                return self.current_state.resolve_event(event)
+            except (ModelValueError, ModelLookupError) as err:
+                # ModelValueError/ModelLookupError: the same user-supplied
+                # path also failed state-relative lookup.
+                raise self._event_input_error(
+                    f"Cannot resolve event path {event!r}: "
+                    f"failed with both StateMachine.resolve_event and State.resolve_event. "
+                    f"Last error: {err}"
+                ) from err
 
     @staticmethod
     def _clone_stack(stack: List[_Frame]) -> List[_Frame]:
@@ -932,11 +1002,49 @@ class SimulationRuntime:
 
     @staticmethod
     def _is_single_event_input(events: Any) -> bool:
-        """Return whether ``events`` is one event value rather than a collection."""
+        """
+        Return whether ``events`` is one event value rather than a collection.
+
+        Bare strings and model :class:`Event` objects are accepted public event
+        inputs, but they should not be iterated as containers during
+        normalization.
+
+        :param events: Candidate public event input.
+        :type events: Any
+        :return: ``True`` if ``events`` should be parsed as one event.
+        :rtype: bool
+
+        Example::
+
+            >>> SimulationRuntime._is_single_event_input("Root.A.Go")
+            True
+        """
         return isinstance(events, (str, Event))
 
     def _iter_event_inputs(self, events: Any) -> List[Any]:
-        """Normalize the public ``cycle(events=...)`` shape into event items."""
+        """
+        Normalize the public ``cycle(events=...)`` shape into event items.
+
+        ``None`` maps to an empty list; bare string and model-event inputs map
+        to a single-item list; other iterables are materialized without parsing
+        their elements. Unsupported non-iterable values are converted to
+        :class:`SimulationRuntimeEventError` so callers see one public event
+        diagnostic boundary.
+
+        :param events: Raw ``cycle`` event argument.
+        :type events: Any
+        :return: Event input items to resolve.
+        :rtype: List[Any]
+        :raises SimulationRuntimeEventError: If ``events`` is neither
+            ``None``, a single event input, nor an iterable of event inputs.
+
+        Example::
+
+            >>> from pyfcstm.simulate.runtime import SimulationRuntime
+            >>> runtime = object.__new__(SimulationRuntime)
+            >>> runtime._iter_event_inputs(None)
+            []
+        """
         if events is None:
             return []
         if self._is_single_event_input(events):
@@ -946,32 +1054,88 @@ class SimulationRuntime:
         except TypeError as e:
             # TypeError: list(events) raises when the caller supplied a
             # non-iterable object that is not one of the supported single-event
-            # shapes. Surface the same public unsupported-event diagnostic that
-            # item-level parsing uses.
-            raise TypeError(f"Unknown event type {type(events)!r} - {events!r}.") from e
+            # shapes. Surface the public simulate event-input diagnostic rather
+            # than leaking the Python container protocol error.
+            raise self._event_input_error(
+                f"Unsupported event input {events!r} of type {type(events)!r}; "
+                "expected an event path string, a model Event object, or an iterable "
+                "of those values."
+            ) from e
 
     def _normalize_events(self, events: Any) -> Tuple[List[Event], Dict[str, Event]]:
         """
         Normalize user-provided events into object and lookup forms.
 
         The runtime accepts event objects, string paths, and iterables
-        containing event objects, string paths, or event-like objects exposing
-        ``path_name``. Bare strings and model event objects are treated as
-        single events, not as generic iterables. This helper resolves inputs
-        into concrete :class:`Event` instances and also builds a dictionary keyed
-        by :attr:`Event.path_name` so transition matching can perform
-        constant-time membership checks.
+        containing event objects or string paths. Bare strings and model event
+        objects are treated as single events, not as generic iterables. This
+        helper resolves inputs into concrete :class:`Event` instances and also
+        builds a dictionary keyed by :attr:`Event.path_name` so transition
+        matching can perform constant-time membership checks.
 
         :param events: Raw event inputs for the current execution attempt.
         :type events: Any
         :return: A pair containing the resolved event list and a name-indexed mapping.
         :rtype: Tuple[List[Event], Dict[str, Event]]
+        :raises SimulationRuntimeEventError: If any input item cannot be
+            resolved as a supported event.
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> ast = parse_with_grammar_entry(
+            ...     'state Root { state A { event Go; } [*] -> A; }',
+            ...     'state_machine_dsl',
+            ... )
+            >>> runtime = SimulationRuntime(parse_dsl_node_to_state_machine(ast))
+            >>> events, by_name = runtime._normalize_events("Root.A.Go")
+            >>> events[0].path_name == "Root.A.Go" and "Root.A.Go" in by_name
+            True
         """
         event_objects = [
             self._parse_event(event) for event in self._iter_event_inputs(events)
         ]
         d_events = {event.path_name: event for event in event_objects}
         return event_objects, d_events
+
+    @staticmethod
+    def _unconsumed_event_names(
+        input_event_names: List[str], consumed_event_names: List[str]
+    ) -> Tuple[str, ...]:
+        """
+        Compute unconsumed input events with multiset semantics.
+
+        The returned tuple preserves input order. Each consumed event removes at
+        most one matching input event; extra consumed occurrences cannot create
+        negative unconsumed counts, which keeps chained transitions using the
+        same event deterministic.
+
+        :param input_event_names: Canonical input event names in normalized
+            input order.
+        :type input_event_names: List[str]
+        :param consumed_event_names: Canonical consumed event names in
+            transition execution order.
+        :type consumed_event_names: List[str]
+        :return: Canonical unconsumed event names in input order.
+        :rtype: Tuple[str, ...]
+
+        Example::
+
+            >>> SimulationRuntime._unconsumed_event_names(
+            ...     ["Root.A.Go", "Root.A.Noise", "Root.A.Go"],
+            ...     ["Root.A.Go"],
+            ... )
+            ('Root.A.Noise', 'Root.A.Go')
+        """
+        remaining_consumed = Counter(consumed_event_names)
+        unconsumed = []
+        for event_name in input_event_names:
+            if remaining_consumed[event_name] > 0:
+                remaining_consumed[event_name] -= 1
+            else:
+                unconsumed.append(event_name)
+        return tuple(unconsumed)
 
     def _execute_transition_effect(
         self,
@@ -1477,6 +1641,7 @@ class SimulationRuntime:
         state: State,
         vars_: Dict[str, Union[int, float]],
         d_events: Dict[str, Event],
+        consumed_events: Optional[List[str]] = None,
         is_validation_mode: bool = False,
     ) -> None:
         """
@@ -1497,6 +1662,9 @@ class SimulationRuntime:
         :type vars_: Dict[str, Union[int, float]]
         :param d_events: Active events for the current execution attempt.
         :type d_events: Dict[str, Event]
+        :param consumed_events: Optional collector for canonical names of
+            evented transitions executed in committed mode.
+        :type consumed_events: Optional[List[str]]
         :param is_validation_mode: Whether this is validation mode (handlers not executed).
         :type is_validation_mode: bool
         :return: ``None``.
@@ -1516,7 +1684,11 @@ class SimulationRuntime:
                 )
             stack[-1].mode = "init_wait"
             self._attempt_init_transition(
-                stack, vars_, d_events, is_validation_mode=is_validation_mode
+                stack,
+                vars_,
+                d_events,
+                consumed_events=consumed_events,
+                is_validation_mode=is_validation_mode,
             )
 
     def _attempt_init_transition(
@@ -1524,6 +1696,7 @@ class SimulationRuntime:
         stack: List[_Frame],
         vars_: Dict[str, Union[int, float]],
         d_events: Dict[str, Event],
+        consumed_events: Optional[List[str]] = None,
         is_validation_mode: bool = False,
     ) -> bool:
         """
@@ -1541,6 +1714,9 @@ class SimulationRuntime:
         :type vars_: Dict[str, Union[int, float]]
         :param d_events: Active events for the current execution attempt.
         :type d_events: Dict[str, Event]
+        :param consumed_events: Optional collector for canonical names of
+            evented transitions executed in committed mode.
+        :type consumed_events: Optional[List[str]]
         :param is_validation_mode: Whether this is validation mode (handlers not executed).
         :type is_validation_mode: bool
         :return: ``True`` if an initial transition was taken.
@@ -1571,6 +1747,7 @@ class SimulationRuntime:
                     vars_,
                     transition,
                     d_events,
+                    consumed_events=consumed_events,
                     is_validation_mode=is_validation_mode,
                 )
                 return True
@@ -1582,6 +1759,7 @@ class SimulationRuntime:
         vars_: Dict[str, Union[int, float]],
         transition: Transition,
         d_events: Dict[str, Event],
+        consumed_events: Optional[List[str]] = None,
         is_validation_mode: bool = False,
     ) -> None:
         """
@@ -1599,11 +1777,20 @@ class SimulationRuntime:
         :type transition: Transition
         :param d_events: Active events for the current execution attempt.
         :type d_events: Dict[str, Event]
+        :param consumed_events: Optional collector for canonical names of
+            evented transitions executed in committed mode.
+        :type consumed_events: Optional[List[str]]
         :param is_validation_mode: Whether this is validation mode.
         :type is_validation_mode: bool
         :return: ``None``.
         :rtype: None
         """
+        if (
+            consumed_events is not None
+            and not is_validation_mode
+            and transition.event is not None
+        ):
+            consumed_events.append(transition.event.path_name)
         state = stack[-1].state
         self._execute_transition_effect(
             transition,
@@ -1616,6 +1803,7 @@ class SimulationRuntime:
             target_state,
             vars_,
             d_events,
+            consumed_events=consumed_events,
             is_validation_mode=is_validation_mode,
         )
 
@@ -1720,6 +1908,7 @@ class SimulationRuntime:
         vars_: Dict[str, Union[int, float]],
         transition: Transition,
         d_events: Dict[str, Event],
+        consumed_events: Optional[List[str]] = None,
         is_validation_mode: bool = False,
     ) -> bool:
         """
@@ -1738,6 +1927,9 @@ class SimulationRuntime:
         :type transition: Transition
         :param d_events: Active events for the current execution attempt.
         :type d_events: Dict[str, Event]
+        :param consumed_events: Optional collector for canonical names of
+            evented transitions executed in committed mode.
+        :type consumed_events: Optional[List[str]]
         :param is_validation_mode: Whether this is validation mode (handlers not executed).
         :type is_validation_mode: bool
         :return: ``True`` if executing the transition ends the runtime.
@@ -1761,6 +1953,12 @@ class SimulationRuntime:
                 f"{current_state_path} -> {target_desc} "
                 f"(event={transition.event.path_name if transition.event else 'none'})"
             )
+            if (
+                transition.event is not None
+                and consumed_events is not None
+                and not is_validation_mode
+            ):
+                consumed_events.append(transition.event.path_name)
 
         for on_exit in current_state.on_exits:
             self._execute_func(on_exit, vars_, is_validation_mode=is_validation_mode)
@@ -1788,7 +1986,12 @@ class SimulationRuntime:
 
         target_state = current_state.parent.substates[transition.to_state]
         self._enter_state(
-            stack, target_state, vars_, d_events, is_validation_mode=is_validation_mode
+            stack,
+            target_state,
+            vars_,
+            d_events,
+            consumed_events=consumed_events,
+            is_validation_mode=is_validation_mode,
         )
         current_state_path = ".".join(current_state.path)
         target_state_path = ".".join(target_state.path)
@@ -1928,6 +2131,7 @@ class SimulationRuntime:
         stack: List[_Frame],
         vars_: Dict[str, Union[int, float]],
         d_events: Dict[str, Event],
+        consumed_events: Optional[List[str]] = None,
         is_validation_mode: bool = False,
     ) -> bool:
         """
@@ -1943,6 +2147,9 @@ class SimulationRuntime:
         :type vars_: Dict[str, Union[int, float]]
         :param d_events: Active events available during initial entry.
         :type d_events: Dict[str, Event]
+        :param consumed_events: Optional collector for canonical names of
+            evented transitions executed in committed mode.
+        :type consumed_events: Optional[List[str]]
         :param is_validation_mode: Whether this is validation mode (handlers not executed).
         :type is_validation_mode: bool
         :return: ``True`` if initialization ends the runtime immediately.
@@ -1954,6 +2161,7 @@ class SimulationRuntime:
             self.state_machine.root_state,
             vars_,
             d_events,
+            consumed_events=consumed_events,
             is_validation_mode=is_validation_mode,
         )
         return len(stack) == 0
@@ -2021,6 +2229,7 @@ class SimulationRuntime:
         *,
         ended: bool = False,
         validate_post_child_exit: bool = True,
+        consumed_events: Optional[List[str]] = None,
         is_validation_mode: bool = False,
     ) -> Tuple[bool, bool]:
         """
@@ -2046,6 +2255,9 @@ class SimulationRuntime:
         :param validate_post_child_exit: Whether transitions selected after a
             child exits to its parent should still perform stoppable validation.
         :type validate_post_child_exit: bool
+        :param consumed_events: Optional collector for canonical names of
+            evented transitions executed in committed mode.
+        :type consumed_events: Optional[List[str]]
         :param is_validation_mode: Whether this is validation mode (handlers not executed).
         :type is_validation_mode: bool
         :return: Pair ``(success, ended)`` describing the result.
@@ -2116,6 +2328,7 @@ class SimulationRuntime:
                         vars_,
                         transition,
                         d_events,
+                        consumed_events=consumed_events,
                         is_validation_mode=is_validation_mode,
                     )
                     steps_taken += 1
@@ -2132,7 +2345,11 @@ class SimulationRuntime:
 
             if frame.mode == "init_wait":
                 progressed = self._attempt_init_transition(
-                    stack, vars_, d_events, is_validation_mode=is_validation_mode
+                    stack,
+                    vars_,
+                    d_events,
+                    consumed_events=consumed_events,
+                    is_validation_mode=is_validation_mode,
                 )
                 steps_taken += 1
                 if not progressed:
@@ -2154,6 +2371,7 @@ class SimulationRuntime:
                     vars_,
                     transition,
                     d_events,
+                    consumed_events=consumed_events,
                     is_validation_mode=is_validation_mode,
                 )
                 steps_taken += 1
@@ -2165,7 +2383,7 @@ class SimulationRuntime:
 
         return True, True
 
-    def cycle(self, events: Any = None):
+    def cycle(self, events: Any = None) -> CycleResult:
         """
         Execute a full runtime cycle until reaching a stable boundary.
 
@@ -2188,12 +2406,11 @@ class SimulationRuntime:
 
         **Event Handling**:
 
-        Events can be provided as event objects, dot-separated path strings, or
-        iterables containing event objects, path strings, and event-like objects
-        exposing ``path_name``. A bare string is treated as one event path, not
-        as an iterable of characters. Multiple events can be active
-        simultaneously, allowing complex transition chains to execute in a
-        single cycle.
+        Events can be provided as model-owned event objects, dot-separated path
+        strings, or iterables containing those two value types. A bare string is
+        treated as one event path, not as an iterable of characters. Multiple
+        events can be active simultaneously, allowing complex transition chains
+        to execute in a single cycle.
 
         **Flexible Event Path Formats**:
 
@@ -2229,12 +2446,15 @@ class SimulationRuntime:
         - All side effects from failed validation are discarded
 
         :param events: Events available for the current cycle. Can be a single
-            event object, a dot-separated path string, or an iterable containing
-            event objects, path strings, and event-like objects exposing
-            ``path_name``.
+            model-owned event object, a dot-separated path string, or an
+            iterable containing event objects and path strings.
         :type events: Any, optional
-        :return: ``None``.
-        :rtype: None
+        :return: A cycle result containing legacy value and event-accounting
+            metadata for this cycle.
+        :rtype: CycleResult
+        :raises SimulationRuntimeEventError: If an event input has an
+            unsupported shape, cannot be resolved, or is not owned by this
+            runtime's state machine.
 
         Example - Basic cycle execution::
 
@@ -2257,12 +2477,16 @@ class SimulationRuntime:
             >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
             >>> sm = parse_dsl_node_to_state_machine(ast)
             >>> runtime = SimulationRuntime(sm)
-            >>> runtime.cycle()  # Initialize and reach Idle
+            >>> result = runtime.cycle()  # Initialize and reach Idle
+            >>> result.input_events
+            ()
             >>> runtime.current_state.path
             ('System', 'Idle')
             >>> runtime.vars['counter']
             1
-            >>> runtime.cycle('System.Idle.Start')  # Transition to Active
+            >>> result = runtime.cycle('System.Idle.Start')  # Transition to Active
+            >>> result.consumed_events
+            ('System.Idle.Start',)
             >>> runtime.current_state.path
             ('System', 'Active')
 
@@ -2399,16 +2623,17 @@ class SimulationRuntime:
             self.logger.warning(
                 "Runtime in error state, cycle ignored. Check error_info."
             )
-            return
+            return CycleResult()
 
         if self._ended:
             self.logger.warning("Runtime already ended, cycle ignored.")
-            return
+            return CycleResult()
 
         event_objects, d_events = self._normalize_events(events)
 
         # Log cycle start
         event_names = [event.path_name for event in event_objects]
+        consumed_event_names: List[str] = []
         self.logger.info(
             f"Cycle {self.cycle_count + 1} starting with events: "
             f"{event_names if event_names else 'none'}"
@@ -2450,11 +2675,20 @@ class SimulationRuntime:
             sim_ended = snapshot_ended
 
             if not sim_initialized:
-                sim_ended = self._initialize_context(sim_stack, sim_vars, d_events)
+                sim_ended = self._initialize_context(
+                    sim_stack,
+                    sim_vars,
+                    d_events,
+                    consumed_events=consumed_event_names,
+                )
                 sim_initialized = True
 
             success, sim_ended = self._run_cycle_on_context(
-                sim_stack, sim_vars, d_events, ended=sim_ended
+                sim_stack,
+                sim_vars,
+                d_events,
+                ended=sim_ended,
+                consumed_events=consumed_event_names,
             )
 
         if success:
@@ -2511,6 +2745,7 @@ class SimulationRuntime:
             self.logger.warning(
                 f"Cycle {self.cycle_count + 1} failed - Unable to reach a stoppable state, changes rolled back"
             )
+            consumed_event_names = []
 
         if self._ended or not self.stack:
             self._ended = True
@@ -2521,6 +2756,16 @@ class SimulationRuntime:
             self.logger.debug(
                 f"Cycle {self.cycle_count} - Current state: {current_state_path}, Vars: {self.vars}"
             )
+
+        result = CycleResult(
+            value=None,
+            input_events=tuple(event_names),
+            consumed_events=tuple(consumed_event_names),
+            unconsumed_events=self._unconsumed_event_names(
+                event_names, consumed_event_names
+            ),
+        )
+        return result
 
     @property
     def current_state(self) -> State:
@@ -2748,7 +2993,7 @@ class SimulationRuntime:
         return list(self._abstract_handler_errors)
 
     @property
-    def abstract_error_mode(self) -> Literal['raise', 'log']:
+    def abstract_error_mode(self) -> Literal["raise", "log"]:
         """
         Return the configured abstract-handler error mode.
 
@@ -2757,7 +3002,7 @@ class SimulationRuntime:
         """
         return self._abstract_error_mode
 
-    def copy_session_configuration_to(self, runtime: 'SimulationRuntime') -> None:
+    def copy_session_configuration_to(self, runtime: "SimulationRuntime") -> None:
         """
         Copy session-level configuration into another runtime instance.
 

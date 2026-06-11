@@ -1,8 +1,8 @@
 schema_version: 1
-id: event_input_path_name_object
-title: path_name event-like object input is accepted
+id: event_input_model_event_object
+title: model Event object input is accepted
 source:
-  fcstm: event_input_path_name_object.fcstm
+  fcstm: event_input_model_event_object.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
@@ -15,7 +15,7 @@ origin:
   - state
   - vars
   notes:
-  - Covers event-like objects exposing path_name.
+  - Covers model Event objects resolved from fixture event descriptors.
 categories:
 - event_paths
 - runtime
@@ -38,7 +38,7 @@ steps:
     return: null
 - cycle:
     events:
-    - event_like: Root.A.Go
+    - event: Root.A.Go
   expect:
     state:
     - Root

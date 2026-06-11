@@ -773,6 +773,7 @@ class SimulationRuntime:
 
         validation_stack = self._clone_stack(self.stack)
         validation_vars = copy.deepcopy(self.vars)
+        dfs_error = None
         try:
             success, _ = self._run_cycle_on_context(
                 validation_stack,
@@ -780,10 +781,15 @@ class SimulationRuntime:
                 {},
                 is_validation_mode=True,
             )
-        except SimulationRuntimeDfsError:
+        except SimulationRuntimeDfsError as e:
+            # _run_cycle_on_context preflight can hit DFS limits while proving
+            # that a hot-start target has no empty-event stable path.
+            dfs_error = e
             success = False
         if not success:
             if self._can_hot_start_wait_for_evented_initial(target_state):
+                if dfs_error is not None:
+                    raise dfs_error
                 return
             target_path = ".".join(target_state.path)
             raise ValueError(
@@ -796,22 +802,83 @@ class SimulationRuntime:
 
         Constructor preflight runs without user events, so an initial transition
         guarded by an event may be legitimately disabled until the first
-        :meth:`cycle` call. Such targets should remain in ``init_wait`` instead
-        of being rejected during construction.
+        :meth:`cycle` call. The event gate can appear directly on the target
+        composite or after an eventless initial-transition chain. Such targets
+        should remain in ``init_wait`` instead of being rejected during
+        construction.
 
         :param target_state: Hot-start target state to inspect.
         :type target_state: State
         :return: ``True`` when the target has an event-gated initial transition
-            whose non-event guard is currently satisfiable.
+            boundary whose non-event guard is currently satisfiable.
         :rtype: bool
+        :raises SimulationRuntimeDfsError: If the eventless initial-chain search
+            exceeds the runtime safety limits.
         """
         if target_state.is_leaf_state:
             return False
-        for transition in target_state.init_transitions:
-            if transition.event is None:
+
+        worklist = [(self._clone_stack(self.stack), copy.deepcopy(self.vars))]
+        seen_signatures = set()
+        steps_taken = 0
+
+        while worklist:
+            current_stack, current_vars = worklist.pop()
+            if not current_stack:
                 continue
-            if self._transition_matches_guard(transition, self.vars):
-                return True
+
+            structural_signature = self._create_structural_signature(current_stack)
+            if len(structural_signature) > self._DFS_STRUCTURAL_DEPTH_LIMIT:
+                raise SimulationRuntimeDfsError(
+                    "Hot start event-gated initial-chain search exceeded the "
+                    "structural stack-depth safety limit "
+                    f"({self._DFS_STRUCTURAL_DEPTH_LIMIT}); "
+                    "choose a shallower target state or simplify the state hierarchy."
+                )
+
+            signature = self._create_execution_signature(current_stack, current_vars)
+            if signature in seen_signatures:
+                continue
+            seen_signatures.add(signature)
+
+            if steps_taken >= self._DFS_STEP_LIMIT:
+                raise SimulationRuntimeDfsError(
+                    "Hot start event-gated initial-chain search exceeded the "
+                    f"step safety limit ({self._DFS_STEP_LIMIT}); "
+                    "the state machine likely contains an invalid unbounded "
+                    "initial-transition chain."
+                )
+            steps_taken += 1
+
+            frame = current_stack[-1]
+            state = frame.state
+            if state.is_leaf_state or frame.mode != "init_wait":
+                continue
+
+            for transition in state.init_transitions:
+                if transition.event is None:
+                    continue
+                if self._transition_matches_guard(transition, current_vars):
+                    return True
+
+            for transition in reversed(state.init_transitions):
+                if transition.event is not None:
+                    continue
+                if not self._transition_matches_guard(transition, current_vars):
+                    continue
+
+                next_stack = self._clone_stack(current_stack)
+                next_vars = copy.deepcopy(current_vars)
+                self._execute_initial_transition_on_context(
+                    next_stack,
+                    next_vars,
+                    transition,
+                    {},
+                    is_validation_mode=True,
+                    attempt_initial_transition=False,
+                )
+                worklist.append((next_stack, next_vars))
+
         return False
 
     def _parse_event(self, event: Any) -> Event:
@@ -1546,6 +1613,8 @@ class SimulationRuntime:
         :type attempt_initial_transition: bool, optional
         :return: ``None``.
         :rtype: None
+        :raises SimulationRuntimeDfsError: If initial-transition validation
+            exceeds runtime safety limits.
         """
         stack.append(_Frame(state, "active"))
         for on_enter in state.on_enters:

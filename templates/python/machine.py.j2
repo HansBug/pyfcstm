@@ -779,7 +779,7 @@ class {{ machine_class_name(model) }}:
             event_names,
             is_validation_mode=is_validation_mode,
         )
-        if composite_frame in stack:
+        if any(frame is composite_frame for frame in stack):
             composite_frame["mode"] = "active"
 
     def _validate_initial_transition(self, stack, vars_, transition_id, event_names):

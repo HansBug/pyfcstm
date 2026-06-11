@@ -410,6 +410,70 @@ state Root {
                 initial_vars={"counter": 0},
             )
 
+    def test_hot_start_parent_waits_for_nested_initial_event(self):
+        """Test that nested event-gated initial chains can wait for first cycle."""
+        dsl_code = """
+def int x = 0;
+state Root {
+    state Locked {
+        state Gate {
+            state Ready {
+                during { x = x + 1; }
+            }
+            [*] -> Ready :: Unlock;
+        }
+        [*] -> Gate;
+    }
+    [*] -> Locked;
+}
+"""
+        sm = build_state_machine(dsl_code)
+        runtime = SimulationRuntime(
+            sm,
+            initial_state="Root.Locked",
+            initial_vars={"x": 0},
+        )
+
+        assert runtime.current_state.path == ("Root", "Locked")
+        assert runtime.stack[-1].mode == "init_wait"
+
+        runtime.cycle(["Root.Locked.Gate.Unlock"])
+
+        assert runtime.current_state.path == ("Root", "Locked", "Gate", "Ready")
+        assert runtime.vars["x"] == 1
+        assert [frame.mode for frame in runtime.stack] == [
+            "active",
+            "active",
+            "active",
+            "active",
+        ]
+
+    def test_hot_start_event_wait_does_not_hide_dfs_error(self):
+        """Test that event-gated fallback does not swallow unbounded init errors."""
+        dsl_code = """
+def int spin = 0;
+state Root {
+    state Locked {
+        pseudo state Loop {
+            during { spin = spin + 1; }
+        }
+        state Ready;
+        [*] -> Loop;
+        [*] -> Ready :: Unlock;
+        Loop -> Loop;
+    }
+    [*] -> Locked;
+}
+"""
+        sm = build_state_machine(dsl_code)
+
+        with pytest.raises(SimulationRuntimeDfsError, match="step safety limit"):
+            SimulationRuntime(
+                sm,
+                initial_state="Root.Locked",
+                initial_vars={"spin": 0},
+            )
+
     def test_deep_initial_chain_validation_is_bounded(self):
         """Test that a single-path initial chain does not validate exponentially."""
 

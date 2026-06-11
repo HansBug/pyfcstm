@@ -617,19 +617,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--fixtures",
         type=Path,
-        default=Path("llm_grammar_guide_evals/fixtures"),
+        default=Path("llm_eval/fixtures"),
         help="Directory containing *.nl.md fixtures.",
     )
     parser.add_argument(
         "--outputs",
         type=Path,
-        default=Path("llm_grammar_guide_evals/outputs"),
+        default=Path("llm_eval/outputs"),
         help="Directory for provider outputs.",
     )
     parser.add_argument(
         "--reports",
         type=Path,
-        default=Path("llm_grammar_guide_evals/reports"),
+        default=Path("llm_eval/reports"),
         help="Directory for aggregate JSON reports.",
     )
     parser.add_argument("--provider", choices=_PROVIDERS)

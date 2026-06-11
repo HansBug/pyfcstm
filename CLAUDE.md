@@ -437,7 +437,7 @@ from pyfcstm.llm import (
 
 When changing DSL syntax, model semantics, or LLM-facing parse rules, update
 the packaged guide, its Markdown example tests, and the standalone
-[llm_grammar_guide_evals/](llm_grammar_guide_evals/) fixtures or reports when the change affects LLM
+[llm_eval/](llm_eval/) fixtures or reports when the change affects LLM
 generation behavior.
 
 The packaged LLM guide is protected by

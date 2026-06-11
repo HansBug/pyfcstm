@@ -403,6 +403,10 @@ def _assert_cycle_result(
 def _handler_call_comparable_record(actual: Mapping[str, Any]) -> Dict[str, Any]:
     result = dict(actual)
     state = actual.get("state")
+    # Handler records originally carried only action/state/stage/vars. These
+    # compatibility defaults reserve optional metadata slots for richer fixture
+    # assertions while preserving old records; handlers that collect concrete
+    # metadata can provide these keys directly and they will not be overwritten.
     result.setdefault(
         "active_leaf", state.split(".") if isinstance(state, str) else None
     )

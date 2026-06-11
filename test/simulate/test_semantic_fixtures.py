@@ -464,6 +464,18 @@ def _set_model_build_expectation(data, raises):
         (
             lambda data: (
                 data["steps"][0]["expect"].pop("return")
+                or data["steps"][0]["expect"].update(
+                    {
+                        "raises": {"type": "ValueError"},
+                        "cycle_result": {"value": None},
+                    }
+                )
+            ),
+            "cannot combine raises and cycle_result",
+        ),
+        (
+            lambda data: (
+                data["steps"][0]["expect"].pop("return")
                 or data["steps"][0]["expect"].update({"cycle_result": None})
             ),
             "cycle_result must be a mapping",

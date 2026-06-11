@@ -219,6 +219,12 @@ for richer execution-context checks:
   invoked through a named reference. Current fixtures may use `null`; richer
   named-reference distinctions are reserved for later context-metadata work.
 
+The fixture helper may synthesize these optional metadata fields from the
+original `action`, `state`, and `stage` record when a handler does not provide
+them. That keeps older handler records compatible while reserving stable schema
+slots for later runtime-context work. Once concrete metadata is collected by a
+handler, the helper preserves the provided values instead of overwriting them.
+
 ## Runtime steps
 
 A runtime step is either an initial assertion or a cycle call:

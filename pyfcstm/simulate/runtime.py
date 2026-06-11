@@ -274,6 +274,25 @@ class SimulationRuntimeDfsError(RuntimeError):
     pass
 
 
+class SimulationRuntimeTerminalStateError(IndexError):
+    """
+    Raised when an active-state query is unavailable after termination.
+
+    The exception is emitted by active-stack queries such as
+    :attr:`SimulationRuntime.current_state` when the runtime has naturally
+    ended and no active state remains. It subclasses :class:`IndexError` for
+    compatibility with callers that previously caught the generic exception,
+    while giving new callers a simulator-owned terminal-state diagnostic to
+    catch directly.
+
+    Example::
+
+        >>> err = SimulationRuntimeTerminalStateError("runtime has ended")
+        >>> isinstance(err, IndexError)
+        True
+    """
+
+
 class SimulationRuntimeEventError(ValueError):
     """
     Raised when a user-supplied cycle event cannot be resolved.
@@ -2915,8 +2934,7 @@ class SimulationRuntime:
 
             # Add to history and maintain size limit
             self.history.append(history_entry)
-            if self.history_size is not None and len(self.history) > self.history_size:
-                self.history.pop(0)  # Remove oldest entry
+            self._trim_history_to_size()
 
             # Log successful cycle completion with variable changes
             changes = self._format_var_changes(old_vars, self.vars)
@@ -2955,6 +2973,35 @@ class SimulationRuntime:
                 _safe_runtime_repr(self.vars),
             )
 
+    def _trim_history_to_size(self) -> None:
+        """
+        Trim committed history entries to the configured retention size.
+
+        ``None`` keeps all entries. Non-negative integer sizes keep the newest
+        ``history_size`` entries, with ``0`` keeping no entries. Unsupported
+        values intentionally retain the previous one-pop boundary behavior; the
+        public validation contract for invalid ``history_size`` values is owned
+        by a separate simulator issue.
+
+        :return: ``None``.
+        :rtype: None
+        """
+        history_size = self.history_size
+        if history_size is None:
+            return
+
+        if (
+            not isinstance(history_size, int)
+            or isinstance(history_size, bool)
+            or history_size < 0
+        ):
+            if len(self.history) > history_size:
+                self.history.pop(0)
+            return
+
+        while len(self.history) > history_size:
+            self.history.pop(0)
+
     @property
     def current_state(self) -> State:
         """
@@ -2965,9 +3012,16 @@ class SimulationRuntime:
         composite states in ``init_wait`` mode, this is the parent waiting for
         an initial transition.
 
+        Check :attr:`is_ended` before calling this property when a runtime may
+        have terminated. Once the runtime has ended, there is no active state
+        and the query raises :class:`SimulationRuntimeTerminalStateError`.
+
         :return: The current active state.
         :rtype: State
-        :raises IndexError: If the runtime has ended and the stack is empty.
+        :raises SimulationRuntimeTerminalStateError: If the runtime has ended
+            and the active stack is empty.
+        :raises RuntimeError: If the active stack is unexpectedly empty before
+            the runtime has ended.
 
         Example::
 
@@ -2999,16 +3053,21 @@ class SimulationRuntime:
         .. note::
            Before the first :meth:`cycle` call, this returns the root state.
            After the runtime has ended, accessing this property will raise
-           an IndexError.
+           :class:`SimulationRuntimeTerminalStateError`.
         """
         if not self.stack:
             if self._ended:
-                raise IndexError("Cannot access current_state: runtime has ended.")
-            else:
-                raise IndexError(
-                    "Cannot access current_state: runtime has not been initialized. "
-                    "This should not happen - the stack should be initialized in __init__."
+                raise SimulationRuntimeTerminalStateError(
+                    "Cannot access current_state: runtime has ended and the "
+                    "active stack is empty. Check is_ended before querying "
+                    "current_state, or use terminal-safe queries such as "
+                    "brief_stack or history."
                 )
+            raise RuntimeError(
+                "Cannot access current_state: runtime active stack is empty "
+                "before termination. This indicates an internal runtime "
+                "invariant failure."
+            )
         return self.stack[-1].state
 
     @property

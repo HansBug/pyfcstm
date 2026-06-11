@@ -2648,6 +2648,10 @@ class TestInspectModelVerifyIntegration:
 
         assert inspect_module._refs_match_code_schema('W_DEAD_GUARD', valid_refs)
         assert not inspect_module._refs_match_code_schema(
+            'X_UNKNOWN_CODE',
+            {'state_path': 'Root.Missing'},
+        )
+        assert not inspect_module._refs_match_code_schema(
             'E_UNDEFINED_VAR',
             dict(valid_refs),
         )

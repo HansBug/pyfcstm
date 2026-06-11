@@ -1306,8 +1306,22 @@ class BinaryOp(Op):
         Evaluate the binary operation.
 
         :param kwargs: Variable name to value mapping
-        :return: Result of the operation
+        :type kwargs: Any
+        :return: Result of the operation.
+        :rtype: Any
+
+        Example::
+
+            >>> expr = BinaryOp(Variable("x").ne(0), "&&", Integer(10) / Variable("x"))
+            >>> expr(x=0)
+            False
         """
+        if self.op_mark == "&&":
+            left = self.x._call(**kwargs)
+            return bool(left) and bool(self.y._call(**kwargs))
+        if self.op_mark == "||":
+            left = self.x._call(**kwargs)
+            return bool(left) or bool(self.y._call(**kwargs))
         return _OP_FUNCTIONS[self.op_mark](self.x._call(**kwargs), self.y._call(**kwargs))
 
     def to_ast_node(self) -> dsl_nodes.Expr:

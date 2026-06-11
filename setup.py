@@ -34,7 +34,7 @@ package_data = {
     package_name: ['*.yaml', '*.yml', '*.json', '*.png', '*.zip', '*.g4', '*.tokens', '*.interp']
     for package_name in find_packages(include=('*'))
 }
-package_data.setdefault('pyfcstm.llm', []).append('*.md')
+package_data.setdefault('pyfcstm.llm', []).extend(['*.md', '*.sha256'])
 
 setup(
     # information

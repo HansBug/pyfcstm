@@ -169,6 +169,7 @@ make docs_en / make docs_zh      # Build for specific language
 make pdocs                       # Production documentation with versioning
 make rst_auto                    # Generate RST from Python source files
 make rst_auto RANGE_DIR=model    # Generate RST for specific directory
+make sha256                      # Update generated SHA-256 sidecar files
 make docs_auto                   # Generate Python docstrings (requires hbllmutils)
 make todos_auto                  # Complete TODO comments (requires hbllmutils)
 make tests_auto                  # Generate unit tests (requires hbllmutils)
@@ -438,6 +439,15 @@ When changing DSL syntax, model semantics, or LLM-facing parse rules, update
 the packaged guide, its Markdown example tests, and the standalone
 [llm_grammar_guide_evals/](llm_grammar_guide_evals/) fixtures or reports when the change affects LLM
 generation behavior.
+
+The packaged LLM guide is protected by
+[pyfcstm/llm/fcstm_grammar_guide.md.sha256](pyfcstm/llm/fcstm_grammar_guide.md.sha256). After editing
+[pyfcstm/llm/fcstm_grammar_guide.md](pyfcstm/llm/fcstm_grammar_guide.md), run `make sha256` and commit the guide and
+checksum together. The hash is computed from LF-normalized UTF-8 prompt text to keep Windows and Unix checkouts
+consistent.
+
+Before committing repository code or public Python API changes, run `make rst_auto` and include any intentional generated
+RST updates in the same commit.
 
 ### Quick Reference
 

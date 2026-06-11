@@ -12,6 +12,12 @@ pyfcstm.llm
 .. autodata:: __all__
 
 
+GrammarGuidePromptIntegrityError
+-----------------------------------------------------
+
+.. autoclass:: GrammarGuidePromptIntegrityError
+
+
 GrammarGuidePromptPathUnavailableError
 -----------------------------------------------------
 

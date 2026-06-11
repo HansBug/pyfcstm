@@ -37,7 +37,7 @@ steps:
     stack:
     - path:
       - Root
-      mode: init_wait
+      mode: active
     - path:
       - Root
       - A
@@ -57,7 +57,7 @@ steps:
     stack:
     - path:
       - Root
-      mode: init_wait
+      mode: active
     - path:
       - Root
       - Good
@@ -80,11 +80,11 @@ steps:
     stack:
     - path:
       - Root
-      mode: init_wait
+      mode: active
     - path:
       - Root
       - Bad
-      mode: init_wait
+      mode: active
     - path:
       - Root
       - Bad

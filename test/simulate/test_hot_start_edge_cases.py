@@ -9,13 +9,42 @@ import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
-from pyfcstm.simulate import SimulationRuntime
+from pyfcstm.simulate import SimulationRuntime, SimulationRuntimeDfsError
 
 
 def build_state_machine(dsl_code: str):
     """Helper to build state machine from DSL code."""
     ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
     return parse_dsl_node_to_state_machine(ast)
+
+
+def make_deep_initial_chain_dsl(depth: int) -> str:
+    """Build a single-path deep initial-chain state machine."""
+
+    def nested(index: int, indent: int) -> str:
+        space = "    " * indent
+        if index > depth:
+            return space + "state Leaf { during { counter = counter + 1; } }\n"
+        child = "Leaf" if index == depth else f"L{index + 1}"
+        return (
+            space + f"state L{index} {{\n"
+            + space + f"    [*] -> {child};\n"
+            + nested(index + 1, indent + 1)
+            + space + "}\n"
+        )
+
+    return (
+        "def int counter = 0;\n"
+        "state Root {\n"
+        "    [*] -> L1;\n"
+        + nested(1, 1)
+        + "}\n"
+    )
+
+
+def deep_leaf_path(depth: int) -> str:
+    """Build the dot-separated leaf path for a deep initial-chain model."""
+    return "Root." + ".".join(f"L{index}" for index in range(1, depth + 1)) + ".Leaf"
 
 
 @pytest.mark.unittest
@@ -369,3 +398,37 @@ state Root {
         runtime.cycle()
         assert runtime.current_state.path == ('Root', 'A')
         assert runtime.vars['x'] == 30
+
+    def test_hot_start_deep_leaf_rejected_at_constructor(self):
+        """Test that too-deep hot-start stacks fail during construction."""
+        sm = build_state_machine(make_deep_initial_chain_dsl(63))
+
+        with pytest.raises(SimulationRuntimeDfsError, match="structural stack-depth"):
+            SimulationRuntime(
+                sm,
+                initial_state=deep_leaf_path(63),
+                initial_vars={"counter": 0},
+            )
+
+    def test_deep_initial_chain_validation_is_bounded(self):
+        """Test that a single-path initial chain does not validate exponentially."""
+
+        class CountingRuntime(SimulationRuntime):
+            def __init__(self, *args, **kwargs):
+                self.initial_validation_calls = 0
+                super().__init__(*args, **kwargs)
+
+            def _validate_initial_transition(self, *args, **kwargs):
+                self.initial_validation_calls += 1
+                return super()._validate_initial_transition(*args, **kwargs)
+
+        sm = build_state_machine(make_deep_initial_chain_dsl(15))
+        runtime = CountingRuntime(sm)
+
+        runtime.cycle()
+
+        assert runtime.current_state.path == tuple(
+            ["Root"] + [f"L{index}" for index in range(1, 16)] + ["Leaf"]
+        )
+        assert runtime.vars["counter"] == 1
+        assert runtime.initial_validation_calls <= 64

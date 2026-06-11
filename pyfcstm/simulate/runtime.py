@@ -1258,9 +1258,27 @@ class SimulationRuntime:
         Evaluate a DSL expression and normalize numeric user-data failures.
 
         :param expr: Expression object to evaluate.
+        :type expr: pyfcstm.model.Expr
         :param scope: Variable scope passed into the expression.
+        :type scope: Dict[str, Union[int, float]]
         :param usage: Human-readable expression usage for diagnostics.
+        :type usage: str
         :return: Expression result.
+        :rtype: Any
+        :raises SimulationRuntimeExpressionError: If evaluating ``expr`` raises
+            :class:`ValueError`, :class:`ArithmeticError`, or :class:`TypeError`
+            from user-authored DSL expression semantics.
+
+        Example::
+
+            >>> from pyfcstm.model import Integer, Variable
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> scope = {"x": 2}
+            >>> expr = Integer(10) / Variable("x")
+            >>> SimulationRuntime._evaluate_runtime_expr(
+            ...     expr, scope, usage="example expression"
+            ... )
+            5.0
         """
         try:
             return expr(**scope)
@@ -1857,9 +1875,10 @@ class SimulationRuntime:
 
         if is_validation_mode:
             self.logger.debug(
-                f"[VALIDATION] Execute transition: "
-                f"{current_state_path} -> {target_desc} "
-                f"(event={transition.event.path_name if transition.event else 'none'})"
+                "[VALIDATION] Execute transition: %s -> %s (event=%s)",
+                current_state_path,
+                target_desc,
+                transition.event.path_name if transition.event else "none",
             )
         else:
             self.logger.info(
@@ -2011,7 +2030,9 @@ class SimulationRuntime:
         )
         if ended:
             self.logger.debug(
-                f"[VALIDATION] DFS validation success for transition {transition.from_state} -> {transition.to_state}: runtime ended"
+                "[VALIDATION] DFS validation success for transition %s -> %s: runtime ended",
+                transition.from_state,
+                transition.to_state,
             )
             return True
 

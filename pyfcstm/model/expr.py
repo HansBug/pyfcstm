@@ -1220,6 +1220,9 @@ _OP_FUNCTIONS = {
     ">=": operator.ge,
     "==": operator.eq,
     "!=": operator.ne,
+    # ``BinaryOp._call`` handles logical ``&&`` and ``||`` specially so the
+    # right-hand operand can stay lazy. Keep these strict value combiners in
+    # sync with that short-circuit branch.
     "&&": lambda x, y: bool(x) and bool(y),
     "and": lambda x, y: bool(x) and bool(y),
     "xor": lambda x, y: bool(x) != bool(y),
@@ -1318,10 +1321,14 @@ class BinaryOp(Op):
         """
         if self.op_mark == "&&":
             left = self.x._call(**kwargs)
-            return bool(left) and bool(self.y._call(**kwargs))
+            if not bool(left):
+                return _OP_FUNCTIONS["&&"](left, False)
+            return _OP_FUNCTIONS["&&"](left, self.y._call(**kwargs))
         if self.op_mark == "||":
             left = self.x._call(**kwargs)
-            return bool(left) or bool(self.y._call(**kwargs))
+            if bool(left):
+                return _OP_FUNCTIONS["||"](left, False)
+            return _OP_FUNCTIONS["||"](left, self.y._call(**kwargs))
         return _OP_FUNCTIONS[self.op_mark](self.x._call(**kwargs), self.y._call(**kwargs))
 
     def to_ast_node(self) -> dsl_nodes.Expr:

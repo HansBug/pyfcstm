@@ -50,6 +50,75 @@ state Root {
         ):
             SimulationRuntime(sm)
 
+    def test_hot_start_without_initial_vars_raises(self):
+        """Reject hot start when initial_vars is not provided."""
+        dsl_code = """
+def int count = 0;
+state Root {
+    state A;
+    [*] -> A;
+}
+"""
+        sm = build_state_machine(dsl_code)
+
+        with pytest.raises(ValueError, match="initial_vars must be provided"):
+            SimulationRuntime(sm, initial_state="Root.A")
+
+    def test_initial_vars_rejects_unknown_variable(self):
+        """Reject initial_vars entries that do not name declared variables."""
+        dsl_code = """
+def int count = 0;
+state Root {
+    state A;
+    [*] -> A;
+}
+"""
+        sm = build_state_machine(dsl_code)
+
+        with pytest.raises(ValueError, match="Variable 'missing' not defined"):
+            SimulationRuntime(sm, initial_vars={"count": 0, "missing": 1})
+
+    def test_hot_start_rejects_missing_initial_vars_entries(self):
+        """Reject hot start when initial_vars omits any declared variable."""
+        dsl_code = """
+def int count = 0;
+def float reading = 0.0;
+state Root {
+    state A;
+    [*] -> A;
+}
+"""
+        sm = build_state_machine(dsl_code)
+
+        with pytest.raises(ValueError, match="initial_vars must provide all variables"):
+            SimulationRuntime(
+                sm,
+                initial_state="Root.A",
+                initial_vars={"count": 0},
+            )
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (True, "must not be bool"),
+            ("1", "must be int or float"),
+            ([1], "must be int or float"),
+        ],
+    )
+    def test_initial_vars_rejects_bool_and_non_numeric_values(self, value, expected):
+        """Reject bool and non-numeric initial_vars before they enter vars."""
+        dsl_code = """
+def int count = 0;
+state Root {
+    state A;
+    [*] -> A;
+}
+"""
+        sm = build_state_machine(dsl_code)
+
+        with pytest.raises(ValueError, match=expected):
+            SimulationRuntime(sm, initial_state="Root.A", initial_vars={"count": value})
+
     def test_initial_vars_override_skips_failed_default_initializer(self):
         """Allow initial_vars to override a failing default initializer."""
         dsl_code = """
@@ -137,6 +206,51 @@ state Root {
         with pytest.raises(ValueError, match="x.*float.*finite"):
             SimulationRuntime(sm, initial_state="Root.A", initial_vars={"x": value})
 
+    def test_initial_vars_rejects_huge_int_for_float_without_overflow_error(self):
+        """Reject huge Python int input for float variables with stable diagnostics."""
+        dsl_code = """
+def float x = 0.0;
+state Root {
+    state A;
+    [*] -> A;
+}
+"""
+        sm = build_state_machine(dsl_code)
+
+        with pytest.raises(ValueError, match="x.*float.*finite"):
+            SimulationRuntime(sm, initial_state="Root.A", initial_vars={"x": 2**2000})
+
+    def test_normalization_rejects_unknown_persistent_variable(self):
+        """Reject helper calls for variables not defined by the state machine."""
+        dsl_code = """
+def int counter = 0;
+state Root {
+    state A;
+    [*] -> A;
+}
+"""
+        sm = build_state_machine(dsl_code)
+        runtime = SimulationRuntime(sm)
+
+        with pytest.raises(ValueError, match="Variable 'missing' not defined"):
+            runtime._normalize_persistent_value("missing", 1, "test source")
+
+    def test_normalization_rejects_unsupported_persistent_type(self):
+        """Reject persistent declarations outside the FCSTM int/float type set."""
+        dsl_code = """
+def int counter = 0;
+state Root {
+    state A;
+    [*] -> A;
+}
+"""
+        sm = build_state_machine(dsl_code)
+        runtime = SimulationRuntime(sm)
+        sm.defines["counter"].type = "double"
+
+        with pytest.raises(ValueError, match="unsupported persistent type 'double'"):
+            runtime._normalize_persistent_value("counter", 1, "test source")
+
 
 @pytest.mark.unittest
 class TestPersistentVariableWriteback:
@@ -209,6 +323,30 @@ state Root {
 
         assert runtime.vars["reading"] == 5.0
         assert type(runtime.vars["reading"]) is float
+
+    def test_operation_writeback_rejects_huge_int_for_float_and_rolls_back(self):
+        """Reject huge integer writeback to float without leaking OverflowError."""
+        dsl_code = """
+def float reading = 0.0;
+def int marker = 0;
+state Root {
+    state A {
+        during {
+            reading = 1 << 2000;
+            marker = marker + 1;
+        }
+    }
+    [*] -> A;
+}
+"""
+        sm = build_state_machine(dsl_code)
+        runtime = SimulationRuntime(sm)
+
+        with pytest.raises(ValueError, match="reading.*float.*finite"):
+            runtime.cycle()
+
+        assert runtime.vars == {"reading": 0.0, "marker": 0}
+        assert runtime.history == []
 
     def test_enter_action_writeback_rejects_non_integer_float_and_rolls_back(self):
         """Reject enter action writeback to int without committing cycle changes."""

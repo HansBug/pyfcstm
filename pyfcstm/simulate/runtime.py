@@ -389,13 +389,21 @@ class SimulationRuntime:
         initialization (entering the root state and executing lifecycle actions)
         is deferred until the first :meth:`cycle` call.
 
+        ``initial_vars`` may override persistent variables during construction.
+        In default-start mode the mapping may be partial; each provided variable
+        skips its default initializer, while uncovered variables still initialize
+        in declaration order. In hot-start mode every declared variable must be
+        provided so the runtime can build a complete already-entered state. All
+        provided values use strict Python ``int`` / ``float`` type checks;
+        subclasses and ``bool`` are rejected.
+
         **Hot Start Mode**:
 
         If ``initial_state`` is provided, the runtime performs a "hot start"
         by directly constructing the execution stack to the specified state
         without executing enter actions. This simulates having already entered
-        and stabilized at that state. The ``initial_vars`` parameter allows
-        overriding variable values for the hot start.
+        and stabilized at that state. Hot start requires ``initial_vars`` to
+        provide every declared persistent variable.
 
         :param state_machine: The state machine model to simulate.
         :type state_machine: StateMachine
@@ -412,12 +420,20 @@ class SimulationRuntime:
             (``('System', 'Active')``), or State object. Defaults to ``None``
             (start from root state).
         :type initial_state: Optional[Union[str, Tuple[str, ...], State]]
-        :param initial_vars: Optional variable overrides for hot start. Only
-            variables defined in the state machine can be overridden. Defaults
-            to ``None``.
+        :param initial_vars: Optional construction-time persistent variable
+            overrides. In default-start mode this mapping may be partial. In
+            hot-start mode it must provide every declared persistent variable.
+            Only variables defined in the state machine can be overridden.
+            Defaults to ``None``.
         :type initial_vars: Optional[Dict[str, Union[int, float]]]
         :return: ``None``.
         :rtype: None
+        :raises ValueError: If ``abstract_error_mode`` is invalid, hot start is
+            requested without complete ``initial_vars``, an override names an
+            undefined variable, a default initializer fails, or a persistent
+            value cannot be normalized to its declared ``int`` / ``float`` type.
+        :raises SimulationRuntimeStateError: If ``initial_state`` cannot be
+            resolved to a state in this machine.
 
         Example - Default initialization::
 
@@ -595,7 +611,12 @@ class SimulationRuntime:
 
         Example::
 
-            >>> runtime = SimulationRuntime(state_machine)
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> dsl_code = 'def int counter = 0; state Root { state A; [*] -> A; }'
+            >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+            >>> sm = parse_dsl_node_to_state_machine(ast)
+            >>> runtime = SimulationRuntime(sm)
             >>> runtime._normalize_persistent_value("counter", 3.0, "example")
             3
         """
@@ -631,7 +652,21 @@ class SimulationRuntime:
             return value
 
         if declared_type == "float":
-            return float(value)
+            try:
+                normalized_float = float(value)
+            except OverflowError as err:
+                # OverflowError: ``float(value)`` cannot represent a very large
+                # Python integer as a finite runtime float.
+                raise ValueError(
+                    f"{source} for variable '{name}' declared float must be finite; "
+                    "integer is outside Python float range"
+                ) from err
+            if not math.isfinite(normalized_float):
+                raise ValueError(
+                    f"{source} for variable '{name}' declared float must be finite, "
+                    f"got {normalized_float!r}"
+                )
+            return normalized_float
 
         raise ValueError(
             f"Variable '{name}' has unsupported persistent type {declared_type!r}"
@@ -2303,6 +2338,15 @@ class SimulationRuntime:
         :type events: Any, optional
         :return: ``None``.
         :rtype: None
+        :raises ValueError: If operation, effect, or lifecycle action writeback
+            produces a value that cannot be normalized to the declared
+            persistent ``int`` / ``float`` type.
+        :raises SimulationRuntimeEventError: If a supplied event path cannot be
+            resolved.
+        :raises SimulationRuntimeStateError: If the runtime cannot reach a
+            stoppable state during validation.
+        :raises Exception: If an abstract handler raises while
+            ``abstract_error_mode`` is ``'raise'``.
 
         Example - Basic cycle execution::
 

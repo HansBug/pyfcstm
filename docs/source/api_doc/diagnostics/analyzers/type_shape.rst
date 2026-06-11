@@ -10,3 +10,5 @@ collect\_type\_warnings
 -----------------------------------------------------
 
 .. autofunction:: collect_type_warnings
+
+

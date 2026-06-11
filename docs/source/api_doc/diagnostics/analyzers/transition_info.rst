@@ -10,3 +10,5 @@ collect\_transition\_infos
 -----------------------------------------------------
 
 .. autofunction:: collect_transition_infos
+
+

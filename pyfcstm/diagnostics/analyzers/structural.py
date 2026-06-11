@@ -206,15 +206,16 @@ def _dead_named_action_warnings(
 
 
 def _expand_leaf_reachability_to_action_states(states, reachable):
-    """Expand leaf-only reachability to states that can host actions.
+    """Expand reachable leaves to ancestor states that can host actions.
 
-    Inspect reachability values are leaf-only, but actions can be declared on
-    composite states. A composite is action-reachable when any reachable leaf
-    sits below it in the hierarchy.
+    Some callers pass a leaf-only topology view, while the default inspect
+    graph may already contain composite paths. Actions can be declared on
+    composite states, so a composite is action-reachable when it is already
+    reachable or when any reachable descendant leaf sits below it.
 
     :param states: Inspect state payloads.
     :type states: Iterable[StateInfo]
-    :param reachable: Reachable state paths from the root topology view.
+    :param reachable: Reachable state paths from the root reachability view.
     :type reachable: Iterable[str]
     :return: Reachable paths including ancestor composites of reachable leaves.
     :rtype: Set[str]

@@ -435,10 +435,9 @@ class ModelInspect:
     :type events: Tuple[EventInfo, ...]
     :param metrics: Aggregate model metrics.
     :type metrics: ModelMetrics
-    :param reachability_graph: Mapping from every state path to leaf state
-        paths reachable in the guard-agnostic topology projection. Keys include
-        composite states, but values are leaf-only and never expose the
-        topology package's synthetic root-exit sink.
+    :param reachability_graph: Mapping from every state path to state paths
+        reachable through normal transitions and composite initial edges.
+        Guards are ignored; ``[*]`` entry/exit markers are not exposed.
     :type reachability_graph: Dict[str, Tuple[str, ...]]
     :param event_emission_map: Mapping event qualified name → list of
         source state paths that can emit it.
@@ -1300,18 +1299,23 @@ def _build_metrics(
     )
 
 
-def _build_reachability_graph(machine: 'StateMachine') -> Dict[str, Tuple[str, ...]]:
-    """Return inspect reachability using the verify topology projection.
+def _build_reachability_graph(
+        states: Tuple[StateInfo, ...],
+        transitions: Tuple[TransitionInfo, ...],
+) -> Dict[str, Tuple[str, ...]]:
+    """Return the default inspect reachability graph.
 
-    The public inspect JSON contract keeps one key for every state path, while
-    values are the leaf-only, guard-agnostic topology closure computed by
-    :func:`pyfcstm.verify.topology.topological_reachable_set`. This keeps
-    inspect, design-health diagnostics, and verify diagnostics on one
-    hierarchy-aware source of truth.
+    The inspect graph is a guard-agnostic breadth-first closure over normal
+    transition endpoints plus composite ``[*]`` initial edges. It is a stable
+    inspect/jsfcstm contract and therefore intentionally independent from the
+    optional verify topology projection that only runs when callers pass
+    ``enable_verify=True`` to :func:`inspect_model`.
 
-    :param machine: State machine whose topology should be projected.
-    :type machine: pyfcstm.model.StateMachine
-    :return: Mapping from every state path to reachable leaf paths.
+    :param states: Inspect state records, one per state path.
+    :type states: Tuple[StateInfo, ...]
+    :param transitions: Inspect transition records in model order.
+    :type transitions: Tuple[TransitionInfo, ...]
+    :return: Mapping from every state path to reachable state paths.
     :rtype: Dict[str, Tuple[str, ...]]
 
     Examples::
@@ -1328,12 +1332,52 @@ def _build_reachability_graph(machine: 'StateMachine') -> Dict[str, Tuple[str, .
         ... '''
         >>> ast = parse_with_grammar_entry(source, 'state_machine_dsl')
         >>> machine = parse_dsl_node_to_state_machine(ast)
-        >>> _build_reachability_graph(machine)['Root.A']
+        >>> states = _build_state_infos(machine)
+        >>> transitions = _build_transition_infos(machine)
+        >>> _build_reachability_graph(states, transitions)['Root']
+        ('Root.A', 'Root.B')
+        >>> _build_reachability_graph(states, transitions)['Root.A']
         ('Root.B',)
     """
-    from ..verify.topology import topological_reachable_set
+    adjacency: Dict[str, set] = {state.path: set() for state in states}
+    initial_edges: Dict[str, set] = {state.path: set() for state in states}
+    for transition in transitions:
+        if (
+                transition.from_path == _INIT_MARK
+                or transition.to_path == _EXIT_MARK
+        ):
+            continue
+        if transition.from_path not in adjacency:  # pragma: no cover
+            # Model-built transitions always point at a known source path. The
+            # guard keeps hand-built test doubles from crashing this helper.
+            continue
+        adjacency[transition.from_path].add(transition.to_path)
 
-    return topological_reachable_set(machine)
+    for state in states:
+        if not (state.is_composite and state.initial_targets):
+            continue
+        for initial_target in state.initial_targets:
+            target = initial_target['target']
+            if target != _EXIT_MARK:
+                initial_edges[state.path].add(target)
+
+    graph: Dict[str, Tuple[str, ...]] = {}
+    for state in states:
+        seen = set()
+        queue = [state.path]
+        while queue:
+            current = queue.pop(0)
+            next_paths = adjacency.get(current, set()) | initial_edges.get(
+                current,
+                set(),
+            )
+            for next_path in sorted(next_paths):
+                if next_path in seen or next_path == state.path:
+                    continue
+                seen.add(next_path)
+                queue.append(next_path)
+        graph[state.path] = tuple(sorted(seen))
+    return graph
 
 
 def _build_event_emission_map(
@@ -2511,7 +2555,7 @@ def inspect_model(
     actions = _build_action_infos(machine)
     forced_transitions = _build_forced_transition_infos(machine)
     metrics = _build_metrics(states, transitions, variables, events)
-    reachability_graph = _build_reachability_graph(machine)
+    reachability_graph = _build_reachability_graph(states, transitions)
     root_state_path = _state_path(machine.root_state)
     diagnostics = list(collect_design_health_warnings(
         states,

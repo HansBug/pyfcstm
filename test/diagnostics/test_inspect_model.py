@@ -31,11 +31,6 @@ from pyfcstm.diagnostics import (
 )
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
-from pyfcstm.verify.topology import (
-    EXIT_ROOT_SINK,
-    topological_reachable_set,
-    unreachable_states,
-)
 
 from ._schema_check import assert_all_diags_match_schema
 
@@ -207,7 +202,7 @@ class TestInspectModelViews:
         assert 'Root.Active' in report.reachability_graph['Root.Idle']
         assert 'Root.Idle' in report.reachability_graph['Root.Active']
 
-    def test_reachability_uses_leaf_only_topology_semantics(self):
+    def test_reachability_preserves_default_inspect_semantics(self):
         dsl = """
         state System {
             state Working {
@@ -227,17 +222,24 @@ class TestInspectModelViews:
         machine = _parse(dsl)
         report = inspect_model(machine)
 
-        assert report.reachability_graph == topological_reachable_set(machine)
         assert report.reachability_graph['System'] == (
+            'System.Done',
+            'System.Working',
+            'System.Working.Active',
+            'System.Working.Idle',
+        )
+        assert report.reachability_graph['System.Working'] == (
             'System.Done',
             'System.Working.Active',
             'System.Working.Idle',
         )
-        assert 'System.Working' not in report.reachability_graph['System']
-        assert report.reachability_graph['System.Working.Idle'] == ('System.Done',)
-        assert EXIT_ROOT_SINK not in report.reachability_graph['System.Done']
+        assert report.reachability_graph['System.Working.Active'] == (
+            'System.Working.Idle',
+        )
+        assert report.reachability_graph['System.Working.Idle'] == tuple()
+        assert report.reachability_graph['System.Done'] == tuple()
 
-    def test_unreachable_diagnostics_match_verify_topology(self):
+    def test_unreachable_diagnostics_use_default_inspect_graph(self):
         dsl = """
         state Root {
             state A;
@@ -255,7 +257,38 @@ class TestInspectModelViews:
                 for diag in report.diagnostics
                 if diag.code == 'W_UNREACHABLE_STATE'
             )
-        ) == unreachable_states(machine)
+        ) == ('Root.Orphan',)
+
+    def test_default_reachability_keeps_composite_transition_targets_reachable(self):
+        dsl = """
+        state Root {
+            state Working {
+                state Idle;
+                [*] -> Idle;
+            }
+            state Done;
+            [*] -> Working;
+            Working -> Done;
+        }
+        """
+
+        report = inspect_model(_parse(dsl))
+
+        assert report.reachability_graph['Root'] == (
+            'Root.Done',
+            'Root.Working',
+            'Root.Working.Idle',
+        )
+        assert report.reachability_graph['Root.Working'] == (
+            'Root.Done',
+            'Root.Working.Idle',
+        )
+        assert report.reachability_graph['Root.Working.Idle'] == tuple()
+        assert not any(
+            diag.code == 'W_UNREACHABLE_STATE'
+            and diag.refs['state_path'] == 'Root.Done'
+            for diag in report.diagnostics
+        )
 
     def test_event_emission_map(self, report):
         assert report.event_emission_map == {
@@ -447,11 +480,11 @@ class TestSchemaJsonValidates:
         assert '<object>_span' in refs_text
         assert 'list[Span]' in refs_text
 
-    def test_schema_documents_leaf_only_reachability(self):
+    def test_schema_documents_default_inspect_reachability(self):
         schema = self._load_schema()
         description = schema['properties']['reachability_graph']['description']
-        assert 'leaf' in description
-        assert 'topology' in description
+        assert 'default inspect graph' in description
+        assert 'composite initial edges' in description
 
     def test_diagnostics_readme_documents_range_layers(self):
         readme_path = os.path.join(
@@ -2116,6 +2149,22 @@ class TestInspectModelVerifyIntegration:
         )
 
         report = inspect_model(_parse(SIMPLE_DSL))
+
+        assert isinstance(report, ModelInspect)
+
+    def test_default_inspect_path_does_not_call_verify_topology(self, monkeypatch):
+        def fail_if_called(*args, **kwargs):
+            raise AssertionError('verify topology must stay disabled by default')
+
+        from pyfcstm.verify import topology
+
+        monkeypatch.setattr(
+            topology,
+            'topological_reachable_set',
+            fail_if_called,
+        )
+
+        report = inspect_model(_parse("state Root;"))
 
         assert isinstance(report, ModelInspect)
 

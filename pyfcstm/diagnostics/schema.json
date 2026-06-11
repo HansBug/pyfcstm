@@ -53,7 +53,7 @@
     "metrics": { "$ref": "#/definitions/ModelMetrics" },
     "reachability_graph": {
       "type": "object",
-      "description": "Mapping state path -> reachable leaf state paths in the guard-agnostic topology projection. Keys include every state path; values are leaf-only paths and do not expose the synthetic root-exit sink.",
+      "description": "Mapping state path -> reachable state paths in the default inspect graph. Guards are ignored; composite initial edges are followed; entry and exit pseudo markers are not exposed.",
       "additionalProperties": {
         "type": "array",
         "items": { "type": "string" }

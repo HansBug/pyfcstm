@@ -24,3 +24,5 @@ pyfcstm.diagnostics.analyzers
 -----------------------------------------------------
 
 .. autodata:: __all__
+
+

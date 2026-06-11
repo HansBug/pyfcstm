@@ -13,9 +13,8 @@ SRC_DIR       := ${PROJ_DIR}/pyfcstm
 TEMPLATES_DIR := ${PROJ_DIR}/templates
 RESOURCE_DIR  := ${PROJ_DIR}/resource
 LOGOS_DIR     := ${PROJ_DIR}/logos
-LLM_GRAMMAR_GUIDE_FILE := ${SRC_DIR}/llm/fcstm_grammar_guide.md
-LLM_GRAMMAR_GUIDE_SHA256_FILE := ${LLM_GRAMMAR_GUIDE_FILE}.sha256
-SHA256_FILES := ${LLM_GRAMMAR_GUIDE_SHA256_FILE}
+SHA256_SOURCE_FILES := ${SRC_DIR}/llm/fcstm_grammar_guide.md
+SHA256_FILES := $(addsuffix .sha256,${SHA256_SOURCE_FILES})
 
 RANGE_DIR      ?= .
 RANGE_TEST_DIR := ${TEST_DIR}/${RANGE_DIR}
@@ -201,8 +200,8 @@ rst_auto: ${RST_DOC_FILES} ${RST_NONM_FILES} auto_rst_top_index.py
 
 sha256: ${SHA256_FILES}
 
-${LLM_GRAMMAR_GUIDE_SHA256_FILE}: ${LLM_GRAMMAR_GUIDE_FILE} Makefile
-	$(PYTHON) -c "from pathlib import Path; import hashlib; source = Path('${LLM_GRAMMAR_GUIDE_FILE}'); target = Path('${LLM_GRAMMAR_GUIDE_SHA256_FILE}'); text = source.read_text(encoding='utf-8').replace('\r\n', '\n').replace('\r', '\n'); target.write_text(hashlib.sha256(text.encode('utf-8')).hexdigest() + '  ' + source.name + '\n', encoding='utf-8')"
+%.sha256: % Makefile
+	$(PYTHON) -c "from pathlib import Path; import hashlib; source = Path('$<'); target = Path('$@'); text = source.read_text(encoding='utf-8').replace('\r\n', '\n').replace('\r', '\n'); target.write_text(hashlib.sha256(text.encode('utf-8')).hexdigest() + '  ' + source.name + '\n', encoding='utf-8')"
 
 ${RST_DOC_DIR}/%.rst: ${PYTHON_CODE_DIR}/%.py auto_rst.py Makefile
 	@mkdir -p $(dir $@)

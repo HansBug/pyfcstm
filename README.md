@@ -726,7 +726,7 @@ Every code is reachable from the minimal DSL snippet in the right-hand column; s
 [`pyfcstm/diagnostics/codes.yaml`](pyfcstm/diagnostics/codes.yaml) for full per-code metadata (refs schema,
 `for_llm` payload, suggested-fix template, parity flags).
 
-#### Errors (`E_*`) — model is invalid, must fix (19)
+#### Errors (`E_*`) — model is invalid, must fix (20)
 
 | Code | What it catches | Minimal DSL example |
 |------|-----------------|---------------------|
@@ -743,6 +743,7 @@ Every code is reachable from the minimal DSL snippet in the right-hand column; s
 | `E_DUPLICATE_FUNCTION_NAME` | Two named lifecycle actions within the same state share the same name. | `state Root { state A { enter Foo { } enter Foo { } } }` |
 | `E_DURING_ASPECT_INVALID` | A `during` block is declared inconsistently with the host state's leaf/composite kind. | `state Root { state A { during before { } } }` |
 | `E_PSEUDO_NOT_LEAF` | A state was declared with the `pseudo` keyword but has nested substates. | `state Root { pseudo state Outer { state Inner; [*] -> Inner; } }` |
+| `E_NAMED_FUNCTION_REF_CYCLE` | A lifecycle action `ref` chain forms a cycle and never reaches a concrete or abstract action. | `state Root { state A { enter First ref Second; enter Second ref First; } [*] -> A; }` |
 | `E_NAMED_FUNCTION_REF_NOT_FOUND` | A `ref` lifecycle action could not resolve its target named action. | `state Root { state A { enter ref NoSuch.NoSuch; } }` |
 | `E_IMPORT_NOT_FOUND` | An `import` statement points at a source file that cannot be found, read, or parsed. | `state System { import "missing.fcstm" as Sub; }` |
 | `E_IMPORT_CIRCULAR` | A cycle was detected while resolving `import` statements between two or more state-machine source files. | `# a.fcstm state A { import "b.fcstm" as B; } # b.fcstm state B { import "a.fcstm" as A; }` |
@@ -750,7 +751,7 @@ Every code is reachable from the minimal DSL snippet in the right-hand column; s
 | `E_IMPORT_DUPLICATE_MAPPING` | Two or more mapping clauses under the same `import { ... }` block target the same imported name. | `state System { import "sub.fcstm" as Sub { def x = a; def x = b; } }` |
 | `E_IMPORT_MAPPING_INVALID` | An import-mapping clause refers to a source name that does not exist in the imported machine. | `state System { import "sub.fcstm" as Sub { def x = no_such_var; } }` |
 
-#### Warnings (`W_*`) — high-confidence design-health issues (24)
+#### Warnings (`W_*`) — high-confidence design-health issues (32)
 
 | Code | What it catches | Minimal DSL example |
 |------|-----------------|---------------------|
@@ -778,14 +779,26 @@ Every code is reachable from the minimal DSL snippet in the right-hand column; s
 | `W_HIGH_VAR_TO_LEAF_RATIO` | The number of variables is high relative to the number of non-pseudo leaf states (fact-flag bloat heuristic). | `def int a = 0; def int b = 0; def int c = 0; state Root { state A; [*] -> A; }` |
 | `W_DEEP_HIERARCHY` | The state hierarchy exceeds the configured maximum depth. | `state Root { state A { state B { state C; [*] -> C; } [*] -> B; } [*] -> A; }` |
 | `W_LARGE_COMPOSITE` | A composite state has more direct children than the configured threshold. | `state Root { state A; state B; state C; [*] -> A; }` |
+| `W_TOPOLOGICAL_NOEXIT` | A root-reachable leaf or cycle has no guard-agnostic route to the root exit sink. | `state System { state A; state B; [*] -> A; A -> B; }` |
+| `W_EVENT_UNREACHABLE_EMIT` | A used event has no consumer source that is reachable in the guard-agnostic topology graph. | `state System { event Panic; state A; state LostA; state LostB; [*] -> A; LostA -> A : Panic; LostB -> A : Panic; }` |
+| `W_DEAD_GUARD` | SMT proves a transition guard is unsatisfiable under model variable type and runtime-definedness constraints. | `def int x = 0; state System { state A; state B; [*] -> A; A -> B : if [x > 1 && x < 0]; }` |
+| `W_GUARD_TAUTOLOGY` | SMT proves a transition guard is true for every valid variable valuation. | `def int x = 0; state System { state A; state B; [*] -> A; A -> B : if [x >= 0 || x < 0]; }` |
+| `W_FORCED_GUARD_UNSAT` | A forced-transition guard cannot be satisfied under declaration initializer values. | `def int x = 0; state System { state A; state B; [*] -> A; !A -> B : if [x > 0]; }` |
+| `W_EFFECT_SMT_NO_OP` | SMT proves a transition effect leaves all persistent model variables unchanged whenever the transition can run. | `def int x = 0; state System { state A; state B; [*] -> A; A -> B : if [x >= 0] effect { x = x + 0; }; }` |
+| `W_TRANSITION_SHADOWED` | A later outgoing transition is fully covered by earlier same-source triggers and therefore cannot be selected. | `state System { state A; state B; state C; [*] -> A; A -> B; A -> C; }` |
+| `W_COMPOSITE_INIT_INCOMPLETE` | A composite state's initial transitions do not jointly cover all variable and event inputs. | `def int x = 0; state System { state A; state B; [*] -> A : if [x > 0]; [*] -> B : if [x < 0]; }` |
 
-#### Infos (`I_*`) — observations that may be intentional (3)
+#### Infos (`I_*`) — observations that may be intentional (7)
 
 | Code | What it observes | Minimal DSL example |
 |------|------------------|---------------------|
 | `I_UNREFERENCED_VAR_MAYBE_ABSTRACT` | A variable cannot affect any transition guard through DSL data-flow, but at least one visible abstract action may use it externally. | `def int maybe_external = 0; def int ready = 0; state Root { state A { enter abstract ExternalHook; } state B; [*] -> A; A -> B : if [ready > 0]; }` |
 | `I_TRANSITION_TO_SELF_VIA_PARENT` | A composite state transitions to itself, intentionally forcing a re-entry through child initialization. | `state Root { state Active { state Leaf; [*] -> Leaf; } [*] -> Active; Active -> Active; }` |
 | `I_TRANSITION_NEVER_EVENT_TRIGGERED` | A normal transition has no event and no guard — an unconditional fall-through. | `state Root { state A; state B; [*] -> A; A -> B; }` |
+| `I_NONTRIVIAL_SCC` | A non-trivial strongly connected component exists in the guard-agnostic leaf-level topology graph. | `state System { state A; state B; [*] -> A; A -> B; B -> A; }` |
+| `I_TOPOLOGICAL_NON_TERMINATING` | The topology does not force all root-reachable executions to eventually reach the root terminator. | `state System { state A; [*] -> A; A -> A; A -> [*]; }` |
+| `I_EFFECT_GUARD_CONTRADICT` | A transition effect makes the same transition guard false after every guarded, runtime-defined execution. | `def int x = 0; state System { state A; state B; [*] -> A; A -> B : if [x > 0] effect { x = 0; }; }` |
+| `I_ENTER_DURING_CONTRADICT` | Entry-time assignments make a first-cycle `during` branch condition predetermined. | `def int x = 0; state System { state A { enter { x = 1; } during { if [x > 0] { x = x + 1; } else { x = x - 1; } } } [*] -> A; }` |
 
 > **Configurable thresholds.** `inspect_model(machine, *, deep_hierarchy_threshold=6, large_composite_threshold=12, var_to_leaf_ratio_threshold=2.0)` accepts override knobs for the three threshold-based warnings (`W_DEEP_HIERARCHY` / `W_LARGE_COMPOSITE` / `W_HIGH_VAR_TO_LEAF_RATIO`). jsfcstm `inspectModel(model, { deepHierarchyThreshold, largeCompositeThreshold, varToLeafRatioThreshold })` mirrors the same defaults.
 

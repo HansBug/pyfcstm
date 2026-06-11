@@ -13,6 +13,7 @@ pyfcstm.entry
     cli
     dispatch
     generate
+    inspect
     plantuml
     simulate/index
     visualize
@@ -21,5 +22,4 @@ pyfcstm.entry
 -----------------------------------------------------
 
 .. autodata:: __all__
-
 

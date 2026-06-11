@@ -75,6 +75,7 @@ pyfcstm aims to provide a complete solution from conceptual design to code imple
 | **Syntax Highlighting**         | Includes FCSTM syntax highlighting for Pygments and editor integrations, including a VS Code extension in this repository.            | Improves authoring, documentation, and review workflows around `.fcstm` files.                                 | [Syntax Highlighting Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/grammar/index.html)            |
 | **Structured Diagnostics**      | `pyfcstm.diagnostics` ships **46 diagnostic codes** (19 errors / 24 warnings / 3 infos) covering parse errors, design-health issues (deadlock, unreachable, redundant transitions, const-folded guards, etc.), and Layer 0 use-def dataflow analysis. | Replace ad-hoc regex / message scraping with a stable structured API; codes carry `for_llm` payloads to drive LLM-assisted repair. | [Diagnostics Code List](#static-diagnostics-codes) |
 | **`inspect_model()` API**       | One-call structured view of a state machine: states / transitions / variables / events / metrics + reachability graph + var dataflow + aspect impact map + diagnostics. Round-trippable via `to_json()` against a published JSON schema. | Drop-in replacement for hand-written model walkers; single source of truth for downstream tooling.             | [inspect_model API](https://pyfcstm.readthedocs.io/en/latest/api_doc/diagnostics/inspect.html)                |
+| **`pyfcstm inspect` CLI**       | Emits the same structured inspect report as stable JSON; verify-backed diagnostics stay disabled unless `--enable-verify` is passed. | Makes diagnostics usable in CI, scripts, and editor tooling without writing Python glue.                       | [CLI Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/cli/index.html)                                |
 | **Suggested-Fix + VS Code Quick-Fix** | Selected diagnostics carry a `suggested_fix` payload (kind / anchor / text template) that the VS Code extension consumes as auto-apply quick-fixes; each fix is parse-back-verified. | Auto-fix loop for both humans and LLM agents; no regex patching. | [VS Code Extension](https://pyfcstm.readthedocs.io/en/latest/tutorials/editor/index.html) |
 | **Cross-End Parity (py / js)**  | Python `inspect_model().diagnostics` and `@pyfcstm/jsfcstm` `inspectModel().diagnostics` emit byte-equivalent sets (normalized `code + severity + refs`), locked by cross-end parity tests. | Same diagnostics surface in CLI tooling, server-side processors, and browser-based editors / language servers. | [Cross-End Parity](https://pyfcstm.readthedocs.io/en/latest/api_doc/diagnostics/parity.html) |
 
@@ -140,11 +141,12 @@ detailed steps and environment requirements.
 
 ### 1. Using the Command Line Interface (CLI)
 
-pyfcstm provides three main command-line subcommands:
+pyfcstm provides several command-line subcommands, including:
 
 - `plantuml` for visualization
 - `generate` for template-based code generation
 - `simulate` for interactive or batch execution
+- `inspect` for structured model and diagnostic JSON
 
 Before using them, create a small FCSTM file such as `traffic_light.fcstm`:
 
@@ -261,6 +263,18 @@ print(str(model.to_ast_node()))
 
 #### Inspect a Model and Read Structured Diagnostics
 
+From the command line, emit the same inspect report as stable JSON:
+
+```shell
+pyfcstm inspect -i buggy.fcstm -o inspect_report.json
+pyfcstm inspect -i buggy.fcstm --enable-verify --max-complexity-tier smt_linear --smt-timeout-ms 1000
+```
+
+The default CLI path matches `inspect_model(model)` and does not run verify-backed checks. Pass `--enable-verify`
+explicitly to append inspect-eligible `pyfcstm.verify` diagnostics. `bmc_search`, `k_unrollings`, and
+`k_unrollings_times_branching` remain forbidden in the automatic inspect path. `--smt-timeout-ms 0` is forwarded
+unchanged to the SMT solver layer, so it can make Z3 return before a non-trivial proof search completes.
+
 ```python
 from pyfcstm.diagnostics import inspect_model
 
@@ -318,6 +332,12 @@ model = parse_dsl_node_to_state_machine(parse_with_grammar_entry(dsl, 'state_mac
 report = inspect_model(model)
 for d in report.diagnostics:
     print(f'{d.severity:7} {d.code:30} {d.message}')
+```
+
+The equivalent CLI path is:
+
+```shell
+pyfcstm inspect -i buggy.fcstm --enable-verify --max-complexity-tier smt_linear
 ```
 
 The full catalog of codes (with minimal triggering DSL for each) is documented under

@@ -448,6 +448,21 @@ def _load_imported_program(
             reason='read_error',
         )
         return None
+    except UnicodeDecodeError as err:
+        # auto_decode raises UnicodeDecodeError when an imported file exists
+        # but cannot be decoded by any supported FCSTM source encoding.
+        _emit_import_diag(
+            sink,
+            'E_IMPORT_NOT_FOUND',
+            f"Failed to decode imported file {file_path!r} for import "
+            f"{import_item.source_path!r} as {import_item.alias!r} in state "
+            f"{'.'.join(owner_state_path)!r}: {err}",
+            source_path=import_item.source_path,
+            alias=import_item.alias,
+            host_state_path='.'.join(owner_state_path),
+            reason='read_error',
+        )
+        return None
 
     try:
         program = parse_state_machine_dsl(content)

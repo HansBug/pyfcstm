@@ -1,0 +1,11 @@
+def int x = 0;
+
+state Root {
+    state Faulty {
+        during {
+            x = 1 / x;
+        }
+    }
+
+    [*] -> Faulty;
+}

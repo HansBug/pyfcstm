@@ -99,6 +99,24 @@ def test_grammar_guide_prompt_path_error_is_actionable(monkeypatch):
 def test_grammar_guide_prompt_metadata_is_deterministic():
     guide = llm.get_grammar_guide_prompt_for_llm()
     metadata = llm.get_grammar_guide_prompt_metadata_for_llm()
+    expected_sections = {
+        "## Output Contract",
+        "## Top-Level Structure",
+        "## State Definitions",
+        "## Transitions",
+        "## Nested State Targets",
+        "## Events",
+        "## Forced Transitions",
+        "## Lifecycle Actions",
+        "## Aspect Actions",
+        "## Expressions",
+        "## Cycle Semantics",
+        "## LLM Modeling Strategy",
+        "## Worked Protocol Example",
+        "## Invalid Forms To Avoid",
+        "## Pre-Output Checklist",
+    }
+    actual_sections = {line for line in guide.splitlines() if line.startswith("## ")}
 
     assert metadata["resource_name"] == "fcstm_grammar_guide.md"
     assert metadata["byte_size"] == len(guide.encode("utf-8"))
@@ -106,6 +124,7 @@ def test_grammar_guide_prompt_metadata_is_deterministic():
     assert metadata["chapter_count"] == sum(
         1 for line in guide.splitlines() if line.startswith("## ")
     )
+    assert actual_sections == expected_sections
     assert re.fullmatch(r"[0-9a-f]{64}", metadata["sha256"])
 
 

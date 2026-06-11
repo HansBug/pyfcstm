@@ -68,6 +68,11 @@ Run replay without contacting providers:
 python tools/evaluate_llm_grammar_guide.py --mode replay --smoke-only
 ```
 
+The checked-in provider outputs currently cover the fixed smoke set only. Use
+`--smoke-only` for reproducible PR verification. A full replay over every
+fixture requires adding `raw_output.md` files for the non-smoke fixtures first;
+otherwise those cases are expected to report `missing_output`.
+
 Run one live smoke:
 
 ```bash

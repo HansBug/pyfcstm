@@ -9,7 +9,7 @@ import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
-from pyfcstm.simulate import SimulationRuntime, ReadOnlyExecutionContext
+from pyfcstm.simulate import SimulationRuntime, ReadOnlyExecutionContext, abstract_handler
 
 
 @pytest.mark.unittest
@@ -687,6 +687,212 @@ class TestAbstractHandlers:
         # Verify no handlers remain
         assert not runtime.has_abstract_handlers('System.A.Init1')
         assert not runtime.has_abstract_handlers('System.B.Init2')
+
+
+    def test_unregister_decorated_bound_method_by_equivalent_method(self):
+        """Test that equivalent bound-method access unregisters a decorated handler."""
+        dsl_code = '''
+        state System {
+            state Idle {
+                enter abstract Init;
+            }
+
+            [*] -> Idle;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        class Handlers:
+            def __init__(self):
+                self.calls = 0
+
+            @abstract_handler('System.Idle.Init')
+            def on_init(self, ctx: ReadOnlyExecutionContext):
+                self.calls += 1
+
+        handlers = Handlers()
+        runtime.register_handlers_from_object(handlers)
+
+        removed_count = runtime.unregister_abstract_handler(
+            'System.Idle.Init', handlers.on_init
+        )
+
+        assert removed_count == 1
+        assert not runtime.has_abstract_handlers('System.Idle.Init')
+
+        runtime.cycle()
+        assert handlers.calls == 0
+
+    def test_register_abstract_handler_rejects_unreachable_paths(self):
+        """Test that handler registration rejects paths that cannot dispatch."""
+        dsl_code = '''
+        state System {
+            state Active {
+                enter abstract Init;
+            }
+
+            [*] -> Active;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        def handler(ctx: ReadOnlyExecutionContext):
+            pass
+
+        invalid_paths = [
+            'System.Active.Missing',
+            'System.Active',
+            'Active.Init',
+            '/System.Active.Init',
+            ' System.Active.Init ',
+        ]
+        for action_path in invalid_paths:
+            with pytest.raises(ValueError, match='named abstract action'):
+                runtime.register_abstract_handler(action_path, handler)
+            assert runtime.get_abstract_handlers(action_path) == []
+
+        runtime.register_abstract_handler('System.Active.Init', handler)
+        assert runtime.has_abstract_handlers('System.Active.Init')
+
+    def test_clear_abstract_handler_session_resets_registry_errors_and_warnings(self):
+        """Test unified abstract-handler session cleanup."""
+        dsl_code = '''
+        state System {
+            state Active {
+                enter abstract /* anonymous action */;
+                enter abstract Fail;
+            }
+
+            [*] -> Active;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+
+        def failing_handler(ctx: ReadOnlyExecutionContext):
+            raise ValueError('boom')
+
+        runtime = SimulationRuntime(sm, abstract_error_mode='log')
+        runtime.register_abstract_handler('System.Active.Fail', failing_handler)
+        with pytest.warns(UserWarning, match='has no name'):
+            runtime.cycle()
+
+        assert runtime.has_abstract_handlers('System.Active.Fail')
+        assert len(runtime.abstract_handler_errors) == 1
+        assert len(runtime._warned_anonymous_abstracts) == 1
+
+        removed_count = runtime.clear_abstract_handler_session()
+
+        assert removed_count == 1
+        assert not runtime.has_abstract_handlers('System.Active.Fail')
+        assert runtime.abstract_handler_errors == []
+        assert len(runtime._warned_anonymous_abstracts) == 0
+
+        legacy_runtime = SimulationRuntime(sm, abstract_error_mode='log')
+        legacy_runtime.register_abstract_handler('System.Active.Fail', failing_handler)
+        with pytest.warns(UserWarning, match='has no name'):
+            legacy_runtime.cycle()
+
+        legacy_removed_count = legacy_runtime.clear_all_abstract_handlers()
+
+        assert legacy_removed_count == 1
+        assert not legacy_runtime.has_abstract_handlers('System.Active.Fail')
+        assert legacy_runtime.abstract_handler_errors == []
+        assert len(legacy_runtime._warned_anonymous_abstracts) == 0
+
+    def test_duplicate_abstract_handler_registration_policy(self):
+        """Test duplicate abstract-handler registration defaults and opt-in behavior."""
+        dsl_code = '''
+        state System {
+            state Active {
+                enter abstract Init;
+                during abstract Monitor;
+            }
+
+            [*] -> Active;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        calls = []
+
+        def handler(ctx: ReadOnlyExecutionContext):
+            calls.append(ctx.action_name)
+
+        runtime.register_abstract_handler('System.Active.Init', handler)
+        runtime.register_abstract_handler('System.Active.Monitor', handler)
+        with pytest.raises(ValueError, match='already registered'):
+            runtime.register_abstract_handler('System.Active.Init', handler)
+
+        assert len(runtime.get_abstract_handlers('System.Active.Init')) == 1
+        assert len(runtime.get_abstract_handlers('System.Active.Monitor')) == 1
+
+        with pytest.warns(UserWarning, match='Duplicate abstract handler'):
+            runtime.register_abstract_handler(
+                'System.Active.Init', handler, allow_duplicates=True
+            )
+
+        assert len(runtime.get_abstract_handlers('System.Active.Init')) == 2
+
+        runtime.cycle()
+        assert calls.count('System.Active.Init') == 2
+        assert calls.count('System.Active.Monitor') == 1
+
+    def test_unregister_duplicate_handler_remove_modes(self):
+        """Test explicit duplicate unregister remove modes."""
+        dsl_code = '''
+        state System {
+            state Active {
+                enter abstract Init;
+            }
+
+            [*] -> Active;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        def handler(ctx: ReadOnlyExecutionContext):
+            pass
+
+        runtime.register_abstract_handler('System.Active.Init', handler)
+        with pytest.warns(UserWarning, match='Duplicate abstract handler'):
+            runtime.register_abstract_handler(
+                'System.Active.Init', handler, allow_duplicates=True
+            )
+
+        assert len(runtime.get_abstract_handlers('System.Active.Init')) == 2
+
+        assert (
+            runtime.unregister_abstract_handler(
+                'System.Active.Init', handler, removal_mode='one'
+            )
+            == 1
+        )
+        assert len(runtime.get_abstract_handlers('System.Active.Init')) == 1
+
+        with pytest.warns(UserWarning, match='Duplicate abstract handler'):
+            runtime.register_abstract_handler(
+                'System.Active.Init', handler, allow_duplicates=True
+            )
+        assert len(runtime.get_abstract_handlers('System.Active.Init')) == 2
+
+        assert runtime.unregister_abstract_handler('System.Active.Init', handler) == 2
+        assert not runtime.has_abstract_handlers('System.Active.Init')
+
+        with pytest.raises(ValueError, match='removal_mode'):
+            runtime.unregister_abstract_handler(
+                'System.Active.Init', handler, removal_mode='bogus'
+            )
+        with pytest.raises(ValueError, match='requires a specific handler'):
+            runtime.unregister_abstract_handler('System.Active.Init', removal_mode='one')
 
     def test_anonymous_abstract_warning(self):
         """Test that anonymous abstracts trigger a warning."""

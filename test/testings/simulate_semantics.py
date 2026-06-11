@@ -111,6 +111,7 @@ _ALLOWED_EXPECT_FIELDS = {
     "abstract_handler_errors",
     "error_state",
     "error_info",
+    "anonymous_warning_count",
 }
 _ALLOWED_INITIAL_EXPECT_FIELDS = {
     "state",
@@ -676,6 +677,17 @@ def _assert_runtime_expectation(
     _assert_handler_calls(expect, handler_calls, case, field_path)
     _assert_abstract_handler_errors(runtime, expect, case, field_path)
     _assert_error_info(runtime, expect, case, field_path)
+    if "anonymous_warning_count" in expect:
+        actual_warning_count = len(getattr(runtime, "_warned_anonymous_abstracts"))
+        assert actual_warning_count == expect["anonymous_warning_count"], (
+            "%s %s anonymous_warning_count mismatch: %r != %r"
+            % (
+                case.id,
+                field_path,
+                actual_warning_count,
+                expect["anonymous_warning_count"],
+            )
+        )
 
 
 def _assert_logs(
@@ -2307,6 +2319,7 @@ def _validate_expect(
             "warnings",
             "error_state",
             "error_info",
+            "anonymous_warning_count",
         }
         overlap = unsupported_generated_alignment_fields & set(expect.keys())
         if overlap:
@@ -2340,6 +2353,16 @@ def _validate_expect(
     _validate_handler_calls(expect, case_id, yaml_path, field_path)
     _validate_abstract_handler_errors(expect, case_id, yaml_path, field_path)
     _validate_error_info(expect, case_id, yaml_path, field_path)
+    if "anonymous_warning_count" in expect and (
+        not isinstance(expect["anonymous_warning_count"], int)
+        or expect["anonymous_warning_count"] < 0
+    ):
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s.anonymous_warning_count must be a non-negative integer"
+            % field_path,
+        )
 
 
 def _validate_model_build(

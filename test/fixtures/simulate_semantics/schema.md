@@ -297,6 +297,7 @@ parent-relative paths (`.go`), and root-relative paths (`/go`).
 | `abstract_handler_errors` | Expected `runtime.abstract_handler_errors` records. Simulation-only. |
 | `error_state` | Expected `runtime.is_error_state`. Simulation-only. |
 | `error_info` | Expected `runtime.error_info` action, exception type, and optional message match. Simulation-only. |
+| `anonymous_warning_count` | Expected count of anonymous abstract warning dedupe records. Simulation-only, intended for rollback and cleanup diagnostics. |
 
 Allowed stack modes are `active` and `init_wait`.
 
@@ -445,6 +446,11 @@ leave committed error metadata.
 `error_info` uses the same `action`, `type`, `message`, and `match_kind` shape
 for `SimulationRuntime.error_info`. Use `error_info: null` when a simulation-only
 case needs to assert that no error-state metadata is present.
+
+`anonymous_warning_count` asserts the size of the simulator's anonymous
+abstract warning dedupe metadata. It is intentionally narrow and should be used
+for warning rollback and cleanup contracts rather than general runtime-state
+inspection.
 
 ## Generated Python alignment runner
 

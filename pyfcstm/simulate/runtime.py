@@ -32,8 +32,11 @@ transition executes. If validation fails or exceeds safety limits (1000 steps or
 64 stack depth), the transition is rejected and variables roll back.
 
 Abstract actions can be implemented by registering Python handlers that receive
-read-only execution context. Handlers can be registered individually or organized
-in classes using the @abstract_handler decorator.
+read-only execution context. Handler registration validates named abstract
+action paths, rejects duplicate handler registrations by default, and exposes
+explicit cleanup helpers for handler registries and related diagnostics.
+Handlers can be registered individually or organized in classes using the
+``@abstract_handler`` decorator.
 
 **Hot Start Feature**:
 
@@ -1175,6 +1178,108 @@ class SimulationRuntime:
             raise SimulationRuntimeExpressionError(
                 f"{usage} evaluation failed: {e}"
             ) from e
+
+    @staticmethod
+    def _handler_identity(handler: Callable[[ReadOnlyExecutionContext], None]) -> Tuple:
+        """
+        Return a stable identity key for an abstract handler callable.
+
+        Bound method objects are recreated on every attribute access. The
+        identity therefore uses the owning object identity and the underlying
+        function identity instead of the transient bound-method wrapper. Other
+        callables use object identity directly. User-defined ``__eq__`` methods
+        are intentionally ignored so registration and unregistration match the
+        concrete callable instance supplied to the runtime.
+
+        :param handler: Handler callable to identify.
+        :type handler: Callable[[ReadOnlyExecutionContext], None]
+        :return: Stable identity tuple for duplicate checks and unregistration.
+        :rtype: Tuple
+
+        Example::
+
+            >>> key = SimulationRuntime._handler_identity(handler)
+            >>> isinstance(key, tuple)
+            True
+        """
+        bound_self = getattr(handler, "__self__", None)
+        bound_func = getattr(handler, "__func__", None)
+        if bound_self is not None and bound_func is not None:
+            return ("bound_method", id(bound_self), id(bound_func))
+        return ("callable", id(handler))
+
+    def _named_abstract_action_paths(self) -> List[str]:
+        """
+        List canonical paths for named abstract actions in the model.
+
+        Only actual named abstract action declarations are registration targets.
+        Named lifecycle references, state paths, relative paths, and anonymous
+        abstract actions are intentionally excluded because they cannot be
+        dispatched by the handler registry.
+
+        :return: Sorted canonical abstract action paths.
+        :rtype: List[str]
+
+        Example::
+
+            >>> paths = runtime._named_abstract_action_paths()
+            >>> all(isinstance(path, str) for path in paths)
+            True
+        """
+        paths = []
+        for state in self.state_machine.walk_states():
+            actions = (
+                list(state.on_enters)
+                + list(state.on_durings)
+                + list(state.on_exits)
+                + list(state.on_during_aspects)
+            )
+            for action in actions:
+                if action.is_abstract and action.name is not None:
+                    paths.append(action.func_name)
+        return sorted(paths)
+
+    def _validate_abstract_action_path(self, action_path: str) -> str:
+        """
+        Validate that a handler path targets a dispatchable abstract action.
+
+        The registry accepts only canonical dot-separated paths for named
+        abstract action declarations in the current state machine. The method
+        rejects surrounding whitespace, leading slash notation, relative paths,
+        state-only paths, and unknown action names instead of creating handler
+        buckets that can never be dispatched.
+
+        :param action_path: Candidate abstract action path.
+        :type action_path: str
+        :return: The validated canonical action path.
+        :rtype: str
+        :raises ValueError: If ``action_path`` is empty, non-string, or not a
+            named abstract action in this runtime's state machine.
+
+        Example::
+
+            >>> runtime._validate_abstract_action_path("System.Active.Init")
+            'System.Active.Init'
+        """
+        if not isinstance(action_path, str):
+            raise ValueError("action_path must be a string")
+        if not action_path:
+            raise ValueError("action_path cannot be empty")
+        if action_path.strip() != action_path:
+            raise ValueError(
+                "action_path must be a canonical named abstract action path "
+                "without surrounding whitespace: %r" % action_path
+            )
+
+        available_paths = self._named_abstract_action_paths()
+        if action_path not in set(available_paths):
+            available_text = ", ".join(available_paths) if available_paths else "<none>"
+            raise ValueError(
+                "action_path must name an existing named abstract action in "
+                "this state machine: %r; available named abstract actions: %s"
+                % (action_path, available_text)
+            )
+        return action_path
 
     def _format_var_changes(
         self,
@@ -2449,13 +2554,20 @@ class SimulationRuntime:
             sim_initialized = snapshot_initialized
             sim_ended = snapshot_ended
 
-            if not sim_initialized:
-                sim_ended = self._initialize_context(sim_stack, sim_vars, d_events)
-                sim_initialized = True
+            metadata_committed = False
+            try:
+                if not sim_initialized:
+                    sim_ended = self._initialize_context(sim_stack, sim_vars, d_events)
+                    sim_initialized = True
 
-            success, sim_ended = self._run_cycle_on_context(
-                sim_stack, sim_vars, d_events, ended=sim_ended
-            )
+                success, sim_ended = self._run_cycle_on_context(
+                    sim_stack, sim_vars, d_events, ended=sim_ended
+                )
+                metadata_committed = True
+            finally:
+                if not metadata_committed:
+                    self._warned_anonymous_abstracts = snapshot_warned_anonymous
+                    self._abstract_handler_errors = snapshot_handler_errors
 
         if success:
             self.stack = [] if sim_ended else sim_stack
@@ -2780,41 +2892,64 @@ class SimulationRuntime:
         }
 
     def register_abstract_handler(
-        self, action_path: str, handler: Callable[[ReadOnlyExecutionContext], None]
+        self,
+        action_path: str,
+        handler: Callable[[ReadOnlyExecutionContext], None],
+        allow_duplicates: bool = False,
     ) -> None:
         """
-        Register a Python function to handle an abstract action.
+        Register a Python function to handle a named abstract action.
 
-        Multiple handlers can be registered for the same abstract action.
-        They will be executed in registration order.
+        Multiple different handlers can be registered for the same abstract
+        action and run in registration order. Registering the same callable for
+        the same abstract action is rejected by default because it usually means
+        setup code ran twice. Callers that intentionally want duplicate
+        execution may set ``allow_duplicates`` to ``True``; the runtime then
+        emits a :class:`UserWarning` and appends another registration entry.
 
-        :param action_path: Full path to the abstract action (e.g., "System.Active.InitHardware")
+        :param action_path: Canonical path to a named abstract action, such as
+            ``"System.Active.InitHardware"``.
         :type action_path: str
-        :param handler: Python function that receives read-only context
+        :param handler: Python function that receives read-only context.
         :type handler: Callable[[ReadOnlyExecutionContext], None]
-        :raises ValueError: If action_path is empty or invalid
+        :param allow_duplicates: Whether to permit the same callable to be
+            registered again for the same action, defaults to ``False``.
+        :type allow_duplicates: bool, optional
+        :return: ``None``.
+        :rtype: None
+        :raises ValueError: If ``action_path`` is empty, invalid, not a named
+            abstract action in this model, or the same callable is already
+            registered for the same action while ``allow_duplicates`` is
+            ``False``.
 
         Example::
 
             >>> def my_init(ctx: ReadOnlyExecutionContext):
             ...     print(f"Initializing in state {ctx.get_state_name()}")
             ...     print(f"Counter value: {ctx.get_var('counter')}")
-            >>>
             >>> runtime.register_abstract_handler("System.Active.InitHardware", my_init)
-            >>>
-            >>> # Register another handler for the same action
             >>> def my_init2(ctx: ReadOnlyExecutionContext):
             ...     print(f"Second handler for {ctx.action_name}")
-            >>>
             >>> runtime.register_abstract_handler("System.Active.InitHardware", my_init2)
         """
-        if not action_path:
-            raise ValueError("action_path cannot be empty")
+        action_path = self._validate_abstract_action_path(action_path)
+        handler_key = self._handler_identity(handler)
+        handlers = self._abstract_handlers.setdefault(action_path, [])
+        duplicate = any(self._handler_identity(item) == handler_key for item in handlers)
+        if duplicate:
+            if not allow_duplicates:
+                raise ValueError(
+                    "Abstract handler is already registered for named abstract "
+                    "action %r" % action_path
+                )
+            warnings.warn(
+                "Duplicate abstract handler registration for named abstract "
+                "action %s; handler will be executed more than once" % action_path,
+                UserWarning,
+                stacklevel=2,
+            )
 
-        if action_path not in self._abstract_handlers:
-            self._abstract_handlers[action_path] = []
-
-        self._abstract_handlers[action_path].append(handler)
+        handlers.append(handler)
         self.logger.debug(
             f"Registered handler for abstract action {action_path} "
             f"(total handlers: {len(self._abstract_handlers[action_path])})"
@@ -2824,65 +2959,116 @@ class SimulationRuntime:
         self,
         action_path: str,
         handler: Optional[Callable[[ReadOnlyExecutionContext], None]] = None,
+        removal_mode: Literal["all", "one"] = "all",
     ) -> int:
         """
-        Unregister abstract handler(s) for an action.
+        Unregister abstract handler entries for an action.
 
-        If handler is ``None``, removes all handlers for the action.
-        If handler is provided, removes only that specific handler.
+        If ``handler`` is ``None``, all handlers for ``action_path`` are removed.
+        If ``handler`` is provided, equivalent handler entries are removed using
+        the same callable identity rules as registration. ``removal_mode``
+        controls whether all equivalent entries or only the first equivalent
+        entry is removed. The default ``"all"`` preserves the legacy behavior
+        and is also the natural counterpart to default duplicate rejection.
 
-        :param action_path: Full path to the abstract action
+        :param action_path: Full path to the abstract action.
         :type action_path: str
-        :param handler: Specific handler to remove, or ``None`` to remove all
+        :param handler: Specific handler to remove, or ``None`` to remove all.
         :type handler: Optional[Callable[[ReadOnlyExecutionContext], None]]
-        :return: Number of handlers removed
+        :param removal_mode: ``"all"`` to remove every equivalent handler or
+            ``"one"`` to remove only the first equivalent handler, defaults to
+            ``"all"``.
+        :type removal_mode: Literal["all", "one"], optional
+        :return: Number of handlers removed.
         :rtype: int
+        :raises ValueError: If ``removal_mode`` is invalid or ``"one"`` is used
+            without a specific ``handler``.
 
         Example::
 
-            >>> # Remove all handlers for an action
             >>> count = runtime.unregister_abstract_handler("System.Active.InitHardware")
             >>> print(f"Removed {count} handlers")
-            >>>
-            >>> # Remove specific handler
             >>> runtime.unregister_abstract_handler("System.Active.InitHardware", my_init)
         """
+        if removal_mode not in ("all", "one"):
+            raise ValueError("removal_mode must be 'all' or 'one'")
+        if handler is None and removal_mode != "all":
+            raise ValueError("removal_mode='one' requires a specific handler")
+
         if action_path not in self._abstract_handlers:
             return 0
 
         if handler is None:
-            # Remove all handlers
             count = len(self._abstract_handlers[action_path])
             del self._abstract_handlers[action_path]
             self.logger.debug(
                 f"Removed all {count} handlers for abstract action {action_path}"
             )
             return count
+
+        handlers = self._abstract_handlers[action_path]
+        handler_key = self._handler_identity(handler)
+        removed_count = 0
+        remaining_handlers = []
+        for item in handlers:
+            if self._handler_identity(item) == handler_key and (
+                removal_mode == "all" or removed_count == 0
+            ):
+                removed_count += 1
+                continue
+            remaining_handlers.append(item)
+
+        if remaining_handlers:
+            self._abstract_handlers[action_path] = remaining_handlers
         else:
-            # Remove specific handler
-            handlers = self._abstract_handlers[action_path]
-            original_count = len(handlers)
-            self._abstract_handlers[action_path] = [
-                h for h in handlers if h is not handler
-            ]
-            removed_count = original_count - len(self._abstract_handlers[action_path])
+            del self._abstract_handlers[action_path]
 
-            # Clean up empty list
-            if not self._abstract_handlers[action_path]:
-                del self._abstract_handlers[action_path]
+        if removed_count > 0:
+            self.logger.debug(
+                f"Removed {removed_count} handler(s) for abstract action {action_path}"
+            )
 
-            if removed_count > 0:
-                self.logger.debug(
-                    f"Removed {removed_count} handler(s) for abstract action {action_path}"
-                )
+        return removed_count
 
-            return removed_count
+    def clear_abstract_handler_session(self) -> int:
+        """
+        Clear abstract-handler registry entries and related diagnostics.
+
+        This method resets the complete abstract-handler session surface: all
+        registered handlers, log-mode handler errors, and anonymous abstract
+        warning dedupe metadata. Use it when rebuilding or resetting a
+        simulation session and expecting handler configuration plus diagnostics
+        to start cleanly.
+
+        :return: Total number of handlers removed.
+        :rtype: int
+
+        Example::
+
+            >>> count = runtime.clear_abstract_handler_session()
+            >>> print(f"Cleared {count} handlers and handler diagnostics")
+        """
+        total_count = sum(
+            len(handlers) for handlers in self._abstract_handlers.values()
+        )
+        self._abstract_handlers.clear()
+        self._abstract_handler_errors.clear()
+        self._warned_anonymous_abstracts.clear()
+        self.logger.debug(
+            f"Cleared abstract handler session with {total_count} handler(s)"
+        )
+        return total_count
 
     def clear_all_abstract_handlers(self) -> int:
         """
-        Clear all registered abstract handlers.
+        Clear all registered abstract handlers and handler diagnostics.
 
-        :return: Total number of handlers removed
+        This compatibility method delegates to
+        :meth:`clear_abstract_handler_session`. It therefore clears registered
+        handlers, log-mode handler errors, and anonymous abstract warning dedupe
+        metadata together.
+
+        :return: Total number of handlers removed.
         :rtype: int
 
         Example::
@@ -2890,13 +3076,7 @@ class SimulationRuntime:
             >>> count = runtime.clear_all_abstract_handlers()
             >>> print(f"Cleared {count} handlers")
         """
-        total_count = sum(
-            len(handlers) for handlers in self._abstract_handlers.values()
-        )
-        self._abstract_handlers.clear()
-        self._warned_anonymous_abstracts.clear()
-        self.logger.debug(f"Cleared all {total_count} abstract handlers")
-        return total_count
+        return self.clear_abstract_handler_session()
 
     def get_abstract_handlers(
         self, action_path: str

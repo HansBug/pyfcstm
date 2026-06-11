@@ -1461,6 +1461,9 @@ class SimulationRuntime:
         func: Union[OnStage, OnAspect],
         vars_: Dict[str, Union[int, float]],
         is_validation_mode: bool = False,
+        *,
+        execution_state_path: Optional[Tuple[str, ...]] = None,
+        active_leaf_path: Optional[Tuple[str, ...]] = None,
     ) -> None:
         """
         Execute a lifecycle or aspect action against a variable mapping.
@@ -1483,12 +1486,26 @@ class SimulationRuntime:
         :type vars_: Dict[str, Union[int, float]]
         :param is_validation_mode: Whether this is validation mode (handlers not executed).
         :type is_validation_mode: bool
+        :param execution_state_path: Current execution location for handler
+            context. Defaults to the action owner state path.
+        :type execution_state_path: Optional[Tuple[str, ...]]
+        :param active_leaf_path: Active leaf path for context metadata. Defaults
+            to ``execution_state_path``.
+        :type active_leaf_path: Optional[Tuple[str, ...]]
         :return: ``None``.
         :rtype: None
         """
         # Preserve the caller state before resolving ``ref`` chains.
         # Model construction assigns a parent state for lifecycle actions.
         calling_state_path = func.parent.path
+        if execution_state_path is None:
+            execution_state_path = calling_state_path
+        if active_leaf_path is None:
+            active_leaf_path = execution_state_path
+        call_stage = func.stage
+        named_ref = (
+            func.func_name if func.name is not None and func.ref is not None else None
+        )
 
         seen_actions = []
         seen_action_ids = set()
@@ -1571,10 +1588,14 @@ class SimulationRuntime:
             # Create read-only context
             # func.parent is always set during state machine construction
             ctx = ReadOnlyExecutionContext(
-                state_path=calling_state_path,
+                state_path=execution_state_path,
                 vars=dict(vars_),
                 action_name=func_path,
-                action_stage=func.stage,
+                action_stage=call_stage,
+                active_leaf=active_leaf_path,
+                call_stage=call_stage,
+                abstract_target=func_path,
+                named_ref=named_ref,
             )
 
             # Execute all handlers in order
@@ -1720,7 +1741,13 @@ class SimulationRuntime:
         :rtype: None
         """
         for _, func in state.iter_on_during_aspect_recursively():
-            self._execute_func(func, vars_, is_validation_mode=is_validation_mode)
+            self._execute_func(
+                func,
+                vars_,
+                is_validation_mode=is_validation_mode,
+                execution_state_path=state.path,
+                active_leaf_path=state.path,
+            )
 
     def _enter_state(
         self,

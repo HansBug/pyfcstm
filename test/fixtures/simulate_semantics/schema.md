@@ -208,16 +208,15 @@ set together with schema-negative tests.
 Optional handler-call metadata fields are assertion-only compatibility slots
 for richer execution-context checks:
 
-- `active_leaf`: Active leaf path segments observed by the handler. The current
-  fixture helper derives this from `state`; later runtime context work can make
-  it more precise for reference callsites.
-- `call_stage`: Lifecycle stage observed at the callsite. When both `stage` and
-  `call_stage` are present they should match unless a later schema extension
-  documents a more precise distinction.
+- `active_leaf`: Active leaf path segments observed by the handler. Runtime
+  contexts provide this field directly for simulation fixtures; older handler
+  records without the field are still compared by deriving it from `state`.
+- `call_stage`: Lifecycle stage observed at the callsite. Runtime contexts
+  provide this field directly for simulation fixtures; older handler records
+  without the field are still compared by deriving it from `stage`.
 - `abstract_target`: Abstract action path observed by the handler.
 - `named_ref`: Named reference callsite path, or `null` when the action is not
-  invoked through a named reference. Current fixtures may use `null`; richer
-  named-reference distinctions are reserved for later context-metadata work.
+  invoked through a named reference.
 
 The fixture helper may synthesize these optional metadata fields from the
 original `action`, `state`, and `stage` record when a handler does not provide

@@ -547,6 +547,28 @@ class TestImportPhase2Assembly:
         assert "Failed to read imported file" in message
         assert "permission denied for test" in message
 
+    def test_imported_file_decode_failure_reports_imported_file_path(self):
+        with isolated_directory():
+            root_file = _write_text_file(
+                "root.fcstm",
+                """
+                state Root {
+                    import "./worker.fcstm" as Worker;
+                    [*] -> Worker;
+                }
+                """,
+            )
+            pathlib.Path("worker.fcstm").write_bytes(b"\x81")
+
+            ast_node = parse_state_machine_dsl(root_file.read_text(encoding="utf-8"))
+            with pytest.raises(SyntaxError) as exc_info:
+                parse_dsl_node_to_state_machine(ast_node, path=root_file)
+
+        message = str(exc_info.value)
+        assert "Failed to decode imported file" in message
+        assert "worker.fcstm" in message
+        assert "root.fcstm" not in message
+
     def test_absolute_import_source_path_is_supported(self):
         with isolated_directory():
             worker_file = _write_text_file(

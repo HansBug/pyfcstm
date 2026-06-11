@@ -120,14 +120,18 @@ class TestEntryInspect:
         assert "Input DSL file not found" not in (result.stderr or result.stdout)
 
     def test_build_inspect_json_rejects_unknown_policy_before_reading_input(self):
-        with pytest.raises(ClickErrorException, match="unknown inspect complexity tier"):
+        with pytest.raises(
+            ClickErrorException, match="unknown inspect complexity tier"
+        ):
             build_inspect_json(
                 "/missing/inspect_case.fcstm",
                 max_complexity_tier="unknown_tier",
             )
 
     def test_build_inspect_json_rejects_unknown_call_count_before_reading_input(self):
-        with pytest.raises(ClickErrorException, match="unknown_scaling"):
+        with pytest.raises(
+            ClickErrorException, match="unknown inspect call-count scaling"
+        ):
             build_inspect_json(
                 "/missing/inspect_case.fcstm",
                 max_call_count_scaling="unknown_scaling",
@@ -245,6 +249,31 @@ class TestEntryInspect:
         assert result.exitcode != 0
         assert "Invalid state machine model" in (result.stderr or result.stdout)
 
+    def test_inspect_import_decode_error_reports_imported_file(self):
+        with TemporaryDirectory() as td:
+            code_file = os.path.join(td, "host.fcstm")
+            imported_file = os.path.join(td, "bad.fcstm")
+            with open(code_file, "w", encoding="utf-8") as f:
+                f.write(
+                    textwrap.dedent("""
+                        state Host {
+                            import "./bad.fcstm" as Bad;
+                            [*] -> Bad;
+                        }
+                    """).strip()
+                )
+            with open(imported_file, "wb") as f:
+                f.write(b"\x81")
+
+            result = _run_inspect("-i", code_file)
+
+        output = result.stderr or result.stdout
+        assert result.exitcode != 0
+        assert "Invalid state machine model" in output
+        assert "Failed to decode imported file" in output
+        assert "bad.fcstm" in output
+        assert "Failed to decode input DSL file" not in output
+
     def test_build_inspect_json_read_error_is_controlled_error(self, monkeypatch):
         def _raise_os_error(_input_code_file):
             raise OSError("permission denied")
@@ -266,7 +295,9 @@ class TestEntryInspect:
             _raise_decode_error,
         )
 
-        with pytest.raises(ClickErrorException, match="Failed to decode input DSL file"):
+        with pytest.raises(
+            ClickErrorException, match="Failed to decode input DSL file"
+        ):
             build_inspect_json("invalid_encoding.fcstm")
 
     def test_inspect_output_write_failure_is_controlled_error(self, inspect_code_file):
@@ -279,6 +310,4 @@ class TestEntryInspect:
             )
 
         assert result.exitcode != 0
-        assert "Failed to write inspect JSON file" in (
-            result.stderr or result.stdout
-        )
+        assert "Failed to write inspect JSON file" in (result.stderr or result.stdout)

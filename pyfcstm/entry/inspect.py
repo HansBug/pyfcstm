@@ -58,8 +58,8 @@ _INSPECT_CALL_COUNT_CHOICES = CALL_COUNT_SCALING_ORDER + (
 
 
 def _validate_inspect_policy(
-        max_complexity_tier: str,
-        max_call_count_scaling: str,
+    max_complexity_tier: str,
+    max_call_count_scaling: str,
 ) -> None:
     """Validate inspect policy knobs before the CLI reads an input model.
 
@@ -101,6 +101,12 @@ def _validate_inspect_policy(
                 maximum=max_complexity_tier
             )
         )
+    if max_call_count_scaling not in _INSPECT_CALL_COUNT_CHOICES:
+        raise InspectAccessForbiddenError(
+            "unknown inspect call-count scaling: {maximum!r}".format(
+                maximum=max_call_count_scaling
+            )
+        )
     if max_call_count_scaling not in CALL_COUNT_SCALING_ORDER:
         raise InspectAccessForbiddenError(
             "call-count scaling {maximum!r} is not allowed in automatic inspect runs".format(
@@ -110,12 +116,12 @@ def _validate_inspect_policy(
 
 
 def build_inspect_json(
-        input_code_file: str,
-        *,
-        enable_verify: bool = False,
-        max_complexity_tier: str = "structural",
-        max_call_count_scaling: str = "linear_in_transitions",
-        smt_timeout_ms: Optional[int] = None,
+    input_code_file: str,
+    *,
+    enable_verify: bool = False,
+    max_complexity_tier: str = "structural",
+    max_call_count_scaling: str = "linear_in_transitions",
+    smt_timeout_ms: Optional[int] = None,
 ) -> str:
     """Build stable JSON text for an inspected FCSTM model.
 
@@ -180,31 +186,42 @@ def build_inspect_json(
         # load_state_machine_from_file uses auto_decode, which raises
         # UnicodeDecodeError when none of the supported encodings can decode
         # user-provided input bytes.
-        raise ClickErrorException(f"Failed to decode input DSL file {input_code_file}: {err}")
+        raise ClickErrorException(
+            f"Failed to decode input DSL file {input_code_file}: {err}"
+        )
     except OSError as err:
         # pathlib.Path.read_bytes inside load_state_machine_from_file raises
         # OSError subclasses for filesystem failures such as permission
         # errors, missing parent components, or directory paths.
-        raise ClickErrorException(f"Failed to read input DSL file {input_code_file}: {err}")
+        raise ClickErrorException(
+            f"Failed to read input DSL file {input_code_file}: {err}"
+        )
     except GrammarParseError as err:
         # parse_state_machine_dsl raises GrammarParseError for syntax and
         # lexical failures in user-provided FCSTM text.
-        raise ClickErrorException(f"Failed to parse input DSL file {input_code_file}: {err}")
+        raise ClickErrorException(
+            f"Failed to parse input DSL file {input_code_file}: {err}"
+        )
     except ModelValidationError as err:
         # parse_dsl_node_to_state_machine raises ModelValidationError for
         # model-level contract violations after a syntactically valid parse.
-        raise ClickErrorException(f"Invalid state machine model in {input_code_file}: {err}")
+        raise ClickErrorException(
+            f"Invalid state machine model in {input_code_file}: {err}"
+        )
     except InspectAccessForbiddenError as err:
         # _validate_inspect_policy and inspect_model reject forbidden automatic
         # inspect verify policies such as BMC search.
         raise ClickErrorException(str(err))
 
-    return json.dumps(
-        report.to_json(),
-        ensure_ascii=False,
-        indent=2,
-        sort_keys=True,
-    ) + "\n"
+    return (
+        json.dumps(
+            report.to_json(),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
 
 
 def _add_inspect_subcommand(cli: click.Group) -> click.Group:
@@ -278,18 +295,15 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
         "--smt-timeout-ms",
         type=click.IntRange(min=0),
         default=None,
-        help=(
-            "Optional SMT solver timeout in milliseconds; 0 is forwarded "
-            "unchanged."
-        ),
+        help=("Optional SMT solver timeout in milliseconds; 0 is forwarded unchanged."),
     )
     def inspect_command(
-            input_code_file: str,
-            output_file: Optional[str],
-            enable_verify: bool,
-            max_complexity_tier: str,
-            max_call_count_scaling: str,
-            smt_timeout_ms: Optional[int],
+        input_code_file: str,
+        output_file: Optional[str],
+        enable_verify: bool,
+        max_complexity_tier: str,
+        max_call_count_scaling: str,
+        smt_timeout_ms: Optional[int],
     ) -> None:
         """Inspect a state machine DSL file and emit JSON.
 

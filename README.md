@@ -141,11 +141,12 @@ detailed steps and environment requirements.
 
 ### 1. Using the Command Line Interface (CLI)
 
-pyfcstm provides three main command-line subcommands:
+pyfcstm provides several command-line subcommands, including:
 
 - `plantuml` for visualization
 - `generate` for template-based code generation
 - `simulate` for interactive or batch execution
+- `inspect` for structured model and diagnostic JSON
 
 Before using them, create a small FCSTM file such as `traffic_light.fcstm`:
 

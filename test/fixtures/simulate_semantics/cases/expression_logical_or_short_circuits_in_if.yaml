@@ -1,21 +1,21 @@
 schema_version: 1
-id: cycle_result_history_stable_leaf
-title: Cycle result and history assertions for a stable leaf
+id: expression_logical_or_short_circuits_in_if
+title: Logical or short circuits in if block conditions
 source:
-  fcstm: cycle_result_history_stable_leaf.fcstm
+  fcstm: expression_logical_or_short_circuits_in_if.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
+  docs:
+  - https://github.com/HansBug/pyfcstm/issues/156#issuecomment-4632515679
   assertion_types:
   - cycle_result
   - history
-  - stack
   - state
   - vars
-  notes:
-  - Minimal fixture proving that cycle_result and history assertions are executable.
 categories:
 - runtime
+- if_blocks
 runners:
 - simulation
 initial:
@@ -26,25 +26,19 @@ steps:
   expect:
     state:
     - Root
-    - Counting
+    - A
     vars:
-      counter: 1
+      x: 0
+      y: 101
     ended: false
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - Counting
-      mode: active
     cycle_count: 1
     cycle_result:
       value: null
     history_length: 1
     history_tail:
     - cycle: 1
-      state: Root.Counting
+      state: Root.A
       vars:
-        counter: 1
+        x: 0
+        y: 101
       events: []

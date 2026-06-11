@@ -4724,3 +4724,20 @@ class TestModelExpr:
             expr()
         with pytest.raises(KeyError):
             expr.to_ast_node()
+
+    @pytest.mark.parametrize(
+        ["expr_text", "kwargs", "expected_value"],
+        [
+            ("x != 0 && 10 / x > 1", {"x": 0}, False),
+            ("x == 0 || 10 / x > 1", {"x": 0}, True),
+            ("x != 0 and 10 / x > 1", {"x": 0}, False),
+            ("x == 0 or 10 / x > 1", {"x": 0}, True),
+        ],
+    )
+    def test_logical_binary_ops_short_circuit_rhs(
+        self, expr_text, kwargs, expected_value
+    ):
+        """Test that logical binary operators do not evaluate unnecessary RHS."""
+        expr = parse_expr_from_string(expr_text, mode="logical")
+
+        assert expr(**kwargs) is expected_value

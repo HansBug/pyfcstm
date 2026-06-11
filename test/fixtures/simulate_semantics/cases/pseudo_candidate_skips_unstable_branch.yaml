@@ -1,0 +1,81 @@
+schema_version: 1
+id: pseudo_candidate_skips_unstable_branch
+title: Pseudo candidate selection skips an unstable branch
+source:
+  fcstm: pseudo_candidate_skips_unstable_branch.fcstm
+origin:
+  files:
+  - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
+  docs:
+  - https://github.com/HansBug/pyfcstm/issues/156#issuecomment-4631750074
+  assertion_types:
+  - state
+  - vars
+  - stack
+  - return
+  - history
+categories:
+- runtime
+- pseudo_chain
+- validation
+- lifecycle
+runners:
+- simulation
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      trace: 101001
+    stack:
+    - path:
+      - Root
+      mode: active
+    - path:
+      - Root
+      - A
+      mode: active
+    ended: false
+    cycle_result:
+      value: null
+    history_length: 1
+- cycle:
+    events:
+    - Root.A.Go
+    - Root.Target.Gate.Go
+  expect:
+    state:
+    - Root
+    - Target
+    - Good
+    vars:
+      trace: 212113
+    stack:
+    - path:
+      - Root
+      mode: active
+    - path:
+      - Root
+      - Target
+      mode: active
+    - path:
+      - Root
+      - Target
+      - Good
+      mode: active
+    ended: false
+    cycle_result:
+      value: null
+    history_tail:
+    - cycle: 2
+      state: Root.Target.Good
+      vars:
+        trace: 212113
+      events:
+      - Root.A.Go
+      - Root.Target.Gate.Go

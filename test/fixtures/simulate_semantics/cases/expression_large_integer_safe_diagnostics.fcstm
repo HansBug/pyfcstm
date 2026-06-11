@@ -1,0 +1,9 @@
+def int x = 0;
+
+state Root {
+    state A {
+        during { x = 10 ** 5000; }
+    }
+
+    [*] -> A;
+}

@@ -121,6 +121,99 @@ from ..model import (
 from .context import ReadOnlyExecutionContext
 
 
+_SAFE_REPR_DIGIT_LIMIT = 80
+_SAFE_REPR_SEQUENCE_LIMIT = 8
+
+
+def _int_decimal_digits(value: int) -> int:
+    """
+    Count decimal digits for an integer without converting it to a string.
+
+    Python 3.11+ may raise :class:`ValueError` when converting very large
+    integers to strings. Runtime diagnostics need the digit count without
+    crossing that conversion boundary.
+
+    :param value: Integer value to measure.
+    :type value: int
+    :return: Number of decimal digits in ``abs(value)``.
+    :rtype: int
+
+    Example::
+
+        >>> _int_decimal_digits(10 ** 100)
+        101
+    """
+    abs_value = abs(value)
+    if abs_value == 0:
+        return 1
+
+    # ``log10(2)`` gives a close estimate from bit length. The comparisons
+    # below make the result exact without decimal string conversion.
+    digits = int((abs_value.bit_length() - 1) * 0.30103) + 1
+    if abs_value >= 10**digits:
+        digits += 1
+    elif abs_value < 10 ** (digits - 1):
+        digits -= 1
+    return digits
+
+
+def _safe_runtime_repr(value: Any) -> str:
+    """
+    Format runtime diagnostic values without raising from Python string limits.
+
+    The helper is intentionally used only by log and diagnostic formatting. It
+    never changes the stored runtime value. Large integers are represented by
+    digit count so Python 3.11+ ``int_max_str_digits`` does not make debug
+    logging fail before the simulator can complete the cycle.
+
+    :param value: Runtime value or container to render for diagnostics.
+    :type value: Any
+    :return: Safe, bounded diagnostic representation.
+    :rtype: str
+
+    Example::
+
+        >>> _safe_runtime_repr({"x": 10 ** 100})
+        "{'x': int<101 digits>}"
+    """
+    if isinstance(value, bool):
+        return repr(value)
+    if isinstance(value, int):
+        if value == 0:
+            return "0"
+        digits = _int_decimal_digits(value)
+        if digits > _SAFE_REPR_DIGIT_LIMIT:
+            return "%sint<%d digits>" % ("-" if value < 0 else "", digits)
+        return repr(value)
+    if isinstance(value, float):
+        return repr(value)
+    if isinstance(value, str):
+        return repr(value)
+    if value is None:
+        return "None"
+    if isinstance(value, dict):
+        items = list(value.items())
+        parts = [
+            "%s: %s" % (_safe_runtime_repr(key), _safe_runtime_repr(item_value))
+            for key, item_value in items[:_SAFE_REPR_SEQUENCE_LIMIT]
+        ]
+        if len(items) > _SAFE_REPR_SEQUENCE_LIMIT:
+            parts.append("...")
+        return "{%s}" % ", ".join(parts)
+    if isinstance(value, tuple):
+        parts = [_safe_runtime_repr(item) for item in value[:_SAFE_REPR_SEQUENCE_LIMIT]]
+        if len(value) > _SAFE_REPR_SEQUENCE_LIMIT:
+            parts.append("...")
+        trailing_comma = "," if len(value) == 1 else ""
+        return "(%s%s)" % (", ".join(parts), trailing_comma)
+    if isinstance(value, list):
+        parts = [_safe_runtime_repr(item) for item in value[:_SAFE_REPR_SEQUENCE_LIMIT]]
+        if len(value) > _SAFE_REPR_SEQUENCE_LIMIT:
+            parts.append("...")
+        return "[%s]" % ", ".join(parts)
+    return repr(value)
+
+
 class SimulationRuntimeDfsError(RuntimeError):
     """
     Raised when speculative validation exceeds safety limits without converging.
@@ -418,6 +511,9 @@ class SimulationRuntime:
         >>> runtime.vars['counter']
         11
     """
+
+    _DFS_STEP_LIMIT = 1000
+    _DFS_STRUCTURAL_DEPTH_LIMIT = 64
 
     def __init__(
         self,
@@ -808,23 +904,128 @@ class SimulationRuntime:
         :return: ``None``.
         :rtype: None
         :raises ValueError: If the target cannot reach a stoppable state or end.
+        :raises SimulationRuntimeDfsError: If the constructed hot-start stack
+            already exceeds the structural depth safety limit.
         """
+        if len(self.stack) > self._DFS_STRUCTURAL_DEPTH_LIMIT:
+            raise SimulationRuntimeDfsError(
+                "Hot start target exceeds the structural stack-depth safety limit "
+                f"({self._DFS_STRUCTURAL_DEPTH_LIMIT}) before execution; "
+                "choose a shallower target state or simplify the state hierarchy."
+            )
+
         if target_state.is_stoppable:
             return
 
         validation_stack = self._clone_stack(self.stack)
         validation_vars = copy.deepcopy(self.vars)
-        success, _ = self._run_cycle_on_context(
-            validation_stack,
-            validation_vars,
-            {},
-            is_validation_mode=True,
-        )
+        dfs_error = None
+        try:
+            success, _ = self._run_cycle_on_context(
+                validation_stack,
+                validation_vars,
+                {},
+                is_validation_mode=True,
+            )
+        except SimulationRuntimeDfsError as e:
+            # _run_cycle_on_context preflight can hit DFS limits while proving
+            # that a hot-start target has no empty-event stable path.
+            dfs_error = e
+            success = False
         if not success:
+            if self._can_hot_start_wait_for_evented_initial(target_state):
+                if dfs_error is not None:
+                    raise dfs_error
+                return
             target_path = ".".join(target_state.path)
             raise ValueError(
                 f"Hot start target '{target_path}' cannot reach a stoppable state"
             )
+
+    def _can_hot_start_wait_for_evented_initial(self, target_state: State) -> bool:
+        """
+        Return whether a composite hot-start target can wait for an evented init.
+
+        Constructor preflight runs without user events, so an initial transition
+        guarded by an event may be legitimately disabled until the first
+        :meth:`cycle` call. The event gate can appear directly on the target
+        composite or after an eventless initial-transition chain. Such targets
+        should remain in ``init_wait`` instead of being rejected during
+        construction.
+
+        :param target_state: Hot-start target state to inspect.
+        :type target_state: State
+        :return: ``True`` when the target has an event-gated initial transition
+            boundary whose non-event guard is currently satisfiable.
+        :rtype: bool
+        :raises SimulationRuntimeDfsError: If the eventless initial-chain search
+            exceeds the runtime safety limits.
+        """
+        if target_state.is_leaf_state:
+            return False
+
+        worklist = [(self._clone_stack(self.stack), copy.deepcopy(self.vars))]
+        seen_signatures = set()
+        steps_taken = 0
+
+        while worklist:
+            current_stack, current_vars = worklist.pop()
+            if not current_stack:
+                continue
+
+            structural_signature = self._create_structural_signature(current_stack)
+            if len(structural_signature) > self._DFS_STRUCTURAL_DEPTH_LIMIT:
+                raise SimulationRuntimeDfsError(
+                    "Hot start event-gated initial-chain search exceeded the "
+                    "structural stack-depth safety limit "
+                    f"({self._DFS_STRUCTURAL_DEPTH_LIMIT}); "
+                    "choose a shallower target state or simplify the state hierarchy."
+                )
+
+            signature = self._create_execution_signature(current_stack, current_vars)
+            if signature in seen_signatures:
+                continue
+            seen_signatures.add(signature)
+
+            if steps_taken >= self._DFS_STEP_LIMIT:
+                raise SimulationRuntimeDfsError(
+                    "Hot start event-gated initial-chain search exceeded the "
+                    f"step safety limit ({self._DFS_STEP_LIMIT}); "
+                    "the state machine likely contains an invalid unbounded "
+                    "initial-transition chain."
+                )
+            steps_taken += 1
+
+            frame = current_stack[-1]
+            state = frame.state
+            if state.is_leaf_state or frame.mode != "init_wait":
+                continue
+
+            for transition in state.init_transitions:
+                if transition.event is None:
+                    continue
+                if self._transition_matches_guard(transition, current_vars):
+                    return True
+
+            for transition in reversed(state.init_transitions):
+                if transition.event is not None:
+                    continue
+                if not self._transition_matches_guard(transition, current_vars):
+                    continue
+
+                next_stack = self._clone_stack(current_stack)
+                next_vars = copy.deepcopy(current_vars)
+                self._execute_initial_transition_on_context(
+                    next_stack,
+                    next_vars,
+                    transition,
+                    {},
+                    is_validation_mode=True,
+                    attempt_initial_transition=False,
+                )
+                worklist.append((next_stack, next_vars))
+
+        return False
 
     def _event_input_error(self, message: str) -> SimulationRuntimeEventError:
         """
@@ -1325,17 +1526,37 @@ class SimulationRuntime:
         Evaluate a DSL expression and normalize numeric user-data failures.
 
         :param expr: Expression object to evaluate.
+        :type expr: pyfcstm.model.Expr
         :param scope: Variable scope passed into the expression.
+        :type scope: Dict[str, Union[int, float]]
         :param usage: Human-readable expression usage for diagnostics.
+        :type usage: str
         :return: Expression result.
+        :rtype: Any
+        :raises SimulationRuntimeExpressionError: If evaluating ``expr`` raises
+            :class:`ValueError`, :class:`ArithmeticError`, or :class:`TypeError`
+            from user-authored DSL expression semantics.
+
+        Example::
+
+            >>> from pyfcstm.model import Integer, Variable
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> scope = {"x": 2}
+            >>> expr = Integer(10) / Variable("x")
+            >>> SimulationRuntime._evaluate_runtime_expr(
+            ...     expr, scope, usage="example expression"
+            ... )
+            5.0
         """
         try:
             return expr(**scope)
-        except (ValueError, ArithmeticError) as e:
+        except (ValueError, ArithmeticError, TypeError) as e:
             # ValueError: math domain errors or invalid numeric operations
             # raised while evaluating the user's DSL expression.
             # ArithmeticError: division by zero, overflow, or other numeric
             # runtime failure while evaluating the user's DSL expression.
+            # TypeError: Python numeric, bitwise, and shift operators reject
+            # runtime operand combinations such as ``float << int``.
             raise SimulationRuntimeExpressionError(
                 f"{usage} evaluation failed: {e}"
             ) from e
@@ -1363,7 +1584,14 @@ class SimulationRuntime:
             old_val = old_vars.get(var_name)
             new_val = new_vars.get(var_name)
             if old_val != new_val:
-                changes.append(f"{var_name}: {old_val} --> {new_val}")
+                changes.append(
+                    "%s: %s --> %s"
+                    % (
+                        var_name,
+                        _safe_runtime_repr(old_val),
+                        _safe_runtime_repr(new_val),
+                    )
+                )
 
         if changes:
             return f"; var changes: {', '.join(changes)}"
@@ -1643,6 +1871,7 @@ class SimulationRuntime:
         d_events: Dict[str, Event],
         consumed_events: Optional[List[str]] = None,
         is_validation_mode: bool = False,
+        attempt_initial_transition: bool = True,
     ) -> None:
         """
         Enter a state and perform its immediate entry-time semantics.
@@ -1667,8 +1896,13 @@ class SimulationRuntime:
         :type consumed_events: Optional[List[str]]
         :param is_validation_mode: Whether this is validation mode (handlers not executed).
         :type is_validation_mode: bool
+        :param attempt_initial_transition: Whether composite entry should
+            immediately try its initial transition chain, defaults to ``True``.
+        :type attempt_initial_transition: bool, optional
         :return: ``None``.
         :rtype: None
+        :raises SimulationRuntimeDfsError: If initial-transition validation
+            exceeds runtime safety limits.
         """
         stack.append(_Frame(state, "active"))
         for on_enter in state.on_enters:
@@ -1683,13 +1917,14 @@ class SimulationRuntime:
                     on_during_before, vars_, is_validation_mode=is_validation_mode
                 )
             stack[-1].mode = "init_wait"
-            self._attempt_init_transition(
-                stack,
-                vars_,
-                d_events,
-                consumed_events=consumed_events,
-                is_validation_mode=is_validation_mode,
-            )
+            if attempt_initial_transition:
+                self._attempt_init_transition(
+                    stack,
+                    vars_,
+                    d_events,
+                    consumed_events=consumed_events,
+                    is_validation_mode=is_validation_mode,
+                )
 
     def _attempt_init_transition(
         self,
@@ -1749,6 +1984,7 @@ class SimulationRuntime:
                     d_events,
                     consumed_events=consumed_events,
                     is_validation_mode=is_validation_mode,
+                    attempt_initial_transition=not is_validation_mode,
                 )
                 return True
         return False
@@ -1761,6 +1997,7 @@ class SimulationRuntime:
         d_events: Dict[str, Event],
         consumed_events: Optional[List[str]] = None,
         is_validation_mode: bool = False,
+        attempt_initial_transition: bool = True,
     ) -> None:
         """
         Execute one enabled initial transition on the supplied context.
@@ -1782,16 +2019,21 @@ class SimulationRuntime:
         :type consumed_events: Optional[List[str]]
         :param is_validation_mode: Whether this is validation mode.
         :type is_validation_mode: bool
+        :param attempt_initial_transition: Whether entering a composite target
+            should immediately try its own initial transition, defaults to
+            ``True``.
+        :type attempt_initial_transition: bool, optional
         :return: ``None``.
         :rtype: None
         """
+        composite_frame = stack[-1]
+        state = composite_frame.state
         if (
             consumed_events is not None
             and not is_validation_mode
             and transition.event is not None
         ):
             consumed_events.append(transition.event.path_name)
-        state = stack[-1].state
         self._execute_transition_effect(
             transition,
             vars_,
@@ -1805,7 +2047,10 @@ class SimulationRuntime:
             d_events,
             consumed_events=consumed_events,
             is_validation_mode=is_validation_mode,
+            attempt_initial_transition=attempt_initial_transition,
         )
+        if composite_frame in stack:
+            composite_frame.mode = "active"
 
     def _validate_initial_transition(
         self,
@@ -1842,14 +2087,9 @@ class SimulationRuntime:
             transition,
             d_events,
             is_validation_mode=True,
+            attempt_initial_transition=False,
         )
-        success, _ = self._run_cycle_on_context(
-            sim_stack,
-            sim_vars,
-            d_events,
-            is_validation_mode=True,
-        )
-        return success
+        return self._validation_search_reaches_stable(sim_stack, sim_vars, d_events)
 
     def _finalize_exit_to_parent(
         self,
@@ -1943,9 +2183,10 @@ class SimulationRuntime:
 
         if is_validation_mode:
             self.logger.debug(
-                f"[VALIDATION] Execute transition: "
-                f"{current_state_path} -> {target_desc} "
-                f"(event={transition.event.path_name if transition.event else 'none'})"
+                "[VALIDATION] Execute transition: %s -> %s (event=%s)",
+                current_state_path,
+                target_desc,
+                transition.event.path_name if transition.event else "none",
             )
         else:
             self.logger.info(
@@ -2097,34 +2338,214 @@ class SimulationRuntime:
         sim_vars = copy.deepcopy(vars_)
         stack_repr = [(".".join(frame.state.path), frame.mode) for frame in stack]
         self.logger.debug(
-            f"[VALIDATION] DFS validation start for transition {transition.from_state} -> {transition.to_state} "
-            f"with stack={stack_repr} vars={vars_}"
+            "[VALIDATION] DFS validation start for transition %s -> %s with stack=%s vars=%s",
+            transition.from_state,
+            transition.to_state,
+            stack_repr,
+            _safe_runtime_repr(vars_),
         )
         ended = self._execute_transition_on_context(
             sim_stack, sim_vars, transition, d_events, is_validation_mode=True
         )
         if ended:
             self.logger.debug(
-                f"[VALIDATION] DFS validation success for transition {transition.from_state} -> {transition.to_state}: runtime ended"
+                "[VALIDATION] DFS validation success for transition %s -> %s: runtime ended",
+                transition.from_state,
+                transition.to_state,
             )
             return True
 
-        success, _ = self._run_cycle_on_context(
+        success = self._validation_search_reaches_stable(
             sim_stack,
             sim_vars,
             d_events,
             ended=ended,
             validate_post_child_exit=True,
-            is_validation_mode=True,
         )
         sim_stack_repr = [
             (".".join(frame.state.path), frame.mode) for frame in sim_stack
         ]
         self.logger.debug(
-            f"[VALIDATION] DFS validation result for transition {transition.from_state} -> {transition.to_state}: "
-            f"success={success}, stack={sim_stack_repr}, vars={sim_vars}"
+            "[VALIDATION] DFS validation result for transition %s -> %s: success=%s, stack=%s, vars=%s",
+            transition.from_state,
+            transition.to_state,
+            success,
+            sim_stack_repr,
+            _safe_runtime_repr(sim_vars),
         )
         return success
+
+    def _validation_search_reaches_stable(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+        *,
+        ended: bool = False,
+        validate_post_child_exit: bool = True,
+    ) -> bool:
+        """
+        Search for a stable continuation without recursive Python calls.
+
+        Speculative transition and initial-transition checks need to decide
+        whether at least one enabled continuation reaches a stoppable state or
+        termination. This helper performs that search with an explicit worklist
+        so unbounded pseudo chains hit the runtime's own DFS safety limits
+        instead of Python's call-stack limit.
+
+        :param stack: Starting validation stack. Mutated to the stable path on
+            success.
+        :type stack: List[_Frame]
+        :param vars_: Starting variable mapping. Mutated to the stable path on
+            success.
+        :type vars_: Dict[str, Union[int, float]]
+        :param d_events: Active events for this validation attempt.
+        :type d_events: Dict[str, Event]
+        :param ended: Whether the starting context has already ended, defaults
+            to ``False``.
+        :type ended: bool, optional
+        :param validate_post_child_exit: Whether post-child-exit transitions
+            should be considered during search, defaults to ``True``.
+        :type validate_post_child_exit: bool, optional
+        :return: ``True`` if a stable continuation is reachable.
+        :rtype: bool
+        :raises SimulationRuntimeDfsError: If the worklist exceeds safety
+            limits before reaching a stable continuation.
+        """
+        if ended:
+            stack.clear()
+            vars_.clear()
+            return True
+
+        worklist = [(self._clone_stack(stack), copy.deepcopy(vars_), False)]
+        seen_signatures = set()
+        steps_taken = 0
+
+        while worklist:
+            current_stack, current_vars, current_ended = worklist.pop()
+            if current_ended:
+                stack.clear()
+                vars_.clear()
+                vars_.update(current_vars)
+                return True
+            if not current_stack:
+                stack.clear()
+                vars_.clear()
+                vars_.update(current_vars)
+                return True
+
+            structural_signature = self._create_structural_signature(current_stack)
+            if len(structural_signature) > self._DFS_STRUCTURAL_DEPTH_LIMIT:
+                raise SimulationRuntimeDfsError(
+                    "Speculative DFS exceeded the structural stack-depth safety limit "
+                    f"({self._DFS_STRUCTURAL_DEPTH_LIMIT}) without reaching a stoppable state or pruning; "
+                    "the state machine likely contains an invalid unbounded nesting chain."
+                )
+
+            signature = self._create_execution_signature(current_stack, current_vars)
+            if signature in seen_signatures:
+                continue
+            seen_signatures.add(signature)
+
+            if steps_taken >= self._DFS_STEP_LIMIT:
+                raise SimulationRuntimeDfsError(
+                    "Speculative DFS exceeded the step safety limit "
+                    f"({self._DFS_STEP_LIMIT}) without reaching a stoppable state or pruning; "
+                    "the state machine likely contains an invalid unbounded pseudo-state "
+                    "or transition chain."
+                )
+            steps_taken += 1
+
+            frame = current_stack[-1]
+            state = frame.state
+
+            if state.is_leaf_state and frame.mode == "after_entry":
+                next_stack = self._clone_stack(current_stack)
+                next_vars = copy.deepcopy(current_vars)
+                next_stack[-1].mode = "active"
+                if state.is_stoppable:
+                    stack[:] = next_stack
+                    vars_.clear()
+                    vars_.update(next_vars)
+                    return True
+                worklist.append((next_stack, next_vars, False))
+                continue
+
+            if state.is_leaf_state:
+                progressed = False
+                for transition in reversed(state.transitions_from):
+                    if not self._transition_is_enabled(
+                        transition, d_events, current_vars
+                    ):
+                        continue
+                    next_stack = self._clone_stack(current_stack)
+                    next_vars = copy.deepcopy(current_vars)
+                    next_ended = self._execute_transition_on_context(
+                        next_stack,
+                        next_vars,
+                        transition,
+                        d_events,
+                        is_validation_mode=True,
+                    )
+                    worklist.append((next_stack, next_vars, next_ended))
+                    progressed = True
+                if progressed:
+                    continue
+
+                if not state.is_stoppable:
+                    continue
+
+                next_stack = self._clone_stack(current_stack)
+                next_vars = copy.deepcopy(current_vars)
+                self._run_leaf_during(state, next_vars, is_validation_mode=True)
+                next_stack[-1].mode = "after_entry"
+                worklist.append((next_stack, next_vars, False))
+                continue
+
+            if frame.mode == "init_wait":
+                progressed = False
+                for transition in reversed(state.init_transitions):
+                    if not self._transition_is_enabled(
+                        transition, d_events, current_vars
+                    ):
+                        continue
+                    next_stack = self._clone_stack(current_stack)
+                    next_vars = copy.deepcopy(current_vars)
+                    self._execute_initial_transition_on_context(
+                        next_stack,
+                        next_vars,
+                        transition,
+                        d_events,
+                        is_validation_mode=True,
+                        attempt_initial_transition=False,
+                    )
+                    worklist.append((next_stack, next_vars, False))
+                    progressed = True
+                if not progressed:
+                    continue
+                continue
+
+            if frame.mode == "post_child_exit":
+                if not validate_post_child_exit:
+                    continue
+                for transition in reversed(state.transitions_from):
+                    if not self._transition_is_enabled(
+                        transition, d_events, current_vars
+                    ):
+                        continue
+                    next_stack = self._clone_stack(current_stack)
+                    next_vars = copy.deepcopy(current_vars)
+                    next_ended = self._execute_transition_on_context(
+                        next_stack,
+                        next_vars,
+                        transition,
+                        d_events,
+                        is_validation_mode=True,
+                    )
+                    worklist.append((next_stack, next_vars, next_ended))
+                continue
+
+        return False
 
     def _initialize_context(
         self,
@@ -2269,9 +2690,9 @@ class SimulationRuntime:
             return True, True
 
         steps_taken = 0
-        max_steps = 1000
+        max_steps = self._DFS_STEP_LIMIT
         seen_signatures = set()
-        max_structural_depth = 64
+        max_structural_depth = self._DFS_STRUCTURAL_DEPTH_LIMIT
 
         while not ended:
             if is_validation_mode:
@@ -2279,8 +2700,11 @@ class SimulationRuntime:
                     (".".join(frame.state.path), frame.mode) for frame in stack
                 ]
                 self.logger.debug(
-                    f"[VALIDATION] DFS step {steps_taken + 1}: stack={stack_repr}, "
-                    f"vars={vars_}, ended={ended}"
+                    "[VALIDATION] DFS step %s: stack=%s, vars=%s, ended=%s",
+                    steps_taken + 1,
+                    stack_repr,
+                    _safe_runtime_repr(vars_),
+                    ended,
                 )
             if not stack:
                 ended = True
@@ -2303,12 +2727,12 @@ class SimulationRuntime:
                 )
 
             if steps_taken >= max_steps:
-                self.logger.debug(
-                    "[VALIDATION] Speculative DFS reached the step safety limit (%s) without convergence; "
-                    "treating the path as invalid continuation.",
-                    max_steps,
+                raise SimulationRuntimeDfsError(
+                    "Speculative DFS exceeded the step safety limit "
+                    f"({max_steps}) without reaching a stoppable state or pruning; "
+                    "the state machine likely contains an invalid unbounded pseudo-state "
+                    "or transition chain."
                 )
-                return False, False
 
             frame = stack[-1]
             state = frame.state
@@ -2321,7 +2745,12 @@ class SimulationRuntime:
                     steps_taken += 1
                     continue
 
-                transition = self._select_transition(stack, vars_, d_events)
+                transition = self._select_transition(
+                    stack,
+                    vars_,
+                    d_events,
+                    force_validate=not state.is_stoppable,
+                )
                 if transition is not None:
                     ended = self._execute_transition_on_context(
                         stack,
@@ -2726,7 +3155,8 @@ class SimulationRuntime:
             # Log successful cycle completion with variable changes
             changes = self._format_var_changes(old_vars, self.vars)
             current_values = ", ".join(
-                f"{name}={value}" for name, value in sorted(self.vars.items())
+                "%s=%s" % (name, _safe_runtime_repr(value))
+                for name, value in sorted(self.vars.items())
             )
             self.logger.info(
                 f"Cycle {self.cycle_count} completed successfully - State: {state_path}{changes}; "
@@ -2754,7 +3184,10 @@ class SimulationRuntime:
         else:
             current_state_path = ".".join(self.current_state.path)
             self.logger.debug(
-                f"Cycle {self.cycle_count} - Current state: {current_state_path}, Vars: {self.vars}"
+                "Cycle %s - Current state: %s, Vars: %s",
+                self.cycle_count,
+                current_state_path,
+                _safe_runtime_repr(self.vars),
             )
 
         result = CycleResult(

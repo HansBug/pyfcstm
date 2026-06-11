@@ -1,0 +1,76 @@
+schema_version: 1
+id: hot_start_composite_waits_for_initial_event
+title: Hot start composite waits for an initial transition event
+source:
+  fcstm: hot_start_composite_waits_for_initial_event.fcstm
+origin:
+  files:
+  - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
+  docs:
+  - https://github.com/HansBug/pyfcstm/issues/156#issuecomment-4631746763
+  assertion_types:
+  - initial
+  - state
+  - vars
+  - stack
+  - return
+  - history
+categories:
+- runtime
+- hot_start
+- validation
+runners:
+- simulation
+initial:
+  state: Root.Locked
+  vars:
+    x: 0
+steps:
+- expect_initial:
+    state:
+    - Root
+    - Locked
+    vars:
+      x: 0
+    stack:
+    - path:
+      - Root
+      mode: active
+    - path:
+      - Root
+      - Locked
+      mode: init_wait
+    ended: false
+- cycle:
+    events:
+    - Root.Locked.Unlock
+  expect:
+    state:
+    - Root
+    - Locked
+    - Ready
+    vars:
+      x: 1
+    stack:
+    - path:
+      - Root
+      mode: active
+    - path:
+      - Root
+      - Locked
+      mode: active
+    - path:
+      - Root
+      - Locked
+      - Ready
+      mode: active
+    ended: false
+    cycle_result:
+      value: null
+    history_tail:
+    - cycle: 1
+      state: Root.Locked.Ready
+      vars:
+        x: 1
+      events:
+      - Root.Locked.Unlock

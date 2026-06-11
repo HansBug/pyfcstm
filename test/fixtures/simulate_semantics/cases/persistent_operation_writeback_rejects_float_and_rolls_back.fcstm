@@ -1,0 +1,12 @@
+def int count = 0;
+def int marker = 0;
+state Root {
+    state A {
+        during {
+            tmp = 1.5;
+            count = tmp;
+            marker = marker + 1;
+        }
+    }
+    [*] -> A;
+}

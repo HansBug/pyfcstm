@@ -175,7 +175,7 @@ inspect 命令
 - ``--enable-verify``：运行可由 ``inspect`` 自动接入的 ``pyfcstm.verify`` 算法，并追加其诊断
 - ``--max-complexity-tier``：``inspect`` 允许的最高验证复杂度层级，默认是 ``structural``
 - ``--max-call-count-scaling``：``inspect`` 允许的最高调用次数增长等级，默认是 ``linear_in_transitions``
-- ``--smt-timeout-ms``：透传给 SMT 本地验证算法的可选超时时间；``0`` 会原样透传，并可能让 Z3 在非平凡证明搜索完成前返回
+- ``--smt-timeout-ms``：透传给 SMT 本地验证算法的可选超时时间；``0`` 会原样透传，并遵循 Z3 语义，表示不设置有限超时
 
 **默认 JSON 输出**
 

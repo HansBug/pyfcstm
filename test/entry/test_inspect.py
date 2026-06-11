@@ -72,6 +72,13 @@ class TestEntryInspect:
             diagnostic["code"] for diagnostic in payload["diagnostics"]
         }
 
+    def test_inspect_help_documents_zero_smt_timeout_as_unbounded(self):
+        result = _run_inspect("--help")
+
+        assert result.exitcode == 0
+        assert "0 keeps Z3 without a finite timeout" in result.stdout
+        assert "return before a non-trivial proof search" not in result.stdout
+
     def test_inspect_rejects_bmc_search_in_automatic_verify(
         self,
         inspect_code_file,

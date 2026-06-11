@@ -143,8 +143,8 @@ def build_inspect_json(
     :type max_call_count_scaling: str, optional
     :param smt_timeout_ms: Optional solver timeout in milliseconds for
         SMT-local verify algorithms. ``None`` leaves the solver timeout
-        unset. ``0`` is forwarded unchanged to the solver layer, which may make
-        Z3 return before a non-trivial proof search can complete.
+        unset. ``0`` is forwarded unchanged to the solver layer and follows Z3
+        semantics, where no finite timeout is configured.
     :type smt_timeout_ms: Optional[int], optional
     :return: Pretty-printed JSON inspection report text ending with a newline.
     :rtype: str
@@ -295,7 +295,10 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
         "--smt-timeout-ms",
         type=click.IntRange(min=0),
         default=None,
-        help=("Optional SMT solver timeout in milliseconds; 0 is forwarded unchanged."),
+        help=(
+            "Optional SMT solver timeout in milliseconds; "
+            "0 keeps Z3 without a finite timeout."
+        ),
     )
     def inspect_command(
         input_code_file: str,
@@ -324,7 +327,8 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
         :type max_call_count_scaling: str
         :param smt_timeout_ms: Optional SMT solver timeout in milliseconds.
             ``None`` leaves the timeout unset, while ``0`` is forwarded
-            unchanged to the solver layer.
+            unchanged to the solver layer and keeps Z3 without a finite
+            timeout.
         :type smt_timeout_ms: Optional[int]
         :return: ``None``. JSON is written to a file or stdout.
         :rtype: None

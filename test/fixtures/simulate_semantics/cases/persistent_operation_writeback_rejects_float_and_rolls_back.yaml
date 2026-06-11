@@ -1,0 +1,43 @@
+schema_version: 1
+id: persistent_operation_writeback_rejects_float_and_rolls_back
+title: Persistent writeback rejects non-integer float and rolls back
+source:
+  fcstm: persistent_operation_writeback_rejects_float_and_rolls_back.fcstm
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/156#issuecomment-4631935935
+  assertion_types:
+  - exception
+  - state
+  - vars
+  - stack
+  - history
+  notes:
+  - Covers operation block temporary variables crossing the persistent int boundary.
+categories:
+- runtime
+- temporary_vars
+- lifecycle
+runners:
+- simulation
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    raises:
+      type: ValueError
+      match: count.*int.*non-integer float
+      match_kind: regex
+    state:
+    - Root
+    vars:
+      count: 0
+      marker: 0
+    ended: false
+    stack:
+    - path:
+      - Root
+      mode: init_wait
+    history_length: 0

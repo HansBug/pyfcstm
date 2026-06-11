@@ -1030,6 +1030,13 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 },
             },
             {
+                'code': 'W_UNREACHABLE_STATE',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.B',
+                },
+            },
+            {
                 'code': 'W_UNREFERENCED_VAR',
                 'severity': 'warning',
                 'refs': {

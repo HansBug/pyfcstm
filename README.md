@@ -73,8 +73,9 @@ pyfcstm aims to provide a complete solution from conceptual design to code imple
 | **PlantUML Integration**        | Directly converts DSL files into **PlantUML** code, with preset detail levels and fine-grained visualization options.                | Facilitates design review and documentation generation.                                                        | [Visualization Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/visualization/index.html)            |
 | **Simulation Runtime**          | Runs FCSTM models directly in Python or from an interactive CLI REPL / batch executor.                                                | Lets you validate behavior before committing to generated code.                                                | [Simulation Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/simulation/index.html)                  |
 | **Syntax Highlighting**         | Includes FCSTM syntax highlighting for Pygments and editor integrations, including a VS Code extension in this repository.            | Improves authoring, documentation, and review workflows around `.fcstm` files.                                 | [Syntax Highlighting Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/grammar/index.html)            |
-| **Structured Diagnostics**      | `pyfcstm.diagnostics` ships **46 diagnostic codes** (19 errors / 24 warnings / 3 infos) covering parse errors, design-health issues (deadlock, unreachable, redundant transitions, const-folded guards, etc.), and Layer 0 use-def dataflow analysis. | Replace ad-hoc regex / message scraping with a stable structured API; codes carry `for_llm` payloads to drive LLM-assisted repair. | [Diagnostics Code List](#static-diagnostics-codes) |
+| **Structured Diagnostics**      | `pyfcstm.diagnostics` ships **59 diagnostic codes** (20 errors / 32 warnings / 7 infos) covering parse errors, design-health issues (deadlock, unreachable, redundant transitions, const-folded guards, etc.), Layer 0 use-def dataflow analysis, and optional verify-backed checks. | Replace ad-hoc regex / message scraping with a stable structured API; codes carry `for_llm` payloads to drive LLM-assisted repair. | [Diagnostics Code List](#static-diagnostics-codes) |
 | **`inspect_model()` API**       | One-call structured view of a state machine: states / transitions / variables / events / metrics + reachability graph + var dataflow + aspect impact map + diagnostics. Round-trippable via `to_json()` against a published JSON schema. | Drop-in replacement for hand-written model walkers; single source of truth for downstream tooling.             | [inspect_model API](https://pyfcstm.readthedocs.io/en/latest/api_doc/diagnostics/inspect.html)                |
+| **`pyfcstm inspect` CLI**       | Emits the same structured inspect report as stable JSON; verify-backed diagnostics stay disabled unless `--enable-verify` is passed. | Makes diagnostics usable in CI, scripts, and editor tooling without writing Python glue.                       | [CLI Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/cli/index.html)                                |
 | **Suggested-Fix + VS Code Quick-Fix** | Selected diagnostics carry a `suggested_fix` payload (kind / anchor / text template) that the VS Code extension consumes as auto-apply quick-fixes; each fix is parse-back-verified. | Auto-fix loop for both humans and LLM agents; no regex patching. | [VS Code Extension](https://pyfcstm.readthedocs.io/en/latest/tutorials/editor/index.html) |
 | **Cross-End Parity (py / js)**  | Python `inspect_model().diagnostics` and `@pyfcstm/jsfcstm` `inspectModel().diagnostics` emit byte-equivalent sets (normalized `code + severity + refs`), locked by cross-end parity tests. | Same diagnostics surface in CLI tooling, server-side processors, and browser-based editors / language servers. | [Cross-End Parity](https://pyfcstm.readthedocs.io/en/latest/api_doc/diagnostics/parity.html) |
 
@@ -140,11 +141,12 @@ detailed steps and environment requirements.
 
 ### 1. Using the Command Line Interface (CLI)
 
-pyfcstm provides three main command-line subcommands:
+pyfcstm provides several command-line subcommands, including:
 
 - `plantuml` for visualization
 - `generate` for template-based code generation
 - `simulate` for interactive or batch execution
+- `inspect` for structured model and diagnostic JSON
 
 Before using them, create a small FCSTM file such as `traffic_light.fcstm`:
 
@@ -261,6 +263,18 @@ print(str(model.to_ast_node()))
 
 #### Inspect a Model and Read Structured Diagnostics
 
+From the command line, emit the same inspect report as stable JSON:
+
+```shell
+pyfcstm inspect -i buggy.fcstm -o inspect_report.json
+pyfcstm inspect -i buggy.fcstm --enable-verify --max-complexity-tier smt_linear --smt-timeout-ms 1000
+```
+
+The default CLI path matches `inspect_model(model)` and does not run verify-backed checks. Pass `--enable-verify`
+explicitly to append inspect-eligible `pyfcstm.verify` diagnostics. `bmc_search`, `k_unrollings`, and
+`k_unrollings_times_branching` remain forbidden in the automatic inspect path. `--smt-timeout-ms 0` is forwarded
+unchanged to the SMT solver layer and follows Z3 semantics, where `0` means no finite timeout is configured.
+
 ```python
 from pyfcstm.diagnostics import inspect_model
 
@@ -278,7 +292,7 @@ for variable in report.variables:
         variable.affects_guard_directly, variable.affects_guard_indirectly,
     )
 
-# 2. Diagnostics: 46 codes (19 E / 24 W / 3 I), structured + LLM-friendly.
+# 2. Diagnostics: 59 codes (20 E / 32 W / 7 I), structured + LLM-friendly.
 for diag in report.diagnostics:
     print(f'[{diag.severity}] {diag.code}: {diag.message}')
     if diag.refs.get('suggested_fix'):
@@ -318,6 +332,12 @@ model = parse_dsl_node_to_state_machine(parse_with_grammar_entry(dsl, 'state_mac
 report = inspect_model(model)
 for d in report.diagnostics:
     print(f'{d.severity:7} {d.code:30} {d.message}')
+```
+
+The equivalent CLI path is:
+
+```shell
+pyfcstm inspect -i buggy.fcstm --enable-verify --max-complexity-tier smt_linear
 ```
 
 The full catalog of codes (with minimal triggering DSL for each) is documented under
@@ -678,9 +698,10 @@ comprehensive guide on template development.
 
 ## Static Diagnostics — Code List <a name="static-diagnostics-codes"></a>
 
-Calling `inspect_model(machine).diagnostics` on a parsed model returns a list of `ModelDiagnostic` objects. As of
-v0.4.0 the catalog covers **46 codes — 19 errors / 24 warnings / 3 infos**, all produced statically with no SMT
-backend. Every code is reachable from the minimal DSL snippet in the right-hand column; see
+Calling `inspect_model(machine).diagnostics` on a parsed model returns a list of `ModelDiagnostic` objects. The
+catalog covers **59 codes — 20 errors / 32 warnings / 7 infos**. The default inspect path remains static and does not
+run an SMT backend; verify-backed diagnostics require `enable_verify=True` or `pyfcstm inspect --enable-verify`.
+Every code is reachable from the minimal DSL snippet in the right-hand column; see
 [`pyfcstm/diagnostics/codes.yaml`](pyfcstm/diagnostics/codes.yaml) for full per-code metadata (refs schema,
 `for_llm` payload, suggested-fix template, parity flags).
 

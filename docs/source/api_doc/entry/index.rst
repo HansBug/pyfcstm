@@ -13,6 +13,7 @@ pyfcstm.entry
     cli
     dispatch
     generate
+    inspect
     plantuml
     simulate/index
     visualize

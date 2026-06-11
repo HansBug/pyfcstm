@@ -7,6 +7,7 @@ The most common documentation-facing commands are:
 
 - ``pyfcstm plantuml``: Generate raw PlantUML text
 - ``pyfcstm visualize``: Render a final diagram file directly
+- ``pyfcstm inspect``: Emit structured model and diagnostic JSON
 - ``pyfcstm generate``: Generate source code from templates
 
 Installation
@@ -151,6 +152,53 @@ This is useful for:
 - Quick verification of DSL syntax
 - Piping output to other tools
 - Integration with CI/CD pipelines
+
+inspect Command
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Inspect a state machine DSL file and emit the structured model report as JSON.
+The JSON shape matches ``inspect_model(model).to_json()`` and includes states,
+transitions, variables, metrics, derived graphs, and diagnostics.
+
+**Syntax**:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i <input_file> [-o <output_file>] [--enable-verify] \
+     [--max-complexity-tier structural|smt_linear|smt_nonlinear_decidable|smt_undecidable_heuristic] \
+     [--max-call-count-scaling linear_in_transitions] [--smt-timeout-ms <ms>]
+
+**Parameters**:
+
+- ``-i, --input-code``: Path to input state machine DSL file (required)
+- ``-o, --output``: Path to output JSON file (optional, outputs to stdout when not specified)
+- ``--enable-verify``: Run inspect-eligible ``pyfcstm.verify`` algorithms and append their diagnostics
+- ``--max-complexity-tier``: Highest verify tier allowed by the inspect adapter; default is ``structural``
+- ``--max-call-count-scaling``: Highest call-count scaling allowed by the inspect adapter; default is ``linear_in_transitions``
+- ``--smt-timeout-ms``: Optional SMT timeout forwarded to SMT-local verify algorithms; ``0`` is forwarded unchanged and follows Z3 semantics, where no finite timeout is configured
+
+**Default JSON output**
+
+.. code-block:: bash
+
+   pyfcstm inspect -i simple_machine.fcstm -o simple_machine.inspect.json
+
+By default, ``inspect`` does not run verify-backed checks. This keeps the CLI
+aligned with ``inspect_model(model)`` and with the existing cross-end default
+diagnostics contract.
+
+**Opt in to verify-backed diagnostics**
+
+.. code-block:: bash
+
+   pyfcstm inspect -i simple_machine.fcstm \
+     --enable-verify --max-complexity-tier smt_linear --smt-timeout-ms 1000
+
+The automatic inspect path still rejects ``bmc_search`` because BMC requires an
+explicit query depth and is not a bounded local diagnostic pass. It also rejects
+``k_unrollings`` and ``k_unrollings_times_branching`` call-count policies. The
+CLI parses those values only to return a controlled policy error instead of
+silently letting them enter automatic inspection.
 
 visualize Command
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -342,8 +390,13 @@ Validate DSL syntax before committing:
 
 .. code-block:: bash
 
-   # Quick syntax check (generates PlantUML)
-   pyfcstm plantuml -i machine.fcstm > /dev/null && echo "Syntax OK"
+   # Quick syntax check plus structured diagnostics
+   pyfcstm inspect -i machine.fcstm -o machine.inspect.json
+
+   # Optional verify-backed diagnostics for CI runs that can afford SMT checks
+   pyfcstm inspect -i machine.fcstm --enable-verify \
+     --max-complexity-tier smt_linear --smt-timeout-ms 1000 \
+     -o machine.verify.inspect.json
 
    # Generate test code
    pyfcstm generate -i machine.fcstm -t ./templates/test -o ./tests/generated
@@ -352,8 +405,8 @@ For import-based projects, validate the entry file only:
 
 .. code-block:: bash
 
-   pyfcstm plantuml -i ./docs/source/tutorials/dsl/import_host_directory.fcstm \
-     > /dev/null && echo "Import project syntax OK"
+   pyfcstm inspect -i ./docs/source/tutorials/dsl/import_host_directory.fcstm \
+     -o import_project.inspect.json
 
 Workflow 4: CI/CD Integration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

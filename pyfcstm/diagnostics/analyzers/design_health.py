@@ -108,7 +108,7 @@ def _unreachable_state_diagnostics(states, reachability_graph, root_state_path) 
     reachable.add(root_state_path)
     diagnostics: List[ModelDiagnostic] = []
     for state in states:
-        if state.is_pseudo or state.path in reachable:
+        if not state.is_leaf or state.is_pseudo or state.path in reachable:
             continue
         diagnostics.append(
             ModelDiagnostic(

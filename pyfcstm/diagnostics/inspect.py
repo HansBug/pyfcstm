@@ -24,10 +24,10 @@ The module exposes the following dataclasses:
 * :class:`ModelMetrics` — aggregate counts and ratios
 * :class:`ModelInspect` — top-level container including diagnostics
 
-Example::
+Examples::
 
     >>> from pyfcstm.dsl import parse_with_grammar_entry
-    >>> from pyfcstm.model.parse import parse_dsl_node_to_state_machine
+    >>> from pyfcstm.model import parse_dsl_node_to_state_machine
     >>> from pyfcstm.diagnostics import inspect_model
     >>> source = '''
     ... def int counter = 0;
@@ -47,13 +47,14 @@ Example::
 
 import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .analyzers import (
     build_use_def_graph,
     collect_design_health_warnings,
     collect_expr_variables,
 )
+from .codes import CODE_REGISTRY, CodeFieldSpec
 from ..utils.validate import ModelDiagnostic, Span
 
 if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
@@ -65,6 +66,7 @@ if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
         StateMachine,
         Transition,
     )
+    from ..verify.inspect_adapter import InspectRunResult
 
 
 DEFAULT_DEEP_HIERARCHY_THRESHOLD = 6
@@ -76,6 +78,14 @@ DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD = 2.0
 # one source object must be listed here and covered by
 # test/diagnostics/test_inspect_span_contract.py.
 KNOWN_SPANLESS_CODES = frozenset()
+
+# Some structural verify algorithms intentionally reuse a legacy static
+# diagnostic code so callers see one stable public code for the same model
+# problem, regardless of whether it came from design-health analysis or the
+# optional verify adapter.
+VERIFY_SHARED_STATIC_CODES = frozenset({
+    'W_UNREACHABLE_STATE',
+})
 
 
 _OP_PRECEDENCE = {
@@ -425,9 +435,9 @@ class ModelInspect:
     :type events: Tuple[EventInfo, ...]
     :param metrics: Aggregate model metrics.
     :type metrics: ModelMetrics
-    :param reachability_graph: Mapping state path → list of state paths
-        reachable through normal transitions (BFS closure, ignoring
-        guards).
+    :param reachability_graph: Mapping from every state path to state paths
+        reachable through normal transitions and composite initial edges.
+        Guards are ignored; ``[*]`` entry/exit markers are not exposed.
     :type reachability_graph: Dict[str, Tuple[str, ...]]
     :param event_emission_map: Mapping event qualified name → list of
         source state paths that can emit it.
@@ -474,8 +484,13 @@ class ModelInspect:
             without loss.
         :rtype: Dict[str, Any]
 
-        Example::
+        Examples::
 
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> ast = parse_with_grammar_entry('state Root;', 'state_machine_dsl')
+            >>> machine = parse_dsl_node_to_state_machine(ast)
+            >>> report = inspect_model(machine)
             >>> report.to_json()['root_state_path']
             'Root'
         """
@@ -1288,45 +1303,81 @@ def _build_reachability_graph(
         states: Tuple[StateInfo, ...],
         transitions: Tuple[TransitionInfo, ...],
 ) -> Dict[str, Tuple[str, ...]]:
-    """BFS reachability over normal transitions, ignoring guards."""
-    # Adjacency list keyed by state path. ``[*]`` markers are skipped.
-    adjacency: Dict[str, set] = {s.path: set() for s in states}
-    initial_edges: Dict[str, set] = {s.path: set() for s in states}
-    for t in transitions:
-        if t.from_path == _INIT_MARK or t.to_path == _EXIT_MARK:
-            # Initial / exit pseudo edges feed reachability from the
-            # parent composite (the parent's "active" implies traversing
-            # the initial transition).
-            continue
-        if t.from_path not in adjacency:  # pragma: no cover
-            # Defensive: transitions emitted by the model layer always
-            # have from_path equal to a known state path (or the INIT
-            # marker caught above). Unreachable through grammar-driven
-            # input; kept as a safety net so a future synthesizer that
-            # invents from_paths doesn't crash here.
-            continue
-        adjacency[t.from_path].add(t.to_path)
+    """Return the default inspect reachability graph.
 
-    for s in states:
-        if s.is_composite and s.initial_targets:
-            for it in s.initial_targets:
-                target = it['target']
-                if target != _EXIT_MARK:
-                    initial_edges[s.path].add(target)
+    The inspect graph is a guard-agnostic breadth-first closure over normal
+    transition endpoints plus composite ``[*]`` initial edges. It is a stable
+    inspect/jsfcstm contract and therefore intentionally independent from the
+    optional verify topology projection that only runs when callers pass
+    ``enable_verify=True`` to :func:`inspect_model`.
 
-    out: Dict[str, Tuple[str, ...]] = {}
-    for s in states:
+    :param states: Inspect state records, one per state path.
+    :type states: Tuple[StateInfo, ...]
+    :param transitions: Inspect transition records in model order.
+    :type transitions: Tuple[TransitionInfo, ...]
+    :return: Mapping from every state path to reachable state paths.
+    :rtype: Dict[str, Tuple[str, ...]]
+
+    Examples::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> source = '''
+        ... state Root {
+        ...     state A;
+        ...     state B;
+        ...     [*] -> A;
+        ...     A -> B;
+        ... }
+        ... '''
+        >>> ast = parse_with_grammar_entry(source, 'state_machine_dsl')
+        >>> machine = parse_dsl_node_to_state_machine(ast)
+        >>> states = _build_state_infos(machine)
+        >>> transitions = _build_transition_infos(machine)
+        >>> _build_reachability_graph(states, transitions)['Root']
+        ('Root.A', 'Root.B')
+        >>> _build_reachability_graph(states, transitions)['Root.A']
+        ('Root.B',)
+    """
+    adjacency: Dict[str, set] = {state.path: set() for state in states}
+    initial_edges: Dict[str, set] = {state.path: set() for state in states}
+    for transition in transitions:
+        if (
+                transition.from_path == _INIT_MARK
+                or transition.to_path == _EXIT_MARK
+        ):
+            continue
+        if transition.from_path not in adjacency:  # pragma: no cover
+            # Model-built transitions always point at a known source path. The
+            # guard keeps hand-built test doubles from crashing this helper.
+            continue
+        adjacency[transition.from_path].add(transition.to_path)
+
+    for state in states:
+        if not (state.is_composite and state.initial_targets):
+            continue
+        for initial_target in state.initial_targets:
+            target = initial_target['target']
+            if target != _EXIT_MARK:
+                initial_edges[state.path].add(target)
+
+    graph: Dict[str, Tuple[str, ...]] = {}
+    for state in states:
         seen = set()
-        queue = [s.path]
+        queue = [state.path]
         while queue:
-            cur = queue.pop(0)
-            for nxt in sorted(adjacency.get(cur, set()) | initial_edges.get(cur, set())):
-                if nxt in seen or nxt == s.path:
+            current = queue.pop(0)
+            next_paths = adjacency.get(current, set()) | initial_edges.get(
+                current,
+                set(),
+            )
+            for next_path in sorted(next_paths):
+                if next_path in seen or next_path == state.path:
                     continue
-                seen.add(nxt)
-                queue.append(nxt)
-        out[s.path] = tuple(sorted(seen))
-    return out
+                seen.add(next_path)
+                queue.append(next_path)
+        graph[state.path] = tuple(sorted(seen))
+    return graph
 
 
 def _build_event_emission_map(
@@ -1412,12 +1463,1022 @@ def _function_signature(state: Any, default_path: Optional[str], action: Any) ->
     return f'{normalized}:{leaf}' if normalized else leaf
 
 
+def _run_verify_inspect_algorithms(machine: 'StateMachine', **kwargs):
+    """Run the verify inspect adapter lazily.
+
+    Keeping this import behind the ``enable_verify`` branch preserves the
+    default inspect path for users that only need structural diagnostics.
+
+    :param machine: State machine to verify.
+    :type machine: pyfcstm.model.StateMachine
+    :param kwargs: Inspect-adapter policy arguments.
+    :type kwargs: object
+    :return: Adapter results in registry order.
+    :rtype: Tuple[pyfcstm.verify.inspect_adapter.InspectRunResult, ...]
+
+    Examples::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> ast = parse_with_grammar_entry("state Root;", "state_machine_dsl")
+        >>> machine = parse_dsl_node_to_state_machine(ast)
+        >>> bool(_run_verify_inspect_algorithms(machine))
+        True
+    """
+    from ..verify.inspect_adapter import run_inspect_algorithms
+
+    return run_inspect_algorithms(machine, **kwargs)
+
+
+def _transition_summary(payload: Mapping[str, Any]) -> str:
+    """Render a raw verify transition payload as a compact label.
+
+    :param payload: Raw transition payload produced by
+        :mod:`pyfcstm.verify.encoding`.
+    :type payload: Mapping[str, Any]
+    :return: ``parent:from->to`` transition label.
+    :rtype: str
+
+    Examples::
+
+        >>> _transition_summary({
+        ...     'parent': 'Root',
+        ...     'from_state': 'A',
+        ...     'to_state': 'B',
+        ... })
+        'Root:A->B'
+    """
+    return '{parent}:{from_state}->{to_state}'.format(**payload)
+
+
+def _verify_transition_payload(payload: Any) -> Optional[Dict[str, Any]]:
+    """Return a validated raw verify transition payload.
+
+    Verify algorithms return diagnostics-layer-free dictionaries. The
+    inspect conversion layer must fail closed when a raw payload is malformed,
+    because the public ``ModelDiagnostic.refs`` schema can only validate the
+    outer ``dict`` type for transition refs.
+
+    :param payload: Raw transition payload to validate.
+    :type payload: Any
+    :return: A defensive copy when the payload is shaped like
+        ``pyfcstm.verify.encoding`` transition data, otherwise ``None``.
+    :rtype: Optional[Dict[str, Any]]
+
+    Examples::
+
+        >>> _verify_transition_payload({
+        ...     'parent': 'Root',
+        ...     'from_state': 'A',
+        ...     'to_state': 'B',
+        ...     'event': None,
+        ...     'guard': 'x > 0',
+        ...     'is_forced': False,
+        ... })['from_state']
+        'A'
+        >>> _verify_transition_payload({'parent': 'Root'}) is None
+        True
+    """
+    if not isinstance(payload, Mapping):
+        return None
+    parent = payload.get('parent')
+    from_state = payload.get('from_state')
+    to_state = payload.get('to_state')
+    event = payload.get('event')
+    guard = payload.get('guard')
+    is_forced = payload.get('is_forced')
+    if not all(isinstance(item, str) for item in (parent, from_state, to_state)):
+        return None
+    if event is not None and not isinstance(event, str):
+        return None
+    if guard is not None and not isinstance(guard, str):
+        return None
+    if not isinstance(is_forced, bool):
+        return None
+    return {
+        'parent': parent,
+        'from_state': from_state,
+        'to_state': to_state,
+        'event': event,
+        'guard': guard,
+        'is_forced': is_forced,
+    }
+
+
+def _verify_transition_summaries(payloads: Any) -> Optional[List[str]]:
+    """Return summaries for a sequence of raw verify transition payloads.
+
+    The conversion fails closed: one malformed item invalidates the entire
+    sequence so the diagnostic cannot present partial evidence as complete.
+
+    :param payloads: Raw transition payload sequence.
+    :type payloads: Any
+    :return: Transition summaries, or ``None`` when the sequence is malformed.
+    :rtype: Optional[List[str]]
+
+    Examples::
+
+        >>> _verify_transition_summaries(({
+        ...     'parent': 'Root',
+        ...     'from_state': 'A',
+        ...     'to_state': 'B',
+        ...     'event': None,
+        ...     'guard': None,
+        ...     'is_forced': False,
+        ... },))
+        ['Root:A->B']
+        >>> _verify_transition_summaries(({'parent': 'Root'},)) is None
+        True
+    """
+    if not isinstance(payloads, (list, tuple)):
+        return None
+    summaries: List[str] = []
+    for raw_item in payloads:
+        item = _verify_transition_payload(raw_item)
+        if item is None:
+            return None
+        summaries.append(_transition_summary(item))
+    return summaries
+
+
+def _state_span_by_path(states: Sequence[StateInfo], state_path: Optional[str]) -> Optional[Span]:
+    """Return the source span for a state path.
+
+    :param states: Inspect state payloads.
+    :type states: Sequence[StateInfo]
+    :param state_path: Dotted state path to locate.
+    :type state_path: Optional[str]
+    :return: Matching state span, or ``None`` when the path is absent.
+    :rtype: Optional[Span]
+
+    Examples::
+
+        >>> state = StateInfo(
+        ...     path='Root',
+        ...     name='Root',
+        ...     parent_path=None,
+        ...     is_leaf=True,
+        ...     is_pseudo=False,
+        ...     is_composite=False,
+        ...     substates=(),
+        ...     initial_targets=(),
+        ...     entry_actions=(),
+        ...     during_actions=(),
+        ...     exit_actions=(),
+        ...     aspect_before=(),
+        ...     aspect_after=(),
+        ...     has_abstract_action=False,
+        ...     span=Span(line=1, column=1),
+        ... )
+        >>> _state_span_by_path((state,), 'Root').line
+        1
+    """
+    if state_path is None:
+        return None
+    for state in states:
+        if state.path == state_path:
+            return state.span
+    return None
+
+
+def _event_span_by_name(events: Sequence[EventInfo], event_name: Optional[str]) -> Optional[Span]:
+    """Return the source span for a qualified event name.
+
+    :param events: Inspect event payloads.
+    :type events: Sequence[EventInfo]
+    :param event_name: Qualified event name to locate.
+    :type event_name: Optional[str]
+    :return: Matching event declaration span, or ``None``.
+    :rtype: Optional[Span]
+
+    Examples::
+
+        >>> event = EventInfo(
+        ...     qualified_name='Root.Tick',
+        ...     scope='chain',
+        ...     used_by=(),
+        ...     is_declared=True,
+        ...     is_used=False,
+        ...     span=Span(line=2, column=5),
+        ... )
+        >>> _event_span_by_name((event,), 'Root.Tick').column
+        5
+    """
+    if event_name is None:
+        return None
+    for event in events:
+        if event.qualified_name == event_name:
+            return event.span
+    return None
+
+
+def _transition_matches_payload(info: TransitionInfo, payload: Mapping[str, Any]) -> bool:
+    """Return whether inspect transition data matches raw verify payload.
+
+    :param info: Inspect transition payload.
+    :type info: TransitionInfo
+    :param payload: Raw verify transition payload.
+    :type payload: Mapping[str, Any]
+    :return: ``True`` when endpoints, event, guard, and forced flag match.
+    :rtype: bool
+
+    Examples::
+
+        >>> info = TransitionInfo(
+        ...     from_path='Root.A',
+        ...     to_path='Root.B',
+        ...     event=None,
+        ...     event_scope=None,
+        ...     guard='x > 0',
+        ...     effect=None,
+        ...     effect_self_assigns=(),
+        ...     is_forced=False,
+        ...     forced_origin=None,
+        ...     transition_index=0,
+        ... )
+        >>> _transition_matches_payload(info, {
+        ...     'parent': 'Root',
+        ...     'from_state': 'A',
+        ...     'to_state': 'B',
+        ...     'event': None,
+        ...     'guard': 'x > 0',
+        ...     'is_forced': False,
+        ... })
+        True
+    """
+    transition_payload = _verify_transition_payload(payload)
+    if transition_payload is None:
+        return False
+    parent = transition_payload['parent']
+    from_state = transition_payload['from_state']
+    to_state = transition_payload['to_state']
+    from_path = '[*]' if from_state == '[*]' else (
+        f'{parent}.{from_state}' if parent else from_state
+    )
+    to_path = '[*]' if to_state == '[*]' else (
+        f'{parent}.{to_state}' if parent else to_state
+    )
+    return (
+        info.from_path == from_path
+        and info.to_path == to_path
+        and info.event == transition_payload['event']
+        and info.guard == transition_payload['guard']
+        and info.is_forced == transition_payload['is_forced']
+    )
+
+
+def _transition_span_by_payload(
+        transitions: Sequence[TransitionInfo],
+        payload: Optional[Mapping[str, Any]],
+) -> Optional[Span]:
+    """Return the transition span for a raw verify transition payload.
+
+    :param transitions: Inspect transition payloads.
+    :type transitions: Sequence[TransitionInfo]
+    :param payload: Raw verify transition payload.
+    :type payload: Optional[Mapping[str, Any]]
+    :return: Matching transition source span, or ``None``.
+    :rtype: Optional[Span]
+
+    Examples::
+
+        >>> transition = TransitionInfo(
+        ...     from_path='Root.A',
+        ...     to_path='Root.B',
+        ...     event=None,
+        ...     event_scope=None,
+        ...     guard=None,
+        ...     effect=None,
+        ...     effect_self_assigns=(),
+        ...     is_forced=False,
+        ...     forced_origin=None,
+        ...     transition_index=0,
+        ...     span=Span(line=3, column=5),
+        ... )
+        >>> _transition_span_by_payload((transition,), {
+        ...     'parent': 'Root',
+        ...     'from_state': 'A',
+        ...     'to_state': 'B',
+        ...     'event': None,
+        ...     'guard': None,
+        ...     'is_forced': False,
+        ... }).line
+        3
+    """
+    if payload is None:
+        return None
+    for transition in transitions:
+        if _transition_matches_payload(transition, payload):
+            return transition.span
+    return None
+
+
+def _effect_span_by_payload(
+        transitions: Sequence[TransitionInfo],
+        payload: Optional[Mapping[str, Any]],
+) -> Optional[Span]:
+    """Return the most specific effect span for a raw transition payload.
+
+    :param transitions: Inspect transition payloads.
+    :type transitions: Sequence[TransitionInfo]
+    :param payload: Raw verify transition payload.
+    :type payload: Optional[Mapping[str, Any]]
+    :return: First effect span when present, otherwise the transition span.
+    :rtype: Optional[Span]
+
+    Examples::
+
+        >>> span = Span(line=4, column=10)
+        >>> transition = TransitionInfo(
+        ...     from_path='Root.A',
+        ...     to_path='Root.B',
+        ...     event=None,
+        ...     event_scope=None,
+        ...     guard=None,
+        ...     effect='x = x + 0',
+        ...     effect_self_assigns=(),
+        ...     is_forced=False,
+        ...     forced_origin=None,
+        ...     transition_index=0,
+        ...     effect_spans=(span,),
+        ... )
+        >>> _effect_span_by_payload((transition,), {
+        ...     'parent': 'Root',
+        ...     'from_state': 'A',
+        ...     'to_state': 'B',
+        ...     'event': None,
+        ...     'guard': None,
+        ...     'is_forced': False,
+        ... }).column
+        10
+    """
+    if payload is None:
+        return None
+    for transition in transitions:
+        if _transition_matches_payload(transition, payload):
+            if transition.effect_spans:
+                return transition.effect_spans[0]
+            return transition.span
+    return None
+
+
+def _action_span_by_state_and_condition(
+        actions: Sequence[ActionInfo],
+        state_path: Optional[str],
+        condition_source: Optional[str],
+) -> Optional[Span]:
+    """Return the lifecycle action span associated with a verify condition.
+
+    :param actions: Inspect action payloads.
+    :type actions: Sequence[ActionInfo]
+    :param state_path: State path reported by the raw verify diagnostic.
+    :type state_path: Optional[str]
+    :param condition_source: Condition source label, such as
+        ``"during:0"``.
+    :type condition_source: Optional[str]
+    :return: Matching action span, or ``None``.
+    :rtype: Optional[Span]
+
+    Examples::
+
+        >>> action = ActionInfo(
+        ...     signature='Root.A:<inline>',
+        ...     state_path='Root.A',
+        ...     name=None,
+        ...     stage='during',
+        ...     aspect=None,
+        ...     is_ref=False,
+        ...     ref_target=None,
+        ...     is_attached=True,
+        ...     span=Span(line=5, column=9),
+        ... )
+        >>> _action_span_by_state_and_condition(
+        ...     (action,),
+        ...     'Root.A',
+        ...     'during:0',
+        ... ).line
+        5
+    """
+    if state_path is None:
+        return None
+    if condition_source and ':' in condition_source:
+        stage = condition_source.split(':', 1)[0]
+        for action in actions:
+            if action.state_path == state_path and action.stage == stage:
+                return action.span
+    for action in actions:
+        if action.state_path == state_path and action.stage == 'during':
+            return action.span
+    return None
+
+
+def _verify_smt_refs(raw: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """Build inspect diagnostic refs from one raw SMT-local finding.
+
+    Raw verify algorithms deliberately return dictionaries so they do not
+    depend on the diagnostics package. This helper translates the shared raw
+    fields into the refs vocabulary declared in ``codes.yaml``.
+
+    :param raw: Raw diagnostic dictionary with ``code``, ``algorithm_name``,
+        and ``data`` keys.
+    :type raw: Mapping[str, Any]
+    :return: Refs payload candidate, or ``None`` when ``raw`` is not shaped
+        like a verify diagnostic.
+    :rtype: Optional[Dict[str, Any]]
+
+    Examples::
+
+        >>> raw = {
+        ...     'code': 'W_DEAD_GUARD',
+        ...     'algorithm_name': 'dead_guard',
+        ...     'data': {
+        ...         'transition': {
+        ...             'parent': 'Root',
+        ...             'from_state': 'A',
+        ...             'to_state': 'B',
+        ...             'event': None,
+        ...             'guard': 'x > 0',
+        ...             'is_forced': False,
+        ...         },
+        ...         'verification_scope': 'smt_local',
+        ...     },
+        ... }
+        >>> refs = _verify_smt_refs(raw)
+        >>> refs['transition_summary']
+        'Root:A->B'
+    """
+    code = raw.get('code')
+    data = raw.get('data')
+    if not isinstance(code, str) or not isinstance(data, Mapping):
+        return None
+    refs: Dict[str, Any] = {
+        'algorithm_name': raw.get('algorithm_name'),
+        'verification_scope': data.get('verification_scope'),
+    }
+
+    transition_dict = _verify_transition_payload(data.get('transition'))
+    if transition_dict is not None:
+        refs['transition'] = transition_dict
+        refs['transition_summary'] = _transition_summary(transition_dict)
+
+    if code == 'W_FORCED_GUARD_UNSAT':
+        refs['scope'] = data.get('scope')
+    elif code == 'W_TRANSITION_SHADOWED':
+        shadowed_by = data.get('shadowed_by') or ()
+        shadowed_by_summaries = _verify_transition_summaries(shadowed_by)
+        if shadowed_by_summaries is None:
+            return None
+        refs.update({
+            'source_state_path': data.get('source'),
+            'reason': data.get('reason'),
+            'shadowed_by_count': len(shadowed_by_summaries),
+            'shadowed_by': shadowed_by_summaries,
+        })
+    elif code == 'I_ENTER_DURING_CONTRADICT':
+        refs.update({
+            'state_path': data.get('state'),
+            'condition': data.get('condition'),
+            'condition_source': data.get('condition_source'),
+            'branch_taken': data.get('branch_taken'),
+        })
+    elif code == 'W_COMPOSITE_INIT_INCOMPLETE':
+        init_transitions = data.get('init_transitions') or ()
+        init_transition_summaries = _verify_transition_summaries(init_transitions)
+        if init_transition_summaries is None:
+            return None
+        refs.update({
+            'composite_path': data.get('state'),
+            'init_transition_count': len(init_transition_summaries),
+            'init_transitions': init_transition_summaries,
+            'witness': data.get('witness'),
+        })
+    return refs
+
+
+def _verify_smt_span(
+        code: str,
+        raw: Mapping[str, Any],
+        states: Sequence[StateInfo],
+        transitions: Sequence[TransitionInfo],
+        actions: Sequence[ActionInfo],
+) -> Optional[Span]:
+    """Choose a source span for an SMT-local verify diagnostic.
+
+    The span follows the semantic object declared for each verify code:
+    guard/transition findings point at the transition, effect findings prefer
+    the effect statement, lifecycle findings point at the relevant action, and
+    composite-init findings point at the composite state.
+
+    :param code: Diagnostic code.
+    :type code: str
+    :param raw: Raw verify diagnostic dictionary.
+    :type raw: Mapping[str, Any]
+    :param states: Inspect state payloads.
+    :type states: Sequence[StateInfo]
+    :param transitions: Inspect transition payloads.
+    :type transitions: Sequence[TransitionInfo]
+    :param actions: Inspect action payloads.
+    :type actions: Sequence[ActionInfo]
+    :return: Best-effort source span, or ``None`` when no source object can
+        be matched.
+    :rtype: Optional[Span]
+
+    Examples::
+
+        >>> transition = TransitionInfo(
+        ...     from_path='Root.A',
+        ...     to_path='Root.B',
+        ...     event=None,
+        ...     event_scope=None,
+        ...     guard='x > 0',
+        ...     effect=None,
+        ...     effect_self_assigns=(),
+        ...     is_forced=False,
+        ...     forced_origin=None,
+        ...     transition_index=0,
+        ...     span=Span(line=3, column=5),
+        ... )
+        >>> raw = {'data': {'transition': {
+        ...     'parent': 'Root',
+        ...     'from_state': 'A',
+        ...     'to_state': 'B',
+        ...     'event': None,
+        ...     'guard': 'x > 0',
+        ...     'is_forced': False,
+        ... }}}
+        >>> _verify_smt_span('W_DEAD_GUARD', raw, (), (transition,), ()).line
+        3
+    """
+    data = raw.get('data')
+    if not isinstance(data, Mapping):
+        return None
+    transition = data.get('transition')
+    if code in {
+            'W_DEAD_GUARD',
+            'W_GUARD_TAUTOLOGY',
+            'W_FORCED_GUARD_UNSAT',
+            'W_TRANSITION_SHADOWED',
+    }:
+        return _transition_span_by_payload(transitions, transition)
+    if code in {'W_EFFECT_SMT_NO_OP', 'I_EFFECT_GUARD_CONTRADICT'}:
+        return _effect_span_by_payload(transitions, transition)
+    if code == 'I_ENTER_DURING_CONTRADICT':
+        return _action_span_by_state_and_condition(
+            actions,
+            data.get('state'),
+            data.get('condition_source'),
+        )
+    if code == 'W_COMPOSITE_INIT_INCOMPLETE':
+        return _state_span_by_path(states, data.get('state'))
+    return None
+
+
+def _structural_verify_diagnostics(
+        result: 'InspectRunResult',
+        states: Sequence[StateInfo],
+        events: Sequence[EventInfo],
+) -> List[ModelDiagnostic]:
+    """Convert structural verify payloads into model diagnostics.
+
+    Structural algorithms return graph-oriented payloads rather than raw
+    diagnostic dictionaries. This helper maps the known structural adapter
+    results onto the verify-pipeline codes declared in ``codes.yaml``.
+
+    :param result: One normalized inspect-adapter result.
+    :type result: pyfcstm.verify.inspect_adapter.InspectRunResult
+    :param states: Inspect state payloads for source-span lookup.
+    :type states: Sequence[StateInfo]
+    :param events: Inspect event payloads for event-span and consumer lookup.
+    :type events: Sequence[EventInfo]
+    :return: Diagnostics converted from ``result``.
+    :rtype: List[ModelDiagnostic]
+
+    Examples::
+
+        >>> from pyfcstm.verify.inspect_adapter import InspectRunResult
+        >>> state = StateInfo(
+        ...     path='Root.A',
+        ...     name='A',
+        ...     parent_path='Root',
+        ...     is_leaf=True,
+        ...     is_pseudo=False,
+        ...     is_composite=False,
+        ...     substates=(),
+        ...     initial_targets=(),
+        ...     entry_actions=(),
+        ...     during_actions=(),
+        ...     exit_actions=(),
+        ...     aspect_before=(),
+        ...     aspect_after=(),
+        ...     has_abstract_action=False,
+        ...     span=Span(line=2, column=5),
+        ... )
+        >>> result = InspectRunResult(
+        ...     algorithm_name='strongly_connected_components',
+        ...     complexity_tier='structural',
+        ...     smt_logic=None,
+        ...     verification_scope='topological_only',
+        ...     diagnostic_codes=('I_NONTRIVIAL_SCC',),
+        ...     result_kind='sat',
+        ...     diagnostics=(),
+        ...     reason=None,
+        ...     raw_result=(('Root.A',),),
+        ... )
+        >>> _structural_verify_diagnostics(result, (state,), ())[0].code
+        'I_NONTRIVIAL_SCC'
+    """
+    diagnostics: List[ModelDiagnostic] = []
+    if result.algorithm_name == 'strongly_connected_components':
+        for component in result.raw_result or ():
+            scc = list(component)
+            if not scc:
+                continue
+            refs = {
+                'algorithm_name': result.algorithm_name,
+                'verification_scope': result.verification_scope,
+                'representative_state_path': scc[0],
+                'scc': scc,
+            }
+            diagnostic = _make_verify_diagnostic(
+                'I_NONTRIVIAL_SCC',
+                refs,
+                _state_span_by_path(states, scc[0]),
+            )
+            if diagnostic is not None:
+                diagnostics.append(diagnostic)
+    elif result.algorithm_name == 'unreachable_states':
+        for state_path in result.raw_result or ():
+            refs = {'state_path': state_path}
+            diagnostic = _make_verify_diagnostic(
+                'W_UNREACHABLE_STATE',
+                refs,
+                _state_span_by_path(states, state_path),
+            )
+            if diagnostic is not None:
+                diagnostics.append(diagnostic)
+    elif result.algorithm_name == 'topological_finite':
+        counterexamples = getattr(result.raw_result, 'counterexamples', ())
+        for kind, payload in counterexamples:
+            representative = payload[0] if isinstance(payload, tuple) else payload
+            scc = list(payload) if isinstance(payload, tuple) else [payload]
+            refs = {
+                'algorithm_name': result.algorithm_name,
+                'verification_scope': result.verification_scope,
+                'representative_state_path': representative,
+                'counterexample_kind': kind,
+                'scc': scc,
+            }
+            diagnostic = _make_verify_diagnostic(
+                'W_TOPOLOGICAL_NOEXIT',
+                refs,
+                _state_span_by_path(states, representative),
+            )
+            if diagnostic is not None:
+                diagnostics.append(diagnostic)
+    elif result.algorithm_name == 'topological_inevitable_terminator':
+        path = list(getattr(result.raw_result, 'counterexample_path', ()) or ())
+        if path:
+            refs = {
+                'algorithm_name': result.algorithm_name,
+                'verification_scope': result.verification_scope,
+                'representative_state_path': path[0],
+                'counterexample_path': path,
+            }
+            diagnostic = _make_verify_diagnostic(
+                'I_TOPOLOGICAL_NON_TERMINATING',
+                refs,
+                _state_span_by_path(states, path[0]),
+            )
+            if diagnostic is not None:
+                diagnostics.append(diagnostic)
+    elif result.algorithm_name == 'event_emission_to_consumer_reachable':
+        for event_name in result.raw_result or ():
+            refs = {
+                'algorithm_name': result.algorithm_name,
+                'verification_scope': result.verification_scope,
+                'event_name': event_name,
+                'consumer_count': _event_consumer_count(events, event_name),
+            }
+            diagnostic = _make_verify_diagnostic(
+                'W_EVENT_UNREACHABLE_EMIT',
+                refs,
+                _event_span_by_name(events, event_name),
+            )
+            if diagnostic is not None:
+                diagnostics.append(diagnostic)
+    return diagnostics
+
+
+def _event_consumer_count(events: Sequence[EventInfo], event_name: str) -> int:
+    """Return how many inspect transitions consume an event.
+
+    :param events: Inspect event payloads.
+    :type events: Sequence[EventInfo]
+    :param event_name: Qualified event name.
+    :type event_name: str
+    :return: Number of transition consumers recorded for the event.
+    :rtype: int
+
+    Examples::
+
+        >>> event = EventInfo(
+        ...     qualified_name='Root.Panic',
+        ...     scope='chain',
+        ...     used_by=(('Root.Lost', 'Root.A'),),
+        ...     is_declared=True,
+        ...     is_used=True,
+        ... )
+        >>> _event_consumer_count((event,), 'Root.Panic')
+        1
+    """
+    for event in events:
+        if event.qualified_name == event_name:
+            return len(event.used_by)
+    return 0
+
+
+def _type_matches_schema(value: Any, field_spec: CodeFieldSpec) -> bool:
+    """Return whether a runtime value fits a ``codes.yaml`` type token.
+
+    :param value: Runtime value from a diagnostic refs payload.
+    :type value: Any
+    :param field_spec: Field schema loaded from ``codes.yaml``.
+    :type field_spec: CodeFieldSpec
+    :return: ``True`` when ``value`` fits the field type.
+    :rtype: bool
+
+    Examples::
+
+        >>> spec = CodeFieldSpec(
+        ...     name='count',
+        ...     type='int',
+        ...     required=True,
+        ...     description='Count value.',
+        ... )
+        >>> _type_matches_schema(3, spec)
+        True
+        >>> _type_matches_schema(True, spec)
+        False
+    """
+    type_token = field_spec.type
+    if type_token == 'str':
+        return isinstance(value, str)
+    if type_token == 'int':
+        return isinstance(value, int) and not isinstance(value, bool)
+    if type_token == 'float':
+        return isinstance(value, float)
+    if type_token == 'number':
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if type_token == 'bool':
+        return isinstance(value, bool)
+    if type_token == 'dict':
+        return isinstance(value, dict)
+    if type_token == 'list[str]':
+        return isinstance(value, list) and all(isinstance(item, str) for item in value)
+    if type_token == 'list[Span]':
+        return isinstance(value, list) and all(
+            item is None or hasattr(item, 'line') for item in value
+        )
+    if type_token == 'Span':
+        return value is None or hasattr(value, 'line')
+    if type_token == 'str_or_null':
+        return value is None or isinstance(value, str)
+    if type_token == 'int_or_null':
+        return value is None or (
+            isinstance(value, int) and not isinstance(value, bool)
+        )
+    return True
+
+
+def _refs_match_code_schema(code: str, refs: Mapping[str, Any]) -> bool:
+    """Return whether refs satisfy the declared verify-adapter schema.
+
+    The conversion layer uses this as a fail-closed guard: raw verify findings
+    are emitted only after their refs are declared, complete, enum-safe, and
+    type-compatible with ``codes.yaml``. Most accepted codes are declared as
+    ``emit_tier: verify_pipeline``; codes in
+    :data:`VERIFY_SHARED_STATIC_CODES` are legacy static diagnostics that a
+    structural verify algorithm may also emit.
+
+    :param code: Diagnostic code to validate.
+    :type code: str
+    :param refs: Candidate refs payload.
+    :type refs: Mapping[str, Any]
+    :return: ``True`` when the code may be emitted by the verify adapter and
+        refs match its schema.
+    :rtype: bool
+
+    Examples::
+
+        >>> _refs_match_code_schema('W_DEAD_GUARD', {
+        ...     'algorithm_name': 'dead_guard',
+        ...     'verification_scope': 'smt_local',
+        ...     'transition': {
+        ...         'parent': 'Root',
+        ...         'from_state': 'A',
+        ...         'to_state': 'B',
+        ...     },
+        ...     'transition_summary': 'Root:A->B',
+        ... })
+        True
+        >>> _refs_match_code_schema('W_UNREACHABLE_STATE', {
+        ...     'state_path': 'Root.Orphan',
+        ... })
+        True
+    """
+    spec = CODE_REGISTRY.get(code)
+    if spec is None:
+        return False
+    if spec.emit_tier != 'verify_pipeline' and code not in VERIFY_SHARED_STATIC_CODES:
+        return False
+    declared = set(spec.refs_schema.keys())
+    if set(refs.keys()) - declared:
+        return False
+    for field_name in spec.required_fields():
+        if field_name not in refs or refs[field_name] is None:
+            return False
+    for field_name, field_spec in spec.refs_schema.items():
+        if field_name not in refs:
+            continue
+        value = refs[field_name]
+        if field_spec.enum and value not in set(field_spec.enum):
+            return False
+        if not _type_matches_schema(value, field_spec):
+            return False
+    return True
+
+
+def _make_verify_diagnostic(
+        code: str,
+        refs: Mapping[str, Any],
+        span: Optional[Span],
+) -> Optional[ModelDiagnostic]:
+    """Create one ``ModelDiagnostic`` from verified refs.
+
+    Verify diagnostics must bind back to the source object declared by the
+    code registry. A raw verify finding with valid refs but no source object
+    is dropped instead of becoming a public spanless diagnostic.
+
+    :param code: Verify-pipeline diagnostic code.
+    :type code: str
+    :param refs: Candidate refs payload.
+    :type refs: Mapping[str, Any]
+    :param span: Best-effort source span for the diagnostic.
+    :type span: Optional[Span]
+    :return: ``ModelDiagnostic`` when refs pass schema validation, otherwise
+        ``None``.
+    :rtype: Optional[ModelDiagnostic]
+
+    Examples::
+
+        >>> diag = _make_verify_diagnostic('I_NONTRIVIAL_SCC', {
+        ...     'algorithm_name': 'strongly_connected_components',
+        ...     'verification_scope': 'topological_only',
+        ...     'representative_state_path': 'Root.A',
+        ...     'scc': ['Root.A'],
+        ... }, Span(line=2, column=5))
+        >>> diag.code
+        'I_NONTRIVIAL_SCC'
+    """
+    if not _refs_match_code_schema(code, refs):
+        return None
+    spec = CODE_REGISTRY[code]
+    if (
+            spec.span_object is not None
+            and code not in KNOWN_SPANLESS_CODES
+            and span is None
+    ):
+        return None
+    return ModelDiagnostic(
+        code=code,
+        severity=spec.severity,
+        message=spec.description,
+        span=span,
+        refs=dict(refs),
+    )
+
+
+def _verify_diagnostics_from_results(
+        results: Sequence['InspectRunResult'],
+        states: Sequence[StateInfo],
+        transitions: Sequence[TransitionInfo],
+        events: Sequence[EventInfo],
+        actions: Sequence[ActionInfo],
+) -> Tuple[ModelDiagnostic, ...]:
+    """Convert inspect-adapter results into public model diagnostics.
+
+    SMT-local raw diagnostic dictionaries are consumed directly. Structural
+    results are interpreted only for algorithms whose payloads have an
+    explicit conversion. Indeterminate results are skipped even when partial
+    raw diagnostics are attached, so ``unknown`` or ``timeout`` does not
+    become a false warning.
+
+    :param results: Normalized inspect-adapter results.
+    :type results: Sequence[pyfcstm.verify.inspect_adapter.InspectRunResult]
+    :param states: Inspect state payloads.
+    :type states: Sequence[StateInfo]
+    :param transitions: Inspect transition payloads.
+    :type transitions: Sequence[TransitionInfo]
+    :param events: Inspect event payloads.
+    :type events: Sequence[EventInfo]
+    :param actions: Inspect action payloads.
+    :type actions: Sequence[ActionInfo]
+    :return: Converted verify diagnostics.
+    :rtype: Tuple[ModelDiagnostic, ...]
+
+    Examples::
+
+        >>> from pyfcstm.verify.inspect_adapter import InspectRunResult
+        >>> result = InspectRunResult(
+        ...     algorithm_name='dead_guard',
+        ...     complexity_tier='smt_linear',
+        ...     smt_logic='QF_LIRA',
+        ...     verification_scope='smt_local',
+        ...     diagnostic_codes=('W_DEAD_GUARD',),
+        ...     result_kind='unknown',
+        ...     diagnostics=(),
+        ...     reason='solver said unknown',
+        ...     raw_result=None,
+        ... )
+        >>> _verify_diagnostics_from_results((result,), (), (), (), ())
+        ()
+    """
+    diagnostics: List[ModelDiagnostic] = []
+    for result in results:
+        if result.result_kind in {'unknown', 'timeout', 'undecidable_skip'}:
+            continue
+        if result.diagnostics:
+            for raw in result.diagnostics:
+                if not isinstance(raw, Mapping):
+                    continue
+                code = raw.get('code')
+                if not isinstance(code, str):
+                    continue
+                refs = _verify_smt_refs(raw)
+                if refs is None:
+                    continue
+                diagnostic = _make_verify_diagnostic(
+                    code,
+                    refs,
+                    _verify_smt_span(code, raw, states, transitions, actions),
+                )
+                if diagnostic is not None:
+                    diagnostics.append(diagnostic)
+            continue
+        diagnostics.extend(_structural_verify_diagnostics(result, states, events))
+    return tuple(diagnostics)
+
+
+def _deduplicate_model_diagnostics(
+        diagnostics: Sequence[ModelDiagnostic],
+) -> Tuple[ModelDiagnostic, ...]:
+    """Remove semantic duplicates while preserving diagnostic order.
+
+    The inspect surface may combine legacy design-health warnings with optional
+    verify-pipeline diagnostics. When both paths report the same unreachable
+    state, callers should see one diagnostic rather than two equivalent
+    warnings. Other diagnostics are left untouched because repeated findings on
+    one state can represent distinct source occurrences.
+
+    :param diagnostics: Diagnostics in emission order.
+    :type diagnostics: Sequence[ModelDiagnostic]
+    :return: Diagnostics with duplicate state-scoped entries removed.
+    :rtype: Tuple[ModelDiagnostic, ...]
+
+    Examples::
+
+        >>> diag = ModelDiagnostic(
+        ...     code='W_UNREACHABLE_STATE',
+        ...     severity='warning',
+        ...     message='unreachable',
+        ...     refs={'state_path': 'Root.Orphan'},
+        ... )
+        >>> len(_deduplicate_model_diagnostics((diag, diag)))
+        1
+    """
+    out: List[ModelDiagnostic] = []
+    seen_state_scoped = set()
+    for diagnostic in diagnostics:
+        state_path = diagnostic.refs.get('state_path')
+        if diagnostic.code == 'W_UNREACHABLE_STATE' and isinstance(state_path, str):
+            key = (diagnostic.code, state_path)
+            if key in seen_state_scoped:
+                continue
+            seen_state_scoped.add(key)
+        out.append(diagnostic)
+    return tuple(out)
+
+
 def inspect_model(
         machine: 'StateMachine',
         *,
         deep_hierarchy_threshold: int = DEFAULT_DEEP_HIERARCHY_THRESHOLD,
         large_composite_threshold: int = DEFAULT_LARGE_COMPOSITE_THRESHOLD,
         var_to_leaf_ratio_threshold: float = DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD,
+        enable_verify: bool = False,
+        max_complexity_tier: str = 'structural',
+        max_call_count_scaling: str = 'linear_in_transitions',
+        smt_timeout_ms: Optional[int] = None,
 ) -> ModelInspect:
     """
     Build a structured inspection report for a state machine model.
@@ -1436,14 +2497,44 @@ def inspect_model(
     :param var_to_leaf_ratio_threshold: Maximum accepted variable to
         non-pseudo leaf-state ratio.
     :type var_to_leaf_ratio_threshold: float
+    :param enable_verify: Whether to run inspect-eligible
+        :mod:`pyfcstm.verify` algorithms and append their diagnostics.
+        The default ``False`` preserves the Layer 2 inspect contract.
+    :type enable_verify: bool, optional
+    :param max_complexity_tier: Maximum verify complexity tier accepted by
+        the inspect adapter when ``enable_verify`` is true.
+        ``"structural"`` keeps the default to graph-only verification.
+    :type max_complexity_tier: str, optional
+    :param max_call_count_scaling: Maximum verify call-count scaling accepted
+        by the inspect adapter when ``enable_verify`` is true.
+    :type max_call_count_scaling: str, optional
+    :param smt_timeout_ms: Optional solver timeout forwarded to SMT-local
+        verify algorithms. ``None`` preserves the raw verify default of no
+        configured timeout.
+    :type smt_timeout_ms: Optional[int], optional
     :return: Structured view of the model.
     :rtype: ModelInspect
 
-    Example::
+    Examples::
 
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> source = '''
+        ... state Root {
+        ...     state A;
+        ...     state B;
+        ...     [*] -> A;
+        ...     A -> B;
+        ... }
+        ... '''
+        >>> ast = parse_with_grammar_entry(source, 'state_machine_dsl')
+        >>> machine = parse_dsl_node_to_state_machine(ast)
         >>> report = inspect_model(machine)
-        >>> sorted(report.reachability_graph['Root.Sub.A'])
-        ['Root.Sub.B']
+        >>> report.reachability_graph['Root.A']
+        ('Root.B',)
+        >>> verify_report = inspect_model(machine, enable_verify=True)
+        >>> len(verify_report.diagnostics) >= len(report.diagnostics)
+        True
     """
     deep_hierarchy_threshold = _normalize_int_threshold(
         'deep_hierarchy_threshold',
@@ -1466,6 +2557,36 @@ def inspect_model(
     metrics = _build_metrics(states, transitions, variables, events)
     reachability_graph = _build_reachability_graph(states, transitions)
     root_state_path = _state_path(machine.root_state)
+    diagnostics = list(collect_design_health_warnings(
+        states,
+        transitions,
+        variables,
+        events,
+        actions,
+        forced_transitions,
+        metrics,
+        reachability_graph,
+        root_state_path=root_state_path,
+        deep_hierarchy_threshold=deep_hierarchy_threshold,
+        large_composite_threshold=large_composite_threshold,
+        var_to_leaf_ratio_threshold=var_to_leaf_ratio_threshold,
+        machine=machine,
+    ))
+    if enable_verify:
+        verify_results = _run_verify_inspect_algorithms(
+            machine,
+            max_complexity_tier=max_complexity_tier,
+            max_call_count_scaling=max_call_count_scaling,
+            smt_timeout_ms=smt_timeout_ms,
+        )
+        diagnostics.extend(_verify_diagnostics_from_results(
+            verify_results,
+            states,
+            transitions,
+            events,
+            actions,
+        ))
+    diagnostics = list(_deduplicate_model_diagnostics(diagnostics))
     return ModelInspect(
         root_state_path=root_state_path,
         states=states,
@@ -1480,21 +2601,7 @@ def inspect_model(
         var_dataflow=_build_var_dataflow(variables),
         aspect_impact_map=_build_aspect_impact_map(states),
         action_ref_graph=_build_action_ref_graph(machine),
-        diagnostics=tuple(collect_design_health_warnings(
-            states,
-            transitions,
-            variables,
-            events,
-            actions,
-            forced_transitions,
-            metrics,
-            reachability_graph,
-            root_state_path=root_state_path,
-            deep_hierarchy_threshold=deep_hierarchy_threshold,
-            large_composite_threshold=large_composite_threshold,
-            var_to_leaf_ratio_threshold=var_to_leaf_ratio_threshold,
-            machine=machine,
-        )),
+        diagnostics=tuple(diagnostics),
     )
 
 

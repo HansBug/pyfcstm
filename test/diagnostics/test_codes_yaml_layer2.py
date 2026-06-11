@@ -243,6 +243,22 @@ class TestCodesLoaderNegativePaths:
         with pytest.raises(CodesSchemaError, match='invalid emit_tier'):
             load_codes(path)
 
+    def test_loader_accepts_verify_pipeline_emit_tier(self, tmp_path):
+        path = _write_yaml(tmp_path, """
+            W_DEMO:
+              severity: warning
+              description: verify-only demo
+              capability: requires_solver
+              emit_tier: verify_pipeline
+              refs:
+                algorithm_name:
+                  type: str
+                  required: true
+                  description: algorithm
+            """)
+        registry = load_codes(path)
+        assert registry['W_DEMO'].emit_tier == 'verify_pipeline'
+
     def test_loader_rejects_for_llm_not_a_dict(self, tmp_path):
         # ``for_llm`` declared as a string — must be a mapping.
         path = _write_yaml(tmp_path, """

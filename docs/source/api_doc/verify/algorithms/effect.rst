@@ -22,3 +22,5 @@ effect\_contradicts\_guard
 -----------------------------------------------------
 
 .. autofunction:: effect_contradicts_guard
+
+

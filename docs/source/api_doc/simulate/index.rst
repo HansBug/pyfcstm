@@ -14,3 +14,9 @@ pyfcstm.simulate
     runtime
     utils
 
+\_\_all\_\_
+-----------------------------------------------------
+
+.. autodata:: __all__
+
+

@@ -31,6 +31,6 @@ CommandProcessor
 -----------------------------------------------------
 
 .. autoclass:: CommandProcessor
-    :members: __init__,process
+    :members: __init__,create_completer,process
 
 

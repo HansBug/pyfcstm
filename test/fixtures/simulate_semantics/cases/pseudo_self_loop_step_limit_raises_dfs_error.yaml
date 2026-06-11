@@ -1,0 +1,70 @@
+schema_version: 1
+id: pseudo_self_loop_step_limit_raises_dfs_error
+title: Pseudo self loop raises on the step safety limit
+source:
+  fcstm: pseudo_self_loop_step_limit_raises_dfs_error.fcstm
+origin:
+  files:
+  - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
+  docs:
+  - https://github.com/HansBug/pyfcstm/issues/156#issuecomment-4631968897
+  assertion_types:
+  - exception
+  - state
+  - vars
+  - stack
+  - history
+categories:
+- runtime
+- pseudo_chain
+- validation
+runners:
+- simulation
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      x: 1
+      spin: 0
+    stack:
+    - path:
+      - Root
+      mode: active
+    - path:
+      - Root
+      - A
+      mode: active
+    ended: false
+    cycle_result:
+      value: null
+    history_length: 1
+- cycle:
+    events:
+    - Root.A.Go
+  expect:
+    raises:
+      type: SimulationRuntimeDfsError
+      match: step safety limit
+      match_kind: substring
+    state:
+    - Root
+    - A
+    vars:
+      x: 1
+      spin: 0
+    stack:
+    - path:
+      - Root
+      mode: active
+    - path:
+      - Root
+      - A
+      mode: active
+    ended: false
+    history_length: 1

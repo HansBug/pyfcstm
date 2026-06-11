@@ -175,7 +175,7 @@ transitions, variables, metrics, derived graphs, and diagnostics.
 - ``--enable-verify``: Run inspect-eligible ``pyfcstm.verify`` algorithms and append their diagnostics
 - ``--max-complexity-tier``: Highest verify tier allowed by the inspect adapter; default is ``structural``
 - ``--max-call-count-scaling``: Highest call-count scaling allowed by the inspect adapter; default is ``linear_in_transitions``
-- ``--smt-timeout-ms``: Optional SMT timeout forwarded to SMT-local verify algorithms
+- ``--smt-timeout-ms``: Optional SMT timeout forwarded to SMT-local verify algorithms; ``0`` is forwarded unchanged
 
 **Default JSON output**
 
@@ -195,7 +195,9 @@ diagnostics contract.
      --enable-verify --max-complexity-tier smt_linear --smt-timeout-ms 1000
 
 The automatic inspect path still rejects ``bmc_search`` because BMC requires an
-explicit query depth and is not a bounded local diagnostic pass.
+explicit query depth and is not a bounded local diagnostic pass. The CLI parses
+that value only to return a controlled policy error instead of silently letting
+it enter automatic inspection.
 
 visualize Command
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

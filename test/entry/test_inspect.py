@@ -7,6 +7,8 @@ import pytest
 from hbutils.testing import isolated_directory, simulate_entry
 
 from pyfcstm.entry import pyfcstmcli
+from pyfcstm.entry.base import ClickErrorException
+from pyfcstm.entry.inspect import build_inspect_json
 
 
 @pytest.fixture()
@@ -87,17 +89,101 @@ class TestEntryInspect:
             result.stderr or result.stdout
         )
 
-    def test_inspect_rejects_invalid_call_count_scaling(self, inspect_code_file):
+    def test_inspect_rejects_bmc_search_without_enable_verify(
+        self,
+        inspect_code_file,
+    ):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--max-complexity-tier",
+            "bmc_search",
+        )
+
+        assert result.exitcode != 0
+        assert "bmc_search algorithms are not allowed" in (
+            result.stderr or result.stdout
+        )
+
+    def test_inspect_rejects_forbidden_policy_before_reading_input(self):
+        result = _run_inspect(
+            "-i",
+            "/missing/inspect_case.fcstm",
+            "--max-complexity-tier",
+            "bmc_search",
+        )
+
+        assert result.exitcode != 0
+        assert "bmc_search algorithms are not allowed" in (
+            result.stderr or result.stdout
+        )
+        assert "Input DSL file not found" not in (result.stderr or result.stdout)
+
+    def test_build_inspect_json_rejects_unknown_policy_before_reading_input(self):
+        with pytest.raises(ClickErrorException, match="unknown inspect complexity tier"):
+            build_inspect_json(
+                "/missing/inspect_case.fcstm",
+                max_complexity_tier="unknown_tier",
+            )
+
+    def test_build_inspect_json_rejects_unknown_call_count_before_reading_input(self):
+        with pytest.raises(ClickErrorException, match="unknown_scaling"):
+            build_inspect_json(
+                "/missing/inspect_case.fcstm",
+                max_call_count_scaling="unknown_scaling",
+            )
+
+    @pytest.mark.parametrize(
+        "call_count_scaling",
+        [
+            "k_unrollings",
+            "k_unrollings_times_branching",
+        ],
+    )
+    def test_inspect_rejects_invalid_call_count_scaling(
+        self,
+        inspect_code_file,
+        call_count_scaling,
+    ):
         result = _run_inspect(
             "-i",
             inspect_code_file,
             "--enable-verify",
+            "--max-call-count-scaling",
+            call_count_scaling,
+        )
+
+        assert result.exitcode != 0
+        assert call_count_scaling in (result.stderr or result.stdout)
+
+    def test_inspect_rejects_invalid_call_count_scaling_without_enable_verify(
+        self,
+        inspect_code_file,
+    ):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
             "--max-call-count-scaling",
             "k_unrollings",
         )
 
         assert result.exitcode != 0
         assert "k_unrollings" in (result.stderr or result.stdout)
+
+    def test_inspect_accepts_zero_smt_timeout(self, inspect_code_file):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--enable-verify",
+            "--max-complexity-tier",
+            "smt_linear",
+            "--smt-timeout-ms",
+            "0",
+        )
+
+        assert result.exitcode == 0
+        payload = _json_from_stdout(result)
+        assert payload["root_state_path"] == "Root"
 
     def test_inspect_writes_json_to_output_file(self, inspect_code_file):
         with isolated_directory():
@@ -147,6 +233,41 @@ class TestEntryInspect:
 
         assert result.exitcode != 0
         assert "Failed to parse input DSL file" in (result.stderr or result.stdout)
+
+    def test_inspect_model_validation_failure_is_controlled_error(self):
+        with TemporaryDirectory() as td:
+            code_file = os.path.join(td, "invalid_model.fcstm")
+            with open(code_file, "w", encoding="utf-8") as f:
+                f.write("state Root { state Idle; state Idle; }")
+
+            result = _run_inspect("-i", code_file)
+
+        assert result.exitcode != 0
+        assert "Invalid state machine model" in (result.stderr or result.stdout)
+
+    def test_build_inspect_json_read_error_is_controlled_error(self, monkeypatch):
+        def _raise_os_error(_input_code_file):
+            raise OSError("permission denied")
+
+        monkeypatch.setattr(
+            "pyfcstm.entry.inspect.load_state_machine_from_file",
+            _raise_os_error,
+        )
+
+        with pytest.raises(ClickErrorException, match="Failed to read input DSL file"):
+            build_inspect_json("unreadable.fcstm")
+
+    def test_build_inspect_json_decode_error_is_controlled_error(self, monkeypatch):
+        def _raise_decode_error(_input_code_file):
+            raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+        monkeypatch.setattr(
+            "pyfcstm.entry.inspect.load_state_machine_from_file",
+            _raise_decode_error,
+        )
+
+        with pytest.raises(ClickErrorException, match="Failed to decode input DSL file"):
+            build_inspect_json("invalid_encoding.fcstm")
 
     def test_inspect_output_write_failure_is_controlled_error(self, inspect_code_file):
         with isolated_directory():

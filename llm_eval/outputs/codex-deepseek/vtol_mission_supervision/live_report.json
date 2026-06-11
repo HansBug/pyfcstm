@@ -1,0 +1,24 @@
+{
+  "diagnostics": "",
+  "evaluated_at": "20260610T162334Z",
+  "failure_category": "passed",
+  "fixture_id": "vtol_mission_supervision",
+  "fixture_path": "llm_eval/fixtures/vtol_mission_supervision.nl.md",
+  "guide_sha256": "1508e493b210348b06ec0d4b033c643a1a50e465530b568c701555174e0cb859",
+  "mode": "live",
+  "model_output_path": "llm_eval/outputs/codex-deepseek/vtol_mission_supervision/model.fcstm",
+  "provider": "codex-deepseek",
+  "provider_command": [
+    "codex-deepseek",
+    "exec",
+    "--skip-git-repo-check",
+    "-"
+  ],
+  "provider_returncode": 0,
+  "provider_stderr_size": 13506,
+  "provider_stderr_tail": "pleted\ncodex\ndef int fly_home_request = 0;\ndef int search_track_request = 0;\ndef int direct_command_request = 0;\ndef int link_ok = 1;\ndef int slow_down_request = 0;\ndef int mission_off_request = 0;\n\nstate VTOLMissionManager {\n    [*] -> MissionMode;\n\n    state MissionMode {\n        [*] -> ParseCommand;\n\n        state ParseCommand;\n        state FlyHome;\n        state SearchTrack;\n        state TakeOff;\n        state Loiter;\n        state Land;\n\n        ParseCommand -> TakeOff :: TakeOffCommand;\n        TakeOff -> ParseCommand :: TakeOffComplete;\n        ParseCommand -> Loiter :: LoiterCommand;\n        Loiter -> ParseCommand :: LoiterComplete;\n        ParseCommand -> FlyHome : if [fly_home_request > 0 && link_ok > 0];\n        FlyHome -> ParseCommand :: FlyHomeComplete;\n        ParseCommand -> SearchTrack : if [search_track_request > 0 && link_ok > 0];\n        SearchTrack -> ParseCommand :: SearchTrackComplete;\n        ParseCommand -> Land :: LandCommand;\n        Land -> ParseCommand :: LandComplete;\n    }\n\n    state CommandMode {\n        [*] -> ParseDirectCommand;\n\n        state ParseDirectCommand;\n        state OperatorDirect;\n        state PayloadDirect;\n\n        ParseDirectCommand -> OperatorDirect :: OperatorOverride;\n        ParseDirectCommand -> PayloadDirect :: PayloadOverride;\n        OperatorDirect -> ParseDirectCommand :: OperatorComplete;\n        PayloadDirect -> ParseDirectCommand :: PayloadComplete;\n    }\n\n    state StandBy;\n    state MissionControllerOff;\n    state SlowDown;\n\n    MissionMode -> CommandMode : if [direct_command_request > 0];\n    CommandMode -> MissionMode :: ResumeMission;\n\n    MissionMode -> StandBy :: AllStop;\n    MissionMode -> MissionControllerOff : if [mission_off_request > 0];\n    MissionMode -> SlowDown :: SlowDownCommand;\n    CommandMode -> StandBy :: AllStop;\n    CommandMode -> MissionControllerOff : if [mission_off_request > 0];\n    CommandMode -> SlowDown :: SlowDownCommand;\n}\nhook: Stop\nhook: Stop Completed\ntokens used\n6,283\n",
+  "raw_output_path": "llm_eval/outputs/codex-deepseek/vtol_mission_supervision/raw_output.md",
+  "root_state": "VTOLMissionManager",
+  "source_line_count": 59,
+  "success": true
+}

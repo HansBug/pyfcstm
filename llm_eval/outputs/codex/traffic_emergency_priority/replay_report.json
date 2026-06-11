@@ -1,0 +1,15 @@
+{
+  "diagnostics": "",
+  "evaluated_at": "20260611T040405Z",
+  "failure_category": "passed",
+  "fixture_id": "traffic_emergency_priority",
+  "fixture_path": "llm_eval/fixtures/traffic_emergency_priority.nl.md",
+  "guide_sha256": "e78f3c3c7b43482091dab41f31d39b67264d2b0212c41e81e6d4b239be47aee5",
+  "mode": "replay",
+  "model_output_path": "llm_eval/outputs/codex/traffic_emergency_priority/model.fcstm",
+  "provider": "codex",
+  "raw_output_path": "llm_eval/outputs/codex/traffic_emergency_priority/raw_output.md",
+  "root_state": "TrafficEmergencyPriority",
+  "source_line_count": 119,
+  "success": true
+}

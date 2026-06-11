@@ -14,6 +14,7 @@ pyfcstm
     dsl/index
     entry/index
     highlight/index
+    llm/index
     model/index
     render/index
     simulate/index
@@ -21,4 +22,3 @@ pyfcstm
     template/index
     utils/index
     verify/index
-

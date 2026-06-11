@@ -1,0 +1,45 @@
+{
+  "case_count": 1,
+  "guide_metadata": {
+    "byte_size": 9595,
+    "chapter_count": 15,
+    "line_count": 338,
+    "pyfcstm_version": "0.4.1",
+    "resource_name": "fcstm_grammar_guide.md",
+    "sha256": "1508e493b210348b06ec0d4b033c643a1a50e465530b568c701555174e0cb859"
+  },
+  "mode": "live",
+  "passed_count": 1,
+  "reports": [
+    {
+      "diagnostics": "",
+      "evaluated_at": "20260610T161945Z",
+      "failure_category": "passed",
+      "fixture_id": "traffic_emergency_priority",
+      "fixture_path": "llm_eval/fixtures/traffic_emergency_priority.nl.md",
+      "guide_sha256": "1508e493b210348b06ec0d4b033c643a1a50e465530b568c701555174e0cb859",
+      "mode": "live",
+      "model_output_path": "llm_eval/outputs/codex-deepseek/traffic_emergency_priority/model.fcstm",
+      "provider": "codex-deepseek",
+      "provider_command": [
+        "codex-deepseek",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "provider_returncode": 0,
+      "provider_stderr_size": 13436,
+      "provider_stderr_tail": "t\nhook: SessionStart Completed\nhook: UserPromptSubmit\nhook: UserPromptSubmit Completed\ncodex\ndef int ambulance_north = 0;\ndef int ambulance_south = 0;\ndef int ambulance_east = 0;\ndef int ambulance_west = 0;\ndef int cars_north = 0;\ndef int cars_south = 0;\ndef int cars_east = 0;\ndef int cars_west = 0;\ndef int neighbor_command = 0;\n\nstate TrafficController {\n    [*] -> NormalOperation;\n\n    state NormalOperation {\n        [*] -> Acquiring;\n\n        state Acquiring;\n        state NorthGreen;\n        state SouthGreen;\n        state EastGreen;\n        state WestGreen;\n        state EmergencyGreen;\n\n        Acquiring -> EmergencyGreen : if [ambulance_north > 0 || ambulance_south > 0 || ambulance_east > 0 || ambulance_west > 0] effect {\n            neighbor_command = 1;\n        };\n\n        Acquiring -> NorthGreen : if [ambulance_north == 0 && ambulance_south == 0 && ambulance_east == 0 && ambulance_west == 0 && cars_north > 10 && cars_south == 0 && cars_east == 0 && cars_west == 0];\n\n        Acquiring -> SouthGreen : if [ambulance_north == 0 && ambulance_south == 0 && ambulance_east == 0 && ambulance_west == 0 && cars_south > 10 && cars_north == 0 && cars_east == 0 && cars_west == 0];\n\n        Acquiring -> EastGreen : if [ambulance_north == 0 && ambulance_south == 0 && ambulance_east == 0 && ambulance_west == 0 && cars_east > 10 && cars_north == 0 && cars_south == 0 && cars_west == 0];\n\n        Acquiring -> WestGreen : if [ambulance_north == 0 && ambulance_south == 0 && ambulance_east == 0 && ambulance_west == 0 && cars_west > 10 && cars_north == 0 && cars_south == 0 && cars_east == 0];\n\n        NorthGreen -> Acquiring :: CycleComplete;\n        SouthGreen -> Acquiring :: CycleComplete;\n        EastGreen -> Acquiring :: CycleComplete;\n        WestGreen -> Acquiring :: CycleComplete;\n\n        EmergencyGreen -> Acquiring : if [ambulance_north == 0 && ambulance_south == 0 && ambulance_east == 0 && ambulance_west == 0];\n    }\n}\nhook: Stop\nhook: Stop Completed\ntokens used\n20,224\n",
+      "raw_output_path": "llm_eval/outputs/codex-deepseek/traffic_emergency_priority/raw_output.md",
+      "root_state": "TrafficController",
+      "source_line_count": 43,
+      "success": true
+    }
+  ],
+  "smoke_fixtures": [
+    "traffic_emergency_priority",
+    "distributed_elevator_can",
+    "platooning_join_protocol",
+    "vtol_mission_supervision"
+  ]
+}

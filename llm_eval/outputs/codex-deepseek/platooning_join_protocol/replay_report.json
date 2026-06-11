@@ -1,0 +1,15 @@
+{
+  "diagnostics": "",
+  "evaluated_at": "20260611T040405Z",
+  "failure_category": "passed",
+  "fixture_id": "platooning_join_protocol",
+  "fixture_path": "llm_eval/fixtures/platooning_join_protocol.nl.md",
+  "guide_sha256": "e78f3c3c7b43482091dab41f31d39b67264d2b0212c41e81e6d4b239be47aee5",
+  "mode": "replay",
+  "model_output_path": "llm_eval/outputs/codex-deepseek/platooning_join_protocol/model.fcstm",
+  "provider": "codex-deepseek",
+  "raw_output_path": "llm_eval/outputs/codex-deepseek/platooning_join_protocol/raw_output.md",
+  "root_state": "PlatoonJoin",
+  "source_line_count": 37,
+  "success": true
+}

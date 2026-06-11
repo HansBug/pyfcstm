@@ -76,8 +76,8 @@ def _validate_inspect_policy(
     :type max_call_count_scaling: str
     :return: ``None``.
     :rtype: None
-    :raises pyfcstm.verify.InspectAccessForbiddenError: If either inspect
-        policy knob is outside the automatic inspect budget.
+    :raises pyfcstm.verify.inspect_adapter.InspectAccessForbiddenError: If
+        either inspect policy knob is outside the automatic inspect budget.
 
     Examples::
 
@@ -136,7 +136,9 @@ def build_inspect_json(
         ``enable_verify`` is false.
     :type max_call_count_scaling: str, optional
     :param smt_timeout_ms: Optional solver timeout in milliseconds for
-        SMT-local verify algorithms.
+        SMT-local verify algorithms. ``None`` leaves the solver timeout
+        unset. ``0`` is forwarded unchanged to the solver layer, which may make
+        Z3 return before a non-trivial proof search can complete.
     :type smt_timeout_ms: Optional[int], optional
     :return: Pretty-printed JSON inspection report text ending with a newline.
     :rtype: str
@@ -307,6 +309,8 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
             accepted by the inspect adapter.
         :type max_call_count_scaling: str
         :param smt_timeout_ms: Optional SMT solver timeout in milliseconds.
+            ``None`` leaves the timeout unset, while ``0`` is forwarded
+            unchanged to the solver layer.
         :type smt_timeout_ms: Optional[int]
         :return: ``None``. JSON is written to a file or stdout.
         :rtype: None

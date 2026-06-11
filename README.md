@@ -270,8 +270,9 @@ pyfcstm inspect -i buggy.fcstm --enable-verify --max-complexity-tier smt_linear 
 ```
 
 The default CLI path matches `inspect_model(model)` and does not run verify-backed checks. Pass `--enable-verify`
-explicitly to append inspect-eligible `pyfcstm.verify` diagnostics. `bmc_search` remains forbidden in the automatic
-inspect path.
+explicitly to append inspect-eligible `pyfcstm.verify` diagnostics. `bmc_search`, `k_unrollings`, and
+`k_unrollings_times_branching` remain forbidden in the automatic inspect path. `--smt-timeout-ms 0` is forwarded
+unchanged to the SMT solver layer, so it can make Z3 return before a non-trivial proof search completes.
 
 ```python
 from pyfcstm.diagnostics import inspect_model

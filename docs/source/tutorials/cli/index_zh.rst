@@ -175,7 +175,7 @@ inspect 命令
 - ``--enable-verify``：运行可由 ``inspect`` 自动接入的 ``pyfcstm.verify`` 算法，并追加其诊断
 - ``--max-complexity-tier``：``inspect`` 允许的最高验证复杂度层级，默认是 ``structural``
 - ``--max-call-count-scaling``：``inspect`` 允许的最高调用次数增长等级，默认是 ``linear_in_transitions``
-- ``--smt-timeout-ms``：透传给 SMT 本地验证算法的可选超时时间；``0`` 会原样透传
+- ``--smt-timeout-ms``：透传给 SMT 本地验证算法的可选超时时间；``0`` 会原样透传，并可能让 Z3 在非平凡证明搜索完成前返回
 
 **默认 JSON 输出**
 
@@ -194,8 +194,9 @@ inspect 命令
      --enable-verify --max-complexity-tier smt_linear --smt-timeout-ms 1000
 
 自动 ``inspect`` 路径仍会拒绝 ``bmc_search``，因为 BMC 需要显式查询深度，
-不是有界的本地诊断遍历。CLI 会解析该值并返回受控的策略错误，而不是让它
-静默进入自动检查流程。
+不是有界的本地诊断遍历。它也会拒绝 ``k_unrollings`` 和
+``k_unrollings_times_branching`` 调用次数策略。CLI 会解析这些值并返回受控的
+策略错误，而不是让它们静默进入自动检查流程。
 
 visualize 命令
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

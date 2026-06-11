@@ -64,6 +64,110 @@ def _by_path(infos):
     return {item.path: item for item in infos}
 
 
+def _state_info(
+        path,
+        *,
+        name=None,
+        parent_path=None,
+        is_leaf=True,
+        is_composite=False,
+        substates=(),
+        span=None,
+):
+    return StateInfo(
+        path=path,
+        name=name or path.rsplit('.', 1)[-1],
+        parent_path=parent_path,
+        is_leaf=is_leaf,
+        is_pseudo=False,
+        is_composite=is_composite,
+        substates=tuple(substates),
+        initial_targets=(),
+        entry_actions=(),
+        during_actions=(),
+        exit_actions=(),
+        aspect_before=(),
+        aspect_after=(),
+        has_abstract_action=False,
+        span=span,
+    )
+
+
+def _transition_info(
+        *,
+        from_path='Root.A',
+        to_path='Root.B',
+        event=None,
+        guard=None,
+        effect=None,
+        is_forced=False,
+        span=None,
+        effect_spans=(),
+):
+    return TransitionInfo(
+        from_path=from_path,
+        to_path=to_path,
+        event=event,
+        event_scope=None,
+        guard=guard,
+        effect=effect,
+        effect_self_assigns=(),
+        is_forced=is_forced,
+        forced_origin=None,
+        transition_index=0,
+        span=span,
+        effect_spans=tuple(effect_spans),
+    )
+
+
+def _action_info(
+        *,
+        state_path='Root.A',
+        stage='during',
+        span=None,
+):
+    return ActionInfo(
+        signature='%s:<inline>' % state_path,
+        state_path=state_path,
+        name=None,
+        stage=stage,
+        aspect=None,
+        is_ref=False,
+        ref_target=None,
+        is_attached=True,
+        span=span,
+    )
+
+
+def _event_info(
+        *,
+        qualified_name='Root.Panic',
+        used_by=(('Root.A', 'Root.B'),),
+        span=None,
+):
+    return EventInfo(
+        qualified_name=qualified_name,
+        scope='chain',
+        used_by=tuple(used_by),
+        is_declared=True,
+        is_used=True,
+        span=span,
+    )
+
+
+def _verify_transition_payload(parent='Root', from_state='A', to_state='B', **kwargs):
+    payload = {
+        'parent': parent,
+        'from_state': from_state,
+        'to_state': to_state,
+        'event': kwargs.pop('event', None),
+        'guard': kwargs.pop('guard', None),
+        'is_forced': kwargs.pop('is_forced', False),
+    }
+    payload.update(kwargs)
+    return payload
+
+
 SIMPLE_DSL = """
 def int counter = 0;
 def float temp = 25.0;
@@ -2372,6 +2476,404 @@ class TestInspectModelVerifyIntegration:
             diagnostics,
             context='verify-unreachable-structural',
         )
+
+    def test_verify_transition_payload_helpers_fail_closed_and_summarize(self):
+        assert inspect_module._verify_transition_payload('not a mapping') is None
+        assert inspect_module._verify_transition_summaries('not a list') is None
+
+        summaries = inspect_module._verify_transition_summaries((
+            _verify_transition_payload(),
+        ))
+
+        assert summaries == ['Root:A->B']
+
+    def test_verify_span_lookup_helpers_cover_absent_and_matched_objects(self):
+        state_span = inspect_module.Span(line=2, column=3)
+        event_span = inspect_module.Span(line=4, column=5)
+        transition_span = inspect_module.Span(line=6, column=7)
+        effect_span = inspect_module.Span(line=8, column=9)
+        enter_span = inspect_module.Span(line=10, column=11)
+        during_span = inspect_module.Span(line=12, column=13)
+        state = _state_info('Root.A', parent_path='Root', span=state_span)
+        event = _event_info(span=event_span)
+        transition = _transition_info(span=transition_span)
+        effect_transition = _transition_info(
+            effect='x = x + 1',
+            span=transition_span,
+            effect_spans=(effect_span,),
+        )
+        fallback_transition = _transition_info(
+            effect='x = x + 0',
+            span=transition_span,
+            effect_spans=(),
+        )
+        enter_action = _action_info(stage='enter', span=enter_span)
+        during_action = _action_info(stage='during', span=during_span)
+        payload = _verify_transition_payload()
+        missing_payload = _verify_transition_payload(to_state='Missing')
+
+        assert inspect_module._state_span_by_path((state,), None) is None
+        assert inspect_module._state_span_by_path((state,), 'Root.A') == state_span
+        assert inspect_module._event_span_by_name((event,), None) is None
+        assert (
+            inspect_module._event_span_by_name((event,), 'Root.Panic')
+            == event_span
+        )
+        assert inspect_module._transition_span_by_payload((transition,), None) is None
+        assert (
+            inspect_module._transition_span_by_payload((transition,), payload)
+            == transition_span
+        )
+
+        assert inspect_module._effect_span_by_payload((transition,), None) is None
+        assert (
+            inspect_module._effect_span_by_payload((effect_transition,), payload)
+            == effect_span
+        )
+        assert (
+            inspect_module._effect_span_by_payload((fallback_transition,), payload)
+            == transition_span
+        )
+        assert (
+            inspect_module._effect_span_by_payload((effect_transition,), missing_payload)
+            is None
+        )
+
+        assert (
+            inspect_module._action_span_by_state_and_condition(
+                (enter_action, during_action),
+                None,
+                'enter:0',
+            )
+            is None
+        )
+        assert (
+            inspect_module._action_span_by_state_and_condition(
+                (enter_action, during_action),
+                'Root.A',
+                'enter:0',
+            )
+            == enter_span
+        )
+        assert (
+            inspect_module._action_span_by_state_and_condition(
+                (during_action,),
+                'Root.A',
+                None,
+            )
+            == during_span
+        )
+        assert (
+            inspect_module._action_span_by_state_and_condition(
+                (during_action,),
+                'Root.Missing',
+                None,
+            )
+            is None
+        )
+
+    def test_verify_smt_refs_cover_code_specific_contracts(self):
+        transition = _verify_transition_payload()
+        assert inspect_module._verify_smt_refs({'code': 1, 'data': {}}) is None
+
+        forced_refs = inspect_module._verify_smt_refs({
+            'code': 'W_FORCED_GUARD_UNSAT',
+            'algorithm_name': 'forced_guard_unsat',
+            'data': {
+                'transition': transition,
+                'scope': 'dsl_def_init_only',
+                'verification_scope': 'smt_local',
+            },
+        })
+        shadowed_refs = inspect_module._verify_smt_refs({
+            'code': 'W_TRANSITION_SHADOWED',
+            'algorithm_name': 'transition_shadowed_by_predecessor',
+            'data': {
+                'transition': transition,
+                'shadowed_by': (_verify_transition_payload(to_state='C'),),
+                'reason': 'guard_shadow',
+                'source': 'Root.A',
+                'verification_scope': 'smt_local',
+            },
+        })
+        lifecycle_refs = inspect_module._verify_smt_refs({
+            'code': 'I_ENTER_DURING_CONTRADICT',
+            'algorithm_name': 'entry_during_branch_feasibility',
+            'data': {
+                'state': 'Root.A',
+                'condition': 'x > 0',
+                'condition_source': 'during:0',
+                'branch_taken': 'true',
+                'verification_scope': 'smt_local',
+            },
+        })
+        init_refs = inspect_module._verify_smt_refs({
+            'code': 'W_COMPOSITE_INIT_INCOMPLETE',
+            'algorithm_name': 'composite_initial_coverage',
+            'data': {
+                'state': 'Root',
+                'init_transitions': (transition,),
+                'witness': 'x = 0',
+                'verification_scope': 'smt_local',
+            },
+        })
+        malformed_init_refs = inspect_module._verify_smt_refs({
+            'code': 'W_COMPOSITE_INIT_INCOMPLETE',
+            'algorithm_name': 'composite_initial_coverage',
+            'data': {
+                'state': 'Root',
+                'init_transitions': ({'parent': 'Root'},),
+                'verification_scope': 'smt_local',
+            },
+        })
+
+        assert forced_refs['scope'] == 'dsl_def_init_only'
+        assert forced_refs['transition_summary'] == 'Root:A->B'
+        assert shadowed_refs['source_state_path'] == 'Root.A'
+        assert shadowed_refs['shadowed_by_count'] == 1
+        assert shadowed_refs['shadowed_by'] == ['Root:A->C']
+        assert lifecycle_refs['state_path'] == 'Root.A'
+        assert lifecycle_refs['condition_source'] == 'during:0'
+        assert lifecycle_refs['branch_taken'] == 'true'
+        assert init_refs['composite_path'] == 'Root'
+        assert init_refs['init_transition_count'] == 1
+        assert init_refs['init_transitions'] == ['Root:A->B']
+        assert init_refs['witness'] == 'x = 0'
+        assert malformed_init_refs is None
+        assert_all_diags_match_schema([
+            inspect_module._make_verify_diagnostic(
+                'W_FORCED_GUARD_UNSAT',
+                forced_refs,
+                inspect_module.Span(line=1, column=1),
+            ),
+            inspect_module._make_verify_diagnostic(
+                'W_TRANSITION_SHADOWED',
+                shadowed_refs,
+                inspect_module.Span(line=2, column=1),
+            ),
+            inspect_module._make_verify_diagnostic(
+                'I_ENTER_DURING_CONTRADICT',
+                lifecycle_refs,
+                inspect_module.Span(line=3, column=1),
+            ),
+            inspect_module._make_verify_diagnostic(
+                'W_COMPOSITE_INIT_INCOMPLETE',
+                init_refs,
+                inspect_module.Span(line=4, column=1),
+            ),
+        ], context='verify-code-specific-refs')
+
+    def test_verify_smt_span_routes_code_families_to_expected_objects(self):
+        state_span = inspect_module.Span(line=2, column=1)
+        transition_span = inspect_module.Span(line=3, column=1)
+        effect_span = inspect_module.Span(line=4, column=1)
+        action_span = inspect_module.Span(line=5, column=1)
+        states = (
+            _state_info(
+                'Root',
+                name='Root',
+                is_leaf=False,
+                is_composite=True,
+                span=state_span,
+            ),
+        )
+        transitions = (
+            _transition_info(
+                guard='x > 0',
+                effect='x = x + 1',
+                span=transition_span,
+                effect_spans=(effect_span,),
+            ),
+        )
+        actions = (_action_info(span=action_span),)
+        transition = _verify_transition_payload(guard='x > 0')
+
+        assert (
+            inspect_module._verify_smt_span(
+                'W_DEAD_GUARD',
+                {'data': {'transition': transition}},
+                states,
+                transitions,
+                actions,
+            )
+            == transition_span
+        )
+        assert (
+            inspect_module._verify_smt_span(
+                'W_EFFECT_SMT_NO_OP',
+                {'data': {'transition': transition}},
+                states,
+                transitions,
+                actions,
+            )
+            == effect_span
+        )
+        assert (
+            inspect_module._verify_smt_span(
+                'I_ENTER_DURING_CONTRADICT',
+                {'data': {'state': 'Root.A', 'condition_source': 'during:0'}},
+                states,
+                transitions,
+                actions,
+            )
+            == action_span
+        )
+        assert (
+            inspect_module._verify_smt_span(
+                'W_COMPOSITE_INIT_INCOMPLETE',
+                {'data': {'state': 'Root'}},
+                states,
+                transitions,
+                actions,
+            )
+            == state_span
+        )
+        assert (
+            inspect_module._verify_smt_span(
+                'W_DEAD_GUARD',
+                {'data': 'not mapping'},
+                states,
+                transitions,
+                actions,
+            )
+            is None
+        )
+        assert (
+            inspect_module._verify_smt_span(
+                'UNKNOWN_CODE',
+                {'data': {}},
+                states,
+                transitions,
+                actions,
+            )
+            is None
+        )
+
+    def test_structural_verify_helpers_skip_empty_scc_and_emit_event_diagnostic(self):
+        from pyfcstm.verify import InspectRunResult
+
+        state = _state_info(
+            'Root.A',
+            parent_path='Root',
+            span=inspect_module.Span(line=2, column=1),
+        )
+        event = _event_info(
+            qualified_name='Root.Panic',
+            used_by=(('Root.A', 'Root.B'), ('Root.A', 'Root.C')),
+            span=inspect_module.Span(line=3, column=1),
+        )
+        scc_result = InspectRunResult(
+            algorithm_name='strongly_connected_components',
+            complexity_tier='structural',
+            smt_logic=None,
+            verification_scope='topological_only',
+            diagnostic_codes=('I_NONTRIVIAL_SCC',),
+            result_kind='sat',
+            diagnostics=(),
+            reason=None,
+            raw_result=((), ('Root.A',)),
+        )
+        event_result = InspectRunResult(
+            algorithm_name='event_emission_to_consumer_reachable',
+            complexity_tier='structural',
+            smt_logic=None,
+            verification_scope='topological_only',
+            diagnostic_codes=('W_EVENT_UNREACHABLE_EMIT',),
+            result_kind='sat',
+            diagnostics=(),
+            reason=None,
+            raw_result=('Root.Panic',),
+        )
+
+        diagnostics = [
+            *inspect_module._structural_verify_diagnostics(
+                scc_result,
+                (state,),
+                (event,),
+            ),
+            *inspect_module._structural_verify_diagnostics(
+                event_result,
+                (state,),
+                (event,),
+            ),
+        ]
+
+        assert [diag.code for diag in diagnostics] == [
+            'I_NONTRIVIAL_SCC',
+            'W_EVENT_UNREACHABLE_EMIT',
+        ]
+        assert diagnostics[1].refs == {
+            'algorithm_name': 'event_emission_to_consumer_reachable',
+            'verification_scope': 'topological_only',
+            'event_name': 'Root.Panic',
+            'consumer_count': 2,
+        }
+        assert diagnostics[1].span == event.span
+        assert inspect_module._event_consumer_count((event,), 'Root.Panic') == 2
+        assert_all_diags_match_schema(
+            diagnostics,
+            context='verify-structural-edge-conversion',
+        )
+
+    def test_verify_schema_accepts_missing_optional_fields(self):
+        assert inspect_module._refs_match_code_schema(
+            'W_COMPOSITE_INIT_INCOMPLETE',
+            {
+                'algorithm_name': 'composite_initial_coverage',
+                'verification_scope': 'smt_local',
+                'composite_path': 'Root',
+                'init_transition_count': 1,
+                'init_transitions': ['Root:[*]->A'],
+            },
+        )
+
+    def test_verify_diagnostics_from_results_skip_malformed_raw_items(self):
+        from pyfcstm.verify import InspectRunResult
+
+        result = InspectRunResult(
+            algorithm_name='dead_guard',
+            complexity_tier='smt_linear',
+            smt_logic='QF_LIRA',
+            verification_scope='smt_local',
+            diagnostic_codes=('W_DEAD_GUARD',),
+            result_kind='sat',
+            diagnostics=('not a mapping', {'code': 123}),
+            reason=None,
+            raw_result=None,
+        )
+
+        assert inspect_module._verify_diagnostics_from_results(
+            (result,),
+            (),
+            (),
+            (),
+            (),
+        ) == ()
+
+    def test_leaf_only_reachability_expands_to_composite_action_states(self):
+        from pyfcstm.diagnostics.analyzers import structural
+
+        root = _state_info(
+            'Root',
+            name='Root',
+            is_leaf=False,
+            is_composite=True,
+            substates=('Root.Group',),
+        )
+        group = _state_info(
+            'Root.Group',
+            name='Group',
+            parent_path='Root',
+            is_leaf=False,
+            is_composite=True,
+            substates=('Root.Group.Leaf',),
+        )
+        leaf = _state_info('Root.Group.Leaf', parent_path='Root.Group')
+
+        assert structural._expand_leaf_reachability_to_action_states(
+            (root, group, leaf),
+            {'Root.Group.Leaf'},
+        ) == {'Root', 'Root.Group', 'Root.Group.Leaf'}
 
     def test_deduplicates_only_unreachable_state_duplicates(self):
         unreachable = inspect_module.ModelDiagnostic(

@@ -6,6 +6,8 @@ from dataclasses import dataclass
 import pytest
 from hbutils.testing import isolated_directory
 
+import pyfcstm.model.imports as imports_module
+from pyfcstm.diagnostics.sink import DiagnosticSink
 from pyfcstm.dsl import parse_state_machine_dsl
 from pyfcstm.dsl import node as dsl_nodes
 from pyfcstm.dsl.error import GrammarParseError, SyntaxFailError
@@ -568,6 +570,71 @@ class TestImportPhase2Assembly:
         assert "Failed to decode imported file" in message
         assert "worker.fcstm" in message
         assert "root.fcstm" not in message
+
+    def test_imported_file_decode_failure_from_auto_decode_is_reported(self, monkeypatch):
+        with isolated_directory():
+            root_file = _write_text_file(
+                "root.fcstm",
+                """
+                state Root {
+                    import "./worker.fcstm" as Worker;
+                    [*] -> Worker;
+                }
+                """,
+            )
+            _write_text_file("worker.fcstm", "state Worker;")
+
+            def _raise_decode_error(_content):
+                raise UnicodeDecodeError(
+                    "utf-8",
+                    b"\xff",
+                    0,
+                    1,
+                    "invalid start byte",
+                )
+
+            monkeypatch.setattr("pyfcstm.model.imports.auto_decode", _raise_decode_error)
+
+            ast_node = parse_state_machine_dsl(root_file.read_text(encoding="utf-8"))
+            with pytest.raises(SyntaxError) as exc_info:
+                parse_dsl_node_to_state_machine(ast_node, path=root_file)
+
+        message = str(exc_info.value)
+        assert "Failed to decode imported file" in message
+        assert "worker.fcstm" in message
+        assert "root.fcstm" not in message
+
+    def test_load_imported_program_decode_failure_returns_none_in_collect_mode(
+            self,
+            monkeypatch,
+    ):
+        with isolated_directory():
+            worker_file = _write_text_file("worker.fcstm", "state Worker;")
+            sink = DiagnosticSink(collect=True)
+            import_item = dsl_nodes.ImportStatement("./worker.fcstm", "Worker")
+
+            def _raise_decode_error(_content):
+                raise UnicodeDecodeError(
+                    "utf-8",
+                    b"\xff",
+                    0,
+                    1,
+                    "invalid start byte",
+                )
+
+            monkeypatch.setattr(imports_module, "auto_decode", _raise_decode_error)
+
+            program = imports_module._load_imported_program(
+                str(worker_file),
+                import_item,
+                ("Root",),
+                sink,
+            )
+
+        assert program is None
+        assert len(sink.diagnostics) == 1
+        assert sink.diagnostics[0].code == "E_IMPORT_NOT_FOUND"
+        assert sink.diagnostics[0].refs["reason"] == "read_error"
 
     def test_absolute_import_source_path_is_supported(self):
         with isolated_directory():

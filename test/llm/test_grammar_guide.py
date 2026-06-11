@@ -1,4 +1,5 @@
 import os
+import hashlib
 import pkgutil
 import re
 
@@ -18,6 +19,7 @@ def test_grammar_guide_prompt_api_returns_packaged_text():
     guide = llm.get_grammar_guide_prompt_for_llm()
 
     assert guide.startswith("# FCSTM Grammar Guide for LLMs")
+    assert "\r" not in guide
     assert "`=>` and `implies`" in guide
     assert ": /GlobalEvent" in guide
     assert "Do not use `^` for\nboolean xor" in guide
@@ -26,9 +28,34 @@ def test_grammar_guide_prompt_api_returns_packaged_text():
 @pytest.mark.unittest
 def test_grammar_guide_prompt_is_available_as_package_data():
     data = pkgutil.get_data(llm.__name__, "fcstm_grammar_guide.md")
+    guide = llm.get_grammar_guide_prompt_for_llm()
 
     assert data is not None
-    assert data.decode("utf-8") == llm.get_grammar_guide_prompt_for_llm()
+    assert data.decode("utf-8").splitlines() == guide.splitlines()
+
+
+@pytest.mark.unittest
+def test_grammar_guide_prompt_normalizes_crlf_resource(monkeypatch):
+    raw_text = "# FCSTM\r\n\r\n## Section\r\nUse `=>`.\r\n"
+    expected_text = "# FCSTM\n\n## Section\nUse `=>`.\n"
+
+    monkeypatch.setattr(
+        llm.pkgutil,
+        "get_data",
+        lambda package, resource: raw_text.encode("utf-8"),
+    )
+
+    guide = llm.get_grammar_guide_prompt_for_llm()
+    metadata = llm.get_grammar_guide_prompt_metadata_for_llm()
+
+    assert guide == expected_text
+    assert "\r" not in guide
+    assert metadata["byte_size"] == len(expected_text.encode("utf-8"))
+    assert metadata["line_count"] == len(expected_text.splitlines())
+    assert metadata["chapter_count"] == 1
+    assert metadata["sha256"] == hashlib.sha256(
+        expected_text.encode("utf-8")
+    ).hexdigest()
 
 
 @pytest.mark.unittest

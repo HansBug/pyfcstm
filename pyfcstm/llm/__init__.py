@@ -56,11 +56,28 @@ def _get_grammar_guide_prompt_bytes() -> bytes:
     return data
 
 
+def _decode_grammar_guide_prompt(data: bytes) -> str:
+    """
+    Decode raw grammar guide bytes into canonical prompt text.
+
+    Markdown resources checked out on Windows may contain CRLF newlines. The
+    public prompt API normalizes newlines to LF so downstream prompt snapshots,
+    Markdown fence parsing, and metadata stay deterministic across platforms.
+
+    :param data: Raw UTF-8 encoded guide bytes.
+    :type data: bytes
+    :return: UTF-8 decoded prompt text with LF newlines.
+    :rtype: str
+    :raises UnicodeDecodeError: If the resource is not valid UTF-8.
+    """
+    return data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+
+
 def get_grammar_guide_prompt_for_llm() -> str:
     """
     Return the packaged FCSTM grammar guide prompt.
 
-    :return: UTF-8 decoded Markdown prompt text.
+    :return: UTF-8 decoded Markdown prompt text with LF newlines.
     :rtype: str
     :raises FileNotFoundError: If the packaged Markdown resource is missing.
     :raises UnicodeDecodeError: If the resource is not valid UTF-8.
@@ -71,7 +88,7 @@ def get_grammar_guide_prompt_for_llm() -> str:
         >>> guide.startswith("# FCSTM")
         True
     """
-    return _get_grammar_guide_prompt_bytes().decode("utf-8")
+    return _decode_grammar_guide_prompt(_get_grammar_guide_prompt_bytes())
 
 
 def get_grammar_guide_prompt_path_for_llm() -> str:
@@ -128,8 +145,8 @@ def get_grammar_guide_prompt_metadata_for_llm() -> Dict[str, Union[str, int]]:
         >>> metadata["chapter_count"] > 0
         True
     """
-    data = _get_grammar_guide_prompt_bytes()
-    text = data.decode("utf-8")
+    text = _decode_grammar_guide_prompt(_get_grammar_guide_prompt_bytes())
+    data = text.encode("utf-8")
     lines = text.splitlines()
     return {
         "resource_name": _GRAMMAR_GUIDE_RESOURCE_NAME,

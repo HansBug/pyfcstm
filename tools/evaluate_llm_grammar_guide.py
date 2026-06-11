@@ -39,7 +39,11 @@ _FCSTM_FENCE_RE = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 _FCSTM_START_RE = re.compile(
-    r"(?m)^\s*(?:def\s+(?:int|float)\s+[A-Za-z_][A-Za-z0-9_]*|state\s+[A-Za-z_][A-Za-z0-9_]*|pseudo\s+state\s+[A-Za-z_][A-Za-z0-9_]*)"
+    r"(?m)^\s*(?:"
+    r"def\s+(?:int|float)\s+[A-Za-z_][A-Za-z0-9_]*\s*="
+    r"|(?:pseudo\s+)?state\s+[A-Za-z_][A-Za-z0-9_]*"
+    r"(?:\s+named\s+\"[^\"]*\")?\s*[;{]"
+    r")"
 )
 _STDERR_TAIL_LIMIT = 2000
 
@@ -111,7 +115,9 @@ def _write_json(path: Path, data: Dict[str, object]) -> None:
     :rtype: None
     :raises OSError: If the file cannot be written.
     """
-    _write_text(path, json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    _write_text(
+        path, json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    )
 
 
 def _iter_fixture_paths(
@@ -143,7 +149,9 @@ def _iter_fixture_paths(
         missing = [path for path in paths if not path.is_file()]
         if missing:
             missing_text = ", ".join(str(path) for path in missing)
-            raise FileNotFoundError(f"Smoke fixture files were not found: {missing_text}.")
+            raise FileNotFoundError(
+                f"Smoke fixture files were not found: {missing_text}."
+            )
         return paths
 
     return sorted(fixtures_dir.glob("*.nl.md"))
@@ -364,7 +372,8 @@ def _run_provider(
             "command": command,
             "returncode": None,
             "stdout": err.stdout or "",
-            "stderr": err.stderr or f"provider timed out after {timeout_seconds} seconds",
+            "stderr": err.stderr
+            or f"provider timed out after {timeout_seconds} seconds",
         }
 
     return {
@@ -563,7 +572,9 @@ def run_live(args: argparse.Namespace) -> List[Dict[str, object]]:
     return reports
 
 
-def _write_aggregate_report(args: argparse.Namespace, reports: Sequence[Dict[str, object]]) -> Path:
+def _write_aggregate_report(
+    args: argparse.Namespace, reports: Sequence[Dict[str, object]]
+) -> Path:
     """
     Write the aggregate evaluation report.
 
@@ -577,7 +588,8 @@ def _write_aggregate_report(args: argparse.Namespace, reports: Sequence[Dict[str
     provider_part = args.provider or "all-providers"
     fixture_part = args.fixture or "all-fixtures"
     report_path = (
-        args.reports / f"{args.mode}-{provider_part}-{fixture_part}-{_utc_timestamp()}.json"
+        args.reports
+        / f"{args.mode}-{provider_part}-{fixture_part}-{_utc_timestamp()}.json"
     )
     _write_json(
         report_path,

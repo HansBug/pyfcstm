@@ -38,7 +38,7 @@ state TrafficController {
 
         state EastGreen;
 
-        NorthGreen -> EastGreen : if [car_count > 10 => ambulance_detected == 0] effect {
+        NorthGreen -> EastGreen : if [car_count > 10 && ambulance_detected == 0] effect {
             car_count = 0;
         }
         EastGreen -> NorthGreen : if [ambulance_detected > 0] effect {
@@ -52,8 +52,8 @@ state TrafficController {
 
 Use `state Name;` for a leaf state and `state Name { ... }` for a composite
 state. A composite state must choose its first active child with an initial
-transition. `pseudo state Name;` is available when a state should skip ancestor
-aspect actions.
+transition. Use `pseudo state Name;` only for a leaf state that should skip
+ancestor `>> during before` and `>> during after` aspect actions.
 
 ```fcstm
 def int link_ok = 1;
@@ -79,6 +79,24 @@ state MissionManager {
     Standby -> MissionMode : if [command_ready > 0];
     MissionMode -> CommandMode : if [link_ok == 0];
     CommandMode -> MissionMode :: ManualReleased;
+}
+```
+
+```fcstm
+def int bypass_count = 0;
+
+state PseudoExample {
+    [*] -> Normal;
+
+    >> during before {
+        bypass_count = bypass_count + 1;
+    }
+
+    state Normal;
+    pseudo state Bypass;
+
+    Normal -> Bypass :: SkipAspect;
+    Bypass -> Normal :: Resume;
 }
 ```
 
@@ -205,10 +223,63 @@ inside a block are temporary variables local to that block.
 Use `abstract` when generated runtime code must provide the behavior. Use
 `ref` only to reference a named lifecycle action that exists in the model.
 
+```fcstm
+def int boot_count = 0;
+def int ready = 0;
+
+state LifecycleExample {
+    [*] -> Idle;
+
+    enter SharedInit {
+        boot_count = boot_count + 1;
+    }
+    exit abstract SharedCleanup;
+
+    state Idle {
+        enter ref /SharedInit;
+        during abstract PollSensors;
+        exit ref /SharedCleanup;
+    }
+
+    state Active {
+        enter StartActive {
+            ready = 1;
+        }
+        exit ref /SharedCleanup;
+    }
+
+    Idle -> Active : if [ready == 0];
+}
+```
+
 ## Aspect Actions
 
 Use `>> during before` and `>> during after` on composite states when an action
 must wrap descendant leaf-state cycles. Use plain `during` on leaf states.
+
+```fcstm
+def int monitor_count = 0;
+def int local_count = 0;
+
+state AspectExample {
+    [*] -> Running;
+
+    >> during before {
+        monitor_count = monitor_count + 1;
+    }
+    >> during after abstract PublishSnapshot;
+
+    state Running {
+        [*] -> Work;
+
+        state Work {
+            during {
+                local_count = local_count + 1;
+            }
+        }
+    }
+}
+```
 
 ## Expressions
 
@@ -225,6 +296,10 @@ Condition operators include:
 - `xor`
 - `iff`
 - `==` and `!=` between conditions
+
+`=>` is material implication: `A => B` means `!A || B`. Use it only when a
+requirement explicitly says that a true premise forces a conclusion. For normal
+state-change guards, `&&` and `||` are usually clearer.
 
 Do not use `->` for implication. It is transition syntax. Do not use `^` for
 boolean xor in conditions; use `xor`. Numeric `^` remains bitwise xor inside

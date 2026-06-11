@@ -16,7 +16,7 @@ Example::
 import hashlib
 import os
 import pkgutil
-from typing import Dict, Union
+import typing as _typing
 
 from pyfcstm.config.meta import __VERSION__
 
@@ -34,8 +34,10 @@ class GrammarGuidePromptPathUnavailableError(RuntimeError):
     """
     Error raised when the grammar guide has no direct filesystem path.
 
-    The text API remains available for normal prompt construction even when the
-    package is imported from a non-filesystem loader.
+    This can occur when the package is loaded from zip import, frozen bundles,
+    or another importer that does not expose packaged Markdown resources as real
+    files. The text API remains available for normal prompt construction in
+    those installation modes.
     """
 
 
@@ -125,12 +127,16 @@ def get_grammar_guide_prompt_path_for_llm() -> str:
     )
 
 
-def get_grammar_guide_prompt_metadata_for_llm() -> Dict[str, Union[str, int]]:
+def get_grammar_guide_prompt_metadata_for_llm() -> _typing.Dict[
+    str, _typing.Union[str, int]
+]:
     """
     Return deterministic metadata for the packaged grammar guide prompt.
 
-    ``chapter_count`` is the number of Markdown level-two heading lines, i.e.
-    lines starting with ``"## "``.
+    ``sha256``, ``byte_size``, and ``line_count`` are computed from the same
+    LF-normalized prompt text returned by
+    :func:`get_grammar_guide_prompt_for_llm`. ``chapter_count`` is the number of
+    Markdown level-two heading lines, i.e. lines starting with ``"## "``.
 
     :return: Resource metadata for experiment snapshots.
     :rtype: Dict[str, Union[str, int]]

@@ -11,6 +11,7 @@ API 文档
     api_doc/dsl/index
     api_doc/entry/index
     api_doc/highlight/index
+    api_doc/llm/index
     api_doc/model/index
     api_doc/render/index
     api_doc/simulate/index
@@ -24,6 +25,7 @@ API 文档
 * :doc:`api_doc/dsl/index`
 * :doc:`api_doc/entry/index`
 * :doc:`api_doc/highlight/index`
+* :doc:`api_doc/llm/index`
 * :doc:`api_doc/model/index`
 * :doc:`api_doc/render/index`
 * :doc:`api_doc/simulate/index`

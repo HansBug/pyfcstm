@@ -1,0 +1,15 @@
+{
+  "diagnostics": "",
+  "evaluated_at": "20260611T040405Z",
+  "failure_category": "passed",
+  "fixture_id": "distributed_elevator_can",
+  "fixture_path": "llm_eval/fixtures/distributed_elevator_can.nl.md",
+  "guide_sha256": "e78f3c3c7b43482091dab41f31d39b67264d2b0212c41e81e6d4b239be47aee5",
+  "mode": "replay",
+  "model_output_path": "llm_eval/outputs/codex/distributed_elevator_can/model.fcstm",
+  "provider": "codex",
+  "raw_output_path": "llm_eval/outputs/codex/distributed_elevator_can/raw_output.md",
+  "root_state": "DistributedElevatorCan",
+  "source_line_count": 86,
+  "success": true
+}

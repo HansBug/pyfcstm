@@ -1,4 +1,4 @@
-.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package
+.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package
 
 PYTHON := $(shell which python)
 
@@ -13,6 +13,8 @@ SRC_DIR       := ${PROJ_DIR}/pyfcstm
 TEMPLATES_DIR := ${PROJ_DIR}/templates
 RESOURCE_DIR  := ${PROJ_DIR}/resource
 LOGOS_DIR     := ${PROJ_DIR}/logos
+SHA256_SOURCE_FILES := ${SRC_DIR}/llm/fcstm_grammar_guide.md
+SHA256_FILES := $(addsuffix .sha256,${SHA256_SOURCE_FILES})
 
 RANGE_DIR      ?= .
 RANGE_TEST_DIR := ${TEST_DIR}/${RANGE_DIR}
@@ -94,6 +96,7 @@ help:
 	@echo "  make pdocs        - Build production documentation with versioning"
 	@echo "  make rst_auto     - Generate RST documentation from Python source"
 	@echo "                      Options: RANGE_DIR=<dir>"
+	@echo "  make sha256       - Update generated SHA-256 sidecar files"
 	@echo ""
 	@echo "LLM-Based Documentation (requires hbllmutils):"
 	@echo "  make docs_auto    - Generate Python docstrings"
@@ -194,6 +197,11 @@ tests_auto:
 # RST documentation generation targets
 rst_auto: ${RST_DOC_FILES} ${RST_NONM_FILES} auto_rst_top_index.py
 	python auto_rst_top_index.py -i ${PYTHON_CODE_DIR} -o ${DOC_DIR}/source
+
+sha256: ${SHA256_FILES}
+
+%.sha256: % Makefile
+	$(PYTHON) -c "from pathlib import Path; import hashlib; source = Path('$<'); target = Path('$@'); text = source.read_text(encoding='utf-8').replace('\r\n', '\n').replace('\r', '\n'); target.write_text(hashlib.sha256(text.encode('utf-8')).hexdigest() + '  ' + source.name + '\n', encoding='utf-8')"
 
 ${RST_DOC_DIR}/%.rst: ${PYTHON_CODE_DIR}/%.py auto_rst.py Makefile
 	@mkdir -p $(dir $@)

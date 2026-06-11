@@ -46,6 +46,10 @@ state Root {
     assert isinstance(exc_info.value.__cause__, TypeError)
     assert "unsupported operand type" in str(exc_info.value.__cause__)
     assert runtime.current_state.path == ("Root", "A")
+    assert runtime.brief_stack == [
+        (("Root",), "active"),
+        (("Root", "A"), "active"),
+    ]
     assert runtime.vars == {"x": 1, "y": 1.5}
     assert runtime.cycle_count == 1
     assert runtime.history == [

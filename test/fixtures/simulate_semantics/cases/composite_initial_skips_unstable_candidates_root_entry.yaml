@@ -37,7 +37,7 @@ steps:
     stack:
     - path:
       - Root
-      mode: init_wait
+      mode: active
     - path:
       - Root
       - Good

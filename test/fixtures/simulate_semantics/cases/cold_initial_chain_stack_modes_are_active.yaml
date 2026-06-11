@@ -1,21 +1,23 @@
 schema_version: 1
-id: cycle_result_history_stable_leaf
-title: Cycle result and history assertions for a stable leaf
+id: cold_initial_chain_stack_modes_are_active
+title: Cold initial chain stack modes become active after stabilization
 source:
-  fcstm: cycle_result_history_stable_leaf.fcstm
+  fcstm: cold_initial_chain_stack_modes_are_active.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
+  docs:
+  - https://github.com/HansBug/pyfcstm/issues/156#issuecomment-4633126858
   assertion_types:
-  - cycle_result
-  - history
-  - stack
   - state
   - vars
-  notes:
-  - Minimal fixture proving that cycle_result and history assertions are executable.
+  - stack
+  - return
+  - history
 categories:
 - runtime
+- validation
+- lifecycle
 runners:
 - simulation
 initial:
@@ -26,25 +28,29 @@ steps:
   expect:
     state:
     - Root
-    - Counting
+    - Parent
+    - A
     vars:
-      counter: 1
-    ended: false
+      x: 1
     stack:
     - path:
       - Root
       mode: active
     - path:
       - Root
-      - Counting
+      - Parent
       mode: active
-    cycle_count: 1
+    - path:
+      - Root
+      - Parent
+      - A
+      mode: active
+    ended: false
     cycle_result:
       value: null
-    history_length: 1
     history_tail:
     - cycle: 1
-      state: Root.Counting
+      state: Root.Parent.A
       vars:
-        counter: 1
+        x: 1
       events: []

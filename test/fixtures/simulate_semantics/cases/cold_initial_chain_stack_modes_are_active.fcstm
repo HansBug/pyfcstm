@@ -1,0 +1,11 @@
+def int x = 0;
+
+state Root {
+    state Parent {
+        state A {
+            during { x = x + 1; }
+        }
+        [*] -> A;
+    }
+    [*] -> Parent;
+}

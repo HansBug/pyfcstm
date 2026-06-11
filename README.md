@@ -40,8 +40,9 @@ target languages. It specializes in modeling **Hierarchical State Machines (Hare
 Jinja2-based template system, making it ideal for embedded systems, protocol implementations, game AI, workflow
 engines, and complex control logic.
 
-Out of the box, pyfcstm can parse, visualize, and simulate FCSTM state machines. For source-code generation, pyfcstm
-provides the rendering engine and model API, while you provide the target-language template directory.
+Out of the box, pyfcstm can parse, visualize, simulate, inspect, and generate code from FCSTM state machines. For
+source-code generation, pyfcstm ships packaged built-in templates for common starting points and still supports fully
+custom target-language template directories.
 
 ## Table of Contents
 
@@ -68,7 +69,7 @@ pyfcstm aims to provide a complete solution from conceptual design to code imple
 | **FSM DSL**                     | A concise and readable DSL syntax for defining states, nesting, transitions, events, conditions, and effects.                         | Focus on state machine logic, not programming language details.                                                | [DSL Syntax Tutorial](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html)                      |
 | **Hierarchical State Machines** | Supports **nested states** and **composite state** lifecycles (`enter`, `during`, `exit`).                                            | Capable of modeling complex real-time systems and protocols, enhancing maintainability.                        | [DSL Syntax Tutorial - State Definitions](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html)  |
 | **Expression System**           | Built-in mathematical and logical expression parser supporting variable definition, conditional guards, and state effects (`effect`). | Allows defining the state machine's internal data and behavior at the DSL level.                               | [DSL Syntax Tutorial - Expression System](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html)  |
-| **Templated Code Generation**   | Based on the **Jinja2** template engine, rendering the state machine model into target code (e.g., C/C++, Python, Rust).              | Extremely high flexibility, supporting code generation for virtually any programming language.                 | [Template Tutorial](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html)                     |
+| **Templated Code Generation**   | Based on the **Jinja2** template engine, rendering the state machine model into target code through packaged built-in templates or custom template directories. | Use built-in `python`, `c`, and `c_poll` templates as starting points, or generate for virtually any language with your own templates. | [Template Tutorial](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html)                     |
 | **Cross-Language Support**      | Easily enables state machine code generation for embedded or high-performance languages like **C/C++** through the template system.   | Suitable for scenarios where state machine logic needs to be deployed across different platforms or languages. | [Template Tutorial - Expression Styles](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html) |
 | **PlantUML Integration**        | Directly converts DSL files into **PlantUML** code, with preset detail levels and fine-grained visualization options.                | Facilitates design review and documentation generation.                                                        | [Visualization Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/visualization/index.html)            |
 | **Simulation Runtime**          | Runs FCSTM models directly in Python or from an interactive CLI REPL / batch executor.                                                | Lets you validate behavior before committing to generated code.                                                | [Simulation Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/simulation/index.html)                  |
@@ -76,8 +77,8 @@ pyfcstm aims to provide a complete solution from conceptual design to code imple
 | **Structured Diagnostics**      | `pyfcstm.diagnostics` ships **59 diagnostic codes** (20 errors / 32 warnings / 7 infos) covering parse errors, design-health issues (deadlock, unreachable, redundant transitions, const-folded guards, etc.), Layer 0 use-def dataflow analysis, and optional verify-backed checks. | Replace ad-hoc regex / message scraping with a stable structured API; codes carry `for_llm` payloads to drive LLM-assisted repair. | [Diagnostics Code List](#static-diagnostics-codes) |
 | **`inspect_model()` API**       | One-call structured view of a state machine: states / transitions / variables / events / metrics + reachability graph + var dataflow + aspect impact map + diagnostics. Round-trippable via `to_json()` against a published JSON schema. | Drop-in replacement for hand-written model walkers; single source of truth for downstream tooling.             | [inspect_model API](https://pyfcstm.readthedocs.io/en/latest/api_doc/diagnostics/inspect.html)                |
 | **`pyfcstm inspect` CLI**       | Emits the same structured inspect report as stable JSON; verify-backed diagnostics stay disabled unless `--enable-verify` is passed. | Makes diagnostics usable in CI, scripts, and editor tooling without writing Python glue.                       | [CLI Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/cli/index.html)                                |
-| **Suggested-Fix + VS Code Quick-Fix** | Selected diagnostics carry a `suggested_fix` payload (kind / anchor / text template) that the VS Code extension consumes as auto-apply quick-fixes; each fix is parse-back-verified. | Auto-fix loop for both humans and LLM agents; no regex patching. | [VS Code Extension](https://pyfcstm.readthedocs.io/en/latest/tutorials/editor/index.html) |
-| **Cross-End Parity (py / js)**  | Python `inspect_model().diagnostics` and `@pyfcstm/jsfcstm` `inspectModel().diagnostics` emit byte-equivalent sets (normalized `code + severity + refs`), locked by cross-end parity tests. | Same diagnostics surface in CLI tooling, server-side processors, and browser-based editors / language servers. | [Cross-End Parity](https://pyfcstm.readthedocs.io/en/latest/api_doc/diagnostics/parity.html) |
+| **Suggested-Fix + VS Code Quick-Fix** | Selected diagnostics carry a `suggested_fix` payload (kind / anchor / text template) that the VS Code extension consumes as auto-apply quick-fixes; each fix is parse-back-verified. | Auto-fix loop for both humans and LLM agents; no regex patching. | [VS Code Extension](https://pyfcstm.readthedocs.io/en/latest/tutorials/grammar/index.html) |
+| **Cross-End Parity (py / js)**  | Python `inspect_model().diagnostics` and `@pyfcstm/jsfcstm` `inspectModel().diagnostics` emit byte-equivalent sets (normalized `code + severity + refs`), locked by cross-end parity tests. | Same diagnostics surface in CLI tooling, server-side processors, and browser-based editors / language servers. | [Diagnostics Code List](#static-diagnostics-codes) |
 
 ## Installation
 
@@ -213,13 +214,22 @@ In interactive mode, useful commands include `cycle`, `current`, `events`, `hist
 
 #### Templated Code Generation
 
-Use the `generate` subcommand, along with a template directory, to generate target language code:
+Use the `generate` subcommand with either a packaged built-in template or a custom template directory.
+
+Built-in templates are selected with `--template`:
+
+```shell
+pyfcstm generate -i traffic_light.fcstm --template python -o ./generated/python --clear
+```
+
+Custom templates are still supported with `-t/--template-dir`:
 
 ```shell
 pyfcstm generate -i traffic_light.fcstm -t ./templates/c -o ./generated/c --clear
 ```
 
-**Important**: `generate` expects a template directory that you provide. At minimum, that directory should contain a
+Built-in templates currently include `python`, `c`, and `c_poll`; they are packaged from the repository
+`templates/` tree and exposed through `pyfcstm generate --template ...`. A custom template directory must contain a
 `config.yaml`; any `.j2` files are rendered, and non-template files are copied as-is.
 
 ### 2. Using the Python API
@@ -636,8 +646,19 @@ template_directory/
 └── ...                  # Directory structure is preserved
 ```
 
-pyfcstm does not ship a universal built-in code template set. In practice, you prepare a template directory for your
-own runtime/framework and pass it to `pyfcstm generate`.
+pyfcstm ships packaged built-in templates declared in `pyfcstm/template/index.json`, currently `python`, `c`, and
+`c_poll`. Use them when you want a ready reference runtime:
+
+```shell
+pyfcstm generate -i machine.fcstm --template python -o ./out --clear
+```
+
+For project-specific runtime/framework integration, prepare a custom template directory and pass it to
+`pyfcstm generate -t`:
+
+```shell
+pyfcstm generate -i machine.fcstm -t ./template_directory -o ./out --clear
+```
 
 **More Information**:
 See [Template System Architecture Details](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html) for a

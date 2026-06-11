@@ -1,0 +1,50 @@
+schema_version: 1
+id: cycle_result_history_stable_leaf
+title: Cycle result and history assertions for a stable leaf
+source:
+  fcstm: cycle_result_history_stable_leaf.fcstm
+origin:
+  files:
+  - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
+  assertion_types:
+  - cycle_result
+  - history
+  - stack
+  - state
+  - vars
+  notes:
+  - Minimal fixture proving that cycle_result and history assertions are executable.
+categories:
+- runtime
+runners:
+- simulation
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - Counting
+    vars:
+      counter: 1
+    ended: false
+    stack:
+    - path:
+      - Root
+      mode: init_wait
+    - path:
+      - Root
+      - Counting
+      mode: active
+    cycle_count: 1
+    cycle_result:
+      value: null
+    history_length: 1
+    history_tail:
+    - cycle: 1
+      state: Root.Counting
+      vars:
+        counter: 1
+      events: []

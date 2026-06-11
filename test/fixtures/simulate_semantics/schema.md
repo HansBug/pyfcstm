@@ -9,8 +9,9 @@ built-in Python runtime alignment tests.  A fixture is a pair of files under
 
 The schema is intentionally strict. Unknown top-level fields, unknown runner
 names, unknown categories, unknown expectation fields, and unknown nested fields
-inside `cycle`, `raises`, `logs`, `stack`, and CLI expectations must fail fast
-with a diagnostic containing the case id and YAML path.
+inside `cycle`, `cycle_result`, `history`, `raises`, `logs`, `stack`, handler
+calls, and CLI expectations must fail fast with a diagnostic containing the case
+id and YAML path.
 
 ## Top-level fields
 
@@ -186,6 +187,10 @@ state: Root
 stage: enter
 vars:
   x: 0
+active_leaf: [Root]
+call_stage: enter
+abstract_target: Root.RootInit
+named_ref: null
 write_attempt:
   name: x
   value: 999
@@ -199,6 +204,26 @@ Only `ValueError` is currently supported for `raise_error`, because the fixture
 corpus only needs a deterministic user-handler exception class for simulator
 rollback semantics. If another exception family is needed, extend the allowed
 set together with schema-negative tests.
+
+Optional handler-call metadata fields are assertion-only compatibility slots
+for richer execution-context checks:
+
+- `active_leaf`: Active leaf path segments observed by the handler. The current
+  fixture helper derives this from `state`; later runtime context work can make
+  it more precise for reference callsites.
+- `call_stage`: Lifecycle stage observed at the callsite. When both `stage` and
+  `call_stage` are present they should match unless a later schema extension
+  documents a more precise distinction.
+- `abstract_target`: Abstract action path observed by the handler.
+- `named_ref`: Named reference callsite path, or `null` when the action is not
+  invoked through a named reference. Current fixtures may use `null`; richer
+  named-reference distinctions are reserved for later context-metadata work.
+
+The fixture helper may synthesize these optional metadata fields from the
+original `action`, `state`, and `stage` record when a handler does not provide
+them. That keeps older handler records compatible while reserving stable schema
+slots for later runtime-context work. Once concrete metadata is collected by a
+handler, the helper preserves the provided values instead of overwriting them.
 
 ## Runtime steps
 
@@ -223,7 +248,14 @@ steps:
       vars:
         counter: 10
       ended: false
-      return: null
+      cycle_result:
+        value: null
+      history_tail:
+        - cycle: 1
+          state: Root.B
+          vars:
+            counter: 10
+          events: [Root.A.Go]
 ```
 
 `cycle` may be `{}`, `null`, a bare event-path string, or a mapping with
@@ -253,7 +285,11 @@ parent-relative paths (`.go`), and root-relative paths (`/go`).
 | `ended` | Expected `runtime.is_ended`. |
 | `stack` | Expected `brief_stack`, with `path` list and `mode`. |
 | `cycle_count` | Runtime cycle count assertion. For generated alignment cases the generated runtime must expose the same count. |
-| `return` | Expected `cycle()` return value. |
+| `return` | Legacy expected `cycle()` return value. Existing fixtures may keep it; new fixtures should prefer `cycle_result`. |
+| `cycle_result` | Standardized `cycle()` result object. Current minimum shape is `value`; later event-consumption metadata can extend the same object. |
+| `history_length` | Expected length of `runtime.history`. |
+| `history` | Expected full `runtime.history` sequence after the step. |
+| `history_tail` | Expected non-empty suffix of `runtime.history` after the step. Use `history_length: 0` or `history: []` to assert no history entries. |
 | `raises` | Expected exception class name and optional message match. |
 | `logs` | Step-local `caplog` assertions. |
 | `warnings` | Step-local Python warning assertions. Simulation-only. |
@@ -266,7 +302,37 @@ Allowed stack modes are `active` and `init_wait`.
 
 `vars` and `vars_exact` may both be present only when the partial `vars` mapping
 is consistent with `vars_exact`. `vars_keys` and `vars_absent` must not overlap.
-`raises` and `return` are mutually exclusive.
+`raises`, `return`, and `cycle_result` are mutually exclusive where their
+meanings overlap: `raises` cannot be combined with either return assertion, and
+`return` cannot be combined with `cycle_result`. `cycle_result` must be a
+mapping with a `value` field; use `cycle_result: {value: null}` for the current
+`SimulationRuntime.cycle()` return value rather than a top-level
+`cycle_result: null`.
+
+`cycle_result` allows these fields:
+
+| Field | Required | Description |
+|---|---:|---|
+| `value` | yes | Standardized `cycle()` return value. |
+| `input_events` | no | Reserved list of normalized input event names. |
+| `consumed_events` | no | Reserved list of consumed event names. |
+| `unconsumed_events` | no | Reserved list of unconsumed event names. |
+
+The current simulator returns `None`, so representative fixtures use only
+`cycle_result.value`. Event-consumption fields are reserved for later
+cycle-result work and remain strict lists of strings.
+
+`history`, `history_tail`, and history entries use the current
+`SimulationRuntime.history` shape:
+
+| Field | Description |
+|---|---|
+| `cycle` | Successful runtime cycle index. |
+| `state` | Dot-separated current state path, or `(terminated)`. |
+| `vars` | Deep-copied variable snapshot. |
+| `events` | List of normalized input event path names. |
+
+`history_tail` must be non-empty and compares the same number of entries from the end of `runtime.history`.
 
 ## Exceptions
 

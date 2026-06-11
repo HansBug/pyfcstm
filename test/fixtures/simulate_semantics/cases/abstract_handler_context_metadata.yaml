@@ -1,0 +1,55 @@
+schema_version: 1
+id: abstract_handler_context_metadata
+title: Abstract handler context metadata fixture
+source:
+  fcstm: abstract_handler_context_metadata.fcstm
+origin:
+  files:
+  - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
+  assertion_types:
+  - handler_calls
+  - history
+  - vars
+  notes:
+  - Minimal fixture proving optional context metadata fields are accepted and asserted.
+categories:
+- runtime
+- abstract
+runners:
+- simulation
+initial:
+  state: null
+  vars: null
+handlers:
+- action: Root.Active.Touch
+  behavior: record_call
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - Active
+    vars:
+      x: 0
+    ended: false
+    cycle_result:
+      value: null
+    history_length: 1
+    history_tail:
+    - cycle: 1
+      state: Root.Active
+      vars:
+        x: 0
+      events: []
+    handler_calls:
+    - action: Root.Active.Touch
+      state: Root.Active
+      stage: during
+      vars:
+        x: 0
+      active_leaf:
+      - Root
+      - Active
+      call_stage: during
+      abstract_target: Root.Active.Touch
+      named_ref: null

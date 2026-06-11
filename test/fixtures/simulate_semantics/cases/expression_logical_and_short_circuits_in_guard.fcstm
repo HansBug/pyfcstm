@@ -1,0 +1,12 @@
+def int x = 0;
+def int y = 0;
+
+state Root {
+    state A {
+        during { y = y + 1; }
+    }
+    state B;
+
+    [*] -> A;
+    A -> B : if [x != 0 && 10 / x > 1];
+}

@@ -10,6 +10,6 @@ ReadOnlyExecutionContext
 -----------------------------------------------------
 
 .. autoclass:: ReadOnlyExecutionContext
-    :members: __post_init__,get_var,get_state_name,get_full_state_path,has_var,state_path,vars,action_name,action_stage
+    :members: __post_init__,get_var,get_state_name,get_full_state_path,has_var,state_path,vars,action_name,action_stage,active_leaf,call_stage,abstract_target,named_ref
 
 

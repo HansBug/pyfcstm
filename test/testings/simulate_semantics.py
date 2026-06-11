@@ -454,6 +454,12 @@ def _assert_handler_calls(
             )
 
 
+def _normalize_handler_call_records(
+    handler_calls: Sequence[Mapping[str, Any]],
+) -> List[Dict[str, Any]]:
+    return [_handler_call_comparable_record(item) for item in handler_calls]
+
+
 def _assert_abstract_handler_errors(
     runtime: Any, expect: Mapping[str, Any], case: SemanticCase, field_path: str
 ) -> None:
@@ -1176,12 +1182,17 @@ def _simulation_kwargs(case: SemanticCase) -> Dict[str, Any]:
 
 
 def _handler_call_record(ctx: Any) -> Dict[str, Any]:
-    return {
+    record = {
         "action": ctx.action_name,
         "state": ctx.get_full_state_path(),
         "stage": ctx.action_stage,
         "vars": dict(ctx.vars),
     }
+    for name in ("active_leaf", "call_stage", "abstract_target", "named_ref"):
+        if hasattr(ctx, name):
+            value = getattr(ctx, name)
+            record[name] = list(value) if isinstance(value, tuple) else value
+    return record
 
 
 def _handler_var_write_record(ctx: Any, name: str, value: Any) -> Dict[str, Any]:
@@ -1573,9 +1584,11 @@ def run_generated_python_alignment_case(case: SemanticCase, caplog: Any = None) 
             caplog=caplog,
             handler_calls=simulation_handler_calls,
         )
-        assert simulation_handler_calls == generated_handler_calls, (
+        simulation_calls = _normalize_handler_call_records(simulation_handler_calls)
+        generated_calls = _normalize_handler_call_records(generated_handler_calls)
+        assert simulation_calls == generated_calls, (
             "%s steps[%d] handler call mismatch: simulation=%r, generated=%r"
-            % (case.id, index, simulation_handler_calls, generated_handler_calls)
+            % (case.id, index, simulation_calls, generated_calls)
         )
 
 

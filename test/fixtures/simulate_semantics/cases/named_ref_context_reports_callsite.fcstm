@@ -1,0 +1,14 @@
+def int x = 0;
+
+state Root {
+    state Library {
+        enter abstract Shared;
+    }
+
+    state A {
+        enter FirstRef ref /Library.Shared;
+        enter SecondRef ref /Library.Shared;
+    }
+
+    [*] -> A;
+}

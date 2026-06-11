@@ -12,6 +12,12 @@ SimulationRuntimeDfsError
 .. autoclass:: SimulationRuntimeDfsError
 
 
+SimulationRuntimeTerminalStateError
+-----------------------------------------------------
+
+.. autoclass:: SimulationRuntimeTerminalStateError
+
+
 SimulationRuntimeEventError
 -----------------------------------------------------
 

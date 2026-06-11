@@ -286,6 +286,7 @@ class TestAbstractHandlers:
                 'action': ctx.action_name,
                 'stage': ctx.action_stage,
                 'state': ctx.get_full_state_path(),
+                'active_leaf': ctx.active_leaf,
                 'counter': counter_val,
                 'pre_counter': pre_counter_val
             }
@@ -315,7 +316,8 @@ class TestAbstractHandlers:
             assert call['cycle'] == i + 1
             assert call['action'] == 'System.PreProcess'
             assert call['stage'] == 'during'
-            assert call['state'] == 'System'
+            assert call['state'] == 'System.Active'
+            assert call['active_leaf'] == ('System', 'Active')
             # Counter should be i (before increment in this cycle)
             assert call['counter'] == i
 
@@ -366,6 +368,7 @@ class TestAbstractHandlers:
                 'action': ctx.action_name,
                 'stage': ctx.action_stage,
                 'state': ctx.get_full_state_path(),
+                'active_leaf': ctx.active_leaf,
                 'counter': counter_val,
                 'sum': sum_val
             }
@@ -394,7 +397,8 @@ class TestAbstractHandlers:
             assert call['cycle'] == i + 1
             assert call['action'] == 'System.PostProcess'
             assert call['stage'] == 'during'
-            assert call['state'] == 'System'
+            assert call['state'] == 'System.Active'
+            assert call['active_leaf'] == ('System', 'Active')
             assert call['counter'] == expected_counter
             assert call['sum'] == expected_sum
 
@@ -1166,3 +1170,149 @@ class TestAbstractHandlerUtilities:
 
         with pytest.raises(ValueError, match='action_path cannot be empty'):
             runtime.register_abstract_handler('', handler)
+
+    def test_context_metadata_defaults_preserve_four_field_constructor(self):
+        """Test direct context construction still derives metadata defaults."""
+        ctx = ReadOnlyExecutionContext(
+            state_path=('Root', 'A'),
+            vars={'x': 1},
+            action_name='Root.A.Touch',
+            action_stage='during',
+        )
+
+        assert ctx.state_path == ('Root', 'A')
+        assert ctx.active_leaf == ('Root', 'A')
+        assert ctx.action_name == 'Root.A.Touch'
+        assert ctx.abstract_target == 'Root.A.Touch'
+        assert ctx.action_stage == 'during'
+        assert ctx.call_stage == 'during'
+        assert ctx.named_ref is None
+        with pytest.raises(TypeError):
+            ctx.vars['x'] = 2
+
+    def test_aspect_handler_context_exposes_active_leaf_metadata(self):
+        """Test ancestor aspect handlers report the active descendant leaf."""
+        dsl_code = '''
+        def int branch = 0;
+
+        state Root {
+            >> during before abstract Observe;
+
+            state A {
+                during { branch = 1; }
+            }
+            state B {
+                during { branch = 2; }
+            }
+
+            [*] -> A;
+            A -> B :: Go;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+        calls = []
+
+        def handler(ctx: ReadOnlyExecutionContext):
+            calls.append(
+                (
+                    ctx.get_full_state_path(),
+                    ctx.active_leaf,
+                    ctx.action_name,
+                    ctx.abstract_target,
+                    ctx.action_stage,
+                    ctx.call_stage,
+                    ctx.named_ref,
+                    dict(ctx.vars),
+                )
+            )
+
+        runtime.register_abstract_handler('Root.Observe', handler)
+
+        runtime.cycle()
+        runtime.cycle('Root.A.Go')
+
+        assert calls == [
+            (
+                'Root.A',
+                ('Root', 'A'),
+                'Root.Observe',
+                'Root.Observe',
+                'during',
+                'during',
+                None,
+                {'branch': 0},
+            ),
+            (
+                'Root.B',
+                ('Root', 'B'),
+                'Root.Observe',
+                'Root.Observe',
+                'during',
+                'during',
+                None,
+                {'branch': 1},
+            ),
+        ]
+
+    def test_named_ref_context_exposes_callsite_metadata(self):
+        """Test named refs to the same abstract target remain distinguishable."""
+        dsl_code = '''
+        def int x = 0;
+
+        state Root {
+            state Library {
+                enter abstract Shared;
+            }
+
+            state A {
+                enter FirstRef ref /Library.Shared;
+                enter SecondRef ref /Library.Shared;
+            }
+
+            [*] -> A;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+        calls = []
+
+        def handler(ctx: ReadOnlyExecutionContext):
+            calls.append(
+                (
+                    ctx.action_name,
+                    ctx.abstract_target,
+                    ctx.action_stage,
+                    ctx.call_stage,
+                    ctx.get_full_state_path(),
+                    ctx.active_leaf,
+                    ctx.named_ref,
+                )
+            )
+
+        runtime.register_abstract_handler('Root.Library.Shared', handler)
+
+        runtime.cycle()
+
+        assert calls == [
+            (
+                'Root.Library.Shared',
+                'Root.Library.Shared',
+                'enter',
+                'enter',
+                'Root.A',
+                ('Root', 'A'),
+                'Root.A.FirstRef',
+            ),
+            (
+                'Root.Library.Shared',
+                'Root.Library.Shared',
+                'enter',
+                'enter',
+                'Root.A',
+                ('Root', 'A'),
+                'Root.A.SecondRef',
+            ),
+        ]

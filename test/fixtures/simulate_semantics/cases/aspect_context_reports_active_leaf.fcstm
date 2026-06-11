@@ -1,0 +1,19 @@
+def int branch = 0;
+
+state Root {
+    >> during before abstract Observe;
+
+    state A {
+        during {
+            branch = 1;
+        }
+    }
+    state B {
+        during {
+            branch = 2;
+        }
+    }
+
+    [*] -> A;
+    A -> B :: Go;
+}

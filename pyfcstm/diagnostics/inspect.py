@@ -79,6 +79,14 @@ DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD = 2.0
 # test/diagnostics/test_inspect_span_contract.py.
 KNOWN_SPANLESS_CODES = frozenset()
 
+# Some structural verify algorithms intentionally reuse a legacy static
+# diagnostic code so callers see one stable public code for the same model
+# problem, regardless of whether it came from design-health analysis or the
+# optional verify adapter.
+VERIFY_SHARED_STATIC_CODES = frozenset({
+    'W_UNREACHABLE_STATE',
+})
+
 
 _OP_PRECEDENCE = {
     'function_call': 90,
@@ -2199,18 +2207,21 @@ def _type_matches_schema(value: Any, field_spec: CodeFieldSpec) -> bool:
 
 
 def _refs_match_code_schema(code: str, refs: Mapping[str, Any]) -> bool:
-    """Return whether refs satisfy the declared verify diagnostic schema.
+    """Return whether refs satisfy the declared verify-adapter schema.
 
     The conversion layer uses this as a fail-closed guard: raw verify findings
     are emitted only after their refs are declared, complete, enum-safe, and
-    type-compatible with ``codes.yaml``.
+    type-compatible with ``codes.yaml``. Most accepted codes are declared as
+    ``emit_tier: verify_pipeline``; codes in
+    :data:`VERIFY_SHARED_STATIC_CODES` are legacy static diagnostics that a
+    structural verify algorithm may also emit.
 
     :param code: Diagnostic code to validate.
     :type code: str
     :param refs: Candidate refs payload.
     :type refs: Mapping[str, Any]
-    :return: ``True`` when the code is a verify-pipeline code and refs match
-        its schema.
+    :return: ``True`` when the code may be emitted by the verify adapter and
+        refs match its schema.
     :rtype: bool
 
     Examples::
@@ -2226,9 +2237,15 @@ def _refs_match_code_schema(code: str, refs: Mapping[str, Any]) -> bool:
         ...     'transition_summary': 'Root:A->B',
         ... })
         True
+        >>> _refs_match_code_schema('W_UNREACHABLE_STATE', {
+        ...     'state_path': 'Root.Orphan',
+        ... })
+        True
     """
     spec = CODE_REGISTRY.get(code)
-    if spec is None or spec.emit_tier != 'verify_pipeline':
+    if spec is None:
+        return False
+    if spec.emit_tier != 'verify_pipeline' and code not in VERIFY_SHARED_STATIC_CODES:
         return False
     declared = set(spec.refs_schema.keys())
     if set(refs.keys()) - declared:

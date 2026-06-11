@@ -2277,6 +2277,88 @@ class TestInspectModelVerifyIntegration:
             context='verify-unreachable-dedup',
         )
 
+    def test_structural_verify_converts_unreachable_shared_static_code(self):
+        from pyfcstm.verify import InspectRunResult
+
+        state = StateInfo(
+            path='Root.Orphan',
+            name='Orphan',
+            parent_path='Root',
+            is_leaf=True,
+            is_pseudo=False,
+            is_composite=False,
+            substates=(),
+            initial_targets=(),
+            entry_actions=(),
+            during_actions=(),
+            exit_actions=(),
+            aspect_before=(),
+            aspect_after=(),
+            has_abstract_action=False,
+            span=inspect_module.Span(line=3, column=5),
+        )
+        result = InspectRunResult(
+            algorithm_name='unreachable_states',
+            complexity_tier='structural',
+            smt_logic=None,
+            verification_scope='topological_only',
+            diagnostic_codes=('W_UNREACHABLE_STATE',),
+            result_kind='sat',
+            diagnostics=(),
+            reason=None,
+            raw_result=('Root.Orphan',),
+        )
+
+        diagnostics = inspect_module._structural_verify_diagnostics(
+            result,
+            (state,),
+            (),
+        )
+
+        assert [(diag.code, diag.refs) for diag in diagnostics] == [
+            ('W_UNREACHABLE_STATE', {'state_path': 'Root.Orphan'}),
+        ]
+        assert diagnostics[0].span == state.span
+        assert_all_diags_match_schema(
+            diagnostics,
+            context='verify-unreachable-structural',
+        )
+
+    def test_deduplicates_only_unreachable_state_duplicates(self):
+        unreachable = inspect_module.ModelDiagnostic(
+            code='W_UNREACHABLE_STATE',
+            severity='warning',
+            message='unreachable',
+            refs={'state_path': 'Root.Orphan'},
+        )
+        distinct_state = inspect_module.ModelDiagnostic(
+            code='W_UNREACHABLE_STATE',
+            severity='warning',
+            message='unreachable',
+            refs={'state_path': 'Root.Other'},
+        )
+        repeated_other_code = inspect_module.ModelDiagnostic(
+            code='W_DEAD_NAMED_ACTION',
+            severity='warning',
+            message='dead action',
+            refs={'state_path': 'Root.Orphan'},
+        )
+
+        diagnostics = inspect_module._deduplicate_model_diagnostics((
+            unreachable,
+            unreachable,
+            distinct_state,
+            repeated_other_code,
+            repeated_other_code,
+        ))
+
+        assert diagnostics == (
+            unreachable,
+            distinct_state,
+            repeated_other_code,
+            repeated_other_code,
+        )
+
     def test_enable_verify_converts_smt_raw_diagnostics(self):
         dsl = """
         def int x = 0;

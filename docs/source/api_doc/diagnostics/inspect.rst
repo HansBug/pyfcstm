@@ -30,6 +30,12 @@ KNOWN\_SPANLESS\_CODES
 .. autodata:: KNOWN_SPANLESS_CODES
 
 
+VERIFY\_SHARED\_STATIC\_CODES
+-----------------------------------------------------
+
+.. autodata:: VERIFY_SHARED_STATIC_CODES
+
+
 StateInfo
 -----------------------------------------------------
 

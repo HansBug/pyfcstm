@@ -532,8 +532,8 @@ class SimulationRuntime:
             requested without complete ``initial_vars``, an override names an
             undefined variable, a default initializer fails, or a persistent
             value cannot be normalized to its declared ``int`` / ``float`` type.
-        :raises SimulationRuntimeStateError: If ``initial_state`` cannot be
-            resolved to a state in this machine.
+        :raises ValueError: If ``initial_state`` cannot be resolved to a
+            state in this machine.
 
         Example - Default initialization::
 
@@ -2772,8 +2772,8 @@ class SimulationRuntime:
             persistent ``int`` / ``float`` type.
         :raises SimulationRuntimeEventError: If a supplied event path cannot be
             resolved.
-        :raises SimulationRuntimeStateError: If the runtime cannot reach a
-            stoppable state during validation.
+        :raises SimulationRuntimeDfsError: If speculative validation exceeds
+            DFS safety limits while searching for a stoppable state.
         :raises Exception: If an abstract handler raises while
             ``abstract_error_mode`` is ``'raise'``.
 

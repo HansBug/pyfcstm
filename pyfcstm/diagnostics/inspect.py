@@ -79,6 +79,14 @@ DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD = 2.0
 # test/diagnostics/test_inspect_span_contract.py.
 KNOWN_SPANLESS_CODES = frozenset()
 
+# Some structural verify algorithms intentionally reuse a legacy static
+# diagnostic code so callers see one stable public code for the same model
+# problem, regardless of whether it came from design-health analysis or the
+# optional verify adapter.
+VERIFY_SHARED_STATIC_CODES = frozenset({
+    'W_UNREACHABLE_STATE',
+})
+
 
 _OP_PRECEDENCE = {
     'function_call': 90,
@@ -427,9 +435,10 @@ class ModelInspect:
     :type events: Tuple[EventInfo, ...]
     :param metrics: Aggregate model metrics.
     :type metrics: ModelMetrics
-    :param reachability_graph: Mapping state path → list of state paths
-        reachable through normal transitions (BFS closure, ignoring
-        guards).
+    :param reachability_graph: Mapping from every state path to leaf state
+        paths reachable in the guard-agnostic topology projection. Keys include
+        composite states, but values are leaf-only and never expose the
+        topology package's synthetic root-exit sink.
     :type reachability_graph: Dict[str, Tuple[str, ...]]
     :param event_emission_map: Mapping event qualified name → list of
         source state paths that can emit it.
@@ -1291,49 +1300,40 @@ def _build_metrics(
     )
 
 
-def _build_reachability_graph(
-        states: Tuple[StateInfo, ...],
-        transitions: Tuple[TransitionInfo, ...],
-) -> Dict[str, Tuple[str, ...]]:
-    """BFS reachability over normal transitions, ignoring guards."""
-    # Adjacency list keyed by state path. ``[*]`` markers are skipped.
-    adjacency: Dict[str, set] = {s.path: set() for s in states}
-    initial_edges: Dict[str, set] = {s.path: set() for s in states}
-    for t in transitions:
-        if t.from_path == _INIT_MARK or t.to_path == _EXIT_MARK:
-            # Initial / exit pseudo edges feed reachability from the
-            # parent composite (the parent's "active" implies traversing
-            # the initial transition).
-            continue
-        if t.from_path not in adjacency:  # pragma: no cover
-            # Defensive: transitions emitted by the model layer always
-            # have from_path equal to a known state path (or the INIT
-            # marker caught above). Unreachable through grammar-driven
-            # input; kept as a safety net so a future synthesizer that
-            # invents from_paths doesn't crash here.
-            continue
-        adjacency[t.from_path].add(t.to_path)
+def _build_reachability_graph(machine: 'StateMachine') -> Dict[str, Tuple[str, ...]]:
+    """Return inspect reachability using the verify topology projection.
 
-    for s in states:
-        if s.is_composite and s.initial_targets:
-            for it in s.initial_targets:
-                target = it['target']
-                if target != _EXIT_MARK:
-                    initial_edges[s.path].add(target)
+    The public inspect JSON contract keeps one key for every state path, while
+    values are the leaf-only, guard-agnostic topology closure computed by
+    :func:`pyfcstm.verify.topology.topological_reachable_set`. This keeps
+    inspect, design-health diagnostics, and verify diagnostics on one
+    hierarchy-aware source of truth.
 
-    out: Dict[str, Tuple[str, ...]] = {}
-    for s in states:
-        seen = set()
-        queue = [s.path]
-        while queue:
-            cur = queue.pop(0)
-            for nxt in sorted(adjacency.get(cur, set()) | initial_edges.get(cur, set())):
-                if nxt in seen or nxt == s.path:
-                    continue
-                seen.add(nxt)
-                queue.append(nxt)
-        out[s.path] = tuple(sorted(seen))
-    return out
+    :param machine: State machine whose topology should be projected.
+    :type machine: pyfcstm.model.StateMachine
+    :return: Mapping from every state path to reachable leaf paths.
+    :rtype: Dict[str, Tuple[str, ...]]
+
+    Examples::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> source = '''
+        ... state Root {
+        ...     state A;
+        ...     state B;
+        ...     [*] -> A;
+        ...     A -> B;
+        ... }
+        ... '''
+        >>> ast = parse_with_grammar_entry(source, 'state_machine_dsl')
+        >>> machine = parse_dsl_node_to_state_machine(ast)
+        >>> _build_reachability_graph(machine)['Root.A']
+        ('Root.B',)
+    """
+    from ..verify.topology import topological_reachable_set
+
+    return topological_reachable_set(machine)
 
 
 def _build_event_emission_map(
@@ -2062,6 +2062,16 @@ def _structural_verify_diagnostics(
             )
             if diagnostic is not None:
                 diagnostics.append(diagnostic)
+    elif result.algorithm_name == 'unreachable_states':
+        for state_path in result.raw_result or ():
+            refs = {'state_path': state_path}
+            diagnostic = _make_verify_diagnostic(
+                'W_UNREACHABLE_STATE',
+                refs,
+                _state_span_by_path(states, state_path),
+            )
+            if diagnostic is not None:
+                diagnostics.append(diagnostic)
     elif result.algorithm_name == 'topological_finite':
         counterexamples = getattr(result.raw_result, 'counterexamples', ())
         for kind, payload in counterexamples:
@@ -2197,18 +2207,21 @@ def _type_matches_schema(value: Any, field_spec: CodeFieldSpec) -> bool:
 
 
 def _refs_match_code_schema(code: str, refs: Mapping[str, Any]) -> bool:
-    """Return whether refs satisfy the declared verify diagnostic schema.
+    """Return whether refs satisfy the declared verify-adapter schema.
 
     The conversion layer uses this as a fail-closed guard: raw verify findings
     are emitted only after their refs are declared, complete, enum-safe, and
-    type-compatible with ``codes.yaml``.
+    type-compatible with ``codes.yaml``. Most accepted codes are declared as
+    ``emit_tier: verify_pipeline``; codes in
+    :data:`VERIFY_SHARED_STATIC_CODES` are legacy static diagnostics that a
+    structural verify algorithm may also emit.
 
     :param code: Diagnostic code to validate.
     :type code: str
     :param refs: Candidate refs payload.
     :type refs: Mapping[str, Any]
-    :return: ``True`` when the code is a verify-pipeline code and refs match
-        its schema.
+    :return: ``True`` when the code may be emitted by the verify adapter and
+        refs match its schema.
     :rtype: bool
 
     Examples::
@@ -2224,9 +2237,15 @@ def _refs_match_code_schema(code: str, refs: Mapping[str, Any]) -> bool:
         ...     'transition_summary': 'Root:A->B',
         ... })
         True
+        >>> _refs_match_code_schema('W_UNREACHABLE_STATE', {
+        ...     'state_path': 'Root.Orphan',
+        ... })
+        True
     """
     spec = CODE_REGISTRY.get(code)
-    if spec is None or spec.emit_tier != 'verify_pipeline':
+    if spec is None:
+        return False
+    if spec.emit_tier != 'verify_pipeline' and code not in VERIFY_SHARED_STATIC_CODES:
         return False
     declared = set(spec.refs_schema.keys())
     if set(refs.keys()) - declared:
@@ -2366,6 +2385,46 @@ def _verify_diagnostics_from_results(
     return tuple(diagnostics)
 
 
+def _deduplicate_model_diagnostics(
+        diagnostics: Sequence[ModelDiagnostic],
+) -> Tuple[ModelDiagnostic, ...]:
+    """Remove semantic duplicates while preserving diagnostic order.
+
+    The inspect surface may combine legacy design-health warnings with optional
+    verify-pipeline diagnostics. When both paths report the same unreachable
+    state, callers should see one diagnostic rather than two equivalent
+    warnings. Other diagnostics are left untouched because repeated findings on
+    one state can represent distinct source occurrences.
+
+    :param diagnostics: Diagnostics in emission order.
+    :type diagnostics: Sequence[ModelDiagnostic]
+    :return: Diagnostics with duplicate state-scoped entries removed.
+    :rtype: Tuple[ModelDiagnostic, ...]
+
+    Examples::
+
+        >>> diag = ModelDiagnostic(
+        ...     code='W_UNREACHABLE_STATE',
+        ...     severity='warning',
+        ...     message='unreachable',
+        ...     refs={'state_path': 'Root.Orphan'},
+        ... )
+        >>> len(_deduplicate_model_diagnostics((diag, diag)))
+        1
+    """
+    out: List[ModelDiagnostic] = []
+    seen_state_scoped = set()
+    for diagnostic in diagnostics:
+        state_path = diagnostic.refs.get('state_path')
+        if diagnostic.code == 'W_UNREACHABLE_STATE' and isinstance(state_path, str):
+            key = (diagnostic.code, state_path)
+            if key in seen_state_scoped:
+                continue
+            seen_state_scoped.add(key)
+        out.append(diagnostic)
+    return tuple(out)
+
+
 def inspect_model(
         machine: 'StateMachine',
         *,
@@ -2452,7 +2511,7 @@ def inspect_model(
     actions = _build_action_infos(machine)
     forced_transitions = _build_forced_transition_infos(machine)
     metrics = _build_metrics(states, transitions, variables, events)
-    reachability_graph = _build_reachability_graph(states, transitions)
+    reachability_graph = _build_reachability_graph(machine)
     root_state_path = _state_path(machine.root_state)
     diagnostics = list(collect_design_health_warnings(
         states,
@@ -2483,6 +2542,7 @@ def inspect_model(
             events,
             actions,
         ))
+    diagnostics = list(_deduplicate_model_diagnostics(diagnostics))
     return ModelInspect(
         root_state_path=root_state_path,
         states=states,

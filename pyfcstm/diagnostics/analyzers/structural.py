@@ -175,10 +175,14 @@ def _dead_named_action_warnings(
     root_path = root_state_path or states[0].path
     reachable = set(reachability_graph.get(root_path, ()))
     reachable.add(root_path)
+    reachable_action_states = _expand_leaf_reachability_to_action_states(
+        states,
+        reachable,
+    )
     referenced: Set[str] = {
         action.ref_target
         for action in actions
-        if action.ref_target is not None and action.state_path in reachable
+        if action.ref_target is not None and action.state_path in reachable_action_states
     }
     diagnostics: List[ModelDiagnostic] = []
     for action in actions:
@@ -186,7 +190,7 @@ def _dead_named_action_warnings(
             continue
         if action.signature in referenced:
             continue
-        if action.state_path in reachable:
+        if action.state_path in reachable_action_states:
             continue
         diagnostics.append(ModelDiagnostic(
             code='W_DEAD_NAMED_ACTION',
@@ -199,3 +203,65 @@ def _dead_named_action_warnings(
             },
         ))
     return diagnostics
+
+
+def _expand_leaf_reachability_to_action_states(states, reachable):
+    """Expand leaf-only reachability to states that can host actions.
+
+    Inspect reachability values are leaf-only, but actions can be declared on
+    composite states. A composite is action-reachable when any reachable leaf
+    sits below it in the hierarchy.
+
+    :param states: Inspect state payloads.
+    :type states: Iterable[StateInfo]
+    :param reachable: Reachable state paths from the root topology view.
+    :type reachable: Iterable[str]
+    :return: Reachable paths including ancestor composites of reachable leaves.
+    :rtype: Set[str]
+
+    Examples::
+
+        >>> from pyfcstm.diagnostics import StateInfo
+        >>> root = StateInfo(
+        ...     path='Root',
+        ...     name='Root',
+        ...     parent_path=None,
+        ...     is_leaf=False,
+        ...     is_pseudo=False,
+        ...     is_composite=True,
+        ...     substates=('Root.A',),
+        ...     initial_targets=(),
+        ...     entry_actions=(),
+        ...     during_actions=(),
+        ...     exit_actions=(),
+        ...     aspect_before=(),
+        ...     aspect_after=(),
+        ...     has_abstract_action=False,
+        ... )
+        >>> leaf = StateInfo(
+        ...     path='Root.A',
+        ...     name='A',
+        ...     parent_path='Root',
+        ...     is_leaf=True,
+        ...     is_pseudo=False,
+        ...     is_composite=False,
+        ...     substates=(),
+        ...     initial_targets=(),
+        ...     entry_actions=(),
+        ...     during_actions=(),
+        ...     exit_actions=(),
+        ...     aspect_before=(),
+        ...     aspect_after=(),
+        ...     has_abstract_action=False,
+        ... )
+        >>> sorted(_expand_leaf_reachability_to_action_states((root, leaf), {'Root.A'}))
+        ['Root', 'Root.A']
+    """
+    reachable_states = set(reachable)
+    for state in states:
+        if state.path in reachable_states:
+            continue
+        prefix = state.path + '.'
+        if any(path.startswith(prefix) for path in reachable):
+            reachable_states.add(state.path)
+    return reachable_states

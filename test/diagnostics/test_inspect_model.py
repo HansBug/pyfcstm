@@ -31,6 +31,11 @@ from pyfcstm.diagnostics import (
 )
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
+from pyfcstm.verify.topology import (
+    EXIT_ROOT_SINK,
+    topological_reachable_set,
+    unreachable_states,
+)
 
 from ._schema_check import assert_all_diags_match_schema
 
@@ -201,6 +206,56 @@ class TestInspectModelViews:
     def test_reachability_leaf_to_leaf(self, report):
         assert 'Root.Active' in report.reachability_graph['Root.Idle']
         assert 'Root.Idle' in report.reachability_graph['Root.Active']
+
+    def test_reachability_uses_leaf_only_topology_semantics(self):
+        dsl = """
+        state System {
+            state Working {
+                state Active;
+                state Idle;
+                [*] -> Active;
+                Active -> Idle;
+                Idle -> [*];
+            }
+            state Done;
+            state Orphan;
+            [*] -> Working;
+            Working -> Done;
+            Done -> [*];
+        }
+        """
+        machine = _parse(dsl)
+        report = inspect_model(machine)
+
+        assert report.reachability_graph == topological_reachable_set(machine)
+        assert report.reachability_graph['System'] == (
+            'System.Done',
+            'System.Working.Active',
+            'System.Working.Idle',
+        )
+        assert 'System.Working' not in report.reachability_graph['System']
+        assert report.reachability_graph['System.Working.Idle'] == ('System.Done',)
+        assert EXIT_ROOT_SINK not in report.reachability_graph['System.Done']
+
+    def test_unreachable_diagnostics_match_verify_topology(self):
+        dsl = """
+        state Root {
+            state A;
+            pseudo state PseudoOnly;
+            state Orphan;
+            [*] -> A;
+        }
+        """
+        machine = _parse(dsl)
+        report = inspect_model(machine)
+
+        assert tuple(
+            sorted(
+                diag.refs['state_path']
+                for diag in report.diagnostics
+                if diag.code == 'W_UNREACHABLE_STATE'
+            )
+        ) == unreachable_states(machine)
 
     def test_event_emission_map(self, report):
         assert report.event_emission_map == {
@@ -391,6 +446,12 @@ class TestSchemaJsonValidates:
         refs_text = json.dumps(refs_schema, sort_keys=True)
         assert '<object>_span' in refs_text
         assert 'list[Span]' in refs_text
+
+    def test_schema_documents_leaf_only_reachability(self):
+        schema = self._load_schema()
+        description = schema['properties']['reachability_graph']['description']
+        assert 'leaf' in description
+        assert 'topology' in description
 
     def test_diagnostics_readme_documents_range_layers(self):
         readme_path = os.path.join(
@@ -690,6 +751,31 @@ state Root {
             d.refs for d in report.diagnostics
             if d.code == 'W_DEAD_NAMED_ACTION'
         ] == [{'function_name': 'Target', 'defined_in': 'Root.Orphan'}]
+
+    def test_dead_named_action_uses_topology_reachability(self):
+        dsl = """
+        state Root {
+            state Flow {
+                state A { enter Live {} }
+                state B { enter AlsoLive {} }
+                [*] -> A;
+                A -> B;
+                B -> [*];
+            }
+            state Done;
+            state Orphan { enter Dead {} }
+            [*] -> Flow;
+            Flow -> Done;
+            Done -> [*];
+        }
+        """
+        report = inspect_model(_parse(dsl))
+
+        assert [
+            diag.refs
+            for diag in report.diagnostics
+            if diag.code == 'W_DEAD_NAMED_ACTION'
+        ] == [{'function_name': 'Dead', 'defined_in': 'Root.Orphan'}]
 
     def test_nested_chain_event_keeps_chain_scope(self):
         dsl = """
@@ -2168,6 +2254,111 @@ class TestInspectModelVerifyIntegration:
         _assert_has_span(noexit_diag.span)
         assert 'state B' in _slice_by_span(dsl, noexit_diag.span)
 
+    def test_enable_verify_deduplicates_unreachable_state_diagnostics(self):
+        dsl = """
+        state System {
+            state A;
+            state Orphan;
+            [*] -> A;
+        }
+        """
+
+        report = inspect_model(_parse(dsl), enable_verify=True)
+        unreachable_diags = [
+            diag for diag in report.diagnostics
+            if diag.code == 'W_UNREACHABLE_STATE'
+        ]
+
+        assert [diag.refs['state_path'] for diag in unreachable_diags] == [
+            'System.Orphan',
+        ]
+        assert_all_diags_match_schema(
+            unreachable_diags,
+            context='verify-unreachable-dedup',
+        )
+
+    def test_structural_verify_converts_unreachable_shared_static_code(self):
+        from pyfcstm.verify import InspectRunResult
+
+        state = StateInfo(
+            path='Root.Orphan',
+            name='Orphan',
+            parent_path='Root',
+            is_leaf=True,
+            is_pseudo=False,
+            is_composite=False,
+            substates=(),
+            initial_targets=(),
+            entry_actions=(),
+            during_actions=(),
+            exit_actions=(),
+            aspect_before=(),
+            aspect_after=(),
+            has_abstract_action=False,
+            span=inspect_module.Span(line=3, column=5),
+        )
+        result = InspectRunResult(
+            algorithm_name='unreachable_states',
+            complexity_tier='structural',
+            smt_logic=None,
+            verification_scope='topological_only',
+            diagnostic_codes=('W_UNREACHABLE_STATE',),
+            result_kind='sat',
+            diagnostics=(),
+            reason=None,
+            raw_result=('Root.Orphan',),
+        )
+
+        diagnostics = inspect_module._structural_verify_diagnostics(
+            result,
+            (state,),
+            (),
+        )
+
+        assert [(diag.code, diag.refs) for diag in diagnostics] == [
+            ('W_UNREACHABLE_STATE', {'state_path': 'Root.Orphan'}),
+        ]
+        assert diagnostics[0].span == state.span
+        assert_all_diags_match_schema(
+            diagnostics,
+            context='verify-unreachable-structural',
+        )
+
+    def test_deduplicates_only_unreachable_state_duplicates(self):
+        unreachable = inspect_module.ModelDiagnostic(
+            code='W_UNREACHABLE_STATE',
+            severity='warning',
+            message='unreachable',
+            refs={'state_path': 'Root.Orphan'},
+        )
+        distinct_state = inspect_module.ModelDiagnostic(
+            code='W_UNREACHABLE_STATE',
+            severity='warning',
+            message='unreachable',
+            refs={'state_path': 'Root.Other'},
+        )
+        repeated_other_code = inspect_module.ModelDiagnostic(
+            code='W_DEAD_NAMED_ACTION',
+            severity='warning',
+            message='dead action',
+            refs={'state_path': 'Root.Orphan'},
+        )
+
+        diagnostics = inspect_module._deduplicate_model_diagnostics((
+            unreachable,
+            unreachable,
+            distinct_state,
+            repeated_other_code,
+            repeated_other_code,
+        ))
+
+        assert diagnostics == (
+            unreachable,
+            distinct_state,
+            repeated_other_code,
+            repeated_other_code,
+        )
+
     def test_enable_verify_converts_smt_raw_diagnostics(self):
         dsl = """
         def int x = 0;
@@ -2456,6 +2647,10 @@ class TestInspectModelVerifyIntegration:
         }
 
         assert inspect_module._refs_match_code_schema('W_DEAD_GUARD', valid_refs)
+        assert not inspect_module._refs_match_code_schema(
+            'X_UNKNOWN_CODE',
+            {'state_path': 'Root.Missing'},
+        )
         assert not inspect_module._refs_match_code_schema(
             'E_UNDEFINED_VAR',
             dict(valid_refs),

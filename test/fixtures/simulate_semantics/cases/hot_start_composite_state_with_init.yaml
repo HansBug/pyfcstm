@@ -56,7 +56,7 @@ steps:
     - path:
       - Root
       - System
-      mode: init_wait
+      mode: active
     - path:
       - Root
       - System

@@ -767,6 +767,7 @@ class {{ machine_class_name(model) }}:
     def _execute_initial_transition_on_context(
         self, stack, vars_, transition_id, event_names, is_validation_mode=False
     ):
+        composite_frame = stack[-1]
         transition = self._TRANSITIONS[transition_id]
         self._execute_transition_effect(
             transition, vars_, is_validation_mode=is_validation_mode
@@ -778,6 +779,8 @@ class {{ machine_class_name(model) }}:
             event_names,
             is_validation_mode=is_validation_mode,
         )
+        if any(frame is composite_frame for frame in stack):
+            composite_frame["mode"] = "active"
 
     def _validate_initial_transition(self, stack, vars_, transition_id, event_names):
         sim_stack = self._clone_stack(stack)

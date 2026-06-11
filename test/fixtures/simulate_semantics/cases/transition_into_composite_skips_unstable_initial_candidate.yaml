@@ -37,7 +37,7 @@ steps:
     stack:
     - path:
       - Root
-      mode: init_wait
+      mode: active
     - path:
       - Root
       - A
@@ -58,11 +58,11 @@ steps:
     stack:
     - path:
       - Root
-      mode: init_wait
+      mode: active
     - path:
       - Root
       - Parent
-      mode: init_wait
+      mode: active
     - path:
       - Root
       - Parent

@@ -1,0 +1,11 @@
+def int x = 0;
+
+state Root {
+    state Locked {
+        state Ready {
+            during { x = x + 1; }
+        }
+        [*] -> Ready :: Unlock;
+    }
+    [*] -> Locked;
+}

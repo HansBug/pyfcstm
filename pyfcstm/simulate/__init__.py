@@ -27,8 +27,31 @@ object that preserves the legacy ``None`` value while exposing canonical input,
 consumed, and unconsumed event paths.
 
 Abstract actions can be implemented by registering Python handlers that receive
-read-only execution context. Handlers can be registered individually or organized
-in classes using the @abstract_handler decorator for better state management.
+read-only execution context. The runtime validates handler targets, rejects
+duplicate registrations by default, supports explicit duplicate cleanup modes,
+and provides session cleanup for handler diagnostics. Handlers can be registered
+individually or organized in classes using the ``@abstract_handler`` decorator
+for better state management.
+
+Public API map:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Export
+     - Purpose
+   * - :class:`SimulationRuntime`
+     - Execute parsed state-machine models cycle by cycle.
+   * - :class:`ReadOnlyExecutionContext`
+     - Expose immutable state, variable, and action metadata to abstract
+       handlers.
+   * - :func:`abstract_handler`
+     - Mark object methods for bulk abstract-handler registration.
+   * - Runtime exceptions
+     - Report DFS convergence, event normalization, expression execution, and
+       action-reference failures.
+   * - :func:`is_state_resolve_event_path`
+     - Classify event-path input syntax for simulator utilities.
 
 Basic usage::
 

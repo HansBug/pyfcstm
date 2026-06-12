@@ -1,0 +1,67 @@
+schema_version: 1
+id: abstract_handler_warning_rollback_on_raise
+title: Abstract handler warning metadata rolls back on raise
+source:
+  fcstm: abstract_handler_warning_rollback_on_raise.fcstm
+origin:
+  files:
+  - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
+  assertion_types:
+  - error_info
+  - error_state
+  - handler_calls
+  - anonymous_warning_count
+  - raises
+  - stack
+  - warnings
+  notes:
+  - Simulation-only fixture proving failed abstract-handler cycles roll back anonymous warning metadata.
+categories:
+- runtime
+- abstract
+- lifecycle
+runners:
+- simulation
+initial:
+  state: null
+  vars: null
+runtime_options:
+  abstract_error_mode: raise
+handlers:
+- action: Root.Active.Fail
+  behavior: raise_error
+  exception:
+    type: ValueError
+    message: boom
+steps:
+- cycle: {}
+  expect:
+    raises:
+      type: ValueError
+      match: boom
+    warnings:
+      count: 1
+      contains:
+      - category: UserWarning
+        message: Root.Active.<unnamed>
+    state:
+    - Root
+    vars_exact: {}
+    ended: false
+    stack:
+    - path:
+      - Root
+      mode: init_wait
+    cycle_count: 0
+    error_state: true
+    error_info:
+      action: Root.Active.Fail
+      type: ValueError
+      message: boom
+    abstract_handler_errors: []
+    anonymous_warning_count: 0
+    handler_calls:
+    - action: Root.Active.Fail
+      state: Root.Active
+      stage: enter
+      vars: {}

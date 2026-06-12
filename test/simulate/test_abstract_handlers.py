@@ -1316,3 +1316,75 @@ class TestAbstractHandlerUtilities:
                 'Root.A.SecondRef',
             ),
         ]
+
+    def test_copy_session_configuration_rejects_incompatible_handler_paths(self):
+        """Test handler registry copy rejects incompatible targets atomically."""
+        source_dsl = '''
+        state Root {
+            state A {
+                enter abstract Init;
+            }
+
+            [*] -> A;
+        }
+        '''
+        target_dsl = '''
+        state Root {
+            state A;
+
+            [*] -> A;
+        }
+        '''
+        source_ast = parse_with_grammar_entry(source_dsl, 'state_machine_dsl')
+        target_ast = parse_with_grammar_entry(target_dsl, 'state_machine_dsl')
+        source_sm = parse_dsl_node_to_state_machine(source_ast)
+        target_sm = parse_dsl_node_to_state_machine(target_ast)
+        source = SimulationRuntime(
+            source_sm, history_size=7, abstract_error_mode='log'
+        )
+        target = SimulationRuntime(
+            target_sm, history_size=3, abstract_error_mode='raise'
+        )
+
+        def handler(ctx: ReadOnlyExecutionContext):
+            pass
+
+        source.register_abstract_handler('Root.A.Init', handler)
+
+        with pytest.raises(ValueError, match='target runtime'):
+            source.copy_session_configuration_to(target)
+
+        assert target.history_size == 3
+        assert target.abstract_error_mode == 'raise'
+        assert target.get_abstract_handlers('Root.A.Init') == []
+
+    def test_copy_session_configuration_preserves_compatible_handlers(self):
+        """Test compatible session configuration copy remains supported."""
+        dsl_code = '''
+        state Root {
+            state A {
+                enter abstract Init;
+            }
+
+            [*] -> A;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        source = SimulationRuntime(sm, history_size=7, abstract_error_mode='log')
+        target = SimulationRuntime(sm, history_size=3, abstract_error_mode='raise')
+
+        calls = []
+
+        def handler(ctx: ReadOnlyExecutionContext):
+            calls.append(ctx.action_name)
+
+        source.register_abstract_handler('Root.A.Init', handler)
+        source.copy_session_configuration_to(target)
+
+        assert target.history_size == 7
+        assert target.abstract_error_mode == 'log'
+        assert target.get_abstract_handlers('Root.A.Init') == [handler]
+
+        target.cycle()
+        assert calls == ['Root.A.Init']

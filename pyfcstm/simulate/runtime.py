@@ -97,6 +97,7 @@ Abstract handler registration::
 
 import copy
 import math
+import types
 import warnings
 from collections import Counter
 from dataclasses import dataclass
@@ -3803,14 +3804,37 @@ class SimulationRuntime:
         Command-line ``init`` and ``clear`` rebuild a runtime while preserving
         the user's session-level configuration. This helper copies only that
         configuration: history retention, abstract-handler error mode, and
-        registered abstract handlers. Execution history, warning records, and
+        registered abstract handlers. The target handler registry is replaced
+        with this runtime's registry so rebuilt sessions do not retain stale
+        target-only handlers. Execution history, warning records, and
         error-state diagnostics are intentionally not copied.
 
         :param runtime: Target runtime that should receive session settings.
         :type runtime: SimulationRuntime
         :return: ``None``.
         :rtype: None
+        :raises ValueError: If the target runtime does not contain every named
+            abstract action path registered in this runtime.
+
+        Example::
+
+            >>> replacement = SimulationRuntime(state_machine)
+            >>> runtime.copy_session_configuration_to(replacement)
+            >>> replacement.history_size == runtime.history_size
+            True
         """
+        for action_path in self._abstract_handlers:
+            try:
+                runtime._validate_abstract_action_path(action_path)
+            except ValueError as err:
+                # ValueError: target runtime path validation rejects a handler
+                # path that was valid for the source runtime but is not a named
+                # abstract action in the target model.
+                raise ValueError(
+                    "Cannot copy abstract handler session to target runtime: "
+                    "target runtime has no named abstract action %r" % action_path
+                ) from err
+
         runtime.history_size = self.history_size
         runtime._abstract_error_mode = self._abstract_error_mode
         runtime._abstract_handlers = {
@@ -4044,6 +4068,161 @@ class SimulationRuntime:
             and len(self._abstract_handlers[action_path]) > 0
         )
 
+    @staticmethod
+    def _is_supported_handler_member(member: object) -> bool:
+        """
+        Check whether a raw class member can be registered as a handler.
+
+        The object scanner supports plain functions, :class:`staticmethod`, and
+        :class:`classmethod`. Other descriptors with abstract-handler metadata
+        are rejected instead of being silently ignored, because the runtime
+        cannot safely bind them without executing user code.
+
+        :param member: Raw member from a class ``__dict__``.
+        :type member: object
+        :return: ``True`` if the member can be bound as a handler.
+        :rtype: bool
+
+        Example::
+
+            >>> def handler(ctx):
+            ...     pass
+            >>> SimulationRuntime._is_supported_handler_member(handler)
+            True
+        """
+        return isinstance(member, (types.FunctionType, staticmethod, classmethod))
+
+    @staticmethod
+    def _object_handler_members(obj: object) -> List[Tuple[str, object]]:
+        """
+        Return raw decorated handler members from an object.
+
+        Scanning raw class dictionaries avoids executing unrelated descriptors.
+        The most-derived class wins for overridden member names; inherited
+        decorated members with different names remain visible. Within each
+        class dictionary, Python's definition order is preserved. Unsupported
+        descriptor metadata, including metadata mirrored to a ``property``
+        getter, is detected from the raw class dictionary without invoking
+        descriptor code.
+
+        :param obj: Object instance containing decorated handler members.
+        :type obj: object
+        :return: ``(name, raw_member)`` pairs for decorated members.
+        :rtype: List[Tuple[str, object]]
+        :raises ValueError: If a language-level dunder protocol method is
+            explicitly decorated as an abstract handler.
+
+        Example::
+
+            >>> class Handlers:
+            ...     @abstract_handler('System.Active.Init')
+            ...     def init(self, ctx):
+            ...         pass
+            >>> len(SimulationRuntime._object_handler_members(Handlers()))
+            1
+        """
+        from .decorators import _get_handler_metadata_paths
+
+        members: List[Tuple[str, object]] = []
+        seen_names = set()
+        for cls in obj.__class__.__mro__:
+            if cls is object:
+                continue
+            for name, raw_member in cls.__dict__.items():
+                if name in seen_names:
+                    continue
+                seen_names.add(name)
+                action_paths = _get_handler_metadata_paths(raw_member)
+                if name.startswith("__") and name.endswith("__"):
+                    # True dunder methods are language protocol hooks, not
+                    # handler declarations. Name-mangled private methods such
+                    # as ``__hidden`` appear as ``_ClassName__hidden`` and are
+                    # still eligible when explicitly decorated. If a true
+                    # dunder method is explicitly decorated, report that
+                    # mismatch instead of silently dropping user intent.
+                    if action_paths:
+                        raise ValueError(
+                            "Abstract handler member %s.%s uses a reserved "
+                            "dunder protocol name"
+                            % (obj.__class__.__name__, name)
+                        )
+                    continue
+                if action_paths:
+                    members.append((name, raw_member))
+        return members
+
+    def _collect_object_handler_registrations(
+        self, obj: object
+    ) -> List[Tuple[str, Callable[[ReadOnlyExecutionContext], None], str]]:
+        """
+        Collect and validate decorated handlers from an object without mutation.
+
+        This collection step supports :meth:`register_handlers_from_object`.
+        It validates every action path and bindable member before the registry
+        is modified, preventing failed scans from leaving partial handler
+        registrations behind.
+
+        :param obj: Object instance containing decorated handler members.
+        :type obj: object
+        :return: ``(action_path, bound_handler, member_name)`` registrations.
+        :rtype: List[Tuple[str, Callable[[ReadOnlyExecutionContext], None], str]]
+        :raises ValueError: If a decorated member cannot be bound safely or any
+            action path is invalid for this runtime.
+
+        Example::
+
+            >>> registrations = runtime._collect_object_handler_registrations(handlers)
+            >>> all(len(item) == 3 for item in registrations)
+            True
+        """
+        from .decorators import _get_handler_metadata_paths
+
+        registrations: List[
+            Tuple[str, Callable[[ReadOnlyExecutionContext], None], str]
+        ] = []
+        for name, raw_member in self._object_handler_members(obj):
+            action_paths = _get_handler_metadata_paths(raw_member)
+            if not self._is_supported_handler_member(raw_member):
+                raise ValueError(
+                    "Abstract handler member %s.%s uses unsupported descriptor "
+                    "type %s"
+                    % (obj.__class__.__name__, name, type(raw_member).__name__)
+                )
+
+            bound_handler = getattr(obj, name)
+            if not callable(bound_handler):
+                raise ValueError(
+                    "Abstract handler member %s.%s did not bind to a callable"
+                    % (obj.__class__.__name__, name)
+                )
+
+            for action_path in action_paths:
+                registrations.append(
+                    (
+                        self._validate_abstract_action_path(action_path),
+                        bound_handler,
+                        name,
+                    )
+                )
+
+        seen_keys = set()
+        existing_keys = {
+            (action_path, self._handler_identity(handler))
+            for action_path, handlers in self._abstract_handlers.items()
+            for handler in handlers
+        }
+        for action_path, handler, name in registrations:
+            key = (action_path, self._handler_identity(handler))
+            if key in existing_keys or key in seen_keys:
+                raise ValueError(
+                    "Abstract handler member %s.%s is already registered for "
+                    "named abstract action %r"
+                    % (obj.__class__.__name__, name, action_path)
+                )
+            seen_keys.add(key)
+
+        return registrations
+
     def register_handlers_from_object(self, obj: object) -> int:
         """
         Register all decorated methods from an object as abstract handlers.
@@ -4055,10 +4234,14 @@ class SimulationRuntime:
         This provides a convenient way to organize multiple related handlers
         in a single class, maintaining state and shared logic between handlers.
 
-        :param obj: Object instance containing decorated handler methods
+        :param obj: Object instance containing decorated handler methods.
         :type obj: object
-        :return: Number of handlers registered
+        :return: Number of handlers registered.
         :rtype: int
+        :raises ValueError: If any decorated member uses an unsupported
+            descriptor shape, reserved dunder protocol name, duplicate handler
+            registration, or action path that is not a named abstract action in
+            this runtime's model.
 
         Example::
 
@@ -4092,39 +4275,28 @@ class SimulationRuntime:
            Only methods decorated with :func:`~pyfcstm.simulate.decorators.abstract_handler`
            will be registered. Other methods are ignored.
         """
-        from .decorators import get_handler_metadata
+        registrations = self._collect_object_handler_registrations(obj)
 
-        registered_count = 0
-
-        # Iterate through all attributes of the object
-        for name in dir(obj):
-            # Skip private/magic methods
-            if name.startswith("_"):
-                continue
-
-            try:
-                attr = getattr(obj, name)
-            except AttributeError:
-                continue
-
-            # Check if it's a callable method
-            if not callable(attr):
-                continue
-
-            # Check if it has handler metadata
-            action_path = get_handler_metadata(attr)
-            if action_path is None:
-                continue
-
-            # Register the bound method
-            self.register_abstract_handler(action_path, attr)
-            registered_count += 1
-            self.logger.debug(
-                f"Registered method {name} from {obj.__class__.__name__} "
-                f"for action {action_path}"
-            )
+        registry_snapshot = {
+            action_path: list(handlers)
+            for action_path, handlers in self._abstract_handlers.items()
+        }
+        try:
+            for action_path, handler, name in registrations:
+                self.register_abstract_handler(action_path, handler)
+                self.logger.debug(
+                    f"Registered method {name} from {obj.__class__.__name__} "
+                    f"for action {action_path}"
+                )
+        except ValueError:
+            # ValueError: register_abstract_handler may still reject a
+            # registration if registry contents change after collection or
+            # validation policy tightens; restore the pre-scan registry to keep
+            # object registration atomic.
+            self._abstract_handlers = registry_snapshot
+            raise
 
         self.logger.info(
-            f"Registered {registered_count} handler(s) from {obj.__class__.__name__}"
+            f"Registered {len(registrations)} handler(s) from {obj.__class__.__name__}"
         )
-        return registered_count
+        return len(registrations)

@@ -21,7 +21,10 @@ enabling cross-cutting concerns like logging or validation.
 The runtime validates transitions speculatively before executing them, ensuring
 they can eventually reach a stoppable state or terminate. If validation fails or
 exceeds safety limits (1000 steps or 64 stack depth), the transition is rejected
-and variables roll back to the previous stable state.
+and variables roll back to the previous stable state. Each successful
+:class:`SimulationRuntime` cycle returns :class:`CycleResult`, an immutable value
+object that preserves the legacy ``None`` value while exposing canonical input,
+consumed, and unconsumed event paths.
 
 Abstract actions can be implemented by registering Python handlers that receive
 read-only execution context. The runtime validates handler targets, rejects
@@ -61,12 +64,27 @@ Basic usage::
     runtime = SimulationRuntime(sm)
 
     # Execute cycles
-    runtime.cycle()  # Initialize and execute first cycle
+    result = runtime.cycle()  # Initialize and execute first cycle
+    assert result.input_events == ()
     runtime.cycle(['EventName'])  # Execute with events
 
     # Access state and variables
     current_state = runtime.current_state
     variables = runtime.vars
+
+Public exports::
+
+    +--------------------------------------+--------------------------------------+
+    | Symbol                               | Purpose                              |
+    +======================================+======================================+
+    | ``SimulationRuntime``                | Stateful simulator runtime.          |
+    +--------------------------------------+--------------------------------------+
+    | ``CycleResult``                      | Immutable per-cycle result metadata. |
+    +--------------------------------------+--------------------------------------+
+    | ``ReadOnlyExecutionContext``         | Abstract-handler callback context.   |
+    +--------------------------------------+--------------------------------------+
+    | ``abstract_handler``                 | Decorator for callback registration. |
+    +--------------------------------------+--------------------------------------+
 
 Abstract handler registration::
 
@@ -85,6 +103,7 @@ Abstract handler registration::
 from .context import ReadOnlyExecutionContext
 from .decorators import abstract_handler
 from .runtime import (
+    CycleResult,
     SimulationRuntime,
     SimulationRuntimeActionReferenceError,
     SimulationRuntimeDfsError,
@@ -95,6 +114,7 @@ from .runtime import (
 from .utils import is_state_resolve_event_path
 
 __all__ = [
+    "CycleResult",
     "ReadOnlyExecutionContext",
     "SimulationRuntime",
     "SimulationRuntimeActionReferenceError",

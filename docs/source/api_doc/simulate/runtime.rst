@@ -24,6 +24,13 @@ SimulationRuntimeEventError
 .. autoclass:: SimulationRuntimeEventError
 
 
+CycleResult
+-----------------------------------------------------
+
+.. autoclass:: CycleResult
+    :members: value,input_events,consumed_events,unconsumed_events
+
+
 SimulationRuntimeExpressionError
 -----------------------------------------------------
 

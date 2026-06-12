@@ -42,6 +42,7 @@ from pyfcstm.entry.simulate.commands import CommandProcessor
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.simulate import (
+    CycleResult,
     SimulationRuntime,
     SimulationRuntimeDfsError,
     SimulationRuntimeEventError,
@@ -256,13 +257,6 @@ class SemanticCase:
         return tuple(self.data["runners"])
 
 
-@dataclass(frozen=True)
-class _FixtureEventLike:
-    """Event-like cycle input used by semantic fixture runners."""
-
-    path_name: str
-
-
 def _case_error(case_id: str, yaml_path: str, message: str) -> SemanticCaseError:
     return SemanticCaseError("%s (%s): %s" % (case_id, yaml_path, message))
 
@@ -330,6 +324,31 @@ def _runtime_stack(runtime: Any) -> List[Tuple[Tuple[str, ...], str]]:
 
 
 def _standardize_cycle_result(value: Any) -> Dict[str, Any]:
+    """
+    Convert runtime-specific cycle results into the fixture assertion shape.
+
+    ``CycleResult`` is the simulator-side public result object. Generated
+    runtimes may still return ``None`` until their own template contracts grow
+    matching metadata, so the compatibility shape always exposes ``value`` and
+    adds event-accounting fields only when the result object provides them.
+
+    :param value: Raw value returned by a runtime ``cycle`` call.
+    :type value: Any
+    :return: Standardized mapping used by ``expect.cycle_result``.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> _standardize_cycle_result(CycleResult(input_events=("Root.A.Go",)))
+        {'value': None, 'input_events': ['Root.A.Go'], 'consumed_events': [], 'unconsumed_events': []}
+    """
+    if isinstance(value, CycleResult):
+        return {
+            "value": value.value,
+            "input_events": list(value.input_events),
+            "consumed_events": list(value.consumed_events),
+            "unconsumed_events": list(value.unconsumed_events),
+        }
     return {"value": value}
 
 
@@ -393,11 +412,16 @@ def _assert_cycle_result(
         return
     actual_result = _standardize_cycle_result(result)
     expected_result = dict(expect["cycle_result"])
-    assert actual_result == expected_result, "%s %s cycle_result mismatch: %r != %r" % (
-        case.id,
-        field_path,
-        actual_result,
-        expected_result,
+    comparable_result = {key: actual_result.get(key) for key in expected_result}
+    assert comparable_result == expected_result, (
+        "%s %s cycle_result mismatch for declared fields: %r != %r (full actual: %r)"
+        % (
+            case.id,
+            field_path,
+            comparable_result,
+            expected_result,
+            actual_result,
+        )
     )
 
 
@@ -912,29 +936,39 @@ def _capture_warnings_if_needed(expect: Mapping[str, Any]):
 
 
 def _event_input_from_fixture_item(
-    item: Any, case: SemanticCase, field_path: str
+    item: Any, runtime: Any, case: SemanticCase, field_path: str
 ) -> Any:
     if isinstance(item, str):
         return item
     if isinstance(item, dict):
-        if set(item.keys()) != {"event_like"}:
+        if set(item.keys()) != {"event"}:
             raise _case_error(
                 case.id,
                 case.yaml_path,
-                "%s event descriptor must contain only event_like" % field_path,
+                "%s event descriptor must contain only event" % field_path,
             )
-        path_name = item["event_like"]
+        path_name = item["event"]
         if not isinstance(path_name, str):
             raise _case_error(
                 case.id,
                 case.yaml_path,
-                "%s.event_like must be a string" % field_path,
+                "%s.event must be a string" % field_path,
             )
-        return _FixtureEventLike(path_name=path_name)
+        state_machine = getattr(runtime, "state_machine", None)
+        if state_machine is None:
+            raise _case_error(
+                case.id,
+                case.yaml_path,
+                "%s.event requires a simulation runtime with state_machine"
+                % field_path,
+            )
+        return state_machine.resolve_event(path_name)
     return item
 
 
-def _step_events(cycle_data: Any, case: SemanticCase, field_path: str) -> Any:
+def _step_events(
+    cycle_data: Any, runtime: Any, case: SemanticCase, field_path: str
+) -> Any:
     if cycle_data in (None, {}):
         return None
     if isinstance(cycle_data, str):
@@ -957,6 +991,7 @@ def _step_events(cycle_data: Any, case: SemanticCase, field_path: str) -> Any:
     return [
         _event_input_from_fixture_item(
             item,
+            runtime,
             case,
             "%s.cycle.events[%d]" % (field_path, index),
         )
@@ -985,7 +1020,7 @@ def _run_step(
         return
 
     expect = step.get("expect") or {}
-    events = _step_events(step.get("cycle", {}), case, field_path)
+    events = _step_events(step.get("cycle", {}), runtime, case, field_path)
     with _capture_logs_if_needed(expect, caplog):
         with _capture_warnings_if_needed(expect) as warning_records:
             if "raises" in expect:
@@ -1003,12 +1038,13 @@ def _run_step(
             else:
                 result = runtime.cycle(events)
                 if "return" in expect:
-                    assert result == expect["return"], (
+                    actual_value = _standardize_cycle_result(result)["value"]
+                    assert actual_value == expect["return"], (
                         "%s %s return mismatch: %r != %r"
                         % (
                             case.id,
                             field_path,
-                            result,
+                            actual_value,
                             expect["return"],
                         )
                     )
@@ -1260,6 +1296,29 @@ class _GeneratedPythonAlignmentRuntime:
         self._generated_runtime = generated_runtime
         self._dsl_code = dsl_code
 
+    @property
+    def state_machine(self):
+        """
+        Return the simulator model used for fixture event-object descriptors.
+
+        Generated Python alignment cases still resolve YAML ``{event: ...}``
+        descriptors through the authoritative :class:`SimulationRuntime`
+        model, then pass the resulting model event to both runtimes. The
+        generated runtime accepts event-like objects by path today, while the
+        simulator verifies that the object belongs to the same model.
+
+        :return: State machine model owned by the simulation runtime.
+        :rtype: pyfcstm.model.StateMachine
+
+        Example::
+
+            >>> case = load_semantic_case("event_input_model_event_object")
+            >>> runtime = _build_simulation_runtime(case)
+            >>> runtime.state_machine is not None
+            True
+        """
+        return self._simulation_runtime.state_machine
+
     def _generated_brief_stack(self) -> List[Tuple[Tuple[str, ...], str]]:
         state_info = self._generated_runtime._STATE_INFO
         return [
@@ -1431,8 +1490,10 @@ class _GeneratedPythonAlignmentRuntime:
                     )
                 )
             raise sim_exc
-        assert sim_result == gen_result, (
-            "cycle(events=%r) return mismatch for DSL:\n%s\nsimulation=%r, generated=%r"
+        sim_standardized = _standardize_cycle_result(sim_result)
+        gen_standardized = _standardize_cycle_result(gen_result)
+        assert sim_standardized.get("value") == gen_standardized.get("value"), (
+            "cycle(events=%r) return value mismatch for DSL:\n%s\nsimulation=%r, generated=%r"
             % (events, self._dsl_code, sim_result, gen_result)
         )
         self._assert_aligned("after cycle(events=%r)" % (events,))
@@ -2373,8 +2434,7 @@ def _validate_expect(
         raise _case_error(
             case_id,
             yaml_path,
-            "%s.anonymous_warning_count must be a non-negative integer"
-            % field_path,
+            "%s.anonymous_warning_count must be a non-negative integer" % field_path,
         )
 
 
@@ -2556,19 +2616,19 @@ def _validate_cycle_event_item(
         raise _case_error(
             case_id,
             yaml_path,
-            "%s must be a string or event-like descriptor" % field_path,
+            "%s must be a string or event descriptor" % field_path,
         )
-    if set(item.keys()) != {"event_like"}:
+    if set(item.keys()) != {"event"}:
         raise _case_error(
             case_id,
             yaml_path,
-            "%s event descriptor must contain only event_like" % field_path,
+            "%s event descriptor must contain only event" % field_path,
         )
-    if not isinstance(item["event_like"], str):
+    if not isinstance(item["event"], str):
         raise _case_error(
             case_id,
             yaml_path,
-            "%s.event_like must be a string" % field_path,
+            "%s.event must be a string" % field_path,
         )
 
 

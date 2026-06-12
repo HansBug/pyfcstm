@@ -263,10 +263,10 @@ unchanged as a single `runtime.cycle("Root.A.Go")` input so fixtures can cover
 string-vs-list API boundaries.
 
 `events` may be `null` or a list. Each list item may be either an event-path
-string or an event-like descriptor with exactly one `event_like` key, for
-example `{event_like: Root.A.Go}`. The runner converts that descriptor into a
-local object exposing `path_name = "Root.A.Go"` and passes the object to the
-runtime under test.
+string or an event-object descriptor with exactly one `event` key, for example
+`{event: Root.A.Go}`. The runner resolves that descriptor against the fixture
+state machine and passes the resulting model `Event` object to the runtime
+under test.
 
 Event strings are passed through unchanged. The corpus covers existing event
 path forms such as full paths (`Root.A.Go`), relative paths (`go`),
@@ -318,9 +318,10 @@ mapping with a `value` field; use `cycle_result: {value: null}` for the current
 | `consumed_events` | no | Reserved list of consumed event names. |
 | `unconsumed_events` | no | Reserved list of unconsumed event names. |
 
-The current simulator returns `None`, so representative fixtures use only
-`cycle_result.value`. Event-consumption fields are reserved for later
-cycle-result work and remain strict lists of strings.
+The simulator returns a `CycleResult` object. Representative compatibility
+fixtures may assert only `cycle_result.value`; event-consumption fields are
+optional strict lists of strings, and assertion compares only fields declared by
+the fixture so old `{value: null}` cases remain stable.
 
 `history`, `history_tail`, and history entries use the current
 `SimulationRuntime.history` shape:

@@ -22,4 +22,3 @@ pyfcstm
     template/index
     utils/index
     verify/index
-

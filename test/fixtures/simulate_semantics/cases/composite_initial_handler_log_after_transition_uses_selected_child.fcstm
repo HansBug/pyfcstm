@@ -1,0 +1,29 @@
+def int phase = 0;
+def int trace = 0;
+
+state Root {
+    state A {
+        during { trace = trace + 1; }
+    }
+
+    state Parent {
+        during before { phase = phase + 1; trace = trace + 10; }
+        during before abstract ObserveParent;
+
+        state Child1 {
+            enter abstract EnterChild1;
+            during { trace = trace + 100; }
+        }
+
+        state Child2 {
+            enter abstract EnterChild2;
+            during { trace = trace + 1000; }
+        }
+
+        [*] -> Child1 : if [phase == 0];
+        [*] -> Child2 : if [phase == 1];
+    }
+
+    [*] -> A;
+    A -> Parent :: Go;
+}

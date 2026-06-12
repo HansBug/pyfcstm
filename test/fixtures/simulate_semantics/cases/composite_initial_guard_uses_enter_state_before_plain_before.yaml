@@ -1,0 +1,57 @@
+schema_version: 1
+id: composite_initial_guard_uses_enter_state_before_plain_before
+title: Composite initial guard uses enter-state variables before plain during-before
+source:
+  fcstm: composite_initial_guard_uses_enter_state_before_plain_before.fcstm
+origin:
+  files:
+  - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
+  docs:
+  - https://github.com/HansBug/pyfcstm/issues/197#issuecomment-4689448449
+  - https://github.com/HansBug/pyfcstm/issues/197#issuecomment-4691296811
+  assertion_types:
+  - state
+  - vars
+  - cycle_result
+  - history
+  notes:
+  - Covers root composite entry where the guard variable is written by composite enter and then plain during-before.
+categories:
+- runtime
+- lifecycle
+- validation
+runners:
+- simulation
+initial:
+  state: null
+  vars: null
+steps:
+- expect_initial:
+    state:
+    - Root
+    vars:
+      select: 0
+      trace: 0
+    ended: false
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - Choice
+    - FromEnter
+    vars:
+      select: 2
+      trace: 2345
+    ended: false
+    cycle_result:
+      value: null
+      input_events: []
+      consumed_events: []
+      unconsumed_events: []
+    history_tail:
+    - cycle: 1
+      state: Root.Choice.FromEnter
+      vars:
+        select: 2
+        trace: 2345
+      events: []

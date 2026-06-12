@@ -1,0 +1,25 @@
+def int flag = 0;
+def int trace = 0;
+
+state Root {
+    state Wrapper {
+        enter { flag = 0; trace = trace * 10 + 2; }
+        during before { flag = 1; trace = trace * 10 + 3; }
+
+        pseudo state Finish {
+            during { trace = trace * 10 + 4; }
+        }
+
+        state Stay {
+            during { trace = trace * 10 + 5; }
+        }
+
+        [*] -> Finish : if [flag == 0];
+        [*] -> Stay : if [flag == 1];
+        Finish -> [*] effect { trace = trace * 10 + 7; }
+    }
+
+    [*] -> Wrapper;
+    Wrapper -> [*] effect { trace = trace * 10 + 8; }
+    exit { trace = trace * 10 + 9; }
+}

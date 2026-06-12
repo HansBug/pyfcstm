@@ -22,9 +22,10 @@ execute before and after the leaf's own during actions. Pseudo states skip ances
 aspect actions entirely.
 
 Composite states have special during before/after actions that execute only at
-composite boundaries: during before runs when entering from parent ([*] -> Child),
-and during after runs when exiting to parent (Child -> [*]). These do NOT execute
-during child-to-child transitions.
+composite boundaries: during before runs after the composite's initial transition
+has been selected and before the selected child is entered, while during after
+runs when exiting to parent (Child -> [*]). These do NOT execute during
+child-to-child transitions.
 
 Validation works by cloning the execution context and speculatively executing the
 transition until reaching a stable boundary. If validation succeeds, the real
@@ -384,9 +385,9 @@ class _Frame:
     Internal stack frame representing an active state and its execution phase.
 
     Frames are stored in the runtime's execution stack from root to the current
-    active state. Each frame tracks both the state itself and its current
-    execution mode, which controls how the runtime processes the frame during
-    cycle execution.
+    active state. Each frame tracks the state, current execution mode, and
+    whether a just-entered composite still owes its plain ``during before``
+    boundary actions after selecting an initial child.
 
     **Frame Modes**:
 
@@ -405,13 +406,18 @@ class _Frame:
     - Next cycle: ``after_entry`` → ``active`` (if stoppable, cycle ends here)
 
     Composite states:
-    - Enter with ``active`` → execute ``during before`` → switch to ``init_wait``
+    - Enter with ``active`` → switch to ``init_wait`` and select an initial child
+    - Before selected child entry: execute plain composite ``during before``
     - After child exits: switch to ``post_child_exit``
 
     :param state: The active state represented by this frame.
     :type state: State
     :param mode: Internal execution phase controlling frame processing.
     :type mode: str
+    :param plain_before_pending: Whether a just-entered composite state still
+        needs to run plain ``during before`` boundary actions before entering
+        the selected initial child.
+    :type plain_before_pending: bool
 
     Example::
 
@@ -430,6 +436,7 @@ class _Frame:
 
     state: State
     mode: str
+    plain_before_pending: bool = False
 
 
 class SimulationRuntime:
@@ -1310,14 +1317,17 @@ class SimulationRuntime:
         The validation logic needs an isolated stack snapshot while still
         referring to the same immutable :class:`State` objects. This helper
         therefore creates new :class:`_Frame` instances that preserve each
-        frame's ``state`` and ``mode``.
+        frame's ``state``, ``mode``, and pending composite boundary metadata.
 
         :param stack: Source stack to clone.
         :type stack: List[_Frame]
         :return: A shallow structural copy of the frame stack.
         :rtype: List[_Frame]
         """
-        return [_Frame(frame.state, frame.mode) for frame in stack]
+        return [
+            _Frame(frame.state, frame.mode, frame.plain_before_pending)
+            for frame in stack
+        ]
 
     @staticmethod
     def _is_single_event_input(events: Any) -> bool:
@@ -2187,9 +2197,10 @@ class SimulationRuntime:
         Entering always pushes a new frame and executes the state's ``enter``
         actions first. Leaf states then immediately execute their full during
         chain and switch into ``'after_entry'`` mode so the next cycle can decide
-        whether they are already stable. Composite states instead execute their
-        local ``during before`` actions, switch into ``'init_wait'`` mode, and
-        immediately attempt their initial transition chain.
+        whether they are already stable. Composite states instead switch into
+        ``'init_wait'`` mode and immediately attempt their initial transition
+        chain. Once an initial child is selected, the composite's plain
+        ``during before`` actions run before entering that selected child.
 
         :param stack: Target execution stack.
         :type stack: List[_Frame]
@@ -2220,11 +2231,8 @@ class SimulationRuntime:
             self._run_leaf_during(state, vars_, is_validation_mode=is_validation_mode)
             stack[-1].mode = "after_entry"
         else:
-            for on_during_before in state.list_on_durings(aspect="before"):
-                self._execute_func(
-                    on_during_before, vars_, is_validation_mode=is_validation_mode
-                )
             stack[-1].mode = "init_wait"
+            stack[-1].plain_before_pending = True
             if attempt_initial_transition:
                 self._attempt_init_transition(
                     stack,
@@ -2312,7 +2320,10 @@ class SimulationRuntime:
 
         The stack top must be the composite state that owns ``transition``.
         Transition effects run before the target child is entered, matching the
-        normal transition ordering.
+        normal transition ordering. The owning composite's plain ``during
+        before`` actions run after the initial transition has been selected and
+        before the selected child is entered, so those actions cannot influence
+        the current initial guard decision.
 
         :param stack: Execution stack to mutate.
         :type stack: List[_Frame]
@@ -2347,6 +2358,12 @@ class SimulationRuntime:
             vars_,
             is_validation_mode=is_validation_mode,
         )
+        if composite_frame.plain_before_pending:
+            for on_during_before in state.list_on_durings(aspect="before"):
+                self._execute_func(
+                    on_during_before, vars_, is_validation_mode=is_validation_mode
+                )
+            composite_frame.plain_before_pending = False
         target_state = state.substates[transition.to_state]
         self._enter_state(
             stack,
@@ -2912,43 +2929,54 @@ class SimulationRuntime:
     def _create_execution_signature(
         stack: List[_Frame],
         vars_: Dict[str, Union[int, float]],
-    ) -> Tuple[Tuple[Tuple[str, ...], str], Tuple[Tuple[str, Union[int, float]], ...]]:
+    ) -> Tuple[
+        Tuple[Tuple[Tuple[str, ...], str, bool], ...],
+        Tuple[Tuple[str, Union[int, float]], ...],
+    ]:
         """
         Build a hashable execution signature for DFS pruning.
 
-        The signature captures the full active stack shape, each frame mode, and
-        the current numeric variable mapping in deterministic key order. It is
-        used only for speculative DFS protection so repeated execution states on
-        the same search path can be pruned safely.
+        The signature captures the full active stack shape, each frame mode,
+        pending composite boundary metadata, and the current numeric variable
+        mapping in deterministic key order. It is used only for speculative DFS
+        protection so repeated execution states on the same search path can be
+        pruned safely.
 
         :param stack: Execution stack to summarize.
         :type stack: List[_Frame]
         :param vars_: Variable mapping to summarize.
         :type vars_: Dict[str, Union[int, float]]
         :return: Hashable execution signature.
-        :rtype: Tuple[Tuple[Tuple[str, ...], str], Tuple[Tuple[str, Union[int, float]], ...]]
+        :rtype: Tuple[Tuple[Tuple[Tuple[str, ...], str, bool], ...], Tuple[Tuple[str, Union[int, float]], ...]]
         """
-        stack_signature = tuple((frame.state.path, frame.mode) for frame in stack)
+        stack_signature = tuple(
+            (frame.state.path, frame.mode, frame.plain_before_pending)
+            for frame in stack
+        )
         vars_signature = tuple((key, vars_[key]) for key in sorted(vars_))
         return stack_signature, vars_signature
 
     @staticmethod
     def _create_structural_signature(
         stack: List[_Frame],
-    ) -> Tuple[Tuple[Tuple[str, ...], str], ...]:
+    ) -> Tuple[Tuple[Tuple[str, ...], str, bool], ...]:
         """
         Build a stack-shape signature for deep-search protection.
 
         Unlike :meth:`_create_execution_signature`, this helper ignores variable
-        values and keeps only the structural execution path. It is used to
-        detect unbounded speculative descent through ever-new stack/mode shapes.
+        values and keeps only the structural execution path plus pending
+        composite boundary metadata. It is used to detect unbounded speculative
+        descent through ever-new stack/mode shapes.
 
         :param stack: Execution stack to summarize.
         :type stack: List[_Frame]
         :return: Hashable structural signature.
-        :rtype: Tuple[Tuple[Tuple[str, ...], str], ...]
+        :rtype: Tuple[Tuple[Tuple[str, ...], str, bool], ...]
         """
-        return tuple((frame.state.path, frame.mode) for frame in stack)
+        return tuple(
+            (frame.state.path, frame.mode, frame.plain_before_pending)
+            for frame in stack
+        )
 
     def _run_cycle_on_context(
         self,

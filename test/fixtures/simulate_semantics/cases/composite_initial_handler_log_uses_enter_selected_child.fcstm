@@ -1,0 +1,24 @@
+def int select = 0;
+def int trace = 0;
+
+state Root {
+    state Choice {
+        enter { select = 1; trace = trace * 10 + 2; }
+        during before { select = 2; trace = trace * 10 + 3; }
+
+        state FromEnter {
+            enter abstract ChosenEnter;
+            during { trace = trace * 10 + 5; }
+        }
+
+        state FromBefore {
+            enter abstract ChosenBefore;
+            during { trace = trace * 10 + 7; }
+        }
+
+        [*] -> FromEnter : if [select == 1];
+        [*] -> FromBefore : if [select == 2];
+    }
+
+    [*] -> Choice;
+}

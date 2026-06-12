@@ -314,8 +314,11 @@ not prove that the model matches the physical timing or business requirement.
 
 Execution-order essentials:
 
-- Initial entry through a composite state runs the composite `enter`, then
-  plain `during before`, then the selected child `enter`.
+- Initial entry through a composite state runs the composite `enter`,
+  selects and applies the initial transition, then runs plain `during before`,
+  then enters the selected child. A plain `during before` action must not
+  affect the guard decision for that same composite's current initial
+  transition.
 - A normal active-state cycle runs ancestor `>> during before`, then the active
   leaf `during`, then ancestor `>> during after`.
 - A child-to-child transition runs source child `exit`, then transition effect,

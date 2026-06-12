@@ -28,7 +28,7 @@ Before diving into usage, understand these key concepts:
 
 **Composite State Actions**
 
-- **during before**  (without ``>>``): Executed when entering composite state from parent (``[*] -> Child``)
+- **during before**  (without ``>>``): Executed after the composite initial transition has been selected and before the selected child enters
 - **during after**  (without ``>>``): Executed when exiting composite state to parent (``Child -> [*]``)
 - **NOT executed**  during child-to-child transitions (``Child1 -> Child2``)
 
@@ -788,8 +788,9 @@ Output:
 **Entry Phase**  (from parent):
 
 1. ``State.enter``
-2. ``State.during before`` (if entering via ``[*] -> Child``)
-3. ``Child.enter``
+2. Select the initial transition (``[*] -> Child``) and execute its effect if present
+3. ``State.during before``
+4. ``Child.enter``
 
 **During Phase**  (each cycle at leaf state):
 
@@ -814,6 +815,7 @@ Output:
 
 - Aspect actions (``>> during before/after``) execute during the ``during`` phase for all descendant leaf states
 - Composite state actions (``during before/after`` without ``>>``) only execute during entry/exit transitions, NOT during the ``during`` phase
+- On entry, plain ``during before`` runs after initial-transition guard selection, so it cannot affect that same selection
 - Pseudo states skip ancestor aspect actions
 
 Example 6: Transition Priority

@@ -1,0 +1,26 @@
+def int flag = 0;
+def int trace = 0;
+
+state Root {
+    state A {
+        during { trace = trace + 1; }
+    }
+
+    state Parent {
+        during before { flag = 1; trace = trace * 10 + 1; }
+
+        state Guarded {
+            during { trace = trace * 10 + 1; }
+        }
+
+        state Fallback {
+            during { trace = trace + 1; }
+        }
+
+        [*] -> Guarded : if [flag == 1];
+        [*] -> Fallback;
+    }
+
+    [*] -> A;
+    A -> Parent :: Go;
+}

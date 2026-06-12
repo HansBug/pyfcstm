@@ -1,0 +1,24 @@
+def int route = 0;
+def int trace = 0;
+
+state Root {
+    state Parent {
+        enter { route = 1; trace = trace * 10 + 1; }
+        during before { route = 3; trace = trace * 10 + 3; }
+
+        state A {
+            enter { trace = trace * 10 + 4; }
+            during { trace = trace * 10 + 5; }
+        }
+
+        state B {
+            enter { trace = trace * 10 + 6; }
+            during { trace = trace * 10 + 7; }
+        }
+
+        [*] -> A : if [route == 1] effect { route = 2; trace = trace * 10 + 2; };
+        [*] -> B : if [route == 3];
+    }
+
+    [*] -> Parent;
+}

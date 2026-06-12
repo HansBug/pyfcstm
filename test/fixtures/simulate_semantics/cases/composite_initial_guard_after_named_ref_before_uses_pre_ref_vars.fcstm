@@ -1,0 +1,30 @@
+def int x = 0;
+
+state Root {
+    state Library {
+        during Bump { x = x + 100; }
+    }
+
+    state Start {
+        during { x = x + 1; }
+    }
+
+    state Parent {
+        enter { x = 1; }
+        during before ref /Library.Bump;
+
+        state A {
+            enter { x = x * 10 + 2; }
+        }
+
+        state B {
+            enter { x = x * 10 + 1; }
+        }
+
+        [*] -> A : if [x == 1];
+        [*] -> B : if [x == 101];
+    }
+
+    [*] -> Start;
+    Start -> Parent :: Go;
+}

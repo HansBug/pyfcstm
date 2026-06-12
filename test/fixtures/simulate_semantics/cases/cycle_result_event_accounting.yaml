@@ -15,7 +15,7 @@ origin:
   - state
   - vars
   notes:
-  - Covers PR-3 consumed and unconsumed event accounting with duplicate inputs.
+  - Covers consumed and unconsumed event accounting with duplicate inputs.
 categories:
 - runtime
 - event_paths

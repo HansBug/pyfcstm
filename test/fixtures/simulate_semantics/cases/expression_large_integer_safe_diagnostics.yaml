@@ -1,0 +1,37 @@
+schema_version: 1
+id: expression_large_integer_safe_diagnostics
+title: Large integer expression does not fail during runtime diagnostics
+source:
+  fcstm: expression_large_integer_safe_diagnostics.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime_expression_diagnostics.py::test_large_integer_cycle_does_not_depend_on_disabled_debug_logging
+  - test/simulate/test_runtime_expression_diagnostics.py::test_large_integer_cycle_uses_safe_debug_logging
+  docs:
+  - https://github.com/HansBug/pyfcstm/issues/156#issuecomment-4633784802
+  assertion_types:
+  - cycle_result
+  - history
+  - state
+  - vars
+categories:
+- runtime
+- validation
+runners:
+- simulation
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars_keys:
+    - x
+    ended: false
+    cycle_count: 1
+    cycle_result:
+      value: null
+    history_length: 1

@@ -1,0 +1,15 @@
+def int counter = 0;
+
+state Root {
+    state Idle;
+    state Active {
+        enter {
+            counter = counter + 3;
+        }
+    }
+
+    [*] -> Idle;
+    Idle -> Active :: Start effect {
+        counter = counter + 2;
+    };
+}

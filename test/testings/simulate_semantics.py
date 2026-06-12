@@ -1,4 +1,29 @@
-"""Shared helpers for simulate semantic fixture tests."""
+"""
+Shared helpers for simulate semantic fixture tests.
+
+This module loads YAML/FCSTM semantic fixtures from
+``test/fixtures/simulate_semantics`` and runs them against
+:class:`pyfcstm.simulate.SimulationRuntime`, the generated Python alignment
+runtime, or the simulate command processor. It owns the strict fixture schema,
+runtime assertion helpers, and callback fixtures used by Python-side simulation
+tests.
+
+The module contains:
+
+* :class:`SemanticCase` - Loaded fixture data and source paths.
+* :class:`SemanticCaseError` - Schema and fixture-shape diagnostics.
+* :func:`load_semantic_case` - Load one fixture by id or YAML path.
+* :func:`iter_semantic_cases` - Enumerate fixture cases with optional filters.
+* :func:`run_simulation_case` - Execute one case against
+  :class:`pyfcstm.simulate.SimulationRuntime`.
+* :func:`run_cli_command_case` - Execute one CLI-command fixture.
+
+Example::
+
+    >>> case = load_semantic_case("design_basic_simple_transition")
+    >>> case.id
+    'design_basic_simple_transition'
+"""
 
 import importlib.util
 import logging
@@ -17,6 +42,7 @@ from pyfcstm.entry.simulate.commands import CommandProcessor
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.simulate import (
+    CycleResult,
     SimulationRuntime,
     SimulationRuntimeDfsError,
     SimulationRuntimeEventError,
@@ -75,6 +101,10 @@ _ALLOWED_EXPECT_FIELDS = {
     "stack",
     "cycle_count",
     "return",
+    "cycle_result",
+    "history",
+    "history_length",
+    "history_tail",
     "raises",
     "logs",
     "warnings",
@@ -82,6 +112,7 @@ _ALLOWED_EXPECT_FIELDS = {
     "abstract_handler_errors",
     "error_state",
     "error_info",
+    "anonymous_warning_count",
 }
 _ALLOWED_INITIAL_EXPECT_FIELDS = {
     "state",
@@ -136,10 +167,24 @@ _ALLOWED_WARNING_FIELDS = {"contains", "not_contains", "count"}
 _ALLOWED_WARNING_ITEM_FIELDS = {"category", "message", "match_kind"}
 _ALLOWED_WARNING_CATEGORIES = {"UserWarning"}
 _REQUIRED_HANDLER_CALL_FIELDS = {"action", "state", "stage", "vars"}
-_ALLOWED_HANDLER_CALL_FIELDS = _REQUIRED_HANDLER_CALL_FIELDS | {"write_attempt"}
+_ALLOWED_HANDLER_CALL_FIELDS = _REQUIRED_HANDLER_CALL_FIELDS | {
+    "active_leaf",
+    "call_stage",
+    "abstract_target",
+    "named_ref",
+    "write_attempt",
+}
 _ALLOWED_WRITE_ATTEMPT_FIELDS = {"name", "value", "succeeded", "error_type", "vars"}
 _ALLOWED_ABSTRACT_HANDLER_ERROR_FIELDS = {"action", "type", "message", "match_kind"}
 _ALLOWED_ERROR_INFO_FIELDS = {"action", "type", "message", "match_kind"}
+_ALLOWED_CYCLE_RESULT_FIELDS = {
+    "value",
+    "input_events",
+    "consumed_events",
+    "unconsumed_events",
+}
+_ALLOWED_HISTORY_FIELDS = {"cycle", "state", "vars", "events"}
+_REQUIRED_HISTORY_FIELDS = _ALLOWED_HISTORY_FIELDS
 _CLI_OUTPUT_FIELDS = ("output_contains", "output_not_contains", "error_contains")
 _EXCEPTION_TYPES = {
     "ModelValidationError": ModelValidationError,
@@ -153,12 +198,50 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 class SemanticCaseError(ValueError):
-    """Raised when a semantic fixture is malformed."""
+    """
+    Raised when a semantic fixture is malformed.
+
+    The exception message includes the fixture case id and YAML path whenever
+    that information is available, so loader failures can be traced back to the
+    source fixture without inspecting the pytest parameter id.
+
+    :param args: Positional message arguments accepted by
+        :class:`ValueError`.
+    :type args: object
+
+    Example::
+
+        >>> err = SemanticCaseError("sample (/tmp/sample.yaml): bad field")
+        >>> "sample" in str(err)
+        True
+    """
 
 
 @dataclass(frozen=True)
 class SemanticCase:
-    """Loaded simulate semantic fixture."""
+    """
+    Loaded simulate semantic fixture.
+
+    A semantic case bundles the parsed YAML metadata, source file locations, and
+    FCSTM DSL text needed by fixture runners. The object is immutable so tests
+    can safely reuse it across parametrized simulation, generated-runtime
+    alignment, and CLI-command runners.
+
+    :param data: Parsed fixture YAML mapping.
+    :type data: typing.Mapping[str, typing.Any]
+    :param yaml_path: Absolute path to the fixture YAML file.
+    :type yaml_path: str
+    :param fcstm_path: Absolute path to the paired FCSTM source file.
+    :type fcstm_path: str
+    :param dsl_code: FCSTM DSL source text.
+    :type dsl_code: str
+
+    Example::
+
+        >>> case = load_semantic_case("design_basic_simple_transition")
+        >>> case.id
+        'design_basic_simple_transition'
+    """
 
     data: Mapping[str, Any]
     yaml_path: str
@@ -172,13 +255,6 @@ class SemanticCase:
     @property
     def runners(self) -> Sequence[str]:
         return tuple(self.data["runners"])
-
-
-@dataclass(frozen=True)
-class _FixtureEventLike:
-    """Event-like cycle input used by semantic fixture runners."""
-
-    path_name: str
 
 
 def _case_error(case_id: str, yaml_path: str, message: str) -> SemanticCaseError:
@@ -247,6 +323,124 @@ def _runtime_stack(runtime: Any) -> List[Tuple[Tuple[str, ...], str]]:
     return [(tuple(path), mode) for path, mode in runtime.brief_stack]
 
 
+def _standardize_cycle_result(value: Any) -> Dict[str, Any]:
+    """
+    Convert runtime-specific cycle results into the fixture assertion shape.
+
+    ``CycleResult`` is the simulator-side public result object. Generated
+    runtimes may still return ``None`` until their own template contracts grow
+    matching metadata, so the compatibility shape always exposes ``value`` and
+    adds event-accounting fields only when the result object provides them.
+
+    :param value: Raw value returned by a runtime ``cycle`` call.
+    :type value: Any
+    :return: Standardized mapping used by ``expect.cycle_result``.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> _standardize_cycle_result(CycleResult(input_events=("Root.A.Go",)))
+        {'value': None, 'input_events': ['Root.A.Go'], 'consumed_events': [], 'unconsumed_events': []}
+    """
+    if isinstance(value, CycleResult):
+        return {
+            "value": value.value,
+            "input_events": list(value.input_events),
+            "consumed_events": list(value.consumed_events),
+            "unconsumed_events": list(value.unconsumed_events),
+        }
+    return {"value": value}
+
+
+def _normalize_history_entries(
+    value: Any, case: SemanticCase, field_path: str
+) -> List[Dict[str, Any]]:
+    if not isinstance(value, list):
+        raise _case_error(case.id, case.yaml_path, "%s must be a list" % field_path)
+    result = []
+    for index, item in enumerate(value):
+        item_path = "%s[%d]" % (field_path, index)
+        if not isinstance(item, dict):
+            raise _case_error(
+                case.id, case.yaml_path, "%s must be a mapping" % item_path
+            )
+        result.append(dict(item))
+    return result
+
+
+def _runtime_history(runtime: Any) -> List[Dict[str, Any]]:
+    return [dict(item) for item in getattr(runtime, "history")]
+
+
+def _assert_history(
+    runtime: Any, expect: Mapping[str, Any], case: SemanticCase, field_path: str
+) -> None:
+    actual_history = None
+    if "history_length" in expect:
+        actual_history = _runtime_history(runtime)
+        assert len(actual_history) == expect["history_length"], (
+            "%s %s history_length mismatch: %r != %r"
+            % (case.id, field_path, len(actual_history), expect["history_length"])
+        )
+    if "history" in expect:
+        actual_history = _runtime_history(runtime)
+        expected_history = _normalize_history_entries(
+            expect["history"], case, field_path + ".history"
+        )
+        assert actual_history == expected_history, (
+            "%s %s history mismatch: %r != %r"
+            % (case.id, field_path, actual_history, expected_history)
+        )
+    if "history_tail" in expect:
+        actual_history = _runtime_history(runtime)
+        expected_tail = _normalize_history_entries(
+            expect["history_tail"], case, field_path + ".history_tail"
+        )
+        actual_tail = actual_history[-len(expected_tail) :] if expected_tail else []
+        assert actual_tail == expected_tail, "%s %s history_tail mismatch: %r != %r" % (
+            case.id,
+            field_path,
+            actual_tail,
+            expected_tail,
+        )
+
+
+def _assert_cycle_result(
+    result: Any, expect: Mapping[str, Any], case: SemanticCase, field_path: str
+) -> None:
+    if "cycle_result" not in expect:
+        return
+    actual_result = _standardize_cycle_result(result)
+    expected_result = dict(expect["cycle_result"])
+    comparable_result = {key: actual_result.get(key) for key in expected_result}
+    assert comparable_result == expected_result, (
+        "%s %s cycle_result mismatch for declared fields: %r != %r (full actual: %r)"
+        % (
+            case.id,
+            field_path,
+            comparable_result,
+            expected_result,
+            actual_result,
+        )
+    )
+
+
+def _handler_call_comparable_record(actual: Mapping[str, Any]) -> Dict[str, Any]:
+    result = dict(actual)
+    state = actual.get("state")
+    # Handler records originally carried only action/state/stage/vars. These
+    # compatibility defaults reserve optional metadata slots for richer fixture
+    # assertions while preserving old records; handlers that collect concrete
+    # metadata can provide these keys directly and they will not be overwritten.
+    result.setdefault(
+        "active_leaf", state.split(".") if isinstance(state, str) else None
+    )
+    result.setdefault("call_stage", actual.get("stage"))
+    result.setdefault("abstract_target", actual.get("action"))
+    result.setdefault("named_ref", None)
+    return result
+
+
 def _assert_handler_calls(
     expect: Mapping[str, Any],
     handler_calls: Optional[Sequence[Mapping[str, Any]]],
@@ -262,13 +456,32 @@ def _assert_handler_calls(
             "%s.handler_calls requires registered fixture handlers" % field_path,
         )
     expected_calls = [dict(item) for item in expect["handler_calls"]]
-    actual_calls = [dict(item) for item in handler_calls]
-    assert actual_calls == expected_calls, "%s %s handler_calls mismatch: %r != %r" % (
-        case.id,
-        field_path,
-        actual_calls,
-        expected_calls,
+    actual_calls = [_handler_call_comparable_record(item) for item in handler_calls]
+    assert len(actual_calls) == len(expected_calls), (
+        "%s %s handler_calls length mismatch: %r != %r"
+        % (case.id, field_path, actual_calls, expected_calls)
     )
+    for index, expected in enumerate(expected_calls):
+        actual = actual_calls[index]
+        for key, expected_value in expected.items():
+            actual_value = actual.get(key)
+            assert actual_value == expected_value, (
+                "%s %s handler_calls[%d].%s mismatch: %r != %r"
+                % (
+                    case.id,
+                    field_path,
+                    index,
+                    key,
+                    actual_value,
+                    expected_value,
+                )
+            )
+
+
+def _normalize_handler_call_records(
+    handler_calls: Sequence[Mapping[str, Any]],
+) -> List[Dict[str, Any]]:
+    return [_handler_call_comparable_record(item) for item in handler_calls]
 
 
 def _assert_abstract_handler_errors(
@@ -490,9 +703,21 @@ def _assert_runtime_expectation(
             )
         )
 
+    _assert_history(runtime, expect, case, field_path)
     _assert_handler_calls(expect, handler_calls, case, field_path)
     _assert_abstract_handler_errors(runtime, expect, case, field_path)
     _assert_error_info(runtime, expect, case, field_path)
+    if "anonymous_warning_count" in expect:
+        actual_warning_count = len(getattr(runtime, "_warned_anonymous_abstracts"))
+        assert actual_warning_count == expect["anonymous_warning_count"], (
+            "%s %s anonymous_warning_count mismatch: %r != %r"
+            % (
+                case.id,
+                field_path,
+                actual_warning_count,
+                expect["anonymous_warning_count"],
+            )
+        )
 
 
 def _assert_logs(
@@ -711,29 +936,39 @@ def _capture_warnings_if_needed(expect: Mapping[str, Any]):
 
 
 def _event_input_from_fixture_item(
-    item: Any, case: SemanticCase, field_path: str
+    item: Any, runtime: Any, case: SemanticCase, field_path: str
 ) -> Any:
     if isinstance(item, str):
         return item
     if isinstance(item, dict):
-        if set(item.keys()) != {"event_like"}:
+        if set(item.keys()) != {"event"}:
             raise _case_error(
                 case.id,
                 case.yaml_path,
-                "%s event descriptor must contain only event_like" % field_path,
+                "%s event descriptor must contain only event" % field_path,
             )
-        path_name = item["event_like"]
+        path_name = item["event"]
         if not isinstance(path_name, str):
             raise _case_error(
                 case.id,
                 case.yaml_path,
-                "%s.event_like must be a string" % field_path,
+                "%s.event must be a string" % field_path,
             )
-        return _FixtureEventLike(path_name=path_name)
+        state_machine = getattr(runtime, "state_machine", None)
+        if state_machine is None:
+            raise _case_error(
+                case.id,
+                case.yaml_path,
+                "%s.event requires a simulation runtime with state_machine"
+                % field_path,
+            )
+        return state_machine.resolve_event(path_name)
     return item
 
 
-def _step_events(cycle_data: Any, case: SemanticCase, field_path: str) -> Any:
+def _step_events(
+    cycle_data: Any, runtime: Any, case: SemanticCase, field_path: str
+) -> Any:
     if cycle_data in (None, {}):
         return None
     if isinstance(cycle_data, str):
@@ -756,6 +991,7 @@ def _step_events(cycle_data: Any, case: SemanticCase, field_path: str) -> Any:
     return [
         _event_input_from_fixture_item(
             item,
+            runtime,
             case,
             "%s.cycle.events[%d]" % (field_path, index),
         )
@@ -784,7 +1020,7 @@ def _run_step(
         return
 
     expect = step.get("expect") or {}
-    events = _step_events(step.get("cycle", {}), case, field_path)
+    events = _step_events(step.get("cycle", {}), runtime, case, field_path)
     with _capture_logs_if_needed(expect, caplog):
         with _capture_warnings_if_needed(expect) as warning_records:
             if "raises" in expect:
@@ -802,15 +1038,22 @@ def _run_step(
             else:
                 result = runtime.cycle(events)
                 if "return" in expect:
-                    assert result == expect["return"], (
+                    actual_value = _standardize_cycle_result(result)["value"]
+                    assert actual_value == expect["return"], (
                         "%s %s return mismatch: %r != %r"
                         % (
                             case.id,
                             field_path,
-                            result,
+                            actual_value,
                             expect["return"],
                         )
                     )
+                _assert_cycle_result(
+                    result,
+                    expect,
+                    case,
+                    field_path + ".expect.cycle_result",
+                )
     _assert_runtime_expectation(
         runtime,
         expect,
@@ -832,12 +1075,54 @@ def _parse_dsl(dsl_code: str):
 
 
 def build_state_machine_from_case(case: SemanticCase):
-    """Build a state machine model for a semantic fixture."""
+    """
+    Build a state machine model for a semantic fixture.
+
+    The helper parses the case DSL with the normal FCSTM grammar entry and then
+    converts the AST into the production model object used by the simulator and
+    generated-runtime alignment runner.
+
+    :param case: Semantic fixture to parse.
+    :type case: SemanticCase
+    :return: Parsed state machine model for the case DSL.
+    :rtype: pyfcstm.model.StateMachine
+    :raises pyfcstm.dsl.error.GrammarParseError: If the fixture DSL is invalid.
+    :raises pyfcstm.utils.validate.ModelValidationError: If model validation
+        rejects the parsed DSL.
+
+    Example::
+
+        >>> case = load_semantic_case("design_basic_simple_transition")
+        >>> model = build_state_machine_from_case(case)
+        >>> model.root_state.name
+        'Root'
+    """
     return _parse_dsl(case.dsl_code)
 
 
 def run_model_build_case(case: SemanticCase) -> None:
-    """Run a semantic fixture that expects model construction diagnostics."""
+    """
+    Run a semantic fixture that expects model construction diagnostics.
+
+    Model-build cases assert failures that happen before a
+    :class:`pyfcstm.simulate.SimulationRuntime` can be constructed. The expected
+    exception is matched through the same ``raises`` schema used by executable
+    runtime steps.
+
+    :param case: Semantic fixture with a ``model_build`` expectation.
+    :type case: SemanticCase
+    :return: ``None``.
+    :rtype: None
+    :raises AssertionError: If model construction succeeds unexpectedly or the
+        diagnostic does not match the fixture expectation.
+    :raises SemanticCaseError: If the fixture expectation is malformed at
+        assertion time.
+
+    Example::
+
+        >>> case = load_semantic_case("validation_action_reference_cycle")
+        >>> run_model_build_case(case)
+    """
     model_build = case.data["model_build"]
     expect = model_build["expect"]
     try:
@@ -933,12 +1218,17 @@ def _simulation_kwargs(case: SemanticCase) -> Dict[str, Any]:
 
 
 def _handler_call_record(ctx: Any) -> Dict[str, Any]:
-    return {
+    record = {
         "action": ctx.action_name,
         "state": ctx.get_full_state_path(),
         "stage": ctx.action_stage,
         "vars": dict(ctx.vars),
     }
+    for name in ("active_leaf", "call_stage", "abstract_target", "named_ref"):
+        if hasattr(ctx, name):
+            value = getattr(ctx, name)
+            record[name] = list(value) if isinstance(value, tuple) else value
+    return record
 
 
 def _handler_var_write_record(ctx: Any, name: str, value: Any) -> Dict[str, Any]:
@@ -1005,6 +1295,29 @@ class _GeneratedPythonAlignmentRuntime:
         self._simulation_runtime = simulation_runtime
         self._generated_runtime = generated_runtime
         self._dsl_code = dsl_code
+
+    @property
+    def state_machine(self):
+        """
+        Return the simulator model used for fixture event-object descriptors.
+
+        Generated Python alignment cases still resolve YAML ``{event: ...}``
+        descriptors through the authoritative :class:`SimulationRuntime`
+        model, then pass the resulting model event to both runtimes. The
+        generated runtime accepts event-like objects by path today, while the
+        simulator verifies that the object belongs to the same model.
+
+        :return: State machine model owned by the simulation runtime.
+        :rtype: pyfcstm.model.StateMachine
+
+        Example::
+
+            >>> case = load_semantic_case("event_input_model_event_object")
+            >>> runtime = _build_simulation_runtime(case)
+            >>> runtime.state_machine is not None
+            True
+        """
+        return self._simulation_runtime.state_machine
 
     def _generated_brief_stack(self) -> List[Tuple[Tuple[str, ...], str]]:
         state_info = self._generated_runtime._STATE_INFO
@@ -1177,8 +1490,10 @@ class _GeneratedPythonAlignmentRuntime:
                     )
                 )
             raise sim_exc
-        assert sim_result == gen_result, (
-            "cycle(events=%r) return mismatch for DSL:\n%s\nsimulation=%r, generated=%r"
+        sim_standardized = _standardize_cycle_result(sim_result)
+        gen_standardized = _standardize_cycle_result(gen_result)
+        assert sim_standardized.get("value") == gen_standardized.get("value"), (
+            "cycle(events=%r) return value mismatch for DSL:\n%s\nsimulation=%r, generated=%r"
             % (events, self._dsl_code, sim_result, gen_result)
         )
         self._assert_aligned("after cycle(events=%r)" % (events,))
@@ -1235,7 +1550,31 @@ def _build_simulation_runtime(case: SemanticCase) -> SimulationRuntime:
 
 
 def run_simulation_case(case: SemanticCase, caplog: Any = None) -> None:
-    """Run a semantic fixture against :class:`SimulationRuntime`."""
+    """
+    Run a semantic fixture against :class:`SimulationRuntime`.
+
+    The runner builds the production simulator, installs any fixture-defined
+    abstract handlers, executes each step, and applies the strict YAML
+    expectations for state, variables, stack, history, cycle result, logs,
+    warnings, and handler calls.
+
+    :param case: Semantic fixture to execute with the simulation runner.
+    :type case: SemanticCase
+    :param caplog: Optional pytest log-capture fixture used when a step asserts
+        log output, defaults to ``None``.
+    :type caplog: typing.Any, optional
+    :return: ``None``.
+    :rtype: None
+    :raises AssertionError: If runtime behavior differs from the fixture
+        expectation.
+    :raises SemanticCaseError: If a runtime-only assertion is requested without
+        the supporting fixture setup.
+
+    Example::
+
+        >>> case = load_semantic_case("design_basic_simple_transition")
+        >>> run_simulation_case(case)
+    """
     if "model_build" in case.data:
         run_model_build_case(case)
         return
@@ -1261,7 +1600,29 @@ def run_simulation_case(case: SemanticCase, caplog: Any = None) -> None:
 
 
 def run_generated_python_alignment_case(case: SemanticCase, caplog: Any = None) -> None:
-    """Run a semantic fixture against simulation and generated Python runtimes."""
+    """
+    Run a semantic fixture against simulation and generated Python runtimes.
+
+    The alignment runner generates the built-in Python runtime for the case DSL,
+    executes it beside :class:`SimulationRuntime`, and asserts that state,
+    variables, stack, cycle counts, returns, exceptions, and handler calls remain
+    aligned after every fixture step.
+
+    :param case: Semantic fixture that includes the
+        ``generated_python_alignment`` runner.
+    :type case: SemanticCase
+    :param caplog: Optional pytest log-capture fixture, defaults to ``None``.
+    :type caplog: typing.Any, optional
+    :return: ``None``.
+    :rtype: None
+    :raises AssertionError: If generated runtime behavior diverges from the
+        simulator or the fixture expectation.
+
+    Example::
+
+        >>> case = load_semantic_case("design_basic_simple_transition")
+        >>> run_generated_python_alignment_case(case)
+    """
     if _initial_constructor_expect(case) is not None:
         _assert_aligned_constructor_failure(case)
         return
@@ -1284,14 +1645,34 @@ def run_generated_python_alignment_case(case: SemanticCase, caplog: Any = None) 
             caplog=caplog,
             handler_calls=simulation_handler_calls,
         )
-        assert simulation_handler_calls == generated_handler_calls, (
+        simulation_calls = _normalize_handler_call_records(simulation_handler_calls)
+        generated_calls = _normalize_handler_call_records(generated_handler_calls)
+        assert simulation_calls == generated_calls, (
             "%s steps[%d] handler call mismatch: simulation=%r, generated=%r"
-            % (case.id, index, simulation_handler_calls, generated_handler_calls)
+            % (case.id, index, simulation_calls, generated_calls)
         )
 
 
 def run_cli_command_case(case: SemanticCase) -> None:
-    """Run a semantic fixture against the simulate CLI command processor."""
+    """
+    Run a semantic fixture against the simulate CLI command processor.
+
+    CLI-command cases exercise :class:`pyfcstm.entry.simulate.commands.CommandProcessor`
+    directly. Each command expectation may assert output text, exit behavior,
+    and the backing runtime state after the command has executed.
+
+    :param case: Semantic fixture that uses the ``cli_command`` runner.
+    :type case: SemanticCase
+    :return: ``None``.
+    :rtype: None
+    :raises AssertionError: If command output, exit flags, or runtime state do
+        not match the fixture expectation.
+
+    Example::
+
+        >>> case = load_semantic_case("cli_init_full_state")
+        >>> run_cli_command_case(case)
+    """
     state_machine = build_state_machine_from_case(case)
     runtime = SimulationRuntime(state_machine)
     processor = CommandProcessor(runtime, state_machine=state_machine, use_color=False)
@@ -1428,6 +1809,12 @@ def _validate_raises(
         raise _case_error(
             case_id, yaml_path, "%s cannot combine raises and return" % field_path
         )
+    if "cycle_result" in expect:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s cannot combine raises and cycle_result" % field_path,
+        )
     raises = expect["raises"]
     if not isinstance(raises, dict):
         raise _case_error(
@@ -1470,6 +1857,105 @@ def _validate_raises(
             case_id,
             yaml_path,
             "%s.raises.cause_match_kind requires cause_match" % field_path,
+        )
+
+
+def _validate_cycle_result(
+    expect: Mapping[str, Any], case_id: str, yaml_path: str, field_path: str
+) -> None:
+    if "cycle_result" not in expect:
+        return
+    if "return" in expect:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s cannot combine return and cycle_result" % field_path,
+        )
+    cycle_result = expect["cycle_result"]
+    if not isinstance(cycle_result, dict):
+        raise _case_error(
+            case_id, yaml_path, "%s.cycle_result must be a mapping" % field_path
+        )
+    unknown = set(cycle_result.keys()) - _ALLOWED_CYCLE_RESULT_FIELDS
+    if unknown:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s.cycle_result has unknown fields: %r" % (field_path, sorted(unknown)),
+        )
+    if "value" not in cycle_result:
+        raise _case_error(
+            case_id, yaml_path, "%s.cycle_result.value is required" % field_path
+        )
+    for event_field in ("input_events", "consumed_events", "unconsumed_events"):
+        if event_field in cycle_result:
+            _validate_string_list(
+                cycle_result[event_field],
+                case_id,
+                yaml_path,
+                "%s.cycle_result.%s" % (field_path, event_field),
+            )
+
+
+def _validate_history_entries(
+    value: Any, case_id: str, yaml_path: str, field_path: str
+) -> None:
+    if not isinstance(value, list):
+        raise _case_error(case_id, yaml_path, "%s must be a list" % field_path)
+    for index, item in enumerate(value):
+        item_path = "%s[%d]" % (field_path, index)
+        if not isinstance(item, dict):
+            raise _case_error(case_id, yaml_path, "%s must be a mapping" % item_path)
+        unknown = set(item.keys()) - _ALLOWED_HISTORY_FIELDS
+        if unknown:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s has unknown fields: %r" % (item_path, sorted(unknown)),
+            )
+        missing = _REQUIRED_HISTORY_FIELDS - set(item.keys())
+        if missing:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s missing fields: %r" % (item_path, sorted(missing)),
+            )
+        if not isinstance(item["cycle"], int):
+            raise _case_error(
+                case_id, yaml_path, "%s.cycle must be an integer" % item_path
+            )
+        if not isinstance(item["state"], str):
+            raise _case_error(
+                case_id, yaml_path, "%s.state must be a string" % item_path
+            )
+        _validate_vars_mapping(item["vars"], case_id, yaml_path, item_path + ".vars")
+        _validate_string_list(item["events"], case_id, yaml_path, item_path + ".events")
+
+
+def _validate_history(
+    expect: Mapping[str, Any], case_id: str, yaml_path: str, field_path: str
+) -> None:
+    if "history_length" in expect and (
+        not isinstance(expect["history_length"], int) or expect["history_length"] < 0
+    ):
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s.history_length must be a non-negative integer" % field_path,
+        )
+    if "history" in expect:
+        _validate_history_entries(
+            expect["history"], case_id, yaml_path, field_path + ".history"
+        )
+    if "history_tail" in expect:
+        if not expect["history_tail"]:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.history_tail must be a non-empty list" % field_path,
+            )
+        _validate_history_entries(
+            expect["history_tail"], case_id, yaml_path, field_path + ".history_tail"
         )
 
 
@@ -1712,6 +2198,25 @@ def _validate_handler_calls(
                 yaml_path,
                 "%s.handler_calls[%d].write_attempt" % (field_path, index),
             )
+        if "active_leaf" in item:
+            _validate_path_segments(
+                item["active_leaf"],
+                case_id,
+                yaml_path,
+                "%s.handler_calls[%d].active_leaf" % (field_path, index),
+            )
+        for field_name in ("call_stage", "abstract_target", "named_ref"):
+            if (
+                field_name in item
+                and item[field_name] is not None
+                and not isinstance(item[field_name], str)
+            ):
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "%s.handler_calls[%d].%s must be a string or null"
+                    % (field_path, index, field_name),
+                )
 
 
 def _validate_write_attempt(
@@ -1888,6 +2393,7 @@ def _validate_expect(
             "warnings",
             "error_state",
             "error_info",
+            "anonymous_warning_count",
         }
         overlap = unsupported_generated_alignment_fields & set(expect.keys())
         if overlap:
@@ -1914,11 +2420,22 @@ def _validate_expect(
     _validate_vars_contract(expect, case_id, yaml_path, field_path)
     _validate_stack(expect, case_id, yaml_path, field_path)
     _validate_raises(expect, case_id, yaml_path, field_path)
+    _validate_cycle_result(expect, case_id, yaml_path, field_path)
+    _validate_history(expect, case_id, yaml_path, field_path)
     _validate_logs(expect, case_id, yaml_path, field_path)
     _validate_warnings(expect, case_id, yaml_path, field_path)
     _validate_handler_calls(expect, case_id, yaml_path, field_path)
     _validate_abstract_handler_errors(expect, case_id, yaml_path, field_path)
     _validate_error_info(expect, case_id, yaml_path, field_path)
+    if "anonymous_warning_count" in expect and (
+        not isinstance(expect["anonymous_warning_count"], int)
+        or expect["anonymous_warning_count"] < 0
+    ):
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s.anonymous_warning_count must be a non-negative integer" % field_path,
+        )
 
 
 def _validate_model_build(
@@ -2099,19 +2616,19 @@ def _validate_cycle_event_item(
         raise _case_error(
             case_id,
             yaml_path,
-            "%s must be a string or event-like descriptor" % field_path,
+            "%s must be a string or event descriptor" % field_path,
         )
-    if set(item.keys()) != {"event_like"}:
+    if set(item.keys()) != {"event"}:
         raise _case_error(
             case_id,
             yaml_path,
-            "%s event descriptor must contain only event_like" % field_path,
+            "%s event descriptor must contain only event" % field_path,
         )
-    if not isinstance(item["event_like"], str):
+    if not isinstance(item["event"], str):
         raise _case_error(
             case_id,
             yaml_path,
-            "%s.event_like must be a string" % field_path,
+            "%s.event must be a string" % field_path,
         )
 
 
@@ -2476,7 +2993,26 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
 
 
 def load_semantic_case(path_or_id: str) -> SemanticCase:
-    """Load a semantic fixture by case id or YAML path."""
+    """
+    Load a semantic fixture by case id or YAML path.
+
+    A bare case id is resolved under ``test/fixtures/simulate_semantics/cases``.
+    A path ending in ``.yaml`` is loaded directly. The loader validates the
+    strict schema before reading the paired FCSTM source file.
+
+    :param path_or_id: Fixture id or path to a YAML fixture file.
+    :type path_or_id: str
+    :return: Loaded semantic fixture.
+    :rtype: SemanticCase
+    :raises SemanticCaseError: If the YAML shape, schema fields, or paired FCSTM
+        path are invalid.
+
+    Example::
+
+        >>> case = load_semantic_case("design_basic_simple_transition")
+        >>> case.yaml_path.endswith("design_basic_simple_transition.yaml")
+        True
+    """
     yaml_path = path_or_id
     if (
         not yaml_path.endswith(".yaml")
@@ -2505,7 +3041,29 @@ def load_semantic_case(path_or_id: str) -> SemanticCase:
 def iter_semantic_cases(
     categories: Optional[Iterable[str]] = None, runners: Optional[Iterable[str]] = None
 ) -> List[SemanticCase]:
-    """Iterate semantic fixtures, optionally filtered by categories or runners."""
+    """
+    Iterate semantic fixtures, optionally filtered by categories or runners.
+
+    Filters are subset matches: a case is returned only when it contains every
+    requested category and every requested runner. Cases are loaded in sorted
+    YAML filename order to keep pytest parametrization stable.
+
+    :param categories: Optional category names that each returned case must
+        contain, defaults to ``None``.
+    :type categories: typing.Optional[typing.Iterable[str]], optional
+    :param runners: Optional runner names that each returned case must contain,
+        defaults to ``None``.
+    :type runners: typing.Optional[typing.Iterable[str]], optional
+    :return: Loaded semantic fixtures matching the filters.
+    :rtype: typing.List[SemanticCase]
+    :raises SemanticCaseError: If any loaded fixture is malformed.
+
+    Example::
+
+        >>> cases = iter_semantic_cases(runners=["simulation"])
+        >>> all("simulation" in case.runners for case in cases)
+        True
+    """
     category_set = set(categories or [])
     runner_set = set(runners or [])
     result = []

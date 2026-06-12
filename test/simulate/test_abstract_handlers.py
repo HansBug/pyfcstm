@@ -9,7 +9,7 @@ import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
-from pyfcstm.simulate import SimulationRuntime, ReadOnlyExecutionContext
+from pyfcstm.simulate import SimulationRuntime, ReadOnlyExecutionContext, abstract_handler
 
 
 @pytest.mark.unittest
@@ -286,6 +286,7 @@ class TestAbstractHandlers:
                 'action': ctx.action_name,
                 'stage': ctx.action_stage,
                 'state': ctx.get_full_state_path(),
+                'active_leaf': ctx.active_leaf,
                 'counter': counter_val,
                 'pre_counter': pre_counter_val
             }
@@ -315,7 +316,8 @@ class TestAbstractHandlers:
             assert call['cycle'] == i + 1
             assert call['action'] == 'System.PreProcess'
             assert call['stage'] == 'during'
-            assert call['state'] == 'System'
+            assert call['state'] == 'System.Active'
+            assert call['active_leaf'] == ('System', 'Active')
             # Counter should be i (before increment in this cycle)
             assert call['counter'] == i
 
@@ -366,6 +368,7 @@ class TestAbstractHandlers:
                 'action': ctx.action_name,
                 'stage': ctx.action_stage,
                 'state': ctx.get_full_state_path(),
+                'active_leaf': ctx.active_leaf,
                 'counter': counter_val,
                 'sum': sum_val
             }
@@ -394,7 +397,8 @@ class TestAbstractHandlers:
             assert call['cycle'] == i + 1
             assert call['action'] == 'System.PostProcess'
             assert call['stage'] == 'during'
-            assert call['state'] == 'System'
+            assert call['state'] == 'System.Active'
+            assert call['active_leaf'] == ('System', 'Active')
             assert call['counter'] == expected_counter
             assert call['sum'] == expected_sum
 
@@ -688,6 +692,212 @@ class TestAbstractHandlers:
         assert not runtime.has_abstract_handlers('System.A.Init1')
         assert not runtime.has_abstract_handlers('System.B.Init2')
 
+
+    def test_unregister_decorated_bound_method_by_equivalent_method(self):
+        """Test that equivalent bound-method access unregisters a decorated handler."""
+        dsl_code = '''
+        state System {
+            state Idle {
+                enter abstract Init;
+            }
+
+            [*] -> Idle;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        class Handlers:
+            def __init__(self):
+                self.calls = 0
+
+            @abstract_handler('System.Idle.Init')
+            def on_init(self, ctx: ReadOnlyExecutionContext):
+                self.calls += 1
+
+        handlers = Handlers()
+        runtime.register_handlers_from_object(handlers)
+
+        removed_count = runtime.unregister_abstract_handler(
+            'System.Idle.Init', handlers.on_init
+        )
+
+        assert removed_count == 1
+        assert not runtime.has_abstract_handlers('System.Idle.Init')
+
+        runtime.cycle()
+        assert handlers.calls == 0
+
+    def test_register_abstract_handler_rejects_unreachable_paths(self):
+        """Test that handler registration rejects paths that cannot dispatch."""
+        dsl_code = '''
+        state System {
+            state Active {
+                enter abstract Init;
+            }
+
+            [*] -> Active;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        def handler(ctx: ReadOnlyExecutionContext):
+            pass
+
+        invalid_paths = [
+            'System.Active.Missing',
+            'System.Active',
+            'Active.Init',
+            '/System.Active.Init',
+            ' System.Active.Init ',
+        ]
+        for action_path in invalid_paths:
+            with pytest.raises(ValueError, match='named abstract action'):
+                runtime.register_abstract_handler(action_path, handler)
+            assert runtime.get_abstract_handlers(action_path) == []
+
+        runtime.register_abstract_handler('System.Active.Init', handler)
+        assert runtime.has_abstract_handlers('System.Active.Init')
+
+    def test_clear_abstract_handler_session_resets_registry_errors_and_warnings(self):
+        """Test unified abstract-handler session cleanup."""
+        dsl_code = '''
+        state System {
+            state Active {
+                enter abstract /* anonymous action */;
+                enter abstract Fail;
+            }
+
+            [*] -> Active;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+
+        def failing_handler(ctx: ReadOnlyExecutionContext):
+            raise ValueError('boom')
+
+        runtime = SimulationRuntime(sm, abstract_error_mode='log')
+        runtime.register_abstract_handler('System.Active.Fail', failing_handler)
+        with pytest.warns(UserWarning, match='has no name'):
+            runtime.cycle()
+
+        assert runtime.has_abstract_handlers('System.Active.Fail')
+        assert len(runtime.abstract_handler_errors) == 1
+        assert len(runtime._warned_anonymous_abstracts) == 1
+
+        removed_count = runtime.clear_abstract_handler_session()
+
+        assert removed_count == 1
+        assert not runtime.has_abstract_handlers('System.Active.Fail')
+        assert runtime.abstract_handler_errors == []
+        assert len(runtime._warned_anonymous_abstracts) == 0
+
+        legacy_runtime = SimulationRuntime(sm, abstract_error_mode='log')
+        legacy_runtime.register_abstract_handler('System.Active.Fail', failing_handler)
+        with pytest.warns(UserWarning, match='has no name'):
+            legacy_runtime.cycle()
+
+        legacy_removed_count = legacy_runtime.clear_all_abstract_handlers()
+
+        assert legacy_removed_count == 1
+        assert not legacy_runtime.has_abstract_handlers('System.Active.Fail')
+        assert legacy_runtime.abstract_handler_errors == []
+        assert len(legacy_runtime._warned_anonymous_abstracts) == 0
+
+    def test_duplicate_abstract_handler_registration_policy(self):
+        """Test duplicate abstract-handler registration defaults and opt-in behavior."""
+        dsl_code = '''
+        state System {
+            state Active {
+                enter abstract Init;
+                during abstract Monitor;
+            }
+
+            [*] -> Active;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        calls = []
+
+        def handler(ctx: ReadOnlyExecutionContext):
+            calls.append(ctx.action_name)
+
+        runtime.register_abstract_handler('System.Active.Init', handler)
+        runtime.register_abstract_handler('System.Active.Monitor', handler)
+        with pytest.raises(ValueError, match='already registered'):
+            runtime.register_abstract_handler('System.Active.Init', handler)
+
+        assert len(runtime.get_abstract_handlers('System.Active.Init')) == 1
+        assert len(runtime.get_abstract_handlers('System.Active.Monitor')) == 1
+
+        with pytest.warns(UserWarning, match='Duplicate abstract handler'):
+            runtime.register_abstract_handler(
+                'System.Active.Init', handler, allow_duplicates=True
+            )
+
+        assert len(runtime.get_abstract_handlers('System.Active.Init')) == 2
+
+        runtime.cycle()
+        assert calls.count('System.Active.Init') == 2
+        assert calls.count('System.Active.Monitor') == 1
+
+    def test_unregister_duplicate_handler_remove_modes(self):
+        """Test explicit duplicate unregister remove modes."""
+        dsl_code = '''
+        state System {
+            state Active {
+                enter abstract Init;
+            }
+
+            [*] -> Active;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        def handler(ctx: ReadOnlyExecutionContext):
+            pass
+
+        runtime.register_abstract_handler('System.Active.Init', handler)
+        with pytest.warns(UserWarning, match='Duplicate abstract handler'):
+            runtime.register_abstract_handler(
+                'System.Active.Init', handler, allow_duplicates=True
+            )
+
+        assert len(runtime.get_abstract_handlers('System.Active.Init')) == 2
+
+        assert (
+            runtime.unregister_abstract_handler(
+                'System.Active.Init', handler, removal_mode='one'
+            )
+            == 1
+        )
+        assert len(runtime.get_abstract_handlers('System.Active.Init')) == 1
+
+        with pytest.warns(UserWarning, match='Duplicate abstract handler'):
+            runtime.register_abstract_handler(
+                'System.Active.Init', handler, allow_duplicates=True
+            )
+        assert len(runtime.get_abstract_handlers('System.Active.Init')) == 2
+
+        assert runtime.unregister_abstract_handler('System.Active.Init', handler) == 2
+        assert not runtime.has_abstract_handlers('System.Active.Init')
+
+        with pytest.raises(ValueError, match='removal_mode'):
+            runtime.unregister_abstract_handler(
+                'System.Active.Init', handler, removal_mode='bogus'
+            )
+        with pytest.raises(ValueError, match='requires a specific handler'):
+            runtime.unregister_abstract_handler('System.Active.Init', removal_mode='one')
+
     def test_anonymous_abstract_warning(self):
         """Test that anonymous abstracts trigger a warning."""
         dsl_code = '''
@@ -960,3 +1170,221 @@ class TestAbstractHandlerUtilities:
 
         with pytest.raises(ValueError, match='action_path cannot be empty'):
             runtime.register_abstract_handler('', handler)
+
+    def test_context_metadata_defaults_preserve_four_field_constructor(self):
+        """Test direct context construction still derives metadata defaults."""
+        ctx = ReadOnlyExecutionContext(
+            state_path=('Root', 'A'),
+            vars={'x': 1},
+            action_name='Root.A.Touch',
+            action_stage='during',
+        )
+
+        assert ctx.state_path == ('Root', 'A')
+        assert ctx.active_leaf == ('Root', 'A')
+        assert ctx.action_name == 'Root.A.Touch'
+        assert ctx.abstract_target == 'Root.A.Touch'
+        assert ctx.action_stage == 'during'
+        assert ctx.call_stage == 'during'
+        assert ctx.named_ref is None
+        with pytest.raises(TypeError):
+            ctx.vars['x'] = 2
+
+    def test_aspect_handler_context_exposes_active_leaf_metadata(self):
+        """Test ancestor aspect handlers report the active descendant leaf."""
+        dsl_code = '''
+        def int branch = 0;
+
+        state Root {
+            >> during before abstract Observe;
+
+            state A {
+                during { branch = 1; }
+            }
+            state B {
+                during { branch = 2; }
+            }
+
+            [*] -> A;
+            A -> B :: Go;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+        calls = []
+
+        def handler(ctx: ReadOnlyExecutionContext):
+            calls.append(
+                (
+                    ctx.get_full_state_path(),
+                    ctx.active_leaf,
+                    ctx.action_name,
+                    ctx.abstract_target,
+                    ctx.action_stage,
+                    ctx.call_stage,
+                    ctx.named_ref,
+                    dict(ctx.vars),
+                )
+            )
+
+        runtime.register_abstract_handler('Root.Observe', handler)
+
+        runtime.cycle()
+        runtime.cycle('Root.A.Go')
+
+        assert calls == [
+            (
+                'Root.A',
+                ('Root', 'A'),
+                'Root.Observe',
+                'Root.Observe',
+                'during',
+                'during',
+                None,
+                {'branch': 0},
+            ),
+            (
+                'Root.B',
+                ('Root', 'B'),
+                'Root.Observe',
+                'Root.Observe',
+                'during',
+                'during',
+                None,
+                {'branch': 1},
+            ),
+        ]
+
+    def test_named_ref_context_exposes_callsite_metadata(self):
+        """Test named refs to the same abstract target remain distinguishable."""
+        dsl_code = '''
+        def int x = 0;
+
+        state Root {
+            state Library {
+                enter abstract Shared;
+            }
+
+            state A {
+                enter FirstRef ref /Library.Shared;
+                enter SecondRef ref /Library.Shared;
+            }
+
+            [*] -> A;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+        calls = []
+
+        def handler(ctx: ReadOnlyExecutionContext):
+            calls.append(
+                (
+                    ctx.action_name,
+                    ctx.abstract_target,
+                    ctx.action_stage,
+                    ctx.call_stage,
+                    ctx.get_full_state_path(),
+                    ctx.active_leaf,
+                    ctx.named_ref,
+                )
+            )
+
+        runtime.register_abstract_handler('Root.Library.Shared', handler)
+
+        runtime.cycle()
+
+        assert calls == [
+            (
+                'Root.Library.Shared',
+                'Root.Library.Shared',
+                'enter',
+                'enter',
+                'Root.A',
+                ('Root', 'A'),
+                'Root.A.FirstRef',
+            ),
+            (
+                'Root.Library.Shared',
+                'Root.Library.Shared',
+                'enter',
+                'enter',
+                'Root.A',
+                ('Root', 'A'),
+                'Root.A.SecondRef',
+            ),
+        ]
+
+    def test_copy_session_configuration_rejects_incompatible_handler_paths(self):
+        """Test handler registry copy rejects incompatible targets atomically."""
+        source_dsl = '''
+        state Root {
+            state A {
+                enter abstract Init;
+            }
+
+            [*] -> A;
+        }
+        '''
+        target_dsl = '''
+        state Root {
+            state A;
+
+            [*] -> A;
+        }
+        '''
+        source_ast = parse_with_grammar_entry(source_dsl, 'state_machine_dsl')
+        target_ast = parse_with_grammar_entry(target_dsl, 'state_machine_dsl')
+        source_sm = parse_dsl_node_to_state_machine(source_ast)
+        target_sm = parse_dsl_node_to_state_machine(target_ast)
+        source = SimulationRuntime(
+            source_sm, history_size=7, abstract_error_mode='log'
+        )
+        target = SimulationRuntime(
+            target_sm, history_size=3, abstract_error_mode='raise'
+        )
+
+        def handler(ctx: ReadOnlyExecutionContext):
+            pass
+
+        source.register_abstract_handler('Root.A.Init', handler)
+
+        with pytest.raises(ValueError, match='target runtime'):
+            source.copy_session_configuration_to(target)
+
+        assert target.history_size == 3
+        assert target.abstract_error_mode == 'raise'
+        assert target.get_abstract_handlers('Root.A.Init') == []
+
+    def test_copy_session_configuration_preserves_compatible_handlers(self):
+        """Test compatible session configuration copy remains supported."""
+        dsl_code = '''
+        state Root {
+            state A {
+                enter abstract Init;
+            }
+
+            [*] -> A;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        source = SimulationRuntime(sm, history_size=7, abstract_error_mode='log')
+        target = SimulationRuntime(sm, history_size=3, abstract_error_mode='raise')
+
+        calls = []
+
+        def handler(ctx: ReadOnlyExecutionContext):
+            calls.append(ctx.action_name)
+
+        source.register_abstract_handler('Root.A.Init', handler)
+        source.copy_session_configuration_to(target)
+
+        assert target.history_size == 7
+        assert target.abstract_error_mode == 'log'
+        assert target.get_abstract_handlers('Root.A.Init') == [handler]
+
+        target.cycle()
+        assert calls == ['Root.A.Init']

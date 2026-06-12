@@ -1,0 +1,64 @@
+schema_version: 1
+id: expression_type_error_wraps_transition_effect
+title: Type errors in transition effects are wrapped and rolled back
+source:
+  fcstm: expression_type_error_wraps_transition_effect.fcstm
+origin:
+  files:
+  - test/simulate/test_runtime_expression_diagnostics.py::test_transition_effect_type_error_is_wrapped_and_rolls_back
+  docs:
+  - https://github.com/HansBug/pyfcstm/issues/156#issuecomment-4631787793
+  assertion_types:
+  - raises
+  - history
+  - stack
+  - state
+  - vars
+categories:
+- runtime
+runners:
+- simulation
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      x: 1
+      y: 1.5
+    ended: false
+    cycle_count: 1
+    cycle_result:
+      value: null
+    history_length: 1
+- cycle:
+    events:
+    - Root.A.Go
+  expect:
+    raises:
+      type: SimulationRuntimeExpressionError
+      match: "operation assignment to 'y' evaluation failed"
+      match_kind: substring
+      cause_type: TypeError
+      cause_match: unsupported operand type
+      cause_match_kind: substring
+    state:
+    - Root
+    - A
+    vars_exact:
+      x: 1
+      y: 1.5
+    stack:
+    - path:
+      - Root
+      mode: active
+    - path:
+      - Root
+      - A
+      mode: active
+    cycle_count: 1
+    history_length: 1

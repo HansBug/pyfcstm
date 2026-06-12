@@ -21,6 +21,92 @@ def test_all_semantic_fixtures_load():
 
 
 @pytest.mark.unittest
+def test_semantic_fixture_assertion_families_are_executable():
+    cases = iter_semantic_cases(runners=["simulation"])
+    covered = set()
+    for case in cases:
+        if case.data.get("model_build"):
+            continue
+        for step in case.data.get("steps") or []:
+            expect = step.get("expect_initial") or step.get("expect") or {}
+            if "stack" in expect:
+                covered.add("stack")
+            if "state" in expect:
+                covered.add("current_state")
+            if any(
+                field in expect
+                for field in ("vars", "vars_exact", "vars_keys", "vars_absent")
+            ):
+                covered.add("vars")
+            if any(
+                field in expect
+                for field in ("history", "history_length", "history_tail")
+            ):
+                covered.add("history")
+            if step.get("cycle") not in (None, {}) and "events" in step.get(
+                "cycle", {}
+            ):
+                covered.add("events")
+            if "cycle_result" in expect:
+                covered.add("cycle_result")
+            if "raises" in expect:
+                covered.add("exception")
+            if "handler_calls" in expect:
+                covered.add("context")
+
+    assert {
+        "stack",
+        "current_state",
+        "vars",
+        "history",
+        "events",
+        "cycle_result",
+        "exception",
+        "context",
+    }.issubset(covered)
+
+
+@pytest.mark.unittest
+def test_semantic_fixture_origin_files_cover_existing_simulate_tests():
+    expected_files = {
+        "test_abstract_handlers.py",
+        "test_cli_init.py",
+        "test_completer_init.py",
+        "test_decorators.py",
+        "test_event_inputs.py",
+        "test_handler_decorator.py",
+        "test_hot_start.py",
+        "test_hot_start_edge_cases.py",
+        "test_semantic_fixtures.py",
+        "test_utils.py",
+    }
+    actual_files = {
+        name
+        for name in os.listdir(os.path.dirname(__file__))
+        if name.startswith("test_") and name.endswith(".py")
+    }
+    assert expected_files.issubset(actual_files)
+
+    representative_cases = {
+        "cycle_result_history_stable_leaf",
+        "cycle_result_history_event_transition",
+        "cycle_result_event_accounting",
+        "expression_error_preserves_runtime_snapshot",
+        "abstract_handler_context_metadata",
+    }
+    cases = [case for case in iter_semantic_cases() if case.id in representative_cases]
+    assert {case.id for case in cases} == representative_cases
+    origin_files = {
+        origin
+        for case in cases
+        for origin in case.data.get("origin", {}).get("files", [])
+    }
+    assert origin_files == {
+        "test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture"
+    }
+
+
+@pytest.mark.unittest
 @pytest.mark.parametrize(
     "case",
     [case for case in iter_semantic_cases(runners=["simulation"])],
@@ -371,6 +457,61 @@ def _set_model_build_expectation(data, raises):
             "cannot combine raises and return",
         ),
         (
+            lambda data: data["steps"][0]["expect"].update(
+                {"cycle_result": {"value": None}}
+            ),
+            "cannot combine return and cycle_result",
+        ),
+        (
+            lambda data: (
+                data["steps"][0]["expect"].pop("return")
+                or data["steps"][0]["expect"].update(
+                    {
+                        "raises": {"type": "ValueError"},
+                        "cycle_result": {"value": None},
+                    }
+                )
+            ),
+            "cannot combine raises and cycle_result",
+        ),
+        (
+            lambda data: (
+                data["steps"][0]["expect"].pop("return")
+                or data["steps"][0]["expect"].update({"cycle_result": None})
+            ),
+            "cycle_result must be a mapping",
+        ),
+        (
+            lambda data: (
+                data["steps"][0]["expect"].pop("return")
+                or data["steps"][0]["expect"].update({"cycle_result": {}})
+            ),
+            "cycle_result.value is required",
+        ),
+        (
+            lambda data: (
+                data["steps"][0]["expect"].pop("return")
+                or data["steps"][0]["expect"].update(
+                    {"cycle_result": {"value": None, "extra": []}}
+                )
+            ),
+            "cycle_result has unknown fields",
+        ),
+        (
+            lambda data: (
+                data["steps"][0]["expect"].pop("return")
+                or data["steps"][0]["expect"].update(
+                    {
+                        "cycle_result": {
+                            "value": None,
+                            "input_events": "Root.A.Go",
+                        }
+                    }
+                )
+            ),
+            "cycle_result.input_events must be a list of strings",
+        ),
+        (
             lambda data: (
                 data["steps"][0]["expect"].pop("return")
                 or data["steps"][0]["expect"].update(
@@ -414,8 +555,66 @@ def _set_model_build_expectation(data, raises):
             "fields are not allowed for generated alignment",
         ),
         (
+            lambda data: (
+                _set_generated_alignment(data)
+                or data["steps"][0]["expect"].update({"anonymous_warning_count": 0})
+            ),
+            "fields are not allowed for generated alignment",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {"anonymous_warning_count": -1}
+            ),
+            "anonymous_warning_count must be a non-negative integer",
+        ),
+        (
             lambda data: data["steps"][0]["expect"].update({"warnings": {"count": -1}}),
             "warnings.count must be a non-negative integer",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"history_length": -1}),
+            "history_length must be a non-negative integer",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"history": {}}),
+            "history must be a list",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {
+                    "history_tail": [
+                        {"cycle": "1", "state": "Root.A", "vars": {}, "events": []}
+                    ]
+                }
+            ),
+            "history_tail\\[0\\].cycle must be an integer",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {
+                    "history_tail": [
+                        {
+                            "cycle": 1,
+                            "state": "Root.A",
+                            "vars": {},
+                            "events": "Root.A.Go",
+                        }
+                    ]
+                }
+            ),
+            "history_tail\\[0\\].events must be a list of strings",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {"history_tail": [{"unknown": True}]}
+            ),
+            "history_tail\\[0\\] has unknown fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {"history_tail": [{"cycle": 1, "state": "Root.A", "events": []}]}
+            ),
+            "history_tail\\[0\\] missing fields",
         ),
         (
             lambda data: data["steps"][0]["expect"].update(
@@ -466,6 +665,38 @@ def _set_model_build_expectation(data, raises):
                 }
             ),
             "write_attempt.succeeded must be a boolean",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {
+                    "handler_calls": [
+                        {
+                            "action": "Root.Init",
+                            "state": "Root",
+                            "stage": "enter",
+                            "vars": {},
+                            "active_leaf": "Root",
+                        }
+                    ]
+                }
+            ),
+            "handler_calls\\[0\\].active_leaf must be a list",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {
+                    "handler_calls": [
+                        {
+                            "action": "Root.Init",
+                            "state": "Root",
+                            "stage": "enter",
+                            "vars": {},
+                            "abstract_target": 7,
+                        }
+                    ]
+                }
+            ),
+            "handler_calls\\[0\\].abstract_target must be a string or null",
         ),
         (
             lambda data: data["steps"][0]["expect"].update({"error_state": "true"}),
@@ -536,25 +767,23 @@ def _set_model_build_expectation(data, raises):
         ),
         (
             lambda data: data["steps"][0]["cycle"].update({"events": [7]}),
-            r"cycle.events\[0\] must be a string or event-like descriptor",
+            r"cycle.events\[0\] must be a string or event descriptor",
         ),
         (
             lambda data: data["steps"][0]["cycle"].update(
-                {"events": [{"event_like": "Root.A.Go", "extra": True}]}
+                {"events": [{"event": "Root.A.Go", "extra": True}]}
             ),
-            r"cycle.events\[0\] event descriptor must contain only event_like",
+            r"cycle.events\[0\] event descriptor must contain only event",
         ),
         (
             lambda data: data["steps"][0]["cycle"].update(
                 {"events": [{"unknown": "Root.A.Go"}]}
             ),
-            r"cycle.events\[0\] event descriptor must contain only event_like",
+            r"cycle.events\[0\] event descriptor must contain only event",
         ),
         (
-            lambda data: data["steps"][0]["cycle"].update(
-                {"events": [{"event_like": 12}]}
-            ),
-            r"cycle.events\[0\].event_like must be a string",
+            lambda data: data["steps"][0]["cycle"].update({"events": [{"event": 12}]}),
+            r"cycle.events\[0\].event must be a string",
         ),
         (
             lambda data: data["steps"][0]["expect"].update({"logs": {"containz": []}}),

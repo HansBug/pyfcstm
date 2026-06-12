@@ -1,0 +1,34 @@
+def int trace = 0;
+
+state Root {
+    >> during before { trace = trace + 1000; }
+    >> during after { trace = trace + 100000; }
+
+    state A {
+        during { trace = trace + 1; }
+    }
+
+    state Target {
+        >> during before { trace = trace + 100; }
+        >> during after { trace = trace + 10000; }
+
+        pseudo state Gate {
+            enter { trace = trace + 10; }
+        }
+        state Bad {
+            enter { trace = trace + 20; }
+            state Dead;
+            [*] -> Dead : if [false];
+        }
+        state Good {
+            during { trace = trace + 2; }
+        }
+
+        [*] -> Gate;
+        Gate -> Bad :: Go;
+        Gate -> Good :: Go;
+    }
+
+    [*] -> A;
+    A -> Target :: Go;
+}

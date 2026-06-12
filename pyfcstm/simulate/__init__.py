@@ -21,11 +21,37 @@ enabling cross-cutting concerns like logging or validation.
 The runtime validates transitions speculatively before executing them, ensuring
 they can eventually reach a stoppable state or terminate. If validation fails or
 exceeds safety limits (1000 steps or 64 stack depth), the transition is rejected
-and variables roll back to the previous stable state.
+and variables roll back to the previous stable state. Each successful
+:class:`SimulationRuntime` cycle returns :class:`CycleResult`, an immutable value
+object that preserves the legacy ``None`` value while exposing canonical input,
+consumed, and unconsumed event paths.
 
 Abstract actions can be implemented by registering Python handlers that receive
-read-only execution context. Handlers can be registered individually or organized
-in classes using the @abstract_handler decorator for better state management.
+read-only execution context. The runtime validates handler targets, rejects
+duplicate registrations by default, supports explicit duplicate cleanup modes,
+and provides session cleanup for handler diagnostics. Handlers can be registered
+individually or organized in classes using the ``@abstract_handler`` decorator
+for better state management.
+
+Public API map:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Export
+     - Purpose
+   * - :class:`SimulationRuntime`
+     - Execute parsed state-machine models cycle by cycle.
+   * - :class:`ReadOnlyExecutionContext`
+     - Expose immutable state, variable, and action metadata to abstract
+       handlers.
+   * - :func:`abstract_handler`
+     - Mark object methods for bulk abstract-handler registration.
+   * - Runtime exceptions
+     - Report DFS convergence, event normalization, expression execution, and
+       action-reference failures.
+   * - :func:`is_state_resolve_event_path`
+     - Classify event-path input syntax for simulator utilities.
 
 Basic usage::
 
@@ -38,12 +64,27 @@ Basic usage::
     runtime = SimulationRuntime(sm)
 
     # Execute cycles
-    runtime.cycle()  # Initialize and execute first cycle
+    result = runtime.cycle()  # Initialize and execute first cycle
+    assert result.input_events == ()
     runtime.cycle(['EventName'])  # Execute with events
 
     # Access state and variables
     current_state = runtime.current_state
     variables = runtime.vars
+
+Public exports::
+
+    +--------------------------------------+--------------------------------------+
+    | Symbol                               | Purpose                              |
+    +======================================+======================================+
+    | ``SimulationRuntime``                | Stateful simulator runtime.          |
+    +--------------------------------------+--------------------------------------+
+    | ``CycleResult``                      | Immutable per-cycle result metadata. |
+    +--------------------------------------+--------------------------------------+
+    | ``ReadOnlyExecutionContext``         | Abstract-handler callback context.   |
+    +--------------------------------------+--------------------------------------+
+    | ``abstract_handler``                 | Decorator for callback registration. |
+    +--------------------------------------+--------------------------------------+
 
 Abstract handler registration::
 
@@ -62,21 +103,25 @@ Abstract handler registration::
 from .context import ReadOnlyExecutionContext
 from .decorators import abstract_handler
 from .runtime import (
+    CycleResult,
     SimulationRuntime,
     SimulationRuntimeActionReferenceError,
     SimulationRuntimeDfsError,
     SimulationRuntimeEventError,
     SimulationRuntimeExpressionError,
+    SimulationRuntimeTerminalStateError,
 )
 from .utils import is_state_resolve_event_path
 
 __all__ = [
+    "CycleResult",
     "ReadOnlyExecutionContext",
     "SimulationRuntime",
     "SimulationRuntimeActionReferenceError",
     "SimulationRuntimeDfsError",
     "SimulationRuntimeEventError",
     "SimulationRuntimeExpressionError",
+    "SimulationRuntimeTerminalStateError",
     "abstract_handler",
     "is_state_resolve_event_path",
 ]

@@ -1,0 +1,41 @@
+schema_version: 1
+id: persistent_initial_vars_override_skips_initializer
+title: Persistent initial_vars override skips failing default initializer
+source:
+  fcstm: persistent_initial_vars_override_skips_initializer.fcstm
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/156#issuecomment-4633663497
+  assertion_types:
+  - initial
+  - state
+  - vars
+  - stack
+  - ended
+  notes:
+  - Ensures provided initial_vars values take priority over their default initializer.
+categories:
+- runtime
+- hot_start
+runners:
+- simulation
+initial:
+  state: Root.A
+  vars:
+    recovered: 5.0
+steps:
+- expect_initial:
+    state:
+    - Root
+    - A
+    vars:
+      recovered: 5.0
+    ended: false
+    stack:
+    - path:
+      - Root
+      mode: active
+    - path:
+      - Root
+      - A
+      mode: active

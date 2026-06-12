@@ -32,8 +32,11 @@ transition executes. If validation fails or exceeds safety limits (1000 steps or
 64 stack depth), the transition is rejected and variables roll back.
 
 Abstract actions can be implemented by registering Python handlers that receive
-read-only execution context. Handlers can be registered individually or organized
-in classes using the @abstract_handler decorator.
+read-only execution context. Handler registration validates named abstract
+action paths, rejects duplicate handler registrations by default, and exposes
+explicit cleanup helpers for handler registries and related diagnostics.
+Handlers can be registered individually or organized in classes using the
+``@abstract_handler`` decorator.
 
 **Hot Start Feature**:
 
@@ -55,7 +58,8 @@ Basic usage::
     from pyfcstm.simulate import SimulationRuntime
 
     runtime = SimulationRuntime(state_machine)
-    runtime.cycle()  # Execute first cycle
+    result = runtime.cycle()  # Execute first cycle
+    assert result.value is None
     runtime.cycle(['EventName'])  # Execute with events
 
     # Access state and variables
@@ -92,7 +96,10 @@ Abstract handler registration::
 """
 
 import copy
+import math
+import types
 import warnings
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -117,6 +124,99 @@ from ..model import (
     Transition,
 )
 from .context import ReadOnlyExecutionContext
+
+
+_SAFE_REPR_DIGIT_LIMIT = 80
+_SAFE_REPR_SEQUENCE_LIMIT = 8
+
+
+def _int_decimal_digits(value: int) -> int:
+    """
+    Count decimal digits for an integer without converting it to a string.
+
+    Python 3.11+ may raise :class:`ValueError` when converting very large
+    integers to strings. Runtime diagnostics need the digit count without
+    crossing that conversion boundary.
+
+    :param value: Integer value to measure.
+    :type value: int
+    :return: Number of decimal digits in ``abs(value)``.
+    :rtype: int
+
+    Example::
+
+        >>> _int_decimal_digits(10 ** 100)
+        101
+    """
+    abs_value = abs(value)
+    if abs_value == 0:
+        return 1
+
+    # ``log10(2)`` gives a close estimate from bit length. The comparisons
+    # below make the result exact without decimal string conversion.
+    digits = int((abs_value.bit_length() - 1) * 0.30103) + 1
+    if abs_value >= 10**digits:
+        digits += 1
+    elif abs_value < 10 ** (digits - 1):
+        digits -= 1
+    return digits
+
+
+def _safe_runtime_repr(value: Any) -> str:
+    """
+    Format runtime diagnostic values without raising from Python string limits.
+
+    The helper is intentionally used only by log and diagnostic formatting. It
+    never changes the stored runtime value. Large integers are represented by
+    digit count so Python 3.11+ ``int_max_str_digits`` does not make debug
+    logging fail before the simulator can complete the cycle.
+
+    :param value: Runtime value or container to render for diagnostics.
+    :type value: Any
+    :return: Safe, bounded diagnostic representation.
+    :rtype: str
+
+    Example::
+
+        >>> _safe_runtime_repr({"x": 10 ** 100})
+        "{'x': int<101 digits>}"
+    """
+    if isinstance(value, bool):
+        return repr(value)
+    if isinstance(value, int):
+        if value == 0:
+            return "0"
+        digits = _int_decimal_digits(value)
+        if digits > _SAFE_REPR_DIGIT_LIMIT:
+            return "%sint<%d digits>" % ("-" if value < 0 else "", digits)
+        return repr(value)
+    if isinstance(value, float):
+        return repr(value)
+    if isinstance(value, str):
+        return repr(value)
+    if value is None:
+        return "None"
+    if isinstance(value, dict):
+        items = list(value.items())
+        parts = [
+            "%s: %s" % (_safe_runtime_repr(key), _safe_runtime_repr(item_value))
+            for key, item_value in items[:_SAFE_REPR_SEQUENCE_LIMIT]
+        ]
+        if len(items) > _SAFE_REPR_SEQUENCE_LIMIT:
+            parts.append("...")
+        return "{%s}" % ", ".join(parts)
+    if isinstance(value, tuple):
+        parts = [_safe_runtime_repr(item) for item in value[:_SAFE_REPR_SEQUENCE_LIMIT]]
+        if len(value) > _SAFE_REPR_SEQUENCE_LIMIT:
+            parts.append("...")
+        trailing_comma = "," if len(value) == 1 else ""
+        return "(%s%s)" % (", ".join(parts), trailing_comma)
+    if isinstance(value, list):
+        parts = [_safe_runtime_repr(item) for item in value[:_SAFE_REPR_SEQUENCE_LIMIT]]
+        if len(value) > _SAFE_REPR_SEQUENCE_LIMIT:
+            parts.append("...")
+        return "[%s]" % ", ".join(parts)
+    return repr(value)
 
 
 class SimulationRuntimeDfsError(RuntimeError):
@@ -177,14 +277,84 @@ class SimulationRuntimeDfsError(RuntimeError):
     pass
 
 
+class SimulationRuntimeTerminalStateError(IndexError):
+    """
+    Raised when an active-state query is unavailable after termination.
+
+    The exception is emitted by active-stack queries such as
+    :attr:`SimulationRuntime.current_state` when the runtime has naturally
+    ended and no active state remains. It subclasses :class:`IndexError` for
+    compatibility with callers that previously caught the generic exception,
+    while giving new callers a simulator-owned terminal-state diagnostic to
+    catch directly.
+
+    Example::
+
+        >>> err = SimulationRuntimeTerminalStateError("runtime has ended")
+        >>> isinstance(err, IndexError)
+        True
+    """
+
+
 class SimulationRuntimeEventError(ValueError):
     """
-    Raised when a user-supplied cycle event cannot be resolved.
+    Raised when a user-supplied cycle event input is invalid.
 
     This exception is intentionally narrower than ``LookupError`` so CLI
     callers can report invalid event input without also swallowing internal
-    ``KeyError`` / ``IndexError`` defects from runtime or model state.
+    ``KeyError`` / ``IndexError`` defects from runtime or model state. It is
+    used both for event paths that cannot be resolved and for unsupported
+    public ``cycle(events=...)`` input shapes.
+
+    Example::
+
+        >>> from pyfcstm.simulate import SimulationRuntimeEventError
+        >>> err = SimulationRuntimeEventError("Unsupported event input")
+        >>> "event" in str(err)
+        True
     """
+
+
+@dataclass(frozen=True)
+class CycleResult:
+    """
+    Immutable result returned by one :meth:`SimulationRuntime.cycle` call.
+
+    The result keeps the historical ``None`` return semantics in
+    :attr:`value` while exposing event-accounting metadata for the same cycle.
+    Event fields use resolved :attr:`pyfcstm.model.Event.path_name` strings so
+    callers can compare canonical event identities instead of user-supplied
+    relative paths.
+
+    :param value: Legacy cycle return value, currently always ``None``.
+    :type value: typing.Any
+    :param input_events: Canonical event paths supplied for this cycle, in
+        normalized input order.
+    :type input_events: Tuple[str, ...]
+    :param consumed_events: Canonical event paths for evented transitions that
+        executed during this cycle, in execution order.
+    :type consumed_events: Tuple[str, ...]
+    :param unconsumed_events: Canonical input event paths that did not
+        correspond to an executed evented transition.
+    :type unconsumed_events: Tuple[str, ...]
+
+    Example::
+
+        >>> result = CycleResult(
+        ...     input_events=("Root.A.Go", "Root.A.Noise"),
+        ...     consumed_events=("Root.A.Go",),
+        ...     unconsumed_events=("Root.A.Noise",),
+        ... )
+        >>> result.value is None
+        True
+        >>> result.consumed_events
+        ('Root.A.Go',)
+    """
+
+    value: Any = None
+    input_events: Tuple[str, ...] = ()
+    consumed_events: Tuple[str, ...] = ()
+    unconsumed_events: Tuple[str, ...] = ()
 
 
 class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
@@ -366,6 +536,9 @@ class SimulationRuntime:
         11
     """
 
+    _DFS_STEP_LIMIT = 1000
+    _DFS_STRUCTURAL_DEPTH_LIMIT = 64
+
     def __init__(
         self,
         state_machine: StateMachine,
@@ -388,13 +561,21 @@ class SimulationRuntime:
         initialization (entering the root state and executing lifecycle actions)
         is deferred until the first :meth:`cycle` call.
 
+        ``initial_vars`` may override persistent variables during construction.
+        In default-start mode the mapping may be partial; each provided variable
+        skips its default initializer, while uncovered variables still initialize
+        in declaration order. In hot-start mode every declared variable must be
+        provided so the runtime can build a complete already-entered state. All
+        provided values use strict Python ``int`` / ``float`` type checks;
+        subclasses and ``bool`` are rejected.
+
         **Hot Start Mode**:
 
         If ``initial_state`` is provided, the runtime performs a "hot start"
         by directly constructing the execution stack to the specified state
         without executing enter actions. This simulates having already entered
-        and stabilized at that state. The ``initial_vars`` parameter allows
-        overriding variable values for the hot start.
+        and stabilized at that state. Hot start requires ``initial_vars`` to
+        provide every declared persistent variable.
 
         :param state_machine: The state machine model to simulate.
         :type state_machine: StateMachine
@@ -411,12 +592,20 @@ class SimulationRuntime:
             (``('System', 'Active')``), or State object. Defaults to ``None``
             (start from root state).
         :type initial_state: Optional[Union[str, Tuple[str, ...], State]]
-        :param initial_vars: Optional variable overrides for hot start. Only
-            variables defined in the state machine can be overridden. Defaults
-            to ``None``.
+        :param initial_vars: Optional construction-time persistent variable
+            overrides. In default-start mode this mapping may be partial. In
+            hot-start mode it must provide every declared persistent variable.
+            Only variables defined in the state machine can be overridden.
+            Defaults to ``None``.
         :type initial_vars: Optional[Dict[str, Union[int, float]]]
         :return: ``None``.
         :rtype: None
+        :raises ValueError: If ``abstract_error_mode`` is invalid, hot start is
+            requested without complete ``initial_vars``, an override names an
+            undefined variable, a default initializer fails, or a persistent
+            value cannot be normalized to its declared ``int`` / ``float`` type.
+        :raises ValueError: If ``initial_state`` cannot be resolved to a
+            state in this machine.
 
         Example - Default initialization::
 
@@ -499,8 +688,42 @@ class SimulationRuntime:
         # Initialize logger
         self.logger = get_logger("pyfcstm.simulate")
 
+        if initial_state is not None and initial_vars is None:
+            raise ValueError(
+                "initial_vars must be provided when initial_state is specified"
+            )
+
+        if initial_vars is not None:
+            unknown_vars = set(initial_vars.keys()) - set(self.state_machine.defines)
+            if unknown_vars:
+                available_vars = list(self.state_machine.defines.keys())
+                unknown_name = sorted(unknown_vars)[0]
+                raise ValueError(
+                    f"Variable '{unknown_name}' not defined in state machine. "
+                    f"Available variables: {available_vars}"
+                )
+
+            if initial_state is not None:
+                missing_vars = set(self.state_machine.defines.keys()) - set(
+                    initial_vars.keys()
+                )
+                if missing_vars:
+                    raise ValueError(
+                        f"initial_vars must provide all variables. Missing: {sorted(missing_vars)}"
+                    )
+
         for name, define in self.state_machine.defines.items():
-            self.vars[name] = define.init(**self.vars)
+            if initial_vars is not None and name in initial_vars:
+                value = initial_vars[name]
+                source = f"initial_vars[{name!r}]"
+            else:
+                value = self._evaluate_runtime_expr(
+                    define.init,
+                    self.vars,
+                    usage=f"variable '{name}' initializer",
+                )
+                source = f"variable '{name}' initializer"
+            self.vars[name] = self._normalize_persistent_value(name, value, source)
 
         self._initialized = False
         self._ended = False
@@ -523,50 +746,8 @@ class SimulationRuntime:
         self._is_error_state = False
         self._error_info: Optional[Tuple[str, Exception]] = None
 
-        # Handle initial_vars (always effective if provided)
-        if initial_vars is not None:
-            # Validate all variables are provided
-            missing_vars = set(self.vars.keys()) - set(initial_vars.keys())
-            if missing_vars:
-                raise ValueError(
-                    f"initial_vars must provide all variables. Missing: {sorted(missing_vars)}"
-                )
-
-            # Override all variables
-            for name, value in initial_vars.items():
-                if name not in self.vars:
-                    available_vars = list(self.vars.keys())
-                    raise ValueError(
-                        f"Variable '{name}' not defined in state machine. "
-                        f"Available variables: {available_vars}"
-                    )
-
-                # Type checking and conversion
-                define = self.state_machine.defines[name]
-                if type(value) is bool:
-                    raise ValueError(f"initial_vars[{name!r}] must not be bool")
-                if type(value) not in (int, float):
-                    raise ValueError(
-                        f"initial_vars[{name!r}] must be int or float, "
-                        f"got {type(value).__name__}"
-                    )
-                if define.type == "int" and type(value) is float:
-                    if value != int(value):
-                        raise ValueError(
-                            f"Variable '{name}' is int type, cannot assign float {value}"
-                        )
-                    value = int(value)
-
-                self.vars[name] = value
-
         # Initialize stack - hot start or default
         if initial_state is not None:
-            # Hot start mode - requires initial_vars
-            if initial_vars is None:
-                raise ValueError(
-                    "initial_vars must be provided when initial_state is specified"
-                )
-
             target_state = self._resolve_initial_state(initial_state)
 
             # Build hot start stack
@@ -576,6 +757,92 @@ class SimulationRuntime:
         else:
             # Default mode: start from root state
             self.stack.append(_Frame(self.state_machine.root_state, "init_wait"))
+
+    def _normalize_persistent_value(
+        self, name: str, value: Any, source: str
+    ) -> Union[int, float]:
+        """
+        Normalize a value before storing it in ``runtime.vars``.
+
+        Persistent variables are the public state of a simulation runtime, so
+        every value entering :attr:`vars` must pass through the same type and
+        finiteness boundary. This helper is used by default initializers,
+        ``initial_vars`` overrides, and operation/effect/lifecycle writeback.
+
+        :param name: Persistent variable name being assigned.
+        :type name: str
+        :param value: Candidate value produced by an initializer, user override,
+            or operation block.
+        :type value: typing.Any
+        :param source: Human-readable source label used in diagnostics.
+        :type source: str
+        :return: Normalized Python value matching the declared FCSTM type.
+        :rtype: Union[int, float]
+        :raises ValueError: If the value is not numeric, is ``bool``, is not
+            finite, or cannot be represented by the declared persistent type.
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> dsl_code = 'def int counter = 0; state Root { state A; [*] -> A; }'
+            >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+            >>> sm = parse_dsl_node_to_state_machine(ast)
+            >>> runtime = SimulationRuntime(sm)
+            >>> runtime._normalize_persistent_value("counter", 3.0, "example")
+            3
+        """
+        if name not in self.state_machine.defines:
+            available_vars = list(self.state_machine.defines.keys())
+            raise ValueError(
+                f"Variable '{name}' not defined in state machine. "
+                f"Available variables: {available_vars}"
+            )
+
+        define = self.state_machine.defines[name]
+        declared_type = define.type
+        if type(value) is bool:
+            raise ValueError(f"{source} must not be bool")
+        if type(value) not in (int, float):
+            raise ValueError(
+                f"{source} must be int or float, got {type(value).__name__}"
+            )
+        if type(value) is float and not math.isfinite(value):
+            raise ValueError(
+                f"{source} for variable '{name}' declared {declared_type} must be "
+                f"finite, got {value!r}"
+            )
+
+        if declared_type == "int":
+            if type(value) is float:
+                if value != int(value):
+                    raise ValueError(
+                        f"Variable '{name}' is int type, cannot assign float {value!r}; "
+                        f"non-integer float from {source}"
+                    )
+                return int(value)
+            return value
+
+        if declared_type == "float":
+            try:
+                normalized_float = float(value)
+            except OverflowError as err:
+                # OverflowError: ``float(value)`` cannot represent a very large
+                # Python integer as a finite runtime float.
+                raise ValueError(
+                    f"{source} for variable '{name}' declared float must be finite; "
+                    "integer is outside Python float range"
+                ) from err
+            if not math.isfinite(normalized_float):
+                raise ValueError(
+                    f"{source} for variable '{name}' declared float must be finite, "
+                    f"got {normalized_float!r}"
+                )
+            return normalized_float
+
+        raise ValueError(
+            f"Variable '{name}' has unsupported persistent type {declared_type!r}"
+        )
 
     def _state_belongs_to_machine(self, state: State) -> bool:
         """
@@ -755,163 +1022,285 @@ class SimulationRuntime:
         :return: ``None``.
         :rtype: None
         :raises ValueError: If the target cannot reach a stoppable state or end.
+        :raises SimulationRuntimeDfsError: If the constructed hot-start stack
+            already exceeds the structural depth safety limit.
         """
+        if len(self.stack) > self._DFS_STRUCTURAL_DEPTH_LIMIT:
+            raise SimulationRuntimeDfsError(
+                "Hot start target exceeds the structural stack-depth safety limit "
+                f"({self._DFS_STRUCTURAL_DEPTH_LIMIT}) before execution; "
+                "choose a shallower target state or simplify the state hierarchy."
+            )
+
         if target_state.is_stoppable:
             return
 
         validation_stack = self._clone_stack(self.stack)
         validation_vars = copy.deepcopy(self.vars)
-        success, _ = self._run_cycle_on_context(
-            validation_stack,
-            validation_vars,
-            {},
-            is_validation_mode=True,
-        )
+        dfs_error = None
+        try:
+            success, _ = self._run_cycle_on_context(
+                validation_stack,
+                validation_vars,
+                {},
+                is_validation_mode=True,
+            )
+        except SimulationRuntimeDfsError as e:
+            # _run_cycle_on_context preflight can hit DFS limits while proving
+            # that a hot-start target has no empty-event stable path.
+            dfs_error = e
+            success = False
         if not success:
+            if self._can_hot_start_wait_for_evented_initial(target_state):
+                if dfs_error is not None:
+                    raise dfs_error
+                return
             target_path = ".".join(target_state.path)
             raise ValueError(
                 f"Hot start target '{target_path}' cannot reach a stoppable state"
             )
 
+    def _can_hot_start_wait_for_evented_initial(self, target_state: State) -> bool:
+        """
+        Return whether a composite hot-start target can wait for an evented init.
+
+        Constructor preflight runs without user events, so an initial transition
+        guarded by an event may be legitimately disabled until the first
+        :meth:`cycle` call. The event gate can appear directly on the target
+        composite or after an eventless initial-transition chain. Such targets
+        should remain in ``init_wait`` instead of being rejected during
+        construction.
+
+        :param target_state: Hot-start target state to inspect.
+        :type target_state: State
+        :return: ``True`` when the target has an event-gated initial transition
+            boundary whose non-event guard is currently satisfiable.
+        :rtype: bool
+        :raises SimulationRuntimeDfsError: If the eventless initial-chain search
+            exceeds the runtime safety limits.
+        """
+        if target_state.is_leaf_state:
+            return False
+
+        worklist = [(self._clone_stack(self.stack), copy.deepcopy(self.vars))]
+        seen_signatures = set()
+        steps_taken = 0
+
+        while worklist:
+            current_stack, current_vars = worklist.pop()
+            if not current_stack:
+                continue
+
+            structural_signature = self._create_structural_signature(current_stack)
+            if len(structural_signature) > self._DFS_STRUCTURAL_DEPTH_LIMIT:
+                raise SimulationRuntimeDfsError(
+                    "Hot start event-gated initial-chain search exceeded the "
+                    "structural stack-depth safety limit "
+                    f"({self._DFS_STRUCTURAL_DEPTH_LIMIT}); "
+                    "choose a shallower target state or simplify the state hierarchy."
+                )
+
+            signature = self._create_execution_signature(current_stack, current_vars)
+            if signature in seen_signatures:
+                continue
+            seen_signatures.add(signature)
+
+            if steps_taken >= self._DFS_STEP_LIMIT:
+                raise SimulationRuntimeDfsError(
+                    "Hot start event-gated initial-chain search exceeded the "
+                    f"step safety limit ({self._DFS_STEP_LIMIT}); "
+                    "the state machine likely contains an invalid unbounded "
+                    "initial-transition chain."
+                )
+            steps_taken += 1
+
+            frame = current_stack[-1]
+            state = frame.state
+            if state.is_leaf_state or frame.mode != "init_wait":
+                continue
+
+            for transition in state.init_transitions:
+                if transition.event is None:
+                    continue
+                if self._transition_matches_guard(transition, current_vars):
+                    return True
+
+            for transition in reversed(state.init_transitions):
+                if transition.event is not None:
+                    continue
+                if not self._transition_matches_guard(transition, current_vars):
+                    continue
+
+                next_stack = self._clone_stack(current_stack)
+                next_vars = copy.deepcopy(current_vars)
+                self._execute_initial_transition_on_context(
+                    next_stack,
+                    next_vars,
+                    transition,
+                    {},
+                    is_validation_mode=True,
+                    attempt_initial_transition=False,
+                )
+                worklist.append((next_stack, next_vars))
+
+        return False
+
+    def _event_input_error(self, message: str) -> SimulationRuntimeEventError:
+        """
+        Create a public event-input diagnostic for ``cycle(events=...)``.
+
+        The runtime uses this helper so unsupported event values, malformed
+        containers, and unresolved event paths all cross the public API
+        boundary as :class:`SimulationRuntimeEventError` rather than leaking
+        Python-native container or attribute errors.
+
+        :param message: Human-readable diagnostic message.
+        :type message: str
+        :return: A runtime event-input exception.
+        :rtype: SimulationRuntimeEventError
+
+        Example::
+
+            >>> from pyfcstm.simulate import SimulationRuntimeEventError
+            >>> isinstance(SimulationRuntimeEventError("bad event"), ValueError)
+            True
+        """
+        return SimulationRuntimeEventError(message)
+
     def _parse_event(self, event: Any) -> Event:
         """
-        Resolve an event reference into a concrete event object.
+        Resolve a public cycle event input into a model-owned event object.
 
-        This method accepts an event object (returned as-is), a dot-separated
-        event path string, or an event-like object exposing a ``path_name``
-        attribute. Event-like inputs are resolved by passing their ``path_name``
-        value through the same string path resolver used for direct string
-        inputs. String paths are resolved using intelligent resolution that
-        supports both StateMachine and State resolve_event methods for maximum
-        flexibility.
+        Supported inputs are string event paths and :class:`Event` instances
+        that resolve back to the current runtime's state machine. Arbitrary
+        event-like objects exposing ``path_name`` are intentionally rejected so
+        bare values and container elements use the same public input boundary.
 
-        **Path Resolution Strategy**:
-
-        The method uses a smart resolution strategy based on the current runtime
-        state and path syntax:
-
-        1. **If runtime has ended** (no current state): Use StateMachine.resolve_event only
-        2. **If path is definitely State.resolve_event syntax** (starts with ``/`` or ``.``):
-           Use State.resolve_event from current state
-        3. **If path is uncertain** (plain path like ``Root.System.event``):
-           Try StateMachine.resolve_event first, fall back to State.resolve_event if it fails
-
-        **Supported Path Formats**:
-
-        - **Full paths**: ``Root.State1.State2.EventName`` (StateMachine.resolve_event)
-        - **Relative paths**: ``error.critical`` (State.resolve_event from current state)
-        - **Parent-relative**: ``.error`` or ``..system.error`` (State.resolve_event)
-        - **Absolute**: ``/global.shutdown`` (State.resolve_event from root)
-
-        :param event: Event object, dot-separated event path string, or
-            event-like object exposing ``path_name``.
+        :param event: Event path string or model event object.
         :type event: Any
-        :return: The resolved event instance.
+        :return: The resolved event instance owned by this runtime's model.
         :rtype: Event
-        :raises TypeError: If ``event`` is neither a string, an :class:`Event`,
-            nor an event-like object exposing a string ``path_name``.
-        :raises SimulationRuntimeEventError: If the user-supplied event path
-            cannot be resolved by any supported method.
+        :raises SimulationRuntimeEventError: If the input shape is unsupported,
+            the path cannot be resolved, or the object does not belong to this
+            runtime's model.
 
         Example::
 
             >>> from pyfcstm.dsl import parse_with_grammar_entry
             >>> from pyfcstm.model import parse_dsl_node_to_state_machine
             >>> from pyfcstm.simulate import SimulationRuntime
-            >>> dsl_code = '''
-            ... state System {
-            ...     state Idle {
-            ...         event Start;
-            ...     }
-            ...     state Active {
-            ...         event Timeout;
-            ...     }
-            ...     [*] -> Idle;
-            ...     Idle -> Active :: Start;
-            ... }
-            ... '''
+            >>> dsl_code = 'state System { state Idle { event Start; } state Active; [*] -> Idle; Idle -> Active :: Start; }'
             >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
             >>> sm = parse_dsl_node_to_state_machine(ast)
             >>> runtime = SimulationRuntime(sm)
             >>> runtime.cycle()
-            >>> # Full path (StateMachine.resolve_event)
-            >>> event1 = runtime._parse_event('System.Idle.Start')
-            >>> event1.name
-            'Start'
-            >>> # Relative path (State.resolve_event from current state)
-            >>> event2 = runtime._parse_event('Start')
-            >>> event2.name
-            'Start'
-            >>> # Parent-relative path (State.resolve_event)
-            >>> event3 = runtime._parse_event('.Start')
-            >>> event3.name
-            'Start'
-            >>> # Absolute path (State.resolve_event)
-            >>> event4 = runtime._parse_event('/Idle.Start')
-            >>> event4.name
-            'Start'
-
-        .. note::
-           This method is used internally by :meth:`cycle` to normalize the
-           events parameter. Users can pass any supported path format directly
-           to :meth:`cycle` for maximum flexibility.
+            CycleResult(value=None, input_events=(), consumed_events=(), unconsumed_events=())
+            >>> runtime._parse_event('System.Idle.Start').path_name
+            'System.Idle.Start'
         """
         if isinstance(event, Event):
-            return event
-        if not isinstance(event, str) and hasattr(event, "path_name"):
-            path_name = getattr(event, "path_name")
-            if not isinstance(path_name, str):
-                raise TypeError(
-                    "Event-like object path_name must be str, got "
-                    f"{type(path_name)!r} - {path_name!r}."
-                )
-            event = path_name
+            return self._resolve_model_event(event)
         if isinstance(event, str):
-            from .utils import is_state_resolve_event_path
+            return self._resolve_event_path(event)
+        raise self._event_input_error(
+            f"Unsupported event input {event!r} of type {type(event)!r}; "
+            "expected an event path string or a model Event object."
+        )
 
-            # Check if runtime has ended (no current state)
-            has_current_state = len(self.stack) > 0
+    def _resolve_model_event(self, event: Event) -> Event:
+        """
+        Resolve and validate a model event object supplied to ``cycle``.
 
-            # If runtime has ended, only use StateMachine.resolve_event
-            if not has_current_state:
-                try:
-                    return self.state_machine.resolve_event(event)
-                except (ModelValueError, ModelLookupError) as e:
-                    # ModelValueError/ModelLookupError: the user-supplied event
-                    # path is malformed or does not exist in the current model.
-                    raise SimulationRuntimeEventError(str(e)) from e
+        Event objects are accepted only when their canonical path resolves to
+        the same object in the current runtime's state machine. This keeps the
+        public boundary deterministic without attempting cross-model remapping.
 
-            # Check if path is definitely State.resolve_event syntax
-            is_definitely_state_path = is_state_resolve_event_path(event)
+        :param event: Event object supplied by the caller.
+        :type event: Event
+        :return: The matching event object from this runtime's state machine.
+        :rtype: Event
+        :raises SimulationRuntimeEventError: If the event path is unknown or
+            resolves to a different event object.
 
-            if is_definitely_state_path:
-                # Use State.resolve_event from current state
-                try:
-                    return self.current_state.resolve_event(event)
-                except (ModelValueError, ModelLookupError) as e:
-                    # ModelValueError/ModelLookupError: the user-supplied event
-                    # path is malformed or does not exist in the current state.
-                    raise SimulationRuntimeEventError(str(e)) from e
-            else:
-                # Uncertain path - try StateMachine first, then State
-                try:
-                    return self.state_machine.resolve_event(event)
-                except (ModelValueError, ModelLookupError):
-                    # ModelValueError/ModelLookupError: the path was not valid
-                    # as a full event path, so try resolving from current state.
-                    # Fall back to State.resolve_event
-                    try:
-                        return self.current_state.resolve_event(event)
-                    except (ModelValueError, ModelLookupError) as e:
-                        # ModelValueError/ModelLookupError: the same
-                        # user-supplied path also failed state-relative lookup.
-                        # Both methods failed - raise informative error
-                        raise SimulationRuntimeEventError(
-                            f"Cannot resolve event path {event!r}: "
-                            f"failed with both StateMachine.resolve_event and State.resolve_event. "
-                            f"Last error: {e}"
-                        ) from e
-        raise TypeError(f"Unknown event type {type(event)!r} - {event!r}.")
+        Example::
+
+            >>> from pyfcstm.model import Event
+            >>> event = Event(name="Go", state_path=("Root", "A"))
+            >>> event.path_name
+            'Root.A.Go'
+        """
+        try:
+            resolved = self.state_machine.resolve_event(event.path_name)
+        except (ModelValueError, ModelLookupError) as err:
+            # ModelValueError/ModelLookupError: the caller supplied an Event
+            # object whose canonical path is malformed or absent from this
+            # runtime's state machine.
+            raise self._event_input_error(
+                f"Event object {event!r} does not resolve in this runtime: {err}"
+            ) from err
+        if resolved is not event:
+            raise self._event_input_error(
+                f"Event object {event!r} is not owned by this runtime's state machine."
+            )
+        return resolved
+
+    def _resolve_event_path(self, event: str) -> Event:
+        """
+        Resolve a string event path using runtime-relative lookup rules.
+
+        The resolver first honors definitely state-relative path syntax
+        (leading ``/`` or ``.``). Ambiguous paths try full state-machine lookup
+        before falling back to the current state, matching the historical
+        ``cycle`` event-path behavior.
+
+        :param event: Event path string supplied by the caller.
+        :type event: str
+        :return: The resolved event object.
+        :rtype: Event
+        :raises SimulationRuntimeEventError: If no supported lookup can resolve
+            the path.
+
+        Example::
+
+            >>> isinstance('Root.A.Go', str)
+            True
+        """
+        from .utils import is_state_resolve_event_path
+
+        has_current_state = len(self.stack) > 0
+        if not has_current_state:
+            try:
+                return self.state_machine.resolve_event(event)
+            except (ModelValueError, ModelLookupError) as err:
+                # ModelValueError/ModelLookupError: the user-supplied event
+                # path is malformed or absent from the model.
+                raise self._event_input_error(str(err)) from err
+
+        if is_state_resolve_event_path(event):
+            try:
+                return self.current_state.resolve_event(event)
+            except (ModelValueError, ModelLookupError) as err:
+                # ModelValueError/ModelLookupError: the user-supplied
+                # state-relative path is malformed or absent from the current
+                # state scope.
+                raise self._event_input_error(str(err)) from err
+
+        try:
+            return self.state_machine.resolve_event(event)
+        except (ModelValueError, ModelLookupError):
+            # ModelValueError/ModelLookupError: the path was not a valid full
+            # state-machine event path, so try current-state lookup before
+            # surfacing a single public diagnostic.
+            try:
+                return self.current_state.resolve_event(event)
+            except (ModelValueError, ModelLookupError) as err:
+                # ModelValueError/ModelLookupError: the same user-supplied
+                # path also failed state-relative lookup.
+                raise self._event_input_error(
+                    f"Cannot resolve event path {event!r}: "
+                    f"failed with both StateMachine.resolve_event and State.resolve_event. "
+                    f"Last error: {err}"
+                ) from err
 
     @staticmethod
     def _clone_stack(stack: List[_Frame]) -> List[_Frame]:
@@ -932,46 +1321,193 @@ class SimulationRuntime:
 
     @staticmethod
     def _is_single_event_input(events: Any) -> bool:
-        """Return whether ``events`` is one event value rather than a collection."""
+        """
+        Return whether ``events`` is one event value rather than a collection.
+
+        Bare strings and model :class:`Event` objects are accepted public event
+        inputs, but they should not be iterated as containers during
+        normalization.
+
+        :param events: Candidate public event input.
+        :type events: Any
+        :return: ``True`` if ``events`` should be parsed as one event.
+        :rtype: bool
+
+        Example::
+
+            >>> SimulationRuntime._is_single_event_input("Root.A.Go")
+            True
+        """
         return isinstance(events, (str, Event))
 
+    @staticmethod
+    def _has_event_path_member(value: Any) -> bool:
+        """
+        Return whether ``value`` advertises an unsupported event path member.
+
+        Synthetic event-like objects that expose ``path_name`` are not part of
+        the public ``cycle(events=...)`` input contract. This helper first
+        inspects instance dictionaries and class descriptors without reading the
+        member value, so normal descriptors and properties are rejected without
+        executing user code. It then falls back to normal attribute lookup only
+        for dynamic ``__getattr__`` / ``__getattribute__`` implementations that
+        would otherwise masquerade as plain iterable containers.
+
+        :param value: Candidate public event input.
+        :type value: Any
+        :return: ``True`` if ``value`` declares a ``path_name`` member.
+        :rtype: bool
+
+        Example::
+
+            >>> class EventLike:
+            ...     path_name = "Root.A.Go"
+            >>> SimulationRuntime._has_event_path_member(EventLike())
+            True
+        """
+        for cls in type(value).__mro__:
+            if "path_name" in cls.__dict__:
+                return True
+
+        try:
+            attrs = vars(value)
+        except TypeError:
+            # TypeError: vars(value) raises for instances without __dict__;
+            # class-level descriptors and slots were already checked above.
+            attrs = {}
+        if "path_name" in attrs:
+            return True
+
+        try:
+            getattr(value, "path_name")
+        except AttributeError:
+            # AttributeError: normal Python signal that this unsupported input
+            # shape does not dynamically expose a path_name member.
+            return False
+        return True
+
     def _iter_event_inputs(self, events: Any) -> List[Any]:
-        """Normalize the public ``cycle(events=...)`` shape into event items."""
+        """
+        Normalize the public ``cycle(events=...)`` shape into event items.
+
+        ``None`` maps to an empty list; bare string and model-event inputs map
+        to a single-item list; synthetic event-like objects are rejected even if
+        they are iterable; other iterables are materialized without parsing
+        their elements. Unsupported non-iterable values are converted to
+        :class:`SimulationRuntimeEventError` so callers see one public event
+        diagnostic boundary.
+
+        :param events: Raw ``cycle`` event argument.
+        :type events: Any
+        :return: Event input items to resolve.
+        :rtype: List[Any]
+        :raises SimulationRuntimeEventError: If ``events`` is neither
+            ``None``, a single event input, nor an iterable of event inputs.
+
+        Example::
+
+            >>> from pyfcstm.simulate.runtime import SimulationRuntime
+            >>> runtime = object.__new__(SimulationRuntime)
+            >>> runtime._iter_event_inputs(None)
+            []
+        """
         if events is None:
             return []
         if self._is_single_event_input(events):
             return [events]
+        if self._has_event_path_member(events):
+            raise self._event_input_error(
+                f"Unsupported event input {events!r} of type {type(events)!r}; "
+                "expected an event path string, a model Event object, or an iterable "
+                "of those values."
+            )
         try:
             return list(events)
         except TypeError as e:
             # TypeError: list(events) raises when the caller supplied a
             # non-iterable object that is not one of the supported single-event
-            # shapes. Surface the same public unsupported-event diagnostic that
-            # item-level parsing uses.
-            raise TypeError(f"Unknown event type {type(events)!r} - {events!r}.") from e
+            # shapes. Surface the public simulate event-input diagnostic rather
+            # than leaking the Python container protocol error.
+            raise self._event_input_error(
+                f"Unsupported event input {events!r} of type {type(events)!r}; "
+                "expected an event path string, a model Event object, or an iterable "
+                "of those values."
+            ) from e
 
     def _normalize_events(self, events: Any) -> Tuple[List[Event], Dict[str, Event]]:
         """
         Normalize user-provided events into object and lookup forms.
 
         The runtime accepts event objects, string paths, and iterables
-        containing event objects, string paths, or event-like objects exposing
-        ``path_name``. Bare strings and model event objects are treated as
-        single events, not as generic iterables. This helper resolves inputs
-        into concrete :class:`Event` instances and also builds a dictionary keyed
-        by :attr:`Event.path_name` so transition matching can perform
-        constant-time membership checks.
+        containing event objects or string paths. Bare strings and model event
+        objects are treated as single events, not as generic iterables. This
+        helper resolves inputs into concrete :class:`Event` instances and also
+        builds a dictionary keyed by :attr:`Event.path_name` so transition
+        matching can perform constant-time membership checks.
 
         :param events: Raw event inputs for the current execution attempt.
         :type events: Any
         :return: A pair containing the resolved event list and a name-indexed mapping.
         :rtype: Tuple[List[Event], Dict[str, Event]]
+        :raises SimulationRuntimeEventError: If any input item cannot be
+            resolved as a supported event.
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> ast = parse_with_grammar_entry(
+            ...     'state Root { state A { event Go; } [*] -> A; }',
+            ...     'state_machine_dsl',
+            ... )
+            >>> runtime = SimulationRuntime(parse_dsl_node_to_state_machine(ast))
+            >>> events, by_name = runtime._normalize_events("Root.A.Go")
+            >>> events[0].path_name == "Root.A.Go" and "Root.A.Go" in by_name
+            True
         """
         event_objects = [
             self._parse_event(event) for event in self._iter_event_inputs(events)
         ]
         d_events = {event.path_name: event for event in event_objects}
         return event_objects, d_events
+
+    @staticmethod
+    def _unconsumed_event_names(
+        input_event_names: List[str], consumed_event_names: List[str]
+    ) -> Tuple[str, ...]:
+        """
+        Compute unconsumed input events with multiset semantics.
+
+        The returned tuple preserves input order. Each consumed event removes at
+        most one matching input event; extra consumed occurrences cannot create
+        negative unconsumed counts, which keeps chained transitions using the
+        same event deterministic.
+
+        :param input_event_names: Canonical input event names in normalized
+            input order.
+        :type input_event_names: List[str]
+        :param consumed_event_names: Canonical consumed event names in
+            transition execution order.
+        :type consumed_event_names: List[str]
+        :return: Canonical unconsumed event names in input order.
+        :rtype: Tuple[str, ...]
+
+        Example::
+
+            >>> SimulationRuntime._unconsumed_event_names(
+            ...     ["Root.A.Go", "Root.A.Noise", "Root.A.Go"],
+            ...     ["Root.A.Go"],
+            ... )
+            ('Root.A.Noise', 'Root.A.Go')
+        """
+        remaining_consumed = Counter(consumed_event_names)
+        unconsumed = []
+        for event_name in input_event_names:
+            if remaining_consumed[event_name] > 0:
+                remaining_consumed[event_name] -= 1
+            else:
+                unconsumed.append(event_name)
+        return tuple(unconsumed)
 
     def _execute_transition_effect(
         self,
@@ -1057,8 +1593,16 @@ class SimulationRuntime:
             is_validation_mode=is_validation_mode,
         )
 
-        for name in global_var_names:
-            vars_[name] = local_scope[name]
+        normalized_updates = {
+            name: self._normalize_persistent_value(
+                name,
+                local_scope[name],
+                "operation block writeback",
+            )
+            for name in global_var_names
+        }
+        for name, value in normalized_updates.items():
+            vars_[name] = value
 
         if not is_validation_mode:
             new_vars = {name: vars_[name] for name in global_var_names}
@@ -1161,20 +1705,142 @@ class SimulationRuntime:
         Evaluate a DSL expression and normalize numeric user-data failures.
 
         :param expr: Expression object to evaluate.
+        :type expr: pyfcstm.model.Expr
         :param scope: Variable scope passed into the expression.
+        :type scope: Dict[str, Union[int, float]]
         :param usage: Human-readable expression usage for diagnostics.
+        :type usage: str
         :return: Expression result.
+        :rtype: Any
+        :raises SimulationRuntimeExpressionError: If evaluating ``expr`` raises
+            :class:`ValueError`, :class:`ArithmeticError`, or :class:`TypeError`
+            from user-authored DSL expression semantics.
+
+        Example::
+
+            >>> from pyfcstm.model import Integer, Variable
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> scope = {"x": 2}
+            >>> expr = Integer(10) / Variable("x")
+            >>> SimulationRuntime._evaluate_runtime_expr(
+            ...     expr, scope, usage="example expression"
+            ... )
+            5.0
         """
         try:
             return expr(**scope)
-        except (ValueError, ArithmeticError) as e:
+        except (ValueError, ArithmeticError, TypeError) as e:
             # ValueError: math domain errors or invalid numeric operations
             # raised while evaluating the user's DSL expression.
             # ArithmeticError: division by zero, overflow, or other numeric
             # runtime failure while evaluating the user's DSL expression.
+            # TypeError: Python numeric, bitwise, and shift operators reject
+            # runtime operand combinations such as ``float << int``.
             raise SimulationRuntimeExpressionError(
                 f"{usage} evaluation failed: {e}"
             ) from e
+
+    @staticmethod
+    def _handler_identity(handler: Callable[[ReadOnlyExecutionContext], None]) -> Tuple:
+        """
+        Return a stable identity key for an abstract handler callable.
+
+        Bound method objects are recreated on every attribute access. The
+        identity therefore uses the owning object identity and the underlying
+        function identity instead of the transient bound-method wrapper. Other
+        callables use object identity directly. User-defined ``__eq__`` methods
+        are intentionally ignored so registration and unregistration match the
+        concrete callable instance supplied to the runtime.
+
+        :param handler: Handler callable to identify.
+        :type handler: Callable[[ReadOnlyExecutionContext], None]
+        :return: Stable identity tuple for duplicate checks and unregistration.
+        :rtype: Tuple
+
+        Example::
+
+            >>> key = SimulationRuntime._handler_identity(handler)
+            >>> isinstance(key, tuple)
+            True
+        """
+        bound_self = getattr(handler, "__self__", None)
+        bound_func = getattr(handler, "__func__", None)
+        if bound_self is not None and bound_func is not None:
+            return ("bound_method", id(bound_self), id(bound_func))
+        return ("callable", id(handler))
+
+    def _named_abstract_action_paths(self) -> List[str]:
+        """
+        List canonical paths for named abstract actions in the model.
+
+        Only actual named abstract action declarations are registration targets.
+        Named lifecycle references, state paths, relative paths, and anonymous
+        abstract actions are intentionally excluded because they cannot be
+        dispatched by the handler registry.
+
+        :return: Sorted canonical abstract action paths.
+        :rtype: List[str]
+
+        Example::
+
+            >>> paths = runtime._named_abstract_action_paths()
+            >>> all(isinstance(path, str) for path in paths)
+            True
+        """
+        paths = []
+        for state in self.state_machine.walk_states():
+            actions = (
+                list(state.on_enters)
+                + list(state.on_durings)
+                + list(state.on_exits)
+                + list(state.on_during_aspects)
+            )
+            for action in actions:
+                if action.is_abstract and action.name is not None:
+                    paths.append(action.func_name)
+        return sorted(paths)
+
+    def _validate_abstract_action_path(self, action_path: str) -> str:
+        """
+        Validate that a handler path targets a dispatchable abstract action.
+
+        The registry accepts only canonical dot-separated paths for named
+        abstract action declarations in the current state machine. The method
+        rejects surrounding whitespace, leading slash notation, relative paths,
+        state-only paths, and unknown action names instead of creating handler
+        buckets that can never be dispatched.
+
+        :param action_path: Candidate abstract action path.
+        :type action_path: str
+        :return: The validated canonical action path.
+        :rtype: str
+        :raises ValueError: If ``action_path`` is empty, non-string, or not a
+            named abstract action in this runtime's state machine.
+
+        Example::
+
+            >>> runtime._validate_abstract_action_path("System.Active.Init")
+            'System.Active.Init'
+        """
+        if not isinstance(action_path, str):
+            raise ValueError("action_path must be a string")
+        if not action_path:
+            raise ValueError("action_path cannot be empty")
+        if action_path.strip() != action_path:
+            raise ValueError(
+                "action_path must be a canonical named abstract action path "
+                "without surrounding whitespace: %r" % action_path
+            )
+
+        available_paths = self._named_abstract_action_paths()
+        if action_path not in set(available_paths):
+            available_text = ", ".join(available_paths) if available_paths else "<none>"
+            raise ValueError(
+                "action_path must name an existing named abstract action in "
+                "this state machine: %r; available named abstract actions: %s"
+                % (action_path, available_text)
+            )
+        return action_path
 
     def _format_var_changes(
         self,
@@ -1199,7 +1865,14 @@ class SimulationRuntime:
             old_val = old_vars.get(var_name)
             new_val = new_vars.get(var_name)
             if old_val != new_val:
-                changes.append(f"{var_name}: {old_val} --> {new_val}")
+                changes.append(
+                    "%s: %s --> %s"
+                    % (
+                        var_name,
+                        _safe_runtime_repr(old_val),
+                        _safe_runtime_repr(new_val),
+                    )
+                )
 
         if changes:
             return f"; var changes: {', '.join(changes)}"
@@ -1210,6 +1883,9 @@ class SimulationRuntime:
         func: Union[OnStage, OnAspect],
         vars_: Dict[str, Union[int, float]],
         is_validation_mode: bool = False,
+        *,
+        execution_state_path: Optional[Tuple[str, ...]] = None,
+        active_leaf_path: Optional[Tuple[str, ...]] = None,
     ) -> None:
         """
         Execute a lifecycle or aspect action against a variable mapping.
@@ -1232,12 +1908,26 @@ class SimulationRuntime:
         :type vars_: Dict[str, Union[int, float]]
         :param is_validation_mode: Whether this is validation mode (handlers not executed).
         :type is_validation_mode: bool
+        :param execution_state_path: Current execution location for handler
+            context. Defaults to the action owner state path.
+        :type execution_state_path: Optional[Tuple[str, ...]]
+        :param active_leaf_path: Active leaf path for context metadata. Defaults
+            to ``execution_state_path``.
+        :type active_leaf_path: Optional[Tuple[str, ...]]
         :return: ``None``.
         :rtype: None
         """
         # Preserve the caller state before resolving ``ref`` chains.
         # Model construction assigns a parent state for lifecycle actions.
         calling_state_path = func.parent.path
+        if execution_state_path is None:
+            execution_state_path = calling_state_path
+        if active_leaf_path is None:
+            active_leaf_path = execution_state_path
+        call_stage = func.stage
+        named_ref = (
+            func.func_name if func.name is not None and func.ref is not None else None
+        )
 
         seen_actions = []
         seen_action_ids = set()
@@ -1320,10 +2010,14 @@ class SimulationRuntime:
             # Create read-only context
             # func.parent is always set during state machine construction
             ctx = ReadOnlyExecutionContext(
-                state_path=calling_state_path,
+                state_path=execution_state_path,
                 vars=dict(vars_),
                 action_name=func_path,
-                action_stage=func.stage,
+                action_stage=call_stage,
+                active_leaf=active_leaf_path,
+                call_stage=call_stage,
+                abstract_target=func_path,
+                named_ref=named_ref,
             )
 
             # Execute all handlers in order
@@ -1469,7 +2163,13 @@ class SimulationRuntime:
         :rtype: None
         """
         for _, func in state.iter_on_during_aspect_recursively():
-            self._execute_func(func, vars_, is_validation_mode=is_validation_mode)
+            self._execute_func(
+                func,
+                vars_,
+                is_validation_mode=is_validation_mode,
+                execution_state_path=state.path,
+                active_leaf_path=state.path,
+            )
 
     def _enter_state(
         self,
@@ -1477,7 +2177,9 @@ class SimulationRuntime:
         state: State,
         vars_: Dict[str, Union[int, float]],
         d_events: Dict[str, Event],
+        consumed_events: Optional[List[str]] = None,
         is_validation_mode: bool = False,
+        attempt_initial_transition: bool = True,
     ) -> None:
         """
         Enter a state and perform its immediate entry-time semantics.
@@ -1497,10 +2199,18 @@ class SimulationRuntime:
         :type vars_: Dict[str, Union[int, float]]
         :param d_events: Active events for the current execution attempt.
         :type d_events: Dict[str, Event]
+        :param consumed_events: Optional collector for canonical names of
+            evented transitions executed in committed mode.
+        :type consumed_events: Optional[List[str]]
         :param is_validation_mode: Whether this is validation mode (handlers not executed).
         :type is_validation_mode: bool
+        :param attempt_initial_transition: Whether composite entry should
+            immediately try its initial transition chain, defaults to ``True``.
+        :type attempt_initial_transition: bool, optional
         :return: ``None``.
         :rtype: None
+        :raises SimulationRuntimeDfsError: If initial-transition validation
+            exceeds runtime safety limits.
         """
         stack.append(_Frame(state, "active"))
         for on_enter in state.on_enters:
@@ -1515,15 +2225,21 @@ class SimulationRuntime:
                     on_during_before, vars_, is_validation_mode=is_validation_mode
                 )
             stack[-1].mode = "init_wait"
-            self._attempt_init_transition(
-                stack, vars_, d_events, is_validation_mode=is_validation_mode
-            )
+            if attempt_initial_transition:
+                self._attempt_init_transition(
+                    stack,
+                    vars_,
+                    d_events,
+                    consumed_events=consumed_events,
+                    is_validation_mode=is_validation_mode,
+                )
 
     def _attempt_init_transition(
         self,
         stack: List[_Frame],
         vars_: Dict[str, Union[int, float]],
         d_events: Dict[str, Event],
+        consumed_events: Optional[List[str]] = None,
         is_validation_mode: bool = False,
     ) -> bool:
         """
@@ -1541,6 +2257,9 @@ class SimulationRuntime:
         :type vars_: Dict[str, Union[int, float]]
         :param d_events: Active events for the current execution attempt.
         :type d_events: Dict[str, Event]
+        :param consumed_events: Optional collector for canonical names of
+            evented transitions executed in committed mode.
+        :type consumed_events: Optional[List[str]]
         :param is_validation_mode: Whether this is validation mode (handlers not executed).
         :type is_validation_mode: bool
         :return: ``True`` if an initial transition was taken.
@@ -1571,7 +2290,9 @@ class SimulationRuntime:
                     vars_,
                     transition,
                     d_events,
+                    consumed_events=consumed_events,
                     is_validation_mode=is_validation_mode,
+                    attempt_initial_transition=not is_validation_mode,
                 )
                 return True
         return False
@@ -1582,7 +2303,9 @@ class SimulationRuntime:
         vars_: Dict[str, Union[int, float]],
         transition: Transition,
         d_events: Dict[str, Event],
+        consumed_events: Optional[List[str]] = None,
         is_validation_mode: bool = False,
+        attempt_initial_transition: bool = True,
     ) -> None:
         """
         Execute one enabled initial transition on the supplied context.
@@ -1599,12 +2322,26 @@ class SimulationRuntime:
         :type transition: Transition
         :param d_events: Active events for the current execution attempt.
         :type d_events: Dict[str, Event]
+        :param consumed_events: Optional collector for canonical names of
+            evented transitions executed in committed mode.
+        :type consumed_events: Optional[List[str]]
         :param is_validation_mode: Whether this is validation mode.
         :type is_validation_mode: bool
+        :param attempt_initial_transition: Whether entering a composite target
+            should immediately try its own initial transition, defaults to
+            ``True``.
+        :type attempt_initial_transition: bool, optional
         :return: ``None``.
         :rtype: None
         """
-        state = stack[-1].state
+        composite_frame = stack[-1]
+        state = composite_frame.state
+        if (
+            consumed_events is not None
+            and not is_validation_mode
+            and transition.event is not None
+        ):
+            consumed_events.append(transition.event.path_name)
         self._execute_transition_effect(
             transition,
             vars_,
@@ -1616,8 +2353,12 @@ class SimulationRuntime:
             target_state,
             vars_,
             d_events,
+            consumed_events=consumed_events,
             is_validation_mode=is_validation_mode,
+            attempt_initial_transition=attempt_initial_transition,
         )
+        if composite_frame in stack:
+            composite_frame.mode = "active"
 
     def _validate_initial_transition(
         self,
@@ -1654,14 +2395,9 @@ class SimulationRuntime:
             transition,
             d_events,
             is_validation_mode=True,
+            attempt_initial_transition=False,
         )
-        success, _ = self._run_cycle_on_context(
-            sim_stack,
-            sim_vars,
-            d_events,
-            is_validation_mode=True,
-        )
-        return success
+        return self._validation_search_reaches_stable(sim_stack, sim_vars, d_events)
 
     def _finalize_exit_to_parent(
         self,
@@ -1720,6 +2456,7 @@ class SimulationRuntime:
         vars_: Dict[str, Union[int, float]],
         transition: Transition,
         d_events: Dict[str, Event],
+        consumed_events: Optional[List[str]] = None,
         is_validation_mode: bool = False,
     ) -> bool:
         """
@@ -1738,6 +2475,9 @@ class SimulationRuntime:
         :type transition: Transition
         :param d_events: Active events for the current execution attempt.
         :type d_events: Dict[str, Event]
+        :param consumed_events: Optional collector for canonical names of
+            evented transitions executed in committed mode.
+        :type consumed_events: Optional[List[str]]
         :param is_validation_mode: Whether this is validation mode (handlers not executed).
         :type is_validation_mode: bool
         :return: ``True`` if executing the transition ends the runtime.
@@ -1751,9 +2491,10 @@ class SimulationRuntime:
 
         if is_validation_mode:
             self.logger.debug(
-                f"[VALIDATION] Execute transition: "
-                f"{current_state_path} -> {target_desc} "
-                f"(event={transition.event.path_name if transition.event else 'none'})"
+                "[VALIDATION] Execute transition: %s -> %s (event=%s)",
+                current_state_path,
+                target_desc,
+                transition.event.path_name if transition.event else "none",
             )
         else:
             self.logger.info(
@@ -1761,6 +2502,12 @@ class SimulationRuntime:
                 f"{current_state_path} -> {target_desc} "
                 f"(event={transition.event.path_name if transition.event else 'none'})"
             )
+            if (
+                transition.event is not None
+                and consumed_events is not None
+                and not is_validation_mode
+            ):
+                consumed_events.append(transition.event.path_name)
 
         for on_exit in current_state.on_exits:
             self._execute_func(on_exit, vars_, is_validation_mode=is_validation_mode)
@@ -1788,7 +2535,12 @@ class SimulationRuntime:
 
         target_state = current_state.parent.substates[transition.to_state]
         self._enter_state(
-            stack, target_state, vars_, d_events, is_validation_mode=is_validation_mode
+            stack,
+            target_state,
+            vars_,
+            d_events,
+            consumed_events=consumed_events,
+            is_validation_mode=is_validation_mode,
         )
         current_state_path = ".".join(current_state.path)
         target_state_path = ".".join(target_state.path)
@@ -1894,40 +2646,221 @@ class SimulationRuntime:
         sim_vars = copy.deepcopy(vars_)
         stack_repr = [(".".join(frame.state.path), frame.mode) for frame in stack]
         self.logger.debug(
-            f"[VALIDATION] DFS validation start for transition {transition.from_state} -> {transition.to_state} "
-            f"with stack={stack_repr} vars={vars_}"
+            "[VALIDATION] DFS validation start for transition %s -> %s with stack=%s vars=%s",
+            transition.from_state,
+            transition.to_state,
+            stack_repr,
+            _safe_runtime_repr(vars_),
         )
         ended = self._execute_transition_on_context(
             sim_stack, sim_vars, transition, d_events, is_validation_mode=True
         )
         if ended:
             self.logger.debug(
-                f"[VALIDATION] DFS validation success for transition {transition.from_state} -> {transition.to_state}: runtime ended"
+                "[VALIDATION] DFS validation success for transition %s -> %s: runtime ended",
+                transition.from_state,
+                transition.to_state,
             )
             return True
 
-        success, _ = self._run_cycle_on_context(
+        success = self._validation_search_reaches_stable(
             sim_stack,
             sim_vars,
             d_events,
             ended=ended,
             validate_post_child_exit=True,
-            is_validation_mode=True,
         )
         sim_stack_repr = [
             (".".join(frame.state.path), frame.mode) for frame in sim_stack
         ]
         self.logger.debug(
-            f"[VALIDATION] DFS validation result for transition {transition.from_state} -> {transition.to_state}: "
-            f"success={success}, stack={sim_stack_repr}, vars={sim_vars}"
+            "[VALIDATION] DFS validation result for transition %s -> %s: success=%s, stack=%s, vars=%s",
+            transition.from_state,
+            transition.to_state,
+            success,
+            sim_stack_repr,
+            _safe_runtime_repr(sim_vars),
         )
         return success
+
+    def _validation_search_reaches_stable(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+        *,
+        ended: bool = False,
+        validate_post_child_exit: bool = True,
+    ) -> bool:
+        """
+        Search for a stable continuation without recursive Python calls.
+
+        Speculative transition and initial-transition checks need to decide
+        whether at least one enabled continuation reaches a stoppable state or
+        termination. This helper performs that search with an explicit worklist
+        so unbounded pseudo chains hit the runtime's own DFS safety limits
+        instead of Python's call-stack limit.
+
+        :param stack: Starting validation stack. Mutated to the stable path on
+            success.
+        :type stack: List[_Frame]
+        :param vars_: Starting variable mapping. Mutated to the stable path on
+            success.
+        :type vars_: Dict[str, Union[int, float]]
+        :param d_events: Active events for this validation attempt.
+        :type d_events: Dict[str, Event]
+        :param ended: Whether the starting context has already ended, defaults
+            to ``False``.
+        :type ended: bool, optional
+        :param validate_post_child_exit: Whether post-child-exit transitions
+            should be considered during search, defaults to ``True``.
+        :type validate_post_child_exit: bool, optional
+        :return: ``True`` if a stable continuation is reachable.
+        :rtype: bool
+        :raises SimulationRuntimeDfsError: If the worklist exceeds safety
+            limits before reaching a stable continuation.
+        """
+        if ended:
+            stack.clear()
+            vars_.clear()
+            return True
+
+        worklist = [(self._clone_stack(stack), copy.deepcopy(vars_), False)]
+        seen_signatures = set()
+        steps_taken = 0
+
+        while worklist:
+            current_stack, current_vars, current_ended = worklist.pop()
+            if current_ended:
+                stack.clear()
+                vars_.clear()
+                vars_.update(current_vars)
+                return True
+            if not current_stack:
+                stack.clear()
+                vars_.clear()
+                vars_.update(current_vars)
+                return True
+
+            structural_signature = self._create_structural_signature(current_stack)
+            if len(structural_signature) > self._DFS_STRUCTURAL_DEPTH_LIMIT:
+                raise SimulationRuntimeDfsError(
+                    "Speculative DFS exceeded the structural stack-depth safety limit "
+                    f"({self._DFS_STRUCTURAL_DEPTH_LIMIT}) without reaching a stoppable state or pruning; "
+                    "the state machine likely contains an invalid unbounded nesting chain."
+                )
+
+            signature = self._create_execution_signature(current_stack, current_vars)
+            if signature in seen_signatures:
+                continue
+            seen_signatures.add(signature)
+
+            if steps_taken >= self._DFS_STEP_LIMIT:
+                raise SimulationRuntimeDfsError(
+                    "Speculative DFS exceeded the step safety limit "
+                    f"({self._DFS_STEP_LIMIT}) without reaching a stoppable state or pruning; "
+                    "the state machine likely contains an invalid unbounded pseudo-state "
+                    "or transition chain."
+                )
+            steps_taken += 1
+
+            frame = current_stack[-1]
+            state = frame.state
+
+            if state.is_leaf_state and frame.mode == "after_entry":
+                next_stack = self._clone_stack(current_stack)
+                next_vars = copy.deepcopy(current_vars)
+                next_stack[-1].mode = "active"
+                if state.is_stoppable:
+                    stack[:] = next_stack
+                    vars_.clear()
+                    vars_.update(next_vars)
+                    return True
+                worklist.append((next_stack, next_vars, False))
+                continue
+
+            if state.is_leaf_state:
+                progressed = False
+                for transition in reversed(state.transitions_from):
+                    if not self._transition_is_enabled(
+                        transition, d_events, current_vars
+                    ):
+                        continue
+                    next_stack = self._clone_stack(current_stack)
+                    next_vars = copy.deepcopy(current_vars)
+                    next_ended = self._execute_transition_on_context(
+                        next_stack,
+                        next_vars,
+                        transition,
+                        d_events,
+                        is_validation_mode=True,
+                    )
+                    worklist.append((next_stack, next_vars, next_ended))
+                    progressed = True
+                if progressed:
+                    continue
+
+                if not state.is_stoppable:
+                    continue
+
+                next_stack = self._clone_stack(current_stack)
+                next_vars = copy.deepcopy(current_vars)
+                self._run_leaf_during(state, next_vars, is_validation_mode=True)
+                next_stack[-1].mode = "after_entry"
+                worklist.append((next_stack, next_vars, False))
+                continue
+
+            if frame.mode == "init_wait":
+                progressed = False
+                for transition in reversed(state.init_transitions):
+                    if not self._transition_is_enabled(
+                        transition, d_events, current_vars
+                    ):
+                        continue
+                    next_stack = self._clone_stack(current_stack)
+                    next_vars = copy.deepcopy(current_vars)
+                    self._execute_initial_transition_on_context(
+                        next_stack,
+                        next_vars,
+                        transition,
+                        d_events,
+                        is_validation_mode=True,
+                        attempt_initial_transition=False,
+                    )
+                    worklist.append((next_stack, next_vars, False))
+                    progressed = True
+                if not progressed:
+                    continue
+                continue
+
+            if frame.mode == "post_child_exit":
+                if not validate_post_child_exit:
+                    continue
+                for transition in reversed(state.transitions_from):
+                    if not self._transition_is_enabled(
+                        transition, d_events, current_vars
+                    ):
+                        continue
+                    next_stack = self._clone_stack(current_stack)
+                    next_vars = copy.deepcopy(current_vars)
+                    next_ended = self._execute_transition_on_context(
+                        next_stack,
+                        next_vars,
+                        transition,
+                        d_events,
+                        is_validation_mode=True,
+                    )
+                    worklist.append((next_stack, next_vars, next_ended))
+                continue
+
+        return False
 
     def _initialize_context(
         self,
         stack: List[_Frame],
         vars_: Dict[str, Union[int, float]],
         d_events: Dict[str, Event],
+        consumed_events: Optional[List[str]] = None,
         is_validation_mode: bool = False,
     ) -> bool:
         """
@@ -1943,6 +2876,9 @@ class SimulationRuntime:
         :type vars_: Dict[str, Union[int, float]]
         :param d_events: Active events available during initial entry.
         :type d_events: Dict[str, Event]
+        :param consumed_events: Optional collector for canonical names of
+            evented transitions executed in committed mode.
+        :type consumed_events: Optional[List[str]]
         :param is_validation_mode: Whether this is validation mode (handlers not executed).
         :type is_validation_mode: bool
         :return: ``True`` if initialization ends the runtime immediately.
@@ -1954,6 +2890,7 @@ class SimulationRuntime:
             self.state_machine.root_state,
             vars_,
             d_events,
+            consumed_events=consumed_events,
             is_validation_mode=is_validation_mode,
         )
         return len(stack) == 0
@@ -2021,6 +2958,7 @@ class SimulationRuntime:
         *,
         ended: bool = False,
         validate_post_child_exit: bool = True,
+        consumed_events: Optional[List[str]] = None,
         is_validation_mode: bool = False,
     ) -> Tuple[bool, bool]:
         """
@@ -2046,6 +2984,9 @@ class SimulationRuntime:
         :param validate_post_child_exit: Whether transitions selected after a
             child exits to its parent should still perform stoppable validation.
         :type validate_post_child_exit: bool
+        :param consumed_events: Optional collector for canonical names of
+            evented transitions executed in committed mode.
+        :type consumed_events: Optional[List[str]]
         :param is_validation_mode: Whether this is validation mode (handlers not executed).
         :type is_validation_mode: bool
         :return: Pair ``(success, ended)`` describing the result.
@@ -2057,9 +2998,9 @@ class SimulationRuntime:
             return True, True
 
         steps_taken = 0
-        max_steps = 1000
+        max_steps = self._DFS_STEP_LIMIT
         seen_signatures = set()
-        max_structural_depth = 64
+        max_structural_depth = self._DFS_STRUCTURAL_DEPTH_LIMIT
 
         while not ended:
             if is_validation_mode:
@@ -2067,8 +3008,11 @@ class SimulationRuntime:
                     (".".join(frame.state.path), frame.mode) for frame in stack
                 ]
                 self.logger.debug(
-                    f"[VALIDATION] DFS step {steps_taken + 1}: stack={stack_repr}, "
-                    f"vars={vars_}, ended={ended}"
+                    "[VALIDATION] DFS step %s: stack=%s, vars=%s, ended=%s",
+                    steps_taken + 1,
+                    stack_repr,
+                    _safe_runtime_repr(vars_),
+                    ended,
                 )
             if not stack:
                 ended = True
@@ -2091,12 +3035,12 @@ class SimulationRuntime:
                 )
 
             if steps_taken >= max_steps:
-                self.logger.debug(
-                    "[VALIDATION] Speculative DFS reached the step safety limit (%s) without convergence; "
-                    "treating the path as invalid continuation.",
-                    max_steps,
+                raise SimulationRuntimeDfsError(
+                    "Speculative DFS exceeded the step safety limit "
+                    f"({max_steps}) without reaching a stoppable state or pruning; "
+                    "the state machine likely contains an invalid unbounded pseudo-state "
+                    "or transition chain."
                 )
-                return False, False
 
             frame = stack[-1]
             state = frame.state
@@ -2109,13 +3053,19 @@ class SimulationRuntime:
                     steps_taken += 1
                     continue
 
-                transition = self._select_transition(stack, vars_, d_events)
+                transition = self._select_transition(
+                    stack,
+                    vars_,
+                    d_events,
+                    force_validate=not state.is_stoppable,
+                )
                 if transition is not None:
                     ended = self._execute_transition_on_context(
                         stack,
                         vars_,
                         transition,
                         d_events,
+                        consumed_events=consumed_events,
                         is_validation_mode=is_validation_mode,
                     )
                     steps_taken += 1
@@ -2132,7 +3082,11 @@ class SimulationRuntime:
 
             if frame.mode == "init_wait":
                 progressed = self._attempt_init_transition(
-                    stack, vars_, d_events, is_validation_mode=is_validation_mode
+                    stack,
+                    vars_,
+                    d_events,
+                    consumed_events=consumed_events,
+                    is_validation_mode=is_validation_mode,
                 )
                 steps_taken += 1
                 if not progressed:
@@ -2154,6 +3108,7 @@ class SimulationRuntime:
                     vars_,
                     transition,
                     d_events,
+                    consumed_events=consumed_events,
                     is_validation_mode=is_validation_mode,
                 )
                 steps_taken += 1
@@ -2165,7 +3120,7 @@ class SimulationRuntime:
 
         return True, True
 
-    def cycle(self, events: Any = None):
+    def cycle(self, events: Any = None) -> CycleResult:
         """
         Execute a full runtime cycle until reaching a stable boundary.
 
@@ -2188,12 +3143,11 @@ class SimulationRuntime:
 
         **Event Handling**:
 
-        Events can be provided as event objects, dot-separated path strings, or
-        iterables containing event objects, path strings, and event-like objects
-        exposing ``path_name``. A bare string is treated as one event path, not
-        as an iterable of characters. Multiple events can be active
-        simultaneously, allowing complex transition chains to execute in a
-        single cycle.
+        Events can be provided as model-owned event objects, dot-separated path
+        strings, or iterables containing those two value types. A bare string is
+        treated as one event path, not as an iterable of characters. Multiple
+        events can be active simultaneously, allowing complex transition chains
+        to execute in a single cycle.
 
         **Flexible Event Path Formats**:
 
@@ -2229,12 +3183,22 @@ class SimulationRuntime:
         - All side effects from failed validation are discarded
 
         :param events: Events available for the current cycle. Can be a single
-            event object, a dot-separated path string, or an iterable containing
-            event objects, path strings, and event-like objects exposing
-            ``path_name``.
+            model-owned event object, a dot-separated path string, or an
+            iterable containing event objects and path strings.
         :type events: Any, optional
-        :return: ``None``.
-        :rtype: None
+        :return: A cycle result containing legacy value and event-accounting
+            metadata for this cycle.
+        :rtype: CycleResult
+        :raises ValueError: If operation, effect, or lifecycle action writeback
+            produces a value that cannot be normalized to the declared
+            persistent ``int`` / ``float`` type.
+        :raises SimulationRuntimeEventError: If an event input has an
+            unsupported shape, cannot be resolved, or is not owned by this
+            runtime's state machine.
+        :raises SimulationRuntimeDfsError: If speculative validation exceeds
+            DFS safety limits while searching for a stoppable state.
+        :raises Exception: If an abstract handler raises while
+            ``abstract_error_mode`` is ``'raise'``.
 
         Example - Basic cycle execution::
 
@@ -2257,12 +3221,16 @@ class SimulationRuntime:
             >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
             >>> sm = parse_dsl_node_to_state_machine(ast)
             >>> runtime = SimulationRuntime(sm)
-            >>> runtime.cycle()  # Initialize and reach Idle
+            >>> result = runtime.cycle()  # Initialize and reach Idle
+            >>> result.input_events
+            ()
             >>> runtime.current_state.path
             ('System', 'Idle')
             >>> runtime.vars['counter']
             1
-            >>> runtime.cycle('System.Idle.Start')  # Transition to Active
+            >>> result = runtime.cycle('System.Idle.Start')  # Transition to Active
+            >>> result.consumed_events
+            ('System.Idle.Start',)
             >>> runtime.current_state.path
             ('System', 'Active')
 
@@ -2399,16 +3367,17 @@ class SimulationRuntime:
             self.logger.warning(
                 "Runtime in error state, cycle ignored. Check error_info."
             )
-            return
+            return CycleResult()
 
         if self._ended:
             self.logger.warning("Runtime already ended, cycle ignored.")
-            return
+            return CycleResult()
 
         event_objects, d_events = self._normalize_events(events)
 
         # Log cycle start
         event_names = [event.path_name for event in event_objects]
+        consumed_event_names: List[str] = []
         self.logger.info(
             f"Cycle {self.cycle_count + 1} starting with events: "
             f"{event_names if event_names else 'none'}"
@@ -2449,13 +3418,29 @@ class SimulationRuntime:
             sim_initialized = snapshot_initialized
             sim_ended = snapshot_ended
 
-            if not sim_initialized:
-                sim_ended = self._initialize_context(sim_stack, sim_vars, d_events)
-                sim_initialized = True
+            metadata_committed = False
+            try:
+                if not sim_initialized:
+                    sim_ended = self._initialize_context(
+                        sim_stack,
+                        sim_vars,
+                        d_events,
+                        consumed_events=consumed_event_names,
+                    )
+                    sim_initialized = True
 
-            success, sim_ended = self._run_cycle_on_context(
-                sim_stack, sim_vars, d_events, ended=sim_ended
-            )
+                success, sim_ended = self._run_cycle_on_context(
+                    sim_stack,
+                    sim_vars,
+                    d_events,
+                    ended=sim_ended,
+                    consumed_events=consumed_event_names,
+                )
+                metadata_committed = True
+            finally:
+                if not metadata_committed:
+                    self._warned_anonymous_abstracts = snapshot_warned_anonymous
+                    self._abstract_handler_errors = snapshot_handler_errors
 
         if success:
             self.stack = [] if sim_ended else sim_stack
@@ -2486,13 +3471,13 @@ class SimulationRuntime:
 
             # Add to history and maintain size limit
             self.history.append(history_entry)
-            if self.history_size is not None and len(self.history) > self.history_size:
-                self.history.pop(0)  # Remove oldest entry
+            self._trim_history_to_size()
 
             # Log successful cycle completion with variable changes
             changes = self._format_var_changes(old_vars, self.vars)
             current_values = ", ".join(
-                f"{name}={value}" for name, value in sorted(self.vars.items())
+                "%s=%s" % (name, _safe_runtime_repr(value))
+                for name, value in sorted(self.vars.items())
             )
             self.logger.info(
                 f"Cycle {self.cycle_count} completed successfully - State: {state_path}{changes}; "
@@ -2511,6 +3496,7 @@ class SimulationRuntime:
             self.logger.warning(
                 f"Cycle {self.cycle_count + 1} failed - Unable to reach a stoppable state, changes rolled back"
             )
+            consumed_event_names = []
 
         if self._ended or not self.stack:
             self._ended = True
@@ -2519,8 +3505,50 @@ class SimulationRuntime:
         else:
             current_state_path = ".".join(self.current_state.path)
             self.logger.debug(
-                f"Cycle {self.cycle_count} - Current state: {current_state_path}, Vars: {self.vars}"
+                "Cycle %s - Current state: %s, Vars: %s",
+                self.cycle_count,
+                current_state_path,
+                _safe_runtime_repr(self.vars),
             )
+
+        result = CycleResult(
+            value=None,
+            input_events=tuple(event_names),
+            consumed_events=tuple(consumed_event_names),
+            unconsumed_events=self._unconsumed_event_names(
+                event_names, consumed_event_names
+            ),
+        )
+        return result
+
+    def _trim_history_to_size(self) -> None:
+        """
+        Trim committed history entries to the configured retention size.
+
+        ``None`` keeps all entries. Non-negative integer sizes keep the newest
+        ``history_size`` entries, with ``0`` keeping no entries. Unsupported
+        values intentionally retain the previous one-pop boundary behavior; the
+        public validation contract for invalid ``history_size`` values is owned
+        by a separate simulator issue.
+
+        :return: ``None``.
+        :rtype: None
+        """
+        history_size = self.history_size
+        if history_size is None:
+            return
+
+        if (
+            not isinstance(history_size, int)
+            or isinstance(history_size, bool)
+            or history_size < 0
+        ):
+            if len(self.history) > history_size:
+                self.history.pop(0)
+            return
+
+        while len(self.history) > history_size:
+            self.history.pop(0)
 
     @property
     def current_state(self) -> State:
@@ -2532,9 +3560,16 @@ class SimulationRuntime:
         composite states in ``init_wait`` mode, this is the parent waiting for
         an initial transition.
 
+        Check :attr:`is_ended` before calling this property when a runtime may
+        have terminated. Once the runtime has ended, there is no active state
+        and the query raises :class:`SimulationRuntimeTerminalStateError`.
+
         :return: The current active state.
         :rtype: State
-        :raises IndexError: If the runtime has ended and the stack is empty.
+        :raises SimulationRuntimeTerminalStateError: If the runtime has ended
+            and the active stack is empty.
+        :raises RuntimeError: If the active stack is unexpectedly empty before
+            the runtime has ended.
 
         Example::
 
@@ -2566,16 +3601,21 @@ class SimulationRuntime:
         .. note::
            Before the first :meth:`cycle` call, this returns the root state.
            After the runtime has ended, accessing this property will raise
-           an IndexError.
+           :class:`SimulationRuntimeTerminalStateError`.
         """
         if not self.stack:
             if self._ended:
-                raise IndexError("Cannot access current_state: runtime has ended.")
-            else:
-                raise IndexError(
-                    "Cannot access current_state: runtime has not been initialized. "
-                    "This should not happen - the stack should be initialized in __init__."
+                raise SimulationRuntimeTerminalStateError(
+                    "Cannot access current_state: runtime has ended and the "
+                    "active stack is empty. Check is_ended before querying "
+                    "current_state, or use terminal-safe queries such as "
+                    "brief_stack or history."
                 )
+            raise RuntimeError(
+                "Cannot access current_state: runtime active stack is empty "
+                "before termination. This indicates an internal runtime "
+                "invariant failure."
+            )
         return self.stack[-1].state
 
     @property
@@ -2748,7 +3788,7 @@ class SimulationRuntime:
         return list(self._abstract_handler_errors)
 
     @property
-    def abstract_error_mode(self) -> Literal['raise', 'log']:
+    def abstract_error_mode(self) -> Literal["raise", "log"]:
         """
         Return the configured abstract-handler error mode.
 
@@ -2757,21 +3797,44 @@ class SimulationRuntime:
         """
         return self._abstract_error_mode
 
-    def copy_session_configuration_to(self, runtime: 'SimulationRuntime') -> None:
+    def copy_session_configuration_to(self, runtime: "SimulationRuntime") -> None:
         """
         Copy session-level configuration into another runtime instance.
 
         Command-line ``init`` and ``clear`` rebuild a runtime while preserving
         the user's session-level configuration. This helper copies only that
         configuration: history retention, abstract-handler error mode, and
-        registered abstract handlers. Execution history, warning records, and
+        registered abstract handlers. The target handler registry is replaced
+        with this runtime's registry so rebuilt sessions do not retain stale
+        target-only handlers. Execution history, warning records, and
         error-state diagnostics are intentionally not copied.
 
         :param runtime: Target runtime that should receive session settings.
         :type runtime: SimulationRuntime
         :return: ``None``.
         :rtype: None
+        :raises ValueError: If the target runtime does not contain every named
+            abstract action path registered in this runtime.
+
+        Example::
+
+            >>> replacement = SimulationRuntime(state_machine)
+            >>> runtime.copy_session_configuration_to(replacement)
+            >>> replacement.history_size == runtime.history_size
+            True
         """
+        for action_path in self._abstract_handlers:
+            try:
+                runtime._validate_abstract_action_path(action_path)
+            except ValueError as err:
+                # ValueError: target runtime path validation rejects a handler
+                # path that was valid for the source runtime but is not a named
+                # abstract action in the target model.
+                raise ValueError(
+                    "Cannot copy abstract handler session to target runtime: "
+                    "target runtime has no named abstract action %r" % action_path
+                ) from err
+
         runtime.history_size = self.history_size
         runtime._abstract_error_mode = self._abstract_error_mode
         runtime._abstract_handlers = {
@@ -2780,41 +3843,66 @@ class SimulationRuntime:
         }
 
     def register_abstract_handler(
-        self, action_path: str, handler: Callable[[ReadOnlyExecutionContext], None]
+        self,
+        action_path: str,
+        handler: Callable[[ReadOnlyExecutionContext], None],
+        allow_duplicates: bool = False,
     ) -> None:
         """
-        Register a Python function to handle an abstract action.
+        Register a Python function to handle a named abstract action.
 
-        Multiple handlers can be registered for the same abstract action.
-        They will be executed in registration order.
+        Multiple different handlers can be registered for the same abstract
+        action and run in registration order. Registering the same callable for
+        the same abstract action is rejected by default because it usually means
+        setup code ran twice. Callers that intentionally want duplicate
+        execution may set ``allow_duplicates`` to ``True``; the runtime then
+        emits a :class:`UserWarning` and appends another registration entry.
 
-        :param action_path: Full path to the abstract action (e.g., "System.Active.InitHardware")
+        :param action_path: Canonical path to a named abstract action, such as
+            ``"System.Active.InitHardware"``.
         :type action_path: str
-        :param handler: Python function that receives read-only context
+        :param handler: Python function that receives read-only context.
         :type handler: Callable[[ReadOnlyExecutionContext], None]
-        :raises ValueError: If action_path is empty or invalid
+        :param allow_duplicates: Whether to permit the same callable to be
+            registered again for the same action, defaults to ``False``.
+        :type allow_duplicates: bool, optional
+        :return: ``None``.
+        :rtype: None
+        :raises ValueError: If ``action_path`` is empty, invalid, not a named
+            abstract action in this model, or the same callable is already
+            registered for the same action while ``allow_duplicates`` is
+            ``False``.
 
         Example::
 
             >>> def my_init(ctx: ReadOnlyExecutionContext):
             ...     print(f"Initializing in state {ctx.get_state_name()}")
             ...     print(f"Counter value: {ctx.get_var('counter')}")
-            >>>
             >>> runtime.register_abstract_handler("System.Active.InitHardware", my_init)
-            >>>
-            >>> # Register another handler for the same action
             >>> def my_init2(ctx: ReadOnlyExecutionContext):
             ...     print(f"Second handler for {ctx.action_name}")
-            >>>
             >>> runtime.register_abstract_handler("System.Active.InitHardware", my_init2)
         """
-        if not action_path:
-            raise ValueError("action_path cannot be empty")
+        action_path = self._validate_abstract_action_path(action_path)
+        handler_key = self._handler_identity(handler)
+        handlers = self._abstract_handlers.setdefault(action_path, [])
+        duplicate = any(
+            self._handler_identity(item) == handler_key for item in handlers
+        )
+        if duplicate:
+            if not allow_duplicates:
+                raise ValueError(
+                    "Abstract handler is already registered for named abstract "
+                    "action %r" % action_path
+                )
+            warnings.warn(
+                "Duplicate abstract handler registration for named abstract "
+                "action %s; handler will be executed more than once" % action_path,
+                UserWarning,
+                stacklevel=2,
+            )
 
-        if action_path not in self._abstract_handlers:
-            self._abstract_handlers[action_path] = []
-
-        self._abstract_handlers[action_path].append(handler)
+        handlers.append(handler)
         self.logger.debug(
             f"Registered handler for abstract action {action_path} "
             f"(total handlers: {len(self._abstract_handlers[action_path])})"
@@ -2824,65 +3912,116 @@ class SimulationRuntime:
         self,
         action_path: str,
         handler: Optional[Callable[[ReadOnlyExecutionContext], None]] = None,
+        removal_mode: Literal["all", "one"] = "all",
     ) -> int:
         """
-        Unregister abstract handler(s) for an action.
+        Unregister abstract handler entries for an action.
 
-        If handler is ``None``, removes all handlers for the action.
-        If handler is provided, removes only that specific handler.
+        If ``handler`` is ``None``, all handlers for ``action_path`` are removed.
+        If ``handler`` is provided, equivalent handler entries are removed using
+        the same callable identity rules as registration. ``removal_mode``
+        controls whether all equivalent entries or only the first equivalent
+        entry is removed. The default ``"all"`` preserves the legacy behavior
+        and is also the natural counterpart to default duplicate rejection.
 
-        :param action_path: Full path to the abstract action
+        :param action_path: Full path to the abstract action.
         :type action_path: str
-        :param handler: Specific handler to remove, or ``None`` to remove all
+        :param handler: Specific handler to remove, or ``None`` to remove all.
         :type handler: Optional[Callable[[ReadOnlyExecutionContext], None]]
-        :return: Number of handlers removed
+        :param removal_mode: ``"all"`` to remove every equivalent handler or
+            ``"one"`` to remove only the first equivalent handler, defaults to
+            ``"all"``.
+        :type removal_mode: Literal["all", "one"], optional
+        :return: Number of handlers removed.
         :rtype: int
+        :raises ValueError: If ``removal_mode`` is invalid or ``"one"`` is used
+            without a specific ``handler``.
 
         Example::
 
-            >>> # Remove all handlers for an action
             >>> count = runtime.unregister_abstract_handler("System.Active.InitHardware")
             >>> print(f"Removed {count} handlers")
-            >>>
-            >>> # Remove specific handler
             >>> runtime.unregister_abstract_handler("System.Active.InitHardware", my_init)
         """
+        if removal_mode not in ("all", "one"):
+            raise ValueError("removal_mode must be 'all' or 'one'")
+        if handler is None and removal_mode != "all":
+            raise ValueError("removal_mode='one' requires a specific handler")
+
         if action_path not in self._abstract_handlers:
             return 0
 
         if handler is None:
-            # Remove all handlers
             count = len(self._abstract_handlers[action_path])
             del self._abstract_handlers[action_path]
             self.logger.debug(
                 f"Removed all {count} handlers for abstract action {action_path}"
             )
             return count
+
+        handlers = self._abstract_handlers[action_path]
+        handler_key = self._handler_identity(handler)
+        removed_count = 0
+        remaining_handlers = []
+        for item in handlers:
+            if self._handler_identity(item) == handler_key and (
+                removal_mode == "all" or removed_count == 0
+            ):
+                removed_count += 1
+                continue
+            remaining_handlers.append(item)
+
+        if remaining_handlers:
+            self._abstract_handlers[action_path] = remaining_handlers
         else:
-            # Remove specific handler
-            handlers = self._abstract_handlers[action_path]
-            original_count = len(handlers)
-            self._abstract_handlers[action_path] = [
-                h for h in handlers if h is not handler
-            ]
-            removed_count = original_count - len(self._abstract_handlers[action_path])
+            del self._abstract_handlers[action_path]
 
-            # Clean up empty list
-            if not self._abstract_handlers[action_path]:
-                del self._abstract_handlers[action_path]
+        if removed_count > 0:
+            self.logger.debug(
+                f"Removed {removed_count} handler(s) for abstract action {action_path}"
+            )
 
-            if removed_count > 0:
-                self.logger.debug(
-                    f"Removed {removed_count} handler(s) for abstract action {action_path}"
-                )
+        return removed_count
 
-            return removed_count
+    def clear_abstract_handler_session(self) -> int:
+        """
+        Clear abstract-handler registry entries and related diagnostics.
+
+        This method resets the complete abstract-handler session surface: all
+        registered handlers, log-mode handler errors, and anonymous abstract
+        warning dedupe metadata. Use it when rebuilding or resetting a
+        simulation session and expecting handler configuration plus diagnostics
+        to start cleanly.
+
+        :return: Total number of handlers removed.
+        :rtype: int
+
+        Example::
+
+            >>> count = runtime.clear_abstract_handler_session()
+            >>> print(f"Cleared {count} handlers and handler diagnostics")
+        """
+        total_count = sum(
+            len(handlers) for handlers in self._abstract_handlers.values()
+        )
+        self._abstract_handlers.clear()
+        self._abstract_handler_errors.clear()
+        self._warned_anonymous_abstracts.clear()
+        self.logger.debug(
+            f"Cleared abstract handler session with {total_count} handler(s)"
+        )
+        return total_count
 
     def clear_all_abstract_handlers(self) -> int:
         """
-        Clear all registered abstract handlers.
+        Clear all registered abstract handlers and handler diagnostics.
 
-        :return: Total number of handlers removed
+        This compatibility method delegates to
+        :meth:`clear_abstract_handler_session`. It therefore clears registered
+        handlers, log-mode handler errors, and anonymous abstract warning dedupe
+        metadata together.
+
+        :return: Total number of handlers removed.
         :rtype: int
 
         Example::
@@ -2890,13 +4029,7 @@ class SimulationRuntime:
             >>> count = runtime.clear_all_abstract_handlers()
             >>> print(f"Cleared {count} handlers")
         """
-        total_count = sum(
-            len(handlers) for handlers in self._abstract_handlers.values()
-        )
-        self._abstract_handlers.clear()
-        self._warned_anonymous_abstracts.clear()
-        self.logger.debug(f"Cleared all {total_count} abstract handlers")
-        return total_count
+        return self.clear_abstract_handler_session()
 
     def get_abstract_handlers(
         self, action_path: str
@@ -2935,6 +4068,161 @@ class SimulationRuntime:
             and len(self._abstract_handlers[action_path]) > 0
         )
 
+    @staticmethod
+    def _is_supported_handler_member(member: object) -> bool:
+        """
+        Check whether a raw class member can be registered as a handler.
+
+        The object scanner supports plain functions, :class:`staticmethod`, and
+        :class:`classmethod`. Other descriptors with abstract-handler metadata
+        are rejected instead of being silently ignored, because the runtime
+        cannot safely bind them without executing user code.
+
+        :param member: Raw member from a class ``__dict__``.
+        :type member: object
+        :return: ``True`` if the member can be bound as a handler.
+        :rtype: bool
+
+        Example::
+
+            >>> def handler(ctx):
+            ...     pass
+            >>> SimulationRuntime._is_supported_handler_member(handler)
+            True
+        """
+        return isinstance(member, (types.FunctionType, staticmethod, classmethod))
+
+    @staticmethod
+    def _object_handler_members(obj: object) -> List[Tuple[str, object]]:
+        """
+        Return raw decorated handler members from an object.
+
+        Scanning raw class dictionaries avoids executing unrelated descriptors.
+        The most-derived class wins for overridden member names; inherited
+        decorated members with different names remain visible. Within each
+        class dictionary, Python's definition order is preserved. Unsupported
+        descriptor metadata, including metadata mirrored to a ``property``
+        getter, is detected from the raw class dictionary without invoking
+        descriptor code.
+
+        :param obj: Object instance containing decorated handler members.
+        :type obj: object
+        :return: ``(name, raw_member)`` pairs for decorated members.
+        :rtype: List[Tuple[str, object]]
+        :raises ValueError: If a language-level dunder protocol method is
+            explicitly decorated as an abstract handler.
+
+        Example::
+
+            >>> class Handlers:
+            ...     @abstract_handler('System.Active.Init')
+            ...     def init(self, ctx):
+            ...         pass
+            >>> len(SimulationRuntime._object_handler_members(Handlers()))
+            1
+        """
+        from .decorators import _get_handler_metadata_paths
+
+        members: List[Tuple[str, object]] = []
+        seen_names = set()
+        for cls in obj.__class__.__mro__:
+            if cls is object:
+                continue
+            for name, raw_member in cls.__dict__.items():
+                if name in seen_names:
+                    continue
+                seen_names.add(name)
+                action_paths = _get_handler_metadata_paths(raw_member)
+                if name.startswith("__") and name.endswith("__"):
+                    # True dunder methods are language protocol hooks, not
+                    # handler declarations. Name-mangled private methods such
+                    # as ``__hidden`` appear as ``_ClassName__hidden`` and are
+                    # still eligible when explicitly decorated. If a true
+                    # dunder method is explicitly decorated, report that
+                    # mismatch instead of silently dropping user intent.
+                    if action_paths:
+                        raise ValueError(
+                            "Abstract handler member %s.%s uses a reserved "
+                            "dunder protocol name"
+                            % (obj.__class__.__name__, name)
+                        )
+                    continue
+                if action_paths:
+                    members.append((name, raw_member))
+        return members
+
+    def _collect_object_handler_registrations(
+        self, obj: object
+    ) -> List[Tuple[str, Callable[[ReadOnlyExecutionContext], None], str]]:
+        """
+        Collect and validate decorated handlers from an object without mutation.
+
+        This collection step supports :meth:`register_handlers_from_object`.
+        It validates every action path and bindable member before the registry
+        is modified, preventing failed scans from leaving partial handler
+        registrations behind.
+
+        :param obj: Object instance containing decorated handler members.
+        :type obj: object
+        :return: ``(action_path, bound_handler, member_name)`` registrations.
+        :rtype: List[Tuple[str, Callable[[ReadOnlyExecutionContext], None], str]]
+        :raises ValueError: If a decorated member cannot be bound safely or any
+            action path is invalid for this runtime.
+
+        Example::
+
+            >>> registrations = runtime._collect_object_handler_registrations(handlers)
+            >>> all(len(item) == 3 for item in registrations)
+            True
+        """
+        from .decorators import _get_handler_metadata_paths
+
+        registrations: List[
+            Tuple[str, Callable[[ReadOnlyExecutionContext], None], str]
+        ] = []
+        for name, raw_member in self._object_handler_members(obj):
+            action_paths = _get_handler_metadata_paths(raw_member)
+            if not self._is_supported_handler_member(raw_member):
+                raise ValueError(
+                    "Abstract handler member %s.%s uses unsupported descriptor "
+                    "type %s"
+                    % (obj.__class__.__name__, name, type(raw_member).__name__)
+                )
+
+            bound_handler = getattr(obj, name)
+            if not callable(bound_handler):
+                raise ValueError(
+                    "Abstract handler member %s.%s did not bind to a callable"
+                    % (obj.__class__.__name__, name)
+                )
+
+            for action_path in action_paths:
+                registrations.append(
+                    (
+                        self._validate_abstract_action_path(action_path),
+                        bound_handler,
+                        name,
+                    )
+                )
+
+        seen_keys = set()
+        existing_keys = {
+            (action_path, self._handler_identity(handler))
+            for action_path, handlers in self._abstract_handlers.items()
+            for handler in handlers
+        }
+        for action_path, handler, name in registrations:
+            key = (action_path, self._handler_identity(handler))
+            if key in existing_keys or key in seen_keys:
+                raise ValueError(
+                    "Abstract handler member %s.%s is already registered for "
+                    "named abstract action %r"
+                    % (obj.__class__.__name__, name, action_path)
+                )
+            seen_keys.add(key)
+
+        return registrations
+
     def register_handlers_from_object(self, obj: object) -> int:
         """
         Register all decorated methods from an object as abstract handlers.
@@ -2946,10 +4234,14 @@ class SimulationRuntime:
         This provides a convenient way to organize multiple related handlers
         in a single class, maintaining state and shared logic between handlers.
 
-        :param obj: Object instance containing decorated handler methods
+        :param obj: Object instance containing decorated handler methods.
         :type obj: object
-        :return: Number of handlers registered
+        :return: Number of handlers registered.
         :rtype: int
+        :raises ValueError: If any decorated member uses an unsupported
+            descriptor shape, reserved dunder protocol name, duplicate handler
+            registration, or action path that is not a named abstract action in
+            this runtime's model.
 
         Example::
 
@@ -2983,39 +4275,28 @@ class SimulationRuntime:
            Only methods decorated with :func:`~pyfcstm.simulate.decorators.abstract_handler`
            will be registered. Other methods are ignored.
         """
-        from .decorators import get_handler_metadata
+        registrations = self._collect_object_handler_registrations(obj)
 
-        registered_count = 0
-
-        # Iterate through all attributes of the object
-        for name in dir(obj):
-            # Skip private/magic methods
-            if name.startswith("_"):
-                continue
-
-            try:
-                attr = getattr(obj, name)
-            except AttributeError:
-                continue
-
-            # Check if it's a callable method
-            if not callable(attr):
-                continue
-
-            # Check if it has handler metadata
-            action_path = get_handler_metadata(attr)
-            if action_path is None:
-                continue
-
-            # Register the bound method
-            self.register_abstract_handler(action_path, attr)
-            registered_count += 1
-            self.logger.debug(
-                f"Registered method {name} from {obj.__class__.__name__} "
-                f"for action {action_path}"
-            )
+        registry_snapshot = {
+            action_path: list(handlers)
+            for action_path, handlers in self._abstract_handlers.items()
+        }
+        try:
+            for action_path, handler, name in registrations:
+                self.register_abstract_handler(action_path, handler)
+                self.logger.debug(
+                    f"Registered method {name} from {obj.__class__.__name__} "
+                    f"for action {action_path}"
+                )
+        except ValueError:
+            # ValueError: register_abstract_handler may still reject a
+            # registration if registry contents change after collection or
+            # validation policy tightens; restore the pre-scan registry to keep
+            # object registration atomic.
+            self._abstract_handlers = registry_snapshot
+            raise
 
         self.logger.info(
-            f"Registered {registered_count} handler(s) from {obj.__class__.__name__}"
+            f"Registered {len(registrations)} handler(s) from {obj.__class__.__name__}"
         )
-        return registered_count
+        return len(registrations)

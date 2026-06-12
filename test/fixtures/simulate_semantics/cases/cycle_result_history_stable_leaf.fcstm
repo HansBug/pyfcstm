@@ -1,0 +1,11 @@
+def int counter = 0;
+
+state Root {
+    state Counting {
+        during {
+            counter = counter + 1;
+        }
+    }
+
+    [*] -> Counting;
+}

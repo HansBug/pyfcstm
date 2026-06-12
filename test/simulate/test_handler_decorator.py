@@ -663,8 +663,8 @@ class TestAbstractHandlerDecorator:
         runtime.cycle()
         assert handlers.calls == ['Root.A.Hidden']
 
-    def test_decorated_dunder_methods_are_ignored_as_protocol_hooks(self):
-        """Test decorated true dunder methods remain outside object scanning."""
+    def test_decorated_dunder_methods_raise_clear_error(self):
+        """Test decorated true dunder methods report unsupported handler names."""
         dsl_code = '''
         state Root {
             state A {
@@ -687,9 +687,9 @@ class TestAbstractHandlerDecorator:
                 self.calls.append(ctx.action_name)
 
         handlers = CallableHandlers()
-        count = runtime.register_handlers_from_object(handlers)
+        with pytest.raises(ValueError, match='reserved dunder protocol name'):
+            runtime.register_handlers_from_object(handlers)
 
-        assert count == 0
         runtime.cycle()
         assert handlers.calls == []
 

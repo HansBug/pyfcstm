@@ -3508,7 +3508,9 @@ class SimulationRuntime:
         Command-line ``init`` and ``clear`` rebuild a runtime while preserving
         the user's session-level configuration. This helper copies only that
         configuration: history retention, abstract-handler error mode, and
-        registered abstract handlers. Execution history, warning records, and
+        registered abstract handlers. The target handler registry is replaced
+        with this runtime's registry so rebuilt sessions do not retain stale
+        target-only handlers. Execution history, warning records, and
         error-state diagnostics are intentionally not copied.
 
         :param runtime: Target runtime that should receive session settings.
@@ -3800,12 +3802,17 @@ class SimulationRuntime:
         Scanning raw class dictionaries avoids executing unrelated descriptors.
         The most-derived class wins for overridden member names; inherited
         decorated members with different names remain visible. Within each
-        class dictionary, Python's definition order is preserved.
+        class dictionary, Python's definition order is preserved. Unsupported
+        descriptor metadata, including metadata mirrored to a ``property``
+        getter, is detected from the raw class dictionary without invoking
+        descriptor code.
 
         :param obj: Object instance containing decorated handler members.
         :type obj: object
         :return: ``(name, raw_member)`` pairs for decorated members.
         :rtype: List[Tuple[str, object]]
+        :raises ValueError: If a language-level dunder protocol method is
+            explicitly decorated as an abstract handler.
 
         Example::
 
@@ -3827,13 +3834,22 @@ class SimulationRuntime:
                 if name in seen_names:
                     continue
                 seen_names.add(name)
+                action_paths = _get_handler_metadata_paths(raw_member)
                 if name.startswith("__") and name.endswith("__"):
                     # True dunder methods are language protocol hooks, not
                     # handler declarations. Name-mangled private methods such
                     # as ``__hidden`` appear as ``_ClassName__hidden`` and are
-                    # still eligible when explicitly decorated.
+                    # still eligible when explicitly decorated. If a true
+                    # dunder method is explicitly decorated, report that
+                    # mismatch instead of silently dropping user intent.
+                    if action_paths:
+                        raise ValueError(
+                            "Abstract handler member %s.%s uses a reserved "
+                            "dunder protocol name"
+                            % (obj.__class__.__name__, name)
+                        )
                     continue
-                if _get_handler_metadata_paths(raw_member):
+                if action_paths:
                     members.append((name, raw_member))
         return members
 
@@ -3920,10 +3936,14 @@ class SimulationRuntime:
         This provides a convenient way to organize multiple related handlers
         in a single class, maintaining state and shared logic between handlers.
 
-        :param obj: Object instance containing decorated handler methods
+        :param obj: Object instance containing decorated handler methods.
         :type obj: object
-        :return: Number of handlers registered
+        :return: Number of handlers registered.
         :rtype: int
+        :raises ValueError: If any decorated member uses an unsupported
+            descriptor shape, reserved dunder protocol name, duplicate handler
+            registration, or action path that is not a named abstract action in
+            this runtime's model.
 
         Example::
 

@@ -479,9 +479,10 @@ RST updates in the same commit.
   local to that block and can only be read after assignment.
 - `enter abstract Name;`, named lifecycle actions, and `ref` are valid lifecycle
   forms. A `ref` points to a named lifecycle action, not to a state or event.
-- Initial entry through a composite runs composite `enter`, plain
-  `during before`, then child `enter`. A child-to-child transition runs source
-  child `exit`, transition effect, then target child `enter`; plain composite
+- Initial entry through a composite runs composite `enter`, initial
+  transition decision/effect, plain `during before`, then selected child
+  `enter`. A child-to-child transition runs source child `exit`, transition
+  effect, then target child `enter`; plain composite
   `during before` / `during after` do not wrap child-to-child transitions.
 - `>> during before` and `>> during after` are aspect actions for descendant
   leaf-state cycles. Plain leaf `during` executes during ordinary active cycles.

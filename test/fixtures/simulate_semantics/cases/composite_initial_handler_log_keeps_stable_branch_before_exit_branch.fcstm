@@ -1,0 +1,27 @@
+def int phase = 0;
+def int trace = 0;
+
+state Root {
+    state Gate {
+        during before { phase = phase + 1; trace = trace + 10; }
+        during before abstract ObserveGate;
+
+        state Stay {
+            enter abstract EnterStay;
+            during { trace = trace + 100; }
+        }
+
+        state Leave {
+            enter abstract EnterLeave;
+            exit abstract ExitLeave;
+            during { phase = phase + 1; trace = trace + 1000; }
+        }
+
+        [*] -> Stay : if [phase == 0];
+        [*] -> Leave : if [phase == 1];
+        Leave -> [*] : if [phase >= 2];
+    }
+
+    [*] -> Gate;
+    Gate -> [*] : if [phase >= 2];
+}

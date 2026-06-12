@@ -1,0 +1,36 @@
+def int route = 0;
+def int trace = 0;
+
+state Root {
+    state Idle {
+        during { trace = trace + 1; }
+    }
+
+    state Outer {
+        enter { route = 1; trace = trace * 10 + 2; }
+        during before { route = 2; trace = trace * 10 + 3; }
+
+        state Middle {
+            enter { trace = trace * 10 + 4; }
+            during before { trace = trace * 10 + 5; }
+
+            state Target {
+                enter { trace = trace * 10 + 6; }
+                during { trace = trace * 10 + 7; }
+            }
+
+            [*] -> Target;
+        }
+
+        state Wrong {
+            enter { trace = trace * 10 + 8; }
+            during { trace = trace * 10 + 9; }
+        }
+
+        [*] -> Middle : if [route == 1];
+        [*] -> Wrong : if [route == 2];
+    }
+
+    [*] -> Idle;
+    Idle -> Outer :: Go;
+}

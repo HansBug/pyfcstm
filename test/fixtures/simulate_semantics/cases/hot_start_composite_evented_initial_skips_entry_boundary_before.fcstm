@@ -1,0 +1,18 @@
+def int gate = 0;
+def int trace = 0;
+
+state Root {
+    state Gate {
+        during before { gate = 1; trace = trace * 10 + 2; }
+        during before abstract ObserveGate;
+
+        state Armed {
+            enter abstract EnterArmed;
+            during { trace = trace * 10 + 3; }
+        }
+
+        [*] -> Armed :: Unlock effect { trace = trace * 10 + 1; };
+    }
+
+    [*] -> Gate;
+}

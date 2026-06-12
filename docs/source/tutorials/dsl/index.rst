@@ -262,9 +262,9 @@ Composite states contain nested substates, transitions, and lifecycle actions. T
 .. important::
    When a composite state is active, exactly one of its child states is also active. This creates a hierarchical execution context:
 
-   1. **Entry**: When entering a composite state, the entry transition (``[*] -> ChildState``) determines which child becomes active
-   2. **During**: While active, the composite state's ``during before/after`` actions execute around the child state's actions
-   3. **Exit**: When leaving a composite state, the active child state exits first, then the composite state exits
+   1. **Entry**: When entering a composite state, ``enter`` runs first; the entry transition (``[*] -> ChildState``) then determines which child becomes active; plain ``during before`` runs after that decision and before the selected child enters
+   2. **During**: While a leaf child is active, aspect actions (``>> during before/after``) execute around the child state's ``during`` action
+   3. **Exit**: When leaving a composite state, the active child state exits first, then plain ``during after`` and the composite state's ``exit`` run
 
 **Annotated Example:**
 
@@ -507,7 +507,7 @@ Entry transitions define the initial state when entering a composite state. They
    };
 
 .. note::
-   When a composite state is entered from outside, the entry transition determines which child state becomes active. The guard condition (if present) is evaluated, and if true, the effect (if present) is executed before entering the target state.
+   When a composite state is entered from outside, the state ``enter`` action runs first, then the entry transition determines which child state becomes active. The guard condition (if present) is evaluated before plain ``during before`` actions for that composite. If the guard is true, the transition effect (if present) executes, then plain ``during before`` runs, and finally the selected child is entered.
 
 Normal Transitions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2064,8 +2064,9 @@ Understanding execution order in hierarchical state machines is crucial. Here's 
 
    1. ``HierarchyDemo.enter`` (if defined)
    2. ``Parent.enter`` (if defined)
-   3. ``Parent.during before`` executes (``execution_log += 100``)
-   4. ``ChildA.enter`` (if defined)
+   3. ``Parent`` selects its initial transition (``[*] -> ChildA``)
+   4. ``Parent.during before`` executes (``execution_log += 100``)
+   5. ``ChildA.enter`` (if defined)
 
    **Scenario 2: During Phase** (while ``ChildA`` is active, each cycle)
 

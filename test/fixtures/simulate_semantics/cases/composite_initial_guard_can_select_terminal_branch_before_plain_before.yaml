@@ -1,0 +1,38 @@
+schema_version: 1
+id: composite_initial_guard_can_select_terminal_branch_before_plain_before
+title: Composite initial guard can choose a terminal branch before plain during-before mutation
+source:
+  fcstm: composite_initial_guard_can_select_terminal_branch_before_plain_before.fcstm
+origin:
+  files:
+  - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
+  docs:
+  - https://github.com/HansBug/pyfcstm/issues/197#issuecomment-4689585597
+  assertion_types:
+  - ended
+  - state
+  - vars
+  - stack
+  notes:
+  - Covers the final and is_ended variant where wrong initial selection prevents machine termination.
+categories:
+- runtime
+- lifecycle
+- pseudo_chain
+- validation
+runners:
+- simulation
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state: null
+    vars:
+      flag: 1
+      trace: 234789
+    ended: true
+    stack: []
+    cycle_result:
+      value: null

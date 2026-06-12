@@ -398,3 +398,321 @@ class TestAbstractHandlerDecorator:
         # Pre should see counter before increment, post after
         assert handlers.pre_calls == [0, 1, 2]
         assert handlers.post_calls == [1, 2, 3]
+
+    def test_object_scanner_preserves_declaration_order(self):
+        """Test decorated object handlers follow class declaration order."""
+        dsl_code = '''
+        state System {
+            state Active {
+                enter abstract Init;
+            }
+
+            [*] -> Active;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        class OrderedHandlers:
+            def __init__(self):
+                self.calls = []
+
+            @abstract_handler('System.Active.Init')
+            def z_declared_first(self, ctx: ReadOnlyExecutionContext):
+                self.calls.append('z_declared_first')
+
+            @abstract_handler('System.Active.Init')
+            def a_declared_second(self, ctx: ReadOnlyExecutionContext):
+                self.calls.append('a_declared_second')
+
+        handlers = OrderedHandlers()
+        count = runtime.register_handlers_from_object(handlers)
+
+        assert count == 2
+        assert [
+            handler.__name__
+            for handler in runtime.get_abstract_handlers('System.Active.Init')
+        ] == ['z_declared_first', 'a_declared_second']
+
+        runtime.cycle()
+        assert handlers.calls == ['z_declared_first', 'a_declared_second']
+
+    def test_object_scanner_skips_non_handler_descriptors_atomically(self):
+        """Test object scanning does not execute unrelated descriptors."""
+        dsl_code = '''
+        state System {
+            state Active {
+                enter abstract Init;
+            }
+
+            [*] -> Active;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        class DescriptorBombHandlers:
+            def __init__(self):
+                self.calls = []
+
+            @abstract_handler('System.Active.Init')
+            def handle(self, ctx: ReadOnlyExecutionContext):
+                self.calls.append('handle')
+
+            @property
+            def public_config(self):
+                raise RuntimeError('public_config getter should not run')
+
+        handlers = DescriptorBombHandlers()
+        count = runtime.register_handlers_from_object(handlers)
+
+        assert count == 1
+        assert [
+            handler.__name__
+            for handler in runtime.get_abstract_handlers('System.Active.Init')
+        ] == ['handle']
+
+        runtime.cycle()
+        assert handlers.calls == ['handle']
+
+    def test_object_scanner_rejects_decorated_unsupported_descriptor(self):
+        """Test decorated unsupported descriptors fail without partial registration."""
+        dsl_code = '''
+        state Root {
+            state A {
+                enter abstract Supported;
+                enter abstract Unsupported;
+            }
+
+            [*] -> A;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        class DescriptorHandlers:
+            @abstract_handler('Root.A.Supported')
+            def supported(self, ctx: ReadOnlyExecutionContext):
+                pass
+
+            @property
+            @abstract_handler('Root.A.Unsupported')
+            def unsupported(self):
+                raise RuntimeError('decorated property getter should not run')
+
+        with pytest.raises(ValueError, match='unsupported descriptor'):
+            runtime.register_handlers_from_object(DescriptorHandlers())
+
+        assert runtime.get_abstract_handlers('Root.A.Supported') == []
+        assert runtime.get_abstract_handlers('Root.A.Unsupported') == []
+
+    def test_object_scanner_rolls_back_failed_bulk_registration(self):
+        """Test invalid decorated paths do not partially modify registry."""
+        dsl_code = '''
+        state System {
+            state Active {
+                enter abstract Init;
+            }
+
+            [*] -> Active;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        class InvalidHandlers:
+            @abstract_handler('System.Active.Init')
+            def valid(self, ctx: ReadOnlyExecutionContext):
+                pass
+
+            @abstract_handler('System.Active.Missing')
+            def invalid(self, ctx: ReadOnlyExecutionContext):
+                pass
+
+        with pytest.raises(ValueError, match='named abstract action'):
+            runtime.register_handlers_from_object(InvalidHandlers())
+
+        assert runtime.get_abstract_handlers('System.Active.Init') == []
+        assert runtime.get_abstract_handlers('System.Active.Missing') == []
+
+    def test_multiple_abstract_handler_decorators_register_all_paths(self):
+        """Test stacked abstract-handler decorators keep every action path."""
+        dsl_code = '''
+        def int ticks = 0;
+
+        state System {
+            state Active {
+                enter abstract InitA;
+                during abstract MonitorB;
+                during { ticks = ticks + 1; }
+            }
+
+            [*] -> Active;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        class Handlers:
+            def __init__(self):
+                self.calls = []
+
+            @abstract_handler('System.Active.InitA')
+            @abstract_handler('System.Active.MonitorB')
+            def shared(self, ctx: ReadOnlyExecutionContext):
+                self.calls.append(ctx.action_name)
+
+        handlers = Handlers()
+        count = runtime.register_handlers_from_object(handlers)
+
+        assert count == 2
+        assert len(runtime.get_abstract_handlers('System.Active.InitA')) == 1
+        assert len(runtime.get_abstract_handlers('System.Active.MonitorB')) == 1
+
+        runtime.cycle()
+        assert handlers.calls == ['System.Active.InitA', 'System.Active.MonitorB']
+
+    def test_descriptor_decorator_orders_register_static_and_class_methods(self):
+        """Test staticmethod and classmethod decorator orders are supported."""
+        dsl_code = '''
+        state Root {
+            state A {
+                enter abstract StaticOuter;
+                during abstract StaticInner;
+                during abstract ClassOuter;
+                during abstract ClassInner;
+            }
+
+            [*] -> A;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        class Handlers:
+            calls = []
+
+            @abstract_handler('Root.A.StaticOuter')
+            @staticmethod
+            def static_outer(ctx: ReadOnlyExecutionContext):
+                Handlers.calls.append(('static_outer', ctx.action_name))
+
+            @staticmethod
+            @abstract_handler('Root.A.StaticInner')
+            def static_inner(ctx: ReadOnlyExecutionContext):
+                Handlers.calls.append(('static_inner', ctx.action_name))
+
+            @abstract_handler('Root.A.ClassOuter')
+            @classmethod
+            def class_outer(cls, ctx: ReadOnlyExecutionContext):
+                cls.calls.append(('class_outer', ctx.action_name, cls.__name__))
+
+            @classmethod
+            @abstract_handler('Root.A.ClassInner')
+            def class_inner(cls, ctx: ReadOnlyExecutionContext):
+                cls.calls.append(('class_inner', ctx.action_name, cls.__name__))
+
+        count = runtime.register_handlers_from_object(Handlers())
+
+        assert count == 4
+        runtime.cycle()
+        assert Handlers.calls == [
+            ('static_outer', 'Root.A.StaticOuter'),
+            ('static_inner', 'Root.A.StaticInner'),
+            ('class_outer', 'Root.A.ClassOuter', 'Handlers'),
+            ('class_inner', 'Root.A.ClassInner', 'Handlers'),
+        ]
+
+    def test_decorated_private_methods_are_registered(self):
+        """Test decorated private methods are not silently skipped."""
+        dsl_code = '''
+        state Root {
+            state A {
+                enter abstract Hidden;
+            }
+
+            [*] -> A;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        class PrivateHandlers:
+            def __init__(self):
+                self.calls = []
+
+            @abstract_handler('Root.A.Hidden')
+            def _hidden(self, ctx: ReadOnlyExecutionContext):
+                self.calls.append(ctx.action_name)
+
+            @property
+            def _ignored_property(self):
+                raise RuntimeError('private property should not run')
+
+        handlers = PrivateHandlers()
+        count = runtime.register_handlers_from_object(handlers)
+
+        assert count == 1
+        runtime.cycle()
+        assert handlers.calls == ['Root.A.Hidden']
+
+    def test_object_scanner_inherited_handlers_use_override_order(self):
+        """Test inherited decorated handlers use stable override rules."""
+        dsl_code = '''
+        state Root {
+            state A {
+                enter abstract Parent;
+                enter abstract Child;
+                enter abstract Shared;
+            }
+
+            [*] -> A;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        class ParentHandlers:
+            def __init__(self):
+                self.calls = []
+
+            @abstract_handler('Root.A.Parent')
+            def parent(self, ctx: ReadOnlyExecutionContext):
+                self.calls.append(('parent', ctx.action_name))
+
+            @abstract_handler('Root.A.Shared')
+            def shared(self, ctx: ReadOnlyExecutionContext):
+                self.calls.append(('parent_shared', ctx.action_name))
+
+        class ChildHandlers(ParentHandlers):
+            @abstract_handler('Root.A.Child')
+            def child(self, ctx: ReadOnlyExecutionContext):
+                self.calls.append(('child', ctx.action_name))
+
+            @abstract_handler('Root.A.Shared')
+            def shared(self, ctx: ReadOnlyExecutionContext):
+                self.calls.append(('child_shared', ctx.action_name))
+
+        handlers = ChildHandlers()
+        count = runtime.register_handlers_from_object(handlers)
+
+        assert count == 3
+        assert [
+            handler.__name__
+            for handler in runtime.get_abstract_handlers('Root.A.Shared')
+        ] == ['shared']
+
+        runtime.cycle()
+        assert handlers.calls == [
+            ('parent', 'Root.A.Parent'),
+            ('child', 'Root.A.Child'),
+            ('child_shared', 'Root.A.Shared'),
+        ]

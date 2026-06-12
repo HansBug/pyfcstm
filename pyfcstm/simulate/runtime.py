@@ -51,8 +51,10 @@ arbitrary state without executing enter actions. This is useful for:
 Hot start is enabled by providing ``initial_state`` and ``initial_vars`` parameters
 to the constructor. The runtime constructs the execution stack directly to the
 target state, bypassing all enter actions. For composite states, the runtime
-automatically performs initial transitions during the first cycle to find a
-stoppable leaf state.
+keeps the target in ``init_wait`` and can perform initial transitions during a
+later cycle to find a stoppable leaf state. Because hot start simulates an
+already-entered boundary, it does not replay plain composite ``during before``
+actions before that delayed child entry.
 
 Basic usage::
 
@@ -386,8 +388,8 @@ class _Frame:
 
     Frames are stored in the runtime's execution stack from root to the current
     active state. Each frame tracks the state, current execution mode, and
-    whether a just-entered composite still owes its plain ``during before``
-    boundary actions after selecting an initial child.
+    whether a composite reached through normal runtime entry still owes its
+    plain ``during before`` boundary actions after selecting an initial child.
 
     **Frame Modes**:
 
@@ -409,14 +411,17 @@ class _Frame:
     - Enter with ``active`` → switch to ``init_wait`` and select an initial child
     - Before selected child entry: execute plain composite ``during before``
     - After child exits: switch to ``post_child_exit``
+    - Hot-started composite targets may also be in ``init_wait``, but they do
+      not set ``plain_before_pending`` because hot start skips entry boundary
+      actions.
 
     :param state: The active state represented by this frame.
     :type state: State
     :param mode: Internal execution phase controlling frame processing.
     :type mode: str
-    :param plain_before_pending: Whether a just-entered composite state still
-        needs to run plain ``during before`` boundary actions before entering
-        the selected initial child.
+    :param plain_before_pending: Whether a normally-entered composite state
+        still needs to run plain ``during before`` boundary actions before
+        entering the selected initial child.
     :type plain_before_pending: bool
 
     Example::
@@ -676,10 +681,12 @@ class SimulationRuntime:
            root state before execution begins.
 
         .. note::
-           Hot start mode constructs the stack without executing enter actions,
-           simulating having already entered the target state. For composite
-           states, the runtime will automatically attempt initial transitions
-           to find a stoppable leaf state during the first cycle.
+           Hot start mode constructs the stack without executing entry boundary
+           actions, simulating having already entered the target state. For
+           composite states, the runtime will automatically attempt initial
+           transitions to find a stoppable leaf state during the first cycle,
+           but it does not replay the composite's plain ``during before``
+           boundary actions before that child entry.
         """
         if abstract_error_mode not in ("raise", "log"):
             raise ValueError("abstract_error_mode must be 'raise' or 'log'")
@@ -960,14 +967,15 @@ class SimulationRuntime:
 
         This method constructs a Frame stack that simulates having already
         entered and stabilized at the target state, without executing any
-        enter actions. The stack represents the active state hierarchy from
-        root to the target state.
+        enter or entry-boundary actions. The stack represents the active state
+        hierarchy from root to the target state.
 
         **Frame Mode Rules**:
 
         - **Leaf states** (target): ``'active'`` - Will execute during chain on first cycle
         - **Composite states** (ancestors): ``'active'`` - Child state is running
-        - **Composite states** (target): ``'init_wait'`` - Trigger initial transition via DFS
+        - **Composite states** (target): ``'init_wait'`` - Trigger initial
+          transition via DFS without replaying entry boundary actions
 
         :param target_state: The target state to start from
         :type target_state: State

@@ -86,6 +86,7 @@ from .runtime import (
     SimulationRuntimeDfsError,
     SimulationRuntimeEventError,
     SimulationRuntimeExpressionError,
+    SimulationRuntimeTerminalStateError,
 )
 from .utils import is_state_resolve_event_path
 
@@ -97,6 +98,7 @@ __all__ = [
     "SimulationRuntimeDfsError",
     "SimulationRuntimeEventError",
     "SimulationRuntimeExpressionError",
+    "SimulationRuntimeTerminalStateError",
     "abstract_handler",
     "is_state_resolve_event_path",
 ]

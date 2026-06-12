@@ -1,0 +1,20 @@
+state Root {
+    state Library {
+        enter abstract SharedEnter;
+        during abstract SharedDuring;
+        exit abstract SharedExit;
+    }
+
+    >> during before ref /Library.SharedExit;
+
+    state A {
+        enter ref /Library.SharedExit;
+        during ref /Library.SharedEnter;
+        exit ref /Library.SharedDuring;
+    }
+
+    state B;
+
+    [*] -> A;
+    A -> B :: Go;
+}

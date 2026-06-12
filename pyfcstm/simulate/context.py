@@ -19,7 +19,7 @@ Example::
 
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Mapping, Union, Tuple
+from typing import Mapping, Optional, Union, Tuple
 
 
 @dataclass(frozen=True)
@@ -29,16 +29,33 @@ class ReadOnlyExecutionContext:
 
     Provides immutable access to current state and variable values without
     allowing modifications. This context is passed to registered abstract
-    handlers during execution.
+    handlers during execution. The existing ``state_path``,
+    ``action_name``, and ``action_stage`` fields keep their public meaning, and
+    the additional metadata fields expose the same callsite information in a
+    fixture-friendly shape.
 
-    :param state_path: Current active state path from root to leaf
+    :param state_path: Current execution state path from root to leaf. For
+        ancestor aspect actions this is the active descendant leaf.
     :type state_path: Tuple[str, ...]
     :param vars: Snapshot of current variable values (immutable mapping copy)
     :type vars: Mapping[str, Union[int, float]]
-    :param action_name: Full path name of the abstract action being executed
+    :param action_name: Full path name of the resolved abstract action target.
     :type action_name: str
-    :param action_stage: Lifecycle stage ('enter', 'during', 'exit')
+    :param action_stage: Lifecycle stage at the current callsite
+        (``'enter'``, ``'during'``, or ``'exit'``).
     :type action_stage: str
+    :param active_leaf: Current active leaf state path. When omitted, it
+        defaults to ``state_path``.
+    :type active_leaf: Tuple[str, ...], optional
+    :param call_stage: Explicit callsite lifecycle stage. When omitted, it
+        defaults to ``action_stage``.
+    :type call_stage: str, optional
+    :param abstract_target: Explicit resolved abstract target path. When
+        omitted, it defaults to ``action_name``.
+    :type abstract_target: str, optional
+    :param named_ref: Full path of the named ``ref`` callsite, or ``None`` when
+        the action was not invoked through a named reference.
+    :type named_ref: Optional[str], optional
 
     Example::
 
@@ -52,21 +69,57 @@ class ReadOnlyExecutionContext:
         'Active'
         >>> ctx.get_var('counter')
         10
+        >>> ctx.active_leaf
+        ('System', 'Active')
+        >>> ctx.abstract_target
+        'System.Active.Monitor'
     """
 
     state_path: Tuple[str, ...]
     vars: Mapping[str, Union[int, float]]
     action_name: str
     action_stage: str
+    active_leaf: Optional[Tuple[str, ...]] = None
+    call_stage: Optional[str] = None
+    abstract_target: Optional[str] = None
+    named_ref: Optional[str] = None
 
     def __post_init__(self) -> None:
         """
-        Freeze the variable snapshot mapping.
+        Freeze and normalize the context snapshot.
+
+        Variable mappings are copied into a read-only proxy. Path-like metadata
+        is normalized to tuples, and optional callsite aliases are derived from
+        the existing four constructor fields when omitted. This preserves the
+        original direct-construction API while exposing richer metadata to
+        runtime-created handler contexts.
 
         :return: ``None``.
         :rtype: None
+
+        Example::
+
+            >>> ctx = ReadOnlyExecutionContext(
+            ...     state_path=('Root', 'A'),
+            ...     vars={},
+            ...     action_name='Root.A.Touch',
+            ...     action_stage='during',
+            ... )
+            >>> ctx.call_stage
+            'during'
+            >>> ctx.named_ref is None
+            True
         """
+        object.__setattr__(self, "state_path", tuple(self.state_path))
         object.__setattr__(self, "vars", MappingProxyType(dict(self.vars)))
+        active_leaf = self.state_path if self.active_leaf is None else self.active_leaf
+        object.__setattr__(self, "active_leaf", tuple(active_leaf))
+        call_stage = self.action_stage if self.call_stage is None else self.call_stage
+        object.__setattr__(self, "call_stage", call_stage)
+        abstract_target = (
+            self.action_name if self.abstract_target is None else self.abstract_target
+        )
+        object.__setattr__(self, "abstract_target", abstract_target)
 
     def get_var(self, name: str) -> Union[int, float]:
         """

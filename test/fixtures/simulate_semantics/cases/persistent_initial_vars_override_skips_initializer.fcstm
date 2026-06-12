@@ -1,0 +1,5 @@
+def float recovered = 1.0 / 0.0;
+state Root {
+    state A;
+    [*] -> A;
+}

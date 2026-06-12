@@ -663,6 +663,36 @@ class TestAbstractHandlerDecorator:
         runtime.cycle()
         assert handlers.calls == ['Root.A.Hidden']
 
+    def test_decorated_dunder_methods_are_ignored_as_protocol_hooks(self):
+        """Test decorated true dunder methods remain outside object scanning."""
+        dsl_code = '''
+        state Root {
+            state A {
+                enter abstract Call;
+            }
+
+            [*] -> A;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        class CallableHandlers:
+            def __init__(self):
+                self.calls = []
+
+            @abstract_handler('Root.A.Call')
+            def __call__(self, ctx: ReadOnlyExecutionContext):
+                self.calls.append(ctx.action_name)
+
+        handlers = CallableHandlers()
+        count = runtime.register_handlers_from_object(handlers)
+
+        assert count == 0
+        runtime.cycle()
+        assert handlers.calls == []
+
     def test_object_scanner_inherited_handlers_use_override_order(self):
         """Test inherited decorated handlers use stable override rules."""
         dsl_code = '''

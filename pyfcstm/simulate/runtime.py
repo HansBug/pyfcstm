@@ -3517,6 +3517,13 @@ class SimulationRuntime:
         :rtype: None
         :raises ValueError: If the target runtime does not contain every named
             abstract action path registered in this runtime.
+
+        Example::
+
+            >>> replacement = SimulationRuntime(state_machine)
+            >>> runtime.copy_session_configuration_to(replacement)
+            >>> replacement.history_size == runtime.history_size
+            True
         """
         for action_path in self._abstract_handlers:
             try:
@@ -3821,6 +3828,10 @@ class SimulationRuntime:
                     continue
                 seen_names.add(name)
                 if name.startswith("__") and name.endswith("__"):
+                    # True dunder methods are language protocol hooks, not
+                    # handler declarations. Name-mangled private methods such
+                    # as ``__hidden`` appear as ``_ClassName__hidden`` and are
+                    # still eligible when explicitly decorated.
                     continue
                 if _get_handler_metadata_paths(raw_member):
                     members.append((name, raw_member))

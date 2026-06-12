@@ -9,6 +9,27 @@ from pyfcstm.model import Event, parse_dsl_node_to_state_machine
 from pyfcstm.simulate import CycleResult, SimulationRuntime, SimulationRuntimeEventError
 
 
+class IterableEventLike:
+    """Synthetic event-like object that also implements the iterable protocol."""
+
+    path_name = "Root.A.Go"
+
+    def __iter__(self):
+        yield self.path_name
+
+
+class DynamicIterableEventLike:
+    """Synthetic event-like object with dynamic path-name lookup."""
+
+    def __getattr__(self, name):
+        if name == "path_name":
+            return "Root.A.Go"
+        raise AttributeError(name)
+
+    def __iter__(self):
+        yield self.path_name
+
+
 def _build_runtime() -> SimulationRuntime:
     """Build a minimal runtime with one evented transition."""
     ast = parse_with_grammar_entry(
@@ -95,6 +116,26 @@ def test_cycle_rejects_bare_event_like_object():
 
     with pytest.raises(SimulationRuntimeEventError, match="Unsupported event input"):
         runtime.cycle(EventLike())
+
+    assert runtime.current_state.path == ("Root", "A")
+    assert runtime.vars["x"] == 1
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "event_like_cls",
+    [
+        pytest.param(IterableEventLike, id="class-attribute"),
+        pytest.param(DynamicIterableEventLike, id="dynamic-attribute"),
+    ],
+)
+def test_cycle_rejects_iterable_bare_event_like_object(event_like_cls):
+    """Event-like bare values cannot masquerade as event containers."""
+    runtime = _build_runtime()
+    runtime.cycle()
+
+    with pytest.raises(SimulationRuntimeEventError, match="Unsupported event input"):
+        runtime.cycle(event_like_cls())
 
     assert runtime.current_state.path == ("Root", "A")
     assert runtime.vars["x"] == 1

@@ -1339,12 +1339,59 @@ class SimulationRuntime:
         """
         return isinstance(events, (str, Event))
 
+    @staticmethod
+    def _has_event_path_member(value: Any) -> bool:
+        """
+        Return whether ``value`` advertises an unsupported event path member.
+
+        Synthetic event-like objects that expose ``path_name`` are not part of
+        the public ``cycle(events=...)`` input contract. This helper first
+        inspects instance dictionaries and class descriptors without reading the
+        member value, so normal descriptors and properties are rejected without
+        executing user code. It then falls back to normal attribute lookup only
+        for dynamic ``__getattr__`` / ``__getattribute__`` implementations that
+        would otherwise masquerade as plain iterable containers.
+
+        :param value: Candidate public event input.
+        :type value: Any
+        :return: ``True`` if ``value`` declares a ``path_name`` member.
+        :rtype: bool
+
+        Example::
+
+            >>> class EventLike:
+            ...     path_name = "Root.A.Go"
+            >>> SimulationRuntime._has_event_path_member(EventLike())
+            True
+        """
+        for cls in type(value).__mro__:
+            if "path_name" in cls.__dict__:
+                return True
+
+        try:
+            attrs = vars(value)
+        except TypeError:
+            # TypeError: vars(value) raises for instances without __dict__;
+            # class-level descriptors and slots were already checked above.
+            attrs = {}
+        if "path_name" in attrs:
+            return True
+
+        try:
+            getattr(value, "path_name")
+        except AttributeError:
+            # AttributeError: normal Python signal that this unsupported input
+            # shape does not dynamically expose a path_name member.
+            return False
+        return True
+
     def _iter_event_inputs(self, events: Any) -> List[Any]:
         """
         Normalize the public ``cycle(events=...)`` shape into event items.
 
         ``None`` maps to an empty list; bare string and model-event inputs map
-        to a single-item list; other iterables are materialized without parsing
+        to a single-item list; synthetic event-like objects are rejected even if
+        they are iterable; other iterables are materialized without parsing
         their elements. Unsupported non-iterable values are converted to
         :class:`SimulationRuntimeEventError` so callers see one public event
         diagnostic boundary.
@@ -1367,6 +1414,12 @@ class SimulationRuntime:
             return []
         if self._is_single_event_input(events):
             return [events]
+        if self._has_event_path_member(events):
+            raise self._event_input_error(
+                f"Unsupported event input {events!r} of type {type(events)!r}; "
+                "expected an event path string, a model Event object, or an iterable "
+                "of those values."
+            )
         try:
             return list(events)
         except TypeError as e:

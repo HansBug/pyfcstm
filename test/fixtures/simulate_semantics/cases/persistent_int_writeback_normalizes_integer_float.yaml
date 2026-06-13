@@ -1,0 +1,51 @@
+schema_version: 1
+id: persistent_int_writeback_normalizes_integer_float
+title: Persistent int writeback normalizes integer-valued float
+source:
+  fcstm: persistent_int_writeback_normalizes_integer_float.fcstm
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694002673
+  - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694852936
+  assertion_types:
+  - state
+  - vars
+  - exception
+  notes:
+  - Covers operation-block temporary propagation into a declared int variable.
+categories:
+- runtime
+- template_alignment
+- temporary_vars
+- lifecycle
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      bits: 3
+      marker: 1
+    ended: false
+    cycle_result:
+      value: null
+- cycle:
+    events:
+    - Root.A.Go
+  expect:
+    state:
+    - Root
+    - B
+    vars:
+      bits: 3
+      marker: 1
+    ended: false
+    cycle_result:
+      value: null

@@ -111,8 +111,9 @@ Allowed fields:
 - `initial.vars`: full variable snapshot mapping or `null`.
 - `initial.expect.raises`: required constructor exception expectation.
 
-When `initial.expect` is present, `initial.state` and `initial.vars` must both
-be explicit non-null values. Use `initial.vars: {}` for zero-variable machines.
+When `initial.expect` is present, `initial.state` and `initial.vars` keys must
+both be explicit. Use `null` / `null` to assert cold-start constructor
+diagnostics and `initial.vars: {}` for zero-variable hot-start diagnostics.
 
 Construction-diagnostic cases must use `steps: []`; executable steps are
 rejected so that constructor failures cannot silently skip later assertions.

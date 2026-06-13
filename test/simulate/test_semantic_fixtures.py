@@ -64,6 +64,54 @@ def test_generated_alignment_cases_share_the_simulation_fixture_corpus():
 
 
 @pytest.mark.unittest
+def test_generated_alignment_regression_fixtures_remain_shared():
+    """
+    Guard simulator/generated-runtime alignment coverage against drift.
+
+    The fixture ids below are the stable behavior-facing regression set that
+    covers composite entry ordering, pseudo validation, hot starts, persistent
+    value normalization, abstract hook context, generated naming, expression
+    rendering, packaged-template smoke, and documented event path inputs.
+    """
+    required_case_ids = {
+        "composite_initial_guard_uses_enter_state_before_plain_before",
+        "composite_initial_guard_with_effect_runs_before_plain_before",
+        "forced_pseudo_candidate_skips_unstable_branch",
+        "pseudo_candidate_skips_unstable_branch",
+        "pseudo_self_loop_step_limit_raises_dfs_error",
+        "hot_start_composite_waits_for_initial_event",
+        "hot_start_evented_initial_matches_cold_suffix",
+        "hot_start_deep_evented_initial_waits_for_event",
+        "hot_start_rejects_overdeep_leaf_stack",
+        "persistent_default_int_initializer_normalizes_integer_float",
+        "persistent_int_writeback_normalizes_integer_float",
+        "persistent_initial_vars_override_skips_initializer",
+        "hot_start_initial_vars_override_skips_int_initializer",
+        "abstract_hook_ref_context_reports_callsite_metadata",
+        "ref_abstract_handler_reports_calling_state",
+        "lifecycle_ref_chain_resolves_long_acyclic_chain",
+        "similar_state_paths_keep_actions_distinct",
+        "sign_function_handles_all_signs",
+        "sign_function_controls_guard_transition",
+        "sign_function_updates_during_action",
+        "sign_function_aligns_aspect_guard_effect_math",
+        "sign_function_preserves_complex_action_precedence",
+        "event_path_absolute",
+        "event_path_parent_relative",
+        "event_path_mixed_formats_full",
+    }
+    cases = {case.id: case for case in iter_semantic_cases()}
+
+    assert required_case_ids <= set(cases)
+    for case_id in required_case_ids:
+        assert cases[case_id].runners == (
+            "simulation",
+            "generated_python_alignment",
+        )
+        assert cases[case_id].data.get("origin", {}).get("files")
+
+
+@pytest.mark.unittest
 def test_semantic_fixture_assertion_families_are_executable():
     cases = iter_semantic_cases(runners=["simulation"])
     covered = set()

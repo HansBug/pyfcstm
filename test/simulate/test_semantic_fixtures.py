@@ -16,8 +16,51 @@ from test.testings.simulate_semantics import (
 def test_all_semantic_fixtures_load():
     cases = iter_semantic_cases()
 
-    assert len(cases) >= 84
+    assert len(cases) >= 136
     assert {case.id for case in cases}
+
+
+@pytest.mark.unittest
+def test_generated_alignment_fixture_baseline_counts():
+    """
+    Guard generated-alignment fixture coverage baselines.
+
+    The checks are intentionally lower-bound and identity based: they prevent
+    silently dropping the semantic harness inputs while allowing later template
+    repairs to add more fixtures.
+    """
+    cases = iter_semantic_cases()
+    generated_cases = [
+        case for case in cases if "generated_python_alignment" in case.runners
+    ]
+    expected_failure_cases = [case for case in cases if "expected_failure" in case.data]
+    generated_handler_cases = [
+        case for case in generated_cases if case.data.get("handlers")
+    ]
+
+    assert len(cases) >= 136
+    assert len(generated_cases) >= 86
+    assert expected_failure_cases == []
+    assert {case.id for case in generated_handler_cases} >= {
+        "failed_initial_cycle_skips_abstract_handler_callbacks",
+        "ref_abstract_handler_reports_calling_state",
+    }
+
+
+@pytest.mark.unittest
+def test_generated_alignment_cases_share_the_simulation_fixture_corpus():
+    """
+    Guard simulator and generated-runtime alignment against fixture drift.
+
+    Generated Python alignment is a runner adapter over the shared semantic
+    corpus, not a separate fixture system. Every generated-alignment case must
+    also be executable by the simulator runner so both sides consume the same
+    DSL, handlers, cycle inputs, and expectation shape.
+    """
+    generated_cases = iter_semantic_cases(runners=["generated_python_alignment"])
+
+    assert generated_cases
+    assert all("simulation" in case.runners for case in generated_cases)
 
 
 @pytest.mark.unittest
@@ -29,6 +72,8 @@ def test_semantic_fixture_assertion_families_are_executable():
             continue
         for step in case.data.get("steps") or []:
             expect = step.get("expect_initial") or step.get("expect") or {}
+            if "ended" in expect:
+                covered.add("ended")
             if "stack" in expect:
                 covered.add("stack")
             if "state" in expect:
@@ -56,6 +101,7 @@ def test_semantic_fixture_assertion_families_are_executable():
 
     assert {
         "stack",
+        "ended",
         "current_state",
         "vars",
         "history",
@@ -64,6 +110,83 @@ def test_semantic_fixture_assertion_families_are_executable():
         "exception",
         "context",
     }.issubset(covered)
+
+
+@pytest.mark.unittest
+def test_generated_alignment_constructor_outcome_helper_covers_three_modes():
+    from test.testings import simulate_semantics
+    from test.testings.simulate_semantics import SemanticCase
+
+    case = SemanticCase(
+        data={
+            "id": "constructor_outcome_helper",
+            "runners": ["simulation", "generated_python_alignment"],
+        },
+        yaml_path="/tmp/constructor_outcome_helper.yaml",
+        fcstm_path="/tmp/constructor_outcome_helper.fcstm",
+        dsl_code="state Root { state A; [*] -> A; }",
+    )
+    expect = {
+        "raises": {
+            "type": "ValueError",
+            "match": "boom",
+            "match_kind": "substring",
+        }
+    }
+
+    simulate_semantics._assert_aligned_constructor_outcome(
+        case, None, object(), None, object(), None
+    )
+    simulate_semantics._assert_aligned_constructor_outcome(
+        case, expect, None, ValueError("boom"), None, ValueError("boom")
+    )
+    simulation_runtime, simulation_err = simulate_semantics._capture_construction(
+        lambda: (_ for _ in ()).throw(
+            simulate_semantics.SimulationRuntimeDfsError("dfs")
+        )
+    )
+    assert simulation_runtime is None
+    assert isinstance(simulation_err, simulate_semantics.SimulationRuntimeDfsError)
+    with pytest.raises(AssertionError, match="constructor one-sided mismatch"):
+        simulate_semantics._assert_aligned_constructor_outcome(
+            case, None, object(), None, None, ValueError("boom")
+        )
+    with pytest.raises(AssertionError, match="constructor failed unexpectedly"):
+        simulate_semantics._assert_aligned_constructor_outcome(
+            case, None, None, ValueError("boom"), None, ValueError("boom")
+        )
+    with pytest.raises(AssertionError, match="expected constructor failure"):
+        simulate_semantics._assert_aligned_constructor_outcome(
+            case, expect, object(), None, object(), None
+        )
+
+
+@pytest.mark.unittest
+def test_initial_vars_override_fixture_remains_simulation_only_seed():
+    case = load_semantic_case("persistent_initial_vars_override_skips_initializer")
+
+    assert case.runners == ("simulation",)
+    assert case.data["initial"]["state"] == "Root.A"
+    assert case.data["initial"]["vars"] == {"recovered": 5.0}
+    assert "initial" in case.data["origin"]["assertion_types"]
+    assert "hot_start" in case.data["categories"]
+
+
+@pytest.mark.unittest
+def test_generated_alignment_handler_metadata_mapping_is_available():
+    case = load_semantic_case("ref_abstract_handler_reports_calling_state")
+    call = case.data["steps"][0]["expect"]["handler_calls"][0]
+
+    assert "generated_python_alignment" in case.runners
+    assert case.data["handlers"] == [
+        {"action": "Root.Library.Shared", "behavior": "record_call"}
+    ]
+    assert {
+        "action": "Root.Library.Shared",
+        "state": "Root.A",
+        "stage": "enter",
+        "vars": {},
+    }.items() <= call.items()
 
 
 @pytest.mark.unittest
@@ -273,7 +396,7 @@ def _set_model_build_expectation(data, raises):
         ),
         (
             lambda data: (
-                data.update({"runners": ["generated_python_alignment"]})
+                data.update({"runners": ["cli_command"]})
                 or data.update(
                     {"handlers": [{"action": "Root.Init", "behavior": "record_call"}]}
                 )
@@ -302,6 +425,10 @@ def _set_model_build_expectation(data, raises):
             "expected_failure is reserved",
         ),
         (lambda data: data.update({"runners": ["unknown"]}), "unknown runners"),
+        (
+            lambda data: data.update({"runners": ["generated_python_alignment"]}),
+            "generated_python_alignment requires the simulation runner",
+        ),
         (
             lambda data: _set_model_build_expectation(data, {"type": "UnknownError"}),
             "model_build.expect.raises.type is unknown",

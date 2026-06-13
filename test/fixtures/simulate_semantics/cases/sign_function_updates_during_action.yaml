@@ -1,0 +1,37 @@
+schema_version: 1
+id: sign_function_updates_during_action
+title: Sign function updates a during action value
+source:
+  fcstm: sign_function_updates_during_action.fcstm
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694810781
+  - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4695001326
+  assertion_types:
+  - state
+  - vars
+  - return
+  notes:
+  - Covers the canonical generated Python sign expression mismatch in a lifecycle action.
+categories:
+- runtime
+- template_alignment
+- lifecycle
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      marker: -1
+      x: -3
+    ended: false
+    cycle_result:
+      value: null

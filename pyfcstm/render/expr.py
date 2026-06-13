@@ -97,6 +97,7 @@ _PY_STYLE = {
     'UFunc(atanh)': 'math.atanh({{ node.expr | expr_render }})',
     'UFunc(sqrt)': 'math.sqrt({{ node.expr | expr_render }})',
     'UFunc(cbrt)': 'math.copysign(abs({{ node.expr | expr_render }}) ** (1.0 / 3.0), {{ node.expr | expr_render }})',
+    'UFunc(sign)': '(({{ node.expr | expr_render }}) > 0) - (({{ node.expr | expr_render }}) < 0)',
     'UFunc(exp)': 'math.exp({{ node.expr | expr_render }})',
     'UFunc(log)': 'math.log({{ node.expr | expr_render }})',
     'UFunc(log10)': 'math.log10({{ node.expr | expr_render }})',

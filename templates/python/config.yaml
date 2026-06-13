@@ -39,11 +39,6 @@ globals:
     params:
       - state
     template: "{{ state.path | join('.') }}"
-  state_slug:
-    type: template
-    params:
-      - state
-    template: "{{ state.path | join('_') | to_identifier }}"
   action_hook_name:
     type: template
     params:
@@ -66,11 +61,6 @@ filters:
     params:
       - state
     template: "{{ state_path(state) }}"
-  state_slug:
-    type: template
-    params:
-      - state
-    template: "{{ state_slug(state) }}"
   action_hook_name:
     type: template
     params:

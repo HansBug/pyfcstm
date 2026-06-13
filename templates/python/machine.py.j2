@@ -16,7 +16,6 @@
 {%- endfor -%}
 {%- endfor -%}
 {%- set action_ref_hop_limit = (action_scan.items | length) + 1 -%}
-{%- macro state_slug(state) -%}{{ state | state_slug }}{%- endmacro %}
 {%- macro state_path_ref(state) -%}_STATE_PATH_TUPLES[{{ state_items.index(state) }}]{%- endmacro %}
 {%- macro action_method_name(state, kind, idx) -%}_action_state_{{ state_items.index(state) }}_{{ kind }}_{{ idx }}{%- endmacro %}
 {%- macro init_transition_id(state, idx) -%}init:{{ state_key(state) }}:{{ idx }}{%- endmacro %}

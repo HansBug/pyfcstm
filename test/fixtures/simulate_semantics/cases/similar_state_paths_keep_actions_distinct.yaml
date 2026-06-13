@@ -1,0 +1,36 @@
+schema_version: 1
+id: similar_state_paths_keep_actions_distinct
+title: Similar state paths keep generated actions distinct
+source:
+  fcstm: similar_state_paths_keep_actions_distinct.fcstm
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694962840
+  assertion_types:
+  - state
+  - vars
+  - return
+  notes:
+  - Covers distinct state paths that previously collapsed to the same generated method slug.
+categories:
+- runtime
+- template_alignment
+- lifecycle
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    - B
+    vars:
+      trace: 11
+    ended: false
+    cycle_result:
+      value: null

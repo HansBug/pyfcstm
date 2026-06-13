@@ -427,7 +427,7 @@ class TestPythonBuiltinTemplate:
             def int counter = 0;
             state Root {
                 enter { }
-                enter { counter = counter + 1; }
+                enter { counter = counter + sign(-3); }
                 enter abstract RootInit;
                 during before { }
                 during after { }
@@ -454,7 +454,7 @@ class TestPythonBuiltinTemplate:
                 [*] -> Idle;
                 Idle -> Waiting :: Pause;
                 Idle -> Done :: Finish;
-                Waiting -> Done : if [false];
+                Waiting -> Done : if [sign(-1) < 0];
             }
             """,
             """

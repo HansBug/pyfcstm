@@ -315,13 +315,22 @@ Do not expand the formatter matrix casually.
 
 Mandatory completion rule for built-in template work:
 
-- Treat formatter convergence as part of correctness, not optional polish.
-- The generated target-language artifacts must be acceptable to the corresponding formatter defaults for that language.
-- For the built-in `python` template specifically, every emitted `machine.py` should be designed to pass both
-  `ruff check` and `ruff format --check` in the representative template tests. Do not treat "ruff can rewrite it" as
-  sufficient; generated Python should be lint-clean and formatter-stable without users editing the generated file.
+- Treat formatter convergence as a readability and maintainability gate for generated artifacts, not as a reason to
+  over-engineer semantic fixes around formatter edge cases. The target-language output should be clean enough for users
+  to read and maintain without hand-editing, while semantic correctness and simulator/template alignment remain the
+  higher-priority acceptance criteria.
+- The generated target-language artifacts must be acceptable to the corresponding formatter defaults for representative
+  outputs of that language. For generated Python, representative `machine.py` artifacts should pass both `ruff check`
+  and `ruff format --check` in template tests.
+- For the built-in `python` template specifically, `ruff` is used to keep generated code broadly tidy and idiomatic. If
+  an extreme legal DSL expression is valid Python, lint-clean, runtime-correct, and aligned with
+  `SimulationRuntime`, but `ruff format --check` only wants stylistic wrapping of that extreme expression, treat that
+  as a non-blocking formatter-only concern unless the task explicitly targets formatter convergence for that shape. Do
+  not add complex generation machinery solely to silence weak formatter-only rewrites.
 - Template-facing documentation artifacts that ship with the generated output, especially generated `README.md` / `README_zh.md` files and their embedded code snippets, must also be kept formatter-friendly for the relevant language and text formatter set.
-- For template changes, "done" means the generated outputs have converged under the intended formatter flow. If the formatter still wants to rewrite the emitted code or the generated usage examples materially, the template work is not complete yet.
+- For template changes, "done" means representative generated outputs have converged under the intended formatter flow,
+  semantic alignment tests pass, and any known formatter-only exceptions are explicitly documented as non-blocking with
+  their runtime/lint evidence.
 - When adding or changing a multi-language built-in template, explicitly design the generated code shape and README examples so they stabilize under the formatter set listed above instead of relying on hand-aligned formatting.
 - Use the formatter that matches the emitted language and verify convergence with that formatter, not with ad-hoc manual styling:
   - `py`: `ruff format`

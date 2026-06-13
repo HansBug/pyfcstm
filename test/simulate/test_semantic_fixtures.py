@@ -16,7 +16,7 @@ from test.testings.simulate_semantics import (
 def test_all_semantic_fixtures_load():
     cases = iter_semantic_cases()
 
-    assert len(cases) >= 136
+    assert len(cases) >= 139
     assert {case.id for case in cases}
 
 
@@ -38,8 +38,8 @@ def test_generated_alignment_fixture_baseline_counts():
         case for case in generated_cases if case.data.get("handlers")
     ]
 
-    assert len(cases) >= 136
-    assert len(generated_cases) >= 86
+    assert len(cases) >= 139
+    assert len(generated_cases) >= 90
     assert expected_failure_cases == []
     assert {case.id for case in generated_handler_cases} >= {
         "failed_initial_cycle_skips_abstract_handler_callbacks",

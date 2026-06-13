@@ -1,4 +1,21 @@
 {%- macro state_key(state) -%}{{ state | state_path }}{%- endmacro %}
+{%- set action_scan = namespace(items=[]) -%}
+{%- for scan_state in model.walk_states() -%}
+{%- for scan_group in [
+    scan_state.list_on_enters(with_ids=True),
+    scan_state.list_on_durings(aspect=None, with_ids=True),
+    scan_state.list_on_exits(with_ids=True),
+    scan_state.list_on_durings(aspect="before", with_ids=True),
+    scan_state.list_on_durings(aspect="after", with_ids=True),
+    scan_state.list_on_during_aspects(aspect="before", with_ids=True),
+    scan_state.list_on_during_aspects(aspect="after", with_ids=True),
+] -%}
+{%- for _, scan_item in scan_group -%}
+{%- set action_scan.items = action_scan.items + [scan_item] -%}
+{%- endfor -%}
+{%- endfor -%}
+{%- endfor -%}
+{%- set action_ref_hop_limit = (action_scan.items | length) + 1 -%}
 {%- macro state_slug(state) -%}{{ state | state_slug }}{%- endmacro %}
 {%- macro state_path_ref(state) -%}_STATE_PATH_TUPLES[{{ state_items.index(state) }}]{%- endmacro %}
 {%- macro action_method_name(state, kind, idx) -%}_action_state_{{ state_items.index(state) }}_{{ kind }}_{{ idx }}{%- endmacro %}
@@ -10,9 +27,10 @@
 {%- macro transition_effect_method_name(state, idx) -%}_effect_transition_state_{{ state_items.index(state) }}_{{ idx }}{%- endmacro %}
 {%- macro abstract_hook_method_name(action) -%}{{ action | action_hook_name }}{%- endmacro %}
 {%- macro render_action_entry(state, item, method_kind, idx) -%}
-{%- set resolved = namespace(item=item) -%}
-{%- for _ in range(16) -%}
-{%- if resolved.item.ref is not none -%}
+{%- set resolved = namespace(item=item, seen=[]) -%}
+{%- for _ in range(action_ref_hop_limit) -%}
+{%- if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
+{%- set resolved.seen = resolved.seen + [resolved.item] -%}
 {%- set resolved.item = resolved.item.ref -%}
 {%- endif -%}
 {%- endfor -%}
@@ -21,8 +39,12 @@
     "method": {{ action_method_name(state, method_kind, idx) | tojson if not resolved.item.is_abstract else "None" }},
     "hook_method": {{ abstract_hook_method_name(resolved.item) | tojson if resolved.item.is_abstract else "None" }},
     "action_name": {{ resolved.item.func_name | tojson }},
-    "action_stage": {{ resolved.item.stage | tojson }},
+    "action_stage": {{ item.stage | tojson }},
     "context_state_path": {{ state_path_ref(state) }},
+    "active_leaf": {{ state_path_ref(state) }},
+    "call_stage": {{ item.stage | tojson }},
+    "abstract_target": {{ resolved.item.func_name | tojson if resolved.item.is_abstract else "None" }},
+    "named_ref": {{ item.func_name | tojson if item.name is not none and item.ref is not none else "None" }},
     "owner_state_path": {{ state_path_ref(resolved.item.parent) }},
     "dsl_snippet": {{ (resolved.item.to_ast_node() | string) | tojson }},
 }
@@ -75,9 +97,10 @@ Abstract Hook Map:
     state.list_on_during_aspects(aspect='after', with_ids=True),
  ] -%}
 {% for _, item in group -%}
-{% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
-{% if resolved.item.ref is not none -%}
+{% set resolved = namespace(item=item, seen=[]) -%}
+{% for _ in range(action_ref_hop_limit) -%}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
+{% set resolved.seen = resolved.seen + [resolved.item] -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
 {% endfor -%}
@@ -101,7 +124,7 @@ Original DSL Source::
 import math  # noqa: F401 - rendered DSL math expressions may use this module.
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Mapping, Tuple, Union
+from typing import Mapping, Optional, Tuple, Union
 
 
 Number = Union[int, float]
@@ -125,9 +148,10 @@ _STATE_PATHS = (
     state.list_on_during_aspects(aspect="after", with_ids=True),
 ] -%}
 {% for _, item in group -%}
-{% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
-{% if resolved.item.ref is not none -%}
+{% set resolved = namespace(item=item, seen=[]) -%}
+{% for _ in range(action_ref_hop_limit) -%}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
+{% set resolved.seen = resolved.seen + [resolved.item] -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
 {% endfor -%}
@@ -150,9 +174,10 @@ _ABSTRACT_HOOKS = {% if abstract_hook_scan.seen %}{
     state.list_on_during_aspects(aspect="after", with_ids=True),
 ] -%}
 {% for _, item in group -%}
-{% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
-{% if resolved.item.ref is not none -%}
+{% set resolved = namespace(item=item, seen=[]) -%}
+{% for _ in range(action_ref_hop_limit) -%}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
+{% set resolved.seen = resolved.seen + [resolved.item] -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
 {% endfor -%}
@@ -209,19 +234,43 @@ class ReadOnlyExecutionContext:
     :type state_path: Tuple[str, ...]
     :param vars: Snapshot of machine variables.
     :type vars: Mapping[str, Number]
-    :param action_name: Full action path.
+    :param action_name: Resolved abstract target action path.
     :type action_name: str
-    :param action_stage: Lifecycle stage.
+    :param action_stage: Lifecycle callsite stage.
     :type action_stage: str
+    :param active_leaf: Current active leaf path, defaults to ``state_path``.
+    :type active_leaf: Tuple[str, ...], optional
+    :param call_stage: Explicit callsite lifecycle stage, defaults to
+        ``action_stage``.
+    :type call_stage: str, optional
+    :param abstract_target: Resolved abstract target action path, defaults to
+        ``action_name``.
+    :type abstract_target: str, optional
+    :param named_ref: Full path of the named ref callsite. Anonymous
+        refs and direct abstract actions use ``None``.
+    :type named_ref: Optional[str], optional
     """
 
     state_path: Tuple[str, ...]
     vars: Mapping[str, Number]
     action_name: str
     action_stage: str
+    active_leaf: Optional[Tuple[str, ...]] = None
+    call_stage: Optional[str] = None
+    abstract_target: Optional[str] = None
+    named_ref: Optional[str] = None
 
     def __post_init__(self):
+        object.__setattr__(self, "state_path", tuple(self.state_path))
         object.__setattr__(self, "vars", MappingProxyType(dict(self.vars)))
+        active_leaf = self.state_path if self.active_leaf is None else self.active_leaf
+        object.__setattr__(self, "active_leaf", tuple(active_leaf))
+        call_stage = self.action_stage if self.call_stage is None else self.call_stage
+        object.__setattr__(self, "call_stage", call_stage)
+        abstract_target = (
+            self.action_name if self.abstract_target is None else self.abstract_target
+        )
+        object.__setattr__(self, "abstract_target", abstract_target)
 
     def get_var(self, name):
         return self.vars[name]
@@ -782,23 +831,44 @@ class {{ machine_class_name(model) }}:
             current_path = self._STATE_INFO[current_path]["parent"]
         return result
 
-    def _execute_actions(self, actions, vars_, is_validation_mode=False):
+    def _execute_actions(
+        self, actions, vars_, is_validation_mode=False, active_leaf_path=None
+    ):
         for action in actions:
             if action["kind"] == "concrete":
                 getattr(self, action["method"])(vars_)
             else:
                 self._execute_abstract_action(
-                    action, vars_, is_validation_mode=is_validation_mode
+                    action,
+                    vars_,
+                    is_validation_mode=is_validation_mode,
+                    active_leaf_path=active_leaf_path,
                 )
 
-    def _execute_abstract_action(self, action, vars_, is_validation_mode=False):
+    def _execute_abstract_action(
+        self,
+        action,
+        vars_,
+        is_validation_mode=False,
+        active_leaf_path=None,
+    ):
         if is_validation_mode:
             return
+        if active_leaf_path is None:
+            context_state_path = action["context_state_path"]
+        else:
+            # Aspect actions pass the active leaf path at runtime; the
+            # action metadata path is only the owner-state fallback.
+            context_state_path = active_leaf_path
         ctx = ReadOnlyExecutionContext(
-            state_path=action["context_state_path"],
+            state_path=context_state_path,
             vars=dict(vars_),
             action_name=action["action_name"],
             action_stage=action["action_stage"],
+            active_leaf=context_state_path,
+            call_stage=action["call_stage"],
+            abstract_target=action["abstract_target"],
+            named_ref=action["named_ref"],
         )
         old_vars = self._vars
         old_variables = self.variables
@@ -820,6 +890,7 @@ class {{ machine_class_name(model) }}:
                     self._STATE_INFO[item_path]["aspect_before_actions"],
                     vars_,
                     is_validation_mode=is_validation_mode,
+                    active_leaf_path=state_info["path"],
                 )
         self._execute_actions(
             state_info["during_actions"],
@@ -832,6 +903,7 @@ class {{ machine_class_name(model) }}:
                     self._STATE_INFO[item_path]["aspect_after_actions"],
                     vars_,
                     is_validation_mode=is_validation_mode,
+                    active_leaf_path=state_info["path"],
                 )
 
     def _transition_matches_event(self, transition, event_names):
@@ -1429,9 +1501,10 @@ class {{ machine_class_name(model) }}:
 {% set hook_ns = namespace(seen=[]) %}
 {% for state in model.walk_states() %}
 {% for id_, item in state.list_on_enters(with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
+{% set resolved = namespace(item=item, seen=[]) %}
+{% for _ in range(action_ref_hop_limit) %}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
+{% set resolved.seen = resolved.seen + [resolved.item] %}
 {% set resolved.item = resolved.item.ref %}
 {% endif %}
 {% endfor %}
@@ -1486,9 +1559,10 @@ class {{ machine_class_name(model) }}:
 {% endif %}
 {% endfor %}
 {% for id_, item in state.list_on_durings(aspect=None, with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
+{% set resolved = namespace(item=item, seen=[]) %}
+{% for _ in range(action_ref_hop_limit) %}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
+{% set resolved.seen = resolved.seen + [resolved.item] %}
 {% set resolved.item = resolved.item.ref %}
 {% endif %}
 {% endfor %}
@@ -1543,9 +1617,10 @@ class {{ machine_class_name(model) }}:
 {% endif %}
 {% endfor %}
 {% for id_, item in state.list_on_exits(with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
+{% set resolved = namespace(item=item, seen=[]) %}
+{% for _ in range(action_ref_hop_limit) %}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
+{% set resolved.seen = resolved.seen + [resolved.item] %}
 {% set resolved.item = resolved.item.ref %}
 {% endif %}
 {% endfor %}
@@ -1600,9 +1675,10 @@ class {{ machine_class_name(model) }}:
 {% endif %}
 {% endfor %}
 {% for id_, item in state.list_on_durings(aspect='before', with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
+{% set resolved = namespace(item=item, seen=[]) %}
+{% for _ in range(action_ref_hop_limit) %}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
+{% set resolved.seen = resolved.seen + [resolved.item] %}
 {% set resolved.item = resolved.item.ref %}
 {% endif %}
 {% endfor %}
@@ -1659,9 +1735,10 @@ class {{ machine_class_name(model) }}:
 {% endif %}
 {% endfor %}
 {% for id_, item in state.list_on_durings(aspect='after', with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
+{% set resolved = namespace(item=item, seen=[]) %}
+{% for _ in range(action_ref_hop_limit) %}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
+{% set resolved.seen = resolved.seen + [resolved.item] %}
 {% set resolved.item = resolved.item.ref %}
 {% endif %}
 {% endfor %}
@@ -1718,9 +1795,10 @@ class {{ machine_class_name(model) }}:
 {% endif %}
 {% endfor %}
 {% for id_, item in state.list_on_during_aspects(aspect='before', with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
+{% set resolved = namespace(item=item, seen=[]) %}
+{% for _ in range(action_ref_hop_limit) %}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
+{% set resolved.seen = resolved.seen + [resolved.item] %}
 {% set resolved.item = resolved.item.ref %}
 {% endif %}
 {% endfor %}
@@ -1777,9 +1855,10 @@ class {{ machine_class_name(model) }}:
 {% endif %}
 {% endfor %}
 {% for id_, item in state.list_on_during_aspects(aspect='after', with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
+{% set resolved = namespace(item=item, seen=[]) %}
+{% for _ in range(action_ref_hop_limit) %}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
+{% set resolved.seen = resolved.seen + [resolved.item] %}
 {% set resolved.item = resolved.item.ref %}
 {% endif %}
 {% endfor %}

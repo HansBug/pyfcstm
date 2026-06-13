@@ -1,0 +1,35 @@
+def int trace = 0;
+
+state Root {
+    state Library {
+        enter Link02 ref Link03;
+        enter Link03 ref Link04;
+        enter Link04 ref Link05;
+        enter Link05 ref Link06;
+        enter Link06 ref Link07;
+        enter Link07 ref Link08;
+        enter Link08 ref Link09;
+        enter Link09 ref Link10;
+        enter Link10 ref Link11;
+        enter Link11 ref Link12;
+        enter Link12 ref Link13;
+        enter Link13 ref Link14;
+        enter Link14 ref Link15;
+        enter Link15 ref Link16;
+        enter Link16 ref Link17;
+        enter Link17 ref Link18;
+        enter Link18 ref Link19;
+        enter Link19 ref Link20;
+        enter Link20 ref Link21;
+        enter Link21 ref Final;
+        enter abstract Final;
+    }
+
+    state Active {
+        enter { trace = 1; }
+        enter ChainStart ref /Library.Link02;
+        during { trace = trace + 10; }
+    }
+
+    [*] -> Active;
+}

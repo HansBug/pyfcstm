@@ -1,0 +1,20 @@
+def int trace = 0;
+def int branch = 0;
+
+state Root {
+    state Gate {
+        state Prep {
+            enter { trace = trace * 10 + 2; }
+            state Wait {
+                state Armed {
+                    enter { trace = trace * 10 + 4; }
+                    during { trace = trace * 10 + 5; }
+                }
+                [*] -> Armed :: Unlock effect { trace = trace * 10 + 3; };
+            }
+            [*] -> Wait effect { trace = trace * 10 + 1; };
+        }
+        [*] -> Prep : if [branch == 0];
+    }
+    [*] -> Gate;
+}

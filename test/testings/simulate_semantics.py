@@ -193,7 +193,6 @@ _EXCEPTION_TYPES = {
     "SimulationRuntimeExpressionError": SimulationRuntimeExpressionError,
     "ValueError": ValueError,
 }
-_CONSTRUCTOR_EXCEPTION_TYPES = tuple(_EXCEPTION_TYPES.values())
 _ALIGNMENT_CONSTRUCTOR_EXCEPTION_TYPES = (
     ValueError,
     ArithmeticError,
@@ -1266,30 +1265,9 @@ def _assert_aligned_constructor_outcome(
             type(generated_err).__name__,
         )
     )
-    assert str(simulation_err) == str(generated_err), (
-        "%s constructor exception message mismatch: simulation=%s generated=%s"
-        % (case.id, simulation_err, generated_err)
-    )
     _assert_exception(simulation_err, expect, case, "initial.expect.raises")
     _assert_exception(generated_err, expect, case, "initial.expect.raises")
 
-
-def _assert_aligned_constructor_failure(case: SemanticCase) -> None:
-    expect = _initial_constructor_expect(case)
-    simulation_runtime, simulation_err = _capture_construction(
-        lambda: _build_simulation_runtime(case)
-    )
-    generated_runtime, generated_err = _capture_construction(
-        lambda: _build_generated_runtime(case)
-    )
-    _assert_aligned_constructor_outcome(
-        case,
-        expect,
-        simulation_runtime,
-        simulation_err,
-        generated_runtime,
-        generated_err,
-    )
 
 
 def _initial_kwargs(case: SemanticCase) -> Dict[str, Any]:

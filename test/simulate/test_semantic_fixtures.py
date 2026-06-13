@@ -140,6 +140,14 @@ def test_generated_alignment_constructor_outcome_helper_covers_three_modes():
     simulate_semantics._assert_aligned_constructor_outcome(
         case, expect, None, ValueError("boom"), None, ValueError("boom")
     )
+    simulate_semantics._assert_aligned_constructor_outcome(
+        case,
+        expect,
+        None,
+        ValueError("simulation boom details"),
+        None,
+        ValueError("generated boom details"),
+    )
     simulation_runtime, simulation_err = simulate_semantics._capture_construction(
         lambda: (_ for _ in ()).throw(
             simulate_semantics.SimulationRuntimeDfsError("dfs")

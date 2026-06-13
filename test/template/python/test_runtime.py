@@ -478,6 +478,27 @@ class TestPythonBuiltinTemplate:
             # locate its bundled CLI binary in this test environment.
             pytest.skip('ruff binary is not available in this test environment')
 
+        fixture_ids = [
+            'sign_function_updates_during_action',
+            'sign_function_handles_all_signs',
+            'sign_function_controls_guard_transition',
+        ]
+        fixture_dir = os.path.join(
+            os.path.dirname(__file__),
+            '..',
+            '..',
+            'fixtures',
+            'simulate_semantics',
+            'cases',
+        )
+        for fixture_id in fixture_ids:
+            with open(
+                os.path.join(fixture_dir, '%s.fcstm' % fixture_id),
+                'r',
+                encoding='utf-8',
+            ) as f:
+                dsl_codes.append(f.read())
+
         for index, dsl_code in enumerate(dsl_codes):
             with _render_python_artifacts(
                 dsl_code, module_name='generated_python_source_%d' % index

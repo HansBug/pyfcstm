@@ -489,17 +489,30 @@ class {{ machine_class_name(model) }}:
         return stack
 
     def _validate_hot_start_stack(self, target_path):
+        max_structural_depth = 64
+        if len(self._stack) > max_structural_depth:
+            raise SimulationRuntimeDfsError(
+                "Hot start target exceeds the structural stack-depth safety limit "
+                "(%s) before execution; choose a shallower target state or simplify "
+                "the state hierarchy." % (max_structural_depth,)
+            )
+
         if self._is_stoppable_state(target_path):
             return
 
         validation_stack = self._clone_stack(self._stack)
         validation_vars = dict(self._vars)
-        success, _ = self._run_cycle_on_context(
-            validation_stack,
-            validation_vars,
-            set(),
-            is_validation_mode=True,
-        )
+        try:
+            success, _ = self._run_cycle_on_context(
+                validation_stack,
+                validation_vars,
+                set(),
+                is_validation_mode=True,
+            )
+        except SimulationRuntimeDfsError:
+            # _run_cycle_on_context can exceed DFS limits while proving that a
+            # hot-start target has no empty-event stable path.
+            success = False
         if not success:
             target_display = ".".join(self._STATE_INFO[target_path]["path"])
             raise ValueError(
@@ -511,18 +524,42 @@ class {{ machine_class_name(model) }}:
         return [dict(frame) for frame in stack]
 
     @staticmethod
+    def _frame_plain_before_pending(frame):
+        return bool(frame.get("plain_before_pending", False))
+
+    @staticmethod
     def _create_execution_signature(stack, vars_):
         return (
-            tuple((frame["state"], frame["mode"]) for frame in stack),
+            tuple(
+                (
+                    frame["state"],
+                    frame["mode"],
+                    {{ machine_class_name(model) }}._frame_plain_before_pending(frame),
+                )
+                for frame in stack
+            ),
             tuple((key, vars_[key]) for key in sorted(vars_)),
         )
 
     @staticmethod
     def _create_structural_signature(stack):
-        return tuple((frame["state"], frame["mode"]) for frame in stack)
+        return tuple(
+            (
+                frame["state"],
+                frame["mode"],
+                {{ machine_class_name(model) }}._frame_plain_before_pending(frame),
+            )
+            for frame in stack
+        )
 
     def _create_root_rollback_stack(self):
-        return [{"state": self._ROOT_STATE_PATH, "mode": "init_wait"}]
+        return [
+            {
+                "state": self._ROOT_STATE_PATH,
+                "mode": "init_wait",
+                "plain_before_pending": False,
+            }
+        ]
 
     def _is_stoppable_state(self, state_path):
         state_info = self._STATE_INFO[state_path]
@@ -717,7 +754,13 @@ class {{ machine_class_name(model) }}:
         return None
 
     def _enter_state(
-        self, stack, state_path, vars_, event_names, is_validation_mode=False
+        self,
+        stack,
+        state_path,
+        vars_,
+        event_names,
+        is_validation_mode=False,
+        attempt_initial_transition=True,
     ):
         state_info = self._STATE_INFO[state_path]
         stack.append({"state": state_path, "mode": "active"})
@@ -731,15 +774,12 @@ class {{ machine_class_name(model) }}:
             )
             stack[-1]["mode"] = "after_entry"
         else:
-            self._execute_actions(
-                state_info["during_before_actions"],
-                vars_,
-                is_validation_mode=is_validation_mode,
-            )
             stack[-1]["mode"] = "init_wait"
-            self._attempt_init_transition(
-                stack, vars_, event_names, is_validation_mode=is_validation_mode
-            )
+            stack[-1]["plain_before_pending"] = True
+            if attempt_initial_transition:
+                self._attempt_init_transition(
+                    stack, vars_, event_names, is_validation_mode=is_validation_mode
+                )
 
     def _attempt_init_transition(
         self, stack, vars_, event_names, is_validation_mode=False
@@ -760,24 +800,39 @@ class {{ machine_class_name(model) }}:
                     transition_id,
                     event_names,
                     is_validation_mode=is_validation_mode,
+                    attempt_initial_transition=not is_validation_mode,
                 )
                 return True
         return False
 
     def _execute_initial_transition_on_context(
-        self, stack, vars_, transition_id, event_names, is_validation_mode=False
+        self,
+        stack,
+        vars_,
+        transition_id,
+        event_names,
+        is_validation_mode=False,
+        attempt_initial_transition=True,
     ):
         composite_frame = stack[-1]
         transition = self._TRANSITIONS[transition_id]
         self._execute_transition_effect(
             transition, vars_, is_validation_mode=is_validation_mode
         )
+        if composite_frame.get("plain_before_pending", False):
+            self._execute_actions(
+                self._STATE_INFO[composite_frame["state"]]["during_before_actions"],
+                vars_,
+                is_validation_mode=is_validation_mode,
+            )
+            composite_frame["plain_before_pending"] = False
         self._enter_state(
             stack,
             transition["target"],
             vars_,
             event_names,
             is_validation_mode=is_validation_mode,
+            attempt_initial_transition=attempt_initial_transition,
         )
         if any(frame is composite_frame for frame in stack):
             composite_frame["mode"] = "active"
@@ -791,14 +846,9 @@ class {{ machine_class_name(model) }}:
             transition_id,
             event_names,
             is_validation_mode=True,
+            attempt_initial_transition=False,
         )
-        success, _ = self._run_cycle_on_context(
-            sim_stack,
-            sim_vars,
-            event_names,
-            is_validation_mode=True,
-        )
-        return success
+        return self._validation_search_reaches_stable(sim_stack, sim_vars, event_names)
 
     def _finalize_exit_to_parent(self, stack, vars_, is_validation_mode=False):
         if not stack:
@@ -868,15 +918,163 @@ class {{ machine_class_name(model) }}:
         )
         if ended:
             return True
-        success, _ = self._run_cycle_on_context(
+        return self._validation_search_reaches_stable(
             sim_stack,
             sim_vars,
             event_names,
             ended=ended,
             validate_post_child_exit=True,
-            is_validation_mode=True,
         )
-        return success
+
+    def _validation_search_reaches_stable(
+        self,
+        stack,
+        vars_,
+        event_names,
+        ended=False,
+        validate_post_child_exit=True,
+    ):
+        if ended:
+            stack[:] = []
+            vars_.clear()
+            return True
+
+        worklist = [(self._clone_stack(stack), dict(vars_), False)]
+        seen_signatures = set()
+        steps_taken = 0
+        max_steps = 1000
+        max_structural_depth = 64
+
+        while worklist:
+            current_stack, current_vars, current_ended = worklist.pop()
+            if current_ended:
+                stack[:] = []
+                vars_.clear()
+                vars_.update(current_vars)
+                return True
+            if not current_stack:
+                stack[:] = []
+                vars_.clear()
+                vars_.update(current_vars)
+                return True
+
+            structural_signature = self._create_structural_signature(current_stack)
+            if len(structural_signature) > max_structural_depth:
+                raise SimulationRuntimeDfsError(
+                    "Speculative DFS exceeded the structural stack-depth safety limit "
+                    "(%s) without reaching a stoppable state or pruning; "
+                    "the state machine likely contains an invalid unbounded nesting chain."
+                    % (max_structural_depth,)
+                )
+
+            signature = self._create_execution_signature(current_stack, current_vars)
+            if signature in seen_signatures:
+                continue
+            seen_signatures.add(signature)
+
+            if steps_taken >= max_steps:
+                raise SimulationRuntimeDfsError(
+                    "Speculative DFS exceeded the step safety limit "
+                    "(%s) without reaching a stoppable state or pruning; "
+                    "the state machine likely contains an invalid unbounded pseudo-state "
+                    "or transition chain." % (max_steps,)
+                )
+            steps_taken += 1
+
+            frame = current_stack[-1]
+            state_path = frame["state"]
+            state_info = self._STATE_INFO[state_path]
+
+            if state_info["is_leaf"] and frame["mode"] == "after_entry":
+                next_stack = self._clone_stack(current_stack)
+                next_vars = dict(current_vars)
+                next_stack[-1]["mode"] = "active"
+                if self._is_stoppable_state(state_path):
+                    stack[:] = next_stack
+                    vars_.clear()
+                    vars_.update(next_vars)
+                    return True
+                worklist.append((next_stack, next_vars, False))
+                continue
+
+            if state_info["is_leaf"]:
+                progressed = False
+                for transition_id in reversed(state_info["transition_ids"]):
+                    transition = self._TRANSITIONS[transition_id]
+                    if not self._transition_is_enabled(
+                        transition, event_names, current_vars
+                    ):
+                        continue
+                    next_stack = self._clone_stack(current_stack)
+                    next_vars = dict(current_vars)
+                    next_ended = self._execute_transition_on_context(
+                        next_stack,
+                        next_vars,
+                        transition_id,
+                        event_names,
+                        is_validation_mode=True,
+                    )
+                    worklist.append((next_stack, next_vars, next_ended))
+                    progressed = True
+                if progressed:
+                    continue
+
+                if not self._is_stoppable_state(state_path):
+                    continue
+
+                next_stack = self._clone_stack(current_stack)
+                next_vars = dict(current_vars)
+                self._run_leaf_during(state_path, next_vars, is_validation_mode=True)
+                next_stack[-1]["mode"] = "after_entry"
+                worklist.append((next_stack, next_vars, False))
+                continue
+
+            if frame["mode"] == "init_wait":
+                progressed = False
+                for transition_id in reversed(state_info["initial_transition_ids"]):
+                    transition = self._TRANSITIONS[transition_id]
+                    if not self._transition_is_enabled(
+                        transition, event_names, current_vars
+                    ):
+                        continue
+                    next_stack = self._clone_stack(current_stack)
+                    next_vars = dict(current_vars)
+                    self._execute_initial_transition_on_context(
+                        next_stack,
+                        next_vars,
+                        transition_id,
+                        event_names,
+                        is_validation_mode=True,
+                        attempt_initial_transition=False,
+                    )
+                    worklist.append((next_stack, next_vars, False))
+                    progressed = True
+                if not progressed:
+                    continue
+                continue
+
+            if frame["mode"] == "post_child_exit":
+                if not validate_post_child_exit:
+                    continue
+                for transition_id in reversed(state_info["transition_ids"]):
+                    transition = self._TRANSITIONS[transition_id]
+                    if not self._transition_is_enabled(
+                        transition, event_names, current_vars
+                    ):
+                        continue
+                    next_stack = self._clone_stack(current_stack)
+                    next_vars = dict(current_vars)
+                    next_ended = self._execute_transition_on_context(
+                        next_stack,
+                        next_vars,
+                        transition_id,
+                        event_names,
+                        is_validation_mode=True,
+                    )
+                    worklist.append((next_stack, next_vars, next_ended))
+                continue
+
+        return False
 
     def _initialize_context(self, stack, vars_, event_names, is_validation_mode=False):
         stack[:] = []
@@ -925,7 +1123,12 @@ class {{ machine_class_name(model) }}:
                 )
 
             if steps_taken >= max_steps:
-                return False, False
+                raise SimulationRuntimeDfsError(
+                    "Speculative DFS exceeded the step safety limit "
+                    "(%s) without reaching a stoppable state or pruning; "
+                    "the state machine likely contains an invalid unbounded pseudo-state "
+                    "or transition chain." % (max_steps,)
+                )
 
             frame = stack[-1]
             state_path = frame["state"]
@@ -939,7 +1142,12 @@ class {{ machine_class_name(model) }}:
                     steps_taken += 1
                     continue
 
-                transition_id = self._select_transition(stack, vars_, event_names)
+                transition_id = self._select_transition(
+                    stack,
+                    vars_,
+                    event_names,
+                    force_validate=state_info["is_pseudo"],
+                )
                 if transition_id is not None:
                     ended = self._execute_transition_on_context(
                         stack,

@@ -12,7 +12,7 @@ origin:
   - vars
   - return
   notes:
-  - Covers the C8 sign guard duplicate with a transition effect and target enter action.
+  - Covers the C8 sign guard duplicate with target enter action after the transition.
 categories:
 - runtime
 - template_alignment

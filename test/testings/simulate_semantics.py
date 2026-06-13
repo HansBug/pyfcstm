@@ -1485,6 +1485,30 @@ class _GeneratedPythonAlignmentRuntime:
         self._assert_aligned("brief_stack access")
         return self._simulation_runtime.brief_stack
 
+    @property
+    def history(self) -> List[Dict[str, Any]]:
+        """
+        Return simulator history after verifying generated-runtime alignment.
+
+        The generated Python runtime does not expose history as a public API.
+        Fixture history assertions remain valid for generated-alignment cases by
+        first checking that generated state, variables, stack, and cycle count
+        still match :class:`SimulationRuntime`, then returning the simulator's
+        authoritative history records.
+
+        :return: Runtime history records from the simulator side.
+        :rtype: List[Dict[str, Any]]
+
+        Example::
+
+            >>> case = load_semantic_case("cycle_result_history_stable_leaf")
+            >>> runtime = _build_simulation_runtime(case)
+            >>> isinstance(runtime.history, list)
+            True
+        """
+        self._assert_aligned("history access")
+        return self._simulation_runtime.history
+
     def cycle(self, events: Optional[Sequence[Any]] = None) -> Any:
         sim_result = None
         gen_result = None

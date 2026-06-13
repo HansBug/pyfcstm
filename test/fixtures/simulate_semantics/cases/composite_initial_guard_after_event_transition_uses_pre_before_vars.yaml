@@ -21,6 +21,7 @@ categories:
 - lifecycle
 runners:
 - simulation
+- generated_python_alignment
 initial:
   state: null
   vars: null

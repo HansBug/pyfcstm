@@ -1,0 +1,25 @@
+def int trace = 0;
+
+state Root {
+    state Target {
+        pseudo state Gate {
+            enter { trace = trace + 1; }
+        }
+
+        state Bad {
+            enter { trace = trace + 10; }
+            state Dead;
+            [*] -> Dead : if [false];
+        }
+
+        state Good {
+            during { trace = trace + 2; }
+        }
+
+        [*] -> Gate;
+        !Gate -> Bad;
+        !Gate -> Good;
+    }
+
+    [*] -> Target;
+}

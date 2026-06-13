@@ -5,6 +5,7 @@ source:
   fcstm: ref_abstract_handler_reports_calling_state.fcstm
 origin:
   files:
+  - https://github.com/HansBug/pyfcstm/pull/205
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614012639
   assertion_types:
   - cycle_count
@@ -52,4 +53,10 @@ steps:
       state: Root.A
       stage: enter
       vars: {}
+      active_leaf:
+      - Root
+      - A
+      call_stage: enter
+      abstract_target: Root.Library.Shared
+      named_ref: null
     return: null

@@ -1,0 +1,49 @@
+def int trace = 0;
+def int branch = 0;
+
+state Root {
+    state Library {
+        enter abstract SharedEnter;
+        during abstract SharedDuring;
+        exit abstract SharedExit;
+    }
+
+    >> during before abstract ObserveBefore;
+    >> during after abstract ObserveAfter;
+
+    state A {
+        enter FirstRef ref /Library.SharedExit;
+        during ref /Library.SharedEnter;
+        exit ref /Library.SharedDuring;
+        during {
+            trace = trace * 10 + 1;
+            branch = branch + 1;
+        }
+    }
+
+    state B {
+        enter abstract EnterB;
+        during abstract DuringB;
+        during {
+            trace = trace * 10 + 2;
+            branch = branch + 10;
+        }
+        exit abstract ExitB;
+    }
+
+    state Gate {
+        during before abstract ObserveGate;
+        state C {
+            enter abstract EnterC;
+            during {
+                trace = trace * 10 + 3;
+                branch = branch + 100;
+            }
+        }
+        [*] -> C;
+    }
+
+    [*] -> A;
+    A -> B :: Go;
+    B -> Gate :: ToGate effect { trace = trace * 10 + 4; }
+}

@@ -1,0 +1,19 @@
+def int trace = 0;
+
+state Root {
+    state Library {
+        during abstract SharedDuring;
+    }
+
+    >> during before abstract ObserveBefore;
+    >> during after abstract ObserveAfter;
+
+    state A {
+        during ActiveRef ref /Library.SharedDuring;
+        during {
+            trace = trace + 1;
+        }
+    }
+
+    [*] -> A;
+}

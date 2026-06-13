@@ -302,6 +302,23 @@ class CustomMachine({{ machine_class_name(model) }}):
     pass
 ```
 
+{%- set action_scan = namespace(items=[]) -%}
+{%- for scan_state in model.walk_states() -%}
+{%- for scan_group in [
+    scan_state.list_on_enters(with_ids=True),
+    scan_state.list_on_durings(aspect=None, with_ids=True),
+    scan_state.list_on_exits(with_ids=True),
+    scan_state.list_on_durings(aspect='before', with_ids=True),
+    scan_state.list_on_durings(aspect='after', with_ids=True),
+    scan_state.list_on_during_aspects(aspect='before', with_ids=True),
+    scan_state.list_on_during_aspects(aspect='after', with_ids=True),
+] -%}
+{%- for _, scan_item in scan_group -%}
+{%- set action_scan.items = action_scan.items + [scan_item] -%}
+{%- endfor -%}
+{%- endfor -%}
+{%- endfor -%}
+{%- set action_ref_hop_limit = (action_scan.items | length) + 1 -%}
 {% set abstract_ns = namespace(rows=[]) -%}
 {% for state in model.walk_states() -%}
 {% for group in [
@@ -314,9 +331,10 @@ class CustomMachine({{ machine_class_name(model) }}):
     state.list_on_during_aspects(aspect='after', with_ids=True),
 ] -%}
 {% for _, item in group -%}
-{% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
-{% if resolved.item.ref is not none -%}
+{% set resolved = namespace(item=item, seen=[]) -%}
+{% for _ in range(action_ref_hop_limit) -%}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
+{% set resolved.seen = resolved.seen + [resolved.item] -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
 {% endfor -%}

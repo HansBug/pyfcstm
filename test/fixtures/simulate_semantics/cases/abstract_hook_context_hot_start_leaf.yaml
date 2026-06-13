@@ -1,0 +1,81 @@
+schema_version: 1
+id: abstract_hook_context_hot_start_leaf
+title: Abstract hook context reports hot-start leaf callsite
+source:
+  fcstm: abstract_hook_context_hot_start_leaf.fcstm
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/pull/205
+  - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694732793
+  assertion_types:
+  - handler_calls
+  - hot_start
+  - state
+  - vars
+  notes:
+  - Hot-start leaf ref/aspect context alignment case for generated Python runtime.
+categories:
+- runtime
+- template_alignment
+- abstract
+- lifecycle
+- hot_start
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: Root.A
+  vars:
+    trace: 7
+handlers:
+- action: Root.Library.SharedDuring
+  behavior: record_call
+- action: Root.ObserveBefore
+  behavior: record_call
+- action: Root.ObserveAfter
+  behavior: record_call
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      trace: 8
+    ended: false
+    cycle_result:
+      value: null
+    handler_calls:
+    - action: Root.ObserveBefore
+      state: Root.A
+      stage: during
+      vars:
+        trace: 7
+      active_leaf:
+      - Root
+      - A
+      call_stage: during
+      abstract_target: Root.ObserveBefore
+      named_ref: null
+    - action: Root.Library.SharedDuring
+      state: Root.A
+      stage: during
+      vars:
+        trace: 7
+      active_leaf:
+      - Root
+      - A
+      call_stage: during
+      abstract_target: Root.Library.SharedDuring
+      named_ref: Root.A.ActiveRef
+    - action: Root.ObserveAfter
+      state: Root.A
+      stage: during
+      vars:
+        trace: 8
+      active_leaf:
+      - Root
+      - A
+      call_stage: during
+      abstract_target: Root.ObserveAfter
+      named_ref: null

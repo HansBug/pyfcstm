@@ -185,8 +185,12 @@ except SimulationRuntimeExpressionError as err:
 
 - `state_path`：所属动作状态路径，类型为 `Tuple[str, ...]`
 - `vars`：持久变量快照字典
-- `action_name`：完整 DSL 动作路径
-- `action_stage`：生命周期阶段字符串
+- `action_name`：解析后的 abstract target 动作路径
+- `action_stage`：生命周期调用点阶段字符串
+- `active_leaf`：当前 active leaf 状态路径；aspect hook 使用 active leaf，direct hook 和 ref 在运行时未传入 leaf 路径时使用调用点所属状态路径
+- `call_stage`：显式生命周期调用点阶段，等同于 `action_stage`
+- `abstract_target`：解析后的 abstract target 动作路径，对 abstract hook 等同于 `action_name`
+- `named_ref`：命名 ref 的调用点路径；匿名 ref 和 direct abstract action 为 `None`
 
 方法：
 

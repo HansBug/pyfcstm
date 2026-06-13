@@ -234,7 +234,7 @@ class ReadOnlyExecutionContext:
     :type state_path: Tuple[str, ...]
     :param vars: Snapshot of machine variables.
     :type vars: Mapping[str, Number]
-    :param action_name: Full action path.
+    :param action_name: Resolved abstract target action path.
     :type action_name: str
     :param action_stage: Lifecycle callsite stage.
     :type action_stage: str
@@ -246,7 +246,8 @@ class ReadOnlyExecutionContext:
     :param abstract_target: Resolved abstract target action path, defaults to
         ``action_name``.
     :type abstract_target: str, optional
-    :param named_ref: Full path of the named ref callsite, or ``None``.
+    :param named_ref: Full path of the named ref callsite. Anonymous
+        refs and direct abstract actions use ``None``.
     :type named_ref: Optional[str], optional
     """
 
@@ -856,6 +857,8 @@ class {{ machine_class_name(model) }}:
         if active_leaf_path is None:
             context_state_path = action["context_state_path"]
         else:
+            # Aspect actions pass the active leaf path at runtime; the
+            # action metadata path is only the owner-state fallback.
             context_state_path = active_leaf_path
         ctx = ReadOnlyExecutionContext(
             state_path=context_state_path,

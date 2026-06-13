@@ -192,8 +192,12 @@ Fields:
 
 - `state_path`: owning action state path as `Tuple[str, ...]`
 - `vars`: snapshot dictionary of persistent variables
-- `action_name`: full DSL action path
-- `action_stage`: lifecycle stage string
+- `action_name`: resolved abstract target action path
+- `action_stage`: lifecycle callsite stage string
+- `active_leaf`: active leaf state path; aspect hooks use the active leaf, while direct hooks and refs use the callsite owner path unless a leaf path is supplied by runtime dispatch
+- `call_stage`: explicit lifecycle callsite stage, equal to `action_stage`
+- `abstract_target`: resolved abstract target action path, equal to `action_name` for abstract hooks
+- `named_ref`: named ref callsite path, or `None` for anonymous refs and direct abstract actions
 
 Methods:
 

@@ -427,7 +427,7 @@ class TestPythonBuiltinTemplate:
             def int counter = 0;
             state Root {
                 enter { }
-                enter { counter = counter + 1; }
+                enter { counter = counter + sign(-3); }
                 enter abstract RootInit;
                 during before { }
                 during after { }
@@ -454,7 +454,7 @@ class TestPythonBuiltinTemplate:
                 [*] -> Idle;
                 Idle -> Waiting :: Pause;
                 Idle -> Done :: Finish;
-                Waiting -> Done : if [false];
+                Waiting -> Done : if [sign(-1) < 0];
             }
             """,
             """
@@ -477,6 +477,29 @@ class TestPythonBuiltinTemplate:
             # find_ruff_bin(): the installed Ruff wrapper package cannot
             # locate its bundled CLI binary in this test environment.
             pytest.skip('ruff binary is not available in this test environment')
+
+        fixture_ids = [
+            'sign_function_updates_during_action',
+            'sign_function_handles_all_signs',
+            'sign_function_controls_guard_transition',
+            'sign_function_preserves_complex_action_precedence',
+            'sign_function_aligns_aspect_guard_effect_math',
+        ]
+        fixture_dir = os.path.join(
+            os.path.dirname(__file__),
+            '..',
+            '..',
+            'fixtures',
+            'simulate_semantics',
+            'cases',
+        )
+        for fixture_id in fixture_ids:
+            with open(
+                os.path.join(fixture_dir, '%s.fcstm' % fixture_id),
+                'r',
+                encoding='utf-8',
+            ) as f:
+                dsl_codes.append(f.read())
 
         for index, dsl_code in enumerate(dsl_codes):
             with _render_python_artifacts(

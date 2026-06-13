@@ -2,16 +2,20 @@ expr_styles:
   python_expr:
     base_lang: python
     Name: "self._vars[{{ node.name | tojson }}]"
+    UFunc(sign): "self._sign({{ node.expr | expr_render }})"
   python_scope_expr:
     base_lang: python
     Name: "scope[{{ node.name | tojson }}]"
+    UFunc(sign): "self._sign({{ node.expr | expr_render }})"
 
 stmt_styles:
   python_runtime:
     base_lang: python
     expr_lang: python
-    state_var_target: "local_scope[{{ name | tojson }}]"
+    state_var_target: "_v[{{ name | tojson }}]"
     temp_var_target: "{{ name }}"
+    expr_templates:
+      UFunc(sign): "_s({{ node.expr | expr_render }})"
     assign: |-
       {{ target }} = self._evaluate_runtime_expr(
           lambda: {{ expr }},
@@ -39,11 +43,6 @@ globals:
     params:
       - state
     template: "{{ state.path | join('.') }}"
-  state_slug:
-    type: template
-    params:
-      - state
-    template: "{{ state.path | join('_') | to_identifier }}"
   action_hook_name:
     type: template
     params:
@@ -66,11 +65,6 @@ filters:
     params:
       - state
     template: "{{ state_path(state) }}"
-  state_slug:
-    type: template
-    params:
-      - state
-    template: "{{ state_slug(state) }}"
   action_hook_name:
     type: template
     params:

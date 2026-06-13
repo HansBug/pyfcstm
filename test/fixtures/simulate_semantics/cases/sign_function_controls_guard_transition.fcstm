@@ -1,0 +1,17 @@
+def int marker = 0;
+
+state Root {
+    state A {
+        enter {
+            marker = 1;
+        }
+    }
+    state B {
+        enter {
+            marker = marker + 10;
+        }
+    }
+
+    [*] -> A;
+    A -> B : if [sign(-2) < 0];
+}

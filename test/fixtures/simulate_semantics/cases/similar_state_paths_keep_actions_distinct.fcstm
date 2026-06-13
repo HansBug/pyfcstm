@@ -1,0 +1,26 @@
+def int trace = 0;
+
+state Root {
+    state A {
+        state B {
+            enter {
+                trace = trace + 1;
+            }
+            during {
+                trace = trace + 10;
+            }
+        }
+        [*] -> B;
+    }
+
+    state A_B {
+        enter {
+            trace = trace + 100;
+        }
+        during {
+            trace = trace + 1000;
+        }
+    }
+
+    [*] -> A;
+}

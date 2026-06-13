@@ -1,0 +1,6 @@
+def int count = 1.5;
+
+state Root {
+    state A;
+    [*] -> A;
+}

@@ -1,0 +1,10 @@
+def int bad = 1 / 0;
+def int ticks = 0;
+
+state Root {
+    state Safe {
+        during { ticks = ticks + 1; }
+    }
+
+    [*] -> Safe;
+}

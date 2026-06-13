@@ -178,14 +178,15 @@ def test_generated_alignment_constructor_outcome_helper_covers_three_modes():
 
 
 @pytest.mark.unittest
-def test_initial_vars_override_fixture_remains_simulation_only_seed():
+def test_initial_vars_override_fixture_runs_generated_alignment_contract():
     case = load_semantic_case("persistent_initial_vars_override_skips_initializer")
 
-    assert case.runners == ("simulation",)
+    assert case.runners == ("simulation", "generated_python_alignment")
     assert case.data["initial"]["state"] == "Root.A"
     assert case.data["initial"]["vars"] == {"recovered": 5.0}
     assert "initial" in case.data["origin"]["assertion_types"]
     assert "hot_start" in case.data["categories"]
+    assert "template_alignment" in case.data["categories"]
 
 
 @pytest.mark.unittest
@@ -497,22 +498,26 @@ def _set_model_build_expectation(data, raises):
             "initial.expect has unknown fields",
         ),
         (
-            lambda data: data["initial"].update(
-                {
-                    "state": None,
-                    "vars": {},
-                    "expect": {"raises": {"type": "ValueError"}},
-                }
+            lambda data: (
+                data["initial"].pop("state")
+                or data["initial"].update(
+                    {
+                        "vars": {},
+                        "expect": {"raises": {"type": "ValueError"}},
+                    }
+                )
             ),
             "initial.expect requires initial.state",
         ),
         (
-            lambda data: data["initial"].update(
-                {
-                    "state": "Root.A",
-                    "vars": None,
-                    "expect": {"raises": {"type": "ValueError"}},
-                }
+            lambda data: (
+                data["initial"].pop("vars")
+                or data["initial"].update(
+                    {
+                        "state": "Root.A",
+                        "expect": {"raises": {"type": "ValueError"}},
+                    }
+                )
             ),
             "initial.expect requires initial.vars",
         ),
@@ -520,7 +525,7 @@ def _set_model_build_expectation(data, raises):
             lambda data: data["initial"].update(
                 {"expect": {"raises": {"type": "UnknownError"}}}
             ),
-            "initial.expect requires initial.state",
+            "initial.expect.raises.type is unknown",
         ),
         (
             lambda data: data["initial"].update(

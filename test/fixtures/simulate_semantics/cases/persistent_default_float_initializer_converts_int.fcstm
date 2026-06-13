@@ -1,0 +1,10 @@
+def float ratio = 2;
+def int marker = 0;
+
+state Root {
+    state A {
+        during { marker = (ratio == 2.0) ? 1 : 0; }
+    }
+
+    [*] -> A;
+}

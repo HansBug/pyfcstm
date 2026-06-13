@@ -10,7 +10,7 @@ stmt_styles:
   python_runtime:
     base_lang: python
     expr_lang: python
-    state_var_target: "scope[{{ name | tojson }}]"
+    state_var_target: "local_scope[{{ name | tojson }}]"
     temp_var_target: "{{ name }}"
     assign: |-
       {{ target }} = self._evaluate_runtime_expr(

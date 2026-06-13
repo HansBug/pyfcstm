@@ -1,0 +1,43 @@
+schema_version: 1
+id: persistent_default_int_initializer_normalizes_integer_float
+title: Persistent default int initializer normalizes integer-valued float
+source:
+  fcstm: persistent_default_int_initializer_normalizes_integer_float.fcstm
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694530145
+  assertion_types:
+  - initial
+  - state
+  - vars
+  - exception
+  notes:
+  - Covers declared int default initializer normalization before the first cycle.
+categories:
+- runtime
+- template_alignment
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+steps:
+- expect_initial:
+    state:
+    - Root
+    vars:
+      bits: 3
+      marker: 0
+    ended: false
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      bits: 3
+      marker: 1
+    ended: false
+    cycle_result:
+      value: null

@@ -338,6 +338,67 @@ class {{ machine_class_name(model) }}:
     }
 {% endif %}
 
+    def _normalize_persistent_value(self, name, value, source):
+        if name not in self._VAR_TYPES:
+            raise ValueError(
+                "Variable %r not defined in state machine. Available variables: %s"
+                % (name, list(self._VAR_TYPES.keys()))
+            )
+        declared_type = self._VAR_TYPES[name]
+        if type(value) is bool:
+            raise ValueError("%s must not be bool" % (source,))
+        if type(value) not in (int, float):
+            raise ValueError(
+                "%s must be int or float, got %s" % (source, type(value).__name__)
+            )
+        if type(value) is float and not math.isfinite(value):
+            raise ValueError(
+                "%s for variable %r declared %s must be finite, got %r"
+                % (source, name, declared_type, value)
+            )
+        if declared_type == "int":
+            if type(value) is float:
+                if value != int(value):
+                    raise ValueError(
+                        "Variable %r is int type, cannot assign float %r; "
+                        "non-integer float from %s" % (name, value, source)
+                    )
+                return int(value)
+            return value
+        if declared_type == "float":
+            try:
+                normalized_float = float(value)
+            except OverflowError as err:
+                # OverflowError: ``float(value)`` cannot represent a very
+                # large Python integer as a finite runtime float.
+                raise ValueError(
+                    "%s for variable %r declared float must be finite; "
+                    "integer is outside Python float range" % (source, name)
+                ) from err
+            if not math.isfinite(normalized_float):
+                raise ValueError(
+                    "%s for variable %r declared float must be finite, got %r"
+                    % (source, name, normalized_float)
+                )
+            return normalized_float
+        raise ValueError(
+            "Variable %r has unsupported persistent type %r" % (name, declared_type)
+        )
+
+    def _execute_operation_block(self, operations, vars_, source):
+        local_scope = dict(vars_)
+        operations(local_scope)
+        normalized_updates = {
+            name: self._normalize_persistent_value(
+                name,
+                local_scope[name],
+                source,
+            )
+            for name in self.VARIABLE_NAMES
+        }
+        for name, value in normalized_updates.items():
+            vars_[name] = value
+
     def __init__(self, initial_state=None, initial_vars=None):
         """
         Initialize the generated state machine runtime.
@@ -349,37 +410,42 @@ class {{ machine_class_name(model) }}:
         """
         self._vars = {}
         self.variables = self._vars
-{%- for def_item in define_items %}
-        self._vars[{{ def_item.name | tojson }}] = {{ def_item.init.to_ast_node() | expr_render(style="python_expr") }}
-{% endfor %}
+        if initial_state is not None and initial_vars is None:
+            raise ValueError(
+                "initial_vars must be provided when initial_state is specified"
+            )
         if initial_vars is not None:
-            missing_vars = set(self._VAR_TYPES.keys()) - set(initial_vars.keys())
-            if missing_vars:
-                raise ValueError(
-                    "initial_vars must provide all variables. Missing: %s"
-                    % sorted(missing_vars)
-                )
             extra_vars = set(initial_vars.keys()) - set(self._VAR_TYPES.keys())
             if extra_vars:
+                unknown_name = sorted(extra_vars)[0]
                 raise ValueError(
-                    "initial_vars contains unknown variables: %s" % sorted(extra_vars)
+                    "Variable %r not defined in state machine. Available variables: %s"
+                    % (unknown_name, list(self._VAR_TYPES.keys()))
                 )
-            for name, value in initial_vars.items():
-                if type(value) is bool:
-                    raise ValueError("initial_vars[%r] must not be bool" % (name,))
-                if type(value) not in (int, float):
+            if initial_state is not None:
+                missing_vars = set(self._VAR_TYPES.keys()) - set(initial_vars.keys())
+                if missing_vars:
                     raise ValueError(
-                        "initial_vars[%r] must be int or float, got %s"
-                        % (name, type(value).__name__)
+                        "initial_vars must provide all variables. Missing: %s"
+                        % sorted(missing_vars)
                     )
-                if self._VAR_TYPES[name] == "int" and type(value) is float:
-                    if value != int(value):
-                        raise ValueError(
-                            "Variable %r is int type, cannot assign float %r"
-                            % (name, value)
-                        )
-                    value = int(value)
-                self._vars[name] = value
+{%- for def_item in define_items %}
+        if initial_vars is not None and {{ def_item.name | tojson }} in initial_vars:
+            self._vars[{{ def_item.name | tojson }}] = self._normalize_persistent_value(
+                {{ def_item.name | tojson }},
+                initial_vars[{{ def_item.name | tojson }}],
+                "initial_vars[%r]" % ({{ def_item.name | tojson }},),
+            )
+        else:
+            self._vars[{{ def_item.name | tojson }}] = self._normalize_persistent_value(
+                {{ def_item.name | tojson }},
+                self._evaluate_runtime_expr(
+                    lambda: {{ def_item.init.to_ast_node() | expr_render(style="python_expr") }},
+                    "variable {{ def_item.name }} initializer",
+                ),
+                "variable {{ def_item.name }} initializer",
+            )
+{% endfor %}
 
         self._ended = False
         self._entered_root = initial_state is not None
@@ -387,10 +453,6 @@ class {{ machine_class_name(model) }}:
         if initial_state is None:
             self._stack = [{"state": self._ROOT_STATE_PATH, "mode": "init_wait"}]
         else:
-            if initial_vars is None:
-                raise ValueError(
-                    "initial_vars must be provided when initial_state is specified"
-                )
             self._stack = self._build_hot_start_stack(
                 self._normalize_state_path(initial_state)
             )
@@ -780,11 +842,13 @@ class {{ machine_class_name(model) }}:
     def _evaluate_runtime_expr(self, fn, usage):
         try:
             return fn()
-        except (ValueError, ArithmeticError) as err:
+        except (ValueError, ArithmeticError, TypeError) as err:
             # ValueError: math domain errors or invalid numeric operations
             # raised while evaluating a user's DSL expression.
             # ArithmeticError: division by zero, overflow, or other numeric
             # runtime failure while evaluating a user's DSL expression.
+            # TypeError: Python numeric, bitwise, and shift operators reject
+            # runtime operand combinations such as ``float << int``.
             raise SimulationRuntimeExpressionError(
                 "%s evaluation failed: %s" % (usage, err)
             ) from err
@@ -1410,7 +1474,11 @@ class {{ machine_class_name(model) }}:
         """
 {% if resolved.item.operations %}
         scope = vars_ if vars_ is not None else self._vars
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+        def operations(local_scope):
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
+
+        self._execute_operation_block(operations, scope, "operation block writeback")
 {% else %}
         pass
 {% endif %}
@@ -1463,7 +1531,11 @@ class {{ machine_class_name(model) }}:
         """
 {% if resolved.item.operations %}
         scope = vars_ if vars_ is not None else self._vars
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+        def operations(local_scope):
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
+
+        self._execute_operation_block(operations, scope, "operation block writeback")
 {% else %}
         pass
 {% endif %}
@@ -1516,7 +1588,11 @@ class {{ machine_class_name(model) }}:
         """
 {% if resolved.item.operations %}
         scope = vars_ if vars_ is not None else self._vars
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+        def operations(local_scope):
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
+
+        self._execute_operation_block(operations, scope, "operation block writeback")
 {% else %}
         pass
 {% endif %}
@@ -1571,7 +1647,11 @@ class {{ machine_class_name(model) }}:
         """
 {% if resolved.item.operations %}
         scope = vars_ if vars_ is not None else self._vars
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+        def operations(local_scope):
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
+
+        self._execute_operation_block(operations, scope, "operation block writeback")
 {% else %}
         pass
 {% endif %}
@@ -1626,7 +1706,11 @@ class {{ machine_class_name(model) }}:
         """
 {% if resolved.item.operations %}
         scope = vars_ if vars_ is not None else self._vars
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+        def operations(local_scope):
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
+
+        self._execute_operation_block(operations, scope, "operation block writeback")
 {% else %}
         pass
 {% endif %}
@@ -1681,7 +1765,11 @@ class {{ machine_class_name(model) }}:
         """
 {% if resolved.item.operations %}
         scope = vars_ if vars_ is not None else self._vars
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+        def operations(local_scope):
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
+
+        self._execute_operation_block(operations, scope, "operation block writeback")
 {% else %}
         pass
 {% endif %}
@@ -1736,7 +1824,11 @@ class {{ machine_class_name(model) }}:
         """
 {% if resolved.item.operations %}
         scope = vars_ if vars_ is not None else self._vars
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+        def operations(local_scope):
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
+
+        self._execute_operation_block(operations, scope, "operation block writeback")
 {% else %}
         pass
 {% endif %}
@@ -1772,7 +1864,11 @@ class {{ machine_class_name(model) }}:
 {{ (transition.to_ast_node() | string) | indent(12, true) }}
         """
         scope = vars_ if vars_ is not None else self._vars
-{{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+        def operations(local_scope):
+{{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=3) }}
+
+        self._execute_operation_block(operations, scope, "operation block writeback")
 
 {% endif %}
 {% endfor %}
@@ -1805,7 +1901,11 @@ class {{ machine_class_name(model) }}:
 {{ (transition.to_ast_node() | string) | indent(12, true) }}
         """
         scope = vars_ if vars_ is not None else self._vars
-{{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+        def operations(local_scope):
+{{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=3) }}
+
+        self._execute_operation_block(operations, scope, "operation block writeback")
 
 {% endif %}
 {% endfor %}

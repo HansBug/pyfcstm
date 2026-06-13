@@ -1,0 +1,10 @@
+def int bits = 6 / 2;
+def int marker = 0;
+
+state Root {
+    state A {
+        during { marker = bits & 1; }
+    }
+
+    [*] -> A;
+}

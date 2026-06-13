@@ -1,0 +1,195 @@
+def int x = 0;
+
+state Root {
+    state S1 {
+        state S2 {
+            state S3 {
+                state S4 {
+                    state S5 {
+                        state S6 {
+                            state S7 {
+                                state S8 {
+                                    state S9 {
+                                        state S10 {
+                                            state S11 {
+                                                state S12 {
+                                                    state S13 {
+                                                        state S14 {
+                                                            state S15 {
+                                                                state S16 {
+                                                                    state S17 {
+                                                                        state S18 {
+                                                                            state S19 {
+                                                                                state S20 {
+                                                                                    state S21 {
+                                                                                        state S22 {
+                                                                                            state S23 {
+                                                                                                state S24 {
+                                                                                                    state S25 {
+                                                                                                        state S26 {
+                                                                                                            state S27 {
+                                                                                                                state S28 {
+                                                                                                                    state S29 {
+                                                                                                                        state S30 {
+                                                                                                                            state S31 {
+                                                                                                                                state S32 {
+                                                                                                                                    state S33 {
+                                                                                                                                        state S34 {
+                                                                                                                                            state S35 {
+                                                                                                                                                state S36 {
+                                                                                                                                                    state S37 {
+                                                                                                                                                        state S38 {
+                                                                                                                                                            state S39 {
+                                                                                                                                                                state S40 {
+                                                                                                                                                                    state S41 {
+                                                                                                                                                                        state S42 {
+                                                                                                                                                                            state S43 {
+                                                                                                                                                                                state S44 {
+                                                                                                                                                                                    state S45 {
+                                                                                                                                                                                        state S46 {
+                                                                                                                                                                                            state S47 {
+                                                                                                                                                                                                state S48 {
+                                                                                                                                                                                                    state S49 {
+                                                                                                                                                                                                        state S50 {
+                                                                                                                                                                                                            state S51 {
+                                                                                                                                                                                                                state S52 {
+                                                                                                                                                                                                                    state S53 {
+                                                                                                                                                                                                                        state S54 {
+                                                                                                                                                                                                                            state S55 {
+                                                                                                                                                                                                                                state S56 {
+                                                                                                                                                                                                                                    state S57 {
+                                                                                                                                                                                                                                        state S58 {
+                                                                                                                                                                                                                                            state S59 {
+                                                                                                                                                                                                                                                state S60 {
+                                                                                                                                                                                                                                                    state S61 {
+                                                                                                                                                                                                                                                        state S62 {
+                                                                                                                                                                                                                                                            state S63 {
+                                                                                                                                                                                                                                                                state Leaf { during { x = x + 1; } }
+                                                                                                                                                                                                                                                                [*] -> Leaf;
+                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                            [*] -> S63;
+                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                        [*] -> S62;
+                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                    [*] -> S61;
+                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                [*] -> S60;
+                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                            [*] -> S59;
+                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                        [*] -> S58;
+                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                    [*] -> S57;
+                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                [*] -> S56;
+                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                            [*] -> S55;
+                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                        [*] -> S54;
+                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                    [*] -> S53;
+                                                                                                                                                                                                                }
+                                                                                                                                                                                                                [*] -> S52;
+                                                                                                                                                                                                            }
+                                                                                                                                                                                                            [*] -> S51;
+                                                                                                                                                                                                        }
+                                                                                                                                                                                                        [*] -> S50;
+                                                                                                                                                                                                    }
+                                                                                                                                                                                                    [*] -> S49;
+                                                                                                                                                                                                }
+                                                                                                                                                                                                [*] -> S48;
+                                                                                                                                                                                            }
+                                                                                                                                                                                            [*] -> S47;
+                                                                                                                                                                                        }
+                                                                                                                                                                                        [*] -> S46;
+                                                                                                                                                                                    }
+                                                                                                                                                                                    [*] -> S45;
+                                                                                                                                                                                }
+                                                                                                                                                                                [*] -> S44;
+                                                                                                                                                                            }
+                                                                                                                                                                            [*] -> S43;
+                                                                                                                                                                        }
+                                                                                                                                                                        [*] -> S42;
+                                                                                                                                                                    }
+                                                                                                                                                                    [*] -> S41;
+                                                                                                                                                                }
+                                                                                                                                                                [*] -> S40;
+                                                                                                                                                            }
+                                                                                                                                                            [*] -> S39;
+                                                                                                                                                        }
+                                                                                                                                                        [*] -> S38;
+                                                                                                                                                    }
+                                                                                                                                                    [*] -> S37;
+                                                                                                                                                }
+                                                                                                                                                [*] -> S36;
+                                                                                                                                            }
+                                                                                                                                            [*] -> S35;
+                                                                                                                                        }
+                                                                                                                                        [*] -> S34;
+                                                                                                                                    }
+                                                                                                                                    [*] -> S33;
+                                                                                                                                }
+                                                                                                                                [*] -> S32;
+                                                                                                                            }
+                                                                                                                            [*] -> S31;
+                                                                                                                        }
+                                                                                                                        [*] -> S30;
+                                                                                                                    }
+                                                                                                                    [*] -> S29;
+                                                                                                                }
+                                                                                                                [*] -> S28;
+                                                                                                            }
+                                                                                                            [*] -> S27;
+                                                                                                        }
+                                                                                                        [*] -> S26;
+                                                                                                    }
+                                                                                                    [*] -> S25;
+                                                                                                }
+                                                                                                [*] -> S24;
+                                                                                            }
+                                                                                            [*] -> S23;
+                                                                                        }
+                                                                                        [*] -> S22;
+                                                                                    }
+                                                                                    [*] -> S21;
+                                                                                }
+                                                                                [*] -> S20;
+                                                                            }
+                                                                            [*] -> S19;
+                                                                        }
+                                                                        [*] -> S18;
+                                                                    }
+                                                                    [*] -> S17;
+                                                                }
+                                                                [*] -> S16;
+                                                            }
+                                                            [*] -> S15;
+                                                        }
+                                                        [*] -> S14;
+                                                    }
+                                                    [*] -> S13;
+                                                }
+                                                [*] -> S12;
+                                            }
+                                            [*] -> S11;
+                                        }
+                                        [*] -> S10;
+                                    }
+                                    [*] -> S9;
+                                }
+                                [*] -> S8;
+                            }
+                            [*] -> S7;
+                        }
+                        [*] -> S6;
+                    }
+                    [*] -> S5;
+                }
+                [*] -> S4;
+            }
+            [*] -> S3;
+        }
+        [*] -> S2;
+    }
+    [*] -> S1;
+}

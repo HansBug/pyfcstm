@@ -155,6 +155,14 @@ def test_generated_alignment_constructor_outcome_helper_covers_three_modes():
     )
     assert simulation_runtime is None
     assert isinstance(simulation_err, simulate_semantics.SimulationRuntimeDfsError)
+
+    generated_dfs_error = type("SimulationRuntimeDfsError", (RuntimeError,), {})
+    generated_runtime, generated_err = simulate_semantics._capture_construction(
+        lambda: (_ for _ in ()).throw(generated_dfs_error("generated dfs"))
+    )
+    assert generated_runtime is None
+    assert type(generated_err).__name__ == "SimulationRuntimeDfsError"
+
     with pytest.raises(AssertionError, match="constructor one-sided mismatch"):
         simulate_semantics._assert_aligned_constructor_outcome(
             case, None, object(), None, None, ValueError("boom")

@@ -200,6 +200,9 @@ _ALIGNMENT_CONSTRUCTOR_EXCEPTION_TYPES = (
     TypeError,
     KeyError,
 )
+_ALIGNMENT_CONSTRUCTOR_EXCEPTION_TYPE_NAMES = {
+    item.__name__ for item in _ALIGNMENT_CONSTRUCTOR_EXCEPTION_TYPES
+}
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
@@ -1165,6 +1168,15 @@ def _capture_construction(build_runtime):
         # runtime constructor references; KeyError covers generated hook-map
         # lookup misses while installing fixture handlers. Unexpected classes
         # still propagate and surface harness bugs.
+        return None, err
+    except Exception as err:
+        # Generated runtimes define local diagnostic classes inside each emitted
+        # module, so classes such as SimulationRuntimeDfsError do not subclass
+        # the simulator's imported class. Only the documented constructor
+        # diagnostic names are captured for cross-runtime parity; every other
+        # exception is re-raised to expose real harness or template bugs.
+        if type(err).__name__ not in _ALIGNMENT_CONSTRUCTOR_EXCEPTION_TYPE_NAMES:
+            raise
         return None, err
 
 

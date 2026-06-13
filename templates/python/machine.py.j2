@@ -433,6 +433,23 @@ class {{ machine_class_name(model) }}:
             "Variable %r has unsupported persistent type %r" % (name, declared_type)
         )
 
+    @staticmethod
+    def _sign(value):
+        """
+        Return the FCSTM sign value for one numeric expression.
+
+        :param value: Numeric expression value.
+        :type value: Number
+        :return: ``-1`` for negative values, ``0`` for zero, and ``1`` for positive values.
+        :rtype: int
+
+        Example::
+
+            >>> {{ machine_class_name(model) }}._sign(-3)
+            -1
+        """
+        return int((value > 0) - (value < 0))
+
     def _execute_operation_block(self, operations, vars_, source):
         local_scope = dict(vars_)
         operations(local_scope)
@@ -1548,6 +1565,8 @@ class {{ machine_class_name(model) }}:
         scope = vars_ if vars_ is not None else self._vars
 
         def operations(local_scope):
+            _v = local_scope
+            _s = self._sign
 {{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
 
         self._execute_operation_block(operations, scope, "operation block writeback")
@@ -1606,6 +1625,8 @@ class {{ machine_class_name(model) }}:
         scope = vars_ if vars_ is not None else self._vars
 
         def operations(local_scope):
+            _v = local_scope
+            _s = self._sign
 {{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
 
         self._execute_operation_block(operations, scope, "operation block writeback")
@@ -1664,6 +1685,8 @@ class {{ machine_class_name(model) }}:
         scope = vars_ if vars_ is not None else self._vars
 
         def operations(local_scope):
+            _v = local_scope
+            _s = self._sign
 {{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
 
         self._execute_operation_block(operations, scope, "operation block writeback")
@@ -1724,6 +1747,8 @@ class {{ machine_class_name(model) }}:
         scope = vars_ if vars_ is not None else self._vars
 
         def operations(local_scope):
+            _v = local_scope
+            _s = self._sign
 {{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
 
         self._execute_operation_block(operations, scope, "operation block writeback")
@@ -1784,6 +1809,8 @@ class {{ machine_class_name(model) }}:
         scope = vars_ if vars_ is not None else self._vars
 
         def operations(local_scope):
+            _v = local_scope
+            _s = self._sign
 {{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
 
         self._execute_operation_block(operations, scope, "operation block writeback")
@@ -1844,6 +1871,8 @@ class {{ machine_class_name(model) }}:
         scope = vars_ if vars_ is not None else self._vars
 
         def operations(local_scope):
+            _v = local_scope
+            _s = self._sign
 {{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
 
         self._execute_operation_block(operations, scope, "operation block writeback")
@@ -1904,6 +1933,8 @@ class {{ machine_class_name(model) }}:
         scope = vars_ if vars_ is not None else self._vars
 
         def operations(local_scope):
+            _v = local_scope
+            _s = self._sign
 {{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
 
         self._execute_operation_block(operations, scope, "operation block writeback")
@@ -1944,6 +1975,8 @@ class {{ machine_class_name(model) }}:
         scope = vars_ if vars_ is not None else self._vars
 
         def operations(local_scope):
+            _v = local_scope
+            _s = self._sign
 {{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=3) }}
 
         self._execute_operation_block(operations, scope, "operation block writeback")
@@ -1981,6 +2014,8 @@ class {{ machine_class_name(model) }}:
         scope = vars_ if vars_ is not None else self._vars
 
         def operations(local_scope):
+            _v = local_scope
+            _s = self._sign
 {{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=3) }}
 
         self._execute_operation_block(operations, scope, "operation block writeback")

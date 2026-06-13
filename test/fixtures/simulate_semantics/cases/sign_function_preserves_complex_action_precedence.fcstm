@@ -1,0 +1,29 @@
+def int x = -3;
+def int y = 2;
+def int score = 0;
+def int marker = 0;
+
+state Root {
+    state Work {
+        enter {
+            marker = 10 + sign(x) * 3;
+        }
+        during {
+            score = score + 100 + 2 * sign(x + y) + sign(0);
+            x = x + 3;
+        }
+        exit {
+            marker = marker + 1000 + 5 * sign(score - 101);
+        }
+    }
+    state Done {
+        enter {
+            marker = marker + 10000 + sign(score - 101) * 7;
+        }
+    }
+
+    [*] -> Work;
+    Work -> Done : if [sign(score - 98) > 0] effect {
+        score = score + 10 * sign(x) + 100 * sign(y - 2);
+    };
+}

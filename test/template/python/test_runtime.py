@@ -482,6 +482,8 @@ class TestPythonBuiltinTemplate:
             'sign_function_updates_during_action',
             'sign_function_handles_all_signs',
             'sign_function_controls_guard_transition',
+            'sign_function_preserves_complex_action_precedence',
+            'sign_function_aligns_aspect_guard_effect_math',
         ]
         fixture_dir = os.path.join(
             os.path.dirname(__file__),

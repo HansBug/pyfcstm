@@ -1,0 +1,30 @@
+def int x = -4;
+def int bias = 1;
+def int gate = 0;
+def int trace = 0;
+
+state Root {
+    >> during before {
+        trace = trace + 100 * sign(x + bias);
+    }
+
+    state Alpha {
+        during {
+            gate = gate + sign(x) * 5 + sign(x + 2) * 7 + sign(3) * 11;
+            x = x + 3;
+        }
+        exit {
+            trace = trace + 1000 * sign(gate - 4);
+        }
+    }
+    state Beta {
+        enter {
+            gate = gate + 100 * sign(trace - 999);
+        }
+    }
+
+    [*] -> Alpha;
+    Alpha -> Beta : if [sign((gate * 2) - 11) > 0] effect {
+        trace = trace + 100000 + sign(x - 1) * 19;
+    };
+}

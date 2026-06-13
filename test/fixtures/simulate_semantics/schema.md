@@ -512,9 +512,11 @@ generated alignment cases in this schema version. `handlers` and
 same fixture handlers are installed in both runtimes and their call records must
 match.
 
-For constructor diagnostics, the alignment runner builds both runtimes and
-requires matching exception class names and messages before applying the
-`initial.expect.raises` matcher.
+For constructor diagnostics, the alignment runner builds both runtimes,
+requires matching exception class names, and then applies the declared
+`initial.expect.raises` matcher to each side. It does not require complete
+exception-message text equality unless a fixture matcher explicitly declares
+that stricter contract.
 
 ## CLI command cases
 

@@ -403,9 +403,11 @@ def test_generated_source_templates_keep_source_metadata_wording():
             _RUNTIME_TEMPLATES[name]
         ):
             source = _read_text(_TEMPLATES_DIR / name / rel_path)
-            lowered = " ".join(source.lower().split())
+            normalized = " ".join(source.lower().split())
+            compact = "".join(source.lower().split())
             for banned in _BANNED_SOURCE_WORDING:
-                assert banned not in lowered
+                assert banned not in normalized
+                assert "".join(banned.split()) not in compact
 
 
 @pytest.mark.unittest

@@ -34,6 +34,16 @@
 {{- '{' -}}{{ state_enum(state.parent.substates[transition.to_state]) if transition.to_state != EXIT_STATE else "-1" }}, {{ 1 if transition.to_state == EXIT_STATE else 0 }}, {{ all_events.items.index(transition.event.path_name) if transition.event is not none else "-1" }}, {{ transition_guard_method_name(state, idx) if transition.guard is not none else "NULL" }}, {{ transition_effect_method_name(state, idx) if transition.effects else "NULL" }}{{- '}' -}}
 {%- endmacro %}
 
+/*
+ * Auto-generated C99 state machine implementation for {{ model.root_state.name }}.
+ *
+ * This file is emitted by the built-in `c_poll` template and pairs with
+ * `machine.h` for event-check polling runtime integration. Do not edit
+ * generated source directly; change the FCSTM DSL/model and regenerate this
+ * file instead. The generated runtime is self-contained and does not depend
+ * on pyfcstm or third-party runtime packages.
+ */
+
 #include "machine.h"
 
 #include <math.h>
@@ -201,7 +211,7 @@ typedef struct _{{ machine_class_name(model) }}EventSet {
     unsigned long evaluated_bitset[{{ machine_macro_name(model) }}_EVENTSET_BITSET_WORDS_INTERNAL];
 } _{{ machine_class_name(model) }}EventSet;
 
-static const _{{ machine_class_name(model) }}StateInfo _{{ machine_class_name(model) }}_state_info[];
+static const _{{ machine_class_name(model) }}StateInfo _{{ machine_class_name(model) }}_state_info[{{ machine_macro_name(model) }}_STATE_COUNT_INTERNAL];
 static int _{{ machine_class_name(model) }}_event_id_is_valid(int event_id);
 
 enum {
@@ -209,7 +219,7 @@ enum {
     {{ machine_macro_name(model) }}_ACTION_KIND_ABSTRACT = 2
 };
 
-/* Embedded original DSL source for diagnostics and README cross-reference. */
+/* Embedded canonical model export for diagnostics and README cross-reference. */
 {% set dsl_source = model.to_ast_node() | string %}
 static const char *_{{ machine_class_name(model) }}_dsl_source =
 {% if dsl_source -%}

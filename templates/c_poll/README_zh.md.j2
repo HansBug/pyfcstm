@@ -50,6 +50,51 @@
 - `README.md`：当前状态机的英文使用说明
 - `README_zh.md`：当前状态机的中文使用说明
 
+## Model Text
+
+`{{ machine_class_name(model) }}_dsl_source()` 返回的是 canonical model
+export。该文本从已解析 model 重新导出，是 canonical / normalized model
+export，可能不同于用户输入文件中的格式、注释或空行。它适合用于诊断、
+追踪和把当前 generated runtime 的模型语义暴露给上层工具。
+
+```fcstm
+{{ model.to_ast_node() | string }}
+```
+
+## Model Summary
+
+### Variables
+
+{% if model.defines.values() | list -%}
+| 名称 | 类型 | 初始 DSL |
+| --- | --- | --- |
+{% for def_item in model.defines.values() -%}
+| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ def_item.init.to_ast_node() | string }}` |
+{% endfor %}
+{% else %}
+当前状态机没有定义持久变量。
+{% endif -%}
+
+### Events
+
+{% if event_ns.items -%}
+{% for event_path in event_ns.items | unique | list -%}
+- `{{ event_path }}`
+{% endfor %}
+{% else %}
+当前状态机没有声明任何事件。
+{% endif -%}
+
+### Abstract Hooks
+
+{% if abstract_ns.rows -%}
+{% for row in abstract_ns.rows -%}
+- `{{ row['func_name'] }}` -> `{{ row['hook_name'] }}`
+{% endfor %}
+{% else %}
+当前状态机没有声明 abstract hook。
+{% endif -%}
+
 ## 运行时概览
 
 这份生成运行时是一个针对当前 DSL 模型专门生成的、自包含的
@@ -90,7 +135,7 @@ ack 副作用的消费接口。
 可直接使用 C99 编译器编译生成运行时：
 
 ```bash
-cc -std=c99 -Wall -Wextra -pedantic -c machine.c -o machine.o
+cc -std=c99 -Wall -Wextra -c machine.c -o machine.o
 ```
 
 如果是性能敏感的生产构建，建议至少使用：
@@ -149,8 +194,7 @@ int main(void)
 {
     {{ machine_class_name(model) }} machine;
 {% if event_ns.items %}
-    {{ machine_class_name(model) }}EventChecks event_checks =
-        {{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT;
+    {{ machine_class_name(model) }}EventChecks event_checks = {{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT;
 {% endif %}
 
     if (!{{ machine_class_name(model) }}_init(&machine)) {
@@ -158,7 +202,7 @@ int main(void)
     }
 {% if event_ns.items %}
 
-{% for event_path in event_ns.items -%}
+{% for event_path in event_ns.items %}
     event_checks.{{ event_check_field_name(event_path) }} = event_check;
 {% endfor %}
     {{ machine_class_name(model) }}_set_event_checks(&machine, &event_checks, NULL);
@@ -359,7 +403,7 @@ machine 对象在 C 中不是 opaque type，但其中多数字段都属于运行
 | `{{ machine_class_name(model) }}_current_state_path(machine)` | 读取当前叶子状态完整路径 |
 | `{{ machine_class_name(model) }}_current_state_name(machine)` | 读取当前叶子状态短名称 |
 | `{{ machine_class_name(model) }}_last_error(machine)` | 读取最近一次错误信息 |
-| `{{ machine_class_name(model) }}_dsl_source()` | 读取内嵌的原始 DSL 文本 |
+| `{{ machine_class_name(model) }}_dsl_source()` | 读取内嵌的 canonical model export |
 
 ### 函数使用说明
 
@@ -380,7 +424,95 @@ machine 对象在 C 中不是 opaque type，但其中多数字段都属于运行
 - `{{ machine_class_name(model) }}_last_error()`：
   在任意 API 返回 `{{ machine_macro_name(model) }}_FAILURE` 后，应优先查看它。
 - `{{ machine_class_name(model) }}_dsl_source()`：
-  可用于诊断、追踪或把原始模型文本暴露给上层工具。
+  可用于诊断、追踪或把 canonical / normalized model export 暴露给上层工具。
+
+## Minimal Complete Flow
+
+```c
+#include "machine.h"
+#include <stdio.h>
+
+{% if abstract_ns.rows -%}
+static void generated_hook(
+    {{ machine_class_name(model) }} *machine,
+    const {{ machine_class_name(model) }}ExecutionContext *ctx,
+    void *user_data
+)
+{
+    (void)machine;
+    (void)user_data;
+    printf("hook: %s @ %s\n", ctx->action_name, ctx->state_path);
+}
+
+{% endif -%}
+{% if event_ns.items -%}
+typedef struct DriverState {
+    int trigger_selected_event;
+} DriverState;
+
+static int selected_event_check(
+    {{ machine_class_name(model) }} *machine,
+    const {{ machine_class_name(model) }}EventContext *ctx,
+    void *user_data
+)
+{
+    DriverState *driver = (DriverState *)user_data;
+    (void)machine;
+    (void)ctx;
+    return driver->trigger_selected_event;
+}
+
+static int inactive_event_check(
+    {{ machine_class_name(model) }} *machine,
+    const {{ machine_class_name(model) }}EventContext *ctx,
+    void *user_data
+)
+{
+    (void)machine;
+    (void)ctx;
+    (void)user_data;
+    return 0;
+}
+
+{% endif -%}
+int main(void)
+{
+    {{ machine_class_name(model) }} machine;
+{% if abstract_ns.rows %}
+    {{ machine_class_name(model) }}Hooks hooks = {{ machine_class_name(model) | upper }}_HOOKS_INIT;
+{% endif -%}
+{% if event_ns.items %}
+    {{ machine_class_name(model) }}EventChecks event_checks = {{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT;
+    DriverState driver = {0};
+{% endif %}
+
+    if (!{{ machine_class_name(model) }}_init(&machine)) {
+        return 1;
+    }
+{% if abstract_ns.rows %}
+    hooks.{{ abstract_ns.rows[0]['hook_name'] }} = generated_hook;
+    {{ machine_class_name(model) }}_set_hooks(&machine, &hooks, NULL);
+{% endif %}
+{% if event_ns.items %}
+    /* Fill every generated event-check field before cycle(). */
+{% for event_path in event_ns.items %}
+    event_checks.{{ event_check_field_name(event_path) }} = {% if loop.first %}selected_event_check{% else %}inactive_event_check{% endif %};
+{% endfor %}
+    {{ machine_class_name(model) }}_set_event_checks(&machine, &event_checks, &driver);
+{% endif %}
+    if (!{{ machine_class_name(model) }}_cycle(&machine)) {
+        return 2;
+    }
+{% if event_ns.items %}
+    driver.trigger_selected_event = 1;
+    if (!{{ machine_class_name(model) }}_cycle(&machine)) {
+        return 3;
+    }
+{% endif %}
+    printf("%s\n", {{ machine_class_name(model) }}_current_state_path(&machine));
+    return 0;
+}
+```
 
 ## 全面使用指南
 

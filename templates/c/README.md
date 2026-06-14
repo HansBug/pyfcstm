@@ -1,180 +1,219 @@
-# c
+# c template maintainer handbook
 
-`c` is the built-in C99 / C++98-compatible runtime template target.
+`c` is the built-in native C runtime template. It emits a self-contained C99
+state-machine runtime with a public header designed for C users and C++98
+integration paths.
 
-This template emits a self-contained C runtime together with generated usage
-documentation for the concrete state machine.
+This file is the maintainer-facing handbook for `templates/c/`. It is ignored
+by the renderer and is not copied to generated output. Generated-output user
+guides come from `README.md.j2` / `README_zh.md.j2`.
 
-Template source contents:
+## Target and non-targets
 
-- `machine.h.j2`: generated public runtime header
-- `machine.c.j2`: generated runtime implementation
-- `README.md.j2`: generated English usage guide in the output directory
-- `README_zh.md.j2`: generated Chinese usage guide in the output directory
-- `README.md` / `README_zh.md`: maintainer-facing template documentation
+Use this template when generated runtime performance, predictable C integration,
+and a small public C API are the primary requirements.
 
-Current properties:
+The generated implementation should be treated as black-box runtime code. Users
+who need different behavior should edit the FCSTM DSL and regenerate. Manual
+long-term maintenance should concentrate on `machine.h`, generated README files,
+and template source review, not on hand-editing generated `machine.c`.
 
-- targets C99 and C++98 or later with broadly available standard-library
-  facilities
-- generates `machine.h`, `machine.c`, `README.md`, and `README_zh.md`
-- embeds state metadata, cycle logic, hot start handling, and abstract hook callback slots
-- exposes hook registration in a form that is natural for C developers
-- avoids generated handler-registration infrastructure
-- normalizes generated identifiers so the emitted code also stays valid under
-  C++ keyword rules
-- uses a generated 64-bit integer alias strategy instead of exposing raw
-  `long long` in the public ABI
+This template is not a dependency bridge to `pyfcstm`. Generated C output must
+run without the Python package or any third-party runtime library.
 
-## Performance Roadmap
+## Source layout and generated output
 
-The C template should be treated as a generated black-box runtime. Human-facing
-maintainability should be concentrated in the public header and generated usage
-docs. The generated `machine.c` should prioritize runtime performance first, as
-long as behavior remains correct and the public API contract stays stable.
+| Template source | Maintainer role | Generated output |
+| --- | --- | --- |
+| `machine.h.j2` | Public C integration surface template | `machine.h` |
+| `machine.c.j2` | Generated high-performance runtime implementation template | `machine.c` |
+| `README.md.j2` | English generated-output guide | `README.md` |
+| `README_zh.md.j2` | Chinese generated-output guide | `README_zh.md` |
+| `config.yaml` | Renderer configuration, C statement rendering, helper names, and ignore rules | Not copied |
+| `template.json` | Built-in template metadata | Not copied |
+| `README.md` / `README_zh.md` | Template maintainer handbooks | Not copied by the renderer, but included in packaged template archives |
 
-Current progress:
+`config.yaml` ignores `README.md`, `README_zh.md`, and `template.json` for
+rendered output. `make tpl` still packages the full template source directory,
+so changes to this handbook must be validated with a refreshed local
+`pyfcstm/template/c.zip`. The archive is ignored by git in normal checkouts;
+setup and packaging commands recreate it from source.
 
-- Phase 1 is implemented.
-- Phase 2 is implemented.
-- Phase 3 is implemented.
-- Phase 4 is implemented.
-- The current C template regression suite passes with the id-only API and the
-  hybrid event-set backend, the specialized state-dispatch hot path, and the
-  reduced-copy rollback/validation path.
-- The current template target is also checked with C++ compilers, including a
-  strict `c++98` path for representative generated machines.
-- The regression suite includes representative C++ harness tests for basic
-  behavior, hot start, rollback behavior, keyword-safe identifiers, and
-  abstract hook mounting.
+## Compatibility and runtime dependency boundary
 
-### Phase 1: Remove avoidable hot-path overhead
+Generated C output should keep these defaults:
 
-- [x] Remove string-based event submission from the generated public C API.
-- [x] Generate transition-local `event_id` constants instead of storing
-      `event_path` for runtime lookup.
-- [x] Change `cycle()` to accept integer event ids directly.
-- [x] Generate public event-id macros in `machine.h` so callers can submit
-      events without string parsing.
-- [x] Remove string state lookup from the hot-start API and switch hot start to
-      state-id input.
-- [x] Generate public state-id macros in `machine.h` for hot-start and other
-      performance-sensitive control paths.
-- [x] Inline or directly emit tiny helpers that are currently paid on every
-      state advance.
+- C99 implementation path.
+- C++98-compatible integration path for the generated public header and
+  representative harnesses.
+- Standard-library-only runtime dependencies; the generated runtime is standard-library-only by default.
+- No dependency on `pyfcstm`, Python, generated-time helpers, or third-party C
+  libraries.
+- Broad compiler and platform compatibility, including older Windows-oriented
+  C environments where practical.
 
-### Phase 2: Introduce a hybrid event-set backend for id-based cycle input
+Generated code may use long-lived C standard headers such as `<stddef.h>`,
+`<math.h>`, `<stdarg.h>`, `<stdio.h>`, `<stdlib.h>`, and `<string.h>` when the
+runtime requires them.
 
-- [x] Make the id-based `cycle()` API the only event-input path exposed by the
-      generated header.
-- [x] Replace the current linear event-set membership checks with a hybrid
-      backend that does not impose a small fixed event-count limit.
-- [x] Use a compact bitset fast path when the generated machine has a small or
-      moderate total event count.
-- [x] Fall back to a deduplicated integer-id array when the event space is too
-      large for a compact bitset to be the best choice.
-- [x] Prefer per-machine reusable scratch storage over per-cycle heap
-      allocation.
+## Resource lifetime and leak policy
 
-Notes for Phase 2:
+Generated C runtimes may be embedded in long-running control systems, so memory and resource ownership are runtime correctness concerns, not optional polish. The generated API should keep ownership simple: `..._create()` owns allocation, `..._destroy()` releases it, `..._init()` and `..._hot_start()` reset runtime state without leaking, and hook registration stores caller-owned pointers without taking ownership. Runtime changes must preserve this contract.
 
-- A pure bitset is fast, but it ties cost directly to total event-space size.
-- A pure array keeps memory small, but membership becomes linear in the number
-  of submitted events.
-- The preferred direction is a hybrid representation chosen from generated
-  machine metadata:
-  - small or dense event spaces: bitset
-  - sparse event spaces with few submitted events per cycle: sorted or
-    deduplicated integer array
-  - larger sparse workloads: open-addressed hash set or similar constant-time
-    membership structure
-- This keeps the fast path for common small machines while avoiding a hard
-  event-count ceiling.
+When `machine.c.j2` or allocation-related parts of `machine.h.j2` change, run at least one representative generated harness under AddressSanitizer / LeakSanitizer, valgrind, or an equivalent platform tool when available. The harness should cover create/destroy, cold start, hot start, normal cycles, eventful cycles, hook installation, and error/rollback paths that are relevant to the change. If a leak is discovered and clearly predates the current change, record the reproduction and scope it for a dedicated fix instead of hiding it.
 
-### Phase 3: Replace table-driven execution with specialized generated code
+## Public integration surface
 
-- [x] Move transition selection away from `StateInfo` / `TransitionInfo` table
-      scans in the cycle hot path.
-- [x] Generate per-state transition dispatch functions instead of scanning
-      transition-id arrays.
-- [x] Generate per-state `enter`, `during`, `exit`, and init-dispatch helpers.
-- [x] Expand concrete action sequences directly in generated code instead of
-      routing through `ActionInfo`.
-- [x] Keep abstract hooks as the only remaining indirect dispatch point, and
-      only pay that cost when a hook is actually installed.
-- [x] Keep the public `.h` stable while making the `.c` implementation more
-      aggressively specialized.
+`machine.h` is the public integration surface and should stay small, clear, and
+stable. It owns:
 
-### Phase 4: Specialize validation and rollback paths
+- the generated machine struct type;
+- persistent variable struct definitions;
+- public state-id and event-id macros;
+- integer event submission through `..._cycle(machine, event_ids, event_count)`;
+- hot start through generated state ids and a complete variable snapshot;
+- abstract hook callback signatures and hook table;
+- current-state, variable, ended-state, last-error, and embedded-model accessors.
 
-- [x] Keep rollback correctness first: failed cycles must still restore the
-      previous committed machine state.
-- [x] Retain speculative validation semantics while reducing the amount of
-      generic interpreter-style execution done during validation.
-- [x] Replace reusable generic DFS helpers with reduced-copy specialized hot-path
-      dispatch where it materially reduces cost.
-- [x] Recheck stack-depth and DFS-step safety guarantees after specialization.
-- [x] Add focused regression tests for nested composites, sibling transitions,
-      exit-to-parent transitions, and abstract-hook interactions.
+`machine.c` is the generated implementation. Downstream integrators should treat
+its internal metadata, helper functions, stack frames, validation state, and
+scratch storage as private implementation details.
 
-### Acceptance Criteria
+## Performance and implementation strategy
 
-- [x] Generated `machine.h` stays small and user-oriented.
-- [x] Generated `machine.c` is free to optimize for runtime speed over manual
-      readability.
-- [x] The generated public API uses integer ids directly for event submission.
-- [x] `machine.h` exposes event-id and state-id macros so users do not need
-      runtime string lookups.
-- [x] Event handling has no artificial small fixed upper bound caused by using
-      bit operations alone.
-- [x] Existing runtime semantics, rollback behavior, and hook semantics remain
-      correct.
+Runtime performance and FCSTM semantic correctness are the first priorities for
+`machine.c`. Human readability is secondary for generated implementation code.
+Keep comments and structure sufficient for diagnostics and review, but do not
+turn the generated implementation into a hand-maintained interpreter when a
+specialized generated path is faster and semantically equivalent.
 
-## Benchmark Record
+The current stable design includes:
 
-The following benchmark was used to compare the current Phase 4 runtime against
-the pre-Phase-1 baseline.
+- id-only public event input instead of runtime string event lookup;
+- public event-id and state-id macros in `machine.h`;
+- a hybrid event-set backend that keeps small and dense event spaces fast while
+  avoiding a fixed small event-count ceiling;
+- state-specialized dispatch for transition selection and lifecycle execution;
+- direct expansion of concrete action blocks in generated code;
+- abstract hooks as the remaining user-defined indirect extension points;
+- speculative validation and rollback with reduced copying where possible;
+- C/C++ keyword-safe generated identifiers;
+- a public 64-bit integer alias strategy that avoids exposing raw `long long`
+  as the only ABI spelling.
 
-Experiment steps:
+These are stable design facts, not a temporary development plan. Avoid
+reintroducing temporary milestone lists or milestone headings as the main
+README structure.
 
-- Baseline version: `99eb3f1c` (`Document id-only C runtime performance roadmap`),
-  checked out into a temporary worktree as the last version before Phase 1
-  implementation.
-- Current version: the local Phase 4 template state under `templates/c/`.
-- Model under test: a moderately complex elevator-control FCSTM model with
-  nested `Service -> Door / Motion / Inspection` composites, init transitions,
-  sibling transitions, exit-to-parent paths, and a validation-failure path via
-  `Idle -> Inspection :: Inspect` when `AuthOk` is absent.
-- Old runtime submission path: string-based `cycle(machine, const char *const *events, ...)`.
-- New runtime submission path: id-only `cycle(machine, const EventId *event_ids, ...)`.
-- Build flags: `cc -O3 -DNDEBUG -std=c99`.
-- Timing method: benchmark harness measures CPU time with `clock()`, then runs
-  the generated binary for several rounds and compares mean / median elapsed
-  time.
+## Performance evidence
 
-Workloads:
+A historical benchmark compared the current specialized C runtime design against
+the older string-submission runtime on a moderately complex elevator-control
+model with nested composites, initial transitions, sibling transitions,
+exit-to-parent paths, and validation rollback.
 
-- `mixed`: mixed boot / motion / door / inspection traffic on the same machine.
-- `validation_heavy`: mostly failed `Inspect` attempts, with periodic
-  `AuthOk`/`ExitInspect`, to stress speculative validation and rollback.
+The benchmark used `cc -O3 -DNDEBUG -std=c99` and measured two workloads:
 
-Results summary:
+| Workload | Cycles | Stable observation |
+| --- | ---: | --- |
+| `mixed` | 4,000,000 | Mean speedup was about `6.42x`; median speedup was about `7.25x`. |
+| `validation_heavy` | 8,000,000 | Mean speedup was about `9.59x`; median speedup was about `9.75x`. |
 
-- `mixed`, `4,000,000` cycles, `3` rounds:
-  - pre-Phase-1 mean: `1.0105s`
-  - current Phase 4 mean: `0.1574s`
-  - mean speedup: `6.42x`
-  - median speedup: `7.25x`
-- `validation_heavy`, `8,000,000` cycles, `3` rounds:
-  - pre-Phase-1 mean: `2.3005s`
-  - current Phase 4 mean: `0.2399s`
-  - mean speedup: `9.59x`
-  - median speedup: `9.75x`
+The result supports the current design direction: id-only event input,
+specialized state dispatch, and reduced-copy validation / rollback materially
+improve the hot paths that dominate generated C runtime cost.
 
-Interpretation:
+Benchmark records are evidence for maintenance decisions, not a substitute for
+semantic regression tests. Do not loosen correctness, rollback, or hook behavior
+in pursuit of microbenchmarks.
 
-- The end-to-end gain from the pre-Phase-1 runtime to the current Phase 4
-  runtime is large and stable.
-- The bigger speedup in `validation_heavy` confirms that the id-only API,
-  specialized dispatch, and reduced-copy validation / rollback path are all
-  materially improving the hot paths that previously dominated cost.
+## Semantics and alignment expectations
+
+The C template must preserve the FCSTM runtime contract for:
+
+- cold start and hot start;
+- composite initial transition ordering;
+- lifecycle enter, during, exit, and aspect actions;
+- event scoping, event identity, and transition priority;
+- guard/effect evaluation and speculative rollback;
+- abstract hook invocation timing and read-only execution context.
+
+The C runtime tests and alignment tests are the behavioral authority. Template
+README edits do not change these tests, but runtime template changes must keep
+them passing.
+
+## Maintenance workflow
+
+Use the smallest verification set that matches the change:
+
+1. For maintainer README-only edits, review English/Chinese section parity and
+   confirm no generated user guide or source template changed.
+2. Run `make rst_auto` before committing repository changes. This README should
+   not normally produce generated RST changes.
+3. Run `make tpl` after changing any file under `templates/c/`, including this
+   README, because packaged built-in template archives include the template
+   source directory.
+4. Inspect packaged asset changes. README-only edits should refresh the local generated
+   `pyfcstm/template/c.zip` archive; because zip archives are ignored by git in
+   normal checkouts, the tracked `pyfcstm/template/index.json` should normally
+   stay content-equivalent.
+5. For runtime template changes, generate representative machines and run C99
+   build checks, C++98 integration checks, formatter convergence checks,
+   sanitizer or equivalent leak checks where available, and simulator-alignment
+   tests.
+
+Useful commands:
+
+```bash
+make rst_auto
+make tpl
+pytest test/template/c -v
+SKIP_SLOW_TESTS=1 make unittest
+```
+
+For C runtime work, do not rely only on `SKIP_SLOW_TESTS=1`; the native C/C++
+toolchain tests are part of the real completion gate.
+
+## Language-specific verification
+
+Representative generated C artifacts should satisfy:
+
+```bash
+clang-format -i -style='{BasedOnStyle: LLVM, IndentWidth: 4}' path/to/machine.h
+clang-format -i -style='{BasedOnStyle: LLVM, IndentWidth: 4}' path/to/machine.c
+cmake -S path/to/harness -B path/to/build
+cmake --build path/to/build
+```
+
+Formatter convergence is a pragmatic quality gate, not an absolute style
+objective. It should catch obvious generated-code roughness and keep artifacts
+professional enough for integration. Do not spend maintenance effort contorting
+generated C for rare formatter-only edge cases when semantics, performance, or
+compatibility would be harmed; document any known formatter-only exception
+narrowly with the reason.
+
+## Relationship to `c_poll`
+
+`c` and `c_poll` share the C-family compatibility and self-contained runtime
+policy, but their event input models are different:
+
+- `c` accepts explicit generated event ids per cycle through the public cycle
+  API.
+- `c_poll` asks installed event-check callbacks whether each generated event is
+  active during the current cycle.
+
+Do not move essential `c` maintenance requirements into `c_poll` by link only.
+Each template README must stay self-contained.
+
+## Documentation layering
+
+Keep documentation layers separate:
+
+- this file explains how to maintain the `c` template;
+- `README.md.j2` / `README_zh.md.j2` explain how to use one generated C output
+  directory;
+- root `templates/README.md` / `README_zh.md` explain repository-wide template
+  system rules.
+
+Generated READMEs should help a downstream user build and run the generated C
+machine without understanding template packaging internals.

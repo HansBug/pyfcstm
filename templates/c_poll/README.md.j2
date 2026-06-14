@@ -51,6 +51,52 @@ cleanly.
 - `README.md`: English usage guide for this generated machine
 - `README_zh.md`: Chinese usage guide for this generated machine
 
+## Model Text
+
+`{{ machine_class_name(model) }}_dsl_source()` returns a canonical model export.
+The text is regenerated from the parsed model as a canonical / normalized
+model export, so it may differ from the user's file formatting, comments, or
+blank lines. Use it for diagnostics, traceability, or exposing the generated
+runtime's model semantics to tooling.
+
+```fcstm
+{{ model.to_ast_node() | string }}
+```
+
+## Model Summary
+
+### Variables
+
+{% if model.defines.values() | list -%}
+| Name | Type | Initial DSL |
+| --- | --- | --- |
+{% for def_item in model.defines.values() -%}
+| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ def_item.init.to_ast_node() | string }}` |
+{% endfor %}
+{% else %}
+This state machine does not define persistent variables.
+{% endif -%}
+
+### Events
+
+{% if event_ns.items -%}
+{% for event_path in event_ns.items | unique | list -%}
+- `{{ event_path }}`
+{% endfor %}
+{% else %}
+This state machine does not declare any events.
+{% endif -%}
+
+### Abstract Hooks
+
+{% if abstract_ns.rows -%}
+{% for row in abstract_ns.rows -%}
+- `{{ row['func_name'] }}` -> `{{ row['hook_name'] }}`
+{% endfor %}
+{% else %}
+This state machine does not declare abstract hooks.
+{% endif -%}
+
 ## Runtime Overview
 
 This generated runtime is a self-contained C99 / C++98+ state-machine engine
@@ -104,7 +150,7 @@ operation.
 Compile the generated runtime directly with a C99 compiler:
 
 ```bash
-cc -std=c99 -Wall -Wextra -pedantic -c machine.c -o machine.o
+cc -std=c99 -Wall -Wextra -c machine.c -o machine.o
 ```
 
 For optimized production builds:
@@ -167,8 +213,7 @@ int main(void)
 {
     {{ machine_class_name(model) }} machine;
 {% if event_ns.items %}
-    {{ machine_class_name(model) }}EventChecks event_checks =
-        {{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT;
+    {{ machine_class_name(model) }}EventChecks event_checks = {{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT;
 {% endif %}
 
     if (!{{ machine_class_name(model) }}_init(&machine)) {
@@ -176,7 +221,7 @@ int main(void)
     }
 {% if event_ns.items %}
 
-{% for event_path in event_ns.items -%}
+{% for event_path in event_ns.items %}
     event_checks.{{ event_check_field_name(event_path) }} = event_check;
 {% endfor %}
     {{ machine_class_name(model) }}_set_event_checks(&machine, &event_checks, NULL);
@@ -388,7 +433,7 @@ The machine object is not opaque in C, but most fields are runtime-owned.
 | `{{ machine_class_name(model) }}_current_state_path(machine)` | Read the current leaf-state full path |
 | `{{ machine_class_name(model) }}_current_state_name(machine)` | Read the current leaf-state short name |
 | `{{ machine_class_name(model) }}_last_error(machine)` | Read the last error message |
-| `{{ machine_class_name(model) }}_dsl_source()` | Read the embedded original DSL text |
+| `{{ machine_class_name(model) }}_dsl_source()` | Read the embedded canonical model export |
 
 ### Function Usage Notes
 
@@ -415,8 +460,96 @@ The machine object is not opaque in C, but most fields are runtime-owned.
 - `{{ machine_class_name(model) }}_last_error()`:
   useful after any API call that returned `{{ machine_macro_name(model) }}_FAILURE`.
 - `{{ machine_class_name(model) }}_dsl_source()`:
-  useful for diagnostics, traceability, or embedding the original model text in
-  tooling.
+  useful for diagnostics, traceability, or exposing the canonical / normalized
+  model export to tooling.
+
+## Minimal Complete Flow
+
+```c
+#include "machine.h"
+#include <stdio.h>
+
+{% if abstract_ns.rows -%}
+static void generated_hook(
+    {{ machine_class_name(model) }} *machine,
+    const {{ machine_class_name(model) }}ExecutionContext *ctx,
+    void *user_data
+)
+{
+    (void)machine;
+    (void)user_data;
+    printf("hook: %s @ %s\n", ctx->action_name, ctx->state_path);
+}
+
+{% endif -%}
+{% if event_ns.items -%}
+typedef struct DriverState {
+    int trigger_selected_event;
+} DriverState;
+
+static int selected_event_check(
+    {{ machine_class_name(model) }} *machine,
+    const {{ machine_class_name(model) }}EventContext *ctx,
+    void *user_data
+)
+{
+    DriverState *driver = (DriverState *)user_data;
+    (void)machine;
+    (void)ctx;
+    return driver->trigger_selected_event;
+}
+
+static int inactive_event_check(
+    {{ machine_class_name(model) }} *machine,
+    const {{ machine_class_name(model) }}EventContext *ctx,
+    void *user_data
+)
+{
+    (void)machine;
+    (void)ctx;
+    (void)user_data;
+    return 0;
+}
+
+{% endif -%}
+int main(void)
+{
+    {{ machine_class_name(model) }} machine;
+{% if abstract_ns.rows %}
+    {{ machine_class_name(model) }}Hooks hooks = {{ machine_class_name(model) | upper }}_HOOKS_INIT;
+{% endif -%}
+{% if event_ns.items %}
+    {{ machine_class_name(model) }}EventChecks event_checks = {{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT;
+    DriverState driver = {0};
+{% endif %}
+
+    if (!{{ machine_class_name(model) }}_init(&machine)) {
+        return 1;
+    }
+{% if abstract_ns.rows %}
+    hooks.{{ abstract_ns.rows[0]['hook_name'] }} = generated_hook;
+    {{ machine_class_name(model) }}_set_hooks(&machine, &hooks, NULL);
+{% endif %}
+{% if event_ns.items %}
+    /* Fill every generated event-check field before cycle(). */
+{% for event_path in event_ns.items %}
+    event_checks.{{ event_check_field_name(event_path) }} = {% if loop.first %}selected_event_check{% else %}inactive_event_check{% endif %};
+{% endfor %}
+    {{ machine_class_name(model) }}_set_event_checks(&machine, &event_checks, &driver);
+{% endif %}
+    if (!{{ machine_class_name(model) }}_cycle(&machine)) {
+        return 2;
+    }
+{% if event_ns.items %}
+    driver.trigger_selected_event = 1;
+    if (!{{ machine_class_name(model) }}_cycle(&machine)) {
+        return 3;
+    }
+{% endif %}
+    printf("%s\n", {{ machine_class_name(model) }}_current_state_path(&machine));
+    return 0;
+}
+```
 
 ## Full Usage Guide
 

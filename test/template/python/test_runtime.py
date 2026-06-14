@@ -1,6 +1,7 @@
 import ast
 import importlib.util
 import os.path
+import re
 import subprocess
 import sys
 import textwrap
@@ -13,6 +14,19 @@ from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.template import extract_template
+
+
+def _workflow_metadata_labels():
+    return [
+        ''.join(('p', 'r', '-', '3')),
+        ''.join(('issue', ' #', '209')),
+        ''.join(('road', 'map')),
+        ''.join(('review', ' ', 'round')),
+    ]
+
+
+def _normalized_lower_text(text):
+    return ' '.join(text.lower().split())
 
 
 @contextmanager
@@ -49,8 +63,79 @@ def _render_python_module(dsl_code, module_name='generated_python'):
         yield artifacts['module']
 
 
+def _representative_gate_dsl():
+    return """
+    def int counter = 0;
+    def int ready = 0;
+    def float gain = 1.5;
+    state Control {
+        enter abstract Boot;
+        state Idle {
+            during { counter = counter + 1; }
+        }
+        state Active {
+            enter abstract ActiveEnter;
+            during before { gain = gain + 0.5; }
+            state Work {
+                enter { counter = counter + 2; }
+                during { counter = counter + 3; }
+            }
+            [*] -> Work : if [ready == 1];
+        }
+        state Done;
+        [*] -> Idle;
+        Idle -> Active :: Start effect { ready = 1; counter = counter + 10; };
+        Active -> Done : if [counter >= 20] effect { counter = counter + 1; };
+    }
+    """
+
+
+def _python_code_blocks(markdown):
+    return re.findall(r"```python\n(.*?)```", markdown, flags=re.S)
+
+
+def _assert_python_readme_code_blocks_are_formatter_friendly(markdown):
+    blocks = _python_code_blocks(markdown)
+    assert blocks
+    for block in blocks:
+        assert "\t" not in block
+        assert "\r" not in block
+
+
 @pytest.mark.unittest
 class TestPythonBuiltinTemplate:
+    def test_generated_machine_source_banner_documents_file_contract(self):
+        dsl_code = """
+        def int counter = 0;
+        state System {
+            state Idle {
+                during { counter = counter + 1; }
+            }
+            state Running;
+            [*] -> Idle;
+            Idle -> Running :: Start;
+        }
+        """
+
+        with _render_python_artifacts(dsl_code) as artifacts:
+            with open(artifacts['machine_file'], 'r', encoding='utf-8') as f:
+                source = f.read()
+
+            module_docstring = ast.get_docstring(ast.parse(source))
+            assert module_docstring is not None
+            normalized_docstring = _normalized_lower_text(module_docstring)
+            assert 'auto-generated' in normalized_docstring
+            assert '``python`` built-in template' in normalized_docstring
+            assert 'System' in module_docstring
+            assert 'SystemMachine' in module_docstring
+            assert 'do not edit generated source directly' in normalized_docstring
+            assert 'change the fcstm dsl/model and regenerate' in normalized_docstring
+            assert 'self-contained' in normalized_docstring
+            assert 'does not require ``pyfcstm``' in normalized_docstring
+            assert 'third-party runtime packages' in normalized_docstring
+            for label in _workflow_metadata_labels():
+                assert label not in source.lower()
+
     def test_generated_machine_runs_cycle_and_event_transition(self):
         dsl_code = """
         def int counter = 0;
@@ -186,7 +271,7 @@ class TestPythonBuiltinTemplate:
                 'Root.RootInit': '_abstract_hook_Root_RootInit',
                 'Root.System.A.AEnter': '_abstract_hook_Root_System_A_AEnter',
             }
-            assert 'Original DSL Source' in module.__doc__
+            assert 'Canonical Model Export' in module.__doc__
             assert (
                 'Root-level hook used for runtime customization.'
                 in module.RootMachine._abstract_hook_Root_RootInit.__doc__
@@ -421,8 +506,23 @@ class TestPythonBuiltinTemplate:
             assert 'abstract hook' in readme_zh
             assert '修改状态机持久变量' in readme_zh
 
+    def test_generated_readme_python_code_blocks_are_formatter_friendly(self):
+        with _render_python_artifacts(_representative_gate_dsl()) as artifacts:
+            with open(artifacts["readme_file"], "r", encoding="utf-8") as f:
+                readme = f.read()
+            with open(artifacts["readme_zh_file"], "r", encoding="utf-8") as f:
+                readme_zh = f.read()
+
+            _assert_python_readme_code_blocks_are_formatter_friendly(readme)
+            _assert_python_readme_code_blocks_are_formatter_friendly(readme_zh)
+            assert "CustomMachine" in readme
+            assert "CustomMachine" in readme_zh
+            assert "machine.cycle" in readme
+            assert "machine.cycle" in readme_zh
+
     def test_generated_machine_source_stays_platform_neutral_and_python37_compatible(self):
         dsl_codes = [
+            _representative_gate_dsl(),
             """
             def int counter = 0;
             state Root {

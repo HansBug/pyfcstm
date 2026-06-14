@@ -1,4 +1,5 @@
 import os.path
+import re
 import shutil
 import subprocess
 import textwrap
@@ -8,8 +9,136 @@ import pytest
 from ._utils import render_c_artifacts, render_c_runtime
 
 
+_CLANG_FORMAT_STYLE = "{BasedOnStyle: LLVM, IndentWidth: 4, ContinuationIndentWidth: 4}"
+
+
+def _format_c_text(text, filename):
+    clang_format = shutil.which("clang-format")
+    if clang_format is None:
+        pytest.skip("clang-format is required for C formatter convergence tests.")
+
+    return subprocess.run(
+        [
+            clang_format,
+            "-style=" + _CLANG_FORMAT_STYLE,
+            "--assume-filename=" + filename,
+        ],
+        input=text,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=True,
+    ).stdout
+
+
+def _representative_gate_dsl():
+    return """
+    def int counter = 0;
+    def int ready = 0;
+    def float gain = 1.5;
+    state Control {
+        enter abstract Boot;
+        state Idle {
+            during { counter = counter + 1; }
+        }
+        state Active {
+            enter abstract ActiveEnter;
+            during before { gain = gain + 0.5; }
+            state Work {
+                enter { counter = counter + 2; }
+                during { counter = counter + 3; }
+            }
+            [*] -> Work : if [ready == 1];
+        }
+        state Done;
+        [*] -> Idle;
+        Idle -> Active :: Start effect { ready = 1; counter = counter + 10; };
+        Active -> Done : if [counter >= 20] effect { counter = counter + 1; };
+    }
+    """
+
+
+def _workflow_metadata_labels():
+    return [
+        ''.join(('p', 'r', '-', '3')),
+        ''.join(('issue', ' #', '209')),
+        ''.join(('road', 'map')),
+        ''.join(('review', ' ', 'round')),
+    ]
+
+
+def _normalized_lower_text(text):
+    lines = []
+    for line in text.lower().splitlines():
+        lines.append(line.strip().lstrip('/*').lstrip('*').strip())
+    return ' '.join(item for item in lines if item)
+
+
+def _first_c_comment_block(source):
+    start = source.find('/*')
+    end = source.find('*/', start)
+    assert start >= 0
+    assert end > start
+    return source[start:end + 2]
+
+
+def _assert_generated_c_banner(source, *, template_name, root_name, extra_terms=None):
+    banner = _first_c_comment_block(source)
+    lower_banner = _normalized_lower_text(banner)
+    assert 'generated' in lower_banner
+    assert '`{name}` template'.format(name=template_name) in lower_banner
+    assert root_name in banner
+    assert 'do not edit generated source directly' in lower_banner
+    assert 'change the fcstm dsl/model and regenerate' in lower_banner
+    assert 'self-contained' in lower_banner
+    assert (
+        'does not depend on pyfcstm' in lower_banner
+        or 'does not require pyfcstm' in lower_banner
+    )
+    assert 'third-party runtime packages' in lower_banner
+    for term in extra_terms or []:
+        assert term.lower() in lower_banner
+
+    lower_source = source.lower()
+    for label in _workflow_metadata_labels():
+        assert label not in lower_source
+
+
 @pytest.mark.unittest
 class TestCBuiltinTemplate:
+    def test_generated_machine_source_banners_document_file_contract(self):
+        dsl_code = """
+        def int counter = 0;
+        state Root {
+            state Idle {
+                during { counter = counter + 1; }
+            }
+            state Running;
+            [*] -> Idle;
+            Idle -> Running :: Start;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            with open(artifacts['machine_h_file'], 'r', encoding='utf-8') as f:
+                header = f.read()
+            with open(artifacts['machine_c_file'], 'r', encoding='utf-8') as f:
+                source = f.read()
+
+            _assert_generated_c_banner(
+                header,
+                template_name='c',
+                root_name='Root',
+                extra_terms=['public integration header'],
+            )
+            _assert_generated_c_banner(
+                source,
+                template_name='c',
+                root_name='Root',
+                extra_terms=['implementation'],
+            )
+            assert source.index('/*') < source.index('#include "machine.h"')
+
     def test_generated_machine_runs_cycle_and_event_transition(self):
         dsl_code = """
         def int counter = 0;
@@ -442,48 +571,257 @@ class TestCBuiltinTemplate:
             assert '不适合修改状态机持久变量' in readme_zh
             assert 'RootMachine_vars(&machine)' in readme_zh
 
-    def test_generated_machine_source_is_c99_and_build_files_work(self):
-        dsl_code = """
-        def int counter = 0;
-        state Root {
-            state Idle {
-                during { counter = counter + 1; }
-            }
-            [*] -> Idle;
-        }
-        """
+    def test_generated_readme_code_blocks_are_formatter_friendly(self):
+        with render_c_artifacts(_representative_gate_dsl()) as artifacts:
+            with open(artifacts["readme_file"], "r", encoding="utf-8") as f:
+                readme = f.read()
+            with open(artifacts["readme_zh_file"], "r", encoding="utf-8") as f:
+                readme_zh = f.read()
 
-        with render_c_artifacts(dsl_code) as artifacts:
-            with open(artifacts['machine_h_file'], 'r', encoding='utf-8') as f:
+            for content in [readme, readme_zh]:
+                blocks = re.findall(r"```(?:c|cpp|bash)\n(.*?)```", content, flags=re.S)
+                assert blocks
+                for block in blocks:
+                    assert "\t" not in block
+
+            assert "clang-format" in readme
+            assert "clang-format" in readme_zh
+
+    def test_generated_machine_clang_format_converges_under_four_space_style(self):
+        with render_c_artifacts(_representative_gate_dsl()) as artifacts:
+            for key in ["machine_h_file", "machine_c_file"]:
+                path = artifacts[key]
+                with open(path, "r", encoding="utf-8") as f:
+                    original = f.read()
+
+                formatted_once = _format_c_text(original, os.path.basename(path))
+                formatted_twice = _format_c_text(formatted_once, os.path.basename(path))
+
+                assert formatted_once == formatted_twice
+                assert "\t" not in formatted_once
+
+    def test_generated_machine_source_is_c99_and_build_files_work(self):
+        with render_c_artifacts(_representative_gate_dsl()) as artifacts:
+            with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
                 header = f.read()
-            with open(artifacts['machine_c_file'], 'r', encoding='utf-8') as f:
+            with open(artifacts["machine_c_file"], "r", encoding="utf-8") as f:
                 source = f.read()
 
-            assert '#include <stddef.h>' in header
-            assert '#include <math.h>' in source
-            assert 'windows.h' not in source
-            assert 'pthread.h' not in source
-            assert 'fork(' not in source
+            assert "#include <stddef.h>" in header
+            assert "#include <math.h>" in source
+            assert "windows.h" not in source
+            assert "pthread.h" not in source
+            assert "fork(" not in source
 
-            assert os.path.isfile(artifacts['shared_lib'])
-            assert os.path.isfile(artifacts['build_files']['cmakelists'])
+            assert os.path.isfile(artifacts["shared_lib"])
+            assert os.path.isfile(artifacts["build_files"]["cmakelists"])
 
-            make_executable = shutil.which('make')
-            if make_executable is not None and os.name != 'nt':
+            make_executable = shutil.which("make")
+            if make_executable is not None and os.name != "nt":
                 subprocess.run(
                     [make_executable],
-                    cwd=artifacts['output_dir'],
+                    cwd=artifacts["output_dir"],
                     check=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
                 )
-                assert os.path.isfile(os.path.join(artifacts['output_dir'], 'libmachine.a'))
-                assert os.path.isfile(artifacts['build_files']['makefile'])
+                assert os.path.isfile(
+                    os.path.join(artifacts["output_dir"], "libmachine.a")
+                )
+                assert os.path.isfile(artifacts["build_files"]["makefile"])
 
-            if artifacts['cmake'] is not None:
-                built_entries = set(os.listdir(artifacts['build_dir']))
-                assert 'CMakeCache.txt' in built_entries
+            if artifacts["cmake"] is not None:
+                built_entries = set(os.listdir(artifacts["build_dir"]))
+                assert "CMakeCache.txt" in built_entries
+
+    def test_generated_machine_c99_gate_runs_representative_model(self):
+        with render_c_artifacts(_representative_gate_dsl()) as artifacts:
+            run = _compile_and_run_c_harness(
+                artifacts,
+                "representative_c99_gate",
+                textwrap.dedent(
+                    r"""
+                    #include "machine.h"
+                    #include <string.h>
+
+                    typedef struct HookLog {
+                        int boot_calls;
+                        int active_calls;
+                    } HookLog;
+
+                    static void boot_hook(
+                        ControlMachine *machine,
+                        const ControlMachineExecutionContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        HookLog *log = (HookLog *)user_data;
+                        (void)machine;
+                        if (strcmp(ctx->action_name, "Control.Boot") == 0) {
+                            log->boot_calls += 1;
+                        }
+                    }
+
+                    static void active_hook(
+                        ControlMachine *machine,
+                        const ControlMachineExecutionContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        HookLog *log = (HookLog *)user_data;
+                        (void)machine;
+                        if (
+                            strcmp(ctx->action_name, "Control.Active.ActiveEnter") == 0 &&
+                            strcmp(ctx->state_path, "Control.Active") == 0
+                        ) {
+                            log->active_calls += 1;
+                        }
+                    }
+
+                    int main(void)
+                    {
+                        ControlMachine machine;
+                        ControlMachineHooks hooks = CONTROLMACHINE_HOOKS_INIT;
+                        HookLog log = {0, 0};
+                        static const ControlMachineEventId start_events[] = {
+                            CONTROL_MACHINE_EVENT_CONTROL_IDLE_START
+                        };
+
+                        if (!ControlMachine_init(&machine)) {
+                            return 10;
+                        }
+                        hooks.on_Control_Boot = boot_hook;
+                        hooks.on_Control_Active_ActiveEnter = active_hook;
+                        ControlMachine_set_hooks(&machine, &hooks, &log);
+
+                        if (!ControlMachine_cycle(&machine, NULL, 0u)) {
+                            return 11;
+                        }
+                        if (strcmp(ControlMachine_current_state_path(&machine), "Control.Idle") != 0) {
+                            return 12;
+                        }
+                        if (ControlMachine_vars(&machine)->counter != (ControlMachineInt)1) {
+                            return 13;
+                        }
+                        if (log.boot_calls != 1 || log.active_calls != 0) {
+                            return 14;
+                        }
+
+                        if (!ControlMachine_cycle(&machine, start_events, 1u)) {
+                            return 15;
+                        }
+                        if (strcmp(ControlMachine_current_state_path(&machine), "Control.Active.Work") != 0) {
+                            return 16;
+                        }
+                        if (
+                            ControlMachine_vars(&machine)->ready != (ControlMachineInt)1 ||
+                            ControlMachine_vars(&machine)->counter != (ControlMachineInt)16 ||
+                            ControlMachine_vars(&machine)->gain != 2.0
+                        ) {
+                            return 17;
+                        }
+                        if (log.boot_calls != 1 || log.active_calls != 1) {
+                            return 18;
+                        }
+
+                        return 0;
+                    }
+                    """
+                ),
+            )
+            assert run.returncode == 0, run.stderr
+
+    def test_generated_machine_cpp98_gate_runs_representative_model(self):
+        with render_c_artifacts(_representative_gate_dsl()) as artifacts:
+            run = _compile_and_run_cpp_harness(
+                artifacts,
+                "representative_cpp98_gate",
+                textwrap.dedent(
+                    r"""
+                    #include "machine.h"
+                    #include <cstring>
+
+                    struct HookLog {
+                        int boot_calls;
+                        int active_calls;
+                    };
+
+                    static void boot_hook(
+                        ControlMachine *machine,
+                        const ControlMachineExecutionContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        HookLog *log = static_cast<HookLog *>(user_data);
+                        (void)machine;
+                        if (std::strcmp(ctx->action_name, "Control.Boot") == 0) {
+                            log->boot_calls += 1;
+                        }
+                    }
+
+                    static void active_hook(
+                        ControlMachine *machine,
+                        const ControlMachineExecutionContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        HookLog *log = static_cast<HookLog *>(user_data);
+                        (void)machine;
+                        if (
+                            std::strcmp(ctx->action_name, "Control.Active.ActiveEnter") == 0 &&
+                            std::strcmp(ctx->state_path, "Control.Active") == 0
+                        ) {
+                            log->active_calls += 1;
+                        }
+                    }
+
+                    int main()
+                    {
+                        ControlMachine machine;
+                        ControlMachineHooks hooks = CONTROLMACHINE_HOOKS_INIT;
+                        HookLog log = {0, 0};
+                        static const ControlMachineEventId start_events[] = {
+                            CONTROL_MACHINE_EVENT_CONTROL_IDLE_START
+                        };
+
+                        if (!ControlMachine_init(&machine)) {
+                            return 30;
+                        }
+                        hooks.on_Control_Boot = boot_hook;
+                        hooks.on_Control_Active_ActiveEnter = active_hook;
+                        ControlMachine_set_hooks(&machine, &hooks, &log);
+
+                        if (!ControlMachine_cycle(&machine, 0, 0u)) {
+                            return 31;
+                        }
+                        if (std::strcmp(ControlMachine_current_state_path(&machine), "Control.Idle") != 0) {
+                            return 32;
+                        }
+                        if (!ControlMachine_cycle(&machine, start_events, 1u)) {
+                            return 33;
+                        }
+                        if (std::strcmp(ControlMachine_current_state_path(&machine), "Control.Active.Work") != 0) {
+                            return 34;
+                        }
+                        if (
+                            ControlMachine_vars(&machine)->ready != (ControlMachineInt)1 ||
+                            ControlMachine_vars(&machine)->counter != (ControlMachineInt)16 ||
+                            ControlMachine_vars(&machine)->gain != 2.0
+                        ) {
+                            return 35;
+                        }
+                        if (log.boot_calls != 1 || log.active_calls != 1) {
+                            return 36;
+                        }
+
+                        return 0;
+                    }
+                    """
+                ),
+            )
+            assert run.returncode == 0, run.stderr
+
 
     def test_generated_machine_rolls_back_transition_effects_on_validation_failure(self):
         dsl_code = """

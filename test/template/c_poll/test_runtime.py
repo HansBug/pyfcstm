@@ -30,8 +30,87 @@ def _format_c_text(text, filename):
     ).stdout
 
 
+def _workflow_metadata_labels():
+    return [
+        ''.join(('p', 'r', '-', '3')),
+        ''.join(('issue', ' #', '209')),
+        ''.join(('road', 'map')),
+        ''.join(('review', ' ', 'round')),
+    ]
+
+
+def _normalized_lower_text(text):
+    lines = []
+    for line in text.lower().splitlines():
+        lines.append(line.strip().lstrip('/*').lstrip('*').strip())
+    return ' '.join(item for item in lines if item)
+
+
+def _first_c_comment_block(source):
+    start = source.find('/*')
+    end = source.find('*/', start)
+    assert start >= 0
+    assert end > start
+    return source[start:end + 2]
+
+
+def _assert_generated_c_banner(source, *, template_name, root_name, extra_terms=None):
+    banner = _first_c_comment_block(source)
+    lower_banner = _normalized_lower_text(banner)
+    assert 'generated' in lower_banner
+    assert '`{name}` template'.format(name=template_name) in lower_banner
+    assert root_name in banner
+    assert 'do not edit generated source directly' in lower_banner
+    assert 'change the fcstm dsl/model and regenerate' in lower_banner
+    assert 'self-contained' in lower_banner
+    assert (
+        'does not depend on pyfcstm' in lower_banner
+        or 'does not require pyfcstm' in lower_banner
+    )
+    assert 'third-party runtime packages' in lower_banner
+    for term in extra_terms or []:
+        assert term.lower() in lower_banner
+
+    lower_source = source.lower()
+    for label in _workflow_metadata_labels():
+        assert label not in lower_source
+
+
 @pytest.mark.unittest
 class TestCPollBuiltinTemplate:
+    def test_generated_machine_source_banners_document_file_contract(self):
+        dsl_code = """
+        def int counter = 0;
+        state Root {
+            state A {
+                during { counter = counter + 1; }
+            }
+            state B;
+            [*] -> A;
+            A -> B :: Go;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            with open(artifacts['machine_h_file'], 'r', encoding='utf-8') as f:
+                header = f.read()
+            with open(artifacts['machine_c_file'], 'r', encoding='utf-8') as f:
+                source = f.read()
+
+            _assert_generated_c_banner(
+                header,
+                template_name='c_poll',
+                root_name='Root',
+                extra_terms=['public integration header', 'event-check polling'],
+            )
+            _assert_generated_c_banner(
+                source,
+                template_name='c_poll',
+                root_name='Root',
+                extra_terms=['implementation', 'event-check polling'],
+            )
+            assert source.index('/*') < source.index('#include "machine.h"')
+
     def test_generated_machine_runs_cycle_and_event_transition(self):
         dsl_code = """
         def int counter = 0;

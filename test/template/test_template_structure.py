@@ -89,6 +89,12 @@ _BANNED_SOURCE_WORDING = (
     "raw source",
     "raw dsl source",
     "original dsl source",
+    "原始 dsl",
+    "原始 dsl 源码",
+    "原始 source",
+    "原始源码",
+    "原始源代码",
+    "raw 源码",
 )
 
 
@@ -129,15 +135,27 @@ def representative_model():
 def rendered_templates(representative_model):
     with TemporaryDirectory() as td:
         output_root = Path(td)
-        rendered = {}
-        for name in _CURRENT_TEMPLATE_NAMES:
-            output_dir = output_root / name
-            StateMachineCodeRenderer(str(_TEMPLATES_DIR / name)).render(
-                model=representative_model,
-                output_dir=str(output_dir),
-            )
-            rendered[name] = output_dir
-        yield rendered
+        yield _render_template_directories(
+            {name: _TEMPLATES_DIR / name for name in _CURRENT_TEMPLATE_NAMES},
+            representative_model,
+            output_root,
+        )
+
+
+@pytest.fixture(scope="session")
+def extracted_rendered_templates(representative_model):
+    with TemporaryDirectory() as extraction_td, TemporaryDirectory() as render_td:
+        extraction_root = Path(extraction_td)
+        output_root = Path(render_td)
+        template_dirs = {
+            name: Path(extract_template(name, str(extraction_root / name)))
+            for name in _CURRENT_TEMPLATE_NAMES
+        }
+        yield _render_template_directories(
+            template_dirs,
+            representative_model,
+            output_root,
+        )
 
 
 def _repository_template_names():
@@ -170,10 +188,23 @@ def _ignore_spec(config):
     return pathspec.GitIgnoreSpec.from_lines(config.get("ignores", []))
 
 
+def _render_template_directories(template_dirs, model, output_root):
+    rendered = {}
+    for name, template_dir in template_dirs.items():
+        output_dir = output_root / name
+        StateMachineCodeRenderer(str(template_dir)).render(
+            model=model,
+            output_dir=str(output_dir),
+        )
+        rendered[name] = output_dir
+    return rendered
+
+
 def _first_c_comment_block(source):
     start = source.find("/*")
     end = source.find("*/", start)
     assert start >= 0
+    assert source[:start].strip() == ""
     assert end > start
     return source[start : end + 2]
 
@@ -223,6 +254,42 @@ def _assert_c_runtime_includes_are_self_contained(source):
     assert include_targets
     assert set(include_targets) <= _ALLOWED_C_RUNTIME_INCLUDES
     assert not (set(include_targets) & set(_BANNED_RUNTIME_DEPENDENCIES))
+
+
+def _assert_rendered_template_contracts(rendered_templates):
+    python_source = _read_text(rendered_templates["python"] / "machine.py")
+    python_docstring = ast.get_docstring(ast.parse(python_source))
+    assert python_docstring is not None
+    _assert_banner_terms(python_docstring, template_name="python", root_name="Control")
+    _assert_source_context_terms(python_docstring)
+    _assert_source_context_terms(_read_text(rendered_templates["python"] / "README.md"))
+    _assert_source_context_terms(
+        _read_text(rendered_templates["python"] / "README_zh.md")
+    )
+    _assert_python_runtime_imports_are_self_contained(python_source)
+
+    for name in ["c", "c_poll"]:
+        header_source = _read_text(rendered_templates[name] / "machine.h")
+        runtime_source = _read_text(rendered_templates[name] / "machine.c")
+        _assert_banner_terms(
+            _first_c_comment_block(header_source),
+            template_name=name,
+            root_name="Control",
+        )
+        _assert_banner_terms(
+            _first_c_comment_block(runtime_source),
+            template_name=name,
+            root_name="Control",
+        )
+        for generated_text in [
+            header_source,
+            runtime_source,
+            _read_text(rendered_templates[name] / "README.md"),
+            _read_text(rendered_templates[name] / "README_zh.md"),
+        ]:
+            _assert_source_context_terms(generated_text)
+        _assert_c_runtime_includes_are_self_contained(header_source)
+        _assert_c_runtime_includes_are_self_contained(runtime_source)
 
 
 @pytest.mark.unittest
@@ -318,40 +385,10 @@ def test_template_readmes_keep_maintainer_and_generated_guidance_separate(
 @pytest.mark.unittest
 def test_generated_sources_preserve_banner_source_context_and_dependency_boundary(
     rendered_templates,
+    extracted_rendered_templates,
 ):
-    python_source = _read_text(rendered_templates["python"] / "machine.py")
-    python_docstring = ast.get_docstring(ast.parse(python_source))
-    assert python_docstring is not None
-    _assert_banner_terms(python_docstring, template_name="python", root_name="Control")
-    _assert_source_context_terms(python_docstring)
-    _assert_source_context_terms(_read_text(rendered_templates["python"] / "README.md"))
-    _assert_source_context_terms(
-        _read_text(rendered_templates["python"] / "README_zh.md")
-    )
-    _assert_python_runtime_imports_are_self_contained(python_source)
-
-    for name in ["c", "c_poll"]:
-        header_source = _read_text(rendered_templates[name] / "machine.h")
-        runtime_source = _read_text(rendered_templates[name] / "machine.c")
-        _assert_banner_terms(
-            _first_c_comment_block(header_source),
-            template_name=name,
-            root_name="Control",
-        )
-        _assert_banner_terms(
-            _first_c_comment_block(runtime_source),
-            template_name=name,
-            root_name="Control",
-        )
-        for generated_text in [
-            header_source,
-            runtime_source,
-            _read_text(rendered_templates[name] / "README.md"),
-            _read_text(rendered_templates[name] / "README_zh.md"),
-        ]:
-            _assert_source_context_terms(generated_text)
-        _assert_c_runtime_includes_are_self_contained(header_source)
-        _assert_c_runtime_includes_are_self_contained(runtime_source)
+    _assert_rendered_template_contracts(rendered_templates)
+    _assert_rendered_template_contracts(extracted_rendered_templates)
 
 
 @pytest.mark.unittest

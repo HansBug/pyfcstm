@@ -15,6 +15,19 @@ from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.template import extract_template
 
 
+def _workflow_metadata_labels():
+    return [
+        ''.join(('p', 'r', '-', '3')),
+        ''.join(('issue', ' #', '209')),
+        ''.join(('road', 'map')),
+        ''.join(('review', ' ', 'round')),
+    ]
+
+
+def _normalized_lower_text(text):
+    return ' '.join(text.lower().split())
+
+
 @contextmanager
 def _render_python_artifacts(dsl_code, module_name='generated_python'):
     ast_node = parse_with_grammar_entry(
@@ -51,6 +64,38 @@ def _render_python_module(dsl_code, module_name='generated_python'):
 
 @pytest.mark.unittest
 class TestPythonBuiltinTemplate:
+    def test_generated_machine_source_banner_documents_file_contract(self):
+        dsl_code = """
+        def int counter = 0;
+        state System {
+            state Idle {
+                during { counter = counter + 1; }
+            }
+            state Running;
+            [*] -> Idle;
+            Idle -> Running :: Start;
+        }
+        """
+
+        with _render_python_artifacts(dsl_code) as artifacts:
+            with open(artifacts['machine_file'], 'r', encoding='utf-8') as f:
+                source = f.read()
+
+            module_docstring = ast.get_docstring(ast.parse(source))
+            assert module_docstring is not None
+            normalized_docstring = _normalized_lower_text(module_docstring)
+            assert 'auto-generated' in normalized_docstring
+            assert '``python`` built-in template' in normalized_docstring
+            assert 'System' in module_docstring
+            assert 'SystemMachine' in module_docstring
+            assert 'do not edit generated source directly' in normalized_docstring
+            assert 'change the fcstm dsl/model and regenerate' in normalized_docstring
+            assert 'self-contained' in normalized_docstring
+            assert 'does not require ``pyfcstm``' in normalized_docstring
+            assert 'third-party runtime packages' in normalized_docstring
+            for label in _workflow_metadata_labels():
+                assert label not in source.lower()
+
     def test_generated_machine_runs_cycle_and_event_transition(self):
         dsl_code = """
         def int counter = 0;

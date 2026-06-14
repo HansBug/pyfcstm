@@ -1,9 +1,11 @@
 /*
  * Generated C99 state machine runtime for {{ model.root_state.name }}.
  *
- * This header is emitted by the built-in `c` template and pairs with
- * `machine.c`. The generated runtime is self-contained and does not depend on
- * pyfcstm at runtime.
+ * This public integration header is emitted by the built-in `c` template and
+ * pairs with `machine.c`. Do not edit generated source directly; change the
+ * FCSTM DSL/model and regenerate this file instead. The generated runtime is
+ * self-contained and does not depend on pyfcstm or third-party runtime
+ * packages.
  */
 
 #ifndef {{ machine_header_guard(model) }}

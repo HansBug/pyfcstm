@@ -176,7 +176,7 @@ Before adding a new built-in template directory, confirm all items below:
 
 Use the smallest verification set that covers the change:
 
-- Root handbook-only changes: run README structure tests; `make tpl` is not needed.
+- Root handbook-only changes: run README structure review and self-check; `make tpl` is not needed.
 - Template source changes under `templates/<name>/`: run `make tpl` and template-specific tests.
 - Generated runtime source-template changes: generate representative outputs, run formatter/build/runtime checks, and verify generated README examples where applicable.
 - Python public API or pydoc changes: run `make rst_auto` and review generated RST diffs.

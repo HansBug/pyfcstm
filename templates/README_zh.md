@@ -142,7 +142,7 @@ Generated runtime files 默认必须严格 self-contained：
 - 优先使用目标语言 core features 和长期稳定的 standard library 能力。
 - 保持广泛版本和平台兼容。现有期望包括：`python` 模板支持 Python 3.7+，C implementation 使用 C99，C header / harness 保持 C++98-compatible integration paths。
 
-Generated implementation files 应优先服务模型语义、可预测执行和 runtime performance。对 `machine.py`、`machine.c` 这类实现文件来说，人工可读性是次要目标。`machine.h` 这类 public integration surfaces 会被下游集成者阅读，应保持清晰。
+Generated implementation files 应优先服务模型语义、可预测执行和运行时性能（runtime performance）。对 `machine.py`、`machine.c` 这类实现文件来说，人工可读性是次要目标。`machine.h` 这类 public integration surfaces 会被下游集成者阅读，应保持清晰。
 
 已经定义的 formatter 和 linter checks 仍然必须通过。它们的目的，是让生成输出看起来专业并避免明显集成阻力。不要为了风格偏好而扭曲 generated runtime design，尤其不能牺牲性能或语义。
 
@@ -176,7 +176,7 @@ Generated implementation files 应优先服务模型语义、可预测执行和 
 
 根据改动范围选择最小但足够的验证集：
 
-- 只改根手册：运行 README structure tests；不需要 `make tpl`。
+- 只改根手册：执行 README structure review 和 self-check；不需要 `make tpl`。
 - 改 `templates/<name>/` 下模板源码：运行 `make tpl` 和对应模板测试。
 - 改 generated runtime source-template：生成代表性输出，运行 formatter/build/runtime checks，并在适用时验证 generated README examples。
 - 改 Python public API 或 pydoc：运行 `make rst_auto` 并审阅生成的 RST diff。

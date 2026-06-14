@@ -119,12 +119,23 @@ pytest test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
 # Fast path: skip native-toolchain template tests (test/template/c, test/template/c_poll)
 # which invoke real cmake/cc per case and consume ~85% of unittest wall time.
 SKIP_SLOW_TESTS=1 make unittest          # ~24s vs ~174s full local (~7x faster)
+
+# Template-specific checks. Use these instead of SKIP_SLOW_TESTS when a change
+# touches the corresponding built-in template so its own generated-runtime tests
+# actually run.
+make unittest RANGE_DIR=template/python
+make unittest RANGE_DIR=template/c
+make unittest RANGE_DIR=template/c_poll
 ```
 
 The `SKIP_SLOW_TESTS=1` env var is read by [test/conftest.py](test/conftest.py). It auto-skips every test under
 [test/template/c/](test/template/c/) and [test/template/c_poll/](test/template/c_poll/) — these are the tests that
 compile C/C++ via cmake. Use it for iteration cycles that don't touch generated C runtime. The Python template,
 simulator, model, DSL, render, and verify tests all still run.
+
+When validating template changes, prefer the narrowest template command that matches the touched runtime. Do not claim a
+C or `c_poll` template change is verified by a `SKIP_SLOW_TESTS=1` run, because that mode intentionally skips those
+native-toolchain checks.
 
 ### CI Workflow Commit-Message Triggers
 
@@ -327,6 +338,10 @@ Mandatory completion rule for built-in template work:
   `SimulationRuntime`, but `ruff format --check` only wants stylistic wrapping of that extreme expression, treat that
   as a non-blocking formatter-only concern unless the task explicitly targets formatter convergence for that shape. Do
   not add complex generation machinery solely to silence weak formatter-only rewrites.
+- For non-Python built-in templates, apply the same practical bar: formatter checks should prevent obviously untidy,
+  inconsistent, or hard-to-maintain generated code for representative outputs, not become an absolute proof obligation
+  for every legal DSL edge case. If an extreme case compiles, runs, and aligns semantically but only exposes a weak
+  formatter preference, document it as non-blocking instead of adding disproportionate generation complexity.
 - Template-facing documentation artifacts that ship with the generated output, especially generated `README.md` / `README_zh.md` files and their embedded code snippets, must also be kept formatter-friendly for the relevant language and text formatter set.
 - For template changes, "done" means representative generated outputs have converged under the intended formatter flow,
   semantic alignment tests pass, and any known formatter-only exceptions are explicitly documented as non-blocking with

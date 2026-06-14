@@ -134,6 +134,43 @@ Documentation must stay layered so template maintainers and generated-code users
 
 A person or LLM that only sees a generated directory should be able to use the generated runtime from the generated README without knowing how the repository template system works.
 
+## Generated README authoring rules
+
+Generated `README.md.j2` and `README_zh.md.j2` files are user-facing runtime
+guides, not template-maintainer notes. Treat them as executable onboarding
+contracts for people and LLMs that only have the generated directory.
+
+When editing generated README templates:
+
+- Render at least one moderately complex checked-in FCSTM fixture that includes
+  persistent variables, events, nested states, lifecycle behavior, and abstract
+  hooks when the target template supports them.
+- From the generated directory alone, write a small downstream program by
+  following the generated README. For compiled languages, compile and run that
+  program with the generated sources. For interpreted languages, import and run
+  the generated module from outside the repository test helpers.
+- Verify the downstream program exercises cold start, at least one eventful
+  cycle when events exist, state/variable inspection, and hook or event-check
+  installation when the generated model declares those extension points.
+- Keep snippets copy-adaptable. Do not reference an undefined callback,
+  variable, event-check field, hook field, include, or import unless the snippet
+  is explicitly marked as schematic and points to a complete example nearby.
+- For `c_poll`, every runnable cycle example for an eventful model must explain
+  that a complete `EventChecks` table is required before `cycle()`. Partial
+  tables are a runtime error, so examples must not imply that setting one field
+  is enough for every generated model.
+- Use canonical / normalized model export wording for text generated from
+  `model.to_ast_node()`. Do not call it raw or original source.
+- Keep generated README files focused on the generated runtime: file layout,
+  model text, model summary, variables, events, hooks, cold start, hot start,
+  cycle input, current-state/variable inspection, errors, and a complete
+  minimal flow. Renderer internals, packaging mechanics, and template
+  governance belong in root or template-level maintainer handbooks.
+
+If a generated README example cannot be used to produce a small working
+consumer program after straightforward identifier substitution, fix the README
+template before claiming the template change is complete.
+
 ## Generated runtime policy
 
 Generated runtime files must be strictly self-contained by default:
@@ -149,6 +186,8 @@ Generated implementation files should be optimized for model semantics, predicta
 Formatter and linter checks are still required where defined. Their purpose is to make generated output look professional and avoid obvious integration friction. This is a pragmatic quality gate, not an unlimited pursuit of style perfection. Do not contort generated runtime design solely to satisfy a stylistic preference when it would harm performance, semantics, compatibility, or simulator/template alignment. If a rare formatter-only exception is accepted, document it narrowly with the runtime and compatibility reason.
 
 This policy applies equally to existing formatter flows and future ones. New templates must not define stricter formatter rules that force maintainers to over-optimize extreme edge cases unrelated to visible behavior or integration quality.
+
+For target languages that manage memory or other resources explicitly, template maintainers must also treat resource lifetime as part of runtime correctness. Generated runtimes can be embedded in long-running control systems, so generated code must have a clear ownership model for allocations, initialization, hot start, cycle execution, hook/event-check registration, and destruction. C/C++ templates and future native or resource-owning templates should run representative sanitizer, leak-check, valgrind, or equivalent harnesses when runtime source templates change. If an existing leak or resource-lifetime issue is discovered outside the current change scope, record it with a reproducible harness instead of silently ignoring it.
 
 ## Source context contract
 
@@ -172,6 +211,7 @@ Before adding a new built-in template directory, confirm all items below:
 - Add generated source templates with generated-file banners near the first real output.
 - Keep generated runtime self-contained: no `pyfcstm runtime`, no third-party runtime dependency, no unstable runtime dependency.
 - Define target-language compatibility, formatter, build, and test gates; formatter gates must be documented as pragmatic quality checks, not absolute style goals.
+- For templates in languages with explicit resource ownership, define resource-lifetime and leak-check expectations alongside build and runtime gates.
 - Add representative generated-runtime tests and, when applicable, simulator alignment tests.
 - Run packaging checks so `pyfcstm/template/index.json`, zip archives, and `extract_template` agree with source templates.
 - Update this handbook only when the repository-wide contract changes; update the template-level README when only one template changes.

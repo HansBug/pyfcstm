@@ -38,6 +38,12 @@
 
 生成代码可以在 runtime 需要时使用长期稳定的 C 标准头，例如 `<stddef.h>`、`<math.h>`、`<stdarg.h>`、`<stdio.h>`、`<stdlib.h>` 和 `<string.h>`。
 
+## 资源生命周期与泄漏策略
+
+Generated C runtime 可能被嵌入长期稳定运行的控制系统，因此内存和资源 ownership 是 runtime correctness 问题，不是可选优化。Generated API 应保持 ownership 简单清楚：`..._create()` 负责 allocation，`..._destroy()` 负责释放，`..._init()` 和 `..._hot_start()` 重置 runtime state 时不能泄漏，hook registration 只保存调用方拥有的指针而不接管 ownership。Runtime 改动必须保持这个 contract。
+
+修改 `machine.c.j2` 或 `machine.h.j2` 中与 allocation 相关的部分时，在工具可用的情况下，至少用一个代表性 generated harness 跑 AddressSanitizer / LeakSanitizer、valgrind 或等价平台工具。Harness 应覆盖 create/destroy、cold start、hot start、normal cycles、eventful cycles、hook installation，以及与改动相关的 error/rollback paths。若发现明显早于当前改动的 leak，应记录复现方式并拆给专门修复，而不是静默忽略。
+
 ## 公开集成面
 
 `machine.h` 是公开集成面，应保持小、清楚且稳定。它负责：
@@ -106,7 +112,7 @@ C runtime tests 和 alignment tests 是行为权威。模板 README 改动不改
 2. 提交仓库改动前运行 `make rst_auto`。本 README 通常不应触发 generated RST diff。
 3. 修改 `templates/c/` 下任何文件后都运行 `make tpl`，包括本 README，因为 packaged built-in template archives 会包含模板源码目录。
 4. 检查 packaged asset 变化。README-only 改动应刷新本地生成的 `pyfcstm/template/c.zip` archive；由于 zip archives 在普通 checkout 中被 git 忽略，tracked `pyfcstm/template/index.json` 通常应保持内容等价。
-5. 修改 runtime template 时，生成代表性 machine，并运行 C99 build checks、C++98 integration checks、formatter convergence checks 和 simulator-alignment tests。
+5. 修改 runtime template 时，生成代表性 machine，并运行 C99 build checks、C++98 integration checks、formatter convergence checks、可用时的 sanitizer 或等价 leak checks，以及 simulator-alignment tests。
 
 常用命令：
 

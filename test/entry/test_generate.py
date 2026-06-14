@@ -177,7 +177,7 @@ class TestEntryGenerate:
             with open(os.path.join(td, "machine.py"), "r") as f:
                 content = f.read()
             assert "class TrafficLightMachine" in content
-            assert "Original DSL Source" in content
+            assert "Canonical Model Export" in content
             assert "Abstract Hook Map" in content
 
             with open(os.path.join(td, "README.md"), "r", encoding="utf-8") as f:

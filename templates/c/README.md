@@ -56,6 +56,12 @@ Generated code may use long-lived C standard headers such as `<stddef.h>`,
 `<math.h>`, `<stdarg.h>`, `<stdio.h>`, `<stdlib.h>`, and `<string.h>` when the
 runtime requires them.
 
+## Resource lifetime and leak policy
+
+Generated C runtimes may be embedded in long-running control systems, so memory and resource ownership are runtime correctness concerns, not optional polish. The generated API should keep ownership simple: `..._create()` owns allocation, `..._destroy()` releases it, `..._init()` and `..._hot_start()` reset runtime state without leaking, and hook registration stores caller-owned pointers without taking ownership. Runtime changes must preserve this contract.
+
+When `machine.c.j2` or allocation-related parts of `machine.h.j2` change, run at least one representative generated harness under AddressSanitizer / LeakSanitizer, valgrind, or an equivalent platform tool when available. The harness should cover create/destroy, cold start, hot start, normal cycles, eventful cycles, hook installation, and error/rollback paths that are relevant to the change. If a leak is discovered and clearly predates the current change, record the reproduction and scope it for a dedicated fix instead of hiding it.
+
 ## Public integration surface
 
 `machine.h` is the public integration surface and should stay small, clear, and
@@ -152,8 +158,9 @@ Use the smallest verification set that matches the change:
    normal checkouts, the tracked `pyfcstm/template/index.json` should normally
    stay content-equivalent.
 5. For runtime template changes, generate representative machines and run C99
-   build checks, C++98 integration checks, formatter convergence checks, and
-   simulator-alignment tests.
+   build checks, C++98 integration checks, formatter convergence checks,
+   sanitizer or equivalent leak checks where available, and simulator-alignment
+   tests.
 
 Useful commands:
 

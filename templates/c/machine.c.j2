@@ -208,7 +208,7 @@ enum {
     {{ machine_macro_name(model) }}_ACTION_KIND_ABSTRACT = 2
 };
 
-/* Embedded original DSL source for diagnostics and README cross-reference. */
+/* Embedded canonical model export for diagnostics and README cross-reference. */
 {% set dsl_source = model.to_ast_node() | string %}
 static const char *_{{ machine_class_name(model) }}_dsl_source =
 {% if dsl_source -%}

@@ -201,7 +201,7 @@ typedef struct _{{ machine_class_name(model) }}EventSet {
     unsigned long evaluated_bitset[{{ machine_macro_name(model) }}_EVENTSET_BITSET_WORDS_INTERNAL];
 } _{{ machine_class_name(model) }}EventSet;
 
-static const _{{ machine_class_name(model) }}StateInfo _{{ machine_class_name(model) }}_state_info[];
+static const _{{ machine_class_name(model) }}StateInfo _{{ machine_class_name(model) }}_state_info[{{ machine_macro_name(model) }}_STATE_COUNT_INTERNAL];
 static int _{{ machine_class_name(model) }}_event_id_is_valid(int event_id);
 
 enum {
@@ -209,7 +209,7 @@ enum {
     {{ machine_macro_name(model) }}_ACTION_KIND_ABSTRACT = 2
 };
 
-/* Embedded original DSL source for diagnostics and README cross-reference. */
+/* Embedded canonical model export for diagnostics and README cross-reference. */
 {% set dsl_source = model.to_ast_node() | string %}
 static const char *_{{ machine_class_name(model) }}_dsl_source =
 {% if dsl_source -%}

@@ -1,9 +1,16 @@
 import os.path
+import subprocess
+import sys
 
 import pytest
 from hbutils.system import TemporaryDirectory
 
-from pyfcstm.template import list_templates, has_template, get_template_info, extract_template
+from pyfcstm.template import (
+    list_templates,
+    has_template,
+    get_template_info,
+    extract_template,
+)
 
 
 @pytest.mark.unittest
@@ -80,3 +87,50 @@ class TestBuiltinTemplateModule:
         with TemporaryDirectory() as td:
             with pytest.raises(LookupError):
                 extract_template("not_exists", td)
+
+    def test_source_install_extracts_builtin_template_outside_checkout(self):
+        with TemporaryDirectory() as build_root:
+            install_dir = os.path.join(build_root, "install")
+            command = [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--quiet",
+                "--no-deps",
+                "--target",
+                install_dir,
+                ".",
+            ]
+            subprocess.run(
+                command,
+                cwd=os.path.abspath(
+                    os.path.join(os.path.dirname(__file__), "..", "..")
+                ),
+                check=True,
+            )
+
+            probe_code = (
+                "import os\n"
+                "from tempfile import TemporaryDirectory\n"
+                "from pyfcstm.template import extract_template\n"
+                "with TemporaryDirectory() as td:\n"
+                "    path = extract_template('python', td)\n"
+                "    assert os.path.basename(path) == 'python', path\n"
+                "    assert os.path.isfile(os.path.join(path, 'config.yaml')), path\n"
+                "    assert os.path.isfile(os.path.join(path, 'machine.py.j2')), path\n"
+                "    print('ok')\n"
+            )
+            probe = subprocess.run(
+                [sys.executable, "-c", probe_code],
+                cwd=build_root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env={
+                    **os.environ,
+                    "PYTHONPATH": install_dir,
+                },
+            )
+            assert probe.stdout.strip() == "ok"

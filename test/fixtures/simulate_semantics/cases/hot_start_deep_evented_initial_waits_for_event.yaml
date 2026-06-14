@@ -1,0 +1,121 @@
+schema_version: 1
+id: hot_start_deep_evented_initial_waits_for_event
+title: Hot-started deep composite waits after eventless initial chain reaches an event gate
+source:
+  fcstm: hot_start_deep_evented_initial_waits_for_event.fcstm
+origin:
+  files:
+  - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
+  - test/template/python/test_semantic_fixture_alignment.py::test_generated_python_alignment_semantic_fixture
+  docs:
+  - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694439541
+  - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694781586
+  assertion_types:
+  - initial
+  - state
+  - vars
+  - stack
+  - cycle_result
+  notes:
+  - Covers a hot-start composite whose eventless initial chain reaches a nested evented initial boundary.
+  - The same fixture absorbs the deep matrix and medium nesting duplicate controls for this behavior.
+categories:
+- runtime
+- template_alignment
+- hot_start
+- validation
+- lifecycle
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: Root.Gate
+  vars:
+    trace: 0
+    branch: 0
+steps:
+- expect_initial:
+    state:
+    - Root
+    - Gate
+    vars:
+      trace: 0
+      branch: 0
+    ended: false
+    stack:
+    - path:
+      - Root
+      mode: active
+    - path:
+      - Root
+      - Gate
+      mode: init_wait
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - Gate
+    vars:
+      trace: 0
+      branch: 0
+    ended: false
+    stack:
+    - path:
+      - Root
+      mode: active
+    - path:
+      - Root
+      - Gate
+      mode: init_wait
+    cycle_result:
+      value: null
+      input_events: []
+      consumed_events: []
+      unconsumed_events: []
+- cycle:
+    events:
+    - Root.Gate.Prep.Wait.Unlock
+  expect:
+    state:
+    - Root
+    - Gate
+    - Prep
+    - Wait
+    - Armed
+    vars:
+      trace: 21345
+      branch: 0
+    ended: false
+    stack:
+    - path:
+      - Root
+      mode: active
+    - path:
+      - Root
+      - Gate
+      mode: active
+    - path:
+      - Root
+      - Gate
+      - Prep
+      mode: active
+    - path:
+      - Root
+      - Gate
+      - Prep
+      - Wait
+      mode: active
+    - path:
+      - Root
+      - Gate
+      - Prep
+      - Wait
+      - Armed
+      mode: active
+    cycle_result:
+      value: null
+      input_events:
+      - Root.Gate.Prep.Wait.Unlock
+      consumed_events:
+      - Root.Gate.Prep.Wait.Unlock
+      unconsumed_events: []

@@ -1,0 +1,416 @@
+schema_version: 1
+id: abstract_hook_ref_context_reports_callsite_metadata
+title: Abstract hook ref context reports callsite metadata
+source:
+  fcstm: abstract_hook_ref_context_reports_callsite_metadata.fcstm
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/pull/205
+  - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694000657
+  assertion_types:
+  - handler_calls
+  - state
+  - vars
+  notes:
+  - Canonical ref/aspect context alignment case for generated Python runtime.
+categories:
+- runtime
+- template_alignment
+- abstract
+- lifecycle
+runners:
+- simulation
+- generated_python_alignment
+initial:
+  state: null
+  vars: null
+handlers:
+- action: Root.Library.SharedEnter
+  behavior: record_call
+- action: Root.Library.SharedDuring
+  behavior: record_call
+- action: Root.Library.SharedExit
+  behavior: record_call
+- action: Root.ObserveBefore
+  behavior: record_call
+- action: Root.ObserveAfter
+  behavior: record_call
+- action: Root.B.EnterB
+  behavior: record_call
+- action: Root.B.DuringB
+  behavior: record_call
+- action: Root.B.ExitB
+  behavior: record_call
+- action: Root.Gate.ObserveGate
+  behavior: record_call
+- action: Root.Gate.C.EnterC
+  behavior: record_call
+steps:
+- cycle: {}
+  expect:
+    state:
+    - Root
+    - A
+    vars:
+      trace: 1
+      branch: 1
+    ended: false
+    cycle_result:
+      value: null
+    handler_calls:
+    - action: Root.Library.SharedExit
+      state: Root.A
+      stage: enter
+      vars:
+        trace: 0
+        branch: 0
+      active_leaf:
+      - Root
+      - A
+      call_stage: enter
+      abstract_target: Root.Library.SharedExit
+      named_ref: Root.A.FirstRef
+    - action: Root.ObserveBefore
+      state: Root.A
+      stage: during
+      vars:
+        trace: 0
+        branch: 0
+      active_leaf:
+      - Root
+      - A
+      call_stage: during
+      abstract_target: Root.ObserveBefore
+      named_ref: null
+    - action: Root.Library.SharedEnter
+      state: Root.A
+      stage: during
+      vars:
+        trace: 0
+        branch: 0
+      active_leaf:
+      - Root
+      - A
+      call_stage: during
+      abstract_target: Root.Library.SharedEnter
+      named_ref: null
+    - action: Root.ObserveAfter
+      state: Root.A
+      stage: during
+      vars:
+        trace: 1
+        branch: 1
+      active_leaf:
+      - Root
+      - A
+      call_stage: during
+      abstract_target: Root.ObserveAfter
+      named_ref: null
+- cycle:
+    events:
+    - Root.A.Go
+  expect:
+    state:
+    - Root
+    - B
+    vars:
+      trace: 12
+      branch: 11
+    ended: false
+    cycle_result:
+      value: null
+    handler_calls:
+    - action: Root.Library.SharedExit
+      state: Root.A
+      stage: enter
+      vars:
+        trace: 0
+        branch: 0
+      active_leaf:
+      - Root
+      - A
+      call_stage: enter
+      abstract_target: Root.Library.SharedExit
+      named_ref: Root.A.FirstRef
+    - action: Root.ObserveBefore
+      state: Root.A
+      stage: during
+      vars:
+        trace: 0
+        branch: 0
+      active_leaf:
+      - Root
+      - A
+      call_stage: during
+      abstract_target: Root.ObserveBefore
+      named_ref: null
+    - action: Root.Library.SharedEnter
+      state: Root.A
+      stage: during
+      vars:
+        trace: 0
+        branch: 0
+      active_leaf:
+      - Root
+      - A
+      call_stage: during
+      abstract_target: Root.Library.SharedEnter
+      named_ref: null
+    - action: Root.ObserveAfter
+      state: Root.A
+      stage: during
+      vars:
+        trace: 1
+        branch: 1
+      active_leaf:
+      - Root
+      - A
+      call_stage: during
+      abstract_target: Root.ObserveAfter
+      named_ref: null
+    - action: Root.Library.SharedDuring
+      state: Root.A
+      stage: exit
+      vars:
+        trace: 1
+        branch: 1
+      active_leaf:
+      - Root
+      - A
+      call_stage: exit
+      abstract_target: Root.Library.SharedDuring
+      named_ref: null
+    - action: Root.B.EnterB
+      state: Root.B
+      stage: enter
+      vars:
+        trace: 1
+        branch: 1
+      active_leaf:
+      - Root
+      - B
+      call_stage: enter
+      abstract_target: Root.B.EnterB
+      named_ref: null
+    - action: Root.ObserveBefore
+      state: Root.B
+      stage: during
+      vars:
+        trace: 1
+        branch: 1
+      active_leaf:
+      - Root
+      - B
+      call_stage: during
+      abstract_target: Root.ObserveBefore
+      named_ref: null
+    - action: Root.B.DuringB
+      state: Root.B
+      stage: during
+      vars:
+        trace: 1
+        branch: 1
+      active_leaf:
+      - Root
+      - B
+      call_stage: during
+      abstract_target: Root.B.DuringB
+      named_ref: null
+    - action: Root.ObserveAfter
+      state: Root.B
+      stage: during
+      vars:
+        trace: 12
+        branch: 11
+      active_leaf:
+      - Root
+      - B
+      call_stage: during
+      abstract_target: Root.ObserveAfter
+      named_ref: null
+- cycle:
+    events:
+    - Root.B.ToGate
+  expect:
+    state:
+    - Root
+    - Gate
+    - C
+    vars:
+      trace: 1243
+      branch: 111
+    ended: false
+    cycle_result:
+      value: null
+    handler_calls:
+    - action: Root.Library.SharedExit
+      state: Root.A
+      stage: enter
+      vars:
+        trace: 0
+        branch: 0
+      active_leaf:
+      - Root
+      - A
+      call_stage: enter
+      abstract_target: Root.Library.SharedExit
+      named_ref: Root.A.FirstRef
+    - action: Root.ObserveBefore
+      state: Root.A
+      stage: during
+      vars:
+        trace: 0
+        branch: 0
+      active_leaf:
+      - Root
+      - A
+      call_stage: during
+      abstract_target: Root.ObserveBefore
+      named_ref: null
+    - action: Root.Library.SharedEnter
+      state: Root.A
+      stage: during
+      vars:
+        trace: 0
+        branch: 0
+      active_leaf:
+      - Root
+      - A
+      call_stage: during
+      abstract_target: Root.Library.SharedEnter
+      named_ref: null
+    - action: Root.ObserveAfter
+      state: Root.A
+      stage: during
+      vars:
+        trace: 1
+        branch: 1
+      active_leaf:
+      - Root
+      - A
+      call_stage: during
+      abstract_target: Root.ObserveAfter
+      named_ref: null
+    - action: Root.Library.SharedDuring
+      state: Root.A
+      stage: exit
+      vars:
+        trace: 1
+        branch: 1
+      active_leaf:
+      - Root
+      - A
+      call_stage: exit
+      abstract_target: Root.Library.SharedDuring
+      named_ref: null
+    - action: Root.B.EnterB
+      state: Root.B
+      stage: enter
+      vars:
+        trace: 1
+        branch: 1
+      active_leaf:
+      - Root
+      - B
+      call_stage: enter
+      abstract_target: Root.B.EnterB
+      named_ref: null
+    - action: Root.ObserveBefore
+      state: Root.B
+      stage: during
+      vars:
+        trace: 1
+        branch: 1
+      active_leaf:
+      - Root
+      - B
+      call_stage: during
+      abstract_target: Root.ObserveBefore
+      named_ref: null
+    - action: Root.B.DuringB
+      state: Root.B
+      stage: during
+      vars:
+        trace: 1
+        branch: 1
+      active_leaf:
+      - Root
+      - B
+      call_stage: during
+      abstract_target: Root.B.DuringB
+      named_ref: null
+    - action: Root.ObserveAfter
+      state: Root.B
+      stage: during
+      vars:
+        trace: 12
+        branch: 11
+      active_leaf:
+      - Root
+      - B
+      call_stage: during
+      abstract_target: Root.ObserveAfter
+      named_ref: null
+    - action: Root.B.ExitB
+      state: Root.B
+      stage: exit
+      vars:
+        trace: 12
+        branch: 11
+      active_leaf:
+      - Root
+      - B
+      call_stage: exit
+      abstract_target: Root.B.ExitB
+      named_ref: null
+    - action: Root.Gate.ObserveGate
+      state: Root.Gate
+      stage: during
+      vars:
+        trace: 124
+        branch: 11
+      active_leaf:
+      - Root
+      - Gate
+      call_stage: during
+      abstract_target: Root.Gate.ObserveGate
+      named_ref: null
+    - action: Root.Gate.C.EnterC
+      state: Root.Gate.C
+      stage: enter
+      vars:
+        trace: 124
+        branch: 11
+      active_leaf:
+      - Root
+      - Gate
+      - C
+      call_stage: enter
+      abstract_target: Root.Gate.C.EnterC
+      named_ref: null
+    - action: Root.ObserveBefore
+      state: Root.Gate.C
+      stage: during
+      vars:
+        trace: 124
+        branch: 11
+      active_leaf:
+      - Root
+      - Gate
+      - C
+      call_stage: during
+      abstract_target: Root.ObserveBefore
+      named_ref: null
+    - action: Root.ObserveAfter
+      state: Root.Gate.C
+      stage: during
+      vars:
+        trace: 1243
+        branch: 111
+      active_leaf:
+      - Root
+      - Gate
+      - C
+      call_stage: during
+      abstract_target: Root.ObserveAfter
+      named_ref: null

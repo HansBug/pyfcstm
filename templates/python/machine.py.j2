@@ -1,20 +1,35 @@
-{%- macro py_tuple(values) -%}
-({%- for value in values -%}{{ value | tojson }}{{ ", " if not loop.last else "" }}{%- endfor -%}{% if values | length == 1 %},{% endif %})
-{%- endmacro %}
 {%- macro state_key(state) -%}{{ state | state_path }}{%- endmacro %}
-{%- macro state_slug(state) -%}{{ state | state_slug }}{%- endmacro %}
-{%- macro action_method_name(state, kind, idx) -%}_action_{{ state_slug(state) }}_{{ kind }}_{{ idx }}{%- endmacro %}
+{%- set action_scan = namespace(items=[]) -%}
+{%- for scan_state in model.walk_states() -%}
+{%- for scan_group in [
+    scan_state.list_on_enters(with_ids=True),
+    scan_state.list_on_durings(aspect=None, with_ids=True),
+    scan_state.list_on_exits(with_ids=True),
+    scan_state.list_on_durings(aspect="before", with_ids=True),
+    scan_state.list_on_durings(aspect="after", with_ids=True),
+    scan_state.list_on_during_aspects(aspect="before", with_ids=True),
+    scan_state.list_on_during_aspects(aspect="after", with_ids=True),
+] -%}
+{%- for _, scan_item in scan_group -%}
+{%- set action_scan.items = action_scan.items + [scan_item] -%}
+{%- endfor -%}
+{%- endfor -%}
+{%- endfor -%}
+{%- set action_ref_hop_limit = (action_scan.items | length) + 1 -%}
+{%- macro state_path_ref(state) -%}_STATE_PATH_TUPLES[{{ state_items.index(state) }}]{%- endmacro %}
+{%- macro action_method_name(state, kind, idx) -%}_action_state_{{ state_items.index(state) }}_{{ kind }}_{{ idx }}{%- endmacro %}
 {%- macro init_transition_id(state, idx) -%}init:{{ state_key(state) }}:{{ idx }}{%- endmacro %}
 {%- macro normal_transition_id(state, idx) -%}transition:{{ state_key(state) }}:{{ idx }}{%- endmacro %}
-{%- macro init_guard_method_name(state, idx) -%}_guard_init_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
-{%- macro init_effect_method_name(state, idx) -%}_effect_init_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
-{%- macro transition_guard_method_name(state, idx) -%}_guard_transition_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
-{%- macro transition_effect_method_name(state, idx) -%}_effect_transition_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
+{%- macro init_guard_method_name(state, idx) -%}_guard_init_state_{{ state_items.index(state) }}_{{ idx }}{%- endmacro %}
+{%- macro init_effect_method_name(state, idx) -%}_effect_init_state_{{ state_items.index(state) }}_{{ idx }}{%- endmacro %}
+{%- macro transition_guard_method_name(state, idx) -%}_guard_transition_state_{{ state_items.index(state) }}_{{ idx }}{%- endmacro %}
+{%- macro transition_effect_method_name(state, idx) -%}_effect_transition_state_{{ state_items.index(state) }}_{{ idx }}{%- endmacro %}
 {%- macro abstract_hook_method_name(action) -%}{{ action | action_hook_name }}{%- endmacro %}
 {%- macro render_action_entry(state, item, method_kind, idx) -%}
-{%- set resolved = namespace(item=item) -%}
-{%- for _ in range(16) -%}
-{%- if resolved.item.ref is not none -%}
+{%- set resolved = namespace(item=item, seen=[]) -%}
+{%- for _ in range(action_ref_hop_limit) -%}
+{%- if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
+{%- set resolved.seen = resolved.seen + [resolved.item] -%}
 {%- set resolved.item = resolved.item.ref -%}
 {%- endif -%}
 {%- endfor -%}
@@ -23,9 +38,13 @@
     "method": {{ action_method_name(state, method_kind, idx) | tojson if not resolved.item.is_abstract else "None" }},
     "hook_method": {{ abstract_hook_method_name(resolved.item) | tojson if resolved.item.is_abstract else "None" }},
     "action_name": {{ resolved.item.func_name | tojson }},
-    "action_stage": {{ resolved.item.stage | tojson }},
-    "context_state_path": {{ py_tuple(state.path) }},
-    "owner_state_path": {{ py_tuple(resolved.item.parent.path) }},
+    "action_stage": {{ item.stage | tojson }},
+    "context_state_path": {{ state_path_ref(state) }},
+    "active_leaf": {{ state_path_ref(state) }},
+    "call_stage": {{ item.stage | tojson }},
+    "abstract_target": {{ resolved.item.func_name | tojson if resolved.item.is_abstract else "None" }},
+    "named_ref": {{ item.func_name | tojson if item.name is not none and item.ref is not none else "None" }},
+    "owner_state_path": {{ state_path_ref(resolved.item.parent) }},
     "dsl_snippet": {{ (resolved.item.to_ast_node() | string) | tojson }},
 }
 {%- endmacro %}
@@ -77,9 +96,10 @@ Abstract Hook Map:
     state.list_on_during_aspects(aspect='after', with_ids=True),
  ] -%}
 {% for _, item in group -%}
-{% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
-{% if resolved.item.ref is not none -%}
+{% set resolved = namespace(item=item, seen=[]) -%}
+{% for _ in range(action_ref_hop_limit) -%}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
+{% set resolved.seen = resolved.seen + [resolved.item] -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
 {% endfor -%}
@@ -103,7 +123,7 @@ Original DSL Source::
 import math  # noqa: F401 - rendered DSL math expressions may use this module.
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Mapping, Tuple, Union
+from typing import Mapping, Optional, Tuple, Union
 
 
 Number = Union[int, float]
@@ -127,9 +147,10 @@ _STATE_PATHS = (
     state.list_on_during_aspects(aspect="after", with_ids=True),
 ] -%}
 {% for _, item in group -%}
-{% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
-{% if resolved.item.ref is not none -%}
+{% set resolved = namespace(item=item, seen=[]) -%}
+{% for _ in range(action_ref_hop_limit) -%}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
+{% set resolved.seen = resolved.seen + [resolved.item] -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
 {% endfor -%}
@@ -152,9 +173,10 @@ _ABSTRACT_HOOKS = {% if abstract_hook_scan.seen %}{
     state.list_on_during_aspects(aspect="after", with_ids=True),
 ] -%}
 {% for _, item in group -%}
-{% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
-{% if resolved.item.ref is not none -%}
+{% set resolved = namespace(item=item, seen=[]) -%}
+{% for _ in range(action_ref_hop_limit) -%}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
+{% set resolved.seen = resolved.seen + [resolved.item] -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
 {% endfor -%}
@@ -184,6 +206,7 @@ _EVENT_PATHS = (
 )
 {% endif -%}
 _EVENT_PATH_SET = set(_EVENT_PATHS)
+_STATE_PATH_TUPLES = tuple(tuple(path.split(".")) for path in _STATE_PATHS)
 
 
 
@@ -210,19 +233,43 @@ class ReadOnlyExecutionContext:
     :type state_path: Tuple[str, ...]
     :param vars: Snapshot of machine variables.
     :type vars: Mapping[str, Number]
-    :param action_name: Full action path.
+    :param action_name: Resolved abstract target action path.
     :type action_name: str
-    :param action_stage: Lifecycle stage.
+    :param action_stage: Lifecycle callsite stage.
     :type action_stage: str
+    :param active_leaf: Current active leaf path, defaults to ``state_path``.
+    :type active_leaf: Tuple[str, ...], optional
+    :param call_stage: Explicit callsite lifecycle stage, defaults to
+        ``action_stage``.
+    :type call_stage: str, optional
+    :param abstract_target: Resolved abstract target action path, defaults to
+        ``action_name``.
+    :type abstract_target: str, optional
+    :param named_ref: Full path of the named ref callsite. Anonymous
+        refs and direct abstract actions use ``None``.
+    :type named_ref: Optional[str], optional
     """
 
     state_path: Tuple[str, ...]
     vars: Mapping[str, Number]
     action_name: str
     action_stage: str
+    active_leaf: Optional[Tuple[str, ...]] = None
+    call_stage: Optional[str] = None
+    abstract_target: Optional[str] = None
+    named_ref: Optional[str] = None
 
     def __post_init__(self):
+        object.__setattr__(self, "state_path", tuple(self.state_path))
         object.__setattr__(self, "vars", MappingProxyType(dict(self.vars)))
+        active_leaf = self.state_path if self.active_leaf is None else self.active_leaf
+        object.__setattr__(self, "active_leaf", tuple(active_leaf))
+        call_stage = self.action_stage if self.call_stage is None else self.call_stage
+        object.__setattr__(self, "call_stage", call_stage)
+        abstract_target = (
+            self.action_name if self.abstract_target is None else self.abstract_target
+        )
+        object.__setattr__(self, "abstract_target", abstract_target)
 
     def get_var(self, name):
         return self.vars[name]
@@ -273,7 +320,7 @@ class {{ machine_class_name(model) }}:
     _STATE_INFO = {
 {% for state in state_items %}
         {{ state_key(state) | tojson }}: {
-            "path": {{ py_tuple(state.path) }},
+            "path": _STATE_PATH_TUPLES[{{ loop.index0 }}],
             "parent": {{ state_key(state.parent) | tojson if state.parent is not none else "None" }},
             "is_leaf": {{ state.is_leaf_state | repr }},
             "is_pseudo": {{ state.is_pseudo | repr }},
@@ -339,6 +386,84 @@ class {{ machine_class_name(model) }}:
     }
 {% endif %}
 
+    def _normalize_persistent_value(self, name, value, source):
+        if name not in self._VAR_TYPES:
+            raise ValueError(
+                "Variable %r not defined in state machine. Available variables: %s"
+                % (name, list(self._VAR_TYPES.keys()))
+            )
+        declared_type = self._VAR_TYPES[name]
+        if type(value) is bool:
+            raise ValueError("%s must not be bool" % (source,))
+        if type(value) not in (int, float):
+            raise ValueError(
+                "%s must be int or float, got %s" % (source, type(value).__name__)
+            )
+        if type(value) is float and not math.isfinite(value):
+            raise ValueError(
+                "%s for variable %r declared %s must be finite, got %r"
+                % (source, name, declared_type, value)
+            )
+        if declared_type == "int":
+            if type(value) is float:
+                if value != int(value):
+                    raise ValueError(
+                        "Variable %r is int type, cannot assign float %r; "
+                        "non-integer float from %s" % (name, value, source)
+                    )
+                return int(value)
+            return value
+        if declared_type == "float":
+            try:
+                normalized_float = float(value)
+            except OverflowError as err:
+                # OverflowError: ``float(value)`` cannot represent a very
+                # large Python integer as a finite runtime float.
+                raise ValueError(
+                    "%s for variable %r declared float must be finite; "
+                    "integer is outside Python float range" % (source, name)
+                ) from err
+            if not math.isfinite(normalized_float):
+                raise ValueError(
+                    "%s for variable %r declared float must be finite, got %r"
+                    % (source, name, normalized_float)
+                )
+            return normalized_float
+        raise ValueError(
+            "Variable %r has unsupported persistent type %r" % (name, declared_type)
+        )
+
+    @staticmethod
+    def _sign(value):
+        """
+        Return the FCSTM sign value for one numeric expression.
+
+        :param value: Numeric expression value.
+        :type value: Number
+        :return: ``-1`` for negative values, ``0`` for zero, and ``1`` for positive values.
+        :rtype: int
+
+        Example::
+
+            >>> {{ machine_class_name(model) }}._sign(-3)
+            -1
+        """
+        return int((value > 0) - (value < 0))
+
+    def _execute_operation_block(self, operations, vars_, source):
+        local_scope = dict(vars_)
+        operations(local_scope)
+        normalized_updates = {
+            name: self._normalize_persistent_value(
+                name,
+                local_scope[name],
+                source,
+            )
+            for name in self.VARIABLE_NAMES
+        }
+        for name, value in normalized_updates.items():
+            vars_[name] = value
+
     def __init__(self, initial_state=None, initial_vars=None):
         """
         Initialize the generated state machine runtime.
@@ -350,37 +475,42 @@ class {{ machine_class_name(model) }}:
         """
         self._vars = {}
         self.variables = self._vars
-{%- for def_item in define_items %}
-        self._vars[{{ def_item.name | tojson }}] = {{ def_item.init.to_ast_node() | expr_render(style="python_expr") }}
-{% endfor %}
+        if initial_state is not None and initial_vars is None:
+            raise ValueError(
+                "initial_vars must be provided when initial_state is specified"
+            )
         if initial_vars is not None:
-            missing_vars = set(self._VAR_TYPES.keys()) - set(initial_vars.keys())
-            if missing_vars:
-                raise ValueError(
-                    "initial_vars must provide all variables. Missing: %s"
-                    % sorted(missing_vars)
-                )
             extra_vars = set(initial_vars.keys()) - set(self._VAR_TYPES.keys())
             if extra_vars:
+                unknown_name = sorted(extra_vars)[0]
                 raise ValueError(
-                    "initial_vars contains unknown variables: %s" % sorted(extra_vars)
+                    "Variable %r not defined in state machine. Available variables: %s"
+                    % (unknown_name, list(self._VAR_TYPES.keys()))
                 )
-            for name, value in initial_vars.items():
-                if type(value) is bool:
-                    raise ValueError("initial_vars[%r] must not be bool" % (name,))
-                if type(value) not in (int, float):
+            if initial_state is not None:
+                missing_vars = set(self._VAR_TYPES.keys()) - set(initial_vars.keys())
+                if missing_vars:
                     raise ValueError(
-                        "initial_vars[%r] must be int or float, got %s"
-                        % (name, type(value).__name__)
+                        "initial_vars must provide all variables. Missing: %s"
+                        % sorted(missing_vars)
                     )
-                if self._VAR_TYPES[name] == "int" and type(value) is float:
-                    if value != int(value):
-                        raise ValueError(
-                            "Variable %r is int type, cannot assign float %r"
-                            % (name, value)
-                        )
-                    value = int(value)
-                self._vars[name] = value
+{%- for def_item in define_items %}
+        if initial_vars is not None and {{ def_item.name | tojson }} in initial_vars:
+            self._vars[{{ def_item.name | tojson }}] = self._normalize_persistent_value(
+                {{ def_item.name | tojson }},
+                initial_vars[{{ def_item.name | tojson }}],
+                "initial_vars[%r]" % ({{ def_item.name | tojson }},),
+            )
+        else:
+            self._vars[{{ def_item.name | tojson }}] = self._normalize_persistent_value(
+                {{ def_item.name | tojson }},
+                self._evaluate_runtime_expr(
+                    lambda: {{ def_item.init.to_ast_node() | expr_render(style="python_expr") }},
+                    "variable {{ def_item.name }} initializer",
+                ),
+                "variable {{ def_item.name }} initializer",
+            )
+{% endfor %}
 
         self._ended = False
         self._entered_root = initial_state is not None
@@ -388,10 +518,6 @@ class {{ machine_class_name(model) }}:
         if initial_state is None:
             self._stack = [{"state": self._ROOT_STATE_PATH, "mode": "init_wait"}]
         else:
-            if initial_vars is None:
-                raise ValueError(
-                    "initial_vars must be provided when initial_state is specified"
-                )
             self._stack = self._build_hot_start_stack(
                 self._normalize_state_path(initial_state)
             )
@@ -489,40 +615,154 @@ class {{ machine_class_name(model) }}:
         return stack
 
     def _validate_hot_start_stack(self, target_path):
+        max_structural_depth = 64
+        if len(self._stack) > max_structural_depth:
+            raise SimulationRuntimeDfsError(
+                "Hot start target exceeds the structural stack-depth safety limit "
+                "(%s) before execution; choose a shallower target state or simplify "
+                "the state hierarchy." % (max_structural_depth,)
+            )
+
         if self._is_stoppable_state(target_path):
             return
 
         validation_stack = self._clone_stack(self._stack)
         validation_vars = dict(self._vars)
-        success, _ = self._run_cycle_on_context(
-            validation_stack,
-            validation_vars,
-            set(),
-            is_validation_mode=True,
-        )
+        dfs_error = None
+        try:
+            success, _ = self._run_cycle_on_context(
+                validation_stack,
+                validation_vars,
+                set(),
+                is_validation_mode=True,
+            )
+        except SimulationRuntimeDfsError as err:
+            # _run_cycle_on_context can exceed DFS limits while proving that a
+            # hot-start target has no empty-event stable path.
+            dfs_error = err
+            success = False
         if not success:
+            if self._can_hot_start_wait_for_evented_initial(target_path):
+                if dfs_error is not None:
+                    raise dfs_error
+                return
             target_display = ".".join(self._STATE_INFO[target_path]["path"])
             raise ValueError(
                 "Hot start target %r cannot reach a stoppable state" % (target_display,)
             )
+
+    def _can_hot_start_wait_for_evented_initial(self, target_path):
+        if self._STATE_INFO[target_path]["is_leaf"]:
+            return False
+
+        worklist = [(self._clone_stack(self._stack), dict(self._vars))]
+        seen_signatures = set()
+        steps_taken = 0
+        max_steps = 1000
+        max_structural_depth = 64
+
+        while worklist:
+            current_stack, current_vars = worklist.pop()
+            if not current_stack:
+                continue
+
+            structural_signature = self._create_structural_signature(current_stack)
+            if len(structural_signature) > max_structural_depth:
+                raise SimulationRuntimeDfsError(
+                    "Hot start event-gated initial-chain search exceeded the "
+                    "structural stack-depth safety limit "
+                    "(%s); choose a shallower target state or simplify the state "
+                    "hierarchy." % (max_structural_depth,)
+                )
+
+            signature = self._create_execution_signature(current_stack, current_vars)
+            if signature in seen_signatures:
+                continue
+            seen_signatures.add(signature)
+
+            if steps_taken >= max_steps:
+                raise SimulationRuntimeDfsError(
+                    "Hot start event-gated initial-chain search exceeded the "
+                    "step safety limit (%s); the state machine likely contains "
+                    "an invalid unbounded initial-transition chain." % (max_steps,)
+                )
+            steps_taken += 1
+
+            frame = current_stack[-1]
+            state_path = frame["state"]
+            state_info = self._STATE_INFO[state_path]
+            if state_info["is_leaf"] or frame["mode"] != "init_wait":
+                continue
+
+            for transition_id in state_info["initial_transition_ids"]:
+                transition = self._TRANSITIONS[transition_id]
+                if transition["event_path"] is None:
+                    continue
+                if self._transition_matches_guard(transition, current_vars):
+                    return True
+
+            for transition_id in reversed(state_info["initial_transition_ids"]):
+                transition = self._TRANSITIONS[transition_id]
+                if transition["event_path"] is not None:
+                    continue
+                if not self._transition_matches_guard(transition, current_vars):
+                    continue
+
+                next_stack = self._clone_stack(current_stack)
+                next_vars = dict(current_vars)
+                self._execute_initial_transition_on_context(
+                    next_stack,
+                    next_vars,
+                    transition_id,
+                    set(),
+                    is_validation_mode=True,
+                    attempt_initial_transition=False,
+                )
+                worklist.append((next_stack, next_vars))
+
+        return False
 
     @staticmethod
     def _clone_stack(stack):
         return [dict(frame) for frame in stack]
 
     @staticmethod
+    def _frame_plain_before_pending(frame):
+        return bool(frame.get("plain_before_pending", False))
+
+    @staticmethod
     def _create_execution_signature(stack, vars_):
         return (
-            tuple((frame["state"], frame["mode"]) for frame in stack),
+            tuple(
+                (
+                    frame["state"],
+                    frame["mode"],
+                    {{ machine_class_name(model) }}._frame_plain_before_pending(frame),
+                )
+                for frame in stack
+            ),
             tuple((key, vars_[key]) for key in sorted(vars_)),
         )
 
     @staticmethod
     def _create_structural_signature(stack):
-        return tuple((frame["state"], frame["mode"]) for frame in stack)
+        return tuple(
+            (
+                frame["state"],
+                frame["mode"],
+                {{ machine_class_name(model) }}._frame_plain_before_pending(frame),
+            )
+            for frame in stack
+        )
 
     def _create_root_rollback_stack(self):
-        return [{"state": self._ROOT_STATE_PATH, "mode": "init_wait"}]
+        return [
+            {
+                "state": self._ROOT_STATE_PATH,
+                "mode": "init_wait",
+                "plain_before_pending": False,
+            }
+        ]
 
     def _is_stoppable_state(self, state_path):
         state_info = self._STATE_INFO[state_path]
@@ -607,23 +847,44 @@ class {{ machine_class_name(model) }}:
             current_path = self._STATE_INFO[current_path]["parent"]
         return result
 
-    def _execute_actions(self, actions, vars_, is_validation_mode=False):
+    def _execute_actions(
+        self, actions, vars_, is_validation_mode=False, active_leaf_path=None
+    ):
         for action in actions:
             if action["kind"] == "concrete":
                 getattr(self, action["method"])(vars_)
             else:
                 self._execute_abstract_action(
-                    action, vars_, is_validation_mode=is_validation_mode
+                    action,
+                    vars_,
+                    is_validation_mode=is_validation_mode,
+                    active_leaf_path=active_leaf_path,
                 )
 
-    def _execute_abstract_action(self, action, vars_, is_validation_mode=False):
+    def _execute_abstract_action(
+        self,
+        action,
+        vars_,
+        is_validation_mode=False,
+        active_leaf_path=None,
+    ):
         if is_validation_mode:
             return
+        if active_leaf_path is None:
+            context_state_path = action["context_state_path"]
+        else:
+            # Aspect actions pass the active leaf path at runtime; the
+            # action metadata path is only the owner-state fallback.
+            context_state_path = active_leaf_path
         ctx = ReadOnlyExecutionContext(
-            state_path=action["context_state_path"],
+            state_path=context_state_path,
             vars=dict(vars_),
             action_name=action["action_name"],
             action_stage=action["action_stage"],
+            active_leaf=context_state_path,
+            call_stage=action["call_stage"],
+            abstract_target=action["abstract_target"],
+            named_ref=action["named_ref"],
         )
         old_vars = self._vars
         old_variables = self.variables
@@ -645,6 +906,7 @@ class {{ machine_class_name(model) }}:
                     self._STATE_INFO[item_path]["aspect_before_actions"],
                     vars_,
                     is_validation_mode=is_validation_mode,
+                    active_leaf_path=state_info["path"],
                 )
         self._execute_actions(
             state_info["during_actions"],
@@ -657,6 +919,7 @@ class {{ machine_class_name(model) }}:
                     self._STATE_INFO[item_path]["aspect_after_actions"],
                     vars_,
                     is_validation_mode=is_validation_mode,
+                    active_leaf_path=state_info["path"],
                 )
 
     def _transition_matches_event(self, transition, event_names):
@@ -667,11 +930,13 @@ class {{ machine_class_name(model) }}:
     def _evaluate_runtime_expr(self, fn, usage):
         try:
             return fn()
-        except (ValueError, ArithmeticError) as err:
+        except (ValueError, ArithmeticError, TypeError) as err:
             # ValueError: math domain errors or invalid numeric operations
             # raised while evaluating a user's DSL expression.
             # ArithmeticError: division by zero, overflow, or other numeric
             # runtime failure while evaluating a user's DSL expression.
+            # TypeError: Python numeric, bitwise, and shift operators reject
+            # runtime operand combinations such as ``float << int``.
             raise SimulationRuntimeExpressionError(
                 "%s evaluation failed: %s" % (usage, err)
             ) from err
@@ -717,7 +982,13 @@ class {{ machine_class_name(model) }}:
         return None
 
     def _enter_state(
-        self, stack, state_path, vars_, event_names, is_validation_mode=False
+        self,
+        stack,
+        state_path,
+        vars_,
+        event_names,
+        is_validation_mode=False,
+        attempt_initial_transition=True,
     ):
         state_info = self._STATE_INFO[state_path]
         stack.append({"state": state_path, "mode": "active"})
@@ -731,15 +1002,12 @@ class {{ machine_class_name(model) }}:
             )
             stack[-1]["mode"] = "after_entry"
         else:
-            self._execute_actions(
-                state_info["during_before_actions"],
-                vars_,
-                is_validation_mode=is_validation_mode,
-            )
             stack[-1]["mode"] = "init_wait"
-            self._attempt_init_transition(
-                stack, vars_, event_names, is_validation_mode=is_validation_mode
-            )
+            stack[-1]["plain_before_pending"] = True
+            if attempt_initial_transition:
+                self._attempt_init_transition(
+                    stack, vars_, event_names, is_validation_mode=is_validation_mode
+                )
 
     def _attempt_init_transition(
         self, stack, vars_, event_names, is_validation_mode=False
@@ -760,24 +1028,39 @@ class {{ machine_class_name(model) }}:
                     transition_id,
                     event_names,
                     is_validation_mode=is_validation_mode,
+                    attempt_initial_transition=not is_validation_mode,
                 )
                 return True
         return False
 
     def _execute_initial_transition_on_context(
-        self, stack, vars_, transition_id, event_names, is_validation_mode=False
+        self,
+        stack,
+        vars_,
+        transition_id,
+        event_names,
+        is_validation_mode=False,
+        attempt_initial_transition=True,
     ):
         composite_frame = stack[-1]
         transition = self._TRANSITIONS[transition_id]
         self._execute_transition_effect(
             transition, vars_, is_validation_mode=is_validation_mode
         )
+        if composite_frame.get("plain_before_pending", False):
+            self._execute_actions(
+                self._STATE_INFO[composite_frame["state"]]["during_before_actions"],
+                vars_,
+                is_validation_mode=is_validation_mode,
+            )
+            composite_frame["plain_before_pending"] = False
         self._enter_state(
             stack,
             transition["target"],
             vars_,
             event_names,
             is_validation_mode=is_validation_mode,
+            attempt_initial_transition=attempt_initial_transition,
         )
         if any(frame is composite_frame for frame in stack):
             composite_frame["mode"] = "active"
@@ -791,14 +1074,9 @@ class {{ machine_class_name(model) }}:
             transition_id,
             event_names,
             is_validation_mode=True,
+            attempt_initial_transition=False,
         )
-        success, _ = self._run_cycle_on_context(
-            sim_stack,
-            sim_vars,
-            event_names,
-            is_validation_mode=True,
-        )
-        return success
+        return self._validation_search_reaches_stable(sim_stack, sim_vars, event_names)
 
     def _finalize_exit_to_parent(self, stack, vars_, is_validation_mode=False):
         if not stack:
@@ -868,15 +1146,163 @@ class {{ machine_class_name(model) }}:
         )
         if ended:
             return True
-        success, _ = self._run_cycle_on_context(
+        return self._validation_search_reaches_stable(
             sim_stack,
             sim_vars,
             event_names,
             ended=ended,
             validate_post_child_exit=True,
-            is_validation_mode=True,
         )
-        return success
+
+    def _validation_search_reaches_stable(
+        self,
+        stack,
+        vars_,
+        event_names,
+        ended=False,
+        validate_post_child_exit=True,
+    ):
+        if ended:
+            stack[:] = []
+            vars_.clear()
+            return True
+
+        worklist = [(self._clone_stack(stack), dict(vars_), False)]
+        seen_signatures = set()
+        steps_taken = 0
+        max_steps = 1000
+        max_structural_depth = 64
+
+        while worklist:
+            current_stack, current_vars, current_ended = worklist.pop()
+            if current_ended:
+                stack[:] = []
+                vars_.clear()
+                vars_.update(current_vars)
+                return True
+            if not current_stack:
+                stack[:] = []
+                vars_.clear()
+                vars_.update(current_vars)
+                return True
+
+            structural_signature = self._create_structural_signature(current_stack)
+            if len(structural_signature) > max_structural_depth:
+                raise SimulationRuntimeDfsError(
+                    "Speculative DFS exceeded the structural stack-depth safety limit "
+                    "(%s) without reaching a stoppable state or pruning; "
+                    "the state machine likely contains an invalid unbounded nesting chain."
+                    % (max_structural_depth,)
+                )
+
+            signature = self._create_execution_signature(current_stack, current_vars)
+            if signature in seen_signatures:
+                continue
+            seen_signatures.add(signature)
+
+            if steps_taken >= max_steps:
+                raise SimulationRuntimeDfsError(
+                    "Speculative DFS exceeded the step safety limit "
+                    "(%s) without reaching a stoppable state or pruning; "
+                    "the state machine likely contains an invalid unbounded pseudo-state "
+                    "or transition chain." % (max_steps,)
+                )
+            steps_taken += 1
+
+            frame = current_stack[-1]
+            state_path = frame["state"]
+            state_info = self._STATE_INFO[state_path]
+
+            if state_info["is_leaf"] and frame["mode"] == "after_entry":
+                next_stack = self._clone_stack(current_stack)
+                next_vars = dict(current_vars)
+                next_stack[-1]["mode"] = "active"
+                if self._is_stoppable_state(state_path):
+                    stack[:] = next_stack
+                    vars_.clear()
+                    vars_.update(next_vars)
+                    return True
+                worklist.append((next_stack, next_vars, False))
+                continue
+
+            if state_info["is_leaf"]:
+                progressed = False
+                for transition_id in reversed(state_info["transition_ids"]):
+                    transition = self._TRANSITIONS[transition_id]
+                    if not self._transition_is_enabled(
+                        transition, event_names, current_vars
+                    ):
+                        continue
+                    next_stack = self._clone_stack(current_stack)
+                    next_vars = dict(current_vars)
+                    next_ended = self._execute_transition_on_context(
+                        next_stack,
+                        next_vars,
+                        transition_id,
+                        event_names,
+                        is_validation_mode=True,
+                    )
+                    worklist.append((next_stack, next_vars, next_ended))
+                    progressed = True
+                if progressed:
+                    continue
+
+                if not self._is_stoppable_state(state_path):
+                    continue
+
+                next_stack = self._clone_stack(current_stack)
+                next_vars = dict(current_vars)
+                self._run_leaf_during(state_path, next_vars, is_validation_mode=True)
+                next_stack[-1]["mode"] = "after_entry"
+                worklist.append((next_stack, next_vars, False))
+                continue
+
+            if frame["mode"] == "init_wait":
+                progressed = False
+                for transition_id in reversed(state_info["initial_transition_ids"]):
+                    transition = self._TRANSITIONS[transition_id]
+                    if not self._transition_is_enabled(
+                        transition, event_names, current_vars
+                    ):
+                        continue
+                    next_stack = self._clone_stack(current_stack)
+                    next_vars = dict(current_vars)
+                    self._execute_initial_transition_on_context(
+                        next_stack,
+                        next_vars,
+                        transition_id,
+                        event_names,
+                        is_validation_mode=True,
+                        attempt_initial_transition=False,
+                    )
+                    worklist.append((next_stack, next_vars, False))
+                    progressed = True
+                if not progressed:
+                    continue
+                continue
+
+            if frame["mode"] == "post_child_exit":
+                if not validate_post_child_exit:
+                    continue
+                for transition_id in reversed(state_info["transition_ids"]):
+                    transition = self._TRANSITIONS[transition_id]
+                    if not self._transition_is_enabled(
+                        transition, event_names, current_vars
+                    ):
+                        continue
+                    next_stack = self._clone_stack(current_stack)
+                    next_vars = dict(current_vars)
+                    next_ended = self._execute_transition_on_context(
+                        next_stack,
+                        next_vars,
+                        transition_id,
+                        event_names,
+                        is_validation_mode=True,
+                    )
+                    worklist.append((next_stack, next_vars, next_ended))
+                continue
+
+        return False
 
     def _initialize_context(self, stack, vars_, event_names, is_validation_mode=False):
         stack[:] = []
@@ -925,7 +1351,12 @@ class {{ machine_class_name(model) }}:
                 )
 
             if steps_taken >= max_steps:
-                return False, False
+                raise SimulationRuntimeDfsError(
+                    "Speculative DFS exceeded the step safety limit "
+                    "(%s) without reaching a stoppable state or pruning; "
+                    "the state machine likely contains an invalid unbounded pseudo-state "
+                    "or transition chain." % (max_steps,)
+                )
 
             frame = stack[-1]
             state_path = frame["state"]
@@ -939,7 +1370,12 @@ class {{ machine_class_name(model) }}:
                     steps_taken += 1
                     continue
 
-                transition_id = self._select_transition(stack, vars_, event_names)
+                transition_id = self._select_transition(
+                    stack,
+                    vars_,
+                    event_names,
+                    force_validate=state_info["is_pseudo"],
+                )
                 if transition_id is not None:
                     ended = self._execute_transition_on_context(
                         stack,
@@ -1081,9 +1517,10 @@ class {{ machine_class_name(model) }}:
 {% set hook_ns = namespace(seen=[]) %}
 {% for state in model.walk_states() %}
 {% for id_, item in state.list_on_enters(with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
+{% set resolved = namespace(item=item, seen=[]) %}
+{% for _ in range(action_ref_hop_limit) %}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
+{% set resolved.seen = resolved.seen + [resolved.item] %}
 {% set resolved.item = resolved.item.ref %}
 {% endif %}
 {% endfor %}
@@ -1126,7 +1563,13 @@ class {{ machine_class_name(model) }}:
         """
 {% if resolved.item.operations %}
         scope = vars_ if vars_ is not None else self._vars
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+        def operations(local_scope):
+            _v = local_scope
+            _s = self._sign
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
+
+        self._execute_operation_block(operations, scope, "operation block writeback")
 {% else %}
         pass
 {% endif %}
@@ -1134,9 +1577,10 @@ class {{ machine_class_name(model) }}:
 {% endif %}
 {% endfor %}
 {% for id_, item in state.list_on_durings(aspect=None, with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
+{% set resolved = namespace(item=item, seen=[]) %}
+{% for _ in range(action_ref_hop_limit) %}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
+{% set resolved.seen = resolved.seen + [resolved.item] %}
 {% set resolved.item = resolved.item.ref %}
 {% endif %}
 {% endfor %}
@@ -1179,7 +1623,13 @@ class {{ machine_class_name(model) }}:
         """
 {% if resolved.item.operations %}
         scope = vars_ if vars_ is not None else self._vars
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+        def operations(local_scope):
+            _v = local_scope
+            _s = self._sign
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
+
+        self._execute_operation_block(operations, scope, "operation block writeback")
 {% else %}
         pass
 {% endif %}
@@ -1187,9 +1637,10 @@ class {{ machine_class_name(model) }}:
 {% endif %}
 {% endfor %}
 {% for id_, item in state.list_on_exits(with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
+{% set resolved = namespace(item=item, seen=[]) %}
+{% for _ in range(action_ref_hop_limit) %}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
+{% set resolved.seen = resolved.seen + [resolved.item] %}
 {% set resolved.item = resolved.item.ref %}
 {% endif %}
 {% endfor %}
@@ -1232,7 +1683,13 @@ class {{ machine_class_name(model) }}:
         """
 {% if resolved.item.operations %}
         scope = vars_ if vars_ is not None else self._vars
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+        def operations(local_scope):
+            _v = local_scope
+            _s = self._sign
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
+
+        self._execute_operation_block(operations, scope, "operation block writeback")
 {% else %}
         pass
 {% endif %}
@@ -1240,9 +1697,10 @@ class {{ machine_class_name(model) }}:
 {% endif %}
 {% endfor %}
 {% for id_, item in state.list_on_durings(aspect='before', with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
+{% set resolved = namespace(item=item, seen=[]) %}
+{% for _ in range(action_ref_hop_limit) %}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
+{% set resolved.seen = resolved.seen + [resolved.item] %}
 {% set resolved.item = resolved.item.ref %}
 {% endif %}
 {% endfor %}
@@ -1287,7 +1745,13 @@ class {{ machine_class_name(model) }}:
         """
 {% if resolved.item.operations %}
         scope = vars_ if vars_ is not None else self._vars
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+        def operations(local_scope):
+            _v = local_scope
+            _s = self._sign
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
+
+        self._execute_operation_block(operations, scope, "operation block writeback")
 {% else %}
         pass
 {% endif %}
@@ -1295,9 +1759,10 @@ class {{ machine_class_name(model) }}:
 {% endif %}
 {% endfor %}
 {% for id_, item in state.list_on_durings(aspect='after', with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
+{% set resolved = namespace(item=item, seen=[]) %}
+{% for _ in range(action_ref_hop_limit) %}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
+{% set resolved.seen = resolved.seen + [resolved.item] %}
 {% set resolved.item = resolved.item.ref %}
 {% endif %}
 {% endfor %}
@@ -1342,7 +1807,13 @@ class {{ machine_class_name(model) }}:
         """
 {% if resolved.item.operations %}
         scope = vars_ if vars_ is not None else self._vars
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+        def operations(local_scope):
+            _v = local_scope
+            _s = self._sign
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
+
+        self._execute_operation_block(operations, scope, "operation block writeback")
 {% else %}
         pass
 {% endif %}
@@ -1350,9 +1821,10 @@ class {{ machine_class_name(model) }}:
 {% endif %}
 {% endfor %}
 {% for id_, item in state.list_on_during_aspects(aspect='before', with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
+{% set resolved = namespace(item=item, seen=[]) %}
+{% for _ in range(action_ref_hop_limit) %}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
+{% set resolved.seen = resolved.seen + [resolved.item] %}
 {% set resolved.item = resolved.item.ref %}
 {% endif %}
 {% endfor %}
@@ -1397,7 +1869,13 @@ class {{ machine_class_name(model) }}:
         """
 {% if resolved.item.operations %}
         scope = vars_ if vars_ is not None else self._vars
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+        def operations(local_scope):
+            _v = local_scope
+            _s = self._sign
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
+
+        self._execute_operation_block(operations, scope, "operation block writeback")
 {% else %}
         pass
 {% endif %}
@@ -1405,9 +1883,10 @@ class {{ machine_class_name(model) }}:
 {% endif %}
 {% endfor %}
 {% for id_, item in state.list_on_during_aspects(aspect='after', with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
+{% set resolved = namespace(item=item, seen=[]) %}
+{% for _ in range(action_ref_hop_limit) %}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
+{% set resolved.seen = resolved.seen + [resolved.item] %}
 {% set resolved.item = resolved.item.ref %}
 {% endif %}
 {% endfor %}
@@ -1452,7 +1931,13 @@ class {{ machine_class_name(model) }}:
         """
 {% if resolved.item.operations %}
         scope = vars_ if vars_ is not None else self._vars
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+        def operations(local_scope):
+            _v = local_scope
+            _s = self._sign
+{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
+
+        self._execute_operation_block(operations, scope, "operation block writeback")
 {% else %}
         pass
 {% endif %}
@@ -1488,7 +1973,13 @@ class {{ machine_class_name(model) }}:
 {{ (transition.to_ast_node() | string) | indent(12, true) }}
         """
         scope = vars_ if vars_ is not None else self._vars
-{{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+        def operations(local_scope):
+            _v = local_scope
+            _s = self._sign
+{{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=3) }}
+
+        self._execute_operation_block(operations, scope, "operation block writeback")
 
 {% endif %}
 {% endfor %}
@@ -1521,7 +2012,13 @@ class {{ machine_class_name(model) }}:
 {{ (transition.to_ast_node() | string) | indent(12, true) }}
         """
         scope = vars_ if vars_ is not None else self._vars
-{{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+        def operations(local_scope):
+            _v = local_scope
+            _s = self._sign
+{{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=3) }}
+
+        self._execute_operation_block(operations, scope, "operation block writeback")
 
 {% endif %}
 {% endfor %}

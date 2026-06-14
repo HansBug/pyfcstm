@@ -1,0 +1,23 @@
+def int trace = 0;
+def int seed = 0;
+
+state Root {
+    state Boot {
+        during { seed = seed + 1; }
+    }
+
+    state Gate {
+        state Armed {
+            enter { trace = trace + 10; }
+            during { trace = trace + 100; }
+        }
+        state Idle {
+            during { trace = trace + 1000; }
+        }
+        [*] -> Armed :: Unlock effect { trace = trace + 1; };
+        Armed -> Idle :: Finish effect { trace = trace + 10000; };
+    }
+
+    [*] -> Boot;
+    Boot -> Gate :: Open;
+}

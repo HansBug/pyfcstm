@@ -1,11 +1,18 @@
 # Simulate semantic fixture schema
 
-This directory stores shared semantic fixtures for Python-side simulator and
-built-in Python runtime alignment tests.  A fixture is a pair of files under
+This directory stores the shared semantic fixture corpus for Python-side
+simulator and built-in Python runtime alignment tests. A fixture is a pair of files under
 `cases/`:
 
 - `<id>.fcstm`: the FCSTM DSL source.
 - `<id>.yaml`: metadata, input sequence, runner selection, and expectations.
+
+The corpus is the long-term single source of truth for executable FCSTM
+semantics on the Python side. Cases that target generated Python alignment must
+also remain executable by the simulator runner, and both runners must consume
+the same YAML schema, FCSTM source, handler setup, cycle inputs, and expectation
+shape. Template-specific tests may add runner adapters, but they must not fork
+the semantic cases into an isolated template-only fixture system.
 
 The schema is intentionally strict. Unknown top-level fields, unknown runner
 names, unknown categories, unknown expectation fields, and unknown nested fields
@@ -63,9 +70,11 @@ Allowed runners:
 present.
 
 `runtime_options` is accepted only for simulation-only cases. `handlers`
-requires the `simulation` runner. When `generated_python_alignment` is also
-present, the same handler behavior is installed into both runtimes so callback
-context and side-effect isolation stay aligned.
+requires the `simulation` runner. Every `generated_python_alignment` case must
+also include `simulation` so the generated runtime is checked against the same
+semantic input that the simulator executes. When `generated_python_alignment`
+is present, the same handler behavior is installed into both runtimes so
+callback context and side-effect isolation stay aligned.
 
 ## Runtime construction diagnostics
 
@@ -102,13 +111,28 @@ Allowed fields:
 - `initial.vars`: full variable snapshot mapping or `null`.
 - `initial.expect.raises`: required constructor exception expectation.
 
-When `initial.expect` is present, `initial.state` and `initial.vars` must both
-be explicit non-null values. Use `initial.vars: {}` for zero-variable machines.
+When `initial.expect` is present, `initial.state` and `initial.vars` keys must
+both be explicit. Use `null` / `null` to assert cold-start constructor
+diagnostics and `initial.vars: {}` for zero-variable hot-start diagnostics.
 
 Construction-diagnostic cases must use `steps: []`; executable steps are
 rejected so that constructor failures cannot silently skip later assertions.
 `initial.expect` is rejected for `cli_command` cases because CLI diagnostics
 belong under `commands[].expect`.
+
+Generated Python alignment cases check constructor outcomes before any cycle
+steps run. The alignment helper distinguishes three outcomes:
+
+- both runtimes build successfully;
+- both runtimes fail with matching diagnostic type and declared message/cause
+  expectations;
+- exactly one runtime fails, which is reported as a constructor one-sided
+  mismatch.
+
+The one-sided mismatch check is a harness-level parity guard. It does not make
+internal stack shape, exception messages, or exception causes public generated
+runtime obligations unless a fixture declares those fields or a later semantic
+case documents such a contract explicitly.
 
 ## Runtime options
 
@@ -223,6 +247,18 @@ original `action`, `state`, and `stage` record when a handler does not provide
 them. That keeps older handler records compatible while reserving stable schema
 slots for later runtime-context work. Once concrete metadata is collected by a
 handler, the helper preserves the provided values instead of overwriting them.
+
+For generated-runtime alignment, the common call-log terminology maps onto the
+fixture fields as follows:
+
+- action name: `action`;
+- state path: `state`;
+- lifecycle action stage: `stage`;
+- variables snapshot: `vars`.
+
+The optional `active_leaf`, `call_stage`, `abstract_target`, and `named_ref`
+fields provide additional white-box context assertions without changing the
+required common log shape.
 
 ## Runtime steps
 
@@ -477,9 +513,11 @@ generated alignment cases in this schema version. `handlers` and
 same fixture handlers are installed in both runtimes and their call records must
 match.
 
-For constructor diagnostics, the alignment runner builds both runtimes and
-requires matching exception class names and messages before applying the
-`initial.expect.raises` matcher.
+For constructor diagnostics, the alignment runner builds both runtimes,
+requires matching exception class names, and then applies the declared
+`initial.expect.raises` matcher to each side. It does not require complete
+exception-message text equality unless a fixture matcher explicitly declares
+that stricter contract.
 
 ## CLI command cases
 

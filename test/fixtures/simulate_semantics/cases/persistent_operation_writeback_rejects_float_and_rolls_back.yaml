@@ -18,8 +18,10 @@ categories:
 - runtime
 - temporary_vars
 - lifecycle
+- template_alignment
 runners:
 - simulation
+- generated_python_alignment
 initial:
   state: null
   vars: null

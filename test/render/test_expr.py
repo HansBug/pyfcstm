@@ -46,6 +46,18 @@ class TestRenderExprNode:
             ("2.5e-3", "dsl", None, "0.0025"),
             ("x & (y | z)", "c", None, "x & (y | z)"),
             ("abs(-5)", "python", None, "abs(-5)"),
+            (
+                "sign(x)",
+                "python",
+                None,
+                "int(((x) > 0) - ((x) < 0))",
+            ),
+            (
+                "2 * sign(x)",
+                "python",
+                None,
+                "2 * int(((x) > 0) - ((x) < 0))",
+            ),
             ("sin(x)", "java", None, "Math.sin(x)"),
             ("sin(x)", "js", None, "Math.sin(x)"),
             ("sin(x)", "ts", None, "Math.sin(x)"),

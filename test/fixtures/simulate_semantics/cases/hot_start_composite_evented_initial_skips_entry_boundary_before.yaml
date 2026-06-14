@@ -22,11 +22,13 @@ origin:
   - The evented initial transition effect still runs when its event is supplied.
 categories:
 - runtime
+- template_alignment
 - hot_start
 - lifecycle
 - abstract
 runners:
 - simulation
+- generated_python_alignment
 initial:
   state: Root.Gate
   vars:

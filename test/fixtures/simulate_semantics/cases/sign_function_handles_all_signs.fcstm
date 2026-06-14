@@ -1,0 +1,13 @@
+def int negative_sign = 0;
+def int zero_sign = 99;
+def int positive_sign = 0;
+state Root {
+    state A {
+        during {
+            negative_sign = sign(-7);
+            zero_sign = sign(0);
+            positive_sign = sign(42);
+        }
+    }
+    [*] -> A;
+}

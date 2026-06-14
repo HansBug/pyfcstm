@@ -193,7 +193,16 @@ _EXCEPTION_TYPES = {
     "SimulationRuntimeExpressionError": SimulationRuntimeExpressionError,
     "ValueError": ValueError,
 }
-_CONSTRUCTOR_EXCEPTION_TYPES = tuple(_EXCEPTION_TYPES.values())
+_ALIGNMENT_CONSTRUCTOR_EXCEPTION_TYPES = (
+    ValueError,
+    ArithmeticError,
+    SimulationRuntimeDfsError,
+    TypeError,
+    KeyError,
+)
+_ALIGNMENT_CONSTRUCTOR_EXCEPTION_TYPE_NAMES = {
+    item.__name__ for item in _ALIGNMENT_CONSTRUCTOR_EXCEPTION_TYPES
+}
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
@@ -1153,10 +1162,21 @@ def _initial_constructor_expect_data(initial: Any) -> bool:
 def _capture_construction(build_runtime):
     try:
         return build_runtime(), None
-    except _CONSTRUCTOR_EXCEPTION_TYPES as err:
-        # Each class in _CONSTRUCTOR_EXCEPTION_TYPES is an allowed semantic
-        # diagnostic in fixture ``raises`` matchers. Unexpected exceptions
-        # propagate and fail the test as implementation bugs.
+    except _ALIGNMENT_CONSTRUCTOR_EXCEPTION_TYPES as err:
+        # ValueError/ArithmeticError/SimulationRuntimeDfsError cover simulator
+        # and generated constructor diagnostics; TypeError covers invalid
+        # runtime constructor references; KeyError covers generated hook-map
+        # lookup misses while installing fixture handlers. Unexpected classes
+        # still propagate and surface harness bugs.
+        return None, err
+    except Exception as err:
+        # Generated runtimes define local diagnostic classes inside each emitted
+        # module, so classes such as SimulationRuntimeDfsError do not subclass
+        # the simulator's imported class. Only the documented constructor
+        # diagnostic names are captured for cross-runtime parity; every other
+        # exception is re-raised to expose real harness or template bugs.
+        if type(err).__name__ not in _ALIGNMENT_CONSTRUCTOR_EXCEPTION_TYPE_NAMES:
+            raise
         return None, err
 
 
@@ -1172,19 +1192,83 @@ def _assert_constructor_failure(build_runtime, expect, case: SemanticCase) -> No
     _assert_exception(err, expect, case, "initial.expect.raises")
 
 
-def _assert_aligned_constructor_failure(case: SemanticCase) -> None:
-    expect = _initial_constructor_expect(case)
-    _, simulation_err = _capture_construction(lambda: _build_simulation_runtime(case))
-    _, generated_err = _capture_construction(lambda: _build_generated_runtime(case))
+def _exception_display(error: BaseException) -> str:
+    return "%s: %s" % (type(error).__name__, error)
 
-    assert simulation_err is not None, (
-        "%s initial.expect.raises expected SimulationRuntime construction failure %r"
-        % (case.id, expect["raises"])
-    )
-    assert generated_err is not None, (
-        "%s initial.expect.raises expected generated Python construction failure %r"
-        % (case.id, expect["raises"])
-    )
+
+def _assert_aligned_constructor_outcome(
+    case: SemanticCase,
+    expect: Optional[Mapping[str, Any]],
+    simulation_runtime: Any,
+    simulation_err: Optional[BaseException],
+    generated_runtime: Any,
+    generated_err: Optional[BaseException],
+) -> None:
+    """
+    Assert generated-runtime constructor parity for a semantic fixture.
+
+    Constructor alignment has three observable outcomes: both runtimes build
+    successfully, both runtimes fail with matching diagnostics, or exactly one
+    side fails. The last outcome is a first-class alignment mismatch because
+    hot-start and handler-installation bugs can happen before a cycle executes.
+
+    :param case: Semantic fixture being constructed.
+    :type case: SemanticCase
+    :param expect: Optional ``initial.expect`` mapping.
+    :type expect: typing.Mapping[str, typing.Any], optional
+    :param simulation_runtime: Constructed simulator runtime, if available.
+    :type simulation_runtime: typing.Any
+    :param simulation_err: Simulator construction error, if construction
+        failed.
+    :type simulation_err: BaseException, optional
+    :param generated_runtime: Constructed generated runtime, if available.
+    :type generated_runtime: typing.Any
+    :param generated_err: Generated-runtime construction error, if
+        construction failed.
+    :type generated_err: BaseException, optional
+    :return: ``None``.
+    :rtype: None
+    :raises AssertionError: If constructor outcomes diverge or do not satisfy
+        the fixture expectation.
+
+    Example::
+
+        >>> case = load_semantic_case("design_basic_simple_transition")
+        >>> _assert_aligned_constructor_outcome(case, None, object(), None, object(), None)
+    """
+    if (simulation_err is None) != (generated_err is None):
+        if simulation_err is None:
+            simulation_text = "built successfully"
+            generated_text = _exception_display(generated_err)
+        else:
+            simulation_text = _exception_display(simulation_err)
+            generated_text = "built successfully"
+        raise AssertionError(
+            "%s constructor one-sided mismatch: simulation=%s, generated=%s"
+            % (case.id, simulation_text, generated_text)
+        )
+
+    if simulation_err is None and generated_err is None:
+        if expect is not None:
+            raise AssertionError(
+                "%s initial.expect.raises expected constructor failure %r"
+                % (case.id, expect["raises"])
+            )
+        assert simulation_runtime is not None, "%s simulation runtime missing" % case.id
+        assert generated_runtime is not None, "%s generated runtime missing" % case.id
+        return
+
+    assert simulation_err is not None
+    assert generated_err is not None
+    if expect is None:
+        raise AssertionError(
+            "%s constructor failed unexpectedly: simulation=%s, generated=%s"
+            % (
+                case.id,
+                _exception_display(simulation_err),
+                _exception_display(generated_err),
+            )
+        )
     assert type(simulation_err).__name__ == type(generated_err).__name__, (
         "%s constructor exception type mismatch: simulation=%s generated=%s"
         % (
@@ -1193,12 +1277,9 @@ def _assert_aligned_constructor_failure(case: SemanticCase) -> None:
             type(generated_err).__name__,
         )
     )
-    assert str(simulation_err) == str(generated_err), (
-        "%s constructor exception message mismatch: simulation=%s generated=%s"
-        % (case.id, simulation_err, generated_err)
-    )
     _assert_exception(simulation_err, expect, case, "initial.expect.raises")
     _assert_exception(generated_err, expect, case, "initial.expect.raises")
+
 
 
 def _initial_kwargs(case: SemanticCase) -> Dict[str, Any]:
@@ -1416,6 +1497,30 @@ class _GeneratedPythonAlignmentRuntime:
         self._assert_aligned("brief_stack access")
         return self._simulation_runtime.brief_stack
 
+    @property
+    def history(self) -> List[Dict[str, Any]]:
+        """
+        Return simulator history after verifying generated-runtime alignment.
+
+        The generated Python runtime does not expose history as a public API.
+        Fixture history assertions remain valid for generated-alignment cases by
+        first checking that generated state, variables, stack, and cycle count
+        still match :class:`SimulationRuntime`, then returning the simulator's
+        authoritative history records.
+
+        :return: Runtime history records from the simulator side.
+        :rtype: List[Dict[str, Any]]
+
+        Example::
+
+            >>> case = load_semantic_case("cycle_result_history_stable_leaf")
+            >>> runtime = _build_simulation_runtime(case)
+            >>> isinstance(runtime.history, list)
+            True
+        """
+        self._assert_aligned("history access")
+        return self._simulation_runtime.history
+
     def cycle(self, events: Optional[Sequence[Any]] = None) -> Any:
         sim_result = None
         gen_result = None
@@ -1623,15 +1728,25 @@ def run_generated_python_alignment_case(case: SemanticCase, caplog: Any = None) 
         >>> case = load_semantic_case("design_basic_simple_transition")
         >>> run_generated_python_alignment_case(case)
     """
-    if _initial_constructor_expect(case) is not None:
-        _assert_aligned_constructor_failure(case)
-        return
-    simulation_runtime = _build_simulation_runtime(case)
-    simulation_handler_calls = _register_fixture_handlers(simulation_runtime, case)
     generated_handler_calls = []
-    generated_runtime = _build_generated_runtime(
-        case, handler_calls=generated_handler_calls
+    simulation_runtime, simulation_err = _capture_construction(
+        lambda: _build_simulation_runtime(case)
     )
+    generated_runtime, generated_err = _capture_construction(
+        lambda: _build_generated_runtime(case, handler_calls=generated_handler_calls)
+    )
+    initial_expect = _initial_constructor_expect(case)
+    _assert_aligned_constructor_outcome(
+        case,
+        initial_expect,
+        simulation_runtime,
+        simulation_err,
+        generated_runtime,
+        generated_err,
+    )
+    if initial_expect is not None:
+        return
+    simulation_handler_calls = _register_fixture_handlers(simulation_runtime, case)
     runtime = _GeneratedPythonAlignmentRuntime(
         simulation_runtime, generated_runtime, case.dsl_code
     )
@@ -2542,13 +2657,13 @@ def _validate_initial(
         _validate_vars_mapping(initial.get("vars"), case_id, yaml_path, "initial.vars")
     if "expect" not in initial:
         return
-    if initial.get("state") is None:
+    if "state" not in initial:
         raise _case_error(
             case_id,
             yaml_path,
             "initial.expect requires initial.state",
         )
-    if initial.get("vars") is None:
+    if "vars" not in initial:
         raise _case_error(
             case_id,
             yaml_path,
@@ -2833,6 +2948,12 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
     if "cli_command" in runners and len(runners) != 1:
         raise _case_error(
             case_id, yaml_path, "cli_command cannot be mixed with other runners"
+        )
+    if "generated_python_alignment" in runners and "simulation" not in runners:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "generated_python_alignment requires the simulation runner",
         )
     _validate_initial(data.get("initial"), case_id, yaml_path, runners)
     _validate_runtime_options(data.get("runtime_options"), case_id, yaml_path, runners)

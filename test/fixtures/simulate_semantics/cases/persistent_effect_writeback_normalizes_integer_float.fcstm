@@ -1,0 +1,15 @@
+def int bits = 0;
+def int marker = 0;
+
+state Root {
+    state A;
+    state B {
+        during { marker = bits & 1; }
+    }
+
+    [*] -> A;
+    A -> B :: Go effect {
+        tmp = 6 / 2;
+        bits = tmp;
+    };
+}

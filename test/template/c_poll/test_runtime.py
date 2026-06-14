@@ -11,6 +11,33 @@ from ._utils import render_c_artifacts, render_c_runtime
 _CLANG_FORMAT_STYLE = '{BasedOnStyle: LLVM, IndentWidth: 4, ContinuationIndentWidth: 4}'
 
 
+def _representative_gate_dsl():
+    return """
+    def int counter = 0;
+    def int ready = 0;
+    def float gain = 1.5;
+    state Control {
+        enter abstract Boot;
+        state Idle {
+            during { counter = counter + 1; }
+        }
+        state Active {
+            enter abstract ActiveEnter;
+            during before { gain = gain + 0.5; }
+            state Work {
+                enter { counter = counter + 2; }
+                during { counter = counter + 3; }
+            }
+            [*] -> Work : if [ready == 1];
+        }
+        state Done;
+        [*] -> Idle;
+        Idle -> Active :: Start effect { ready = 1; counter = counter + 10; };
+        Active -> Done : if [counter >= 20] effect { counter = counter + 1; };
+    }
+    """
+
+
 def _format_c_text(text, filename):
     clang_format = shutil.which('clang-format')
     if clang_format is None:
@@ -79,37 +106,26 @@ def _assert_generated_c_banner(source, *, template_name, root_name, extra_terms=
 @pytest.mark.unittest
 class TestCPollBuiltinTemplate:
     def test_generated_machine_source_banners_document_file_contract(self):
-        dsl_code = """
-        def int counter = 0;
-        state Root {
-            state A {
-                during { counter = counter + 1; }
-            }
-            state B;
-            [*] -> A;
-            A -> B :: Go;
-        }
-        """
-
-        with render_c_artifacts(dsl_code) as artifacts:
-            with open(artifacts['machine_h_file'], 'r', encoding='utf-8') as f:
+        with render_c_artifacts(_representative_gate_dsl()) as artifacts:
+            with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
                 header = f.read()
-            with open(artifacts['machine_c_file'], 'r', encoding='utf-8') as f:
+            with open(artifacts["machine_c_file"], "r", encoding="utf-8") as f:
                 source = f.read()
 
             _assert_generated_c_banner(
                 header,
-                template_name='c_poll',
-                root_name='Root',
-                extra_terms=['public integration header', 'event-check polling'],
+                template_name="c_poll",
+                root_name="Control",
+                extra_terms=["public integration header", "event-check polling"],
             )
             _assert_generated_c_banner(
                 source,
-                template_name='c_poll',
-                root_name='Root',
-                extra_terms=['implementation', 'event-check polling'],
+                template_name="c_poll",
+                root_name="Control",
+                extra_terms=["implementation", "event-check polling"],
             )
-            assert source.index('/*') < source.index('#include "machine.h"')
+            assert source.index("/*") < source.index('#include "machine.h"')
+
 
     def test_generated_machine_runs_cycle_and_event_transition(self):
         dsl_code = """
@@ -344,242 +360,236 @@ class TestCPollBuiltinTemplate:
             assert '返回 `0`' in readme_zh
 
     def test_generated_machine_clang_format_converges_under_four_space_style(self):
-        dsl_code = """
-        def int counter = 0;
-        def int ready = 0;
-        state Root {
-            enter abstract RootInit;
-            state A {
-                during { counter = counter + 1; }
-            }
-            state B {
-                enter abstract BEnter;
-                state B1 {
-                    during { counter = counter + 10; }
-                }
-                [*] -> B1 : if [ready == 1];
-            }
-            [*] -> A;
-            A -> B :: Go effect { counter = counter + 100; };
-        }
-        """
-
-        with render_c_artifacts(dsl_code) as artifacts:
-            for key in ['machine_h_file', 'machine_c_file']:
+        with render_c_artifacts(_representative_gate_dsl()) as artifacts:
+            for key in ["machine_h_file", "machine_c_file"]:
                 path = artifacts[key]
-                with open(path, 'r', encoding='utf-8') as f:
+                with open(path, "r", encoding="utf-8") as f:
                     original = f.read()
 
                 formatted_once = _format_c_text(original, os.path.basename(path))
                 formatted_twice = _format_c_text(formatted_once, os.path.basename(path))
 
                 assert formatted_once == formatted_twice
-                assert '\t' not in formatted_once
+                assert "\t" not in formatted_once
+
 
     def test_generated_readme_code_blocks_are_formatter_friendly(self):
-        dsl_code = """
-        def int counter = 0;
-        state Root {
-            state A {
-                during { counter = counter + 1; }
-            }
-            state B;
-            [*] -> A;
-            A -> B :: Go;
-        }
-        """
-
-        with render_c_artifacts(dsl_code) as artifacts:
-            with open(artifacts['readme_file'], 'r', encoding='utf-8') as f:
+        with render_c_artifacts(_representative_gate_dsl()) as artifacts:
+            with open(artifacts["readme_file"], "r", encoding="utf-8") as f:
                 readme = f.read()
-            with open(artifacts['readme_zh_file'], 'r', encoding='utf-8') as f:
+            with open(artifacts["readme_zh_file"], "r", encoding="utf-8") as f:
                 readme_zh = f.read()
 
             for content in [readme, readme_zh]:
-                blocks = re.findall(r'```(?:c|cpp|bash)\n(.*?)```', content, flags=re.S)
+                blocks = re.findall(r"```(?:c|cpp|bash)\n(.*?)```", content, flags=re.S)
                 assert blocks
                 for block in blocks:
-                    assert '\t' not in block
+                    assert "\t" not in block
 
-            assert 'clang-format' in readme
-            assert 'clang-format' in readme_zh
+            assert "clang-format" in readme
+            assert "clang-format" in readme_zh
+
 
     def test_generated_machine_c_event_checks_install_and_drive_cycle(self):
-        dsl_code = """
-        def int counter = 0;
-        state Root {
-            state A {
-                during { counter = counter + 1; }
-            }
-            state B {
-                during { counter = counter + 10; }
-            }
-            [*] -> A;
-            A -> B :: Go;
-        }
-        """
-
-        with render_c_artifacts(dsl_code) as artifacts:
+        with render_c_artifacts(_representative_gate_dsl()) as artifacts:
             run = _compile_and_run_c_harness(
                 artifacts,
-                'event_check_mount_test',
+                "event_check_mount_test",
                 textwrap.dedent(
-                    r'''
+                    r"""
                     #include "machine.h"
                     #include <string.h>
 
                     typedef struct EventLog {
-                        int allow_go;
-                        int seen;
+                        int allow_start;
+                        int seen_start;
                     } EventLog;
 
-                    static int check_go(
-                        RootMachine *machine,
-                        const RootMachineEventContext *ctx,
+                    typedef struct HookLog {
+                        int boot_calls;
+                        int active_calls;
+                    } HookLog;
+
+                    static int check_start(
+                        ControlMachine *machine,
+                        const ControlMachineEventContext *ctx,
                         void *user_data
                     )
                     {
                         EventLog *log = (EventLog *)user_data;
                         (void)machine;
                         if (
-                            strcmp(ctx->event_path, "Root.A.Go") == 0 &&
-                            strcmp(ctx->current_state_path, "Root.A") == 0
+                            strcmp(ctx->event_path, "Control.Idle.Start") == 0 &&
+                            strcmp(ctx->current_state_path, "Control.Idle") == 0
                         ) {
-                            log->seen += 1;
+                            log->seen_start += 1;
                         }
-                        return log->allow_go;
+                        return log->allow_start;
+                    }
+
+                    static void boot_hook(
+                        ControlMachine *machine,
+                        const ControlMachineExecutionContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        HookLog *log = (HookLog *)user_data;
+                        (void)machine;
+                        if (strcmp(ctx->action_name, "Control.Boot") == 0) {
+                            log->boot_calls += 1;
+                        }
+                    }
+
+                    static void active_hook(
+                        ControlMachine *machine,
+                        const ControlMachineExecutionContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        HookLog *log = (HookLog *)user_data;
+                        (void)machine;
+                        if (strcmp(ctx->action_name, "Control.Active.ActiveEnter") == 0) {
+                            log->active_calls += 1;
+                        }
                     }
 
                     int main(void)
                     {
-                        RootMachine machine;
-                        RootMachineEventChecks event_checks = ROOTMACHINE_EVENT_CHECKS_INIT;
+                        ControlMachine machine;
+                        ControlMachineHooks hooks = CONTROLMACHINE_HOOKS_INIT;
+                        ControlMachineEventChecks event_checks = CONTROLMACHINE_EVENT_CHECKS_INIT;
                         EventLog log = {0};
+                        HookLog hooks_log = {0};
 
-                        if (!RootMachine_init(&machine)) {
+                        if (!ControlMachine_init(&machine)) {
                             return 10;
                         }
-                        if (RootMachine_cycle(&machine)) {
+                        if (ControlMachine_cycle(&machine)) {
                             return 11;
                         }
 
-                        event_checks.check_Root_A_Go = check_go;
-                        RootMachine_set_event_checks(&machine, &event_checks, &log);
+                        hooks.on_Control_Boot = boot_hook;
+                        hooks.on_Control_Active_ActiveEnter = active_hook;
+                        ControlMachine_set_hooks(&machine, &hooks, &hooks_log);
+                        event_checks.check_Control_Idle_Start = check_start;
+                        ControlMachine_set_event_checks(&machine, &event_checks, &log);
 
-                        if (!RootMachine_cycle(&machine)) {
+                        if (!ControlMachine_cycle(&machine)) {
                             return 12;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.A") != 0) {
+                        if (strcmp(ControlMachine_current_state_path(&machine), "Control.Idle") != 0) {
                             return 13;
                         }
-                        if (RootMachine_vars(&machine)->counter != 1) {
+                        if (ControlMachine_vars(&machine)->counter != 1) {
                             return 14;
                         }
-
-                        log.allow_go = 1;
-                        if (!RootMachine_cycle(&machine)) {
+                        if (hooks_log.boot_calls != 1 || hooks_log.active_calls != 0) {
                             return 15;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.B") != 0) {
+
+                        log.allow_start = 1;
+                        if (!ControlMachine_cycle(&machine)) {
                             return 16;
                         }
-                        if (RootMachine_vars(&machine)->counter != 11) {
+                        if (strcmp(ControlMachine_current_state_path(&machine), "Control.Active.Work") != 0) {
                             return 17;
                         }
-                        if (log.seen != 1) {
+                        if (
+                            ControlMachine_vars(&machine)->ready != (ControlMachineInt)1 ||
+                            ControlMachine_vars(&machine)->counter != (ControlMachineInt)16 ||
+                            ControlMachine_vars(&machine)->gain != 2.0
+                        ) {
                             return 18;
+                        }
+                        if (log.seen_start != 1) {
+                            return 19;
+                        }
+                        if (hooks_log.boot_calls != 1 || hooks_log.active_calls != 1) {
+                            return 20;
                         }
 
                         return 0;
                     }
-                    '''
+                    """
                 ),
             )
             assert run.returncode == 0, run.stderr
 
-    def test_generated_machine_cpp98_event_checks_install_and_drive_cycle(self):
-        dsl_code = """
-        def int counter = 0;
-        state Root {
-            state A {
-                during { counter = counter + 1; }
-            }
-            state B {
-                during { counter = counter + 10; }
-            }
-            [*] -> A;
-            A -> B :: Go;
-        }
-        """
 
-        with render_c_artifacts(dsl_code) as artifacts:
+    def test_generated_machine_cpp98_event_checks_install_and_drive_cycle(self):
+        with render_c_artifacts(_representative_gate_dsl()) as artifacts:
             run = _compile_and_run_cpp_harness(
                 artifacts,
-                'cpp98_event_check_mount',
+                "cpp98_event_check_mount",
                 textwrap.dedent(
-                    r'''
+                    r"""
                     #include "machine.h"
                     #include <cstring>
 
                     struct EventLog {
-                        int allow_go;
-                        int seen;
+                        int allow_start;
+                        int seen_start;
                     };
 
-                    static int check_go(
-                        RootMachine *machine,
-                        const RootMachineEventContext *ctx,
+                    static int check_start(
+                        ControlMachine *machine,
+                        const ControlMachineEventContext *ctx,
                         void *user_data
                     )
                     {
                         EventLog *log = static_cast<EventLog *>(user_data);
                         (void)machine;
                         if (
-                            std::strcmp(ctx->event_path, "Root.A.Go") == 0 &&
-                            std::strcmp(ctx->current_state_path, "Root.A") == 0
+                            std::strcmp(ctx->event_path, "Control.Idle.Start") == 0 &&
+                            std::strcmp(ctx->current_state_path, "Control.Idle") == 0
                         ) {
-                            log->seen += 1;
+                            log->seen_start += 1;
                         }
-                        return log->allow_go;
+                        return log->allow_start;
                     }
 
                     int main()
                     {
-                        RootMachine machine;
-                        RootMachineEventChecks event_checks = ROOTMACHINE_EVENT_CHECKS_INIT;
+                        ControlMachine machine;
+                        ControlMachineEventChecks event_checks = CONTROLMACHINE_EVENT_CHECKS_INIT;
                         EventLog log = {0, 0};
 
-                        if (!RootMachine_init(&machine)) {
+                        if (!ControlMachine_init(&machine)) {
                             return 20;
                         }
-                        event_checks.check_Root_A_Go = check_go;
-                        RootMachine_set_event_checks(&machine, &event_checks, &log);
+                        event_checks.check_Control_Idle_Start = check_start;
+                        ControlMachine_set_event_checks(&machine, &event_checks, &log);
 
-                        if (!RootMachine_cycle(&machine)) {
+                        if (!ControlMachine_cycle(&machine)) {
                             return 21;
                         }
-                        if (std::strcmp(RootMachine_current_state_path(&machine), "Root.A") != 0) {
+                        if (std::strcmp(ControlMachine_current_state_path(&machine), "Control.Idle") != 0) {
                             return 22;
                         }
-                        log.allow_go = 1;
-                        if (!RootMachine_cycle(&machine)) {
+                        log.allow_start = 1;
+                        if (!ControlMachine_cycle(&machine)) {
                             return 23;
                         }
-                        if (std::strcmp(RootMachine_current_state_path(&machine), "Root.B") != 0) {
+                        if (std::strcmp(ControlMachine_current_state_path(&machine), "Control.Active.Work") != 0) {
                             return 24;
                         }
-                        if (RootMachine_vars(&machine)->counter != 11) {
+                        if (
+                            ControlMachine_vars(&machine)->ready != (ControlMachineInt)1 ||
+                            ControlMachine_vars(&machine)->counter != (ControlMachineInt)16 ||
+                            ControlMachine_vars(&machine)->gain != 2.0
+                        ) {
                             return 25;
                         }
-                        if (log.seen != 1) {
+                        if (log.seen_start != 1) {
                             return 26;
                         }
                         return 0;
                     }
-                    '''
+                    """
                 ),
             )
             assert run.returncode == 0, run.stderr
+
 
     def test_generated_machine_cpp98_supports_cxx_keyword_safe_identifiers(self):
         dsl_code = """

@@ -1,6 +1,7 @@
 import ast
 import importlib.util
 import os.path
+import re
 import subprocess
 import sys
 import textwrap
@@ -60,6 +61,45 @@ def _render_python_artifacts(dsl_code, module_name='generated_python'):
 def _render_python_module(dsl_code, module_name='generated_python'):
     with _render_python_artifacts(dsl_code, module_name=module_name) as artifacts:
         yield artifacts['module']
+
+
+def _representative_gate_dsl():
+    return """
+    def int counter = 0;
+    def int ready = 0;
+    def float gain = 1.5;
+    state Control {
+        enter abstract Boot;
+        state Idle {
+            during { counter = counter + 1; }
+        }
+        state Active {
+            enter abstract ActiveEnter;
+            during before { gain = gain + 0.5; }
+            state Work {
+                enter { counter = counter + 2; }
+                during { counter = counter + 3; }
+            }
+            [*] -> Work : if [ready == 1];
+        }
+        state Done;
+        [*] -> Idle;
+        Idle -> Active :: Start effect { ready = 1; counter = counter + 10; };
+        Active -> Done : if [counter >= 20] effect { counter = counter + 1; };
+    }
+    """
+
+
+def _python_code_blocks(markdown):
+    return re.findall(r"```python\n(.*?)```", markdown, flags=re.S)
+
+
+def _assert_python_readme_code_blocks_are_formatter_friendly(markdown):
+    blocks = _python_code_blocks(markdown)
+    assert blocks
+    for block in blocks:
+        assert "\t" not in block
+        assert "\r" not in block
 
 
 @pytest.mark.unittest
@@ -466,8 +506,23 @@ class TestPythonBuiltinTemplate:
             assert 'abstract hook' in readme_zh
             assert '修改状态机持久变量' in readme_zh
 
+    def test_generated_readme_python_code_blocks_are_formatter_friendly(self):
+        with _render_python_artifacts(_representative_gate_dsl()) as artifacts:
+            with open(artifacts["readme_file"], "r", encoding="utf-8") as f:
+                readme = f.read()
+            with open(artifacts["readme_zh_file"], "r", encoding="utf-8") as f:
+                readme_zh = f.read()
+
+            _assert_python_readme_code_blocks_are_formatter_friendly(readme)
+            _assert_python_readme_code_blocks_are_formatter_friendly(readme_zh)
+            assert "CustomMachine" in readme
+            assert "CustomMachine" in readme_zh
+            assert "machine.cycle" in readme
+            assert "machine.cycle" in readme_zh
+
     def test_generated_machine_source_stays_platform_neutral_and_python37_compatible(self):
         dsl_codes = [
+            _representative_gate_dsl(),
             """
             def int counter = 0;
             state Root {

@@ -58,6 +58,12 @@ Generated `c_poll` output should keep these defaults:
 `machine.h` is the public integration surface; `machine.c` is generated runtime
 implementation optimized for semantics and performance.
 
+## Resource lifetime and leak policy
+
+Generated `c_poll` runtimes may run for long periods inside control applications. Resource ownership therefore has to be explicit and leak-free: `..._create()` owns allocation, `..._destroy()` releases it, `..._init()` / `..._hot_start()` reset state without leaking, `..._set_hooks()` and `..._set_event_checks()` store caller-owned tables and user-data pointers without taking ownership, and each `cycle()` must leave only the machine-owned persistent state behind.
+
+When `machine.c.j2` or allocation-related public API changes, run at least one representative generated harness under AddressSanitizer / LeakSanitizer, valgrind, or an equivalent platform tool when available. The harness should cover event-check installation, repeated cycles, hot start, hook callbacks, and destroy paths. If an existing leak or ownership bug is found outside the current change scope, record a reproducible harness and split it into a dedicated fix.
+
 ## Public integration surface
 
 `machine.h` owns the stable integration contract:
@@ -163,7 +169,8 @@ Use the smallest verification set that matches the change:
    normally stay content-equivalent.
 5. For runtime template changes, generate representative machines and run C99
    build checks, C++98 integration checks, formatter convergence checks,
-   c_poll-specific event-check tests, and simulator-alignment tests.
+   sanitizer or equivalent leak checks where available, c_poll-specific
+   event-check tests, and simulator-alignment tests.
 
 Useful commands:
 

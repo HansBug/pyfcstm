@@ -186,7 +186,7 @@ class TestPythonBuiltinTemplate:
                 'Root.RootInit': '_abstract_hook_Root_RootInit',
                 'Root.System.A.AEnter': '_abstract_hook_Root_System_A_AEnter',
             }
-            assert 'Original DSL Source' in module.__doc__
+            assert 'Canonical Model Export' in module.__doc__
             assert (
                 'Root-level hook used for runtime customization.'
                 in module.RootMachine._abstract_hook_Root_RootInit.__doc__

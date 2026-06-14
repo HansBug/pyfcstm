@@ -315,22 +315,23 @@ Do not expand the formatter matrix casually.
 
 Mandatory completion rule for built-in template work:
 
-- Treat formatter convergence as a readability and maintainability gate for generated artifacts, not as a reason to
-  over-engineer semantic fixes around formatter edge cases. The target-language output should be clean enough for users
-  to read and maintain without hand-editing, while semantic correctness and simulator/template alignment remain the
-  higher-priority acceptance criteria.
+- Treat formatter/linter gates as pragmatic quality gates for generated artifacts, not as absolute style objectives.
+  Their job is to catch obvious roughness and keep generated output professional, tidy, and integration-friendly; they
+  must not become a reason to contort generated runtime design when semantics, performance, compatibility, or
+  simulator/template alignment would be harmed.
+- This rule applies to all current and future target-language formatter flows, including `ruff`, `dprint`,
+  `clang-format`, `rustfmt`, `gofmt`, and any formatter added later for languages such as Java, JavaScript, Rust, Ruby,
+  or Go. Future template READMEs and test gates must state this same pragmatic standard instead of presenting
+  formatter output as an unlimited pursuit of style perfection.
 - The generated target-language artifacts must be acceptable to the corresponding formatter defaults for representative
   outputs of that language. For generated Python, representative `machine.py` artifacts should pass both `ruff check`
-  and `ruff format --check` in template tests.
-- For the built-in `python` template specifically, `ruff` is used to keep generated code broadly tidy and idiomatic. If
-  an extreme legal DSL expression is valid Python, lint-clean, runtime-correct, and aligned with
-  `SimulationRuntime`, but `ruff format --check` only wants stylistic wrapping of that extreme expression, treat that
-  as a non-blocking formatter-only concern unless the task explicitly targets formatter convergence for that shape. Do
-  not add complex generation machinery solely to silence weak formatter-only rewrites.
+  and `ruff format --check` in template tests, while rare extreme formatter-only rewrites that are lint-clean,
+  runtime-correct, and simulator-aligned may be documented as non-blocking when the task is not specifically about that
+  shape.
 - Template-facing documentation artifacts that ship with the generated output, especially generated `README.md` / `README_zh.md` files and their embedded code snippets, must also be kept formatter-friendly for the relevant language and text formatter set.
-- For template changes, "done" means representative generated outputs have converged under the intended formatter flow,
-  semantic alignment tests pass, and any known formatter-only exceptions are explicitly documented as non-blocking with
-  their runtime/lint evidence.
+- For template changes, "done" means representative generated outputs satisfy the intended formatter flow, semantic
+  alignment tests pass, and any known formatter-only exceptions are explicitly documented as non-blocking with their
+  runtime/lint evidence. Do not add complex generation machinery solely to silence weak formatter-only rewrites.
 - When adding or changing a multi-language built-in template, explicitly design the generated code shape and README examples so they stabilize under the formatter set listed above instead of relying on hand-aligned formatting.
 - Use the formatter that matches the emitted language and verify convergence with that formatter, not with ad-hoc manual styling:
   - `py`: `ruff format`
@@ -1008,11 +1009,16 @@ For built-in template work, the current design bar is defined by the `python` te
 - The target language version and platform envelope should be broad and explicit. Match the spirit of the Python template: low dependency footprint, wide version compatibility, and cross-platform behavior.
 - Do not require users to edit generated files to implement abstract behavior. Instead, expose stable, language-idiomatic extension points for abstract actions and related hooks. The Python template uses protected hook override methods as the reference pattern.
 - Preserve naming clarity for generated extension points so DSL authors can map states, actions, and abstract behavior back to code quickly, ideally with IDE completion support.
-- Keep generated code readable and inspectable. Generated runtimes are product artifacts, not opaque intermediate blobs.
-- Ensure the final generated code, generated support files, and generated README examples are written so the corresponding formatter flow reaches a stable end state. Template work that has not reached formatter convergence is not complete.
+- Keep public integration surfaces, generated README files, and generated-file guidance clear and inspectable. Generated
+  implementation bodies may be mechanical and performance-oriented, but they must still look professional enough for
+  downstream integration.
+- Ensure the final generated code, generated support files, and generated README examples satisfy the corresponding
+  pragmatic formatter flow for representative outputs. Formatter/linter gates are not absolute style goals; rare
+  formatter-only edge cases may be documented as non-blocking when runtime semantics, performance, compatibility, and
+  simulator/template alignment remain correct.
 - For changes to [templates/python/](templates/python/), verify representative generated `machine.py` outputs with both `ruff check` and
-  `ruff format --check`; if ruff reports lint diagnostics or would reformat the generated Python, the template change
-  is not ready.
+  `ruff format --check`. Ordinary representative output that fails lint or formatting is not ready; rare extreme
+  formatter-only rewrites fall under the non-blocking exception policy above when explicitly justified.
 - When adding a new built-in template, update all of the following together: [templates/](templates/), packaged template assets, CLI/template metadata, maintainer docs, generated docs if applicable, and the corresponding tests.
 
 ### Testing Strategy

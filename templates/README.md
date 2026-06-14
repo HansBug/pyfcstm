@@ -51,6 +51,8 @@ Future templates are expected to use stable `template.json.language` values. The
 
 Checks should distinguish current templates from reserved vocabulary. `python`, `c`, and `c_poll` are current template names. `java`, `js`, `rust`, `ruby`, and `go` are reserved target-language vocabulary and must not force empty directories to exist.
 
+All future formatter or linter gates for these reserved languages inherit the same repository-wide standard: they are pragmatic quality gates for obvious generated-code roughness, not absolute style objectives. A future Java, JavaScript, Rust, Ruby, Go, or other template must document its formatter flow with that constraint before adding strict checks.
+
 ## Renderer contract
 
 The renderer is implemented primarily in `pyfcstm/render/render.py` and `pyfcstm/render/env.py`.
@@ -144,7 +146,9 @@ Generated runtime files must be strictly self-contained by default:
 
 Generated implementation files should be optimized for model semantics, predictable execution, and runtime performance. Human readability is secondary for implementation files such as `machine.py` and `machine.c`. Public integration surfaces such as `machine.h` should remain clear because they are read by downstream integrators.
 
-Formatter and linter checks are still required where defined. Their purpose is to make generated output look professional and avoid obvious integration friction. Do not contort generated runtime design solely to satisfy a stylistic preference when it would harm performance or semantics.
+Formatter and linter checks are still required where defined. Their purpose is to make generated output look professional and avoid obvious integration friction. This is a pragmatic quality gate, not an unlimited pursuit of style perfection. Do not contort generated runtime design solely to satisfy a stylistic preference when it would harm performance, semantics, compatibility, or simulator/template alignment. If a rare formatter-only exception is accepted, document it narrowly with the runtime and compatibility reason.
+
+This policy applies equally to existing formatter flows and future ones. New templates must not define stricter formatter rules that force maintainers to over-optimize extreme edge cases unrelated to visible behavior or integration quality.
 
 ## Source context contract
 
@@ -167,7 +171,7 @@ Before adding a new built-in template directory, confirm all items below:
 - Add generated-output `README.md.j2` and `README_zh.md.j2` for generated-code users.
 - Add generated source templates with generated-file banners near the first real output.
 - Keep generated runtime self-contained: no `pyfcstm runtime`, no third-party runtime dependency, no unstable runtime dependency.
-- Define target-language compatibility, formatter, build, and test gates.
+- Define target-language compatibility, formatter, build, and test gates; formatter gates must be documented as pragmatic quality checks, not absolute style goals.
 - Add representative generated-runtime tests and, when applicable, simulator alignment tests.
 - Run packaging checks so `pyfcstm/template/index.json`, zip archives, and `extract_template` agree with source templates.
 - Update this handbook only when the repository-wide contract changes; update the template-level README when only one template changes.

@@ -94,7 +94,10 @@ _BANNED_SOURCE_WORDING = (
     "原始 source",
     "原始源码",
     "原始源代码",
+    "原始输入源码",
+    "原始输入源代码",
     "raw 源码",
+    "raw 源代码",
 )
 
 
@@ -228,12 +231,14 @@ def _assert_banner_terms(text, *, template_name, root_name):
 
 def _assert_source_context_terms(text):
     normalized = " ".join(text.lower().split())
+    compact = "".join(text.lower().split())
     assert (
         "canonical model export" in normalized
         or "normalized model export" in normalized
     )
     for banned in _BANNED_SOURCE_WORDING:
         assert banned not in normalized
+        assert "".join(banned.split()) not in compact
 
 
 def _assert_python_runtime_imports_are_self_contained(source):

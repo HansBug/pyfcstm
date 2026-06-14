@@ -1,46 +1,207 @@
-# c_poll
+# c_poll template maintainer handbook
 
-`c_poll` is the built-in C99 / C++98-compatible runtime template target that
-uses hook-polled events instead of per-cycle external event-id submission.
+`c_poll` is the built-in C-family runtime template whose event input model is
+hook-polled. Instead of accepting external event-id arrays on each cycle, the
+generated runtime calls installed event-check functions to decide whether each
+DSL event is active in the current cycle.
 
-Template source contents:
+This file is the maintainer-facing handbook for `templates/c_poll/`. It is
+ignored by the renderer and is not copied to generated output. Generated-output
+user guides come from `README.md.j2` / `README_zh.md.j2`.
 
-- `machine.h.j2`: generated public runtime header
-- `machine.c.j2`: generated runtime implementation
-- `README.md.j2`: generated English usage guide in the output directory
-- `README_zh.md.j2`: generated Chinese usage guide in the output directory
-- `README.md` / `README_zh.md`: maintainer-facing template documentation
+## Target and non-targets
 
-Current design direction:
+Use this template when the host environment already has event signals available
+through callbacks, device reads, polling functions, or application state, and a
+plain `cycle(machine)` API is a better integration shape than per-cycle event-id
+submission.
 
-- keep `templates/c/` as the behavioral and structural baseline wherever the
-  event-input model does not force divergence
-- keep the generated runtime compatible with `C99` and `C++98`
-- treat generated `machine.c` as a black-box high-performance runtime
-- keep generated `machine.h` small, stable, and user-oriented
-- require a complete generated event-check table before `cycle()` can run on
-  machines that declare events
-- define event checks as read-only probes where non-zero means "active this
-  cycle" and `0` means "inactive this cycle"
-- use lazy evaluation and per-cycle cache semantics for installed event checks
+`c_poll` should stay close to `templates/c/` where the event-input model does
+not require divergence. It is not a separate semantic runtime: FCSTM state,
+transition, lifecycle, validation, rollback, and hook behavior must remain
+aligned with the simulator and the regular C template.
 
-Phase status in this template directory:
+Generated output must not depend on `pyfcstm`, Python, or third-party runtime
+libraries.
 
-- Phase 1: template skeleton established under `templates/c_poll/`
-- Phase 2: public API switched to event-check mounting plus `cycle(machine)`
-- Phase 3: internal event-check cache and dispatch-path migration completed
-- Phase 4: runtime tests and alignment coverage completed
-- Phase 5: builtin-template packaging, docs, and CLI integration completed
-- Phase 6: formatter convergence validated with explicit 4-space clang-format checks
+## Source layout and generated output
 
-Implementation notes:
+| Template source | Maintainer role | Generated output |
+| --- | --- | --- |
+| `machine.h.j2` | Public C integration surface template, including event-check types | `machine.h` |
+| `machine.c.j2` | Generated high-performance hook-polled runtime implementation template | `machine.c` |
+| `README.md.j2` | English generated-output guide | `README.md` |
+| `README_zh.md.j2` | Chinese generated-output guide | `README_zh.md` |
+| `config.yaml` | Renderer configuration, C statement rendering, helper names, and ignore rules | Not copied |
+| `template.json` | Built-in template metadata | Not copied |
+| `README.md` / `README_zh.md` | Template maintainer handbooks | Not copied by the renderer, but included in packaged template archives |
 
-- `machine.c` does not need to optimize for human readability; it is generated
-  black-box runtime code and should prioritize runtime performance once
-  semantics are correct.
-- `machine.h` should expose only the public operations and data structures that
-  integrators actually need.
-- Formatter convergence is part of completion. Generated C/C++ artifacts should
-  stabilize under `clang-format` with the repository's template-development
-  guidance. For `c_poll`, verification is done against an explicit 4-space
-  `clang-format` style rather than the 2-space LLVM default.
+`config.yaml` ignores `README.md`, `README_zh.md`, and `template.json` for
+generated output. `make tpl` still packages the full template source directory,
+so changes to this handbook must be validated with a refreshed local
+`pyfcstm/template/c_poll.zip`. The archive is ignored by git in normal
+checkouts; setup and packaging commands recreate it from source.
+
+## Compatibility and runtime dependency boundary
+
+Generated `c_poll` output should keep these defaults:
+
+- C99 implementation path.
+- C++98-compatible integration path for the generated public header and
+  representative harnesses.
+- Standard-library-only runtime dependencies; the generated runtime is standard-library-only by default.
+- No dependency on `pyfcstm`, Python, generated-time helpers, or third-party C
+  libraries.
+- Broad compiler and platform compatibility, matching the C-family policy used
+  by `templates/c/`.
+
+`machine.h` is the public integration surface; `machine.c` is generated runtime
+implementation optimized for semantics and performance.
+
+## Public integration surface
+
+`machine.h` owns the stable integration contract:
+
+- generated machine and persistent variable types;
+- public state-id and event-id macros;
+- abstract hook callback signatures and hook table;
+- event-check callback signatures and a complete generated event-check table;
+- `..._set_event_checks(machine, checks, user_data)` for mounting event input;
+- `..._cycle(machine)` for executing one cycle through installed event checks;
+- hot start, current-state, variable, ended-state, last-error, and
+  embedded-model accessors.
+
+`machine.c` owns the generated execution details, event-check cache, validation
+state, rollback state, and dispatch helpers. Integrators should not edit or
+reach into those internals.
+
+## Event-check model
+
+Each declared DSL event maps to one field in the generated `EventChecks` table.
+For machines that declare events, callers must install a complete table before
+`cycle()` can run.
+
+An event-check callback is a read-only probe:
+
+- non-zero return value means the event is active for the current cycle;
+- `0` means the event is inactive for the current cycle;
+- callbacks should not mutate machine persistent variables;
+- the `EventContext` identifies the queried event, current leaf state, and
+  variable snapshot.
+
+The runtime uses lazy evaluation and a per-cycle cache. If several guards or
+transitions ask about the same event within one cycle, the installed event-check
+function should be called only as needed and the first observation should remain
+stable for the rest of that cycle.
+
+## Relationship to `c`
+
+`c_poll` and `c` share the same C-family maintenance constraints:
+
+- C99 / C++98 compatibility expectations;
+- standard-library-only and strictly self-contained generated runtime;
+- `machine.h` as the stable public integration surface;
+- `machine.c` as high-performance generated implementation;
+- no `pyfcstm` runtime dependency and no third-party runtime dependency;
+- semantic alignment with simulator behavior.
+
+The main difference is event input:
+
+- `c` accepts explicit generated event ids per cycle.
+- `c_poll` polls mounted event-check callbacks during `cycle(machine)`.
+
+This README must remain self-contained. Links to `templates/c/` can be useful
+for comparison, but they must not carry essential `c_poll` maintenance rules by
+themselves.
+
+## Performance and implementation strategy
+
+Generated `machine.c` should prioritize FCSTM semantics and runtime performance.
+Human readability is secondary for implementation code. Keep the public header
+clear and stable; let the generated implementation use specialized dispatch,
+per-cycle event cache storage, and direct action expansion when those choices
+improve performance without changing visible behavior.
+
+Formatter convergence is a pragmatic quality gate, not an absolute style
+objective. It should catch obvious generated-code roughness and keep artifacts
+professional enough for integration. Do not spend maintenance effort contorting
+generated C for rare formatter-only edge cases when semantics, performance, or
+compatibility would be harmed; document any known formatter-only exception
+narrowly with the reason.
+
+## Semantics and alignment expectations
+
+The hook-polled event model must preserve FCSTM behavior for:
+
+- cold start and hot start;
+- composite initial transition ordering;
+- lifecycle enter, during, exit, and aspect actions;
+- event scoping, event identity, and transition priority;
+- guard/effect evaluation and speculative rollback;
+- abstract hook invocation timing and context values;
+- event-check invocation timing, context values, lazy evaluation, and per-cycle
+  cache stability.
+
+Runtime tests and alignment tests are the behavioral authority. README-only
+changes should not modify those tests, but runtime template changes must keep
+them passing.
+
+## Maintenance workflow
+
+Use the smallest verification set that matches the change:
+
+1. For maintainer README-only edits, review English/Chinese section parity and
+   confirm no generated user guide or source template changed.
+2. Run `make rst_auto` before committing repository changes. This README should
+   not normally produce generated RST changes.
+3. Run `make tpl` after changing any file under `templates/c_poll/`, including
+   this README, because packaged built-in template archives include the template
+   source directory.
+4. Inspect packaged asset changes. README-only edits should refresh the local generated
+   `pyfcstm/template/c_poll.zip` archive; because zip archives are ignored by
+   git in normal checkouts, the tracked `pyfcstm/template/index.json` should
+   normally stay content-equivalent.
+5. For runtime template changes, generate representative machines and run C99
+   build checks, C++98 integration checks, formatter convergence checks,
+   c_poll-specific event-check tests, and simulator-alignment tests.
+
+Useful commands:
+
+```bash
+make rst_auto
+make tpl
+pytest test/template/c_poll -v
+SKIP_SLOW_TESTS=1 make unittest
+```
+
+For c_poll runtime work, do not rely only on `SKIP_SLOW_TESTS=1`; the native
+C/C++ toolchain tests are part of the real completion gate.
+
+## Language-specific verification
+
+Representative generated C artifacts should satisfy:
+
+```bash
+clang-format -i -style='{BasedOnStyle: LLVM, IndentWidth: 4}' path/to/machine.h
+clang-format -i -style='{BasedOnStyle: LLVM, IndentWidth: 4}' path/to/machine.c
+cmake -S path/to/harness -B path/to/build
+cmake --build path/to/build
+```
+
+Event-check tests should include machines with no declared events, machines with
+one event, and machines with multiple scoped events so the complete-table rule
+and cache behavior remain covered.
+
+## Documentation layering
+
+Keep documentation layers separate:
+
+- this file explains how to maintain the `c_poll` template;
+- `README.md.j2` / `README_zh.md.j2` explain how to use one generated c_poll
+  output directory;
+- root `templates/README.md` / `README_zh.md` explain repository-wide template
+  system rules.
+
+Generated READMEs should teach users how to register event checks, run cycles,
+inspect state, and diagnose errors without needing to understand repository
+packaging internals.

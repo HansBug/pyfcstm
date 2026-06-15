@@ -20,6 +20,12 @@ automatically. That marker is a load-time contract gate: it rejects legacy
 shared-forbidden fields before either the simulator or generated Python
 alignment runner can treat them as evidence.
 
+As a forward-looking authoring rule for later shared-corpus growth, treat a
+shared fixture as applicable to simulation and all templates by default. When a
+runner/template is not applicable, write the exception explicitly by exclusion
+or capability gap; do not use an `include`-style whitelist as the default
+selection model.
+
 ## How to run
 
 ```bash
@@ -41,6 +47,9 @@ SKIP_SLOW_TESTS=1 make unittest
      expected to match the simulator for this behavior.
    - Do not add `cli_command` to this shared corpus; CLI/REPL behavior belongs
      in ordinary pytest coverage.
+   - For later shared-corpus expansion, prefer the default model "simulation
+     plus all templates" and express exceptions with exclusion or capability
+     gaps instead of an `include` whitelist.
 6. For new shared cases, keep only the public observation surface: `state`,
    `vars`, `ended`, constructor or hot-start outcomes, per-step cycle state and
    vars, `handler_calls`, and `cycle_result.value`.

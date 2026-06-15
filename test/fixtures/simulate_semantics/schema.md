@@ -33,6 +33,11 @@ CLI-only, or model-construction diagnostics. New cross-runtime shared cases
 should declare `boundary: pure_shared`; the fixture loader then runs the
 stricter boundary check automatically.
 
+Future shared-corpus runner selection should default to simulation plus all
+templates. A runner/template that cannot consume a fixture should be named as an
+explicit exclusion or capability gap; an `include`-style whitelist must not
+become the default way to shrink shared fixture coverage.
+
 ## Top-level fields
 
 | Field | Required | Description |

@@ -755,6 +755,10 @@ def _render_report(
             ),
         ),
         "",
+        "后续扩展 shared corpus 时，默认覆盖面应按 simulation + 所有 templates",
+        "理解；不适用的 runner/template 应通过显式排除或能力标签说明，而不是",
+        "用 include 白名单把 shared fixture 缩成少数实现专用样本。",
+        "",
         "## Classification Summary",
         "",
         _format_markdown_table(

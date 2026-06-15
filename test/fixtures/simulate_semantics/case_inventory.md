@@ -32,6 +32,10 @@ fixture cases, so regenerate this report after any corpus or helper change.
 | 兼容层和文档 token 命中 | helper/doc compatibility hits=9 | 通过：非零命中仅用于 schema/README 说明或模拟器 helper 的旧 schema 兼容，不作为 generated alignment 证据。 |
 | C/C poll 基线 | private token hits=0 | 通过：阶段一未接入 C/C poll runner；该结果仅作为第二阶段接入前的公共 API 基线。 |
 
+后续扩展 shared corpus 时，默认覆盖面应按 simulation + 所有 templates
+理解；不适用的 runner/template 应通过显式排除或能力标签说明，而不是
+用 include 白名单把 shared fixture 缩成少数实现专用样本。
+
 ## Classification Summary
 
 | Classification | Case files |
@@ -108,12 +112,12 @@ private-token hits, as summarized in the final acceptance table above.
 
 | Source | Token | Line count | Lines |
 |---|---|---|---|
-| test/fixtures/simulate_semantics/README.md | brief_stack | 1 | 51 |
-| test/fixtures/simulate_semantics/README.md | cycle_count | 1 | 51 |
-| test/fixtures/simulate_semantics/README.md | history | 4 | 52, 56, 73, 104 |
-| test/fixtures/simulate_semantics/schema.md | brief_stack | 2 | 333, 362 |
-| test/fixtures/simulate_semantics/schema.md | cycle_count | 4 | 133, 334, 362, 574 |
-| test/fixtures/simulate_semantics/schema.md | history | 10 | 19, 133, 337, 338, 339, 363, 381, 382, 392, 535 |
+| test/fixtures/simulate_semantics/README.md | brief_stack | 1 | 60 |
+| test/fixtures/simulate_semantics/README.md | cycle_count | 1 | 60 |
+| test/fixtures/simulate_semantics/README.md | history | 4 | 61, 65, 82, 113 |
+| test/fixtures/simulate_semantics/schema.md | brief_stack | 2 | 338, 367 |
+| test/fixtures/simulate_semantics/schema.md | cycle_count | 4 | 138, 339, 367, 579 |
+| test/fixtures/simulate_semantics/schema.md | history | 10 | 19, 138, 342, 343, 344, 368, 386, 387, 397, 540 |
 | test/testings/simulate_semantics.py | brief_stack | 2 | 196, 367 |
 | test/testings/simulate_semantics.py | cycle_count | 8 | 104, 142, 197, 738, 739, 740, 741, 746 |
 | test/testings/simulate_semantics.py | history | 8 | 107, 199, 416, 429, 432, 435, 1915, 1917 |

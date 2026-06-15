@@ -108,10 +108,6 @@ def _runtime_from_dsl_code(dsl_code, **runtime_kwargs):
     return SimulationRuntime(state_machine, **runtime_kwargs)
 
 
-def _raise_boom(ctx):
-    raise ValueError("boom")
-
-
 def _recording_raise_boom(calls):
     def handler(ctx):
         calls.append(
@@ -131,6 +127,14 @@ def _assert_root_runtime_snapshot(runtime, expected_vars):
     assert runtime.current_state.path == ("Root",)
     assert dict(runtime.vars) == expected_vars
     assert runtime.is_ended is False
+
+
+def _assert_error_info(runtime, expected_action, expected_error_type, expected_message):
+    assert runtime.error_info is not None
+    action_path, error = runtime.error_info
+    assert action_path == expected_action
+    assert type(error).__name__ == expected_error_type
+    assert expected_message in str(error)
 
 
 def _anonymous_warning_count(runtime):
@@ -204,11 +208,7 @@ def test_abstract_handler_raise_mode_blocks_later_cycles():
     _assert_root_runtime_snapshot(runtime, {"x": 0})
     assert runtime.cycle_count == 0
     assert runtime.is_error_state is True
-    assert runtime.error_info is not None
-    action_path, error = runtime.error_info
-    assert action_path == "Root.A.Boom"
-    assert type(error).__name__ == "ValueError"
-    assert "boom" in str(error)
+    _assert_error_info(runtime, "Root.A.Boom", "ValueError", "boom")
     assert calls == [
         {
             "action": "Root.A.Boom",
@@ -225,6 +225,7 @@ def test_abstract_handler_raise_mode_blocks_later_cycles():
     assert runtime.cycle_count == 0
     assert runtime.is_error_state is True
     assert runtime.error_info is not None
+    _assert_error_info(runtime, "Root.A.Boom", "ValueError", "boom")
     assert calls == [
         {
             "action": "Root.A.Boom",
@@ -254,11 +255,7 @@ def test_abstract_handler_warning_rollback_on_raise():
     _assert_root_runtime_snapshot(runtime, {})
     assert runtime.cycle_count == 0
     assert runtime.is_error_state is True
-    assert runtime.error_info is not None
-    action_path, error = runtime.error_info
-    assert action_path == "Root.Active.Fail"
-    assert type(error).__name__ == "ValueError"
-    assert "boom" in str(error)
+    _assert_error_info(runtime, "Root.Active.Fail", "ValueError", "boom")
     assert runtime.abstract_handler_errors == []
     assert _anonymous_warning_count(runtime) == 0
     assert calls == [
@@ -276,11 +273,12 @@ def test_failed_cycle_rolls_back_logged_abstract_handler_errors():
     """
     Preserve log-mode abstract handler rollback diagnostics.
     """
+    calls = []
     runtime = _runtime_from_diagnostic_source(
         "failed_cycle_rolls_back_logged_abstract_handler_errors",
         abstract_error_mode="log",
     )
-    runtime.register_abstract_handler("Root.A.Boom", _raise_boom)
+    runtime.register_abstract_handler("Root.A.Boom", _recording_raise_boom(calls))
 
     result = runtime.cycle()
 
@@ -290,6 +288,7 @@ def test_failed_cycle_rolls_back_logged_abstract_handler_errors():
     assert runtime.is_error_state is False
     assert runtime.error_info is None
     assert runtime.abstract_handler_errors == []
+    assert calls == []
 
 
 @pytest.mark.unittest

@@ -10,8 +10,7 @@ origin:
   - initial
   - state
   - vars
-  - stack
-  - return
+  - cycle_result
   - ended
 categories:
 - runtime
@@ -19,6 +18,7 @@ categories:
 - lifecycle
 runners:
 - simulation
+- generated_python_alignment
 initial:
   state: Root.System
   vars:
@@ -31,14 +31,6 @@ steps:
     vars:
       counter: 0
     ended: false
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - System
-      mode: init_wait
 - cycle: {}
   expect:
     state:
@@ -48,20 +40,8 @@ steps:
     vars:
       counter: 1
     ended: false
-    return: null
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - System
-      mode: active
-    - path:
-      - Root
-      - System
-      - Idle
-      mode: active
+    cycle_result:
+      value: null
 - cycle: {}
   expect:
     state:
@@ -71,7 +51,8 @@ steps:
     vars:
       counter: 2
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle: {}
   expect:
     state:
@@ -81,4 +62,5 @@ steps:
     vars:
       counter: 3
     ended: false
-    return: null
+    cycle_result:
+      value: null

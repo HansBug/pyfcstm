@@ -10,9 +10,10 @@ origin:
   assertion_types:
   - state
   - vars
-  - return
+  - cycle_result
   notes:
-  - Covers the canonical generated Python sign expression mismatch in a lifecycle action.
+  - Covers the canonical generated Python sign expression mismatch in a lifecycle
+    action.
 categories:
 - runtime
 - template_alignment

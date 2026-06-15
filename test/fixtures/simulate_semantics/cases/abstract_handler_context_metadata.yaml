@@ -8,7 +8,6 @@ origin:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   assertion_types:
   - handler_calls
-  - history
   - vars
   notes:
   - Minimal fixture proving optional context metadata fields are accepted and asserted.
@@ -17,6 +16,7 @@ categories:
 - abstract
 runners:
 - simulation
+- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -34,13 +34,6 @@ steps:
     ended: false
     cycle_result:
       value: null
-    history_length: 1
-    history_tail:
-    - cycle: 1
-      state: Root.Active
-      vars:
-        x: 0
-      events: []
     handler_calls:
     - action: Root.Active.Touch
       state: Root.Active

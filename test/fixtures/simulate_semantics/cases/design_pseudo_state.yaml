@@ -9,7 +9,7 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_6_pseudo_state
   assertion_types:
   - ended
-  - return
+  - cycle_result
   - state
   - vars
 categories:
@@ -30,4 +30,5 @@ steps:
     vars:
       trace: 2
     ended: true
-    return: null
+    cycle_result:
+      value: null

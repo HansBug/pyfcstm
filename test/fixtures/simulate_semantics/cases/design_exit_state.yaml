@@ -9,7 +9,7 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_10_exit_state
   assertion_types:
   - ended
-  - return
+  - cycle_result
   - state
   - vars
 categories:
@@ -31,7 +31,8 @@ steps:
     vars:
       counter: 1
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle: {}
   expect:
     state:
@@ -40,7 +41,8 @@ steps:
     vars:
       counter: 2
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle: {}
   expect:
     state:
@@ -49,11 +51,13 @@ steps:
     vars:
       counter: 3
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle: {}
   expect:
     state: null
     vars:
       counter: 103
     ended: true
-    return: null
+    cycle_result:
+      value: null

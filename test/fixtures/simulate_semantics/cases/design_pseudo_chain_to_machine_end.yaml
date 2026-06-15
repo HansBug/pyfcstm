@@ -9,7 +9,7 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_16_pseudo_chain_to_machine_end
   assertion_types:
   - ended
-  - return
+  - cycle_result
   - state
   - vars
 categories:
@@ -32,7 +32,8 @@ steps:
     vars:
       counter: 1
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle:
     events:
     - Root.A.GoP
@@ -41,4 +42,5 @@ steps:
     vars:
       counter: 11
     ended: true
-    return: null
+    cycle_result:
+      value: null

@@ -10,7 +10,7 @@ origin:
   assertion_types:
   - state
   - vars
-  - return
+  - cycle_result
   - ended
 categories:
 - runtime
@@ -32,7 +32,8 @@ steps:
       x: 0
       flag: 0
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle:
     events:
     - Root.A.Go
@@ -44,4 +45,5 @@ steps:
       x: 111
       flag: 0
     ended: false
-    return: null
+    cycle_result:
+      value: null

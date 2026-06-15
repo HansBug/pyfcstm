@@ -10,7 +10,6 @@ origin:
   - initial
   - state
   - vars
-  - stack
   - ended
   notes:
   - Ensures provided initial_vars values take priority over their default initializer.
@@ -33,11 +32,3 @@ steps:
     vars:
       recovered: 5.0
     ended: false
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - A
-      mode: active

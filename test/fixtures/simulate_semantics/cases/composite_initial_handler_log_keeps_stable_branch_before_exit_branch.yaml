@@ -14,7 +14,8 @@ origin:
   - vars
   - cycle_result
   notes:
-  - Covers near-exit handler observation where wrong initial choice would enter an exit-capable child.
+  - Covers near-exit handler observation where wrong initial choice would enter an
+    exit-capable child.
 categories:
 - runtime
 - abstract

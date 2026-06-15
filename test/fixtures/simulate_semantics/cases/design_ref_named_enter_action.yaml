@@ -9,7 +9,7 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_33_ref_reuses_named_enter_action
   assertion_types:
   - ended
-  - return
+  - cycle_result
   - state
   - vars
 categories:
@@ -32,7 +32,8 @@ steps:
       init_count: 2
       trace: 201
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle:
     events:
     - Root.A.Go
@@ -44,7 +45,8 @@ steps:
       init_count: 3
       trace: 311
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle: {}
   expect:
     state:
@@ -54,4 +56,5 @@ steps:
       init_count: 3
       trace: 321
     ended: false
-    return: null
+    cycle_result:
+      value: null

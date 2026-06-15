@@ -9,7 +9,7 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_9_self_transition
   assertion_types:
   - ended
-  - return
+  - cycle_result
   - state
   - vars
 categories:
@@ -31,7 +31,8 @@ steps:
     vars:
       counter: 11
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle:
     events:
     - Root.A.Loop
@@ -42,4 +43,5 @@ steps:
     vars:
       counter: 122
     ended: false
-    return: null
+    cycle_result:
+      value: null

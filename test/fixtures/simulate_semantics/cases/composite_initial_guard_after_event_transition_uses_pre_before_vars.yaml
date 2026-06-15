@@ -14,7 +14,8 @@ origin:
   - state
   - vars
   notes:
-  - Covers event-driven entry into the affected composite and declaration-order fallback behavior.
+  - Covers event-driven entry into the affected composite and declaration-order fallback
+    behavior.
 categories:
 - runtime
 - event_paths

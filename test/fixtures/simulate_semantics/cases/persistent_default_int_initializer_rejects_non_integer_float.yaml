@@ -22,6 +22,6 @@ initial:
   expect:
     raises:
       type: ValueError
-      match: "Variable 'count' is int type, cannot assign float 1.5"
+      match: Variable 'count' is int type, cannot assign float 1.5
       match_kind: substring
 steps: []

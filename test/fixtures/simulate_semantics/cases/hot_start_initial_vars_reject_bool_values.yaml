@@ -26,6 +26,6 @@ initial:
   expect:
     raises:
       type: ValueError
-      match: "initial_vars['counter'] must not be bool"
+      match: initial_vars['counter'] must not be bool
       match_kind: substring
 steps: []

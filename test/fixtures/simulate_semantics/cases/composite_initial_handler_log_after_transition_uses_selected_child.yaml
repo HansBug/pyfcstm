@@ -15,7 +15,8 @@ origin:
   - vars
   - cycle_result
   notes:
-  - Covers transition-into-composite handler log observation, not just root-entry handler observation.
+  - Covers transition-into-composite handler log observation, not just root-entry
+    handler observation.
 categories:
 - runtime
 - abstract

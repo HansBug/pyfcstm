@@ -9,7 +9,7 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_31_prunes_repeated_speculative_execution_state
   assertion_types:
   - ended
-  - return
+  - cycle_result
   - state
   - vars
 categories:
@@ -31,7 +31,8 @@ steps:
     vars:
       counter: 1
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle:
     events:
     - Root.A.Go
@@ -42,4 +43,5 @@ steps:
     vars:
       counter: 11
     ended: false
-    return: null
+    cycle_result:
+      value: null

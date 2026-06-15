@@ -9,9 +9,10 @@ origin:
   assertion_types:
   - state
   - vars
-  - return
+  - cycle_result
   notes:
-  - Covers distinct state paths that previously collapsed to the same generated method slug.
+  - Covers distinct state paths that previously collapsed to the same generated method
+    slug.
 categories:
 - runtime
 - template_alignment

@@ -10,7 +10,7 @@ origin:
   assertion_types:
   - state
   - vars
-  - return
+  - cycle_result
   notes:
   - Covers the sign function's three-value semantics in one lifecycle action block.
 categories:

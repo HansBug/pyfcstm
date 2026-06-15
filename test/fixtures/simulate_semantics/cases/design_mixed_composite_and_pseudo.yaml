@@ -9,7 +9,7 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_20_mixed_composite_and_pseudo
   assertion_types:
   - ended
-  - return
+  - cycle_result
   - state
   - vars
 categories:
@@ -32,7 +32,8 @@ steps:
     vars:
       counter: 1
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle:
     events:
     - Root.A.GoB
@@ -45,4 +46,5 @@ steps:
     vars:
       counter: 111
     ended: false
-    return: null
+    cycle_result:
+      value: null

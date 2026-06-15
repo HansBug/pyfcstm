@@ -10,7 +10,7 @@ origin:
   assertion_types:
   - state
   - vars
-  - return
+  - cycle_result
   notes:
   - Covers the C8 sign guard duplicate with target enter action after the transition.
 categories:

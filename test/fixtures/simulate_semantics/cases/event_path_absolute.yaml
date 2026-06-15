@@ -9,7 +9,7 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_202_flexible_path_absolute
   assertion_types:
   - ended
-  - return
+  - cycle_result
   - state
   - vars
 categories:
@@ -33,7 +33,8 @@ steps:
     vars:
       counter: 1
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle:
     events:
     - /global_reset
@@ -45,4 +46,5 @@ steps:
     vars:
       counter: 11
     ended: false
-    return: null
+    cycle_result:
+      value: null

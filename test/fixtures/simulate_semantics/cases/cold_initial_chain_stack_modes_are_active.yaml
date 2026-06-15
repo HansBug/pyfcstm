@@ -11,15 +11,14 @@ origin:
   assertion_types:
   - state
   - vars
-  - stack
-  - return
-  - history
+  - cycle_result
 categories:
 - runtime
 - validation
 - lifecycle
 runners:
 - simulation
+- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -32,25 +31,6 @@ steps:
     - A
     vars:
       x: 1
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - Parent
-      mode: active
-    - path:
-      - Root
-      - Parent
-      - A
-      mode: active
     ended: false
     cycle_result:
       value: null
-    history_tail:
-    - cycle: 1
-      state: Root.Parent.A
-      vars:
-        x: 1
-      events: []

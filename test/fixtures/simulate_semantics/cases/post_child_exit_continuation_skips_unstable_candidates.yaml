@@ -8,8 +8,7 @@ origin:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614271348
   assertion_types:
   - ended
-  - return
-  - stack
+  - cycle_result
   - state
   - vars
 categories:
@@ -33,20 +32,8 @@ steps:
     vars:
       trace: 1
     ended: false
-    return: null
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - System
-      mode: active
-    - path:
-      - Root
-      - System
-      - A
-      mode: active
+    cycle_result:
+      value: null
 - cycle:
     events:
     - Root.System.A.Exit
@@ -59,17 +46,5 @@ steps:
     vars:
       trace: 12365
     ended: false
-    return: null
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - Good
-      mode: active
-    - path:
-      - Root
-      - Good
-      - B
-      mode: active
+    cycle_result:
+      value: null

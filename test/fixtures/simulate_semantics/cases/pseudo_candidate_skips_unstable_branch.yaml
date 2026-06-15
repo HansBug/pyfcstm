@@ -11,9 +11,7 @@ origin:
   assertion_types:
   - state
   - vars
-  - stack
-  - return
-  - history
+  - cycle_result
 categories:
 - runtime
 - pseudo_chain
@@ -33,18 +31,9 @@ steps:
     - A
     vars:
       trace: 101001
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - A
-      mode: active
     ended: false
     cycle_result:
       value: null
-    history_length: 1
 - cycle:
     events:
     - Root.A.Go
@@ -56,27 +45,6 @@ steps:
     - Good
     vars:
       trace: 212113
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - Target
-      mode: active
-    - path:
-      - Root
-      - Target
-      - Good
-      mode: active
     ended: false
     cycle_result:
       value: null
-    history_tail:
-    - cycle: 2
-      state: Root.Target.Good
-      vars:
-        trace: 212113
-      events:
-      - Root.A.Go
-      - Root.Target.Gate.Go

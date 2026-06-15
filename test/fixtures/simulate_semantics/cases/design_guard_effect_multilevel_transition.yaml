@@ -9,7 +9,7 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_11_guard_effect_multilevel_transition
   assertion_types:
   - ended
-  - return
+  - cycle_result
   - state
   - vars
 categories:
@@ -32,7 +32,8 @@ steps:
       counter: 1
       flag: 0
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle: {}
   expect:
     state:
@@ -42,7 +43,8 @@ steps:
       counter: 2
       flag: 0
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle: {}
   expect:
     state:
@@ -52,7 +54,8 @@ steps:
       counter: 3
       flag: 0
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle: {}
   expect:
     state:
@@ -63,4 +66,5 @@ steps:
       counter: 13
       flag: 1
     ended: false
-    return: null
+    cycle_result:
+      value: null

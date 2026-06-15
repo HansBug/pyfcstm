@@ -1,6 +1,7 @@
 schema_version: 1
 id: composite_initial_guard_with_effect_runs_before_plain_before
-title: Composite initial transition effect runs after guard selection and before plain during-before
+title: Composite initial transition effect runs after guard selection and before plain
+  during-before
 source:
   fcstm: composite_initial_guard_with_effect_runs_before_plain_before.fcstm
 origin:
@@ -13,7 +14,8 @@ origin:
   - vars
   - cycle_result
   notes:
-  - Covers the same root cause with an initial-transition effect so the full selected-transition order is pinned.
+  - Covers the same root cause with an initial-transition effect so the full selected-transition
+    order is pinned.
 categories:
 - runtime
 - lifecycle

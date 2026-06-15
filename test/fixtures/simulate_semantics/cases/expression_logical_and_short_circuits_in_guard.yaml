@@ -10,13 +10,13 @@ origin:
   - https://github.com/HansBug/pyfcstm/issues/156#issuecomment-4632515679
   assertion_types:
   - cycle_result
-  - history
   - state
   - vars
 categories:
 - runtime
 runners:
 - simulation
+- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -30,10 +30,8 @@ steps:
       x: 0
       y: 1
     ended: false
-    cycle_count: 1
     cycle_result:
       value: null
-    history_length: 1
 - cycle: {}
   expect:
     state:
@@ -43,14 +41,5 @@ steps:
       x: 0
       y: 2
     ended: false
-    cycle_count: 2
     cycle_result:
       value: null
-    history_length: 2
-    history_tail:
-    - cycle: 2
-      state: Root.A
-      vars:
-        x: 0
-        y: 2
-      events: []

@@ -1486,13 +1486,14 @@ class _GeneratedPythonAlignmentRuntime:
     @property
     def history(self) -> List[Dict[str, Any]]:
         """
-        Return simulator history after verifying generated-runtime alignment.
+        Return simulator history for temporary compatibility expectations.
 
         The generated Python runtime does not expose history as a public API.
-        Fixture history assertions remain valid for generated-alignment cases by
-        first checking that generated state, variables, stack, and cycle count
-        still match :class:`SimulationRuntime`, then returning the simulator's
-        authoritative history records.
+        The current shared fixture corpus no longer uses history as
+        cross-runtime evidence. While the temporary compatibility schema remains
+        in place, this property first runs the alignment helper and then returns
+        the simulator's authoritative history records for any older caller that
+        still requests them.
 
         :return: Runtime history records from the simulator side.
         :rtype: List[Dict[str, Any]]
@@ -1646,8 +1647,10 @@ def run_simulation_case(case: SemanticCase, caplog: Any = None) -> None:
 
     The runner builds the production simulator, installs any fixture-defined
     abstract handlers, executes each step, and applies the strict YAML
-    expectations for state, variables, stack, history, cycle result, logs,
-    warnings, and handler calls.
+    expectations for state, variables, cycle result, exceptions, and public
+    hook-call records. The loader still accepts older debug-only expectation
+    fields until the schema cleanup removes them, but the shared corpus no
+    longer uses those fields as cross-runtime evidence.
 
     :param case: Semantic fixture to execute with the simulation runner.
     :type case: SemanticCase
@@ -1692,9 +1695,11 @@ def run_generated_python_alignment_case(case: SemanticCase, caplog: Any = None) 
     Run a semantic fixture against simulation and generated Python runtimes.
 
     The alignment runner generates the built-in Python runtime for the case DSL,
-    executes it beside :class:`SimulationRuntime`, and asserts that state,
-    variables, stack, cycle counts, returns, exceptions, and handler calls remain
-    aligned after every fixture step.
+    executes it beside :class:`SimulationRuntime`, and asserts that public state,
+    variables, cycle results, exceptions, and handler calls remain aligned after
+    every fixture step. Temporary helper parity checks for stack shape and cycle
+    count remain in this helper until the schema/helper cleanup slice removes
+    them from the alignment adapter.
 
     :param case: Semantic fixture that includes the
         ``generated_python_alignment`` runner.

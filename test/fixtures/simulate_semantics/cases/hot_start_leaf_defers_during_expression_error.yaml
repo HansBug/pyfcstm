@@ -9,7 +9,8 @@ origin:
   assertion_types:
   - exception
   notes:
-  - A non-pseudo leaf target is already stoppable, so construction must not run its first-cycle during action.
+  - A non-pseudo leaf target is already stoppable, so construction must not run its
+    first-cycle during action.
 categories:
 - runtime
 - hot_start
@@ -27,8 +28,8 @@ steps:
   expect:
     raises:
       type: SimulationRuntimeExpressionError
-      match: "operation assignment to 'x' evaluation failed: division by zero"
+      match: 'operation assignment to ''x'' evaluation failed: division by zero'
       match_kind: substring
       cause_type: ZeroDivisionError
-      cause_match: 'division by zero'
+      cause_match: division by zero
       cause_match_kind: substring

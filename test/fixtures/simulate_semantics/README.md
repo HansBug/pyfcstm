@@ -1,7 +1,7 @@
 # Simulate semantic fixtures
 
 This corpus turns existing simulator and built-in Python template alignment
-semantics into data files.  Each case lives in `cases/<id>.fcstm` plus
+semantics into data files. Each case lives in `cases/<id>.fcstm` plus
 `cases/<id>.yaml` and is executed by helpers in
 `test/testings/simulate_semantics.py`.
 

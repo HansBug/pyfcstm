@@ -16,9 +16,10 @@ the semantic cases into an isolated template-only fixture system.
 
 The schema is intentionally strict. Unknown top-level fields, unknown runner
 names, unknown categories, unknown expectation fields, and unknown nested fields
-inside `cycle`, `cycle_result`, `history`, `raises`, `logs`, `stack`, handler
-calls, and CLI expectations must fail fast with a diagnostic containing the case
-id and YAML path.
+inside `cycle`, `cycle_result`, `raises`, `logs`, handler calls, and CLI
+expectations must fail fast with a diagnostic containing the case id and YAML
+path. Fixtures marked `boundary: pure_shared` also reject legacy observation
+fields while loading, before any runtime assertion runs.
 
 The current shared corpus is restricted to simulator plus generated Python
 alignment cases that use the public observation surface. The loader still keeps
@@ -283,11 +284,6 @@ steps:
       vars:
         counter: 0
       ended: false
-      stack:
-        - path: [Root]
-          mode: active
-        - path: [Root, A]
-          mode: active
   - cycle:
       events: [Root.A.Go]
     expect:
@@ -297,12 +293,6 @@ steps:
       ended: false
       cycle_result:
         value: null
-      history_tail:
-        - cycle: 1
-          state: Root.B
-          vars:
-            counter: 10
-          events: [Root.A.Go]
 ```
 
 `cycle` may be `{}`, `null`, a bare event-path string, or a mapping with
@@ -361,7 +351,8 @@ observation surface as the only stable contract: `state`, `vars`, `ended`,
 constructor and hot-start results, per-step cycle state/vars, `handler_calls`,
 and `cycle_result.value`. Do not add `stack`, `brief_stack`, `cycle_count`,
 `history*`, `return`, `warnings`, `abstract_handler_errors`, `error_state`, or
-`error_info` to new shared cases.
+`error_info` to new shared cases. The loader rejects those fields for
+`boundary: pure_shared` fixtures at schema-load time.
 
 `cycle_result` allows these fields:
 
@@ -377,8 +368,8 @@ fixtures may assert only `cycle_result.value`; event-consumption fields are
 optional strict lists of strings, and assertion compares only fields declared by
 the fixture so old `{value: null}` cases remain stable.
 
-`history`, `history_tail`, and history entries use the current
-`SimulationRuntime.history` shape:
+Legacy simulator-only fixtures that still mention `history`, `history_tail`,
+or `history_length` use the current `SimulationRuntime.history` shape:
 
 | Field | Description |
 |---|---|
@@ -387,7 +378,9 @@ the fixture so old `{value: null}` cases remain stable.
 | `vars` | Deep-copied variable snapshot. |
 | `events` | List of normalized input event path names. |
 
-`history_tail` must be non-empty and compares the same number of entries from the end of `runtime.history`.
+`history_tail` must be non-empty and compares the same number of entries from
+the end of `runtime.history`. These fields are not part of the pure shared
+contract.
 
 ## Exceptions
 
@@ -487,14 +480,17 @@ registered by the top-level `handlers` field. For generated alignment cases,
 the helper also asserts that simulation and generated callback records match.
 Use `handler_calls: []` to prove a failed speculative execution did not invoke
 any handler, but still keep a non-empty top-level `handlers` list so the
-assertion has an explicit hook source. New `boundary: pure_shared` cases may use
-only `record_call` handlers; `raise_error` and `record_var_write_attempt`
-belong to legacy simulator-diagnostic coverage.
+assertion has an explicit hook source. New `boundary: pure_shared` cases should
+use handler records only for public hook observations. `raise_error` belongs to
+ordinary simulator diagnostic coverage; `record_var_write_attempt` records the
+public read-only behavior of handler context variables when the same callback
+behavior can be installed on both runtimes.
 
 When a handler call includes `write_attempt`, the record asserts the attempted
 variable name, attempted value, success flag, optional exception type, and the
-handler-visible variable snapshot after the attempt. This is intended for
-simulation-only checks of `ReadOnlyExecutionContext.vars`.
+handler-visible variable snapshot after the attempt. Shared cases may use this
+shape only when it is observed through the public handler context contract on
+both runtimes.
 
 `abstract_handler_errors` matches the public
 `SimulationRuntime.abstract_handler_errors` list. Each item may assert `action`,
@@ -522,22 +518,19 @@ at construction time and after every step:
 - `is_ended`
 - variables
 - current state path
-- temporary helper-only `brief_stack` parity
-- temporary helper-only `cycle_count` parity
 - `cycle()` return value
 - exception class names for expected exception paths
 
-The alignment runner does not require shared YAML to assert stack shape or cycle
-count; those are temporary helper compatibility details rather than shared
-fixture evidence.
+The alignment runner does not require shared YAML or private generated-runtime
+state to assert stack shape, cycle count, or history records.
 `runtime_options`, `warnings`, `abstract_handler_errors`, `error_state`, and
 `error_info` are rejected for generated alignment cases in this schema version.
 `handlers` and `handler_calls` are allowed when the fixture also includes
 `simulation`; the same fixture handlers are installed in both runtimes and their
 call records must match. For new pure shared cases, `handlers` should install
-only public `record_call` hook adapters; `raise_error` and
-`record_var_write_attempt` remain simulator-diagnostic shapes for migration to
-ordinary pytest.
+only hook adapters whose effects are visible through the public handler context
+and call-record surface; `raise_error` remains ordinary simulator diagnostic
+coverage.
 
 For constructor diagnostics, the alignment runner builds both runtimes,
 requires matching exception class names, and then applies the declared

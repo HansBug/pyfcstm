@@ -1015,8 +1015,52 @@ def test_semantic_fixture_schema_rejects_invalid_yaml(tmp_path, mutate, message)
 @pytest.mark.unittest
 def test_pure_shared_fixture_boundary_accepts_public_observations(tmp_path):
     data = _pure_shared_case_data()
-    data["handlers"] = [{"action": "Root.Init", "behavior": "record_call"}]
-    data["steps"][0]["expect"]["handler_calls"] = []
+    data["handlers"] = [
+        {
+            "action": "Root.Init",
+            "behavior": "record_var_write_attempt",
+            "write": {"name": "x", "value": 1},
+        },
+        {"action": "Root.Init", "behavior": "record_call"},
+    ]
+    data["steps"][0]["expect"]["handler_calls"] = [
+        {
+            "action": "Root.Init",
+            "state": "Root",
+            "stage": "enter",
+            "vars": {},
+            "write_attempt": {
+                "name": "x",
+                "value": 1,
+                "succeeded": False,
+                "error_type": "TypeError",
+                "vars": {},
+            },
+        },
+        {
+            "action": "Root.Init",
+            "state": "Root",
+            "stage": "enter",
+            "vars": {},
+        },
+    ]
+    yaml_path = _write_fixture(tmp_path, data)
+
+    load_semantic_case(yaml_path)
+    validate_pure_shared_fixture_boundary(data, yaml_path)
+
+
+@pytest.mark.unittest
+def test_pure_shared_fixture_boundary_accepts_initial_constructor_observation(
+    tmp_path,
+):
+    data = _pure_shared_case_data()
+    data["steps"] = []
+    data["initial"] = {
+        "state": "Root.A",
+        "vars": {},
+        "expect": {"raises": {"type": "ValueError"}},
+    }
     yaml_path = _write_fixture(tmp_path, data)
 
     load_semantic_case(yaml_path)
@@ -1061,11 +1105,12 @@ def test_pure_shared_fixture_boundary_marker_rejects_empty_observations(
 @pytest.mark.unittest
 def test_pure_shared_fixture_boundary_rejects_legacy_return_field(tmp_path):
     data = _pure_shared_case_data()
+    data["steps"][0]["expect"].pop("cycle_result")
     data["steps"][0]["expect"]["return"] = None
     yaml_path = _write_fixture(tmp_path, data)
 
     with pytest.raises(SemanticCaseError, match="forbidden expectation fields"):
-        validate_pure_shared_fixture_boundary(data, yaml_path)
+        load_semantic_case(yaml_path)
 
 
 @pytest.mark.unittest
@@ -1098,18 +1143,13 @@ def test_shared_fixture_corpus_uses_public_observation_fields():
 
 
 @pytest.mark.unittest
-def test_pure_shared_fixture_boundary_would_reject_existing_legacy_cases():
+def test_shared_fixture_corpus_satisfies_pure_shared_boundary():
     cases = list(iter_semantic_cases())
-    rejected_case_ids = set()
 
     for case in cases:
-        try:
-            validate_pure_shared_fixture_boundary(case.data, case.yaml_path)
-        except SemanticCaseError:
-            rejected_case_ids.add(case.id)
+        validate_pure_shared_fixture_boundary(case.data, case.yaml_path)
 
     assert cases
-    assert rejected_case_ids
 
 
 @pytest.mark.unittest
@@ -1145,12 +1185,6 @@ def test_pure_shared_fixture_boundary_would_reject_existing_legacy_cases():
         (
             lambda data: data.update({"expected_failure": {"reason": "legacy bug"}}),
             "forbidden top-level fields",
-        ),
-        (
-            lambda data: data["initial"].update(
-                {"expect": {"raises": {"type": "ValueError"}}}
-            ),
-            "initial.expect diagnostics",
         ),
         (
             lambda data: data["steps"][0]["expect"].update({"stack": []}),
@@ -1253,19 +1287,6 @@ def test_pure_shared_fixture_boundary_would_reject_existing_legacy_cases():
                 {
                     "handlers": [
                         {"action": "Root.Init", "behavior": "raise_error"}
-                    ]
-                }
-            ),
-            "only allows handlers",
-        ),
-        (
-            lambda data: data.update(
-                {
-                    "handlers": [
-                        {
-                            "action": "Root.Init",
-                            "behavior": "record_var_write_attempt",
-                        }
                     ]
                 }
             ),

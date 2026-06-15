@@ -344,7 +344,6 @@ parent-relative paths (`.go`), and root-relative paths (`/go`).
 | `abstract_handler_errors` | Expected `runtime.abstract_handler_errors` records. Simulation-only; not part of the pure shared boundary for new cases. |
 | `error_state` | Expected `runtime.is_error_state`. Simulation-only; not part of the pure shared boundary for new cases. |
 | `error_info` | Expected `runtime.error_info` action, exception type, and optional message match. Simulation-only; not part of the pure shared boundary for new cases. |
-| `anonymous_warning_count` | Expected count of anonymous abstract warning dedupe records. Simulation-only rollback and cleanup diagnostic; not part of the pure shared boundary for new cases. |
 
 Allowed stack modes are `active` and `init_wait`.
 
@@ -361,8 +360,8 @@ For new pure shared cases, set `boundary: pure_shared` and treat the public
 observation surface as the only stable contract: `state`, `vars`, `ended`,
 constructor and hot-start results, per-step cycle state/vars, `handler_calls`,
 and `cycle_result.value`. Do not add `stack`, `brief_stack`, `cycle_count`,
-`history*`, `return`, `warnings`, `abstract_handler_errors`, `error_state`,
-`error_info`, or `anonymous_warning_count` to new shared cases.
+`history*`, `return`, `warnings`, `abstract_handler_errors`, `error_state`, or
+`error_info` to new shared cases.
 
 `cycle_result` allows these fields:
 
@@ -505,10 +504,9 @@ leave committed error metadata.
 for `SimulationRuntime.error_info`. Use `error_info: null` when a simulation-only
 case needs to assert that no error-state metadata is present.
 
-`anonymous_warning_count` asserts the size of the simulator's anonymous
-abstract warning dedupe metadata. It is intentionally narrow and should be used
-for warning rollback and cleanup contracts rather than general runtime-state
-inspection.
+Anonymous-warning dedupe metadata is intentionally not a shared fixture field.
+Rollback checks for that simulator-internal surface live in dedicated
+`test/simulate/` pytest cases.
 
 ## Generated Python alignment runner
 

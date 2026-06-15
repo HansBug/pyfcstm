@@ -752,17 +752,10 @@ def _pure_shared_case_data():
             "fields are not allowed for generated alignment",
         ),
         (
-            lambda data: (
-                _set_generated_alignment(data)
-                or data["steps"][0]["expect"].update({"anonymous_warning_count": 0})
-            ),
-            "fields are not allowed for generated alignment",
-        ),
-        (
             lambda data: data["steps"][0]["expect"].update(
-                {"anonymous_warning_count": -1}
+                {"anonymous_warning_count": 0}
             ),
-            "anonymous_warning_count must be a non-negative integer",
+            "has unknown fields",
         ),
         (
             lambda data: data["steps"][0]["expect"].update({"warnings": {"count": -1}}),

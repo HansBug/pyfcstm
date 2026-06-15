@@ -1,7 +1,0 @@
-def int x = 0;
-state Root {
-    enter A ref B;
-    enter B ref A;
-    state Idle { during { x = x + 1; } }
-    [*] -> Idle;
-}

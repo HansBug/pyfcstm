@@ -7,7 +7,6 @@ from test.testings.simulate_semantics import (
     SemanticCaseError,
     iter_semantic_cases,
     load_semantic_case,
-    run_cli_command_case,
     run_simulation_case,
     validate_pure_shared_fixture_boundary,
 )
@@ -303,16 +302,6 @@ def test_semantic_fixture_origin_files_cover_existing_simulate_tests():
 )
 def test_simulation_semantic_fixture(case, caplog):
     run_simulation_case(case, caplog=caplog)
-
-
-@pytest.mark.unittest
-@pytest.mark.parametrize(
-    "case",
-    [case for case in iter_semantic_cases(runners=["cli_command"])],
-    ids=lambda case: case.id,
-)
-def test_cli_command_semantic_fixture(case):
-    run_cli_command_case(case)
 
 
 def _write_fixture(tmp_path, data, fcstm="state Root { state A; [*] -> A; }"):

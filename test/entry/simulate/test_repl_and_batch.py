@@ -30,6 +30,14 @@ _TINY_DSL = textwrap.dedent("""
     }
 """).strip()
 
+_ENDED_MULTIPLE_CYCLE_DSL = textwrap.dedent("""
+    state System {
+        state A;
+        [*] -> A;
+        A -> [*];
+    }
+""").strip()
+
 
 def _make_runtime():
     ast_node = parse_with_grammar_entry(_TINY_DSL, entry_name='state_machine_dsl')
@@ -373,6 +381,27 @@ class TestCommandProcessorSessionState:
 
         assert 'Root.System1.Switch' not in result.output
         assert 'No events available' in result.output
+
+    def test_ended_multiple_cycle_table_uses_actual_cycle_count(self):
+        runtime, model = _build_runtime(_ENDED_MULTIPLE_CYCLE_DSL)
+        processor = CommandProcessor(runtime, state_machine=model, use_color=False)
+
+        first_result = processor.process('cycle')
+
+        assert not first_result.should_exit
+        assert processor.runtime.current_state.path == ('System', 'A')
+        assert not processor.runtime.is_ended
+        assert processor.runtime.cycle_count == 1
+
+        result = processor.process('cycle 5')
+
+        assert not result.should_exit
+        assert '(terminated)' in result.output
+        assert ' 2 ' in result.output
+        for fabricated_cycle in (' 3 ', ' 4 ', ' 5 ', ' 6 '):
+            assert fabricated_cycle not in result.output
+        assert processor.runtime.is_ended
+        assert processor.runtime.cycle_count == 2
 
 
 @pytest.mark.unittest

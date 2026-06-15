@@ -341,10 +341,10 @@ parent-relative paths (`.go`), and root-relative paths (`/go`).
 | `logs` | Step-local `caplog` assertions. Not part of the pure shared boundary for new cases. |
 | `warnings` | Step-local Python warning assertions. Simulation-only. |
 | `handler_calls` | Exact accumulated fixture-handler call records. Simulation-only. New pure shared cases may keep only public hook-call records. |
-| `abstract_handler_errors` | Expected `runtime.abstract_handler_errors` records. Simulation-only. |
-| `error_state` | Expected `runtime.is_error_state`. Simulation-only. |
-| `error_info` | Expected `runtime.error_info` action, exception type, and optional message match. Simulation-only. |
-| `anonymous_warning_count` | Expected count of anonymous abstract warning dedupe records. Simulation-only, intended for rollback and cleanup diagnostics. |
+| `abstract_handler_errors` | Expected `runtime.abstract_handler_errors` records. Simulation-only; not part of the pure shared boundary for new cases. |
+| `error_state` | Expected `runtime.is_error_state`. Simulation-only; not part of the pure shared boundary for new cases. |
+| `error_info` | Expected `runtime.error_info` action, exception type, and optional message match. Simulation-only; not part of the pure shared boundary for new cases. |
+| `anonymous_warning_count` | Expected count of anonymous abstract warning dedupe records. Simulation-only rollback and cleanup diagnostic; not part of the pure shared boundary for new cases. |
 
 Allowed stack modes are `active` and `init_wait`.
 

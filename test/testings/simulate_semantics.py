@@ -211,6 +211,17 @@ _PURE_SHARED_FORBIDDEN_EXPECT_FIELDS = {
     "anonymous_warning_count",
 }
 _PURE_SHARED_HANDLER_BEHAVIORS = {"record_call"}
+_PURE_SHARED_PUBLIC_EXPECT_FIELDS = {
+    "state",
+    "vars",
+    "vars_exact",
+    "vars_keys",
+    "vars_absent",
+    "ended",
+    "raises",
+    "cycle_result",
+    "handler_calls",
+}
 _ALLOWED_HISTORY_FIELDS = {"cycle", "state", "vars", "events"}
 _REQUIRED_HISTORY_FIELDS = _ALLOWED_HISTORY_FIELDS
 _CLI_OUTPUT_FIELDS = ("output_contains", "output_not_contains", "error_contains")
@@ -3089,6 +3100,13 @@ def validate_pure_shared_fixture_boundary(
                     yaml_path,
                     "pure shared fixture has forbidden expectation fields: %r"
                     % sorted(forbidden_expect),
+                )
+            public_expect = _PURE_SHARED_PUBLIC_EXPECT_FIELDS & set(expect.keys())
+            if not public_expect:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "%s requires public observation fields" % expect_name,
                 )
             if "handler_calls" in expect and not data.get("handlers"):
                 raise _case_error(

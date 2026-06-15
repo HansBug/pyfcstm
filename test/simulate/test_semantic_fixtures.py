@@ -1044,6 +1044,31 @@ def test_pure_shared_fixture_boundary_marker_enforces_loader_gate(tmp_path):
 
 
 @pytest.mark.unittest
+@pytest.mark.parametrize(
+    ["mutate", "message"],
+    [
+        (
+            lambda data: data["steps"][0].update({"expect": {}}),
+            "expect requires public observation fields",
+        ),
+        (
+            lambda data: data.update({"steps": [{"expect_initial": {}}]}),
+            "expect_initial requires public observation fields",
+        ),
+    ],
+)
+def test_pure_shared_fixture_boundary_marker_rejects_empty_observations(
+    tmp_path, mutate, message
+):
+    data = _pure_shared_case_data()
+    mutate(data)
+    yaml_path = _write_fixture(tmp_path, data)
+
+    with pytest.raises(SemanticCaseError, match=message):
+        load_semantic_case(yaml_path)
+
+
+@pytest.mark.unittest
 def test_pure_shared_fixture_boundary_rejects_legacy_return_field(tmp_path):
     data = _pure_shared_case_data()
     data["steps"][0]["expect"]["return"] = None
@@ -1186,6 +1211,14 @@ def test_pure_shared_fixture_boundary_would_reject_existing_legacy_cases():
         (
             lambda data: data["steps"][0].update({"expect_initial": {"return": None}}),
             "forbidden expectation fields",
+        ),
+        (
+            lambda data: data["steps"][0].update({"expect": {}}),
+            "expect requires public observation fields",
+        ),
+        (
+            lambda data: data["steps"][0].update({"expect_initial": {}}),
+            "expect_initial requires public observation fields",
         ),
         (
             lambda data: data.update({"steps": []}),

@@ -177,7 +177,8 @@ machine.cycle("<event-path>")
 
 `cycle(...)` 返回 `CycleResult` 对象，包含 `value`、`input_events`、
 `consumed_events` 和 `unconsumed_events`。其中事件名都是规范化后的生成
-运行时事件路径。
+运行时事件路径。如果需要可复现的事件顺序，建议传入 `list` 或 `tuple`；
+`set` 输入会遵循 Python 当次提供的迭代顺序。
 
 ## Hot Start
 

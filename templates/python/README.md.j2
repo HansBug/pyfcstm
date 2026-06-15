@@ -179,7 +179,9 @@ If an event cannot be resolved, the runtime raises `LookupError` or
 
 `cycle(...)` returns a `CycleResult` object with `value`, `input_events`,
 `consumed_events`, and `unconsumed_events`. Event names in that object are
-normalized generated event paths.
+normalized generated event paths. Use `list` or `tuple` inputs when the
+reported event order must be reproducible; `set` inputs follow the iteration
+order provided by Python.
 
 ## Hot Start
 

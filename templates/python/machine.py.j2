@@ -126,7 +126,6 @@ Canonical Model Export::
 """
 
 import math  # noqa: F401 - rendered DSL math expressions may use this module.
-from collections import Counter
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Mapping, Optional, Tuple, Union
@@ -246,6 +245,16 @@ class CycleResult:
     :param unconsumed_events: Normalized input event paths that did not trigger
         an evented transition.
     :type unconsumed_events: Tuple[str, ...]
+
+    Example::
+
+        >>> result = CycleResult(
+        ...     input_events=("Root.A.Go", "Root.A.Noise", "Root.A.Go"),
+        ...     consumed_events=("Root.A.Go",),
+        ...     unconsumed_events=("Root.A.Noise", "Root.A.Go"),
+        ... )
+        >>> result.consumed_events
+        ('Root.A.Go',)
     """
 
     value: Optional[Tuple[str, ...]] = None
@@ -871,10 +880,12 @@ class {{ machine_class_name(model) }}:
 
     @staticmethod
     def _unconsumed_event_names(input_events, consumed_events):
-        remaining_consumed = Counter(consumed_events)
+        remaining_consumed = {}
+        for event_name in consumed_events:
+            remaining_consumed[event_name] = remaining_consumed.get(event_name, 0) + 1
         unconsumed = []
         for event_name in input_events:
-            if remaining_consumed[event_name] > 0:
+            if remaining_consumed.get(event_name, 0) > 0:
                 remaining_consumed[event_name] -= 1
             else:
                 unconsumed.append(event_name)

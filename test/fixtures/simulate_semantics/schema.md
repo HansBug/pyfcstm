@@ -20,6 +20,17 @@ inside `cycle`, `cycle_result`, `history`, `raises`, `logs`, `stack`, handler
 calls, and CLI expectations must fail fast with a diagnostic containing the case
 id and YAML path.
 
+This corpus is currently in a migration window. Existing legacy cases may still
+use older simulator-debugging expectations while the corpus is being cleaned up,
+but any newly added shared case should follow the pure shared boundary documented
+below. The pure shared boundary is the contract for new cross-runtime cases:
+simulation plus generated Python alignment, public observation surface only,
+and no simulator-only, CLI-only, or model-construction diagnostics.
+New cross-runtime shared cases should declare `boundary: pure_shared`; the
+fixture loader then runs the stricter boundary check automatically. Existing
+legacy cases without that marker stay on the migration-window schema until they
+are rewritten by the later cleanup slices.
+
 ## Top-level fields
 
 | Field | Required | Description |
@@ -27,6 +38,7 @@ id and YAML path.
 | `schema_version` | yes | Fixed integer value `1`. |
 | `id` | yes | Stable snake-case id. Must match the YAML basename. |
 | `title` | yes | Human-readable title. |
+| `boundary` | no | Optional fixture boundary marker. Use `pure_shared` for new simulator plus generated Python shared cases so the loader enforces the stricter public-observation contract. Existing legacy cases may omit it during the migration window. |
 | `source.fcstm` | yes | FCSTM file name in the same directory. |
 | `origin.files` | yes | Original pytest functions that this fixture migrates from. |
 | `origin.docs` | no | Optional design-document references. |
@@ -35,11 +47,11 @@ id and YAML path.
 | `categories` | yes | Non-empty list from the allowed category set. |
 | `runners` | yes | Non-empty list from the allowed runner set. |
 | `initial` | no | Runtime construction state and vars. |
-| `runtime_options` | no | Simulation-only runtime options such as abstract-handler error mode. |
-| `model_build` | conditional | Simulation-only model-construction diagnostic expectation. Mutually exclusive with `steps` and `commands`. |
-| `steps` | conditional | Required for runtime/alignment runners. Mutually exclusive with `model_build` and `commands`. |
-| `commands` | conditional | Required for CLI runner. Mutually exclusive with `model_build` and `steps`. |
-| `handlers` | no | Abstract-handler fixtures for recording calls or raising errors. Requires the `simulation` runner and may also be used for generated Python alignment. |
+| `runtime_options` | no | Simulation-only runtime options such as abstract-handler error mode. Legacy corpus only; new pure shared cases should not add it. |
+| `model_build` | conditional | Simulation-only model-construction diagnostic expectation. Mutually exclusive with `steps` and `commands`. Legacy corpus only; new pure shared cases should not add it. |
+| `steps` | conditional | Required for runtime/alignment runners. Mutually exclusive with `model_build` and `commands`. New pure shared cases should keep only public observation fields inside step expectations. |
+| `commands` | conditional | Required for CLI runner. Mutually exclusive with `model_build` and `steps`. Legacy CLI fixture shape only; new pure shared cases should not add it. |
+| `handlers` | no | Abstract-handler fixtures for recording calls or raising errors. Requires the `simulation` runner and may also be used for generated Python alignment in the legacy corpus. |
 | `expected_failure` | reserved | Reserved for inactive regression fixtures that should not run in the main corpus. |
 
 Allowed categories:
@@ -318,21 +330,21 @@ parent-relative paths (`.go`), and root-relative paths (`/go`).
 | `vars_keys` | Exact variable key-set assertion. |
 | `vars_absent` | Variables that must not be present. |
 | `ended` | Expected `runtime.is_ended`. |
-| `stack` | Expected `brief_stack`, with `path` list and `mode`. |
-| `cycle_count` | Runtime cycle count assertion. For generated alignment cases the generated runtime must expose the same count. |
-| `return` | Legacy expected `cycle()` return value. Existing fixtures may keep it; new fixtures should prefer `cycle_result`. |
+| `stack` | Expected `brief_stack`, with `path` list and `mode`. Legacy debugging surface; not part of the pure shared boundary for new cases. |
+| `cycle_count` | Runtime cycle count assertion. For generated alignment cases the generated runtime must expose the same count. Legacy debugging surface; not part of the pure shared boundary for new cases. |
+| `return` | Legacy expected `cycle()` return value. Existing fixtures may keep it; new pure shared cases should use `cycle_result` instead. |
 | `cycle_result` | Standardized `cycle()` result object. Current minimum shape is `value`; later event-consumption metadata can extend the same object. |
-| `history_length` | Expected length of `runtime.history`. |
-| `history` | Expected full `runtime.history` sequence after the step. |
-| `history_tail` | Expected non-empty suffix of `runtime.history` after the step. Use `history_length: 0` or `history: []` to assert no history entries. |
+| `history_length` | Expected length of `runtime.history`. Legacy debugging surface; not part of the pure shared boundary for new cases. |
+| `history` | Expected full `runtime.history` sequence after the step. Legacy debugging surface; not part of the pure shared boundary for new cases. |
+| `history_tail` | Expected non-empty suffix of `runtime.history` after the step. Use `history_length: 0` or `history: []` to assert no history entries. Legacy debugging surface; not part of the pure shared boundary for new cases. |
 | `raises` | Expected exception class name and optional message match. |
-| `logs` | Step-local `caplog` assertions. |
+| `logs` | Step-local `caplog` assertions. Not part of the pure shared boundary for new cases. |
 | `warnings` | Step-local Python warning assertions. Simulation-only. |
-| `handler_calls` | Exact accumulated fixture-handler call records. Simulation-only. |
-| `abstract_handler_errors` | Expected `runtime.abstract_handler_errors` records. Simulation-only. |
-| `error_state` | Expected `runtime.is_error_state`. Simulation-only. |
-| `error_info` | Expected `runtime.error_info` action, exception type, and optional message match. Simulation-only. |
-| `anonymous_warning_count` | Expected count of anonymous abstract warning dedupe records. Simulation-only, intended for rollback and cleanup diagnostics. |
+| `handler_calls` | Exact accumulated fixture-handler call records. Simulation-only. New pure shared cases may keep only public hook-call records. |
+| `abstract_handler_errors` | Expected `runtime.abstract_handler_errors` records. Simulation-only; not part of the pure shared boundary for new cases. |
+| `error_state` | Expected `runtime.is_error_state`. Simulation-only; not part of the pure shared boundary for new cases. |
+| `error_info` | Expected `runtime.error_info` action, exception type, and optional message match. Simulation-only; not part of the pure shared boundary for new cases. |
+| `anonymous_warning_count` | Expected count of anonymous abstract warning dedupe records. Simulation-only rollback and cleanup diagnostic; not part of the pure shared boundary for new cases. |
 
 Allowed stack modes are `active` and `init_wait`.
 
@@ -344,6 +356,13 @@ meanings overlap: `raises` cannot be combined with either return assertion, and
 mapping with a `value` field; use `cycle_result: {value: null}` for the current
 `SimulationRuntime.cycle()` return value rather than a top-level
 `cycle_result: null`.
+
+For new pure shared cases, set `boundary: pure_shared` and treat the public
+observation surface as the only stable contract: `state`, `vars`, `ended`,
+constructor and hot-start results, per-step cycle state/vars, `handler_calls`,
+and `cycle_result.value`. Do not add `stack`, `brief_stack`, `cycle_count`,
+`history*`, `return`, `warnings`, `abstract_handler_errors`, `error_state`,
+`error_info`, or `anonymous_warning_count` to new shared cases.
 
 `cycle_result` allows these fields:
 
@@ -466,7 +485,10 @@ expect:
 registered by the top-level `handlers` field. For generated alignment cases,
 the helper also asserts that simulation and generated callback records match.
 Use `handler_calls: []` to prove a failed speculative execution did not invoke
-any handler.
+any handler, but still keep a non-empty top-level `handlers` list so the
+assertion has an explicit hook source. New `boundary: pure_shared` cases may use
+only `record_call` handlers; `raise_error` and `record_var_write_attempt`
+belong to legacy simulator-diagnostic coverage.
 
 When a handler call includes `write_attempt`, the record asserts the attempted
 variable name, attempted value, success flag, optional exception type, and the
@@ -506,12 +528,17 @@ at construction time and after every step:
 - exception class names for expected exception paths
 
 Even when YAML does not contain an explicit `stack` assertion, the alignment
-runner compares both stacks internally. `runtime_options`, `warnings`,
-`abstract_handler_errors`, `error_state`, and `error_info` are rejected for
-generated alignment cases in this schema version. `handlers` and
-`handler_calls` are allowed when the fixture also includes `simulation`; the
-same fixture handlers are installed in both runtimes and their call records must
-match.
+runner currently compares both stacks internally. That behavior is legacy
+helper coverage, not the long-term pure shared contract; new pure shared cases
+must not introduce `stack`, `brief_stack`, or `cycle_count` as fixture evidence.
+`runtime_options`, `warnings`, `abstract_handler_errors`, `error_state`, and
+`error_info` are rejected for generated alignment cases in this schema version.
+`handlers` and `handler_calls` are allowed when the fixture also includes
+`simulation`; the same fixture handlers are installed in both runtimes and their
+call records must match. For new pure shared cases, `handlers` should install
+only public `record_call` hook adapters; `raise_error` and
+`record_var_write_attempt` remain simulator-diagnostic shapes for migration to
+ordinary pytest.
 
 For constructor diagnostics, the alignment runner builds both runtimes,
 requires matching exception class names, and then applies the declared

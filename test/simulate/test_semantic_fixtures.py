@@ -9,6 +9,7 @@ from test.testings.simulate_semantics import (
     load_semantic_case,
     run_cli_command_case,
     run_simulation_case,
+    validate_pure_shared_fixture_boundary,
 )
 
 
@@ -366,11 +367,22 @@ def _set_model_build_expectation(data, raises):
     data["model_build"] = {"expect": {"raises": raises}}
 
 
+def _pure_shared_case_data():
+    """Return the minimal valid fixture shape for pure shared boundary tests."""
+    data = _valid_case_data()
+    data["boundary"] = "pure_shared"
+    data["runners"] = ["simulation", "generated_python_alignment"]
+    data["steps"][0]["expect"].pop("return", None)
+    data["steps"][0]["expect"]["cycle_result"] = {"value": None}
+    return data
+
+
 @pytest.mark.unittest
 @pytest.mark.parametrize(
     ["mutate", "message"],
     [
         (lambda data: data.update({"unexpected": True}), "unknown top-level fields"),
+        (lambda data: data.update({"boundary": "legacy"}), "unknown boundary"),
         (lambda data: data["source"].pop("fcstm"), "source.fcstm is required"),
         (
             lambda data: data.update({"commands": []}),
@@ -1008,6 +1020,294 @@ def test_semantic_fixture_schema_rejects_invalid_yaml(tmp_path, mutate, message)
 
     with pytest.raises(SemanticCaseError, match=message):
         load_semantic_case(yaml_path)
+
+
+@pytest.mark.unittest
+def test_pure_shared_fixture_boundary_accepts_public_observations(tmp_path):
+    data = _pure_shared_case_data()
+    data["handlers"] = [{"action": "Root.Init", "behavior": "record_call"}]
+    data["steps"][0]["expect"]["handler_calls"] = []
+    yaml_path = _write_fixture(tmp_path, data)
+
+    load_semantic_case(yaml_path)
+    validate_pure_shared_fixture_boundary(data, yaml_path)
+
+
+@pytest.mark.unittest
+def test_pure_shared_fixture_boundary_marker_enforces_loader_gate(tmp_path):
+    data = _pure_shared_case_data()
+    data["steps"][0]["expect"]["stack"] = [{"path": ["Root", "A"], "mode": "active"}]
+    yaml_path = _write_fixture(tmp_path, data)
+
+    with pytest.raises(SemanticCaseError, match="forbidden expectation fields"):
+        load_semantic_case(yaml_path)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ["mutate", "message"],
+    [
+        (
+            lambda data: data["steps"][0].update({"expect": {}}),
+            "expect requires public observation fields",
+        ),
+        (
+            lambda data: data.update({"steps": [{"expect_initial": {}}]}),
+            "expect_initial requires public observation fields",
+        ),
+    ],
+)
+def test_pure_shared_fixture_boundary_marker_rejects_empty_observations(
+    tmp_path, mutate, message
+):
+    data = _pure_shared_case_data()
+    mutate(data)
+    yaml_path = _write_fixture(tmp_path, data)
+
+    with pytest.raises(SemanticCaseError, match=message):
+        load_semantic_case(yaml_path)
+
+
+@pytest.mark.unittest
+def test_pure_shared_fixture_boundary_rejects_legacy_return_field(tmp_path):
+    data = _pure_shared_case_data()
+    data["steps"][0]["expect"]["return"] = None
+    yaml_path = _write_fixture(tmp_path, data)
+
+    with pytest.raises(SemanticCaseError, match="forbidden expectation fields"):
+        validate_pure_shared_fixture_boundary(data, yaml_path)
+
+
+@pytest.mark.unittest
+def test_pure_shared_fixture_boundary_does_not_gate_existing_corpus():
+    cases = list(iter_semantic_cases())
+    legacy_fields = {
+        field
+        for case in cases
+        for step in case.data.get("steps") or []
+        for expect in (step.get("expect_initial"), step.get("expect"))
+        if isinstance(expect, dict)
+        for field in expect
+        if field in {"stack", "cycle_count", "return", "history", "history_tail"}
+    }
+
+    assert cases
+    assert legacy_fields
+
+
+@pytest.mark.unittest
+def test_pure_shared_fixture_boundary_would_reject_existing_legacy_cases():
+    cases = list(iter_semantic_cases())
+    rejected_case_ids = set()
+
+    for case in cases:
+        try:
+            validate_pure_shared_fixture_boundary(case.data, case.yaml_path)
+        except SemanticCaseError:
+            rejected_case_ids.add(case.id)
+
+    assert cases
+    assert rejected_case_ids
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ["mutate", "message"],
+    [
+        (
+            lambda data: data.update({"runners": ["simulation"]}),
+            "requires runners",
+        ),
+        (
+            lambda data: _set_cli_expectation(data, {"output_contains": ["Commands"]}),
+            "cannot use cli_command runner",
+        ),
+        (
+            lambda data: data.update(
+                {"runtime_options": {"abstract_error_mode": "log"}}
+            ),
+            "forbidden top-level fields",
+        ),
+        (
+            lambda data: _set_model_build_expectation(
+                data, {"type": "ModelValidationError"}
+            ),
+            "forbidden top-level fields",
+        ),
+        (
+            lambda data: data.update(
+                {"commands": [{"input": "help", "expect": {"output_contains": []}}]}
+            ),
+            "forbidden top-level fields",
+        ),
+        (
+            lambda data: data.update({"expected_failure": {"reason": "legacy bug"}}),
+            "forbidden top-level fields",
+        ),
+        (
+            lambda data: data["initial"].update(
+                {"expect": {"raises": {"type": "ValueError"}}}
+            ),
+            "initial.expect diagnostics",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"stack": []}),
+            "forbidden expectation fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"brief_stack": []}),
+            "forbidden expectation fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"cycle_count": 1}),
+            "forbidden expectation fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"return": None}),
+            "forbidden expectation fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"history": []}),
+            "forbidden expectation fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"history_length": 0}),
+            "forbidden expectation fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"history_tail": []}),
+            "forbidden expectation fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"warnings": {"count": 0}}),
+            "forbidden expectation fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {"logs": {"contains": [{"level": "INFO", "message": "x"}]}}
+            ),
+            "forbidden expectation fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {"abstract_handler_errors": []}
+            ),
+            "forbidden expectation fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"error_state": False}),
+            "forbidden expectation fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"error_info": None}),
+            "forbidden expectation fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {"anonymous_warning_count": 0}
+            ),
+            "forbidden expectation fields",
+        ),
+        (
+            lambda data: data["steps"][0].update({"expect_initial": {"return": None}}),
+            "forbidden expectation fields",
+        ),
+        (
+            lambda data: data["steps"][0].update({"expect": {}}),
+            "expect requires public observation fields",
+        ),
+        (
+            lambda data: data["steps"][0].update({"expect_initial": {}}),
+            "expect_initial requires public observation fields",
+        ),
+        (
+            lambda data: data.update({"steps": []}),
+            "requires non-empty steps",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"handler_calls": []}),
+            "handler_calls requires top-level handlers",
+        ),
+        (
+            lambda data: data.update(
+                {
+                    "handlers": [],
+                    "steps": [
+                        {
+                            "cycle": {},
+                            "expect": {
+                                "state": ["Root", "A"],
+                                "handler_calls": [],
+                                "cycle_result": {"value": None},
+                            },
+                        }
+                    ],
+                }
+            ),
+            "handler_calls requires top-level handlers",
+        ),
+        (
+            lambda data: data.update(
+                {
+                    "handlers": [
+                        {"action": "Root.Init", "behavior": "raise_error"}
+                    ]
+                }
+            ),
+            "only allows handlers",
+        ),
+        (
+            lambda data: data.update(
+                {
+                    "handlers": [
+                        {
+                            "action": "Root.Init",
+                            "behavior": "record_var_write_attempt",
+                        }
+                    ]
+                }
+            ),
+            "only allows handlers",
+        ),
+        (
+            lambda data: data.update(
+                {
+                    "handlers": [
+                        {
+                            "action": "Root.Init",
+                            "behavior": "record_call",
+                            "exception": {"type": "ValueError"},
+                        }
+                    ]
+                }
+            ),
+            "does not allow handlers\\[0\\].exception",
+        ),
+        (
+            lambda data: data.update(
+                {
+                    "handlers": [
+                        {
+                            "action": "Root.Init",
+                            "behavior": "record_call",
+                            "write": {"name": "x", "value": 1},
+                        }
+                    ]
+                }
+            ),
+            "does not allow handlers\\[0\\].write",
+        ),
+    ],
+)
+def test_pure_shared_fixture_boundary_rejects_non_shared_surfaces(
+    tmp_path, mutate, message
+):
+    data = _pure_shared_case_data()
+    mutate(data)
+    yaml_path = _write_fixture(tmp_path, data)
+
+    with pytest.raises(SemanticCaseError, match=message):
+        validate_pure_shared_fixture_boundary(data, yaml_path)
 
 
 @pytest.mark.unittest

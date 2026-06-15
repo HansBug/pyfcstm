@@ -1,6 +1,7 @@
 schema_version: 1
 id: hot_start_evented_initial_matches_cold_suffix
-title: Hot-started evented initial boundary follows the same suffix as an equivalent cold-start boundary
+title: Hot-started evented initial boundary follows the same suffix as an equivalent
+  cold-start boundary
 source:
   fcstm: hot_start_evented_initial_matches_cold_suffix.fcstm
 origin:
@@ -13,11 +14,12 @@ origin:
   - initial
   - state
   - vars
-  - stack
   - cycle_result
   notes:
-  - The hot-start suffix starts from the same already-entered Gate boundary that a cold Boot-to-Gate transition would reach.
-  - The fixture then exercises the evented initial transition and a normal child transition after the boundary.
+  - The hot-start suffix starts from the same already-entered Gate boundary that a
+    cold Boot-to-Gate transition would reach.
+  - The fixture then exercises the evented initial transition and a normal child transition
+    after the boundary.
 categories:
 - runtime
 - template_alignment
@@ -41,14 +43,6 @@ steps:
       trace: 0
       seed: 1
     ended: false
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - Gate
-      mode: init_wait
 - cycle: {}
   expect:
     state:

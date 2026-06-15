@@ -26,6 +26,6 @@ initial:
   expect:
     raises:
       type: ValueError
-      match: "initial_vars['counter'] must be int or float"
+      match: initial_vars['counter'] must be int or float
       match_kind: substring
 steps: []

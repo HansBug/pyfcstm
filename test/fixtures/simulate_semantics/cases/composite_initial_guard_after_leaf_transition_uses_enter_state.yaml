@@ -12,7 +12,6 @@ origin:
   - state
   - vars
   - cycle_result
-  - history
   notes:
   - Covers a later transition from an already-stable leaf into the affected composite.
 categories:
@@ -49,10 +48,3 @@ steps:
     ended: false
     cycle_result:
       value: null
-    history_tail:
-    - cycle: 2
-      state: Root.Choice.FromEnter
-      vars:
-        select: 2
-        trace: 12345
-      events: []

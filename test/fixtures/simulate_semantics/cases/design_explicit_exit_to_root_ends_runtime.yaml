@@ -9,8 +9,7 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_30_explicit_exit_to_root_ends_runtime
   assertion_types:
   - ended
-  - return
-  - stack
+  - cycle_result
   - state
   - vars
 categories:
@@ -33,15 +32,8 @@ steps:
       phase: 1
       trace: 10
     ended: false
-    return: null
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - A
-      mode: active
+    cycle_result:
+      value: null
 - cycle: {}
   expect:
     state:
@@ -51,15 +43,8 @@ steps:
       phase: 2
       trace: 20
     ended: false
-    return: null
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - A
-      mode: active
+    cycle_result:
+      value: null
 - cycle: {}
   expect:
     state: null
@@ -67,8 +52,8 @@ steps:
       phase: 2
       trace: 20
     ended: true
-    return: null
-    stack: []
+    cycle_result:
+      value: null
 - cycle: {}
   expect:
     state: null
@@ -76,5 +61,5 @@ steps:
       phase: 2
       trace: 20
     ended: true
-    return: null
-    stack: []
+    cycle_result:
+      value: null

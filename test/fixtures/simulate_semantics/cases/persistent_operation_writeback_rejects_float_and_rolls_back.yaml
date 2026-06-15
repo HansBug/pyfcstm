@@ -10,8 +10,6 @@ origin:
   - exception
   - state
   - vars
-  - stack
-  - history
   notes:
   - Covers operation block temporary variables crossing the persistent int boundary.
 categories:
@@ -38,8 +36,3 @@ steps:
       count: 0
       marker: 0
     ended: false
-    stack:
-    - path:
-      - Root
-      mode: init_wait
-    history_length: 0

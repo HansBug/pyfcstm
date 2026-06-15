@@ -1,6 +1,7 @@
 schema_version: 1
 id: composite_initial_guard_can_select_terminal_branch_before_plain_before
-title: Composite initial guard can choose a terminal branch before plain during-before mutation
+title: Composite initial guard can choose a terminal branch before plain during-before
+  mutation
 source:
   fcstm: composite_initial_guard_can_select_terminal_branch_before_plain_before.fcstm
 origin:
@@ -12,9 +13,9 @@ origin:
   - ended
   - state
   - vars
-  - stack
   notes:
-  - Covers the final and is_ended variant where wrong initial selection prevents machine termination.
+  - Covers the final and is_ended variant where wrong initial selection prevents machine
+    termination.
 categories:
 - runtime
 - lifecycle
@@ -34,6 +35,5 @@ steps:
       flag: 1
       trace: 234789
     ended: true
-    stack: []
     cycle_result:
       value: null

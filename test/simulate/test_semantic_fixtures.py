@@ -115,6 +115,7 @@ def test_generated_alignment_regression_fixtures_remain_shared():
 def test_semantic_fixture_assertion_families_are_executable():
     cases = iter_semantic_cases(runners=["simulation"])
     covered = set()
+    legacy_fields = set()
     for case in cases:
         if case.data.get("model_build"):
             continue
@@ -123,7 +124,7 @@ def test_semantic_fixture_assertion_families_are_executable():
             if "ended" in expect:
                 covered.add("ended")
             if "stack" in expect:
-                covered.add("stack")
+                legacy_fields.add("stack")
             if "state" in expect:
                 covered.add("current_state")
             if any(
@@ -135,7 +136,15 @@ def test_semantic_fixture_assertion_families_are_executable():
                 field in expect
                 for field in ("history", "history_length", "history_tail")
             ):
-                covered.add("history")
+                legacy_fields.update(
+                    field
+                    for field in ("history", "history_length", "history_tail")
+                    if field in expect
+                )
+            if "cycle_count" in expect:
+                legacy_fields.add("cycle_count")
+            if "return" in expect:
+                legacy_fields.add("return")
             if step.get("cycle") not in (None, {}) and "events" in step.get(
                 "cycle", {}
             ):
@@ -148,16 +157,15 @@ def test_semantic_fixture_assertion_families_are_executable():
                 covered.add("context")
 
     assert {
-        "stack",
         "ended",
         "current_state",
         "vars",
-        "history",
         "events",
         "cycle_result",
         "exception",
         "context",
     }.issubset(covered)
+    assert legacy_fields == set()
 
 
 @pytest.mark.unittest
@@ -1061,7 +1069,7 @@ def test_pure_shared_fixture_boundary_rejects_legacy_return_field(tmp_path):
 
 
 @pytest.mark.unittest
-def test_pure_shared_fixture_boundary_does_not_gate_existing_corpus():
+def test_shared_fixture_corpus_uses_public_observation_fields():
     cases = list(iter_semantic_cases())
     legacy_fields = {
         field
@@ -1070,11 +1078,23 @@ def test_pure_shared_fixture_boundary_does_not_gate_existing_corpus():
         for expect in (step.get("expect_initial"), step.get("expect"))
         if isinstance(expect, dict)
         for field in expect
-        if field in {"stack", "cycle_count", "return", "history", "history_tail"}
+        if field
+        in {
+            "stack",
+            "cycle_count",
+            "return",
+            "history",
+            "history_tail",
+            "history_length",
+        }
     }
+    simulation_only_cases = [
+        case.id for case in cases if case.runners == ("simulation",)
+    ]
 
     assert cases
-    assert legacy_fields
+    assert legacy_fields == set()
+    assert simulation_only_cases == []
 
 
 @pytest.mark.unittest

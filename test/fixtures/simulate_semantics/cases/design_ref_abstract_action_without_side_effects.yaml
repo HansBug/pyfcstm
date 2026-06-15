@@ -9,7 +9,7 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_34_ref_targets_abstract_action_without_side_effects
   assertion_types:
   - ended
-  - return
+  - cycle_result
   - state
   - vars
 categories:
@@ -31,7 +31,8 @@ steps:
     vars:
       trace: 1
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle:
     events:
     - Root.A.Go
@@ -42,7 +43,8 @@ steps:
     vars:
       trace: 11
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle: {}
   expect:
     state:
@@ -51,4 +53,5 @@ steps:
     vars:
       trace: 21
     ended: false
-    return: null
+    cycle_result:
+      value: null

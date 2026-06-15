@@ -10,7 +10,7 @@ origin:
   assertion_types:
   - state
   - vars
-  - return
+  - cycle_result
   - ended
   notes:
   - Migrated from one parameter row of the parametrized if-block runtime test.
@@ -36,4 +36,5 @@ steps:
       flag: 0
       mode: 0
     ended: false
-    return: null
+    cycle_result:
+      value: null

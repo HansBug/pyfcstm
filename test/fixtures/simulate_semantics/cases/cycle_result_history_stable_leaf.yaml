@@ -8,8 +8,6 @@ origin:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   assertion_types:
   - cycle_result
-  - history
-  - stack
   - state
   - vars
   notes:
@@ -18,6 +16,7 @@ categories:
 - runtime
 runners:
 - simulation
+- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -30,21 +29,5 @@ steps:
     vars:
       counter: 1
     ended: false
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - Counting
-      mode: active
-    cycle_count: 1
     cycle_result:
       value: null
-    history_length: 1
-    history_tail:
-    - cycle: 1
-      state: Root.Counting
-      vars:
-        counter: 1
-      events: []

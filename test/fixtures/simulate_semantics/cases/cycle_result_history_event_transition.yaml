@@ -9,17 +9,17 @@ origin:
   assertion_types:
   - cycle_result
   - events
-  - history
-  - stack
   - state
   - vars
   notes:
-  - Minimal fixture proving event input is reflected in history and cycle_result stays compatible.
+  - Minimal fixture proving event input is reflected in history and cycle_result stays
+    compatible.
 categories:
 - runtime
 - event_paths
 runners:
 - simulation
+- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -37,7 +37,6 @@ steps:
       input_events: []
       consumed_events: []
       unconsumed_events: []
-    history_length: 1
 - cycle:
     events:
     - Root.Idle.Start
@@ -48,15 +47,6 @@ steps:
     vars:
       counter: 5
     ended: false
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - Active
-      mode: active
-    cycle_count: 2
     cycle_result:
       value: null
       input_events:
@@ -64,11 +54,3 @@ steps:
       consumed_events:
       - Root.Idle.Start
       unconsumed_events: []
-    history_length: 2
-    history_tail:
-    - cycle: 2
-      state: Root.Active
-      vars:
-        counter: 5
-      events:
-      - Root.Idle.Start

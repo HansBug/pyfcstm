@@ -9,7 +9,7 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_25_cross_hierarchy_transition_actual_runtime_behavior
   assertion_types:
   - ended
-  - return
+  - cycle_result
   - state
   - vars
 categories:
@@ -32,7 +32,8 @@ steps:
     vars:
       counter: 110111
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle:
     events:
     - Root.System1.Go
@@ -44,4 +45,5 @@ steps:
     vars:
       counter: 220222
     ended: false
-    return: null
+    cycle_result:
+      value: null

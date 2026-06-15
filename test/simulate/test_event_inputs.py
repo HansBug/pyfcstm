@@ -178,6 +178,30 @@ def test_cycle_rejects_non_iterable_event_container():
 
 
 @pytest.mark.unittest
+def test_cycle_rejects_unknown_event_path_and_preserves_public_snapshot():
+    """Unknown event paths surface as simulator event errors without rollback drift."""
+    ast = parse_with_grammar_entry(
+        """
+state Root {
+    state A;
+    [*] -> A;
+}
+""",
+        "state_machine_dsl",
+    )
+    runtime = SimulationRuntime(parse_dsl_node_to_state_machine(ast))
+
+    with pytest.raises(
+        SimulationRuntimeEventError, match="Cannot resolve event path 'Missing'"
+    ):
+        runtime.cycle(["Missing"])
+
+    assert runtime.current_state.path == ("Root",)
+    assert runtime.vars == {}
+    assert runtime.is_ended is False
+
+
+@pytest.mark.unittest
 def test_cycle_rejects_foreign_model_event_object():
     """Event objects must belong to the runtime's own state machine."""
     runtime = _build_runtime()

@@ -10,7 +10,7 @@ origin:
   assertion_types:
   - state
   - vars
-  - return
+  - cycle_result
   notes:
   - Covers complex sign expressions in enter, during, exit, guard, and effect blocks.
   - This case also guards generated Python formatter convergence for long sign expressions.

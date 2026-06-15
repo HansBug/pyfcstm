@@ -26,5 +26,5 @@ steps:
       match: 'if-block condition evaluation failed: division by zero'
       match_kind: substring
       cause_type: ZeroDivisionError
-      cause_match: 'division by zero'
+      cause_match: division by zero
       cause_match_kind: substring

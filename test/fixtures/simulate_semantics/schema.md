@@ -20,16 +20,16 @@ inside `cycle`, `cycle_result`, `history`, `raises`, `logs`, `stack`, handler
 calls, and CLI expectations must fail fast with a diagnostic containing the case
 id and YAML path.
 
-This corpus is currently in a migration window. Existing legacy cases may still
-use older simulator-debugging expectations while the corpus is being cleaned up,
-but any newly added shared case should follow the pure shared boundary documented
-below. The pure shared boundary is the contract for new cross-runtime cases:
-simulation plus generated Python alignment, public observation surface only,
-and no simulator-only, CLI-only, or model-construction diagnostics.
-New cross-runtime shared cases should declare `boundary: pure_shared`; the
-fixture loader then runs the stricter boundary check automatically. Existing
-legacy cases without that marker stay on the migration-window schema until they
-are rewritten by the later cleanup slices.
+The current shared corpus is restricted to simulator plus generated Python
+alignment cases that use the public observation surface. The loader still keeps
+temporary compatibility for older simulator-debugging, CLI, and
+model-construction fixture shapes until the schema cleanup removes those fields,
+but those shapes must not be reintroduced into shared YAML. The pure shared
+boundary is the contract for cross-runtime cases: simulation plus generated
+Python alignment, public observation surface only, and no simulator-only,
+CLI-only, or model-construction diagnostics. New cross-runtime shared cases
+should declare `boundary: pure_shared`; the fixture loader then runs the
+stricter boundary check automatically.
 
 ## Top-level fields
 
@@ -38,7 +38,7 @@ are rewritten by the later cleanup slices.
 | `schema_version` | yes | Fixed integer value `1`. |
 | `id` | yes | Stable snake-case id. Must match the YAML basename. |
 | `title` | yes | Human-readable title. |
-| `boundary` | no | Optional fixture boundary marker. Use `pure_shared` for new simulator plus generated Python shared cases so the loader enforces the stricter public-observation contract. Existing legacy cases may omit it during the migration window. |
+| `boundary` | no | Optional fixture boundary marker. Use `pure_shared` for simulator plus generated Python shared cases so the loader enforces the stricter public-observation contract. |
 | `source.fcstm` | yes | FCSTM file name in the same directory. |
 | `origin.files` | yes | Original pytest functions that this fixture migrates from. |
 | `origin.docs` | no | Optional design-document references. |
@@ -51,7 +51,7 @@ are rewritten by the later cleanup slices.
 | `model_build` | conditional | Simulation-only model-construction diagnostic expectation. Mutually exclusive with `steps` and `commands`. Legacy corpus only; new pure shared cases should not add it. |
 | `steps` | conditional | Required for runtime/alignment runners. Mutually exclusive with `model_build` and `commands`. New pure shared cases should keep only public observation fields inside step expectations. |
 | `commands` | conditional | Required for CLI runner. Mutually exclusive with `model_build` and `steps`. Legacy CLI fixture shape only; new pure shared cases should not add it. |
-| `handlers` | no | Abstract-handler fixtures for recording calls or raising errors. Requires the `simulation` runner and may also be used for generated Python alignment in the legacy corpus. |
+| `handlers` | no | Abstract-handler fixtures for public hook-call records. Requires the `simulation` runner and may also be used for generated Python alignment when the same public callback behavior is installed in both runtimes. |
 | `expected_failure` | reserved | Reserved for inactive regression fixtures that should not run in the main corpus. |
 
 Allowed categories:
@@ -330,13 +330,13 @@ parent-relative paths (`.go`), and root-relative paths (`/go`).
 | `vars_keys` | Exact variable key-set assertion. |
 | `vars_absent` | Variables that must not be present. |
 | `ended` | Expected `runtime.is_ended`. |
-| `stack` | Expected `brief_stack`, with `path` list and `mode`. Legacy debugging surface; not part of the pure shared boundary for new cases. |
-| `cycle_count` | Runtime cycle count assertion. For generated alignment cases the generated runtime must expose the same count. Legacy debugging surface; not part of the pure shared boundary for new cases. |
-| `return` | Legacy expected `cycle()` return value. Existing fixtures may keep it; new pure shared cases should use `cycle_result` instead. |
+| `stack` | Expected `brief_stack`, with `path` list and `mode`. Temporary schema compatibility only; not part of the pure shared boundary and unused by the current shared corpus. |
+| `cycle_count` | Runtime cycle count assertion. Temporary schema compatibility only; not part of the pure shared boundary and unused by the current shared corpus. |
+| `return` | Legacy expected `cycle()` return value. Temporary schema compatibility only; shared cases use `cycle_result` instead. |
 | `cycle_result` | Standardized `cycle()` result object. Current minimum shape is `value`; later event-consumption metadata can extend the same object. |
-| `history_length` | Expected length of `runtime.history`. Legacy debugging surface; not part of the pure shared boundary for new cases. |
-| `history` | Expected full `runtime.history` sequence after the step. Legacy debugging surface; not part of the pure shared boundary for new cases. |
-| `history_tail` | Expected non-empty suffix of `runtime.history` after the step. Use `history_length: 0` or `history: []` to assert no history entries. Legacy debugging surface; not part of the pure shared boundary for new cases. |
+| `history_length` | Expected length of `runtime.history`. Temporary schema compatibility only; not part of the pure shared boundary and unused by the current shared corpus. |
+| `history` | Expected full `runtime.history` sequence after the step. Temporary schema compatibility only; not part of the pure shared boundary and unused by the current shared corpus. |
+| `history_tail` | Expected non-empty suffix of `runtime.history` after the step. Temporary schema compatibility only; not part of the pure shared boundary and unused by the current shared corpus. |
 | `raises` | Expected exception class name and optional message match. |
 | `logs` | Step-local `caplog` assertions. Not part of the pure shared boundary for new cases. |
 | `warnings` | Step-local Python warning assertions. Simulation-only. |
@@ -412,7 +412,9 @@ Allowed exception type names are:
 - `ValueError`
 
 `match_kind` may be `substring` or `regex`; default is `substring`.
-Exception steps may still assert rollback state, vars, ended status, and stack.
+Exception steps may still assert rollback state, vars, and ended status. Stack
+assertions are only accepted by the temporary compatibility schema and should
+not be used by shared cases.
 `raises` only allows the fields `type`, `match`, and `match_kind`; misspelled
 message fields must be rejected instead of weakening the exception assertion.
 
@@ -520,15 +522,14 @@ at construction time and after every step:
 - `is_ended`
 - variables
 - current state path
-- `brief_stack`
-- `cycle_count`
+- temporary helper-only `brief_stack` parity
+- temporary helper-only `cycle_count` parity
 - `cycle()` return value
 - exception class names for expected exception paths
 
-Even when YAML does not contain an explicit `stack` assertion, the alignment
-runner currently compares both stacks internally. That behavior is legacy
-helper coverage, not the long-term pure shared contract; new pure shared cases
-must not introduce `stack`, `brief_stack`, or `cycle_count` as fixture evidence.
+The alignment runner does not require shared YAML to assert stack shape or cycle
+count; those are temporary helper compatibility details rather than shared
+fixture evidence.
 `runtime_options`, `warnings`, `abstract_handler_errors`, `error_state`, and
 `error_info` are rejected for generated alignment cases in this schema version.
 `handlers` and `handler_calls` are allowed when the fixture also includes

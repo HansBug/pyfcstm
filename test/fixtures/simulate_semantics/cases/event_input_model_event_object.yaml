@@ -11,7 +11,7 @@ origin:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614288612
   assertion_types:
   - ended
-  - return
+  - cycle_result
   - state
   - vars
   notes:
@@ -35,7 +35,8 @@ steps:
     vars:
       x: 1
     ended: false
-    return: null
+    cycle_result:
+      value: null
 - cycle:
     events:
     - event: Root.A.Go
@@ -46,4 +47,5 @@ steps:
     vars:
       x: 11
     ended: false
-    return: null
+    cycle_result:
+      value: null

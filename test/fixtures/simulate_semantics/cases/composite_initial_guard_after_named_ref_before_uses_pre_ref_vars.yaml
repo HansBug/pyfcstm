@@ -14,7 +14,8 @@ origin:
   - state
   - vars
   notes:
-  - Covers the named lifecycle ref variant where the plain during-before action mutates the guard variable through a ref.
+  - Covers the named lifecycle ref variant where the plain during-before action mutates
+    the guard variable through a ref.
 categories:
 - runtime
 - lifecycle

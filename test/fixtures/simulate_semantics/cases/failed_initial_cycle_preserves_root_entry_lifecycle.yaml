@@ -7,10 +7,8 @@ origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614005134
   assertion_types:
-  - cycle_count
   - ended
-  - return
-  - stack
+  - cycle_result
   - state
   - vars
   notes:
@@ -35,12 +33,8 @@ steps:
     vars:
       x: 0
     ended: false
-    stack:
-    - path:
-      - Root
-      mode: init_wait
-    cycle_count: 0
-    return: null
+    cycle_result:
+      value: null
 - cycle:
     events:
     - Root.Start
@@ -51,13 +45,5 @@ steps:
     vars:
       x: 11
     ended: false
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - A
-      mode: active
-    cycle_count: 1
-    return: null
+    cycle_result:
+      value: null

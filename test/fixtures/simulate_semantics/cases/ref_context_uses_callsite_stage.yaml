@@ -10,7 +10,6 @@ origin:
   - https://github.com/HansBug/pyfcstm/issues/156#issuecomment-4631761534
   assertion_types:
   - handler_calls
-  - stack
   - state
   - vars_exact
   notes:
@@ -21,6 +20,7 @@ categories:
 - lifecycle
 runners:
 - simulation
+- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -83,14 +83,6 @@ steps:
     ended: false
     cycle_result:
       value: null
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - B
-      mode: active
     handler_calls:
     - action: Root.Library.SharedExit
       state: Root.A

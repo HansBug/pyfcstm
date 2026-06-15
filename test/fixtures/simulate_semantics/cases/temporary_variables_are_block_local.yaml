@@ -9,7 +9,7 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestTemporaryVariables::test_temporary_variables_are_block_local
   assertion_types:
   - ended
-  - return
+  - cycle_result
   - state
   - vars
   - vars_absent
@@ -34,12 +34,13 @@ steps:
       x: 1
       y: 0
     ended: false
-    return: null
     vars_keys:
     - x
     - y
     vars_absent:
     - tmp
+    cycle_result:
+      value: null
 - cycle:
     events:
     - Root.A.Go
@@ -51,9 +52,10 @@ steps:
       x: 11
       y: 12
     ended: false
-    return: null
     vars_keys:
     - x
     - y
     vars_absent:
     - tmp
+    cycle_result:
+      value: null

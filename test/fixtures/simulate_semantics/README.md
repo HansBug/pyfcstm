@@ -6,17 +6,15 @@ semantics into data files. Each case lives in `cases/<id>.fcstm` plus
 `test/testings/simulate_semantics.py`.
 
 This corpus is a fixture/test-harness change only. It does not change production
-runtime semantics and does not activate known simulator bug reproductions. The
-tracking context is [issue #143](https://github.com/HansBug/pyfcstm/issues/143)
-and [PR #145](https://github.com/HansBug/pyfcstm/pull/145).
+runtime semantics and does not activate known simulator bug reproductions.
 
-The current shared corpus is constrained to simulator plus generated Python
-alignment cases that use the public observation surface. The loader still has
-temporary compatibility code for older simulator-debugging, CLI, and
-model-construction fixture shapes until the schema cleanup removes those fields,
-but those shapes must not be reintroduced into shared YAML. Mark new shared
-cases with `boundary: pure_shared` so the loader applies the stricter boundary
-automatically.
+The shared corpus is intentionally narrow and public-API based. Every YAML case
+defaults to the simulator plus generated Python alignment runners, and the only
+runner-selection field is `exclude_runners` for explicit exceptions. Do not add
+`runners`, top-level boundary markers, CLI command scenarios, model-construction
+diagnostics, runtime options, log/warning assertions, stack snapshots, cycle
+counters, history records, or any other private simulator surface to this
+corpus.
 
 ## How to run
 
@@ -33,29 +31,18 @@ SKIP_SLOW_TESTS=1 make unittest
    `schema.md`.
 3. Keep `id` equal to the YAML/FCSTM basename.
 4. Set `origin.files` to the exact original pytest function(s).
-5. Choose runners deliberately:
-   - `simulation` for `SimulationRuntime` semantics.
-   - `generated_python_alignment` only when the generated Python runtime is
-     expected to match the simulator for this behavior.
-   - Do not add `cli_command` to this shared corpus; CLI/REPL behavior belongs
-     in ordinary pytest coverage.
-6. For new shared cases, keep only the public observation surface: `state`,
-   `vars`, `ended`, constructor or hot-start outcomes, per-step cycle state and
-   vars, `handler_calls`, and `cycle_result.value`.
-7. For new shared cases, set `boundary: pure_shared`; this is the machine gate
-   that rejects legacy or simulator-only observation fields during load.
-8. For new shared cases, do not add `runtime_options`, `model_build`,
-   `commands`, `cli_command`, `stack`, `brief_stack`, `cycle_count`,
-   `history*`, `return`, `warnings`, `abstract_handler_errors`, `error_state`,
-   or `error_info`.
-9. Preserve every original behavior either through the shared public observation
-   surface or through an ordinary pytest outside this corpus. Do not keep logs,
-   stack shape, cycle counters, history records, warning metadata,
-   simulator-only errors, or CLI output in shared YAML.
-10. Run the fixture tests and the ordinary pytest coverage that owns any
+5. Omit `runners`; the loader applies all current shared runners by default.
+6. Use `exclude_runners` only when a current shared runner cannot consume the
+   case and the exclusion is intentional.
+7. Keep only the public observation surface: `state`, `vars`, `vars_exact`,
+   `vars_keys`, `vars_absent`, `ended`, constructor or hot-start outcomes,
+   per-step cycle state and vars, `handler_calls`, and `cycle_result`.
+8. Preserve every original behavior either through the shared public observation
+   surface or through an ordinary pytest outside this corpus.
+9. Run the fixture tests and the ordinary pytest coverage that owns any
    non-shared behavior.
 
-## Anti-drift migration checklist
+## Public-observation checklist
 
 Use this checklist before deleting or replacing any inline original test:
 
@@ -66,18 +53,16 @@ Use this checklist before deleting or replacing any inline original test:
 - Event input strings are not rewritten to a different path form.
 - Every helper assertion and every bare assertion either has a public YAML
   equivalent or remains in ordinary pytest coverage.
-- Runtime log assertions, Python warning assertions, stack/brief-stack details,
-  cycle counters, history records, and CLI output stay outside this shared
-  corpus.
+- Runtime log assertions, Python warning assertions, stack snapshots, cycle
+  counters, history records, and CLI output stay outside this shared corpus.
 - `set(runtime.vars.keys())` and temporary-variable non-leakage use
   `vars_keys` and/or `vars_absent`.
 - Exception tests keep class and message assertions under `raises` and keep
   rollback state/vars assertions when the original checked them.
-- CLI tests keep output assertions under `output_contains` /
-  `output_not_contains` / `error_contains`.
-- Abstract-handler callbacks use `handlers` plus `handler_calls`; new
-  `boundary: pure_shared` cases keep only public hook-call records. Log-mode
-  handler error metadata belongs in ordinary simulator pytest coverage.
+- CLI tests stay as ordinary pytest coverage instead of shared fixture YAML.
+- Abstract-handler callbacks use `handlers` plus `handler_calls`; shared cases
+  keep only public hook-call records. Handler error metadata belongs in
+  ordinary simulator pytest coverage.
 - Anonymous abstract warning dedupe metadata is a simulator-internal diagnostic
   and belongs in dedicated `test/simulate/` pytest coverage, not shared fixture
   YAML.
@@ -92,15 +77,12 @@ Reviewers can use this fixed template when checking a migrated case:
 |---|---|---|---|---|---|
 | `path::Class::test_name` | `case_id` | yes/no | yes/no | yes/no | Missing or changed assertions. |
 
-## Current migration index
+## Current fixture index
 
 The table below is generated from the current YAML metadata and is intended to
 make anti-drift review straightforward. `origin.files` points to the original
-inline tests that supplied each fixture's semantics; fully migrated runtime and
-Python-template alignment tests are now executed through the fixture runners, so
-those origin paths may be visible only through repository history or the
-[migration pull request](https://github.com/HansBug/pyfcstm/pull/145) after the
-inline files are removed.
+inline tests or upstream issue/PR evidence that supplied each fixture's
+semantics.
 
 | Fixture id | Runners | Assertion types | Origin files |
 |---|---|---|---|
@@ -123,8 +105,8 @@ inline files are removed.
 | `composite_initial_nested_entry_order_survives_deep_choice` | simulation, generated_python_alignment | events, state, vars, cycle_result | `test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture` |
 | `composite_initial_skips_unstable_candidates_root_entry` | simulation, generated_python_alignment | ended, cycle_result, state, vars | [source](https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614352350) |
 | `cycle_result_event_accounting` | simulation, generated_python_alignment | cycle_result, events, state, vars | `test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture` |
-| `cycle_result_history_event_transition` | simulation, generated_python_alignment | cycle_result, events, state, vars | `test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture` |
-| `cycle_result_history_stable_leaf` | simulation, generated_python_alignment | cycle_result, state, vars | `test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture` |
+| `cycle_result_event_transition` | simulation, generated_python_alignment | cycle_result, events, state, vars | `test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture` |
+| `cycle_result_stable_leaf` | simulation, generated_python_alignment | cycle_result, state, vars | `test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture` |
 | `design_aspect_actions` | simulation, generated_python_alignment | ended, cycle_result, state, vars | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_5_aspect_actions`<br>`test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_5_aspect_actions` |
 | `design_basic_simple_transition` | simulation, generated_python_alignment | ended, cycle_result, state, vars | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_1_basic_simple_transition`<br>`test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_1_basic_simple_transition` |
 | `design_composite_state` | simulation, generated_python_alignment | ended, cycle_result, state, vars | `test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_2_composite_state`<br>`test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_2_composite_state` |

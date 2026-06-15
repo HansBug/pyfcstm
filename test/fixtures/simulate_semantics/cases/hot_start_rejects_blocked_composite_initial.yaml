@@ -17,9 +17,6 @@ categories:
 - hot_start
 - validation
 - template_alignment
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: Root.C
   vars:

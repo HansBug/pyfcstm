@@ -141,6 +141,7 @@ class TestPythonBuiltinTemplate:
         def int counter = 0;
         state System {
             state Idle {
+                event Noise;
                 during { counter = counter + 1; }
             }
             state Running {
@@ -157,11 +158,27 @@ class TestPythonBuiltinTemplate:
             assert machine.current_state_path == ('System',)
             assert machine.vars == {'counter': 0}
 
-            machine.cycle()
+            result = machine.cycle()
+            assert result == module.CycleResult(
+                input_events=(),
+                consumed_events=(),
+                unconsumed_events=(),
+            )
             assert machine.current_state_path == ('System', 'Idle')
             assert machine.vars == {'counter': 1}
 
-            machine.cycle(['Start'])
+            result = machine.cycle(['Start', 'System.Idle.Noise', 'Start'])
+            assert result.value is None
+            assert result.input_events == (
+                'System.Idle.Start',
+                'System.Idle.Noise',
+                'System.Idle.Start',
+            )
+            assert result.consumed_events == ('System.Idle.Start',)
+            assert result.unconsumed_events == (
+                'System.Idle.Noise',
+                'System.Idle.Start',
+            )
             assert machine.current_state_path == ('System', 'Running')
             assert machine.vars == {'counter': 111}
             assert module.SystemMachine.DSL_SOURCE.strip().startswith('def int counter = 0;')
@@ -621,6 +638,7 @@ class TestPythonBuiltinTemplate:
 
                 assert imported_modules <= {
                     '__future__',
+                    'collections',
                     'math',
                     'dataclasses',
                     'types',

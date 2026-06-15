@@ -1,8 +1,8 @@
 schema_version: 1
-id: cycle_result_history_event_transition
-title: Cycle result and history assertions for event transition
+id: cycle_result_event_transition
+title: Cycle result assertion for event transition
 source:
-  fcstm: cycle_result_history_event_transition.fcstm
+  fcstm: cycle_result_event_transition.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
@@ -12,14 +12,11 @@ origin:
   - state
   - vars
   notes:
-  - Minimal fixture proving event input is reflected in history and cycle_result stays
-    compatible.
+  - Minimal fixture proving event input is reflected in the public cycle_result
+    observation.
 categories:
 - runtime
 - event_paths
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null

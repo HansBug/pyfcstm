@@ -230,6 +230,40 @@ class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
 
 
 @dataclass(frozen=True)
+class CycleResult:
+    """
+    Immutable metadata returned by one generated runtime cycle.
+
+    :param value: Public return value payload. The generated Python runtime
+        keeps this as ``None`` for compatibility with the simulator.
+    :type value: Optional[Tuple[str, ...]]
+    :param input_events: Normalized event paths supplied for this cycle.
+    :type input_events: Tuple[str, ...]
+    :param consumed_events: Normalized event paths consumed by evented
+        transitions during this cycle.
+    :type consumed_events: Tuple[str, ...]
+    :param unconsumed_events: Normalized input event paths that did not trigger
+        an evented transition.
+    :type unconsumed_events: Tuple[str, ...]
+
+    Example::
+
+        >>> result = CycleResult(
+        ...     input_events=("Root.A.Go", "Root.A.Noise", "Root.A.Go"),
+        ...     consumed_events=("Root.A.Go",),
+        ...     unconsumed_events=("Root.A.Noise", "Root.A.Go"),
+        ... )
+        >>> result.consumed_events
+        ('Root.A.Go',)
+    """
+
+    value: Optional[Tuple[str, ...]] = None
+    input_events: Tuple[str, ...] = ()
+    consumed_events: Tuple[str, ...] = ()
+    unconsumed_events: Tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class ReadOnlyExecutionContext:
     """
     Read-only execution context passed to abstract handlers.
@@ -836,13 +870,26 @@ class {{ machine_class_name(model) }}:
 
     def _normalize_events(self, events):
         if events is None:
-            return set()
+            return ()
         if isinstance(events, str):
             events = [events]
-        normalized = set()
+        normalized = []
         for item in events:
-            normalized.add(self._parse_event(item))
-        return normalized
+            normalized.append(self._parse_event(item))
+        return tuple(normalized)
+
+    @staticmethod
+    def _unconsumed_event_names(input_events, consumed_events):
+        remaining_consumed = {}
+        for event_name in consumed_events:
+            remaining_consumed[event_name] = remaining_consumed.get(event_name, 0) + 1
+        unconsumed = []
+        for event_name in input_events:
+            if remaining_consumed.get(event_name, 0) > 0:
+                remaining_consumed[event_name] -= 1
+            else:
+                unconsumed.append(event_name)
+        return tuple(unconsumed)
 
     def _iter_path_to_state(self, state_path):
         result = []
@@ -992,6 +1039,7 @@ class {{ machine_class_name(model) }}:
         state_path,
         vars_,
         event_names,
+        consumed_events=None,
         is_validation_mode=False,
         attempt_initial_transition=True,
     ):
@@ -1011,11 +1059,20 @@ class {{ machine_class_name(model) }}:
             stack[-1]["plain_before_pending"] = True
             if attempt_initial_transition:
                 self._attempt_init_transition(
-                    stack, vars_, event_names, is_validation_mode=is_validation_mode
+                    stack,
+                    vars_,
+                    event_names,
+                    consumed_events=consumed_events,
+                    is_validation_mode=is_validation_mode,
                 )
 
     def _attempt_init_transition(
-        self, stack, vars_, event_names, is_validation_mode=False
+        self,
+        stack,
+        vars_,
+        event_names,
+        consumed_events=None,
+        is_validation_mode=False,
     ):
         if not stack:
             return False
@@ -1032,6 +1089,7 @@ class {{ machine_class_name(model) }}:
                     vars_,
                     transition_id,
                     event_names,
+                    consumed_events=consumed_events,
                     is_validation_mode=is_validation_mode,
                     attempt_initial_transition=not is_validation_mode,
                 )
@@ -1044,11 +1102,18 @@ class {{ machine_class_name(model) }}:
         vars_,
         transition_id,
         event_names,
+        consumed_events=None,
         is_validation_mode=False,
         attempt_initial_transition=True,
     ):
         composite_frame = stack[-1]
         transition = self._TRANSITIONS[transition_id]
+        if (
+            not is_validation_mode
+            and consumed_events is not None
+            and transition["event_path"] is not None
+        ):
+            consumed_events.append(transition["event_path"])
         self._execute_transition_effect(
             transition, vars_, is_validation_mode=is_validation_mode
         )
@@ -1064,6 +1129,7 @@ class {{ machine_class_name(model) }}:
             transition["target"],
             vars_,
             event_names,
+            consumed_events=consumed_events,
             is_validation_mode=is_validation_mode,
             attempt_initial_transition=attempt_initial_transition,
         )
@@ -1111,9 +1177,21 @@ class {{ machine_class_name(model) }}:
         return False
 
     def _execute_transition_on_context(
-        self, stack, vars_, transition_id, event_names, is_validation_mode=False
+        self,
+        stack,
+        vars_,
+        transition_id,
+        event_names,
+        is_validation_mode=False,
+        consumed_events=None,
     ):
         transition = self._TRANSITIONS[transition_id]
+        if (
+            not is_validation_mode
+            and consumed_events is not None
+            and transition["event_path"] is not None
+        ):
+            consumed_events.append(transition["event_path"])
         current_path = stack[-1]["state"]
         self._execute_actions(
             self._STATE_INFO[current_path]["exit_actions"],
@@ -1135,6 +1213,7 @@ class {{ machine_class_name(model) }}:
             transition["target"],
             vars_,
             event_names,
+            consumed_events=consumed_events,
             is_validation_mode=is_validation_mode,
         )
         return False
@@ -1309,13 +1388,21 @@ class {{ machine_class_name(model) }}:
 
         return False
 
-    def _initialize_context(self, stack, vars_, event_names, is_validation_mode=False):
+    def _initialize_context(
+        self,
+        stack,
+        vars_,
+        event_names,
+        consumed_events=None,
+        is_validation_mode=False,
+    ):
         stack[:] = []
         self._enter_state(
             stack,
             self._ROOT_STATE_PATH,
             vars_,
             event_names,
+            consumed_events=consumed_events,
             is_validation_mode=is_validation_mode,
         )
         return len(stack) == 0
@@ -1328,6 +1415,7 @@ class {{ machine_class_name(model) }}:
         ended=False,
         validate_post_child_exit=True,
         is_validation_mode=False,
+        consumed_events=None,
     ):
         if ended:
             return True, True
@@ -1388,6 +1476,7 @@ class {{ machine_class_name(model) }}:
                         transition_id,
                         event_names,
                         is_validation_mode=is_validation_mode,
+                        consumed_events=consumed_events,
                     )
                     steps_taken += 1
                     if ended:
@@ -1406,6 +1495,7 @@ class {{ machine_class_name(model) }}:
                     stack,
                     vars_,
                     event_names,
+                    consumed_events=consumed_events,
                     is_validation_mode=is_validation_mode,
                 )
                 steps_taken += 1
@@ -1429,6 +1519,7 @@ class {{ machine_class_name(model) }}:
                     transition_id,
                     event_names,
                     is_validation_mode=is_validation_mode,
+                    consumed_events=consumed_events,
                 )
                 steps_taken += 1
                 if ended:
@@ -1445,12 +1536,14 @@ class {{ machine_class_name(model) }}:
 
         :param events: Optional event name or event collection for this cycle.
         :type events: Optional[Union[str, List[str], Tuple[str, ...], set]]
-        :return: Current leaf state path after the cycle, or ``None`` if ended.
-        :rtype: Optional[Tuple[str, ...]]
+        :return: Per-cycle public return metadata.
+        :rtype: CycleResult
         """
         if self._ended:
-            return None
+            return CycleResult()
         event_names = self._normalize_events(events)
+        event_name_set = set(event_names)
+        consumed_event_names = []
 
         snapshot_stack = self._clone_stack(self._stack)
         snapshot_vars = dict(self._vars)
@@ -1466,7 +1559,7 @@ class {{ machine_class_name(model) }}:
             validation_ended = self._initialize_context(
                 validation_stack,
                 validation_vars,
-                event_names,
+                event_name_set,
                 is_validation_mode=True,
             )
             validation_entered_root = True
@@ -1474,7 +1567,7 @@ class {{ machine_class_name(model) }}:
         success, validation_ended = self._run_cycle_on_context(
             validation_stack,
             validation_vars,
-            event_names,
+            event_name_set,
             ended=validation_ended,
             is_validation_mode=True,
         )
@@ -1486,14 +1579,20 @@ class {{ machine_class_name(model) }}:
             sim_ended = snapshot_ended
 
             if not sim_entered_root:
-                sim_ended = self._initialize_context(sim_stack, sim_vars, event_names)
+                sim_ended = self._initialize_context(
+                    sim_stack,
+                    sim_vars,
+                    event_name_set,
+                    consumed_events=consumed_event_names,
+                )
                 sim_entered_root = True
 
             success, sim_ended = self._run_cycle_on_context(
                 sim_stack,
                 sim_vars,
-                event_names,
+                event_name_set,
                 ended=sim_ended,
+                consumed_events=consumed_event_names,
             )
 
         if success:
@@ -1507,6 +1606,7 @@ class {{ machine_class_name(model) }}:
             self._vars = snapshot_vars
             self.variables = self._vars
             self._ended = snapshot_ended
+            consumed_event_names = []
             if not snapshot_entered_root and not snapshot_ended:
                 self._stack = self._create_root_rollback_stack()
             else:
@@ -1517,7 +1617,14 @@ class {{ machine_class_name(model) }}:
             self._ended = True
             self._stack = []
 
-        return None
+        return CycleResult(
+            value=None,
+            input_events=event_names,
+            consumed_events=tuple(consumed_event_names),
+            unconsumed_events=self._unconsumed_event_names(
+                event_names, consumed_event_names
+            ),
+        )
 
 {% set hook_ns = namespace(seen=[]) %}
 {% for state in model.walk_states() %}

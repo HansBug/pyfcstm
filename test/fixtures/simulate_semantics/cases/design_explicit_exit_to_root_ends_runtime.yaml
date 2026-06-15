@@ -16,9 +16,6 @@ categories:
 - design_example
 - runtime
 - template_alignment
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null

@@ -13,13 +13,11 @@ origin:
   - state
   - vars
   notes:
-  - Simulation-only callback contract for read-only variable snapshots.
+  - Public handler context read-only observation shared by simulation and generated
+    Python alignment.
 categories:
 - runtime
 - abstract
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null

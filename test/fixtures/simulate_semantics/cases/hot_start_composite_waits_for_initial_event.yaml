@@ -18,9 +18,6 @@ categories:
 - template_alignment
 - hot_start
 - validation
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: Root.Locked
   vars:

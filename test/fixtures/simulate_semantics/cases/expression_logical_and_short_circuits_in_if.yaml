@@ -15,9 +15,6 @@ origin:
 categories:
 - runtime
 - if_blocks
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null

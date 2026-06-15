@@ -46,6 +46,15 @@ CASE_FIELD_NAMES = (
     "error_info",
     "anonymous_warning_count",
 )
+CLASSIFICATION_LABELS = (
+    "KEEP_SHARED_FIXTURE",
+    "REWRITE_SHARED_PUBLIC_OBSERVATIONS",
+    "ADD_ALIGNMENT_RUNNER",
+    "MIGRATE_MODEL_VALIDATION",
+    "MIGRATE_CLI_REPL",
+    "MIGRATE_SIMULATOR_DIAGNOSTIC",
+    "OPEN_ISSUE_OR_UNDECIDED",
+)
 TOKEN_PATTERNS = (
     ("_STATE_INFO", re.compile(r"\b_STATE_INFO\b")),
     ("_stack", re.compile(r"(?<![A-Za-z0-9])_stack\b")),
@@ -573,14 +582,17 @@ def _classification_records(
 
 
 def _render_report(
-    root: Path, records: Sequence[SemanticCaseRecord], readme_text: str
+    root: Path,
+    records: Sequence[SemanticCaseRecord],
+    report_readme_text: str,
+    drift_readme_text: str,
 ) -> str:
     field_cases = _case_field_counts(records)
     classifications = _classification_records(records)
     schema_text = _read_text(root / SCHEMA_RELATIVE_PATH)
     helper_sources = _source_texts(root, HELPER_RELATIVE_PATHS)
     helper_sources[SCHEMA_RELATIVE_PATH] = schema_text
-    helper_sources[README_RELATIVE_PATH] = readme_text
+    helper_sources[README_RELATIVE_PATH] = report_readme_text
     c_poll_sources = _source_texts(root, C_POLL_BASELINE_RELATIVE_PATHS)
     fcstm_count = len(list((root / CASE_DIR_RELATIVE_PATH).glob("*.fcstm")))
 
@@ -594,7 +606,7 @@ def _render_report(
     classification_counter = Counter(
         classification.label for classification in classifications.values()
     )
-    readme_drift = _readme_drift_rows(records, readme_text)
+    readme_drift = _readme_drift_rows(records, drift_readme_text)
     return_distribution = _return_value_distribution(records)
     return_case_distribution = _return_case_distribution(records)
     handler_distribution = _handler_behavior_distribution(records)
@@ -638,8 +650,8 @@ def _render_report(
         _format_markdown_table(
             ("Classification", "Case files"),
             tuple(
-                (label, str(count))
-                for label, count in sorted(classification_counter.items())
+                (label, str(classification_counter.get(label, 0)))
+                for label in CLASSIFICATION_LABELS
             ),
         ),
         "",
@@ -853,7 +865,7 @@ def build_outputs(root: Path) -> Tuple[str, str]:
     readme_text = _read_text(_readme_path(root))
     readme_index = _render_readme_index(records)
     readme_output = _replace_readme_index(readme_text, readme_index)
-    report_text = _render_report(root, records, readme_output)
+    report_text = _render_report(root, records, readme_output, readme_text)
     return report_text, readme_output
 
 

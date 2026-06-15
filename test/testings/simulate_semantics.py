@@ -206,7 +206,7 @@ _PURE_SHARED_FORBIDDEN_EXPECT_FIELDS = {
     "error_info",
     "anonymous_warning_count",
 }
-_PURE_SHARED_HANDLER_BEHAVIORS = {"record_call"}
+_PURE_SHARED_HANDLER_BEHAVIORS = {"record_call", "record_var_write_attempt"}
 _PURE_SHARED_PUBLIC_EXPECT_FIELDS = {
     "state",
     "vars",
@@ -1386,13 +1386,6 @@ class _GeneratedPythonAlignmentRuntime:
         """
         return self._simulation_runtime.state_machine
 
-    def _generated_brief_stack(self) -> List[Tuple[Tuple[str, ...], str]]:
-        state_info = self._generated_runtime._STATE_INFO
-        return [
-            (tuple(state_info[frame["state"]]["path"]), frame["mode"])
-            for frame in self._generated_runtime._stack
-        ]
-
     def _assert_aligned(self, when: str) -> None:
         sim_ended = self._simulation_runtime.is_ended
         gen_ended = self._generated_runtime.is_ended
@@ -1433,33 +1426,6 @@ class _GeneratedPythonAlignmentRuntime:
                     gen_path,
                 )
             )
-        sim_stack = self._simulation_runtime.brief_stack
-        gen_stack = self._generated_brief_stack()
-        assert sim_stack == gen_stack, (
-            "%s: brief_stack mismatch for DSL:\n%s\nsimulation=%r\ngenerated=%r"
-            % (
-                when,
-                self._dsl_code,
-                sim_stack,
-                gen_stack,
-            )
-        )
-        sim_cycle_count = self._simulation_runtime.cycle_count
-        gen_cycle_count = self._generated_runtime.cycle_count
-        assert sim_cycle_count == gen_cycle_count, (
-            "%s: cycle_count mismatch for DSL:\n%s\nsimulation=%r, generated=%r"
-            % (
-                when,
-                self._dsl_code,
-                sim_cycle_count,
-                gen_cycle_count,
-            )
-        )
-
-    @property
-    def cycle_count(self) -> int:
-        self._assert_aligned("cycle_count access")
-        return self._simulation_runtime.cycle_count
 
     @property
     def vars(self) -> Mapping[str, Any]:
@@ -1477,36 +1443,6 @@ class _GeneratedPythonAlignmentRuntime:
             return self._simulation_runtime.current_state
         self._assert_aligned("current_state access")
         return self._simulation_runtime.current_state
-
-    @property
-    def brief_stack(self) -> List[Tuple[Tuple[str, ...], str]]:
-        self._assert_aligned("brief_stack access")
-        return self._simulation_runtime.brief_stack
-
-    @property
-    def history(self) -> List[Dict[str, Any]]:
-        """
-        Return simulator history for temporary compatibility expectations.
-
-        The generated Python runtime does not expose history as a public API.
-        The current shared fixture corpus no longer uses history as
-        cross-runtime evidence. While the temporary compatibility schema remains
-        in place, this property first runs the alignment helper and then returns
-        the simulator's authoritative history records for any older caller that
-        still requests them.
-
-        :return: Runtime history records from the simulator side.
-        :rtype: List[Dict[str, Any]]
-
-        Example::
-
-            >>> case = load_semantic_case("cycle_result_history_stable_leaf")
-            >>> runtime = _build_simulation_runtime(case)
-            >>> isinstance(runtime.history, list)
-            True
-        """
-        self._assert_aligned("history access")
-        return self._simulation_runtime.history
 
     def cycle(self, events: Optional[Sequence[Any]] = None) -> Any:
         sim_result = None
@@ -1697,9 +1633,7 @@ def run_generated_python_alignment_case(case: SemanticCase, caplog: Any = None) 
     The alignment runner generates the built-in Python runtime for the case DSL,
     executes it beside :class:`SimulationRuntime`, and asserts that public state,
     variables, cycle results, exceptions, and handler calls remain aligned after
-    every fixture step. Temporary helper parity checks for stack shape and cycle
-    count remain in this helper until the schema/helper cleanup slice removes
-    them from the alignment adapter.
+    every fixture step.
 
     :param case: Semantic fixture that includes the
         ``generated_python_alignment`` runner.
@@ -2905,16 +2839,12 @@ def validate_pure_shared_fixture_boundary(
             "pure shared fixture has forbidden top-level fields: %r"
             % sorted(forbidden_top_level),
         )
+    has_initial_expect = False
     if "initial" in data and data.get("initial") is not None:
         initial = data["initial"]
         if not isinstance(initial, dict):
             raise _case_error(case_id, yaml_path, "initial must be a mapping")
-        if "expect" in initial:
-            raise _case_error(
-                case_id,
-                yaml_path,
-                "pure shared fixture cannot use initial.expect diagnostics",
-            )
+        has_initial_expect = "expect" in initial
     if "handlers" in data:
         handlers = data["handlers"]
         if not isinstance(handlers, list):
@@ -2941,7 +2871,7 @@ def validate_pure_shared_fixture_boundary(
                     "pure shared fixture does not allow handlers[%d].exception"
                     % handler_index,
                 )
-            if "write" in handler:
+            if behavior != "record_var_write_attempt" and "write" in handler:
                 raise _case_error(
                     case_id,
                     yaml_path,
@@ -2951,7 +2881,7 @@ def validate_pure_shared_fixture_boundary(
     steps = data.get("steps")
     if not isinstance(steps, list):
         raise _case_error(case_id, yaml_path, "pure shared fixture requires steps")
-    if not steps:
+    if not steps and not has_initial_expect:
         raise _case_error(
             case_id, yaml_path, "pure shared fixture requires non-empty steps"
         )

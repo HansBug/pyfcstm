@@ -14,6 +14,8 @@ The module contains:
 * :class:`SemanticCaseError` - Schema and fixture-shape diagnostics.
 * :func:`load_semantic_case` - Load one fixture by id or YAML path.
 * :func:`iter_semantic_cases` - Enumerate fixture cases with optional filters.
+* :func:`validate_pure_shared_fixture_boundary` - Check the stricter boundary
+  for new cross-runtime shared fixtures.
 * :func:`run_simulation_case` - Execute one case against
   :class:`pyfcstm.simulate.SimulationRuntime`.
 * :func:`run_cli_command_case` - Execute one CLI-command fixture.
@@ -183,6 +185,29 @@ _ALLOWED_CYCLE_RESULT_FIELDS = {
     "consumed_events",
     "unconsumed_events",
 }
+_PURE_SHARED_REQUIRED_RUNNERS = {"simulation", "generated_python_alignment"}
+_PURE_SHARED_FORBIDDEN_TOP_LEVEL_FIELDS = {
+    "runtime_options",
+    "model_build",
+    "commands",
+    "expected_failure",
+}
+_PURE_SHARED_FORBIDDEN_EXPECT_FIELDS = {
+    "stack",
+    "brief_stack",
+    "cycle_count",
+    "return",
+    "history",
+    "history_length",
+    "history_tail",
+    "logs",
+    "warnings",
+    "abstract_handler_errors",
+    "error_state",
+    "error_info",
+    "anonymous_warning_count",
+}
+_PURE_SHARED_HANDLER_BEHAVIORS = {"record_call"}
 _ALLOWED_HISTORY_FIELDS = {"cycle", "state", "vars", "events"}
 _REQUIRED_HISTORY_FIELDS = _ALLOWED_HISTORY_FIELDS
 _CLI_OUTPUT_FIELDS = ("output_contains", "output_not_contains", "error_contains")
@@ -2909,6 +2934,152 @@ def _validate_handlers(
                     case_id,
                     yaml_path,
                     "handlers[%d].exception.message must be a string" % index,
+                )
+
+
+def validate_pure_shared_fixture_boundary(
+    data: Mapping[str, Any], yaml_path: str
+) -> None:
+    """
+    Validate the stricter shared-fixture boundary for new shared cases.
+
+    The boundary check is intentionally narrower than the full loader schema.
+    It is designed for PRs that add or rewrite shared semantic fixtures and
+    should not be applied to the existing legacy corpus all at once. The helper
+    enforces the pure shared contract: both runtimes must be present, and the
+    case may only use the public observation surface that is stable across the
+    simulator and generated Python alignment runtime.
+
+    :param data: Parsed fixture YAML mapping.
+    :type data: typing.Mapping[str, typing.Any]
+    :param yaml_path: Absolute path to the fixture YAML file.
+    :type yaml_path: str
+    :return: ``None``.
+    :rtype: None
+    :raises SemanticCaseError: If the fixture violates the new shared boundary.
+
+    Example::
+
+        >>> validate_pure_shared_fixture_boundary(
+        ...     {
+        ...         "id": "shared_case",
+        ...         "runners": ["simulation", "generated_python_alignment"],
+        ...         "steps": [],
+        ...     },
+        ...     "/tmp/shared_case.yaml",
+        ... )
+        >>> validate_pure_shared_fixture_boundary(
+        ...     {
+        ...         "id": "legacy_case",
+        ...         "runners": ["simulation", "generated_python_alignment"],
+        ...         "steps": [{"expect": {"return": None}}],
+        ...     },
+        ...     "/tmp/legacy_case.yaml",
+        ... )
+        Traceback (most recent call last):
+        ...
+        test.testings.simulate_semantics.SemanticCaseError: legacy_case (/tmp/legacy_case.yaml): pure shared fixture has forbidden expectation fields: ['return']
+    """
+    case_id = str(data.get("id", "<unknown>")) if isinstance(data, dict) else "<unknown>"
+    if not isinstance(data, dict):
+        raise _case_error(case_id, yaml_path, "fixture data must be a mapping")
+    runners = data.get("runners")
+    if not isinstance(runners, list) or not runners:
+        raise _case_error(case_id, yaml_path, "runners must be a non-empty list")
+    unknown_runners = set(runners) - _ALLOWED_RUNNERS
+    if unknown_runners:
+        raise _case_error(
+            case_id, yaml_path, "unknown runners: %r" % sorted(unknown_runners)
+        )
+    if "cli_command" in runners:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "pure shared fixture cannot use cli_command runner",
+        )
+    missing_runners = _PURE_SHARED_REQUIRED_RUNNERS - set(runners)
+    if missing_runners:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "pure shared fixture requires runners: %r" % sorted(missing_runners),
+        )
+    forbidden_top_level = _PURE_SHARED_FORBIDDEN_TOP_LEVEL_FIELDS & set(data.keys())
+    if forbidden_top_level:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "pure shared fixture has forbidden top-level fields: %r"
+            % sorted(forbidden_top_level),
+        )
+    if "initial" in data and data.get("initial") is not None:
+        initial = data["initial"]
+        if not isinstance(initial, dict):
+            raise _case_error(case_id, yaml_path, "initial must be a mapping")
+        if "expect" in initial:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "pure shared fixture cannot use initial.expect diagnostics",
+            )
+    if "handlers" in data:
+        handlers = data["handlers"]
+        if not isinstance(handlers, list):
+            raise _case_error(case_id, yaml_path, "handlers must be a list")
+        for handler_index, handler in enumerate(handlers):
+            if not isinstance(handler, dict):
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "handlers[%d] must be a mapping" % handler_index,
+                )
+            behavior = handler.get("behavior")
+            if behavior not in _PURE_SHARED_HANDLER_BEHAVIORS:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "pure shared fixture only allows handlers with behavior %r"
+                    % sorted(_PURE_SHARED_HANDLER_BEHAVIORS),
+                )
+            if "exception" in handler:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "handlers[%d].exception is only allowed for raise_error"
+                    % handler_index,
+                )
+            if "write" in handler:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "handlers[%d].write is only allowed for record_var_write_attempt"
+                    % handler_index,
+                )
+    steps = data.get("steps")
+    if not isinstance(steps, list):
+        raise _case_error(case_id, yaml_path, "pure shared fixture requires steps")
+    for step_index, step in enumerate(steps):
+        if not isinstance(step, dict):
+            raise _case_error(
+                case_id, yaml_path, "steps[%d] must be a mapping" % step_index
+            )
+        for expect_name in ("expect_initial", "expect"):
+            expect = step.get(expect_name)
+            if not isinstance(expect, dict):
+                continue
+            forbidden_expect = _PURE_SHARED_FORBIDDEN_EXPECT_FIELDS & set(expect.keys())
+            if forbidden_expect:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "pure shared fixture has forbidden expectation fields: %r"
+                    % sorted(forbidden_expect),
+                )
+            if "handler_calls" in expect and "handlers" not in data:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "handler_calls requires top-level handlers",
                 )
 
 

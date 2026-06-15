@@ -436,6 +436,8 @@ def _has_clear_simulator_diagnostic(record: SemanticCaseRecord) -> bool:
     keys = _case_key_set(record)
     if keys & {
         "runtime_options",
+        "warnings",
+        "logs",
         "abstract_handler_errors",
         "error_state",
         "error_info",
@@ -502,6 +504,8 @@ def _classification(record: SemanticCaseRecord) -> Classification:
     if _has_clear_simulator_diagnostic(record):
         for field_name in (
             "runtime_options",
+            "warnings",
+            "logs",
             "abstract_handler_errors",
             "error_state",
             "error_info",

@@ -317,10 +317,10 @@ def _standardize_cycle_result(value: Any) -> Dict[str, Any]:
     """
     Convert runtime-specific cycle results into the fixture assertion shape.
 
-    ``CycleResult`` is the simulator-side public result object. Generated
-    runtimes may return ``None`` until their own template contracts grow
-    matching metadata, so the shared shape always exposes ``value`` and adds
-    event-accounting fields only when the result object provides them.
+    Both :class:`pyfcstm.simulate.CycleResult` and generated Python runtime
+    cycle-result objects expose the same public ``value`` and event-accounting
+    attributes. The helper accepts either implementation so shared fixtures can
+    compare the whole public return object across runtimes.
 
     :param value: Raw value returned by a runtime ``cycle`` call.
     :type value: Any
@@ -332,7 +332,7 @@ def _standardize_cycle_result(value: Any) -> Dict[str, Any]:
         >>> _standardize_cycle_result(CycleResult(input_events=("Root.A.Go",)))
         {'value': None, 'input_events': ['Root.A.Go'], 'consumed_events': [], 'unconsumed_events': []}
     """
-    if isinstance(value, CycleResult):
+    if _is_cycle_result_like(value):
         return {
             "value": value.value,
             "input_events": list(value.input_events),
@@ -340,6 +340,13 @@ def _standardize_cycle_result(value: Any) -> Dict[str, Any]:
             "unconsumed_events": list(value.unconsumed_events),
         }
     return {"value": value}
+
+
+def _is_cycle_result_like(value: Any) -> bool:
+    return all(
+        hasattr(value, field)
+        for field in ("value", "input_events", "consumed_events", "unconsumed_events")
+    )
 
 
 def _assert_cycle_result(
@@ -1107,8 +1114,8 @@ class _GeneratedPythonAlignmentRuntime:
             raise sim_exc
         sim_standardized = _standardize_cycle_result(sim_result)
         gen_standardized = _standardize_cycle_result(gen_result)
-        assert sim_standardized.get("value") == gen_standardized.get("value"), (
-            "cycle(events=%r) return value mismatch for DSL:\n%s\nsimulation=%r, generated=%r"
+        assert sim_standardized == gen_standardized, (
+            "cycle(events=%r) return metadata mismatch for DSL:\n%s\nsimulation=%r, generated=%r"
             % (events, self._dsl_code, sim_result, gen_result)
         )
         self._assert_aligned("after cycle(events=%r)" % (events,))

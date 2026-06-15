@@ -53,7 +53,7 @@ expected-failure markers.
 | `origin.files` | yes | Original pytest functions or issue/PR links that supplied the behavior. |
 | `origin.docs` | no | Optional design-document references. |
 | `origin.assertion_types` | no | Review hint: assertion families carried by the fixture. |
-| `origin.notes` | no | Optional migration or equivalence notes. |
+| `origin.notes` | no | Optional equivalence or provenance notes. |
 | `categories` | yes | Non-empty list from the allowed category set. |
 | `exclude_runners` | no | Non-empty list of current shared runners to exclude. Omit for all shared runners. |
 | `initial` | no | Runtime construction state and variables. |
@@ -193,11 +193,12 @@ observation field.
 | Field | Required | Description |
 |---|---:|---|
 | `value` | yes | Standardized `cycle()` return value. |
-| `input_events` | no | Normalized input event names when provided by the runtime result. |
-| `consumed_events` | no | Consumed event names when provided by the runtime result. |
-| `unconsumed_events` | no | Unconsumed event names when provided by the runtime result. |
+| `input_events` | no | Normalized input event names from the runtime result. |
+| `consumed_events` | no | Consumed event names from the runtime result. |
+| `unconsumed_events` | no | Unconsumed event names from the runtime result. |
 
-The assertion compares only fields declared by the fixture.
+Simulator and generated Python alignment runners both expose these fields. The
+assertion compares only fields declared by the fixture.
 
 ## Exceptions
 

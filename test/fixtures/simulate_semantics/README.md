@@ -42,7 +42,7 @@ SKIP_SLOW_TESTS=1 make unittest
 9. Run the fixture tests and the ordinary pytest coverage that owns any
    non-shared behavior.
 
-## Anti-drift migration checklist
+## Public-observation checklist
 
 Use this checklist before deleting or replacing any inline original test:
 

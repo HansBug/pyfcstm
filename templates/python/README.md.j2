@@ -138,11 +138,12 @@ committing a partial result.
 from machine import {{ machine_class_name(model) }}
 
 machine = {{ machine_class_name(model) }}()
-machine.cycle()
+result = machine.cycle()
 
 print(machine.current_state_path)
 print(machine.current_state_name)
 print(machine.vars)
+print(result.consumed_events)
 ```
 
 Pass one or more generated event paths:
@@ -175,6 +176,10 @@ The generated runtime accepts:
 
 If an event cannot be resolved, the runtime raises `LookupError` or
 `ValueError`.
+
+`cycle(...)` returns a `CycleResult` object with `value`, `input_events`,
+`consumed_events`, and `unconsumed_events`. Event names in that object are
+normalized generated event paths.
 
 ## Hot Start
 

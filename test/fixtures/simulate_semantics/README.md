@@ -47,7 +47,7 @@ SKIP_SLOW_TESTS=1 make unittest
 8. For new shared cases, do not add `runtime_options`, `model_build`,
    `commands`, `cli_command`, `stack`, `brief_stack`, `cycle_count`,
    `history*`, `return`, `warnings`, `abstract_handler_errors`, `error_state`,
-   `error_info`, or `anonymous_warning_count`.
+   or `error_info`.
 9. Express every original assertion in YAML for migrated legacy cases. Do not
    weaken a migrated test to only state/vars if the original asserted logs,
    stack, exception class, exception message, temporary-variable absence,
@@ -77,6 +77,9 @@ Use this checklist before deleting or replacing any inline original test:
   `boundary: pure_shared` cases keep only `record_call` handlers, while
   log-mode handler error metadata uses `abstract_handler_errors` in legacy
   simulator-diagnostic coverage.
+- Anonymous abstract warning dedupe metadata is a simulator-internal diagnostic
+  and belongs in dedicated `test/simulate/` pytest coverage, not shared fixture
+  YAML.
 - Python API shape tests that YAML cannot represent, such as tuple or State
   object hot-start inputs, stay as dedicated Python tests.
 

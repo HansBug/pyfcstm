@@ -86,17 +86,16 @@ listed deliberately to preserve the initial PR-F1b baseline.
 | Source | Token | Line count | Lines |
 |---|---|---|---|
 | test/fixtures/simulate_semantics/README.md | brief_stack | 2 | 48, 68 |
-| test/fixtures/simulate_semantics/README.md | cycle_count | 8 | 48, 104, 110, 111, 165, 188, 189, 232 |
-| test/fixtures/simulate_semantics/README.md | history | 20 | 49, 97, 103, 113, 115, 118, 125, 126, 127, 182, 183, 184, 185, 186, 187, 190, 194, 228, 230, 231 |
-| test/fixtures/simulate_semantics/schema.md | brief_stack | 4 | 333, 363, 525, 533 |
-| test/fixtures/simulate_semantics/schema.md | cycle_count | 5 | 334, 363, 526, 533, 572 |
-| test/fixtures/simulate_semantics/schema.md | history | 8 | 19, 337, 338, 339, 364, 381, 382, 391 |
-| test/testings/simulate_semantics.py | _STATE_INFO | 1 | 1443 |
-| test/testings/simulate_semantics.py | _stack | 1 | 1446 |
-| test/testings/simulate_semantics.py | brief_stack | 7 | 200, 371, 1489, 1492, 1535, 1536, 1537 |
-| test/testings/simulate_semantics.py | cycle_count | 14 | 107, 146, 201, 742, 743, 744, 745, 750, 1500, 1501, 1503, 1513, 1514, 1515 |
-| test/testings/simulate_semantics.py | _warned_anonymous_abstracts | 1 | 759 |
-| test/testings/simulate_semantics.py | history | 18 | 110, 203, 420, 433, 436, 439, 1540, 1542, 1544, 1545, 1548, 1550, 1557, 1560, 1561, 1702, 2100, 2102 |
+| test/fixtures/simulate_semantics/README.md | cycle_count | 8 | 48, 107, 113, 114, 168, 191, 192, 235 |
+| test/fixtures/simulate_semantics/README.md | history | 20 | 49, 100, 106, 116, 118, 121, 128, 129, 130, 185, 186, 187, 188, 189, 190, 193, 197, 231, 233, 234 |
+| test/fixtures/simulate_semantics/schema.md | brief_stack | 4 | 333, 362, 523, 531 |
+| test/fixtures/simulate_semantics/schema.md | cycle_count | 5 | 334, 362, 524, 531, 570 |
+| test/fixtures/simulate_semantics/schema.md | history | 8 | 19, 337, 338, 339, 363, 380, 381, 390 |
+| test/testings/simulate_semantics.py | _STATE_INFO | 1 | 1431 |
+| test/testings/simulate_semantics.py | _stack | 1 | 1434 |
+| test/testings/simulate_semantics.py | brief_stack | 7 | 199, 370, 1477, 1480, 1523, 1524, 1525 |
+| test/testings/simulate_semantics.py | cycle_count | 14 | 107, 145, 200, 741, 742, 743, 744, 749, 1488, 1489, 1491, 1501, 1502, 1503 |
+| test/testings/simulate_semantics.py | history | 18 | 110, 202, 419, 432, 435, 438, 1528, 1530, 1532, 1533, 1536, 1538, 1545, 1548, 1549, 1690, 2088, 2090 |
 
 ## C / C Poll Public API Baseline
 

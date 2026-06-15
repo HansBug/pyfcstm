@@ -64,6 +64,7 @@ _ALLOWED_TOP_LEVEL_FIELDS = {
     "origin",
     "categories",
     "runners",
+    "exclude_runners",
     "initial",
     "runtime_options",
     "model_build",
@@ -89,7 +90,9 @@ _ALLOWED_CATEGORIES = {
     "validation",
     "lifecycle",
 }
+_DEFAULT_SHARED_RUNNERS = ("simulation", "generated_python_alignment")
 _ALLOWED_RUNNERS = {"simulation", "generated_python_alignment", "cli_command"}
+_ALLOWED_EXCLUDE_RUNNERS = set(_DEFAULT_SHARED_RUNNERS)
 _PURE_SHARED_BOUNDARY = "pure_shared"
 _ALLOWED_BOUNDARIES = {_PURE_SHARED_BOUNDARY}
 _ALLOWED_STACK_MODES = {"active", "init_wait"}
@@ -184,7 +187,6 @@ _ALLOWED_CYCLE_RESULT_FIELDS = {
     "consumed_events",
     "unconsumed_events",
 }
-_PURE_SHARED_REQUIRED_RUNNERS = {"simulation", "generated_python_alignment"}
 _PURE_SHARED_FORBIDDEN_TOP_LEVEL_FIELDS = {
     "runtime_options",
     "model_build",
@@ -298,11 +300,104 @@ class SemanticCase:
 
     @property
     def runners(self) -> Sequence[str]:
-        return tuple(self.data["runners"])
+        return _effective_runners_from_data(self.data, self.id, self.yaml_path)
 
 
 def _case_error(case_id: str, yaml_path: str, message: str) -> SemanticCaseError:
     return SemanticCaseError("%s (%s): %s" % (case_id, yaml_path, message))
+
+
+def _validate_runner_list(
+    value: Any,
+    case_id: str,
+    yaml_path: str,
+    field_path: str,
+    allowed_runners: Iterable[str],
+) -> Tuple[str, ...]:
+    if not isinstance(value, list) or not value:
+        raise _case_error(case_id, yaml_path, "%s must be a non-empty list" % field_path)
+    if not all(isinstance(item, str) for item in value):
+        raise _case_error(
+            case_id, yaml_path, "%s must be a list of strings" % field_path
+        )
+    duplicates = sorted(item for item in set(value) if value.count(item) > 1)
+    if duplicates:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s has duplicate runners: %r" % (field_path, duplicates),
+        )
+    unknown_runners = set(value) - set(allowed_runners)
+    if unknown_runners:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s has unknown runners: %r" % (field_path, sorted(unknown_runners)),
+        )
+    return tuple(value)
+
+
+def _effective_runners_from_data(
+    data: Mapping[str, Any], case_id: str, yaml_path: str
+) -> Tuple[str, ...]:
+    if data.get("boundary") == _PURE_SHARED_BOUNDARY:
+        if "runners" in data:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "pure shared fixture uses exclude-only runner selection; remove runners",
+            )
+        if "exclude_runners" in data:
+            excluded = _validate_runner_list(
+                data["exclude_runners"],
+                case_id,
+                yaml_path,
+                "exclude_runners",
+                _ALLOWED_EXCLUDE_RUNNERS,
+            )
+        else:
+            excluded = tuple()
+        effective = tuple(
+            runner for runner in _DEFAULT_SHARED_RUNNERS if runner not in set(excluded)
+        )
+        if not effective:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "exclude_runners cannot remove all default runners",
+            )
+        if "generated_python_alignment" in effective and "simulation" not in effective:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "generated_python_alignment requires the simulation runner",
+            )
+        return effective
+
+    if "exclude_runners" in data:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "exclude_runners is only supported for pure shared fixtures",
+        )
+    runners = _validate_runner_list(
+        data.get("runners"),
+        case_id,
+        yaml_path,
+        "runners",
+        _ALLOWED_RUNNERS,
+    )
+    if "cli_command" in runners and len(runners) != 1:
+        raise _case_error(
+            case_id, yaml_path, "cli_command cannot be mixed with other runners"
+        )
+    if "generated_python_alignment" in runners and "simulation" not in runners:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "generated_python_alignment requires the simulation runner",
+        )
+    return runners
 
 
 def _as_tuple_path(
@@ -2765,9 +2860,10 @@ def validate_pure_shared_fixture_boundary(
     The boundary check is intentionally narrower than the full loader schema.
     It is designed for PRs that add or rewrite shared semantic fixtures and
     should not be applied to the existing legacy corpus all at once. The helper
-    enforces the pure shared contract: both runtimes must be present, and the
-    case may only use the public observation surface that is stable across the
-    simulator and generated Python alignment runtime.
+    enforces the pure shared contract: shared cases use exclude-only runner
+    selection, default to all currently shared runners, and may only use the
+    public observation surface that is stable across the simulator and
+    generated Python alignment runtime.
 
     :param data: Parsed fixture YAML mapping.
     :type data: typing.Mapping[str, typing.Any]
@@ -2782,7 +2878,7 @@ def validate_pure_shared_fixture_boundary(
         >>> validate_pure_shared_fixture_boundary(
         ...     {
         ...         "id": "shared_case",
-        ...         "runners": ["simulation", "generated_python_alignment"],
+        ...         "boundary": "pure_shared",
         ...         "steps": [
         ...             {
         ...                 "cycle": {},
@@ -2798,7 +2894,7 @@ def validate_pure_shared_fixture_boundary(
         >>> validate_pure_shared_fixture_boundary(
         ...     {
         ...         "id": "legacy_case",
-        ...         "runners": ["simulation", "generated_python_alignment"],
+        ...         "boundary": "pure_shared",
         ...         "steps": [{"expect": {"return": None}}],
         ...     },
         ...     "/tmp/legacy_case.yaml",
@@ -2810,26 +2906,12 @@ def validate_pure_shared_fixture_boundary(
     case_id = str(data.get("id", "<unknown>")) if isinstance(data, dict) else "<unknown>"
     if not isinstance(data, dict):
         raise _case_error(case_id, yaml_path, "fixture data must be a mapping")
-    runners = data.get("runners")
-    if not isinstance(runners, list) or not runners:
-        raise _case_error(case_id, yaml_path, "runners must be a non-empty list")
-    unknown_runners = set(runners) - _ALLOWED_RUNNERS
-    if unknown_runners:
-        raise _case_error(
-            case_id, yaml_path, "unknown runners: %r" % sorted(unknown_runners)
-        )
+    runners = _effective_runners_from_data(data, case_id, yaml_path)
     if "cli_command" in runners:
         raise _case_error(
             case_id,
             yaml_path,
             "pure shared fixture cannot use cli_command runner",
-        )
-    missing_runners = _PURE_SHARED_REQUIRED_RUNNERS - set(runners)
-    if missing_runners:
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "pure shared fixture requires runners: %r" % sorted(missing_runners),
         )
     forbidden_top_level = _PURE_SHARED_FORBIDDEN_TOP_LEVEL_FIELDS & set(data.keys())
     if forbidden_top_level:
@@ -2981,24 +3063,7 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
         raise _case_error(
             case_id, yaml_path, "unknown categories: %r" % sorted(unknown_categories)
         )
-    runners = data.get("runners")
-    if not isinstance(runners, list) or not runners:
-        raise _case_error(case_id, yaml_path, "runners must be a non-empty list")
-    unknown_runners = set(runners) - _ALLOWED_RUNNERS
-    if unknown_runners:
-        raise _case_error(
-            case_id, yaml_path, "unknown runners: %r" % sorted(unknown_runners)
-        )
-    if "cli_command" in runners and len(runners) != 1:
-        raise _case_error(
-            case_id, yaml_path, "cli_command cannot be mixed with other runners"
-        )
-    if "generated_python_alignment" in runners and "simulation" not in runners:
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "generated_python_alignment requires the simulation runner",
-        )
+    runners = _effective_runners_from_data(data, case_id, yaml_path)
     _validate_initial(data.get("initial"), case_id, yaml_path, runners)
     _validate_runtime_options(data.get("runtime_options"), case_id, yaml_path, runners)
     _validate_handlers(data.get("handlers"), case_id, yaml_path, runners)

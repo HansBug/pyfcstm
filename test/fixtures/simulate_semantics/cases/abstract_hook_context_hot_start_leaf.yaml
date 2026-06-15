@@ -21,9 +21,6 @@ categories:
 - abstract
 - lifecycle
 - hot_start
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: Root.A
   vars:

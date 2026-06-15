@@ -368,7 +368,7 @@ def _pure_shared_case_data():
     """Return the minimal valid fixture shape for pure shared boundary tests."""
     data = _valid_case_data()
     data["boundary"] = "pure_shared"
-    data["runners"] = ["simulation", "generated_python_alignment"]
+    data.pop("runners")
     data["steps"][0]["expect"].pop("return", None)
     data["steps"][0]["expect"]["cycle_result"] = {"value": None}
     return data
@@ -1151,6 +1151,29 @@ def test_shared_fixture_corpus_satisfies_pure_shared_boundary():
 
     assert cases
     assert all(case.data.get("boundary") == "pure_shared" for case in cases)
+    assert all("runners" not in case.data for case in cases)
+    assert all("exclude_runners" not in case.data for case in cases)
+
+
+@pytest.mark.unittest
+def test_pure_shared_fixture_uses_exclude_only_runner_selection(tmp_path):
+    data = _pure_shared_case_data()
+    yaml_path = _write_fixture(tmp_path, data)
+
+    case = load_semantic_case(yaml_path)
+
+    assert case.runners == ("simulation", "generated_python_alignment")
+
+
+@pytest.mark.unittest
+def test_pure_shared_fixture_can_exclude_generated_alignment(tmp_path):
+    data = _pure_shared_case_data()
+    data["exclude_runners"] = ["generated_python_alignment"]
+    yaml_path = _write_fixture(tmp_path, data)
+
+    case = load_semantic_case(yaml_path)
+
+    assert case.runners == ("simulation",)
 
 
 @pytest.mark.unittest
@@ -1159,11 +1182,25 @@ def test_shared_fixture_corpus_satisfies_pure_shared_boundary():
     [
         (
             lambda data: data.update({"runners": ["simulation"]}),
-            "requires runners",
+            "exclude-only runner selection",
+        ),
+        (
+            lambda data: data.update({"exclude_runners": ["unknown"]}),
+            "exclude_runners has unknown runners",
+        ),
+        (
+            lambda data: data.update({"exclude_runners": ["simulation"]}),
+            "generated_python_alignment requires the simulation runner",
+        ),
+        (
+            lambda data: data.update(
+                {"exclude_runners": ["simulation", "generated_python_alignment"]}
+            ),
+            "exclude_runners cannot remove all default runners",
         ),
         (
             lambda data: _set_cli_expectation(data, {"output_contains": ["Commands"]}),
-            "cannot use cli_command runner",
+            "exclude-only runner selection",
         ),
         (
             lambda data: data.update(

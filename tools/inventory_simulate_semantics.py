@@ -27,6 +27,7 @@ import yaml
 
 
 CASE_FIELD_NAMES = (
+    "exclude_runners",
     "model_build",
     "commands",
     "runtime_options",
@@ -76,6 +77,8 @@ C_POLL_BASELINE_RELATIVE_PATHS = (
     "test/template/c/test_runtime_alignment.py",
     "test/template/c_poll/test_runtime_alignment.py",
 )
+DEFAULT_SHARED_RUNNERS = ("simulation", "generated_python_alignment")
+PURE_SHARED_BOUNDARY = "pure_shared"
 
 
 @dataclass(frozen=True)
@@ -100,7 +103,18 @@ class SemanticCaseRecord:
 
     @property
     def runners(self) -> Tuple[str, ...]:
-        return tuple(self.data.get("runners", ()))
+        return _effective_runners(self.data)
+
+    @property
+    def runner_selection(self) -> str:
+        if self.data.get("boundary") == PURE_SHARED_BOUNDARY:
+            excluded = self.data.get("exclude_runners", ())
+            if excluded:
+                return "exclude-only; exclude=%s" % ",".join(
+                    str(item) for item in excluded
+                )
+            return "exclude-only; default"
+        return "legacy runners"
 
     @property
     def assertion_types(self) -> Tuple[str, ...]:
@@ -180,6 +194,21 @@ def _load_cases(root: Path) -> List[SemanticCaseRecord]:
             )
         )
     return records
+
+
+def _effective_runners(data: Mapping[str, Any]) -> Tuple[str, ...]:
+    if data.get("boundary") == PURE_SHARED_BOUNDARY:
+        excluded = data.get("exclude_runners", ())
+        if not isinstance(excluded, Sequence) or isinstance(excluded, str):
+            excluded = ()
+        excluded_set = {str(item) for item in excluded}
+        return tuple(
+            runner for runner in DEFAULT_SHARED_RUNNERS if runner not in excluded_set
+        )
+    runners = data.get("runners", ())
+    if not isinstance(runners, Sequence) or isinstance(runners, str):
+        return tuple()
+    return tuple(str(item) for item in runners)
 
 
 def _iter_mapping_keys(value: Any) -> Iterable[str]:
@@ -719,6 +748,15 @@ def _render_report(
                     "通过：当前共享 corpus 不再存在只跑模拟器的 case。",
                 ),
                 (
+                    "exclude-only runner 选择",
+                    "YAML runners 字段=%s；exclude_runners 字段=%s"
+                    % (
+                        sum(1 for record in records if "runners" in record.data),
+                        len(field_cases["exclude_runners"]),
+                    ),
+                    "通过：shared YAML 不再用 include 白名单；当前没有排除例外。",
+                ),
+                (
                     "pure_shared 边界标记",
                     "boundary: pure_shared=%s/%s" % (pure_shared_count, len(records)),
                     "通过：加载阶段会统一执行公共观察面边界校验。",
@@ -756,7 +794,9 @@ def _render_report(
         ),
         "",
         "后续扩展 shared corpus 时，默认覆盖面应按 simulation + 所有 templates",
-        "理解；不适用的 runner/template 应通过显式排除或能力标签说明，而不是",
+        "理解；当前 corpus 已迁移为 exclude-only 选择：YAML 不写 `runners`",
+        "时默认覆盖 simulation + generated_python_alignment。不适用的",
+        "runner/template 应通过 `exclude_runners` 或能力标签说明，而不是",
         "用 include 白名单把 shared fixture 缩成少数实现专用样本。",
         "",
         "## Classification Summary",
@@ -889,6 +929,10 @@ def _render_report(
 
 def _field_handling_note(field_name: str) -> str:
     notes = {
+        "exclude_runners": (
+            "shared fixture exclude-only runner exception list; "
+            "absent means all current shared runners"
+        ),
         "model_build": "top-level model diagnostic; ordinary pytest coverage, not shared fixture surface",
         "commands": "CLI/REPL diagnostic; ordinary pytest coverage, not shared fixture surface",
         "runtime_options": "simulator diagnostic; ordinary simulator pytest coverage",
@@ -920,7 +964,10 @@ def _readme_drift_details(rows: Sequence[Tuple[str, str, str]]) -> str:
 
 
 def _case_shape(record: SemanticCaseRecord) -> str:
-    shape = ["runners=%s" % ",".join(record.runners)]
+    shape = [
+        "runners=%s" % ",".join(record.runners),
+        "runner_selection=%s" % record.runner_selection,
+    ]
     for key_name in ("model_build", "commands", "runtime_options", "handlers"):
         if key_name in record.data:
             shape.append(key_name)

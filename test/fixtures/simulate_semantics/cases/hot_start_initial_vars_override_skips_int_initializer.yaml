@@ -18,9 +18,6 @@ categories:
 - runtime
 - template_alignment
 - hot_start
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: Root.Safe
   vars:

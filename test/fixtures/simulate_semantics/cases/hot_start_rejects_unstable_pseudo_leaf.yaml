@@ -18,9 +18,6 @@ categories:
 - validation
 - pseudo_chain
 - template_alignment
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: Root.P
   vars:

@@ -15,15 +15,12 @@ origin:
   - state
   - vars_exact
   notes:
-  - Simulation-only callback contract for referenced abstract actions.
+  - Public callback contract for referenced abstract actions across shared runners.
 categories:
 - runtime
 - template_alignment
 - abstract
 - lifecycle
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null

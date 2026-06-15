@@ -27,16 +27,17 @@ alignment cases that use the public observation surface. The loader still keeps
 temporary compatibility for older simulator-debugging, CLI, and
 model-construction fixture shapes until the schema cleanup removes those fields,
 but those shapes must not be reintroduced into shared YAML. The pure shared
-boundary is the contract for cross-runtime cases: simulation plus generated
-Python alignment, public observation surface only, and no simulator-only,
-CLI-only, or model-construction diagnostics. New cross-runtime shared cases
-should declare `boundary: pure_shared`; the fixture loader then runs the
-stricter boundary check automatically.
+boundary is the contract for cross-runtime cases: exclude-only runner
+selection, simulation plus generated Python alignment by default, public
+observation surface only, and no simulator-only, CLI-only, or
+model-construction diagnostics. New cross-runtime shared cases should declare
+`boundary: pure_shared` and should not declare `runners`; the fixture loader
+then runs the stricter boundary check automatically.
 
-Future shared-corpus runner selection should default to simulation plus all
-templates. A runner/template that cannot consume a fixture should be named as an
-explicit exclusion or capability gap; an `include`-style whitelist must not
-become the default way to shrink shared fixture coverage.
+Shared-corpus runner selection now defaults to simulation plus every currently
+shared runner. A runner/template that cannot consume a fixture must be named as
+an explicit `exclude_runners` exception or capability gap; an `include`-style
+whitelist must not become the default way to shrink shared fixture coverage.
 
 ## Top-level fields
 
@@ -52,7 +53,8 @@ become the default way to shrink shared fixture coverage.
 | `origin.assertion_types` | no | Review hint: assertion families carried over from the original test. |
 | `origin.notes` | no | Optional migration notes, especially for split parametrized cases. |
 | `categories` | yes | Non-empty list from the allowed category set. |
-| `runners` | yes | Non-empty list from the allowed runner set. |
+| `runners` | legacy | Non-empty list from the allowed runner set. Forbidden for `boundary: pure_shared`; kept only for temporary non-shared compatibility shapes. |
+| `exclude_runners` | no | Exclude-only runner exception list for `boundary: pure_shared`. Omit it to run every current shared runner. |
 | `initial` | no | Runtime construction state and vars. |
 | `runtime_options` | no | Simulation-only runtime options such as abstract-handler error mode. Legacy corpus only; new pure shared cases should not add it. |
 | `model_build` | conditional | Simulation-only model-construction diagnostic expectation. Mutually exclusive with `steps` and `commands`. Legacy corpus only; new pure shared cases should not add it. |
@@ -77,23 +79,33 @@ Allowed categories:
 - `validation`
 - `lifecycle`
 
-Allowed runners:
+Effective runners:
 
 - `simulation`
 - `generated_python_alignment`
 - `cli_command`
 
-`cli_command` must be the only runner in a case. Runtime/alignment cases use
-`steps`; CLI cases use `commands`; model-construction diagnostic cases use
-`model_build`. Exactly one of `model_build`, `steps`, or `commands` must be
-present.
+For `boundary: pure_shared`, YAML must not declare `runners`. The loader
+computes the effective runner set as `simulation` plus
+`generated_python_alignment`, then removes optional entries listed in
+`exclude_runners`. Current shared YAML does not use any exclusion. If a future
+fixture excludes a runner, the reason should be visible in `origin.notes` or the
+owning PR because exclusion narrows default cross-implementation coverage.
 
-`runtime_options` is accepted only for simulation-only cases. `handlers`
-requires the `simulation` runner. Every `generated_python_alignment` case must
-also include `simulation` so the generated runtime is checked against the same
-semantic input that the simulator executes. When `generated_python_alignment`
-is present, the same handler behavior is installed into both runtimes so
-callback context and side-effect isolation stay aligned.
+`generated_python_alignment` currently requires `simulation`, because the
+alignment runner executes the generated runtime beside the simulator and
+compares public state, variables, cycle results, exceptions, and hook calls.
+
+Legacy non-shared fixture shapes may still declare `runners` while the cleanup
+is in progress. In that compatibility mode, `cli_command` must be the only
+runner in a case. Runtime/alignment cases use `steps`; CLI cases use
+`commands`; model-construction diagnostic cases use `model_build`. Exactly one
+of `model_build`, `steps`, or `commands` must be present.
+
+`runtime_options` is accepted only for legacy simulation-only cases. `handlers`
+requires the `simulation` runner. When `generated_python_alignment` is present,
+the same handler behavior is installed into both runtimes so callback context
+and side-effect isolation stay aligned.
 
 ## Runtime construction diagnostics
 
@@ -111,7 +123,7 @@ the constructor-time diagnostic. This shape is supported by `simulation` and
 `generated_python_alignment` runners:
 
 ```yaml
-runners: [simulation, generated_python_alignment]
+boundary: pure_shared
 initial:
   state: Root.A
   vars:
@@ -173,7 +185,7 @@ schema and loader tests instead of silently accepting ignored data.
 
 ## Model construction diagnostics
 
-`model_build` lets a simulation-only case assert that parsing and model
+`model_build` lets a legacy simulation-only case assert that parsing and model
 construction fail before a `SimulationRuntime` is created:
 
 ```yaml

@@ -27,9 +27,6 @@ categories:
 - hot_start
 - validation
 - lifecycle
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: Root.Gate
   vars:

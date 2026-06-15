@@ -17,9 +17,6 @@ categories:
 - runtime
 - hot_start
 - lifecycle
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: Root.System
   vars:

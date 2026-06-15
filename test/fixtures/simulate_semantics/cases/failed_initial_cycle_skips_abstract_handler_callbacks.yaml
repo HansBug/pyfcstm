@@ -20,9 +20,6 @@ categories:
 - template_alignment
 - validation
 - abstract
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null

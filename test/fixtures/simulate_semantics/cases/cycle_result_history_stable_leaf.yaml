@@ -15,9 +15,6 @@ origin:
   - Minimal fixture proving that cycle_result and history assertions are executable.
 categories:
 - runtime
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null

@@ -20,11 +20,11 @@ automatically. That marker is a load-time contract gate: it rejects legacy
 shared-forbidden fields before either the simulator or generated Python
 alignment runner can treat them as evidence.
 
-As a forward-looking authoring rule for later shared-corpus growth, treat a
-shared fixture as applicable to simulation and all templates by default. When a
-runner/template is not applicable, write the exception explicitly by exclusion
-or capability gap; do not use an `include`-style whitelist as the default
-selection model.
+Shared fixture authoring now uses exclude-only runner selection. For
+`boundary: pure_shared` cases, omit `runners` entirely and let the loader apply
+the default shared runner set. If a runner/template is not applicable, write
+the exception explicitly with `exclude_runners` or a capability gap; do not use
+an `include`-style whitelist as the default selection model.
 
 ## How to run
 
@@ -42,20 +42,23 @@ SKIP_SLOW_TESTS=1 make unittest
 3. Keep `id` equal to the YAML/FCSTM basename.
 4. Set `origin.files` to the exact original pytest function(s).
 5. Choose runners deliberately:
-   - `simulation` for `SimulationRuntime` semantics.
-   - `generated_python_alignment` only when the generated Python runtime is
-     expected to match the simulator for this behavior.
+   - For `boundary: pure_shared`, do not write `runners`; the loader applies
+     the default shared runner set and then removes any `exclude_runners`
+     entries.
+   - Use `exclude_runners` only when a current shared runner cannot consume the
+     case and the exclusion is intentional.
    - Do not add `cli_command` to this shared corpus; CLI/REPL behavior belongs
      in ordinary pytest coverage.
-   - For later shared-corpus expansion, prefer the default model "simulation
-     plus all templates" and express exceptions with exclusion or capability
-     gaps instead of an `include` whitelist.
+   - For later shared-corpus expansion, keep the default model "simulation plus
+     all templates" and express exceptions with exclusion or capability gaps
+     instead of an `include` whitelist.
 6. For new shared cases, keep only the public observation surface: `state`,
    `vars`, `ended`, constructor or hot-start outcomes, per-step cycle state and
    vars, `handler_calls`, and `cycle_result.value`.
 7. For new shared cases, set `boundary: pure_shared`; this is the machine gate
    that rejects legacy or simulator-only observation fields during load,
-   including constructor-time `initial.expect` misuse.
+   including constructor-time `initial.expect` misuse. Shared cases should not
+   declare `runners`.
 8. For new shared cases, do not add `runtime_options`, `model_build`,
    `commands`, `cli_command`, `stack`, `brief_stack`, `cycle_count`,
    `history*`, `return`, `warnings`, `abstract_handler_errors`, `error_state`,

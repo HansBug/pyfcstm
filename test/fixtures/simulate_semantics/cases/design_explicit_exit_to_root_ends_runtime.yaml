@@ -9,7 +9,6 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_30_explicit_exit_to_root_ends_runtime
   assertion_types:
   - ended
-  - logs
   - return
   - stack
   - state
@@ -79,8 +78,3 @@ steps:
     ended: true
     return: null
     stack: []
-    logs:
-      contains:
-      - level: WARNING
-        message: Runtime already ended, cycle ignored.
-        match_kind: substring

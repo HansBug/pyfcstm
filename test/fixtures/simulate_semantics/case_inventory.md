@@ -9,21 +9,21 @@ the final corpus.
 
 | Metric | Value |
 |---|---|
-| YAML cases | 156 |
-| FCSTM files | 156 |
-| Runner counts | cli_command=5, generated_python_alignment=123, simulation=151 |
-| Runner combinations | cli_command=5, simulation=28, simulation, generated_python_alignment=123 |
+| YAML cases | 152 |
+| FCSTM files | 152 |
+| Runner counts | cli_command=5, generated_python_alignment=123, simulation=147 |
+| Runner combinations | cli_command=5, simulation=24, simulation, generated_python_alignment=123 |
 
 ## Classification Summary
 
 | Classification | Case files |
 |---|---|
 | KEEP_SHARED_FIXTURE | 31 |
-| REWRITE_SHARED_PUBLIC_OBSERVATIONS | 109 |
+| REWRITE_SHARED_PUBLIC_OBSERVATIONS | 112 |
 | ADD_ALIGNMENT_RUNNER | 1 |
 | MIGRATE_MODEL_VALIDATION | 3 |
 | MIGRATE_CLI_REPL | 5 |
-| MIGRATE_SIMULATOR_DIAGNOSTIC | 7 |
+| MIGRATE_SIMULATOR_DIAGNOSTIC | 0 |
 | OPEN_ISSUE_OR_UNDECIDED | 0 |
 
 ## YAML Field Counts
@@ -35,45 +35,43 @@ listed deliberately to preserve the initial PR-F1b baseline.
 |---|---|---|
 | model_build | 3 | top-level model diagnostic; PR-F1c migration input |
 | commands | 5 | CLI/REPL diagnostic; PR-F1c migration input |
-| runtime_options | 3 | simulator diagnostic; PR-F1d migration input |
-| handlers | 17 | split by behavior; record_call may be shared, raise_error is diagnostic |
-| stack | 38 | YAML literal for brief_stack concept; PR-F1e rewrite input |
+| runtime_options | 0 | simulator diagnostic; PR-F1d migration input |
+| handlers | 14 | split by behavior; record_call may be shared, raise_error is diagnostic |
+| stack | 34 | YAML literal for brief_stack concept; PR-F1e rewrite input |
 | brief_stack | 0 | concept token; YAML literal is stack |
-| cycle_count | 19 | debug/derived observation; PR-F1e rewrite input |
+| cycle_count | 15 | debug/derived observation; PR-F1e rewrite input |
 | history | 0 | concept/literal baseline; current YAML uses history_tail/history_length |
 | history_tail | 14 | history* concept; PR-F1e rewrite input |
 | history_length | 13 | history* concept; PR-F1e rewrite input |
-| return | 88 | legacy cycle return; migrate null values to cycle_result.value |
+| return | 85 | legacy cycle return; migrate null values to cycle_result.value |
 | cycle_result | 46 | public cycle return value/event accounting surface |
-| warnings | 2 | simulator diagnostic unless explicitly shared later |
-| logs | 3 | diagnostic/public-output assertion; preserve when migrating |
-| abstract_handler_errors | 2 | simulator diagnostic; PR-F1d migration input |
-| error_state | 2 | simulator diagnostic; PR-F1d migration input |
-| error_info | 2 | simulator diagnostic; PR-F1d migration input |
-| anonymous_warning_count | 1 | private warning dedupe; PR-F1d migration input |
+| warnings | 0 | simulator diagnostic unless explicitly shared later |
+| logs | 0 | diagnostic/public-output assertion; preserve when migrating |
+| abstract_handler_errors | 0 | simulator diagnostic; PR-F1d migration input |
+| error_state | 0 | simulator diagnostic; PR-F1d migration input |
+| error_info | 0 | simulator diagnostic; PR-F1d migration input |
+| anonymous_warning_count | 0 | private warning dedupe; PR-F1d migration input |
 
 ## Concept Field Mapping
 
 | Concept | YAML literal keys | Case-file count |
 |---|---|---|
-| brief_stack | stack | 38 |
+| brief_stack | stack | 34 |
 | history* | history, history_tail, history_length | 19 |
 
 ## Legacy Return Distribution
 
 | Scope | Distribution |
 |---|---|
-| return value occurrences | null=259 |
-| case-level return value sets | 19 cases => 1 x null, 27 cases => 2 x null, 20 cases => 3 x null, 7 cases => 4 x null, 4 cases => 5 x null, 3 cases => 6 x null, 5 cases => 7 x null, 2 cases => 8 x null, 1 cases => 9 x null |
+| return value occurrences | null=254 |
+| case-level return value sets | 17 cases => 1 x null, 27 cases => 2 x null, 19 cases => 3 x null, 7 cases => 4 x null, 4 cases => 5 x null, 3 cases => 6 x null, 5 cases => 7 x null, 2 cases => 8 x null, 1 cases => 9 x null |
 
 ## Handler Behavior Distribution
 
 | Metric | Count |
 |---|---|
-| case files with: raise_error | 3 |
 | case files with: record_call | 14 |
 | case files with: record_var_write_attempt | 1 |
-| handler entries: raise_error | 3 |
 | handler entries: record_call | 34 |
 | handler entries: record_var_write_attempt | 1 |
 
@@ -88,8 +86,8 @@ listed deliberately to preserve the initial PR-F1b baseline.
 | Source | Token | Line count | Lines |
 |---|---|---|---|
 | test/fixtures/simulate_semantics/README.md | brief_stack | 2 | 48, 68 |
-| test/fixtures/simulate_semantics/README.md | cycle_count | 11 | 48, 104, 105, 112, 113, 167, 190, 191, 192, 235, 237 |
-| test/fixtures/simulate_semantics/README.md | history | 20 | 49, 97, 103, 115, 117, 120, 127, 128, 129, 184, 185, 186, 187, 188, 189, 193, 197, 231, 233, 234 |
+| test/fixtures/simulate_semantics/README.md | cycle_count | 8 | 48, 104, 110, 111, 165, 188, 189, 232 |
+| test/fixtures/simulate_semantics/README.md | history | 20 | 49, 97, 103, 113, 115, 118, 125, 126, 127, 182, 183, 184, 185, 186, 187, 190, 194, 228, 230, 231 |
 | test/fixtures/simulate_semantics/schema.md | brief_stack | 4 | 333, 363, 525, 533 |
 | test/fixtures/simulate_semantics/schema.md | cycle_count | 5 | 334, 363, 526, 533, 572 |
 | test/fixtures/simulate_semantics/schema.md | history | 8 | 19, 337, 338, 339, 364, 381, 382, 391 |
@@ -116,8 +114,6 @@ public API observations.
 |---|---|---|---|---|---|---|---|
 | `abstract_handler_context_metadata` | runners=simulation; handlers | REWRITE_SHARED_PUBLIC_OBSERVATIONS | history_tail, history_length | handler_calls, history, vars | Replace history assertions with per-step public observations, or migrate diagnostic-only history checks. | PR-F1e | shared fixture rewrite |
 | `abstract_handler_context_vars_are_read_only` | runners=simulation; handlers | REWRITE_SHARED_PUBLIC_OBSERVATIONS | stack, cycle_count, return | cycle_count, ended, handler_calls, return, stack, state, vars | Move legacy return assertions to cycle_result.value., Replace stack/brief_stack assertions with public state/ended/vars, or migrate if frame mode is the only evidence., Replace cycle_count with explicit step order and public post-step observations. | PR-F1e | shared fixture rewrite |
-| `abstract_handler_raise_mode_blocks_later_cycles` | runners=simulation; runtime_options; handlers | MIGRATE_SIMULATOR_DIAGNOSTIC | error_info, error_state, handlers.behavior=raise_error, runtime_options | cycle_count, ended, error_info, error_state, handler_calls, raises, return, stack, state, vars | Preserve exception type and message assertions., Preserve warning/log text assertions., Preserve rollback state and variable snapshots., Preserve abstract handler call and error metadata. | PR-F1d | test/simulate/ |
-| `abstract_handler_warning_rollback_on_raise` | runners=simulation; runtime_options; handlers | MIGRATE_SIMULATOR_DIAGNOSTIC | abstract_handler_errors, anonymous_warning_count, error_info, error_state, handlers.behavior=raise_error, runtime_options, warnings | error_info, error_state, handler_calls, anonymous_warning_count, raises, stack, warnings | Preserve exception type and message assertions., Preserve warning/log text assertions., Preserve rollback state and variable snapshots., Preserve abstract handler call and error metadata. | PR-F1d | test/simulate/ |
 | `abstract_hook_context_hot_start_leaf` | runners=simulation,generated_python_alignment; handlers | KEEP_SHARED_FIXTURE | - | handler_calls, hot_start, state, vars | Keep reading only public observations. | none | test/fixtures/simulate_semantics/ |
 | `abstract_hook_ref_context_reports_callsite_metadata` | runners=simulation,generated_python_alignment; handlers | KEEP_SHARED_FIXTURE | - | handler_calls, state, vars | Keep reading only public observations. | none | test/fixtures/simulate_semantics/ |
 | `aspect_context_reports_active_leaf` | runners=simulation,generated_python_alignment; handlers | KEEP_SHARED_FIXTURE | - | handler_calls, state, vars | Keep reading only public observations. | none | test/fixtures/simulate_semantics/ |
@@ -144,7 +140,7 @@ public API observations.
 | `design_aspect_actions` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
 | `design_basic_simple_transition` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
 | `design_composite_state` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
-| `design_composite_stuck_in_init_wait` | runners=simulation,generated_python_alignment | MIGRATE_SIMULATOR_DIAGNOSTIC | logs | ended, logs, return, stack, state, vars | Preserve exception type and message assertions., Preserve warning/log text assertions., Preserve rollback state and variable snapshots., Preserve abstract handler call and error metadata. | PR-F1d | test/simulate/ |
+| `design_composite_stuck_in_init_wait` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | stack, return | ended, return, stack, state, vars | Move legacy return assertions to cycle_result.value., Replace stack/brief_stack assertions with public state/ended/vars, or migrate if frame mode is the only evidence. | PR-F1e | shared fixture rewrite |
 | `design_cross_hierarchy_transition_actual_runtime_behavior` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
 | `design_cross_hierarchy_transition_with_staged_guards` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
 | `design_evented_pseudo_chain_invalid_then_valid` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
@@ -152,14 +148,14 @@ public API observations.
 | `design_exit_to_parent_invalid` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
 | `design_exit_to_parent_then_event_transition` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
 | `design_exit_to_parent_then_pseudo_guard` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
-| `design_explicit_exit_to_root_ends_runtime` | runners=simulation,generated_python_alignment | MIGRATE_SIMULATOR_DIAGNOSTIC | logs | ended, logs, return, stack, state, vars | Preserve exception type and message assertions., Preserve warning/log text assertions., Preserve rollback state and variable snapshots., Preserve abstract handler call and error metadata. | PR-F1d | test/simulate/ |
+| `design_explicit_exit_to_root_ends_runtime` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | stack, return | ended, return, stack, state, vars | Move legacy return assertions to cycle_result.value., Replace stack/brief_stack assertions with public state/ended/vars, or migrate if frame mode is the only evidence. | PR-F1e | shared fixture rewrite |
 | `design_guard_effect_multilevel_transition` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
 | `design_mixed_composite_and_pseudo` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
 | `design_multi_layer_aspect_actions` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
 | `design_multi_level_non_stoppable_deep` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
 | `design_multi_level_non_stoppable_leaf` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
 | `design_multiple_leaf_states_share_aspects` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
-| `design_post_child_exit_without_follow_up` | runners=simulation,generated_python_alignment | MIGRATE_SIMULATOR_DIAGNOSTIC | logs | ended, logs, return, stack, state, vars | Preserve exception type and message assertions., Preserve warning/log text assertions., Preserve rollback state and variable snapshots., Preserve abstract handler call and error metadata. | PR-F1d | test/simulate/ |
+| `design_post_child_exit_without_follow_up` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | stack, return | ended, return, stack, state, vars | Move legacy return assertions to cycle_result.value., Replace stack/brief_stack assertions with public state/ended/vars, or migrate if frame mode is the only evidence. | PR-F1e | shared fixture rewrite |
 | `design_pseudo_chain_inside_composite` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
 | `design_pseudo_chain_multiple` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
 | `design_pseudo_chain_single` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
@@ -201,7 +197,6 @@ public API observations.
 | `expression_logical_or_short_circuits_in_guard` | runners=simulation | REWRITE_SHARED_PUBLIC_OBSERVATIONS | cycle_count, history_tail, history_length | cycle_result, history, state, vars | Replace cycle_count with explicit step order and public post-step observations., Replace history assertions with per-step public observations, or migrate diagnostic-only history checks. | PR-F1e | shared fixture rewrite |
 | `expression_logical_or_short_circuits_in_if` | runners=simulation | REWRITE_SHARED_PUBLIC_OBSERVATIONS | cycle_count, history_tail, history_length | cycle_result, history, state, vars | Replace cycle_count with explicit step order and public post-step observations., Replace history assertions with per-step public observations, or migrate diagnostic-only history checks. | PR-F1e | shared fixture rewrite |
 | `expression_type_error_wraps_transition_effect` | runners=simulation | REWRITE_SHARED_PUBLIC_OBSERVATIONS | stack, cycle_count, history_length | raises, history, stack, state, vars | Replace stack/brief_stack assertions with public state/ended/vars, or migrate if frame mode is the only evidence., Replace cycle_count with explicit step order and public post-step observations., Replace history assertions with per-step public observations, or migrate diagnostic-only history checks. | PR-F1e | shared fixture rewrite |
-| `failed_cycle_rolls_back_logged_abstract_handler_errors` | runners=simulation; runtime_options; handlers | MIGRATE_SIMULATOR_DIAGNOSTIC | abstract_handler_errors, handlers.behavior=raise_error, runtime_options | abstract_handler_errors, cycle_count, ended, handler_calls, return, stack, state, vars | Preserve exception type and message assertions., Preserve warning/log text assertions., Preserve rollback state and variable snapshots., Preserve abstract handler call and error metadata. | PR-F1d | test/simulate/ |
 | `failed_initial_cycle_preserves_root_entry_lifecycle` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | stack, cycle_count, return | cycle_count, ended, return, stack, state, vars | Move legacy return assertions to cycle_result.value., Replace stack/brief_stack assertions with public state/ended/vars, or migrate if frame mode is the only evidence., Replace cycle_count with explicit step order and public post-step observations. | PR-F1e | shared fixture rewrite |
 | `failed_initial_cycle_skips_abstract_handler_callbacks` | runners=simulation,generated_python_alignment; handlers | REWRITE_SHARED_PUBLIC_OBSERVATIONS | stack, cycle_count, return | cycle_count, ended, handler_calls, return, stack, state, vars | Move legacy return assertions to cycle_result.value., Replace stack/brief_stack assertions with public state/ended/vars, or migrate if frame mode is the only evidence., Replace cycle_count with explicit step order and public post-step observations. | PR-F1e | shared fixture rewrite |
 | `forced_pseudo_candidate_skips_unstable_branch` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | history_tail | state, vars, cycle_result, history | Replace history assertions with per-step public observations, or migrate diagnostic-only history checks. | PR-F1e | shared fixture rewrite |
@@ -248,7 +243,6 @@ public API observations.
 | `pseudo_self_loop_step_limit_raises_dfs_error` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | stack, history_length | exception, state, vars, stack, history | Replace stack/brief_stack assertions with public state/ended/vars, or migrate if frame mode is the only evidence., Replace history assertions with per-step public observations, or migrate diagnostic-only history checks. | PR-F1e | shared fixture rewrite |
 | `ref_abstract_handler_reports_calling_state` | runners=simulation,generated_python_alignment; handlers | REWRITE_SHARED_PUBLIC_OBSERVATIONS | stack, cycle_count, return | cycle_count, ended, handler_calls, return, stack, state, vars_exact | Move legacy return assertions to cycle_result.value., Replace stack/brief_stack assertions with public state/ended/vars, or migrate if frame mode is the only evidence., Replace cycle_count with explicit step order and public post-step observations. | PR-F1e | shared fixture rewrite |
 | `ref_context_uses_callsite_stage` | runners=simulation; handlers | REWRITE_SHARED_PUBLIC_OBSERVATIONS | stack | handler_calls, stack, state, vars_exact | Replace stack/brief_stack assertions with public state/ended/vars, or migrate if frame mode is the only evidence. | PR-F1e | shared fixture rewrite |
-| `rejected_transition_candidate_defers_anonymous_warning` | runners=simulation | MIGRATE_SIMULATOR_DIAGNOSTIC | warnings | cycle_count, ended, return, stack, state, vars, warnings | Preserve exception type and message assertions., Preserve warning/log text assertions., Preserve rollback state and variable snapshots., Preserve abstract handler call and error metadata. | PR-F1d | test/simulate/ |
 | `root_exit_runs_root_cleanup` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | stack, return | ended, return, stack, state, vars | Move legacy return assertions to cycle_result.value., Replace stack/brief_stack assertions with public state/ended/vars, or migrate if frame mode is the only evidence. | PR-F1e | shared fixture rewrite |
 | `scenario_ac_charger_session_control_normal` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |
 | `scenario_ac_charger_session_control_unplug` | runners=simulation,generated_python_alignment | REWRITE_SHARED_PUBLIC_OBSERVATIONS | return | ended, return, state, vars | Move legacy return assertions to cycle_result.value. | PR-F1e | shared fixture rewrite |

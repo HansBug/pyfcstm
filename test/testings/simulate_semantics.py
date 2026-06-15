@@ -3045,14 +3045,14 @@ def validate_pure_shared_fixture_boundary(
                 raise _case_error(
                     case_id,
                     yaml_path,
-                    "handlers[%d].exception is only allowed for raise_error"
+                    "pure shared fixture does not allow handlers[%d].exception"
                     % handler_index,
                 )
             if "write" in handler:
                 raise _case_error(
                     case_id,
                     yaml_path,
-                    "handlers[%d].write is only allowed for record_var_write_attempt"
+                    "pure shared fixture does not allow handlers[%d].write"
                     % handler_index,
                 )
     steps = data.get("steps")

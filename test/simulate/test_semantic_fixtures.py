@@ -368,6 +368,7 @@ def _set_model_build_expectation(data, raises):
 
 
 def _pure_shared_case_data():
+    """Return the minimal valid fixture shape for pure shared boundary tests."""
     data = _valid_case_data()
     data["runners"] = ["simulation", "generated_python_alignment"]
     data["steps"][0]["expect"].pop("return", None)
@@ -1042,7 +1043,7 @@ def test_pure_shared_fixture_boundary_rejects_legacy_return_field(tmp_path):
 
 @pytest.mark.unittest
 def test_pure_shared_fixture_boundary_does_not_gate_existing_corpus():
-    cases = iter_semantic_cases()
+    cases = list(iter_semantic_cases())
     legacy_fields = {
         field
         for case in cases
@@ -1055,6 +1056,21 @@ def test_pure_shared_fixture_boundary_does_not_gate_existing_corpus():
 
     assert cases
     assert legacy_fields
+
+
+@pytest.mark.unittest
+def test_pure_shared_fixture_boundary_would_reject_existing_legacy_cases():
+    cases = list(iter_semantic_cases())
+    rejected_case_ids = set()
+
+    for case in cases:
+        try:
+            validate_pure_shared_fixture_boundary(case.data, case.yaml_path)
+        except SemanticCaseError:
+            rejected_case_ids.add(case.id)
+
+    assert cases
+    assert rejected_case_ids
 
 
 @pytest.mark.unittest
@@ -1079,6 +1095,16 @@ def test_pure_shared_fixture_boundary_does_not_gate_existing_corpus():
             lambda data: _set_model_build_expectation(
                 data, {"type": "ModelValidationError"}
             ),
+            "forbidden top-level fields",
+        ),
+        (
+            lambda data: data.update(
+                {"commands": [{"input": "help", "expect": {"output_contains": []}}]}
+            ),
+            "forbidden top-level fields",
+        ),
+        (
+            lambda data: data.update({"expected_failure": {"reason": "legacy bug"}}),
             "forbidden top-level fields",
         ),
         (
@@ -1117,6 +1143,12 @@ def test_pure_shared_fixture_boundary_does_not_gate_existing_corpus():
         ),
         (
             lambda data: data["steps"][0]["expect"].update({"warnings": {"count": 0}}),
+            "forbidden expectation fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {"logs": {"contains": [{"level": "INFO", "message": "x"}]}}
+            ),
             "forbidden expectation fields",
         ),
         (
@@ -1182,7 +1214,21 @@ def test_pure_shared_fixture_boundary_does_not_gate_existing_corpus():
                     ]
                 }
             ),
-            "handlers\\[0\\].exception is only allowed for raise_error",
+            "does not allow handlers\\[0\\].exception",
+        ),
+        (
+            lambda data: data.update(
+                {
+                    "handlers": [
+                        {
+                            "action": "Root.Init",
+                            "behavior": "record_call",
+                            "write": {"name": "x", "value": 1},
+                        }
+                    ]
+                }
+            ),
+            "does not allow handlers\\[0\\].write",
         ),
     ],
 )

@@ -1,7 +1,6 @@
 schema_version: 1
 id: design_speculative_prunes_repeated_state
 title: 4 31 prunes repeated speculative execution state
-boundary: pure_shared
 source:
   fcstm: design_speculative_prunes_repeated_state.fcstm
 origin:

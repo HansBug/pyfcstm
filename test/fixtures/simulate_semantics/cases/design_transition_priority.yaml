@@ -1,7 +1,6 @@
 schema_version: 1
 id: design_transition_priority
 title: 4 8 transition priority
-boundary: pure_shared
 source:
   fcstm: design_transition_priority.fcstm
 origin:

@@ -1,7 +1,6 @@
 schema_version: 1
 id: design_self_transition
 title: 4 9 self transition
-boundary: pure_shared
 source:
   fcstm: design_self_transition.fcstm
 origin:

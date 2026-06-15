@@ -1,7 +1,6 @@
 schema_version: 1
 id: design_composite_stuck_in_init_wait
 title: 4 27 composite state stuck in init wait without enabled init transition
-boundary: pure_shared
 source:
   fcstm: design_composite_stuck_in_init_wait.fcstm
 origin:

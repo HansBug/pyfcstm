@@ -1,7 +1,6 @@
 schema_version: 1
 id: design_aspect_actions
 title: 4 5 aspect actions
-boundary: pure_shared
 source:
   fcstm: design_aspect_actions.fcstm
 origin:

@@ -1,7 +1,6 @@
 schema_version: 1
 id: design_pseudo_state
 title: 4 6 pseudo state
-boundary: pure_shared
 source:
   fcstm: design_pseudo_state.fcstm
 origin:

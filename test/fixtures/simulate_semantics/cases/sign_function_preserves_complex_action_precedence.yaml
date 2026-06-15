@@ -1,7 +1,6 @@
 schema_version: 1
 id: sign_function_preserves_complex_action_precedence
 title: Sign function preserves complex action precedence
-boundary: pure_shared
 source:
   fcstm: sign_function_preserves_complex_action_precedence.fcstm
 origin:

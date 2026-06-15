@@ -1,7 +1,6 @@
 schema_version: 1
 id: scenario_ac_charger_session_control_normal
 title: 4 103 ac charger session control
-boundary: pure_shared
 source:
   fcstm: scenario_ac_charger_session_control_normal.fcstm
 origin:

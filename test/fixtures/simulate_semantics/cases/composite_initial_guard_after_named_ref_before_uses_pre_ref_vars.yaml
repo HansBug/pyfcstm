@@ -1,7 +1,6 @@
 schema_version: 1
 id: composite_initial_guard_after_named_ref_before_uses_pre_ref_vars
 title: Composite initial guard is decided before named-ref plain during-before action
-boundary: pure_shared
 source:
   fcstm: composite_initial_guard_after_named_ref_before_uses_pre_ref_vars.fcstm
 origin:

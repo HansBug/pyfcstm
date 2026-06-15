@@ -1,7 +1,6 @@
 schema_version: 1
 id: expression_error_preserves_runtime_snapshot
 title: Expression errors preserve runtime snapshot assertions
-boundary: pure_shared
 source:
   fcstm: expression_error_preserves_runtime_snapshot.fcstm
 origin:

@@ -1,7 +1,6 @@
 schema_version: 1
 id: composite_initial_guard_after_leaf_transition_uses_enter_state
 title: Composite initial guard uses enter-state variables after a leaf transition
-boundary: pure_shared
 source:
   fcstm: composite_initial_guard_after_leaf_transition_uses_enter_state.fcstm
 origin:

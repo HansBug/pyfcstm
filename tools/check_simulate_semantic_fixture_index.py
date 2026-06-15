@@ -1,7 +1,7 @@
 """
 Validate the simulate semantic fixture README inventory.
 
-This maintenance command checks that the ``Current migration index`` table in
+This maintenance command checks that the ``Current fixture index`` table in
 ``test/fixtures/simulate_semantics/README.md`` lists exactly the fixture case
 files under ``test/fixtures/simulate_semantics/cases``.
 """
@@ -43,11 +43,11 @@ def _fixture_case_ids(case_dir):
     )
 
 
-def _readme_migration_index_case_ids(readme_path):
+def _readme_fixture_index_case_ids(readme_path):
     with open(readme_path, encoding="utf-8") as file:
         readme_lines = file.read().splitlines()
 
-    start_index = readme_lines.index("## Current migration index") + 1
+    start_index = readme_lines.index("## Current fixture index") + 1
     end_index = next(
         (
             index
@@ -74,7 +74,7 @@ def _format_items(items):
 
 def validate_fixture_index(case_dir, readme_path):
     fixture_case_ids = _fixture_case_ids(case_dir)
-    readme_case_ids = _readme_migration_index_case_ids(readme_path)
+    readme_case_ids = _readme_fixture_index_case_ids(readme_path)
     readme_case_counter = Counter(readme_case_ids)
 
     duplicate_readme_ids = sorted(

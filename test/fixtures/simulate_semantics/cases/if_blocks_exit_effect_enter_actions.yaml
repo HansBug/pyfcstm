@@ -1,7 +1,6 @@
 schema_version: 1
 id: if_blocks_exit_effect_enter_actions
 title: If blocks in exit effect and enter actions
-boundary: pure_shared
 source:
   fcstm: if_blocks_exit_effect_enter_actions.fcstm
 origin:

@@ -1,7 +1,6 @@
 schema_version: 1
 id: hot_start_rejects_overdeep_leaf_stack
 title: Hot-start rejects a leaf stack beyond the structural depth limit
-boundary: pure_shared
 source:
   fcstm: hot_start_rejects_overdeep_leaf_stack.fcstm
 origin:

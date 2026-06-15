@@ -1,7 +1,6 @@
 schema_version: 1
 id: design_pseudo_chain_with_guard
 title: 4 15 pseudo chain with guard
-boundary: pure_shared
 source:
   fcstm: design_pseudo_chain_with_guard.fcstm
 origin:

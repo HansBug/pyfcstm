@@ -1,7 +1,6 @@
 schema_version: 1
 id: design_cross_hierarchy_transition_actual_runtime_behavior
 title: 4 25 cross hierarchy transition actual runtime behavior
-boundary: pure_shared
 source:
   fcstm: design_cross_hierarchy_transition_actual_runtime_behavior.fcstm
 origin:

@@ -1,7 +1,6 @@
 schema_version: 1
 id: hot_start_rejects_blocked_composite_initial
 title: Hot start rejects a composite target whose initial transition is blocked
-boundary: pure_shared
 source:
   fcstm: hot_start_rejects_blocked_composite_initial.fcstm
 origin:

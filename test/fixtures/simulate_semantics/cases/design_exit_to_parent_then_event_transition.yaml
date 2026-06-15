@@ -1,7 +1,6 @@
 schema_version: 1
 id: design_exit_to_parent_then_event_transition
 title: 4 17 1 exit to parent then event transition
-boundary: pure_shared
 source:
   fcstm: design_exit_to_parent_then_event_transition.fcstm
 origin:

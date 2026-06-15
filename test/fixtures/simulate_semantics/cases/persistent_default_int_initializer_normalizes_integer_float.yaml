@@ -1,7 +1,6 @@
 schema_version: 1
 id: persistent_default_int_initializer_normalizes_integer_float
 title: Persistent default int initializer normalizes integer-valued float
-boundary: pure_shared
 source:
   fcstm: persistent_default_int_initializer_normalizes_integer_float.fcstm
 origin:

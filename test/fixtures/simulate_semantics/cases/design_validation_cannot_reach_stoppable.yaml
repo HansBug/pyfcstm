@@ -1,7 +1,6 @@
 schema_version: 1
 id: design_validation_cannot_reach_stoppable
 title: 4 3 validation cannot reach stoppable
-boundary: pure_shared
 source:
   fcstm: design_validation_cannot_reach_stoppable.fcstm
 origin:

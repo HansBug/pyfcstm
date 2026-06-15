@@ -1,7 +1,6 @@
 schema_version: 1
 id: design_pseudo_chain_to_machine_end
 title: 4 16 pseudo chain to machine end
-boundary: pure_shared
 source:
   fcstm: design_pseudo_chain_to_machine_end.fcstm
 origin:

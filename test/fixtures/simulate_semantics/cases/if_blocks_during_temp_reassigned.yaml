@@ -1,7 +1,6 @@
 schema_version: 1
 id: if_blocks_during_temp_reassigned
 title: if blocks during temp reassigned
-boundary: pure_shared
 source:
   fcstm: if_blocks_during_temp_reassigned.fcstm
 origin:

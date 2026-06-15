@@ -1,7 +1,6 @@
 schema_version: 1
 id: ref_context_uses_callsite_stage
 title: Ref abstract handler reports callsite lifecycle stage
-boundary: pure_shared
 source:
   fcstm: ref_context_uses_callsite_stage.fcstm
 origin:

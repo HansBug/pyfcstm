@@ -1,7 +1,6 @@
 schema_version: 1
 id: abstract_hook_ref_context_reports_callsite_metadata
 title: Abstract hook ref context reports callsite metadata
-boundary: pure_shared
 source:
   fcstm: abstract_hook_ref_context_reports_callsite_metadata.fcstm
 origin:

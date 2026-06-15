@@ -1,7 +1,6 @@
 schema_version: 1
 id: scenario_ats_mains_generator_transfer_outage
 title: 4 104 ats mains generator transfer
-boundary: pure_shared
 source:
   fcstm: scenario_ats_mains_generator_transfer_outage.fcstm
 origin:

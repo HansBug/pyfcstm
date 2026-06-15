@@ -1,7 +1,6 @@
 schema_version: 1
 id: composite_initial_handler_log_after_transition_uses_selected_child
 title: Handler observer follows composite initial child selected before plain during-before
-boundary: pure_shared
 source:
   fcstm: composite_initial_handler_log_after_transition_uses_selected_child.fcstm
 origin:

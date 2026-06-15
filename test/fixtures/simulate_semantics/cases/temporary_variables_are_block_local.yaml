@@ -1,7 +1,6 @@
 schema_version: 1
 id: temporary_variables_are_block_local
 title: temporary variables are block local
-boundary: pure_shared
 source:
   fcstm: temporary_variables_are_block_local.fcstm
 origin:

@@ -1,7 +1,6 @@
 schema_version: 1
 id: if_blocks_during_else_if_branch
 title: if blocks during else if branch
-boundary: pure_shared
 source:
   fcstm: if_blocks_during_else_if_branch.fcstm
 origin:

@@ -1,7 +1,6 @@
 schema_version: 1
 id: persistent_effect_writeback_normalizes_integer_float
 title: Persistent transition effect writeback normalizes integer-valued float
-boundary: pure_shared
 source:
   fcstm: persistent_effect_writeback_normalizes_integer_float.fcstm
 origin:

@@ -1,7 +1,6 @@
 schema_version: 1
 id: abstract_hook_context_hot_start_leaf
 title: Abstract hook context reports hot-start leaf callsite
-boundary: pure_shared
 source:
   fcstm: abstract_hook_context_hot_start_leaf.fcstm
 origin:

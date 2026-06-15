@@ -2,7 +2,6 @@ schema_version: 1
 id: composite_initial_guard_can_select_terminal_branch_before_plain_before
 title: Composite initial guard can choose a terminal branch before plain during-before
   mutation
-boundary: pure_shared
 source:
   fcstm: composite_initial_guard_can_select_terminal_branch_before_plain_before.fcstm
 origin:

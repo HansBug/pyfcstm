@@ -1,7 +1,6 @@
 schema_version: 1
 id: cold_initial_chain_stack_modes_are_active
 title: Cold initial chain stack modes become active after stabilization
-boundary: pure_shared
 source:
   fcstm: cold_initial_chain_stack_modes_are_active.fcstm
 origin:

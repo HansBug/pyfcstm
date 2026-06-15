@@ -1,7 +1,6 @@
 schema_version: 1
 id: cycle_result_event_accounting
 title: Cycle result records consumed and unconsumed events
-boundary: pure_shared
 source:
   fcstm: cycle_result_event_accounting.fcstm
 origin:

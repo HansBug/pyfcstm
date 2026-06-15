@@ -1,7 +1,6 @@
 schema_version: 1
 id: event_path_parent_relative
 title: 4 201 flexible path parent relative
-boundary: pure_shared
 source:
   fcstm: event_path_parent_relative.fcstm
 origin:

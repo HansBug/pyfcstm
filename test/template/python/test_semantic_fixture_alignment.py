@@ -14,8 +14,8 @@ from test.testings.simulate_semantics import (
     [case for case in iter_semantic_cases(runners=["generated_python_alignment"])],
     ids=lambda case: case.id,
 )
-def test_generated_python_alignment_semantic_fixture(case, caplog):
-    run_generated_python_alignment_case(case, caplog=caplog)
+def test_generated_python_alignment_semantic_fixture(case):
+    run_generated_python_alignment_case(case)
 
 
 @pytest.mark.unittest

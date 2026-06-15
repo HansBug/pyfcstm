@@ -1,7 +1,6 @@
 schema_version: 1
 id: scenario_elevator_door_control_blocked
 title: 4 100 elevator door control
-boundary: pure_shared
 source:
   fcstm: scenario_elevator_door_control_blocked.fcstm
 origin:

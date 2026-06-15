@@ -1,7 +1,6 @@
 schema_version: 1
 id: transition_into_composite_skips_unstable_initial_candidate
 title: Transition into composite skips unstable initial candidate
-boundary: pure_shared
 source:
   fcstm: transition_into_composite_skips_unstable_initial_candidate.fcstm
 origin:

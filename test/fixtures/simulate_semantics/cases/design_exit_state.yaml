@@ -1,7 +1,6 @@
 schema_version: 1
 id: design_exit_state
 title: 4 10 exit state
-boundary: pure_shared
 source:
   fcstm: design_exit_state.fcstm
 origin:

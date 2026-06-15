@@ -1,7 +1,6 @@
 schema_version: 1
 id: composite_initial_guard_uses_enter_state_before_plain_before
 title: Composite initial guard uses enter-state variables before plain during-before
-boundary: pure_shared
 source:
   fcstm: composite_initial_guard_uses_enter_state_before_plain_before.fcstm
 origin:

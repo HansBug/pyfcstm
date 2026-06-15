@@ -1,7 +1,6 @@
 schema_version: 1
 id: design_pseudo_chain_single
 title: 4 13 single pseudo state chain
-boundary: pure_shared
 source:
   fcstm: design_pseudo_chain_single.fcstm
 origin:

@@ -1,7 +1,6 @@
 schema_version: 1
 id: if_blocks_during_then_without_else
 title: if blocks during then without else
-boundary: pure_shared
 source:
   fcstm: if_blocks_during_then_without_else.fcstm
 origin:

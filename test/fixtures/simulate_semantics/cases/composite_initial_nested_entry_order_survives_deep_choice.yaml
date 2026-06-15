@@ -2,7 +2,6 @@ schema_version: 1
 id: composite_initial_nested_entry_order_survives_deep_choice
 title: Deep composite initial guard uses entered state before plain during-before
   mutation
-boundary: pure_shared
 source:
   fcstm: composite_initial_nested_entry_order_survives_deep_choice.fcstm
 origin:

@@ -1,7 +1,6 @@
 schema_version: 1
 id: sign_function_controls_guard_transition
 title: Sign function controls a guard transition
-boundary: pure_shared
 source:
   fcstm: sign_function_controls_guard_transition.fcstm
 origin:

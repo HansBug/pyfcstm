@@ -1,7 +1,6 @@
 schema_version: 1
 id: design_single_layer_aspect_actions
 title: 4 21 single layer aspect actions
-boundary: pure_shared
 source:
   fcstm: design_single_layer_aspect_actions.fcstm
 origin:

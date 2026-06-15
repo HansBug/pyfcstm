@@ -1,7 +1,6 @@
 schema_version: 1
 id: persistent_int_writeback_normalizes_integer_float
 title: Persistent int writeback normalizes integer-valued float
-boundary: pure_shared
 source:
   fcstm: persistent_int_writeback_normalizes_integer_float.fcstm
 origin:

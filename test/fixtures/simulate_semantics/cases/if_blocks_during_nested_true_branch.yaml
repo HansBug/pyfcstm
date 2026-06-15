@@ -1,7 +1,6 @@
 schema_version: 1
 id: if_blocks_during_nested_true_branch
 title: if blocks during nested true branch
-boundary: pure_shared
 source:
   fcstm: if_blocks_during_nested_true_branch.fcstm
 origin:

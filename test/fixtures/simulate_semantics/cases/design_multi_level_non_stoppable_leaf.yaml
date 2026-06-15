@@ -1,7 +1,6 @@
 schema_version: 1
 id: design_multi_level_non_stoppable_leaf
 title: 4 7 multi level non stoppable
-boundary: pure_shared
 source:
   fcstm: design_multi_level_non_stoppable_leaf.fcstm
 origin:

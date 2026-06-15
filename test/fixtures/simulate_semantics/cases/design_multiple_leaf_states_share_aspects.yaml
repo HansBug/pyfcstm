@@ -1,7 +1,6 @@
 schema_version: 1
 id: design_multiple_leaf_states_share_aspects
 title: 4 24 multiple leaf states share aspects
-boundary: pure_shared
 source:
   fcstm: design_multiple_leaf_states_share_aspects.fcstm
 origin:

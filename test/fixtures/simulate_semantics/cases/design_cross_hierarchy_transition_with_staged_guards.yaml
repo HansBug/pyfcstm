@@ -1,7 +1,6 @@
 schema_version: 1
 id: design_cross_hierarchy_transition_with_staged_guards
 title: 4 26 cross hierarchy transition with staged guards
-boundary: pure_shared
 source:
   fcstm: design_cross_hierarchy_transition_with_staged_guards.fcstm
 origin:

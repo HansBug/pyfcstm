@@ -1,6 +1,7 @@
 schema_version: 1
 id: failed_initial_cycle_preserves_root_entry_lifecycle
 title: Failed initial cycle preserves root entry lifecycle on later success
+boundary: pure_shared
 source:
   fcstm: failed_initial_cycle_preserves_root_entry_lifecycle.fcstm
 origin:

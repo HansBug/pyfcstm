@@ -1,6 +1,7 @@
 schema_version: 1
 id: scenario_cold_storage_defrost_cycle_defrost
 title: 4 105 cold storage defrost cycle
+boundary: pure_shared
 source:
   fcstm: scenario_cold_storage_defrost_cycle_defrost.fcstm
 origin:

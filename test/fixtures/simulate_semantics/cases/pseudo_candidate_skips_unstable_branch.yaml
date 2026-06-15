@@ -1,6 +1,7 @@
 schema_version: 1
 id: pseudo_candidate_skips_unstable_branch
 title: Pseudo candidate selection skips an unstable branch
+boundary: pure_shared
 source:
   fcstm: pseudo_candidate_skips_unstable_branch.fcstm
 origin:

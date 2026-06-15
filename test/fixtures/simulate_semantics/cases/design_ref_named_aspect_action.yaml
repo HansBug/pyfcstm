@@ -1,6 +1,7 @@
 schema_version: 1
 id: design_ref_named_aspect_action
 title: 4 35 ref reuses named aspect action
+boundary: pure_shared
 source:
   fcstm: design_ref_named_aspect_action.fcstm
 origin:

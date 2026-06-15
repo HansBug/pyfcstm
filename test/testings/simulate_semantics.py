@@ -2845,6 +2845,36 @@ def validate_pure_shared_fixture_boundary(
         if not isinstance(initial, dict):
             raise _case_error(case_id, yaml_path, "initial must be a mapping")
         has_initial_expect = "expect" in initial
+        if has_initial_expect:
+            initial_expect = initial["expect"]
+            if not isinstance(initial_expect, dict):
+                raise _case_error(
+                    case_id, yaml_path, "initial.expect must be a mapping"
+                )
+            forbidden_initial_expect = _PURE_SHARED_FORBIDDEN_EXPECT_FIELDS & set(
+                initial_expect.keys()
+            )
+            if forbidden_initial_expect:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "pure shared fixture has forbidden initial.expect fields: %r"
+                    % sorted(forbidden_initial_expect),
+                )
+            unknown_initial_expect = set(initial_expect.keys()) - (
+                _ALLOWED_INITIAL_CONSTRUCTOR_EXPECT_FIELDS
+            )
+            if unknown_initial_expect:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "initial.expect has unknown fields: %r"
+                    % sorted(unknown_initial_expect),
+                )
+            if "raises" not in initial_expect:
+                raise _case_error(
+                    case_id, yaml_path, "initial.expect.raises is required"
+                )
     if "handlers" in data:
         handlers = data["handlers"]
         if not isinstance(handlers, list):

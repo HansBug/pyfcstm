@@ -1,6 +1,7 @@
 schema_version: 1
 id: sign_function_handles_all_signs
 title: Sign function handles negative zero and positive values
+boundary: pure_shared
 source:
   fcstm: sign_function_handles_all_signs.fcstm
 origin:

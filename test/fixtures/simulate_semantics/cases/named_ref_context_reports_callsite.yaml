@@ -1,6 +1,7 @@
 schema_version: 1
 id: named_ref_context_reports_callsite
 title: Named ref context reports the concrete callsite
+boundary: pure_shared
 source:
   fcstm: named_ref_context_reports_callsite.fcstm
 origin:

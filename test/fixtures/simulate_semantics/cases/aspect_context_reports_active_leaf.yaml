@@ -1,6 +1,7 @@
 schema_version: 1
 id: aspect_context_reports_active_leaf
 title: Aspect abstract handler reports active leaf context
+boundary: pure_shared
 source:
   fcstm: aspect_context_reports_active_leaf.fcstm
 origin:

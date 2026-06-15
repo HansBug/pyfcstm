@@ -1,6 +1,7 @@
 schema_version: 1
 id: abstract_handler_context_metadata
 title: Abstract handler context metadata fixture
+boundary: pure_shared
 source:
   fcstm: abstract_handler_context_metadata.fcstm
 origin:

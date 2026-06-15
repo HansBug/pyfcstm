@@ -1,6 +1,7 @@
 schema_version: 1
 id: design_validation_init_transition_requires_event
 title: 4 4 validation init transition requires event
+boundary: pure_shared
 source:
   fcstm: design_validation_init_transition_requires_event.fcstm
 origin:

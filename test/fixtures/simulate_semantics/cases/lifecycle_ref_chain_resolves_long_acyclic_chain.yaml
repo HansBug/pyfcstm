@@ -1,6 +1,7 @@
 schema_version: 1
 id: lifecycle_ref_chain_resolves_long_acyclic_chain
 title: Lifecycle ref chain resolves long acyclic chain
+boundary: pure_shared
 source:
   fcstm: lifecycle_ref_chain_resolves_long_acyclic_chain.fcstm
 origin:

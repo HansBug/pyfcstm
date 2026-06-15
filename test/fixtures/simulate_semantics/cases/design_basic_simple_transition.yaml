@@ -1,6 +1,7 @@
 schema_version: 1
 id: design_basic_simple_transition
 title: 4 1 basic simple transition
+boundary: pure_shared
 source:
   fcstm: design_basic_simple_transition.fcstm
 origin:

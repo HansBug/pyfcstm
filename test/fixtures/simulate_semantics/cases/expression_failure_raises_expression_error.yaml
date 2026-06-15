@@ -1,6 +1,7 @@
 schema_version: 1
 id: expression_failure_raises_expression_error
 title: 4 200 dsl expression failure raises expression error
+boundary: pure_shared
 source:
   fcstm: expression_failure_raises_expression_error.fcstm
 origin:

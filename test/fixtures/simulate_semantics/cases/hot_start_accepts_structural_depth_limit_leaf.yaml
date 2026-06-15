@@ -1,6 +1,7 @@
 schema_version: 1
 id: hot_start_accepts_structural_depth_limit_leaf
 title: Hot-start accepts a leaf stack exactly at the structural depth limit
+boundary: pure_shared
 source:
   fcstm: hot_start_accepts_structural_depth_limit_leaf.fcstm
 origin:

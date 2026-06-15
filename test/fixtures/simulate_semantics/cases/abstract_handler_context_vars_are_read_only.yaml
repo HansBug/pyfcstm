@@ -1,6 +1,7 @@
 schema_version: 1
 id: abstract_handler_context_vars_are_read_only
 title: Abstract handler context variables are read-only
+boundary: pure_shared
 source:
   fcstm: abstract_handler_context_vars_are_read_only.fcstm
 origin:
@@ -13,7 +14,8 @@ origin:
   - state
   - vars
   notes:
-  - Simulation-only callback contract for read-only variable snapshots.
+  - Public handler context read-only observation shared by simulation and generated
+    Python alignment.
 categories:
 - runtime
 - abstract

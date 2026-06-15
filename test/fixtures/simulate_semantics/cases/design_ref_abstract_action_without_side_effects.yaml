@@ -1,6 +1,7 @@
 schema_version: 1
 id: design_ref_abstract_action_without_side_effects
 title: 4 34 ref targets abstract action without side effects
+boundary: pure_shared
 source:
   fcstm: design_ref_abstract_action_without_side_effects.fcstm
 origin:

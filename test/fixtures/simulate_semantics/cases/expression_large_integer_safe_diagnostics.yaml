@@ -1,6 +1,7 @@
 schema_version: 1
 id: expression_large_integer_safe_diagnostics
 title: Large integer expression does not fail during runtime diagnostics
+boundary: pure_shared
 source:
   fcstm: expression_large_integer_safe_diagnostics.fcstm
 origin:

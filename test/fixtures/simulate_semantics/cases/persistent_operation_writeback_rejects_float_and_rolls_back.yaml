@@ -1,6 +1,7 @@
 schema_version: 1
 id: persistent_operation_writeback_rejects_float_and_rolls_back
 title: Persistent writeback rejects non-integer float and rolls back
+boundary: pure_shared
 source:
   fcstm: persistent_operation_writeback_rejects_float_and_rolls_back.fcstm
 origin:

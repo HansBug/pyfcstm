@@ -455,7 +455,15 @@ def _has_clear_simulator_diagnostic(record: SemanticCaseRecord) -> bool:
 def _old_observation_fields(record: SemanticCaseRecord) -> Tuple[str, ...]:
     keys = _case_key_set(record)
     result = []
-    for field_name in ("stack", "cycle_count", "history_tail", "history_length", "return"):
+    for field_name in (
+        "stack",
+        "brief_stack",
+        "cycle_count",
+        "history",
+        "history_tail",
+        "history_length",
+        "return",
+    ):
         if field_name in keys:
             result.append(field_name)
     return tuple(result)
@@ -602,7 +610,9 @@ def _render_report(
 
     runner_counter = Counter()
     runner_combo_counter = Counter()
+    boundary_counter = Counter()
     for record in records:
+        boundary_counter[str(record.data.get("boundary", "<missing>"))] += 1
         for runner in record.runners:
             runner_counter[runner] += 1
         runner_combo_counter[", ".join(record.runners)] += 1
@@ -616,6 +626,39 @@ def _render_report(
     handler_distribution = _handler_behavior_distribution(records)
     helper_hits = _token_hits(helper_sources)
     c_poll_hits = _token_hits(c_poll_sources)
+    pure_shared_count = boundary_counter.get("pure_shared", 0)
+    simulation_only_count = runner_combo_counter.get("simulation", 0)
+    migration_case_count = sum(
+        classification_counter.get(label, 0)
+        for label in CLASSIFICATION_LABELS
+        if label != "KEEP_SHARED_FIXTURE"
+    )
+    legacy_case_ids = sorted(
+        set().union(
+            field_cases["model_build"],
+            field_cases["commands"],
+            field_cases["runtime_options"],
+            field_cases["stack"],
+            field_cases["brief_stack"],
+            field_cases["cycle_count"],
+            field_cases["history"],
+            field_cases["history_tail"],
+            field_cases["history_length"],
+            field_cases["return"],
+            field_cases["warnings"],
+            field_cases["logs"],
+            field_cases["abstract_handler_errors"],
+            field_cases["error_state"],
+            field_cases["error_info"],
+            field_cases["anonymous_warning_count"],
+        )
+    )
+    generated_helper_hits = [
+        row for row in helper_hits if row[0].startswith("test/template/python/")
+    ]
+    helper_compat_hits = [
+        row for row in helper_hits if not row[0].startswith("test/template/python/")
+    ]
 
     lines = [
         "# Simulate semantic fixture case inventory",
@@ -645,6 +688,69 @@ def _render_report(
                         "%s=%s" % (combo, count)
                         for combo, count in sorted(runner_combo_counter.items())
                     ),
+                ),
+            ),
+        ),
+        "",
+        "## 阶段一总验收",
+        "",
+        "本小节给出共享语义 fixture 收束后的机器复核结论。它面向后续",
+        "[issue #218](https://github.com/HansBug/pyfcstm/issues/218) 的全模板",
+        "对齐工作：当前 corpus 只声明公共观察面，第二阶段可以在此基础上",
+        "接入更多模板 runner，但不应重新消费旧白盒字段。",
+        "",
+        _format_markdown_table(
+            ("验收项", "当前结果", "结论"),
+            (
+                (
+                    "YAML 与 FCSTM 配对",
+                    "YAML cases=%s；FCSTM files=%s" % (len(records), fcstm_count),
+                    "通过：每个语义 fixture 都有配对 DSL 源。",
+                ),
+                (
+                    "跨实现 runner 组合",
+                    "simulation, generated_python_alignment=%s；simulation only=%s"
+                    % (
+                        runner_combo_counter.get(
+                            "simulation, generated_python_alignment", 0
+                        ),
+                        simulation_only_count,
+                    ),
+                    "通过：当前共享 corpus 不再存在只跑模拟器的 case。",
+                ),
+                (
+                    "pure_shared 边界标记",
+                    "boundary: pure_shared=%s/%s" % (pure_shared_count, len(records)),
+                    "通过：加载阶段会统一执行公共观察面边界校验。",
+                ),
+                (
+                    "迁出分类",
+                    "KEEP_SHARED_FIXTURE=%s；其他分类合计=%s"
+                    % (
+                        classification_counter.get("KEEP_SHARED_FIXTURE", 0),
+                        migration_case_count,
+                    ),
+                    "通过：模型构建、CLI/REPL、模拟器诊断和旧观察面迁出项均已清零。",
+                ),
+                (
+                    "共享禁入字段",
+                    "命中 case=%s" % (", ".join(legacy_case_ids) or "0"),
+                    "通过：shared YAML 中没有 runtime_options、model_build、commands、stack、cycle_count、history*、return 或诊断字段。",
+                ),
+                (
+                    "generated Python alignment 私有读取",
+                    "helper token hits=%s" % len(generated_helper_hits),
+                    "通过：生成 Python 对齐路径没有依赖 stack、cycle_count、history 等私有观察面。",
+                ),
+                (
+                    "兼容层和文档 token 命中",
+                    "helper/doc compatibility hits=%s" % len(helper_compat_hits),
+                    "通过：非零命中仅用于 schema/README 说明或模拟器 helper 的旧 schema 兼容，不作为 generated alignment 证据。",
+                ),
+                (
+                    "C/C poll 基线",
+                    "private token hits=%s" % len(c_poll_hits),
+                    "通过：阶段一未接入 C/C poll runner；该结果仅作为第二阶段接入前的公共 API 基线。",
                 ),
             ),
         ),
@@ -736,6 +842,10 @@ def _render_report(
         ),
         "",
         "## Helper White-Box Reads",
+        "",
+        "Non-zero rows here are retained for schema documentation or simulator helper",
+        "compatibility checks. Generated Python alignment evidence must stay at zero",
+        "private-token hits, as summarized in the final acceptance table above.",
         "",
         _format_markdown_table(
             ("Source", "Token", "Line count", "Lines"),

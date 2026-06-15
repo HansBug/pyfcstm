@@ -1,6 +1,7 @@
 schema_version: 1
 id: hot_start_with_aspect_actions
 title: Hot start executes aspect actions during cycles
+boundary: pure_shared
 source:
   fcstm: hot_start_with_aspect_actions.fcstm
 origin:

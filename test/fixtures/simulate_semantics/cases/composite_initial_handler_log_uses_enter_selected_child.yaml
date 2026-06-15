@@ -1,6 +1,7 @@
 schema_version: 1
 id: composite_initial_handler_log_uses_enter_selected_child
 title: Composite initial decision selects the child whose handler should observe entry
+boundary: pure_shared
 source:
   fcstm: composite_initial_handler_log_uses_enter_selected_child.fcstm
 origin:

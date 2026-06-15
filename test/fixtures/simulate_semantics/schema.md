@@ -16,10 +16,11 @@ the semantic cases into an isolated template-only fixture system.
 
 The schema is intentionally strict. Unknown top-level fields, unknown runner
 names, unknown categories, unknown expectation fields, and unknown nested fields
-inside `cycle`, `cycle_result`, `raises`, `logs`, handler calls, and CLI
-expectations must fail fast with a diagnostic containing the case id and YAML
-path. Fixtures marked `boundary: pure_shared` also reject legacy observation
-fields while loading, before any runtime assertion runs.
+inside `cycle`, `cycle_result`, `raises`, legacy `history` records, stack
+records, `logs`, handler calls, and CLI expectations must fail fast with a
+diagnostic containing the case id and YAML path. Fixtures marked
+`boundary: pure_shared` also reject legacy observation fields while loading,
+before any runtime assertion runs.
 
 The current shared corpus is restricted to simulator plus generated Python
 alignment cases that use the public observation surface. The loader still keeps
@@ -127,6 +128,9 @@ Allowed fields:
 When `initial.expect` is present, `initial.state` and `initial.vars` keys must
 both be explicit. Use `null` / `null` to assert cold-start constructor
 diagnostics and `initial.vars: {}` for zero-variable hot-start diagnostics.
+`boundary: pure_shared` fixtures only allow `initial.expect.raises`; constructor
+diagnostics must not reintroduce legacy step observations such as `stack`,
+`cycle_count`, `history*`, `return`, or `cycle_result`.
 
 Construction-diagnostic cases must use `steps: []`; executable steps are
 rejected so that constructor failures cannot silently skip later assertions.
@@ -241,6 +245,12 @@ Only `ValueError` is currently supported for `raise_error`, because the fixture
 corpus only needs a deterministic user-handler exception class for simulator
 rollback semantics. If another exception family is needed, extend the allowed
 set together with schema-negative tests.
+
+Handlers are installed in the top-level `handlers` list order. A
+`handler_calls` expectation compares the accumulated call records in actual
+runtime invocation order, so cases that register more than one handler for the
+same abstract action must list expected calls in the order those callbacks are
+observed.
 
 Optional handler-call metadata fields are assertion-only compatibility slots
 for richer execution-context checks:

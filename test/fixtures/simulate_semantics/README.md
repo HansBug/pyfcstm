@@ -16,7 +16,9 @@ temporary compatibility code for older simulator-debugging, CLI, and
 model-construction fixture shapes until the schema cleanup removes those fields,
 but those shapes must not be reintroduced into shared YAML. Mark new shared
 cases with `boundary: pure_shared` so the loader applies the stricter boundary
-automatically.
+automatically. That marker is a load-time contract gate: it rejects legacy
+shared-forbidden fields before either the simulator or generated Python
+alignment runner can treat them as evidence.
 
 ## How to run
 
@@ -43,7 +45,8 @@ SKIP_SLOW_TESTS=1 make unittest
    `vars`, `ended`, constructor or hot-start outcomes, per-step cycle state and
    vars, `handler_calls`, and `cycle_result.value`.
 7. For new shared cases, set `boundary: pure_shared`; this is the machine gate
-   that rejects legacy or simulator-only observation fields during load.
+   that rejects legacy or simulator-only observation fields during load,
+   including constructor-time `initial.expect` misuse.
 8. For new shared cases, do not add `runtime_options`, `model_build`,
    `commands`, `cli_command`, `stack`, `brief_stack`, `cycle_count`,
    `history*`, `return`, `warnings`, `abstract_handler_errors`, `error_state`,

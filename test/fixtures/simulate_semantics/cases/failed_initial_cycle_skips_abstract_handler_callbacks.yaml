@@ -1,6 +1,7 @@
 schema_version: 1
 id: failed_initial_cycle_skips_abstract_handler_callbacks
 title: Failed initial cycle skips abstract handler callbacks
+boundary: pure_shared
 source:
   fcstm: failed_initial_cycle_skips_abstract_handler_callbacks.fcstm
 origin:

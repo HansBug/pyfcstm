@@ -1,6 +1,7 @@
 schema_version: 1
 id: design_pseudo_skips_aspect_actions
 title: 4 23 pseudo state skips aspect actions
+boundary: pure_shared
 source:
   fcstm: design_pseudo_skips_aspect_actions.fcstm
 origin:

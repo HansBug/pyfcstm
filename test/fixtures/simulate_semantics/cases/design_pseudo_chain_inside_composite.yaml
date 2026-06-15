@@ -1,6 +1,7 @@
 schema_version: 1
 id: design_pseudo_chain_inside_composite
 title: 4 18 pseudo chain inside composite
+boundary: pure_shared
 source:
   fcstm: design_pseudo_chain_inside_composite.fcstm
 origin:

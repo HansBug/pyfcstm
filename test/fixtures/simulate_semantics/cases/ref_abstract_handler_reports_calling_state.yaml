@@ -1,6 +1,7 @@
 schema_version: 1
 id: ref_abstract_handler_reports_calling_state
 title: Ref abstract handler reports the calling state
+boundary: pure_shared
 source:
   fcstm: ref_abstract_handler_reports_calling_state.fcstm
 origin:

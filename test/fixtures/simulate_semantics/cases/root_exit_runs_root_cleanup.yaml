@@ -1,6 +1,7 @@
 schema_version: 1
 id: root_exit_runs_root_cleanup
 title: Root exit runs root cleanup actions
+boundary: pure_shared
 source:
   fcstm: root_exit_runs_root_cleanup.fcstm
 origin:

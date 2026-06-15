@@ -1,6 +1,7 @@
 schema_version: 1
 id: event_path_absolute
 title: 4 202 flexible path absolute
+boundary: pure_shared
 source:
   fcstm: event_path_absolute.fcstm
 origin:

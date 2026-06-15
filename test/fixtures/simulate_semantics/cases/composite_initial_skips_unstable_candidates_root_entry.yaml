@@ -1,6 +1,7 @@
 schema_version: 1
 id: composite_initial_skips_unstable_candidates_root_entry
 title: Composite initial skips unstable candidates from root entry
+boundary: pure_shared
 source:
   fcstm: composite_initial_skips_unstable_candidates_root_entry.fcstm
 origin:

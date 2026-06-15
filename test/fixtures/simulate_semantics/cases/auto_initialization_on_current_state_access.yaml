@@ -1,6 +1,7 @@
 schema_version: 1
 id: auto_initialization_on_current_state_access
 title: Current state access observes root before first cycle
+boundary: pure_shared
 source:
   fcstm: auto_initialization_on_current_state_access.fcstm
 origin:

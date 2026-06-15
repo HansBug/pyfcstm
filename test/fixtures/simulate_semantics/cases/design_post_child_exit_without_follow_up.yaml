@@ -1,6 +1,7 @@
 schema_version: 1
 id: design_post_child_exit_without_follow_up
 title: 4 28 post child exit without follow up transition
+boundary: pure_shared
 source:
   fcstm: design_post_child_exit_without_follow_up.fcstm
 origin:

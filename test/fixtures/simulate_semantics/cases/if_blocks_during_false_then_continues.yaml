@@ -1,6 +1,7 @@
 schema_version: 1
 id: if_blocks_during_false_then_continues
 title: if blocks during false then continues
+boundary: pure_shared
 source:
   fcstm: if_blocks_during_false_then_continues.fcstm
 origin:

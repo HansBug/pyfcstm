@@ -1,6 +1,7 @@
 schema_version: 1
 id: ended_runtime_ignores_event_inputs
 title: ended runtime ignores event inputs
+boundary: pure_shared
 source:
   fcstm: ended_runtime_ignores_event_inputs.fcstm
 origin:

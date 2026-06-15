@@ -1,6 +1,7 @@
 schema_version: 1
 id: event_path_mixed_formats_absolute
 title: 4 203 flexible path mixed formats
+boundary: pure_shared
 source:
   fcstm: event_path_mixed_formats_absolute.fcstm
 origin:

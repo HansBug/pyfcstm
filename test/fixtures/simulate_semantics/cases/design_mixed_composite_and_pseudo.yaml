@@ -1,6 +1,7 @@
 schema_version: 1
 id: design_mixed_composite_and_pseudo
 title: 4 20 mixed composite and pseudo
+boundary: pure_shared
 source:
   fcstm: design_mixed_composite_and_pseudo.fcstm
 origin:

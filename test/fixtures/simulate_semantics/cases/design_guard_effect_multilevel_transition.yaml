@@ -1,6 +1,7 @@
 schema_version: 1
 id: design_guard_effect_multilevel_transition
 title: 4 11 guard effect multilevel transition
+boundary: pure_shared
 source:
   fcstm: design_guard_effect_multilevel_transition.fcstm
 origin:

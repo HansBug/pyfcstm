@@ -1,6 +1,7 @@
 schema_version: 1
 id: event_input_model_event_object
 title: model Event object input is accepted
+boundary: pure_shared
 source:
   fcstm: event_input_model_event_object.fcstm
 origin:

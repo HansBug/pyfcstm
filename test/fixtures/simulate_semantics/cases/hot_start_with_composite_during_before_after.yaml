@@ -1,6 +1,7 @@
 schema_version: 1
 id: hot_start_with_composite_during_before_after
 title: Hot start nested leaf skips composite enter then follows child transition semantics
+boundary: pure_shared
 source:
   fcstm: hot_start_with_composite_during_before_after.fcstm
 origin:

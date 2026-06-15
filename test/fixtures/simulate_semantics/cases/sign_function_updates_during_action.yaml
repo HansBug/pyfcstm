@@ -1,6 +1,7 @@
 schema_version: 1
 id: sign_function_updates_during_action
 title: Sign function updates a during action value
+boundary: pure_shared
 source:
   fcstm: sign_function_updates_during_action.fcstm
 origin:

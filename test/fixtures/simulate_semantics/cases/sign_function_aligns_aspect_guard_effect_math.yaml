@@ -1,6 +1,7 @@
 schema_version: 1
 id: sign_function_aligns_aspect_guard_effect_math
 title: Sign function aligns aspect guard and effect math
+boundary: pure_shared
 source:
   fcstm: sign_function_aligns_aspect_guard_effect_math.fcstm
 origin:

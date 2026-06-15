@@ -1,6 +1,7 @@
 schema_version: 1
 id: scenario_storage_water_heater_control_draw
 title: 4 101 storage water heater control
+boundary: pure_shared
 source:
   fcstm: scenario_storage_water_heater_control_draw.fcstm
 origin:

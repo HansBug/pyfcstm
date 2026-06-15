@@ -1,6 +1,7 @@
 schema_version: 1
 id: composite_initial_handler_log_keeps_stable_branch_before_exit_branch
 title: Composite initial handler log keeps stable branch before exit-capable branch
+boundary: pure_shared
 source:
   fcstm: composite_initial_handler_log_keeps_stable_branch_before_exit_branch.fcstm
 origin:

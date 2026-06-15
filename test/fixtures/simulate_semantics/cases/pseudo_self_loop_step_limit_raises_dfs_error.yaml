@@ -1,6 +1,7 @@
 schema_version: 1
 id: pseudo_self_loop_step_limit_raises_dfs_error
 title: Pseudo self loop raises on the step safety limit
+boundary: pure_shared
 source:
   fcstm: pseudo_self_loop_step_limit_raises_dfs_error.fcstm
 origin:

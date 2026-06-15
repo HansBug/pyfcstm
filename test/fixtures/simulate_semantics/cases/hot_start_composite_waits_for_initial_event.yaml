@@ -1,6 +1,7 @@
 schema_version: 1
 id: hot_start_composite_waits_for_initial_event
 title: Hot start composite waits for an initial transition event
+boundary: pure_shared
 source:
   fcstm: hot_start_composite_waits_for_initial_event.fcstm
 origin:

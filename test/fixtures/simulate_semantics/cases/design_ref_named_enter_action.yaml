@@ -1,6 +1,7 @@
 schema_version: 1
 id: design_ref_named_enter_action
 title: 4 33 ref reuses named enter action
+boundary: pure_shared
 source:
   fcstm: design_ref_named_enter_action.fcstm
 origin:

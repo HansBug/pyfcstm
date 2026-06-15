@@ -1,6 +1,7 @@
 schema_version: 1
 id: persistent_default_float_initializer_converts_int
 title: Persistent default float initializer converts integer value
+boundary: pure_shared
 source:
   fcstm: persistent_default_float_initializer_converts_int.fcstm
 origin:

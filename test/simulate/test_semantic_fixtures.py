@@ -1150,6 +1150,7 @@ def test_shared_fixture_corpus_satisfies_pure_shared_boundary():
         validate_pure_shared_fixture_boundary(case.data, case.yaml_path)
 
     assert cases
+    assert all(case.data.get("boundary") == "pure_shared" for case in cases)
 
 
 @pytest.mark.unittest
@@ -1247,6 +1248,45 @@ def test_shared_fixture_corpus_satisfies_pure_shared_boundary():
         (
             lambda data: data["steps"][0].update({"expect_initial": {"return": None}}),
             "forbidden expectation fields",
+        ),
+        (
+            lambda data: (
+                data.update({"steps": []})
+                or data["initial"].update(
+                    {
+                        "state": "Root.A",
+                        "vars": {},
+                        "expect": {"return": None},
+                    }
+                )
+            ),
+            "forbidden initial.expect fields",
+        ),
+        (
+            lambda data: (
+                data.update({"steps": []})
+                or data["initial"].update(
+                    {
+                        "state": "Root.A",
+                        "vars": {},
+                        "expect": {"history": []},
+                    }
+                )
+            ),
+            "forbidden initial.expect fields",
+        ),
+        (
+            lambda data: (
+                data.update({"steps": []})
+                or data["initial"].update(
+                    {
+                        "state": "Root.A",
+                        "vars": {},
+                        "expect": {"cycle_result": {"value": None}},
+                    }
+                )
+            ),
+            "initial.expect has unknown fields",
         ),
         (
             lambda data: data["steps"][0].update({"expect": {}}),

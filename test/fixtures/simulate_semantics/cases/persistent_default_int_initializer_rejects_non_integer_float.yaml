@@ -1,6 +1,7 @@
 schema_version: 1
 id: persistent_default_int_initializer_rejects_non_integer_float
 title: Persistent default int initializer rejects non-integer float
+boundary: pure_shared
 source:
   fcstm: persistent_default_int_initializer_rejects_non_integer_float.fcstm
 origin:

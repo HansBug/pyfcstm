@@ -1,6 +1,7 @@
 schema_version: 1
 id: expression_logical_or_short_circuits_in_guard
 title: Logical or short circuits in transition guards
+boundary: pure_shared
 source:
   fcstm: expression_logical_or_short_circuits_in_guard.fcstm
 origin:

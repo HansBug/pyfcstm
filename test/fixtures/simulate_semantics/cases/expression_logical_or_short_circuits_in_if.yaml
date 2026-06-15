@@ -1,6 +1,7 @@
 schema_version: 1
 id: expression_logical_or_short_circuits_in_if
 title: Logical or short circuits in if block conditions
+boundary: pure_shared
 source:
   fcstm: expression_logical_or_short_circuits_in_if.fcstm
 origin:

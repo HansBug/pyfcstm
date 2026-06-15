@@ -1,6 +1,7 @@
 schema_version: 1
 id: similar_state_paths_keep_actions_distinct
 title: Similar state paths keep generated actions distinct
+boundary: pure_shared
 source:
   fcstm: similar_state_paths_keep_actions_distinct.fcstm
 origin:

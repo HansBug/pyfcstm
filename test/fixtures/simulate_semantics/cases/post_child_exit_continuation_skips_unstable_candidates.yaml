@@ -1,6 +1,7 @@
 schema_version: 1
 id: post_child_exit_continuation_skips_unstable_candidates
 title: Post child exit continuation skips unstable candidates
+boundary: pure_shared
 source:
   fcstm: post_child_exit_continuation_skips_unstable_candidates.fcstm
 origin:

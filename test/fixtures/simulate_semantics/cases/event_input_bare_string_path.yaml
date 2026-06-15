@@ -1,6 +1,7 @@
 schema_version: 1
 id: event_input_bare_string_path
 title: bare string event input is a single event path
+boundary: pure_shared
 source:
   fcstm: event_input_bare_string_path.fcstm
 origin:

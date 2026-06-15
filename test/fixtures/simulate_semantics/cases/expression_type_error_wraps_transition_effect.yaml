@@ -1,6 +1,7 @@
 schema_version: 1
 id: expression_type_error_wraps_transition_effect
 title: Type errors in transition effects are wrapped and rolled back
+boundary: pure_shared
 source:
   fcstm: expression_type_error_wraps_transition_effect.fcstm
 origin:

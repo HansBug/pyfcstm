@@ -1,6 +1,7 @@
 schema_version: 1
 id: composite_initial_guard_after_event_transition_uses_pre_before_vars
 title: Composite initial guard ignores plain during-before mutation after event transition
+boundary: pure_shared
 source:
   fcstm: composite_initial_guard_after_event_transition_uses_pre_before_vars.fcstm
 origin:

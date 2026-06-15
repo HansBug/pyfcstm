@@ -1,6 +1,7 @@
 schema_version: 1
 id: persistent_initial_vars_override_skips_initializer
 title: Persistent initial_vars override skips failing default initializer
+boundary: pure_shared
 source:
   fcstm: persistent_initial_vars_override_skips_initializer.fcstm
 origin:

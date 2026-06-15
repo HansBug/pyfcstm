@@ -1,6 +1,7 @@
 schema_version: 1
 id: cycle_result_history_event_transition
 title: Cycle result and history assertions for event transition
+boundary: pure_shared
 source:
   fcstm: cycle_result_history_event_transition.fcstm
 origin:

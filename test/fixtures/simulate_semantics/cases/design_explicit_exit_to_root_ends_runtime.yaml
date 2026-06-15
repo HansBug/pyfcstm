@@ -1,6 +1,7 @@
 schema_version: 1
 id: design_explicit_exit_to_root_ends_runtime
 title: 4 30 explicit exit to root ends runtime
+boundary: pure_shared
 source:
   fcstm: design_explicit_exit_to_root_ends_runtime.fcstm
 origin:

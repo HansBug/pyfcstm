@@ -14,6 +14,24 @@ fixture cases, so regenerate this report after any corpus or helper change.
 | Runner counts | generated_python_alignment=143, simulation=143 |
 | Runner combinations | simulation, generated_python_alignment=143 |
 
+## 阶段一总验收
+
+本小节给出共享语义 fixture 收束后的机器复核结论。它面向后续
+[issue #218](https://github.com/HansBug/pyfcstm/issues/218) 的全模板
+对齐工作：当前 corpus 只声明公共观察面，第二阶段可以在此基础上
+接入更多模板 runner，但不应重新消费旧白盒字段。
+
+| 验收项 | 当前结果 | 结论 |
+|---|---|---|
+| YAML 与 FCSTM 配对 | YAML cases=143；FCSTM files=143 | 通过：每个语义 fixture 都有配对 DSL 源。 |
+| 跨实现 runner 组合 | simulation, generated_python_alignment=143；simulation only=0 | 通过：当前共享 corpus 不再存在只跑模拟器的 case。 |
+| pure_shared 边界标记 | boundary: pure_shared=143/143 | 通过：加载阶段会统一执行公共观察面边界校验。 |
+| 迁出分类 | KEEP_SHARED_FIXTURE=143；其他分类合计=0 | 通过：模型构建、CLI/REPL、模拟器诊断和旧观察面迁出项均已清零。 |
+| 共享禁入字段 | 命中 case=0 | 通过：shared YAML 中没有 runtime_options、model_build、commands、stack、cycle_count、history*、return 或诊断字段。 |
+| generated Python alignment 私有读取 | helper token hits=0 | 通过：生成 Python 对齐路径没有依赖 stack、cycle_count、history 等私有观察面。 |
+| 兼容层和文档 token 命中 | helper/doc compatibility hits=9 | 通过：非零命中仅用于 schema/README 说明或模拟器 helper 的旧 schema 兼容，不作为 generated alignment 证据。 |
+| C/C poll 基线 | private token hits=0 | 通过：阶段一未接入 C/C poll runner；该结果仅作为第二阶段接入前的公共 API 基线。 |
+
 ## Classification Summary
 
 | Classification | Case files |
@@ -84,14 +102,18 @@ zero in the current corpus.
 
 ## Helper White-Box Reads
 
+Non-zero rows here are retained for schema documentation or simulator helper
+compatibility checks. Generated Python alignment evidence must stay at zero
+private-token hits, as summarized in the final acceptance table above.
+
 | Source | Token | Line count | Lines |
 |---|---|---|---|
-| test/fixtures/simulate_semantics/README.md | brief_stack | 1 | 48 |
-| test/fixtures/simulate_semantics/README.md | cycle_count | 1 | 48 |
-| test/fixtures/simulate_semantics/README.md | history | 4 | 49, 53, 70, 101 |
-| test/fixtures/simulate_semantics/schema.md | brief_stack | 2 | 323, 352 |
-| test/fixtures/simulate_semantics/schema.md | cycle_count | 3 | 324, 352, 564 |
-| test/fixtures/simulate_semantics/schema.md | history | 8 | 327, 328, 329, 353, 371, 372, 382, 525 |
+| test/fixtures/simulate_semantics/README.md | brief_stack | 1 | 51 |
+| test/fixtures/simulate_semantics/README.md | cycle_count | 1 | 51 |
+| test/fixtures/simulate_semantics/README.md | history | 4 | 52, 56, 73, 104 |
+| test/fixtures/simulate_semantics/schema.md | brief_stack | 2 | 333, 362 |
+| test/fixtures/simulate_semantics/schema.md | cycle_count | 4 | 133, 334, 362, 574 |
+| test/fixtures/simulate_semantics/schema.md | history | 10 | 19, 133, 337, 338, 339, 363, 381, 382, 392, 535 |
 | test/testings/simulate_semantics.py | brief_stack | 2 | 196, 367 |
 | test/testings/simulate_semantics.py | cycle_count | 8 | 104, 142, 197, 738, 739, 740, 741, 746 |
 | test/testings/simulate_semantics.py | history | 8 | 107, 199, 416, 429, 432, 435, 1915, 1917 |

@@ -3,10 +3,9 @@ Shared helpers for simulate semantic fixture tests.
 
 This module loads YAML/FCSTM semantic fixtures from
 ``test/fixtures/simulate_semantics`` and runs them against
-:class:`pyfcstm.simulate.SimulationRuntime`, the generated Python alignment
-runtime, or the simulate command processor. It owns the strict fixture schema,
-runtime assertion helpers, and callback fixtures used by Python-side simulation
-tests.
+:class:`pyfcstm.simulate.SimulationRuntime` or the generated Python alignment
+runtime. It owns the strict fixture schema, runtime assertion helpers, and
+callback fixtures used by Python-side simulation tests.
 
 The module contains:
 
@@ -18,7 +17,6 @@ The module contains:
   for new cross-runtime shared fixtures.
 * :func:`run_simulation_case` - Execute one case against
   :class:`pyfcstm.simulate.SimulationRuntime`.
-* :func:`run_cli_command_case` - Execute one CLI-command fixture.
 
 Example::
 
@@ -40,7 +38,6 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 import yaml
 
 from pyfcstm.dsl import parse_with_grammar_entry
-from pyfcstm.entry.simulate.commands import CommandProcessor
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.simulate import (
@@ -1148,44 +1145,6 @@ def build_state_machine_from_case(case: SemanticCase):
     return _parse_dsl(case.dsl_code)
 
 
-def run_model_build_case(case: SemanticCase) -> None:
-    """
-    Run a semantic fixture that expects model construction diagnostics.
-
-    Model-build cases assert failures that happen before a
-    :class:`pyfcstm.simulate.SimulationRuntime` can be constructed. The expected
-    exception is matched through the same ``raises`` schema used by executable
-    runtime steps.
-
-    :param case: Semantic fixture with a ``model_build`` expectation.
-    :type case: SemanticCase
-    :return: ``None``.
-    :rtype: None
-    :raises AssertionError: If model construction succeeds unexpectedly or the
-        diagnostic does not match the fixture expectation.
-    :raises SemanticCaseError: If the fixture expectation is malformed at
-        assertion time.
-
-    Example::
-
-        >>> case = load_semantic_case("validation_action_reference_cycle")
-        >>> run_model_build_case(case)
-    """
-    model_build = case.data["model_build"]
-    expect = model_build["expect"]
-    try:
-        build_state_machine_from_case(case)
-    except ModelValidationError as err:
-        # ModelValidationError: model-build fixtures intentionally assert
-        # documented construction diagnostics through the same exception
-        # matcher as runtime steps.
-        _assert_exception(err, expect, case, "model_build.expect.raises")
-    else:
-        raise AssertionError(
-            "%s model_build expected exception %r" % (case.id, expect["raises"])
-        )
-
-
 def _initial_constructor_expect(case: SemanticCase) -> Optional[Mapping[str, Any]]:
     initial = case.data.get("initial") or {}
     expect = initial.get("expect")
@@ -1719,9 +1678,6 @@ def run_simulation_case(case: SemanticCase, caplog: Any = None) -> None:
         >>> case = load_semantic_case("design_basic_simple_transition")
         >>> run_simulation_case(case)
     """
-    if "model_build" in case.data:
-        run_model_build_case(case)
-        return
     initial_expect = _initial_constructor_expect(case)
     if initial_expect is not None:
         _assert_constructor_failure(
@@ -1805,74 +1761,6 @@ def run_generated_python_alignment_case(case: SemanticCase, caplog: Any = None) 
             "%s steps[%d] handler call mismatch: simulation=%r, generated=%r"
             % (case.id, index, simulation_calls, generated_calls)
         )
-
-
-def run_cli_command_case(case: SemanticCase) -> None:
-    """
-    Run a semantic fixture against the simulate CLI command processor.
-
-    CLI-command cases exercise :class:`pyfcstm.entry.simulate.commands.CommandProcessor`
-    directly. Each command expectation may assert output text, exit behavior,
-    and the backing runtime state after the command has executed.
-
-    :param case: Semantic fixture that uses the ``cli_command`` runner.
-    :type case: SemanticCase
-    :return: ``None``.
-    :rtype: None
-    :raises AssertionError: If command output, exit flags, or runtime state do
-        not match the fixture expectation.
-
-    Example::
-
-        >>> case = load_semantic_case("cli_init_full_state")
-        >>> run_cli_command_case(case)
-    """
-    state_machine = build_state_machine_from_case(case)
-    runtime = SimulationRuntime(state_machine)
-    processor = CommandProcessor(runtime, state_machine=state_machine, use_color=False)
-    for index, command in enumerate(case.data.get("commands") or []):
-        result = processor.process(command["input"])
-        expect = command.get("expect") or {}
-        output = _strip_ansi(result.output)
-        for item in expect.get("output_contains", []) or []:
-            assert item in output, "%s commands[%d] output missing %r:\n%s" % (
-                case.id,
-                index,
-                item,
-                output,
-            )
-        for item in expect.get("output_not_contains", []) or []:
-            assert item not in output, (
-                "%s commands[%d] output unexpectedly contains %r:\n%s"
-                % (
-                    case.id,
-                    index,
-                    item,
-                    output,
-                )
-            )
-        for item in expect.get("error_contains", []) or []:
-            assert item in output, "%s commands[%d] error missing %r:\n%s" % (
-                case.id,
-                index,
-                item,
-                output,
-            )
-        if "should_exit" in expect:
-            assert result.should_exit is bool(expect["should_exit"]), (
-                "%s commands[%d] should_exit mismatch"
-                % (
-                    case.id,
-                    index,
-                )
-            )
-        if "runtime" in expect:
-            _assert_runtime_expectation(
-                processor.runtime,
-                expect["runtime"],
-                case,
-                "commands[%d].expect.runtime" % index,
-            )
 
 
 def _validate_vars_contract(

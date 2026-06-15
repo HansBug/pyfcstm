@@ -370,6 +370,7 @@ def _set_model_build_expectation(data, raises):
 def _pure_shared_case_data():
     """Return the minimal valid fixture shape for pure shared boundary tests."""
     data = _valid_case_data()
+    data["boundary"] = "pure_shared"
     data["runners"] = ["simulation", "generated_python_alignment"]
     data["steps"][0]["expect"].pop("return", None)
     data["steps"][0]["expect"]["cycle_result"] = {"value": None}
@@ -381,6 +382,7 @@ def _pure_shared_case_data():
     ["mutate", "message"],
     [
         (lambda data: data.update({"unexpected": True}), "unknown top-level fields"),
+        (lambda data: data.update({"boundary": "legacy"}), "unknown boundary"),
         (lambda data: data["source"].pop("fcstm"), "source.fcstm is required"),
         (
             lambda data: data.update({"commands": []}),
@@ -1032,6 +1034,16 @@ def test_pure_shared_fixture_boundary_accepts_public_observations(tmp_path):
 
 
 @pytest.mark.unittest
+def test_pure_shared_fixture_boundary_marker_enforces_loader_gate(tmp_path):
+    data = _pure_shared_case_data()
+    data["steps"][0]["expect"]["stack"] = [{"path": ["Root", "A"], "mode": "active"}]
+    yaml_path = _write_fixture(tmp_path, data)
+
+    with pytest.raises(SemanticCaseError, match="forbidden expectation fields"):
+        load_semantic_case(yaml_path)
+
+
+@pytest.mark.unittest
 def test_pure_shared_fixture_boundary_rejects_legacy_return_field(tmp_path):
     data = _pure_shared_case_data()
     data["steps"][0]["expect"]["return"] = None
@@ -1176,7 +1188,29 @@ def test_pure_shared_fixture_boundary_would_reject_existing_legacy_cases():
             "forbidden expectation fields",
         ),
         (
+            lambda data: data.update({"steps": []}),
+            "requires non-empty steps",
+        ),
+        (
             lambda data: data["steps"][0]["expect"].update({"handler_calls": []}),
+            "handler_calls requires top-level handlers",
+        ),
+        (
+            lambda data: data.update(
+                {
+                    "handlers": [],
+                    "steps": [
+                        {
+                            "cycle": {},
+                            "expect": {
+                                "state": ["Root", "A"],
+                                "handler_calls": [],
+                                "cycle_result": {"value": None},
+                            },
+                        }
+                    ],
+                }
+            ),
             "handler_calls requires top-level handlers",
         ),
         (

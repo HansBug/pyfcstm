@@ -26,6 +26,10 @@ but any newly added shared case should follow the pure shared boundary documente
 below. The pure shared boundary is the contract for new cross-runtime cases:
 simulation plus generated Python alignment, public observation surface only,
 and no simulator-only, CLI-only, or model-construction diagnostics.
+New cross-runtime shared cases should declare `boundary: pure_shared`; the
+fixture loader then runs the stricter boundary check automatically. Existing
+legacy cases without that marker stay on the migration-window schema until they
+are rewritten by the later cleanup slices.
 
 ## Top-level fields
 
@@ -34,6 +38,7 @@ and no simulator-only, CLI-only, or model-construction diagnostics.
 | `schema_version` | yes | Fixed integer value `1`. |
 | `id` | yes | Stable snake-case id. Must match the YAML basename. |
 | `title` | yes | Human-readable title. |
+| `boundary` | no | Optional fixture boundary marker. Use `pure_shared` for new simulator plus generated Python shared cases so the loader enforces the stricter public-observation contract. Existing legacy cases may omit it during the migration window. |
 | `source.fcstm` | yes | FCSTM file name in the same directory. |
 | `origin.files` | yes | Original pytest functions that this fixture migrates from. |
 | `origin.docs` | no | Optional design-document references. |
@@ -352,12 +357,12 @@ mapping with a `value` field; use `cycle_result: {value: null}` for the current
 `SimulationRuntime.cycle()` return value rather than a top-level
 `cycle_result: null`.
 
-For new pure shared cases, treat the public observation surface as the only
-stable contract: `state`, `vars`, `ended`, constructor and hot-start results,
-per-step cycle state/vars, `handler_calls`, and `cycle_result.value`. Do not add
-`stack`, `brief_stack`, `cycle_count`, `history*`, `return`, `warnings`,
-`abstract_handler_errors`, `error_state`, `error_info`, or
-`anonymous_warning_count` to new shared cases.
+For new pure shared cases, set `boundary: pure_shared` and treat the public
+observation surface as the only stable contract: `state`, `vars`, `ended`,
+constructor and hot-start results, per-step cycle state/vars, `handler_calls`,
+and `cycle_result.value`. Do not add `stack`, `brief_stack`, `cycle_count`,
+`history*`, `return`, `warnings`, `abstract_handler_errors`, `error_state`,
+`error_info`, or `anonymous_warning_count` to new shared cases.
 
 `cycle_result` allows these fields:
 
@@ -480,7 +485,10 @@ expect:
 registered by the top-level `handlers` field. For generated alignment cases,
 the helper also asserts that simulation and generated callback records match.
 Use `handler_calls: []` to prove a failed speculative execution did not invoke
-any handler.
+any handler, but still keep a non-empty top-level `handlers` list so the
+assertion has an explicit hook source. New `boundary: pure_shared` cases may use
+only `record_call` handlers; `raise_error` and `record_var_write_attempt`
+belong to legacy simulator-diagnostic coverage.
 
 When a handler call includes `write_attempt`, the record asserts the attempted
 variable name, attempted value, success flag, optional exception type, and the

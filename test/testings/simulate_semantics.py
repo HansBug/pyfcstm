@@ -62,6 +62,7 @@ _ALLOWED_TOP_LEVEL_FIELDS = {
     "schema_version",
     "id",
     "title",
+    "boundary",
     "source",
     "origin",
     "categories",
@@ -92,6 +93,8 @@ _ALLOWED_CATEGORIES = {
     "lifecycle",
 }
 _ALLOWED_RUNNERS = {"simulation", "generated_python_alignment", "cli_command"}
+_PURE_SHARED_BOUNDARY = "pure_shared"
+_ALLOWED_BOUNDARIES = {_PURE_SHARED_BOUNDARY}
 _ALLOWED_STACK_MODES = {"active", "init_wait"}
 _ALLOWED_EXPECT_FIELDS = {
     "state",
@@ -2964,7 +2967,15 @@ def validate_pure_shared_fixture_boundary(
         ...     {
         ...         "id": "shared_case",
         ...         "runners": ["simulation", "generated_python_alignment"],
-        ...         "steps": [],
+        ...         "steps": [
+        ...             {
+        ...                 "cycle": {},
+        ...                 "expect": {
+        ...                     "state": ["Root", "A"],
+        ...                     "cycle_result": {"value": None},
+        ...                 },
+        ...             }
+        ...         ],
         ...     },
         ...     "/tmp/shared_case.yaml",
         ... )
@@ -3038,8 +3049,8 @@ def validate_pure_shared_fixture_boundary(
                 raise _case_error(
                     case_id,
                     yaml_path,
-                    "pure shared fixture only allows handlers with behavior %r"
-                    % sorted(_PURE_SHARED_HANDLER_BEHAVIORS),
+                    "pure shared fixture only allows handlers[%d] with behavior %r"
+                    % (handler_index, sorted(_PURE_SHARED_HANDLER_BEHAVIORS)),
                 )
             if "exception" in handler:
                 raise _case_error(
@@ -3058,6 +3069,10 @@ def validate_pure_shared_fixture_boundary(
     steps = data.get("steps")
     if not isinstance(steps, list):
         raise _case_error(case_id, yaml_path, "pure shared fixture requires steps")
+    if not steps:
+        raise _case_error(
+            case_id, yaml_path, "pure shared fixture requires non-empty steps"
+        )
     for step_index, step in enumerate(steps):
         if not isinstance(step, dict):
             raise _case_error(
@@ -3075,7 +3090,7 @@ def validate_pure_shared_fixture_boundary(
                     "pure shared fixture has forbidden expectation fields: %r"
                     % sorted(forbidden_expect),
                 )
-            if "handler_calls" in expect and "handlers" not in data:
+            if "handler_calls" in expect and not data.get("handlers"):
                 raise _case_error(
                     case_id,
                     yaml_path,
@@ -3092,6 +3107,15 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
         )
     if data.get("schema_version") != 1:
         raise _case_error(case_id, yaml_path, "schema_version must be 1")
+    boundary = data.get("boundary")
+    if "boundary" in data and (
+        not isinstance(boundary, str) or boundary not in _ALLOWED_BOUNDARIES
+    ):
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "unknown boundary: %r" % boundary,
+        )
     if not data.get("id"):
         raise _case_error(case_id, yaml_path, "id is required")
     if not data.get("title") or not isinstance(data.get("title"), str):
@@ -3318,6 +3342,8 @@ def load_semantic_case(path_or_id: str) -> SemanticCase:
     if not isinstance(data, dict):
         raise SemanticCaseError("%s: fixture YAML must be a mapping" % yaml_path)
     _validate_case_data(data, yaml_path)
+    if data.get("boundary") == _PURE_SHARED_BOUNDARY:
+        validate_pure_shared_fixture_boundary(data, yaml_path)
     fcstm_path = os.path.join(os.path.dirname(yaml_path), data["source"]["fcstm"])
     if not os.path.isfile(fcstm_path):
         raise _case_error(

@@ -14,7 +14,10 @@ This directory is currently in a migration window. Existing legacy fixtures may
 still carry simulator-debugging or CLI-shape expectations while the corpus is
 being cleaned up, but new shared cases should follow the pure shared boundary:
 simulation plus generated Python alignment, public observation surface only,
-and no simulator-only, CLI-only, or model-construction diagnostics.
+and no simulator-only, CLI-only, or model-construction diagnostics. Mark new
+shared cases with `boundary: pure_shared` so the loader applies that stricter
+boundary automatically; legacy cases may omit the marker until they are
+rewritten.
 
 ## How to run
 
@@ -39,15 +42,17 @@ SKIP_SLOW_TESTS=1 make unittest
 6. For new shared cases, keep only the public observation surface: `state`,
    `vars`, `ended`, constructor or hot-start outcomes, per-step cycle state and
    vars, `handler_calls`, and `cycle_result.value`.
-7. For new shared cases, do not add `runtime_options`, `model_build`,
+7. For new shared cases, set `boundary: pure_shared`; this is the machine gate
+   that rejects legacy or simulator-only observation fields during load.
+8. For new shared cases, do not add `runtime_options`, `model_build`,
    `commands`, `cli_command`, `stack`, `brief_stack`, `cycle_count`,
    `history*`, `return`, `warnings`, `abstract_handler_errors`, `error_state`,
    `error_info`, or `anonymous_warning_count`.
-8. Express every original assertion in YAML for migrated legacy cases. Do not
+9. Express every original assertion in YAML for migrated legacy cases. Do not
    weaken a migrated test to only state/vars if the original asserted logs,
    stack, exception class, exception message, temporary-variable absence,
    return value, or CLI output.
-9. Run the fixture tests and the original tests that the case came from.
+10. Run the fixture tests and the original tests that the case came from.
 
 ## Anti-drift migration checklist
 
@@ -68,8 +73,10 @@ Use this checklist before deleting or replacing any inline original test:
   rollback state/vars assertions when the original checked them.
 - CLI tests keep output assertions under `output_contains` /
   `output_not_contains` / `error_contains`.
-- Abstract-handler callbacks use `handlers` plus `handler_calls`; log-mode
-  handler error metadata uses `abstract_handler_errors`.
+- Abstract-handler callbacks use `handlers` plus `handler_calls`; new
+  `boundary: pure_shared` cases keep only `record_call` handlers, while
+  log-mode handler error metadata uses `abstract_handler_errors` in legacy
+  simulator-diagnostic coverage.
 - Python API shape tests that YAML cannot represent, such as tuple or State
   object hot-start inputs, stay as dedicated Python tests.
 

@@ -1177,6 +1177,19 @@ def test_pure_shared_fixture_can_exclude_generated_alignment(tmp_path):
 
 
 @pytest.mark.unittest
+def test_legacy_fixture_schema_rejects_exclude_runner_selection(tmp_path):
+    data = _valid_case_data()
+    data["exclude_runners"] = ["generated_python_alignment"]
+    yaml_path = _write_fixture(tmp_path, data)
+
+    with pytest.raises(
+        SemanticCaseError,
+        match="exclude_runners is only supported for pure shared fixtures",
+    ):
+        load_semantic_case(yaml_path)
+
+
+@pytest.mark.unittest
 @pytest.mark.parametrize(
     ["mutate", "message"],
     [
@@ -1187,6 +1200,24 @@ def test_pure_shared_fixture_can_exclude_generated_alignment(tmp_path):
         (
             lambda data: data.update({"exclude_runners": ["unknown"]}),
             "exclude_runners has unknown runners",
+        ),
+        (
+            lambda data: data.update({"exclude_runners": "simulation"}),
+            "exclude_runners must be a non-empty list",
+        ),
+        (
+            lambda data: data.update({"exclude_runners": []}),
+            "exclude_runners must be a non-empty list",
+        ),
+        (
+            lambda data: data.update({"exclude_runners": ["simulation", 1]}),
+            "exclude_runners must be a list of strings",
+        ),
+        (
+            lambda data: data.update(
+                {"exclude_runners": ["generated_python_alignment"] * 2}
+            ),
+            "exclude_runners has duplicate runners",
         ),
         (
             lambda data: data.update({"exclude_runners": ["simulation"]}),

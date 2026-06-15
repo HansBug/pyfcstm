@@ -197,6 +197,8 @@ def _load_cases(root: Path) -> List[SemanticCaseRecord]:
 
 
 def _effective_runners(data: Mapping[str, Any]) -> Tuple[str, ...]:
+    # This mirrors the loader's pure-shared exclude-only projection for report
+    # purposes; the actual schema gate still lives in the fixture loader.
     if data.get("boundary") == PURE_SHARED_BOUNDARY:
         excluded = data.get("exclude_runners", ())
         if not isinstance(excluded, Sequence) or isinstance(excluded, str):

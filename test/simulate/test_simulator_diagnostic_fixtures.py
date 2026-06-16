@@ -6,7 +6,6 @@ diagnostics that are useful for :class:`pyfcstm.simulate.SimulationRuntime` but
 are not part of the cross-template shared fixture contract.
 """
 
-import os
 import re
 import warnings
 
@@ -18,9 +17,67 @@ from pyfcstm.simulate import SimulationRuntime
 from test.testings.simulate_semantics import load_semantic_case
 
 
-DIAGNOSTIC_FIXTURE_DIR = os.path.join(
-    os.path.dirname(__file__), "fixtures", "simulator_diagnostics"
-)
+DIAGNOSTIC_SOURCES = {
+    "abstract_handler_raise_mode_blocks_later_cycles": """
+def int x = 0;
+
+state Root {
+    state A {
+        during abstract Boom;
+        during {
+            x = x + 1;
+        }
+    }
+
+    [*] -> A;
+}
+""",
+    "abstract_handler_warning_rollback_on_raise": """
+state Root {
+    state Active {
+        enter abstract /* anonymous action */;
+        enter abstract Fail;
+    }
+
+    [*] -> Active;
+}
+""",
+    "failed_cycle_rolls_back_logged_abstract_handler_errors": """
+def int x = 0;
+state Root {
+    pseudo state A {
+        during abstract Boom;
+    }
+
+    [*] -> A;
+}
+""",
+    "rejected_transition_candidate_defers_anonymous_warning": """
+def int x = 0;
+state Root {
+    state A;
+
+    state Bad {
+        enter abstract /* anonymous action */;
+
+        state Done;
+
+        [*] -> Done : if [x < 0];
+    }
+
+    state Good {
+        during {
+            x = -1;
+        }
+    }
+
+    [*] -> A;
+    A -> Bad :: Go;
+    A -> Good :: Go;
+    Good -> Bad :: TryBad;
+}
+""",
+}
 
 DESIGN_LOG_ASSERTIONS = {
     "design_composite_stuck_in_init_wait": {
@@ -95,10 +152,8 @@ DESIGN_LOG_ASSERTIONS = {
 }
 
 
-def _runtime_from_diagnostic_source(case_id, **runtime_kwargs):
-    source_path = os.path.join(DIAGNOSTIC_FIXTURE_DIR, case_id + ".fcstm")
-    with open(source_path, "r", encoding="utf-8") as file:
-        dsl_code = file.read()
+def _runtime_from_diagnostic_case(case_id, **runtime_kwargs):
+    dsl_code = DIAGNOSTIC_SOURCES[case_id]
     return _runtime_from_dsl_code(dsl_code, **runtime_kwargs)
 
 
@@ -196,7 +251,7 @@ def test_abstract_handler_raise_mode_blocks_later_cycles():
     Preserve raise-mode abstract handler diagnostics after fixture migration.
     """
     calls = []
-    runtime = _runtime_from_diagnostic_source(
+    runtime = _runtime_from_diagnostic_case(
         "abstract_handler_raise_mode_blocks_later_cycles",
         abstract_error_mode="raise",
     )
@@ -242,7 +297,7 @@ def test_abstract_handler_warning_rollback_on_raise():
     Preserve warning and rollback diagnostics for failing abstract handlers.
     """
     calls = []
-    runtime = _runtime_from_diagnostic_source(
+    runtime = _runtime_from_diagnostic_case(
         "abstract_handler_warning_rollback_on_raise",
         abstract_error_mode="raise",
     )
@@ -274,7 +329,7 @@ def test_failed_cycle_rolls_back_logged_abstract_handler_errors():
     Preserve log-mode abstract handler rollback diagnostics.
     """
     calls = []
-    runtime = _runtime_from_diagnostic_source(
+    runtime = _runtime_from_diagnostic_case(
         "failed_cycle_rolls_back_logged_abstract_handler_errors",
         abstract_error_mode="log",
     )
@@ -296,7 +351,7 @@ def test_rejected_transition_candidate_defers_anonymous_warning():
     """
     Preserve delayed anonymous warning behavior for rejected transition candidates.
     """
-    runtime = _runtime_from_diagnostic_source(
+    runtime = _runtime_from_diagnostic_case(
         "rejected_transition_candidate_defers_anonymous_warning"
     )
 

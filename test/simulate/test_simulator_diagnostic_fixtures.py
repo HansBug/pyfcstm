@@ -17,8 +17,7 @@ from pyfcstm.simulate import SimulationRuntime
 from test.testings.simulate_semantics import load_semantic_case
 
 
-DIAGNOSTIC_SOURCES = {
-    "abstract_handler_raise_mode_blocks_later_cycles": """
+ABSTRACT_HANDLER_RAISE_MODE_BLOCKS_LATER_CYCLES_DSL = """
 def int x = 0;
 
 state Root {
@@ -31,8 +30,9 @@ state Root {
 
     [*] -> A;
 }
-""",
-    "abstract_handler_warning_rollback_on_raise": """
+"""
+
+ABSTRACT_HANDLER_WARNING_ROLLBACK_ON_RAISE_DSL = """
 state Root {
     state Active {
         enter abstract /* anonymous action */;
@@ -41,8 +41,9 @@ state Root {
 
     [*] -> Active;
 }
-""",
-    "failed_cycle_rolls_back_logged_abstract_handler_errors": """
+"""
+
+FAILED_CYCLE_ROLLS_BACK_LOGGED_ABSTRACT_HANDLER_ERRORS_DSL = """
 def int x = 0;
 state Root {
     pseudo state A {
@@ -51,8 +52,9 @@ state Root {
 
     [*] -> A;
 }
-""",
-    "rejected_transition_candidate_defers_anonymous_warning": """
+"""
+
+REJECTED_TRANSITION_CANDIDATE_DEFERS_ANONYMOUS_WARNING_DSL = """
 def int x = 0;
 state Root {
     state A;
@@ -76,8 +78,7 @@ state Root {
     A -> Good :: Go;
     Good -> Bad :: TryBad;
 }
-""",
-}
+"""
 
 DESIGN_LOG_ASSERTIONS = {
     "design_composite_stuck_in_init_wait": {
@@ -150,11 +151,6 @@ DESIGN_LOG_ASSERTIONS = {
         },
     },
 }
-
-
-def _runtime_from_diagnostic_case(case_id, **runtime_kwargs):
-    dsl_code = DIAGNOSTIC_SOURCES[case_id]
-    return _runtime_from_dsl_code(dsl_code, **runtime_kwargs)
 
 
 def _runtime_from_dsl_code(dsl_code, **runtime_kwargs):
@@ -251,8 +247,8 @@ def test_abstract_handler_raise_mode_blocks_later_cycles():
     Preserve raise-mode abstract handler diagnostics after fixture migration.
     """
     calls = []
-    runtime = _runtime_from_diagnostic_case(
-        "abstract_handler_raise_mode_blocks_later_cycles",
+    runtime = _runtime_from_dsl_code(
+        ABSTRACT_HANDLER_RAISE_MODE_BLOCKS_LATER_CYCLES_DSL,
         abstract_error_mode="raise",
     )
     runtime.register_abstract_handler("Root.A.Boom", _recording_raise_boom(calls))
@@ -297,8 +293,8 @@ def test_abstract_handler_warning_rollback_on_raise():
     Preserve warning and rollback diagnostics for failing abstract handlers.
     """
     calls = []
-    runtime = _runtime_from_diagnostic_case(
-        "abstract_handler_warning_rollback_on_raise",
+    runtime = _runtime_from_dsl_code(
+        ABSTRACT_HANDLER_WARNING_ROLLBACK_ON_RAISE_DSL,
         abstract_error_mode="raise",
     )
     runtime.register_abstract_handler("Root.Active.Fail", _recording_raise_boom(calls))
@@ -329,8 +325,8 @@ def test_failed_cycle_rolls_back_logged_abstract_handler_errors():
     Preserve log-mode abstract handler rollback diagnostics.
     """
     calls = []
-    runtime = _runtime_from_diagnostic_case(
-        "failed_cycle_rolls_back_logged_abstract_handler_errors",
+    runtime = _runtime_from_dsl_code(
+        FAILED_CYCLE_ROLLS_BACK_LOGGED_ABSTRACT_HANDLER_ERRORS_DSL,
         abstract_error_mode="log",
     )
     runtime.register_abstract_handler("Root.A.Boom", _recording_raise_boom(calls))
@@ -351,8 +347,8 @@ def test_rejected_transition_candidate_defers_anonymous_warning():
     """
     Preserve delayed anonymous warning behavior for rejected transition candidates.
     """
-    runtime = _runtime_from_diagnostic_case(
-        "rejected_transition_candidate_defers_anonymous_warning"
+    runtime = _runtime_from_dsl_code(
+        REJECTED_TRANSITION_CANDIDATE_DEFERS_ANONYMOUS_WARNING_DSL
     )
 
     result = runtime.cycle()

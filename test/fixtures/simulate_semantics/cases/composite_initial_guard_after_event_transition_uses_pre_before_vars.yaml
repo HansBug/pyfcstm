@@ -9,19 +9,16 @@ origin:
   docs:
   - https://github.com/HansBug/pyfcstm/issues/197#issuecomment-4689584606
   assertion_types:
-  - cycle_result
   - events
   - state
   - vars
   notes:
-  - Covers event-driven entry into the affected composite and declaration-order fallback behavior.
+  - Covers event-driven entry into the affected composite and declaration-order fallback
+    behavior.
 categories:
 - runtime
 - event_paths
 - lifecycle
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -35,8 +32,6 @@ steps:
       flag: 0
       trace: 1
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.A.Go
@@ -49,10 +44,3 @@ steps:
       flag: 1
       trace: 12
     ended: false
-    cycle_result:
-      value: null
-      input_events:
-      - Root.A.Go
-      consumed_events:
-      - Root.A.Go
-      unconsumed_events: []

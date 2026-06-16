@@ -9,16 +9,12 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_100_elevator_door_control
   assertion_types:
   - ended
-  - return
   - state
   - vars
 categories:
 - runtime
 - scenario_example
 - template_alignment
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -33,7 +29,6 @@ steps:
       hold: 0
       reopen_count: 0
     ended: false
-    return: null
 - cycle:
     events:
     - Root.Closed.HallCall
@@ -46,7 +41,6 @@ steps:
       hold: 0
       reopen_count: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -57,7 +51,6 @@ steps:
       hold: 0
       reopen_count: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -68,7 +61,6 @@ steps:
       hold: 1
       reopen_count: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -79,7 +71,6 @@ steps:
       hold: 2
       reopen_count: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -90,7 +81,6 @@ steps:
       hold: 2
       reopen_count: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -101,7 +91,6 @@ steps:
       hold: 2
       reopen_count: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -112,4 +101,3 @@ steps:
       hold: 0
       reopen_count: 0
     ended: false
-    return: null

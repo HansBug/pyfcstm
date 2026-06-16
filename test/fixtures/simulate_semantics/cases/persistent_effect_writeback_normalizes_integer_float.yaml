@@ -11,14 +11,12 @@ origin:
   - vars
   - exception
   notes:
-  - Covers transition-effect writeback through the same persistent boundary as lifecycle actions.
+  - Covers transition-effect writeback through the same persistent boundary as lifecycle
+    actions.
 categories:
 - runtime
 - template_alignment
 - temporary_vars
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -32,8 +30,6 @@ steps:
       bits: 0
       marker: 0
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.A.Go
@@ -45,5 +41,3 @@ steps:
       bits: 3
       marker: 1
     ended: false
-    cycle_result:
-      value: null

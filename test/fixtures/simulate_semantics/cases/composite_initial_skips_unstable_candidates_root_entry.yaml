@@ -8,8 +8,6 @@ origin:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614352350
   assertion_types:
   - ended
-  - return
-  - stack
   - state
   - vars
 categories:
@@ -17,9 +15,6 @@ categories:
 - template_alignment
 - lifecycle
 - validation
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -33,12 +28,3 @@ steps:
       x: 1
       marker: 1
     ended: false
-    return: null
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - Good
-      mode: active

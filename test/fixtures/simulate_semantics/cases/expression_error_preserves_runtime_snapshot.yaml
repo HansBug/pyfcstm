@@ -8,14 +8,12 @@ origin:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   assertion_types:
   - raises
-  - stack
   - vars
   notes:
-  - Minimal fixture proving exception assertions can be combined with rollback snapshot assertions.
+  - Minimal fixture proving exception assertions can be combined with rollback snapshot
+    assertions.
 categories:
 - runtime
-runners:
-- simulation
 initial:
   state: null
   vars: null
@@ -31,8 +29,3 @@ steps:
       cause_match_kind: substring
     vars_exact:
       x: 0
-    stack:
-    - path:
-      - Root
-      mode: init_wait
-    history_length: 0

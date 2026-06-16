@@ -12,15 +12,10 @@ origin:
   - exception
   - state
   - vars
-  - stack
-  - history
 categories:
 - runtime
 - pseudo_chain
 - validation
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -33,18 +28,7 @@ steps:
     vars:
       x: 1
       spin: 0
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - A
-      mode: active
     ended: false
-    cycle_result:
-      value: null
-    history_length: 1
 - cycle:
     events:
     - Root.A.Go
@@ -59,13 +43,4 @@ steps:
     vars:
       x: 1
       spin: 0
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - A
-      mode: active
     ended: false
-    history_length: 1

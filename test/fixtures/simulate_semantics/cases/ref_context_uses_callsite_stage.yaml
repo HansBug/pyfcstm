@@ -10,7 +10,6 @@ origin:
   - https://github.com/HansBug/pyfcstm/issues/156#issuecomment-4631761534
   assertion_types:
   - handler_calls
-  - stack
   - state
   - vars_exact
   notes:
@@ -19,8 +18,6 @@ categories:
 - runtime
 - abstract
 - lifecycle
-runners:
-- simulation
 initial:
   state: null
   vars: null
@@ -39,8 +36,6 @@ steps:
     - A
     vars_exact: {}
     ended: false
-    cycle_result:
-      value: null
     handler_calls:
     - action: Root.Library.SharedExit
       state: Root.A
@@ -81,16 +76,6 @@ steps:
     - B
     vars_exact: {}
     ended: false
-    cycle_result:
-      value: null
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - B
-      mode: active
     handler_calls:
     - action: Root.Library.SharedExit
       state: Root.A

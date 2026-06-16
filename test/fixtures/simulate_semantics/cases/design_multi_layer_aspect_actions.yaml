@@ -9,16 +9,12 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_22_multi_layer_aspect_actions
   assertion_types:
   - ended
-  - return
   - state
   - vars
 categories:
 - design_example
 - runtime
 - template_alignment
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -33,4 +29,3 @@ steps:
     vars:
       counter: 111112
     ended: false
-    return: null

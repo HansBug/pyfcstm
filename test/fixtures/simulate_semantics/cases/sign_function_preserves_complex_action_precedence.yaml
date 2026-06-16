@@ -10,7 +10,6 @@ origin:
   assertion_types:
   - state
   - vars
-  - return
   notes:
   - Covers complex sign expressions in enter, during, exit, guard, and effect blocks.
   - This case also guards generated Python formatter convergence for long sign expressions.
@@ -18,9 +17,6 @@ categories:
 - runtime
 - template_alignment
 - lifecycle
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -36,8 +32,6 @@ steps:
       score: 98
       marker: 7
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -49,8 +43,6 @@ steps:
       score: 200
       marker: 7
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -62,5 +54,3 @@ steps:
       score: 210
       marker: 11019
     ended: false
-    cycle_result:
-      value: null

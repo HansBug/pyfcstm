@@ -7,10 +7,7 @@ origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614005134
   assertion_types:
-  - cycle_count
   - ended
-  - return
-  - stack
   - state
   - vars
   notes:
@@ -20,9 +17,6 @@ categories:
 - template_alignment
 - validation
 - lifecycle
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -35,12 +29,6 @@ steps:
     vars:
       x: 0
     ended: false
-    stack:
-    - path:
-      - Root
-      mode: init_wait
-    cycle_count: 0
-    return: null
 - cycle:
     events:
     - Root.Start
@@ -51,13 +39,3 @@ steps:
     vars:
       x: 11
     ended: false
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - A
-      mode: active
-    cycle_count: 1
-    return: null

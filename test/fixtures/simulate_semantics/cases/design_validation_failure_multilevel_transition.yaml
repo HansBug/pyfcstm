@@ -9,7 +9,6 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_12_validation_failure_multilevel_transition
   assertion_types:
   - ended
-  - return
   - state
   - vars
 categories:
@@ -17,9 +16,6 @@ categories:
 - runtime
 - template_alignment
 - validation
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -33,7 +29,6 @@ steps:
       counter: 1
       flag: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -43,7 +38,6 @@ steps:
       counter: 2
       flag: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -53,7 +47,6 @@ steps:
       counter: 3
       flag: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -63,4 +56,3 @@ steps:
       counter: 4
       flag: 0
     ended: false
-    return: null

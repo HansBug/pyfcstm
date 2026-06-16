@@ -9,16 +9,12 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_101_storage_water_heater_control
   assertion_types:
   - ended
-  - return
   - state
   - vars
 categories:
 - runtime
 - scenario_example
 - template_alignment
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -32,7 +28,6 @@ steps:
       water_temp: 54
       draw_count: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -42,7 +37,6 @@ steps:
       water_temp: 53
       draw_count: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -52,7 +46,6 @@ steps:
       water_temp: 52
       draw_count: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -62,7 +55,6 @@ steps:
       water_temp: 51
       draw_count: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -72,7 +64,6 @@ steps:
       water_temp: 50
       draw_count: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -82,7 +73,6 @@ steps:
       water_temp: 54
       draw_count: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -92,4 +82,3 @@ steps:
       water_temp: 58
       draw_count: 0
     ended: false
-    return: null

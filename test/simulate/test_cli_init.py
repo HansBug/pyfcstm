@@ -22,6 +22,138 @@ def build_state_machine(dsl_code: str):
 class TestCLIInitCommand:
     """Test CLI init command functionality."""
 
+    def test_init_command_basic(self):
+        """Test init command initializes a leaf state."""
+        dsl_code = '''
+def int counter = 0;
+def int flag = 0;
+state System {
+    state Idle {
+        during { counter = counter + 1; }
+    }
+    state Active {
+        during { counter = counter + 10; }
+    }
+    [*] -> Idle;
+}
+'''
+        sm = build_state_machine(dsl_code)
+        runtime = SimulationRuntime(sm)
+        processor = CommandProcessor(runtime, state_machine=sm, use_color=False)
+
+        result = processor.process('init System.Active counter=5 flag=1')
+
+        assert not result.should_exit
+        assert 'Initialized from state: System.Active' in result.output
+        assert 'System.Active' in result.output
+        assert 'Error' not in result.output
+        assert processor.runtime.current_state.path == ('System', 'Active')
+        assert processor.runtime.vars['counter'] == 5
+        assert processor.runtime.vars['flag'] == 1
+        assert not processor.runtime.is_ended
+
+    def test_init_command_composite_state(self):
+        """Test init command can stop at a composite state before cycling."""
+        dsl_code = '''
+def int counter = 0;
+state Root {
+    state System {
+        state Idle {
+            during { counter = counter + 1; }
+        }
+        [*] -> Idle;
+    }
+    [*] -> System;
+}
+'''
+        sm = build_state_machine(dsl_code)
+        runtime = SimulationRuntime(sm)
+        processor = CommandProcessor(runtime, state_machine=sm, use_color=False)
+
+        result = processor.process('init Root.System counter=0')
+
+        assert not result.should_exit
+        assert 'Initialized from state: Root.System' in result.output
+        assert processor.runtime.current_state.path == ('Root', 'System')
+        assert processor.runtime.vars['counter'] == 0
+        assert not processor.runtime.is_ended
+        assert processor.runtime.cycle_count == 0
+        assert processor.runtime.brief_stack == [
+            (('Root',), 'active'),
+            (('Root', 'System'), 'init_wait'),
+        ]
+
+        result = processor.process('cycle')
+
+        assert not result.should_exit
+        assert processor.runtime.current_state.path == ('Root', 'System', 'Idle')
+        assert processor.runtime.vars['counter'] == 1
+        assert not processor.runtime.is_ended
+        assert processor.runtime.cycle_count == 1
+
+    def test_init_command_then_cycle(self):
+        """Test init command followed by cycle execution."""
+        dsl_code = '''
+def int counter = 0;
+state System {
+    state Active {
+        during { counter = counter + 10; }
+    }
+    [*] -> Active;
+}
+'''
+        sm = build_state_machine(dsl_code)
+        runtime = SimulationRuntime(sm)
+        processor = CommandProcessor(runtime, state_machine=sm, use_color=False)
+
+        result = processor.process('init System.Active counter=5')
+
+        assert not result.should_exit
+        assert 'Initialized from state: System.Active' in result.output
+        assert processor.runtime.current_state.path == ('System', 'Active')
+        assert processor.runtime.vars['counter'] == 5
+        assert not processor.runtime.is_ended
+        assert processor.runtime.cycle_count == 0
+
+        result = processor.process('cycle')
+
+        assert not result.should_exit
+        assert processor.runtime.current_state.path == ('System', 'Active')
+        assert processor.runtime.vars['counter'] == 15
+        assert not processor.runtime.is_ended
+        assert processor.runtime.cycle_count == 1
+
+        result = processor.process('cycle')
+
+        assert not result.should_exit
+        assert processor.runtime.current_state.path == ('System', 'Active')
+        assert processor.runtime.vars['counter'] == 25
+        assert not processor.runtime.is_ended
+        assert processor.runtime.cycle_count == 2
+
+    def test_init_command_zero_variable_state(self):
+        """Test zero-variable states can be initialized through CLI init."""
+        dsl_code = '''
+state Root {
+    state A;
+    [*] -> A;
+}
+'''
+        sm = build_state_machine(dsl_code)
+        runtime = SimulationRuntime(sm)
+        processor = CommandProcessor(runtime, state_machine=sm, use_color=False)
+
+        result = processor.process('init Root.A')
+
+        assert not result.should_exit
+        assert 'Initialized from state: Root.A' in result.output
+        assert 'Root.A' in result.output
+        assert 'Initialization failed' not in result.output
+        assert 'Error' not in result.output
+        assert processor.runtime.current_state.path == ('Root', 'A')
+        assert processor.runtime.vars == {}
+        assert not processor.runtime.is_ended
+
     def test_init_command_with_hex_value(self):
         """Test init command with hexadecimal values."""
         dsl_code = '''

@@ -8,8 +8,6 @@ origin:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614271348
   assertion_types:
   - ended
-  - return
-  - stack
   - state
   - vars
 categories:
@@ -17,9 +15,6 @@ categories:
 - template_alignment
 - lifecycle
 - validation
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -33,20 +28,6 @@ steps:
     vars:
       trace: 1
     ended: false
-    return: null
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - System
-      mode: active
-    - path:
-      - Root
-      - System
-      - A
-      mode: active
 - cycle:
     events:
     - Root.System.A.Exit
@@ -59,17 +40,3 @@ steps:
     vars:
       trace: 12365
     ended: false
-    return: null
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - Good
-      mode: active
-    - path:
-      - Root
-      - Good
-      - B
-      mode: active

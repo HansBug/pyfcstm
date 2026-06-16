@@ -10,15 +10,11 @@ origin:
   - initial
   - state
   - vars
-  - stack
-  - return
   - ended
 categories:
 - runtime
 - hot_start
 - lifecycle
-runners:
-- simulation
 initial:
   state: System.Active
   vars:
@@ -31,14 +27,6 @@ steps:
     vars:
       counter: 0
     ended: false
-    stack:
-    - path:
-      - System
-      mode: active
-    - path:
-      - System
-      - Active
-      mode: active
 - cycle: {}
   expect:
     state:
@@ -47,7 +35,6 @@ steps:
     vars:
       counter: 10
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -56,7 +43,6 @@ steps:
     vars:
       counter: 20
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -65,4 +51,3 @@ steps:
     vars:
       counter: 30
     ended: false
-    return: null

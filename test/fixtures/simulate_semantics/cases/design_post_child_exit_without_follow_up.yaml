@@ -9,18 +9,12 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_28_post_child_exit_without_follow_up_transition
   assertion_types:
   - ended
-  - logs
-  - return
-  - stack
   - state
   - vars
 categories:
 - design_example
 - runtime
 - template_alignment
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -33,16 +27,6 @@ steps:
       phase: 0
       trace: 0
     ended: false
-    return: null
-    stack:
-    - path:
-      - Root
-      mode: init_wait
-    logs:
-      contains:
-      - level: WARNING
-        message: Unable to reach a stoppable state
-        match_kind: substring
 - cycle: {}
   expect:
     state:
@@ -51,16 +35,6 @@ steps:
       phase: 0
       trace: 0
     ended: false
-    return: null
-    stack:
-    - path:
-      - Root
-      mode: init_wait
-    logs:
-      contains:
-      - level: WARNING
-        message: Unable to reach a stoppable state
-        match_kind: substring
 - cycle: {}
   expect:
     state:
@@ -69,13 +43,3 @@ steps:
       phase: 0
       trace: 0
     ended: false
-    return: null
-    stack:
-    - path:
-      - Root
-      mode: init_wait
-    logs:
-      contains:
-      - level: WARNING
-        message: Unable to reach a stoppable state
-        match_kind: substring

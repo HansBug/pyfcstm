@@ -10,15 +10,11 @@ origin:
   docs:
   - https://github.com/HansBug/pyfcstm/issues/156#issuecomment-4633784802
   assertion_types:
-  - cycle_result
-  - history
   - state
   - vars
 categories:
 - runtime
 - validation
-runners:
-- simulation
 initial:
   state: null
   vars: null
@@ -31,7 +27,3 @@ steps:
     vars_keys:
     - x
     ended: false
-    cycle_count: 1
-    cycle_result:
-      value: null
-    history_length: 1

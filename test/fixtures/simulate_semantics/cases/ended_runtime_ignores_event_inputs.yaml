@@ -10,8 +10,6 @@ origin:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614008879
   assertion_types:
   - ended
-  - return
-  - stack
   - state
   - vars
   notes:
@@ -20,9 +18,6 @@ categories:
 - event_paths
 - runtime
 - template_alignment
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -35,15 +30,6 @@ steps:
     vars:
       x: 0
     ended: false
-    return: null
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - A
-      mode: active
 - cycle:
     events:
     - Root.A.End
@@ -52,8 +38,6 @@ steps:
     vars:
       x: 0
     ended: true
-    return: null
-    stack: []
 - cycle:
     events:
     - Missing
@@ -62,5 +46,3 @@ steps:
     vars:
       x: 0
     ended: true
-    return: null
-    stack: []

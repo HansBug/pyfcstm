@@ -10,14 +10,11 @@ origin:
   - initial
   - state
   - vars
-  - return
   - ended
 categories:
 - runtime
 - hot_start
 - lifecycle
-runners:
-- simulation
 initial:
   state: Root.A
   vars:
@@ -44,7 +41,6 @@ steps:
       during_count: 1
       after_count: 1
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -55,7 +51,6 @@ steps:
       during_count: 2
       after_count: 2
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -66,7 +61,6 @@ steps:
       during_count: 3
       after_count: 3
     ended: false
-    return: null
 - cycle:
     events:
     - Root.A.Go
@@ -79,7 +73,6 @@ steps:
       during_count: 13
       after_count: 4
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -90,4 +83,3 @@ steps:
       during_count: 23
       after_count: 5
     ended: false
-    return: null

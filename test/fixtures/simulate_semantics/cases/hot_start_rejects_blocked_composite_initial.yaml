@@ -10,15 +10,13 @@ origin:
   assertion_types:
   - constructor_exception
   notes:
-  - The target composite remains in init_wait because its guarded initial transition is false.
+  - The target composite remains in init_wait because its guarded initial transition
+    is false.
 categories:
 - runtime
 - hot_start
 - validation
 - template_alignment
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: Root.C
   vars:
@@ -26,6 +24,6 @@ initial:
   expect:
     raises:
       type: ValueError
-      match: "Hot start target 'Root.C' cannot reach a stoppable state"
+      match: Hot start target 'Root.C' cannot reach a stoppable state
       match_kind: substring
 steps: []

@@ -11,18 +11,14 @@ origin:
   assertion_types:
   - state
   - vars
-  - cycle_result
-  - history
   notes:
-  - Covers forced-transition expansion on a pseudo source where the first candidate is unstable and a later candidate is valid.
+  - Covers forced-transition expansion on a pseudo source where the first candidate
+    is unstable and a later candidate is valid.
 categories:
 - runtime
 - pseudo_chain
 - validation
 - lifecycle
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -36,14 +32,3 @@ steps:
     vars:
       trace: 3
     ended: false
-    cycle_result:
-      value: null
-      input_events: []
-      consumed_events: []
-      unconsumed_events: []
-    history_tail:
-    - cycle: 1
-      state: Root.Target.Good
-      vars:
-        trace: 3
-      events: []

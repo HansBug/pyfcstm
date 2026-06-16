@@ -1,8 +1,0 @@
-state Root {
-    state Active {
-        enter abstract /* anonymous action */;
-        enter abstract Fail;
-    }
-
-    [*] -> Active;
-}

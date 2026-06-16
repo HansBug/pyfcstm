@@ -15,9 +15,6 @@ categories:
 - runtime
 - hot_start
 - template_alignment
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: Root.A
   vars:
@@ -26,6 +23,6 @@ initial:
   expect:
     raises:
       type: ValueError
-      match: "initial_vars['counter'] must be int or float"
+      match: initial_vars['counter'] must be int or float
       match_kind: substring
 steps: []

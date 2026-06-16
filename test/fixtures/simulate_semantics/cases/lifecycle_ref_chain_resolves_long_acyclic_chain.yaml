@@ -18,9 +18,6 @@ categories:
 - template_alignment
 - abstract
 - lifecycle
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -36,8 +33,6 @@ steps:
     vars:
       trace: 11
     ended: false
-    cycle_result:
-      value: null
     handler_calls:
     - action: Root.Library.Final
       state: Root.Active

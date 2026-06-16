@@ -7,20 +7,16 @@ origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614012639
   assertion_types:
-  - cycle_count
   - ended
   - handler_calls
-  - return
-  - stack
   - state
   - vars
   notes:
-  - Simulation-only callback contract for read-only variable snapshots.
+  - Public handler context read-only observation shared by simulation and generated
+    Python alignment.
 categories:
 - runtime
 - abstract
-runners:
-- simulation
 initial:
   state: null
   vars: null
@@ -41,15 +37,6 @@ steps:
     vars:
       x: 0
     ended: false
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - A
-      mode: active
-    cycle_count: 1
     handler_calls:
     - action: Root.A.Touch
       state: Root.A
@@ -68,4 +55,3 @@ steps:
       stage: during
       vars:
         x: 0
-    return: null

@@ -836,13 +836,13 @@ class {{ machine_class_name(model) }}:
 
     def _normalize_events(self, events):
         if events is None:
-            return set()
+            return ()
         if isinstance(events, str):
             events = [events]
-        normalized = set()
+        normalized = []
         for item in events:
-            normalized.add(self._parse_event(item))
-        return normalized
+            normalized.append(self._parse_event(item))
+        return tuple(normalized)
 
     def _iter_path_to_state(self, state_path):
         result = []
@@ -1011,11 +1011,18 @@ class {{ machine_class_name(model) }}:
             stack[-1]["plain_before_pending"] = True
             if attempt_initial_transition:
                 self._attempt_init_transition(
-                    stack, vars_, event_names, is_validation_mode=is_validation_mode
+                    stack,
+                    vars_,
+                    event_names,
+                    is_validation_mode=is_validation_mode,
                 )
 
     def _attempt_init_transition(
-        self, stack, vars_, event_names, is_validation_mode=False
+        self,
+        stack,
+        vars_,
+        event_names,
+        is_validation_mode=False,
     ):
         if not stack:
             return False
@@ -1111,7 +1118,12 @@ class {{ machine_class_name(model) }}:
         return False
 
     def _execute_transition_on_context(
-        self, stack, vars_, transition_id, event_names, is_validation_mode=False
+        self,
+        stack,
+        vars_,
+        transition_id,
+        event_names,
+        is_validation_mode=False,
     ):
         transition = self._TRANSITIONS[transition_id]
         current_path = stack[-1]["state"]
@@ -1309,7 +1321,13 @@ class {{ machine_class_name(model) }}:
 
         return False
 
-    def _initialize_context(self, stack, vars_, event_names, is_validation_mode=False):
+    def _initialize_context(
+        self,
+        stack,
+        vars_,
+        event_names,
+        is_validation_mode=False,
+    ):
         stack[:] = []
         self._enter_state(
             stack,
@@ -1445,12 +1463,13 @@ class {{ machine_class_name(model) }}:
 
         :param events: Optional event name or event collection for this cycle.
         :type events: Optional[Union[str, List[str], Tuple[str, ...], set]]
-        :return: Current leaf state path after the cycle, or ``None`` if ended.
-        :rtype: Optional[Tuple[str, ...]]
+        :return: ``None``.
+        :rtype: None
         """
         if self._ended:
             return None
         event_names = self._normalize_events(events)
+        event_name_set = set(event_names)
 
         snapshot_stack = self._clone_stack(self._stack)
         snapshot_vars = dict(self._vars)
@@ -1466,7 +1485,7 @@ class {{ machine_class_name(model) }}:
             validation_ended = self._initialize_context(
                 validation_stack,
                 validation_vars,
-                event_names,
+                event_name_set,
                 is_validation_mode=True,
             )
             validation_entered_root = True
@@ -1474,7 +1493,7 @@ class {{ machine_class_name(model) }}:
         success, validation_ended = self._run_cycle_on_context(
             validation_stack,
             validation_vars,
-            event_names,
+            event_name_set,
             ended=validation_ended,
             is_validation_mode=True,
         )
@@ -1486,13 +1505,17 @@ class {{ machine_class_name(model) }}:
             sim_ended = snapshot_ended
 
             if not sim_entered_root:
-                sim_ended = self._initialize_context(sim_stack, sim_vars, event_names)
+                sim_ended = self._initialize_context(
+                    sim_stack,
+                    sim_vars,
+                    event_name_set,
+                )
                 sim_entered_root = True
 
             success, sim_ended = self._run_cycle_on_context(
                 sim_stack,
                 sim_vars,
-                event_names,
+                event_name_set,
                 ended=sim_ended,
             )
 

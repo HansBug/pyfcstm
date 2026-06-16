@@ -176,6 +176,11 @@ The generated runtime accepts:
 If an event cannot be resolved, the runtime raises `LookupError` or
 `ValueError`.
 
+`cycle(...)` executes the requested step for its side effects and returns
+`None`. Observe the runtime through `current_state_path`, `current_state_name`,
+`vars`, and `is_ended`. Use `list` or `tuple` inputs when event input order must
+be reproducible; `set` inputs follow the iteration order provided by Python.
+
 ## Hot Start
 
 You can start from a concrete state path by providing both `initial_state` and

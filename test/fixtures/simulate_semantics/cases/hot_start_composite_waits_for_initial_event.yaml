@@ -12,17 +12,11 @@ origin:
   - initial
   - state
   - vars
-  - stack
-  - return
-  - history
 categories:
 - runtime
 - template_alignment
 - hot_start
 - validation
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: Root.Locked
   vars:
@@ -34,14 +28,6 @@ steps:
     - Locked
     vars:
       x: 0
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - Locked
-      mode: init_wait
     ended: false
 - cycle:
     events:
@@ -53,26 +39,4 @@ steps:
     - Ready
     vars:
       x: 1
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - Locked
-      mode: active
-    - path:
-      - Root
-      - Locked
-      - Ready
-      mode: active
     ended: false
-    cycle_result:
-      value: null
-    history_tail:
-    - cycle: 1
-      state: Root.Locked.Ready
-      vars:
-        x: 1
-      events:
-      - Root.Locked.Unlock

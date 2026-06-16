@@ -9,7 +9,6 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_17_2_exit_to_parent_then_pseudo_then_guard
   assertion_types:
   - ended
-  - return
   - state
   - vars
 categories:
@@ -17,9 +16,6 @@ categories:
 - pseudo_chain
 - runtime
 - template_alignment
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -33,7 +29,6 @@ steps:
     vars:
       counter: 1
     ended: false
-    return: null
 - cycle:
     events:
     - Root.System.A.GoP
@@ -45,7 +40,6 @@ steps:
     vars:
       counter: 2
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -55,7 +49,6 @@ steps:
     vars:
       counter: 3
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -65,7 +58,6 @@ steps:
     vars:
       counter: 4
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -75,7 +67,6 @@ steps:
     vars:
       counter: 5
     ended: false
-    return: null
 - cycle:
     events:
     - Root.System.A.GoP
@@ -86,4 +77,3 @@ steps:
     vars:
       counter: 1115
     ended: false
-    return: null

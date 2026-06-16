@@ -10,14 +10,11 @@ origin:
   - initial
   - state
   - vars
-  - return
   - ended
 categories:
 - runtime
 - hot_start
 - lifecycle
-runners:
-- simulation
 initial:
   state: Root.System.A
   vars:
@@ -46,7 +43,6 @@ steps:
       during_count: 1
       exit_count: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -58,7 +54,6 @@ steps:
       during_count: 2
       exit_count: 0
     ended: false
-    return: null
 - cycle:
     events:
     - Root.System.A.Go
@@ -72,7 +67,6 @@ steps:
       during_count: 12
       exit_count: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -84,7 +78,6 @@ steps:
       during_count: 22
       exit_count: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -96,4 +89,3 @@ steps:
       during_count: 32
       exit_count: 0
     ended: false
-    return: null

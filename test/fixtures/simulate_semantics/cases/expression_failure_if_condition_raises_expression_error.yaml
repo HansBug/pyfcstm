@@ -12,9 +12,6 @@ categories:
 - runtime
 - template_alignment
 - if_blocks
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -26,5 +23,5 @@ steps:
       match: 'if-block condition evaluation failed: division by zero'
       match_kind: substring
       cause_type: ZeroDivisionError
-      cause_match: 'division by zero'
+      cause_match: division by zero
       cause_match_kind: substring

@@ -9,16 +9,12 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_105_cold_storage_defrost_cycle
   assertion_types:
   - ended
-  - return
   - state
   - vars
 categories:
 - runtime
 - scenario_example
 - template_alignment
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -32,7 +28,6 @@ steps:
       frost: 2
       drip_ticks: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -42,7 +37,6 @@ steps:
       frost: 4
       drip_ticks: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -52,4 +46,3 @@ steps:
       frost: 6
       drip_ticks: 0
     ended: false
-    return: null

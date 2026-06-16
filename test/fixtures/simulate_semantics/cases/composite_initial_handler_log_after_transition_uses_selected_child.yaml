@@ -13,17 +13,14 @@ origin:
   - handler_calls
   - state
   - vars
-  - cycle_result
   notes:
-  - Covers transition-into-composite handler log observation, not just root-entry handler observation.
+  - Covers transition-into-composite handler log observation, not just root-entry
+    handler observation.
 categories:
 - runtime
 - abstract
 - lifecycle
 - event_paths
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -44,8 +41,6 @@ steps:
       phase: 0
       trace: 1
     ended: false
-    cycle_result:
-      value: null
     handler_calls: []
 - cycle:
     events:
@@ -59,13 +54,6 @@ steps:
       phase: 1
       trace: 111
     ended: false
-    cycle_result:
-      value: null
-      input_events:
-      - Root.A.Go
-      consumed_events:
-      - Root.A.Go
-      unconsumed_events: []
     handler_calls:
     - action: Root.Parent.ObserveParent
       state: Root.Parent

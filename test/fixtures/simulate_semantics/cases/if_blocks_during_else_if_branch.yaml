@@ -10,7 +10,6 @@ origin:
   assertion_types:
   - state
   - vars
-  - return
   - ended
   notes:
   - Migrated from one parameter row of the parametrized if-block runtime test.
@@ -18,9 +17,6 @@ categories:
 - runtime
 - template_alignment
 - if_blocks
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -36,4 +32,3 @@ steps:
       flag: 0
       mode: 1
     ended: false
-    return: null

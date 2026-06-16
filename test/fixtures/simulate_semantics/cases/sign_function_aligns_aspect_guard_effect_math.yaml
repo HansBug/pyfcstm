@@ -10,17 +10,15 @@ origin:
   assertion_types:
   - state
   - vars
-  - return
   notes:
-  - Covers sign in aspect actions, during actions, transition guards, transition effects, and target enter actions.
-  - This is a complex duplicate-class regression for the generated Python sign alignment bug.
+  - Covers sign in aspect actions, during actions, transition guards, transition effects,
+    and target enter actions.
+  - This is a complex duplicate-class regression for the generated Python sign alignment
+    bug.
 categories:
 - runtime
 - template_alignment
 - lifecycle
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -36,8 +34,6 @@ steps:
       gate: -1
       trace: -100
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -49,8 +45,6 @@ steps:
       gate: 12
       trace: -100
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -62,5 +56,3 @@ steps:
       gate: 112
       trace: 101019
     ended: false
-    cycle_result:
-      value: null

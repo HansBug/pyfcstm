@@ -9,16 +9,12 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_21_single_layer_aspect_actions
   assertion_types:
   - ended
-  - return
   - state
   - vars
 categories:
 - design_example
 - runtime
 - template_alignment
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -31,7 +27,6 @@ steps:
     vars:
       counter: 10101
     ended: false
-    return: null
 - cycle:
     events:
     - Root.A.Go
@@ -42,4 +37,3 @@ steps:
     vars:
       counter: 21102
     ended: false
-    return: null

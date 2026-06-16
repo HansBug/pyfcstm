@@ -10,16 +10,12 @@ origin:
   assertion_types:
   - state
   - vars
-  - return
   notes:
   - Covers the C8 sign guard duplicate with target enter action after the transition.
 categories:
 - runtime
 - template_alignment
 - lifecycle
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -32,8 +28,6 @@ steps:
     vars:
       marker: 1
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -42,5 +36,3 @@ steps:
     vars:
       marker: 11
     ended: false
-    cycle_result:
-      value: null

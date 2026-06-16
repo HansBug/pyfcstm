@@ -174,6 +174,11 @@ machine.cycle("<event-path>")
 
 如果事件无法解析，会抛出 `LookupError` 或 `ValueError`。
 
+`cycle(...)` 只负责执行本轮状态机步骤，完成后返回 `None`。请通过
+`current_state_path`、`current_state_name`、`vars` 和 `is_ended` 观察运行时。
+如果需要可复现的事件输入顺序，建议传入 `list` 或 `tuple`；`set` 输入会遵循
+Python 当次提供的迭代顺序。
+
 ## Hot Start
 
 如需从指定状态开始启动，需要同时提供 `initial_state` 和

@@ -9,19 +9,16 @@ origin:
   docs:
   - https://github.com/HansBug/pyfcstm/issues/197#issuecomment-4689646151
   assertion_types:
-  - cycle_result
   - events
   - state
   - vars
   notes:
-  - Covers the named lifecycle ref variant where the plain during-before action mutates the guard variable through a ref.
+  - Covers the named lifecycle ref variant where the plain during-before action mutates
+    the guard variable through a ref.
 categories:
 - runtime
 - lifecycle
 - event_paths
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -34,8 +31,6 @@ steps:
     vars:
       x: 1
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.Start.Go
@@ -47,10 +42,3 @@ steps:
     vars:
       x: 1012
     ended: false
-    cycle_result:
-      value: null
-      input_events:
-      - Root.Start.Go
-      consumed_events:
-      - Root.Start.Go
-      unconsumed_events: []

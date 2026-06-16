@@ -18,9 +18,6 @@ categories:
 - runtime
 - abstract
 - lifecycle
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -40,8 +37,6 @@ steps:
       select: 2
       trace: 235
     ended: false
-    cycle_result:
-      value: null
     handler_calls:
     - action: Root.Choice.FromEnter.ChosenEnter
       state: Root.Choice.FromEnter

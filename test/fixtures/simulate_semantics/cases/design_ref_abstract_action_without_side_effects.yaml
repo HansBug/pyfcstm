@@ -9,16 +9,12 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_34_ref_targets_abstract_action_without_side_effects
   assertion_types:
   - ended
-  - return
   - state
   - vars
 categories:
 - design_example
 - runtime
 - template_alignment
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -31,7 +27,6 @@ steps:
     vars:
       trace: 1
     ended: false
-    return: null
 - cycle:
     events:
     - Root.A.Go
@@ -42,7 +37,6 @@ steps:
     vars:
       trace: 11
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -51,4 +45,3 @@ steps:
     vars:
       trace: 21
     ended: false
-    return: null

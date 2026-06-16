@@ -13,9 +13,6 @@ origin:
 categories:
 - runtime
 - template_alignment
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -29,15 +26,14 @@ steps:
       counter: 1
       sink: 0
     ended: false
-    return: null
 - cycle: {}
   expect:
     raises:
       type: SimulationRuntimeExpressionError
-      match: "operation assignment to 'sink' evaluation failed: division by zero"
+      match: 'operation assignment to ''sink'' evaluation failed: division by zero'
       match_kind: substring
       cause_type: ZeroDivisionError
-      cause_match: 'division by zero'
+      cause_match: division by zero
       cause_match_kind: substring
     state:
     - Root

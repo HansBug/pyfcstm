@@ -10,8 +10,6 @@ origin:
   assertion_types:
   - ended
   - exception
-  - return
-  - stack
   - state
   - vars
 categories:
@@ -19,9 +17,6 @@ categories:
 - runtime
 - template_alignment
 - validation
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -34,7 +29,6 @@ steps:
     vars:
       counter: 1
     ended: false
-    return: null
 - cycle:
     events:
     - Root.A.Go
@@ -49,11 +43,3 @@ steps:
     vars:
       counter: 1
     ended: false
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - A
-      mode: active

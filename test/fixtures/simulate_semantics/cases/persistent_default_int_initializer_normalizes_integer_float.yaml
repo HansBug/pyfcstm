@@ -16,9 +16,6 @@ origin:
 categories:
 - runtime
 - template_alignment
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -39,5 +36,3 @@ steps:
       bits: 3
       marker: 1
     ended: false
-    cycle_result:
-      value: null

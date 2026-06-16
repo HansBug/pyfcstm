@@ -8,23 +8,17 @@ origin:
   - https://github.com/HansBug/pyfcstm/pull/205
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614012639
   assertion_types:
-  - cycle_count
   - ended
   - handler_calls
-  - return
-  - stack
   - state
   - vars_exact
   notes:
-  - Simulation-only callback contract for referenced abstract actions.
+  - Public callback contract for referenced abstract actions across shared runners.
 categories:
 - runtime
 - template_alignment
 - abstract
 - lifecycle
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -39,15 +33,6 @@ steps:
     - A
     vars_exact: {}
     ended: false
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - A
-      mode: active
-    cycle_count: 1
     handler_calls:
     - action: Root.Library.Shared
       state: Root.A
@@ -59,4 +44,3 @@ steps:
       call_stage: enter
       abstract_target: Root.Library.Shared
       named_ref: null
-    return: null

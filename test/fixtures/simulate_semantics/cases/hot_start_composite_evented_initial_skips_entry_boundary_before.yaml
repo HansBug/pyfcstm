@@ -1,6 +1,7 @@
 schema_version: 1
 id: hot_start_composite_evented_initial_skips_entry_boundary_before
-title: Hot-started composite evented initial transition skips entry boundary before actions
+title: Hot-started composite evented initial transition skips entry boundary before
+  actions
 source:
   fcstm: hot_start_composite_evented_initial_skips_entry_boundary_before.fcstm
 origin:
@@ -13,12 +14,12 @@ origin:
   - initial
   - state
   - vars
-  - stack
-  - cycle_result
   - handler_calls
   notes:
-  - Locks the hot-start contract that a composite target simulates an already-entered boundary.
-  - Hot start does not replay enter actions or plain composite during-before boundary actions.
+  - Locks the hot-start contract that a composite target simulates an already-entered
+    boundary.
+  - Hot start does not replay enter actions or plain composite during-before boundary
+    actions.
   - The evented initial transition effect still runs when its event is supplied.
 categories:
 - runtime
@@ -26,9 +27,6 @@ categories:
 - hot_start
 - lifecycle
 - abstract
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: Root.Gate
   vars:
@@ -48,14 +46,6 @@ steps:
       gate: 0
       trace: 0
     ended: false
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - Gate
-      mode: init_wait
 - cycle: {}
   expect:
     state:
@@ -65,19 +55,6 @@ steps:
       gate: 0
       trace: 0
     ended: false
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - Gate
-      mode: init_wait
-    cycle_result:
-      value: null
-      input_events: []
-      consumed_events: []
-      unconsumed_events: []
     handler_calls: []
 - cycle:
     events:
@@ -91,26 +68,6 @@ steps:
       gate: 0
       trace: 13
     ended: false
-    stack:
-    - path:
-      - Root
-      mode: active
-    - path:
-      - Root
-      - Gate
-      mode: active
-    - path:
-      - Root
-      - Gate
-      - Armed
-      mode: active
-    cycle_result:
-      value: null
-      input_events:
-      - Root.Gate.Unlock
-      consumed_events:
-      - Root.Gate.Unlock
-      unconsumed_events: []
     handler_calls:
     - action: Root.Gate.Armed.EnterArmed
       state: Root.Gate.Armed

@@ -11,7 +11,6 @@ origin:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614133609
   assertion_types:
   - ended
-  - return
   - state
   - vars
   notes:
@@ -20,9 +19,6 @@ categories:
 - event_paths
 - runtime
 - template_alignment
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -35,7 +31,6 @@ steps:
     vars:
       x: 1
     ended: false
-    return: null
 - cycle: Root.A.Go
   expect:
     state:
@@ -44,4 +39,3 @@ steps:
     vars:
       x: 11
     ended: false
-    return: null

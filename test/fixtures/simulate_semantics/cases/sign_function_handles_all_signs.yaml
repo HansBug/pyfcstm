@@ -10,16 +10,12 @@ origin:
   assertion_types:
   - state
   - vars
-  - return
   notes:
   - Covers the sign function's three-value semantics in one lifecycle action block.
 categories:
 - runtime
 - template_alignment
 - lifecycle
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -34,5 +30,3 @@ steps:
       zero_sign: 0
       positive_sign: 1
     ended: false
-    cycle_result:
-      value: null

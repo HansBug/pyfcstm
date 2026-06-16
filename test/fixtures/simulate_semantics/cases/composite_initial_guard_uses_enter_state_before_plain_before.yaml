@@ -12,17 +12,13 @@ origin:
   assertion_types:
   - state
   - vars
-  - cycle_result
-  - history
   notes:
-  - Covers root composite entry where the guard variable is written by composite enter and then plain during-before.
+  - Covers root composite entry where the guard variable is written by composite enter
+    and then plain during-before.
 categories:
 - runtime
 - lifecycle
 - validation
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -44,15 +40,3 @@ steps:
       select: 2
       trace: 2345
     ended: false
-    cycle_result:
-      value: null
-      input_events: []
-      consumed_events: []
-      unconsumed_events: []
-    history_tail:
-    - cycle: 1
-      state: Root.Choice.FromEnter
-      vars:
-        select: 2
-        trace: 2345
-      events: []

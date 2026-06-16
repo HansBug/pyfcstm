@@ -81,6 +81,50 @@ def test_cycle_reports_unconsumed_duplicate_events_in_input_order():
 
 
 @pytest.mark.unittest
+def test_cycle_return_metadata_covers_stable_and_ended_cycles():
+    """Cycle result metadata remains simulator-only ordinary pytest coverage."""
+    runtime = _build_runtime()
+
+    first = runtime.cycle()
+
+    assert first == CycleResult(
+        input_events=(), consumed_events=(), unconsumed_events=()
+    )
+    assert runtime.current_state.path == ("Root", "A")
+    assert runtime.vars["x"] == 1
+
+    runtime.cycle("Root.A.Go")
+    assert runtime.current_state.path == ("Root", "B")
+
+    ast = parse_with_grammar_entry(
+        """
+state Root {
+    state A;
+    [*] -> A;
+    A -> [*] :: Stop;
+}
+""",
+        "state_machine_dsl",
+    )
+    ended_runtime = SimulationRuntime(parse_dsl_node_to_state_machine(ast))
+    ended_runtime.cycle()
+
+    ended = ended_runtime.cycle(["Root.A.Stop"])
+
+    assert ended == CycleResult(
+        input_events=("Root.A.Stop",),
+        consumed_events=("Root.A.Stop",),
+        unconsumed_events=(),
+    )
+    assert ended_runtime.is_ended is True
+
+    ignored = ended_runtime.cycle("Root.A.Stop")
+
+    assert ignored == CycleResult()
+    assert ended_runtime.is_ended is True
+
+
+@pytest.mark.unittest
 @pytest.mark.parametrize(
     ("events_factory", "expected_input_events"),
     [
@@ -175,6 +219,30 @@ def test_cycle_rejects_non_iterable_event_container():
 
     with pytest.raises(SimulationRuntimeEventError, match="Unsupported event input"):
         runtime.cycle(7)
+
+
+@pytest.mark.unittest
+def test_cycle_rejects_unknown_event_path_and_preserves_public_snapshot():
+    """Unknown event paths surface as simulator event errors without rollback drift."""
+    ast = parse_with_grammar_entry(
+        """
+state Root {
+    state A;
+    [*] -> A;
+}
+""",
+        "state_machine_dsl",
+    )
+    runtime = SimulationRuntime(parse_dsl_node_to_state_machine(ast))
+
+    with pytest.raises(
+        SimulationRuntimeEventError, match="Cannot resolve event path 'Missing'"
+    ):
+        runtime.cycle(["Missing"])
+
+    assert runtime.current_state.path == ("Root",)
+    assert runtime.vars == {}
+    assert runtime.is_ended is False
 
 
 @pytest.mark.unittest

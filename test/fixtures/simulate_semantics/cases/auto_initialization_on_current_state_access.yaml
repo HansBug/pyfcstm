@@ -9,18 +9,13 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_auto_initialization_on_current_state_access
   assertion_types:
   - initial
-  - stack
   - state
   - vars
-  - return
   - ended
 categories:
 - runtime
 - template_alignment
 - lifecycle
-runners:
-- simulation
-- generated_python_alignment
 initial:
   state: null
   vars: null
@@ -31,10 +26,6 @@ steps:
     vars:
       counter: 0
     ended: false
-    stack:
-    - path:
-      - System
-      mode: init_wait
 - cycle: {}
   expect:
     state:
@@ -43,7 +34,6 @@ steps:
     vars:
       counter: 1
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -52,7 +42,6 @@ steps:
     vars:
       counter: 2
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -61,7 +50,6 @@ steps:
     vars:
       counter: 3
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -70,7 +58,6 @@ steps:
     vars:
       counter: 4
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -79,7 +66,6 @@ steps:
     vars:
       counter: 5
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -88,7 +74,6 @@ steps:
     vars:
       counter: 15
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -97,7 +82,6 @@ steps:
     vars:
       counter: 25
     ended: false
-    return: null
 - cycle: {}
   expect:
     state:
@@ -106,4 +90,3 @@ steps:
     vars:
       counter: 35
     ended: false
-    return: null

@@ -1,26 +1,28 @@
 """
 Inventory the shared simulate semantic fixture corpus.
 
-This maintenance command regenerates the shared fixture inventory and README
-index. It uses static file reads only; it does not import runtime modules,
-render templates, instantiate generated runtimes, or touch native toolchains.
+This maintenance command reports the shared fixture surface and checks the
+long-term Markdown and runner-selection contract. It uses static file reads
+only; it does not import runtime modules, render templates, instantiate
+generated runtimes, or touch native toolchains.
 """
 
 import argparse
-import difflib
+import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import yaml
 
 
-README_INDEX_HEADER = "## Current fixture index"
-REPORT_RELATIVE_PATH = "test/fixtures/simulate_semantics/case_inventory.md"
 README_RELATIVE_PATH = "test/fixtures/simulate_semantics/README.md"
+SCHEMA_RELATIVE_PATH = "test/fixtures/simulate_semantics/schema.md"
+FIXTURE_DIR_RELATIVE_PATH = "test/fixtures/simulate_semantics"
 CASE_DIR_RELATIVE_PATH = "test/fixtures/simulate_semantics/cases"
 DEFAULT_SHARED_RUNNERS = ("simulation", "generated_python_alignment")
+ALLOWED_MARKDOWN_FILES = ("README.md", "schema.md")
 DISALLOWED_TOP_LEVEL_FIELDS = (
     "boundary",
     "runners",
@@ -85,28 +87,6 @@ class SemanticCaseRecord:
     def runners(self) -> Tuple[str, ...]:
         return _effective_runners(self.data)
 
-    @property
-    def assertion_types(self) -> Tuple[str, ...]:
-        origin = self.data.get("origin", {})
-        if not isinstance(origin, Mapping):
-            return tuple()
-        assertion_types = origin.get("assertion_types", ())
-        if not isinstance(assertion_types, Sequence) or isinstance(
-            assertion_types, str
-        ):
-            return tuple()
-        return tuple(str(item) for item in assertion_types)
-
-    @property
-    def origin_files(self) -> Tuple[str, ...]:
-        origin = self.data.get("origin", {})
-        if not isinstance(origin, Mapping):
-            return tuple()
-        files = origin.get("files", ())
-        if not isinstance(files, Sequence) or isinstance(files, str):
-            return tuple()
-        return tuple(str(item) for item in files)
-
 
 def _repository_root() -> Path:
     return Path(__file__).resolve().parents[1]
@@ -149,22 +129,6 @@ def _effective_runners(data: Mapping[str, Any]) -> Tuple[str, ...]:
     )
 
 
-def _iter_mapping_keys(value: Any) -> Iterable[str]:
-    if isinstance(value, Mapping):
-        for key, item in value.items():
-            yield str(key)
-            for child_key in _iter_mapping_keys(item):
-                yield child_key
-    elif isinstance(value, list):
-        for item in value:
-            for child_key in _iter_mapping_keys(item):
-                yield child_key
-
-
-def _case_has_key(record: SemanticCaseRecord, key_name: str) -> bool:
-    return key_name in set(_iter_mapping_keys(record.data))
-
-
 def _expectation_fields(record: SemanticCaseRecord) -> List[str]:
     result = []
     for step in record.data.get("steps") or []:
@@ -187,7 +151,7 @@ def _field_case_ids(
 ) -> Dict[str, List[str]]:
     return {
         field_name: [
-            record.case_id for record in records if _case_has_key(record, field_name)
+            record.case_id for record in records if field_name in record.data
         ]
         for field_name in fields
     }
@@ -218,16 +182,6 @@ def _handler_behavior_distribution(records: Sequence[SemanticCaseRecord]) -> Cou
     return result
 
 
-def _markdown_code(value: str) -> str:
-    return "`%s`" % value.replace("`", "\\`")
-
-
-def _markdown_link_or_code(value: str) -> str:
-    if value.startswith("http://") or value.startswith("https://"):
-        return "[source](%s)" % value
-    return _markdown_code(value)
-
-
 def _format_markdown_table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
     lines = [
         "| %s |" % " | ".join(headers),
@@ -239,107 +193,6 @@ def _format_markdown_table(headers: Sequence[str], rows: Sequence[Sequence[str]]
     return "\n".join(lines)
 
 
-def _readme_index_bounds(readme_text: str) -> Tuple[int, int]:
-    lines = readme_text.splitlines()
-    try:
-        start = lines.index(README_INDEX_HEADER)
-    except ValueError:
-        raise ValueError("README is missing %r" % README_INDEX_HEADER)
-    end = len(lines)
-    for index in range(start + 1, len(lines)):
-        if lines[index].startswith("## "):
-            end = index
-            break
-    return start, end
-
-
-def _render_readme_index(records: Sequence[SemanticCaseRecord]) -> str:
-    rows = []
-    for record in records:
-        rows.append(
-            (
-                _markdown_code(record.case_id),
-                ", ".join(record.runners),
-                ", ".join(record.assertion_types),
-                "<br>".join(
-                    _markdown_link_or_code(origin) for origin in record.origin_files
-                ),
-            )
-        )
-    table = _format_markdown_table(
-        ("Fixture id", "Runners", "Assertion types", "Origin files"), rows
-    )
-    return "\n".join(
-        (
-            README_INDEX_HEADER,
-            "",
-            "The table below is generated from the current YAML metadata and is intended to",
-            "make anti-drift review straightforward. `origin.files` points to the original",
-            "inline tests or upstream issue/PR evidence that supplied each fixture's",
-            "semantics.",
-            "",
-            table,
-        )
-    )
-
-
-def _replace_readme_index(readme_text: str, generated_index: str) -> str:
-    lines = readme_text.splitlines()
-    start, end = _readme_index_bounds(readme_text)
-    new_lines = lines[:start] + generated_index.splitlines() + lines[end:]
-    return "\n".join(new_lines).rstrip() + "\n"
-
-
-def _parse_readme_index(readme_text: str) -> Dict[str, Tuple[str, str]]:
-    lines = readme_text.splitlines()
-    start, end = _readme_index_bounds(readme_text)
-    result = {}
-    for line in lines[start:end]:
-        if not line.startswith("| `"):
-            continue
-        cells = [cell.strip() for cell in line.strip("|").split("|")]
-        if len(cells) < 4:
-            continue
-        case_cell = cells[0]
-        if case_cell.startswith("`") and case_cell.endswith("`"):
-            result[case_cell[1:-1]] = (cells[1], cells[2])
-    return result
-
-
-def _readme_drift_rows(
-    records: Sequence[SemanticCaseRecord], readme_text: str
-) -> List[Tuple[str, str, str]]:
-    actual_rows = _parse_readme_index(readme_text)
-    expected = {
-        record.case_id: (", ".join(record.runners), ", ".join(record.assertion_types))
-        for record in records
-    }
-    rows = []
-    for case_id in sorted(set(expected) | set(actual_rows)):
-        if case_id not in actual_rows:
-            rows.append((case_id, "missing_from_readme", "expected row absent"))
-        elif case_id not in expected:
-            rows.append((case_id, "extra_in_readme", "row has no YAML case"))
-        elif actual_rows[case_id] != expected[case_id]:
-            rows.append(
-                (
-                    case_id,
-                    "metadata_mismatch",
-                    "README runners/assertions %r != YAML %r"
-                    % (actual_rows[case_id], expected[case_id]),
-                )
-            )
-    return rows
-
-
-def _readme_drift_details(rows: Sequence[Tuple[str, str, str]]) -> str:
-    if not rows:
-        return "README fixture index matches YAML runners and assertion types."
-    return "<br>".join("%s: %s (%s)" % row for row in rows[:40]) + (
-        "<br>..." if len(rows) > 40 else ""
-    )
-
-
 def _case_ids(values: Sequence[str]) -> str:
     return ", ".join(values) if values else "0"
 
@@ -347,7 +200,6 @@ def _case_ids(values: Sequence[str]) -> str:
 def _render_report(
     root: Path,
     records: Sequence[SemanticCaseRecord],
-    drift_readme_text: str,
 ) -> str:
     fcstm_count = len(list((root / CASE_DIR_RELATIVE_PATH).glob("*.fcstm")))
     runner_counter = Counter()
@@ -372,7 +224,6 @@ def _render_report(
         for field_name in PUBLIC_EXPECTATION_FIELDS
     }
     handler_distribution = _handler_behavior_distribution(records)
-    readme_drift = _readme_drift_rows(records, drift_readme_text)
 
     disallowed_top_level_hits = sorted(
         set().union(*(set(items) for items in disallowed_top_level_cases.values()))
@@ -380,13 +231,15 @@ def _render_report(
     disallowed_expectation_hits = sorted(
         set().union(*(set(items) for items in disallowed_expectation_cases.values()))
     )
+    markdown_files = _fixture_markdown_files(root)
+    markdown_file_names = [path.name for path in markdown_files]
 
     lines = [
-        "# Simulate semantic fixture case inventory",
+        "# Simulate semantic fixture inventory",
         "",
-        "This file is generated by `python tools/inventory_simulate_semantics.py --write`.",
-        "It records the current shared fixture surface and public-observation",
-        "contract. Regenerate it after any corpus or helper change.",
+        "This command reports the current shared fixture surface and public-observation",
+        "contract. Use `--check` as the maintenance gate after any corpus or helper",
+        "change; it does not write generated Markdown snapshots into the repository.",
         "",
         "## Summary",
         "",
@@ -450,9 +303,11 @@ def _render_report(
                     "通过：未出现 stack、cycle_count、history*、return、logs、warnings 或错误诊断字段。",
                 ),
                 (
-                    "README 索引",
-                    "clean" if not readme_drift else "drift",
-                    _readme_drift_details(readme_drift),
+                    "长期 Markdown 文件",
+                    ", ".join(markdown_file_names) if markdown_file_names else "0",
+                    "通过：顶层只保留 README.md 和 schema.md。"
+                    if tuple(markdown_file_names) == ALLOWED_MARKDOWN_FILES
+                    else "失败：顶层 Markdown 文件清单不符合长期维护口径。",
                 ),
             ),
         ),
@@ -497,87 +352,127 @@ def _render_report(
             or (("-", "0"),),
         ),
         "",
-        "## Per-Case Inventory",
-        "",
-        _format_markdown_table(
-            ("Case id", "Runners", "Assertion types", "Origin files"),
-            tuple(
-                (
-                    _markdown_code(record.case_id),
-                    ", ".join(record.runners),
-                    ", ".join(record.assertion_types),
-                    "<br>".join(
-                        _markdown_link_or_code(origin)
-                        for origin in record.origin_files
-                    ),
-                )
-                for record in records
-            ),
-        ),
         "",
     ]
     return "\n".join(lines).rstrip() + "\n"
-
-
-def _report_path(root: Path) -> Path:
-    return root / REPORT_RELATIVE_PATH
 
 
 def _readme_path(root: Path) -> Path:
     return root / README_RELATIVE_PATH
 
 
-def _unified_diff(name: str, expected: str, actual: str) -> str:
-    diff = difflib.unified_diff(
-        expected.splitlines(),
-        actual.splitlines(),
-        fromfile="%s.expected" % name,
-        tofile="%s.actual" % name,
-        lineterm="",
-    )
-    lines = list(diff)
-    if len(lines) > 120:
-        lines = lines[:120] + ["... diff truncated ..."]
-    return "\n".join(lines)
+def _schema_path(root: Path) -> Path:
+    return root / SCHEMA_RELATIVE_PATH
 
 
-def _check_file(path: Path, expected_text: str, label: str) -> List[str]:
-    if not path.exists():
-        return ["%s is missing: %s" % (label, path)]
-    actual_text = _read_text(path)
-    if actual_text != expected_text:
-        diff = _unified_diff(label, expected_text, actual_text)
-        return ["%s is out of date:\n%s" % (label, diff)]
-    return []
+def _fixture_markdown_files(root: Path) -> List[Path]:
+    return sorted((root / FIXTURE_DIR_RELATIVE_PATH).glob("*.md"))
 
 
-def _write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+def _paired_file_errors(root: Path, records: Sequence[SemanticCaseRecord]) -> List[str]:
+    case_dir = root / CASE_DIR_RELATIVE_PATH
+    yaml_ids = {record.case_id for record in records}
+    fcstm_ids = {path.stem for path in case_dir.glob("*.fcstm")}
+    errors = []
+    for case_id in sorted(yaml_ids - fcstm_ids):
+        errors.append("YAML fixture 缺少配对 FCSTM：%s.yaml" % case_id)
+    for case_id in sorted(fcstm_ids - yaml_ids):
+        errors.append("FCSTM fixture 缺少配对 YAML：%s.fcstm" % case_id)
+    for record in records:
+        source = record.data.get("source")
+        if not isinstance(source, Mapping):
+            errors.append("%s 缺少 source mapping" % record.case_id)
+            continue
+        source_fcstm = source.get("fcstm")
+        if source_fcstm != record.fcstm_path.name:
+            errors.append(
+                "%s 的 source.fcstm=%r，应为 %r"
+                % (record.case_id, source_fcstm, record.fcstm_path.name)
+            )
+    return errors
 
 
-def build_outputs(root: Path) -> Tuple[str, str]:
+def _markdown_contract_errors(root: Path) -> List[str]:
+    errors = []
+    readme_path = _readme_path(root)
+    schema_path = _schema_path(root)
+    if not readme_path.exists():
+        errors.append("shared fixture README 缺失：%s" % readme_path)
+    if not schema_path.exists():
+        errors.append("shared fixture schema 缺失：%s" % schema_path)
+
+    markdown_names = tuple(path.name for path in _fixture_markdown_files(root))
+    if markdown_names != ALLOWED_MARKDOWN_FILES:
+        errors.append(
+            "shared fixture 顶层 Markdown 只能是 %s，当前是 %s"
+            % (", ".join(ALLOWED_MARKDOWN_FILES), ", ".join(markdown_names) or "0")
+        )
+
+    if readme_path.exists():
+        readme_text = _read_text(readme_path)
+        if "## Current fixture index" in readme_text:
+            errors.append("README 仍包含旧的 generated fixture index 章节")
+        if "generated fixture index" in readme_text.lower():
+            errors.append("README 仍包含 generated fixture index 口径")
+    return errors
+
+
+def _runner_field_errors(root: Path) -> List[str]:
+    errors = []
+    pattern = re.compile(r"^[ \t]*runners:", re.MULTILINE)
+    for yaml_path in sorted((root / CASE_DIR_RELATIVE_PATH).glob("*.yaml")):
+        if pattern.search(_read_text(yaml_path)):
+            errors.append("shared fixture 禁止 include-style runners 字段：%s" % yaml_path)
+    return errors
+
+
+def _field_contract_errors(records: Sequence[SemanticCaseRecord]) -> List[str]:
+    errors = []
+    disallowed_top_level_cases = _field_case_ids(records, DISALLOWED_TOP_LEVEL_FIELDS)
+    for field_name in DISALLOWED_TOP_LEVEL_FIELDS:
+        case_ids = disallowed_top_level_cases[field_name]
+        if case_ids:
+            errors.append(
+                "shared fixture 顶层字段 %s 不属于长期契约，命中：%s"
+                % (field_name, _case_ids(case_ids))
+            )
+
+    for field_name in DISALLOWED_EXPECTATION_FIELDS:
+        case_ids = [
+            record.case_id
+            for record in records
+            if field_name in set(_expectation_fields(record))
+        ]
+        if case_ids:
+            errors.append(
+                "shared fixture 观察字段 %s 不属于公开观察面，命中：%s"
+                % (field_name, _case_ids(case_ids))
+            )
+    return errors
+
+
+def _contract_errors(root: Path, records: Sequence[SemanticCaseRecord]) -> List[str]:
+    errors = []
+    errors.extend(_paired_file_errors(root, records))
+    errors.extend(_markdown_contract_errors(root))
+    errors.extend(_runner_field_errors(root))
+    errors.extend(_field_contract_errors(records))
+    return errors
+
+
+def build_report(root: Path) -> str:
     records = _load_cases(root)
-    readme_text = _read_text(_readme_path(root))
-    readme_index = _render_readme_index(records)
-    readme_output = _replace_readme_index(readme_text, readme_index)
-    report_text = _render_report(root, records, readme_text)
-    return report_text, readme_output
+    return _render_report(root, records)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Generate or check the simulate semantic fixture inventory."
-    )
-    parser.add_argument(
-        "--write",
-        action="store_true",
-        help="Write the inventory report and README fixture index.",
+        description="Report or check the simulate semantic fixture inventory."
     )
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Check that generated outputs are up to date.",
+        help="Check the long-term shared fixture maintenance contract.",
     )
     parser.add_argument(
         "--root",
@@ -587,25 +482,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()
-    report_text, readme_text = build_outputs(root)
-
-    if args.write:
-        _write(_report_path(root), report_text)
-        _write(_readme_path(root), readme_text)
+    records = _load_cases(root)
 
     if args.check:
-        errors = []
-        errors.extend(_check_file(_report_path(root), report_text, "case inventory"))
-        errors.extend(_check_file(_readme_path(root), readme_text, "README index"))
+        errors = _contract_errors(root, records)
         if errors:
             for error in errors:
                 print(error)
             return 1
-        print("simulate semantic fixture inventory is up to date")
+        print("simulate semantic fixture maintenance checks passed")
         return 0
 
-    if not args.write:
-        print(report_text, end="")
+    print(_render_report(root, records), end="")
     return 0
 
 

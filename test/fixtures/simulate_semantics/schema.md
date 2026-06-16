@@ -35,6 +35,11 @@ The shared corpus may assert only public observations:
 - abstract hook call behavior through `handlers` plus `handler_calls`
 - cycle return value and event accounting through `cycle_result`
 
+Current v1 fixtures still record `cycle_result` in shared YAML. That field is
+kept here as the current contract fact, not as a promise of a broader private
+runtime surface. If a later cleanup removes it from the shared contract, this
+schema should be updated together with the corresponding fixture migration.
+
 These surfaces are not part of the shared fixture contract and must stay in
 ordinary pytest coverage instead of shared YAML: CLI/REPL command transcripts,
 model-construction diagnostics, simulator runtime options, stack snapshots,

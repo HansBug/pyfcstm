@@ -848,7 +848,15 @@ def test_shared_fixture_accepts_initial_constructor_observation(tmp_path):
 
 @pytest.mark.unittest
 @pytest.mark.parametrize(
-    "field_name", ["input_events", "consumed_events", "unconsumed_events"]
+    "field_name",
+    [
+        "input_events",
+        "consumed_events",
+        "unconsumed_events",
+        "event_accounting",
+        "event_ledger",
+        "event_log",
+    ],
 )
 def test_shared_fixture_contract_rejects_event_accounting_fields(tmp_path, field_name):
     data = _shared_case_data()
@@ -881,6 +889,9 @@ def test_shared_fixture_corpus_uses_public_observation_fields():
         "input_events",
         "consumed_events",
         "unconsumed_events",
+        "event_accounting",
+        "event_ledger",
+        "event_log",
         "history",
         "history_tail",
         "history_length",

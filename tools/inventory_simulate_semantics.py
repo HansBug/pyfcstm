@@ -45,6 +45,9 @@ DISALLOWED_EXPECTATION_FIELDS = (
     "input_events",
     "consumed_events",
     "unconsumed_events",
+    "event_accounting",
+    "event_ledger",
+    "event_log",
     "history",
     "history_tail",
     "history_length",
@@ -210,6 +213,17 @@ def _expectation_field_counts(records: Sequence[SemanticCaseRecord]) -> Dict[str
         for field_name in set(_expectation_fields(record)):
             counter[field_name] += 1
     return {field_name: counter[field_name] for field_name in sorted(counter)}
+
+
+def _unknown_expectation_field_case_ids(
+    records: Sequence[SemanticCaseRecord],
+) -> Dict[str, List[str]]:
+    known_fields = set(PUBLIC_EXPECTATION_FIELDS) | set(DISALLOWED_EXPECTATION_FIELDS)
+    result = {}
+    for record in records:
+        for field_name in set(_expectation_fields(record)) - known_fields:
+            result.setdefault(field_name, []).append(record.case_id)
+    return {field_name: result[field_name] for field_name in sorted(result)}
 
 
 def _step_count(records: Sequence[SemanticCaseRecord]) -> int:
@@ -381,6 +395,7 @@ def _render_report(
         ]
         for field_name in DISALLOWED_EXPECTATION_FIELDS
     }
+    unknown_expectation_cases = _unknown_expectation_field_case_ids(records)
     legacy_cycle_cases = _legacy_cycle_shape_case_ids(records)
     legacy_path_cases = _legacy_path_shape_case_ids(records)
     public_expectation_counts = {
@@ -401,6 +416,9 @@ def _render_report(
     )
     disallowed_expectation_hits = sorted(
         set().union(*(set(items) for items in disallowed_expectation_cases.values()))
+    )
+    unknown_expectation_hits = sorted(
+        set().union(*(set(items) for items in unknown_expectation_cases.values()))
     )
     legacy_cycle_hits = sorted(
         set().union(*(set(items) for items in legacy_cycle_cases.values()))
@@ -499,8 +517,13 @@ def _render_report(
                 ),
                 (
                     "契约外观察字段",
-                    _case_ids(disallowed_expectation_hits),
-                    "通过：未出现 stack、cycle_count、history*、cycle_result、return、event accounting、logs、warnings 或错误诊断字段。",
+                    _case_ids(
+                        sorted(
+                            set(disallowed_expectation_hits)
+                            | set(unknown_expectation_hits)
+                        )
+                    ),
+                    "通过：只出现 state、vars、vars_exact、vars_keys、vars_absent、ended、raises 和 handler_calls 公开观察字段；未出现 event accounting 或其他私有观察字段。",
                 ),
                 (
                     "长期 Markdown 文件",
@@ -602,6 +625,17 @@ def _render_report(
                 (field_name, str(len(disallowed_expectation_cases[field_name])))
                 for field_name in DISALLOWED_EXPECTATION_FIELDS
             ),
+        ),
+        "",
+        "## Unknown Expectation Field Counts",
+        "",
+        _format_markdown_table(
+            ("Expectation field", "Case files"),
+            tuple(
+                (field_name, str(len(case_ids)))
+                for field_name, case_ids in sorted(unknown_expectation_cases.items())
+            )
+            or (("-", "0"),),
         ),
         "",
         "## Handler Behavior Distribution",
@@ -738,6 +772,13 @@ def _field_contract_errors(records: Sequence[SemanticCaseRecord]) -> List[str]:
                 "shared fixture 观察字段 %s 不属于公开观察面，命中：%s"
                 % (field_name, _case_ids(case_ids))
             )
+
+    unknown_expectation_cases = _unknown_expectation_field_case_ids(records)
+    for field_name, case_ids in sorted(unknown_expectation_cases.items()):
+        errors.append(
+            "shared fixture 观察字段 %s 未在 schema v2 公开观察面中声明，命中：%s"
+            % (field_name, _case_ids(case_ids))
+        )
     return errors
 
 

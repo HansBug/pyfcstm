@@ -1590,7 +1590,9 @@ def validate_shared_fixture_contract(data: Mapping[str, Any], yaml_path: str) ->
     The fixture corpus has a single current schema: every case is shared by
     default, uses exclude-only runner selection, and may only assert public
     observations that are stable across the simulator and generated Python
-    alignment runtime.
+    alignment runtime. This guard enforces the shared public-observation
+    surface; :func:`load_semantic_case` applies the full fixture schema before
+    constructing a :class:`SemanticCase`.
 
     :param data: Parsed fixture YAML mapping.
     :type data: typing.Mapping[str, typing.Any]
@@ -1708,6 +1710,14 @@ def validate_shared_fixture_contract(data: Mapping[str, Any], yaml_path: str) ->
             expect = step.get(expect_name)
             if not isinstance(expect, dict):
                 continue
+            field_path = "steps[%d].%s" % (step_index, expect_name)
+            unknown_expect = set(expect.keys()) - _PUBLIC_EXPECT_FIELDS
+            if unknown_expect:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "%s has unknown fields: %r" % (field_path, sorted(unknown_expect)),
+                )
             public_expect = _PUBLIC_EXPECT_FIELDS & set(expect.keys())
             if not public_expect:
                 raise _case_error(

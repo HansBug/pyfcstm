@@ -747,6 +747,18 @@ def _shared_case_data():
             "has unknown fields",
         ),
         (
+            lambda data: data["steps"][0]["expect"].update({"input_events": []}),
+            "has unknown fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"consumed_events": []}),
+            "has unknown fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"unconsumed_events": []}),
+            "has unknown fields",
+        ),
+        (
             lambda data: data["steps"][0]["expect"].update({"warnings": {"count": 0}}),
             "has unknown fields",
         ),
@@ -835,6 +847,19 @@ def test_shared_fixture_accepts_initial_constructor_observation(tmp_path):
 
 
 @pytest.mark.unittest
+@pytest.mark.parametrize(
+    "field_name", ["input_events", "consumed_events", "unconsumed_events"]
+)
+def test_shared_fixture_contract_rejects_event_accounting_fields(tmp_path, field_name):
+    data = _shared_case_data()
+    data["steps"][0]["expect"][field_name] = []
+    yaml_path = _write_fixture(tmp_path, data)
+
+    with pytest.raises(SemanticCaseError, match="has unknown fields"):
+        validate_shared_fixture_contract(data, yaml_path)
+
+
+@pytest.mark.unittest
 def test_shared_fixture_corpus_uses_public_observation_fields():
     disallowed_top_level_fields = {
         "boundary",
@@ -866,6 +891,8 @@ def test_shared_fixture_corpus_uses_public_observation_fields():
         "error_info",
         "anonymous_warning_count",
         "output_contains",
+        "output_not_contains",
+        "error_contains",
         "should_exit",
     }
     cases = list(iter_semantic_cases())

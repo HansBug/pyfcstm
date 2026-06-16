@@ -42,6 +42,9 @@ DISALLOWED_EXPECTATION_FIELDS = (
     "cycle_count",
     "cycle_result",
     "return",
+    "input_events",
+    "consumed_events",
+    "unconsumed_events",
     "history",
     "history_tail",
     "history_length",
@@ -497,7 +500,7 @@ def _render_report(
                 (
                     "契约外观察字段",
                     _case_ids(disallowed_expectation_hits),
-                    "通过：未出现 stack、cycle_count、history*、cycle_result、return、logs、warnings 或错误诊断字段。",
+                    "通过：未出现 stack、cycle_count、history*、cycle_result、return、event accounting、logs、warnings 或错误诊断字段。",
                 ),
                 (
                     "长期 Markdown 文件",

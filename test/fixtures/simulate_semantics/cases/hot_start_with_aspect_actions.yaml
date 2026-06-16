@@ -10,7 +10,6 @@ origin:
   - initial
   - state
   - vars
-  - cycle_result
   - ended
 categories:
 - runtime
@@ -42,8 +41,6 @@ steps:
       during_count: 1
       after_count: 1
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -54,8 +51,6 @@ steps:
       during_count: 2
       after_count: 2
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -66,8 +61,6 @@ steps:
       during_count: 3
       after_count: 3
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.A.Go
@@ -80,8 +73,6 @@ steps:
       during_count: 13
       after_count: 4
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -92,5 +83,3 @@ steps:
       during_count: 23
       after_count: 5
     ended: false
-    cycle_result:
-      value: null

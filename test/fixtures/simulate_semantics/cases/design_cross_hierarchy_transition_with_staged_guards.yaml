@@ -9,7 +9,6 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_26_cross_hierarchy_transition_with_staged_guards
   assertion_types:
   - ended
-  - cycle_result
   - state
   - vars
 categories:
@@ -30,8 +29,6 @@ steps:
       phase: 1
       trace: 110111
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -42,8 +39,6 @@ steps:
       phase: 2
       trace: 220222
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -54,8 +49,6 @@ steps:
       phase: 3
       trace: 330333
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -66,8 +59,6 @@ steps:
       phase: 4
       trace: 440444
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -78,8 +69,6 @@ steps:
       phase: 5
       trace: 550555
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -90,8 +79,6 @@ steps:
       phase: 6
       trace: 660666
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -102,8 +89,6 @@ steps:
       phase: 7
       trace: 770777
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -114,8 +99,6 @@ steps:
       phase: 7
       trace: 1881778
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -126,5 +109,3 @@ steps:
       phase: 7
       trace: 2992779
     ended: false
-    cycle_result:
-      value: null

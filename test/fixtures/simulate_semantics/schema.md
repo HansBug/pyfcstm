@@ -9,8 +9,8 @@ built-in Python runtime alignment tests. A fixture is a pair of files under
 
 The schema is intentionally strict. Unknown top-level fields, unknown
 categories, unknown expectation fields, and unknown nested fields inside
-`cycle`, `cycle_result`, `raises`, handlers, and handler calls fail fast with a
-diagnostic containing the case id and YAML path.
+`cycle`, `raises`, handlers, and handler calls fail fast with a diagnostic
+containing the case id and YAML path.
 
 ## Contract
 
@@ -33,19 +33,17 @@ The shared corpus may assert only public observations:
 - construction or hot-start outcome through `initial`
 - cycle inputs and post-cycle state/vars through `steps`
 - abstract hook call behavior through `handlers` plus `handler_calls`
-- cycle return value and event accounting through `cycle_result`
 
-Current v1 fixtures still record `cycle_result` in shared YAML. That field is
-kept here as the current contract fact, not as a promise of a broader private
-runtime surface. If a later cleanup removes it from the shared contract, this
-schema should be updated together with the corresponding fixture migration.
+Cycle return values and event accounting are simulator-only debug / introspection
+metadata. They belong in ordinary `test/simulate/` pytest coverage and must not
+appear in shared fixture YAML or generated-template alignment expectations.
 
 These surfaces are not part of the shared fixture contract and must stay in
 ordinary pytest coverage instead of shared YAML: CLI/REPL command transcripts,
 model-construction diagnostics, simulator runtime options, stack snapshots,
 cycle counters, history records, logs, warnings, abstract handler error lists,
-error-state metadata, anonymous-warning dedupe metadata, and top-level
-expected-failure markers.
+error-state metadata, anonymous-warning dedupe metadata, cycle return metadata,
+and top-level expected-failure markers.
 
 ## Top-Level Fields
 
@@ -155,8 +153,6 @@ steps:
       vars:
         counter: 10
       ended: false
-      cycle_result:
-        value: null
 ```
 
 `cycle` may be `{}`, `null`, a bare event-path string, or a mapping with only
@@ -180,30 +176,23 @@ cycle:
 | `vars_keys` | Exact variable key-set assertion. |
 | `vars_absent` | Variables that must not be present. |
 | `ended` | Expected `runtime.is_ended`. |
-| `cycle_result` | Standardized `cycle()` result object. |
 | `raises` | Expected exception class name and optional message/cause match. |
 | `handler_calls` | Exact accumulated fixture-handler call records. |
 
 `vars` and `vars_exact` may both be present only when the partial `vars` mapping
 is consistent with `vars_exact`. `vars_keys` and `vars_absent` must not overlap.
-`raises` cannot be combined with `cycle_result`.
 
 Every `expect` or `expect_initial` mapping must assert at least one public
 observation field.
 
-## Cycle Result
+## Simulator-only cycle return metadata
 
-`cycle_result` allows these fields:
-
-| Field | Required | Description |
-|---|---:|---|
-| `value` | yes | Standardized `cycle()` return value. |
-| `input_events` | no | Normalized input event names from the runtime result. |
-| `consumed_events` | no | Consumed event names from the runtime result. |
-| `unconsumed_events` | no | Unconsumed event names from the runtime result. |
-
-Simulator and generated Python alignment runners both expose these fields. The
-assertion compares only fields declared by the fixture.
+`cycle_result` is intentionally not a shared fixture field.
+`pyfcstm.simulate.SimulationRuntime.cycle()` may return simulator debug metadata,
+including event-accounting details, but generated runtimes are not required to
+mirror that return object. Keep those assertions in ordinary simulator pytest
+files such as `test/simulate/test_event_inputs.py` and
+`test/simulate/test_runtime_contract_integration.py`.
 
 ## Exceptions
 
@@ -275,7 +264,6 @@ alignment runner checks construction outcomes and, after every step:
 - `is_ended`
 - variables
 - current state path
-- `cycle()` return value
 - expected exception class names and messages
 - public handler call records
 

@@ -10,7 +10,6 @@ origin:
   assertion_types:
   - state
   - vars
-  - cycle_result
   notes:
   - Covers the canonical generated Python sign expression mismatch in a lifecycle
     action.
@@ -31,5 +30,3 @@ steps:
       marker: -1
       x: -3
     ended: false
-    cycle_result:
-      value: null

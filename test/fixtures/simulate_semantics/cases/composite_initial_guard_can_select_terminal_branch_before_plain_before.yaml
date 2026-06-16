@@ -32,5 +32,3 @@ steps:
       flag: 1
       trace: 234789
     ended: true
-    cycle_result:
-      value: null

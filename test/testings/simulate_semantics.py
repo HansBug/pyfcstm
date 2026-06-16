@@ -38,7 +38,6 @@ from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.simulate import (
-    CycleResult,
     SimulationRuntime,
     SimulationRuntimeDfsError,
     SimulationRuntimeEventError,
@@ -89,7 +88,6 @@ _ALLOWED_EXPECT_FIELDS = {
     "vars_keys",
     "vars_absent",
     "ended",
-    "cycle_result",
     "raises",
     "handler_calls",
 }
@@ -124,12 +122,6 @@ _ALLOWED_HANDLER_CALL_FIELDS = _REQUIRED_HANDLER_CALL_FIELDS | {
     "write_attempt",
 }
 _ALLOWED_WRITE_ATTEMPT_FIELDS = {"name", "value", "succeeded", "error_type", "vars"}
-_ALLOWED_CYCLE_RESULT_FIELDS = {
-    "value",
-    "input_events",
-    "consumed_events",
-    "unconsumed_events",
-}
 _PUBLIC_EXPECT_FIELDS = {
     "state",
     "vars",
@@ -138,7 +130,6 @@ _PUBLIC_EXPECT_FIELDS = {
     "vars_absent",
     "ended",
     "raises",
-    "cycle_result",
     "handler_calls",
 }
 _EXCEPTION_TYPES = {
@@ -311,62 +302,6 @@ def _runtime_state_path(runtime: Any) -> Optional[Tuple[str, ...]]:
     if current_state is None:
         return None
     return tuple(current_state.path)
-
-
-def _standardize_cycle_result(value: Any) -> Dict[str, Any]:
-    """
-    Convert runtime-specific cycle results into the fixture assertion shape.
-
-    Both :class:`pyfcstm.simulate.CycleResult` and generated Python runtime
-    cycle-result objects expose the same public ``value`` and event-accounting
-    attributes. The helper accepts either implementation so shared fixtures can
-    compare the whole public return object across runtimes.
-
-    :param value: Raw value returned by a runtime ``cycle`` call.
-    :type value: Any
-    :return: Standardized mapping used by ``expect.cycle_result``.
-    :rtype: Dict[str, Any]
-
-    Example::
-
-        >>> _standardize_cycle_result(CycleResult(input_events=("Root.A.Go",)))
-        {'value': None, 'input_events': ['Root.A.Go'], 'consumed_events': [], 'unconsumed_events': []}
-    """
-    if _is_cycle_result_like(value):
-        return {
-            "value": value.value,
-            "input_events": list(value.input_events),
-            "consumed_events": list(value.consumed_events),
-            "unconsumed_events": list(value.unconsumed_events),
-        }
-    return {"value": value}
-
-
-def _is_cycle_result_like(value: Any) -> bool:
-    return all(
-        hasattr(value, field)
-        for field in ("value", "input_events", "consumed_events", "unconsumed_events")
-    )
-
-
-def _assert_cycle_result(
-    result: Any, expect: Mapping[str, Any], case: SemanticCase, field_path: str
-) -> None:
-    if "cycle_result" not in expect:
-        return
-    actual_result = _standardize_cycle_result(result)
-    expected_result = dict(expect["cycle_result"])
-    comparable_result = {key: actual_result.get(key) for key in expected_result}
-    assert comparable_result == expected_result, (
-        "%s %s cycle_result mismatch for declared fields: %r != %r (full actual: %r)"
-        % (
-            case.id,
-            field_path,
-            comparable_result,
-            expected_result,
-            actual_result,
-        )
-    )
 
 
 def _handler_call_comparable_record(actual: Mapping[str, Any]) -> Dict[str, Any]:
@@ -682,13 +617,7 @@ def _run_step(
                 % (case.id, field_path, expect["raises"])
             )
     else:
-        result = runtime.cycle(events)
-        _assert_cycle_result(
-            result,
-            expect,
-            case,
-            field_path + ".expect.cycle_result",
-        )
+        runtime.cycle(events)
     _assert_runtime_expectation(
         runtime,
         expect,
@@ -1112,12 +1041,6 @@ class _GeneratedPythonAlignmentRuntime:
                     )
                 )
             raise sim_exc
-        sim_standardized = _standardize_cycle_result(sim_result)
-        gen_standardized = _standardize_cycle_result(gen_result)
-        assert sim_standardized == gen_standardized, (
-            "cycle(events=%r) return metadata mismatch for DSL:\n%s\nsimulation=%r, generated=%r"
-            % (events, self._dsl_code, sim_result, gen_result)
-        )
         self._assert_aligned("after cycle(events=%r)" % (events,))
         return sim_result
 
@@ -1177,7 +1100,7 @@ def run_simulation_case(case: SemanticCase) -> None:
 
     The runner builds the production simulator, installs any fixture-defined
     abstract handlers, executes each step, and applies the strict YAML
-    expectations for state, variables, cycle result, exceptions, and public
+    expectations for state, variables, exceptions, and public
     hook-call records.
 
     :param case: Semantic fixture to execute with the simulation runner.
@@ -1220,7 +1143,7 @@ def run_generated_python_alignment_case(case: SemanticCase) -> None:
 
     The alignment runner generates the built-in Python runtime for the case DSL,
     executes it beside :class:`SimulationRuntime`, and asserts that public state,
-    variables, cycle results, exceptions, and handler calls remain aligned after
+    variables, exceptions, and handler calls remain aligned after
     every fixture step.
 
     :param case: Semantic fixture that includes the
@@ -1305,12 +1228,6 @@ def _validate_raises(
 ) -> None:
     if "raises" not in expect:
         return
-    if "cycle_result" in expect:
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "%s cannot combine raises and cycle_result" % field_path,
-        )
     raises = expect["raises"]
     if not isinstance(raises, dict):
         raise _case_error(
@@ -1354,37 +1271,6 @@ def _validate_raises(
             yaml_path,
             "%s.raises.cause_match_kind requires cause_match" % field_path,
         )
-
-
-def _validate_cycle_result(
-    expect: Mapping[str, Any], case_id: str, yaml_path: str, field_path: str
-) -> None:
-    if "cycle_result" not in expect:
-        return
-    cycle_result = expect["cycle_result"]
-    if not isinstance(cycle_result, dict):
-        raise _case_error(
-            case_id, yaml_path, "%s.cycle_result must be a mapping" % field_path
-        )
-    unknown = set(cycle_result.keys()) - _ALLOWED_CYCLE_RESULT_FIELDS
-    if unknown:
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "%s.cycle_result has unknown fields: %r" % (field_path, sorted(unknown)),
-        )
-    if "value" not in cycle_result:
-        raise _case_error(
-            case_id, yaml_path, "%s.cycle_result.value is required" % field_path
-        )
-    for event_field in ("input_events", "consumed_events", "unconsumed_events"):
-        if event_field in cycle_result:
-            _validate_string_list(
-                cycle_result[event_field],
-                case_id,
-                yaml_path,
-                "%s.cycle_result.%s" % (field_path, event_field),
-            )
 
 
 def _validate_handler_calls(
@@ -1554,7 +1440,6 @@ def _validate_expect(
             )
     _validate_vars_contract(expect, case_id, yaml_path, field_path)
     _validate_raises(expect, case_id, yaml_path, field_path)
-    _validate_cycle_result(expect, case_id, yaml_path, field_path)
     _validate_handler_calls(expect, case_id, yaml_path, field_path)
 
 
@@ -1818,7 +1703,7 @@ def validate_shared_fixture_contract(data: Mapping[str, Any], yaml_path: str) ->
         ...                 "cycle": {},
         ...                 "expect": {
         ...                     "state": ["Root", "A"],
-        ...                     "cycle_result": {"value": None},
+        ...                     "ended": False,
         ...                 },
         ...             }
         ...         ],

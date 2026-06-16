@@ -36,5 +36,3 @@ steps:
       bits: 3
       marker: 1
     ended: false
-    cycle_result:
-      value: null

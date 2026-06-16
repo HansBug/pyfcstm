@@ -37,8 +37,6 @@ steps:
       select: 2
       trace: 235
     ended: false
-    cycle_result:
-      value: null
     handler_calls:
     - action: Root.Choice.FromEnter.ChosenEnter
       state: Root.Choice.FromEnter

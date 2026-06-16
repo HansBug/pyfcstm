@@ -9,7 +9,6 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_23_pseudo_state_skips_aspect_actions
   assertion_types:
   - ended
-  - cycle_result
   - state
   - vars
 categories:
@@ -29,8 +28,6 @@ steps:
     vars:
       counter: 10101
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.A.GoP
@@ -42,5 +39,3 @@ steps:
     vars:
       counter: 121102
     ended: false
-    cycle_result:
-      value: null

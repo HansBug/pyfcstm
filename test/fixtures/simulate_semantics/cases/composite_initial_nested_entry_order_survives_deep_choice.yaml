@@ -13,7 +13,6 @@ origin:
   - events
   - state
   - vars
-  - cycle_result
   notes:
   - Covers deep nested composite entry rather than only the minimal two-level shape.
 categories:
@@ -34,8 +33,6 @@ steps:
       route: 0
       trace: 1
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.Idle.Go
@@ -49,10 +46,3 @@ steps:
       route: 2
       trace: 1234567
     ended: false
-    cycle_result:
-      value: null
-      input_events:
-      - Root.Idle.Go
-      consumed_events:
-      - Root.Idle.Go
-      unconsumed_events: []

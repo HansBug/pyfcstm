@@ -10,7 +10,6 @@ origin:
   - initial
   - state
   - vars
-  - cycle_result
   - ended
 categories:
 - runtime
@@ -39,8 +38,6 @@ steps:
       enter_count: 0
       during_count: 1
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -50,8 +47,6 @@ steps:
       enter_count: 0
       during_count: 2
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -61,5 +56,3 @@ steps:
       enter_count: 0
       during_count: 3
     ended: false
-    cycle_result:
-      value: null

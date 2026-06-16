@@ -33,8 +33,6 @@ steps:
     vars:
       trace: 11
     ended: false
-    cycle_result:
-      value: null
     handler_calls:
     - action: Root.Library.Final
       state: Root.Active

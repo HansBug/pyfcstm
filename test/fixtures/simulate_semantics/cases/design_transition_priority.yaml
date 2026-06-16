@@ -9,7 +9,6 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_8_transition_priority
   assertion_types:
   - ended
-  - cycle_result
   - state
   - vars
 categories:
@@ -28,8 +27,6 @@ steps:
     vars:
       counter: 1
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -38,8 +35,6 @@ steps:
     vars:
       counter: 2
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -48,8 +43,6 @@ steps:
     vars:
       counter: 3
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -58,5 +51,3 @@ steps:
     vars:
       counter: 103
     ended: false
-    cycle_result:
-      value: null

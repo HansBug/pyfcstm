@@ -27,8 +27,6 @@ steps:
       x: 1
       y: 1.5
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.A.Go

@@ -9,7 +9,6 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_4_validation_init_transition_requires_event
   assertion_types:
   - ended
-  - cycle_result
   - state
   - vars
 categories:
@@ -29,8 +28,6 @@ steps:
     vars:
       counter: 1
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.A.GoB
@@ -41,8 +38,6 @@ steps:
     vars:
       counter: 2
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.A.GoB
@@ -55,5 +50,3 @@ steps:
     vars:
       counter: 12
     ended: false
-    cycle_result:
-      value: null

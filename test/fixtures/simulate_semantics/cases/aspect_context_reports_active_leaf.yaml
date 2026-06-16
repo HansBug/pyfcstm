@@ -34,8 +34,6 @@ steps:
     vars:
       branch: 1
     ended: false
-    cycle_result:
-      value: null
     handler_calls:
     - action: Root.Observe
       state: Root.A
@@ -58,8 +56,6 @@ steps:
     vars:
       branch: 2
     ended: false
-    cycle_result:
-      value: null
     handler_calls:
     - action: Root.Observe
       state: Root.A

@@ -26,8 +26,6 @@ steps:
       counter: 0
       divisor: 0
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     raises:

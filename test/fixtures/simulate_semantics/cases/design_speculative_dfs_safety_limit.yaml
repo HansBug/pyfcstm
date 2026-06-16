@@ -10,7 +10,6 @@ origin:
   assertion_types:
   - ended
   - exception
-  - cycle_result
   - state
   - vars
 categories:
@@ -30,8 +29,6 @@ steps:
     vars:
       counter: 1
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.A.Go

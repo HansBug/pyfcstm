@@ -33,8 +33,6 @@ steps:
     vars:
       x: 0
     ended: false
-    cycle_result:
-      value: null
     handler_calls:
     - action: Root.Library.Shared
       state: Root.A

@@ -12,7 +12,6 @@ origin:
   assertion_types:
   - state
   - vars
-  - cycle_result
   notes:
   - Covers root composite entry where the guard variable is written by composite enter
     and then plain during-before.
@@ -41,8 +40,3 @@ steps:
       select: 2
       trace: 2345
     ended: false
-    cycle_result:
-      value: null
-      input_events: []
-      consumed_events: []
-      unconsumed_events: []

@@ -40,8 +40,6 @@ steps:
     vars:
       trace: 8
     ended: false
-    cycle_result:
-      value: null
     handler_calls:
     - action: Root.ObserveBefore
       state: Root.A

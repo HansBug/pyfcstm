@@ -9,7 +9,6 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_2_composite_state
   assertion_types:
   - ended
-  - cycle_result
   - state
   - vars
 categories:
@@ -28,8 +27,6 @@ steps:
     vars:
       counter: 1
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.A.GoB
@@ -41,8 +38,6 @@ steps:
     vars:
       counter: 11
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.B.B1.Next
@@ -54,5 +49,3 @@ steps:
     vars:
       counter: 111
     ended: false
-    cycle_result:
-      value: null

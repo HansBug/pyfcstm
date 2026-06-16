@@ -36,8 +36,6 @@ steps:
     - A
     vars_exact: {}
     ended: false
-    cycle_result:
-      value: null
     handler_calls:
     - action: Root.Library.SharedExit
       state: Root.A
@@ -78,8 +76,6 @@ steps:
     - B
     vars_exact: {}
     ended: false
-    cycle_result:
-      value: null
     handler_calls:
     - action: Root.Library.SharedExit
       state: Root.A

@@ -1,17 +1,9 @@
-schema_version: 1
-id: composite_initial_guard_after_named_ref_before_uses_pre_ref_vars
 title: Composite initial guard is decided before named-ref plain during-before action
-source:
-  fcstm: composite_initial_guard_after_named_ref_before_uses_pre_ref_vars.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   docs:
   - https://github.com/HansBug/pyfcstm/issues/197#issuecomment-4689646151
-  assertion_types:
-  - events
-  - state
-  - vars
   notes:
   - Covers the named lifecycle ref variant where the plain during-before action mutates
     the guard variable through a ref.
@@ -19,26 +11,16 @@ categories:
 - runtime
 - lifecycle
 - event_paths
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Start
+    state: Root.Start
     vars:
       x: 1
     ended: false
-- cycle:
-    events:
-    - Root.Start.Go
+- cycle: Root.Start.Go
   expect:
-    state:
-    - Root
-    - Parent
-    - A
+    state: Root.Parent.A
     vars:
       x: 1012
     ended: false

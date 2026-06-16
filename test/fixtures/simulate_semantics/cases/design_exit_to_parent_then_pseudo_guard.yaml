@@ -1,79 +1,47 @@
-schema_version: 1
-id: design_exit_to_parent_then_pseudo_guard
 title: 4 17 2 exit to parent then pseudo then guard
-source:
-  fcstm: design_exit_to_parent_then_pseudo_guard.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_17_2_exit_to_parent_then_pseudo_then_guard
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_17_2_exit_to_parent_then_pseudo_then_guard
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - design_example
 - pseudo_chain
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System
-    - A
+    state: Root.System.A
     vars:
       counter: 1
     ended: false
-- cycle:
-    events:
-    - Root.System.A.GoP
+- cycle: Root.System.A.GoP
   expect:
-    state:
-    - Root
-    - System
-    - A
+    state: Root.System.A
     vars:
       counter: 2
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System
-    - A
+    state: Root.System.A
     vars:
       counter: 3
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System
-    - A
+    state: Root.System.A
     vars:
       counter: 4
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System
-    - A
+    state: Root.System.A
     vars:
       counter: 5
     ended: false
-- cycle:
-    events:
-    - Root.System.A.GoP
+- cycle: Root.System.A.GoP
   expect:
-    state:
-    - Root
-    - B
+    state: Root.B
     vars:
       counter: 1115
     ended: false

@@ -1,17 +1,8 @@
-schema_version: 1
-id: abstract_hook_context_hot_start_leaf
 title: Abstract hook context reports hot-start leaf callsite
-source:
-  fcstm: abstract_hook_context_hot_start_leaf.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/pull/205
   - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694732793
-  assertion_types:
-  - handler_calls
-  - hot_start
-  - state
-  - vars
   notes:
   - Hot-start leaf ref/aspect context alignment case for generated Python runtime.
 categories:
@@ -32,11 +23,9 @@ handlers:
 - action: Root.ObserveAfter
   behavior: record_call
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       trace: 8
     ended: false
@@ -46,9 +35,7 @@ steps:
       stage: during
       vars:
         trace: 7
-      active_leaf:
-      - Root
-      - A
+      active_leaf: Root.A
       call_stage: during
       abstract_target: Root.ObserveBefore
       named_ref: null
@@ -57,9 +44,7 @@ steps:
       stage: during
       vars:
         trace: 7
-      active_leaf:
-      - Root
-      - A
+      active_leaf: Root.A
       call_stage: during
       abstract_target: Root.Library.SharedDuring
       named_ref: Root.A.ActiveRef
@@ -68,9 +53,7 @@ steps:
       stage: during
       vars:
         trace: 8
-      active_leaf:
-      - Root
-      - A
+      active_leaf: Root.A
       call_stage: during
       abstract_target: Root.ObserveAfter
       named_ref: null

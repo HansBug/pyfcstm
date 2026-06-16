@@ -1,15 +1,7 @@
-schema_version: 1
-id: failed_initial_cycle_preserves_root_entry_lifecycle
 title: Failed initial cycle preserves root entry lifecycle on later success
-source:
-  fcstm: failed_initial_cycle_preserves_root_entry_lifecycle.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614005134
-  assertion_types:
-  - ended
-  - state
-  - vars
   notes:
   - Tracks failed-initial-cycle rollback of root entry lifecycle state.
 categories:
@@ -17,25 +9,16 @@ categories:
 - template_alignment
 - validation
 - lifecycle
-initial:
-  state: null
-  vars: null
 steps:
-- cycle:
-    events: []
+- cycle: []
   expect:
-    state:
-    - Root
+    state: Root
     vars:
       x: 0
     ended: false
-- cycle:
-    events:
-    - Root.Start
+- cycle: Root.Start
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       x: 11
     ended: false

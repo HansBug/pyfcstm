@@ -1,16 +1,7 @@
-schema_version: 1
-id: hot_start_initial_vars_override_skips_int_initializer
 title: Hot start initial vars override skips failing int initializer
-source:
-  fcstm: hot_start_initial_vars_override_skips_int_initializer.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694623177
-  assertion_types:
-  - initial
-  - state
-  - vars
-  - constructor_exception
   notes:
   - Covers the canonical int failing-initializer override case.
 categories:
@@ -23,19 +14,16 @@ initial:
     bad: 7
     ticks: 0
 steps:
-- expect_initial:
-    state:
-    - Root
-    - Safe
+- cycle_count: 0
+  expect:
+    state: Root.Safe
     vars:
       bad: 7
       ticks: 0
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Safe
+    state: Root.Safe
     vars:
       bad: 7
       ticks: 1

@@ -1,17 +1,10 @@
-schema_version: 1
-id: hot_start_rejects_overdeep_leaf_stack
 title: Hot-start rejects a leaf stack beyond the structural depth limit
-source:
-  fcstm: hot_start_rejects_overdeep_leaf_stack.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   - test/template/python/test_semantic_fixture_alignment.py::test_generated_python_alignment_semantic_fixture
   docs:
   - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694747151
-  assertion_types:
-  - initial
-  - exception
   notes:
   - The path contains 65 frames from Root through S63 and Leaf.
   - Both runtimes must reject the constructor before any cycle can execute.

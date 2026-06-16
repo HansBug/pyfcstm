@@ -52,10 +52,7 @@ FIXTURE_ROOT = os.path.abspath(
 )
 CASE_DIR = os.path.join(FIXTURE_ROOT, "cases")
 _ALLOWED_TOP_LEVEL_FIELDS = {
-    "schema_version",
-    "id",
     "title",
-    "source",
     "origin",
     "categories",
     "exclude_runners",
@@ -63,8 +60,7 @@ _ALLOWED_TOP_LEVEL_FIELDS = {
     "steps",
     "handlers",
 }
-_ALLOWED_SOURCE_FIELDS = {"fcstm"}
-_ALLOWED_ORIGIN_FIELDS = {"files", "docs", "assertion_types", "notes"}
+_ALLOWED_ORIGIN_FIELDS = {"files", "docs", "notes"}
 _ALLOWED_CATEGORIES = {
     "runtime",
     "template_alignment",
@@ -91,17 +87,8 @@ _ALLOWED_EXPECT_FIELDS = {
     "raises",
     "handler_calls",
 }
-_ALLOWED_INITIAL_EXPECT_FIELDS = {
-    "state",
-    "vars",
-    "vars_exact",
-    "vars_keys",
-    "vars_absent",
-    "ended",
-}
 _ALLOWED_INITIAL_FIELDS = {"state", "vars", "expect"}
 _ALLOWED_INITIAL_CONSTRUCTOR_EXPECT_FIELDS = {"raises"}
-_ALLOWED_CYCLE_FIELDS = {"events"}
 _ALLOWED_RAISES_FIELDS = {
     "type",
     "match",
@@ -110,18 +97,15 @@ _ALLOWED_RAISES_FIELDS = {
     "cause_match",
     "cause_match_kind",
 }
-_ALLOWED_HANDLER_FIELDS = {"action", "behavior", "write"}
-_ALLOWED_HANDLER_BEHAVIORS = {"record_call", "record_var_write_attempt"}
-_ALLOWED_HANDLER_WRITE_FIELDS = {"name", "value"}
+_ALLOWED_HANDLER_FIELDS = {"action", "behavior"}
+_ALLOWED_HANDLER_BEHAVIORS = {"record_call"}
 _REQUIRED_HANDLER_CALL_FIELDS = {"action", "state", "stage", "vars"}
 _ALLOWED_HANDLER_CALL_FIELDS = _REQUIRED_HANDLER_CALL_FIELDS | {
     "active_leaf",
     "call_stage",
     "abstract_target",
     "named_ref",
-    "write_attempt",
 }
-_ALLOWED_WRITE_ATTEMPT_FIELDS = {"name", "value", "succeeded", "error_type", "vars"}
 _PUBLIC_EXPECT_FIELDS = {
     "state",
     "vars",
@@ -205,7 +189,7 @@ class SemanticCase:
 
     @property
     def id(self) -> str:
-        return str(self.data["id"])
+        return os.path.splitext(os.path.basename(self.yaml_path))[0]
 
     @property
     def runners(self) -> Sequence[str]:
@@ -224,7 +208,9 @@ def _validate_runner_list(
     allowed_runners: Iterable[str],
 ) -> Tuple[str, ...]:
     if not isinstance(value, list) or not value:
-        raise _case_error(case_id, yaml_path, "%s must be a non-empty list" % field_path)
+        raise _case_error(
+            case_id, yaml_path, "%s must be a non-empty list" % field_path
+        )
     if not all(isinstance(item, str) for item in value):
         raise _case_error(
             case_id, yaml_path, "%s must be a list of strings" % field_path
@@ -277,18 +263,31 @@ def _effective_runners_from_data(
     return effective
 
 
-def _as_tuple_path(
-    value: Any, case: SemanticCase, field_path: str
+def _path_segments_from_dot_string(
+    value: Any, case_id: str, yaml_path: str, field_path: str
 ) -> Optional[Tuple[str, ...]]:
     if value is None:
         return None
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+    if not isinstance(value, str) or not value:
         raise _case_error(
-            case.id,
-            case.yaml_path,
-            "%s must be a list of path segments or null" % field_path,
+            case_id,
+            yaml_path,
+            "%s must be a dot-separated state path string or null" % field_path,
         )
-    return tuple(value)
+    parts = value.split(".")
+    if any(not part for part in parts):
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s must be a dot-separated state path string or null" % field_path,
+        )
+    return tuple(parts)
+
+
+def _as_tuple_path(
+    value: Any, case: SemanticCase, field_path: str
+) -> Optional[Tuple[str, ...]]:
+    return _path_segments_from_dot_string(value, case.id, case.yaml_path, field_path)
 
 
 def _vars_dict(runtime: Any) -> Dict[str, Any]:
@@ -309,9 +308,7 @@ def _handler_call_comparable_record(actual: Mapping[str, Any]) -> Dict[str, Any]
     state = actual.get("state")
     # Handlers may provide optional metadata directly. When a record omits an
     # optional field, derive the stable public value from required call data.
-    result.setdefault(
-        "active_leaf", state.split(".") if isinstance(state, str) else None
-    )
+    result.setdefault("active_leaf", state if isinstance(state, str) else None)
     result.setdefault("call_stage", actual.get("stage"))
     result.setdefault("abstract_target", actual.get("action"))
     result.setdefault("named_ref", None)
@@ -524,63 +521,142 @@ def _event_input_from_fixture_item(
 ) -> Any:
     if isinstance(item, str):
         return item
-    if isinstance(item, dict):
-        if set(item.keys()) != {"event"}:
-            raise _case_error(
-                case.id,
-                case.yaml_path,
-                "%s event descriptor must contain only event" % field_path,
-            )
-        path_name = item["event"]
-        if not isinstance(path_name, str):
-            raise _case_error(
-                case.id,
-                case.yaml_path,
-                "%s.event must be a string" % field_path,
-            )
-        state_machine = getattr(runtime, "state_machine", None)
-        if state_machine is None:
-            raise _case_error(
-                case.id,
-                case.yaml_path,
-                "%s.event requires a simulation runtime with state_machine"
-                % field_path,
-            )
-        return state_machine.resolve_event(path_name)
-    return item
+    raise _case_error(
+        case.id,
+        case.yaml_path,
+        "%s must be a string event path" % field_path,
+    )
 
 
 def _step_events(
     cycle_data: Any, runtime: Any, case: SemanticCase, field_path: str
 ) -> Any:
-    if cycle_data in (None, {}):
-        return None
     if isinstance(cycle_data, str):
         return cycle_data
-    if not isinstance(cycle_data, dict):
+    if isinstance(cycle_data, list):
+        return [
+            _event_input_from_fixture_item(
+                item,
+                runtime,
+                case,
+                "%s.cycle[%d]" % (field_path, index),
+            )
+            for index, item in enumerate(cycle_data)
+        ]
+    raise _case_error(
+        case.id,
+        case.yaml_path,
+        "%s.cycle must be a string event path or a list of string event paths"
+        % field_path,
+    )
+
+
+def _effective_cycle_count(
+    step: Mapping[str, Any], case_id: str, yaml_path: str, field_path: str
+) -> int:
+    if "cycle_count" in step:
+        cycle_count = step["cycle_count"]
+        if not isinstance(cycle_count, int) or isinstance(cycle_count, bool):
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.cycle_count must be a non-negative integer" % field_path,
+            )
+        if cycle_count < 0:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.cycle_count must be a non-negative integer" % field_path,
+            )
+        return cycle_count
+    return 1
+
+
+def _cycle_input_for_step(
+    step: Mapping[str, Any], case_id: str, yaml_path: str, field_path: str
+) -> Any:
+    if "cycle" not in step:
+        return []
+    cycle_data = step["cycle"]
+    if isinstance(cycle_data, str):
+        return cycle_data
+    if isinstance(cycle_data, list):
+        return cycle_data
+    if isinstance(cycle_data, dict):
+        if not cycle_data:
+            raise _case_error(
+                case_id, yaml_path, "%s.cycle: {} is not valid v2" % field_path
+            )
+        if "events" in cycle_data:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.cycle.events is not valid v2; use cycle: <event> or cycle: [<event>]"
+                % field_path,
+            )
         raise _case_error(
-            case.id,
-            case.yaml_path,
-            "%s.cycle must be a mapping, string, null, or omitted" % field_path,
+            case_id,
+            yaml_path,
+            "%s.cycle must be a string event path or a list of string event paths"
+            % field_path,
         )
-    events = cycle_data.get("events")
-    if events is None:
-        return None
-    if not isinstance(events, list):
+    if cycle_data is None:
         raise _case_error(
-            case.id,
-            case.yaml_path,
-            "%s.cycle.events must be a list or null" % field_path,
+            case_id, yaml_path, "%s.cycle: null is not valid v2" % field_path
         )
-    return [
-        _event_input_from_fixture_item(
-            item,
-            runtime,
-            case,
-            "%s.cycle.events[%d]" % (field_path, index),
+    raise _case_error(
+        case_id,
+        yaml_path,
+        "%s.cycle must be a string event path or a list of string event paths"
+        % field_path,
+    )
+
+
+def _validate_cycle_input_items(
+    cycle_input: Any, case_id: str, yaml_path: str, field_path: str
+) -> None:
+    if isinstance(cycle_input, str):
+        return
+    if not isinstance(cycle_input, list):
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s.cycle must be a string event path or a list of string event paths"
+            % field_path,
         )
-        for index, item in enumerate(events)
-    ]
+    for index, item in enumerate(cycle_input):
+        if not isinstance(item, str):
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.cycle[%d] must be a string event path" % (field_path, index),
+            )
+
+
+def _cycle_input_is_non_empty(cycle_input: Any) -> bool:
+    if isinstance(cycle_input, str):
+        return True
+    return bool(cycle_input)
+
+
+def _validate_step_cycle_shape(
+    step: Mapping[str, Any], case_id: str, yaml_path: str, field_path: str
+) -> None:
+    if "cycle" not in step and "cycle_count" not in step:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s must contain cycle or cycle_count" % field_path,
+        )
+    cycle_count = _effective_cycle_count(step, case_id, yaml_path, field_path)
+    cycle_input = _cycle_input_for_step(step, case_id, yaml_path, field_path)
+    _validate_cycle_input_items(cycle_input, case_id, yaml_path, field_path)
+    if cycle_count == 0 and _cycle_input_is_non_empty(cycle_input):
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s.cycle_count: 0 cannot have non-empty cycle" % field_path,
+        )
 
 
 def _run_step(
@@ -591,19 +667,10 @@ def _run_step(
     handler_calls: Optional[Sequence[Mapping[str, Any]]] = None,
 ) -> None:
     field_path = "steps[%d]" % index
-    if "expect_initial" in step:
-        expect = step["expect_initial"]
-        _assert_runtime_expectation(
-            runtime,
-            expect,
-            case,
-            field_path + ".expect_initial",
-            handler_calls=handler_calls,
-        )
-        return
-
     expect = step.get("expect") or {}
-    events = _step_events(step.get("cycle", {}), runtime, case, field_path)
+    cycle_count = _effective_cycle_count(step, case.id, case.yaml_path, field_path)
+    cycle_input = _cycle_input_for_step(step, case.id, case.yaml_path, field_path)
+    events = _step_events(cycle_input, runtime, case, field_path)
     if "raises" in expect:
         try:
             runtime.cycle(events)
@@ -613,11 +680,11 @@ def _run_step(
             _assert_exception(err, expect, case, field_path + ".expect.raises")
         else:
             raise AssertionError(
-                "%s %s expected exception %r"
-                % (case.id, field_path, expect["raises"])
+                "%s %s expected exception %r" % (case.id, field_path, expect["raises"])
             )
     else:
-        runtime.cycle(events)
+        for _ in range(cycle_count):
+            runtime.cycle(events)
     _assert_runtime_expectation(
         runtime,
         expect,
@@ -796,7 +863,6 @@ def _assert_aligned_constructor_outcome(
     _assert_exception(generated_err, expect, case, "initial.expect.raises")
 
 
-
 def _initial_kwargs(case: SemanticCase) -> Dict[str, Any]:
     initial = case.data.get("initial") or {}
     kwargs = {}
@@ -821,28 +887,7 @@ def _handler_call_record(ctx: Any) -> Dict[str, Any]:
     for name in ("active_leaf", "call_stage", "abstract_target", "named_ref"):
         if hasattr(ctx, name):
             value = getattr(ctx, name)
-            record[name] = list(value) if isinstance(value, tuple) else value
-    return record
-
-
-def _handler_var_write_record(ctx: Any, name: str, value: Any) -> Dict[str, Any]:
-    write_record = {
-        "name": name,
-        "value": value,
-        "succeeded": False,
-        "vars": dict(ctx.vars),
-    }
-    try:
-        ctx.vars[name] = value
-    except TypeError as err:
-        # MappingProxyType and other immutable mappings reject item assignment
-        # with TypeError; other exceptions should surface as test bugs.
-        write_record["error_type"] = type(err).__name__
-    else:
-        write_record["succeeded"] = True
-        write_record["vars"] = dict(ctx.vars)
-    record = _handler_call_record(ctx)
-    record["write_attempt"] = write_record
+            record[name] = ".".join(value) if isinstance(value, tuple) else value
     return record
 
 
@@ -852,11 +897,6 @@ def _run_fixture_handler(
     behavior = handler_data["behavior"]
     if behavior == "record_call":
         calls.append(_handler_call_record(ctx))
-    elif behavior == "record_var_write_attempt":
-        write_data = handler_data["write"]
-        calls.append(
-            _handler_var_write_record(ctx, write_data["name"], write_data["value"])
-        )
     else:
         raise ValueError("handlers behavior is invalid: %r" % behavior)
 
@@ -889,13 +929,12 @@ class _GeneratedPythonAlignmentRuntime:
     @property
     def state_machine(self):
         """
-        Return the simulator model used for fixture event-object descriptors.
+        Return the simulator model used for generated-runtime alignment.
 
-        Generated Python alignment cases still resolve YAML ``{event: ...}``
-        descriptors through the authoritative :class:`SimulationRuntime`
-        model, then pass the resulting model event to both runtimes. The
-        generated runtime accepts event-like objects by path today, while the
-        simulator verifies that the object belongs to the same model.
+        Schema v2 fixtures pass only string event paths or lists of string event
+        paths to :meth:`cycle`. The state machine remains available here for
+        alignment diagnostics and for callers that need to inspect the
+        authoritative simulator model while comparing generated behavior.
 
         :return: State machine model owned by the simulation runtime.
         :rtype: pyfcstm.model.StateMachine
@@ -968,8 +1007,6 @@ class _GeneratedPythonAlignmentRuntime:
         return self._simulation_runtime.current_state
 
     def cycle(self, events: Optional[Sequence[Any]] = None) -> Any:
-        sim_result = None
-        gen_result = None
         sim_exc = None
         gen_exc = None
         try:
@@ -979,7 +1016,7 @@ class _GeneratedPythonAlignmentRuntime:
             # alignment compares its class name with the generated runtime.
             sim_exc = err
         try:
-            gen_result = self._generated_runtime.cycle(events)
+            self._generated_runtime.cycle(events)
         except Exception as err:
             # Generated runtime has its own local exception classes, so class-name
             # comparison is the stable cross-runtime contract.
@@ -1202,13 +1239,23 @@ def _validate_vars_contract(
     expect: Mapping[str, Any], case_id: str, yaml_path: str, field_path: str
 ) -> None:
     if "vars" in expect and "vars_exact" in expect:
-        for name, value in dict(expect["vars"]).items():
-            if name in expect["vars_exact"] and expect["vars_exact"][name] != value:
-                raise _case_error(
-                    case_id,
-                    yaml_path,
-                    "%s vars and vars_exact conflict for %s" % (field_path, name),
-                )
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s vars and vars_exact conflict" % field_path,
+        )
+    if "vars_exact" in expect and "vars_keys" in expect:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s vars_exact and vars_keys conflict" % field_path,
+        )
+    if "vars_exact" in expect and "vars_absent" in expect:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s vars_exact and vars_absent conflict" % field_path,
+        )
     if "vars_keys" in expect and "vars_absent" in expect:
         overlap = set(expect["vars_keys"]) & set(expect["vars_absent"])
         if overlap:
@@ -1320,15 +1367,8 @@ def _validate_handler_calls(
             yaml_path,
             "%s.handler_calls[%d].vars" % (field_path, index),
         )
-        if "write_attempt" in item:
-            _validate_write_attempt(
-                item["write_attempt"],
-                case_id,
-                yaml_path,
-                "%s.handler_calls[%d].write_attempt" % (field_path, index),
-            )
         if "active_leaf" in item:
-            _validate_path_segments(
+            _validate_dot_state_path(
                 item["active_leaf"],
                 case_id,
                 yaml_path,
@@ -1348,46 +1388,10 @@ def _validate_handler_calls(
                 )
 
 
-def _validate_write_attempt(
+def _validate_dot_state_path(
     value: Any, case_id: str, yaml_path: str, field_path: str
 ) -> None:
-    if not isinstance(value, dict):
-        raise _case_error(case_id, yaml_path, "%s must be a mapping" % field_path)
-    unknown = set(value.keys()) - _ALLOWED_WRITE_ATTEMPT_FIELDS
-    if unknown:
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "%s has unknown fields: %r" % (field_path, sorted(unknown)),
-        )
-    for field_name in ("name", "error_type"):
-        if field_name in value and not isinstance(value[field_name], str):
-            raise _case_error(
-                case_id, yaml_path, "%s.%s must be a string" % (field_path, field_name)
-            )
-    if "name" not in value:
-        raise _case_error(case_id, yaml_path, "%s.name is required" % field_path)
-    if "value" not in value:
-        raise _case_error(case_id, yaml_path, "%s.value is required" % field_path)
-    if "succeeded" not in value or not isinstance(value["succeeded"], bool):
-        raise _case_error(
-            case_id, yaml_path, "%s.succeeded must be a boolean" % field_path
-        )
-    if "vars" in value:
-        _validate_vars_mapping(value["vars"], case_id, yaml_path, field_path + ".vars")
-
-
-def _validate_path_segments(
-    value: Any, case_id: str, yaml_path: str, field_path: str
-) -> None:
-    if value is None:
-        return
-    if not isinstance(value, list) or not all(
-        isinstance(segment, str) for segment in value
-    ):
-        raise _case_error(
-            case_id, yaml_path, "%s must be a list of strings or null" % field_path
-        )
+    _path_segments_from_dot_string(value, case_id, yaml_path, field_path)
 
 
 def _validate_vars_mapping(
@@ -1425,7 +1429,7 @@ def _validate_expect(
             "%s has unknown fields: %r" % (field_path, sorted(unknown)),
         )
     if "state" in expect:
-        _validate_path_segments(
+        _validate_dot_state_path(
             expect["state"], case_id, yaml_path, field_path + ".state"
         )
     for vars_field in ("vars", "vars_exact"):
@@ -1438,23 +1442,24 @@ def _validate_expect(
             _validate_string_list(
                 expect[list_field], case_id, yaml_path, field_path + "." + list_field
             )
+    if "ended" in expect and not isinstance(expect["ended"], bool):
+        raise _case_error(case_id, yaml_path, "%s.ended must be a boolean" % field_path)
+    if "state" in expect and "ended" in expect:
+        if expect["state"] is None and expect["ended"] is False:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s state and ended conflict" % field_path,
+            )
+        if expect["state"] is not None and expect["ended"] is True:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s state and ended conflict" % field_path,
+            )
     _validate_vars_contract(expect, case_id, yaml_path, field_path)
     _validate_raises(expect, case_id, yaml_path, field_path)
     _validate_handler_calls(expect, case_id, yaml_path, field_path)
-
-
-def _validate_source(source: Any, case_id: str, yaml_path: str) -> None:
-    if not isinstance(source, dict):
-        raise _case_error(case_id, yaml_path, "source must be a mapping")
-    unknown_source = set(source.keys()) - _ALLOWED_SOURCE_FIELDS
-    if unknown_source:
-        raise _case_error(
-            case_id, yaml_path, "source has unknown fields: %r" % sorted(unknown_source)
-        )
-    if not source.get("fcstm"):
-        raise _case_error(case_id, yaml_path, "source.fcstm is required")
-    if not isinstance(source["fcstm"], str):
-        raise _case_error(case_id, yaml_path, "source.fcstm must be a string")
 
 
 def _validate_origin(origin: Any, case_id: str, yaml_path: str) -> None:
@@ -1474,7 +1479,7 @@ def _validate_origin(origin: Any, case_id: str, yaml_path: str) -> None:
         raise _case_error(
             case_id, yaml_path, "origin.files must be a non-empty list of strings"
         )
-    for field_name in ("docs", "assertion_types", "notes"):
+    for field_name in ("docs", "notes"):
         if field_name in origin:
             _validate_string_list(
                 origin[field_name], case_id, yaml_path, "origin." + field_name
@@ -1495,8 +1500,10 @@ def _validate_initial(
             yaml_path,
             "initial has unknown fields: %r" % sorted(unknown_initial),
         )
-    if initial.get("state") is not None and not isinstance(initial.get("state"), str):
-        raise _case_error(case_id, yaml_path, "initial.state must be a string or null")
+    if initial.get("state") is not None:
+        _validate_dot_state_path(
+            initial.get("state"), case_id, yaml_path, "initial.state"
+        )
     if initial.get("vars") is not None:
         _validate_vars_mapping(initial.get("vars"), case_id, yaml_path, "initial.vars")
     if "expect" not in initial:
@@ -1526,71 +1533,6 @@ def _validate_initial(
     )
     if "raises" not in expect:
         raise _case_error(case_id, yaml_path, "initial.expect.raises is required")
-
-
-def _validate_cycle_event_item(
-    item: Any, case_id: str, yaml_path: str, field_path: str
-) -> None:
-    if isinstance(item, str):
-        return
-    if not isinstance(item, dict):
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "%s must be a string or event descriptor" % field_path,
-        )
-    if set(item.keys()) != {"event"}:
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "%s event descriptor must contain only event" % field_path,
-        )
-    if not isinstance(item["event"], str):
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "%s.event must be a string" % field_path,
-        )
-
-
-def _validate_cycle_data(
-    cycle_data: Any, case_id: str, yaml_path: str, field_path: str
-) -> None:
-    if cycle_data in (None, {}):
-        return
-    if isinstance(cycle_data, str):
-        return
-    if not isinstance(cycle_data, dict):
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "%s.cycle must be a mapping, string, or null" % field_path,
-        )
-    unknown_cycle = set(cycle_data.keys()) - _ALLOWED_CYCLE_FIELDS
-    if unknown_cycle:
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "%s.cycle has unknown fields: %r" % (field_path, sorted(unknown_cycle)),
-        )
-    if "events" not in cycle_data:
-        return
-    events = cycle_data["events"]
-    if events is None:
-        return
-    if not isinstance(events, list):
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "%s.cycle.events must be a list or null" % field_path,
-        )
-    for event_index, item in enumerate(events):
-        _validate_cycle_event_item(
-            item,
-            case_id,
-            yaml_path,
-            "%s.cycle.events[%d]" % (field_path, event_index),
-        )
 
 
 def _validate_handlers(
@@ -1639,41 +1581,6 @@ def _validate_handlers(
                 yaml_path,
                 "handlers[%d].behavior is invalid: %r" % (index, item["behavior"]),
             )
-        if item["behavior"] != "record_var_write_attempt" and "write" in item:
-            raise _case_error(
-                case_id,
-                yaml_path,
-                "handlers[%d].write is only allowed for record_var_write_attempt"
-                % index,
-            )
-        if item["behavior"] == "record_var_write_attempt":
-            write_data = item.get("write")
-            if not isinstance(write_data, dict):
-                raise _case_error(
-                    case_id, yaml_path, "handlers[%d].write must be a mapping" % index
-                )
-            unknown_write = set(write_data.keys()) - _ALLOWED_HANDLER_WRITE_FIELDS
-            if unknown_write:
-                raise _case_error(
-                    case_id,
-                    yaml_path,
-                    "handlers[%d].write has unknown fields: %r"
-                    % (index, sorted(unknown_write)),
-                )
-            if "name" not in write_data:
-                raise _case_error(
-                    case_id, yaml_path, "handlers[%d].write.name is required" % index
-                )
-            if not isinstance(write_data["name"], str):
-                raise _case_error(
-                    case_id,
-                    yaml_path,
-                    "handlers[%d].write.name must be a string" % index,
-                )
-            if "value" not in write_data:
-                raise _case_error(
-                    case_id, yaml_path, "handlers[%d].write.value is required" % index
-                )
 
 
 def validate_shared_fixture_contract(data: Mapping[str, Any], yaml_path: str) -> None:
@@ -1683,7 +1590,9 @@ def validate_shared_fixture_contract(data: Mapping[str, Any], yaml_path: str) ->
     The fixture corpus has a single current schema: every case is shared by
     default, uses exclude-only runner selection, and may only assert public
     observations that are stable across the simulator and generated Python
-    alignment runtime.
+    alignment runtime. This guard enforces the shared public-observation
+    surface; :func:`load_semantic_case` applies the full fixture schema before
+    constructing a :class:`SemanticCase`.
 
     :param data: Parsed fixture YAML mapping.
     :type data: typing.Mapping[str, typing.Any]
@@ -1697,12 +1606,14 @@ def validate_shared_fixture_contract(data: Mapping[str, Any], yaml_path: str) ->
 
         >>> validate_shared_fixture_contract(
         ...     {
-        ...         "id": "shared_case",
+        ...         "title": "shared case",
+        ...         "origin": {"files": ["test/example.py::test_example"]},
+        ...         "categories": ["runtime"],
         ...         "steps": [
         ...             {
-        ...                 "cycle": {},
+        ...                 "cycle": [],
         ...                 "expect": {
-        ...                     "state": ["Root", "A"],
+        ...                     "state": "Root.A",
         ...                     "ended": False,
         ...                 },
         ...             }
@@ -1712,8 +1623,10 @@ def validate_shared_fixture_contract(data: Mapping[str, Any], yaml_path: str) ->
         ... )
         >>> validate_shared_fixture_contract(
         ...     {
-        ...         "id": "bad_case",
-        ...         "steps": [{"expect": {"bogus": None}}],
+        ...         "title": "bad case",
+        ...         "origin": {"files": ["test/example.py::test_example"]},
+        ...         "categories": ["runtime"],
+        ...         "steps": [{"cycle": [], "expect": {"bogus": None}}],
         ...     },
         ...     "/tmp/bad_case.yaml",
         ... )
@@ -1721,7 +1634,7 @@ def validate_shared_fixture_contract(data: Mapping[str, Any], yaml_path: str) ->
         ...
         test.testings.simulate_semantics.SemanticCaseError: bad_case (/tmp/bad_case.yaml): steps[0].expect has unknown fields: ['bogus']
     """
-    case_id = str(data.get("id", "<unknown>")) if isinstance(data, dict) else "<unknown>"
+    case_id = os.path.splitext(os.path.basename(yaml_path))[0]
     if not isinstance(data, dict):
         raise _case_error(case_id, yaml_path, "fixture data must be a mapping")
     unknown_top_level = set(data.keys()) - _ALLOWED_TOP_LEVEL_FIELDS
@@ -1781,32 +1694,30 @@ def validate_shared_fixture_contract(data: Mapping[str, Any], yaml_path: str) ->
                 raise _case_error(
                     case_id,
                     yaml_path,
-                    "handlers[%d].behavior is invalid: %r"
-                    % (handler_index, behavior),
-                )
-            if behavior != "record_var_write_attempt" and "write" in handler:
-                raise _case_error(
-                    case_id,
-                    yaml_path,
-                    "handlers[%d].write is only allowed for record_var_write_attempt"
-                    % handler_index,
+                    "handlers[%d].behavior is invalid: %r" % (handler_index, behavior),
                 )
     steps = data.get("steps")
     if not isinstance(steps, list):
         raise _case_error(case_id, yaml_path, "shared fixture requires steps")
     if not steps and not has_initial_expect:
-        raise _case_error(
-            case_id, yaml_path, "shared fixture requires non-empty steps"
-        )
+        raise _case_error(case_id, yaml_path, "shared fixture requires non-empty steps")
     for step_index, step in enumerate(steps):
         if not isinstance(step, dict):
             raise _case_error(
                 case_id, yaml_path, "steps[%d] must be a mapping" % step_index
             )
-        for expect_name in ("expect_initial", "expect"):
+        for expect_name in ("expect",):
             expect = step.get(expect_name)
             if not isinstance(expect, dict):
                 continue
+            field_path = "steps[%d].%s" % (step_index, expect_name)
+            unknown_expect = set(expect.keys()) - _PUBLIC_EXPECT_FIELDS
+            if unknown_expect:
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "%s has unknown fields: %r" % (field_path, sorted(unknown_expect)),
+                )
             public_expect = _PUBLIC_EXPECT_FIELDS & set(expect.keys())
             if not public_expect:
                 raise _case_error(
@@ -1823,21 +1734,14 @@ def validate_shared_fixture_contract(data: Mapping[str, Any], yaml_path: str) ->
 
 
 def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
-    case_id = str(data.get("id", "<unknown>"))
+    case_id = os.path.splitext(os.path.basename(yaml_path))[0]
     unknown = set(data.keys()) - _ALLOWED_TOP_LEVEL_FIELDS
     if unknown:
         raise _case_error(
             case_id, yaml_path, "unknown top-level fields: %r" % sorted(unknown)
         )
-    if data.get("schema_version") != 1:
-        raise _case_error(case_id, yaml_path, "schema_version must be 1")
-    if not data.get("id"):
-        raise _case_error(case_id, yaml_path, "id is required")
     if not data.get("title") or not isinstance(data.get("title"), str):
         raise _case_error(case_id, yaml_path, "title is required")
-    if os.path.splitext(os.path.basename(yaml_path))[0] != case_id:
-        raise _case_error(case_id, yaml_path, "id must match YAML file name")
-    _validate_source(data.get("source"), case_id, yaml_path)
     _validate_origin(data.get("origin"), case_id, yaml_path)
     categories = data.get("categories")
     if not isinstance(categories, list) or not categories:
@@ -1872,52 +1776,36 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
                     case_id, yaml_path, "steps[%d] must be a mapping" % index
                 )
             field_path = "steps[%d]" % index
-            if "expect_initial" in step:
-                unknown_step = set(step.keys()) - {"expect_initial"}
-                if unknown_step:
-                    raise _case_error(
-                        case_id,
-                        yaml_path,
-                        "%s has unknown fields: %r"
-                        % (
-                            field_path,
-                            sorted(unknown_step),
-                        ),
-                    )
-                _validate_expect(
-                    step["expect_initial"],
+            unknown_step = set(step.keys()) - {"cycle", "cycle_count", "expect"}
+            if unknown_step:
+                raise _case_error(
                     case_id,
                     yaml_path,
-                    field_path + ".expect_initial",
-                    runners,
-                    allowed_fields=_ALLOWED_INITIAL_EXPECT_FIELDS,
+                    "%s has unknown fields: %r"
+                    % (
+                        field_path,
+                        sorted(unknown_step),
+                    ),
                 )
-            else:
-                unknown_step = set(step.keys()) - {"cycle", "expect"}
-                if unknown_step:
+            if "expect" not in step:
+                raise _case_error(
+                    case_id, yaml_path, "%s.expect is required" % field_path
+                )
+            _validate_step_cycle_shape(step, case_id, yaml_path, field_path)
+            _validate_expect(
+                step["expect"], case_id, yaml_path, field_path + ".expect", runners
+            )
+            if "raises" in step["expect"]:
+                cycle_count = _effective_cycle_count(
+                    step, case_id, yaml_path, field_path
+                )
+                if cycle_count != 1:
                     raise _case_error(
                         case_id,
                         yaml_path,
-                        "%s has unknown fields: %r"
-                        % (
-                            field_path,
-                            sorted(unknown_step),
-                        ),
+                        "%s.expect.raises requires effective cycle_count == 1"
+                        % field_path,
                     )
-                if "cycle" not in step:
-                    raise _case_error(
-                        case_id,
-                        yaml_path,
-                        "%s must contain cycle or expect_initial" % field_path,
-                    )
-                if "expect" not in step:
-                    raise _case_error(
-                        case_id, yaml_path, "%s.expect is required" % field_path
-                    )
-                _validate_cycle_data(step.get("cycle"), case_id, yaml_path, field_path)
-                _validate_expect(
-                    step["expect"], case_id, yaml_path, field_path + ".expect", runners
-                )
     validate_shared_fixture_contract(data, yaml_path)
 
 
@@ -1955,10 +1843,11 @@ def load_semantic_case(path_or_id: str) -> SemanticCase:
     if not isinstance(data, dict):
         raise SemanticCaseError("%s: fixture YAML must be a mapping" % yaml_path)
     _validate_case_data(data, yaml_path)
-    fcstm_path = os.path.join(os.path.dirname(yaml_path), data["source"]["fcstm"])
+    case_id = os.path.splitext(os.path.basename(yaml_path))[0]
+    fcstm_path = os.path.join(os.path.dirname(yaml_path), case_id + ".fcstm")
     if not os.path.isfile(fcstm_path):
         raise _case_error(
-            str(data["id"]), yaml_path, "source.fcstm does not exist: %s" % fcstm_path
+            case_id, yaml_path, "paired FCSTM source does not exist: %s" % fcstm_path
         )
     with open(fcstm_path, "r", encoding="utf-8") as file:
         dsl_code = file.read()

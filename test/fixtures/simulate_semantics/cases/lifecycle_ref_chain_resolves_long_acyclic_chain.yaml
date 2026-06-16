@@ -1,16 +1,8 @@
-schema_version: 1
-id: lifecycle_ref_chain_resolves_long_acyclic_chain
 title: Lifecycle ref chain resolves long acyclic chain
-source:
-  fcstm: lifecycle_ref_chain_resolves_long_acyclic_chain.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/pull/205
   - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694663908
-  assertion_types:
-  - handler_calls
-  - state
-  - vars
   notes:
   - Canonical long lifecycle ref-chain alignment case for generated Python runtime.
 categories:
@@ -18,18 +10,13 @@ categories:
 - template_alignment
 - abstract
 - lifecycle
-initial:
-  state: null
-  vars: null
 handlers:
 - action: Root.Library.Final
   behavior: record_call
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Active
+    state: Root.Active
     vars:
       trace: 11
     ended: false
@@ -39,9 +26,7 @@ steps:
       stage: enter
       vars:
         trace: 1
-      active_leaf:
-      - Root
-      - Active
+      active_leaf: Root.Active
       call_stage: enter
       abstract_target: Root.Library.Final
       named_ref: Root.Active.ChainStart

@@ -1,15 +1,8 @@
-schema_version: 1
-id: sign_function_aligns_aspect_guard_effect_math
 title: Sign function aligns aspect guard and effect math
-source:
-  fcstm: sign_function_aligns_aspect_guard_effect_math.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694810781
   - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4695001326
-  assertion_types:
-  - state
-  - vars
   notes:
   - Covers sign in aspect actions, during actions, transition guards, transition effects,
     and target enter actions.
@@ -19,37 +12,28 @@ categories:
 - runtime
 - template_alignment
 - lifecycle
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Alpha
+    state: Root.Alpha
     vars:
       x: -1
       bias: 1
       gate: -1
       trace: -100
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Alpha
+    state: Root.Alpha
     vars:
       x: 2
       bias: 1
       gate: 12
       trace: -100
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Beta
+    state: Root.Beta
     vars:
       x: 2
       bias: 1

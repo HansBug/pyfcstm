@@ -1,38 +1,24 @@
-schema_version: 1
-id: sign_function_controls_guard_transition
 title: Sign function controls a guard transition
-source:
-  fcstm: sign_function_controls_guard_transition.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694810781
   - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4695001326
-  assertion_types:
-  - state
-  - vars
   notes:
   - Covers the C8 sign guard duplicate with target enter action after the transition.
 categories:
 - runtime
 - template_alignment
 - lifecycle
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       marker: 1
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - B
+    state: Root.B
     vars:
       marker: 11
     ended: false

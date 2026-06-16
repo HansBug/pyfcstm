@@ -1,53 +1,29 @@
-schema_version: 1
-id: event_path_parent_relative
 title: 4 201 flexible path parent relative
-source:
-  fcstm: event_path_parent_relative.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_201_flexible_path_parent_relative
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_201_flexible_path_parent_relative
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - event_paths
 - runtime
 - scenario_example
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System
-    - Active
+    state: Root.System.Active
     vars:
       counter: 1
     ended: false
-- cycle:
-    events:
-    - active_event
+- cycle: active_event
   expect:
-    state:
-    - Root
-    - System
-    - Idle
+    state: Root.System.Idle
     vars:
       counter: 11
     ended: false
-- cycle:
-    events:
-    - .system_event
+- cycle: .system_event
   expect:
-    state:
-    - Root
-    - System
-    - Active
+    state: Root.System.Active
     vars:
       counter: 12
     ended: false

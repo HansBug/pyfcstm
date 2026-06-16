@@ -1,46 +1,29 @@
-schema_version: 1
-id: ended_runtime_ignores_event_inputs
 title: ended runtime ignores event inputs
-source:
-  fcstm: ended_runtime_ignores_event_inputs.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   docs:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614008879
-  assertion_types:
-  - ended
-  - state
-  - vars
   notes:
   - Covers ended cycle no-op behavior before event parsing.
 categories:
 - event_paths
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       x: 0
     ended: false
-- cycle:
-    events:
-    - Root.A.End
+- cycle: Root.A.End
   expect:
     state: null
     vars:
       x: 0
     ended: true
-- cycle:
-    events:
-    - Missing
+- cycle: Missing
   expect:
     state: null
     vars:

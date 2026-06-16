@@ -1,16 +1,7 @@
-schema_version: 1
-id: hot_start_with_aspect_actions
 title: Hot start executes aspect actions during cycles
-source:
-  fcstm: hot_start_with_aspect_actions.fcstm
 origin:
   files:
   - test/simulate/test_hot_start.py::TestHotStartWithLifecycleActions::test_hot_start_with_aspect_actions
-  assertion_types:
-  - initial
-  - state
-  - vars
-  - ended
 categories:
 - runtime
 - hot_start
@@ -22,62 +13,49 @@ initial:
     during_count: 0
     after_count: 0
 steps:
-- expect_initial:
-    state:
-    - Root
-    - A
+- cycle_count: 0
+  expect:
+    state: Root.A
     vars:
       before_count: 0
       during_count: 0
       after_count: 0
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       before_count: 1
       during_count: 1
       after_count: 1
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       before_count: 2
       during_count: 2
       after_count: 2
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       before_count: 3
       during_count: 3
       after_count: 3
     ended: false
-- cycle:
-    events:
-    - Root.A.Go
+- cycle: Root.A.Go
   expect:
-    state:
-    - Root
-    - B
+    state: Root.B
     vars:
       before_count: 4
       during_count: 13
       after_count: 4
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - B
+    state: Root.B
     vars:
       before_count: 5
       during_count: 23

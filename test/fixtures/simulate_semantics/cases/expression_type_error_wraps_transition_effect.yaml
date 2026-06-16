@@ -1,35 +1,20 @@
-schema_version: 1
-id: expression_type_error_wraps_transition_effect
 title: Type errors in transition effects are wrapped and rolled back
-source:
-  fcstm: expression_type_error_wraps_transition_effect.fcstm
 origin:
   files:
   - test/simulate/test_runtime_expression_diagnostics.py::test_transition_effect_type_error_is_wrapped_and_rolls_back
   docs:
   - https://github.com/HansBug/pyfcstm/issues/156#issuecomment-4631787793
-  assertion_types:
-  - raises
-  - state
-  - vars
 categories:
 - runtime
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       x: 1
       y: 1.5
     ended: false
-- cycle:
-    events:
-    - Root.A.Go
+- cycle: Root.A.Go
   expect:
     raises:
       type: SimulationRuntimeExpressionError
@@ -38,9 +23,7 @@ steps:
       cause_type: TypeError
       cause_match: unsupported operand type
       cause_match_kind: substring
-    state:
-    - Root
-    - A
+    state: Root.A
     vars_exact:
       x: 1
       y: 1.5

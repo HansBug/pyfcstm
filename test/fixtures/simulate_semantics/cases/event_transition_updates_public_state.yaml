@@ -1,39 +1,23 @@
-schema_version: 1
-id: event_transition_updates_public_state
 title: Event transition updates public state
-source:
-  fcstm: event_transition_updates_public_state.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
-  assertion_types:
-  - events
-  - state
-  - vars
   notes:
-  - Minimal fixture proving that an event transition updates public state through the shared observation contract.
+  - Minimal fixture proving that an event transition updates public state through
+    the shared observation contract.
 categories:
 - runtime
 - event_paths
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Idle
+    state: Root.Idle
     vars:
       counter: 0
     ended: false
-- cycle:
-    events:
-    - Root.Idle.Start
+- cycle: Root.Idle.Start
   expect:
-    state:
-    - Root
-    - Active
+    state: Root.Active
     vars:
       counter: 5
     ended: false

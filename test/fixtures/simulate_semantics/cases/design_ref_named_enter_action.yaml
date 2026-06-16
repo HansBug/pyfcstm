@@ -1,49 +1,30 @@
-schema_version: 1
-id: design_ref_named_enter_action
 title: 4 33 ref reuses named enter action
-source:
-  fcstm: design_ref_named_enter_action.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_33_ref_reuses_named_enter_action
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_33_ref_reuses_named_enter_action
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - design_example
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       init_count: 2
       trace: 201
     ended: false
-- cycle:
-    events:
-    - Root.A.Go
+- cycle: Root.A.Go
   expect:
-    state:
-    - Root
-    - B
+    state: Root.B
     vars:
       init_count: 3
       trace: 311
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - B
+    state: Root.B
     vars:
       init_count: 3
       trace: 321

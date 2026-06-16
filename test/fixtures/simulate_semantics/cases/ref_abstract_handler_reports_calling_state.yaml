@@ -1,17 +1,8 @@
-schema_version: 1
-id: ref_abstract_handler_reports_calling_state
 title: Ref abstract handler reports the calling state
-source:
-  fcstm: ref_abstract_handler_reports_calling_state.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/pull/205
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614012639
-  assertion_types:
-  - ended
-  - handler_calls
-  - state
-  - vars_exact
   notes:
   - Public callback contract for referenced abstract actions across shared runners.
 categories:
@@ -19,18 +10,13 @@ categories:
 - template_alignment
 - abstract
 - lifecycle
-initial:
-  state: null
-  vars: null
 handlers:
 - action: Root.Library.Shared
   behavior: record_call
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars_exact: {}
     ended: false
     handler_calls:
@@ -38,9 +24,7 @@ steps:
       state: Root.A
       stage: enter
       vars: {}
-      active_leaf:
-      - Root
-      - A
+      active_leaf: Root.A
       call_stage: enter
       abstract_target: Root.Library.Shared
       named_ref: null

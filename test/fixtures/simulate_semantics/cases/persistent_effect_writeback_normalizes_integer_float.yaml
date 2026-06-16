@@ -1,15 +1,7 @@
-schema_version: 1
-id: persistent_effect_writeback_normalizes_integer_float
 title: Persistent transition effect writeback normalizes integer-valued float
-source:
-  fcstm: persistent_effect_writeback_normalizes_integer_float.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694002673
-  assertion_types:
-  - state
-  - vars
-  - exception
   notes:
   - Covers transition-effect writeback through the same persistent boundary as lifecycle
     actions.
@@ -17,26 +9,17 @@ categories:
 - runtime
 - template_alignment
 - temporary_vars
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       bits: 0
       marker: 0
     ended: false
-- cycle:
-    events:
-    - Root.A.Go
+- cycle: Root.A.Go
   expect:
-    state:
-    - Root
-    - B
+    state: Root.B
     vars:
       bits: 3
       marker: 1

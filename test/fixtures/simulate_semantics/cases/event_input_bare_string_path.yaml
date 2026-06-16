@@ -1,41 +1,26 @@
-schema_version: 1
-id: event_input_bare_string_path
 title: bare string event input is a single event path
-source:
-  fcstm: event_input_bare_string_path.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   - test/template/python/test_semantic_fixture_alignment.py::test_generated_python_alignment_semantic_fixture
   docs:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614133609
-  assertion_types:
-  - ended
-  - state
-  - vars
   notes:
   - Covers a bare string passed directly to cycle(events=...).
 categories:
 - event_paths
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       x: 1
     ended: false
 - cycle: Root.A.Go
   expect:
-    state:
-    - Root
-    - B
+    state: Root.B
     vars:
       x: 11
     ended: false

@@ -115,7 +115,7 @@ def test_semantic_fixture_assertion_families_are_executable():
     covered = set()
     for case in cases:
         for step in case.data.get("steps") or []:
-            expect = step.get("expect_initial") or step.get("expect") or {}
+            expect = step.get("expect") or {}
             if "ended" in expect:
                 covered.add("ended")
             if "state" in expect:
@@ -125,9 +125,9 @@ def test_semantic_fixture_assertion_families_are_executable():
                 for field in ("vars", "vars_exact", "vars_keys", "vars_absent")
             ):
                 covered.add("vars")
-            if step.get("cycle") not in (None, {}) and "events" in step.get(
-                "cycle", {}
-            ):
+            cycle_count = step.get("cycle_count", 1)
+            cycle_input = step.get("cycle", [])
+            if cycle_count > 0 and cycle_input:
                 covered.add("events")
             if "raises" in expect:
                 covered.add("exception")
@@ -154,7 +154,7 @@ def test_generated_alignment_constructor_outcome_helper_covers_three_modes():
     from test.testings.simulate_semantics import SemanticCase
 
     case = SemanticCase(
-        data={"id": "constructor_outcome_helper"},
+        data={"title": "constructor outcome helper"},
         yaml_path="/tmp/constructor_outcome_helper.yaml",
         fcstm_path="/tmp/constructor_outcome_helper.fcstm",
         dsl_code="state Root { state A; [*] -> A; }",
@@ -217,7 +217,6 @@ def test_initial_vars_override_fixture_runs_generated_alignment_contract():
     assert case.runners == ("simulation", "generated_python_alignment")
     assert case.data["initial"]["state"] == "Root.A"
     assert case.data["initial"]["vars"] == {"recovered": 5.0}
-    assert "initial" in case.data["origin"]["assertion_types"]
     assert "hot_start" in case.data["categories"]
     assert "template_alignment" in case.data["categories"]
 
@@ -290,27 +289,23 @@ def test_simulation_semantic_fixture(case):
 
 
 def _write_fixture(tmp_path, data, fcstm="state Root { state A; [*] -> A; }"):
-    yaml_path = tmp_path / ("%s.yaml" % data.get("id", "bad"))
-    fcstm_name = data.get("source", {}).get("fcstm", "bad.fcstm")
-    (tmp_path / fcstm_name).write_text(fcstm, encoding="utf-8")
+    yaml_path = tmp_path / "bad.yaml"
+    fcstm_path = tmp_path / "bad.fcstm"
+    fcstm_path.write_text(fcstm, encoding="utf-8")
     yaml_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     return str(yaml_path)
 
 
 def _valid_case_data():
     return {
-        "schema_version": 1,
-        "id": "bad",
         "title": "Bad fixture used by schema tests",
-        "source": {"fcstm": "bad.fcstm"},
         "origin": {"files": ["test/example.py::test_example"]},
         "categories": ["runtime"],
-        "initial": {"state": None, "vars": None},
         "steps": [
             {
-                "cycle": {},
+                "cycle": [],
                 "expect": {
-                    "state": ["Root", "A"],
+                    "state": "Root.A",
                     "ended": False,
                 },
             },
@@ -332,16 +327,31 @@ def _shared_case_data():
     ["mutate", "message"],
     [
         (lambda data: data.update({"unexpected": True}), "unknown top-level fields"),
+        (lambda data: data.update({"schema_version": 2}), "unknown top-level fields"),
+        (lambda data: data.update({"id": "bad"}), "unknown top-level fields"),
+        (
+            lambda data: data.update({"source": {"fcstm": "bad.fcstm"}}),
+            "unknown top-level fields",
+        ),
         (lambda data: data.update({"boundary": "shared"}), "unknown top-level fields"),
-        (lambda data: data.update({"runners": ["simulation"]}), "unknown top-level fields"),
+        (
+            lambda data: data.update({"runners": ["simulation"]}),
+            "unknown top-level fields",
+        ),
         (lambda data: data.update({"commands": []}), "unknown top-level fields"),
         (
-            lambda data: data.update({"runtime_options": {"abstract_error_mode": "log"}}),
+            lambda data: data.update(
+                {"runtime_options": {"abstract_error_mode": "log"}}
+            ),
             "unknown top-level fields",
         ),
         (
             lambda data: data.update(
-                {"model_build": {"expect": {"raises": {"type": "ModelValidationError"}}}}
+                {
+                    "model_build": {
+                        "expect": {"raises": {"type": "ModelValidationError"}}
+                    }
+                }
             ),
             "unknown top-level fields",
         ),
@@ -349,9 +359,14 @@ def _shared_case_data():
             lambda data: data.update({"expected_failure": {"reason": "known bug"}}),
             "unknown top-level fields",
         ),
-        (lambda data: data["source"].pop("fcstm"), "source.fcstm is required"),
-        (lambda data: data["source"].update({"extra": "x"}), "source has unknown fields"),
-        (lambda data: data["origin"].update({"extra": "x"}), "origin has unknown fields"),
+        (
+            lambda data: data["origin"].update({"extra": "x"}),
+            "origin has unknown fields",
+        ),
+        (
+            lambda data: data["origin"].update({"assertion_types": ["state"]}),
+            "origin has unknown fields",
+        ),
         (lambda data: data.update({"categories": ["unknown"]}), "unknown categories"),
         (
             lambda data: data.update({"exclude_runners": ["unknown"]}),
@@ -385,7 +400,10 @@ def _shared_case_data():
             ),
             "exclude_runners cannot remove all default runners",
         ),
-        (lambda data: data.update({"handlers": "Root.Init"}), "handlers must be a list"),
+        (
+            lambda data: data.update({"handlers": "Root.Init"}),
+            "handlers must be a list",
+        ),
         (
             lambda data: data.update({"handlers": [{"action": "Root.Init"}]}),
             "handlers\\[0\\].behavior is required",
@@ -421,73 +439,70 @@ def _shared_case_data():
                     ]
                 }
             ),
-            "handlers\\[0\\].write must be a mapping",
+            "handlers\\[0\\].behavior is invalid",
         ),
         (
             lambda data: data.update(
                 {
                     "handlers": [
-                        {
-                            "action": "Root.Init",
-                            "behavior": "record_var_write_attempt",
-                            "write": {"name": "x", "value": 1, "extra": True},
-                        }
+                        {"action": "Root.Init", "behavior": "record_call", "write": {}}
                     ]
                 }
             ),
-            "handlers\\[0\\].write has unknown fields",
+            "handlers\\[0\\] has unknown fields",
         ),
         (
-            lambda data: data.update(
-                {
-                    "handlers": [
-                        {
-                            "action": "Root.Init",
-                            "behavior": "record_var_write_attempt",
-                            "write": {"value": 1},
-                        }
-                    ]
-                }
-            ),
-            "handlers\\[0\\].write.name is required",
-        ),
-        (
-            lambda data: data["initial"].update({"unexpected": True}),
+            lambda data: data.update({"initial": {"unexpected": True}}),
             "initial has unknown fields",
         ),
         (
-            lambda data: data["initial"].update(
-                {"state": "Root.A", "vars": {}, "expect": {"return": None}}
+            lambda data: data.update({"initial": {"state": ["Root", "A"]}}),
+            "initial.state must be a dot-separated state path string or null",
+        ),
+        (
+            lambda data: data.update(
+                {"initial": {"state": "Root.A", "vars": {}, "expect": {"return": None}}}
             ),
             "initial.expect has unknown fields",
         ),
         (
-            lambda data: (
-                data["initial"].pop("state")
-                or data["initial"].update(
-                    {"vars": {}, "expect": {"raises": {"type": "ValueError"}}}
-                )
+            lambda data: data.update(
+                {"initial": {"vars": {}, "expect": {"raises": {"type": "ValueError"}}}}
             ),
             "initial.expect requires initial.state",
         ),
         (
-            lambda data: (
-                data["initial"].pop("vars")
-                or data["initial"].update(
-                    {"state": "Root.A", "expect": {"raises": {"type": "ValueError"}}}
-                )
+            lambda data: data.update(
+                {
+                    "initial": {
+                        "state": "Root.A",
+                        "expect": {"raises": {"type": "ValueError"}},
+                    }
+                }
             ),
             "initial.expect requires initial.vars",
         ),
         (
-            lambda data: data["initial"].update(
-                {"state": "Root.A", "vars": {}, "expect": {"raises": {"type": "UnknownError"}}}
+            lambda data: data.update(
+                {
+                    "initial": {
+                        "state": "Root.A",
+                        "vars": {},
+                        "expect": {"raises": {"type": "UnknownError"}},
+                    }
+                }
             ),
             "initial.expect.raises.type is unknown",
         ),
         (
-            lambda data: data["initial"].update(
-                {"state": "Root.A", "vars": {}, "expect": {"raises": {"type": "ValueError"}}}
+            lambda data: data.update(
+                {
+                    "initial": {
+                        "state": "Root.A",
+                        "vars": {},
+                        "expect": {"raises": {"type": "ValueError"}},
+                    }
+                }
             ),
             "initial.expect.raises cases require empty steps",
         ),
@@ -499,31 +514,65 @@ def _shared_case_data():
         ),
         (
             lambda data: data["steps"][0].pop("cycle"),
-            "steps\\[0\\] must contain cycle or expect_initial",
+            "steps\\[0\\] must contain cycle or cycle_count",
         ),
         (
             lambda data: data["steps"][0].pop("expect"),
             "steps\\[0\\].expect is required",
         ),
         (
+            lambda data: data["steps"][0].update(
+                {"expect_initial": {"state": "Root.A"}}
+            ),
+            "steps\\[0\\] has unknown fields",
+        ),
+        (
             lambda data: data["steps"][0]["expect"].update({"unknown_expect": True}),
             "unknown fields",
         ),
         (
-            lambda data: data["steps"][0].update({"expect_initial": {"return": None}}),
-            "unknown fields",
+            lambda data: data["steps"][0]["expect"].update(
+                {"vars": {"x": 1}, "vars_exact": {"x": 1}}
+            ),
+            "vars and vars_exact conflict",
         ),
         (
             lambda data: data["steps"][0]["expect"].update(
-                {"vars": {"x": 1}, "vars_exact": {"x": 2}}
+                {"vars_exact": {"x": 1}, "vars_keys": ["x"]}
             ),
-            "vars and vars_exact conflict",
+            "vars_exact and vars_keys conflict",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {"vars_exact": {"x": 1}, "vars_absent": ["tmp"]}
+            ),
+            "vars_exact and vars_absent conflict",
         ),
         (
             lambda data: data["steps"][0]["expect"].update(
                 {"vars_keys": ["tmp"], "vars_absent": ["tmp"]}
             ),
             "vars_keys and vars_absent overlap",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"state": ["Root", "A"]}),
+            "state must be a dot-separated state path string or null",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {"state": None, "ended": False}
+            ),
+            "state and ended conflict",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update(
+                {"state": "Root.A", "ended": True}
+            ),
+            "state and ended conflict",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"ended": "false"}),
+            "ended must be a boolean",
         ),
         (
             lambda data: data["steps"][0]["expect"].update(
@@ -560,52 +609,70 @@ def _shared_case_data():
             "raises.cause_match_kind requires cause_match",
         ),
         (
-            lambda data: _set_expected_raises(data, {"type": "ValueError", "matc": "typo"}),
+            lambda data: _set_expected_raises(
+                data, {"type": "ValueError", "matc": "typo"}
+            ),
             "raises has unknown fields",
         ),
         (
-            lambda data: data["steps"][0]["expect"].update({"state": "Root.A"}),
-            "state must be a list",
+            lambda data: data["steps"][0].update({"cycle": {}}),
+            "cycle: {} is not valid v2",
         ),
         (
-            lambda data: data.update({"initial": {"state": ["Root", "A"]}}),
-            "initial.state must be a string",
+            lambda data: data["steps"][0].update({"cycle": None}),
+            "cycle: null is not valid v2",
         ),
         (
-            lambda data: data["steps"][0]["cycle"].update({"eventz": []}),
-            "cycle has unknown fields",
+            lambda data: data["steps"][0].update({"cycle": {"events": ["Root.A.Go"]}}),
+            "cycle.events is not valid v2",
+        ),
+        (
+            lambda data: data["steps"][0].update({"cycle": [{"event": "Root.A.Go"}]}),
+            r"cycle\[0\] must be a string event path",
         ),
         (
             lambda data: data["steps"][0].update({"cycle": 12}),
-            "cycle must be a mapping, string, or null",
+            "cycle must be a string event path or a list of string event paths",
         ),
         (
-            lambda data: data["steps"][0].update({"cycle": []}),
-            "cycle must be a mapping, string, or null",
+            lambda data: data["steps"][0].update({"cycle": [7]}),
+            r"cycle\[0\] must be a string event path",
         ),
         (
-            lambda data: data["steps"][0]["cycle"].update({"events": "Root.A.Go"}),
-            "cycle.events must be a list or null",
+            lambda data: data["steps"][0].update({"cycle_count": True}),
+            "cycle_count must be a non-negative integer",
         ),
         (
-            lambda data: data["steps"][0]["cycle"].update({"events": [7]}),
-            r"cycle.events\[0\] must be a string or event descriptor",
+            lambda data: data["steps"][0].update({"cycle_count": 1.5}),
+            "cycle_count must be a non-negative integer",
         ),
         (
-            lambda data: data["steps"][0]["cycle"].update(
-                {"events": [{"event": "Root.A.Go", "extra": True}]}
+            lambda data: data["steps"][0].update({"cycle_count": "1"}),
+            "cycle_count must be a non-negative integer",
+        ),
+        (
+            lambda data: data["steps"][0].update({"cycle_count": -1}),
+            "cycle_count must be a non-negative integer",
+        ),
+        (
+            lambda data: data["steps"][0].update(
+                {"cycle": "Root.A.Go", "cycle_count": 0}
             ),
-            r"cycle.events\[0\] event descriptor must contain only event",
+            "cycle_count: 0 cannot have non-empty cycle",
         ),
         (
-            lambda data: data["steps"][0]["cycle"].update(
-                {"events": [{"unknown": "Root.A.Go"}]}
+            lambda data: (
+                data["steps"][0].update({"cycle_count": 0})
+                or _set_expected_raises(data, {"type": "ValueError"})
             ),
-            r"cycle.events\[0\] event descriptor must contain only event",
+            "expect.raises requires effective cycle_count == 1",
         ),
         (
-            lambda data: data["steps"][0]["cycle"].update({"events": [{"event": 12}]}),
-            r"cycle.events\[0\].event must be a string",
+            lambda data: (
+                data["steps"][0].update({"cycle_count": 2})
+                or _set_expected_raises(data, {"type": "ValueError"})
+            ),
+            "expect.raises requires effective cycle_count == 1",
         ),
         (
             lambda data: data["steps"][0]["expect"].update(
@@ -628,16 +695,12 @@ def _shared_case_data():
                             "state": "Root",
                             "stage": "enter",
                             "vars": {},
-                            "write_attempt": {
-                                "name": "x",
-                                "value": 1,
-                                "succeeded": "no",
-                            },
+                            "write_attempt": {"name": "x"},
                         }
                     ]
                 }
             ),
-            "write_attempt.succeeded must be a boolean",
+            "handler_calls\\[0\\] has unknown fields",
         ),
         (
             lambda data: data["steps"][0]["expect"].update(
@@ -648,12 +711,16 @@ def _shared_case_data():
                             "state": "Root",
                             "stage": "enter",
                             "vars": {},
-                            "active_leaf": "Root",
+                            "active_leaf": ["Root"],
                         }
                     ]
                 }
             ),
-            "handler_calls\\[0\\].active_leaf must be a list",
+            "active_leaf must be a dot-separated state path string or null",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"handler_calls": []}),
+            "handler_calls requires top-level handlers",
         ),
         (
             lambda data: data["steps"][0]["expect"].update({"history": []}),
@@ -677,6 +744,18 @@ def _shared_case_data():
         ),
         (
             lambda data: data["steps"][0]["expect"].update({"return": None}),
+            "has unknown fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"input_events": []}),
+            "has unknown fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"consumed_events": []}),
+            "has unknown fields",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"unconsumed_events": []}),
             "has unknown fields",
         ),
         (
@@ -710,7 +789,9 @@ def _shared_case_data():
             "has unknown fields",
         ),
         (
-            lambda data: data["steps"][0]["expect"].update({"output_contains": "Commands"}),
+            lambda data: data["steps"][0]["expect"].update(
+                {"output_contains": "Commands"}
+            ),
             "has unknown fields",
         ),
         (
@@ -731,34 +812,18 @@ def test_semantic_fixture_schema_rejects_invalid_yaml(tmp_path, mutate, message)
 @pytest.mark.unittest
 def test_shared_fixture_accepts_public_observations(tmp_path):
     data = _shared_case_data()
-    data["handlers"] = [
-        {
-            "action": "Root.Init",
-            "behavior": "record_var_write_attempt",
-            "write": {"name": "x", "value": 1},
-        },
-        {"action": "Root.Init", "behavior": "record_call"},
-    ]
+    data["handlers"] = [{"action": "Root.Init", "behavior": "record_call"}]
     data["steps"][0]["expect"]["handler_calls"] = [
         {
             "action": "Root.Init",
             "state": "Root",
             "stage": "enter",
             "vars": {},
-            "write_attempt": {
-                "name": "x",
-                "value": 1,
-                "succeeded": False,
-                "error_type": "TypeError",
-                "vars": {},
-            },
-        },
-        {
-            "action": "Root.Init",
-            "state": "Root",
-            "stage": "enter",
-            "vars": {},
-        },
+            "active_leaf": "Root",
+            "call_stage": "enter",
+            "abstract_target": "Root.Init",
+            "named_ref": None,
+        }
     ]
     yaml_path = _write_fixture(tmp_path, data)
 
@@ -782,9 +847,33 @@ def test_shared_fixture_accepts_initial_constructor_observation(tmp_path):
 
 
 @pytest.mark.unittest
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "input_events",
+        "consumed_events",
+        "unconsumed_events",
+        "event_accounting",
+        "event_ledger",
+        "event_log",
+    ],
+)
+def test_shared_fixture_contract_rejects_event_accounting_fields(tmp_path, field_name):
+    data = _shared_case_data()
+    data["steps"][0]["expect"][field_name] = []
+    yaml_path = _write_fixture(tmp_path, data)
+
+    with pytest.raises(SemanticCaseError, match="has unknown fields"):
+        validate_shared_fixture_contract(data, yaml_path)
+
+
+@pytest.mark.unittest
 def test_shared_fixture_corpus_uses_public_observation_fields():
     disallowed_top_level_fields = {
         "boundary",
+        "id",
+        "schema_version",
+        "source",
         "runners",
         "model_build",
         "commands",
@@ -796,6 +885,13 @@ def test_shared_fixture_corpus_uses_public_observation_fields():
         "brief_stack",
         "cycle_count",
         "return",
+        "cycle_result",
+        "input_events",
+        "consumed_events",
+        "unconsumed_events",
+        "event_accounting",
+        "event_ledger",
+        "event_log",
         "history",
         "history_tail",
         "history_length",
@@ -806,17 +902,22 @@ def test_shared_fixture_corpus_uses_public_observation_fields():
         "error_info",
         "anonymous_warning_count",
         "output_contains",
+        "output_not_contains",
+        "error_contains",
         "should_exit",
     }
     cases = list(iter_semantic_cases())
     top_level_hits = {
-        field for case in cases for field in case.data if field in disallowed_top_level_fields
+        field
+        for case in cases
+        for field in case.data
+        if field in disallowed_top_level_fields
     }
     observation_hits = {
         field
         for case in cases
         for step in case.data.get("steps") or []
-        for expect in (step.get("expect_initial"), step.get("expect"))
+        for expect in (step.get("expect"),)
         if isinstance(expect, dict)
         for field in expect
         if field in disallowed_observation_fields
@@ -844,8 +945,13 @@ def test_shared_fixture_corpus_satisfies_current_contract():
 
     assert cases
     assert all("boundary" not in case.data for case in cases)
+    assert all("id" not in case.data for case in cases)
+    assert all("schema_version" not in case.data for case in cases)
+    assert all("source" not in case.data for case in cases)
     assert all("runners" not in case.data for case in cases)
-    assert all(case.runners == ("simulation", "generated_python_alignment") for case in cases)
+    assert all(
+        case.runners == ("simulation", "generated_python_alignment") for case in cases
+    )
     assert all("exclude_runners" not in case.data for case in cases)
 
 

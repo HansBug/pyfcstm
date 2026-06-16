@@ -1,53 +1,34 @@
-schema_version: 1
-id: design_transition_priority
 title: 4 8 transition priority
-source:
-  fcstm: design_transition_priority.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_8_transition_priority
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_8_transition_priority
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - design_example
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 1
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 2
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 3
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - C
+    state: Root.C
     vars:
       counter: 103
     ended: false

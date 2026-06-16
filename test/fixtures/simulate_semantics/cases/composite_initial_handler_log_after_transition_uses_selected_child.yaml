@@ -1,18 +1,9 @@
-schema_version: 1
-id: composite_initial_handler_log_after_transition_uses_selected_child
 title: Handler observer follows composite initial child selected before plain during-before
-source:
-  fcstm: composite_initial_handler_log_after_transition_uses_selected_child.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   docs:
   - https://github.com/HansBug/pyfcstm/issues/197#issuecomment-4689585273
-  assertion_types:
-  - events
-  - handler_calls
-  - state
-  - vars
   notes:
   - Covers transition-into-composite handler log observation, not just root-entry
     handler observation.
@@ -21,9 +12,6 @@ categories:
 - abstract
 - lifecycle
 - event_paths
-initial:
-  state: null
-  vars: null
 handlers:
 - action: Root.Parent.ObserveParent
   behavior: record_call
@@ -32,24 +20,17 @@ handlers:
 - action: Root.Parent.Child2.EnterChild2
   behavior: record_call
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       phase: 0
       trace: 1
     ended: false
     handler_calls: []
-- cycle:
-    events:
-    - Root.A.Go
+- cycle: Root.A.Go
   expect:
-    state:
-    - Root
-    - Parent
-    - Child1
+    state: Root.Parent.Child1
     vars:
       phase: 1
       trace: 111
@@ -61,9 +42,7 @@ steps:
       vars:
         phase: 1
         trace: 11
-      active_leaf:
-      - Root
-      - Parent
+      active_leaf: Root.Parent
       call_stage: during
       abstract_target: Root.Parent.ObserveParent
       named_ref: null
@@ -73,10 +52,7 @@ steps:
       vars:
         phase: 1
         trace: 11
-      active_leaf:
-      - Root
-      - Parent
-      - Child1
+      active_leaf: Root.Parent.Child1
       call_stage: enter
       abstract_target: Root.Parent.Child1.EnterChild1
       named_ref: null

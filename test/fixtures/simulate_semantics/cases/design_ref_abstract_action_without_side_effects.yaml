@@ -1,47 +1,28 @@
-schema_version: 1
-id: design_ref_abstract_action_without_side_effects
 title: 4 34 ref targets abstract action without side effects
-source:
-  fcstm: design_ref_abstract_action_without_side_effects.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_34_ref_targets_abstract_action_without_side_effects
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_34_ref_targets_abstract_action_without_side_effects
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - design_example
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       trace: 1
     ended: false
-- cycle:
-    events:
-    - Root.A.Go
+- cycle: Root.A.Go
   expect:
-    state:
-    - Root
-    - B
+    state: Root.B
     vars:
       trace: 11
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - B
+    state: Root.B
     vars:
       trace: 21
     ended: false

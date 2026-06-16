@@ -1,35 +1,20 @@
-schema_version: 1
-id: root_exit_runs_root_cleanup
 title: Root exit runs root cleanup actions
-source:
-  fcstm: root_exit_runs_root_cleanup.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614013960
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - runtime
 - template_alignment
 - lifecycle
 - validation
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       trace: 1234
     ended: false
-- cycle:
-    events:
-    - Root.A.Stop
+- cycle: Root.A.Stop
   expect:
     state: null
     vars:

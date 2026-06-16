@@ -1,69 +1,44 @@
-schema_version: 1
-id: scenario_ats_mains_generator_transfer_restore
 title: 4 104 ats mains generator transfer
-source:
-  fcstm: scenario_ats_mains_generator_transfer_restore.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_104_ats_mains_generator_transfer
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_104_ats_mains_generator_transfer
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - runtime
 - scenario_example
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - OnMains
+    state: Root.OnMains
     vars:
       warmup: 0
       transfer_count: 0
     ended: false
-- cycle:
-    events:
-    - Root.OnMains.GridFail
+- cycle: Root.OnMains.GridFail
   expect:
-    state:
-    - Root
-    - StartingGen
+    state: Root.StartingGen
     vars:
       warmup: 1
       transfer_count: 0
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - StartingGen
+    state: Root.StartingGen
     vars:
       warmup: 2
       transfer_count: 0
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - OnGenerator
+    state: Root.OnGenerator
     vars:
       warmup: 2
       transfer_count: 1
     ended: false
-- cycle:
-    events:
-    - Root.OnGenerator.GridRestore
+- cycle: Root.OnGenerator.GridRestore
   expect:
-    state:
-    - Root
-    - OnMains
+    state: Root.OnMains
     vars:
       warmup: 0
       transfer_count: 2

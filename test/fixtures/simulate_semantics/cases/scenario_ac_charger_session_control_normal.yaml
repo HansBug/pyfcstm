@@ -1,78 +1,51 @@
-schema_version: 1
-id: scenario_ac_charger_session_control_normal
 title: 4 103 ac charger session control
-source:
-  fcstm: scenario_ac_charger_session_control_normal.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_103_ac_charger_session_control
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_103_ac_charger_session_control
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - runtime
 - scenario_example
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Idle
+    state: Root.Idle
     vars:
       soc: 70
       sessions: 0
     ended: false
-- cycle:
-    events:
-    - Root.Idle.PlugIn
+- cycle: Root.Idle.PlugIn
   expect:
-    state:
-    - Root
-    - Charging
+    state: Root.Charging
     vars:
       soc: 80
       sessions: 0
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Charging
+    state: Root.Charging
     vars:
       soc: 90
       sessions: 0
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Charging
+    state: Root.Charging
     vars:
       soc: 100
       sessions: 0
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Complete
+    state: Root.Complete
     vars:
       soc: 100
       sessions: 0
     ended: false
-- cycle:
-    events:
-    - Root.Complete.Unplug
+- cycle: Root.Complete.Unplug
   expect:
-    state:
-    - Root
-    - Idle
+    state: Root.Idle
     vars:
       soc: 100
       sessions: 1

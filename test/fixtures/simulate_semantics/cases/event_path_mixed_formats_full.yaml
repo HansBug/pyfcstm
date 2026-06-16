@@ -1,42 +1,23 @@
-schema_version: 1
-id: event_path_mixed_formats_full
 title: 4 203 flexible path mixed formats
-source:
-  fcstm: event_path_mixed_formats_full.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_203_flexible_path_mixed_formats
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_203_flexible_path_mixed_formats
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - event_paths
 - runtime
 - scenario_example
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System
-    - A
+    state: Root.System.A
     vars:
       counter: 1
     ended: false
-- cycle:
-    events:
-    - Root.System.A.local_a
+- cycle: Root.System.A.local_a
   expect:
-    state:
-    - Root
-    - System
-    - B
+    state: Root.System.B
     vars:
       counter: 11
     ended: false

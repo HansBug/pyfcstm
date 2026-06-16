@@ -14,7 +14,6 @@ origin:
   - initial
   - state
   - vars
-  - cycle_result
   notes:
   - The hot-start suffix starts from the same already-entered Gate boundary that a
     cold Boot-to-Gate transition would reach.
@@ -49,11 +48,6 @@ steps:
       trace: 0
       seed: 1
     ended: false
-    cycle_result:
-      value: null
-      input_events: []
-      consumed_events: []
-      unconsumed_events: []
 - cycle:
     events:
     - Root.Gate.Unlock
@@ -66,13 +60,6 @@ steps:
       trace: 111
       seed: 1
     ended: false
-    cycle_result:
-      value: null
-      input_events:
-      - Root.Gate.Unlock
-      consumed_events:
-      - Root.Gate.Unlock
-      unconsumed_events: []
 - cycle:
     events:
     - Root.Gate.Armed.Finish
@@ -85,10 +72,3 @@ steps:
       trace: 11111
       seed: 1
     ended: false
-    cycle_result:
-      value: null
-      input_events:
-      - Root.Gate.Armed.Finish
-      consumed_events:
-      - Root.Gate.Armed.Finish
-      unconsumed_events: []

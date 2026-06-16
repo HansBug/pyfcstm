@@ -10,7 +10,6 @@ origin:
   assertion_types:
   - ended
   - handler_calls
-  - cycle_result
   - state
   - vars_exact
   notes:
@@ -45,5 +44,3 @@ steps:
       call_stage: enter
       abstract_target: Root.Library.Shared
       named_ref: null
-    cycle_result:
-      value: null

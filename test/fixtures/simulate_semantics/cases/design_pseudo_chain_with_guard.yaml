@@ -9,7 +9,6 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_15_pseudo_chain_with_guard
   assertion_types:
   - ended
-  - cycle_result
   - state
   - vars
 categories:
@@ -29,8 +28,6 @@ steps:
     vars:
       counter: 1
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -39,8 +36,6 @@ steps:
     vars:
       counter: 2
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -49,8 +44,6 @@ steps:
     vars:
       counter: 3
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -59,8 +52,6 @@ steps:
     vars:
       counter: 4
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -69,8 +60,6 @@ steps:
     vars:
       counter: 5
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -79,5 +68,3 @@ steps:
     vars:
       counter: 115
     ended: false
-    cycle_result:
-      value: null

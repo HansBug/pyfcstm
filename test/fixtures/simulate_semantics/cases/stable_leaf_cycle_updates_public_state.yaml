@@ -1,17 +1,16 @@
 schema_version: 1
-id: cycle_result_stable_leaf
-title: Cycle result assertion for a stable leaf
+id: stable_leaf_cycle_updates_public_state
+title: Stable leaf cycle updates public state
 source:
-  fcstm: cycle_result_stable_leaf.fcstm
+  fcstm: stable_leaf_cycle_updates_public_state.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   assertion_types:
-  - cycle_result
   - state
   - vars
   notes:
-  - Minimal fixture proving that the public cycle_result observation is executable.
+  - Minimal fixture proving that a stable leaf cycle updates public state through the shared observation contract.
 categories:
 - runtime
 initial:
@@ -26,5 +25,3 @@ steps:
     vars:
       counter: 1
     ended: false
-    cycle_result:
-      value: null

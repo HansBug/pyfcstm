@@ -8,7 +8,6 @@ origin:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614352350
   assertion_types:
   - ended
-  - cycle_result
   - state
   - vars
 categories:
@@ -29,5 +28,3 @@ steps:
       x: 1
       marker: 1
     ended: false
-    cycle_result:
-      value: null

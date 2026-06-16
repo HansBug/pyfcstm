@@ -129,8 +129,6 @@ def test_semantic_fixture_assertion_families_are_executable():
                 "cycle", {}
             ):
                 covered.add("events")
-            if "cycle_result" in expect:
-                covered.add("cycle_result")
             if "raises" in expect:
                 covered.add("exception")
             if "handler_calls" in expect:
@@ -144,7 +142,6 @@ def test_semantic_fixture_assertion_families_are_executable():
         "current_state",
         "vars",
         "events",
-        "cycle_result",
         "exception",
         "context",
         "constructor_exception",
@@ -264,9 +261,9 @@ def test_semantic_fixture_origin_files_cover_existing_simulate_tests():
     assert expected_files.issubset(actual_files)
 
     representative_cases = {
-        "cycle_result_stable_leaf",
-        "cycle_result_event_transition",
-        "cycle_result_event_accounting",
+        "stable_leaf_cycle_updates_public_state",
+        "event_transition_updates_public_state",
+        "event_duplicate_inputs_preserve_public_state",
         "expression_error_preserves_runtime_snapshot",
         "abstract_handler_context_metadata",
     }
@@ -315,7 +312,6 @@ def _valid_case_data():
                 "expect": {
                     "state": ["Root", "A"],
                     "ended": False,
-                    "cycle_result": {"value": None},
                 },
             },
         ],
@@ -323,7 +319,6 @@ def _valid_case_data():
 
 
 def _set_expected_raises(data, raises):
-    data["steps"][0]["expect"].pop("cycle_result", None)
     data["steps"][0]["expect"]["raises"] = raises
 
 
@@ -531,33 +526,10 @@ def _shared_case_data():
             "vars_keys and vars_absent overlap",
         ),
         (
-            lambda data: data["steps"][0]["expect"].update({"raises": {"type": "ValueError"}}),
-            "cannot combine raises and cycle_result",
-        ),
-        (
-            lambda data: data["steps"][0]["expect"].update({"cycle_result": None}),
-            "cycle_result must be a mapping",
-        ),
-        (
-            lambda data: data["steps"][0]["expect"].update({"cycle_result": {}}),
-            "cycle_result.value is required",
-        ),
-        (
             lambda data: data["steps"][0]["expect"].update(
-                {"cycle_result": {"value": None, "extra": []}}
+                {"cycle_result": {"value": None}}
             ),
-            "cycle_result has unknown fields",
-        ),
-        (
-            lambda data: data["steps"][0]["expect"].update(
-                {
-                    "cycle_result": {
-                        "value": None,
-                        "input_events": "Root.A.Go",
-                    }
-                }
-            ),
-            "cycle_result.input_events must be a list of strings",
+            "unknown fields",
         ),
         (
             lambda data: _set_expected_raises(data, {"type": "UnknownError"}),

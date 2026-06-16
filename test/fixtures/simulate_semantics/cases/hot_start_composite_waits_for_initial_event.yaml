@@ -12,7 +12,6 @@ origin:
   - initial
   - state
   - vars
-  - cycle_result
 categories:
 - runtime
 - template_alignment
@@ -41,5 +40,3 @@ steps:
     vars:
       x: 1
     ended: false
-    cycle_result:
-      value: null

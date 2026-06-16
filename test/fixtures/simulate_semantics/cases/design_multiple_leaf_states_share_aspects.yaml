@@ -9,7 +9,6 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_24_multiple_leaf_states_share_aspects
   assertion_types:
   - ended
-  - cycle_result
   - state
   - vars
 categories:
@@ -29,8 +28,6 @@ steps:
     vars:
       counter: 1112
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.System.A.GoB
@@ -42,8 +39,6 @@ steps:
     vars:
       counter: 2233
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.System.B.GoC
@@ -55,5 +50,3 @@ steps:
     vars:
       counter: 3444
     ended: false
-    cycle_result:
-      value: null

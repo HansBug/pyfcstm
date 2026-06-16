@@ -10,7 +10,6 @@ origin:
   assertion_types:
   - state
   - vars
-  - cycle_result
   notes:
   - Covers complex sign expressions in enter, during, exit, guard, and effect blocks.
   - This case also guards generated Python formatter convergence for long sign expressions.
@@ -33,8 +32,6 @@ steps:
       score: 98
       marker: 7
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -46,8 +43,6 @@ steps:
       score: 200
       marker: 7
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -59,5 +54,3 @@ steps:
       score: 210
       marker: 11019
     ended: false
-    cycle_result:
-      value: null

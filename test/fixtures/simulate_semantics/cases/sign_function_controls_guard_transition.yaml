@@ -10,7 +10,6 @@ origin:
   assertion_types:
   - state
   - vars
-  - cycle_result
   notes:
   - Covers the C8 sign guard duplicate with target enter action after the transition.
 categories:
@@ -29,8 +28,6 @@ steps:
     vars:
       marker: 1
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -39,5 +36,3 @@ steps:
     vars:
       marker: 11
     ended: false
-    cycle_result:
-      value: null

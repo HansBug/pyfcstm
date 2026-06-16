@@ -9,7 +9,6 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_17_1_exit_to_parent_then_event_transition
   assertion_types:
   - ended
-  - cycle_result
   - state
   - vars
 categories:
@@ -29,8 +28,6 @@ steps:
     vars:
       counter: 1
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.System.A.GoP
@@ -42,8 +39,6 @@ steps:
     vars:
       counter: 2
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.System.A.GoP
@@ -55,5 +50,3 @@ steps:
     vars:
       counter: 112
     ended: false
-    cycle_result:
-      value: null

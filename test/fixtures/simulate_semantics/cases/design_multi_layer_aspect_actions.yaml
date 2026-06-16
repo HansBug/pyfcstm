@@ -9,7 +9,6 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_22_multi_layer_aspect_actions
   assertion_types:
   - ended
-  - cycle_result
   - state
   - vars
 categories:
@@ -30,5 +29,3 @@ steps:
     vars:
       counter: 111112
     ended: false
-    cycle_result:
-      value: null

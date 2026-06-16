@@ -31,8 +31,6 @@ steps:
       bits: 3
       marker: 1
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.A.Go
@@ -44,5 +42,3 @@ steps:
       bits: 3
       marker: 1
     ended: false
-    cycle_result:
-      value: null

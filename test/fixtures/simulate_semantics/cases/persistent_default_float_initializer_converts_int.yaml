@@ -35,5 +35,3 @@ steps:
       ratio: 2.0
       marker: 1
     ended: false
-    cycle_result:
-      value: null

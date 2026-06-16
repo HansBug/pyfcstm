@@ -12,7 +12,6 @@ origin:
   - handler_calls
   - state
   - vars
-  - cycle_result
   notes:
   - Covers near-exit handler observation where wrong initial choice would enter an
     exit-capable child.
@@ -44,8 +43,6 @@ steps:
       phase: 1
       trace: 110
     ended: false
-    cycle_result:
-      value: null
     handler_calls:
     - action: Root.Gate.ObserveGate
       state: Root.Gate
@@ -82,8 +79,6 @@ steps:
       phase: 1
       trace: 210
     ended: false
-    cycle_result:
-      value: null
     handler_calls:
     - action: Root.Gate.ObserveGate
       state: Root.Gate

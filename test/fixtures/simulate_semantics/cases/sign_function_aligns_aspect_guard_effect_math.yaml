@@ -10,7 +10,6 @@ origin:
   assertion_types:
   - state
   - vars
-  - cycle_result
   notes:
   - Covers sign in aspect actions, during actions, transition guards, transition effects,
     and target enter actions.
@@ -35,8 +34,6 @@ steps:
       gate: -1
       trace: -100
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -48,8 +45,6 @@ steps:
       gate: 12
       trace: -100
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -61,5 +56,3 @@ steps:
       gate: 112
       trace: 101019
     ended: false
-    cycle_result:
-      value: null

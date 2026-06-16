@@ -9,7 +9,6 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_7_multi_level_non_stoppable
   assertion_types:
   - ended
-  - cycle_result
   - state
   - vars
 categories:
@@ -28,8 +27,6 @@ steps:
     vars:
       counter: 1
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.A.GoB
@@ -42,5 +39,3 @@ steps:
     vars:
       counter: 11
     ended: false
-    cycle_result:
-      value: null

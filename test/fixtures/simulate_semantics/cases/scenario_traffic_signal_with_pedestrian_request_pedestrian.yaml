@@ -9,7 +9,6 @@ origin:
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_102_traffic_signal_with_pedestrian_request
   assertion_types:
   - ended
-  - cycle_result
   - state
   - vars
 categories:
@@ -31,8 +30,6 @@ steps:
       yellow_ticks: 0
       walk_ticks: 0
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.MainGreen.PedRequest
@@ -46,8 +43,6 @@ steps:
       yellow_ticks: 0
       walk_ticks: 0
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -59,8 +54,6 @@ steps:
       yellow_ticks: 0
       walk_ticks: 0
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -73,8 +66,6 @@ steps:
       yellow_ticks: 1
       walk_ticks: 0
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -87,8 +78,6 @@ steps:
       yellow_ticks: 1
       walk_ticks: 1
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -101,8 +90,6 @@ steps:
       yellow_ticks: 1
       walk_ticks: 2
     ended: false
-    cycle_result:
-      value: null
 - cycle: {}
   expect:
     state:
@@ -114,5 +101,3 @@ steps:
       yellow_ticks: 0
       walk_ticks: 0
     ended: false
-    cycle_result:
-      value: null

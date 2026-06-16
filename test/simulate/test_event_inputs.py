@@ -81,6 +81,50 @@ def test_cycle_reports_unconsumed_duplicate_events_in_input_order():
 
 
 @pytest.mark.unittest
+def test_cycle_return_metadata_covers_stable_and_ended_cycles():
+    """Cycle result metadata remains simulator-only ordinary pytest coverage."""
+    runtime = _build_runtime()
+
+    first = runtime.cycle()
+
+    assert first == CycleResult(
+        input_events=(), consumed_events=(), unconsumed_events=()
+    )
+    assert runtime.current_state.path == ("Root", "A")
+    assert runtime.vars["x"] == 1
+
+    runtime.cycle("Root.A.Go")
+    assert runtime.current_state.path == ("Root", "B")
+
+    ast = parse_with_grammar_entry(
+        """
+state Root {
+    state A;
+    [*] -> A;
+    A -> [*] :: Stop;
+}
+""",
+        "state_machine_dsl",
+    )
+    ended_runtime = SimulationRuntime(parse_dsl_node_to_state_machine(ast))
+    ended_runtime.cycle()
+
+    ended = ended_runtime.cycle(["Root.A.Stop"])
+
+    assert ended == CycleResult(
+        input_events=("Root.A.Stop",),
+        consumed_events=("Root.A.Stop",),
+        unconsumed_events=(),
+    )
+    assert ended_runtime.is_ended is True
+
+    ignored = ended_runtime.cycle("Root.A.Stop")
+
+    assert ignored == CycleResult()
+    assert ended_runtime.is_ended is True
+
+
+@pytest.mark.unittest
 @pytest.mark.parametrize(
     ("events_factory", "expected_input_events"),
     [

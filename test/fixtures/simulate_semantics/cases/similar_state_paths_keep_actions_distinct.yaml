@@ -9,7 +9,6 @@ origin:
   assertion_types:
   - state
   - vars
-  - cycle_result
   notes:
   - Covers distinct state paths that previously collapsed to the same generated method
     slug.
@@ -30,5 +29,3 @@ steps:
     vars:
       trace: 11
     ended: false
-    cycle_result:
-      value: null

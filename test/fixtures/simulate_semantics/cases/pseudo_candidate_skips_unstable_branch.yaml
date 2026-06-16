@@ -11,7 +11,6 @@ origin:
   assertion_types:
   - state
   - vars
-  - cycle_result
 categories:
 - runtime
 - pseudo_chain
@@ -29,8 +28,6 @@ steps:
     vars:
       trace: 101001
     ended: false
-    cycle_result:
-      value: null
 - cycle:
     events:
     - Root.A.Go
@@ -43,5 +40,3 @@ steps:
     vars:
       trace: 212113
     ended: false
-    cycle_result:
-      value: null

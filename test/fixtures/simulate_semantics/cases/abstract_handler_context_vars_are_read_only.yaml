@@ -9,7 +9,6 @@ origin:
   assertion_types:
   - ended
   - handler_calls
-  - cycle_result
   - state
   - vars
   notes:
@@ -56,5 +55,3 @@ steps:
       stage: during
       vars:
         x: 0
-    cycle_result:
-      value: null

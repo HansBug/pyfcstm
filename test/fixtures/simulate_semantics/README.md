@@ -37,7 +37,7 @@ SKIP_SLOW_TESTS=1 make unittest
    case and the exclusion is intentional.
 7. Keep only the public observation surface: `state`, `vars`, `vars_exact`,
    `vars_keys`, `vars_absent`, `ended`, constructor or hot-start outcomes,
-   per-step cycle state and vars, `handler_calls`, and `cycle_result`.
+   per-step cycle state and vars, and `handler_calls`.
 8. Preserve every original behavior either through the shared public observation
    surface or through an ordinary pytest outside this corpus.
 9. Run the fixture tests and the ordinary pytest coverage that owns any
@@ -69,7 +69,8 @@ Use this checklist before deleting or replacing any inline original test:
 - Every helper assertion and every bare assertion either has a public YAML
   equivalent or remains in ordinary pytest coverage.
 - Runtime log assertions, Python warning assertions, stack snapshots, cycle
-  counters, history records, and CLI output stay outside this shared corpus.
+  counters, history records, cycle return metadata, and CLI output stay outside
+  this shared corpus.
 - `set(runtime.vars.keys())` and temporary-variable non-leakage use
   `vars_keys` and/or `vars_absent`.
 - Exception tests keep class and message assertions under `raises` and keep

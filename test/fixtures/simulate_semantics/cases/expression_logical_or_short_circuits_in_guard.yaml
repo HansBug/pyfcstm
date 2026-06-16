@@ -1,36 +1,22 @@
-schema_version: 1
-id: expression_logical_or_short_circuits_in_guard
 title: Logical or short circuits in transition guards
-source:
-  fcstm: expression_logical_or_short_circuits_in_guard.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   docs:
   - https://github.com/HansBug/pyfcstm/issues/156#issuecomment-4632515679
-  assertion_types:
-  - state
-  - vars
 categories:
 - runtime
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       x: 0
       y: 1
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - B
+    state: Root.B
     vars:
       x: 0
       y: 1

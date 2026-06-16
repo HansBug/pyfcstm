@@ -1,41 +1,23 @@
-schema_version: 1
-id: transition_into_composite_skips_unstable_initial_candidate
 title: Transition into composite skips unstable initial candidate
-source:
-  fcstm: transition_into_composite_skips_unstable_initial_candidate.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614352350
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - runtime
 - template_alignment
 - lifecycle
 - validation
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       x: 1
       marker: 0
     ended: false
-- cycle:
-    events:
-    - Root.A.Go
+- cycle: Root.A.Go
   expect:
-    state:
-    - Root
-    - Parent
-    - Good
+    state: Root.Parent.Good
     vars:
       x: 101
       marker: 1

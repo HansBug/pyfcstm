@@ -1,30 +1,18 @@
-schema_version: 1
-id: sign_function_handles_all_signs
 title: Sign function handles negative zero and positive values
-source:
-  fcstm: sign_function_handles_all_signs.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694810781
   - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4695001326
-  assertion_types:
-  - state
-  - vars
   notes:
   - Covers the sign function's three-value semantics in one lifecycle action block.
 categories:
 - runtime
 - template_alignment
 - lifecycle
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       negative_sign: -1
       zero_sign: 0

@@ -1,36 +1,23 @@
-schema_version: 1
-id: persistent_default_float_initializer_converts_int
 title: Persistent default float initializer converts integer value
-source:
-  fcstm: persistent_default_float_initializer_converts_int.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694530145
-  assertion_types:
-  - initial
-  - state
-  - vars
   notes:
   - Completeness guard for declared float normalization on default initializers.
 categories:
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- expect_initial:
-    state:
-    - Root
+- cycle_count: 0
+  expect:
+    state: Root
     vars:
       ratio: 2.0
       marker: 0
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       ratio: 2.0
       marker: 1

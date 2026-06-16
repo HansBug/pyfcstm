@@ -1,39 +1,22 @@
-schema_version: 1
-id: design_speculative_prunes_repeated_state
 title: 4 31 prunes repeated speculative execution state
-source:
-  fcstm: design_speculative_prunes_repeated_state.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_31_prunes_repeated_speculative_execution_state
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_31_prunes_repeated_speculative_execution_state
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - design_example
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 1
     ended: false
-- cycle:
-    events:
-    - Root.A.Go
+- cycle: Root.A.Go
   expect:
-    state:
-    - Root
-    - B
+    state: Root.B
     vars:
       counter: 11
     ended: false

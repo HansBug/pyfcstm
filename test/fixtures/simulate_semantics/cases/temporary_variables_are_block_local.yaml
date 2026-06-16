@@ -1,31 +1,16 @@
-schema_version: 1
-id: temporary_variables_are_block_local
 title: temporary variables are block local
-source:
-  fcstm: temporary_variables_are_block_local.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestTemporaryVariables::test_temporary_variables_are_block_local
   - test/template/python/test_runtime_alignment.py::TestTemporaryVariables::test_temporary_variables_are_block_local
-  assertion_types:
-  - ended
-  - state
-  - vars
-  - vars_absent
-  - vars_keys
 categories:
 - runtime
 - template_alignment
 - temporary_vars
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       x: 1
       y: 0
@@ -35,13 +20,9 @@ steps:
     - y
     vars_absent:
     - tmp
-- cycle:
-    events:
-    - Root.A.Go
+- cycle: Root.A.Go
   expect:
-    state:
-    - Root
-    - B
+    state: Root.B
     vars:
       x: 11
       y: 12

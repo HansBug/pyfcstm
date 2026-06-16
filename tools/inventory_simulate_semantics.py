@@ -25,12 +25,17 @@ DEFAULT_SHARED_RUNNERS = ("simulation", "generated_python_alignment")
 ALLOWED_MARKDOWN_FILES = ("README.md", "schema.md")
 DISALLOWED_TOP_LEVEL_FIELDS = (
     "boundary",
+    "id",
+    "schema_version",
+    "source",
     "runners",
     "runtime_options",
     "model_build",
     "commands",
     "expected_failure",
 )
+DISALLOWED_ORIGIN_FIELDS = ("assertion_types",)
+DISALLOWED_STEP_FIELDS = ("expect_initial",)
 DISALLOWED_EXPECTATION_FIELDS = (
     "stack",
     "brief_stack",
@@ -50,6 +55,18 @@ DISALLOWED_EXPECTATION_FIELDS = (
     "output_not_contains",
     "error_contains",
     "should_exit",
+)
+LEGACY_CYCLE_SHAPES = (
+    "cycle_null",
+    "cycle_mapping",
+    "cycle_empty_mapping",
+    "cycle_events_mapping",
+    "cycle_event_descriptor",
+)
+LEGACY_PATH_SHAPES = (
+    "initial_state_list",
+    "expect_state_list",
+    "handler_active_leaf_list",
 )
 PUBLIC_EXPECTATION_FIELDS = (
     "state",
@@ -134,10 +151,9 @@ def _expectation_fields(record: SemanticCaseRecord) -> List[str]:
     for step in record.data.get("steps") or []:
         if not isinstance(step, Mapping):
             continue
-        for expect_name in ("expect_initial", "expect"):
-            expect = step.get(expect_name)
-            if isinstance(expect, Mapping):
-                result.extend(str(key) for key in expect.keys())
+        expect = step.get("expect")
+        if isinstance(expect, Mapping):
+            result.extend(str(key) for key in expect.keys())
     initial = record.data.get("initial")
     if isinstance(initial, Mapping):
         expect = initial.get("expect")
@@ -150,8 +166,36 @@ def _field_case_ids(
     records: Sequence[SemanticCaseRecord], fields: Sequence[str]
 ) -> Dict[str, List[str]]:
     return {
+        field_name: [record.case_id for record in records if field_name in record.data]
+        for field_name in fields
+    }
+
+
+def _origin_field_case_ids(
+    records: Sequence[SemanticCaseRecord], fields: Sequence[str]
+) -> Dict[str, List[str]]:
+    return {
         field_name: [
-            record.case_id for record in records if field_name in record.data
+            record.case_id
+            for record in records
+            if isinstance(record.data.get("origin"), Mapping)
+            and field_name in record.data["origin"]
+        ]
+        for field_name in fields
+    }
+
+
+def _step_field_case_ids(
+    records: Sequence[SemanticCaseRecord], fields: Sequence[str]
+) -> Dict[str, List[str]]:
+    return {
+        field_name: [
+            record.case_id
+            for record in records
+            if any(
+                isinstance(step, Mapping) and field_name in step
+                for step in record.data.get("steps") or []
+            )
         ]
         for field_name in fields
     }
@@ -163,6 +207,117 @@ def _expectation_field_counts(records: Sequence[SemanticCaseRecord]) -> Dict[str
         for field_name in set(_expectation_fields(record)):
             counter[field_name] += 1
     return {field_name: counter[field_name] for field_name in sorted(counter)}
+
+
+def _step_count(records: Sequence[SemanticCaseRecord]) -> int:
+    return sum(
+        len(record.data.get("steps") or [])
+        for record in records
+        if isinstance(record.data.get("steps") or [], list)
+    )
+
+
+def _cycle_shape_counts(records: Sequence[SemanticCaseRecord]) -> Counter:
+    result = Counter()
+    for record in records:
+        for step in record.data.get("steps") or []:
+            if not isinstance(step, Mapping):
+                continue
+            if "cycle_count" in step:
+                result["steps with cycle_count"] += 1
+            if "cycle" not in step:
+                result["steps without cycle"] += 1
+                continue
+            cycle = step["cycle"]
+            if cycle is None:
+                result["cycle_null"] += 1
+            elif isinstance(cycle, str):
+                result["cycle_string"] += 1
+            elif isinstance(cycle, list):
+                if not cycle:
+                    result["cycle_empty_list"] += 1
+                else:
+                    result["cycle_list"] += 1
+                if any(isinstance(item, Mapping) for item in cycle):
+                    result["cycle_event_descriptor"] += 1
+            elif isinstance(cycle, Mapping):
+                result["cycle_mapping"] += 1
+                if not cycle:
+                    result["cycle_empty_mapping"] += 1
+                if "events" in cycle:
+                    result["cycle_events_mapping"] += 1
+                    events = cycle.get("events")
+                    if isinstance(events, list) and any(
+                        isinstance(item, Mapping) for item in events
+                    ):
+                        result["cycle_event_descriptor"] += 1
+            else:
+                result["cycle_other"] += 1
+    return result
+
+
+def _legacy_cycle_shape_case_ids(
+    records: Sequence[SemanticCaseRecord],
+) -> Dict[str, List[str]]:
+    result = {field_name: [] for field_name in LEGACY_CYCLE_SHAPES}
+    for record in records:
+        found = {field_name: False for field_name in LEGACY_CYCLE_SHAPES}
+        for step in record.data.get("steps") or []:
+            if not isinstance(step, Mapping) or "cycle" not in step:
+                continue
+            cycle = step["cycle"]
+            if cycle is None:
+                found["cycle_null"] = True
+            elif isinstance(cycle, Mapping):
+                found["cycle_mapping"] = True
+                if not cycle:
+                    found["cycle_empty_mapping"] = True
+                if "events" in cycle:
+                    found["cycle_events_mapping"] = True
+                    events = cycle.get("events")
+                    if isinstance(events, list) and any(
+                        isinstance(item, Mapping) for item in events
+                    ):
+                        found["cycle_event_descriptor"] = True
+            elif isinstance(cycle, list) and any(
+                isinstance(item, Mapping) for item in cycle
+            ):
+                found["cycle_event_descriptor"] = True
+        for field_name, present in found.items():
+            if present:
+                result[field_name].append(record.case_id)
+    return result
+
+
+def _legacy_path_shape_case_ids(
+    records: Sequence[SemanticCaseRecord],
+) -> Dict[str, List[str]]:
+    result = {field_name: [] for field_name in LEGACY_PATH_SHAPES}
+    for record in records:
+        initial = record.data.get("initial")
+        if isinstance(initial, Mapping) and isinstance(initial.get("state"), list):
+            result["initial_state_list"].append(record.case_id)
+        expect_state_hit = False
+        handler_active_leaf_hit = False
+        for step in record.data.get("steps") or []:
+            if not isinstance(step, Mapping):
+                continue
+            expect = step.get("expect")
+            if not isinstance(expect, Mapping):
+                continue
+            if isinstance(expect.get("state"), list):
+                expect_state_hit = True
+            calls = expect.get("handler_calls")
+            if isinstance(calls, list) and any(
+                isinstance(item, Mapping) and isinstance(item.get("active_leaf"), list)
+                for item in calls
+            ):
+                handler_active_leaf_hit = True
+        if expect_state_hit:
+            result["expect_state_list"].append(record.case_id)
+        if handler_active_leaf_hit:
+            result["handler_active_leaf_list"].append(record.case_id)
+    return result
 
 
 def _handler_behavior_distribution(records: Sequence[SemanticCaseRecord]) -> Counter:
@@ -182,7 +337,9 @@ def _handler_behavior_distribution(records: Sequence[SemanticCaseRecord]) -> Cou
     return result
 
 
-def _format_markdown_table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
+def _format_markdown_table(
+    headers: Sequence[str], rows: Sequence[Sequence[str]]
+) -> str:
     lines = [
         "| %s |" % " | ".join(headers),
         "|%s|" % "|".join("---" for _ in headers),
@@ -210,6 +367,8 @@ def _render_report(
         runner_combo_counter[", ".join(record.runners)] += 1
 
     disallowed_top_level_cases = _field_case_ids(records, DISALLOWED_TOP_LEVEL_FIELDS)
+    disallowed_origin_cases = _origin_field_case_ids(records, DISALLOWED_ORIGIN_FIELDS)
+    disallowed_step_cases = _step_field_case_ids(records, DISALLOWED_STEP_FIELDS)
     expectation_field_counts = _expectation_field_counts(records)
     disallowed_expectation_cases = {
         field_name: [
@@ -219,17 +378,32 @@ def _render_report(
         ]
         for field_name in DISALLOWED_EXPECTATION_FIELDS
     }
+    legacy_cycle_cases = _legacy_cycle_shape_case_ids(records)
+    legacy_path_cases = _legacy_path_shape_case_ids(records)
     public_expectation_counts = {
         field_name: expectation_field_counts.get(field_name, 0)
         for field_name in PUBLIC_EXPECTATION_FIELDS
     }
+    cycle_shape_counts = _cycle_shape_counts(records)
     handler_distribution = _handler_behavior_distribution(records)
 
     disallowed_top_level_hits = sorted(
         set().union(*(set(items) for items in disallowed_top_level_cases.values()))
     )
+    disallowed_origin_hits = sorted(
+        set().union(*(set(items) for items in disallowed_origin_cases.values()))
+    )
+    disallowed_step_hits = sorted(
+        set().union(*(set(items) for items in disallowed_step_cases.values()))
+    )
     disallowed_expectation_hits = sorted(
         set().union(*(set(items) for items in disallowed_expectation_cases.values()))
+    )
+    legacy_cycle_hits = sorted(
+        set().union(*(set(items) for items in legacy_cycle_cases.values()))
+    )
+    legacy_path_hits = sorted(
+        set().union(*(set(items) for items in legacy_path_cases.values()))
     )
     markdown_files = _fixture_markdown_files(root)
     markdown_file_names = [path.name for path in markdown_files]
@@ -248,6 +422,7 @@ def _render_report(
             (
                 ("YAML cases", str(len(records))),
                 ("FCSTM files", str(fcstm_count)),
+                ("Runtime steps", str(_step_count(records))),
                 (
                     "Runner counts",
                     ", ".join(
@@ -288,14 +463,36 @@ def _render_report(
                     "runners 字段=%s；exclude_runners 字段=%s"
                     % (
                         len(disallowed_top_level_cases["runners"]),
-                        sum(1 for record in records if "exclude_runners" in record.data),
+                        sum(
+                            1 for record in records if "exclude_runners" in record.data
+                        ),
                     ),
                     "通过：当前 corpus 只使用默认 runner 集合加排除例外。",
                 ),
                 (
                     "契约外 top-level 字段",
                     _case_ids(disallowed_top_level_hits),
-                    "通过：未出现 boundary、runners、runtime_options、model_build、commands 或 expected_failure。",
+                    "通过：未出现 v1 id/schema/source、runners、runtime_options、model_build、commands 或 expected_failure。",
+                ),
+                (
+                    "契约外 origin 字段",
+                    _case_ids(disallowed_origin_hits),
+                    "通过：未出现 origin.assertion_types 等旧维护提示字段。",
+                ),
+                (
+                    "契约外 step 字段",
+                    _case_ids(disallowed_step_hits),
+                    "通过：未出现 expect_initial 等 v1 step 字段。",
+                ),
+                (
+                    "旧 cycle 形态",
+                    _case_ids(legacy_cycle_hits),
+                    "通过：未出现 cycle: {}、cycle.events、cycle: null 或 event descriptor。",
+                ),
+                (
+                    "旧 path 形态",
+                    _case_ids(legacy_path_hits),
+                    "通过：state / active_leaf 均使用 dot-string 或 null。",
                 ),
                 (
                     "契约外观察字段",
@@ -309,6 +506,28 @@ def _render_report(
                     if tuple(markdown_file_names) == ALLOWED_MARKDOWN_FILES
                     else "失败：顶层 Markdown 文件清单不符合长期维护口径。",
                 ),
+            ),
+        ),
+        "",
+        "## Cycle Shape Counts",
+        "",
+        _format_markdown_table(
+            ("Cycle shape", "Steps"),
+            tuple(
+                (name, str(cycle_shape_counts.get(name, 0)))
+                for name in (
+                    "cycle_empty_list",
+                    "cycle_string",
+                    "cycle_list",
+                    "steps with cycle_count",
+                    "steps without cycle",
+                    "cycle_null",
+                    "cycle_mapping",
+                    "cycle_empty_mapping",
+                    "cycle_events_mapping",
+                    "cycle_event_descriptor",
+                    "cycle_other",
+                )
             ),
         ),
         "",
@@ -332,6 +551,46 @@ def _render_report(
             ),
         ),
         "",
+        "## Disallowed Origin Field Counts",
+        "",
+        _format_markdown_table(
+            ("Disallowed field", "Case files"),
+            tuple(
+                (field_name, str(len(disallowed_origin_cases[field_name])))
+                for field_name in DISALLOWED_ORIGIN_FIELDS
+            ),
+        ),
+        "",
+        "## Disallowed Step Field Counts",
+        "",
+        _format_markdown_table(
+            ("Disallowed field", "Case files"),
+            tuple(
+                (field_name, str(len(disallowed_step_cases[field_name])))
+                for field_name in DISALLOWED_STEP_FIELDS
+            ),
+        ),
+        "",
+        "## Legacy Cycle Shape Counts",
+        "",
+        _format_markdown_table(
+            ("Legacy shape", "Case files"),
+            tuple(
+                (field_name, str(len(legacy_cycle_cases[field_name])))
+                for field_name in LEGACY_CYCLE_SHAPES
+            ),
+        ),
+        "",
+        "## Legacy Path Shape Counts",
+        "",
+        _format_markdown_table(
+            ("Legacy shape", "Case files"),
+            tuple(
+                (field_name, str(len(legacy_path_cases[field_name])))
+                for field_name in LEGACY_PATH_SHAPES
+            ),
+        ),
+        "",
         "## Disallowed Expectation Field Counts",
         "",
         _format_markdown_table(
@@ -347,7 +606,8 @@ def _render_report(
         _format_markdown_table(
             ("Metric", "Count"),
             tuple(
-                (name, str(count)) for name, count in sorted(handler_distribution.items())
+                (name, str(count))
+                for name, count in sorted(handler_distribution.items())
             )
             or (("-", "0"),),
         ),
@@ -378,17 +638,6 @@ def _paired_file_errors(root: Path, records: Sequence[SemanticCaseRecord]) -> Li
         errors.append("YAML fixture 缺少配对 FCSTM：%s.yaml" % case_id)
     for case_id in sorted(fcstm_ids - yaml_ids):
         errors.append("FCSTM fixture 缺少配对 YAML：%s.fcstm" % case_id)
-    for record in records:
-        source = record.data.get("source")
-        if not isinstance(source, Mapping):
-            errors.append("%s 缺少 source mapping" % record.case_id)
-            continue
-        source_fcstm = source.get("fcstm")
-        if source_fcstm != record.fcstm_path.name:
-            errors.append(
-                "%s 的 source.fcstm=%r，应为 %r"
-                % (record.case_id, source_fcstm, record.fcstm_path.name)
-            )
     return errors
 
 
@@ -422,7 +671,9 @@ def _runner_field_errors(root: Path) -> List[str]:
     pattern = re.compile(r"^[ \t]*runners:", re.MULTILINE)
     for yaml_path in sorted((root / CASE_DIR_RELATIVE_PATH).glob("*.yaml")):
         if pattern.search(_read_text(yaml_path)):
-            errors.append("shared fixture 禁止 include-style runners 字段：%s" % yaml_path)
+            errors.append(
+                "shared fixture 禁止 include-style runners 字段：%s" % yaml_path
+            )
     return errors
 
 
@@ -434,6 +685,42 @@ def _field_contract_errors(records: Sequence[SemanticCaseRecord]) -> List[str]:
         if case_ids:
             errors.append(
                 "shared fixture 顶层字段 %s 不属于长期契约，命中：%s"
+                % (field_name, _case_ids(case_ids))
+            )
+
+    disallowed_origin_cases = _origin_field_case_ids(records, DISALLOWED_ORIGIN_FIELDS)
+    for field_name in DISALLOWED_ORIGIN_FIELDS:
+        case_ids = disallowed_origin_cases[field_name]
+        if case_ids:
+            errors.append(
+                "shared fixture origin 字段 %s 是 v1 维护字段，命中：%s"
+                % (field_name, _case_ids(case_ids))
+            )
+
+    disallowed_step_cases = _step_field_case_ids(records, DISALLOWED_STEP_FIELDS)
+    for field_name in DISALLOWED_STEP_FIELDS:
+        case_ids = disallowed_step_cases[field_name]
+        if case_ids:
+            errors.append(
+                "shared fixture step 字段 %s 是 v1 字段，命中：%s"
+                % (field_name, _case_ids(case_ids))
+            )
+
+    legacy_cycle_cases = _legacy_cycle_shape_case_ids(records)
+    for field_name in LEGACY_CYCLE_SHAPES:
+        case_ids = legacy_cycle_cases[field_name]
+        if case_ids:
+            errors.append(
+                "shared fixture cycle 旧形态 %s 不属于 schema v2，命中：%s"
+                % (field_name, _case_ids(case_ids))
+            )
+
+    legacy_path_cases = _legacy_path_shape_case_ids(records)
+    for field_name in LEGACY_PATH_SHAPES:
+        case_ids = legacy_path_cases[field_name]
+        if case_ids:
+            errors.append(
+                "shared fixture state path 旧形态 %s 不属于 schema v2，命中：%s"
                 % (field_name, _case_ids(case_ids))
             )
 

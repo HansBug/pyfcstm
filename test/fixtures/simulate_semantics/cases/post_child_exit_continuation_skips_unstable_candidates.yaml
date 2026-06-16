@@ -1,42 +1,24 @@
-schema_version: 1
-id: post_child_exit_continuation_skips_unstable_candidates
 title: Post child exit continuation skips unstable candidates
-source:
-  fcstm: post_child_exit_continuation_skips_unstable_candidates.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614271348
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - runtime
 - template_alignment
 - lifecycle
 - validation
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System
-    - A
+    state: Root.System.A
     vars:
       trace: 1
     ended: false
 - cycle:
-    events:
-    - Root.System.A.Exit
-    - Root.System.Switch
+  - Root.System.A.Exit
+  - Root.System.Switch
   expect:
-    state:
-    - Root
-    - Good
-    - B
+    state: Root.Good.B
     vars:
       trace: 12365
     ended: false

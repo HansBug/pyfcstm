@@ -1,43 +1,28 @@
-schema_version: 1
-id: event_duplicate_inputs_preserve_public_state
 title: Duplicate event inputs preserve public state
-source:
-  fcstm: event_duplicate_inputs_preserve_public_state.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   docs:
   - https://github.com/HansBug/pyfcstm/issues/156#issuecomment-4633873538
-  assertion_types:
-  - events
-  - state
-  - vars
   notes:
-  - Covers duplicate event inputs while shared assertions stay limited to public state and variables.
+  - Covers duplicate event inputs while shared assertions stay limited to public state
+    and variables.
 categories:
 - runtime
 - event_paths
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 1
     ended: false
 - cycle:
-    events:
-    - Root.A.Tick
-    - Root.A.Noise
-    - Root.A.Tick
+  - Root.A.Tick
+  - Root.A.Noise
+  - Root.A.Tick
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 2
     ended: false

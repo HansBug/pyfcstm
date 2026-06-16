@@ -1,47 +1,28 @@
-schema_version: 1
-id: design_basic_simple_transition
 title: 4 1 basic simple transition
-source:
-  fcstm: design_basic_simple_transition.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_1_basic_simple_transition
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_1_basic_simple_transition
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - design_example
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 1
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 2
     ended: false
-- cycle:
-    events:
-    - Root.A.Go
+- cycle: Root.A.Go
   expect:
-    state:
-    - Root
-    - B
+    state: Root.B
     vars:
       counter: 12
     ended: false

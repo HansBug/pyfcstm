@@ -1,16 +1,7 @@
-schema_version: 1
-id: hot_start_with_composite_during_before_after
 title: Hot start nested leaf skips composite enter then follows child transition semantics
-source:
-  fcstm: hot_start_with_composite_during_before_after.fcstm
 origin:
   files:
   - test/simulate/test_hot_start.py::TestHotStartWithLifecycleActions::test_hot_start_with_composite_during_before_after
-  assertion_types:
-  - initial
-  - state
-  - vars
-  - ended
 categories:
 - runtime
 - hot_start
@@ -22,68 +13,49 @@ initial:
     during_count: 0
     exit_count: 0
 steps:
-- expect_initial:
-    state:
-    - Root
-    - System
-    - A
+- cycle_count: 0
+  expect:
+    state: Root.System.A
     vars:
       enter_count: 0
       during_count: 0
       exit_count: 0
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System
-    - A
+    state: Root.System.A
     vars:
       enter_count: 0
       during_count: 1
       exit_count: 0
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System
-    - A
+    state: Root.System.A
     vars:
       enter_count: 0
       during_count: 2
       exit_count: 0
     ended: false
-- cycle:
-    events:
-    - Root.System.A.Go
+- cycle: Root.System.A.Go
   expect:
-    state:
-    - Root
-    - System
-    - B
+    state: Root.System.B
     vars:
       enter_count: 0
       during_count: 12
       exit_count: 0
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System
-    - B
+    state: Root.System.B
     vars:
       enter_count: 0
       during_count: 22
       exit_count: 0
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System
-    - B
+    state: Root.System.B
     vars:
       enter_count: 0
       during_count: 32

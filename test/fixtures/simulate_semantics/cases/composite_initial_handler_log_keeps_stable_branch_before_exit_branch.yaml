@@ -1,17 +1,9 @@
-schema_version: 1
-id: composite_initial_handler_log_keeps_stable_branch_before_exit_branch
 title: Composite initial handler log keeps stable branch before exit-capable branch
-source:
-  fcstm: composite_initial_handler_log_keeps_stable_branch_before_exit_branch.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   docs:
   - https://github.com/HansBug/pyfcstm/issues/197#issuecomment-4689585273
-  assertion_types:
-  - handler_calls
-  - state
-  - vars
   notes:
   - Covers near-exit handler observation where wrong initial choice would enter an
     exit-capable child.
@@ -20,9 +12,6 @@ categories:
 - abstract
 - lifecycle
 - validation
-initial:
-  state: null
-  vars: null
 handlers:
 - action: Root.Gate.ObserveGate
   behavior: record_call
@@ -33,12 +22,9 @@ handlers:
 - action: Root.Gate.Leave.ExitLeave
   behavior: record_call
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Gate
-    - Stay
+    state: Root.Gate.Stay
     vars:
       phase: 1
       trace: 110
@@ -50,9 +36,7 @@ steps:
       vars:
         phase: 1
         trace: 10
-      active_leaf:
-      - Root
-      - Gate
+      active_leaf: Root.Gate
       call_stage: during
       abstract_target: Root.Gate.ObserveGate
       named_ref: null
@@ -62,19 +46,13 @@ steps:
       vars:
         phase: 1
         trace: 10
-      active_leaf:
-      - Root
-      - Gate
-      - Stay
+      active_leaf: Root.Gate.Stay
       call_stage: enter
       abstract_target: Root.Gate.Stay.EnterStay
       named_ref: null
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Gate
-    - Stay
+    state: Root.Gate.Stay
     vars:
       phase: 1
       trace: 210
@@ -86,9 +64,7 @@ steps:
       vars:
         phase: 1
         trace: 10
-      active_leaf:
-      - Root
-      - Gate
+      active_leaf: Root.Gate
       call_stage: during
       abstract_target: Root.Gate.ObserveGate
       named_ref: null
@@ -98,10 +74,7 @@ steps:
       vars:
         phase: 1
         trace: 10
-      active_leaf:
-      - Root
-      - Gate
-      - Stay
+      active_leaf: Root.Gate.Stay
       call_stage: enter
       abstract_target: Root.Gate.Stay.EnterStay
       named_ref: null

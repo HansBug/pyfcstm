@@ -1,93 +1,64 @@
-schema_version: 1
-id: scenario_elevator_door_control_blocked
 title: 4 100 elevator door control
-source:
-  fcstm: scenario_elevator_door_control_blocked.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_100_elevator_door_control
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_100_elevator_door_control
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - runtime
 - scenario_example
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Closed
+    state: Root.Closed
     vars:
       door_pos: 0
       hold: 0
       reopen_count: 0
     ended: false
-- cycle:
-    events:
-    - Root.Closed.HallCall
+- cycle: Root.Closed.HallCall
   expect:
-    state:
-    - Root
-    - Opening
+    state: Root.Opening
     vars:
       door_pos: 50
       hold: 0
       reopen_count: 0
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Opening
+    state: Root.Opening
     vars:
       door_pos: 100
       hold: 0
       reopen_count: 0
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Opened
+    state: Root.Opened
     vars:
       door_pos: 100
       hold: 1
       reopen_count: 0
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Opened
+    state: Root.Opened
     vars:
       door_pos: 100
       hold: 2
       reopen_count: 0
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Closing
+    state: Root.Closing
     vars:
       door_pos: 50
       hold: 2
       reopen_count: 0
     ended: false
-- cycle:
-    events:
-    - Root.Closing.BeamBlocked
+- cycle: Root.Closing.BeamBlocked
   expect:
-    state:
-    - Root
-    - Opened
+    state: Root.Opened
     vars:
       door_pos: 100
       hold: 1

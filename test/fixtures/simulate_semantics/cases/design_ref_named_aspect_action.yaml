@@ -1,50 +1,28 @@
-schema_version: 1
-id: design_ref_named_aspect_action
 title: 4 35 ref reuses named aspect action
-source:
-  fcstm: design_ref_named_aspect_action.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_35_ref_reuses_named_aspect_action
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_35_ref_reuses_named_aspect_action
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - design_example
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System
-    - A
+    state: Root.System.A
     vars:
       trace: 201
     ended: false
-- cycle:
-    events:
-    - Root.System.A.Go
+- cycle: Root.System.A.Go
   expect:
-    state:
-    - Root
-    - System
-    - B
+    state: Root.System.B
     vars:
       trace: 411
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System
-    - B
+    state: Root.System.B
     vars:
       trace: 621
     ended: false

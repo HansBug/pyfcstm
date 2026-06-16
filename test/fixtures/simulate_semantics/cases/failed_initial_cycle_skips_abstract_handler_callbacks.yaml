@@ -1,16 +1,7 @@
-schema_version: 1
-id: failed_initial_cycle_skips_abstract_handler_callbacks
 title: Failed initial cycle skips abstract handler callbacks
-source:
-  fcstm: failed_initial_cycle_skips_abstract_handler_callbacks.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614005134
-  assertion_types:
-  - ended
-  - handler_calls
-  - state
-  - vars
   notes:
   - Tracks speculative initial-cycle isolation for abstract handlers.
 categories:
@@ -18,18 +9,13 @@ categories:
 - template_alignment
 - validation
 - abstract
-initial:
-  state: null
-  vars: null
 handlers:
 - action: Root.RootInit
   behavior: record_call
 steps:
-- cycle:
-    events: []
+- cycle: []
   expect:
-    state:
-    - Root
+    state: Root
     vars:
       x: 0
     ended: false

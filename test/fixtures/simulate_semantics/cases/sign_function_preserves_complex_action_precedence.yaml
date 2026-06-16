@@ -1,15 +1,8 @@
-schema_version: 1
-id: sign_function_preserves_complex_action_precedence
 title: Sign function preserves complex action precedence
-source:
-  fcstm: sign_function_preserves_complex_action_precedence.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694810781
   - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4695001326
-  assertion_types:
-  - state
-  - vars
   notes:
   - Covers complex sign expressions in enter, during, exit, guard, and effect blocks.
   - This case also guards generated Python formatter convergence for long sign expressions.
@@ -17,37 +10,28 @@ categories:
 - runtime
 - template_alignment
 - lifecycle
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Work
+    state: Root.Work
     vars:
       x: 0
       y: 2
       score: 98
       marker: 7
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Work
+    state: Root.Work
     vars:
       x: 3
       y: 2
       score: 200
       marker: 7
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Done
+    state: Root.Done
     vars:
       x: 3
       y: 2

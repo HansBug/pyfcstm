@@ -1,42 +1,23 @@
-schema_version: 1
-id: event_path_absolute
 title: 4 202 flexible path absolute
-source:
-  fcstm: event_path_absolute.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_202_flexible_path_absolute
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_202_flexible_path_absolute
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - event_paths
 - runtime
 - scenario_example
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System
-    - A
+    state: Root.System.A
     vars:
       counter: 1
     ended: false
-- cycle:
-    events:
-    - /global_reset
+- cycle: /global_reset
   expect:
-    state:
-    - Root
-    - System
-    - B
+    state: Root.System.B
     vars:
       counter: 11
     ended: false

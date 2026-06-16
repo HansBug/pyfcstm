@@ -1,39 +1,22 @@
-schema_version: 1
-id: design_self_transition
 title: 4 9 self transition
-source:
-  fcstm: design_self_transition.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_9_self_transition
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_9_self_transition
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - design_example
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 11
     ended: false
-- cycle:
-    events:
-    - Root.A.Loop
+- cycle: Root.A.Loop
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 122
     ended: false

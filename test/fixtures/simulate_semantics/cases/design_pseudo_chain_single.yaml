@@ -1,51 +1,31 @@
-schema_version: 1
-id: design_pseudo_chain_single
 title: 4 13 single pseudo state chain
-source:
-  fcstm: design_pseudo_chain_single.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_13_single_pseudo_state_chain
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_13_single_pseudo_state_chain
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - design_example
 - pseudo_chain
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 1
     ended: false
-- cycle:
-    events:
-    - Root.A.GoP
+- cycle: Root.A.GoP
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 2
     ended: false
 - cycle:
-    events:
-    - Root.A.GoP
-    - Root.P.GoB
+  - Root.A.GoP
+  - Root.P.GoB
   expect:
-    state:
-    - Root
-    - B
+    state: Root.B
     vars:
       counter: 1112
     ended: false

@@ -1,40 +1,23 @@
-schema_version: 1
-id: if_blocks_exit_effect_enter_actions
 title: If blocks in exit effect and enter actions
-source:
-  fcstm: if_blocks_exit_effect_enter_actions.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestIfBlockRuntime::test_if_blocks_in_exit_effect_and_enter_actions
   - test/template/python/test_runtime_alignment.py::TestIfBlockRuntime::test_if_blocks_in_exit_effect_and_enter_actions
-  assertion_types:
-  - state
-  - vars
-  - ended
 categories:
 - runtime
 - template_alignment
 - if_blocks
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       x: 0
       flag: 0
     ended: false
-- cycle:
-    events:
-    - Root.A.Go
+- cycle: Root.A.Go
   expect:
-    state:
-    - Root
-    - B
+    state: Root.B
     vars:
       x: 111
       flag: 0

@@ -1,41 +1,24 @@
-schema_version: 1
-id: design_validation_cannot_reach_stoppable
 title: 4 3 validation cannot reach stoppable
-source:
-  fcstm: design_validation_cannot_reach_stoppable.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_3_validation_cannot_reach_stoppable
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_3_validation_cannot_reach_stoppable
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - design_example
 - runtime
 - template_alignment
 - validation
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 1
       ready: 0
     ended: false
-- cycle:
-    events:
-    - Root.A.GoB
+- cycle: Root.A.GoB
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 2
       ready: 0

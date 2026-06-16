@@ -1,110 +1,72 @@
-schema_version: 1
-id: design_cross_hierarchy_transition_with_staged_guards
 title: 4 26 cross hierarchy transition with staged guards
-source:
-  fcstm: design_cross_hierarchy_transition_with_staged_guards.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_26_cross_hierarchy_transition_with_staged_guards
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_26_cross_hierarchy_transition_with_staged_guards
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - design_example
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System1
-    - A
+    state: Root.System1.A
     vars:
       phase: 1
       trace: 110111
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System1
-    - A
+    state: Root.System1.A
     vars:
       phase: 2
       trace: 220222
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System1
-    - A
+    state: Root.System1.A
     vars:
       phase: 3
       trace: 330333
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System1
-    - A
+    state: Root.System1.A
     vars:
       phase: 4
       trace: 440444
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System1
-    - A
+    state: Root.System1.A
     vars:
       phase: 5
       trace: 550555
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System1
-    - A
+    state: Root.System1.A
     vars:
       phase: 6
       trace: 660666
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System1
-    - A
+    state: Root.System1.A
     vars:
       phase: 7
       trace: 770777
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System2
-    - B
+    state: Root.System2.B
     vars:
       phase: 7
       trace: 1881778
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System2
-    - B
+    state: Root.System2.B
     vars:
       phase: 7
       trace: 2992779

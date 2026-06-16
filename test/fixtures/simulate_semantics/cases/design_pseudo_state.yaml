@@ -1,26 +1,15 @@
-schema_version: 1
-id: design_pseudo_state
 title: 4 6 pseudo state
-source:
-  fcstm: design_pseudo_state.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_6_pseudo_state
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_6_pseudo_state
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - design_example
 - pseudo_chain
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
     state: null
     vars:

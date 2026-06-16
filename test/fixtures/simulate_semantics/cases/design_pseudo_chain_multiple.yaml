@@ -1,63 +1,40 @@
-schema_version: 1
-id: design_pseudo_chain_multiple
 title: 4 14 multiple pseudo states chain
-source:
-  fcstm: design_pseudo_chain_multiple.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_14_multiple_pseudo_states_chain
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_14_multiple_pseudo_states_chain
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - design_example
 - pseudo_chain
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 1
     ended: false
-- cycle:
-    events:
-    - Root.A.Go1
+- cycle: Root.A.Go1
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 2
     ended: false
 - cycle:
-    events:
-    - Root.A.Go1
-    - Root.P1.Go2
+  - Root.A.Go1
+  - Root.P1.Go2
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 3
     ended: false
 - cycle:
-    events:
-    - Root.A.Go1
-    - Root.P1.Go2
-    - Root.P2.Go3
+  - Root.A.Go1
+  - Root.P1.Go2
+  - Root.P2.Go3
   expect:
-    state:
-    - Root
-    - B
+    state: Root.B
     vars:
       counter: 1113
     ended: false

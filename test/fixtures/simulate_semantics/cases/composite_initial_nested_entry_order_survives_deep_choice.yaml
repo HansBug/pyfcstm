@@ -1,18 +1,10 @@
-schema_version: 1
-id: composite_initial_nested_entry_order_survives_deep_choice
 title: Deep composite initial guard uses entered state before plain during-before
   mutation
-source:
-  fcstm: composite_initial_nested_entry_order_survives_deep_choice.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   docs:
   - https://github.com/HansBug/pyfcstm/issues/197#issuecomment-4690004949
-  assertion_types:
-  - events
-  - state
-  - vars
   notes:
   - Covers deep nested composite entry rather than only the minimal two-level shape.
 categories:
@@ -20,28 +12,17 @@ categories:
 - lifecycle
 - event_paths
 - validation
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Idle
+    state: Root.Idle
     vars:
       route: 0
       trace: 1
     ended: false
-- cycle:
-    events:
-    - Root.Idle.Go
+- cycle: Root.Idle.Go
   expect:
-    state:
-    - Root
-    - Outer
-    - Middle
-    - Target
+    state: Root.Outer.Middle.Target
     vars:
       route: 2
       trace: 1234567

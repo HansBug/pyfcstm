@@ -1,13 +1,7 @@
-schema_version: 1
-id: persistent_default_int_initializer_rejects_non_integer_float
 title: Persistent default int initializer rejects non-integer float
-source:
-  fcstm: persistent_default_int_initializer_rejects_non_integer_float.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694530145
-  assertion_types:
-  - constructor_exception
   notes:
   - Guards the constructor-side persistent int boundary for default initializers.
 categories:

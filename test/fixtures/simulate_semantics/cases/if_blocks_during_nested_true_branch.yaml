@@ -1,31 +1,18 @@
-schema_version: 1
-id: if_blocks_during_nested_true_branch
 title: if blocks during nested true branch
-source:
-  fcstm: if_blocks_during_nested_true_branch.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestIfBlockRuntime::test_if_blocks_in_during_actions
   - test/template/python/test_runtime_alignment.py::TestIfBlockRuntime::test_if_blocks_in_during_actions
-  assertion_types:
-  - state
-  - vars
-  - ended
   notes:
   - Migrated from one parameter row of the parametrized if-block runtime test.
 categories:
 - runtime
 - template_alignment
 - if_blocks
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       x: 10
       y: 0

@@ -1,17 +1,9 @@
-schema_version: 1
-id: composite_initial_guard_after_event_transition_uses_pre_before_vars
 title: Composite initial guard ignores plain during-before mutation after event transition
-source:
-  fcstm: composite_initial_guard_after_event_transition_uses_pre_before_vars.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   docs:
   - https://github.com/HansBug/pyfcstm/issues/197#issuecomment-4689584606
-  assertion_types:
-  - events
-  - state
-  - vars
   notes:
   - Covers event-driven entry into the affected composite and declaration-order fallback
     behavior.
@@ -19,27 +11,17 @@ categories:
 - runtime
 - event_paths
 - lifecycle
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       flag: 0
       trace: 1
     ended: false
-- cycle:
-    events:
-    - Root.A.Go
+- cycle: Root.A.Go
   expect:
-    state:
-    - Root
-    - Parent
-    - Fallback
+    state: Root.Parent.Fallback
     vars:
       flag: 1
       trace: 12

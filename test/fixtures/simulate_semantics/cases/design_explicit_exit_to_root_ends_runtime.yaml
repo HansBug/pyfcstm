@@ -1,50 +1,35 @@
-schema_version: 1
-id: design_explicit_exit_to_root_ends_runtime
 title: 4 30 explicit exit to root ends runtime
-source:
-  fcstm: design_explicit_exit_to_root_ends_runtime.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_30_explicit_exit_to_root_ends_runtime
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_30_explicit_exit_to_root_ends_runtime
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - design_example
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       phase: 1
       trace: 10
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       phase: 2
       trace: 20
     ended: false
-- cycle: {}
+- cycle: []
   expect:
     state: null
     vars:
       phase: 2
       trace: 20
     ended: true
-- cycle: {}
+- cycle: []
   expect:
     state: null
     vars:

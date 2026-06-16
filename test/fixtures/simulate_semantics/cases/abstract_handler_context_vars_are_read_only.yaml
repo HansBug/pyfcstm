@@ -1,55 +1,25 @@
-schema_version: 1
-id: abstract_handler_context_vars_are_read_only
 title: Abstract handler context variables are read-only
-source:
-  fcstm: abstract_handler_context_vars_are_read_only.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/143#issuecomment-4614012639
-  assertion_types:
-  - ended
-  - handler_calls
-  - state
-  - vars
   notes:
-  - Public handler context read-only observation shared by simulation and generated
-    Python alignment.
+  - Public handler context snapshot observation shared by simulation and generated
+    Python alignment. Read-only write-attempt behavior remains in ordinary simulator
+    tests.
 categories:
 - runtime
 - abstract
-initial:
-  state: null
-  vars: null
 handlers:
-- action: Root.A.Touch
-  behavior: record_var_write_attempt
-  write:
-    name: x
-    value: 999
 - action: Root.A.Touch
   behavior: record_call
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       x: 0
     ended: false
     handler_calls:
-    - action: Root.A.Touch
-      state: Root.A
-      stage: during
-      vars:
-        x: 0
-      write_attempt:
-        name: x
-        value: 999
-        succeeded: false
-        error_type: TypeError
-        vars:
-          x: 0
     - action: Root.A.Touch
       state: Root.A
       stage: during

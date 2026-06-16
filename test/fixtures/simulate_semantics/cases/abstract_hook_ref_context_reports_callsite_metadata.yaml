@@ -1,16 +1,8 @@
-schema_version: 1
-id: abstract_hook_ref_context_reports_callsite_metadata
 title: Abstract hook ref context reports callsite metadata
-source:
-  fcstm: abstract_hook_ref_context_reports_callsite_metadata.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/pull/205
   - https://github.com/HansBug/pyfcstm/issues/199#issuecomment-4694000657
-  assertion_types:
-  - handler_calls
-  - state
-  - vars
   notes:
   - Canonical ref/aspect context alignment case for generated Python runtime.
 categories:
@@ -18,9 +10,6 @@ categories:
 - template_alignment
 - abstract
 - lifecycle
-initial:
-  state: null
-  vars: null
 handlers:
 - action: Root.Library.SharedEnter
   behavior: record_call
@@ -43,11 +32,9 @@ handlers:
 - action: Root.Gate.C.EnterC
   behavior: record_call
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       trace: 1
       branch: 1
@@ -59,9 +46,7 @@ steps:
       vars:
         trace: 0
         branch: 0
-      active_leaf:
-      - Root
-      - A
+      active_leaf: Root.A
       call_stage: enter
       abstract_target: Root.Library.SharedExit
       named_ref: Root.A.FirstRef
@@ -71,9 +56,7 @@ steps:
       vars:
         trace: 0
         branch: 0
-      active_leaf:
-      - Root
-      - A
+      active_leaf: Root.A
       call_stage: during
       abstract_target: Root.ObserveBefore
       named_ref: null
@@ -83,9 +66,7 @@ steps:
       vars:
         trace: 0
         branch: 0
-      active_leaf:
-      - Root
-      - A
+      active_leaf: Root.A
       call_stage: during
       abstract_target: Root.Library.SharedEnter
       named_ref: null
@@ -95,19 +76,13 @@ steps:
       vars:
         trace: 1
         branch: 1
-      active_leaf:
-      - Root
-      - A
+      active_leaf: Root.A
       call_stage: during
       abstract_target: Root.ObserveAfter
       named_ref: null
-- cycle:
-    events:
-    - Root.A.Go
+- cycle: Root.A.Go
   expect:
-    state:
-    - Root
-    - B
+    state: Root.B
     vars:
       trace: 12
       branch: 11
@@ -119,9 +94,7 @@ steps:
       vars:
         trace: 0
         branch: 0
-      active_leaf:
-      - Root
-      - A
+      active_leaf: Root.A
       call_stage: enter
       abstract_target: Root.Library.SharedExit
       named_ref: Root.A.FirstRef
@@ -131,9 +104,7 @@ steps:
       vars:
         trace: 0
         branch: 0
-      active_leaf:
-      - Root
-      - A
+      active_leaf: Root.A
       call_stage: during
       abstract_target: Root.ObserveBefore
       named_ref: null
@@ -143,9 +114,7 @@ steps:
       vars:
         trace: 0
         branch: 0
-      active_leaf:
-      - Root
-      - A
+      active_leaf: Root.A
       call_stage: during
       abstract_target: Root.Library.SharedEnter
       named_ref: null
@@ -155,9 +124,7 @@ steps:
       vars:
         trace: 1
         branch: 1
-      active_leaf:
-      - Root
-      - A
+      active_leaf: Root.A
       call_stage: during
       abstract_target: Root.ObserveAfter
       named_ref: null
@@ -167,9 +134,7 @@ steps:
       vars:
         trace: 1
         branch: 1
-      active_leaf:
-      - Root
-      - A
+      active_leaf: Root.A
       call_stage: exit
       abstract_target: Root.Library.SharedDuring
       named_ref: null
@@ -179,9 +144,7 @@ steps:
       vars:
         trace: 1
         branch: 1
-      active_leaf:
-      - Root
-      - B
+      active_leaf: Root.B
       call_stage: enter
       abstract_target: Root.B.EnterB
       named_ref: null
@@ -191,9 +154,7 @@ steps:
       vars:
         trace: 1
         branch: 1
-      active_leaf:
-      - Root
-      - B
+      active_leaf: Root.B
       call_stage: during
       abstract_target: Root.ObserveBefore
       named_ref: null
@@ -203,9 +164,7 @@ steps:
       vars:
         trace: 1
         branch: 1
-      active_leaf:
-      - Root
-      - B
+      active_leaf: Root.B
       call_stage: during
       abstract_target: Root.B.DuringB
       named_ref: null
@@ -215,20 +174,13 @@ steps:
       vars:
         trace: 12
         branch: 11
-      active_leaf:
-      - Root
-      - B
+      active_leaf: Root.B
       call_stage: during
       abstract_target: Root.ObserveAfter
       named_ref: null
-- cycle:
-    events:
-    - Root.B.ToGate
+- cycle: Root.B.ToGate
   expect:
-    state:
-    - Root
-    - Gate
-    - C
+    state: Root.Gate.C
     vars:
       trace: 1243
       branch: 111
@@ -240,9 +192,7 @@ steps:
       vars:
         trace: 0
         branch: 0
-      active_leaf:
-      - Root
-      - A
+      active_leaf: Root.A
       call_stage: enter
       abstract_target: Root.Library.SharedExit
       named_ref: Root.A.FirstRef
@@ -252,9 +202,7 @@ steps:
       vars:
         trace: 0
         branch: 0
-      active_leaf:
-      - Root
-      - A
+      active_leaf: Root.A
       call_stage: during
       abstract_target: Root.ObserveBefore
       named_ref: null
@@ -264,9 +212,7 @@ steps:
       vars:
         trace: 0
         branch: 0
-      active_leaf:
-      - Root
-      - A
+      active_leaf: Root.A
       call_stage: during
       abstract_target: Root.Library.SharedEnter
       named_ref: null
@@ -276,9 +222,7 @@ steps:
       vars:
         trace: 1
         branch: 1
-      active_leaf:
-      - Root
-      - A
+      active_leaf: Root.A
       call_stage: during
       abstract_target: Root.ObserveAfter
       named_ref: null
@@ -288,9 +232,7 @@ steps:
       vars:
         trace: 1
         branch: 1
-      active_leaf:
-      - Root
-      - A
+      active_leaf: Root.A
       call_stage: exit
       abstract_target: Root.Library.SharedDuring
       named_ref: null
@@ -300,9 +242,7 @@ steps:
       vars:
         trace: 1
         branch: 1
-      active_leaf:
-      - Root
-      - B
+      active_leaf: Root.B
       call_stage: enter
       abstract_target: Root.B.EnterB
       named_ref: null
@@ -312,9 +252,7 @@ steps:
       vars:
         trace: 1
         branch: 1
-      active_leaf:
-      - Root
-      - B
+      active_leaf: Root.B
       call_stage: during
       abstract_target: Root.ObserveBefore
       named_ref: null
@@ -324,9 +262,7 @@ steps:
       vars:
         trace: 1
         branch: 1
-      active_leaf:
-      - Root
-      - B
+      active_leaf: Root.B
       call_stage: during
       abstract_target: Root.B.DuringB
       named_ref: null
@@ -336,9 +272,7 @@ steps:
       vars:
         trace: 12
         branch: 11
-      active_leaf:
-      - Root
-      - B
+      active_leaf: Root.B
       call_stage: during
       abstract_target: Root.ObserveAfter
       named_ref: null
@@ -348,9 +282,7 @@ steps:
       vars:
         trace: 12
         branch: 11
-      active_leaf:
-      - Root
-      - B
+      active_leaf: Root.B
       call_stage: exit
       abstract_target: Root.B.ExitB
       named_ref: null
@@ -360,9 +292,7 @@ steps:
       vars:
         trace: 124
         branch: 11
-      active_leaf:
-      - Root
-      - Gate
+      active_leaf: Root.Gate
       call_stage: during
       abstract_target: Root.Gate.ObserveGate
       named_ref: null
@@ -372,10 +302,7 @@ steps:
       vars:
         trace: 124
         branch: 11
-      active_leaf:
-      - Root
-      - Gate
-      - C
+      active_leaf: Root.Gate.C
       call_stage: enter
       abstract_target: Root.Gate.C.EnterC
       named_ref: null
@@ -385,10 +312,7 @@ steps:
       vars:
         trace: 124
         branch: 11
-      active_leaf:
-      - Root
-      - Gate
-      - C
+      active_leaf: Root.Gate.C
       call_stage: during
       abstract_target: Root.ObserveBefore
       named_ref: null
@@ -398,10 +322,7 @@ steps:
       vars:
         trace: 1243
         branch: 111
-      active_leaf:
-      - Root
-      - Gate
-      - C
+      active_leaf: Root.Gate.C
       call_stage: during
       abstract_target: Root.ObserveAfter
       named_ref: null

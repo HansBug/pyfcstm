@@ -1,41 +1,22 @@
-schema_version: 1
-id: design_cross_hierarchy_transition_actual_runtime_behavior
 title: 4 25 cross hierarchy transition actual runtime behavior
-source:
-  fcstm: design_cross_hierarchy_transition_actual_runtime_behavior.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_25_cross_hierarchy_transition_actual_runtime_behavior
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_25_cross_hierarchy_transition_actual_runtime_behavior
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - design_example
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System1
-    - A
+    state: Root.System1.A
     vars:
       counter: 110111
     ended: false
-- cycle:
-    events:
-    - Root.System1.Go
+- cycle: Root.System1.Go
   expect:
-    state:
-    - Root
-    - System1
-    - A
+    state: Root.System1.A
     vars:
       counter: 220222
     ended: false

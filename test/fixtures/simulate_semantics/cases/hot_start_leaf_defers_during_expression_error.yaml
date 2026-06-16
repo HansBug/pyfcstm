@@ -1,13 +1,7 @@
-schema_version: 1
-id: hot_start_leaf_defers_during_expression_error
 title: Hot start leaf defers during expression errors until the first cycle
-source:
-  fcstm: hot_start_leaf_defers_during_expression_error.fcstm
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/pull/153#issuecomment-4627323375
-  assertion_types:
-  - exception
   notes:
   - A non-pseudo leaf target is already stoppable, so construction must not run its
     first-cycle during action.
@@ -21,7 +15,7 @@ initial:
   vars:
     x: 0
 steps:
-- cycle: {}
+- cycle: []
   expect:
     raises:
       type: SimulationRuntimeExpressionError

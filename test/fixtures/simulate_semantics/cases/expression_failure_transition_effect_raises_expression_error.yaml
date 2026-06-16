@@ -1,32 +1,19 @@
-schema_version: 1
-id: expression_failure_transition_effect_raises_expression_error
 title: transition effect expression failure raises expression error
-source:
-  fcstm: expression_failure_transition_effect_raises_expression_error.fcstm
 origin:
   files:
   - test/fixtures/simulate_semantics/cases/expression_failure_transition_effect_raises_expression_error.fcstm
-  assertion_types:
-  - exception
-  - state
-  - vars
 categories:
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 1
       sink: 0
     ended: false
-- cycle: {}
+- cycle: []
   expect:
     raises:
       type: SimulationRuntimeExpressionError
@@ -35,9 +22,7 @@ steps:
       cause_type: ZeroDivisionError
       cause_match: division by zero
       cause_match_kind: substring
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 1
       sink: 0

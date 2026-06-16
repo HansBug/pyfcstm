@@ -1,24 +1,14 @@
-schema_version: 1
-id: expression_error_preserves_runtime_snapshot
 title: Expression errors preserve runtime snapshot assertions
-source:
-  fcstm: expression_error_preserves_runtime_snapshot.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
-  assertion_types:
-  - raises
-  - vars
   notes:
   - Minimal fixture proving exception assertions can be combined with rollback snapshot
     assertions.
 categories:
 - runtime
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
     raises:
       type: SimulationRuntimeExpressionError

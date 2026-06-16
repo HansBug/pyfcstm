@@ -1,52 +1,28 @@
-schema_version: 1
-id: design_multiple_leaf_states_share_aspects
 title: 4 24 multiple leaf states share aspects
-source:
-  fcstm: design_multiple_leaf_states_share_aspects.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_24_multiple_leaf_states_share_aspects
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_24_multiple_leaf_states_share_aspects
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - design_example
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System
-    - A
+    state: Root.System.A
     vars:
       counter: 1112
     ended: false
-- cycle:
-    events:
-    - Root.System.A.GoB
+- cycle: Root.System.A.GoB
   expect:
-    state:
-    - Root
-    - System
-    - B
+    state: Root.System.B
     vars:
       counter: 2233
     ended: false
-- cycle:
-    events:
-    - Root.System.B.GoC
+- cycle: Root.System.B.GoC
   expect:
-    state:
-    - Root
-    - System
-    - C
+    state: Root.System.C
     vars:
       counter: 3444
     ended: false

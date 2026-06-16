@@ -1,14 +1,8 @@
-schema_version: 1
-id: hot_start_rejects_blocked_composite_initial
 title: Hot start rejects a composite target whose initial transition is blocked
-source:
-  fcstm: hot_start_rejects_blocked_composite_initial.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   - test/template/python/test_semantic_fixture_alignment.py::test_generated_python_alignment_semantic_fixture
-  assertion_types:
-  - constructor_exception
   notes:
   - The target composite remains in init_wait because its guarded initial transition
     is false.

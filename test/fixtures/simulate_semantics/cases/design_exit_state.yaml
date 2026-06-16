@@ -1,49 +1,32 @@
-schema_version: 1
-id: design_exit_state
 title: 4 10 exit state
-source:
-  fcstm: design_exit_state.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_10_exit_state
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_10_exit_state
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - design_example
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 1
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 2
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 3
     ended: false
-- cycle: {}
+- cycle: []
   expect:
     state: null
     vars:

@@ -1,38 +1,24 @@
-schema_version: 1
-id: composite_initial_handler_log_uses_enter_selected_child
 title: Composite initial decision selects the child whose handler should observe entry
-source:
-  fcstm: composite_initial_handler_log_uses_enter_selected_child.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   docs:
   - https://github.com/HansBug/pyfcstm/issues/197#issuecomment-4689585273
-  assertion_types:
-  - handler_calls
-  - state
-  - vars
   notes:
   - Covers the handler call log variant without testing handler registry mechanics.
 categories:
 - runtime
 - abstract
 - lifecycle
-initial:
-  state: null
-  vars: null
 handlers:
 - action: Root.Choice.FromEnter.ChosenEnter
   behavior: record_call
 - action: Root.Choice.FromBefore.ChosenBefore
   behavior: record_call
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Choice
-    - FromEnter
+    state: Root.Choice.FromEnter
     vars:
       select: 2
       trace: 235
@@ -44,10 +30,7 @@ steps:
       vars:
         select: 2
         trace: 23
-      active_leaf:
-      - Root
-      - Choice
-      - FromEnter
+      active_leaf: Root.Choice.FromEnter
       call_stage: enter
       abstract_target: Root.Choice.FromEnter.ChosenEnter
       named_ref: null

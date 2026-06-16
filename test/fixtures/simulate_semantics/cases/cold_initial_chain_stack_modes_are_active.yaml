@@ -1,30 +1,17 @@
-schema_version: 1
-id: cold_initial_chain_stack_modes_are_active
 title: Cold initial chain stack modes become active after stabilization
-source:
-  fcstm: cold_initial_chain_stack_modes_are_active.fcstm
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   docs:
   - https://github.com/HansBug/pyfcstm/issues/156#issuecomment-4633126858
-  assertion_types:
-  - state
-  - vars
 categories:
 - runtime
 - validation
 - lifecycle
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - Parent
-    - A
+    state: Root.Parent.A
     vars:
       x: 1
     ended: false

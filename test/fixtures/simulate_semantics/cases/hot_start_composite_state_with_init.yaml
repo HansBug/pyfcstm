@@ -1,16 +1,7 @@
-schema_version: 1
-id: hot_start_composite_state_with_init
 title: Hot start from composite state with init transition
-source:
-  fcstm: hot_start_composite_state_with_init.fcstm
 origin:
   files:
   - test/simulate/test_hot_start.py::TestHotStartCompositeState::test_hot_start_from_composite_state_with_init
-  assertion_types:
-  - initial
-  - state
-  - vars
-  - ended
 categories:
 - runtime
 - hot_start
@@ -20,37 +11,27 @@ initial:
   vars:
     counter: 0
 steps:
-- expect_initial:
-    state:
-    - Root
-    - System
+- cycle_count: 0
+  expect:
+    state: Root.System
     vars:
       counter: 0
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System
-    - Idle
+    state: Root.System.Idle
     vars:
       counter: 1
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System
-    - Idle
+    state: Root.System.Idle
     vars:
       counter: 2
     ended: false
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - System
-    - Idle
+    state: Root.System.Idle
     vars:
       counter: 3
     ended: false

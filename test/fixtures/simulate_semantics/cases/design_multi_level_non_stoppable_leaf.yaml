@@ -1,39 +1,22 @@
-schema_version: 1
-id: design_multi_level_non_stoppable_leaf
 title: 4 7 multi level non stoppable
-source:
-  fcstm: design_multi_level_non_stoppable_leaf.fcstm
 origin:
   files:
   - test/simulate/test_runtime.py::TestSimulationDesignExamples::test_4_7_multi_level_non_stoppable
   - test/template/python/test_runtime_alignment.py::TestSimulationDesignExamples::test_4_7_multi_level_non_stoppable
-  assertion_types:
-  - ended
-  - state
-  - vars
 categories:
 - design_example
 - runtime
 - template_alignment
-initial:
-  state: null
-  vars: null
 steps:
-- cycle: {}
+- cycle: []
   expect:
-    state:
-    - Root
-    - A
+    state: Root.A
     vars:
       counter: 1
     ended: false
-- cycle:
-    events:
-    - Root.A.GoC
+- cycle: Root.A.GoC
   expect:
-    state:
-    - Root
-    - C
+    state: Root.C
     vars:
       counter: 101
     ended: false

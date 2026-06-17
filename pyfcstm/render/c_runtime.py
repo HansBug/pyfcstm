@@ -171,7 +171,7 @@ def _quote_c_string(value: str) -> str:
     Example::
 
         >>> _quote_c_string("a'b")
-        '"a\'b"'
+        '"a\\'b"'
     """
     return json.dumps(value)
 

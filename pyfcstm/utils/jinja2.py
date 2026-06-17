@@ -36,6 +36,34 @@ import jinja2
 from .text import normalize, to_identifier, to_c_identifier
 
 
+def to_c_path_identifier(segments) -> str:
+    """
+    Convert a path sequence into a collision-resistant C identifier.
+
+    Each path segment is normalized independently and prefixed with its
+    normalized length. Encoding segment boundaries this way avoids collisions
+    such as ``Root.A.B`` and ``Root.A_B`` while keeping the output acceptable
+    for C/C++ identifiers.
+
+    :param segments: Iterable path segments to encode.
+    :type segments: typing.Iterable[str]
+    :return: C/C++-safe path identifier.
+    :rtype: str
+
+    Example::
+
+        >>> to_c_path_identifier(["Root", "A", "B"])
+        'p4_Root_p1_A_p1_B'
+        >>> to_c_path_identifier(["Root", "A_B"])
+        'p4_Root_p3_A_B'
+    """
+    parts = []
+    for segment in segments:
+        item = to_c_identifier(str(segment))
+        parts.append("p%d_%s" % (len(item), item))
+    return "_".join(parts) or "p0_empty"
+
+
 def add_builtins_to_env(env: jinja2.Environment) -> jinja2.Environment:
     """
     Mount Python built-in functions to a Jinja2 environment.
@@ -162,6 +190,7 @@ def add_settings_for_env(env: jinja2.Environment) -> jinja2.Environment:
     env.filters['normalize'] = normalize
     env.filters['to_identifier'] = to_identifier
     env.filters['to_c_identifier'] = to_c_identifier
+    env.filters['to_c_path_identifier'] = to_c_path_identifier
     env.globals['indent'] = textwrap.indent
     for key, value in os.environ.items():
         if key not in env.globals:

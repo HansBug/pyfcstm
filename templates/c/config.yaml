@@ -39,7 +39,7 @@ globals:
     type: template
     params:
       - state
-    template: "{{ state.path | join('_') | to_c_identifier }}"
+    template: "{{ state.path | to_c_path_identifier }}"
   state_enum_name:
     type: template
     params:

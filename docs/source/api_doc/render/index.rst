@@ -9,6 +9,7 @@ pyfcstm.render
 .. toctree::
     :maxdepth: 3
 
+    c_runtime
     env
     expr
     func

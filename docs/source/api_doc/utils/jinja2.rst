@@ -6,6 +6,12 @@ pyfcstm.utils.jinja2
 .. automodule:: pyfcstm.utils.jinja2
 
 
+to\_c\_path\_identifier
+-----------------------------------------------------
+
+.. autofunction:: to_c_path_identifier
+
+
 add\_builtins\_to\_env
 -----------------------------------------------------
 

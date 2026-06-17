@@ -14,6 +14,7 @@ The package exposes the following main components:
 * :func:`format_multiline_comment` - Normalize multiline comments from parsers
 * :func:`add_builtins_to_env` - Register Python built-ins in a Jinja2 environment
 * :func:`add_settings_for_env` - Apply common filters and globals to Jinja2
+* :func:`to_c_path_identifier` - Build collision-resistant C path identifiers
 * :class:`IJsonOp` - Interface for JSON/YAML serialization
 * :func:`sequence_safe` - Build a safe underscore-separated identifier
 * :func:`normalize` - Normalize text to identifier-friendly form
@@ -51,7 +52,7 @@ from .binary import is_binary_file
 from .decode import auto_decode
 from .doc import format_multiline_comment
 from .fixed import Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64
-from .jinja2 import add_builtins_to_env, add_settings_for_env
+from .jinja2 import add_builtins_to_env, add_settings_for_env, to_c_path_identifier
 from .json import IJsonOp
 from .logging import get_logger
 from .parse import parse_value, parse_key_value_pairs

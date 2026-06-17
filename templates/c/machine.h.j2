@@ -198,6 +198,8 @@ struct {{ machine_class_name(model) }} {
 extern "C" {
 #endif
 
+/* Allocate a zeroed machine instance without evaluating DSL defaults. */
+{{ machine_macro_name(model) }}_API {{ machine_class_name(model) }} *{{ machine_class_name(model) }}_create_uninitialized(void);
 /* Allocate a machine instance and initialize it to cold-start state. */
 {{ machine_macro_name(model) }}_API {{ machine_class_name(model) }} *{{ machine_class_name(model) }}_create(void);
 /* Free an instance previously returned by `..._create()`. */

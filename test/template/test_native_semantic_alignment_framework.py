@@ -7,6 +7,7 @@ import pytest
 
 from test.testings import native_semantic_alignment as native_alignment
 from test.testings.native_semantic_alignment import (
+    _GeneratedNativeAlignmentRuntime,
     GENERATED_C_ALIGNMENT,
     GENERATED_C_POLL_ALIGNMENT,
     NativeAlignmentMatrixError,
@@ -22,7 +23,7 @@ def test_native_capability_matrix_covers_known_failures():
     matrix = native_capability_by_runner_case(entries)
     case_ids = {case.id for case in iter_semantic_cases()}
 
-    assert len(entries) == 98
+    assert len(entries) == 60
     assert {entry.runner for entry in entries} == {
         GENERATED_C_ALIGNMENT,
         GENERATED_C_POLL_ALIGNMENT,
@@ -36,7 +37,7 @@ def test_native_capability_matrix_covers_known_failures():
     assert (
         GENERATED_C_ALIGNMENT,
         "expression_failure_raises_expression_error",
-    ) in matrix
+    ) not in matrix
     assert (
         GENERATED_C_POLL_ALIGNMENT,
         "transition_into_composite_skips_unstable_initial_candidate",
@@ -80,7 +81,7 @@ def test_native_capability_matrix_file_is_single_fact_source():
 
 
 @pytest.mark.unittest
-def test_native_subprocess_classifies_sigfpe_expected_failure(monkeypatch):
+def test_native_subprocess_classifies_sigfpe_as_unexpected_after_repair(monkeypatch):
     def fake_run(cmd, **kwargs):
         return subprocess.CompletedProcess(
             args=cmd,
@@ -95,15 +96,15 @@ def test_native_subprocess_classifies_sigfpe_expected_failure(monkeypatch):
         GENERATED_C_ALIGNMENT, "expression_failure_raises_expression_error"
     )
 
-    assert result.status == "expected_failure"
+    assert result.status == "unexpected_failure"
     assert result.classification == "sigfpe"
-    assert result.expected_classification == "sigfpe"
-    assert result.support == "expected_failure"
+    assert result.expected_classification is None
+    assert result.support is None
     assert result.returncode == -signal.SIGFPE
 
 
 @pytest.mark.unittest
-def test_native_subprocess_rejects_non_sigfpe_signal_for_sigfpe_case(monkeypatch):
+def test_native_subprocess_reports_non_sigfpe_signal_as_unexpected(monkeypatch):
     sigsegv = getattr(signal, "SIGSEGV", 11)
 
     def fake_run(cmd, **kwargs):
@@ -120,14 +121,14 @@ def test_native_subprocess_rejects_non_sigfpe_signal_for_sigfpe_case(monkeypatch
         GENERATED_C_ALIGNMENT, "expression_failure_raises_expression_error"
     )
 
-    assert result.status == "classification_mismatch"
+    assert result.status == "unexpected_failure"
     assert result.classification == "native_crash"
-    assert result.expected_classification == "sigfpe"
+    assert result.expected_classification is None
     assert result.returncode == -sigsegv
 
 
 @pytest.mark.unittest
-def test_native_subprocess_accepts_windows_arithmetic_crash_for_sigfpe_case(
+def test_native_subprocess_reports_windows_arithmetic_crash_as_unexpected(
     monkeypatch,
 ):
     windows_arithmetic_returncodes = [
@@ -153,14 +154,14 @@ def test_native_subprocess_accepts_windows_arithmetic_crash_for_sigfpe_case(
             GENERATED_C_ALIGNMENT, "expression_failure_raises_expression_error"
         )
 
-        assert result.status == "expected_failure"
+        assert result.status == "unexpected_failure"
         assert result.classification == "sigfpe"
-        assert result.expected_classification == "sigfpe"
+        assert result.expected_classification is None
         assert result.returncode == returncode
 
 
 @pytest.mark.unittest
-def test_native_subprocess_rejects_windows_non_arithmetic_crash_for_sigfpe_case(
+def test_native_subprocess_reports_windows_non_arithmetic_crash_as_unexpected(
     monkeypatch,
 ):
     def fake_run(cmd, **kwargs):
@@ -177,14 +178,14 @@ def test_native_subprocess_rejects_windows_non_arithmetic_crash_for_sigfpe_case(
         GENERATED_C_ALIGNMENT, "expression_failure_raises_expression_error"
     )
 
-    assert result.status == "classification_mismatch"
+    assert result.status == "unexpected_failure"
     assert result.classification == "native_crash"
-    assert result.expected_classification == "sigfpe"
+    assert result.expected_classification is None
     assert result.returncode == 0xC0000005
 
 
 @pytest.mark.unittest
-def test_native_subprocess_rejects_worker_failure_for_parse_render_case(monkeypatch):
+def test_native_subprocess_rejects_worker_failure_for_known_gap(monkeypatch):
     def fake_run(cmd, **kwargs):
         return subprocess.CompletedProcess(
             args=cmd,
@@ -196,10 +197,34 @@ def test_native_subprocess_rejects_worker_failure_for_parse_render_case(monkeypa
     monkeypatch.setattr(native_alignment.subprocess, "run", fake_run)
 
     result = native_alignment.run_native_alignment_case_subprocess(
-        GENERATED_C_ALIGNMENT, "expression_type_error_wraps_transition_effect"
+        GENERATED_C_ALIGNMENT, "aspect_context_reports_active_leaf"
     )
 
     assert result.status == "classification_mismatch"
     assert result.classification == "worker_failure"
-    assert result.expected_classification == "parse_render_load"
+    assert result.expected_classification == "handler_mismatch"
     assert result.returncode == 1
+
+
+@pytest.mark.unittest
+def test_alignment_runtime_large_integer_filter_retains_other_exact_values():
+    class _StubSimulation:
+        is_ended = False
+        vars = {"big": 10**100, "fraction": 1.25}
+
+        class _State:
+            path = ("Root", "A")
+
+        current_state = _State()
+
+    class _StubNative:
+        is_ended = False
+        vars = {"big": 0, "fraction": 1.5}
+        current_state_path = ("Root", "A")
+
+    runtime = _GeneratedNativeAlignmentRuntime(
+        _StubSimulation(), _StubNative(), "state Root { state A; [*] -> A; }"
+    )
+
+    with pytest.raises(AssertionError, match="vars mismatch"):
+        runtime._assert_aligned("probe")

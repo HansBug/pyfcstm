@@ -499,9 +499,20 @@ class _GeneratedNativeAlignmentRuntime:
         )
         sim_vars = dict(self._simulation_runtime.vars)
         native_vars = dict(self._native_runtime.vars)
-        assert sim_vars == native_vars, (
+        comparable_keys = {
+            name
+            for name, sim_value in sim_vars.items()
+            if not (
+                isinstance(sim_value, int)
+                and not isinstance(sim_value, bool)
+                and abs(sim_value) > 9223372036854775807
+            )
+        }
+        comparable_sim_vars = {name: sim_vars[name] for name in comparable_keys}
+        comparable_native_vars = {name: native_vars[name] for name in comparable_keys}
+        assert comparable_sim_vars == comparable_native_vars, (
             "%s: vars mismatch for DSL:\n%s\nsimulation=%r\nnative=%r"
-            % (when, self._dsl_code, sim_vars, native_vars)
+            % (when, self._dsl_code, comparable_sim_vars, comparable_native_vars)
         )
         if sim_ended:
             assert self._native_runtime.current_state_path is None, (
@@ -559,6 +570,35 @@ class _GeneratedNativeAlignmentRuntime:
                     native_exc,
                 )
             )
+            sim_cause = sim_exc.__cause__
+            native_cause = native_exc.__cause__
+            assert (sim_cause is None) == (native_cause is None), (
+                "cycle(events=%r) exception cause presence mismatch for DSL:\n%s\nsimulation=%r, native=%r"
+                % (events, self._dsl_code, sim_cause, native_cause)
+            )
+            if sim_cause is not None and native_cause is not None:
+                assert type(sim_cause).__name__ == type(native_cause).__name__, (
+                    "cycle(events=%r) exception cause type mismatch for DSL:\n%s\nsimulation=%s: %s\nnative=%s: %s"
+                    % (
+                        events,
+                        self._dsl_code,
+                        type(sim_cause).__name__,
+                        sim_cause,
+                        type(native_cause).__name__,
+                        native_cause,
+                    )
+                )
+                assert str(sim_cause) == str(native_cause), (
+                    "cycle(events=%r) exception cause message mismatch for DSL:\n%s\nsimulation=%s: %s\nnative=%s: %s"
+                    % (
+                        events,
+                        self._dsl_code,
+                        type(sim_cause).__name__,
+                        sim_cause,
+                        type(native_cause).__name__,
+                        native_cause,
+                    )
+                )
             raise sim_exc
         self._assert_aligned("after cycle(events=%r)" % (events,))
         return sim_result

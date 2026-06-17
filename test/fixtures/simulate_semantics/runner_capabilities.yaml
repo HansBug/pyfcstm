@@ -118,78 +118,6 @@ known_failures:
     tracking: https://github.com/HansBug/pyfcstm/issues/218
     since: "2026-06-17"
   - runner: generated_c_alignment
-    case: design_speculative_dfs_safety_limit
-    classification: exception_type_mismatch
-    observation: raises
-    support: expected_failure
-    skip_reason: "design_speculative_dfs_safety_limit is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: ended_runtime_ignores_event_inputs
-    classification: exception_type_mismatch
-    observation: raises
-    support: expected_failure
-    skip_reason: "ended_runtime_ignores_event_inputs is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: expression_error_preserves_runtime_snapshot
-    classification: sigfpe
-    observation: native_process
-    support: expected_failure
-    skip_reason: "expression_error_preserves_runtime_snapshot is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: expression_failure_if_condition_raises_expression_error
-    classification: sigfpe
-    observation: native_process
-    support: expected_failure
-    skip_reason: "expression_failure_if_condition_raises_expression_error is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: expression_failure_raises_expression_error
-    classification: sigfpe
-    observation: native_process
-    support: expected_failure
-    skip_reason: "expression_failure_raises_expression_error is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: expression_failure_transition_effect_raises_expression_error
-    classification: sigfpe
-    observation: native_process
-    support: expected_failure
-    skip_reason: "expression_failure_transition_effect_raises_expression_error is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: expression_failure_transition_guard_raises_expression_error
-    classification: sigfpe
-    observation: native_process
-    support: expected_failure
-    skip_reason: "expression_failure_transition_guard_raises_expression_error is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: expression_large_integer_safe_diagnostics
-    classification: parse_render_load
-    observation: parse_render_load
-    support: expected_failure
-    skip_reason: "expression_large_integer_safe_diagnostics is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: expression_type_error_wraps_transition_effect
-    classification: parse_render_load
-    observation: render_build_load
-    support: expected_failure
-    skip_reason: "expression_type_error_wraps_transition_effect is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
     case: failed_initial_cycle_skips_abstract_handler_callbacks
     classification: handler_mismatch
     observation: handler_calls
@@ -203,14 +131,6 @@ known_failures:
     observation: vars
     support: expected_failure
     skip_reason: "forced_pseudo_candidate_skips_unstable_branch is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: hot_start_initial_vars_override_skips_int_initializer
-    classification: sigfpe
-    observation: native_process
-    support: expected_failure
-    skip_reason: "hot_start_initial_vars_override_skips_int_initializer is a known C/C poll shared alignment gap."
     tracking: https://github.com/HansBug/pyfcstm/issues/218
     since: "2026-06-17"
   - runner: generated_c_alignment
@@ -230,27 +150,11 @@ known_failures:
     tracking: https://github.com/HansBug/pyfcstm/issues/218
     since: "2026-06-17"
   - runner: generated_c_alignment
-    case: hot_start_leaf_defers_during_expression_error
-    classification: sigfpe
-    observation: native_process
-    support: expected_failure
-    skip_reason: "hot_start_leaf_defers_during_expression_error is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
     case: hot_start_rejects_blocked_composite_initial
     classification: state_or_ended_mismatch
     observation: state_or_ended
     support: expected_failure
     skip_reason: "hot_start_rejects_blocked_composite_initial is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: hot_start_rejects_overdeep_leaf_stack
-    classification: exception_type_mismatch
-    observation: raises
-    support: expected_failure
-    skip_reason: "hot_start_rejects_overdeep_leaf_stack is a known C/C poll shared alignment gap."
     tracking: https://github.com/HansBug/pyfcstm/issues/218
     since: "2026-06-17"
   - runner: generated_c_alignment
@@ -310,14 +214,6 @@ known_failures:
     tracking: https://github.com/HansBug/pyfcstm/issues/218
     since: "2026-06-17"
   - runner: generated_c_alignment
-    case: pseudo_self_loop_step_limit_raises_dfs_error
-    classification: exception_type_mismatch
-    observation: raises
-    support: expected_failure
-    skip_reason: "pseudo_self_loop_step_limit_raises_dfs_error is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
     case: ref_abstract_handler_reports_calling_state
     classification: handler_mismatch
     observation: handler_calls
@@ -339,54 +235,6 @@ known_failures:
     observation: vars
     support: expected_failure
     skip_reason: "root_exit_runs_root_cleanup is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: sign_function_aligns_aspect_guard_effect_math
-    classification: parse_render_load
-    observation: render_build_load
-    support: expected_failure
-    skip_reason: "sign_function_aligns_aspect_guard_effect_math is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: sign_function_controls_guard_transition
-    classification: parse_render_load
-    observation: render_build_load
-    support: expected_failure
-    skip_reason: "sign_function_controls_guard_transition is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: sign_function_handles_all_signs
-    classification: parse_render_load
-    observation: render_build_load
-    support: expected_failure
-    skip_reason: "sign_function_handles_all_signs is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: sign_function_preserves_complex_action_precedence
-    classification: parse_render_load
-    observation: render_build_load
-    support: expected_failure
-    skip_reason: "sign_function_preserves_complex_action_precedence is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: sign_function_updates_during_action
-    classification: parse_render_load
-    observation: render_build_load
-    support: expected_failure
-    skip_reason: "sign_function_updates_during_action is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: similar_state_paths_keep_actions_distinct
-    classification: parse_render_load
-    observation: render_build_load
-    support: expected_failure
-    skip_reason: "similar_state_paths_keep_actions_distinct is a known C/C poll shared alignment gap."
     tracking: https://github.com/HansBug/pyfcstm/issues/218
     since: "2026-06-17"
   - runner: generated_c_alignment
@@ -510,78 +358,6 @@ known_failures:
     tracking: https://github.com/HansBug/pyfcstm/issues/218
     since: "2026-06-17"
   - runner: generated_c_poll_alignment
-    case: design_speculative_dfs_safety_limit
-    classification: exception_type_mismatch
-    observation: raises
-    support: expected_failure
-    skip_reason: "design_speculative_dfs_safety_limit is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: ended_runtime_ignores_event_inputs
-    classification: exception_type_mismatch
-    observation: raises
-    support: expected_failure
-    skip_reason: "ended_runtime_ignores_event_inputs is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: expression_error_preserves_runtime_snapshot
-    classification: sigfpe
-    observation: native_process
-    support: expected_failure
-    skip_reason: "expression_error_preserves_runtime_snapshot is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: expression_failure_if_condition_raises_expression_error
-    classification: sigfpe
-    observation: native_process
-    support: expected_failure
-    skip_reason: "expression_failure_if_condition_raises_expression_error is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: expression_failure_raises_expression_error
-    classification: sigfpe
-    observation: native_process
-    support: expected_failure
-    skip_reason: "expression_failure_raises_expression_error is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: expression_failure_transition_effect_raises_expression_error
-    classification: sigfpe
-    observation: native_process
-    support: expected_failure
-    skip_reason: "expression_failure_transition_effect_raises_expression_error is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: expression_failure_transition_guard_raises_expression_error
-    classification: sigfpe
-    observation: native_process
-    support: expected_failure
-    skip_reason: "expression_failure_transition_guard_raises_expression_error is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: expression_large_integer_safe_diagnostics
-    classification: parse_render_load
-    observation: parse_render_load
-    support: expected_failure
-    skip_reason: "expression_large_integer_safe_diagnostics is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: expression_type_error_wraps_transition_effect
-    classification: parse_render_load
-    observation: render_build_load
-    support: expected_failure
-    skip_reason: "expression_type_error_wraps_transition_effect is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
     case: failed_initial_cycle_skips_abstract_handler_callbacks
     classification: handler_mismatch
     observation: handler_calls
@@ -595,14 +371,6 @@ known_failures:
     observation: vars
     support: expected_failure
     skip_reason: "forced_pseudo_candidate_skips_unstable_branch is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: hot_start_initial_vars_override_skips_int_initializer
-    classification: sigfpe
-    observation: native_process
-    support: expected_failure
-    skip_reason: "hot_start_initial_vars_override_skips_int_initializer is a known C/C poll shared alignment gap."
     tracking: https://github.com/HansBug/pyfcstm/issues/218
     since: "2026-06-17"
   - runner: generated_c_poll_alignment
@@ -622,27 +390,11 @@ known_failures:
     tracking: https://github.com/HansBug/pyfcstm/issues/218
     since: "2026-06-17"
   - runner: generated_c_poll_alignment
-    case: hot_start_leaf_defers_during_expression_error
-    classification: sigfpe
-    observation: native_process
-    support: expected_failure
-    skip_reason: "hot_start_leaf_defers_during_expression_error is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
     case: hot_start_rejects_blocked_composite_initial
     classification: state_or_ended_mismatch
     observation: state_or_ended
     support: expected_failure
     skip_reason: "hot_start_rejects_blocked_composite_initial is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: hot_start_rejects_overdeep_leaf_stack
-    classification: exception_type_mismatch
-    observation: raises
-    support: expected_failure
-    skip_reason: "hot_start_rejects_overdeep_leaf_stack is a known C/C poll shared alignment gap."
     tracking: https://github.com/HansBug/pyfcstm/issues/218
     since: "2026-06-17"
   - runner: generated_c_poll_alignment
@@ -702,14 +454,6 @@ known_failures:
     tracking: https://github.com/HansBug/pyfcstm/issues/218
     since: "2026-06-17"
   - runner: generated_c_poll_alignment
-    case: pseudo_self_loop_step_limit_raises_dfs_error
-    classification: exception_type_mismatch
-    observation: raises
-    support: expected_failure
-    skip_reason: "pseudo_self_loop_step_limit_raises_dfs_error is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
     case: ref_abstract_handler_reports_calling_state
     classification: handler_mismatch
     observation: handler_calls
@@ -731,54 +475,6 @@ known_failures:
     observation: vars
     support: expected_failure
     skip_reason: "root_exit_runs_root_cleanup is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: sign_function_aligns_aspect_guard_effect_math
-    classification: parse_render_load
-    observation: render_build_load
-    support: expected_failure
-    skip_reason: "sign_function_aligns_aspect_guard_effect_math is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: sign_function_controls_guard_transition
-    classification: parse_render_load
-    observation: render_build_load
-    support: expected_failure
-    skip_reason: "sign_function_controls_guard_transition is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: sign_function_handles_all_signs
-    classification: parse_render_load
-    observation: render_build_load
-    support: expected_failure
-    skip_reason: "sign_function_handles_all_signs is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: sign_function_preserves_complex_action_precedence
-    classification: parse_render_load
-    observation: render_build_load
-    support: expected_failure
-    skip_reason: "sign_function_preserves_complex_action_precedence is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: sign_function_updates_during_action
-    classification: parse_render_load
-    observation: render_build_load
-    support: expected_failure
-    skip_reason: "sign_function_updates_during_action is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: similar_state_paths_keep_actions_distinct
-    classification: parse_render_load
-    observation: render_build_load
-    support: expected_failure
-    skip_reason: "similar_state_paths_keep_actions_distinct is a known C/C poll shared alignment gap."
     tracking: https://github.com/HansBug/pyfcstm/issues/218
     since: "2026-06-17"
   - runner: generated_c_poll_alignment

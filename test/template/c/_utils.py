@@ -15,6 +15,32 @@ from pyfcstm.template import extract_template
 from pyfcstm.utils import to_c_identifier
 
 
+class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
+    pass
+
+
+class SimulationRuntimeDfsError(RuntimeError):
+    pass
+
+
+def _runtime_exception_from_message(message):
+    if 'evaluation failed:' in message:
+        cause_text = message.split('evaluation failed:', 1)[1].strip()
+        if 'division by zero' in cause_text or 'modulo' in cause_text:
+            cause = ZeroDivisionError(cause_text)
+        elif 'unsupported operand type' in cause_text:
+            cause = TypeError(cause_text)
+        else:
+            cause = ArithmeticError(cause_text)
+        return SimulationRuntimeExpressionError(message), cause
+    if (
+        'structural stack-depth safety limit' in message
+        or 'step safety limit' in message
+    ):
+        return SimulationRuntimeDfsError(message), None
+    return RuntimeError(message), None
+
+
 def _find_cmake():
     return shutil.which('cmake')
 
@@ -260,7 +286,7 @@ class _ExecutionContextView:
 
 
 class _CRuntime:
-    def __init__(self, lib, model, temporary_directories=None, dll_directory_handle=None):
+    def __init__(self, lib, model, temporary_directories=None, dll_directory_handle=None, initialize=True):
         self._lib = lib
         self._model = model
         self._temporary_directories = list(temporary_directories or [])
@@ -285,7 +311,8 @@ class _CRuntime:
             path: index for index, path in enumerate(self._event_paths)
         }
         self._vars_struct = self._build_vars_struct_type()
-        self._machine = self._bind_function('{prefix}_create', restype=ctypes.c_void_p)()
+        create_name = '{prefix}_create' if initialize else '{prefix}_create_uninitialized'
+        self._machine = self._bind_function(create_name, restype=ctypes.c_void_p)()
         self._destroy = self._bind_function('{prefix}_destroy', argtypes=[ctypes.c_void_p])
         self._hot_start = self._bind_function(
             '{prefix}_hot_start',
@@ -381,7 +408,11 @@ class _CRuntime:
 
     def _raise_last_error(self):
         message = self._last_error(self._machine)
-        raise RuntimeError(message.decode('utf-8') if message else 'unknown C runtime error')
+        text = message.decode('utf-8') if message else 'unknown C runtime error'
+        error, cause = _runtime_exception_from_message(text)
+        if cause is not None:
+            raise error from cause
+        raise error
 
     def _get_var_from_vars_ptr(self, vars_ptr, name):
         values = ctypes.cast(vars_ptr, ctypes.POINTER(self._vars_struct)).contents
@@ -489,6 +520,10 @@ class _CRuntime:
         self._set_hooks(self._machine, ctypes.byref(self._hook_values), None)
 
     def cycle(self, events=None):
+        if self.is_ended:
+            if self._cycle(self._machine, None, 0) != 1:
+                self._raise_last_error()
+            return
         if events is None:
             event_array = None
             event_count = 0
@@ -591,6 +626,7 @@ def build_c_runtime(dsl_code, initial_state=None, initial_vars=None):
         model,
         temporary_directories=temporary_directories,
         dll_directory_handle=dll_directory_handle,
+        initialize=initial_state is None,
     )
     if initial_state is not None:
         runtime.hot_start(initial_state, initial_vars or {})

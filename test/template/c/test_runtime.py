@@ -635,6 +635,18 @@ class TestCBuiltinTemplate:
                 built_entries = set(os.listdir(artifacts["build_dir"]))
                 assert "CMakeCache.txt" in built_entries
 
+    def test_generated_hot_start_checks_stack_depth_before_path_write(self):
+        with render_c_artifacts(_representative_gate_dsl()) as artifacts:
+            with open(artifacts["machine_c_file"], "r", encoding="utf-8") as f:
+                source = f.read()
+
+            hot_start = source.index("int ControlMachine_hot_start(")
+            path_loop = source.index("path_count = 0u;", hot_start)
+            guard = source.index("if (path_count >=", path_loop)
+            write = source.index("path_ids[path_count++]", path_loop)
+
+            assert guard < write
+
     def test_generated_machine_c99_gate_runs_representative_model(self):
         with render_c_artifacts(_representative_gate_dsl()) as artifacts:
             run = _compile_and_run_c_harness(

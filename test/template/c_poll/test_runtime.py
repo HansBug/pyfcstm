@@ -372,6 +372,17 @@ class TestCPollBuiltinTemplate:
                 assert formatted_once == formatted_twice
                 assert "\t" not in formatted_once
 
+    def test_generated_hot_start_checks_stack_depth_before_path_write(self):
+        with render_c_artifacts(_representative_gate_dsl()) as artifacts:
+            with open(artifacts["machine_c_file"], "r", encoding="utf-8") as f:
+                source = f.read()
+
+            hot_start = source.index("int ControlMachine_hot_start(")
+            path_loop = source.index("path_count = 0u;", hot_start)
+            guard = source.index("if (path_count >=", path_loop)
+            write = source.index("path_ids[path_count++]", path_loop)
+
+            assert guard < write
 
     def test_generated_readme_code_blocks_are_formatter_friendly(self):
         with render_c_artifacts(_representative_gate_dsl()) as artifacts:

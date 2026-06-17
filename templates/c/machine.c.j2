@@ -1818,12 +1818,12 @@ int {{ machine_class_name(model) }}_hot_start(
 
     path_count = 0u;
     while (current_state_id >= 0) {
-        path_ids[path_count++] = current_state_id;
-        current_state_id = _{{ machine_class_name(model) }}_state_info[current_state_id].parent_state_id;
-        if (path_count > {{ machine_macro_name(model) }}_MAX_STACK_DEPTH) {
+        if (path_count >= {{ machine_macro_name(model) }}_MAX_STACK_DEPTH) {
             _{{ machine_class_name(model) }}_set_error(machine, "Hot start target exceeds the structural stack-depth safety limit (%d) before execution; choose a shallower target state or simplify the state hierarchy.", {{ machine_macro_name(model) }}_MAX_STACK_DEPTH);
             return {{ machine_macro_name(model) }}_FAILURE;
         }
+        path_ids[path_count++] = current_state_id;
+        current_state_id = _{{ machine_class_name(model) }}_state_info[current_state_id].parent_state_id;
     }
 
     machine->stack_size = 0u;

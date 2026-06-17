@@ -627,66 +627,60 @@ def _render_statement_sequence(
             continue
 
         if isinstance(statement, dsl_nodes.OperationIf):
-            for index, branch in enumerate(statement.branches):
-                if index == 0:
-                    condition = branch.condition
-                    assert condition is not None
-                    branch_known = {**state_types, **current_types}
-                    _emit_expr_checks(
-                        lines,
-                        condition,
-                        branch_known,
-                        state_types.keys(),
-                        names,
-                        "if-block condition",
-                        indent,
-                        level,
-                    )
-                    _line(
-                        lines,
-                        indent,
-                        level,
-                        "if (%s) {"
-                        % _render_expr(
-                            condition, branch_known, state_types.keys()
-                        ).text,
-                    )
-                elif branch.condition is None:
-                    _line(lines, indent, level, "} else {")
-                else:
-                    branch_known = {**state_types, **current_types}
-                    _emit_expr_checks(
-                        lines,
-                        branch.condition,
-                        branch_known,
-                        state_types.keys(),
-                        names,
-                        "if-block condition",
-                        indent,
-                        level,
-                    )
-                    _line(
-                        lines,
-                        indent,
-                        level,
-                        "} else if (%s) {"
-                        % _render_expr(
-                            branch.condition, branch_known, state_types.keys()
-                        ).text,
-                    )
+
+            def emit_branch_body(
+                branch: dsl_nodes.OperationIfBranch, body_level: int
+            ) -> None:
+                """Emit one branch body with simulator-compatible local scope."""
                 body, _ = _render_statement_sequence(
                     tuple(branch.statements),
                     state_types,
                     dict(current_types),
                     names,
                     indent,
-                    level + 1,
+                    body_level,
                 )
                 if body:
                     lines.extend(body)
                 else:
-                    _line(lines, indent, level + 1, "/* no-op */")
-            _line(lines, indent, level, "}")
+                    _line(lines, indent, body_level, "/* no-op */")
+
+            def emit_branch_chain(index: int, chain_level: int) -> None:
+                """Nest later branch checks so earlier matched branches stay lazy."""
+                branch = statement.branches[index]
+                if branch.condition is None:
+                    emit_branch_body(branch, chain_level)
+                    return
+
+                branch_known = {**state_types, **current_types}
+                _emit_expr_checks(
+                    lines,
+                    branch.condition,
+                    branch_known,
+                    state_types.keys(),
+                    names,
+                    "if-block condition",
+                    indent,
+                    chain_level,
+                )
+                _line(
+                    lines,
+                    indent,
+                    chain_level,
+                    "if (%s) {"
+                    % _render_expr(
+                        branch.condition, branch_known, state_types.keys()
+                    ).text,
+                )
+                emit_branch_body(branch, chain_level + 1)
+                if index + 1 < len(statement.branches):
+                    _line(lines, indent, chain_level, "} else {")
+                    emit_branch_chain(index + 1, chain_level + 1)
+                    _line(lines, indent, chain_level, "}")
+                else:
+                    _line(lines, indent, chain_level, "}")
+
+            emit_branch_chain(0, level)
             continue
 
         raise TypeError("Unsupported C operation statement: %r" % (type(statement),))

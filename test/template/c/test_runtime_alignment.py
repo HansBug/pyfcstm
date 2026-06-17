@@ -4,7 +4,7 @@ from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.simulate import SimulationRuntime, SimulationRuntimeDfsError
 
-from ._utils import build_c_runtime
+from ._utils import SimulationRuntimeExpressionError, build_c_runtime
 
 
 class _DualRuntime:
@@ -107,6 +107,73 @@ def build_runtime(dsl_code):
     runtime = _DualRuntime(simulation_runtime, generated_runtime, dsl_code)
     runtime._assert_aligned('initial build')
     return runtime
+
+
+@pytest.mark.unittest
+def test_if_elif_condition_checks_are_lazy_after_matching_branch():
+    dsl_code = '''
+def int x = 0;
+def int y = 0;
+def int z = 0;
+
+state Root {
+    state A {
+        during {
+            if [x == 0] {
+                y = 1;
+            } else if [1 / z > 0] {
+                y = 2;
+            } else {
+                y = 3;
+            }
+        }
+    }
+
+    [*] -> A;
+}
+'''
+    runtime = build_c_runtime(dsl_code)
+    try:
+        runtime.cycle()
+        assert runtime.vars == {'x': 0, 'y': 1, 'z': 0}
+        assert runtime.current_state_path == ('Root', 'A')
+    finally:
+        runtime.close()
+
+
+@pytest.mark.unittest
+def test_if_elif_condition_reports_error_after_prior_branch_misses():
+    dsl_code = '''
+def int x = 1;
+def int y = 0;
+def int z = 0;
+
+state Root {
+    state A {
+        during {
+            if [x == 0] {
+                y = 1;
+            } else if [1 / z > 0] {
+                y = 2;
+            } else {
+                y = 3;
+            }
+        }
+    }
+
+    [*] -> A;
+}
+'''
+    runtime = build_c_runtime(dsl_code)
+    try:
+        with pytest.raises(
+            SimulationRuntimeExpressionError, match='if-block condition evaluation failed'
+        ):
+            runtime.cycle()
+        assert runtime.vars == {'x': 1, 'y': 0, 'z': 0}
+        assert runtime.current_state_path == ('Root',)
+    finally:
+        runtime.close()
 
 
 def assert_runtime_state(runtime, current_path=None, vars=None, is_ended=False):

@@ -22,5 +22,3 @@ render\_c\_condition\_body
 -----------------------------------------------------
 
 .. autofunction:: render_c_condition_body
-
-

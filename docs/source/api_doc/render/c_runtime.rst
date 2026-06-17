@@ -18,6 +18,12 @@ render\_c\_action\_body
 .. autofunction:: render_c_action_body
 
 
+render\_c\_reset\_vars\_body
+-----------------------------------------------------
+
+.. autofunction:: render_c_reset_vars_body
+
+
 render\_c\_condition\_body
 -----------------------------------------------------
 

@@ -23,14 +23,28 @@ def test_native_capability_matrix_covers_known_failures():
     matrix = native_capability_by_runner_case(entries)
     case_ids = {case.id for case in iter_semantic_cases()}
 
-    assert len(entries) == 60
+    remaining_known_gap_cases = {
+        "abstract_hook_context_hot_start_leaf",
+        "abstract_hook_ref_context_reports_callsite_metadata",
+        "aspect_context_reports_active_leaf",
+        "failed_initial_cycle_skips_abstract_handler_callbacks",
+        "lifecycle_ref_chain_resolves_long_acyclic_chain",
+        "named_ref_context_reports_callsite",
+        "ref_abstract_handler_reports_calling_state",
+        "ref_context_uses_callsite_stage",
+    }
+
+    assert len(entries) == len(remaining_known_gap_cases) * 2
     assert {entry.runner for entry in entries} == {
         GENERATED_C_ALIGNMENT,
         GENERATED_C_POLL_ALIGNMENT,
     }
+    assert {entry.case for entry in entries} == remaining_known_gap_cases
     for entry in entries:
         assert entry.case in case_ids
         assert entry.support == "expected_failure"
+        assert entry.classification == "handler_mismatch"
+        assert entry.observation == "handler_calls"
         assert entry.skip_reason
         assert entry.tracking.startswith("https://github.com/HansBug/pyfcstm/")
         assert entry.since
@@ -41,6 +55,10 @@ def test_native_capability_matrix_covers_known_failures():
     assert (
         GENERATED_C_POLL_ALIGNMENT,
         "transition_into_composite_skips_unstable_initial_candidate",
+    ) not in matrix
+    assert (
+        GENERATED_C_ALIGNMENT,
+        "aspect_context_reports_active_leaf",
     ) in matrix
 
 

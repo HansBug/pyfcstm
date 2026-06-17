@@ -193,6 +193,7 @@ typedef struct {{ machine_class_name(model) }}EventChecks {
 typedef struct {{ machine_class_name(model) }}Frame {
     int state_id;
     int mode;
+    int plain_before_pending;
 } {{ machine_class_name(model) }}Frame;
 
 /*
@@ -235,6 +236,7 @@ struct {{ machine_class_name(model) }} {
     size_t stack_size;
     int ended;
     int entered_root;
+    int validation_depth;
     const {{ machine_class_name(model) }}Hooks *hooks;
     void *hook_user_data;
     const {{ machine_class_name(model) }}EventChecks *event_checks;

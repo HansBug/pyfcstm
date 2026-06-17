@@ -166,6 +166,63 @@ class TestCBuiltinTemplate:
             assert runtime.current_state_path == ('System', 'Running')
             assert runtime.vars == {'counter': 111}
 
+    def test_generated_machine_create_failure_cannot_be_cycled(self):
+        dsl_code = """
+        def int counter = 1.5;
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            run = _compile_and_run_c_harness(
+                artifacts,
+                'create_failure_cycle_guard_test',
+                textwrap.dedent(
+                    r'''
+                    #include "machine.h"
+                    #include <string.h>
+
+                    int main(void)
+                    {
+                        RootMachine *machine = RootMachine_create();
+                        const char *message;
+
+                        if (machine == NULL) {
+                            return 10;
+                        }
+                        message = RootMachine_last_error(machine);
+                        if (message == NULL || strstr(message, "non-integer float") == NULL) {
+                            RootMachine_destroy(machine);
+                            return 11;
+                        }
+                        if (RootMachine_current_state_path(machine) != NULL) {
+                            RootMachine_destroy(machine);
+                            return 12;
+                        }
+                        if (RootMachine_cycle(machine, NULL, 0u)) {
+                            RootMachine_destroy(machine);
+                            return 13;
+                        }
+                        message = RootMachine_last_error(machine);
+                        if (message == NULL || strstr(message, "not initialized") == NULL) {
+                            RootMachine_destroy(machine);
+                            return 14;
+                        }
+                        if (RootMachine_current_state_path(machine) != NULL) {
+                            RootMachine_destroy(machine);
+                            return 15;
+                        }
+
+                        RootMachine_destroy(machine);
+                        return 0;
+                    }
+                    '''
+                ),
+            )
+            assert run.returncode == 0, run.stderr
+
     def test_generated_machine_supports_hot_start_and_hook_registration(self):
         dsl_code = """
         def int counter = 0;

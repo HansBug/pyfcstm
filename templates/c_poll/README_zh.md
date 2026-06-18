@@ -71,6 +71,22 @@ Event-check callback 是只读探针：
 
 Runtime 使用 lazy evaluation 和 per-cycle cache。如果同一个 cycle 内多个 guard 或 transition 查询同一个 event，已安装的 event-check function 应只在需要时被调用，并且第一次观察结果应在该 cycle 剩余部分保持稳定。
 
+## Numeric metadata 维护纪律
+
+生成期可完全枚举的 runtime metadata，应在公开热路径 ABI 中使用 generated macros 和 numeric ids。该规则适用于 state、event、abstract action、具名 `ref` action、lifecycle stage、event-check event id、current-state id、active-leaf id，以及未来同类的有限 metadata domain。
+
+不要为了“可读性”在 `ExecutionContext`、`EventContext` 或其他热路径 contract 中保留 `const char *` 字段。只要比较域在模板渲染时已知，就不要把 `strcmp()` 重新引入 runtime selection、event-check logic 或 hook-context checks。真正可读的集成面应是 `machine.h` 中生成的 macro set，例如 `..._STATE_*`、`..._EVENT_*`、`..._ACTION_*` 和 `..._STAGE_*`。
+
+字符串只应保留在冷路径或诊断面：
+
+- `last_error` 和其他需要明确暴露问题的 diagnostic messages；
+- `..._dsl_source()` 以及 generated comments / README text；
+- `..._current_state_path()`、`..._current_state_name()` 等可选 diagnostic helpers；
+- Python test adapters 将 generated ids 映射回 shared fixture schema strings；
+- 生成期确实不存在稳定有限 id domain 的不可枚举输出。
+
+新增 event-check、hook-context 或 public metadata value 时，先判断该 domain 是否在模板渲染时已经完全已知。若答案是肯定的，就生成 macro-backed integer id，并把任何字符串映射留在 generated runtime 热路径之外。
+
 ## 与 `c` 的关系
 
 `c_poll` 和 `c` 共享相同 C-family 维护约束：

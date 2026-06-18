@@ -277,21 +277,39 @@ def _collect_hook_info_rows(model):
     return rows
 
 
-def _decode_optional_c_string(value):
-    return value.decode('utf-8') if value else None
+def _collect_action_paths(model):
+    paths = []
+    seen_paths = set()
+    for state in model.walk_states():
+        groups = [
+            state.list_on_enters(with_ids=True),
+            state.list_on_durings(aspect=None, with_ids=True),
+            state.list_on_exits(with_ids=True),
+            state.list_on_durings(aspect='before', with_ids=True),
+            state.list_on_durings(aspect='after', with_ids=True),
+            state.list_on_during_aspects(aspect='before', with_ids=True),
+            state.list_on_during_aspects(aspect='after', with_ids=True),
+        ]
+        for group in groups:
+            for _, item in group:
+                if item.func_name in seen_paths:
+                    continue
+                seen_paths.add(item.func_name)
+                paths.append(item.func_name)
+    return paths
 
 
 class _ExecutionContextView:
     def __init__(self, runtime, ctx_struct):
         self._runtime = runtime
         self._vars_ptr = ctx_struct.vars
-        self.action_name = _decode_optional_c_string(ctx_struct.action_name)
-        self.action_stage = _decode_optional_c_string(ctx_struct.action_stage)
-        self.state_path = _decode_optional_c_string(ctx_struct.state_path)
-        self.active_leaf = _decode_optional_c_string(ctx_struct.active_leaf)
-        self.call_stage = _decode_optional_c_string(ctx_struct.call_stage)
-        self.abstract_target = _decode_optional_c_string(ctx_struct.abstract_target)
-        self.named_ref = _decode_optional_c_string(ctx_struct.named_ref)
+        self.action_name = runtime._action_path_from_id(ctx_struct.action_id)
+        self.action_stage = runtime._stage_name_from_id(ctx_struct.action_stage_id)
+        self.state_path = runtime._state_path_from_id(ctx_struct.state_id)
+        self.active_leaf = runtime._state_path_from_id(ctx_struct.active_leaf_state_id)
+        self.call_stage = runtime._stage_name_from_id(ctx_struct.call_stage_id)
+        self.abstract_target = runtime._action_path_from_id(ctx_struct.abstract_target_id)
+        self.named_ref = runtime._action_path_from_id(ctx_struct.named_ref_id)
 
     def get_var(self, name):
         return self._runtime._get_var_from_vars_ptr(self._vars_ptr, name)
@@ -310,9 +328,8 @@ class _EventContextView:
     def __init__(self, runtime, ctx_struct):
         self._runtime = runtime
         self._vars_ptr = ctx_struct.vars
-        self.event_path = ctx_struct.event_path.decode('utf-8')
-        state_path = ctx_struct.current_state_path
-        self.current_state_path = state_path.decode('utf-8') if state_path else ''
+        self.event_path = runtime._event_path_from_id(ctx_struct.event_id) or ''
+        self.current_state_path = runtime._state_path_from_id(ctx_struct.current_state_id) or ''
 
     def get_var(self, name):
         return self._runtime._get_var_from_vars_ptr(self._vars_ptr, name)
@@ -360,6 +377,8 @@ class _CPollRuntime:
         self._event_ids = {
             path: index for index, path in enumerate(self._event_paths)
         }
+        self._action_paths = _collect_action_paths(model)
+        self._stage_names = ['enter', 'during', 'exit']
         self._event_field_names = {
             path: 'check_{name}'.format(name=to_c_identifier(path))
             for path in self._event_paths
@@ -409,20 +428,20 @@ class _CPollRuntime:
 
         class _ContextStruct(ctypes.Structure):
             _fields_ = [
-                ('state_path', ctypes.c_char_p),
+                ('state_id', ctypes.c_int),
                 ('vars', ctypes.c_void_p),
-                ('action_name', ctypes.c_char_p),
-                ('action_stage', ctypes.c_char_p),
-                ('active_leaf', ctypes.c_char_p),
-                ('call_stage', ctypes.c_char_p),
-                ('abstract_target', ctypes.c_char_p),
-                ('named_ref', ctypes.c_char_p),
+                ('action_id', ctypes.c_int),
+                ('action_stage_id', ctypes.c_int),
+                ('active_leaf_state_id', ctypes.c_int),
+                ('call_stage_id', ctypes.c_int),
+                ('abstract_target_id', ctypes.c_int),
+                ('named_ref_id', ctypes.c_int),
             ]
 
         class _EventContextStruct(ctypes.Structure):
             _fields_ = [
-                ('event_path', ctypes.c_char_p),
-                ('current_state_path', ctypes.c_char_p),
+                ('event_id', ctypes.c_int),
+                ('current_state_id', ctypes.c_int),
                 ('vars', ctypes.c_void_p),
             ]
 
@@ -504,6 +523,26 @@ class _CPollRuntime:
         if cause is not None:
             raise error from cause
         raise error
+
+    def _state_path_from_id(self, state_id):
+        if state_id < 0 or state_id >= len(self._state_paths):
+            return None
+        return self._state_paths[state_id]
+
+    def _action_path_from_id(self, action_id):
+        if action_id < 0 or action_id >= len(self._action_paths):
+            return None
+        return self._action_paths[action_id]
+
+    def _event_path_from_id(self, event_id):
+        if event_id < 0 or event_id >= len(self._event_paths):
+            return None
+        return self._event_paths[event_id]
+
+    def _stage_name_from_id(self, stage_id):
+        if stage_id < 0 or stage_id >= len(self._stage_names):
+            return None
+        return self._stage_names[stage_id]
 
     def _get_var_from_vars_ptr(self, vars_ptr, name):
         values = ctypes.cast(vars_ptr, ctypes.POINTER(self._vars_struct)).contents

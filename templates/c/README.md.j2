@@ -230,6 +230,8 @@ int main(void)
 | `{{ machine_class_name(model) }}ExecutionContext` | Read-only context passed to abstract hooks |
 | `{{ machine_class_name(model) }}StateId` | Integer state id type |
 | `{{ machine_class_name(model) }}EventId` | Integer event id type |
+| `{{ machine_class_name(model) }}ActionId` | Integer action id type for generated abstract-action metadata |
+| `{{ machine_class_name(model) }}StageId` | Integer lifecycle-stage id type |
 | `{{ machine_class_name(model) }}Int` | Public signed 64-bit integer alias used by generated integer vars |
 | `{{ machine_class_name(model) }}Vars` | Persistent variable snapshot type |
 | `{{ machine_class_name(model) }}HookFn` | Abstract hook callback function type |
@@ -256,18 +258,19 @@ valid as long as the machine object remains valid.
 
 | Field | Meaning |
 | --- | --- |
-| `state_path` | Public call-context DSL state path |
+| `state_id` | Public call-context state id; compare with generated `{{ machine_macro_name(model) }}_STATE_*` macros |
 | `vars` | Read-only snapshot pointer to persistent machine variables |
-| `action_name` | Resolved abstract target DSL action path/name currently being executed |
-| `action_stage` | Lifecycle stage reported for this callsite |
-| `active_leaf` | Active leaf-state path visible to the callsite |
-| `call_stage` | Lifecycle stage of the concrete callsite before resolving `ref` chains |
-| `abstract_target` | Resolved abstract action path after following `ref` chains |
-| `named_ref` | Named `ref` action path when the call came through a named reference, otherwise `NULL` |
+| `action_id` | Resolved abstract target action id; compare with generated `{{ machine_macro_name(model) }}_ACTION_*` macros |
+| `action_stage_id` | Lifecycle stage id reported for this callsite; compare with `{{ machine_macro_name(model) }}_STAGE_*` |
+| `active_leaf_state_id` | Active leaf-state id visible to the callsite |
+| `call_stage_id` | Lifecycle stage id of the concrete callsite before resolving `ref` chains |
+| `abstract_target_id` | Resolved abstract action id after following `ref` chains |
+| `named_ref_id` | Named `ref` action id when the call came through a named reference, otherwise `{{ machine_macro_name(model) }}_INVALID_ACTION_ID` |
 
 This structure is intended for observation only. In particular, abstract hooks
 should not mutate persistent machine variables through `machine` or any other
-runtime-owned storage.
+runtime-owned storage. All generation-time enumerable metadata is numeric on
+purpose: use the generated macros instead of string comparisons in hot paths.
 
 ### `{{ machine_class_name(model) }}HookFn`
 
@@ -340,7 +343,8 @@ The machine object is not opaque in C, but most fields are runtime-owned.
 | `{{ machine_class_name(model) }}_cycle(machine, event_ids, event_count)` | Execute one cycle with zero or more event ids |
 | `{{ machine_class_name(model) }}_vars(machine)` | Read persistent variables |
 | `{{ machine_class_name(model) }}_is_ended(machine)` | Test whether the machine has ended |
-| `{{ machine_class_name(model) }}_current_state_path(machine)` | Read the current leaf-state full path |
+| `{{ machine_class_name(model) }}_current_state_id(machine)` | Read the current leaf-state id |
+| `{{ machine_class_name(model) }}_current_state_path(machine)` | Read the current leaf-state full path for diagnostics |
 | `{{ machine_class_name(model) }}_current_state_name(machine)` | Read the current leaf-state short name |
 | `{{ machine_class_name(model) }}_last_error(machine)` | Read the last error message |
 | `{{ machine_class_name(model) }}_dsl_source()` | Read the embedded canonical model export |
@@ -380,7 +384,7 @@ static void generated_hook(
 {
     (void)machine;
     (void)user_data;
-    printf("hook: %s @ %s\n", ctx->action_name, ctx->state_path);
+    printf("hook: action=%d state=%d stage=%d\n", (int)ctx->action_id, (int)ctx->state_id, (int)ctx->action_stage_id);
 }
 
 {% endif -%}
@@ -411,7 +415,7 @@ int main(void)
         }
     }
 {% endif %}
-    printf("%s\n", {{ machine_class_name(model) }}_current_state_path(&machine));
+    printf("state id: %d\n", (int){{ machine_class_name(model) }}_current_state_id(&machine));
     return 0;
 }
 ```
@@ -536,6 +540,7 @@ int main(void)
 ### 6. Inspect State and Errors
 
 ```c
+printf("state id: %d\n", (int){{ machine_class_name(model) }}_current_state_id(&machine));
 printf("state path: %s\n", {{ machine_class_name(model) }}_current_state_path(&machine));
 printf("state name: %s\n", {{ machine_class_name(model) }}_current_state_name(&machine));
 printf("ended: %d\n", {{ machine_class_name(model) }}_is_ended(&machine));
@@ -561,6 +566,30 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 {% else %}
 This state machine does not define any events.
 {% endif %}
+
+## Action and Stage IDs
+
+{% if action_scan.items %}
+{% set action_doc_ns = namespace(rows=[]) -%}
+{% for action in action_scan.items -%}
+{% if action.func_name not in action_doc_ns.rows | map(attribute='func_name') | list -%}
+{% set action_doc_ns.rows = action_doc_ns.rows + [{'func_name': action.func_name}] -%}
+{% endif -%}
+{% endfor -%}
+| Action path | Macro | Value |
+| --- | --- | ---: |
+{% for row in action_doc_ns.rows -%}
+| `{{ row['func_name'] }}` | `{{ machine_macro_name(model) }}_ACTION_{{ row['func_name'] | to_c_identifier | upper }}` | `{{ loop.index0 }}` |
+{% endfor %}
+{% else %}
+This state machine does not define lifecycle actions.
+{% endif %}
+
+| Stage | Macro | Value |
+| --- | --- | ---: |
+| `enter` | `{{ machine_macro_name(model) }}_STAGE_ENTER` | `0` |
+| `during` | `{{ machine_macro_name(model) }}_STAGE_DURING` | `1` |
+| `exit` | `{{ machine_macro_name(model) }}_STAGE_EXIT` | `2` |
 
 ## Performance Advice
 

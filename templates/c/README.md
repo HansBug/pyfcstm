@@ -105,6 +105,36 @@ These are stable design facts, not a temporary development plan. Avoid
 reintroducing temporary milestone lists or milestone headings as the main
 README structure.
 
+## Numeric metadata discipline
+
+Generation-time enumerable runtime metadata should use generated macros and
+numeric ids in the public hot-path ABI. This applies to states, events,
+abstract actions, named `ref` actions, lifecycle stages, current-state ids,
+active-leaf ids, and future finite metadata domains with the same shape.
+
+Do not keep `const char *` fields in `ExecutionContext`, event submission, or
+other hot-path contracts merely for readability. Do not reintroduce `strcmp()`
+into runtime selection or hook-context checks when the compared domain is known
+while rendering the template. The readable integration surface is the generated
+macro set in `machine.h`, for example `..._STATE_*`, `..._EVENT_*`,
+`..._ACTION_*`, and `..._STAGE_*`.
+
+Strings remain acceptable only for cold or diagnostic surfaces:
+
+- `last_error` and other crash-loudly diagnostic messages;
+- `..._dsl_source()` and generated comments / README text;
+- optional diagnostic helpers such as `..._current_state_path()` and
+  `..._current_state_name()`;
+- Python test adapters that map generated ids back to shared fixture schema
+  strings;
+- genuinely non-enumerable output where no stable finite id domain exists at
+  generation time.
+
+When adding a new context field or public metadata value, first ask whether the
+domain is completely known while rendering the template. If it is, generate a
+macro-backed integer id and keep any string mapping outside the generated
+runtime hot path.
+
 ## Performance evidence
 
 A historical benchmark compared the current specialized C runtime design against

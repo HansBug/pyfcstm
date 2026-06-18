@@ -50,6 +50,8 @@ typedef struct {{ machine_class_name(model) }} {{ machine_class_name(model) }};
 typedef struct {{ machine_class_name(model) }}ExecutionContext {{ machine_class_name(model) }}ExecutionContext;
 typedef int {{ machine_class_name(model) }}StateId;
 typedef int {{ machine_class_name(model) }}EventId;
+typedef int {{ machine_class_name(model) }}ActionId;
+typedef int {{ machine_class_name(model) }}StageId;
 typedef PYFCSTM_GENERATED_INT64 {{ machine_class_name(model) }}Int;
 
 /*
@@ -71,6 +73,8 @@ typedef struct {{ machine_class_name(model) }}Vars {
 /* Public state/event id space used by `..._hot_start(...)` and `..._cycle(...)`. */
 #define {{ machine_macro_name(model) }}_INVALID_STATE_ID (({{ machine_class_name(model) }}StateId) - 1)
 #define {{ machine_macro_name(model) }}_INVALID_EVENT_ID (({{ machine_class_name(model) }}EventId) - 1)
+#define {{ machine_macro_name(model) }}_INVALID_ACTION_ID (({{ machine_class_name(model) }}ActionId) - 1)
+#define {{ machine_macro_name(model) }}_INVALID_STAGE_ID (({{ machine_class_name(model) }}StageId) - 1)
 #define {{ machine_macro_name(model) }}_STATE_COUNT {{ (model.walk_states() | list) | length }}
 {% for state in model.walk_states() -%}
 /* DSL state path: `{{ state | state_path }}` */
@@ -87,6 +91,34 @@ typedef struct {{ machine_class_name(model) }}Vars {
 /* DSL event path: `{{ event_path }}` */
 #define {{ machine_macro_name(model) }}_EVENT_{{ event_path | to_c_identifier | upper }} (({{ machine_class_name(model) }}EventId){{ loop.index0 }})
 {% endfor %}
+{%- set action_id_ns = namespace(rows=[]) -%}
+{%- for scan_state in model.walk_states() -%}
+{%- for scan_group in [
+    scan_state.list_on_enters(with_ids=True),
+    scan_state.list_on_durings(aspect=None, with_ids=True),
+    scan_state.list_on_exits(with_ids=True),
+    scan_state.list_on_durings(aspect='before', with_ids=True),
+    scan_state.list_on_durings(aspect='after', with_ids=True),
+    scan_state.list_on_during_aspects(aspect='before', with_ids=True),
+    scan_state.list_on_during_aspects(aspect='after', with_ids=True),
+] -%}
+{%- for _, scan_item in scan_group -%}
+{%- if scan_item.func_name not in action_id_ns.rows | map(attribute='func_name') | list -%}
+{%- set action_id_ns.rows = action_id_ns.rows + [{'func_name': scan_item.func_name}] -%}
+{%- endif -%}
+{%- endfor -%}
+{%- endfor -%}
+{%- endfor -%}
+#define {{ machine_macro_name(model) }}_ACTION_COUNT {{ action_id_ns.rows | length }}
+{% for row in action_id_ns.rows -%}
+/* DSL action path: `{{ row['func_name'] }}` */
+#define {{ machine_macro_name(model) }}_ACTION_{{ row['func_name'] | to_c_identifier | upper }} (({{ machine_class_name(model) }}ActionId){{ loop.index0 }})
+{% endfor -%}
+#define {{ machine_macro_name(model) }}_STAGE_COUNT 3
+#define {{ machine_macro_name(model) }}_STAGE_ENTER (({{ machine_class_name(model) }}StageId)0)
+#define {{ machine_macro_name(model) }}_STAGE_DURING (({{ machine_class_name(model) }}StageId)1)
+#define {{ machine_macro_name(model) }}_STAGE_EXIT (({{ machine_class_name(model) }}StageId)2)
+
 
 /*
  * Callback signature for generated abstract hooks.
@@ -183,21 +215,20 @@ typedef struct {{ machine_class_name(model) }}Frame {
 /*
  * Read-only execution context passed into registered abstract hooks.
  *
- * `state_path` names the public call context state, `vars` points to a
- * snapshot of persistent variables, and `action_name` / `action_stage` identify
- * the resolved abstract target and lifecycle callsite stage. The remaining
- * metadata fields expose the same public handler-call context used by the
- * simulator and generated Python runtime.
+ * Numeric ids identify the public call context state, resolved abstract
+ * target, lifecycle callsite stage, active leaf, and optional named `ref`.
+ * Compare these fields with generated `..._STATE_*`, `..._ACTION_*`, and
+ * `..._STAGE_*` macros instead of string comparisons.
  */
 struct {{ machine_class_name(model) }}ExecutionContext {
-    const char *state_path;
+    {{ machine_class_name(model) }}StateId state_id;
     const {{ machine_class_name(model) }}Vars *vars;
-    const char *action_name;
-    const char *action_stage;
-    const char *active_leaf;
-    const char *call_stage;
-    const char *abstract_target;
-    const char *named_ref;
+    {{ machine_class_name(model) }}ActionId action_id;
+    {{ machine_class_name(model) }}StageId action_stage_id;
+    {{ machine_class_name(model) }}StateId active_leaf_state_id;
+    {{ machine_class_name(model) }}StageId call_stage_id;
+    {{ machine_class_name(model) }}ActionId abstract_target_id;
+    {{ machine_class_name(model) }}ActionId named_ref_id;
 };
 
 /*
@@ -253,7 +284,10 @@ extern "C" {
 /* Return non-zero after the machine has reached runtime end. */
 {{ machine_macro_name(model) }}_API int {{ machine_class_name(model) }}_is_ended(
     const {{ machine_class_name(model) }} *machine);
-/* Return the current leaf-state DSL path, or `NULL` after runtime end. */
+/* Return the current leaf-state id, or `..._INVALID_STATE_ID` after runtime end. */
+{{ machine_macro_name(model) }}_API {{ machine_class_name(model) }}StateId {{ machine_class_name(model) }}_current_state_id(
+    const {{ machine_class_name(model) }} *machine);
+/* Return the current leaf-state DSL path, or `NULL` after runtime end. Diagnostic helper. */
 {{ machine_macro_name(model) }}_API const char *{{ machine_class_name(model) }}_current_state_path(
     const {{ machine_class_name(model) }} *machine);
 /* Return the current leaf-state DSL short name, or `NULL` after runtime end. */

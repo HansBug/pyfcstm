@@ -139,6 +139,67 @@ class TestCBuiltinTemplate:
             )
             assert source.index('/*') < source.index('#include "machine.h"')
 
+
+    def test_generated_context_metadata_uses_numeric_contract(self):
+        dsl_code = """
+        def int counter = 0;
+        state Root {
+            enter abstract Boot;
+            state Library {
+                enter abstract Shared;
+            }
+            state A {
+                enter FirstRef ref /Library.Shared;
+                during abstract Touch;
+            }
+            state B;
+            [*] -> A;
+            A -> B :: Go;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
+                header = f.read()
+            with open(artifacts["machine_c_file"], "r", encoding="utf-8") as f:
+                source = f.read()
+            with open(artifacts["readme_file"], "r", encoding="utf-8") as f:
+                readme = f.read()
+
+        assert "typedef int RootMachineActionId;" in header
+        assert "typedef int RootMachineStageId;" in header
+        assert "ROOT_MACHINE_INVALID_ACTION_ID" in header
+        assert "ROOT_MACHINE_STAGE_ENTER" in header
+        assert "RootMachine_current_state_id" in header
+
+        context_block = re.search(
+            r"struct RootMachineExecutionContext \{(?P<body>.*?)\};",
+            header,
+            flags=re.S,
+        ).group("body")
+        for forbidden in (
+            "const char *state_path",
+            "const char *action_name",
+            "const char *action_stage",
+            "const char *active_leaf",
+            "const char *call_stage",
+            "const char *abstract_target",
+            "const char *named_ref",
+        ):
+            assert forbidden not in context_block
+        assert "RootMachineStateId state_id;" in context_block
+        assert "RootMachineActionId action_id;" in context_block
+        assert "RootMachineStageId action_stage_id;" in context_block
+        assert "RootMachineStateId active_leaf_state_id;" in context_block
+        assert "RootMachineStageId call_stage_id;" in context_block
+        assert "RootMachineActionId abstract_target_id;" in context_block
+        assert "RootMachineActionId named_ref_id;" in context_block
+
+        assert "ctx->action_name" not in readme
+        assert "ctx->state_path" not in readme
+        assert "strcmp(ctx->" not in readme
+        assert "strcmp(ctx->" not in source
+
     def test_generated_machine_runs_cycle_and_event_transition(self):
         dsl_code = """
         def int counter = 0;
@@ -367,7 +428,6 @@ class TestCBuiltinTemplate:
                     r'''
                     #include "machine.h"
                     #include <stdio.h>
-                    #include <string.h>
 
                     typedef struct HookLog {
                         int count;
@@ -387,9 +447,9 @@ class TestCBuiltinTemplate:
                         (void)machine;
                         log->count += 1;
                         if (
-                            strcmp(ctx->action_name, "Root.RootInit") == 0 &&
-                            strcmp(ctx->state_path, "Root") == 0 &&
-                            strcmp(ctx->action_stage, "enter") == 0
+                            ctx->action_id == ROOT_MACHINE_ACTION_ROOT_ROOTINIT &&
+                            ctx->state_id == ROOT_MACHINE_STATE_ROOT &&
+                            ctx->action_stage_id == ROOT_MACHINE_STAGE_ENTER
                         ) {
                             log->root_seen = 1;
                             log->root_counter = ctx->vars->counter;
@@ -406,9 +466,9 @@ class TestCBuiltinTemplate:
                         (void)machine;
                         log->count += 1;
                         if (
-                            strcmp(ctx->action_name, "Root.System.A.AEnter") == 0 &&
-                            strcmp(ctx->state_path, "Root.System.A") == 0 &&
-                            strcmp(ctx->action_stage, "enter") == 0
+                            ctx->action_id == ROOT_MACHINE_ACTION_ROOT_SYSTEM_A_AENTER &&
+                            ctx->state_id == ROOT_MACHINE_STATE_ROOT_SYSTEM_A &&
+                            ctx->action_stage_id == ROOT_MACHINE_STAGE_ENTER
                         ) {
                             log->a_seen = 1;
                             log->a_counter = ctx->vars->counter;
@@ -438,7 +498,7 @@ class TestCBuiltinTemplate:
                         if (log.root_counter != 0 || log.a_counter != 0) {
                             return 13;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.System.A") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_SYSTEM_A) {
                             return 14;
                         }
                         if (RootMachine_vars(&machine)->counter != 2) {
@@ -491,7 +551,6 @@ class TestCBuiltinTemplate:
                     r'''
                     #include "machine.h"
                     #include <stdio.h>
-                    #include <string.h>
 
                     typedef struct HookLog {
                         int total_calls;
@@ -509,27 +568,27 @@ class TestCBuiltinTemplate:
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
 
-                        if (strcmp(ctx->action_name, "Root.PlatformInit") != 0) {
+                        if (ctx->action_id != ROOT_MACHINE_ACTION_ROOT_PLATFORMINIT) {
                             log->total_calls = -100;
                             return;
                         }
-                        if (strcmp(ctx->abstract_target, "Root.PlatformInit") != 0) {
+                        if (ctx->abstract_target_id != ROOT_MACHINE_ACTION_ROOT_PLATFORMINIT) {
                             log->total_calls = -101;
                             return;
                         }
-                        if (strcmp(ctx->call_stage, "enter") != 0) {
+                        if (ctx->call_stage_id != ROOT_MACHINE_STAGE_ENTER) {
                             log->total_calls = -102;
                             return;
                         }
 
                         log->total_calls += 1;
-                        if (strcmp(ctx->state_path, "Root") == 0) {
+                        if (ctx->state_id == ROOT_MACHINE_STATE_ROOT) {
                             log->root_calls += 1;
                         }
-                        if (strcmp(ctx->state_path, "Root.A") == 0) {
+                        if (ctx->state_id == ROOT_MACHINE_STATE_ROOT_A) {
                             log->a_calls += 1;
                         }
-                        if (strcmp(ctx->state_path, "Root.B") == 0) {
+                        if (ctx->state_id == ROOT_MACHINE_STATE_ROOT_B) {
                             log->b_calls += 1;
                         }
                     }
@@ -569,7 +628,7 @@ class TestCBuiltinTemplate:
                         if (RootMachine_vars(&machine)->trace != 11) {
                             return 26;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.B") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_B) {
                             return 27;
                         }
 
@@ -760,7 +819,6 @@ class TestCBuiltinTemplate:
                 textwrap.dedent(
                     r"""
                     #include "machine.h"
-                    #include <string.h>
 
                     typedef struct HookLog {
                         int boot_calls;
@@ -775,7 +833,7 @@ class TestCBuiltinTemplate:
                     {
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
-                        if (strcmp(ctx->action_name, "Control.Boot") == 0) {
+                        if (ctx->action_id == CONTROL_MACHINE_ACTION_CONTROL_BOOT) {
                             log->boot_calls += 1;
                         }
                     }
@@ -789,8 +847,8 @@ class TestCBuiltinTemplate:
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
                         if (
-                            strcmp(ctx->action_name, "Control.Active.ActiveEnter") == 0 &&
-                            strcmp(ctx->state_path, "Control.Active") == 0
+                            ctx->action_id == CONTROL_MACHINE_ACTION_CONTROL_ACTIVE_ACTIVEENTER &&
+                            ctx->state_id == CONTROL_MACHINE_STATE_CONTROL_ACTIVE
                         ) {
                             log->active_calls += 1;
                         }
@@ -815,7 +873,7 @@ class TestCBuiltinTemplate:
                         if (!ControlMachine_cycle(&machine, NULL, 0u)) {
                             return 11;
                         }
-                        if (strcmp(ControlMachine_current_state_path(&machine), "Control.Idle") != 0) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_CONTROL_IDLE) {
                             return 12;
                         }
                         if (ControlMachine_vars(&machine)->counter != (ControlMachineInt)1) {
@@ -828,7 +886,7 @@ class TestCBuiltinTemplate:
                         if (!ControlMachine_cycle(&machine, start_events, 1u)) {
                             return 15;
                         }
-                        if (strcmp(ControlMachine_current_state_path(&machine), "Control.Active.Work") != 0) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_CONTROL_ACTIVE_WORK) {
                             return 16;
                         }
                         if (
@@ -857,7 +915,6 @@ class TestCBuiltinTemplate:
                 textwrap.dedent(
                     r"""
                     #include "machine.h"
-                    #include <cstring>
 
                     struct HookLog {
                         int boot_calls;
@@ -872,7 +929,7 @@ class TestCBuiltinTemplate:
                     {
                         HookLog *log = static_cast<HookLog *>(user_data);
                         (void)machine;
-                        if (std::strcmp(ctx->action_name, "Control.Boot") == 0) {
+                        if (ctx->action_id == CONTROL_MACHINE_ACTION_CONTROL_BOOT) {
                             log->boot_calls += 1;
                         }
                     }
@@ -886,8 +943,8 @@ class TestCBuiltinTemplate:
                         HookLog *log = static_cast<HookLog *>(user_data);
                         (void)machine;
                         if (
-                            std::strcmp(ctx->action_name, "Control.Active.ActiveEnter") == 0 &&
-                            std::strcmp(ctx->state_path, "Control.Active") == 0
+                            ctx->action_id == CONTROL_MACHINE_ACTION_CONTROL_ACTIVE_ACTIVEENTER &&
+                            ctx->state_id == CONTROL_MACHINE_STATE_CONTROL_ACTIVE
                         ) {
                             log->active_calls += 1;
                         }
@@ -912,13 +969,13 @@ class TestCBuiltinTemplate:
                         if (!ControlMachine_cycle(&machine, 0, 0u)) {
                             return 31;
                         }
-                        if (std::strcmp(ControlMachine_current_state_path(&machine), "Control.Idle") != 0) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_CONTROL_IDLE) {
                             return 32;
                         }
                         if (!ControlMachine_cycle(&machine, start_events, 1u)) {
                             return 33;
                         }
-                        if (std::strcmp(ControlMachine_current_state_path(&machine), "Control.Active.Work") != 0) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_CONTROL_ACTIVE_WORK) {
                             return 34;
                         }
                         if (
@@ -1031,7 +1088,6 @@ class TestCBuiltinTemplate:
                 textwrap.dedent(
                     r'''
                     #include "machine.h"
-                    #include <string.h>
 
                     int main(void)
                     {
@@ -1046,7 +1102,7 @@ class TestCBuiltinTemplate:
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
                             return 11;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.Idle") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_IDLE) {
                             return 12;
                         }
                         if (RootMachine_vars(&machine)->counter != (RootMachineInt)1) {
@@ -1056,7 +1112,7 @@ class TestCBuiltinTemplate:
                         if (!RootMachine_cycle(&machine, start_events, 1u)) {
                             return 14;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.Running") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_RUNNING) {
                             return 15;
                         }
                         if (RootMachine_vars(&machine)->counter != (RootMachineInt)111) {
@@ -1091,7 +1147,6 @@ class TestCBuiltinTemplate:
                 textwrap.dedent(
                     r'''
                     #include "machine.h"
-                    #include <string.h>
 
                     int main(void)
                     {
@@ -1110,14 +1165,14 @@ class TestCBuiltinTemplate:
                         )) {
                             return 21;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.Service") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_SERVICE) {
                             return 22;
                         }
 
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
                             return 23;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.Service.Ready") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_SERVICE_READY) {
                             return 24;
                         }
                         if (RootMachine_vars(&machine)->counter != (RootMachineInt)43) {
@@ -1154,7 +1209,6 @@ class TestCBuiltinTemplate:
                 textwrap.dedent(
                     r'''
                     #include "machine.h"
-                    #include <string.h>
 
                     typedef struct HookLog {
                         int count;
@@ -1174,9 +1228,9 @@ class TestCBuiltinTemplate:
                         (void)machine;
                         log->count += 1;
                         if (
-                            strcmp(ctx->action_name, "Root.RootInit") == 0 &&
-                            strcmp(ctx->state_path, "Root") == 0 &&
-                            strcmp(ctx->action_stage, "enter") == 0
+                            ctx->action_id == ROOT_MACHINE_ACTION_ROOT_ROOTINIT &&
+                            ctx->state_id == ROOT_MACHINE_STATE_ROOT &&
+                            ctx->action_stage_id == ROOT_MACHINE_STAGE_ENTER
                         ) {
                             log->root_seen = 1;
                             log->root_counter = ctx->vars->counter;
@@ -1193,9 +1247,9 @@ class TestCBuiltinTemplate:
                         (void)machine;
                         log->count += 1;
                         if (
-                            strcmp(ctx->action_name, "Root.System.A.AEnter") == 0 &&
-                            strcmp(ctx->state_path, "Root.System.A") == 0 &&
-                            strcmp(ctx->action_stage, "enter") == 0
+                            ctx->action_id == ROOT_MACHINE_ACTION_ROOT_SYSTEM_A_AENTER &&
+                            ctx->state_id == ROOT_MACHINE_STATE_ROOT_SYSTEM_A &&
+                            ctx->action_stage_id == ROOT_MACHINE_STAGE_ENTER
                         ) {
                             log->a_seen = 1;
                             log->a_counter = ctx->vars->counter;
@@ -1271,7 +1325,6 @@ class TestCBuiltinTemplate:
                 textwrap.dedent(
                     r'''
                     #include "machine.h"
-                    #include <string.h>
 
                     typedef struct HookLog {
                         int total_calls;
@@ -1289,27 +1342,27 @@ class TestCBuiltinTemplate:
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
 
-                        if (strcmp(ctx->action_name, "Root.PlatformInit") != 0) {
+                        if (ctx->action_id != ROOT_MACHINE_ACTION_ROOT_PLATFORMINIT) {
                             log->total_calls = -100;
                             return;
                         }
-                        if (strcmp(ctx->abstract_target, "Root.PlatformInit") != 0) {
+                        if (ctx->abstract_target_id != ROOT_MACHINE_ACTION_ROOT_PLATFORMINIT) {
                             log->total_calls = -101;
                             return;
                         }
-                        if (strcmp(ctx->call_stage, "enter") != 0) {
+                        if (ctx->call_stage_id != ROOT_MACHINE_STAGE_ENTER) {
                             log->total_calls = -102;
                             return;
                         }
 
                         log->total_calls += 1;
-                        if (strcmp(ctx->state_path, "Root") == 0) {
+                        if (ctx->state_id == ROOT_MACHINE_STATE_ROOT) {
                             log->root_calls += 1;
                         }
-                        if (strcmp(ctx->state_path, "Root.A") == 0) {
+                        if (ctx->state_id == ROOT_MACHINE_STATE_ROOT_A) {
                             log->a_calls += 1;
                         }
-                        if (strcmp(ctx->state_path, "Root.B") == 0) {
+                        if (ctx->state_id == ROOT_MACHINE_STATE_ROOT_B) {
                             log->b_calls += 1;
                         }
                     }
@@ -1349,7 +1402,7 @@ class TestCBuiltinTemplate:
                         if (RootMachine_vars(&machine)->trace != (RootMachineInt)11) {
                             return 46;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.B") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_B) {
                             return 47;
                         }
 
@@ -1389,7 +1442,6 @@ class TestCBuiltinTemplate:
                 textwrap.dedent(
                     r'''
                     #include "machine.h"
-                    #include <string.h>
 
                     typedef struct HookLog {
                         int b1_enter_count;
@@ -1404,8 +1456,8 @@ class TestCBuiltinTemplate:
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
                         if (
-                            strcmp(ctx->action_name, "Root.B.B1.B1Enter") == 0 &&
-                            strcmp(ctx->state_path, "Root.B.B1") == 0
+                            ctx->action_id == ROOT_MACHINE_ACTION_ROOT_B_B1_B1ENTER &&
+                            ctx->state_id == ROOT_MACHINE_STATE_ROOT_B_B1
                         ) {
                             log->b1_enter_count += 1;
                         }
@@ -1430,7 +1482,7 @@ class TestCBuiltinTemplate:
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
                             return 51;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.A") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_A) {
                             return 52;
                         }
                         if (RootMachine_vars(&machine)->counter != (RootMachineInt)1) {
@@ -1440,7 +1492,7 @@ class TestCBuiltinTemplate:
                         if (!RootMachine_cycle(&machine, go_events, 1u)) {
                             return 54;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.A") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_A) {
                             return 55;
                         }
                         if (RootMachine_vars(&machine)->counter != (RootMachineInt)2) {
@@ -1479,7 +1531,6 @@ class TestCBuiltinTemplate:
                 textwrap.dedent(
                     r'''
                     #include "machine.h"
-                    #include <string.h>
 
                     int main(void)
                     {
@@ -1491,7 +1542,7 @@ class TestCBuiltinTemplate:
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
                             return 61;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.namespace_") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_NAMESPACE) {
                             return 62;
                         }
                         if (RootMachine_vars(&machine)->class_ != (RootMachineInt)1) {

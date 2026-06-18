@@ -15,6 +15,8 @@
 {%- macro transition_effect_method_name(state, idx) -%}_effect_transition_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro hook_field(action) -%}{{ action | hook_field_name }}{%- endmacro %}
 {%- macro hook_enum(action) -%}{{ machine_macro_name(model) }}_HOOK_{{ action.func_name | to_c_identifier | upper }}{%- endmacro %}
+{%- macro action_enum(action) -%}{{ machine_macro_name(model) }}_ACTION_{{ action.func_name | to_c_identifier | upper }}{%- endmacro %}
+{%- macro stage_enum(stage) -%}{{ machine_macro_name(model) }}_STAGE_{{ stage | upper }}{%- endmacro %}
 {%- set action_scan = namespace(items=[]) -%}
 {%- for scan_state in model.walk_states() -%}
 {%- for scan_group in [
@@ -39,7 +41,7 @@
 {%- set resolved.item = resolved.item.ref -%}
 {%- endif -%}
 {%- endfor -%}
-{{- '{' -}}{{ machine_macro_name(model) }}_ACTION_KIND_{{ "ABSTRACT" if resolved.item.is_abstract else "CONCRETE" }}, {{ action_method_name(state, method_kind, idx) if not resolved.item.is_abstract else "NULL" }}, {{ hook_enum(resolved.item) if resolved.item.is_abstract else "-1" }}, {{ cstr(resolved.item.func_name) }}, {{ cstr(resolved.item.stage) }}, {{ state_enum(resolved.item.parent) }}{{- '}' -}}
+{{- '{' -}}{{ machine_macro_name(model) }}_ACTION_KIND_{{ "ABSTRACT" if resolved.item.is_abstract else "CONCRETE" }}, {{ action_method_name(state, method_kind, idx) if not resolved.item.is_abstract else "NULL" }}, {{ hook_enum(resolved.item) if resolved.item.is_abstract else "-1" }}, {{ action_enum(resolved.item) }}, {{ stage_enum(resolved.item.stage) }}, {{ state_enum(resolved.item.parent) }}{{- '}' -}}
 {%- endmacro %}
 {%- macro render_state_info_item(state) -%}
 {{- '{' -}}{{ cstr(state_key(state)) }}, {{ cstr(state.name) }}, {{ state_enum(state.parent) if state.parent is not none else "-1" }}, {{ 1 if state.is_leaf_state else 0 }}, {{ 1 if state.is_pseudo else 0 }}, {% if state.list_on_enters(with_ids=True) | list %}_{{ state_slug(state) }}_enter_actions{% else %}NULL{% endif %}, {{ (state.list_on_enters(with_ids=True) | list) | length }}, {% if state.list_on_durings(aspect=None, with_ids=True) | list %}_{{ state_slug(state) }}_during_actions{% else %}NULL{% endif %}, {{ (state.list_on_durings(aspect=None, with_ids=True) | list) | length }}, {% if state.list_on_exits(with_ids=True) | list %}_{{ state_slug(state) }}_exit_actions{% else %}NULL{% endif %}, {{ (state.list_on_exits(with_ids=True) | list) | length }}, {% if state.list_on_durings(aspect='before', with_ids=True) | list %}_{{ state_slug(state) }}_during_before_actions{% else %}NULL{% endif %}, {{ (state.list_on_durings(aspect='before', with_ids=True) | list) | length }}, {% if state.list_on_durings(aspect='after', with_ids=True) | list %}_{{ state_slug(state) }}_during_after_actions{% else %}NULL{% endif %}, {{ (state.list_on_durings(aspect='after', with_ids=True) | list) | length }}, {% if state.list_on_during_aspects(aspect='before', with_ids=True) | list %}_{{ state_slug(state) }}_aspect_before_actions{% else %}NULL{% endif %}, {{ (state.list_on_during_aspects(aspect='before', with_ids=True) | list) | length }}, {% if state.list_on_during_aspects(aspect='after', with_ids=True) | list %}_{{ state_slug(state) }}_aspect_after_actions{% else %}NULL{% endif %}, {{ (state.list_on_during_aspects(aspect='after', with_ids=True) | list) | length }}, {% if state.init_transitions | list %}_{{ state_slug(state) }}_init_transition_ids{% else %}NULL{% endif %}, {{ (state.init_transitions | list) | length }}, {% if state.transitions_from | list %}_{{ state_slug(state) }}_transition_ids{% else %}NULL{% endif %}, {{ (state.transitions_from | list) | length }}{{- '}' -}}
@@ -178,8 +180,8 @@ typedef struct _{{ machine_class_name(model) }}ActionInfo {
     int kind;
     _{{ machine_class_name(model) }}ActionFn action_fn;
     int hook_id;
-    const char *action_name;
-    const char *action_stage;
+    int action_id;
+    int action_stage_id;
     int owner_state_id;
 } _{{ machine_class_name(model) }}ActionInfo;
 
@@ -340,10 +342,10 @@ static PYFCSTM_GENERATED_UNUSED void _{{ machine_class_name(model) }}_invoke_abs
     int context_state_id,
     int use_active_leaf_context,
     int hook_id,
-    const char *action_name,
-    const char *action_stage,
-    const char *abstract_target,
-    const char *named_ref);
+    int action_id,
+    int action_stage_id,
+    int abstract_target_id,
+    int named_ref_id);
 
 {% for state in model.walk_states() -%}
 {% for id_, item in state.list_on_enters(with_ids=True) -%}
@@ -554,10 +556,10 @@ _{{ machine_class_name(model) }}_invoke_abstract_action(
     {{ state_enum(state) }},
     {{ 1 if item.is_aspect else 0 }},
     {{ hook_enum(resolved.item) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(item.stage) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(item.func_name) if item.name is not none and item.ref is not none else "NULL" }});
+    {{ action_enum(resolved.item) }},
+    {{ stage_enum(item.stage) }},
+    {{ action_enum(resolved.item) }},
+    {{ action_enum(item) if item.name is not none and item.ref is not none else machine_macro_name(model) ~ "_INVALID_ACTION_ID" }});
 {% else -%}
 if ({{ action_method_name(state, 'enter', id_) }}(machine, &context->vars) != {{ machine_macro_name(model) }}_SUCCESS) {
     return {{ machine_macro_name(model) }}_FAILURE;
@@ -601,10 +603,10 @@ _{{ machine_class_name(model) }}_invoke_abstract_action(
     {{ state_enum(state) }},
     {{ 1 if item.is_aspect else 0 }},
     {{ hook_enum(resolved.item) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(item.stage) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(item.func_name) if item.name is not none and item.ref is not none else "NULL" }});
+    {{ action_enum(resolved.item) }},
+    {{ stage_enum(item.stage) }},
+    {{ action_enum(resolved.item) }},
+    {{ action_enum(item) if item.name is not none and item.ref is not none else machine_macro_name(model) ~ "_INVALID_ACTION_ID" }});
 {% else -%}
 if ({{ action_method_name(state, 'during', id_) }}(machine, &context->vars) != {{ machine_macro_name(model) }}_SUCCESS) {
     return {{ machine_macro_name(model) }}_FAILURE;
@@ -648,10 +650,10 @@ _{{ machine_class_name(model) }}_invoke_abstract_action(
     {{ state_enum(state) }},
     {{ 1 if item.is_aspect else 0 }},
     {{ hook_enum(resolved.item) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(item.stage) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(item.func_name) if item.name is not none and item.ref is not none else "NULL" }});
+    {{ action_enum(resolved.item) }},
+    {{ stage_enum(item.stage) }},
+    {{ action_enum(resolved.item) }},
+    {{ action_enum(item) if item.name is not none and item.ref is not none else machine_macro_name(model) ~ "_INVALID_ACTION_ID" }});
 {% else -%}
 if ({{ action_method_name(state, 'exit', id_) }}(machine, &context->vars) != {{ machine_macro_name(model) }}_SUCCESS) {
     return {{ machine_macro_name(model) }}_FAILURE;
@@ -695,10 +697,10 @@ _{{ machine_class_name(model) }}_invoke_abstract_action(
     {{ state_enum(state) }},
     {{ 1 if item.is_aspect else 0 }},
     {{ hook_enum(resolved.item) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(item.stage) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(item.func_name) if item.name is not none and item.ref is not none else "NULL" }});
+    {{ action_enum(resolved.item) }},
+    {{ stage_enum(item.stage) }},
+    {{ action_enum(resolved.item) }},
+    {{ action_enum(item) if item.name is not none and item.ref is not none else machine_macro_name(model) ~ "_INVALID_ACTION_ID" }});
 {% else -%}
 if ({{ action_method_name(state, 'during_before', id_) }}(machine, &context->vars) != {{ machine_macro_name(model) }}_SUCCESS) {
     return {{ machine_macro_name(model) }}_FAILURE;
@@ -742,10 +744,10 @@ _{{ machine_class_name(model) }}_invoke_abstract_action(
     {{ state_enum(state) }},
     {{ 1 if item.is_aspect else 0 }},
     {{ hook_enum(resolved.item) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(item.stage) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(item.func_name) if item.name is not none and item.ref is not none else "NULL" }});
+    {{ action_enum(resolved.item) }},
+    {{ stage_enum(item.stage) }},
+    {{ action_enum(resolved.item) }},
+    {{ action_enum(item) if item.name is not none and item.ref is not none else machine_macro_name(model) ~ "_INVALID_ACTION_ID" }});
 {% else -%}
 if ({{ action_method_name(state, 'during_after', id_) }}(machine, &context->vars) != {{ machine_macro_name(model) }}_SUCCESS) {
     return {{ machine_macro_name(model) }}_FAILURE;
@@ -789,10 +791,10 @@ _{{ machine_class_name(model) }}_invoke_abstract_action(
     {{ state_enum(state) }},
     {{ 1 if item.is_aspect else 0 }},
     {{ hook_enum(resolved.item) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(item.stage) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(item.func_name) if item.name is not none and item.ref is not none else "NULL" }});
+    {{ action_enum(resolved.item) }},
+    {{ stage_enum(item.stage) }},
+    {{ action_enum(resolved.item) }},
+    {{ action_enum(item) if item.name is not none and item.ref is not none else machine_macro_name(model) ~ "_INVALID_ACTION_ID" }});
 {% else -%}
 if ({{ action_method_name(state, 'aspect_before', id_) }}(machine, &context->vars) != {{ machine_macro_name(model) }}_SUCCESS) {
     return {{ machine_macro_name(model) }}_FAILURE;
@@ -836,10 +838,10 @@ _{{ machine_class_name(model) }}_invoke_abstract_action(
     {{ state_enum(state) }},
     {{ 1 if item.is_aspect else 0 }},
     {{ hook_enum(resolved.item) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(item.stage) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(item.func_name) if item.name is not none and item.ref is not none else "NULL" }});
+    {{ action_enum(resolved.item) }},
+    {{ stage_enum(item.stage) }},
+    {{ action_enum(resolved.item) }},
+    {{ action_enum(item) if item.name is not none and item.ref is not none else machine_macro_name(model) ~ "_INVALID_ACTION_ID" }});
 {% else -%}
 if ({{ action_method_name(state, 'aspect_after', id_) }}(machine, &context->vars) != {{ machine_macro_name(model) }}_SUCCESS) {
     return {{ machine_macro_name(model) }}_FAILURE;
@@ -1443,10 +1445,10 @@ static void _{{ machine_class_name(model) }}_invoke_abstract_action(
     int context_state_id,
     int use_active_leaf_context,
     int hook_id,
-    const char *action_name,
-    const char *action_stage,
-    const char *abstract_target,
-    const char *named_ref)
+    int action_id,
+    int action_stage_id,
+    int abstract_target_id,
+    int named_ref_id)
 {
     {{ machine_class_name(model) }}ExecutionContext ctx;
     {{ machine_class_name(model) }}Vars *saved_active_vars;
@@ -1463,14 +1465,14 @@ static void _{{ machine_class_name(model) }}_invoke_abstract_action(
 
     saved_active_vars = machine->_active_vars;
     machine->_active_vars = &context->vars;
-    ctx.state_path = _{{ machine_class_name(model) }}_state_info[effective_state_id].path;
+    ctx.state_id = ({{ machine_class_name(model) }}StateId)effective_state_id;
     ctx.vars = &context->vars;
-    ctx.action_name = action_name;
-    ctx.action_stage = action_stage;
-    ctx.active_leaf = ctx.state_path;
-    ctx.call_stage = action_stage;
-    ctx.abstract_target = abstract_target;
-    ctx.named_ref = named_ref;
+    ctx.action_id = ({{ machine_class_name(model) }}ActionId)action_id;
+    ctx.action_stage_id = ({{ machine_class_name(model) }}StageId)action_stage_id;
+    ctx.active_leaf_state_id = ({{ machine_class_name(model) }}StateId)effective_state_id;
+    ctx.call_stage_id = ({{ machine_class_name(model) }}StageId)action_stage_id;
+    ctx.abstract_target_id = ({{ machine_class_name(model) }}ActionId)abstract_target_id;
+    ctx.named_ref_id = ({{ machine_class_name(model) }}ActionId)named_ref_id;
     _{{ machine_class_name(model) }}_execute_abstract_hook(machine, hook_id, &ctx);
     machine->_active_vars = saved_active_vars;
 }
@@ -2279,6 +2281,14 @@ const {{ machine_class_name(model) }}Vars *{{ machine_class_name(model) }}_vars(
 int {{ machine_class_name(model) }}_is_ended(const {{ machine_class_name(model) }} *machine)
 {
     return machine != NULL ? machine->ended : 1;
+}
+
+{{ machine_class_name(model) }}StateId {{ machine_class_name(model) }}_current_state_id(const {{ machine_class_name(model) }} *machine)
+{
+    if (machine == NULL || machine->stack_size == 0u) {
+        return {{ machine_macro_name(model) }}_INVALID_STATE_ID;
+    }
+    return ({{ machine_class_name(model) }}StateId)machine->stack[machine->stack_size - 1u].state_id;
 }
 
 const char *{{ machine_class_name(model) }}_current_state_path(const {{ machine_class_name(model) }} *machine)

@@ -220,6 +220,8 @@ int main(void)
 | `{{ machine_class_name(model) }}ExecutionContext` | 传给 abstract hook 的只读上下文 |
 | `{{ machine_class_name(model) }}StateId` | 整数状态 id 类型 |
 | `{{ machine_class_name(model) }}EventId` | 整数事件 id 类型 |
+| `{{ machine_class_name(model) }}ActionId` | generated abstract action metadata 使用的整数 action id 类型 |
+| `{{ machine_class_name(model) }}StageId` | 生命周期阶段整数 id 类型 |
 | `{{ machine_class_name(model) }}Int` | 生成整数持久变量时使用的公开有符号 64 位别名 |
 | `{{ machine_class_name(model) }}Vars` | 持久变量快照类型 |
 | `{{ machine_class_name(model) }}HookFn` | abstract hook 回调函数类型 |
@@ -245,17 +247,18 @@ int main(void)
 
 | 字段 | 含义 |
 | --- | --- |
-| `state_path` | 对外报告的调用上下文 DSL 状态路径 |
+| `state_id` | 对外报告的调用上下文状态 id；用 generated `{{ machine_macro_name(model) }}_STATE_*` macro 比较 |
 | `vars` | 指向持久变量快照的只读指针 |
-| `action_name` | 解析 `ref` 链后的 abstract 目标动作路径/名称 |
-| `action_stage` | 这个调用点对外报告的生命周期阶段 |
-| `active_leaf` | 调用点可见的当前 active leaf 状态路径 |
-| `call_stage` | 解析 `ref` 链之前具体调用点的生命周期阶段 |
-| `abstract_target` | 解析 `ref` 链后的 abstract 目标动作路径 |
-| `named_ref` | 如果通过具名 `ref` 调用，则为该具名引用动作路径；否则为 `NULL` |
+| `action_id` | 解析后的 abstract 目标 action id；用 generated `{{ machine_macro_name(model) }}_ACTION_*` macro 比较 |
+| `action_stage_id` | 这个调用点对外报告的生命周期阶段 id；用 `{{ machine_macro_name(model) }}_STAGE_*` 比较 |
+| `active_leaf_state_id` | 调用点可见的当前 active leaf 状态 id |
+| `call_stage_id` | 解析 `ref` 链之前具体调用点的生命周期阶段 id |
+| `abstract_target_id` | 解析 `ref` 链后的 abstract 目标 action id |
+| `named_ref_id` | 如果通过具名 `ref` 调用，则为该具名引用 action id；否则为 `{{ machine_macro_name(model) }}_INVALID_ACTION_ID` |
 
 这个结构体只应用于观察上下文。尤其在 abstract hook 中，不应通过 `machine`
-或任何运行时内部存储修改持久变量。
+或任何运行时内部存储修改持久变量。所有生成期可枚举的 metadata 都故意使用
+numeric id：hot path 中应使用 generated macro，不要做字符串比较。
 
 ### `{{ machine_class_name(model) }}HookFn`
 
@@ -325,7 +328,8 @@ machine 对象在 C 中不是 opaque type，但其中多数字段都属于运行
 | `{{ machine_class_name(model) }}_cycle(machine, event_ids, event_count)` | 执行一个 cycle，并提交零个或多个事件 id |
 | `{{ machine_class_name(model) }}_vars(machine)` | 读取持久变量 |
 | `{{ machine_class_name(model) }}_is_ended(machine)` | 判断状态机是否结束 |
-| `{{ machine_class_name(model) }}_current_state_path(machine)` | 读取当前叶子状态完整路径 |
+| `{{ machine_class_name(model) }}_current_state_id(machine)` | 读取当前叶子状态 id |
+| `{{ machine_class_name(model) }}_current_state_path(machine)` | 读取当前叶子状态完整路径，主要用于诊断 |
 | `{{ machine_class_name(model) }}_current_state_name(machine)` | 读取当前叶子状态短名称 |
 | `{{ machine_class_name(model) }}_last_error(machine)` | 读取最近一次错误信息 |
 | `{{ machine_class_name(model) }}_dsl_source()` | 读取内嵌的 canonical model export |
@@ -362,7 +366,7 @@ static void generated_hook(
 {
     (void)machine;
     (void)user_data;
-    printf("hook: %s @ %s\n", ctx->action_name, ctx->state_path);
+    printf("hook: action=%d state=%d stage=%d\n", (int)ctx->action_id, (int)ctx->state_id, (int)ctx->action_stage_id);
 }
 
 {% endif -%}
@@ -393,7 +397,7 @@ int main(void)
         }
     }
 {% endif %}
-    printf("%s\n", {{ machine_class_name(model) }}_current_state_path(&machine));
+    printf("state id: %d\n", (int){{ machine_class_name(model) }}_current_state_id(&machine));
     return 0;
 }
 ```

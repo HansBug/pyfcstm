@@ -105,6 +105,77 @@ def _assert_generated_c_banner(source, *, template_name, root_name, extra_terms=
 
 @pytest.mark.unittest
 class TestCPollBuiltinTemplate:
+
+    def test_generated_context_metadata_uses_numeric_contract(self):
+        dsl_code = """
+        def int counter = 0;
+        state Root {
+            enter abstract Boot;
+            state Library {
+                enter abstract Shared;
+            }
+            state A {
+                enter FirstRef ref /Library.Shared;
+                during abstract Touch;
+            }
+            state B;
+            [*] -> A;
+            A -> B :: Go;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
+                header = f.read()
+            with open(artifacts["machine_c_file"], "r", encoding="utf-8") as f:
+                source = f.read()
+            with open(artifacts["readme_file"], "r", encoding="utf-8") as f:
+                readme = f.read()
+
+        assert "typedef int RootMachineActionId;" in header
+        assert "typedef int RootMachineStageId;" in header
+        assert "ROOT_MACHINE_INVALID_ACTION_ID" in header
+        assert "ROOT_MACHINE_STAGE_ENTER" in header
+        assert "RootMachine_current_state_id" in header
+
+        context_block = re.search(
+            r"struct RootMachineExecutionContext \{(?P<body>.*?)\};",
+            header,
+            flags=re.S,
+        ).group("body")
+        for forbidden in (
+            "const char *state_path",
+            "const char *action_name",
+            "const char *action_stage",
+            "const char *active_leaf",
+            "const char *call_stage",
+            "const char *abstract_target",
+            "const char *named_ref",
+        ):
+            assert forbidden not in context_block
+        assert "RootMachineStateId state_id;" in context_block
+        assert "RootMachineActionId action_id;" in context_block
+        assert "RootMachineStageId action_stage_id;" in context_block
+        assert "RootMachineStateId active_leaf_state_id;" in context_block
+        assert "RootMachineStageId call_stage_id;" in context_block
+        assert "RootMachineActionId abstract_target_id;" in context_block
+        assert "RootMachineActionId named_ref_id;" in context_block
+
+        assert "ctx->action_name" not in readme
+        assert "ctx->state_path" not in readme
+        assert "strcmp(ctx->" not in readme
+        assert "strcmp(ctx->" not in source
+
+        event_context_block = re.search(
+            r"struct RootMachineEventContext \{(?P<body>.*?)\};",
+            header,
+            flags=re.S,
+        ).group("body")
+        assert "event_path" not in event_context_block
+        assert "current_state_path" not in event_context_block
+        assert "RootMachineEventId event_id;" in event_context_block
+        assert "RootMachineStateId current_state_id;" in event_context_block
+
     def test_generated_machine_source_banners_document_file_contract(self):
         with render_c_artifacts(_representative_gate_dsl()) as artifacts:
             with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
@@ -498,7 +569,6 @@ class TestCPollBuiltinTemplate:
                 textwrap.dedent(
                     r"""
                     #include "machine.h"
-                    #include <string.h>
 
                     typedef struct EventLog {
                         int allow_start;
@@ -519,8 +589,8 @@ class TestCPollBuiltinTemplate:
                         EventLog *log = (EventLog *)user_data;
                         (void)machine;
                         if (
-                            strcmp(ctx->event_path, "Control.Idle.Start") == 0 &&
-                            strcmp(ctx->current_state_path, "Control.Idle") == 0
+                            ctx->event_id == CONTROL_MACHINE_EVENT_CONTROL_IDLE_START &&
+                            ctx->current_state_id == CONTROL_MACHINE_STATE_CONTROL_IDLE
                         ) {
                             log->seen_start += 1;
                         }
@@ -535,7 +605,7 @@ class TestCPollBuiltinTemplate:
                     {
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
-                        if (strcmp(ctx->action_name, "Control.Boot") == 0) {
+                        if (ctx->action_id == CONTROL_MACHINE_ACTION_CONTROL_BOOT) {
                             log->boot_calls += 1;
                         }
                     }
@@ -548,7 +618,7 @@ class TestCPollBuiltinTemplate:
                     {
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
-                        if (strcmp(ctx->action_name, "Control.Active.ActiveEnter") == 0) {
+                        if (ctx->action_id == CONTROL_MACHINE_ACTION_CONTROL_ACTIVE_ACTIVEENTER) {
                             log->active_calls += 1;
                         }
                     }
@@ -577,7 +647,7 @@ class TestCPollBuiltinTemplate:
                         if (!ControlMachine_cycle(&machine)) {
                             return 12;
                         }
-                        if (strcmp(ControlMachine_current_state_path(&machine), "Control.Idle") != 0) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_CONTROL_IDLE) {
                             return 13;
                         }
                         if (ControlMachine_vars(&machine)->counter != 1) {
@@ -591,7 +661,7 @@ class TestCPollBuiltinTemplate:
                         if (!ControlMachine_cycle(&machine)) {
                             return 16;
                         }
-                        if (strcmp(ControlMachine_current_state_path(&machine), "Control.Active.Work") != 0) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_CONTROL_ACTIVE_WORK) {
                             return 17;
                         }
                         if (
@@ -624,7 +694,6 @@ class TestCPollBuiltinTemplate:
                 textwrap.dedent(
                     r"""
                     #include "machine.h"
-                    #include <cstring>
 
                     struct EventLog {
                         int allow_start;
@@ -640,8 +709,8 @@ class TestCPollBuiltinTemplate:
                         EventLog *log = static_cast<EventLog *>(user_data);
                         (void)machine;
                         if (
-                            std::strcmp(ctx->event_path, "Control.Idle.Start") == 0 &&
-                            std::strcmp(ctx->current_state_path, "Control.Idle") == 0
+                            ctx->event_id == CONTROL_MACHINE_EVENT_CONTROL_IDLE_START &&
+                            ctx->current_state_id == CONTROL_MACHINE_STATE_CONTROL_IDLE
                         ) {
                             log->seen_start += 1;
                         }
@@ -663,14 +732,14 @@ class TestCPollBuiltinTemplate:
                         if (!ControlMachine_cycle(&machine)) {
                             return 21;
                         }
-                        if (std::strcmp(ControlMachine_current_state_path(&machine), "Control.Idle") != 0) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_CONTROL_IDLE) {
                             return 22;
                         }
                         log.allow_start = 1;
                         if (!ControlMachine_cycle(&machine)) {
                             return 23;
                         }
-                        if (std::strcmp(ControlMachine_current_state_path(&machine), "Control.Active.Work") != 0) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_CONTROL_ACTIVE_WORK) {
                             return 24;
                         }
                         if (
@@ -709,7 +778,6 @@ class TestCPollBuiltinTemplate:
                 textwrap.dedent(
                     r'''
                     #include "machine.h"
-                    #include <cstring>
 
                     int main()
                     {
@@ -720,7 +788,7 @@ class TestCPollBuiltinTemplate:
                         if (!RootMachine_cycle(&machine)) {
                             return 31;
                         }
-                        if (std::strcmp(RootMachine_current_state_path(&machine), "Root.template") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_TEMPLATE) {
                             return 32;
                         }
                         return 0;

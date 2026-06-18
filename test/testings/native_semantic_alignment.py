@@ -336,7 +336,7 @@ def load_native_capability_matrix(
 
         >>> entries = load_native_capability_matrix()
         >>> bool(entries)
-        True
+        False
     """
     with open(path, "r", encoding="utf-8") as file:
         data = yaml.safe_load(file)

@@ -6,6 +6,23 @@
 {% endfor -%}
 {% endfor -%}
 {% set abstract_ns = namespace(rows=[]) -%}
+{% set action_scan = namespace(items=[]) -%}
+{% for scan_state in state_items -%}
+{% for scan_group in [
+    scan_state.list_on_enters(with_ids=True),
+    scan_state.list_on_durings(aspect=None, with_ids=True),
+    scan_state.list_on_exits(with_ids=True),
+    scan_state.list_on_durings(aspect='before', with_ids=True),
+    scan_state.list_on_durings(aspect='after', with_ids=True),
+    scan_state.list_on_during_aspects(aspect='before', with_ids=True),
+    scan_state.list_on_during_aspects(aspect='after', with_ids=True),
+] -%}
+{% for _, scan_item in scan_group -%}
+{% set action_scan.items = action_scan.items + [scan_item] -%}
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+{% set action_ref_hop_limit = (action_scan.items | length) + 1 -%}
 {% for state in state_items -%}
 {% for group in [
     state.list_on_enters(with_ids=True),
@@ -18,7 +35,7 @@
 ] -%}
 {% for _, item in group -%}
 {% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
+{% for _ in range(action_ref_hop_limit) -%}
 {% if resolved.item.ref is not none -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
@@ -239,10 +256,14 @@ valid as long as the machine object remains valid.
 
 | Field | Meaning |
 | --- | --- |
-| `state_path` | Full DSL path of the current state/action owner |
+| `state_path` | Public call-context DSL state path |
 | `vars` | Read-only snapshot pointer to persistent machine variables |
-| `action_name` | DSL action path/name currently being executed |
-| `action_stage` | Stage string such as `enter`, `during`, `exit`, or aspect stage |
+| `action_name` | Resolved abstract target DSL action path/name currently being executed |
+| `action_stage` | Lifecycle stage reported for this callsite |
+| `active_leaf` | Active leaf-state path visible to the callsite |
+| `call_stage` | Lifecycle stage of the concrete callsite before resolving `ref` chains |
+| `abstract_target` | Resolved abstract action path after following `ref` chains |
+| `named_ref` | Named `ref` action path when the call came through a named reference, otherwise `NULL` |
 
 This structure is intended for observation only. In particular, abstract hooks
 should not mutate persistent machine variables through `machine` or any other

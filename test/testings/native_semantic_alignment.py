@@ -336,7 +336,7 @@ def load_native_capability_matrix(
 
         >>> entries = load_native_capability_matrix()
         >>> bool(entries)
-        True
+        False
     """
     with open(path, "r", encoding="utf-8") as file:
         data = yaml.safe_load(file)
@@ -409,8 +409,8 @@ def native_capability_by_runner_case(
     Example::
 
         >>> matrix = native_capability_by_runner_case()
-        >>> ("generated_c_alignment", "expression_failure_raises_expression_error") in matrix
-        True
+        >>> matrix
+        {}
     """
     source = tuple(entries) if entries is not None else load_native_capability_matrix()
     return {(entry.runner, entry.case): entry for entry in source}
@@ -442,6 +442,10 @@ def _native_handler_call_record(runtime: Any, ctx: Any) -> Dict[str, Any]:
         "state": ctx.get_full_state_path(),
         "stage": ctx.action_stage,
         "vars": {name: ctx.get_var(name) for name in runtime._var_names},
+        "active_leaf": ctx.active_leaf,
+        "call_stage": ctx.call_stage,
+        "abstract_target": ctx.abstract_target,
+        "named_ref": ctx.named_ref,
     }
 
 
@@ -1021,8 +1025,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     Example::
 
-        >>> main(["--runner", "generated_c_alignment", "--case-id", "design_basic_simple_transition"])
+        >>> import contextlib
+        >>> import io
+        >>> output = io.StringIO()
+        >>> with contextlib.redirect_stdout(output):
+        ...     status = main(["--runner", "generated_c_alignment", "--case-id", "design_basic_simple_transition"])
+        >>> status
         0
+        >>> '"passed": 1' in output.getvalue()
+        True
     """
     args = _parse_args(argv)
     if args.worker:

@@ -243,7 +243,7 @@ def _load_runtime_library(shared_lib):
 
 def _collect_hook_info_rows(model):
     rows = []
-    seen = set()
+    seen_abstract_paths = set()
     for state in model.walk_states():
         groups = [
             state.list_on_enters(with_ids=True),
@@ -257,13 +257,17 @@ def _collect_hook_info_rows(model):
         for group in groups:
             for _, item in group:
                 resolved = item
-                for _ in range(16):
-                    if resolved.ref is None:
-                        break
+                seen_action_ids = set()
+                while resolved.ref is not None and id(resolved) not in seen_action_ids:
+                    seen_action_ids.add(id(resolved))
                     resolved = resolved.ref
-                if not resolved.is_abstract or resolved.func_name in seen:
+                if (
+                    not resolved.is_abstract
+                    or id(resolved) in seen_action_ids
+                    or resolved.func_name in seen_abstract_paths
+                ):
                     continue
-                seen.add(resolved.func_name)
+                seen_abstract_paths.add(resolved.func_name)
                 rows.append({
                     'dsl_action_path': resolved.func_name,
                     'hook_field': 'on_{name}'.format(name=to_c_identifier(resolved.func_name)),
@@ -273,13 +277,21 @@ def _collect_hook_info_rows(model):
     return rows
 
 
+def _decode_optional_c_string(value):
+    return value.decode('utf-8') if value else None
+
+
 class _ExecutionContextView:
     def __init__(self, runtime, ctx_struct):
         self._runtime = runtime
         self._vars_ptr = ctx_struct.vars
-        self.action_name = ctx_struct.action_name.decode('utf-8')
-        self.action_stage = ctx_struct.action_stage.decode('utf-8')
-        self.state_path = ctx_struct.state_path.decode('utf-8')
+        self.action_name = _decode_optional_c_string(ctx_struct.action_name)
+        self.action_stage = _decode_optional_c_string(ctx_struct.action_stage)
+        self.state_path = _decode_optional_c_string(ctx_struct.state_path)
+        self.active_leaf = _decode_optional_c_string(ctx_struct.active_leaf)
+        self.call_stage = _decode_optional_c_string(ctx_struct.call_stage)
+        self.abstract_target = _decode_optional_c_string(ctx_struct.abstract_target)
+        self.named_ref = _decode_optional_c_string(ctx_struct.named_ref)
 
     def get_var(self, name):
         return self._runtime._get_var_from_vars_ptr(self._vars_ptr, name)
@@ -364,6 +376,10 @@ class _CRuntime:
                 ('vars', ctypes.c_void_p),
                 ('action_name', ctypes.c_char_p),
                 ('action_stage', ctypes.c_char_p),
+                ('active_leaf', ctypes.c_char_p),
+                ('call_stage', ctypes.c_char_p),
+                ('abstract_target', ctypes.c_char_p),
+                ('named_ref', ctypes.c_char_p),
             ]
 
         self._context_struct = _ContextStruct

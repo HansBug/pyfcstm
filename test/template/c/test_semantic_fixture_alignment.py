@@ -19,16 +19,16 @@ def test_generated_c_alignment_shared_fixture_smoke():
 
 
 @pytest.mark.unittest
-def test_generated_c_alignment_subprocess_reports_known_native_failure():
+def test_generated_c_alignment_subprocess_reports_repaired_hook_context():
     result = run_native_alignment_case_subprocess(
         GENERATED_C_ALIGNMENT, "aspect_context_reports_active_leaf"
     )
 
-    assert result.status == "expected_failure"
-    assert result.classification == "handler_mismatch"
-    assert result.expected_classification == "handler_mismatch"
-    assert result.support == "expected_failure"
-    assert result.tracking == "https://github.com/HansBug/pyfcstm/issues/218"
+    assert result.status == "passed"
+    assert result.classification is None
+    assert result.expected_classification is None
+    assert result.support is None
+    assert result.tracking is None
 
 
 _NATIVE_EXPRESSION_DIAGNOSTIC_CASES = (

@@ -27,11 +27,11 @@ class TestJinjaEnvironmentEnhancement:
             ("Root", "A"): "p4_Root_p1_A",
             ("Root", "a"): "p4_Root_p1_a",
             ("Count", "Internal"): "p5_Count_p8_Internal",
-            ("Count", "Internal_"): "p5_Count_p9_Internal_",
-            ("Count", "A_B"): "p5_Count_p3_A_B",
-            ("Count", "A__B"): "p5_Count_p4_A__B",
+            ("Count", "Internal_"): "p5_Count_p9_Internalz00005F",
+            ("Count", "A_B"): "p5_Count_p3_Az00005FB",
+            ("Count", "A__B"): "p5_Count_p4_Az00005Fz00005FB",
             ("Root", "A", "B"): "p4_Root_p1_A_p1_B",
-            ("Root", "A_B"): "p4_Root_p3_A_B",
+            ("Root", "A_B"): "p4_Root_p3_Az00005FB",
         }
 
         outputs = [to_c_path_identifier(path) for path in cases]

@@ -129,7 +129,8 @@ black-box runtime:
 - abstract hooks are the supported extension point for integrating external
   systems
 - generated identifiers are normalized for both C and C++, including escaping
-  keyword collisions such as `class` or `template`
+  keyword collisions such as `class` or `template` and avoiding reserved
+  public identifier shapes such as double underscores
 
 The public header exposes some runtime layout structs for ABI simplicity, but
 runtime-owned internals should not be modified directly unless the field is

@@ -126,7 +126,8 @@ C99 / C++98+ 状态机引擎。它遵循 `c_poll` 的事件输入契约：
   `{{ machine_class_name(model) }}_set_event_checks(...)` 挂载完整 event-check 表之前，`cycle()` 会直接失败
 - hot start 会把完整变量快照恢复到生成状态 id，并保留已安装的 hook 表和 event-check 表
 - speculative transition 失败时仍会回滚到上一次已提交状态
-- 生成标识符会同时兼顾 C 和 C++，遇到 `class`、`template` 等关键字冲突时会自动规避
+- 生成标识符会同时兼顾 C 和 C++，遇到 `class`、`template` 等关键字冲突时会自动规避，
+  也会避开双下划线等 reserved public identifier 形态
 
 头文件为了 ABI 简洁起见暴露了一些运行时布局结构体，但除非文档明确说明可直接使用，
 否则这些字段都应视为运行时内部实现细节，不应自行写入。

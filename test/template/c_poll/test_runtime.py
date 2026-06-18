@@ -76,6 +76,25 @@ def _duplicate_macro_define_names(header):
     return duplicates
 
 
+def _public_generated_names(header):
+    macro_names = re.findall(
+        r'^#define\s+(\w+_(?:STATE|EVENT|ACTION)_\w+)',
+        header,
+        flags=re.M,
+    )
+    hook_fields = re.findall(r'^\s+(on_\w+);', header, flags=re.M)
+    event_check_fields = re.findall(r'^\s+(check_\w+);', header, flags=re.M)
+    return macro_names + hook_fields + event_check_fields
+
+
+def _reserved_cxx_public_names(header):
+    return [
+        name
+        for name in _public_generated_names(header)
+        if '__' in name or re.search(r'(?:^|_)_[A-Z]', name)
+    ]
+
+
 def _normalized_lower_text(text):
     lines = []
     for line in text.lower().splitlines():
@@ -238,8 +257,8 @@ class TestCPollBuiltinTemplate:
                         (void)machine;
                         (void)user_data;
                         return (
-                            ctx->event_id == ROOT_MACHINE_EVENT_P4_ROOT_P3_A_B_P4_SWAP &&
-                            ctx->current_state_id == ROOT_MACHINE_STATE_P4_ROOT_P3_A_B
+                            ctx->event_id == ROOT_MACHINE_EVENT_P4_ROOT_P3_AZ00005FB_P4_SWAP &&
+                            ctx->current_state_id == ROOT_MACHINE_STATE_P4_ROOT_P3_AZ00005FB
                         );
                     }
 
@@ -249,28 +268,28 @@ class TestCPollBuiltinTemplate:
                         RootMachineHooks hooks = ROOTMACHINE_HOOKS_INIT;
                         RootMachineEventChecks event_checks = ROOTMACHINE_EVENT_CHECKS_INIT;
                         (void)hooks.on_p4_Root_p1_A_p1_B_p6_Shared;
-                        (void)hooks.on_p4_Root_p3_A_B_p6_Shared;
+                        (void)hooks.on_p4_Root_p3_Az00005FB_p6_Shared;
 
-                        if (ROOT_MACHINE_STATE_P4_ROOT_P1_A_P1_B == ROOT_MACHINE_STATE_P4_ROOT_P3_A_B) {
+                        if (ROOT_MACHINE_STATE_P4_ROOT_P1_A_P1_B == ROOT_MACHINE_STATE_P4_ROOT_P3_AZ00005FB) {
                             return 10;
                         }
-                        if (ROOT_MACHINE_EVENT_P4_ROOT_P1_A_P1_B_P2_GO == ROOT_MACHINE_EVENT_P4_ROOT_P3_A_B_P2_GO) {
+                        if (ROOT_MACHINE_EVENT_P4_ROOT_P1_A_P1_B_P2_GO == ROOT_MACHINE_EVENT_P4_ROOT_P3_AZ00005FB_P2_GO) {
                             return 11;
                         }
-                        if (ROOT_MACHINE_ACTION_P4_ROOT_P1_A_P1_B_P6_SHARED == ROOT_MACHINE_ACTION_P4_ROOT_P3_A_B_P6_SHARED) {
+                        if (ROOT_MACHINE_ACTION_P4_ROOT_P1_A_P1_B_P6_SHARED == ROOT_MACHINE_ACTION_P4_ROOT_P3_AZ00005FB_P6_SHARED) {
                             return 12;
                         }
                         if (!RootMachine_init(&machine)) {
                             return 13;
                         }
-                        event_checks.check_p4_Root_p3_A_B_p4_Swap = swap_event;
+                        event_checks.check_p4_Root_p3_Az00005FB_p4_Swap = swap_event;
                         event_checks.check_p4_Root_p1_A_p1_B_p2_Go = inactive_event;
-                        event_checks.check_p4_Root_p3_A_B_p2_Go = inactive_event;
+                        event_checks.check_p4_Root_p3_Az00005FB_p2_Go = inactive_event;
                         RootMachine_set_event_checks(&machine, &event_checks, NULL);
                         if (!RootMachine_cycle(&machine)) {
                             return 14;
                         }
-                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P3_A_B) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P3_AZ00005FB) {
                             return 15;
                         }
                         if (!RootMachine_cycle(&machine)) {
@@ -288,6 +307,7 @@ class TestCPollBuiltinTemplate:
         assert "#define ROOT_MACHINE_STATE_P4_ROOT_P1_A_B " not in header
         assert "#define ROOT_MACHINE_EVENT_ROOT_A_B_GO " not in header
         assert "#define ROOT_MACHINE_ACTION_ROOT_A_B_SHARED " not in header
+        assert _reserved_cxx_public_names(header) == []
         assert run.returncode == 0, run.stderr
 
     def test_generated_public_metadata_aliases_avoid_reserved_macros(self):
@@ -367,6 +387,7 @@ class TestCPollBuiltinTemplate:
         assert "#define COUNT_MACHINE_STATE_COUNT COUNT_MACHINE_STATE_" not in header
         assert "#define COUNT_MACHINE_ACTION_COUNT COUNT_MACHINE_ACTION_" not in header
         assert duplicate_names == []
+        assert _reserved_cxx_public_names(header) == []
         assert run.returncode == 0, run.stderr
 
     def test_generated_public_metadata_identifiers_preserve_case_and_underscores(self):
@@ -422,33 +443,33 @@ class TestCPollBuiltinTemplate:
                         CountMachineEventChecks checks = COUNTMACHINE_EVENT_CHECKS_INIT;
                         (void)hooks.on_p5_Count_p8_Internal_p15_InvalidActionId;
                         (void)hooks.on_p5_Count_p8_Internal_p6_Shared;
-                        (void)hooks.on_p5_Count_p9_Internal__p6_Shared;
+                        (void)hooks.on_p5_Count_p9_Internalz00005F_p6_Shared;
                         (void)hooks.on_p5_Count_p1_A_p6_Shared;
                         (void)hooks.on_p5_Count_p1_a_p6_Shared;
-                        (void)hooks.on_p5_Count_p3_A_B_p6_Shared;
-                        (void)hooks.on_p5_Count_p4_A__B_p6_Shared;
+                        (void)hooks.on_p5_Count_p3_Az00005FB_p6_Shared;
+                        (void)hooks.on_p5_Count_p4_Az00005Fz00005FB_p6_Shared;
                         (void)checks.check_p5_Count_p8_Internal_p5_Count;
-                        (void)checks.check_p5_Count_p9_Internal__p5_Count;
+                        (void)checks.check_p5_Count_p9_Internalz00005F_p5_Count;
 
-                        if (COUNT_MACHINE_STATE_p5_Count_p8_Internal == COUNT_MACHINE_STATE_p5_Count_p9_Internal_) {
+                        if (COUNT_MACHINE_STATE_p5_Count_p8_Internal == COUNT_MACHINE_STATE_p5_Count_p9_Internalz00005F) {
                             return 10;
                         }
                         if (COUNT_MACHINE_STATE_p5_Count_p1_A == COUNT_MACHINE_STATE_p5_Count_p1_a) {
                             return 11;
                         }
-                        if (COUNT_MACHINE_STATE_p5_Count_p3_A_B == COUNT_MACHINE_STATE_p5_Count_p4_A__B) {
+                        if (COUNT_MACHINE_STATE_p5_Count_p3_Az00005FB == COUNT_MACHINE_STATE_p5_Count_p4_Az00005Fz00005FB) {
                             return 12;
                         }
-                        if (COUNT_MACHINE_EVENT_p5_Count_p8_Internal_p5_Count == COUNT_MACHINE_EVENT_p5_Count_p9_Internal__p5_Count) {
+                        if (COUNT_MACHINE_EVENT_p5_Count_p8_Internal_p5_Count == COUNT_MACHINE_EVENT_p5_Count_p9_Internalz00005F_p5_Count) {
                             return 13;
                         }
-                        if (COUNT_MACHINE_ACTION_p5_Count_p8_Internal_p6_Shared == COUNT_MACHINE_ACTION_p5_Count_p9_Internal__p6_Shared) {
+                        if (COUNT_MACHINE_ACTION_p5_Count_p8_Internal_p6_Shared == COUNT_MACHINE_ACTION_p5_Count_p9_Internalz00005F_p6_Shared) {
                             return 14;
                         }
                         if (COUNT_MACHINE_ACTION_p5_Count_p1_A_p6_Shared == COUNT_MACHINE_ACTION_p5_Count_p1_a_p6_Shared) {
                             return 15;
                         }
-                        if (COUNT_MACHINE_ACTION_p5_Count_p3_A_B_p6_Shared == COUNT_MACHINE_ACTION_p5_Count_p4_A__B_p6_Shared) {
+                        if (COUNT_MACHINE_ACTION_p5_Count_p3_Az00005FB_p6_Shared == COUNT_MACHINE_ACTION_p5_Count_p4_Az00005Fz00005FB_p6_Shared) {
                             return 16;
                         }
                         return 0;
@@ -461,6 +482,7 @@ class TestCPollBuiltinTemplate:
         assert "#define COUNT_MACHINE_ACTION_P5_COUNT_P1_A_P6_SHARED " not in header
         assert "#define COUNT_MACHINE_STATE_COUNT_A_B " not in header
         assert duplicate_names == []
+        assert _reserved_cxx_public_names(header) == []
         assert run.returncode == 0, run.stderr
 
     def test_generated_machine_source_banners_document_file_contract(self):

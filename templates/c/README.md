@@ -152,7 +152,9 @@ lowercase, collapse repeated underscores, or strip trailing underscores from
 canonical state/event/action/hook/event-check identifiers. Uppercase or flattened
 compatibility aliases may be emitted only as optional conveniences after the full
 generated domain proves that the alias is unique and does not collide with a
-reserved or canonical public macro.
+reserved or canonical public macro. Canonical public identifiers must also stay
+outside C/C++ reserved identifier forms, including double underscores or names
+that begin with an underscore followed by an uppercase letter.
 
 ## Performance evidence
 

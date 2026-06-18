@@ -42,9 +42,10 @@ def to_c_path_identifier(segments) -> str:
 
     Each path segment is encoded independently and prefixed with its original
     length. Encoding segment boundaries this way avoids collisions such as
-    ``Root.A.B`` and ``Root.A_B``. Preserving case and significant underscores
-    also avoids collisions such as ``Root.A`` and ``Root.a`` or ``Internal`` and
-    ``Internal_`` while keeping the output acceptable for C/C++ identifiers.
+    ``Root.A.B`` and ``Root.A_B``. Preserving case while escaping significant
+    underscores also avoids collisions such as ``Root.A`` and ``Root.a`` or
+    ``Internal`` and ``Internal_`` while keeping the output acceptable for
+    C/C++ identifiers and out of the C++ reserved double-underscore namespace.
 
     :param segments: Iterable path segments to encode.
     :type segments: typing.Iterable[str]
@@ -56,21 +57,21 @@ def to_c_path_identifier(segments) -> str:
         >>> to_c_path_identifier(["Root", "A", "B"])
         'p4_Root_p1_A_p1_B'
         >>> to_c_path_identifier(["Root", "A_B"])
-        'p4_Root_p3_A_B'
+        'p4_Root_p3_Az00005FB'
         >>> to_c_path_identifier(["Root", "A__B"])
-        'p4_Root_p4_A__B'
+        'p4_Root_p4_Az00005Fz00005FB'
         >>> to_c_path_identifier(["Root", "Internal_"])
-        'p4_Root_p9_Internal_'
+        'p4_Root_p9_Internalz00005F'
     """
     parts = []
     for segment in segments:
         raw_segment = str(segment)
         encoded_chars = []
         for char in raw_segment:
-            if char == "_" or "0" <= char <= "9" or "A" <= char <= "Z" or "a" <= char <= "z":
+            if "0" <= char <= "9" or "A" <= char <= "Z" or "a" <= char <= "y":
                 encoded_chars.append(char)
             else:
-                encoded_chars.append("u%X_" % ord(char))
+                encoded_chars.append("z%06X" % ord(char))
         item = "".join(encoded_chars) or "empty"
         parts.append("p%d_%s" % (len(raw_segment), item))
     return "_".join(parts) or "p0_empty"

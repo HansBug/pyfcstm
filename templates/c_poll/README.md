@@ -141,7 +141,13 @@ unique within that generated domain **and** does not collide with any reserved
 public macro such as `..._STATE_COUNT`, `..._EVENT_COUNT`,
 `..._ACTION_COUNT`, invalid-id sentinels, stage macros, or canonical ids from
 that domain. When in doubt, omit the alias and keep only the canonical
-path-boundary-safe macro.
+path-boundary-safe macro. Canonical finite-domain public macros are deliberately
+case-preserving and lossless for significant underscores. Do not uppercase,
+lowercase, collapse repeated underscores, or strip trailing underscores from
+canonical state/event/action/hook/event-check identifiers. Uppercase or flattened
+compatibility aliases may be emitted only as optional conveniences after the full
+generated domain proves that the alias is unique and does not collide with a
+reserved or canonical public macro.
 
 ## Relationship to `c`
 

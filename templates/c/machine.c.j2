@@ -1,21 +1,21 @@
 {%- macro state_key(state) -%}{{ state | state_path }}{%- endmacro %}
 {%- macro state_slug(state) -%}{{ state | state_slug }}{%- endmacro %}
-{%- macro state_enum(state) -%}{{ machine_macro_name(model) }}_STATE_ID_{{ state_slug(state) | upper }}{%- endmacro %}
+{%- macro state_enum(state) -%}{{ machine_macro_name(model) }}_STATE_ID_{{ state_slug(state) }}{%- endmacro %}
 {%- macro cstr(value) -%}{{ value | tojson | replace('\\u003c', '<') | replace('\\u003e', '>') | replace('\\u0026', '&') }}{%- endmacro %}
 {%- macro action_method_name(state, kind, idx) -%}_action_{{ state_slug(state) }}_{{ kind }}_{{ idx }}{%- endmacro %}
 {%- macro action_stage_runner_name(state, stage) -%}_run_{{ state_slug(state) }}_{{ stage }}_actions{%- endmacro %}
 {%- macro leaf_during_runner_name(state) -%}_run_leaf_during_{{ state_slug(state) }}{%- endmacro %}
 {%- macro select_transition_state_name(state) -%}_select_transition_{{ state_slug(state) }}{%- endmacro %}
 {%- macro attempt_init_state_name(state) -%}_attempt_init_transition_{{ state_slug(state) }}{%- endmacro %}
-{%- macro init_transition_id(state, idx) -%}{{ machine_macro_name(model) }}_TRANSITION_INIT_{{ state_slug(state) | upper }}_{{ idx }}{%- endmacro %}
-{%- macro normal_transition_id(state, idx) -%}{{ machine_macro_name(model) }}_TRANSITION_NORMAL_{{ state_slug(state) | upper }}_{{ idx }}{%- endmacro %}
+{%- macro init_transition_id(state, idx) -%}{{ machine_macro_name(model) }}_TRANSITION_INIT_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
+{%- macro normal_transition_id(state, idx) -%}{{ machine_macro_name(model) }}_TRANSITION_NORMAL_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro init_guard_method_name(state, idx) -%}_guard_init_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro init_effect_method_name(state, idx) -%}_effect_init_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro transition_guard_method_name(state, idx) -%}_guard_transition_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro transition_effect_method_name(state, idx) -%}_effect_transition_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro hook_field(action) -%}{{ action | hook_field_name }}{%- endmacro %}
-{%- macro hook_enum(action) -%}{{ machine_macro_name(model) }}_HOOK_{{ action.func_name.split('.') | to_c_path_identifier | upper }}{%- endmacro %}
-{%- macro action_enum(action) -%}{{ machine_macro_name(model) }}_ACTION_{{ action.func_name.split('.') | to_c_path_identifier | upper }}{%- endmacro %}
+{%- macro hook_enum(action) -%}{{ machine_macro_name(model) }}_HOOK_{{ action.func_name.split('.') | to_c_path_identifier }}{%- endmacro %}
+{%- macro action_enum(action) -%}{{ machine_macro_name(model) }}_ACTION_{{ action.func_name.split('.') | to_c_path_identifier }}{%- endmacro %}
 {%- macro stage_enum(stage) -%}{{ machine_macro_name(model) }}_STAGE_{{ stage | upper }}{%- endmacro %}
 {%- set action_scan = namespace(items=[]) -%}
 {%- for scan_state in model.walk_states() -%}

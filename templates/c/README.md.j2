@@ -195,7 +195,7 @@ int main(void)
 {% if event_ns.items %}
     {
         static const {{ machine_class_name(model) }}EventId event_ids[] = {
-            {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier | upper }}
+            {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }}
         };
         {{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
     }
@@ -408,7 +408,7 @@ int main(void)
 {% if event_ns.items %}
     {
         static const {{ machine_class_name(model) }}EventId event_ids[] = {
-            {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier | upper }}
+            {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }}
         };
         if (!{{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u)) {
             return 3;
@@ -440,7 +440,7 @@ Use generated event ids directly. Do not construct event names at runtime.
 ```c
 {% if event_ns.items %}
 static const {{ machine_class_name(model) }}EventId event_ids[] = {
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier | upper }}
+    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }}
 };
 
 {{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
@@ -454,13 +454,13 @@ You may also submit more than one event in one cycle:
 ```c
 {% if event_ns.items | length >= 2 %}
 static const {{ machine_class_name(model) }}EventId event_ids[] = {
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier | upper }},
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[1].split('.') | to_c_path_identifier | upper }}
+    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }},
+    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[1].split('.') | to_c_path_identifier }}
 };
 {{ machine_class_name(model) }}_cycle(&machine, event_ids, 2u);
 {% elif event_ns.items %}
 static const {{ machine_class_name(model) }}EventId event_ids[] = {
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier | upper }}
+    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }}
 };
 {{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
 {% else %}
@@ -499,7 +499,7 @@ initial_vars.{{ def_item.name | to_c_identifier }} = {{ def_item.init.to_ast_nod
 {% endfor %}
 {{ machine_class_name(model) }}_hot_start(
     &machine,
-    {{ machine_macro_name(model) }}_STATE_{{ model.root_state | state_slug | upper }},
+    {{ machine_macro_name(model) }}_STATE_{{ model.root_state | state_slug }},
     &initial_vars
 );
 ```
@@ -552,7 +552,7 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 | State path | Macro | Value |
 | --- | --- | ---: |
 {% for state in state_items -%}
-| `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ state | state_slug | upper }}` | `{{ loop.index0 }}` |
+| `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ state | state_slug }}` | `{{ loop.index0 }}` |
 {% endfor %}
 
 ## Event IDs
@@ -561,7 +561,7 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 | Event path | Macro | Value |
 | --- | --- | ---: |
 {% for event_path in event_ns.items -%}
-| `{{ event_path }}` | `{{ machine_macro_name(model) }}_EVENT_{{ event_path.split('.') | to_c_path_identifier | upper }}` | `{{ loop.index0 }}` |
+| `{{ event_path }}` | `{{ machine_macro_name(model) }}_EVENT_{{ event_path.split('.') | to_c_path_identifier }}` | `{{ loop.index0 }}` |
 {% endfor %}
 {% else %}
 This state machine does not define any events.
@@ -579,7 +579,7 @@ This state machine does not define any events.
 | Action path | Macro | Value |
 | --- | --- | ---: |
 {% for row in action_doc_ns.rows -%}
-| `{{ row['func_name'] }}` | `{{ machine_macro_name(model) }}_ACTION_{{ row['func_name'].split('.') | to_c_path_identifier | upper }}` | `{{ loop.index0 }}` |
+| `{{ row['func_name'] }}` | `{{ machine_macro_name(model) }}_ACTION_{{ row['func_name'].split('.') | to_c_path_identifier }}` | `{{ loop.index0 }}` |
 {% endfor %}
 {% else %}
 This state machine does not define lifecycle actions.

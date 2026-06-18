@@ -365,6 +365,97 @@ class TestCBuiltinTemplate:
         assert duplicate_names == []
         assert run.returncode == 0, run.stderr
 
+    def test_generated_public_metadata_identifiers_preserve_case_and_underscores(self):
+        dsl_code = """
+        def int trace = 0;
+        state Count {
+            event Internal;
+            enter abstract Count;
+            state Internal {
+                event Count;
+                enter abstract InvalidActionId;
+                during abstract Shared;
+            }
+            state Internal_ {
+                event Count;
+                enter abstract Shared;
+            }
+            state A {
+                enter abstract Shared;
+            }
+            state a {
+                enter abstract Shared;
+            }
+            state A_B {
+                enter abstract Shared;
+            }
+            state A__B {
+                enter abstract Shared;
+            }
+            [*] -> Internal;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
+                header = f.read()
+
+            duplicate_names = [
+                name
+                for name in _duplicate_macro_define_names(header)
+                if name != "COUNT_MACHINE_API"
+            ]
+            run = _compile_and_run_c_harness(
+                artifacts,
+                "case_and_underscore_safe_public_metadata",
+                textwrap.dedent(
+                    r"""
+                    #include "machine.h"
+
+                    int main(void)
+                    {
+                        CountMachineHooks hooks = COUNTMACHINE_HOOKS_INIT;
+                        (void)hooks.on_p5_Count_p8_Internal_p15_InvalidActionId;
+                        (void)hooks.on_p5_Count_p8_Internal_p6_Shared;
+                        (void)hooks.on_p5_Count_p9_Internal__p6_Shared;
+                        (void)hooks.on_p5_Count_p1_A_p6_Shared;
+                        (void)hooks.on_p5_Count_p1_a_p6_Shared;
+                        (void)hooks.on_p5_Count_p3_A_B_p6_Shared;
+                        (void)hooks.on_p5_Count_p4_A__B_p6_Shared;
+
+                        if (COUNT_MACHINE_STATE_p5_Count_p8_Internal == COUNT_MACHINE_STATE_p5_Count_p9_Internal_) {
+                            return 10;
+                        }
+                        if (COUNT_MACHINE_STATE_p5_Count_p1_A == COUNT_MACHINE_STATE_p5_Count_p1_a) {
+                            return 11;
+                        }
+                        if (COUNT_MACHINE_STATE_p5_Count_p3_A_B == COUNT_MACHINE_STATE_p5_Count_p4_A__B) {
+                            return 12;
+                        }
+                        if (COUNT_MACHINE_EVENT_p5_Count_p8_Internal_p5_Count == COUNT_MACHINE_EVENT_p5_Count_p9_Internal__p5_Count) {
+                            return 13;
+                        }
+                        if (COUNT_MACHINE_ACTION_p5_Count_p8_Internal_p6_Shared == COUNT_MACHINE_ACTION_p5_Count_p9_Internal__p6_Shared) {
+                            return 14;
+                        }
+                        if (COUNT_MACHINE_ACTION_p5_Count_p1_A_p6_Shared == COUNT_MACHINE_ACTION_p5_Count_p1_a_p6_Shared) {
+                            return 15;
+                        }
+                        if (COUNT_MACHINE_ACTION_p5_Count_p3_A_B_p6_Shared == COUNT_MACHINE_ACTION_p5_Count_p4_A__B_p6_Shared) {
+                            return 16;
+                        }
+                        return 0;
+                    }
+                    """
+                ),
+            )
+
+        assert "#define COUNT_MACHINE_STATE_P5_COUNT_P1_A " not in header
+        assert "#define COUNT_MACHINE_ACTION_P5_COUNT_P1_A_P6_SHARED " not in header
+        assert "#define COUNT_MACHINE_STATE_COUNT_A_B " not in header
+        assert duplicate_names == []
+        assert run.returncode == 0, run.stderr
+
     def test_generated_machine_runs_cycle_and_event_transition(self):
         dsl_code = """
         def int counter = 0;
@@ -1707,7 +1798,7 @@ class TestCBuiltinTemplate:
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
                             return 61;
                         }
-                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P10_NAMESPACE_) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_p4_Root_p10_namespace_) {
                             return 62;
                         }
                         if (RootMachine_vars(&machine)->class_ != (RootMachineInt)1) {

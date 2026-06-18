@@ -44,7 +44,7 @@ globals:
     type: template
     params:
       - state
-    template: "{{ machine_macro_name(model) }}_STATE_{{ state_slug(state) | upper }}"
+    template: "{{ machine_macro_name(model) }}_STATE_{{ state_slug(state) }}"
   hook_field_name:
     type: template
     params:
@@ -64,7 +64,7 @@ globals:
     type: template
     params:
       - action
-    template: "{{ machine_macro_name(model) }}_HOOK_{{ action.func_name.split('.') | to_c_path_identifier | upper }}"
+    template: "{{ machine_macro_name(model) }}_HOOK_{{ action.func_name.split('.') | to_c_path_identifier }}"
   action_owner_path:
     type: template
     params:

@@ -185,7 +185,7 @@ int main(void)
 {% if event_ns.items %}
     {
         static const {{ machine_class_name(model) }}EventId event_ids[] = {
-            {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier | upper }}
+            {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }}
         };
         {{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
     }
@@ -390,7 +390,7 @@ int main(void)
 {% if event_ns.items %}
     {
         static const {{ machine_class_name(model) }}EventId event_ids[] = {
-            {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier | upper }}
+            {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }}
         };
         if (!{{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u)) {
             return 3;
@@ -422,7 +422,7 @@ if (!{{ machine_class_name(model) }}_init(&machine)) {
 ```c
 {% if event_ns.items %}
 static const {{ machine_class_name(model) }}EventId event_ids[] = {
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier | upper }}
+    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }}
 };
 
 {{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
@@ -436,13 +436,13 @@ static const {{ machine_class_name(model) }}EventId event_ids[] = {
 ```c
 {% if event_ns.items | length >= 2 %}
 static const {{ machine_class_name(model) }}EventId event_ids[] = {
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier | upper }},
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[1].split('.') | to_c_path_identifier | upper }}
+    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }},
+    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[1].split('.') | to_c_path_identifier }}
 };
 {{ machine_class_name(model) }}_cycle(&machine, event_ids, 2u);
 {% elif event_ns.items %}
 static const {{ machine_class_name(model) }}EventId event_ids[] = {
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier | upper }}
+    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }}
 };
 {{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
 {% else %}
@@ -481,7 +481,7 @@ initial_vars.{{ def_item.name | to_c_identifier }} = {{ def_item.init.to_ast_nod
 {% endfor %}
 {{ machine_class_name(model) }}_hot_start(
     &machine,
-    {{ machine_macro_name(model) }}_STATE_{{ model.root_state | state_slug | upper }},
+    {{ machine_macro_name(model) }}_STATE_{{ model.root_state | state_slug }},
     &initial_vars
 );
 ```
@@ -532,7 +532,7 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 | 状态路径 | 宏 | 数值 |
 | --- | --- | ---: |
 {% for state in state_items -%}
-| `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ state | state_slug | upper }}` | `{{ loop.index0 }}` |
+| `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ state | state_slug }}` | `{{ loop.index0 }}` |
 {% endfor %}
 
 ## 事件 ID
@@ -541,7 +541,7 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 | 事件路径 | 宏 | 数值 |
 | --- | --- | ---: |
 {% for event_path in event_ns.items -%}
-| `{{ event_path }}` | `{{ machine_macro_name(model) }}_EVENT_{{ event_path.split('.') | to_c_path_identifier | upper }}` | `{{ loop.index0 }}` |
+| `{{ event_path }}` | `{{ machine_macro_name(model) }}_EVENT_{{ event_path.split('.') | to_c_path_identifier }}` | `{{ loop.index0 }}` |
 {% endfor %}
 {% else %}
 当前状态机没有定义事件。
@@ -559,7 +559,7 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 | Action path | Macro | Value |
 | --- | --- | ---: |
 {% for row in action_doc_ns.rows -%}
-| `{{ row['func_name'] }}` | `{{ machine_macro_name(model) }}_ACTION_{{ row['func_name'].split('.') | to_c_path_identifier | upper }}` | `{{ loop.index0 }}` |
+| `{{ row['func_name'] }}` | `{{ machine_macro_name(model) }}_ACTION_{{ row['func_name'].split('.') | to_c_path_identifier }}` | `{{ loop.index0 }}` |
 {% endfor %}
 {% else %}
 该状态机没有定义 lifecycle action。

@@ -2,6 +2,7 @@ import pytest
 from jinja2 import Environment
 
 from pyfcstm.utils import add_builtins_to_env, add_settings_for_env
+from pyfcstm.utils.jinja2 import to_c_path_identifier
 
 
 @pytest.fixture
@@ -21,6 +22,23 @@ def env_with_settings(base_env):
 
 @pytest.mark.unittest
 class TestJinjaEnvironmentEnhancement:
+    def test_to_c_path_identifier_preserves_finite_domain_identity(self):
+        cases = {
+            ("Root", "A"): "p4_Root_p1_A",
+            ("Root", "a"): "p4_Root_p1_a",
+            ("Count", "Internal"): "p5_Count_p8_Internal",
+            ("Count", "Internal_"): "p5_Count_p9_Internal_",
+            ("Count", "A_B"): "p5_Count_p3_A_B",
+            ("Count", "A__B"): "p5_Count_p4_A__B",
+            ("Root", "A", "B"): "p4_Root_p1_A_p1_B",
+            ("Root", "A_B"): "p4_Root_p3_A_B",
+        }
+
+        outputs = [to_c_path_identifier(path) for path in cases]
+
+        assert outputs == list(cases.values())
+        assert len(set(outputs)) == len(outputs)
+
     @pytest.mark.parametrize(
         "template_str, extra_params, expected_str",
         [

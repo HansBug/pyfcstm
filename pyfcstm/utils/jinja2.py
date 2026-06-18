@@ -40,10 +40,11 @@ def to_c_path_identifier(segments) -> str:
     """
     Convert a path sequence into a collision-resistant C identifier.
 
-    Each path segment is normalized independently and prefixed with its
-    normalized length. Encoding segment boundaries this way avoids collisions
-    such as ``Root.A.B`` and ``Root.A_B`` while keeping the output acceptable
-    for C/C++ identifiers.
+    Each path segment is encoded independently and prefixed with its original
+    length. Encoding segment boundaries this way avoids collisions such as
+    ``Root.A.B`` and ``Root.A_B``. Preserving case and significant underscores
+    also avoids collisions such as ``Root.A`` and ``Root.a`` or ``Internal`` and
+    ``Internal_`` while keeping the output acceptable for C/C++ identifiers.
 
     :param segments: Iterable path segments to encode.
     :type segments: typing.Iterable[str]
@@ -56,11 +57,22 @@ def to_c_path_identifier(segments) -> str:
         'p4_Root_p1_A_p1_B'
         >>> to_c_path_identifier(["Root", "A_B"])
         'p4_Root_p3_A_B'
+        >>> to_c_path_identifier(["Root", "A__B"])
+        'p4_Root_p4_A__B'
+        >>> to_c_path_identifier(["Root", "Internal_"])
+        'p4_Root_p9_Internal_'
     """
     parts = []
     for segment in segments:
-        item = to_c_identifier(str(segment))
-        parts.append("p%d_%s" % (len(item), item))
+        raw_segment = str(segment)
+        encoded_chars = []
+        for char in raw_segment:
+            if char == "_" or "0" <= char <= "9" or "A" <= char <= "Z" or "a" <= char <= "z":
+                encoded_chars.append(char)
+            else:
+                encoded_chars.append("u%X_" % ord(char))
+        item = "".join(encoded_chars) or "empty"
+        parts.append("p%d_%s" % (len(raw_segment), item))
     return "_".join(parts) or "p0_empty"
 
 

@@ -15,6 +15,9 @@ The package exposes the following main components:
 * :func:`add_builtins_to_env` - Register Python built-ins in a Jinja2 environment
 * :func:`add_settings_for_env` - Apply common filters and globals to Jinja2
 * :func:`to_c_path_identifier` - Build collision-resistant C path identifiers
+* :func:`to_c_public_identifier` - Build public C/C++ identifiers that avoid reserved forms
+* :func:`to_c_public_macro_identifier` - Build public C/C++ macro identifiers
+* :func:`is_c_public_identifier_reserved` - Detect reserved public C/C++ identifier shapes
 * :class:`IJsonOp` - Interface for JSON/YAML serialization
 * :func:`sequence_safe` - Build a safe underscore-separated identifier
 * :func:`normalize` - Normalize text to identifier-friendly form
@@ -52,7 +55,14 @@ from .binary import is_binary_file
 from .decode import auto_decode
 from .doc import format_multiline_comment
 from .fixed import Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64
-from .jinja2 import add_builtins_to_env, add_settings_for_env, to_c_path_identifier
+from .jinja2 import (
+    add_builtins_to_env,
+    add_settings_for_env,
+    to_c_path_identifier,
+    to_c_public_identifier,
+    to_c_public_macro_identifier,
+    is_c_public_identifier_reserved,
+)
 from .json import IJsonOp
 from .logging import get_logger
 from .parse import parse_value, parse_key_value_pairs

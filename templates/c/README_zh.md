@@ -76,6 +76,26 @@ Generated C runtime 可能被嵌入长期稳定运行的控制系统，因此内
 
 这些是稳定设计事实，不是临时开发计划。不要重新把临时里程碑列表或里程碑标题作为 README 主体结构。
 
+## Numeric metadata 维护纪律
+
+生成期可完全枚举的 runtime metadata，应在公开热路径 ABI 中使用 collision-resistant generated macros 和 numeric ids。该规则适用于 state、event、abstract action、具名 `ref` action、lifecycle stage、current-state id、active-leaf id，以及未来同类的有限 metadata domain。
+
+不要为了“可读性”在 `ExecutionContext`、事件提交或其他热路径 contract 中保留 `const char *` 字段。只要比较域在模板渲染时已知，就不要把 `strcmp()` 重新引入 runtime selection 或 hook-context checks。真正可读的集成面应是 `machine.h` 中生成的 macro set，例如 `..._STATE_*`、`..._EVENT_*`、`..._ACTION_*` 和 `..._STAGE_*`。
+
+字符串只应保留在冷路径或诊断面：
+
+- `last_error` 和其他需要明确暴露问题的 diagnostic messages；
+- `..._dsl_source()` 以及 generated comments / README text；
+- `..._current_state_path()`、`..._current_state_name()` 等可选 diagnostic helpers；
+- Python test adapters 将 generated ids 映射回 shared fixture schema strings；
+- 生成期确实不存在稳定有限 id domain 的不可枚举输出。
+
+新增 context field 或 public metadata value 时，先判断该 domain 是否在模板渲染时已经完全已知。若答案是肯定的，就生成 macro-backed integer id，并把任何字符串映射留在 generated runtime 热路径之外。
+
+有限 domain 的 generated public identifiers 必须保留 path boundaries，不能用普通下划线拼接把 dotted path 打平。`Root.A.B` 和 `Root.A_B` 这类合法 DSL path 绝不能生成同名 public state、event、action、hook 或 event-check identifier。Canonical public macro 和 callback-table field 应使用模板里的 collision-resistant path-identifier helpers；短 alias 只有在该 generated domain 内可证明唯一、且不会碰撞 `..._STATE_COUNT`、`..._EVENT_COUNT`、`..._ACTION_COUNT`、invalid-id sentinel、stage macro 或同域 canonical id 等保留 public macro 时才允许存在。拿不准时应省略 alias，只保留 canonical path-boundary-safe macro。Canonical 有限 domain public macro 必须保留大小写和有效下划线信息；不要对 canonical state/event/action/hook/event-check identifiers 做整体大写、小写、重复下划线折叠或尾下划线裁剪。全大写或扁平化 compatibility alias 只能作为可选便利项存在，且必须在完整 generated domain 内证明唯一并且不碰撞 reserved 或 canonical public macro。Canonical public identifiers 还必须避开 C/C++ reserved identifier 形态，包括双下划线以及以下划线加大写字母开头的名称。
+
+同一 reserved-shape 规则也适用于 root-machine ABI prefix、symbol visibility macro prefix、hook/event-check initializer macros 和 header guard。不要直接把原始 root state name 做整体大写或下划线拼接来生成这些 public names；应使用 public C identifier helpers，确保 `_Root`、`class`、`A__B` 这类合法 root name 不会在 generated header 中泄漏 C/C++ reserved public macros、typedefs、function prefixes 或 include guards。
+
 ## 性能证据
 
 一组历史 benchmark 曾用包含嵌套 composites、initial transitions、sibling transitions、exit-to-parent paths 和 validation rollback 的中等复杂度电梯控制模型，对比当前专用化 C runtime 设计和更早的字符串提交 runtime。

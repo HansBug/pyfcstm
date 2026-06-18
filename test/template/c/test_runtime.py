@@ -67,6 +67,30 @@ def _workflow_metadata_labels():
     ]
 
 
+def _duplicate_macro_define_names(header):
+    seen_names = set()
+    duplicates = []
+    for name in re.findall(r'^#define\s+(\w+)', header, flags=re.M):
+        if name in seen_names and name not in duplicates:
+            duplicates.append(name)
+        seen_names.add(name)
+    return duplicates
+
+
+def _public_generated_names(header):
+    macro_names = re.findall(r'^#define\s+(\w+)', header, flags=re.M)
+    hook_fields = re.findall(r'^\s+(on_\w+);', header, flags=re.M)
+    return macro_names + hook_fields
+
+
+def _reserved_cxx_public_names(header):
+    return [
+        name
+        for name in _public_generated_names(header)
+        if '__' in name or re.search(r'(?:^|_)_[A-Z]', name)
+    ]
+
+
 def _normalized_lower_text(text):
     lines = []
     for line in text.lower().splitlines():
@@ -138,6 +162,390 @@ class TestCBuiltinTemplate:
                 extra_terms=['implementation'],
             )
             assert source.index('/*') < source.index('#include "machine.h"')
+
+
+    def test_generated_context_metadata_uses_numeric_contract(self):
+        dsl_code = """
+        def int counter = 0;
+        state Root {
+            enter abstract Boot;
+            state Library {
+                enter abstract Shared;
+            }
+            state A {
+                enter FirstRef ref /Library.Shared;
+                during abstract Touch;
+            }
+            state B;
+            [*] -> A;
+            A -> B :: Go;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
+                header = f.read()
+            with open(artifacts["machine_c_file"], "r", encoding="utf-8") as f:
+                source = f.read()
+            with open(artifacts["readme_file"], "r", encoding="utf-8") as f:
+                readme = f.read()
+
+        assert "typedef int RootMachineActionId;" in header
+        assert "typedef int RootMachineStageId;" in header
+        assert "ROOT_MACHINE_INVALID_ACTION_ID" in header
+        assert "ROOT_MACHINE_STAGE_ENTER" in header
+        assert "RootMachine_current_state_id" in header
+
+        context_block = re.search(
+            r"struct RootMachineExecutionContext \{(?P<body>.*?)\};",
+            header,
+            flags=re.S,
+        ).group("body")
+        for forbidden in (
+            "const char *state_path",
+            "const char *action_name",
+            "const char *action_stage",
+            "const char *active_leaf",
+            "const char *call_stage",
+            "const char *abstract_target",
+            "const char *named_ref",
+        ):
+            assert forbidden not in context_block
+        assert "RootMachineStateId state_id;" in context_block
+        assert "RootMachineActionId action_id;" in context_block
+        assert "RootMachineStageId action_stage_id;" in context_block
+        assert "RootMachineStateId active_leaf_state_id;" in context_block
+        assert "RootMachineStageId call_stage_id;" in context_block
+        assert "RootMachineActionId abstract_target_id;" in context_block
+        assert "RootMachineActionId named_ref_id;" in context_block
+
+        assert "ctx->action_name" not in readme
+        assert "ctx->state_path" not in readme
+        assert "strcmp(ctx->" not in readme
+        assert "strcmp(ctx->" not in source
+
+    def test_generated_root_public_identifiers_avoid_reserved_shapes(self):
+        cases = [
+            {
+                "root_name": "_Root",
+                "class_name": "p_p5_z00005FRootMachine",
+                "macro_name": "P_P5_Z00005FROOT_MACHINE",
+                "state_slug": "p5_z00005FRoot_p4_Idle",
+            },
+            {
+                "root_name": "class",
+                "class_name": "class_Machine",
+                "macro_name": "P_P5_CLASS_MACHINE",
+                "state_slug": "p5_class_p4_Idle",
+            },
+        ]
+
+        for case in cases:
+            dsl_code = """
+            state {root_name} {{
+                state Idle;
+                [*] -> Idle;
+            }}
+            """.format(root_name=case["root_name"])
+
+            with render_c_artifacts(dsl_code) as artifacts:
+                with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
+                    header = f.read()
+
+                class_name = case["class_name"]
+                macro_name = case["macro_name"]
+                run = _compile_and_run_cpp_harness(
+                    artifacts,
+                    "root_reserved_safe_public_identifiers_" + case["root_name"].replace("_", "u"),
+                    textwrap.dedent(
+                        """
+                        #include "machine.h"
+
+                        int main()
+                        {{
+                            {class_name} machine;
+
+                            if (!{class_name}_init(&machine)) {{
+                                return 10;
+                            }}
+                            if (!{class_name}_cycle(&machine, 0, 0u)) {{
+                                return 11;
+                            }}
+                            if ({class_name}_current_state_id(&machine) != {macro_name}_STATE_{state_slug}) {{
+                                return 12;
+                            }}
+                            if ({macro_name}_SUCCESS != 1) {{
+                                return 13;
+                            }}
+                            return 0;
+                        }}
+                        """.format(
+                            class_name=class_name,
+                            macro_name=macro_name,
+                            state_slug=case["state_slug"],
+                        )
+                    ),
+                )
+
+            assert "_ROOT_MACHINE" not in header
+            assert "CLASS__MACHINE" not in header
+            assert "#ifndef PYFCSTM_GENERATED_{macro_name}_H".format(
+                macro_name=case["macro_name"],
+            ) in header
+            assert "#define {macro_name}_API".format(
+                macro_name=case["macro_name"],
+            ) in header
+            assert _reserved_cxx_public_names(header) == []
+            assert run.returncode == 0, run.stderr
+
+    def test_generated_public_metadata_identifiers_resist_path_collisions(self):
+        dsl_code = """
+        def int trace = 0;
+        state Root {
+            state A {
+                state B {
+                    event Go;
+                    enter abstract Shared;
+                }
+                [*] -> B;
+            }
+            state A_B {
+                event Go;
+                enter abstract Shared;
+            }
+            [*] -> A_B;
+            A_B -> A :: Swap;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
+                header = f.read()
+
+            run = _compile_and_run_c_harness(
+                artifacts,
+                "collision_safe_public_metadata",
+                textwrap.dedent(
+                    r"""
+                    #include "machine.h"
+
+                    int main(void)
+                    {
+                        RootMachine machine;
+                        RootMachineHooks hooks = ROOTMACHINE_HOOKS_INIT;
+                        static const RootMachineEventId swap_events[] = {
+                            ROOT_MACHINE_EVENT_P4_ROOT_P3_AZ00005FB_P4_SWAP
+                        };
+                        (void)hooks.on_p4_Root_p1_A_p1_B_p6_Shared;
+                        (void)hooks.on_p4_Root_p3_Az00005FB_p6_Shared;
+
+                        if (ROOT_MACHINE_STATE_P4_ROOT_P1_A_P1_B == ROOT_MACHINE_STATE_P4_ROOT_P3_AZ00005FB) {
+                            return 10;
+                        }
+                        if (ROOT_MACHINE_EVENT_P4_ROOT_P1_A_P1_B_P2_GO == ROOT_MACHINE_EVENT_P4_ROOT_P3_AZ00005FB_P2_GO) {
+                            return 11;
+                        }
+                        if (ROOT_MACHINE_ACTION_P4_ROOT_P1_A_P1_B_P6_SHARED == ROOT_MACHINE_ACTION_P4_ROOT_P3_AZ00005FB_P6_SHARED) {
+                            return 12;
+                        }
+                        if (!RootMachine_init(&machine)) {
+                            return 13;
+                        }
+                        if (!RootMachine_cycle(&machine, NULL, 0u)) {
+                            return 14;
+                        }
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P3_AZ00005FB) {
+                            return 15;
+                        }
+                        if (!RootMachine_cycle(&machine, swap_events, 1u)) {
+                            return 16;
+                        }
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P1_A_P1_B) {
+                            return 17;
+                        }
+                        return 0;
+                    }
+                    """
+                ),
+            )
+
+        assert "#define ROOT_MACHINE_STATE_P4_ROOT_P1_A_B " not in header
+        assert "#define ROOT_MACHINE_EVENT_ROOT_A_B_GO " not in header
+        assert "#define ROOT_MACHINE_ACTION_ROOT_A_B_SHARED " not in header
+        assert _reserved_cxx_public_names(header) == []
+        assert run.returncode == 0, run.stderr
+
+    def test_generated_public_metadata_aliases_avoid_reserved_macros(self):
+        dsl_code = """
+        def int trace = 0;
+        state Count {
+            enter abstract Count;
+            state InvalidStateId {
+                enter abstract StageEnter;
+                event Count;
+                event InvalidEventId;
+            }
+            state ActionCount;
+            [*] -> InvalidStateId;
+            InvalidStateId -> ActionCount :: Count;
+            ActionCount -> InvalidStateId :: InvalidEventId;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
+                header = f.read()
+
+            duplicate_names = [
+                name
+                for name in _duplicate_macro_define_names(header)
+                if name != "COUNT_MACHINE_API"
+            ]
+            run = _compile_and_run_c_harness(
+                artifacts,
+                "reserved_public_metadata_aliases",
+                textwrap.dedent(
+                    r"""
+                    #include "machine.h"
+
+                    int main(void)
+                    {
+                        if (COUNT_MACHINE_STATE_COUNT != 3) {
+                            return 10;
+                        }
+                        if (COUNT_MACHINE_EVENT_COUNT != 3) {
+                            return 11;
+                        }
+                        if (COUNT_MACHINE_ACTION_COUNT != 2) {
+                            return 12;
+                        }
+                        if (COUNT_MACHINE_STAGE_ENTER != 0) {
+                            return 13;
+                        }
+                        if (COUNT_MACHINE_INVALID_STATE_ID >= 0) {
+                            return 14;
+                        }
+                        if (COUNT_MACHINE_INVALID_EVENT_ID >= 0) {
+                            return 15;
+                        }
+                        if (COUNT_MACHINE_STATE_P5_COUNT < 0) {
+                            return 16;
+                        }
+                        if (COUNT_MACHINE_STATE_P5_COUNT_P14_INVALIDSTATEID < 0) {
+                            return 17;
+                        }
+                        if (COUNT_MACHINE_EVENT_P5_COUNT_P14_INVALIDSTATEID_P5_COUNT < 0) {
+                            return 18;
+                        }
+                        if (COUNT_MACHINE_ACTION_P5_COUNT_P5_COUNT < 0) {
+                            return 19;
+                        }
+                        if (COUNT_MACHINE_ACTION_P5_COUNT_P14_INVALIDSTATEID_P10_STAGEENTER < 0) {
+                            return 20;
+                        }
+                        return 0;
+                    }
+                    """
+                ),
+            )
+
+        assert "#define COUNT_MACHINE_STATE_COUNT COUNT_MACHINE_STATE_" not in header
+        assert "#define COUNT_MACHINE_ACTION_COUNT COUNT_MACHINE_ACTION_" not in header
+        assert duplicate_names == []
+        assert _reserved_cxx_public_names(header) == []
+        assert run.returncode == 0, run.stderr
+
+    def test_generated_public_metadata_identifiers_preserve_case_and_underscores(self):
+        dsl_code = """
+        def int trace = 0;
+        state Count {
+            event Internal;
+            enter abstract Count;
+            state Internal {
+                event Count;
+                enter abstract InvalidActionId;
+                during abstract Shared;
+            }
+            state Internal_ {
+                event Count;
+                enter abstract Shared;
+            }
+            state A {
+                enter abstract Shared;
+            }
+            state a {
+                enter abstract Shared;
+            }
+            state A_B {
+                enter abstract Shared;
+            }
+            state A__B {
+                enter abstract Shared;
+            }
+            [*] -> Internal;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
+                header = f.read()
+
+            duplicate_names = [
+                name
+                for name in _duplicate_macro_define_names(header)
+                if name != "COUNT_MACHINE_API"
+            ]
+            run = _compile_and_run_c_harness(
+                artifacts,
+                "case_and_underscore_safe_public_metadata",
+                textwrap.dedent(
+                    r"""
+                    #include "machine.h"
+
+                    int main(void)
+                    {
+                        CountMachineHooks hooks = COUNTMACHINE_HOOKS_INIT;
+                        (void)hooks.on_p5_Count_p8_Internal_p15_InvalidActionId;
+                        (void)hooks.on_p5_Count_p8_Internal_p6_Shared;
+                        (void)hooks.on_p5_Count_p9_Internalz00005F_p6_Shared;
+                        (void)hooks.on_p5_Count_p1_A_p6_Shared;
+                        (void)hooks.on_p5_Count_p1_a_p6_Shared;
+                        (void)hooks.on_p5_Count_p3_Az00005FB_p6_Shared;
+                        (void)hooks.on_p5_Count_p4_Az00005Fz00005FB_p6_Shared;
+
+                        if (COUNT_MACHINE_STATE_p5_Count_p8_Internal == COUNT_MACHINE_STATE_p5_Count_p9_Internalz00005F) {
+                            return 10;
+                        }
+                        if (COUNT_MACHINE_STATE_p5_Count_p1_A == COUNT_MACHINE_STATE_p5_Count_p1_a) {
+                            return 11;
+                        }
+                        if (COUNT_MACHINE_STATE_p5_Count_p3_Az00005FB == COUNT_MACHINE_STATE_p5_Count_p4_Az00005Fz00005FB) {
+                            return 12;
+                        }
+                        if (COUNT_MACHINE_EVENT_p5_Count_p8_Internal_p5_Count == COUNT_MACHINE_EVENT_p5_Count_p9_Internalz00005F_p5_Count) {
+                            return 13;
+                        }
+                        if (COUNT_MACHINE_ACTION_p5_Count_p8_Internal_p6_Shared == COUNT_MACHINE_ACTION_p5_Count_p9_Internalz00005F_p6_Shared) {
+                            return 14;
+                        }
+                        if (COUNT_MACHINE_ACTION_p5_Count_p1_A_p6_Shared == COUNT_MACHINE_ACTION_p5_Count_p1_a_p6_Shared) {
+                            return 15;
+                        }
+                        if (COUNT_MACHINE_ACTION_p5_Count_p3_Az00005FB_p6_Shared == COUNT_MACHINE_ACTION_p5_Count_p4_Az00005Fz00005FB_p6_Shared) {
+                            return 16;
+                        }
+                        return 0;
+                    }
+                    """
+                ),
+            )
+
+        assert "#define COUNT_MACHINE_STATE_P5_COUNT_P1_A " not in header
+        assert "#define COUNT_MACHINE_ACTION_P5_COUNT_P1_A_P6_SHARED " not in header
+        assert "#define COUNT_MACHINE_STATE_COUNT_A_B " not in header
+        assert duplicate_names == []
+        assert _reserved_cxx_public_names(header) == []
+        assert run.returncode == 0, run.stderr
 
     def test_generated_machine_runs_cycle_and_event_transition(self):
         dsl_code = """
@@ -243,7 +651,7 @@ class TestCBuiltinTemplate:
             hot_calls = []
 
             runtime.install_hooks({
-                'on_Root_System_A_AEnter': lambda ctx: hot_calls.append(
+                'on_p4_Root_p6_System_p1_A_p6_AEnter': lambda ctx: hot_calls.append(
                     ('hot', ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter'))
                 ),
             })
@@ -259,7 +667,7 @@ class TestCBuiltinTemplate:
             cold_calls = []
 
             runtime.install_hooks({
-                'on_Root_RootInit': lambda ctx: cold_calls.append(
+                'on_p4_Root_p8_RootInit': lambda ctx: cold_calls.append(
                     ('cold', ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter'))
                 ),
             })
@@ -327,8 +735,8 @@ class TestCBuiltinTemplate:
                 calls.append(('a_enter', ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter')))
 
             runtime.install_hooks({
-                'on_Root_RootInit': root_hook,
-                'on_Root_System_A_AEnter': a_enter_hook,
+                'on_p4_Root_p8_RootInit': root_hook,
+                'on_p4_Root_p6_System_p1_A_p6_AEnter': a_enter_hook,
             })
             runtime.cycle()
 
@@ -339,8 +747,8 @@ class TestCBuiltinTemplate:
                 ('a_enter', 'Root.System.A', 'enter', 0),
             ]
             assert runtime.get_abstract_hook_map() == {
-                'Root.RootInit': 'on_Root_RootInit',
-                'Root.System.A.AEnter': 'on_Root_System_A_AEnter',
+                'Root.RootInit': 'on_p4_Root_p8_RootInit',
+                'Root.System.A.AEnter': 'on_p4_Root_p6_System_p1_A_p6_AEnter',
             }
 
     def test_generated_machine_c_hooks_install_and_fire_with_user_data(self):
@@ -367,7 +775,6 @@ class TestCBuiltinTemplate:
                     r'''
                     #include "machine.h"
                     #include <stdio.h>
-                    #include <string.h>
 
                     typedef struct HookLog {
                         int count;
@@ -387,9 +794,9 @@ class TestCBuiltinTemplate:
                         (void)machine;
                         log->count += 1;
                         if (
-                            strcmp(ctx->action_name, "Root.RootInit") == 0 &&
-                            strcmp(ctx->state_path, "Root") == 0 &&
-                            strcmp(ctx->action_stage, "enter") == 0
+                            ctx->action_id == ROOT_MACHINE_ACTION_P4_ROOT_P8_ROOTINIT &&
+                            ctx->state_id == ROOT_MACHINE_STATE_ROOT &&
+                            ctx->action_stage_id == ROOT_MACHINE_STAGE_ENTER
                         ) {
                             log->root_seen = 1;
                             log->root_counter = ctx->vars->counter;
@@ -406,9 +813,9 @@ class TestCBuiltinTemplate:
                         (void)machine;
                         log->count += 1;
                         if (
-                            strcmp(ctx->action_name, "Root.System.A.AEnter") == 0 &&
-                            strcmp(ctx->state_path, "Root.System.A") == 0 &&
-                            strcmp(ctx->action_stage, "enter") == 0
+                            ctx->action_id == ROOT_MACHINE_ACTION_P4_ROOT_P6_SYSTEM_P1_A_P6_AENTER &&
+                            ctx->state_id == ROOT_MACHINE_STATE_P4_ROOT_P6_SYSTEM_P1_A &&
+                            ctx->action_stage_id == ROOT_MACHINE_STAGE_ENTER
                         ) {
                             log->a_seen = 1;
                             log->a_counter = ctx->vars->counter;
@@ -425,8 +832,8 @@ class TestCBuiltinTemplate:
                             return 10;
                         }
 
-                        hooks.on_Root_RootInit = root_hook;
-                        hooks.on_Root_System_A_AEnter = a_enter_hook;
+                        hooks.on_p4_Root_p8_RootInit = root_hook;
+                        hooks.on_p4_Root_p6_System_p1_A_p6_AEnter = a_enter_hook;
                         RootMachine_set_hooks(&machine, &hooks, &log);
 
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
@@ -438,7 +845,7 @@ class TestCBuiltinTemplate:
                         if (log.root_counter != 0 || log.a_counter != 0) {
                             return 13;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.System.A") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P6_SYSTEM_P1_A) {
                             return 14;
                         }
                         if (RootMachine_vars(&machine)->counter != 2) {
@@ -491,7 +898,6 @@ class TestCBuiltinTemplate:
                     r'''
                     #include "machine.h"
                     #include <stdio.h>
-                    #include <string.h>
 
                     typedef struct HookLog {
                         int total_calls;
@@ -509,27 +915,27 @@ class TestCBuiltinTemplate:
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
 
-                        if (strcmp(ctx->action_name, "Root.PlatformInit") != 0) {
+                        if (ctx->action_id != ROOT_MACHINE_ACTION_P4_ROOT_P12_PLATFORMINIT) {
                             log->total_calls = -100;
                             return;
                         }
-                        if (strcmp(ctx->abstract_target, "Root.PlatformInit") != 0) {
+                        if (ctx->abstract_target_id != ROOT_MACHINE_ACTION_P4_ROOT_P12_PLATFORMINIT) {
                             log->total_calls = -101;
                             return;
                         }
-                        if (strcmp(ctx->call_stage, "enter") != 0) {
+                        if (ctx->call_stage_id != ROOT_MACHINE_STAGE_ENTER) {
                             log->total_calls = -102;
                             return;
                         }
 
                         log->total_calls += 1;
-                        if (strcmp(ctx->state_path, "Root") == 0) {
+                        if (ctx->state_id == ROOT_MACHINE_STATE_ROOT) {
                             log->root_calls += 1;
                         }
-                        if (strcmp(ctx->state_path, "Root.A") == 0) {
+                        if (ctx->state_id == ROOT_MACHINE_STATE_P4_ROOT_P1_A) {
                             log->a_calls += 1;
                         }
-                        if (strcmp(ctx->state_path, "Root.B") == 0) {
+                        if (ctx->state_id == ROOT_MACHINE_STATE_P4_ROOT_P1_B) {
                             log->b_calls += 1;
                         }
                     }
@@ -540,14 +946,14 @@ class TestCBuiltinTemplate:
                         RootMachineHooks hooks = ROOTMACHINE_HOOKS_INIT;
                         HookLog log = {0};
                         static const RootMachineEventId go_events[] = {
-                            ROOT_MACHINE_EVENT_ROOT_A_GO
+                            ROOT_MACHINE_EVENT_P4_ROOT_P1_A_P2_GO
                         };
 
                         if (!RootMachine_init(&machine)) {
                             return 20;
                         }
 
-                        hooks.on_Root_PlatformInit = platform_hook;
+                        hooks.on_p4_Root_p12_PlatformInit = platform_hook;
                         RootMachine_set_hooks(&machine, &hooks, &log);
 
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
@@ -569,7 +975,7 @@ class TestCBuiltinTemplate:
                         if (RootMachine_vars(&machine)->trace != 11) {
                             return 26;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.B") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P1_B) {
                             return 27;
                         }
 
@@ -607,7 +1013,7 @@ class TestCBuiltinTemplate:
             def platform_init(ctx):
                 calls.append((ctx.action_name, ctx.action_stage, ctx.get_full_state_path()))
 
-            runtime.install_hooks({'on_Root_PlatformInit': platform_init})
+            runtime.install_hooks({'on_p4_Root_p12_PlatformInit': platform_init})
             runtime.cycle()
             assert runtime.current_state_path == ('Root', 'A')
             assert runtime.vars == {'trace': 1}
@@ -617,7 +1023,7 @@ class TestCBuiltinTemplate:
             assert runtime.vars == {'trace': 11}
 
             assert runtime.get_abstract_hook_map() == {
-                'Root.PlatformInit': 'on_Root_PlatformInit',
+                'Root.PlatformInit': 'on_p4_Root_p12_PlatformInit',
             }
             assert calls == [
                 ('Root.PlatformInit', 'enter', 'Root'),
@@ -651,8 +1057,8 @@ class TestCBuiltinTemplate:
             assert os.path.isfile(artifacts['readme_zh_file'])
             assert '# RootMachine' in readme
             assert 'RootMachineHooks' in readme
-            assert 'on_Root_RootInit' in readme
-            assert 'on_Root_System_A_AEnter' in readme
+            assert 'on_p4_Root_p8_RootInit' in readme
+            assert 'on_p4_Root_p6_System_p1_A_p6_AEnter' in readme
             assert '| Hook field | DSL action path | Owner state | Stage |' in readme
             assert '## Public Header Reference' in readme
             assert '## Function Reference' in readme
@@ -664,8 +1070,8 @@ class TestCBuiltinTemplate:
             assert 'should not mutate persistent machine variables' in readme
             assert 'RootMachine_vars(&machine)' in readme
             assert '| Hook 字段 | DSL 动作路径 | 所属状态 | 阶段 |' in readme_zh
-            assert 'on_Root_RootInit' in readme_zh
-            assert 'on_Root_System_A_AEnter' in readme_zh
+            assert 'on_p4_Root_p8_RootInit' in readme_zh
+            assert 'on_p4_Root_p6_System_p1_A_p6_AEnter' in readme_zh
             assert '## 公开头文件参考' in readme_zh
             assert '## 函数参考' in readme_zh
             assert '## 性能建议' in readme_zh
@@ -760,7 +1166,6 @@ class TestCBuiltinTemplate:
                 textwrap.dedent(
                     r"""
                     #include "machine.h"
-                    #include <string.h>
 
                     typedef struct HookLog {
                         int boot_calls;
@@ -775,7 +1180,7 @@ class TestCBuiltinTemplate:
                     {
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
-                        if (strcmp(ctx->action_name, "Control.Boot") == 0) {
+                        if (ctx->action_id == CONTROL_MACHINE_ACTION_P7_CONTROL_P4_BOOT) {
                             log->boot_calls += 1;
                         }
                     }
@@ -789,8 +1194,8 @@ class TestCBuiltinTemplate:
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
                         if (
-                            strcmp(ctx->action_name, "Control.Active.ActiveEnter") == 0 &&
-                            strcmp(ctx->state_path, "Control.Active") == 0
+                            ctx->action_id == CONTROL_MACHINE_ACTION_P7_CONTROL_P6_ACTIVE_P11_ACTIVEENTER &&
+                            ctx->state_id == CONTROL_MACHINE_STATE_P7_CONTROL_P6_ACTIVE
                         ) {
                             log->active_calls += 1;
                         }
@@ -802,20 +1207,20 @@ class TestCBuiltinTemplate:
                         ControlMachineHooks hooks = CONTROLMACHINE_HOOKS_INIT;
                         HookLog log = {0, 0};
                         static const ControlMachineEventId start_events[] = {
-                            CONTROL_MACHINE_EVENT_CONTROL_IDLE_START
+                            CONTROL_MACHINE_EVENT_P7_CONTROL_P4_IDLE_P5_START
                         };
 
                         if (!ControlMachine_init(&machine)) {
                             return 10;
                         }
-                        hooks.on_Control_Boot = boot_hook;
-                        hooks.on_Control_Active_ActiveEnter = active_hook;
+                        hooks.on_p7_Control_p4_Boot = boot_hook;
+                        hooks.on_p7_Control_p6_Active_p11_ActiveEnter = active_hook;
                         ControlMachine_set_hooks(&machine, &hooks, &log);
 
                         if (!ControlMachine_cycle(&machine, NULL, 0u)) {
                             return 11;
                         }
-                        if (strcmp(ControlMachine_current_state_path(&machine), "Control.Idle") != 0) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P4_IDLE) {
                             return 12;
                         }
                         if (ControlMachine_vars(&machine)->counter != (ControlMachineInt)1) {
@@ -828,7 +1233,7 @@ class TestCBuiltinTemplate:
                         if (!ControlMachine_cycle(&machine, start_events, 1u)) {
                             return 15;
                         }
-                        if (strcmp(ControlMachine_current_state_path(&machine), "Control.Active.Work") != 0) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P6_ACTIVE_P4_WORK) {
                             return 16;
                         }
                         if (
@@ -857,7 +1262,6 @@ class TestCBuiltinTemplate:
                 textwrap.dedent(
                     r"""
                     #include "machine.h"
-                    #include <cstring>
 
                     struct HookLog {
                         int boot_calls;
@@ -872,7 +1276,7 @@ class TestCBuiltinTemplate:
                     {
                         HookLog *log = static_cast<HookLog *>(user_data);
                         (void)machine;
-                        if (std::strcmp(ctx->action_name, "Control.Boot") == 0) {
+                        if (ctx->action_id == CONTROL_MACHINE_ACTION_P7_CONTROL_P4_BOOT) {
                             log->boot_calls += 1;
                         }
                     }
@@ -886,8 +1290,8 @@ class TestCBuiltinTemplate:
                         HookLog *log = static_cast<HookLog *>(user_data);
                         (void)machine;
                         if (
-                            std::strcmp(ctx->action_name, "Control.Active.ActiveEnter") == 0 &&
-                            std::strcmp(ctx->state_path, "Control.Active") == 0
+                            ctx->action_id == CONTROL_MACHINE_ACTION_P7_CONTROL_P6_ACTIVE_P11_ACTIVEENTER &&
+                            ctx->state_id == CONTROL_MACHINE_STATE_P7_CONTROL_P6_ACTIVE
                         ) {
                             log->active_calls += 1;
                         }
@@ -899,26 +1303,26 @@ class TestCBuiltinTemplate:
                         ControlMachineHooks hooks = CONTROLMACHINE_HOOKS_INIT;
                         HookLog log = {0, 0};
                         static const ControlMachineEventId start_events[] = {
-                            CONTROL_MACHINE_EVENT_CONTROL_IDLE_START
+                            CONTROL_MACHINE_EVENT_P7_CONTROL_P4_IDLE_P5_START
                         };
 
                         if (!ControlMachine_init(&machine)) {
                             return 30;
                         }
-                        hooks.on_Control_Boot = boot_hook;
-                        hooks.on_Control_Active_ActiveEnter = active_hook;
+                        hooks.on_p7_Control_p4_Boot = boot_hook;
+                        hooks.on_p7_Control_p6_Active_p11_ActiveEnter = active_hook;
                         ControlMachine_set_hooks(&machine, &hooks, &log);
 
                         if (!ControlMachine_cycle(&machine, 0, 0u)) {
                             return 31;
                         }
-                        if (std::strcmp(ControlMachine_current_state_path(&machine), "Control.Idle") != 0) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P4_IDLE) {
                             return 32;
                         }
                         if (!ControlMachine_cycle(&machine, start_events, 1u)) {
                             return 33;
                         }
-                        if (std::strcmp(ControlMachine_current_state_path(&machine), "Control.Active.Work") != 0) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P6_ACTIVE_P4_WORK) {
                             return 34;
                         }
                         if (
@@ -995,7 +1399,7 @@ class TestCBuiltinTemplate:
         with render_c_runtime(dsl_code) as (runtime, _):
             calls = []
             runtime.install_hooks({
-                'on_Root_B_B1_B1Enter': lambda ctx: calls.append(
+                'on_p4_Root_p1_B_p2_B1_p7_B1Enter': lambda ctx: calls.append(
                     (ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter'))
                 ),
             })
@@ -1031,13 +1435,12 @@ class TestCBuiltinTemplate:
                 textwrap.dedent(
                     r'''
                     #include "machine.h"
-                    #include <string.h>
 
                     int main(void)
                     {
                         RootMachine machine;
                         static const RootMachineEventId start_events[] = {
-                            ROOT_MACHINE_EVENT_ROOT_IDLE_START
+                            ROOT_MACHINE_EVENT_P4_ROOT_P4_IDLE_P5_START
                         };
 
                         if (!RootMachine_init(&machine)) {
@@ -1046,7 +1449,7 @@ class TestCBuiltinTemplate:
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
                             return 11;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.Idle") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P4_IDLE) {
                             return 12;
                         }
                         if (RootMachine_vars(&machine)->counter != (RootMachineInt)1) {
@@ -1056,7 +1459,7 @@ class TestCBuiltinTemplate:
                         if (!RootMachine_cycle(&machine, start_events, 1u)) {
                             return 14;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.Running") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P7_RUNNING) {
                             return 15;
                         }
                         if (RootMachine_vars(&machine)->counter != (RootMachineInt)111) {
@@ -1091,7 +1494,6 @@ class TestCBuiltinTemplate:
                 textwrap.dedent(
                     r'''
                     #include "machine.h"
-                    #include <string.h>
 
                     int main(void)
                     {
@@ -1105,19 +1507,19 @@ class TestCBuiltinTemplate:
                         initial_vars.counter = (RootMachineInt)40;
                         if (!RootMachine_hot_start(
                             &machine,
-                            ROOT_MACHINE_STATE_ROOT_SERVICE,
+                            ROOT_MACHINE_STATE_P4_ROOT_P7_SERVICE,
                             &initial_vars
                         )) {
                             return 21;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.Service") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P7_SERVICE) {
                             return 22;
                         }
 
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
                             return 23;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.Service.Ready") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P7_SERVICE_P5_READY) {
                             return 24;
                         }
                         if (RootMachine_vars(&machine)->counter != (RootMachineInt)43) {
@@ -1154,7 +1556,6 @@ class TestCBuiltinTemplate:
                 textwrap.dedent(
                     r'''
                     #include "machine.h"
-                    #include <string.h>
 
                     typedef struct HookLog {
                         int count;
@@ -1174,9 +1575,9 @@ class TestCBuiltinTemplate:
                         (void)machine;
                         log->count += 1;
                         if (
-                            strcmp(ctx->action_name, "Root.RootInit") == 0 &&
-                            strcmp(ctx->state_path, "Root") == 0 &&
-                            strcmp(ctx->action_stage, "enter") == 0
+                            ctx->action_id == ROOT_MACHINE_ACTION_P4_ROOT_P8_ROOTINIT &&
+                            ctx->state_id == ROOT_MACHINE_STATE_ROOT &&
+                            ctx->action_stage_id == ROOT_MACHINE_STAGE_ENTER
                         ) {
                             log->root_seen = 1;
                             log->root_counter = ctx->vars->counter;
@@ -1193,9 +1594,9 @@ class TestCBuiltinTemplate:
                         (void)machine;
                         log->count += 1;
                         if (
-                            strcmp(ctx->action_name, "Root.System.A.AEnter") == 0 &&
-                            strcmp(ctx->state_path, "Root.System.A") == 0 &&
-                            strcmp(ctx->action_stage, "enter") == 0
+                            ctx->action_id == ROOT_MACHINE_ACTION_P4_ROOT_P6_SYSTEM_P1_A_P6_AENTER &&
+                            ctx->state_id == ROOT_MACHINE_STATE_P4_ROOT_P6_SYSTEM_P1_A &&
+                            ctx->action_stage_id == ROOT_MACHINE_STAGE_ENTER
                         ) {
                             log->a_seen = 1;
                             log->a_counter = ctx->vars->counter;
@@ -1212,8 +1613,8 @@ class TestCBuiltinTemplate:
                             return 30;
                         }
 
-                        hooks.on_Root_RootInit = root_hook;
-                        hooks.on_Root_System_A_AEnter = a_enter_hook;
+                        hooks.on_p4_Root_p8_RootInit = root_hook;
+                        hooks.on_p4_Root_p6_System_p1_A_p6_AEnter = a_enter_hook;
                         RootMachine_set_hooks(&machine, &hooks, &log);
 
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
@@ -1271,7 +1672,6 @@ class TestCBuiltinTemplate:
                 textwrap.dedent(
                     r'''
                     #include "machine.h"
-                    #include <string.h>
 
                     typedef struct HookLog {
                         int total_calls;
@@ -1289,27 +1689,27 @@ class TestCBuiltinTemplate:
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
 
-                        if (strcmp(ctx->action_name, "Root.PlatformInit") != 0) {
+                        if (ctx->action_id != ROOT_MACHINE_ACTION_P4_ROOT_P12_PLATFORMINIT) {
                             log->total_calls = -100;
                             return;
                         }
-                        if (strcmp(ctx->abstract_target, "Root.PlatformInit") != 0) {
+                        if (ctx->abstract_target_id != ROOT_MACHINE_ACTION_P4_ROOT_P12_PLATFORMINIT) {
                             log->total_calls = -101;
                             return;
                         }
-                        if (strcmp(ctx->call_stage, "enter") != 0) {
+                        if (ctx->call_stage_id != ROOT_MACHINE_STAGE_ENTER) {
                             log->total_calls = -102;
                             return;
                         }
 
                         log->total_calls += 1;
-                        if (strcmp(ctx->state_path, "Root") == 0) {
+                        if (ctx->state_id == ROOT_MACHINE_STATE_ROOT) {
                             log->root_calls += 1;
                         }
-                        if (strcmp(ctx->state_path, "Root.A") == 0) {
+                        if (ctx->state_id == ROOT_MACHINE_STATE_P4_ROOT_P1_A) {
                             log->a_calls += 1;
                         }
-                        if (strcmp(ctx->state_path, "Root.B") == 0) {
+                        if (ctx->state_id == ROOT_MACHINE_STATE_P4_ROOT_P1_B) {
                             log->b_calls += 1;
                         }
                     }
@@ -1320,14 +1720,14 @@ class TestCBuiltinTemplate:
                         RootMachineHooks hooks = ROOTMACHINE_HOOKS_INIT;
                         HookLog log = {0, 0, 0, 0};
                         static const RootMachineEventId go_events[] = {
-                            ROOT_MACHINE_EVENT_ROOT_A_GO
+                            ROOT_MACHINE_EVENT_P4_ROOT_P1_A_P2_GO
                         };
 
                         if (!RootMachine_init(&machine)) {
                             return 40;
                         }
 
-                        hooks.on_Root_PlatformInit = platform_hook;
+                        hooks.on_p4_Root_p12_PlatformInit = platform_hook;
                         RootMachine_set_hooks(&machine, &hooks, &log);
 
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
@@ -1349,7 +1749,7 @@ class TestCBuiltinTemplate:
                         if (RootMachine_vars(&machine)->trace != (RootMachineInt)11) {
                             return 46;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.B") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P1_B) {
                             return 47;
                         }
 
@@ -1389,7 +1789,6 @@ class TestCBuiltinTemplate:
                 textwrap.dedent(
                     r'''
                     #include "machine.h"
-                    #include <string.h>
 
                     typedef struct HookLog {
                         int b1_enter_count;
@@ -1404,8 +1803,8 @@ class TestCBuiltinTemplate:
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
                         if (
-                            strcmp(ctx->action_name, "Root.B.B1.B1Enter") == 0 &&
-                            strcmp(ctx->state_path, "Root.B.B1") == 0
+                            ctx->action_id == ROOT_MACHINE_ACTION_P4_ROOT_P1_B_P2_B1_P7_B1ENTER &&
+                            ctx->state_id == ROOT_MACHINE_STATE_P4_ROOT_P1_B_P2_B1
                         ) {
                             log->b1_enter_count += 1;
                         }
@@ -1417,20 +1816,20 @@ class TestCBuiltinTemplate:
                         RootMachineHooks hooks = ROOTMACHINE_HOOKS_INIT;
                         HookLog log = {0};
                         static const RootMachineEventId go_events[] = {
-                            ROOT_MACHINE_EVENT_ROOT_A_GO
+                            ROOT_MACHINE_EVENT_P4_ROOT_P1_A_P2_GO
                         };
 
                         if (!RootMachine_init(&machine)) {
                             return 50;
                         }
 
-                        hooks.on_Root_B_B1_B1Enter = b1_enter_hook;
+                        hooks.on_p4_Root_p1_B_p2_B1_p7_B1Enter = b1_enter_hook;
                         RootMachine_set_hooks(&machine, &hooks, &log);
 
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
                             return 51;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.A") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P1_A) {
                             return 52;
                         }
                         if (RootMachine_vars(&machine)->counter != (RootMachineInt)1) {
@@ -1440,7 +1839,7 @@ class TestCBuiltinTemplate:
                         if (!RootMachine_cycle(&machine, go_events, 1u)) {
                             return 54;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.A") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P1_A) {
                             return 55;
                         }
                         if (RootMachine_vars(&machine)->counter != (RootMachineInt)2) {
@@ -1479,7 +1878,6 @@ class TestCBuiltinTemplate:
                 textwrap.dedent(
                     r'''
                     #include "machine.h"
-                    #include <string.h>
 
                     int main(void)
                     {
@@ -1491,7 +1889,7 @@ class TestCBuiltinTemplate:
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
                             return 61;
                         }
-                        if (strcmp(RootMachine_current_state_path(&machine), "Root.namespace_") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_p4_Root_p10_namespacez00005F) {
                             return 62;
                         }
                         if (RootMachine_vars(&machine)->class_ != (RootMachineInt)1) {

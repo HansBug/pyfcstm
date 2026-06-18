@@ -13,7 +13,7 @@ from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.template import extract_template
-from pyfcstm.utils import to_c_identifier
+from pyfcstm.utils import to_c_identifier, to_c_path_identifier
 
 
 class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
@@ -270,7 +270,9 @@ def _collect_hook_info_rows(model):
                 seen_abstract_paths.add(resolved.func_name)
                 rows.append({
                     'dsl_action_path': resolved.func_name,
-                    'hook_field': 'on_{name}'.format(name=to_c_identifier(resolved.func_name)),
+                    'hook_field': 'on_{name}'.format(
+                        name=to_c_path_identifier(resolved.func_name.split('.'))
+                    ),
                     'owner_state_path': '.'.join(resolved.parent.path),
                     'action_stage': resolved.stage,
                 })

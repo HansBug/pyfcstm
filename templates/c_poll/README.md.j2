@@ -43,7 +43,7 @@
 {% if resolved.item.is_abstract and resolved.item.func_name not in abstract_ns.rows | map(attribute='func_name') | list -%}
 {% set abstract_ns.rows = abstract_ns.rows + [{
     'func_name': resolved.item.func_name,
-    'hook_name': hook_field_name(resolved.item),
+    'hook_name': hook_field_id_name(resolved.item),
     'owner_path': action_owner_path(resolved.item),
     'stage': resolved.item.stage,
     'aspect': resolved.item.aspect,
@@ -239,7 +239,7 @@ int main(void)
 {% if event_ns.items %}
 
 {% for event_path in event_ns.items %}
-    event_checks.{{ event_check_field_name(event_path) }} = event_check;
+    event_checks.{{ event_check_field_id_name(event_path) }} = event_check;
 {% endfor %}
     {{ machine_class_name(model) }}_set_event_checks(&machine, &event_checks, NULL);
 {% endif %}
@@ -388,7 +388,7 @@ assign the fields you need, and register it with
 | Event path | Hook field |
 | --- | --- |
 {% for event_path in event_ns.items -%}
-| `{{ event_path }}` | `{{ event_check_field_name(event_path) }}` |
+| `{{ event_path }}` | `{{ event_check_field_id_name(event_path) }}` |
 {% endfor %}
 
 Initialize the table with
@@ -559,7 +559,7 @@ int main(void)
 {% if event_ns.items %}
     /* Fill every generated event-check field before cycle(). */
 {% for event_path in event_ns.items %}
-    event_checks.{{ event_check_field_name(event_path) }} = {% if loop.first %}selected_event_check{% else %}inactive_event_check{% endif %};
+    event_checks.{{ event_check_field_id_name(event_path) }} = {% if loop.first %}selected_event_check{% else %}inactive_event_check{% endif %};
 {% endfor %}
     {{ machine_class_name(model) }}_set_event_checks(&machine, &event_checks, &driver);
 {% endif %}
@@ -613,7 +613,7 @@ static int event_check(
     {{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT;
 
 {% for event_path in event_ns.items -%}
-event_checks.{{ event_check_field_name(event_path) }} = event_check;
+event_checks.{{ event_check_field_id_name(event_path) }} = event_check;
 {% endfor %}
 {{ machine_class_name(model) }}_set_event_checks(&machine, &event_checks, NULL);
 ```
@@ -662,7 +662,7 @@ initial_vars.{{ def_item.name | to_c_identifier }} = {{ def_item.init.to_ast_nod
 {% endfor %}
 {{ machine_class_name(model) }}_hot_start(
     &machine,
-    {{ machine_macro_name(model) }}_STATE_{{ (model.root_state | state_path) | to_c_identifier | upper }},
+    {{ machine_macro_name(model) }}_STATE_{{ model.root_state | state_slug | upper }},
     &initial_vars
 );
 ```
@@ -714,7 +714,7 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 | State path | Macro | Value |
 | --- | --- | ---: |
 {% for state in state_items -%}
-| `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ (state | state_path) | to_c_identifier | upper }}` | `{{ loop.index0 }}` |
+| `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ state | state_slug | upper }}` | `{{ loop.index0 }}` |
 {% endfor %}
 
 ## Event IDs
@@ -723,7 +723,7 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 | Event path | Macro | Value |
 | --- | --- | ---: |
 {% for event_path in event_ns.items -%}
-| `{{ event_path }}` | `{{ machine_macro_name(model) }}_EVENT_{{ event_path | to_c_identifier | upper }}` | `{{ loop.index0 }}` |
+| `{{ event_path }}` | `{{ machine_macro_name(model) }}_EVENT_{{ event_path.split('.') | to_c_path_identifier | upper }}` | `{{ loop.index0 }}` |
 {% endfor %}
 {% else %}
 This state machine does not define any events.
@@ -741,7 +741,7 @@ This state machine does not define any events.
 | Action path | Macro | Value |
 | --- | --- | ---: |
 {% for row in action_doc_ns.rows -%}
-| `{{ row['func_name'] }}` | `{{ machine_macro_name(model) }}_ACTION_{{ row['func_name'] | to_c_identifier | upper }}` | `{{ loop.index0 }}` |
+| `{{ row['func_name'] }}` | `{{ machine_macro_name(model) }}_ACTION_{{ row['func_name'].split('.') | to_c_path_identifier | upper }}` | `{{ loop.index0 }}` |
 {% endfor %}
 {% else %}
 This state machine does not define lifecycle actions.

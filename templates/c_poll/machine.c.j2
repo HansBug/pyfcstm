@@ -14,8 +14,8 @@
 {%- macro transition_guard_method_name(state, idx) -%}_guard_transition_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro transition_effect_method_name(state, idx) -%}_effect_transition_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro hook_field(action) -%}{{ action | hook_field_name }}{%- endmacro %}
-{%- macro hook_enum(action) -%}{{ machine_macro_name(model) }}_HOOK_{{ action.func_name | to_c_identifier | upper }}{%- endmacro %}
-{%- macro action_enum(action) -%}{{ machine_macro_name(model) }}_ACTION_{{ action.func_name | to_c_identifier | upper }}{%- endmacro %}
+{%- macro hook_enum(action) -%}{{ machine_macro_name(model) }}_HOOK_{{ action.func_name.split('.') | to_c_path_identifier | upper }}{%- endmacro %}
+{%- macro action_enum(action) -%}{{ machine_macro_name(model) }}_ACTION_{{ action.func_name.split('.') | to_c_path_identifier | upper }}{%- endmacro %}
 {%- macro stage_enum(stage) -%}{{ machine_macro_name(model) }}_STAGE_{{ stage | upper }}{%- endmacro %}
 {%- set action_scan = namespace(items=[]) -%}
 {%- for scan_state in model.walk_states() -%}
@@ -34,6 +34,15 @@
 {%- endfor -%}
 {%- endfor -%}
 {%- set action_ref_hop_limit = (action_scan.items | length) + 1 -%}
+{%- set all_events = namespace(items=[]) -%}
+{%- for scan_state in model.walk_states() -%}
+{%- for scan_event in scan_state.events.values() -%}
+{%- set all_events.items = all_events.items + [scan_event.path_name] -%}
+{%- endfor -%}
+{%- endfor -%}
+{% macro event_check_field(event_path) -%}
+{{ event_check_field_id_name(event_path) }}
+{%- endmacro %}
 {%- macro render_action_item(state, item, method_kind, idx) -%}
 {%- set resolved = namespace(item=item) -%}
 {%- for _ in range(action_ref_hop_limit) -%}
@@ -150,6 +159,7 @@ enum {
     'func_name': resolved.item.func_name,
     'hook_enum': hook_enum(resolved.item),
     'hook_field': hook_field(resolved.item),
+    'hook_field_id': 'on_' ~ (resolved.item.func_name.split('.') | to_c_path_identifier),
     'owner_path': action_owner_path(resolved.item),
     'stage': resolved.item.stage,
 }] -%}
@@ -161,12 +171,6 @@ enum {
 {{ '    ' }}{{ machine_macro_name(model) }}_HOOK_COUNT = {{ hook_ns.rows | length }}
 };
 
-{% set all_events = namespace(items=[]) -%}
-{% for state in model.walk_states() -%}
-{% for event in state.events.values() -%}
-{% set all_events.items = all_events.items + [event.path_name] -%}
-{% endfor -%}
-{% endfor -%}
 enum {
     {{ machine_macro_name(model) }}_EVENT_COUNT_INTERNAL = {{ all_events.items | length }},
     {{ machine_macro_name(model) }}_EVENTSET_SMALL_ARRAY_THRESHOLD_INTERNAL = 8,
@@ -304,10 +308,10 @@ static int _{{ machine_class_name(model) }}_validate_event_checks(
         return {{ machine_macro_name(model) }}_FAILURE;
     }
 {% for event_path in all_events.items %}
-    if (event_checks->{{ event_check_field_name(event_path) }} == NULL) {
+    if (event_checks->{{ event_check_field(event_path) }} == NULL) {
         _{{ machine_class_name(model) }}_set_error(
             machine,
-            "Missing required event check function: {{ machine_class_name(model) }}EventChecks.{{ event_check_field_name(event_path) }}.");
+            "Missing required event check function: {{ machine_class_name(model) }}EventChecks.{{ event_check_field(event_path) }}.");
         return {{ machine_macro_name(model) }}_FAILURE;
     }
 {% endfor %}
@@ -362,7 +366,7 @@ static int _{{ machine_class_name(model) }}_execute_event_check(
     switch (event_id) {
 {% for event_path in all_events.items %}
         case {{ loop.index0 }}:
-            return machine->event_checks->{{ event_check_field_name(event_path) }}(
+            return machine->event_checks->{{ event_check_field(event_path) }}(
                 machine,
                 &event_ctx,
                 machine->event_check_user_data
@@ -1478,8 +1482,8 @@ static PYFCSTM_GENERATED_UNUSED void _{{ machine_class_name(model) }}_execute_ab
 {% if hook_ns.rows %}
 {% for row in hook_ns.rows %}
         case {{ row['hook_enum'] }}:
-            if (machine->hooks->{{ row['hook_field'] }} != NULL) {
-                machine->hooks->{{ row['hook_field'] }}(machine, ctx, machine->hook_user_data);
+            if (machine->hooks->{{ row['hook_field_id'] }} != NULL) {
+                machine->hooks->{{ row['hook_field_id'] }}(machine, ctx, machine->hook_user_data);
             }
             break;
 {% endfor %}

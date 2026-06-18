@@ -200,6 +200,82 @@ class TestCBuiltinTemplate:
         assert "strcmp(ctx->" not in readme
         assert "strcmp(ctx->" not in source
 
+    def test_generated_public_metadata_identifiers_resist_path_collisions(self):
+        dsl_code = """
+        def int trace = 0;
+        state Root {
+            state A {
+                state B {
+                    event Go;
+                    enter abstract Shared;
+                }
+                [*] -> B;
+            }
+            state A_B {
+                event Go;
+                enter abstract Shared;
+            }
+            [*] -> A_B;
+            A_B -> A :: Swap;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
+                header = f.read()
+
+            run = _compile_and_run_c_harness(
+                artifacts,
+                "collision_safe_public_metadata",
+                textwrap.dedent(
+                    r"""
+                    #include "machine.h"
+
+                    int main(void)
+                    {
+                        RootMachine machine;
+                        RootMachineHooks hooks = ROOTMACHINE_HOOKS_INIT;
+                        static const RootMachineEventId swap_events[] = {
+                            ROOT_MACHINE_EVENT_P4_ROOT_P3_A_B_P4_SWAP
+                        };
+                        (void)hooks.on_p4_Root_p1_A_p1_B_p6_Shared;
+                        (void)hooks.on_p4_Root_p3_A_B_p6_Shared;
+
+                        if (ROOT_MACHINE_STATE_P4_ROOT_P1_A_P1_B == ROOT_MACHINE_STATE_P4_ROOT_P3_A_B) {
+                            return 10;
+                        }
+                        if (ROOT_MACHINE_EVENT_P4_ROOT_P1_A_P1_B_P2_GO == ROOT_MACHINE_EVENT_P4_ROOT_P3_A_B_P2_GO) {
+                            return 11;
+                        }
+                        if (ROOT_MACHINE_ACTION_P4_ROOT_P1_A_P1_B_P6_SHARED == ROOT_MACHINE_ACTION_P4_ROOT_P3_A_B_P6_SHARED) {
+                            return 12;
+                        }
+                        if (!RootMachine_init(&machine)) {
+                            return 13;
+                        }
+                        if (!RootMachine_cycle(&machine, NULL, 0u)) {
+                            return 14;
+                        }
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P3_A_B) {
+                            return 15;
+                        }
+                        if (!RootMachine_cycle(&machine, swap_events, 1u)) {
+                            return 16;
+                        }
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P1_A_P1_B) {
+                            return 17;
+                        }
+                        return 0;
+                    }
+                    """
+                ),
+            )
+
+        assert "#define ROOT_MACHINE_STATE_P4_ROOT_P1_A_B " not in header
+        assert "#define ROOT_MACHINE_EVENT_ROOT_A_B_GO " not in header
+        assert "#define ROOT_MACHINE_ACTION_ROOT_A_B_SHARED " not in header
+        assert run.returncode == 0, run.stderr
+
     def test_generated_machine_runs_cycle_and_event_transition(self):
         dsl_code = """
         def int counter = 0;
@@ -304,7 +380,7 @@ class TestCBuiltinTemplate:
             hot_calls = []
 
             runtime.install_hooks({
-                'on_Root_System_A_AEnter': lambda ctx: hot_calls.append(
+                'on_p4_Root_p6_System_p1_A_p6_AEnter': lambda ctx: hot_calls.append(
                     ('hot', ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter'))
                 ),
             })
@@ -320,7 +396,7 @@ class TestCBuiltinTemplate:
             cold_calls = []
 
             runtime.install_hooks({
-                'on_Root_RootInit': lambda ctx: cold_calls.append(
+                'on_p4_Root_p8_RootInit': lambda ctx: cold_calls.append(
                     ('cold', ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter'))
                 ),
             })
@@ -388,8 +464,8 @@ class TestCBuiltinTemplate:
                 calls.append(('a_enter', ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter')))
 
             runtime.install_hooks({
-                'on_Root_RootInit': root_hook,
-                'on_Root_System_A_AEnter': a_enter_hook,
+                'on_p4_Root_p8_RootInit': root_hook,
+                'on_p4_Root_p6_System_p1_A_p6_AEnter': a_enter_hook,
             })
             runtime.cycle()
 
@@ -400,8 +476,8 @@ class TestCBuiltinTemplate:
                 ('a_enter', 'Root.System.A', 'enter', 0),
             ]
             assert runtime.get_abstract_hook_map() == {
-                'Root.RootInit': 'on_Root_RootInit',
-                'Root.System.A.AEnter': 'on_Root_System_A_AEnter',
+                'Root.RootInit': 'on_p4_Root_p8_RootInit',
+                'Root.System.A.AEnter': 'on_p4_Root_p6_System_p1_A_p6_AEnter',
             }
 
     def test_generated_machine_c_hooks_install_and_fire_with_user_data(self):
@@ -447,7 +523,7 @@ class TestCBuiltinTemplate:
                         (void)machine;
                         log->count += 1;
                         if (
-                            ctx->action_id == ROOT_MACHINE_ACTION_ROOT_ROOTINIT &&
+                            ctx->action_id == ROOT_MACHINE_ACTION_P4_ROOT_P8_ROOTINIT &&
                             ctx->state_id == ROOT_MACHINE_STATE_ROOT &&
                             ctx->action_stage_id == ROOT_MACHINE_STAGE_ENTER
                         ) {
@@ -466,8 +542,8 @@ class TestCBuiltinTemplate:
                         (void)machine;
                         log->count += 1;
                         if (
-                            ctx->action_id == ROOT_MACHINE_ACTION_ROOT_SYSTEM_A_AENTER &&
-                            ctx->state_id == ROOT_MACHINE_STATE_ROOT_SYSTEM_A &&
+                            ctx->action_id == ROOT_MACHINE_ACTION_P4_ROOT_P6_SYSTEM_P1_A_P6_AENTER &&
+                            ctx->state_id == ROOT_MACHINE_STATE_P4_ROOT_P6_SYSTEM_P1_A &&
                             ctx->action_stage_id == ROOT_MACHINE_STAGE_ENTER
                         ) {
                             log->a_seen = 1;
@@ -485,8 +561,8 @@ class TestCBuiltinTemplate:
                             return 10;
                         }
 
-                        hooks.on_Root_RootInit = root_hook;
-                        hooks.on_Root_System_A_AEnter = a_enter_hook;
+                        hooks.on_p4_Root_p8_RootInit = root_hook;
+                        hooks.on_p4_Root_p6_System_p1_A_p6_AEnter = a_enter_hook;
                         RootMachine_set_hooks(&machine, &hooks, &log);
 
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
@@ -498,7 +574,7 @@ class TestCBuiltinTemplate:
                         if (log.root_counter != 0 || log.a_counter != 0) {
                             return 13;
                         }
-                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_SYSTEM_A) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P6_SYSTEM_P1_A) {
                             return 14;
                         }
                         if (RootMachine_vars(&machine)->counter != 2) {
@@ -568,11 +644,11 @@ class TestCBuiltinTemplate:
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
 
-                        if (ctx->action_id != ROOT_MACHINE_ACTION_ROOT_PLATFORMINIT) {
+                        if (ctx->action_id != ROOT_MACHINE_ACTION_P4_ROOT_P12_PLATFORMINIT) {
                             log->total_calls = -100;
                             return;
                         }
-                        if (ctx->abstract_target_id != ROOT_MACHINE_ACTION_ROOT_PLATFORMINIT) {
+                        if (ctx->abstract_target_id != ROOT_MACHINE_ACTION_P4_ROOT_P12_PLATFORMINIT) {
                             log->total_calls = -101;
                             return;
                         }
@@ -585,10 +661,10 @@ class TestCBuiltinTemplate:
                         if (ctx->state_id == ROOT_MACHINE_STATE_ROOT) {
                             log->root_calls += 1;
                         }
-                        if (ctx->state_id == ROOT_MACHINE_STATE_ROOT_A) {
+                        if (ctx->state_id == ROOT_MACHINE_STATE_P4_ROOT_P1_A) {
                             log->a_calls += 1;
                         }
-                        if (ctx->state_id == ROOT_MACHINE_STATE_ROOT_B) {
+                        if (ctx->state_id == ROOT_MACHINE_STATE_P4_ROOT_P1_B) {
                             log->b_calls += 1;
                         }
                     }
@@ -599,14 +675,14 @@ class TestCBuiltinTemplate:
                         RootMachineHooks hooks = ROOTMACHINE_HOOKS_INIT;
                         HookLog log = {0};
                         static const RootMachineEventId go_events[] = {
-                            ROOT_MACHINE_EVENT_ROOT_A_GO
+                            ROOT_MACHINE_EVENT_P4_ROOT_P1_A_P2_GO
                         };
 
                         if (!RootMachine_init(&machine)) {
                             return 20;
                         }
 
-                        hooks.on_Root_PlatformInit = platform_hook;
+                        hooks.on_p4_Root_p12_PlatformInit = platform_hook;
                         RootMachine_set_hooks(&machine, &hooks, &log);
 
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
@@ -628,7 +704,7 @@ class TestCBuiltinTemplate:
                         if (RootMachine_vars(&machine)->trace != 11) {
                             return 26;
                         }
-                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_B) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P1_B) {
                             return 27;
                         }
 
@@ -666,7 +742,7 @@ class TestCBuiltinTemplate:
             def platform_init(ctx):
                 calls.append((ctx.action_name, ctx.action_stage, ctx.get_full_state_path()))
 
-            runtime.install_hooks({'on_Root_PlatformInit': platform_init})
+            runtime.install_hooks({'on_p4_Root_p12_PlatformInit': platform_init})
             runtime.cycle()
             assert runtime.current_state_path == ('Root', 'A')
             assert runtime.vars == {'trace': 1}
@@ -676,7 +752,7 @@ class TestCBuiltinTemplate:
             assert runtime.vars == {'trace': 11}
 
             assert runtime.get_abstract_hook_map() == {
-                'Root.PlatformInit': 'on_Root_PlatformInit',
+                'Root.PlatformInit': 'on_p4_Root_p12_PlatformInit',
             }
             assert calls == [
                 ('Root.PlatformInit', 'enter', 'Root'),
@@ -710,8 +786,8 @@ class TestCBuiltinTemplate:
             assert os.path.isfile(artifacts['readme_zh_file'])
             assert '# RootMachine' in readme
             assert 'RootMachineHooks' in readme
-            assert 'on_Root_RootInit' in readme
-            assert 'on_Root_System_A_AEnter' in readme
+            assert 'on_p4_Root_p8_RootInit' in readme
+            assert 'on_p4_Root_p6_System_p1_A_p6_AEnter' in readme
             assert '| Hook field | DSL action path | Owner state | Stage |' in readme
             assert '## Public Header Reference' in readme
             assert '## Function Reference' in readme
@@ -723,8 +799,8 @@ class TestCBuiltinTemplate:
             assert 'should not mutate persistent machine variables' in readme
             assert 'RootMachine_vars(&machine)' in readme
             assert '| Hook 字段 | DSL 动作路径 | 所属状态 | 阶段 |' in readme_zh
-            assert 'on_Root_RootInit' in readme_zh
-            assert 'on_Root_System_A_AEnter' in readme_zh
+            assert 'on_p4_Root_p8_RootInit' in readme_zh
+            assert 'on_p4_Root_p6_System_p1_A_p6_AEnter' in readme_zh
             assert '## 公开头文件参考' in readme_zh
             assert '## 函数参考' in readme_zh
             assert '## 性能建议' in readme_zh
@@ -833,7 +909,7 @@ class TestCBuiltinTemplate:
                     {
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
-                        if (ctx->action_id == CONTROL_MACHINE_ACTION_CONTROL_BOOT) {
+                        if (ctx->action_id == CONTROL_MACHINE_ACTION_P7_CONTROL_P4_BOOT) {
                             log->boot_calls += 1;
                         }
                     }
@@ -847,8 +923,8 @@ class TestCBuiltinTemplate:
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
                         if (
-                            ctx->action_id == CONTROL_MACHINE_ACTION_CONTROL_ACTIVE_ACTIVEENTER &&
-                            ctx->state_id == CONTROL_MACHINE_STATE_CONTROL_ACTIVE
+                            ctx->action_id == CONTROL_MACHINE_ACTION_P7_CONTROL_P6_ACTIVE_P11_ACTIVEENTER &&
+                            ctx->state_id == CONTROL_MACHINE_STATE_P7_CONTROL_P6_ACTIVE
                         ) {
                             log->active_calls += 1;
                         }
@@ -860,20 +936,20 @@ class TestCBuiltinTemplate:
                         ControlMachineHooks hooks = CONTROLMACHINE_HOOKS_INIT;
                         HookLog log = {0, 0};
                         static const ControlMachineEventId start_events[] = {
-                            CONTROL_MACHINE_EVENT_CONTROL_IDLE_START
+                            CONTROL_MACHINE_EVENT_P7_CONTROL_P4_IDLE_P5_START
                         };
 
                         if (!ControlMachine_init(&machine)) {
                             return 10;
                         }
-                        hooks.on_Control_Boot = boot_hook;
-                        hooks.on_Control_Active_ActiveEnter = active_hook;
+                        hooks.on_p7_Control_p4_Boot = boot_hook;
+                        hooks.on_p7_Control_p6_Active_p11_ActiveEnter = active_hook;
                         ControlMachine_set_hooks(&machine, &hooks, &log);
 
                         if (!ControlMachine_cycle(&machine, NULL, 0u)) {
                             return 11;
                         }
-                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_CONTROL_IDLE) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P4_IDLE) {
                             return 12;
                         }
                         if (ControlMachine_vars(&machine)->counter != (ControlMachineInt)1) {
@@ -886,7 +962,7 @@ class TestCBuiltinTemplate:
                         if (!ControlMachine_cycle(&machine, start_events, 1u)) {
                             return 15;
                         }
-                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_CONTROL_ACTIVE_WORK) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P6_ACTIVE_P4_WORK) {
                             return 16;
                         }
                         if (
@@ -929,7 +1005,7 @@ class TestCBuiltinTemplate:
                     {
                         HookLog *log = static_cast<HookLog *>(user_data);
                         (void)machine;
-                        if (ctx->action_id == CONTROL_MACHINE_ACTION_CONTROL_BOOT) {
+                        if (ctx->action_id == CONTROL_MACHINE_ACTION_P7_CONTROL_P4_BOOT) {
                             log->boot_calls += 1;
                         }
                     }
@@ -943,8 +1019,8 @@ class TestCBuiltinTemplate:
                         HookLog *log = static_cast<HookLog *>(user_data);
                         (void)machine;
                         if (
-                            ctx->action_id == CONTROL_MACHINE_ACTION_CONTROL_ACTIVE_ACTIVEENTER &&
-                            ctx->state_id == CONTROL_MACHINE_STATE_CONTROL_ACTIVE
+                            ctx->action_id == CONTROL_MACHINE_ACTION_P7_CONTROL_P6_ACTIVE_P11_ACTIVEENTER &&
+                            ctx->state_id == CONTROL_MACHINE_STATE_P7_CONTROL_P6_ACTIVE
                         ) {
                             log->active_calls += 1;
                         }
@@ -956,26 +1032,26 @@ class TestCBuiltinTemplate:
                         ControlMachineHooks hooks = CONTROLMACHINE_HOOKS_INIT;
                         HookLog log = {0, 0};
                         static const ControlMachineEventId start_events[] = {
-                            CONTROL_MACHINE_EVENT_CONTROL_IDLE_START
+                            CONTROL_MACHINE_EVENT_P7_CONTROL_P4_IDLE_P5_START
                         };
 
                         if (!ControlMachine_init(&machine)) {
                             return 30;
                         }
-                        hooks.on_Control_Boot = boot_hook;
-                        hooks.on_Control_Active_ActiveEnter = active_hook;
+                        hooks.on_p7_Control_p4_Boot = boot_hook;
+                        hooks.on_p7_Control_p6_Active_p11_ActiveEnter = active_hook;
                         ControlMachine_set_hooks(&machine, &hooks, &log);
 
                         if (!ControlMachine_cycle(&machine, 0, 0u)) {
                             return 31;
                         }
-                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_CONTROL_IDLE) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P4_IDLE) {
                             return 32;
                         }
                         if (!ControlMachine_cycle(&machine, start_events, 1u)) {
                             return 33;
                         }
-                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_CONTROL_ACTIVE_WORK) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P6_ACTIVE_P4_WORK) {
                             return 34;
                         }
                         if (
@@ -1052,7 +1128,7 @@ class TestCBuiltinTemplate:
         with render_c_runtime(dsl_code) as (runtime, _):
             calls = []
             runtime.install_hooks({
-                'on_Root_B_B1_B1Enter': lambda ctx: calls.append(
+                'on_p4_Root_p1_B_p2_B1_p7_B1Enter': lambda ctx: calls.append(
                     (ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter'))
                 ),
             })
@@ -1093,7 +1169,7 @@ class TestCBuiltinTemplate:
                     {
                         RootMachine machine;
                         static const RootMachineEventId start_events[] = {
-                            ROOT_MACHINE_EVENT_ROOT_IDLE_START
+                            ROOT_MACHINE_EVENT_P4_ROOT_P4_IDLE_P5_START
                         };
 
                         if (!RootMachine_init(&machine)) {
@@ -1102,7 +1178,7 @@ class TestCBuiltinTemplate:
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
                             return 11;
                         }
-                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_IDLE) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P4_IDLE) {
                             return 12;
                         }
                         if (RootMachine_vars(&machine)->counter != (RootMachineInt)1) {
@@ -1112,7 +1188,7 @@ class TestCBuiltinTemplate:
                         if (!RootMachine_cycle(&machine, start_events, 1u)) {
                             return 14;
                         }
-                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_RUNNING) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P7_RUNNING) {
                             return 15;
                         }
                         if (RootMachine_vars(&machine)->counter != (RootMachineInt)111) {
@@ -1160,19 +1236,19 @@ class TestCBuiltinTemplate:
                         initial_vars.counter = (RootMachineInt)40;
                         if (!RootMachine_hot_start(
                             &machine,
-                            ROOT_MACHINE_STATE_ROOT_SERVICE,
+                            ROOT_MACHINE_STATE_P4_ROOT_P7_SERVICE,
                             &initial_vars
                         )) {
                             return 21;
                         }
-                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_SERVICE) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P7_SERVICE) {
                             return 22;
                         }
 
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
                             return 23;
                         }
-                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_SERVICE_READY) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P7_SERVICE_P5_READY) {
                             return 24;
                         }
                         if (RootMachine_vars(&machine)->counter != (RootMachineInt)43) {
@@ -1228,7 +1304,7 @@ class TestCBuiltinTemplate:
                         (void)machine;
                         log->count += 1;
                         if (
-                            ctx->action_id == ROOT_MACHINE_ACTION_ROOT_ROOTINIT &&
+                            ctx->action_id == ROOT_MACHINE_ACTION_P4_ROOT_P8_ROOTINIT &&
                             ctx->state_id == ROOT_MACHINE_STATE_ROOT &&
                             ctx->action_stage_id == ROOT_MACHINE_STAGE_ENTER
                         ) {
@@ -1247,8 +1323,8 @@ class TestCBuiltinTemplate:
                         (void)machine;
                         log->count += 1;
                         if (
-                            ctx->action_id == ROOT_MACHINE_ACTION_ROOT_SYSTEM_A_AENTER &&
-                            ctx->state_id == ROOT_MACHINE_STATE_ROOT_SYSTEM_A &&
+                            ctx->action_id == ROOT_MACHINE_ACTION_P4_ROOT_P6_SYSTEM_P1_A_P6_AENTER &&
+                            ctx->state_id == ROOT_MACHINE_STATE_P4_ROOT_P6_SYSTEM_P1_A &&
                             ctx->action_stage_id == ROOT_MACHINE_STAGE_ENTER
                         ) {
                             log->a_seen = 1;
@@ -1266,8 +1342,8 @@ class TestCBuiltinTemplate:
                             return 30;
                         }
 
-                        hooks.on_Root_RootInit = root_hook;
-                        hooks.on_Root_System_A_AEnter = a_enter_hook;
+                        hooks.on_p4_Root_p8_RootInit = root_hook;
+                        hooks.on_p4_Root_p6_System_p1_A_p6_AEnter = a_enter_hook;
                         RootMachine_set_hooks(&machine, &hooks, &log);
 
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
@@ -1342,11 +1418,11 @@ class TestCBuiltinTemplate:
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
 
-                        if (ctx->action_id != ROOT_MACHINE_ACTION_ROOT_PLATFORMINIT) {
+                        if (ctx->action_id != ROOT_MACHINE_ACTION_P4_ROOT_P12_PLATFORMINIT) {
                             log->total_calls = -100;
                             return;
                         }
-                        if (ctx->abstract_target_id != ROOT_MACHINE_ACTION_ROOT_PLATFORMINIT) {
+                        if (ctx->abstract_target_id != ROOT_MACHINE_ACTION_P4_ROOT_P12_PLATFORMINIT) {
                             log->total_calls = -101;
                             return;
                         }
@@ -1359,10 +1435,10 @@ class TestCBuiltinTemplate:
                         if (ctx->state_id == ROOT_MACHINE_STATE_ROOT) {
                             log->root_calls += 1;
                         }
-                        if (ctx->state_id == ROOT_MACHINE_STATE_ROOT_A) {
+                        if (ctx->state_id == ROOT_MACHINE_STATE_P4_ROOT_P1_A) {
                             log->a_calls += 1;
                         }
-                        if (ctx->state_id == ROOT_MACHINE_STATE_ROOT_B) {
+                        if (ctx->state_id == ROOT_MACHINE_STATE_P4_ROOT_P1_B) {
                             log->b_calls += 1;
                         }
                     }
@@ -1373,14 +1449,14 @@ class TestCBuiltinTemplate:
                         RootMachineHooks hooks = ROOTMACHINE_HOOKS_INIT;
                         HookLog log = {0, 0, 0, 0};
                         static const RootMachineEventId go_events[] = {
-                            ROOT_MACHINE_EVENT_ROOT_A_GO
+                            ROOT_MACHINE_EVENT_P4_ROOT_P1_A_P2_GO
                         };
 
                         if (!RootMachine_init(&machine)) {
                             return 40;
                         }
 
-                        hooks.on_Root_PlatformInit = platform_hook;
+                        hooks.on_p4_Root_p12_PlatformInit = platform_hook;
                         RootMachine_set_hooks(&machine, &hooks, &log);
 
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
@@ -1402,7 +1478,7 @@ class TestCBuiltinTemplate:
                         if (RootMachine_vars(&machine)->trace != (RootMachineInt)11) {
                             return 46;
                         }
-                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_B) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P1_B) {
                             return 47;
                         }
 
@@ -1456,8 +1532,8 @@ class TestCBuiltinTemplate:
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
                         if (
-                            ctx->action_id == ROOT_MACHINE_ACTION_ROOT_B_B1_B1ENTER &&
-                            ctx->state_id == ROOT_MACHINE_STATE_ROOT_B_B1
+                            ctx->action_id == ROOT_MACHINE_ACTION_P4_ROOT_P1_B_P2_B1_P7_B1ENTER &&
+                            ctx->state_id == ROOT_MACHINE_STATE_P4_ROOT_P1_B_P2_B1
                         ) {
                             log->b1_enter_count += 1;
                         }
@@ -1469,20 +1545,20 @@ class TestCBuiltinTemplate:
                         RootMachineHooks hooks = ROOTMACHINE_HOOKS_INIT;
                         HookLog log = {0};
                         static const RootMachineEventId go_events[] = {
-                            ROOT_MACHINE_EVENT_ROOT_A_GO
+                            ROOT_MACHINE_EVENT_P4_ROOT_P1_A_P2_GO
                         };
 
                         if (!RootMachine_init(&machine)) {
                             return 50;
                         }
 
-                        hooks.on_Root_B_B1_B1Enter = b1_enter_hook;
+                        hooks.on_p4_Root_p1_B_p2_B1_p7_B1Enter = b1_enter_hook;
                         RootMachine_set_hooks(&machine, &hooks, &log);
 
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
                             return 51;
                         }
-                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_A) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P1_A) {
                             return 52;
                         }
                         if (RootMachine_vars(&machine)->counter != (RootMachineInt)1) {
@@ -1492,7 +1568,7 @@ class TestCBuiltinTemplate:
                         if (!RootMachine_cycle(&machine, go_events, 1u)) {
                             return 54;
                         }
-                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_A) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P1_A) {
                             return 55;
                         }
                         if (RootMachine_vars(&machine)->counter != (RootMachineInt)2) {
@@ -1542,7 +1618,7 @@ class TestCBuiltinTemplate:
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
                             return 61;
                         }
-                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_NAMESPACE) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P10_NAMESPACE_) {
                             return 62;
                         }
                         if (RootMachine_vars(&machine)->class_ != (RootMachineInt)1) {

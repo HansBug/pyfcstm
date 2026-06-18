@@ -50,16 +50,31 @@ globals:
     params:
       - action
     template: "on_{{ action.func_name | to_c_identifier }}"
+  hook_field_id_name:
+    type: template
+    params:
+      - action
+    template: "on_{{ action.func_name.split('.') | to_c_path_identifier }}"
   event_check_field_name:
     type: template
     params:
       - event_path
     template: "check_{{ event_path | to_c_identifier }}"
+  event_check_field_id_name:
+    type: template
+    params:
+      - event_path
+    template: "check_{{ event_path.split('.') | to_c_path_identifier }}"
   hook_enum_name:
     type: template
     params:
       - action
     template: "{{ machine_macro_name(model) }}_HOOK_{{ action.func_name | to_c_identifier | upper }}"
+  hook_enum_id_name:
+    type: template
+    params:
+      - action
+    template: "{{ machine_macro_name(model) }}_HOOK_{{ action.func_name.split('.') | to_c_path_identifier | upper }}"
   action_owner_path:
     type: template
     params:
@@ -102,16 +117,31 @@ filters:
     params:
       - action
     template: "{{ hook_field_name(action) }}"
+  hook_field_id_name:
+    type: template
+    params:
+      - action
+    template: "{{ hook_field_id_name(action) }}"
   event_check_field_name:
     type: template
     params:
       - event_path
     template: "{{ event_check_field_name(event_path) }}"
+  event_check_field_id_name:
+    type: template
+    params:
+      - event_path
+    template: "{{ event_check_field_id_name(event_path) }}"
   hook_enum_name:
     type: template
     params:
       - action
     template: "{{ hook_enum_name(action) }}"
+  hook_enum_id_name:
+    type: template
+    params:
+      - action
+    template: "{{ hook_enum_id_name(action) }}"
   action_owner_path:
     type: template
     params:

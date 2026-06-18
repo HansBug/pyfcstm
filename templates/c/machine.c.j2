@@ -14,8 +14,8 @@
 {%- macro transition_guard_method_name(state, idx) -%}_guard_transition_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro transition_effect_method_name(state, idx) -%}_effect_transition_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro hook_field(action) -%}{{ action | hook_field_name }}{%- endmacro %}
-{%- macro hook_enum(action) -%}{{ machine_macro_name(model) }}_HOOK_{{ action.func_name | to_c_identifier | upper }}{%- endmacro %}
-{%- macro action_enum(action) -%}{{ machine_macro_name(model) }}_ACTION_{{ action.func_name | to_c_identifier | upper }}{%- endmacro %}
+{%- macro hook_enum(action) -%}{{ machine_macro_name(model) }}_HOOK_{{ action.func_name.split('.') | to_c_path_identifier | upper }}{%- endmacro %}
+{%- macro action_enum(action) -%}{{ machine_macro_name(model) }}_ACTION_{{ action.func_name.split('.') | to_c_path_identifier | upper }}{%- endmacro %}
 {%- macro stage_enum(stage) -%}{{ machine_macro_name(model) }}_STAGE_{{ stage | upper }}{%- endmacro %}
 {%- set action_scan = namespace(items=[]) -%}
 {%- for scan_state in model.walk_states() -%}
@@ -150,6 +150,7 @@ enum {
     'func_name': resolved.item.func_name,
     'hook_enum': hook_enum(resolved.item),
     'hook_field': hook_field(resolved.item),
+    'hook_field_id': 'on_' ~ (resolved.item.func_name.split('.') | to_c_path_identifier),
     'owner_path': action_owner_path(resolved.item),
     'stage': resolved.item.stage,
 }] -%}
@@ -1427,8 +1428,8 @@ static PYFCSTM_GENERATED_UNUSED void _{{ machine_class_name(model) }}_execute_ab
 {% if hook_ns.rows %}
 {% for row in hook_ns.rows %}
         case {{ row['hook_enum'] }}:
-            if (machine->hooks->{{ row['hook_field'] }} != NULL) {
-                machine->hooks->{{ row['hook_field'] }}(machine, ctx, machine->hook_user_data);
+            if (machine->hooks->{{ row['hook_field_id'] }} != NULL) {
+                machine->hooks->{{ row['hook_field_id'] }}(machine, ctx, machine->hook_user_data);
             }
             break;
 {% endfor %}

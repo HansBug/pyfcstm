@@ -102,11 +102,11 @@ stable for the rest of that cycle.
 
 ## Numeric metadata discipline
 
-Generation-time enumerable runtime metadata should use generated macros and
-numeric ids in the public hot-path ABI. This applies to states, events,
-abstract actions, named `ref` actions, lifecycle stages, event-check event ids,
-current-state ids, active-leaf ids, and future finite metadata domains with the
-same shape.
+Generation-time enumerable runtime metadata should use collision-resistant
+generated macros and numeric ids in the public hot-path ABI. This applies to
+states, events, abstract actions, named `ref` actions, lifecycle stages,
+event-check event ids, current-state ids, active-leaf ids, and future finite
+metadata domains with the same shape.
 
 Do not keep `const char *` fields in `ExecutionContext`, `EventContext`, or
 other hot-path contracts merely for readability. Do not reintroduce `strcmp()`
@@ -130,6 +130,14 @@ When adding a new event-check, hook-context, or public metadata value, first ask
 whether the domain is completely known while rendering the template. If it is,
 generate a macro-backed integer id and keep any string mapping outside the
 generated runtime hot path.
+
+Generated public identifiers for finite domains must preserve path boundaries
+instead of flattening dotted paths with plain underscore joins. Legal DSL paths
+such as `Root.A.B` and `Root.A_B` must never produce the same public state,
+event, action, hook, or event-check identifier. Use the template's
+collision-resistant path-identifier helpers for canonical public macros and
+callback-table fields; short aliases may exist only when the alias is provably
+unique within that generated domain.
 
 ## Relationship to `c`
 

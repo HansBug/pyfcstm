@@ -176,6 +176,110 @@ class TestCPollBuiltinTemplate:
         assert "RootMachineEventId event_id;" in event_context_block
         assert "RootMachineStateId current_state_id;" in event_context_block
 
+    def test_generated_public_metadata_identifiers_resist_path_collisions(self):
+        dsl_code = """
+        def int trace = 0;
+        state Root {
+            state A {
+                state B {
+                    event Go;
+                    enter abstract Shared;
+                }
+                [*] -> B;
+            }
+            state A_B {
+                event Go;
+                enter abstract Shared;
+            }
+            [*] -> A_B;
+            A_B -> A :: Swap;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
+                header = f.read()
+
+            run = _compile_and_run_c_harness(
+                artifacts,
+                "collision_safe_public_metadata",
+                textwrap.dedent(
+                    r"""
+                    #include "machine.h"
+
+                    static int inactive_event(
+                        RootMachine *machine,
+                        const RootMachineEventContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        (void)machine;
+                        (void)ctx;
+                        (void)user_data;
+                        return 0;
+                    }
+
+                    static int swap_event(
+                        RootMachine *machine,
+                        const RootMachineEventContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        (void)machine;
+                        (void)user_data;
+                        return (
+                            ctx->event_id == ROOT_MACHINE_EVENT_P4_ROOT_P3_A_B_P4_SWAP &&
+                            ctx->current_state_id == ROOT_MACHINE_STATE_P4_ROOT_P3_A_B
+                        );
+                    }
+
+                    int main(void)
+                    {
+                        RootMachine machine;
+                        RootMachineHooks hooks = ROOTMACHINE_HOOKS_INIT;
+                        RootMachineEventChecks event_checks = ROOTMACHINE_EVENT_CHECKS_INIT;
+                        (void)hooks.on_p4_Root_p1_A_p1_B_p6_Shared;
+                        (void)hooks.on_p4_Root_p3_A_B_p6_Shared;
+
+                        if (ROOT_MACHINE_STATE_P4_ROOT_P1_A_P1_B == ROOT_MACHINE_STATE_P4_ROOT_P3_A_B) {
+                            return 10;
+                        }
+                        if (ROOT_MACHINE_EVENT_P4_ROOT_P1_A_P1_B_P2_GO == ROOT_MACHINE_EVENT_P4_ROOT_P3_A_B_P2_GO) {
+                            return 11;
+                        }
+                        if (ROOT_MACHINE_ACTION_P4_ROOT_P1_A_P1_B_P6_SHARED == ROOT_MACHINE_ACTION_P4_ROOT_P3_A_B_P6_SHARED) {
+                            return 12;
+                        }
+                        if (!RootMachine_init(&machine)) {
+                            return 13;
+                        }
+                        event_checks.check_p4_Root_p3_A_B_p4_Swap = swap_event;
+                        event_checks.check_p4_Root_p1_A_p1_B_p2_Go = inactive_event;
+                        event_checks.check_p4_Root_p3_A_B_p2_Go = inactive_event;
+                        RootMachine_set_event_checks(&machine, &event_checks, NULL);
+                        if (!RootMachine_cycle(&machine)) {
+                            return 14;
+                        }
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P3_A_B) {
+                            return 15;
+                        }
+                        if (!RootMachine_cycle(&machine)) {
+                            return 16;
+                        }
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P1_A_P1_B) {
+                            return 17;
+                        }
+                        return 0;
+                    }
+                    """
+                ),
+            )
+
+        assert "#define ROOT_MACHINE_STATE_P4_ROOT_P1_A_B " not in header
+        assert "#define ROOT_MACHINE_EVENT_ROOT_A_B_GO " not in header
+        assert "#define ROOT_MACHINE_ACTION_ROOT_A_B_SHARED " not in header
+        assert run.returncode == 0, run.stderr
+
     def test_generated_machine_source_banners_document_file_contract(self):
         with render_c_artifacts(_representative_gate_dsl()) as artifacts:
             with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
@@ -319,7 +423,7 @@ class TestCPollBuiltinTemplate:
             hot_calls = []
 
             runtime.install_hooks({
-                'on_Root_System_A_AEnter': lambda ctx: hot_calls.append(
+                'on_p4_Root_p6_System_p1_A_p6_AEnter': lambda ctx: hot_calls.append(
                     ('hot', ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter'))
                 ),
             })
@@ -335,7 +439,7 @@ class TestCPollBuiltinTemplate:
             cold_calls = []
 
             runtime.install_hooks({
-                'on_Root_RootInit': lambda ctx: cold_calls.append(
+                'on_p4_Root_p8_RootInit': lambda ctx: cold_calls.append(
                     ('cold', ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter'))
                 ),
             })
@@ -394,7 +498,7 @@ class TestCPollBuiltinTemplate:
             calls = []
 
             runtime.install_event_checks({
-                'check_Root_A_Go': lambda ctx: calls.append(
+                'check_p4_Root_p1_A_p2_Go': lambda ctx: calls.append(
                     (ctx.event_path, ctx.get_full_state_path(), ctx.get_var('counter'))
                 ) or True,
             })
@@ -429,11 +533,11 @@ class TestCPollBuiltinTemplate:
             trace = []
 
             runtime.install_hooks({
-                'on_Root_RootInit': lambda ctx: trace.append(('hook', ctx.action_name, ctx.get_var('counter'))),
-                'on_Root_B_BEnter': lambda ctx: trace.append(('hook', ctx.action_name, ctx.get_var('counter'))),
+                'on_p4_Root_p8_RootInit': lambda ctx: trace.append(('hook', ctx.action_name, ctx.get_var('counter'))),
+                'on_p4_Root_p1_B_p6_BEnter': lambda ctx: trace.append(('hook', ctx.action_name, ctx.get_var('counter'))),
             })
             runtime.install_event_checks({
-                'check_Root_A_Go': lambda ctx: trace.append(('event', ctx.event_path, ctx.get_var('counter'))) or True,
+                'check_p4_Root_p1_A_p2_Go': lambda ctx: trace.append(('event', ctx.event_path, ctx.get_var('counter'))) or True,
             })
 
             runtime.cycle()
@@ -505,7 +609,7 @@ class TestCPollBuiltinTemplate:
             assert '_cycle(&machine)' in readme
             assert 'cycle(machine, event_ids, event_count)' not in readme
             assert 'fails fast' in readme
-            assert 'check_Root_A_Go' in readme
+            assert 'check_p4_Root_p1_A_p2_Go' in readme
             assert 'return non-zero' in readme
             assert 'return `0`' in readme
 
@@ -515,7 +619,7 @@ class TestCPollBuiltinTemplate:
             assert '_cycle(&machine)' in readme_zh
             assert 'cycle(machine, event_ids, event_count)' not in readme_zh
             assert '直接失败' in readme_zh
-            assert 'check_Root_A_Go' in readme_zh
+            assert 'check_p4_Root_p1_A_p2_Go' in readme_zh
             assert '返回非零' in readme_zh
             assert '返回 `0`' in readme_zh
 
@@ -589,8 +693,8 @@ class TestCPollBuiltinTemplate:
                         EventLog *log = (EventLog *)user_data;
                         (void)machine;
                         if (
-                            ctx->event_id == CONTROL_MACHINE_EVENT_CONTROL_IDLE_START &&
-                            ctx->current_state_id == CONTROL_MACHINE_STATE_CONTROL_IDLE
+                            ctx->event_id == CONTROL_MACHINE_EVENT_P7_CONTROL_P4_IDLE_P5_START &&
+                            ctx->current_state_id == CONTROL_MACHINE_STATE_P7_CONTROL_P4_IDLE
                         ) {
                             log->seen_start += 1;
                         }
@@ -605,7 +709,7 @@ class TestCPollBuiltinTemplate:
                     {
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
-                        if (ctx->action_id == CONTROL_MACHINE_ACTION_CONTROL_BOOT) {
+                        if (ctx->action_id == CONTROL_MACHINE_ACTION_P7_CONTROL_P4_BOOT) {
                             log->boot_calls += 1;
                         }
                     }
@@ -618,7 +722,7 @@ class TestCPollBuiltinTemplate:
                     {
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
-                        if (ctx->action_id == CONTROL_MACHINE_ACTION_CONTROL_ACTIVE_ACTIVEENTER) {
+                        if (ctx->action_id == CONTROL_MACHINE_ACTION_P7_CONTROL_P6_ACTIVE_P11_ACTIVEENTER) {
                             log->active_calls += 1;
                         }
                     }
@@ -638,16 +742,16 @@ class TestCPollBuiltinTemplate:
                             return 11;
                         }
 
-                        hooks.on_Control_Boot = boot_hook;
-                        hooks.on_Control_Active_ActiveEnter = active_hook;
+                        hooks.on_p7_Control_p4_Boot = boot_hook;
+                        hooks.on_p7_Control_p6_Active_p11_ActiveEnter = active_hook;
                         ControlMachine_set_hooks(&machine, &hooks, &hooks_log);
-                        event_checks.check_Control_Idle_Start = check_start;
+                        event_checks.check_p7_Control_p4_Idle_p5_Start = check_start;
                         ControlMachine_set_event_checks(&machine, &event_checks, &log);
 
                         if (!ControlMachine_cycle(&machine)) {
                             return 12;
                         }
-                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_CONTROL_IDLE) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P4_IDLE) {
                             return 13;
                         }
                         if (ControlMachine_vars(&machine)->counter != 1) {
@@ -661,7 +765,7 @@ class TestCPollBuiltinTemplate:
                         if (!ControlMachine_cycle(&machine)) {
                             return 16;
                         }
-                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_CONTROL_ACTIVE_WORK) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P6_ACTIVE_P4_WORK) {
                             return 17;
                         }
                         if (
@@ -709,8 +813,8 @@ class TestCPollBuiltinTemplate:
                         EventLog *log = static_cast<EventLog *>(user_data);
                         (void)machine;
                         if (
-                            ctx->event_id == CONTROL_MACHINE_EVENT_CONTROL_IDLE_START &&
-                            ctx->current_state_id == CONTROL_MACHINE_STATE_CONTROL_IDLE
+                            ctx->event_id == CONTROL_MACHINE_EVENT_P7_CONTROL_P4_IDLE_P5_START &&
+                            ctx->current_state_id == CONTROL_MACHINE_STATE_P7_CONTROL_P4_IDLE
                         ) {
                             log->seen_start += 1;
                         }
@@ -726,20 +830,20 @@ class TestCPollBuiltinTemplate:
                         if (!ControlMachine_init(&machine)) {
                             return 20;
                         }
-                        event_checks.check_Control_Idle_Start = check_start;
+                        event_checks.check_p7_Control_p4_Idle_p5_Start = check_start;
                         ControlMachine_set_event_checks(&machine, &event_checks, &log);
 
                         if (!ControlMachine_cycle(&machine)) {
                             return 21;
                         }
-                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_CONTROL_IDLE) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P4_IDLE) {
                             return 22;
                         }
                         log.allow_start = 1;
                         if (!ControlMachine_cycle(&machine)) {
                             return 23;
                         }
-                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_CONTROL_ACTIVE_WORK) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P6_ACTIVE_P4_WORK) {
                             return 24;
                         }
                         if (
@@ -788,7 +892,7 @@ class TestCPollBuiltinTemplate:
                         if (!RootMachine_cycle(&machine)) {
                             return 31;
                         }
-                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_ROOT_TEMPLATE) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P9_TEMPLATE_) {
                             return 32;
                         }
                         return 0;

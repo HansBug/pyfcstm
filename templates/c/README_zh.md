@@ -78,7 +78,7 @@ Generated C runtime 可能被嵌入长期稳定运行的控制系统，因此内
 
 ## Numeric metadata 维护纪律
 
-生成期可完全枚举的 runtime metadata，应在公开热路径 ABI 中使用 generated macros 和 numeric ids。该规则适用于 state、event、abstract action、具名 `ref` action、lifecycle stage、current-state id、active-leaf id，以及未来同类的有限 metadata domain。
+生成期可完全枚举的 runtime metadata，应在公开热路径 ABI 中使用 collision-resistant generated macros 和 numeric ids。该规则适用于 state、event、abstract action、具名 `ref` action、lifecycle stage、current-state id、active-leaf id，以及未来同类的有限 metadata domain。
 
 不要为了“可读性”在 `ExecutionContext`、事件提交或其他热路径 contract 中保留 `const char *` 字段。只要比较域在模板渲染时已知，就不要把 `strcmp()` 重新引入 runtime selection 或 hook-context checks。真正可读的集成面应是 `machine.h` 中生成的 macro set，例如 `..._STATE_*`、`..._EVENT_*`、`..._ACTION_*` 和 `..._STAGE_*`。
 
@@ -91,6 +91,8 @@ Generated C runtime 可能被嵌入长期稳定运行的控制系统，因此内
 - 生成期确实不存在稳定有限 id domain 的不可枚举输出。
 
 新增 context field 或 public metadata value 时，先判断该 domain 是否在模板渲染时已经完全已知。若答案是肯定的，就生成 macro-backed integer id，并把任何字符串映射留在 generated runtime 热路径之外。
+
+有限 domain 的 generated public identifiers 必须保留 path boundaries，不能用普通下划线拼接把 dotted path 打平。`Root.A.B` 和 `Root.A_B` 这类合法 DSL path 绝不能生成同名 public state、event、action、hook 或 event-check identifier。Canonical public macro 和 callback-table field 应使用模板里的 collision-resistant path-identifier helpers；短 alias 只有在该 generated domain 内可证明唯一时才允许存在。
 
 ## 性能证据
 

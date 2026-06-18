@@ -92,7 +92,7 @@ Generated C runtime 可能被嵌入长期稳定运行的控制系统，因此内
 
 新增 context field 或 public metadata value 时，先判断该 domain 是否在模板渲染时已经完全已知。若答案是肯定的，就生成 macro-backed integer id，并把任何字符串映射留在 generated runtime 热路径之外。
 
-有限 domain 的 generated public identifiers 必须保留 path boundaries，不能用普通下划线拼接把 dotted path 打平。`Root.A.B` 和 `Root.A_B` 这类合法 DSL path 绝不能生成同名 public state、event、action、hook 或 event-check identifier。Canonical public macro 和 callback-table field 应使用模板里的 collision-resistant path-identifier helpers；短 alias 只有在该 generated domain 内可证明唯一时才允许存在。
+有限 domain 的 generated public identifiers 必须保留 path boundaries，不能用普通下划线拼接把 dotted path 打平。`Root.A.B` 和 `Root.A_B` 这类合法 DSL path 绝不能生成同名 public state、event、action、hook 或 event-check identifier。Canonical public macro 和 callback-table field 应使用模板里的 collision-resistant path-identifier helpers；短 alias 只有在该 generated domain 内可证明唯一、且不会碰撞 `..._STATE_COUNT`、`..._EVENT_COUNT`、`..._ACTION_COUNT`、invalid-id sentinel、stage macro 或同域 canonical id 等保留 public macro 时才允许存在。拿不准时应省略 alias，只保留 canonical path-boundary-safe macro。
 
 ## 性能证据
 

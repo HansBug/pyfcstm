@@ -713,6 +713,9 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 | `during` | `{{ machine_macro_name(model) }}_STAGE_DURING` | `1` |
 | `exit` | `{{ machine_macro_name(model) }}_STAGE_EXIT` | `2` |
 
+
+只有这些表里的 canonical macros 是稳定保证的 public contract。如果 header 同时为简单且不冲突的路径生成较短 compatibility alias，应把它们视为可选便利名：一旦 alias 会碰撞 `..._STATE_COUNT`、`..._EVENT_COUNT`、`..._ACTION_COUNT`、invalid-id sentinel、stage macro 或 canonical path-boundary-safe id 等保留 public macro，模板会故意省略它。
+
 ## 性能建议
 
 - 把生成运行时当作可复用的有状态基础设施：初始化一次，循环驱动很多次，避免无意义的 create/destroy 抖动。

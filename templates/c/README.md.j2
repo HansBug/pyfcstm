@@ -591,6 +591,14 @@ This state machine does not define lifecycle actions.
 | `during` | `{{ machine_macro_name(model) }}_STAGE_DURING` | `1` |
 | `exit` | `{{ machine_macro_name(model) }}_STAGE_EXIT` | `2` |
 
+
+Only the canonical macros listed in these tables are guaranteed. If the header
+also emits shorter compatibility aliases for simple, non-conflicting paths, treat
+them as optional convenience names: they are intentionally omitted whenever they
+would collide with reserved public macros such as `..._STATE_COUNT`,
+`..._EVENT_COUNT`, `..._ACTION_COUNT`, invalid-id sentinels, stage macros, or
+canonical path-boundary-safe ids.
+
 ## Performance Advice
 
 - Use the generated event-id macros directly; do not reintroduce runtime string

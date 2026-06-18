@@ -70,6 +70,23 @@ typedef struct {{ machine_class_name(model) }}Vars {
 {% endif -%}
 } {{ machine_class_name(model) }}Vars;
 
+{% set public_macro_reserved_ns = namespace(items=[
+    machine_macro_name(model) ~ '_SUCCESS',
+    machine_macro_name(model) ~ '_FAILURE',
+    machine_macro_name(model) ~ '_MAX_STACK_DEPTH',
+    machine_macro_name(model) ~ '_MAX_DFS_STEPS',
+    machine_macro_name(model) ~ '_INVALID_STATE_ID',
+    machine_macro_name(model) ~ '_INVALID_EVENT_ID',
+    machine_macro_name(model) ~ '_INVALID_ACTION_ID',
+    machine_macro_name(model) ~ '_INVALID_STAGE_ID',
+    machine_macro_name(model) ~ '_STATE_COUNT',
+    machine_macro_name(model) ~ '_EVENT_COUNT',
+    machine_macro_name(model) ~ '_ACTION_COUNT',
+    machine_macro_name(model) ~ '_STAGE_COUNT',
+    machine_macro_name(model) ~ '_STAGE_ENTER',
+    machine_macro_name(model) ~ '_STAGE_DURING',
+    machine_macro_name(model) ~ '_STAGE_EXIT',
+]) -%}
 /* Public state/event id space used by `..._hot_start(...)` and `..._cycle(...)`. */
 #define {{ machine_macro_name(model) }}_INVALID_STATE_ID (({{ machine_class_name(model) }}StateId) - 1)
 #define {{ machine_macro_name(model) }}_INVALID_EVENT_ID (({{ machine_class_name(model) }}EventId) - 1)
@@ -77,14 +94,17 @@ typedef struct {{ machine_class_name(model) }}Vars {
 #define {{ machine_macro_name(model) }}_INVALID_STAGE_ID (({{ machine_class_name(model) }}StageId) - 1)
 #define {{ machine_macro_name(model) }}_STATE_COUNT {{ (model.walk_states() | list) | length }}
 {% set state_alias_ns = namespace(items=[]) -%}
+{% set state_macro_ns = namespace(canonical=[]) -%}
 {% for state in model.walk_states() -%}
 {% set state_alias_ns.items = state_alias_ns.items + [((state | state_path) | to_c_identifier | upper)] -%}
+{% set state_macro_ns.canonical = state_macro_ns.canonical + [machine_macro_name(model) ~ '_STATE_' ~ (state_slug(state) | upper)] -%}
 {% endfor -%}
 {% for state in model.walk_states() -%}
 /* DSL state path: `{{ state | state_path }}` */
 #define {{ machine_macro_name(model) }}_STATE_{{ state_slug(state) | upper }} (({{ machine_class_name(model) }}StateId){{ loop.index0 }})
 {% set state_alias = (state | state_path) | to_c_identifier | upper -%}
-{% if state_alias_ns.items.count(state_alias) == 1 %}
+{% set state_alias_macro = machine_macro_name(model) ~ '_STATE_' ~ state_alias -%}
+{% if state_alias_ns.items.count(state_alias) == 1 and state_alias_macro not in public_macro_reserved_ns.items and state_alias_macro not in state_macro_ns.canonical %}
 #define {{ machine_macro_name(model) }}_STATE_{{ state_alias }} {{ machine_macro_name(model) }}_STATE_{{ state_slug(state) | upper }}
 {% endif -%}
 {% endfor -%}
@@ -96,14 +116,17 @@ typedef struct {{ machine_class_name(model) }}Vars {
 {% endfor -%}
 #define {{ machine_macro_name(model) }}_EVENT_COUNT {{ event_ns.items | length }}
 {% set event_alias_ns = namespace(items=[]) -%}
+{% set event_macro_ns = namespace(canonical=[]) -%}
 {% for event_path in event_ns.items -%}
 {% set event_alias_ns.items = event_alias_ns.items + [(event_path | to_c_identifier | upper)] -%}
+{% set event_macro_ns.canonical = event_macro_ns.canonical + [machine_macro_name(model) ~ '_EVENT_' ~ (event_path.split('.') | to_c_path_identifier | upper)] -%}
 {% endfor -%}
 {% for event_path in event_ns.items -%}
 /* DSL event path: `{{ event_path }}` */
 #define {{ machine_macro_name(model) }}_EVENT_{{ event_path.split('.') | to_c_path_identifier | upper }} (({{ machine_class_name(model) }}EventId){{ loop.index0 }})
 {% set event_alias = event_path | to_c_identifier | upper -%}
-{% if event_alias_ns.items.count(event_alias) == 1 %}
+{% set event_alias_macro = machine_macro_name(model) ~ '_EVENT_' ~ event_alias -%}
+{% if event_alias_ns.items.count(event_alias) == 1 and event_alias_macro not in public_macro_reserved_ns.items and event_alias_macro not in event_macro_ns.canonical %}
 #define {{ machine_macro_name(model) }}_EVENT_{{ event_alias }} {{ machine_macro_name(model) }}_EVENT_{{ event_path.split('.') | to_c_path_identifier | upper }}
 {% endif -%}
 {% endfor %}
@@ -127,14 +150,17 @@ typedef struct {{ machine_class_name(model) }}Vars {
 {%- endfor -%}
 #define {{ machine_macro_name(model) }}_ACTION_COUNT {{ action_id_ns.rows | length }}
 {% set action_alias_ns = namespace(items=[]) -%}
+{% set action_macro_ns = namespace(canonical=[]) -%}
 {% for row in action_id_ns.rows -%}
 {% set action_alias_ns.items = action_alias_ns.items + [(row['func_name'] | to_c_identifier | upper)] -%}
+{% set action_macro_ns.canonical = action_macro_ns.canonical + [machine_macro_name(model) ~ '_ACTION_' ~ (row['func_name'].split('.') | to_c_path_identifier | upper)] -%}
 {% endfor -%}
 {% for row in action_id_ns.rows -%}
 /* DSL action path: `{{ row['func_name'] }}` */
 #define {{ machine_macro_name(model) }}_ACTION_{{ row['func_name'].split('.') | to_c_path_identifier | upper }} (({{ machine_class_name(model) }}ActionId){{ loop.index0 }})
 {% set action_alias = row['func_name'] | to_c_identifier | upper -%}
-{% if action_alias_ns.items.count(action_alias) == 1 %}
+{% set action_alias_macro = machine_macro_name(model) ~ '_ACTION_' ~ action_alias -%}
+{% if action_alias_ns.items.count(action_alias) == 1 and action_alias_macro not in public_macro_reserved_ns.items and action_alias_macro not in action_macro_ns.canonical %}
 #define {{ machine_macro_name(model) }}_ACTION_{{ action_alias }} {{ machine_macro_name(model) }}_ACTION_{{ row['func_name'].split('.') | to_c_path_identifier | upper }}
 {% endif -%}
 {% endfor -%}

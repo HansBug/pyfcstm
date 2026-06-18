@@ -136,8 +136,12 @@ instead of flattening dotted paths with plain underscore joins. Legal DSL paths
 such as `Root.A.B` and `Root.A_B` must never produce the same public state,
 event, action, hook, or event-check identifier. Use the template's
 collision-resistant path-identifier helpers for canonical public macros and
-callback-table fields; short aliases may exist only when the alias is provably
-unique within that generated domain.
+callback-table fields. Short aliases may exist only when the alias is provably
+unique within that generated domain **and** does not collide with any reserved
+public macro such as `..._STATE_COUNT`, `..._EVENT_COUNT`,
+`..._ACTION_COUNT`, invalid-id sentinels, stage macros, or canonical ids from
+that domain. When in doubt, omit the alias and keep only the canonical
+path-boundary-safe macro.
 
 ## Relationship to `c`
 

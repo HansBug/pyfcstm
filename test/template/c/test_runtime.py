@@ -67,6 +67,16 @@ def _workflow_metadata_labels():
     ]
 
 
+def _duplicate_macro_define_names(header):
+    seen_names = set()
+    duplicates = []
+    for name in re.findall(r'^#define\s+(\w+)', header, flags=re.M):
+        if name in seen_names and name not in duplicates:
+            duplicates.append(name)
+        seen_names.add(name)
+    return duplicates
+
+
 def _normalized_lower_text(text):
     lines = []
     for line in text.lower().splitlines():
@@ -274,6 +284,85 @@ class TestCBuiltinTemplate:
         assert "#define ROOT_MACHINE_STATE_P4_ROOT_P1_A_B " not in header
         assert "#define ROOT_MACHINE_EVENT_ROOT_A_B_GO " not in header
         assert "#define ROOT_MACHINE_ACTION_ROOT_A_B_SHARED " not in header
+        assert run.returncode == 0, run.stderr
+
+    def test_generated_public_metadata_aliases_avoid_reserved_macros(self):
+        dsl_code = """
+        def int trace = 0;
+        state Count {
+            enter abstract Count;
+            state InvalidStateId {
+                enter abstract StageEnter;
+                event Count;
+                event InvalidEventId;
+            }
+            state ActionCount;
+            [*] -> InvalidStateId;
+            InvalidStateId -> ActionCount :: Count;
+            ActionCount -> InvalidStateId :: InvalidEventId;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
+                header = f.read()
+
+            duplicate_names = [
+                name
+                for name in _duplicate_macro_define_names(header)
+                if name != "COUNT_MACHINE_API"
+            ]
+            run = _compile_and_run_c_harness(
+                artifacts,
+                "reserved_public_metadata_aliases",
+                textwrap.dedent(
+                    r"""
+                    #include "machine.h"
+
+                    int main(void)
+                    {
+                        if (COUNT_MACHINE_STATE_COUNT != 3) {
+                            return 10;
+                        }
+                        if (COUNT_MACHINE_EVENT_COUNT != 3) {
+                            return 11;
+                        }
+                        if (COUNT_MACHINE_ACTION_COUNT != 2) {
+                            return 12;
+                        }
+                        if (COUNT_MACHINE_STAGE_ENTER != 0) {
+                            return 13;
+                        }
+                        if (COUNT_MACHINE_INVALID_STATE_ID >= 0) {
+                            return 14;
+                        }
+                        if (COUNT_MACHINE_INVALID_EVENT_ID >= 0) {
+                            return 15;
+                        }
+                        if (COUNT_MACHINE_STATE_P5_COUNT < 0) {
+                            return 16;
+                        }
+                        if (COUNT_MACHINE_STATE_P5_COUNT_P14_INVALIDSTATEID < 0) {
+                            return 17;
+                        }
+                        if (COUNT_MACHINE_EVENT_P5_COUNT_P14_INVALIDSTATEID_P5_COUNT < 0) {
+                            return 18;
+                        }
+                        if (COUNT_MACHINE_ACTION_P5_COUNT_P5_COUNT < 0) {
+                            return 19;
+                        }
+                        if (COUNT_MACHINE_ACTION_P5_COUNT_P14_INVALIDSTATEID_P10_STAGEENTER < 0) {
+                            return 20;
+                        }
+                        return 0;
+                    }
+                    """
+                ),
+            )
+
+        assert "#define COUNT_MACHINE_STATE_COUNT COUNT_MACHINE_STATE_" not in header
+        assert "#define COUNT_MACHINE_ACTION_COUNT COUNT_MACHINE_ACTION_" not in header
+        assert duplicate_names == []
         assert run.returncode == 0, run.stderr
 
     def test_generated_machine_runs_cycle_and_event_transition(self):

@@ -547,6 +547,33 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 当前状态机没有定义事件。
 {% endif %}
 
+## Action 和 Stage ID
+
+{% if action_scan.items %}
+{% set action_doc_ns = namespace(rows=[]) -%}
+{% for action in action_scan.items -%}
+{% if action.func_name not in action_doc_ns.rows | map(attribute='func_name') | list -%}
+{% set action_doc_ns.rows = action_doc_ns.rows + [{'func_name': action.func_name}] -%}
+{% endif -%}
+{% endfor -%}
+| Action path | Macro | Value |
+| --- | --- | ---: |
+{% for row in action_doc_ns.rows -%}
+| `{{ row['func_name'] }}` | `{{ machine_macro_name(model) }}_ACTION_{{ row['func_name'].split('.') | to_c_path_identifier | upper }}` | `{{ loop.index0 }}` |
+{% endfor %}
+{% else %}
+该状态机没有定义 lifecycle action。
+{% endif %}
+
+| Stage | Macro | Value |
+| --- | --- | ---: |
+| `enter` | `{{ machine_macro_name(model) }}_STAGE_ENTER` | `0` |
+| `during` | `{{ machine_macro_name(model) }}_STAGE_DURING` | `1` |
+| `exit` | `{{ machine_macro_name(model) }}_STAGE_EXIT` | `2` |
+
+
+只有这些表里的 canonical macros 是稳定保证的 public contract。如果 header 同时为简单且不冲突的路径生成较短 compatibility alias，应把它们视为可选便利名：一旦 alias 会碰撞 `..._STATE_COUNT`、`..._EVENT_COUNT`、`..._ACTION_COUNT`、invalid-id sentinel、stage macro 或 canonical path-boundary-safe id 等保留 public macro，模板会故意省略它。
+
 ## 性能建议
 
 - 直接使用生成出来的事件 id 宏，不要在应用层重新引入字符串事件解析。

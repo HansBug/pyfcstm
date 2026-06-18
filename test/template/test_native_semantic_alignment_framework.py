@@ -9,7 +9,6 @@ from test.testings import native_semantic_alignment as native_alignment
 from test.testings.native_semantic_alignment import (
     _GeneratedNativeAlignmentRuntime,
     GENERATED_C_ALIGNMENT,
-    GENERATED_C_POLL_ALIGNMENT,
     NativeAlignmentMatrixError,
     load_native_capability_matrix,
     native_capability_by_runner_case,
@@ -18,48 +17,15 @@ from test.testings.simulate_semantics import iter_semantic_cases
 
 
 @pytest.mark.unittest
-def test_native_capability_matrix_covers_known_failures():
+def test_native_capability_matrix_has_no_expected_failures_after_alignment():
     entries = load_native_capability_matrix()
     matrix = native_capability_by_runner_case(entries)
     case_ids = {case.id for case in iter_semantic_cases()}
 
-    remaining_known_gap_cases = {
-        "abstract_hook_context_hot_start_leaf",
-        "abstract_hook_ref_context_reports_callsite_metadata",
-        "aspect_context_reports_active_leaf",
-        "failed_initial_cycle_skips_abstract_handler_callbacks",
-        "lifecycle_ref_chain_resolves_long_acyclic_chain",
-        "named_ref_context_reports_callsite",
-        "ref_abstract_handler_reports_calling_state",
-        "ref_context_uses_callsite_stage",
-    }
-
-    assert len(entries) == len(remaining_known_gap_cases) * 2
-    assert {entry.runner for entry in entries} == {
-        GENERATED_C_ALIGNMENT,
-        GENERATED_C_POLL_ALIGNMENT,
-    }
-    assert {entry.case for entry in entries} == remaining_known_gap_cases
-    for entry in entries:
-        assert entry.case in case_ids
-        assert entry.support == "expected_failure"
-        assert entry.classification == "handler_mismatch"
-        assert entry.observation == "handler_calls"
-        assert entry.skip_reason
-        assert entry.tracking.startswith("https://github.com/HansBug/pyfcstm/")
-        assert entry.since
-    assert (
-        GENERATED_C_ALIGNMENT,
-        "expression_failure_raises_expression_error",
-    ) not in matrix
-    assert (
-        GENERATED_C_POLL_ALIGNMENT,
-        "transition_into_composite_skips_unstable_initial_candidate",
-    ) not in matrix
-    assert (
-        GENERATED_C_ALIGNMENT,
-        "aspect_context_reports_active_leaf",
-    ) in matrix
+    assert entries == ()
+    assert matrix == {}
+    assert "aspect_context_reports_active_leaf" in case_ids
+    assert "failed_initial_cycle_skips_abstract_handler_callbacks" in case_ids
 
 
 @pytest.mark.unittest
@@ -203,7 +169,7 @@ def test_native_subprocess_reports_windows_non_arithmetic_crash_as_unexpected(
 
 
 @pytest.mark.unittest
-def test_native_subprocess_rejects_worker_failure_for_known_gap(monkeypatch):
+def test_native_subprocess_reports_worker_failure_as_unexpected(monkeypatch):
     def fake_run(cmd, **kwargs):
         return subprocess.CompletedProcess(
             args=cmd,
@@ -218,9 +184,9 @@ def test_native_subprocess_rejects_worker_failure_for_known_gap(monkeypatch):
         GENERATED_C_ALIGNMENT, "aspect_context_reports_active_leaf"
     )
 
-    assert result.status == "classification_mismatch"
+    assert result.status == "unexpected_failure"
     assert result.classification == "worker_failure"
-    assert result.expected_classification == "handler_mismatch"
+    assert result.expected_classification is None
     assert result.returncode == 1
 
 

@@ -442,6 +442,10 @@ def _native_handler_call_record(runtime: Any, ctx: Any) -> Dict[str, Any]:
         "state": ctx.get_full_state_path(),
         "stage": ctx.action_stage,
         "vars": {name: ctx.get_var(name) for name in runtime._var_names},
+        "active_leaf": ctx.active_leaf,
+        "call_stage": ctx.call_stage,
+        "abstract_target": ctx.abstract_target,
+        "named_ref": ctx.named_ref,
     }
 
 

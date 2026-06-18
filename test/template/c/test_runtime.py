@@ -496,6 +496,8 @@ class TestCBuiltinTemplate:
                     typedef struct HookLog {
                         int total_calls;
                         int root_calls;
+                        int a_calls;
+                        int b_calls;
                     } HookLog;
 
                     static void platform_hook(
@@ -511,10 +513,24 @@ class TestCBuiltinTemplate:
                             log->total_calls = -100;
                             return;
                         }
+                        if (strcmp(ctx->abstract_target, "Root.PlatformInit") != 0) {
+                            log->total_calls = -101;
+                            return;
+                        }
+                        if (strcmp(ctx->call_stage, "enter") != 0) {
+                            log->total_calls = -102;
+                            return;
+                        }
 
                         log->total_calls += 1;
                         if (strcmp(ctx->state_path, "Root") == 0) {
                             log->root_calls += 1;
+                        }
+                        if (strcmp(ctx->state_path, "Root.A") == 0) {
+                            log->a_calls += 1;
+                        }
+                        if (strcmp(ctx->state_path, "Root.B") == 0) {
+                            log->b_calls += 1;
                         }
                     }
 
@@ -537,7 +553,7 @@ class TestCBuiltinTemplate:
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
                             return 21;
                         }
-                        if (log.total_calls != 2 || log.root_calls != 2) {
+                        if (log.total_calls != 2 || log.root_calls != 1 || log.a_calls != 1 || log.b_calls != 0) {
                             return 22;
                         }
                         if (RootMachine_vars(&machine)->trace != 1) {
@@ -547,7 +563,7 @@ class TestCBuiltinTemplate:
                         if (!RootMachine_cycle(&machine, go_events, 1u)) {
                             return 24;
                         }
-                        if (log.total_calls != 3 || log.root_calls != 3) {
+                        if (log.total_calls != 3 || log.root_calls != 1 || log.a_calls != 1 || log.b_calls != 1) {
                             return 25;
                         }
                         if (RootMachine_vars(&machine)->trace != 11) {
@@ -605,8 +621,8 @@ class TestCBuiltinTemplate:
             }
             assert calls == [
                 ('Root.PlatformInit', 'enter', 'Root'),
-                ('Root.PlatformInit', 'enter', 'Root'),
-                ('Root.PlatformInit', 'enter', 'Root'),
+                ('Root.PlatformInit', 'enter', 'Root.A'),
+                ('Root.PlatformInit', 'enter', 'Root.B'),
             ]
 
     def test_generated_readme_documents_usage_and_abstract_hooks(self):
@@ -1260,6 +1276,8 @@ class TestCBuiltinTemplate:
                     typedef struct HookLog {
                         int total_calls;
                         int root_calls;
+                        int a_calls;
+                        int b_calls;
                     } HookLog;
 
                     static void platform_hook(
@@ -1275,10 +1293,24 @@ class TestCBuiltinTemplate:
                             log->total_calls = -100;
                             return;
                         }
+                        if (strcmp(ctx->abstract_target, "Root.PlatformInit") != 0) {
+                            log->total_calls = -101;
+                            return;
+                        }
+                        if (strcmp(ctx->call_stage, "enter") != 0) {
+                            log->total_calls = -102;
+                            return;
+                        }
 
                         log->total_calls += 1;
                         if (strcmp(ctx->state_path, "Root") == 0) {
                             log->root_calls += 1;
+                        }
+                        if (strcmp(ctx->state_path, "Root.A") == 0) {
+                            log->a_calls += 1;
+                        }
+                        if (strcmp(ctx->state_path, "Root.B") == 0) {
+                            log->b_calls += 1;
                         }
                     }
 
@@ -1286,7 +1318,7 @@ class TestCBuiltinTemplate:
                     {
                         RootMachine machine;
                         RootMachineHooks hooks = ROOTMACHINE_HOOKS_INIT;
-                        HookLog log = {0, 0};
+                        HookLog log = {0, 0, 0, 0};
                         static const RootMachineEventId go_events[] = {
                             ROOT_MACHINE_EVENT_ROOT_A_GO
                         };
@@ -1301,7 +1333,7 @@ class TestCBuiltinTemplate:
                         if (!RootMachine_cycle(&machine, NULL, 0u)) {
                             return 41;
                         }
-                        if (log.total_calls != 2 || log.root_calls != 2) {
+                        if (log.total_calls != 2 || log.root_calls != 1 || log.a_calls != 1 || log.b_calls != 0) {
                             return 42;
                         }
                         if (RootMachine_vars(&machine)->trace != (RootMachineInt)1) {
@@ -1311,7 +1343,7 @@ class TestCBuiltinTemplate:
                         if (!RootMachine_cycle(&machine, go_events, 1u)) {
                             return 44;
                         }
-                        if (log.total_calls != 3 || log.root_calls != 3) {
+                        if (log.total_calls != 3 || log.root_calls != 1 || log.a_calls != 1 || log.b_calls != 1) {
                             return 45;
                         }
                         if (RootMachine_vars(&machine)->trace != (RootMachineInt)11) {

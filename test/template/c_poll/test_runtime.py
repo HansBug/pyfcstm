@@ -301,6 +301,11 @@ class TestCPollBuiltinTemplate:
             assert runtime.vars == before_vars
             assert runtime.is_ended is before_ended
 
+            runtime.cycle()
+            assert runtime.current_state_path == before_state
+            assert runtime.vars == {'trace': before_vars['trace'] + 1}
+            assert runtime.is_ended is before_ended
+
     def test_generated_machine_exposes_read_only_event_check_context(self):
         dsl_code = """
         def int counter = 0;

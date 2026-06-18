@@ -2138,6 +2138,8 @@ int {{ machine_class_name(model) }}_cycle(
         _{{ machine_class_name(model) }}_set_error(machine, "Machine is not initialized; call {{ machine_class_name(model) }}_init(...) or {{ machine_class_name(model) }}_hot_start(...) before cycle().");
         return {{ machine_macro_name(model) }}_FAILURE;
     }
+
+    _{{ machine_class_name(model) }}_clear_error(machine);
     if (machine->ended) {
         return {{ machine_macro_name(model) }}_SUCCESS;
     }

@@ -1,4 +1,5 @@
 import ctypes
+import math
 import os
 import shutil
 import subprocess
@@ -38,6 +39,14 @@ def _runtime_exception_from_message(message):
         or 'step safety limit' in message
     ):
         return SimulationRuntimeDfsError(message), None
+    if (
+        'non-integer float' in message
+        or 'must not be bool' in message
+        or 'must be int or float' in message
+        or 'must be finite' in message
+        or 'cannot reach a stoppable state' in message
+    ):
+        return ValueError(message), None
     return RuntimeError(message), None
 
 
@@ -379,6 +388,12 @@ class _CPollRuntime:
         self._last_error = self._bind_function(
             '{prefix}_last_error', argtypes=[ctypes.c_void_p], restype=ctypes.c_char_p
         )
+        if self._machine is None:
+            raise MemoryError('failed to allocate generated C poll runtime machine.')
+        if initialize:
+            message = self._last_error(self._machine)
+            if message and message.decode('utf-8'):
+                self._raise_last_error()
 
         class _ContextStruct(ctypes.Structure):
             _fields_ = [
@@ -547,6 +562,36 @@ class _CPollRuntime:
         if not self._var_names:
             values._unused_placeholder = 0
         for name, value in initial_vars.items():
+            source = "initial_vars[{!r}]".format(name)
+            if type(value) is bool:
+                raise ValueError('{} must not be bool'.format(source))
+            if type(value) not in (int, float):
+                raise ValueError(
+                    '{} must be int or float, got {}'.format(
+                        source, type(value).__name__
+                    )
+                )
+            if type(value) is float and not math.isfinite(value):
+                raise ValueError(
+                    '{} for variable {!r} declared {} must be finite, got {!r}'.format(
+                        source, name, self._var_types[name], value
+                    )
+                )
+            if self._var_types[name] == 'int' and type(value) is float:
+                if value != int(value):
+                    raise ValueError(
+                        "Variable {!r} is int type, cannot assign float {!r}; "
+                        "non-integer float from {}".format(name, value, source)
+                    )
+                value = int(value)
+            elif self._var_types[name] == 'float':
+                value = float(value)
+                if not math.isfinite(value):
+                    raise ValueError(
+                        '{} for variable {!r} declared float must be finite, got {!r}'.format(
+                            source, name, value
+                        )
+                    )
             setattr(values, self._generated_var_names[name], value)
         return values
 

@@ -154,6 +154,63 @@ class TestCPollBuiltinTemplate:
             assert runtime.current_state_path == ('System', 'Running')
             assert runtime.vars == {'counter': 111}
 
+    def test_generated_machine_create_failure_cannot_be_cycled(self):
+        dsl_code = """
+        def int counter = 1.5;
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            run = _compile_and_run_c_harness(
+                artifacts,
+                'create_failure_cycle_guard_test',
+                textwrap.dedent(
+                    r'''
+                    #include "machine.h"
+                    #include <string.h>
+
+                    int main(void)
+                    {
+                        RootMachine *machine = RootMachine_create();
+                        const char *message;
+
+                        if (machine == NULL) {
+                            return 10;
+                        }
+                        message = RootMachine_last_error(machine);
+                        if (message == NULL || strstr(message, "non-integer float") == NULL) {
+                            RootMachine_destroy(machine);
+                            return 11;
+                        }
+                        if (RootMachine_current_state_path(machine) != NULL) {
+                            RootMachine_destroy(machine);
+                            return 12;
+                        }
+                        if (RootMachine_cycle(machine)) {
+                            RootMachine_destroy(machine);
+                            return 13;
+                        }
+                        message = RootMachine_last_error(machine);
+                        if (message == NULL || strstr(message, "not initialized") == NULL) {
+                            RootMachine_destroy(machine);
+                            return 14;
+                        }
+                        if (RootMachine_current_state_path(machine) != NULL) {
+                            RootMachine_destroy(machine);
+                            return 15;
+                        }
+
+                        RootMachine_destroy(machine);
+                        return 0;
+                    }
+                    '''
+                ),
+            )
+            assert run.returncode == 0, run.stderr
+
     def test_generated_machine_requires_event_checks_before_cycle(self):
         dsl_code = """
         def int counter = 0;
@@ -216,6 +273,38 @@ class TestCPollBuiltinTemplate:
             assert runtime.current_state_path == ('Root', 'System', 'A')
             assert runtime.vars == {'counter': 1}
             assert cold_calls == [('cold', 'Root', 'enter', 0)]
+
+
+    def test_failed_hot_start_preserves_public_runtime_snapshot(self):
+        dsl_code = """
+        def int trace = 0;
+        state Root {
+            state Idle { during { trace = trace + 1; } }
+            state Composite {
+                state Blocked;
+                [*] -> Blocked : if [false];
+            }
+            [*] -> Idle;
+        }
+        """
+
+        with render_c_runtime(dsl_code) as (runtime, _):
+            runtime.cycle()
+            before_state = runtime.current_state_path
+            before_vars = dict(runtime.vars)
+            before_ended = runtime.is_ended
+
+            with pytest.raises(ValueError, match='cannot reach a stoppable state'):
+                runtime.hot_start('Root.Composite', {'trace': 5})
+
+            assert runtime.current_state_path == before_state
+            assert runtime.vars == before_vars
+            assert runtime.is_ended is before_ended
+
+            runtime.cycle()
+            assert runtime.current_state_path == before_state
+            assert runtime.vars == {'trace': before_vars['trace'] + 1}
+            assert runtime.is_ended is before_ended
 
     def test_generated_machine_exposes_read_only_event_check_context(self):
         dsl_code = """

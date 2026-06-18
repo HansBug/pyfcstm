@@ -5,483 +5,131 @@
 # use tracking URLs for issue/PR provenance.
 version: 1
 known_failures:
-  - runner: generated_c_alignment
-    case: abstract_hook_context_hot_start_leaf
-    classification: handler_mismatch
-    observation: handler_calls
-    support: expected_failure
-    skip_reason: "abstract_hook_context_hot_start_leaf is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: abstract_hook_ref_context_reports_callsite_metadata
-    classification: handler_mismatch
-    observation: handler_calls
-    support: expected_failure
-    skip_reason: "abstract_hook_ref_context_reports_callsite_metadata is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: aspect_context_reports_active_leaf
-    classification: handler_mismatch
-    observation: handler_calls
-    support: expected_failure
-    skip_reason: "aspect_context_reports_active_leaf is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: composite_initial_guard_after_event_transition_uses_pre_before_vars
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_guard_after_event_transition_uses_pre_before_vars is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: composite_initial_guard_after_leaf_transition_uses_enter_state
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_guard_after_leaf_transition_uses_enter_state is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: composite_initial_guard_after_named_ref_before_uses_pre_ref_vars
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_guard_after_named_ref_before_uses_pre_ref_vars is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: composite_initial_guard_can_select_terminal_branch_before_plain_before
-    classification: state_or_ended_mismatch
-    observation: state_or_ended
-    support: expected_failure
-    skip_reason: "composite_initial_guard_can_select_terminal_branch_before_plain_before is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: composite_initial_guard_uses_enter_state_before_plain_before
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_guard_uses_enter_state_before_plain_before is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: composite_initial_guard_with_effect_runs_before_plain_before
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_guard_with_effect_runs_before_plain_before is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: composite_initial_handler_log_after_transition_uses_selected_child
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_handler_log_after_transition_uses_selected_child is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: composite_initial_handler_log_keeps_stable_branch_before_exit_branch
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_handler_log_keeps_stable_branch_before_exit_branch is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: composite_initial_handler_log_uses_enter_selected_child
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_handler_log_uses_enter_selected_child is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: composite_initial_nested_entry_order_survives_deep_choice
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_nested_entry_order_survives_deep_choice is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: composite_initial_skips_unstable_candidates_root_entry
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_skips_unstable_candidates_root_entry is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: failed_initial_cycle_skips_abstract_handler_callbacks
-    classification: handler_mismatch
-    observation: handler_calls
-    support: expected_failure
-    skip_reason: "failed_initial_cycle_skips_abstract_handler_callbacks is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: forced_pseudo_candidate_skips_unstable_branch
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "forced_pseudo_candidate_skips_unstable_branch is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: hot_start_initial_vars_reject_bool_values
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "hot_start_initial_vars_reject_bool_values is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: hot_start_initial_vars_reject_string_values
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "hot_start_initial_vars_reject_string_values is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: hot_start_rejects_blocked_composite_initial
-    classification: state_or_ended_mismatch
-    observation: state_or_ended
-    support: expected_failure
-    skip_reason: "hot_start_rejects_blocked_composite_initial is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: hot_start_rejects_unstable_pseudo_leaf
-    classification: state_or_ended_mismatch
-    observation: state_or_ended
-    support: expected_failure
-    skip_reason: "hot_start_rejects_unstable_pseudo_leaf is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: lifecycle_ref_chain_resolves_long_acyclic_chain
-    classification: handler_mismatch
-    observation: handler_calls
-    support: expected_failure
-    skip_reason: "lifecycle_ref_chain_resolves_long_acyclic_chain is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: named_ref_context_reports_callsite
-    classification: handler_mismatch
-    observation: handler_calls
-    support: expected_failure
-    skip_reason: "named_ref_context_reports_callsite is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: persistent_default_int_initializer_rejects_non_integer_float
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "persistent_default_int_initializer_rejects_non_integer_float is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: persistent_operation_writeback_rejects_float_and_rolls_back
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "persistent_operation_writeback_rejects_float_and_rolls_back is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: post_child_exit_continuation_skips_unstable_candidates
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "post_child_exit_continuation_skips_unstable_candidates is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: pseudo_candidate_skips_unstable_branch
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "pseudo_candidate_skips_unstable_branch is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: ref_abstract_handler_reports_calling_state
-    classification: handler_mismatch
-    observation: handler_calls
-    support: expected_failure
-    skip_reason: "ref_abstract_handler_reports_calling_state is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: ref_context_uses_callsite_stage
-    classification: handler_mismatch
-    observation: handler_calls
-    support: expected_failure
-    skip_reason: "ref_context_uses_callsite_stage is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: root_exit_runs_root_cleanup
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "root_exit_runs_root_cleanup is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_alignment
-    case: transition_into_composite_skips_unstable_initial_candidate
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "transition_into_composite_skips_unstable_initial_candidate is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: abstract_hook_context_hot_start_leaf
-    classification: handler_mismatch
-    observation: handler_calls
-    support: expected_failure
-    skip_reason: "abstract_hook_context_hot_start_leaf is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: abstract_hook_ref_context_reports_callsite_metadata
-    classification: handler_mismatch
-    observation: handler_calls
-    support: expected_failure
-    skip_reason: "abstract_hook_ref_context_reports_callsite_metadata is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: aspect_context_reports_active_leaf
-    classification: handler_mismatch
-    observation: handler_calls
-    support: expected_failure
-    skip_reason: "aspect_context_reports_active_leaf is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: composite_initial_guard_after_event_transition_uses_pre_before_vars
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_guard_after_event_transition_uses_pre_before_vars is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: composite_initial_guard_after_leaf_transition_uses_enter_state
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_guard_after_leaf_transition_uses_enter_state is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: composite_initial_guard_after_named_ref_before_uses_pre_ref_vars
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_guard_after_named_ref_before_uses_pre_ref_vars is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: composite_initial_guard_can_select_terminal_branch_before_plain_before
-    classification: state_or_ended_mismatch
-    observation: state_or_ended
-    support: expected_failure
-    skip_reason: "composite_initial_guard_can_select_terminal_branch_before_plain_before is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: composite_initial_guard_uses_enter_state_before_plain_before
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_guard_uses_enter_state_before_plain_before is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: composite_initial_guard_with_effect_runs_before_plain_before
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_guard_with_effect_runs_before_plain_before is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: composite_initial_handler_log_after_transition_uses_selected_child
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_handler_log_after_transition_uses_selected_child is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: composite_initial_handler_log_keeps_stable_branch_before_exit_branch
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_handler_log_keeps_stable_branch_before_exit_branch is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: composite_initial_handler_log_uses_enter_selected_child
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_handler_log_uses_enter_selected_child is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: composite_initial_nested_entry_order_survives_deep_choice
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_nested_entry_order_survives_deep_choice is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: composite_initial_skips_unstable_candidates_root_entry
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "composite_initial_skips_unstable_candidates_root_entry is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: failed_initial_cycle_skips_abstract_handler_callbacks
-    classification: handler_mismatch
-    observation: handler_calls
-    support: expected_failure
-    skip_reason: "failed_initial_cycle_skips_abstract_handler_callbacks is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: forced_pseudo_candidate_skips_unstable_branch
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "forced_pseudo_candidate_skips_unstable_branch is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: hot_start_initial_vars_reject_bool_values
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "hot_start_initial_vars_reject_bool_values is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: hot_start_initial_vars_reject_string_values
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "hot_start_initial_vars_reject_string_values is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: hot_start_rejects_blocked_composite_initial
-    classification: state_or_ended_mismatch
-    observation: state_or_ended
-    support: expected_failure
-    skip_reason: "hot_start_rejects_blocked_composite_initial is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: hot_start_rejects_unstable_pseudo_leaf
-    classification: state_or_ended_mismatch
-    observation: state_or_ended
-    support: expected_failure
-    skip_reason: "hot_start_rejects_unstable_pseudo_leaf is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: lifecycle_ref_chain_resolves_long_acyclic_chain
-    classification: handler_mismatch
-    observation: handler_calls
-    support: expected_failure
-    skip_reason: "lifecycle_ref_chain_resolves_long_acyclic_chain is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: named_ref_context_reports_callsite
-    classification: handler_mismatch
-    observation: handler_calls
-    support: expected_failure
-    skip_reason: "named_ref_context_reports_callsite is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: persistent_default_int_initializer_rejects_non_integer_float
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "persistent_default_int_initializer_rejects_non_integer_float is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: persistent_operation_writeback_rejects_float_and_rolls_back
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "persistent_operation_writeback_rejects_float_and_rolls_back is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: post_child_exit_continuation_skips_unstable_candidates
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "post_child_exit_continuation_skips_unstable_candidates is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: pseudo_candidate_skips_unstable_branch
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "pseudo_candidate_skips_unstable_branch is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: ref_abstract_handler_reports_calling_state
-    classification: handler_mismatch
-    observation: handler_calls
-    support: expected_failure
-    skip_reason: "ref_abstract_handler_reports_calling_state is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: ref_context_uses_callsite_stage
-    classification: handler_mismatch
-    observation: handler_calls
-    support: expected_failure
-    skip_reason: "ref_context_uses_callsite_stage is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: root_exit_runs_root_cleanup
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "root_exit_runs_root_cleanup is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
-  - runner: generated_c_poll_alignment
-    case: transition_into_composite_skips_unstable_initial_candidate
-    classification: vars_mismatch
-    observation: vars
-    support: expected_failure
-    skip_reason: "transition_into_composite_skips_unstable_initial_candidate is a known C/C poll shared alignment gap."
-    tracking: https://github.com/HansBug/pyfcstm/issues/218
-    since: "2026-06-17"
+- runner: generated_c_alignment
+  case: abstract_hook_context_hot_start_leaf
+  classification: handler_mismatch
+  observation: handler_calls
+  support: expected_failure
+  skip_reason: abstract_hook_context_hot_start_leaf is a known C/C poll shared alignment gap.
+  tracking: https://github.com/HansBug/pyfcstm/issues/218
+  since: '2026-06-17'
+- runner: generated_c_alignment
+  case: abstract_hook_ref_context_reports_callsite_metadata
+  classification: handler_mismatch
+  observation: handler_calls
+  support: expected_failure
+  skip_reason: abstract_hook_ref_context_reports_callsite_metadata is a known C/C poll shared alignment gap.
+  tracking: https://github.com/HansBug/pyfcstm/issues/218
+  since: '2026-06-17'
+- runner: generated_c_alignment
+  case: aspect_context_reports_active_leaf
+  classification: handler_mismatch
+  observation: handler_calls
+  support: expected_failure
+  skip_reason: aspect_context_reports_active_leaf is a known C/C poll shared alignment gap.
+  tracking: https://github.com/HansBug/pyfcstm/issues/218
+  since: '2026-06-17'
+- runner: generated_c_alignment
+  case: failed_initial_cycle_skips_abstract_handler_callbacks
+  classification: handler_mismatch
+  observation: handler_calls
+  support: expected_failure
+  skip_reason: failed_initial_cycle_skips_abstract_handler_callbacks is a known C/C poll shared alignment gap.
+  tracking: https://github.com/HansBug/pyfcstm/issues/218
+  since: '2026-06-17'
+- runner: generated_c_alignment
+  case: lifecycle_ref_chain_resolves_long_acyclic_chain
+  classification: handler_mismatch
+  observation: handler_calls
+  support: expected_failure
+  skip_reason: lifecycle_ref_chain_resolves_long_acyclic_chain is a known C/C poll shared alignment gap.
+  tracking: https://github.com/HansBug/pyfcstm/issues/218
+  since: '2026-06-17'
+- runner: generated_c_alignment
+  case: named_ref_context_reports_callsite
+  classification: handler_mismatch
+  observation: handler_calls
+  support: expected_failure
+  skip_reason: named_ref_context_reports_callsite is a known C/C poll shared alignment gap.
+  tracking: https://github.com/HansBug/pyfcstm/issues/218
+  since: '2026-06-17'
+- runner: generated_c_alignment
+  case: ref_abstract_handler_reports_calling_state
+  classification: handler_mismatch
+  observation: handler_calls
+  support: expected_failure
+  skip_reason: ref_abstract_handler_reports_calling_state is a known C/C poll shared alignment gap.
+  tracking: https://github.com/HansBug/pyfcstm/issues/218
+  since: '2026-06-17'
+- runner: generated_c_alignment
+  case: ref_context_uses_callsite_stage
+  classification: handler_mismatch
+  observation: handler_calls
+  support: expected_failure
+  skip_reason: ref_context_uses_callsite_stage is a known C/C poll shared alignment gap.
+  tracking: https://github.com/HansBug/pyfcstm/issues/218
+  since: '2026-06-17'
+- runner: generated_c_poll_alignment
+  case: abstract_hook_context_hot_start_leaf
+  classification: handler_mismatch
+  observation: handler_calls
+  support: expected_failure
+  skip_reason: abstract_hook_context_hot_start_leaf is a known C/C poll shared alignment gap.
+  tracking: https://github.com/HansBug/pyfcstm/issues/218
+  since: '2026-06-17'
+- runner: generated_c_poll_alignment
+  case: abstract_hook_ref_context_reports_callsite_metadata
+  classification: handler_mismatch
+  observation: handler_calls
+  support: expected_failure
+  skip_reason: abstract_hook_ref_context_reports_callsite_metadata is a known C/C poll shared alignment gap.
+  tracking: https://github.com/HansBug/pyfcstm/issues/218
+  since: '2026-06-17'
+- runner: generated_c_poll_alignment
+  case: aspect_context_reports_active_leaf
+  classification: handler_mismatch
+  observation: handler_calls
+  support: expected_failure
+  skip_reason: aspect_context_reports_active_leaf is a known C/C poll shared alignment gap.
+  tracking: https://github.com/HansBug/pyfcstm/issues/218
+  since: '2026-06-17'
+- runner: generated_c_poll_alignment
+  case: failed_initial_cycle_skips_abstract_handler_callbacks
+  classification: handler_mismatch
+  observation: handler_calls
+  support: expected_failure
+  skip_reason: failed_initial_cycle_skips_abstract_handler_callbacks is a known C/C poll shared alignment gap.
+  tracking: https://github.com/HansBug/pyfcstm/issues/218
+  since: '2026-06-17'
+- runner: generated_c_poll_alignment
+  case: lifecycle_ref_chain_resolves_long_acyclic_chain
+  classification: handler_mismatch
+  observation: handler_calls
+  support: expected_failure
+  skip_reason: lifecycle_ref_chain_resolves_long_acyclic_chain is a known C/C poll shared alignment gap.
+  tracking: https://github.com/HansBug/pyfcstm/issues/218
+  since: '2026-06-17'
+- runner: generated_c_poll_alignment
+  case: named_ref_context_reports_callsite
+  classification: handler_mismatch
+  observation: handler_calls
+  support: expected_failure
+  skip_reason: named_ref_context_reports_callsite is a known C/C poll shared alignment gap.
+  tracking: https://github.com/HansBug/pyfcstm/issues/218
+  since: '2026-06-17'
+- runner: generated_c_poll_alignment
+  case: ref_abstract_handler_reports_calling_state
+  classification: handler_mismatch
+  observation: handler_calls
+  support: expected_failure
+  skip_reason: ref_abstract_handler_reports_calling_state is a known C/C poll shared alignment gap.
+  tracking: https://github.com/HansBug/pyfcstm/issues/218
+  since: '2026-06-17'
+- runner: generated_c_poll_alignment
+  case: ref_context_uses_callsite_stage
+  classification: handler_mismatch
+  observation: handler_calls
+  support: expected_failure
+  skip_reason: ref_context_uses_callsite_stage is a known C/C poll shared alignment gap.
+  tracking: https://github.com/HansBug/pyfcstm/issues/218
+  since: '2026-06-17'

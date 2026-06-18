@@ -9,6 +9,7 @@ compile errors.
 
 The module contains:
 
+* :func:`render_c_reset_vars_body` - Render default persistent-variable setup.
 * :func:`render_c_action_body` - Render operation statements as a fallible C body.
 * :func:`render_c_condition_body` - Render a fallible C guard/condition body.
 
@@ -623,6 +624,37 @@ def _render_statement_sequence(
                     )
                 if inferred_type is not None:
                     current_types[statement.name] = inferred_type
+            if state_types.get(statement.name) == "int" and expr.value_type == "float":
+                temp_name = "__pyfcstm_value_%d" % len(lines)
+                _line(lines, indent, level, "double %s = %s;" % (temp_name, expr.text))
+                _line(
+                    lines,
+                    indent,
+                    level,
+                    "if (%s != (double)((PYFCSTM_GENERATED_INT64)%s)) {"
+                    % (temp_name, temp_name),
+                )
+                _line(
+                    lines,
+                    indent,
+                    level + 1,
+                    (
+                        "%s(machine, "
+                        "\"Variable '%s' is int type, cannot assign float %%.15g; "
+                        "non-integer float from operation block writeback\", "
+                        "%s);"
+                    )
+                    % (names.set_error, statement.name, temp_name),
+                )
+                _line(lines, indent, level + 1, "return %s;" % names.failure)
+                _line(lines, indent, level, "}")
+                _line(
+                    lines,
+                    indent,
+                    level,
+                    "%s = (PYFCSTM_GENERATED_INT64)%s;" % (target, temp_name),
+                )
+                continue
             _line(lines, indent, level, "%s = %s;" % (target, expr.text))
             continue
 
@@ -731,6 +763,98 @@ def render_c_action_body(
     ]
     body, _ = _render_statement_sequence(nodes, state_types, {}, names, indent, 1)
     lines.extend(body)
+    lines.append("%sreturn %s;" % (indent, names.success))
+    return "\n".join(lines)
+
+
+def render_c_reset_vars_body(
+    var_defines: Mapping[str, Any],
+    machine_class_name: str,
+    machine_macro_name: str,
+    indent: str = "    ",
+) -> str:
+    """
+    Render C statements for default persistent-variable initialization.
+
+    The emitted body evaluates ``def`` initializers in declaration order and
+    applies the same persistent ``int`` writeback boundary used by operation
+    blocks. Integer defaults therefore accept integer-valued floats but report a
+    generated runtime error for non-integer floats instead of relying on C's
+    implicit narrowing conversion.
+
+    :param var_defines: Model variable definitions keyed by DSL variable name.
+    :type var_defines: typing.Mapping[str, typing.Any]
+    :param machine_class_name: Generated machine class name.
+    :type machine_class_name: str
+    :param machine_macro_name: Generated macro prefix.
+    :type machine_macro_name: str
+    :param indent: Indentation unit used for generated C code, defaults to four
+        spaces.
+    :type indent: str, optional
+    :return: C statements ending in a generated success return.
+    :rtype: str
+
+    Example::
+
+        >>> body = render_c_reset_vars_body({}, "Demo", "DEMO")
+        >>> body.strip().endswith("return DEMO_SUCCESS;")
+        True
+    """
+    state_types = _normalise_var_types(var_defines)
+    names = _CNames(machine_class_name, machine_macro_name)
+    lines = [
+        "%s(void)machine;" % indent,
+        "%s(void)scope;" % indent,
+    ]
+    for name, define in var_defines.items():
+        expr = _render_expr(define.init, state_types, state_types.keys())
+        checks: List[str] = []
+        safe = _emit_expr_checks(
+            checks,
+            define.init,
+            state_types,
+            state_types.keys(),
+            names,
+            "variable '%s' initializer" % name,
+            indent,
+            1,
+        )
+        lines.extend(checks)
+        if not safe:
+            continue
+        target = "scope->%s" % to_c_identifier(name)
+        if state_types.get(name) == "int" and expr.value_type == "float":
+            temp_name = "__pyfcstm_init_%d" % len(lines)
+            _line(lines, indent, 1, "double %s = %s;" % (temp_name, expr.text))
+            _line(
+                lines,
+                indent,
+                1,
+                "if (%s != (double)((PYFCSTM_GENERATED_INT64)%s)) {"
+                % (temp_name, temp_name),
+            )
+            _line(
+                lines,
+                indent,
+                2,
+                (
+                    "%s(machine, "
+                    "\"Variable '%s' is int type, cannot assign float %%.15g; "
+                    "non-integer float from variable '%s' initializer\", "
+                    "%s);"
+                )
+                % (names.set_error, name, name, temp_name),
+            )
+            _line(lines, indent, 2, "return %s;" % names.failure)
+            _line(lines, indent, 1, "}")
+            _line(
+                lines,
+                indent,
+                1,
+                "%s = (PYFCSTM_GENERATED_INT64)%s;" % (target, temp_name),
+            )
+            continue
+        _line(lines, indent, 1, "%s = %s;" % (target, expr.text))
     lines.append("%sreturn %s;" % (indent, names.success))
     return "\n".join(lines)
 

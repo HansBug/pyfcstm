@@ -231,6 +231,18 @@ static const char *_{{ machine_class_name(model) }}_dsl_source =
 {% endif -%}
 
 /* Error helpers used by the public API wrappers. */
+static void _{{ machine_class_name(model) }}_format_error_text(char *buffer, size_t buffer_size, const char *fmt, ...)
+{
+    va_list ap;
+    if (buffer == NULL || buffer_size == 0u) {
+        return;
+    }
+    va_start(ap, fmt);
+    PYFCSTM_GENERATED_VSNPRINTF(buffer, buffer_size, fmt, ap);
+    buffer[buffer_size - 1u] = '\0';
+    va_end(ap);
+}
+
 static void _{{ machine_class_name(model) }}_set_error({{ machine_class_name(model) }} *machine, const char *fmt, ...)
 {
     va_list ap;
@@ -355,15 +367,11 @@ static const {{ machine_class_name(model) }}Vars *_{{ machine_class_name(model) 
 }
 
 /* Reset persistent variables to the DSL `def ... = ...;` defaults. */
-static void _{{ machine_class_name(model) }}_reset_vars({{ machine_class_name(model) }}Vars *vars)
+static int _{{ machine_class_name(model) }}_reset_vars(
+    {{ machine_class_name(model) }} *machine,
+    {{ machine_class_name(model) }}Vars *scope)
 {
-{% if model.defines.values() | list -%}
-{% for def_item in model.defines.values() -%}
-{{ '    ' }}vars->{{ def_item.name | to_c_identifier }} = {{ def_item.init.to_ast_node() | expr_render(style='c') }};
-{% endfor -%}
-{% else -%}
-    vars->_unused_placeholder = 0;
-{% endif -%}
+{{ render_c_reset_vars_body(model.defines, machine_class_name(model), machine_macro_name(model)) }}
 }
 
 static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_validate_transition(
@@ -372,12 +380,32 @@ static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_validate_tr
     int transition_id,
     const _{{ machine_class_name(model) }}EventSet *event_set);
 
+static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_validate_initial_transition(
+    {{ machine_class_name(model) }} *machine,
+    const _{{ machine_class_name(model) }}RuntimeContext *context,
+    int transition_id,
+    const _{{ machine_class_name(model) }}EventSet *event_set);
+
+static int _{{ machine_class_name(model) }}_execute_transition_effect(
+    {{ machine_class_name(model) }} *machine,
+    const _{{ machine_class_name(model) }}TransitionInfo *transition,
+    _{{ machine_class_name(model) }}RuntimeContext *context);
+
+static int _{{ machine_class_name(model) }}_execute_initial_transition_on_context(
+    {{ machine_class_name(model) }} *machine,
+    _{{ machine_class_name(model) }}RuntimeContext *context,
+    int transition_id,
+    const _{{ machine_class_name(model) }}EventSet *event_set,
+    int is_validation_mode,
+    int attempt_nested_initial);
+
 static int _{{ machine_class_name(model) }}_enter_state(
     {{ machine_class_name(model) }} *machine,
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int state_id,
     const _{{ machine_class_name(model) }}EventSet *event_set,
-    int is_validation_mode);
+    int is_validation_mode,
+    int attempt_initial_transition);
 
 static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_event_set_has(
     {{ machine_class_name(model) }} *machine,
@@ -1027,7 +1055,6 @@ _{{ machine_class_name(model) }}_event_set_has(machine, context, event_set, {{ a
 {% endif -%}
 {%- endset %}
 {% set branch_body -%}
-{% if state.is_leaf_state and not state.is_pseudo -%}
 if (validate_stoppable) {
     int is_valid = _{{ machine_class_name(model) }}_validate_transition(
         machine,
@@ -1044,9 +1071,6 @@ if (validate_stoppable) {
 } else {
     return {{ normal_transition_id(state, loop.index) }};
 }
-{% else -%}
-return {{ normal_transition_id(state, loop.index) }};
-{% endif -%}
 {%- endset %}
     if ({{ event_condition | trim | replace('\n', ' ') }}) {
 {% if transition.guard is not none %}
@@ -1090,20 +1114,29 @@ _{{ machine_class_name(model) }}_event_set_has(machine, context, event_set, {{ a
 {% endif -%}
 {%- endset %}
 {% set init_body -%}
-{% if transition.effects %}
-if ({{ init_effect_method_name(state, loop.index) }}(machine, &context->vars) != {{ machine_macro_name(model) }}_SUCCESS) {
-    return 0;
-}
-{% endif %}
-if (_{{ machine_class_name(model) }}_enter_state(
+{
+    int is_valid = _{{ machine_class_name(model) }}_validate_initial_transition(
         machine,
         context,
-        {{ state_enum(state.substates[transition.to_state]) }},
-        event_set,
-        is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
-    return 0;
+        {{ init_transition_id(state, loop.index) }},
+        event_set);
+    if (!is_valid) {
+        if (machine != NULL && machine->last_error[0] != '\0') {
+            return 0;
+        }
+    } else {
+        if (_{{ machine_class_name(model) }}_execute_initial_transition_on_context(
+                machine,
+                context,
+                {{ init_transition_id(state, loop.index) }},
+                event_set,
+                is_validation_mode,
+                !is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+            return 0;
+        }
+        return 1;
+    }
 }
-return 1;
 {%- endset %}
     if ({{ event_condition | trim | replace('\n', ' ') }}) {
 {% if transition.guard is not none %}
@@ -1213,6 +1246,58 @@ static const _{{ machine_class_name(model) }}TransitionInfo _{{ machine_class_na
 {% endfor %}
 };
 
+static int _{{ machine_class_name(model) }}_execute_initial_transition_on_context(
+    {{ machine_class_name(model) }} *machine,
+    _{{ machine_class_name(model) }}RuntimeContext *context,
+    int transition_id,
+    const _{{ machine_class_name(model) }}EventSet *event_set,
+    int is_validation_mode,
+    int attempt_nested_initial)
+{
+    const _{{ machine_class_name(model) }}TransitionInfo *transition;
+    int composite_state_id;
+
+    if (context->stack_size == 0u) {
+        return 0;
+    }
+
+    transition = &_{{ machine_class_name(model) }}_transitions[transition_id];
+    composite_state_id = context->stack[context->stack_size - 1u].state_id;
+    if (_{{ machine_class_name(model) }}_execute_transition_effect(machine, transition, context) != {{ machine_macro_name(model) }}_SUCCESS) {
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
+    if (context->stack_size > 0u && context->stack[context->stack_size - 1u].plain_before_pending) {
+        int pending_state_id = context->stack[context->stack_size - 1u].state_id;
+        if (_{{ machine_class_name(model) }}_run_during_before_actions_for_state(
+                machine,
+                pending_state_id,
+                context,
+                is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+            return {{ machine_macro_name(model) }}_FAILURE;
+        }
+        context->stack[context->stack_size - 1u].plain_before_pending = 0;
+    }
+    if (_{{ machine_class_name(model) }}_enter_state(
+            machine,
+            context,
+            transition->target_state_id,
+            event_set,
+            is_validation_mode,
+            attempt_nested_initial) != {{ machine_macro_name(model) }}_SUCCESS) {
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
+    if (context->stack_size > 0u) {
+        size_t frame_index;
+        for (frame_index = context->stack_size; frame_index > 0u; --frame_index) {
+            if (context->stack[frame_index - 1u].state_id == composite_state_id) {
+                context->stack[frame_index - 1u].mode = {{ machine_macro_name(model) }}_FRAME_MODE_ACTIVE;
+                break;
+            }
+        }
+    }
+    return {{ machine_macro_name(model) }}_SUCCESS;
+}
+
 static int _{{ machine_class_name(model) }}_state_id_is_valid(int state_id)
 {
     return state_id >= 0 && state_id < {{ machine_macro_name(model) }}_STATE_COUNT;
@@ -1280,6 +1365,18 @@ static int _{{ machine_class_name(model) }}_normalize_events(
     return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
+static void _{{ machine_class_name(model) }}_event_set_activate_all(
+    _{{ machine_class_name(model) }}EventSet *event_set)
+{
+    size_t i;
+
+    _{{ machine_class_name(model) }}_event_set_reset(event_set);
+    for (i = 0u; i < sizeof(event_set->active_bitset) / sizeof(event_set->active_bitset[0]); ++i) {
+        event_set->active_bitset[i] = ~0ul;
+        event_set->evaluated_bitset[i] = ~0ul;
+    }
+}
+
 static void _{{ machine_class_name(model) }}_copy_context(
     _{{ machine_class_name(model) }}RuntimeContext *dst,
     const _{{ machine_class_name(model) }}RuntimeContext *src)
@@ -1321,6 +1418,7 @@ static int _{{ machine_class_name(model) }}_push_frame(
     }
     context->stack[context->stack_size].state_id = state_id;
     context->stack[context->stack_size].mode = mode;
+    context->stack[context->stack_size].plain_before_pending = 0;
     ++context->stack_size;
     return {{ machine_macro_name(model) }}_SUCCESS;
 }
@@ -1488,12 +1586,15 @@ static int _{{ machine_class_name(model) }}_enter_state(
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int state_id,
     const _{{ machine_class_name(model) }}EventSet *event_set,
-    int is_validation_mode)
+    int is_validation_mode,
+    int attempt_initial_transition)
 {
     const _{{ machine_class_name(model) }}StateInfo *state_info;
     int init_result;
+    size_t pushed_index;
 
     state_info = &_{{ machine_class_name(model) }}_state_info[state_id];
+    pushed_index = context->stack_size;
     if (_{{ machine_class_name(model) }}_push_frame(machine, context, state_id, {{ machine_macro_name(model) }}_FRAME_MODE_ACTIVE) != {{ machine_macro_name(model) }}_SUCCESS) {
         if (is_validation_mode) {
             _{{ machine_class_name(model) }}_set_error(
@@ -1520,17 +1621,13 @@ static int _{{ machine_class_name(model) }}_enter_state(
         return {{ machine_macro_name(model) }}_SUCCESS;
     }
 
-    if (_{{ machine_class_name(model) }}_run_during_before_actions_for_state(
-            machine,
-            state_id,
-            context,
-            is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
-        return {{ machine_macro_name(model) }}_FAILURE;
-    }
-    context->stack[context->stack_size - 1u].mode = {{ machine_macro_name(model) }}_FRAME_MODE_INIT_WAIT;
-    init_result = _{{ machine_class_name(model) }}_attempt_init_transition(machine, context, event_set, is_validation_mode);
-    if (init_result != {{ machine_macro_name(model) }}_SUCCESS && machine != NULL && machine->last_error[0] != '\0') {
-        return {{ machine_macro_name(model) }}_FAILURE;
+    context->stack[pushed_index].mode = {{ machine_macro_name(model) }}_FRAME_MODE_INIT_WAIT;
+    context->stack[pushed_index].plain_before_pending = 1;
+    if (attempt_initial_transition) {
+        init_result = _{{ machine_class_name(model) }}_attempt_init_transition(machine, context, event_set, is_validation_mode);
+        if (init_result != {{ machine_macro_name(model) }}_SUCCESS && machine != NULL && machine->last_error[0] != '\0') {
+            return {{ machine_macro_name(model) }}_FAILURE;
+        }
     }
     return {{ machine_macro_name(model) }}_SUCCESS;
 }
@@ -1572,6 +1669,20 @@ static int _{{ machine_class_name(model) }}_finalize_exit_to_parent(
 
     parent_state_id = context->stack[context->stack_size - 1u].state_id;
     if (parent_state_id == {{ state_enum(model.root_state) }}) {
+        if (_{{ machine_class_name(model) }}_run_during_after_actions_for_state(
+                machine,
+                parent_state_id,
+                context,
+                is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+            return {{ machine_macro_name(model) }}_FAILURE;
+        }
+        if (_{{ machine_class_name(model) }}_run_exit_actions_for_state(
+                machine,
+                parent_state_id,
+                context,
+                is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+            return {{ machine_macro_name(model) }}_FAILURE;
+        }
         context->stack_size = 0u;
         return 1;
     }
@@ -1621,7 +1732,8 @@ static int _{{ machine_class_name(model) }}_execute_transition_on_context(
             context,
             transition->target_state_id,
             event_set,
-            is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+            is_validation_mode,
+            1) != {{ machine_macro_name(model) }}_SUCCESS) {
         return {{ machine_macro_name(model) }}_FAILURE;
     }
     return 0;
@@ -1773,6 +1885,18 @@ static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_validate_tr
 {
     _{{ machine_class_name(model) }}RuntimeContext sim_context;
     int ended;
+    int result;
+
+    if (machine != NULL) {
+        if (machine->validation_depth >= {{ machine_macro_name(model) }}_MAX_DFS_STEPS) {
+            _{{ machine_class_name(model) }}_set_error(
+                machine,
+                "Speculative DFS exceeded the step safety limit (%d) without reaching a stoppable state or pruning; the state machine likely contains an invalid unbounded pseudo-state or transition chain.",
+                {{ machine_macro_name(model) }}_MAX_DFS_STEPS);
+            return {{ machine_macro_name(model) }}_FAILURE;
+        }
+        ++machine->validation_depth;
+    }
 
     _{{ machine_class_name(model) }}_copy_context(&sim_context, context);
     ended = _{{ machine_class_name(model) }}_execute_transition_on_context(
@@ -1782,18 +1906,74 @@ static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_validate_tr
         event_set,
         1);
     if (machine != NULL && machine->last_error[0] != '\0') {
-        return {{ machine_macro_name(model) }}_FAILURE;
+        result = {{ machine_macro_name(model) }}_FAILURE;
+    } else if (ended) {
+        result = 1;
+    } else {
+        result = _{{ machine_class_name(model) }}_run_cycle_on_context(
+            machine,
+            &sim_context,
+            event_set,
+            &ended,
+            1,
+            1);
     }
-    if (ended) {
-        return 1;
+
+    if (machine != NULL && machine->validation_depth > 0) {
+        --machine->validation_depth;
     }
-    return _{{ machine_class_name(model) }}_run_cycle_on_context(
-        machine,
-        &sim_context,
-        event_set,
-        &ended,
-        0,
-        1);
+    return result;
+}
+
+static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_validate_initial_transition(
+    {{ machine_class_name(model) }} *machine,
+    const _{{ machine_class_name(model) }}RuntimeContext *context,
+    int transition_id,
+    const _{{ machine_class_name(model) }}EventSet *event_set)
+{
+    _{{ machine_class_name(model) }}RuntimeContext sim_context;
+    int ended;
+    int result;
+
+    if (machine != NULL) {
+        if (machine->validation_depth >= {{ machine_macro_name(model) }}_MAX_DFS_STEPS) {
+            _{{ machine_class_name(model) }}_set_error(
+                machine,
+                "Speculative DFS exceeded the step safety limit (%d) without reaching a stoppable state or pruning; the state machine likely contains an invalid unbounded pseudo-state or transition chain.",
+                {{ machine_macro_name(model) }}_MAX_DFS_STEPS);
+            return {{ machine_macro_name(model) }}_FAILURE;
+        }
+        ++machine->validation_depth;
+    }
+
+    _{{ machine_class_name(model) }}_copy_context(&sim_context, context);
+    if (_{{ machine_class_name(model) }}_execute_initial_transition_on_context(
+            machine,
+            &sim_context,
+            transition_id,
+            event_set,
+            1,
+            0) != {{ machine_macro_name(model) }}_SUCCESS) {
+        result = {{ machine_macro_name(model) }}_FAILURE;
+    } else {
+        ended = sim_context.stack_size == 0u;
+        if (ended) {
+            result = 1;
+        } else {
+            result = _{{ machine_class_name(model) }}_run_cycle_on_context(
+                machine,
+                &sim_context,
+                event_set,
+                &ended,
+                1,
+                1);
+        }
+    }
+
+    if (machine != NULL && machine->validation_depth > 0) {
+        --machine->validation_depth;
+    }
+    return result;
 }
 
 static int _{{ machine_class_name(model) }}_initialize_context(
@@ -1802,7 +1982,9 @@ static int _{{ machine_class_name(model) }}_initialize_context(
     const _{{ machine_class_name(model) }}EventSet *event_set)
 {
     context->stack_size = 0u;
-    _{{ machine_class_name(model) }}_enter_state(machine, context, {{ state_enum(model.root_state) }}, event_set, 0);
+    if (_{{ machine_class_name(model) }}_enter_state(machine, context, {{ state_enum(model.root_state) }}, event_set, 0, 1) != {{ machine_macro_name(model) }}_SUCCESS) {
+        return 0;
+    }
     return context->stack_size == 0u;
 }
 
@@ -1833,12 +2015,15 @@ int {{ machine_class_name(model) }}_init({{ machine_class_name(model) }} *machin
     }
 
     memset(machine, 0, sizeof(*machine));
-    _{{ machine_class_name(model) }}_reset_vars(&machine->vars);
+    if (_{{ machine_class_name(model) }}_reset_vars(machine, &machine->vars) != {{ machine_macro_name(model) }}_SUCCESS) {
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
     machine->stack_size = 1u;
     machine->stack[0].state_id = {{ state_enum(model.root_state) }};
     machine->stack[0].mode = {{ machine_macro_name(model) }}_FRAME_MODE_INIT_WAIT;
     machine->ended = 0;
     machine->entered_root = 0;
+    machine->initialized = 1;
     machine->_active_vars = NULL;
     _{{ machine_class_name(model) }}_clear_error(machine);
     return {{ machine_macro_name(model) }}_SUCCESS;
@@ -1849,38 +2034,46 @@ int {{ machine_class_name(model) }}_hot_start(
     {{ machine_class_name(model) }}StateId initial_state_id,
     const {{ machine_class_name(model) }}Vars *initial_vars)
 {
-    const {{ machine_class_name(model) }}Hooks *saved_hooks;
-    void *saved_hook_user_data;
-    const {{ machine_class_name(model) }}EventChecks *saved_event_checks;
-    void *saved_event_check_user_data;
-    int saved_event_checks_mounted;
+    {{ machine_class_name(model) }} saved_machine;
+    char hot_start_error[sizeof(machine->last_error)];
+    _{{ machine_class_name(model) }}RuntimeContext validation_context;
+    _{{ machine_class_name(model) }}EventSet validation_event_set;
+    int validation_ended;
+    int validation_success;
     int path_ids[{{ machine_macro_name(model) }}_MAX_STACK_DEPTH];
     size_t path_count;
     int current_state_id;
+    int target_state_id;
     size_t i;
 
     if (machine == NULL || initial_vars == NULL) {
         return {{ machine_macro_name(model) }}_FAILURE;
     }
 
-    saved_hooks = machine->hooks;
-    saved_hook_user_data = machine->hook_user_data;
-    saved_event_checks = machine->event_checks;
-    saved_event_check_user_data = machine->event_check_user_data;
-    saved_event_checks_mounted = machine->event_checks_mounted;
+    saved_machine = *machine;
+    hot_start_error[0] = '\0';
     memset(machine, 0, sizeof(*machine));
     machine->vars = *initial_vars;
+    target_state_id = initial_state_id;
     current_state_id = initial_state_id;
     if (!_{{ machine_class_name(model) }}_state_id_is_valid(current_state_id)) {
-        _{{ machine_class_name(model) }}_set_error(machine, "Invalid state id: %d", initial_state_id);
-        return {{ machine_macro_name(model) }}_FAILURE;
+        _{{ machine_class_name(model) }}_format_error_text(
+            hot_start_error,
+            sizeof(hot_start_error),
+            "Invalid state id: %d",
+            initial_state_id);
+        goto hot_start_failure;
     }
 
     path_count = 0u;
     while (current_state_id >= 0) {
         if (path_count >= {{ machine_macro_name(model) }}_MAX_STACK_DEPTH) {
-            _{{ machine_class_name(model) }}_set_error(machine, "Hot start target exceeds the structural stack-depth safety limit (%d) before execution; choose a shallower target state or simplify the state hierarchy.", {{ machine_macro_name(model) }}_MAX_STACK_DEPTH);
-            return {{ machine_macro_name(model) }}_FAILURE;
+            _{{ machine_class_name(model) }}_format_error_text(
+                hot_start_error,
+                sizeof(hot_start_error),
+                "Hot start target exceeds the structural stack-depth safety limit (%d) before execution; choose a shallower target state or simplify the state hierarchy.",
+                {{ machine_macro_name(model) }}_MAX_STACK_DEPTH);
+            goto hot_start_failure;
         }
         path_ids[path_count++] = current_state_id;
         current_state_id = _{{ machine_class_name(model) }}_state_info[current_state_id].parent_state_id;
@@ -1899,18 +2092,58 @@ int {{ machine_class_name(model) }}_hot_start(
         }
         machine->stack[machine->stack_size].state_id = state_id;
         machine->stack[machine->stack_size].mode = mode;
+        machine->stack[machine->stack_size].plain_before_pending = 0;
         ++machine->stack_size;
     }
     machine->entered_root = 1;
     machine->ended = 0;
+    machine->initialized = 1;
     machine->_active_vars = NULL;
-    machine->hooks = saved_hooks;
-    machine->hook_user_data = saved_hook_user_data;
-    machine->event_checks = saved_event_checks;
-    machine->event_check_user_data = saved_event_check_user_data;
-    machine->event_checks_mounted = saved_event_checks_mounted;
+    machine->hooks = saved_machine.hooks;
+    machine->hook_user_data = saved_machine.hook_user_data;
+    machine->event_checks = saved_machine.event_checks;
+    machine->event_check_user_data = saved_machine.event_check_user_data;
+    machine->event_checks_mounted = saved_machine.event_checks_mounted;
     _{{ machine_class_name(model) }}_clear_error(machine);
+    if (machine->stack_size > {{ machine_macro_name(model) }}_MAX_STACK_DEPTH) {
+        _{{ machine_class_name(model) }}_format_error_text(
+            hot_start_error,
+            sizeof(hot_start_error),
+            "Hot start target exceeds the structural stack-depth safety limit (%d) before execution; choose a shallower target state or simplify the state hierarchy.",
+            {{ machine_macro_name(model) }}_MAX_STACK_DEPTH);
+        goto hot_start_failure;
+    }
+    if (!_{{ machine_class_name(model) }}_is_stoppable_state(target_state_id)) {
+        _{{ machine_class_name(model) }}_event_set_activate_all(&validation_event_set);
+        _{{ machine_class_name(model) }}_copy_from_machine(&validation_context, machine);
+        validation_ended = 0;
+        validation_success = _{{ machine_class_name(model) }}_run_cycle_on_context(
+            machine,
+            &validation_context,
+            &validation_event_set,
+            &validation_ended,
+            1,
+            1);
+        if (!validation_success && machine->last_error[0] != '\0') {
+            _{{ machine_class_name(model) }}_format_error_text(hot_start_error, sizeof(hot_start_error), "%s", machine->last_error);
+            goto hot_start_failure;
+        }
+        if (!validation_success) {
+            _{{ machine_class_name(model) }}_format_error_text(
+                hot_start_error,
+                sizeof(hot_start_error),
+                "Hot start target '%s' cannot reach a stoppable state",
+                _{{ machine_class_name(model) }}_state_info[target_state_id].path);
+            goto hot_start_failure;
+        }
+        _{{ machine_class_name(model) }}_clear_error(machine);
+    }
     return {{ machine_macro_name(model) }}_SUCCESS;
+
+hot_start_failure:
+    *machine = saved_machine;
+    _{{ machine_class_name(model) }}_set_error(machine, "%s", hot_start_error);
+    return {{ machine_macro_name(model) }}_FAILURE;
 }
 
 void {{ machine_class_name(model) }}_set_hooks(
@@ -1960,6 +2193,12 @@ int {{ machine_class_name(model) }}_cycle(
     if (machine == NULL) {
         return {{ machine_macro_name(model) }}_FAILURE;
     }
+    if (!machine->initialized) {
+        _{{ machine_class_name(model) }}_set_error(machine, "Machine is not initialized; call {{ machine_class_name(model) }}_init(...) or {{ machine_class_name(model) }}_hot_start(...) before cycle().");
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
+
+    _{{ machine_class_name(model) }}_clear_error(machine);
     if (machine->ended) {
         return {{ machine_macro_name(model) }}_SUCCESS;
     }

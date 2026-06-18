@@ -131,6 +131,9 @@ black-box runtime:
 - generated identifiers are normalized for both C and C++, including escaping
   keyword collisions such as `class` or `template` and avoiding reserved
   public identifier shapes such as double underscores
+- root-machine public ABI prefixes and header guards use the same reserved-safe
+  identifier discipline; legal root names such as `_Root`, `class`, and `A__B`
+  must not leak reserved C/C++ public names into the generated header
 
 The public header exposes some runtime layout structs for ABI simplicity, but
 runtime-owned internals should not be modified directly unless the field is

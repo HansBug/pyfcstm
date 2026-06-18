@@ -13,7 +13,12 @@ from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.template import extract_template
-from pyfcstm.utils import to_c_identifier, to_c_path_identifier
+from pyfcstm.utils import (
+    to_c_identifier,
+    to_c_path_identifier,
+    to_c_public_identifier,
+    to_c_public_macro_identifier,
+)
 
 
 class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
@@ -61,7 +66,7 @@ def _cmake_generator_args():
 
 
 def _machine_macro_name(model):
-    return '{name}_MACHINE'.format(name=to_c_identifier(model.root_state.name).upper())
+    return to_c_public_macro_identifier(model.root_state.name, '_MACHINE')
 
 
 def write_test_build_files(output_dir, model):
@@ -136,7 +141,7 @@ def write_test_build_files(output_dir, model):
             '    target_link_libraries(machine_static m)\n'
             '    target_link_libraries(machine_shared m)\n'
             'endif()\n'.format(
-                name=to_c_identifier(model.root_state.name) + 'Machine',
+                name=to_c_public_identifier(model.root_state.name, 'Machine'),
                 macro=macro_name,
             )
         )
@@ -360,7 +365,7 @@ class _CPollRuntime:
         self._model = model
         self._temporary_directories = list(temporary_directories or [])
         self._dll_directory_handle = dll_directory_handle
-        self._prefix = '{name}Machine'.format(name=to_c_identifier(model.root_state.name))
+        self._prefix = to_c_public_identifier(model.root_state.name, 'Machine')
         self._var_types = {
             def_item.name: def_item.type for def_item in model.defines.values()
         }

@@ -19,17 +19,17 @@ globals:
     type: template
     params:
       - model
-    template: "{{ model.root_state.name | to_c_identifier }}Machine"
+    template: "{{ model.root_state.name | to_c_public_identifier('Machine') }}"
   machine_macro_name:
     type: template
     params:
       - model
-    template: "{{ model.root_state.name | to_c_identifier | upper }}_MACHINE"
+    template: "{{ model.root_state.name | to_c_public_macro_identifier('_MACHINE') }}"
   machine_header_guard:
     type: template
     params:
       - model
-    template: "PYFCSTM_GENERATED_{{ machine_class_name(model) | upper }}_H"
+    template: "PYFCSTM_GENERATED_{{ machine_macro_name(model) }}_H"
   state_path:
     type: template
     params:

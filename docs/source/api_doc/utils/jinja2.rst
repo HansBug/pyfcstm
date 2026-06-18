@@ -12,6 +12,24 @@ to\_c\_path\_identifier
 .. autofunction:: to_c_path_identifier
 
 
+is\_c\_public\_identifier\_reserved
+-----------------------------------------------------
+
+.. autofunction:: is_c_public_identifier_reserved
+
+
+to\_c\_public\_identifier
+-----------------------------------------------------
+
+.. autofunction:: to_c_public_identifier
+
+
+to\_c\_public\_macro\_identifier
+-----------------------------------------------------
+
+.. autofunction:: to_c_public_macro_identifier
+
+
 add\_builtins\_to\_env
 -----------------------------------------------------
 

@@ -113,12 +113,12 @@ typedef struct {{ machine_class_name(model) }}Vars {
 #define {{ machine_macro_name(model) }}_STATE_{{ state_slug(state) }} (({{ machine_class_name(model) }}StateId){{ loop.index0 }})
 {% set state_legacy_alias = state_slug(state) | upper -%}
 {% set state_legacy_alias_macro = machine_macro_name(model) ~ '_STATE_' ~ state_legacy_alias -%}
-{% if state_all_alias_ns.items.count(state_legacy_alias) == 1 and state_legacy_alias_macro not in public_macro_reserved_ns.items and state_legacy_alias_macro not in state_macro_ns.canonical %}
+{% if state_all_alias_ns.items.count(state_legacy_alias) == 1 and state_legacy_alias_macro not in public_macro_reserved_ns.items and state_legacy_alias_macro not in state_macro_ns.canonical and not (state_legacy_alias_macro is c_public_identifier_reserved) %}
 #define {{ machine_macro_name(model) }}_STATE_{{ state_legacy_alias }} {{ machine_macro_name(model) }}_STATE_{{ state_slug(state) }}
 {% endif -%}
 {% set state_alias = (state | state_path) | to_c_identifier | upper -%}
 {% set state_alias_macro = machine_macro_name(model) ~ '_STATE_' ~ state_alias -%}
-{% if state_all_alias_ns.items.count(state_alias) == 1 and state_alias_macro not in public_macro_reserved_ns.items and state_alias_macro not in state_macro_ns.canonical %}
+{% if state_all_alias_ns.items.count(state_alias) == 1 and state_alias_macro not in public_macro_reserved_ns.items and state_alias_macro not in state_macro_ns.canonical and not (state_alias_macro is c_public_identifier_reserved) %}
 #define {{ machine_macro_name(model) }}_STATE_{{ state_alias }} {{ machine_macro_name(model) }}_STATE_{{ state_slug(state) }}
 {% endif -%}
 {% endfor -%}
@@ -143,12 +143,12 @@ typedef struct {{ machine_class_name(model) }}Vars {
 #define {{ machine_macro_name(model) }}_EVENT_{{ event_path.split('.') | to_c_path_identifier }} (({{ machine_class_name(model) }}EventId){{ loop.index0 }})
 {% set event_legacy_alias = event_path.split('.') | to_c_path_identifier | upper -%}
 {% set event_legacy_alias_macro = machine_macro_name(model) ~ '_EVENT_' ~ event_legacy_alias -%}
-{% if event_all_alias_ns.items.count(event_legacy_alias) == 1 and event_legacy_alias_macro not in public_macro_reserved_ns.items and event_legacy_alias_macro not in event_macro_ns.canonical %}
+{% if event_all_alias_ns.items.count(event_legacy_alias) == 1 and event_legacy_alias_macro not in public_macro_reserved_ns.items and event_legacy_alias_macro not in event_macro_ns.canonical and not (event_legacy_alias_macro is c_public_identifier_reserved) %}
 #define {{ machine_macro_name(model) }}_EVENT_{{ event_legacy_alias }} {{ machine_macro_name(model) }}_EVENT_{{ event_path.split('.') | to_c_path_identifier }}
 {% endif -%}
 {% set event_alias = event_path | to_c_identifier | upper -%}
 {% set event_alias_macro = machine_macro_name(model) ~ '_EVENT_' ~ event_alias -%}
-{% if event_all_alias_ns.items.count(event_alias) == 1 and event_alias_macro not in public_macro_reserved_ns.items and event_alias_macro not in event_macro_ns.canonical %}
+{% if event_all_alias_ns.items.count(event_alias) == 1 and event_alias_macro not in public_macro_reserved_ns.items and event_alias_macro not in event_macro_ns.canonical and not (event_alias_macro is c_public_identifier_reserved) %}
 #define {{ machine_macro_name(model) }}_EVENT_{{ event_alias }} {{ machine_macro_name(model) }}_EVENT_{{ event_path.split('.') | to_c_path_identifier }}
 {% endif -%}
 {% endfor %}
@@ -185,12 +185,12 @@ typedef struct {{ machine_class_name(model) }}Vars {
 #define {{ machine_macro_name(model) }}_ACTION_{{ row['func_name'].split('.') | to_c_path_identifier }} (({{ machine_class_name(model) }}ActionId){{ loop.index0 }})
 {% set action_legacy_alias = row['func_name'].split('.') | to_c_path_identifier | upper -%}
 {% set action_legacy_alias_macro = machine_macro_name(model) ~ '_ACTION_' ~ action_legacy_alias -%}
-{% if action_all_alias_ns.items.count(action_legacy_alias) == 1 and action_legacy_alias_macro not in public_macro_reserved_ns.items and action_legacy_alias_macro not in action_macro_ns.canonical %}
+{% if action_all_alias_ns.items.count(action_legacy_alias) == 1 and action_legacy_alias_macro not in public_macro_reserved_ns.items and action_legacy_alias_macro not in action_macro_ns.canonical and not (action_legacy_alias_macro is c_public_identifier_reserved) %}
 #define {{ machine_macro_name(model) }}_ACTION_{{ action_legacy_alias }} {{ machine_macro_name(model) }}_ACTION_{{ row['func_name'].split('.') | to_c_path_identifier }}
 {% endif -%}
 {% set action_alias = row['func_name'] | to_c_identifier | upper -%}
 {% set action_alias_macro = machine_macro_name(model) ~ '_ACTION_' ~ action_alias -%}
-{% if action_all_alias_ns.items.count(action_alias) == 1 and action_alias_macro not in public_macro_reserved_ns.items and action_alias_macro not in action_macro_ns.canonical %}
+{% if action_all_alias_ns.items.count(action_alias) == 1 and action_alias_macro not in public_macro_reserved_ns.items and action_alias_macro not in action_macro_ns.canonical and not (action_alias_macro is c_public_identifier_reserved) %}
 #define {{ machine_macro_name(model) }}_ACTION_{{ action_alias }} {{ machine_macro_name(model) }}_ACTION_{{ row['func_name'].split('.') | to_c_path_identifier }}
 {% endif -%}
 {% endfor -%}

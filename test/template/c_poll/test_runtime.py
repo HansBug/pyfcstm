@@ -77,11 +77,7 @@ def _duplicate_macro_define_names(header):
 
 
 def _public_generated_names(header):
-    macro_names = re.findall(
-        r'^#define\s+(\w+_(?:STATE|EVENT|ACTION)_\w+)',
-        header,
-        flags=re.M,
-    )
+    macro_names = re.findall(r'^#define\s+(\w+)', header, flags=re.M)
     hook_fields = re.findall(r'^\s+(on_\w+);', header, flags=re.M)
     event_check_fields = re.findall(r'^\s+(check_\w+);', header, flags=re.M)
     return macro_names + hook_fields + event_check_fields
@@ -204,6 +200,80 @@ class TestCPollBuiltinTemplate:
         assert "current_state_path" not in event_context_block
         assert "RootMachineEventId event_id;" in event_context_block
         assert "RootMachineStateId current_state_id;" in event_context_block
+
+    def test_generated_root_public_identifiers_avoid_reserved_shapes(self):
+        cases = [
+            {
+                "root_name": "_Root",
+                "class_name": "p_p5_z00005FRootMachine",
+                "macro_name": "P_P5_Z00005FROOT_MACHINE",
+                "state_slug": "p5_z00005FRoot_p4_Idle",
+            },
+            {
+                "root_name": "class",
+                "class_name": "class_Machine",
+                "macro_name": "P_P5_CLASS_MACHINE",
+                "state_slug": "p5_class_p4_Idle",
+            },
+        ]
+
+        for case in cases:
+            dsl_code = """
+            state {root_name} {{
+                state Idle;
+                [*] -> Idle;
+            }}
+            """.format(root_name=case["root_name"])
+
+            with render_c_artifacts(dsl_code) as artifacts:
+                with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
+                    header = f.read()
+
+                class_name = case["class_name"]
+                macro_name = case["macro_name"]
+                run = _compile_and_run_cpp_harness(
+                    artifacts,
+                    "root_reserved_safe_public_identifiers_" + case["root_name"].replace("_", "u"),
+                    textwrap.dedent(
+                        """
+                        #include "machine.h"
+
+                        int main()
+                        {{
+                            {class_name} machine;
+
+                            if (!{class_name}_init(&machine)) {{
+                                return 10;
+                            }}
+                            if (!{class_name}_cycle(&machine)) {{
+                                return 11;
+                            }}
+                            if ({class_name}_current_state_id(&machine) != {macro_name}_STATE_{state_slug}) {{
+                                return 12;
+                            }}
+                            if ({macro_name}_SUCCESS != 1) {{
+                                return 13;
+                            }}
+                            return 0;
+                        }}
+                        """.format(
+                            class_name=class_name,
+                            macro_name=macro_name,
+                            state_slug=case["state_slug"],
+                        )
+                    ),
+                )
+
+            assert "_ROOT_MACHINE" not in header
+            assert "CLASS__MACHINE" not in header
+            assert "#ifndef PYFCSTM_GENERATED_{macro_name}_H".format(
+                macro_name=case["macro_name"],
+            ) in header
+            assert "#define {macro_name}_API".format(
+                macro_name=case["macro_name"],
+            ) in header
+            assert _reserved_cxx_public_names(header) == []
+            assert run.returncode == 0, run.stderr
 
     def test_generated_public_metadata_identifiers_resist_path_collisions(self):
         dsl_code = """

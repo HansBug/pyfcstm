@@ -151,6 +151,13 @@ reserved or canonical public macro. Canonical public identifiers must also stay
 outside C/C++ reserved identifier forms, including double underscores or names
 that begin with an underscore followed by an uppercase letter.
 
+The same reserved-shape rule applies to the root-machine ABI prefix, symbol
+visibility macro prefix, hook/event-check initializer macros, and header guard.
+Do not derive those public names by simply uppercasing or underscore-joining the
+raw root state name. Use the public C identifier helpers so legal root names such
+as `_Root`, `class`, and `A__B` cannot generate public macros, typedefs, function
+prefixes, or include guards in C/C++ reserved namespaces.
+
 ## Relationship to `c`
 
 `c_poll` and `c` share the same C-family maintenance constraints:

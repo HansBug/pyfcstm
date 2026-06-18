@@ -269,6 +269,33 @@ class TestCBuiltinTemplate:
             assert runtime.vars == {'counter': 1}
             assert cold_calls == [('cold', 'Root', 'enter', 0)]
 
+
+    def test_failed_hot_start_preserves_public_runtime_snapshot(self):
+        dsl_code = """
+        def int trace = 0;
+        state Root {
+            state Idle { during { trace = trace + 1; } }
+            state Composite {
+                state Blocked;
+                [*] -> Blocked : if [false];
+            }
+            [*] -> Idle;
+        }
+        """
+
+        with render_c_runtime(dsl_code) as (runtime, _):
+            runtime.cycle()
+            before_state = runtime.current_state_path
+            before_vars = dict(runtime.vars)
+            before_ended = runtime.is_ended
+
+            with pytest.raises(ValueError, match='cannot reach a stoppable state'):
+                runtime.hot_start('Root.Composite', {'trace': 5})
+
+            assert runtime.current_state_path == before_state
+            assert runtime.vars == before_vars
+            assert runtime.is_ended is before_ended
+
     def test_generated_machine_exposes_read_only_hook_context(self):
         dsl_code = """
         def int counter = 0;

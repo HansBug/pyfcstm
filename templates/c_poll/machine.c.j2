@@ -231,6 +231,18 @@ static const char *_{{ machine_class_name(model) }}_dsl_source =
 {% endif -%}
 
 /* Error helpers used by the public API wrappers. */
+static void _{{ machine_class_name(model) }}_format_error_text(char *buffer, size_t buffer_size, const char *fmt, ...)
+{
+    va_list ap;
+    if (buffer == NULL || buffer_size == 0u) {
+        return;
+    }
+    va_start(ap, fmt);
+    PYFCSTM_GENERATED_VSNPRINTF(buffer, buffer_size, fmt, ap);
+    buffer[buffer_size - 1u] = '\0';
+    va_end(ap);
+}
+
 static void _{{ machine_class_name(model) }}_set_error({{ machine_class_name(model) }} *machine, const char *fmt, ...)
 {
     va_list ap;
@@ -2022,11 +2034,8 @@ int {{ machine_class_name(model) }}_hot_start(
     {{ machine_class_name(model) }}StateId initial_state_id,
     const {{ machine_class_name(model) }}Vars *initial_vars)
 {
-    const {{ machine_class_name(model) }}Hooks *saved_hooks;
-    void *saved_hook_user_data;
-    const {{ machine_class_name(model) }}EventChecks *saved_event_checks;
-    void *saved_event_check_user_data;
-    int saved_event_checks_mounted;
+    {{ machine_class_name(model) }} saved_machine;
+    char hot_start_error[sizeof(machine->last_error)];
     _{{ machine_class_name(model) }}RuntimeContext validation_context;
     _{{ machine_class_name(model) }}EventSet validation_event_set;
     int validation_ended;
@@ -2041,25 +2050,30 @@ int {{ machine_class_name(model) }}_hot_start(
         return {{ machine_macro_name(model) }}_FAILURE;
     }
 
-    saved_hooks = machine->hooks;
-    saved_hook_user_data = machine->hook_user_data;
-    saved_event_checks = machine->event_checks;
-    saved_event_check_user_data = machine->event_check_user_data;
-    saved_event_checks_mounted = machine->event_checks_mounted;
+    saved_machine = *machine;
+    hot_start_error[0] = '\0';
     memset(machine, 0, sizeof(*machine));
     machine->vars = *initial_vars;
     target_state_id = initial_state_id;
     current_state_id = initial_state_id;
     if (!_{{ machine_class_name(model) }}_state_id_is_valid(current_state_id)) {
-        _{{ machine_class_name(model) }}_set_error(machine, "Invalid state id: %d", initial_state_id);
-        return {{ machine_macro_name(model) }}_FAILURE;
+        _{{ machine_class_name(model) }}_format_error_text(
+            hot_start_error,
+            sizeof(hot_start_error),
+            "Invalid state id: %d",
+            initial_state_id);
+        goto hot_start_failure;
     }
 
     path_count = 0u;
     while (current_state_id >= 0) {
         if (path_count >= {{ machine_macro_name(model) }}_MAX_STACK_DEPTH) {
-            _{{ machine_class_name(model) }}_set_error(machine, "Hot start target exceeds the structural stack-depth safety limit (%d) before execution; choose a shallower target state or simplify the state hierarchy.", {{ machine_macro_name(model) }}_MAX_STACK_DEPTH);
-            return {{ machine_macro_name(model) }}_FAILURE;
+            _{{ machine_class_name(model) }}_format_error_text(
+                hot_start_error,
+                sizeof(hot_start_error),
+                "Hot start target exceeds the structural stack-depth safety limit (%d) before execution; choose a shallower target state or simplify the state hierarchy.",
+                {{ machine_macro_name(model) }}_MAX_STACK_DEPTH);
+            goto hot_start_failure;
         }
         path_ids[path_count++] = current_state_id;
         current_state_id = _{{ machine_class_name(model) }}_state_info[current_state_id].parent_state_id;
@@ -2085,18 +2099,19 @@ int {{ machine_class_name(model) }}_hot_start(
     machine->ended = 0;
     machine->initialized = 1;
     machine->_active_vars = NULL;
-    machine->hooks = saved_hooks;
-    machine->hook_user_data = saved_hook_user_data;
-    machine->event_checks = saved_event_checks;
-    machine->event_check_user_data = saved_event_check_user_data;
-    machine->event_checks_mounted = saved_event_checks_mounted;
+    machine->hooks = saved_machine.hooks;
+    machine->hook_user_data = saved_machine.hook_user_data;
+    machine->event_checks = saved_machine.event_checks;
+    machine->event_check_user_data = saved_machine.event_check_user_data;
+    machine->event_checks_mounted = saved_machine.event_checks_mounted;
     _{{ machine_class_name(model) }}_clear_error(machine);
     if (machine->stack_size > {{ machine_macro_name(model) }}_MAX_STACK_DEPTH) {
-        _{{ machine_class_name(model) }}_set_error(
-            machine,
+        _{{ machine_class_name(model) }}_format_error_text(
+            hot_start_error,
+            sizeof(hot_start_error),
             "Hot start target exceeds the structural stack-depth safety limit (%d) before execution; choose a shallower target state or simplify the state hierarchy.",
             {{ machine_macro_name(model) }}_MAX_STACK_DEPTH);
-        return {{ machine_macro_name(model) }}_FAILURE;
+        goto hot_start_failure;
     }
     if (!_{{ machine_class_name(model) }}_is_stoppable_state(target_state_id)) {
         _{{ machine_class_name(model) }}_event_set_activate_all(&validation_event_set);
@@ -2110,18 +2125,25 @@ int {{ machine_class_name(model) }}_hot_start(
             1,
             1);
         if (!validation_success && machine->last_error[0] != '\0') {
-            return {{ machine_macro_name(model) }}_FAILURE;
+            _{{ machine_class_name(model) }}_format_error_text(hot_start_error, sizeof(hot_start_error), "%s", machine->last_error);
+            goto hot_start_failure;
         }
         if (!validation_success) {
-            _{{ machine_class_name(model) }}_set_error(
-                machine,
+            _{{ machine_class_name(model) }}_format_error_text(
+                hot_start_error,
+                sizeof(hot_start_error),
                 "Hot start target '%s' cannot reach a stoppable state",
                 _{{ machine_class_name(model) }}_state_info[target_state_id].path);
-            return {{ machine_macro_name(model) }}_FAILURE;
+            goto hot_start_failure;
         }
         _{{ machine_class_name(model) }}_clear_error(machine);
     }
     return {{ machine_macro_name(model) }}_SUCCESS;
+
+hot_start_failure:
+    *machine = saved_machine;
+    _{{ machine_class_name(model) }}_set_error(machine, "%s", hot_start_error);
+    return {{ machine_macro_name(model) }}_FAILURE;
 }
 
 void {{ machine_class_name(model) }}_set_hooks(

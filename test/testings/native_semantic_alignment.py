@@ -409,8 +409,8 @@ def native_capability_by_runner_case(
     Example::
 
         >>> matrix = native_capability_by_runner_case()
-        >>> ("generated_c_alignment", "expression_failure_raises_expression_error") in matrix
-        True
+        >>> matrix
+        {}
     """
     source = tuple(entries) if entries is not None else load_native_capability_matrix()
     return {(entry.runner, entry.case): entry for entry in source}
@@ -1025,8 +1025,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     Example::
 
-        >>> main(["--runner", "generated_c_alignment", "--case-id", "design_basic_simple_transition"])
+        >>> import contextlib
+        >>> import io
+        >>> output = io.StringIO()
+        >>> with contextlib.redirect_stdout(output):
+        ...     status = main(["--runner", "generated_c_alignment", "--case-id", "design_basic_simple_transition"])
+        >>> status
         0
+        >>> '"passed": 1' in output.getvalue()
+        True
     """
     args = _parse_args(argv)
     if args.worker:

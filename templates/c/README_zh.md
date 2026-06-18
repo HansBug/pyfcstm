@@ -96,6 +96,14 @@ Generated C runtime 可能被嵌入长期稳定运行的控制系统，因此内
 
 同一 reserved-shape 规则也适用于 root-machine ABI prefix、symbol visibility macro prefix、hook/event-check initializer macros 和 header guard。不要直接把原始 root state name 做整体大写或下划线拼接来生成这些 public names；应使用 public C identifier helpers，确保 `_Root`、`class`、`A__B` 这类合法 root name 不会在 generated header 中泄漏 C/C++ reserved public macros、typedefs、function prefixes 或 include guards。
 
+维护这条 contract 时，下面这些检查属于常规模板 review 的一部分：
+
+- 修改 public metadata 或 identifier helpers 前，至少生成一个同时覆盖嵌套状态、events、abstract actions、具名 `ref` actions、lifecycle stages，以及 `Root.A.B` / `Root.A_B` 这类相似 path 的模型。
+- 检查 generated public ABI 和 hot path。任何生成期可枚举值如果以 `const char *` 出现、需要 `strcmp()`，或需要 per-cycle string allocation / formatting，除非明确限制在冷诊断面，否则都是设计回退。
+- 测试 adapter 只能单向兼容：Python fixtures 可以把 numeric ids 映射回 schema strings 方便断言，但这层兼容不能反向要求 generated C ABI 在 hooks、event submission 或 current-state checks 中携带字符串。
+- 共享的 C-family metadata 规则必须同步更新 `c` 和 `c_poll`。只有差异直接来自不同 event-input model，且在两个模板手册中都写清楚时，才允许不同。
+- metadata、identifier 或 hook-context 变更完成前，必须重新运行代表性的 native gates，不能依赖 slow-test skipping 作为完成依据。
+
 ## 性能证据
 
 一组历史 benchmark 曾用包含嵌套 composites、initial transitions、sibling transitions、exit-to-parent paths 和 validation rollback 的中等复杂度电梯控制模型，对比当前专用化 C runtime 设计和更早的字符串提交 runtime。

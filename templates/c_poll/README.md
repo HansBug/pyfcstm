@@ -158,6 +158,31 @@ raw root state name. Use the public C identifier helpers so legal root names suc
 as `_Root`, `class`, and `A__B` cannot generate public macros, typedefs, function
 prefixes, or include guards in C/C++ reserved namespaces.
 
+When maintaining this contract, treat the following checks as part of normal
+template review:
+
+- Generate at least one model that combines nested states, events, abstract
+  actions, named `ref` actions, lifecycle stages, event checks, and
+  similar-looking paths such as `Root.A.B` / `Root.A_B` before changing public
+  metadata or identifier helpers.
+- Inspect the generated public ABI and hot path. Any generation-time enumerable
+  value that appears as `const char *`, requires `strcmp()`, or needs per-cycle
+  string allocation / formatting is a design regression unless it is explicitly
+  confined to a cold diagnostic surface.
+- Keep test adapters one-way: Python fixtures may map numeric ids back to schema
+  strings for assertions, but that compatibility layer must not require the
+  generated c_poll ABI to carry strings in hooks, event checks, or current-state
+  checks.
+- Keep event-check metadata numeric as well. The event-check callback should
+  receive generated event and state ids, not event-path strings that integrators
+  must compare at runtime.
+- Update `c` and `c_poll` together for shared C-family metadata rules. A
+  difference is acceptable only when it follows directly from the different
+  event-input model and is documented in both template handbooks.
+- Re-run representative native gates without relying on slow-test skipping
+  before claiming metadata, identifier, hook-context, or event-check changes are
+  complete.
+
 ## Relationship to `c`
 
 `c_poll` and `c` share the same C-family maintenance constraints:

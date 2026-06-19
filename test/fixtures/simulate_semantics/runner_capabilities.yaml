@@ -1,6 +1,0 @@
-# Native shared semantic alignment capability matrix.
-# This file is the single test-side fact source for C/C poll shared
-# alignment expected failures. The list must remain empty when the native
-# generated runtimes match the shared semantic fixture corpus.
-version: 1
-known_failures: []

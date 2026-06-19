@@ -97,7 +97,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y tree cloc wget curl make zip
           sudo apt-get install -y git-lfs
-          sudo apt-get install p7zip-full rar unrar
+          sudo apt-get install -y p7zip-full rar unrar
       - name: Set up system dependences on Windows
         if: ${{ env.OS_NAME == 'Windows' }}
         shell: bash

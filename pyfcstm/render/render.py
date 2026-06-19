@@ -61,6 +61,11 @@ from .statement import (
     _KNOWN_STMT_STYLES, _normalize_stmt_style,
 )
 from .func import process_item_to_object
+from .c_runtime import (
+    render_c_action_body,
+    render_c_condition_body,
+    render_c_reset_vars_body,
+)
 from ..dsl import node as dsl_nodes
 from ..model import StateMachine
 from ..utils import auto_decode
@@ -229,6 +234,9 @@ class StateMachineCodeRenderer:
         self.env.filters['stmt_render'] = _fn_stmt_render
         self.env.globals['stmts_render'] = _fn_stmts_render
         self.env.filters['stmts_render'] = _fn_stmts_render
+        self.env.globals['render_c_action_body'] = render_c_action_body
+        self.env.globals['render_c_condition_body'] = render_c_condition_body
+        self.env.globals['render_c_reset_vars_body'] = render_c_reset_vars_body
 
         globals_ = config_info.pop('globals', None) or {}
         for name, value in globals_.items():

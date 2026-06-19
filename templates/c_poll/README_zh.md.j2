@@ -6,6 +6,23 @@
 {% endfor -%}
 {% endfor -%}
 {% set abstract_ns = namespace(rows=[]) -%}
+{% set action_scan = namespace(items=[]) -%}
+{% for scan_state in state_items -%}
+{% for scan_group in [
+    scan_state.list_on_enters(with_ids=True),
+    scan_state.list_on_durings(aspect=None, with_ids=True),
+    scan_state.list_on_exits(with_ids=True),
+    scan_state.list_on_durings(aspect='before', with_ids=True),
+    scan_state.list_on_durings(aspect='after', with_ids=True),
+    scan_state.list_on_during_aspects(aspect='before', with_ids=True),
+    scan_state.list_on_during_aspects(aspect='after', with_ids=True),
+] -%}
+{% for _, scan_item in scan_group -%}
+{% set action_scan.items = action_scan.items + [scan_item] -%}
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+{% set action_ref_hop_limit = (action_scan.items | length) + 1 -%}
 {% for state in state_items -%}
 {% for group in [
     state.list_on_enters(with_ids=True),
@@ -18,7 +35,7 @@
 ] -%}
 {% for _, item in group -%}
 {% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
+{% for _ in range(action_ref_hop_limit) -%}
 {% if resolved.item.ref is not none -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
@@ -26,7 +43,7 @@
 {% if resolved.item.is_abstract and resolved.item.func_name not in abstract_ns.rows | map(attribute='func_name') | list -%}
 {% set abstract_ns.rows = abstract_ns.rows + [{
     'func_name': resolved.item.func_name,
-    'hook_name': hook_field_name(resolved.item),
+    'hook_name': hook_field_id_name(resolved.item),
     'owner_path': action_owner_path(resolved.item),
     'stage': resolved.item.stage,
     'aspect': resolved.item.aspect,
@@ -109,7 +126,8 @@ C99 / C++98+ 状态机引擎。它遵循 `c_poll` 的事件输入契约：
   `{{ machine_class_name(model) }}_set_event_checks(...)` 挂载完整 event-check 表之前，`cycle()` 会直接失败
 - hot start 会把完整变量快照恢复到生成状态 id，并保留已安装的 hook 表和 event-check 表
 - speculative transition 失败时仍会回滚到上一次已提交状态
-- 生成标识符会同时兼顾 C 和 C++，遇到 `class`、`template` 等关键字冲突时会自动规避
+- 生成标识符会同时兼顾 C 和 C++，遇到 `class`、`template` 等关键字冲突时会自动规避，
+  也会避开双下划线等 reserved public identifier 形态
 
 头文件为了 ABI 简洁起见暴露了一些运行时布局结构体，但除非文档明确说明可直接使用，
 否则这些字段都应视为运行时内部实现细节，不应自行写入。
@@ -203,7 +221,7 @@ int main(void)
 {% if event_ns.items %}
 
 {% for event_path in event_ns.items %}
-    event_checks.{{ event_check_field_name(event_path) }} = event_check;
+    event_checks.{{ event_check_field_id_name(event_path) }} = event_check;
 {% endfor %}
     {{ machine_class_name(model) }}_set_event_checks(&machine, &event_checks, NULL);
 {% endif %}
@@ -241,6 +259,8 @@ int main(void)
 | `{{ machine_class_name(model) }}EventContext` | 传给 event-check hook 的只读上下文 |
 | `{{ machine_class_name(model) }}StateId` | 整数状态 id 类型 |
 | `{{ machine_class_name(model) }}EventId` | 整数事件 id 类型 |
+| `{{ machine_class_name(model) }}ActionId` | generated abstract action metadata 使用的整数 action id 类型 |
+| `{{ machine_class_name(model) }}StageId` | 生命周期阶段整数 id 类型 |
 | `{{ machine_class_name(model) }}Int` | 生成整数持久变量时使用的公开有符号 64 位别名 |
 | `{{ machine_class_name(model) }}Vars` | 持久变量快照类型 |
 | `{{ machine_class_name(model) }}HookFn` | abstract 生命周期 hook 回调类型 |
@@ -268,24 +288,30 @@ int main(void)
 
 | 字段 | 含义 |
 | --- | --- |
-| `state_path` | 当前状态/动作所属者的完整 DSL 路径 |
+| `state_id` | 对外报告的调用上下文状态 id；用 generated `{{ machine_macro_name(model) }}_STATE_*` macro 比较 |
 | `vars` | 指向持久变量快照的只读指针 |
-| `action_name` | 当前执行中的 DSL 动作路径/名称 |
-| `action_stage` | 当前阶段字符串，如 `enter`、`during`、`exit` 或 aspect 阶段 |
+| `action_id` | 解析后的 abstract 目标 action id；用 generated `{{ machine_macro_name(model) }}_ACTION_*` macro 比较 |
+| `action_stage_id` | 这个调用点对外报告的生命周期阶段 id；用 `{{ machine_macro_name(model) }}_STAGE_*` 比较 |
+| `active_leaf_state_id` | 调用点可见的当前 active leaf 状态 id |
+| `call_stage_id` | 解析 `ref` 链之前具体调用点的生命周期阶段 id |
+| `abstract_target_id` | 解析 `ref` 链后的 abstract 目标 action id |
+| `named_ref_id` | 如果通过具名 `ref` 调用，则为该具名引用 action id；否则为 `{{ machine_macro_name(model) }}_INVALID_ACTION_ID` |
 
 这个结构体只应用于观察上下文。abstract hook 不应通过 `machine`
-或任何运行时内部存储修改持久变量。
+或任何运行时内部存储修改持久变量。所有生成期可枚举的 metadata 都故意使用 numeric id：
+hot path 中应使用 generated macro，不要做字符串比较。
 
 ### `{{ machine_class_name(model) }}EventContext`
 
 | 字段 | 含义 |
 | --- | --- |
-| `event_path` | 当前被查询的 DSL 事件完整路径 |
-| `current_state_path` | 执行检查时当前叶子状态路径 |
+| `event_id` | 当前被查询的事件 id；用 generated `{{ machine_macro_name(model) }}_EVENT_*` macro 比较 |
+| `current_state_id` | 执行检查时当前叶子状态 id；用 generated `{{ machine_macro_name(model) }}_STATE_*` macro 比较 |
 | `vars` | 指向持久变量快照的只读指针 |
 
 这个结构体是 event-check 的只读观察面。event-check 回调应被视为 probe，
-而不是修改持久状态的入口。
+而不是修改持久状态的入口。Event 与 state metadata 使用 numeric id，
+这样 polling 代码可以保持零分配并避免字符串比较。
 
 ### `{{ machine_class_name(model) }}HookFn`
 
@@ -338,7 +364,7 @@ typedef int (*{{ machine_class_name(model) }}EventCheckFn)(
 | 事件路径 | Hook 字段 |
 | --- | --- |
 {% for event_path in event_ns.items -%}
-| `{{ event_path }}` | `{{ event_check_field_name(event_path) }}` |
+| `{{ event_path }}` | `{{ event_check_field_id_name(event_path) }}` |
 {% endfor %}
 
 可先使用 `{{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT` 初始化，再把
@@ -400,7 +426,8 @@ machine 对象在 C 中不是 opaque type，但其中多数字段都属于运行
 | `{{ machine_class_name(model) }}_cycle(machine)` | 使用当前已安装 event-check 表执行一个 cycle |
 | `{{ machine_class_name(model) }}_vars(machine)` | 读取持久变量 |
 | `{{ machine_class_name(model) }}_is_ended(machine)` | 判断状态机是否结束 |
-| `{{ machine_class_name(model) }}_current_state_path(machine)` | 读取当前叶子状态完整路径 |
+| `{{ machine_class_name(model) }}_current_state_id(machine)` | 读取当前叶子状态 id |
+| `{{ machine_class_name(model) }}_current_state_path(machine)` | 读取当前叶子状态完整路径，主要用于诊断 |
 | `{{ machine_class_name(model) }}_current_state_name(machine)` | 读取当前叶子状态短名称 |
 | `{{ machine_class_name(model) }}_last_error(machine)` | 读取最近一次错误信息 |
 | `{{ machine_class_name(model) }}_dsl_source()` | 读取内嵌的 canonical model export |
@@ -441,7 +468,7 @@ static void generated_hook(
 {
     (void)machine;
     (void)user_data;
-    printf("hook: %s @ %s\n", ctx->action_name, ctx->state_path);
+    printf("hook: action=%d state=%d stage=%d\n", (int)ctx->action_id, (int)ctx->state_id, (int)ctx->action_stage_id);
 }
 
 {% endif -%}
@@ -496,7 +523,7 @@ int main(void)
 {% if event_ns.items %}
     /* Fill every generated event-check field before cycle(). */
 {% for event_path in event_ns.items %}
-    event_checks.{{ event_check_field_name(event_path) }} = {% if loop.first %}selected_event_check{% else %}inactive_event_check{% endif %};
+    event_checks.{{ event_check_field_id_name(event_path) }} = {% if loop.first %}selected_event_check{% else %}inactive_event_check{% endif %};
 {% endfor %}
     {{ machine_class_name(model) }}_set_event_checks(&machine, &event_checks, &driver);
 {% endif %}
@@ -509,7 +536,7 @@ int main(void)
         return 3;
     }
 {% endif %}
-    printf("%s\n", {{ machine_class_name(model) }}_current_state_path(&machine));
+    printf("state id: %d\n", (int){{ machine_class_name(model) }}_current_state_id(&machine));
     return 0;
 }
 ```
@@ -549,7 +576,7 @@ static int event_check(
     {{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT;
 
 {% for event_path in event_ns.items -%}
-event_checks.{{ event_check_field_name(event_path) }} = event_check;
+event_checks.{{ event_check_field_id_name(event_path) }} = event_check;
 {% endfor %}
 {{ machine_class_name(model) }}_set_event_checks(&machine, &event_checks, NULL);
 ```
@@ -597,7 +624,7 @@ initial_vars.{{ def_item.name | to_c_identifier }} = {{ def_item.init.to_ast_nod
 {% endfor %}
 {{ machine_class_name(model) }}_hot_start(
     &machine,
-    {{ machine_macro_name(model) }}_STATE_{{ (model.root_state | state_path) | to_c_identifier | upper }},
+    {{ machine_macro_name(model) }}_STATE_{{ model.root_state | state_slug }},
     &initial_vars
 );
 ```
@@ -636,6 +663,7 @@ int main(void)
 ### 7. 查看状态和错误
 
 ```c
+printf("state id: %d\n", (int){{ machine_class_name(model) }}_current_state_id(&machine));
 printf("state path: %s\n", {{ machine_class_name(model) }}_current_state_path(&machine));
 printf("state name: %s\n", {{ machine_class_name(model) }}_current_state_name(&machine));
 printf("ended: %d\n", {{ machine_class_name(model) }}_is_ended(&machine));
@@ -647,7 +675,7 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 | 状态路径 | 宏 | 数值 |
 | --- | --- | ---: |
 {% for state in state_items -%}
-| `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ (state | state_path) | to_c_identifier | upper }}` | `{{ loop.index0 }}` |
+| `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ state | state_slug }}` | `{{ loop.index0 }}` |
 {% endfor %}
 
 ## 事件 ID
@@ -656,11 +684,38 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 | 事件路径 | 宏 | 数值 |
 | --- | --- | ---: |
 {% for event_path in event_ns.items -%}
-| `{{ event_path }}` | `{{ machine_macro_name(model) }}_EVENT_{{ event_path | to_c_identifier | upper }}` | `{{ loop.index0 }}` |
+| `{{ event_path }}` | `{{ machine_macro_name(model) }}_EVENT_{{ event_path.split('.') | to_c_path_identifier }}` | `{{ loop.index0 }}` |
 {% endfor %}
 {% else %}
 当前状态机没有定义事件。
 {% endif %}
+
+## Action 和 Stage ID
+
+{% if action_scan.items %}
+{% set action_doc_ns = namespace(rows=[]) -%}
+{% for action in action_scan.items -%}
+{% if action.func_name not in action_doc_ns.rows | map(attribute='func_name') | list -%}
+{% set action_doc_ns.rows = action_doc_ns.rows + [{'func_name': action.func_name}] -%}
+{% endif -%}
+{% endfor -%}
+| Action path | Macro | Value |
+| --- | --- | ---: |
+{% for row in action_doc_ns.rows -%}
+| `{{ row['func_name'] }}` | `{{ machine_macro_name(model) }}_ACTION_{{ row['func_name'].split('.') | to_c_path_identifier }}` | `{{ loop.index0 }}` |
+{% endfor %}
+{% else %}
+该状态机没有定义 lifecycle action。
+{% endif %}
+
+| Stage | Macro | Value |
+| --- | --- | ---: |
+| `enter` | `{{ machine_macro_name(model) }}_STAGE_ENTER` | `0` |
+| `during` | `{{ machine_macro_name(model) }}_STAGE_DURING` | `1` |
+| `exit` | `{{ machine_macro_name(model) }}_STAGE_EXIT` | `2` |
+
+
+只有这些表里的 canonical macros 是稳定保证的 public contract。如果 header 同时为简单且不冲突的路径生成较短 compatibility alias，应把它们视为可选便利名：一旦 alias 会碰撞 `..._STATE_COUNT`、`..._EVENT_COUNT`、`..._ACTION_COUNT`、invalid-id sentinel、stage macro 或 canonical path-boundary-safe id 等保留 public macro，模板会故意省略它。
 
 ## 性能建议
 

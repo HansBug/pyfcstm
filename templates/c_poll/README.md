@@ -100,6 +100,89 @@ transitions ask about the same event within one cycle, the installed event-check
 function should be called only as needed and the first observation should remain
 stable for the rest of that cycle.
 
+## Numeric metadata discipline
+
+Generation-time enumerable runtime metadata should use collision-resistant
+generated macros and numeric ids in the public hot-path ABI. This applies to
+states, events, abstract actions, named `ref` actions, lifecycle stages,
+event-check event ids, current-state ids, active-leaf ids, and future finite
+metadata domains with the same shape.
+
+Do not keep `const char *` fields in `ExecutionContext`, `EventContext`, or
+other hot-path contracts merely for readability. Do not reintroduce `strcmp()`
+into runtime selection, event-check logic, or hook-context checks when the
+compared domain is known while rendering the template. The readable integration
+surface is the generated macro set in `machine.h`, for example `..._STATE_*`,
+`..._EVENT_*`, `..._ACTION_*`, and `..._STAGE_*`.
+
+Strings remain acceptable only for cold or diagnostic surfaces:
+
+- `last_error` and other crash-loudly diagnostic messages;
+- `..._dsl_source()` and generated comments / README text;
+- optional diagnostic helpers such as `..._current_state_path()` and
+  `..._current_state_name()`;
+- Python test adapters that map generated ids back to shared fixture schema
+  strings;
+- genuinely non-enumerable output where no stable finite id domain exists at
+  generation time.
+
+When adding a new event-check, hook-context, or public metadata value, first ask
+whether the domain is completely known while rendering the template. If it is,
+generate a macro-backed integer id and keep any string mapping outside the
+generated runtime hot path.
+
+Generated public identifiers for finite domains must preserve path boundaries
+instead of flattening dotted paths with plain underscore joins. Legal DSL paths
+such as `Root.A.B` and `Root.A_B` must never produce the same public state,
+event, action, hook, or event-check identifier. Use the template's
+collision-resistant path-identifier helpers for canonical public macros and
+callback-table fields. Short aliases may exist only when the alias is provably
+unique within that generated domain **and** does not collide with any reserved
+public macro such as `..._STATE_COUNT`, `..._EVENT_COUNT`,
+`..._ACTION_COUNT`, invalid-id sentinels, stage macros, or canonical ids from
+that domain. When in doubt, omit the alias and keep only the canonical
+path-boundary-safe macro. Canonical finite-domain public macros are deliberately
+case-preserving and lossless for significant underscores. Do not uppercase,
+lowercase, collapse repeated underscores, or strip trailing underscores from
+canonical state/event/action/hook/event-check identifiers. Uppercase or flattened
+compatibility aliases may be emitted only as optional conveniences after the full
+generated domain proves that the alias is unique and does not collide with a
+reserved or canonical public macro. Canonical public identifiers must also stay
+outside C/C++ reserved identifier forms, including double underscores or names
+that begin with an underscore followed by an uppercase letter.
+
+The same reserved-shape rule applies to the root-machine ABI prefix, symbol
+visibility macro prefix, hook/event-check initializer macros, and header guard.
+Do not derive those public names by simply uppercasing or underscore-joining the
+raw root state name. Use the public C identifier helpers so legal root names such
+as `_Root`, `class`, and `A__B` cannot generate public macros, typedefs, function
+prefixes, or include guards in C/C++ reserved namespaces.
+
+When maintaining this contract, treat the following checks as part of normal
+template review:
+
+- Generate at least one model that combines nested states, events, abstract
+  actions, named `ref` actions, lifecycle stages, event checks, and
+  similar-looking paths such as `Root.A.B` / `Root.A_B` before changing public
+  metadata or identifier helpers.
+- Inspect the generated public ABI and hot path. Any generation-time enumerable
+  value that appears as `const char *`, requires `strcmp()`, or needs per-cycle
+  string allocation / formatting is a design regression unless it is explicitly
+  confined to a cold diagnostic surface.
+- Keep test adapters one-way: Python fixtures may map numeric ids back to schema
+  strings for assertions, but that compatibility layer must not require the
+  generated c_poll ABI to carry strings in hooks, event checks, or current-state
+  checks.
+- Keep event-check metadata numeric as well. The event-check callback should
+  receive generated event and state ids, not event-path strings that integrators
+  must compare at runtime.
+- Update `c` and `c_poll` together for shared C-family metadata rules. A
+  difference is acceptable only when it follows directly from the different
+  event-input model and is documented in both template handbooks.
+- Re-run representative native gates without relying on slow-test skipping
+  before claiming metadata, identifier, hook-context, or event-check changes are
+  complete.
+
 ## Relationship to `c`
 
 `c_poll` and `c` share the same C-family maintenance constraints:

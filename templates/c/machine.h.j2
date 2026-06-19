@@ -50,6 +50,8 @@ typedef struct {{ machine_class_name(model) }} {{ machine_class_name(model) }};
 typedef struct {{ machine_class_name(model) }}ExecutionContext {{ machine_class_name(model) }}ExecutionContext;
 typedef int {{ machine_class_name(model) }}StateId;
 typedef int {{ machine_class_name(model) }}EventId;
+typedef int {{ machine_class_name(model) }}ActionId;
+typedef int {{ machine_class_name(model) }}StageId;
 typedef PYFCSTM_GENERATED_INT64 {{ machine_class_name(model) }}Int;
 
 /*
@@ -68,13 +70,57 @@ typedef struct {{ machine_class_name(model) }}Vars {
 {% endif -%}
 } {{ machine_class_name(model) }}Vars;
 
+{% set public_macro_reserved_ns = namespace(items=[
+    machine_macro_name(model) ~ '_SUCCESS',
+    machine_macro_name(model) ~ '_FAILURE',
+    machine_macro_name(model) ~ '_MAX_STACK_DEPTH',
+    machine_macro_name(model) ~ '_MAX_DFS_STEPS',
+    machine_macro_name(model) ~ '_INVALID_STATE_ID',
+    machine_macro_name(model) ~ '_INVALID_EVENT_ID',
+    machine_macro_name(model) ~ '_INVALID_ACTION_ID',
+    machine_macro_name(model) ~ '_INVALID_STAGE_ID',
+    machine_macro_name(model) ~ '_STATE_COUNT',
+    machine_macro_name(model) ~ '_EVENT_COUNT',
+    machine_macro_name(model) ~ '_ACTION_COUNT',
+    machine_macro_name(model) ~ '_STAGE_COUNT',
+    machine_macro_name(model) ~ '_STAGE_ENTER',
+    machine_macro_name(model) ~ '_STAGE_DURING',
+    machine_macro_name(model) ~ '_STAGE_EXIT',
+
+    machine_macro_name(model) ~ '_STATE_COUNT_INTERNAL',
+    machine_macro_name(model) ~ '_EVENT_COUNT_INTERNAL',
+    machine_macro_name(model) ~ '_ACTION_KIND_CONCRETE',
+    machine_macro_name(model) ~ '_ACTION_KIND_ABSTRACT',
+    machine_macro_name(model) ~ '_HOOK_COUNT',
+]) -%}
 /* Public state/event id space used by `..._hot_start(...)` and `..._cycle(...)`. */
 #define {{ machine_macro_name(model) }}_INVALID_STATE_ID (({{ machine_class_name(model) }}StateId) - 1)
 #define {{ machine_macro_name(model) }}_INVALID_EVENT_ID (({{ machine_class_name(model) }}EventId) - 1)
+#define {{ machine_macro_name(model) }}_INVALID_ACTION_ID (({{ machine_class_name(model) }}ActionId) - 1)
+#define {{ machine_macro_name(model) }}_INVALID_STAGE_ID (({{ machine_class_name(model) }}StageId) - 1)
 #define {{ machine_macro_name(model) }}_STATE_COUNT {{ (model.walk_states() | list) | length }}
+{% set state_alias_ns = namespace(items=[]) -%}
+{% set state_legacy_alias_ns = namespace(items=[]) -%}
+{% set state_macro_ns = namespace(canonical=[]) -%}
+{% for state in model.walk_states() -%}
+{% set state_alias_ns.items = state_alias_ns.items + [((state | state_path) | to_c_identifier | upper)] -%}
+{% set state_legacy_alias_ns.items = state_legacy_alias_ns.items + [(state_slug(state) | upper)] -%}
+{% set state_macro_ns.canonical = state_macro_ns.canonical + [machine_macro_name(model) ~ '_STATE_' ~ state_slug(state)] -%}
+{% endfor -%}
+{% set state_all_alias_ns = namespace(items=state_alias_ns.items + state_legacy_alias_ns.items) -%}
 {% for state in model.walk_states() -%}
 /* DSL state path: `{{ state | state_path }}` */
-#define {{ machine_macro_name(model) }}_STATE_{{ (state | state_path) | to_c_identifier | upper }} (({{ machine_class_name(model) }}StateId){{ loop.index0 }})
+#define {{ machine_macro_name(model) }}_STATE_{{ state_slug(state) }} (({{ machine_class_name(model) }}StateId){{ loop.index0 }})
+{% set state_legacy_alias = state_slug(state) | upper -%}
+{% set state_legacy_alias_macro = machine_macro_name(model) ~ '_STATE_' ~ state_legacy_alias -%}
+{% if state_all_alias_ns.items.count(state_legacy_alias) == 1 and state_legacy_alias_macro not in public_macro_reserved_ns.items and state_legacy_alias_macro not in state_macro_ns.canonical and not (state_legacy_alias_macro is c_public_identifier_reserved) %}
+#define {{ machine_macro_name(model) }}_STATE_{{ state_legacy_alias }} {{ machine_macro_name(model) }}_STATE_{{ state_slug(state) }}
+{% endif -%}
+{% set state_alias = (state | state_path) | to_c_identifier | upper -%}
+{% set state_alias_macro = machine_macro_name(model) ~ '_STATE_' ~ state_alias -%}
+{% if state_all_alias_ns.items.count(state_alias) == 1 and state_alias_macro not in public_macro_reserved_ns.items and state_alias_macro not in state_macro_ns.canonical and not (state_alias_macro is c_public_identifier_reserved) %}
+#define {{ machine_macro_name(model) }}_STATE_{{ state_alias }} {{ machine_macro_name(model) }}_STATE_{{ state_slug(state) }}
+{% endif -%}
 {% endfor -%}
 {% set event_ns = namespace(items=[]) -%}
 {% for state in model.walk_states() -%}
@@ -83,10 +129,76 @@ typedef struct {{ machine_class_name(model) }}Vars {
 {% endfor -%}
 {% endfor -%}
 #define {{ machine_macro_name(model) }}_EVENT_COUNT {{ event_ns.items | length }}
+{% set event_alias_ns = namespace(items=[]) -%}
+{% set event_legacy_alias_ns = namespace(items=[]) -%}
+{% set event_macro_ns = namespace(canonical=[]) -%}
+{% for event_path in event_ns.items -%}
+{% set event_alias_ns.items = event_alias_ns.items + [(event_path | to_c_identifier | upper)] -%}
+{% set event_legacy_alias_ns.items = event_legacy_alias_ns.items + [(event_path.split('.') | to_c_path_identifier | upper)] -%}
+{% set event_macro_ns.canonical = event_macro_ns.canonical + [machine_macro_name(model) ~ '_EVENT_' ~ (event_path.split('.') | to_c_path_identifier)] -%}
+{% endfor -%}
+{% set event_all_alias_ns = namespace(items=event_alias_ns.items + event_legacy_alias_ns.items) -%}
 {% for event_path in event_ns.items -%}
 /* DSL event path: `{{ event_path }}` */
-#define {{ machine_macro_name(model) }}_EVENT_{{ event_path | to_c_identifier | upper }} (({{ machine_class_name(model) }}EventId){{ loop.index0 }})
+#define {{ machine_macro_name(model) }}_EVENT_{{ event_path.split('.') | to_c_path_identifier }} (({{ machine_class_name(model) }}EventId){{ loop.index0 }})
+{% set event_legacy_alias = event_path.split('.') | to_c_path_identifier | upper -%}
+{% set event_legacy_alias_macro = machine_macro_name(model) ~ '_EVENT_' ~ event_legacy_alias -%}
+{% if event_all_alias_ns.items.count(event_legacy_alias) == 1 and event_legacy_alias_macro not in public_macro_reserved_ns.items and event_legacy_alias_macro not in event_macro_ns.canonical and not (event_legacy_alias_macro is c_public_identifier_reserved) %}
+#define {{ machine_macro_name(model) }}_EVENT_{{ event_legacy_alias }} {{ machine_macro_name(model) }}_EVENT_{{ event_path.split('.') | to_c_path_identifier }}
+{% endif -%}
+{% set event_alias = event_path | to_c_identifier | upper -%}
+{% set event_alias_macro = machine_macro_name(model) ~ '_EVENT_' ~ event_alias -%}
+{% if event_all_alias_ns.items.count(event_alias) == 1 and event_alias_macro not in public_macro_reserved_ns.items and event_alias_macro not in event_macro_ns.canonical and not (event_alias_macro is c_public_identifier_reserved) %}
+#define {{ machine_macro_name(model) }}_EVENT_{{ event_alias }} {{ machine_macro_name(model) }}_EVENT_{{ event_path.split('.') | to_c_path_identifier }}
+{% endif -%}
 {% endfor %}
+{%- set action_id_ns = namespace(rows=[]) -%}
+{%- for scan_state in model.walk_states() -%}
+{%- for scan_group in [
+    scan_state.list_on_enters(with_ids=True),
+    scan_state.list_on_durings(aspect=None, with_ids=True),
+    scan_state.list_on_exits(with_ids=True),
+    scan_state.list_on_durings(aspect='before', with_ids=True),
+    scan_state.list_on_durings(aspect='after', with_ids=True),
+    scan_state.list_on_during_aspects(aspect='before', with_ids=True),
+    scan_state.list_on_during_aspects(aspect='after', with_ids=True),
+] -%}
+{%- for _, scan_item in scan_group -%}
+{%- if scan_item.func_name not in action_id_ns.rows | map(attribute='func_name') | list -%}
+{%- set action_id_ns.rows = action_id_ns.rows + [{'func_name': scan_item.func_name}] -%}
+{%- endif -%}
+{%- endfor -%}
+{%- endfor -%}
+{%- endfor -%}
+#define {{ machine_macro_name(model) }}_ACTION_COUNT {{ action_id_ns.rows | length }}
+{% set action_alias_ns = namespace(items=[]) -%}
+{% set action_legacy_alias_ns = namespace(items=[]) -%}
+{% set action_macro_ns = namespace(canonical=[]) -%}
+{% for row in action_id_ns.rows -%}
+{% set action_alias_ns.items = action_alias_ns.items + [(row['func_name'] | to_c_identifier | upper)] -%}
+{% set action_legacy_alias_ns.items = action_legacy_alias_ns.items + [(row['func_name'].split('.') | to_c_path_identifier | upper)] -%}
+{% set action_macro_ns.canonical = action_macro_ns.canonical + [machine_macro_name(model) ~ '_ACTION_' ~ (row['func_name'].split('.') | to_c_path_identifier)] -%}
+{% endfor -%}
+{% set action_all_alias_ns = namespace(items=action_alias_ns.items + action_legacy_alias_ns.items) -%}
+{% for row in action_id_ns.rows -%}
+/* DSL action path: `{{ row['func_name'] }}` */
+#define {{ machine_macro_name(model) }}_ACTION_{{ row['func_name'].split('.') | to_c_path_identifier }} (({{ machine_class_name(model) }}ActionId){{ loop.index0 }})
+{% set action_legacy_alias = row['func_name'].split('.') | to_c_path_identifier | upper -%}
+{% set action_legacy_alias_macro = machine_macro_name(model) ~ '_ACTION_' ~ action_legacy_alias -%}
+{% if action_all_alias_ns.items.count(action_legacy_alias) == 1 and action_legacy_alias_macro not in public_macro_reserved_ns.items and action_legacy_alias_macro not in action_macro_ns.canonical and not (action_legacy_alias_macro is c_public_identifier_reserved) %}
+#define {{ machine_macro_name(model) }}_ACTION_{{ action_legacy_alias }} {{ machine_macro_name(model) }}_ACTION_{{ row['func_name'].split('.') | to_c_path_identifier }}
+{% endif -%}
+{% set action_alias = row['func_name'] | to_c_identifier | upper -%}
+{% set action_alias_macro = machine_macro_name(model) ~ '_ACTION_' ~ action_alias -%}
+{% if action_all_alias_ns.items.count(action_alias) == 1 and action_alias_macro not in public_macro_reserved_ns.items and action_alias_macro not in action_macro_ns.canonical and not (action_alias_macro is c_public_identifier_reserved) %}
+#define {{ machine_macro_name(model) }}_ACTION_{{ action_alias }} {{ machine_macro_name(model) }}_ACTION_{{ row['func_name'].split('.') | to_c_path_identifier }}
+{% endif -%}
+{% endfor -%}
+#define {{ machine_macro_name(model) }}_STAGE_COUNT 3
+#define {{ machine_macro_name(model) }}_STAGE_ENTER (({{ machine_class_name(model) }}StageId)0)
+#define {{ machine_macro_name(model) }}_STAGE_DURING (({{ machine_class_name(model) }}StageId)1)
+#define {{ machine_macro_name(model) }}_STAGE_EXIT (({{ machine_class_name(model) }}StageId)2)
+
 
 /*
  * Callback signature for generated abstract hooks.
@@ -109,6 +221,23 @@ typedef void (*{{ machine_class_name(model) }}HookFn)(
  */
 typedef struct {{ machine_class_name(model) }}Hooks {
 {% set hook_ns = namespace(rows=[]) -%}
+{%- set action_scan = namespace(items=[]) -%}
+{%- for scan_state in model.walk_states() -%}
+{%- for scan_group in [
+    scan_state.list_on_enters(with_ids=True),
+    scan_state.list_on_durings(aspect=None, with_ids=True),
+    scan_state.list_on_exits(with_ids=True),
+    scan_state.list_on_durings(aspect='before', with_ids=True),
+    scan_state.list_on_durings(aspect='after', with_ids=True),
+    scan_state.list_on_during_aspects(aspect='before', with_ids=True),
+    scan_state.list_on_during_aspects(aspect='after', with_ids=True),
+] -%}
+{%- for _, scan_item in scan_group -%}
+{%- set action_scan.items = action_scan.items + [scan_item] -%}
+{%- endfor -%}
+{%- endfor -%}
+{%- endfor -%}
+{%- set action_ref_hop_limit = (action_scan.items | length) + 1 -%}
 {% for state in model.walk_states() -%}
 {% for group in [
     state.list_on_enters(with_ids=True),
@@ -121,7 +250,7 @@ typedef struct {{ machine_class_name(model) }}Hooks {
 ] -%}
 {% for _, item in group -%}
 {% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
+{% for _ in range(action_ref_hop_limit) -%}
 {% if resolved.item.ref is not none -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
@@ -147,7 +276,7 @@ typedef struct {{ machine_class_name(model) }}Hooks {
     // Lifecycle stage: `{{ row['stage'] }}{% if row['aspect'] %} {{ row['aspect'] }}{% endif %}`
     // DSL fragment:
 {{- '\n' ~ (('    //   ' ~ fragment_text) | replace('\n', '\n    //   ')) }}
-    {{ machine_class_name(model) }}HookFn {{ row['hook_field'] }};
+    {{ machine_class_name(model) }}HookFn on_{{ row['func_name'].split('.') | to_c_path_identifier }};
 {% endfor -%}
 {% else %}
     int _unused_placeholder;
@@ -160,20 +289,26 @@ typedef struct {{ machine_class_name(model) }}Hooks {
 typedef struct {{ machine_class_name(model) }}Frame {
     int state_id;
     int mode;
+    int plain_before_pending;
 } {{ machine_class_name(model) }}Frame;
 
 /*
  * Read-only execution context passed into registered abstract hooks.
  *
- * `state_path` names the DSL owner state, `vars` points to a snapshot of
- * persistent variables, and `action_name` / `action_stage` identify the exact
- * DSL action being executed.
+ * Numeric ids identify the public call context state, resolved abstract
+ * target, lifecycle callsite stage, active leaf, and optional named `ref`.
+ * Compare these fields with generated `..._STATE_*`, `..._ACTION_*`, and
+ * `..._STAGE_*` macros instead of string comparisons.
  */
 struct {{ machine_class_name(model) }}ExecutionContext {
-    const char *state_path;
+    {{ machine_class_name(model) }}StateId state_id;
     const {{ machine_class_name(model) }}Vars *vars;
-    const char *action_name;
-    const char *action_stage;
+    {{ machine_class_name(model) }}ActionId action_id;
+    {{ machine_class_name(model) }}StageId action_stage_id;
+    {{ machine_class_name(model) }}StateId active_leaf_state_id;
+    {{ machine_class_name(model) }}StageId call_stage_id;
+    {{ machine_class_name(model) }}ActionId abstract_target_id;
+    {{ machine_class_name(model) }}ActionId named_ref_id;
 };
 
 /*
@@ -189,6 +324,8 @@ struct {{ machine_class_name(model) }} {
     size_t stack_size;
     int ended;
     int entered_root;
+    int initialized;
+    int validation_depth;
     const {{ machine_class_name(model) }}Hooks *hooks;
     void *hook_user_data;
     char last_error[512];
@@ -198,6 +335,8 @@ struct {{ machine_class_name(model) }} {
 extern "C" {
 #endif
 
+/* Allocate a zeroed machine instance without evaluating DSL defaults. */
+{{ machine_macro_name(model) }}_API {{ machine_class_name(model) }} *{{ machine_class_name(model) }}_create_uninitialized(void);
 /* Allocate a machine instance and initialize it to cold-start state. */
 {{ machine_macro_name(model) }}_API {{ machine_class_name(model) }} *{{ machine_class_name(model) }}_create(void);
 /* Free an instance previously returned by `..._create()`. */
@@ -225,7 +364,10 @@ extern "C" {
 /* Return non-zero after the machine has reached runtime end. */
 {{ machine_macro_name(model) }}_API int {{ machine_class_name(model) }}_is_ended(
     const {{ machine_class_name(model) }} *machine);
-/* Return the current leaf-state DSL path, or `NULL` after runtime end. */
+/* Return the current leaf-state id, or `..._INVALID_STATE_ID` after runtime end. */
+{{ machine_macro_name(model) }}_API {{ machine_class_name(model) }}StateId {{ machine_class_name(model) }}_current_state_id(
+    const {{ machine_class_name(model) }} *machine);
+/* Return the current leaf-state DSL path, or `NULL` after runtime end. Diagnostic helper. */
 {{ machine_macro_name(model) }}_API const char *{{ machine_class_name(model) }}_current_state_path(
     const {{ machine_class_name(model) }} *machine);
 /* Return the current leaf-state DSL short name, or `NULL` after runtime end. */

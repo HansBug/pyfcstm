@@ -1,28 +1,56 @@
 {%- macro state_key(state) -%}{{ state | state_path }}{%- endmacro %}
 {%- macro state_slug(state) -%}{{ state | state_slug }}{%- endmacro %}
-{%- macro state_enum(state) -%}{{ machine_macro_name(model) }}_STATE_ID_{{ state_slug(state) | upper }}{%- endmacro %}
+{%- macro state_enum(state) -%}{{ machine_macro_name(model) }}_STATE_ID_{{ state_slug(state) }}{%- endmacro %}
 {%- macro cstr(value) -%}{{ value | tojson | replace('\\u003c', '<') | replace('\\u003e', '>') | replace('\\u0026', '&') }}{%- endmacro %}
 {%- macro action_method_name(state, kind, idx) -%}_action_{{ state_slug(state) }}_{{ kind }}_{{ idx }}{%- endmacro %}
 {%- macro action_stage_runner_name(state, stage) -%}_run_{{ state_slug(state) }}_{{ stage }}_actions{%- endmacro %}
 {%- macro leaf_during_runner_name(state) -%}_run_leaf_during_{{ state_slug(state) }}{%- endmacro %}
 {%- macro select_transition_state_name(state) -%}_select_transition_{{ state_slug(state) }}{%- endmacro %}
 {%- macro attempt_init_state_name(state) -%}_attempt_init_transition_{{ state_slug(state) }}{%- endmacro %}
-{%- macro init_transition_id(state, idx) -%}{{ machine_macro_name(model) }}_TRANSITION_INIT_{{ state_slug(state) | upper }}_{{ idx }}{%- endmacro %}
-{%- macro normal_transition_id(state, idx) -%}{{ machine_macro_name(model) }}_TRANSITION_NORMAL_{{ state_slug(state) | upper }}_{{ idx }}{%- endmacro %}
+{%- macro init_transition_id(state, idx) -%}{{ machine_macro_name(model) }}_TRANSITION_INIT_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
+{%- macro normal_transition_id(state, idx) -%}{{ machine_macro_name(model) }}_TRANSITION_NORMAL_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro init_guard_method_name(state, idx) -%}_guard_init_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro init_effect_method_name(state, idx) -%}_effect_init_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro transition_guard_method_name(state, idx) -%}_guard_transition_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro transition_effect_method_name(state, idx) -%}_effect_transition_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro hook_field(action) -%}{{ action | hook_field_name }}{%- endmacro %}
-{%- macro hook_enum(action) -%}{{ machine_macro_name(model) }}_HOOK_{{ action.func_name | to_c_identifier | upper }}{%- endmacro %}
+{%- macro hook_enum(action) -%}{{ machine_macro_name(model) }}_HOOK_{{ action.func_name.split('.') | to_c_path_identifier }}{%- endmacro %}
+{%- macro action_enum(action) -%}{{ machine_macro_name(model) }}_ACTION_{{ action.func_name.split('.') | to_c_path_identifier }}{%- endmacro %}
+{%- macro stage_enum(stage) -%}{{ machine_macro_name(model) }}_STAGE_{{ stage | upper }}{%- endmacro %}
+{%- set action_scan = namespace(items=[]) -%}
+{%- for scan_state in model.walk_states() -%}
+{%- for scan_group in [
+    scan_state.list_on_enters(with_ids=True),
+    scan_state.list_on_durings(aspect=None, with_ids=True),
+    scan_state.list_on_exits(with_ids=True),
+    scan_state.list_on_durings(aspect='before', with_ids=True),
+    scan_state.list_on_durings(aspect='after', with_ids=True),
+    scan_state.list_on_during_aspects(aspect='before', with_ids=True),
+    scan_state.list_on_during_aspects(aspect='after', with_ids=True),
+] -%}
+{%- for _, scan_item in scan_group -%}
+{%- set action_scan.items = action_scan.items + [scan_item] -%}
+{%- endfor -%}
+{%- endfor -%}
+{%- endfor -%}
+{%- set action_ref_hop_limit = (action_scan.items | length) + 1 -%}
+{%- set all_events = namespace(items=[]) -%}
+{%- for scan_state in model.walk_states() -%}
+{%- for scan_event in scan_state.events.values() -%}
+{%- set all_events.items = all_events.items + [scan_event.path_name] -%}
+{%- endfor -%}
+{%- endfor -%}
+{% macro event_check_field(event_path) -%}
+{{ event_check_field_id_name(event_path) }}
+{%- endmacro %}
 {%- macro render_action_item(state, item, method_kind, idx) -%}
 {%- set resolved = namespace(item=item) -%}
-{%- for _ in range(16) -%}
+{%- for _ in range(action_ref_hop_limit) -%}
 {%- if resolved.item.ref is not none -%}
 {%- set resolved.item = resolved.item.ref -%}
 {%- endif -%}
 {%- endfor -%}
-{{- '{' -}}{{ machine_macro_name(model) }}_ACTION_KIND_{{ "ABSTRACT" if resolved.item.is_abstract else "CONCRETE" }}, {{ action_method_name(state, method_kind, idx) if not resolved.item.is_abstract else "NULL" }}, {{ hook_enum(resolved.item) if resolved.item.is_abstract else "-1" }}, {{ cstr(resolved.item.func_name) }}, {{ cstr(resolved.item.stage) }}, {{ state_enum(resolved.item.parent) }}{{- '}' -}}
+{{- '{' -}}{{ machine_macro_name(model) }}_ACTION_KIND_{{ "ABSTRACT" if resolved.item.is_abstract else "CONCRETE" }}, {{ action_method_name(state, method_kind, idx) if not resolved.item.is_abstract else "NULL" }}, {{ hook_enum(resolved.item) if resolved.item.is_abstract else "-1" }}, {{ action_enum(resolved.item) }}, {{ stage_enum(resolved.item.stage) }}, {{ state_enum(resolved.item.parent) }}{{- '}' -}}
 {%- endmacro %}
 {%- macro render_state_info_item(state) -%}
 {{- '{' -}}{{ cstr(state_key(state)) }}, {{ cstr(state.name) }}, {{ state_enum(state.parent) if state.parent is not none else "-1" }}, {{ 1 if state.is_leaf_state else 0 }}, {{ 1 if state.is_pseudo else 0 }}, {% if state.list_on_enters(with_ids=True) | list %}_{{ state_slug(state) }}_enter_actions{% else %}NULL{% endif %}, {{ (state.list_on_enters(with_ids=True) | list) | length }}, {% if state.list_on_durings(aspect=None, with_ids=True) | list %}_{{ state_slug(state) }}_during_actions{% else %}NULL{% endif %}, {{ (state.list_on_durings(aspect=None, with_ids=True) | list) | length }}, {% if state.list_on_exits(with_ids=True) | list %}_{{ state_slug(state) }}_exit_actions{% else %}NULL{% endif %}, {{ (state.list_on_exits(with_ids=True) | list) | length }}, {% if state.list_on_durings(aspect='before', with_ids=True) | list %}_{{ state_slug(state) }}_during_before_actions{% else %}NULL{% endif %}, {{ (state.list_on_durings(aspect='before', with_ids=True) | list) | length }}, {% if state.list_on_durings(aspect='after', with_ids=True) | list %}_{{ state_slug(state) }}_during_after_actions{% else %}NULL{% endif %}, {{ (state.list_on_durings(aspect='after', with_ids=True) | list) | length }}, {% if state.list_on_during_aspects(aspect='before', with_ids=True) | list %}_{{ state_slug(state) }}_aspect_before_actions{% else %}NULL{% endif %}, {{ (state.list_on_during_aspects(aspect='before', with_ids=True) | list) | length }}, {% if state.list_on_during_aspects(aspect='after', with_ids=True) | list %}_{{ state_slug(state) }}_aspect_after_actions{% else %}NULL{% endif %}, {{ (state.list_on_during_aspects(aspect='after', with_ids=True) | list) | length }}, {% if state.init_transitions | list %}_{{ state_slug(state) }}_init_transition_ids{% else %}NULL{% endif %}, {{ (state.init_transitions | list) | length }}, {% if state.transitions_from | list %}_{{ state_slug(state) }}_transition_ids{% else %}NULL{% endif %}, {{ (state.transitions_from | list) | length }}{{- '}' -}}
@@ -71,8 +99,8 @@
  * helper functions. Public users only interact with `machine.h`; everything in
  * this file is generated implementation detail.
  */
-typedef int (*_{{ machine_class_name(model) }}GuardFn)(const {{ machine_class_name(model) }}Vars *scope);
-typedef void (*_{{ machine_class_name(model) }}ActionFn)({{ machine_class_name(model) }}Vars *scope);
+typedef int (*_{{ machine_class_name(model) }}GuardFn)({{ machine_class_name(model) }} *machine, const {{ machine_class_name(model) }}Vars *scope, int *result);
+typedef int (*_{{ machine_class_name(model) }}ActionFn)({{ machine_class_name(model) }} *machine, {{ machine_class_name(model) }}Vars *scope);
 
 /* Internal execution-stack frame modes used by the generated runtime loop. */
 enum {
@@ -121,7 +149,7 @@ enum {
 ] -%}
 {% for _, item in group -%}
 {% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
+{% for _ in range(action_ref_hop_limit) -%}
 {% if resolved.item.ref is not none -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
@@ -131,6 +159,7 @@ enum {
     'func_name': resolved.item.func_name,
     'hook_enum': hook_enum(resolved.item),
     'hook_field': hook_field(resolved.item),
+    'hook_field_id': 'on_' ~ (resolved.item.func_name.split('.') | to_c_path_identifier),
     'owner_path': action_owner_path(resolved.item),
     'stage': resolved.item.stage,
 }] -%}
@@ -142,12 +171,6 @@ enum {
 {{ '    ' }}{{ machine_macro_name(model) }}_HOOK_COUNT = {{ hook_ns.rows | length }}
 };
 
-{% set all_events = namespace(items=[]) -%}
-{% for state in model.walk_states() -%}
-{% for event in state.events.values() -%}
-{% set all_events.items = all_events.items + [event.path_name] -%}
-{% endfor -%}
-{% endfor -%}
 enum {
     {{ machine_macro_name(model) }}_EVENT_COUNT_INTERNAL = {{ all_events.items | length }},
     {{ machine_macro_name(model) }}_EVENTSET_SMALL_ARRAY_THRESHOLD_INTERNAL = 8,
@@ -161,8 +184,8 @@ typedef struct _{{ machine_class_name(model) }}ActionInfo {
     int kind;
     _{{ machine_class_name(model) }}ActionFn action_fn;
     int hook_id;
-    const char *action_name;
-    const char *action_stage;
+    int action_id;
+    int action_stage_id;
     int owner_state_id;
 } _{{ machine_class_name(model) }}ActionInfo;
 
@@ -231,6 +254,18 @@ static const char *_{{ machine_class_name(model) }}_dsl_source =
 {% endif -%}
 
 /* Error helpers used by the public API wrappers. */
+static void _{{ machine_class_name(model) }}_format_error_text(char *buffer, size_t buffer_size, const char *fmt, ...)
+{
+    va_list ap;
+    if (buffer == NULL || buffer_size == 0u) {
+        return;
+    }
+    va_start(ap, fmt);
+    PYFCSTM_GENERATED_VSNPRINTF(buffer, buffer_size, fmt, ap);
+    buffer[buffer_size - 1u] = '\0';
+    va_end(ap);
+}
+
 static void _{{ machine_class_name(model) }}_set_error({{ machine_class_name(model) }} *machine, const char *fmt, ...)
 {
     va_list ap;
@@ -273,10 +308,10 @@ static int _{{ machine_class_name(model) }}_validate_event_checks(
         return {{ machine_macro_name(model) }}_FAILURE;
     }
 {% for event_path in all_events.items %}
-    if (event_checks->{{ event_check_field_name(event_path) }} == NULL) {
+    if (event_checks->{{ event_check_field(event_path) }} == NULL) {
         _{{ machine_class_name(model) }}_set_error(
             machine,
-            "Missing required event check function: {{ machine_class_name(model) }}EventChecks.{{ event_check_field_name(event_path) }}.");
+            "Missing required event check function: {{ machine_class_name(model) }}EventChecks.{{ event_check_field(event_path) }}.");
         return {{ machine_macro_name(model) }}_FAILURE;
     }
 {% endfor %}
@@ -297,13 +332,13 @@ static int _{{ machine_class_name(model) }}_require_event_checks_mounted({{ mach
     return {{ machine_macro_name(model) }}_FAILURE;
 }
 
-static const char *_{{ machine_class_name(model) }}_current_state_path_on_context(
+static int _{{ machine_class_name(model) }}_current_state_id_on_context(
     const _{{ machine_class_name(model) }}RuntimeContext *context)
 {
     if (context == NULL || context->stack_size == 0u) {
-        return NULL;
+        return {{ machine_macro_name(model) }}_INVALID_STATE_ID;
     }
-    return _{{ machine_class_name(model) }}_state_info[context->stack[context->stack_size - 1u].state_id].path;
+    return context->stack[context->stack_size - 1u].state_id;
 }
 
 static int _{{ machine_class_name(model) }}_execute_event_check(
@@ -324,15 +359,14 @@ static int _{{ machine_class_name(model) }}_execute_event_check(
         return 0;
     }
 
-    event_ctx.event_path = "";
-    event_ctx.current_state_path = _{{ machine_class_name(model) }}_current_state_path_on_context(context);
+    event_ctx.event_id = ({{ machine_class_name(model) }}EventId)event_id;
+    event_ctx.current_state_id = ({{ machine_class_name(model) }}StateId)_{{ machine_class_name(model) }}_current_state_id_on_context(context);
     event_ctx.vars = context != NULL ? &context->vars : NULL;
 
     switch (event_id) {
 {% for event_path in all_events.items %}
         case {{ loop.index0 }}:
-            event_ctx.event_path = {{ cstr(event_path) }};
-            return machine->event_checks->{{ event_check_field_name(event_path) }}(
+            return machine->event_checks->{{ event_check_field(event_path) }}(
                 machine,
                 &event_ctx,
                 machine->event_check_user_data
@@ -355,15 +389,11 @@ static const {{ machine_class_name(model) }}Vars *_{{ machine_class_name(model) 
 }
 
 /* Reset persistent variables to the DSL `def ... = ...;` defaults. */
-static void _{{ machine_class_name(model) }}_reset_vars({{ machine_class_name(model) }}Vars *vars)
+static int _{{ machine_class_name(model) }}_reset_vars(
+    {{ machine_class_name(model) }} *machine,
+    {{ machine_class_name(model) }}Vars *scope)
 {
-{% if model.defines.values() | list -%}
-{% for def_item in model.defines.values() -%}
-{{ '    ' }}vars->{{ def_item.name | to_c_identifier }} = {{ def_item.init.to_ast_node() | expr_render(style='c') }};
-{% endfor -%}
-{% else -%}
-    vars->_unused_placeholder = 0;
-{% endif -%}
+{{ render_c_reset_vars_body(model.defines, machine_class_name(model), machine_macro_name(model)) }}
 }
 
 static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_validate_transition(
@@ -372,12 +402,32 @@ static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_validate_tr
     int transition_id,
     const _{{ machine_class_name(model) }}EventSet *event_set);
 
+static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_validate_initial_transition(
+    {{ machine_class_name(model) }} *machine,
+    const _{{ machine_class_name(model) }}RuntimeContext *context,
+    int transition_id,
+    const _{{ machine_class_name(model) }}EventSet *event_set);
+
+static int _{{ machine_class_name(model) }}_execute_transition_effect(
+    {{ machine_class_name(model) }} *machine,
+    const _{{ machine_class_name(model) }}TransitionInfo *transition,
+    _{{ machine_class_name(model) }}RuntimeContext *context);
+
+static int _{{ machine_class_name(model) }}_execute_initial_transition_on_context(
+    {{ machine_class_name(model) }} *machine,
+    _{{ machine_class_name(model) }}RuntimeContext *context,
+    int transition_id,
+    const _{{ machine_class_name(model) }}EventSet *event_set,
+    int is_validation_mode,
+    int attempt_nested_initial);
+
 static int _{{ machine_class_name(model) }}_enter_state(
     {{ machine_class_name(model) }} *machine,
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int state_id,
     const _{{ machine_class_name(model) }}EventSet *event_set,
-    int is_validation_mode);
+    int is_validation_mode,
+    int attempt_initial_transition);
 
 static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_event_set_has(
     {{ machine_class_name(model) }} *machine,
@@ -389,26 +439,31 @@ static PYFCSTM_GENERATED_UNUSED void _{{ machine_class_name(model) }}_invoke_abs
     {{ machine_class_name(model) }} *machine,
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int is_validation_mode,
-    int owner_state_id,
+    int context_state_id,
+    int use_active_leaf_context,
     int hook_id,
-    const char *action_name,
-    const char *action_stage);
+    int action_id,
+    int action_stage_id,
+    int abstract_target_id,
+    int named_ref_id);
 
 {% for state in model.walk_states() -%}
 {% for id_, item in state.list_on_enters(with_ids=True) -%}
 {% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
+{% for _ in range(action_ref_hop_limit) -%}
 {% if resolved.item.ref is not none -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
 {% endfor -%}
 {% if not resolved.item.is_abstract -%}
-static void {{ action_method_name(state, 'enter', id_) }}({{ machine_class_name(model) }}Vars *scope)
+static int {{ action_method_name(state, 'enter', id_) }}({{ machine_class_name(model) }} *machine, {{ machine_class_name(model) }}Vars *scope)
 {
 {% if resolved.item.operations -%}
-{{ (resolved.item.operations | stmts_render(style='c_runtime', indent='    ', level=1)).strip('\n') }}
+{{ render_c_action_body(resolved.item.operations, model.defines, machine_class_name(model), machine_macro_name(model)) }}
 {% else -%}
+    (void)machine;
     (void)scope;
+    return {{ machine_macro_name(model) }}_SUCCESS;
 {% endif -%}
 }
 
@@ -416,18 +471,20 @@ static void {{ action_method_name(state, 'enter', id_) }}({{ machine_class_name(
 {% endfor -%}
 {% for id_, item in state.list_on_durings(aspect=None, with_ids=True) -%}
 {% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
+{% for _ in range(action_ref_hop_limit) -%}
 {% if resolved.item.ref is not none -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
 {% endfor -%}
 {% if not resolved.item.is_abstract -%}
-static void {{ action_method_name(state, 'during', id_) }}({{ machine_class_name(model) }}Vars *scope)
+static int {{ action_method_name(state, 'during', id_) }}({{ machine_class_name(model) }} *machine, {{ machine_class_name(model) }}Vars *scope)
 {
 {% if resolved.item.operations -%}
-{{ (resolved.item.operations | stmts_render(style='c_runtime', indent='    ', level=1)).strip('\n') }}
+{{ render_c_action_body(resolved.item.operations, model.defines, machine_class_name(model), machine_macro_name(model)) }}
 {% else -%}
+    (void)machine;
     (void)scope;
+    return {{ machine_macro_name(model) }}_SUCCESS;
 {% endif -%}
 }
 
@@ -435,18 +492,20 @@ static void {{ action_method_name(state, 'during', id_) }}({{ machine_class_name
 {% endfor -%}
 {% for id_, item in state.list_on_exits(with_ids=True) -%}
 {% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
+{% for _ in range(action_ref_hop_limit) -%}
 {% if resolved.item.ref is not none -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
 {% endfor -%}
 {% if not resolved.item.is_abstract -%}
-static void {{ action_method_name(state, 'exit', id_) }}({{ machine_class_name(model) }}Vars *scope)
+static int {{ action_method_name(state, 'exit', id_) }}({{ machine_class_name(model) }} *machine, {{ machine_class_name(model) }}Vars *scope)
 {
 {% if resolved.item.operations -%}
-{{ (resolved.item.operations | stmts_render(style='c_runtime', indent='    ', level=1)).strip('\n') }}
+{{ render_c_action_body(resolved.item.operations, model.defines, machine_class_name(model), machine_macro_name(model)) }}
 {% else -%}
+    (void)machine;
     (void)scope;
+    return {{ machine_macro_name(model) }}_SUCCESS;
 {% endif -%}
 }
 
@@ -454,18 +513,20 @@ static void {{ action_method_name(state, 'exit', id_) }}({{ machine_class_name(m
 {% endfor -%}
 {% for id_, item in state.list_on_durings(aspect='before', with_ids=True) -%}
 {% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
+{% for _ in range(action_ref_hop_limit) -%}
 {% if resolved.item.ref is not none -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
 {% endfor -%}
 {% if not resolved.item.is_abstract -%}
-static void {{ action_method_name(state, 'during_before', id_) }}({{ machine_class_name(model) }}Vars *scope)
+static int {{ action_method_name(state, 'during_before', id_) }}({{ machine_class_name(model) }} *machine, {{ machine_class_name(model) }}Vars *scope)
 {
 {% if resolved.item.operations -%}
-{{ (resolved.item.operations | stmts_render(style='c_runtime', indent='    ', level=1)).strip('\n') }}
+{{ render_c_action_body(resolved.item.operations, model.defines, machine_class_name(model), machine_macro_name(model)) }}
 {% else -%}
+    (void)machine;
     (void)scope;
+    return {{ machine_macro_name(model) }}_SUCCESS;
 {% endif -%}
 }
 
@@ -473,18 +534,20 @@ static void {{ action_method_name(state, 'during_before', id_) }}({{ machine_cla
 {% endfor -%}
 {% for id_, item in state.list_on_durings(aspect='after', with_ids=True) -%}
 {% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
+{% for _ in range(action_ref_hop_limit) -%}
 {% if resolved.item.ref is not none -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
 {% endfor -%}
 {% if not resolved.item.is_abstract -%}
-static void {{ action_method_name(state, 'during_after', id_) }}({{ machine_class_name(model) }}Vars *scope)
+static int {{ action_method_name(state, 'during_after', id_) }}({{ machine_class_name(model) }} *machine, {{ machine_class_name(model) }}Vars *scope)
 {
 {% if resolved.item.operations -%}
-{{ (resolved.item.operations | stmts_render(style='c_runtime', indent='    ', level=1)).strip('\n') }}
+{{ render_c_action_body(resolved.item.operations, model.defines, machine_class_name(model), machine_macro_name(model)) }}
 {% else -%}
+    (void)machine;
     (void)scope;
+    return {{ machine_macro_name(model) }}_SUCCESS;
 {% endif -%}
 }
 
@@ -492,18 +555,20 @@ static void {{ action_method_name(state, 'during_after', id_) }}({{ machine_clas
 {% endfor -%}
 {% for id_, item in state.list_on_during_aspects(aspect='before', with_ids=True) -%}
 {% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
+{% for _ in range(action_ref_hop_limit) -%}
 {% if resolved.item.ref is not none -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
 {% endfor -%}
 {% if not resolved.item.is_abstract -%}
-static void {{ action_method_name(state, 'aspect_before', id_) }}({{ machine_class_name(model) }}Vars *scope)
+static int {{ action_method_name(state, 'aspect_before', id_) }}({{ machine_class_name(model) }} *machine, {{ machine_class_name(model) }}Vars *scope)
 {
 {% if resolved.item.operations -%}
-{{ (resolved.item.operations | stmts_render(style='c_runtime', indent='    ', level=1)).strip('\n') }}
+{{ render_c_action_body(resolved.item.operations, model.defines, machine_class_name(model), machine_macro_name(model)) }}
 {% else -%}
+    (void)machine;
     (void)scope;
+    return {{ machine_macro_name(model) }}_SUCCESS;
 {% endif -%}
 }
 
@@ -511,18 +576,20 @@ static void {{ action_method_name(state, 'aspect_before', id_) }}({{ machine_cla
 {% endfor -%}
 {% for id_, item in state.list_on_during_aspects(aspect='after', with_ids=True) -%}
 {% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
+{% for _ in range(action_ref_hop_limit) -%}
 {% if resolved.item.ref is not none -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
 {% endfor -%}
 {% if not resolved.item.is_abstract -%}
-static void {{ action_method_name(state, 'aspect_after', id_) }}({{ machine_class_name(model) }}Vars *scope)
+static int {{ action_method_name(state, 'aspect_after', id_) }}({{ machine_class_name(model) }} *machine, {{ machine_class_name(model) }}Vars *scope)
 {
 {% if resolved.item.operations -%}
-{{ (resolved.item.operations | stmts_render(style='c_runtime', indent='    ', level=1)).strip('\n') }}
+{{ render_c_action_body(resolved.item.operations, model.defines, machine_class_name(model), machine_macro_name(model)) }}
 {% else -%}
+    (void)machine;
     (void)scope;
+    return {{ machine_macro_name(model) }}_SUCCESS;
 {% endif -%}
 }
 
@@ -530,32 +597,32 @@ static void {{ action_method_name(state, 'aspect_after', id_) }}({{ machine_clas
 {% endfor -%}
 {% for transition in state.init_transitions -%}
 {% if transition.guard is not none -%}
-static int {{ init_guard_method_name(state, loop.index) }}(const {{ machine_class_name(model) }}Vars *scope)
+static int {{ init_guard_method_name(state, loop.index) }}({{ machine_class_name(model) }} *machine, const {{ machine_class_name(model) }}Vars *scope, int *result)
 {
-    return !!({{ transition.guard.to_ast_node() | expr_render(style='c_scope_expr') }});
+{{ render_c_condition_body(transition.guard.to_ast_node(), model.defines, machine_class_name(model), machine_macro_name(model), "transition guard") }}
 }
 
 {% endif -%}
 {% if transition.effects -%}
-static void {{ init_effect_method_name(state, loop.index) }}({{ machine_class_name(model) }}Vars *scope)
+static int {{ init_effect_method_name(state, loop.index) }}({{ machine_class_name(model) }} *machine, {{ machine_class_name(model) }}Vars *scope)
 {
-{{ (transition.effects | stmts_render(style='c_runtime', indent='    ', level=1)).strip('\n') }}
+{{ render_c_action_body(transition.effects, model.defines, machine_class_name(model), machine_macro_name(model)) }}
 }
 
 {% endif -%}
 {% endfor -%}
 {% for transition in state.transitions_from -%}
 {% if transition.guard is not none -%}
-static int {{ transition_guard_method_name(state, loop.index) }}(const {{ machine_class_name(model) }}Vars *scope)
+static int {{ transition_guard_method_name(state, loop.index) }}({{ machine_class_name(model) }} *machine, const {{ machine_class_name(model) }}Vars *scope, int *result)
 {
-    return !!({{ transition.guard.to_ast_node() | expr_render(style='c_scope_expr') }});
+{{ render_c_condition_body(transition.guard.to_ast_node(), model.defines, machine_class_name(model), machine_macro_name(model), "transition guard") }}
 }
 
 {% endif -%}
 {% if transition.effects -%}
-static void {{ transition_effect_method_name(state, loop.index) }}({{ machine_class_name(model) }}Vars *scope)
+static int {{ transition_effect_method_name(state, loop.index) }}({{ machine_class_name(model) }} *machine, {{ machine_class_name(model) }}Vars *scope)
 {
-{{ (transition.effects | stmts_render(style='c_runtime', indent='    ', level=1)).strip('\n') }}
+{{ render_c_action_body(transition.effects, model.defines, machine_class_name(model), machine_macro_name(model)) }}
 }
 
 {% endif -%}
@@ -563,7 +630,7 @@ static void {{ transition_effect_method_name(state, loop.index) }}({{ machine_cl
 {% endfor -%}
 
 {% for state in model.walk_states() %}
-static void {{ action_stage_runner_name(state, 'enter') }}(
+static int {{ action_stage_runner_name(state, 'enter') }}(
     {{ machine_class_name(model) }} *machine,
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int is_validation_mode)
@@ -576,7 +643,7 @@ static void {{ action_stage_runner_name(state, 'enter') }}(
 {% if items -%}
 {% for id_, item in items -%}
 {% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
+{% for _ in range(action_ref_hop_limit) -%}
 {% if resolved.item.ref is not none -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
@@ -586,24 +653,31 @@ _{{ machine_class_name(model) }}_invoke_abstract_action(
     machine,
     context,
     is_validation_mode,
-    {{ state_enum(resolved.item.parent) }},
+    {{ state_enum(state) }},
+    {{ 1 if item.is_aspect else 0 }},
     {{ hook_enum(resolved.item) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(resolved.item.stage) }});
+    {{ action_enum(resolved.item) }},
+    {{ stage_enum(item.stage) }},
+    {{ action_enum(resolved.item) }},
+    {{ action_enum(item) if item.name is not none and item.ref is not none else machine_macro_name(model) ~ "_INVALID_ACTION_ID" }});
 {% else -%}
-{{ action_method_name(state, 'enter', id_) }}(&context->vars);
+if ({{ action_method_name(state, 'enter', id_) }}(machine, &context->vars) != {{ machine_macro_name(model) }}_SUCCESS) {
+    return {{ machine_macro_name(model) }}_FAILURE;
+}
 {% endif -%}
 {% endfor -%}
 {% else -%}
 (void)machine;
 (void)context;
 (void)is_validation_mode;
+return {{ machine_macro_name(model) }}_SUCCESS;
 {% endif -%}
 {%- endset %}
 {{ (runner_body.strip('\n')) | indent(4, true) }}
+    return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-static void {{ action_stage_runner_name(state, 'during') }}(
+static int {{ action_stage_runner_name(state, 'during') }}(
     {{ machine_class_name(model) }} *machine,
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int is_validation_mode)
@@ -616,7 +690,7 @@ static void {{ action_stage_runner_name(state, 'during') }}(
 {% if items -%}
 {% for id_, item in items -%}
 {% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
+{% for _ in range(action_ref_hop_limit) -%}
 {% if resolved.item.ref is not none -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
@@ -626,24 +700,31 @@ _{{ machine_class_name(model) }}_invoke_abstract_action(
     machine,
     context,
     is_validation_mode,
-    {{ state_enum(resolved.item.parent) }},
+    {{ state_enum(state) }},
+    {{ 1 if item.is_aspect else 0 }},
     {{ hook_enum(resolved.item) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(resolved.item.stage) }});
+    {{ action_enum(resolved.item) }},
+    {{ stage_enum(item.stage) }},
+    {{ action_enum(resolved.item) }},
+    {{ action_enum(item) if item.name is not none and item.ref is not none else machine_macro_name(model) ~ "_INVALID_ACTION_ID" }});
 {% else -%}
-{{ action_method_name(state, 'during', id_) }}(&context->vars);
+if ({{ action_method_name(state, 'during', id_) }}(machine, &context->vars) != {{ machine_macro_name(model) }}_SUCCESS) {
+    return {{ machine_macro_name(model) }}_FAILURE;
+}
 {% endif -%}
 {% endfor -%}
 {% else -%}
 (void)machine;
 (void)context;
 (void)is_validation_mode;
+return {{ machine_macro_name(model) }}_SUCCESS;
 {% endif -%}
 {%- endset %}
 {{ (runner_body.strip('\n')) | indent(4, true) }}
+    return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-static void {{ action_stage_runner_name(state, 'exit') }}(
+static int {{ action_stage_runner_name(state, 'exit') }}(
     {{ machine_class_name(model) }} *machine,
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int is_validation_mode)
@@ -656,7 +737,7 @@ static void {{ action_stage_runner_name(state, 'exit') }}(
 {% if items -%}
 {% for id_, item in items -%}
 {% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
+{% for _ in range(action_ref_hop_limit) -%}
 {% if resolved.item.ref is not none -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
@@ -666,24 +747,31 @@ _{{ machine_class_name(model) }}_invoke_abstract_action(
     machine,
     context,
     is_validation_mode,
-    {{ state_enum(resolved.item.parent) }},
+    {{ state_enum(state) }},
+    {{ 1 if item.is_aspect else 0 }},
     {{ hook_enum(resolved.item) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(resolved.item.stage) }});
+    {{ action_enum(resolved.item) }},
+    {{ stage_enum(item.stage) }},
+    {{ action_enum(resolved.item) }},
+    {{ action_enum(item) if item.name is not none and item.ref is not none else machine_macro_name(model) ~ "_INVALID_ACTION_ID" }});
 {% else -%}
-{{ action_method_name(state, 'exit', id_) }}(&context->vars);
+if ({{ action_method_name(state, 'exit', id_) }}(machine, &context->vars) != {{ machine_macro_name(model) }}_SUCCESS) {
+    return {{ machine_macro_name(model) }}_FAILURE;
+}
 {% endif -%}
 {% endfor -%}
 {% else -%}
 (void)machine;
 (void)context;
 (void)is_validation_mode;
+return {{ machine_macro_name(model) }}_SUCCESS;
 {% endif -%}
 {%- endset %}
 {{ (runner_body.strip('\n')) | indent(4, true) }}
+    return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-static void {{ action_stage_runner_name(state, 'during_before') }}(
+static int {{ action_stage_runner_name(state, 'during_before') }}(
     {{ machine_class_name(model) }} *machine,
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int is_validation_mode)
@@ -696,7 +784,7 @@ static void {{ action_stage_runner_name(state, 'during_before') }}(
 {% if items -%}
 {% for id_, item in items -%}
 {% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
+{% for _ in range(action_ref_hop_limit) -%}
 {% if resolved.item.ref is not none -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
@@ -706,24 +794,31 @@ _{{ machine_class_name(model) }}_invoke_abstract_action(
     machine,
     context,
     is_validation_mode,
-    {{ state_enum(resolved.item.parent) }},
+    {{ state_enum(state) }},
+    {{ 1 if item.is_aspect else 0 }},
     {{ hook_enum(resolved.item) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(resolved.item.stage) }});
+    {{ action_enum(resolved.item) }},
+    {{ stage_enum(item.stage) }},
+    {{ action_enum(resolved.item) }},
+    {{ action_enum(item) if item.name is not none and item.ref is not none else machine_macro_name(model) ~ "_INVALID_ACTION_ID" }});
 {% else -%}
-{{ action_method_name(state, 'during_before', id_) }}(&context->vars);
+if ({{ action_method_name(state, 'during_before', id_) }}(machine, &context->vars) != {{ machine_macro_name(model) }}_SUCCESS) {
+    return {{ machine_macro_name(model) }}_FAILURE;
+}
 {% endif -%}
 {% endfor -%}
 {% else -%}
 (void)machine;
 (void)context;
 (void)is_validation_mode;
+return {{ machine_macro_name(model) }}_SUCCESS;
 {% endif -%}
 {%- endset %}
 {{ (runner_body.strip('\n')) | indent(4, true) }}
+    return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-static void {{ action_stage_runner_name(state, 'during_after') }}(
+static int {{ action_stage_runner_name(state, 'during_after') }}(
     {{ machine_class_name(model) }} *machine,
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int is_validation_mode)
@@ -736,7 +831,7 @@ static void {{ action_stage_runner_name(state, 'during_after') }}(
 {% if items -%}
 {% for id_, item in items -%}
 {% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
+{% for _ in range(action_ref_hop_limit) -%}
 {% if resolved.item.ref is not none -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
@@ -746,24 +841,31 @@ _{{ machine_class_name(model) }}_invoke_abstract_action(
     machine,
     context,
     is_validation_mode,
-    {{ state_enum(resolved.item.parent) }},
+    {{ state_enum(state) }},
+    {{ 1 if item.is_aspect else 0 }},
     {{ hook_enum(resolved.item) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(resolved.item.stage) }});
+    {{ action_enum(resolved.item) }},
+    {{ stage_enum(item.stage) }},
+    {{ action_enum(resolved.item) }},
+    {{ action_enum(item) if item.name is not none and item.ref is not none else machine_macro_name(model) ~ "_INVALID_ACTION_ID" }});
 {% else -%}
-{{ action_method_name(state, 'during_after', id_) }}(&context->vars);
+if ({{ action_method_name(state, 'during_after', id_) }}(machine, &context->vars) != {{ machine_macro_name(model) }}_SUCCESS) {
+    return {{ machine_macro_name(model) }}_FAILURE;
+}
 {% endif -%}
 {% endfor -%}
 {% else -%}
 (void)machine;
 (void)context;
 (void)is_validation_mode;
+return {{ machine_macro_name(model) }}_SUCCESS;
 {% endif -%}
 {%- endset %}
 {{ (runner_body.strip('\n')) | indent(4, true) }}
+    return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-static void {{ action_stage_runner_name(state, 'aspect_before') }}(
+static int {{ action_stage_runner_name(state, 'aspect_before') }}(
     {{ machine_class_name(model) }} *machine,
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int is_validation_mode)
@@ -776,7 +878,7 @@ static void {{ action_stage_runner_name(state, 'aspect_before') }}(
 {% if items -%}
 {% for id_, item in items -%}
 {% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
+{% for _ in range(action_ref_hop_limit) -%}
 {% if resolved.item.ref is not none -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
@@ -786,24 +888,31 @@ _{{ machine_class_name(model) }}_invoke_abstract_action(
     machine,
     context,
     is_validation_mode,
-    {{ state_enum(resolved.item.parent) }},
+    {{ state_enum(state) }},
+    {{ 1 if item.is_aspect else 0 }},
     {{ hook_enum(resolved.item) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(resolved.item.stage) }});
+    {{ action_enum(resolved.item) }},
+    {{ stage_enum(item.stage) }},
+    {{ action_enum(resolved.item) }},
+    {{ action_enum(item) if item.name is not none and item.ref is not none else machine_macro_name(model) ~ "_INVALID_ACTION_ID" }});
 {% else -%}
-{{ action_method_name(state, 'aspect_before', id_) }}(&context->vars);
+if ({{ action_method_name(state, 'aspect_before', id_) }}(machine, &context->vars) != {{ machine_macro_name(model) }}_SUCCESS) {
+    return {{ machine_macro_name(model) }}_FAILURE;
+}
 {% endif -%}
 {% endfor -%}
 {% else -%}
 (void)machine;
 (void)context;
 (void)is_validation_mode;
+return {{ machine_macro_name(model) }}_SUCCESS;
 {% endif -%}
 {%- endset %}
 {{ (runner_body.strip('\n')) | indent(4, true) }}
+    return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-static void {{ action_stage_runner_name(state, 'aspect_after') }}(
+static int {{ action_stage_runner_name(state, 'aspect_after') }}(
     {{ machine_class_name(model) }} *machine,
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int is_validation_mode)
@@ -816,7 +925,7 @@ static void {{ action_stage_runner_name(state, 'aspect_after') }}(
 {% if items -%}
 {% for id_, item in items -%}
 {% set resolved = namespace(item=item) -%}
-{% for _ in range(16) -%}
+{% for _ in range(action_ref_hop_limit) -%}
 {% if resolved.item.ref is not none -%}
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
@@ -826,26 +935,33 @@ _{{ machine_class_name(model) }}_invoke_abstract_action(
     machine,
     context,
     is_validation_mode,
-    {{ state_enum(resolved.item.parent) }},
+    {{ state_enum(state) }},
+    {{ 1 if item.is_aspect else 0 }},
     {{ hook_enum(resolved.item) }},
-    {{ cstr(resolved.item.func_name) }},
-    {{ cstr(resolved.item.stage) }});
+    {{ action_enum(resolved.item) }},
+    {{ stage_enum(item.stage) }},
+    {{ action_enum(resolved.item) }},
+    {{ action_enum(item) if item.name is not none and item.ref is not none else machine_macro_name(model) ~ "_INVALID_ACTION_ID" }});
 {% else -%}
-{{ action_method_name(state, 'aspect_after', id_) }}(&context->vars);
+if ({{ action_method_name(state, 'aspect_after', id_) }}(machine, &context->vars) != {{ machine_macro_name(model) }}_SUCCESS) {
+    return {{ machine_macro_name(model) }}_FAILURE;
+}
 {% endif -%}
 {% endfor -%}
 {% else -%}
 (void)machine;
 (void)context;
 (void)is_validation_mode;
+return {{ machine_macro_name(model) }}_SUCCESS;
 {% endif -%}
 {%- endset %}
 {{ (runner_body.strip('\n')) | indent(4, true) }}
+    return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
 {% endfor %}
 
-static void _{{ machine_class_name(model) }}_run_enter_actions_for_state(
+static int _{{ machine_class_name(model) }}_run_enter_actions_for_state(
     {{ machine_class_name(model) }} *machine,
     int state_id,
     _{{ machine_class_name(model) }}RuntimeContext *context,
@@ -854,15 +970,15 @@ static void _{{ machine_class_name(model) }}_run_enter_actions_for_state(
     switch (state_id) {
 {% for state in model.walk_states() %}
         case {{ state_enum(state) }}:
-            {{ action_stage_runner_name(state, 'enter') }}(machine, context, is_validation_mode);
-            break;
+            return {{ action_stage_runner_name(state, 'enter') }}(machine, context, is_validation_mode);
 {% endfor %}
         default:
             break;
     }
+    return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-static void _{{ machine_class_name(model) }}_run_during_actions_for_state(
+static int _{{ machine_class_name(model) }}_run_during_actions_for_state(
     {{ machine_class_name(model) }} *machine,
     int state_id,
     _{{ machine_class_name(model) }}RuntimeContext *context,
@@ -871,15 +987,15 @@ static void _{{ machine_class_name(model) }}_run_during_actions_for_state(
     switch (state_id) {
 {% for state in model.walk_states() %}
         case {{ state_enum(state) }}:
-            {{ action_stage_runner_name(state, 'during') }}(machine, context, is_validation_mode);
-            break;
+            return {{ action_stage_runner_name(state, 'during') }}(machine, context, is_validation_mode);
 {% endfor %}
         default:
             break;
     }
+    return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-static void _{{ machine_class_name(model) }}_run_exit_actions_for_state(
+static int _{{ machine_class_name(model) }}_run_exit_actions_for_state(
     {{ machine_class_name(model) }} *machine,
     int state_id,
     _{{ machine_class_name(model) }}RuntimeContext *context,
@@ -888,15 +1004,15 @@ static void _{{ machine_class_name(model) }}_run_exit_actions_for_state(
     switch (state_id) {
 {% for state in model.walk_states() %}
         case {{ state_enum(state) }}:
-            {{ action_stage_runner_name(state, 'exit') }}(machine, context, is_validation_mode);
-            break;
+            return {{ action_stage_runner_name(state, 'exit') }}(machine, context, is_validation_mode);
 {% endfor %}
         default:
             break;
     }
+    return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-static void _{{ machine_class_name(model) }}_run_during_before_actions_for_state(
+static int _{{ machine_class_name(model) }}_run_during_before_actions_for_state(
     {{ machine_class_name(model) }} *machine,
     int state_id,
     _{{ machine_class_name(model) }}RuntimeContext *context,
@@ -905,15 +1021,15 @@ static void _{{ machine_class_name(model) }}_run_during_before_actions_for_state
     switch (state_id) {
 {% for state in model.walk_states() %}
         case {{ state_enum(state) }}:
-            {{ action_stage_runner_name(state, 'during_before') }}(machine, context, is_validation_mode);
-            break;
+            return {{ action_stage_runner_name(state, 'during_before') }}(machine, context, is_validation_mode);
 {% endfor %}
         default:
             break;
     }
+    return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-static void _{{ machine_class_name(model) }}_run_during_after_actions_for_state(
+static int _{{ machine_class_name(model) }}_run_during_after_actions_for_state(
     {{ machine_class_name(model) }} *machine,
     int state_id,
     _{{ machine_class_name(model) }}RuntimeContext *context,
@@ -922,15 +1038,15 @@ static void _{{ machine_class_name(model) }}_run_during_after_actions_for_state(
     switch (state_id) {
 {% for state in model.walk_states() %}
         case {{ state_enum(state) }}:
-            {{ action_stage_runner_name(state, 'during_after') }}(machine, context, is_validation_mode);
-            break;
+            return {{ action_stage_runner_name(state, 'during_after') }}(machine, context, is_validation_mode);
 {% endfor %}
         default:
             break;
     }
+    return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-static void _{{ machine_class_name(model) }}_run_aspect_before_actions_for_state(
+static int _{{ machine_class_name(model) }}_run_aspect_before_actions_for_state(
     {{ machine_class_name(model) }} *machine,
     int state_id,
     _{{ machine_class_name(model) }}RuntimeContext *context,
@@ -939,15 +1055,15 @@ static void _{{ machine_class_name(model) }}_run_aspect_before_actions_for_state
     switch (state_id) {
 {% for state in model.walk_states() %}
         case {{ state_enum(state) }}:
-            {{ action_stage_runner_name(state, 'aspect_before') }}(machine, context, is_validation_mode);
-            break;
+            return {{ action_stage_runner_name(state, 'aspect_before') }}(machine, context, is_validation_mode);
 {% endfor %}
         default:
             break;
     }
+    return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-static void _{{ machine_class_name(model) }}_run_aspect_after_actions_for_state(
+static int _{{ machine_class_name(model) }}_run_aspect_after_actions_for_state(
     {{ machine_class_name(model) }} *machine,
     int state_id,
     _{{ machine_class_name(model) }}RuntimeContext *context,
@@ -956,12 +1072,12 @@ static void _{{ machine_class_name(model) }}_run_aspect_after_actions_for_state(
     switch (state_id) {
 {% for state in model.walk_states() %}
         case {{ state_enum(state) }}:
-            {{ action_stage_runner_name(state, 'aspect_after') }}(machine, context, is_validation_mode);
-            break;
+            return {{ action_stage_runner_name(state, 'aspect_after') }}(machine, context, is_validation_mode);
 {% endfor %}
         default:
             break;
     }
+    return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
 {% for state in model.walk_states() -%}
@@ -977,18 +1093,14 @@ static int {{ select_transition_state_name(state) }}(
     (void)validate_stoppable;
 {% if state.transitions_from | list -%}
 {% for transition in state.transitions_from -%}
-{% set condition -%}
+{% set event_condition -%}
 {% if transition.event is not none -%}
-                _{{ machine_class_name(model) }}_event_set_has(machine, context, event_set, {{ all_events.items.index(transition.event.path_name) }})
+_{{ machine_class_name(model) }}_event_set_has(machine, context, event_set, {{ all_events.items.index(transition.event.path_name) }})
 {% else -%}
 1
 {% endif -%}
-{% if transition.guard is not none -%}
-&& {{ transition_guard_method_name(state, loop.index) }}(&context->vars)
-{% endif -%}
 {%- endset %}
 {% set branch_body -%}
-{% if state.is_leaf_state and not state.is_pseudo -%}
 if (validate_stoppable) {
     int is_valid = _{{ machine_class_name(model) }}_validate_transition(
         machine,
@@ -1005,12 +1117,19 @@ if (validate_stoppable) {
 } else {
     return {{ normal_transition_id(state, loop.index) }};
 }
-{% else -%}
-return {{ normal_transition_id(state, loop.index) }};
-{% endif -%}
 {%- endset %}
-    if ({{ condition | trim | replace('\n', ' ') }}) {
+    if ({{ event_condition | trim | replace('\n', ' ') }}) {
+{% if transition.guard is not none %}
+        int guard_result = 0;
+        if ({{ transition_guard_method_name(state, loop.index) }}(machine, &context->vars, &guard_result) != {{ machine_macro_name(model) }}_SUCCESS) {
+            return -1;
+        }
+        if (guard_result) {
+{{ branch_body.strip('\n') | indent(12, true) }}
+        }
+{% else %}
 {{ branch_body.strip('\n') | indent(8, true) }}
+{% endif %}
     }
 {% endfor -%}
 {% else %}
@@ -1033,29 +1152,50 @@ static int {{ attempt_init_state_name(state) }}(
     (void)is_validation_mode;
 {% if state.init_transitions | list -%}
 {% for transition in state.init_transitions -%}
-{% set condition -%}
+{% set event_condition -%}
 {% if transition.event is not none -%}
-                _{{ machine_class_name(model) }}_event_set_has(machine, context, event_set, {{ all_events.items.index(transition.event.path_name) }})
+_{{ machine_class_name(model) }}_event_set_has(machine, context, event_set, {{ all_events.items.index(transition.event.path_name) }})
 {% else -%}
 1
 {% endif -%}
-{% if transition.guard is not none -%}
-&& {{ init_guard_method_name(state, loop.index) }}(&context->vars)
-{% endif -%}
 {%- endset %}
-    if ({{ condition | trim | replace('\n', ' ') }}) {
-{% if transition.effects %}
-        {{ init_effect_method_name(state, loop.index) }}(&context->vars);
-{% endif %}
-        if (_{{ machine_class_name(model) }}_enter_state(
+{% set init_body -%}
+{
+    int is_valid = _{{ machine_class_name(model) }}_validate_initial_transition(
+        machine,
+        context,
+        {{ init_transition_id(state, loop.index) }},
+        event_set);
+    if (!is_valid) {
+        if (machine != NULL && machine->last_error[0] != '\0') {
+            return 0;
+        }
+    } else {
+        if (_{{ machine_class_name(model) }}_execute_initial_transition_on_context(
                 machine,
                 context,
-                {{ state_enum(state.substates[transition.to_state]) }},
+                {{ init_transition_id(state, loop.index) }},
                 event_set,
-                is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+                is_validation_mode,
+                !is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
             return 0;
         }
         return 1;
+    }
+}
+{%- endset %}
+    if ({{ event_condition | trim | replace('\n', ' ') }}) {
+{% if transition.guard is not none %}
+        int guard_result = 0;
+        if ({{ init_guard_method_name(state, loop.index) }}(machine, &context->vars, &guard_result) != {{ machine_macro_name(model) }}_SUCCESS) {
+            return 0;
+        }
+        if (guard_result) {
+{{ init_body.strip('\n') | indent(12, true) }}
+        }
+{% else %}
+{{ init_body.strip('\n') | indent(8, true) }}
+{% endif %}
     }
 {% endfor -%}
 {% else %}
@@ -1152,6 +1292,58 @@ static const _{{ machine_class_name(model) }}TransitionInfo _{{ machine_class_na
 {% endfor %}
 };
 
+static int _{{ machine_class_name(model) }}_execute_initial_transition_on_context(
+    {{ machine_class_name(model) }} *machine,
+    _{{ machine_class_name(model) }}RuntimeContext *context,
+    int transition_id,
+    const _{{ machine_class_name(model) }}EventSet *event_set,
+    int is_validation_mode,
+    int attempt_nested_initial)
+{
+    const _{{ machine_class_name(model) }}TransitionInfo *transition;
+    int composite_state_id;
+
+    if (context->stack_size == 0u) {
+        return 0;
+    }
+
+    transition = &_{{ machine_class_name(model) }}_transitions[transition_id];
+    composite_state_id = context->stack[context->stack_size - 1u].state_id;
+    if (_{{ machine_class_name(model) }}_execute_transition_effect(machine, transition, context) != {{ machine_macro_name(model) }}_SUCCESS) {
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
+    if (context->stack_size > 0u && context->stack[context->stack_size - 1u].plain_before_pending) {
+        int pending_state_id = context->stack[context->stack_size - 1u].state_id;
+        if (_{{ machine_class_name(model) }}_run_during_before_actions_for_state(
+                machine,
+                pending_state_id,
+                context,
+                is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+            return {{ machine_macro_name(model) }}_FAILURE;
+        }
+        context->stack[context->stack_size - 1u].plain_before_pending = 0;
+    }
+    if (_{{ machine_class_name(model) }}_enter_state(
+            machine,
+            context,
+            transition->target_state_id,
+            event_set,
+            is_validation_mode,
+            attempt_nested_initial) != {{ machine_macro_name(model) }}_SUCCESS) {
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
+    if (context->stack_size > 0u) {
+        size_t frame_index;
+        for (frame_index = context->stack_size; frame_index > 0u; --frame_index) {
+            if (context->stack[frame_index - 1u].state_id == composite_state_id) {
+                context->stack[frame_index - 1u].mode = {{ machine_macro_name(model) }}_FRAME_MODE_ACTIVE;
+                break;
+            }
+        }
+    }
+    return {{ machine_macro_name(model) }}_SUCCESS;
+}
+
 static int _{{ machine_class_name(model) }}_state_id_is_valid(int state_id)
 {
     return state_id >= 0 && state_id < {{ machine_macro_name(model) }}_STATE_COUNT;
@@ -1219,6 +1411,18 @@ static int _{{ machine_class_name(model) }}_normalize_events(
     return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
+static void _{{ machine_class_name(model) }}_event_set_activate_all(
+    _{{ machine_class_name(model) }}EventSet *event_set)
+{
+    size_t i;
+
+    _{{ machine_class_name(model) }}_event_set_reset(event_set);
+    for (i = 0u; i < sizeof(event_set->active_bitset) / sizeof(event_set->active_bitset[0]); ++i) {
+        event_set->active_bitset[i] = ~0ul;
+        event_set->evaluated_bitset[i] = ~0ul;
+    }
+}
+
 static void _{{ machine_class_name(model) }}_copy_context(
     _{{ machine_class_name(model) }}RuntimeContext *dst,
     const _{{ machine_class_name(model) }}RuntimeContext *src)
@@ -1260,6 +1464,7 @@ static int _{{ machine_class_name(model) }}_push_frame(
     }
     context->stack[context->stack_size].state_id = state_id;
     context->stack[context->stack_size].mode = mode;
+    context->stack[context->stack_size].plain_before_pending = 0;
     ++context->stack_size;
     return {{ machine_macro_name(model) }}_SUCCESS;
 }
@@ -1277,8 +1482,8 @@ static PYFCSTM_GENERATED_UNUSED void _{{ machine_class_name(model) }}_execute_ab
 {% if hook_ns.rows %}
 {% for row in hook_ns.rows %}
         case {{ row['hook_enum'] }}:
-            if (machine->hooks->{{ row['hook_field'] }} != NULL) {
-                machine->hooks->{{ row['hook_field'] }}(machine, ctx, machine->hook_user_data);
+            if (machine->hooks->{{ row['hook_field_id'] }} != NULL) {
+                machine->hooks->{{ row['hook_field_id'] }}(machine, ctx, machine->hook_user_data);
             }
             break;
 {% endfor %}
@@ -1292,29 +1497,42 @@ static void _{{ machine_class_name(model) }}_invoke_abstract_action(
     {{ machine_class_name(model) }} *machine,
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int is_validation_mode,
-    int owner_state_id,
+    int context_state_id,
+    int use_active_leaf_context,
     int hook_id,
-    const char *action_name,
-    const char *action_stage)
+    int action_id,
+    int action_stage_id,
+    int abstract_target_id,
+    int named_ref_id)
 {
     {{ machine_class_name(model) }}ExecutionContext ctx;
     {{ machine_class_name(model) }}Vars *saved_active_vars;
+    int effective_state_id;
 
     if (is_validation_mode) {
         return;
     }
 
+    effective_state_id = context_state_id;
+    if (use_active_leaf_context && context != NULL && context->stack_size > 0u) {
+        effective_state_id = context->stack[context->stack_size - 1u].state_id;
+    }
+
     saved_active_vars = machine->_active_vars;
     machine->_active_vars = &context->vars;
-    ctx.state_path = _{{ machine_class_name(model) }}_state_info[owner_state_id].path;
+    ctx.state_id = ({{ machine_class_name(model) }}StateId)effective_state_id;
     ctx.vars = &context->vars;
-    ctx.action_name = action_name;
-    ctx.action_stage = action_stage;
+    ctx.action_id = ({{ machine_class_name(model) }}ActionId)action_id;
+    ctx.action_stage_id = ({{ machine_class_name(model) }}StageId)action_stage_id;
+    ctx.active_leaf_state_id = ({{ machine_class_name(model) }}StateId)effective_state_id;
+    ctx.call_stage_id = ({{ machine_class_name(model) }}StageId)action_stage_id;
+    ctx.abstract_target_id = ({{ machine_class_name(model) }}ActionId)abstract_target_id;
+    ctx.named_ref_id = ({{ machine_class_name(model) }}ActionId)named_ref_id;
     _{{ machine_class_name(model) }}_execute_abstract_hook(machine, hook_id, &ctx);
     machine->_active_vars = saved_active_vars;
 }
 
-static void _{{ machine_class_name(model) }}_run_leaf_during(
+static int _{{ machine_class_name(model) }}_run_leaf_during(
     {{ machine_class_name(model) }} *machine,
     int state_id,
     _{{ machine_class_name(model) }}RuntimeContext *context,
@@ -1337,38 +1555,47 @@ static void _{{ machine_class_name(model) }}_run_leaf_during(
 
     if (!state_info->is_pseudo) {
         for (i = path_count; i > 0u; --i) {
-            _{{ machine_class_name(model) }}_run_aspect_before_actions_for_state(
-                machine,
-                path_ids[i - 1u],
-                context,
-                is_validation_mode);
+            if (_{{ machine_class_name(model) }}_run_aspect_before_actions_for_state(
+                    machine,
+                    path_ids[i - 1u],
+                    context,
+                    is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+                return {{ machine_macro_name(model) }}_FAILURE;
+            }
         }
     }
 
-    _{{ machine_class_name(model) }}_run_during_actions_for_state(
-        machine,
-        state_id,
-        context,
-        is_validation_mode);
+    if (_{{ machine_class_name(model) }}_run_during_actions_for_state(
+            machine,
+            state_id,
+            context,
+            is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
 
     if (!state_info->is_pseudo) {
         for (i = 0u; i < path_count; ++i) {
-            _{{ machine_class_name(model) }}_run_aspect_after_actions_for_state(
-                machine,
-                path_ids[i],
-                context,
-                is_validation_mode);
+            if (_{{ machine_class_name(model) }}_run_aspect_after_actions_for_state(
+                    machine,
+                    path_ids[i],
+                    context,
+                    is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+                return {{ machine_macro_name(model) }}_FAILURE;
+            }
         }
     }
+    return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-static void _{{ machine_class_name(model) }}_execute_transition_effect(
+static int _{{ machine_class_name(model) }}_execute_transition_effect(
+    {{ machine_class_name(model) }} *machine,
     const _{{ machine_class_name(model) }}TransitionInfo *transition,
     _{{ machine_class_name(model) }}RuntimeContext *context)
 {
     if (transition->effect_fn != NULL) {
-        transition->effect_fn(&context->vars);
+        return transition->effect_fn(machine, &context->vars);
     }
+    return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
 static int _{{ machine_class_name(model) }}_is_stoppable_state(int state_id)
@@ -1418,12 +1645,15 @@ static int _{{ machine_class_name(model) }}_enter_state(
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int state_id,
     const _{{ machine_class_name(model) }}EventSet *event_set,
-    int is_validation_mode)
+    int is_validation_mode,
+    int attempt_initial_transition)
 {
     const _{{ machine_class_name(model) }}StateInfo *state_info;
     int init_result;
+    size_t pushed_index;
 
     state_info = &_{{ machine_class_name(model) }}_state_info[state_id];
+    pushed_index = context->stack_size;
     if (_{{ machine_class_name(model) }}_push_frame(machine, context, state_id, {{ machine_macro_name(model) }}_FRAME_MODE_ACTIVE) != {{ machine_macro_name(model) }}_SUCCESS) {
         if (is_validation_mode) {
             _{{ machine_class_name(model) }}_set_error(
@@ -1434,27 +1664,29 @@ static int _{{ machine_class_name(model) }}_enter_state(
         return {{ machine_macro_name(model) }}_FAILURE;
     }
 
-    _{{ machine_class_name(model) }}_run_enter_actions_for_state(
-        machine,
-        state_id,
-        context,
-        is_validation_mode);
+    if (_{{ machine_class_name(model) }}_run_enter_actions_for_state(
+            machine,
+            state_id,
+            context,
+            is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
 
     if (state_info->is_leaf) {
-        _{{ machine_class_name(model) }}_run_leaf_during(machine, state_id, context, is_validation_mode);
+        if (_{{ machine_class_name(model) }}_run_leaf_during(machine, state_id, context, is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+            return {{ machine_macro_name(model) }}_FAILURE;
+        }
         context->stack[context->stack_size - 1u].mode = {{ machine_macro_name(model) }}_FRAME_MODE_AFTER_ENTRY;
         return {{ machine_macro_name(model) }}_SUCCESS;
     }
 
-    _{{ machine_class_name(model) }}_run_during_before_actions_for_state(
-        machine,
-        state_id,
-        context,
-        is_validation_mode);
-    context->stack[context->stack_size - 1u].mode = {{ machine_macro_name(model) }}_FRAME_MODE_INIT_WAIT;
-    init_result = _{{ machine_class_name(model) }}_attempt_init_transition(machine, context, event_set, is_validation_mode);
-    if (init_result != {{ machine_macro_name(model) }}_SUCCESS && machine != NULL && machine->last_error[0] != '\0') {
-        return {{ machine_macro_name(model) }}_FAILURE;
+    context->stack[pushed_index].mode = {{ machine_macro_name(model) }}_FRAME_MODE_INIT_WAIT;
+    context->stack[pushed_index].plain_before_pending = 1;
+    if (attempt_initial_transition) {
+        init_result = _{{ machine_class_name(model) }}_attempt_init_transition(machine, context, event_set, is_validation_mode);
+        if (init_result != {{ machine_macro_name(model) }}_SUCCESS && machine != NULL && machine->last_error[0] != '\0') {
+            return {{ machine_macro_name(model) }}_FAILURE;
+        }
     }
     return {{ machine_macro_name(model) }}_SUCCESS;
 }
@@ -1496,15 +1728,31 @@ static int _{{ machine_class_name(model) }}_finalize_exit_to_parent(
 
     parent_state_id = context->stack[context->stack_size - 1u].state_id;
     if (parent_state_id == {{ state_enum(model.root_state) }}) {
+        if (_{{ machine_class_name(model) }}_run_during_after_actions_for_state(
+                machine,
+                parent_state_id,
+                context,
+                is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+            return {{ machine_macro_name(model) }}_FAILURE;
+        }
+        if (_{{ machine_class_name(model) }}_run_exit_actions_for_state(
+                machine,
+                parent_state_id,
+                context,
+                is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+            return {{ machine_macro_name(model) }}_FAILURE;
+        }
         context->stack_size = 0u;
         return 1;
     }
 
-    _{{ machine_class_name(model) }}_run_during_after_actions_for_state(
-        machine,
-        parent_state_id,
-        context,
-        is_validation_mode);
+    if (_{{ machine_class_name(model) }}_run_during_after_actions_for_state(
+            machine,
+            parent_state_id,
+            context,
+            is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
     context->stack[context->stack_size - 1u].mode = {{ machine_macro_name(model) }}_FRAME_MODE_POST_CHILD_EXIT;
     return 0;
 }
@@ -1522,12 +1770,16 @@ static int _{{ machine_class_name(model) }}_execute_transition_on_context(
     transition = &_{{ machine_class_name(model) }}_transitions[transition_id];
     current_state_id = context->stack[context->stack_size - 1u].state_id;
 
-    _{{ machine_class_name(model) }}_run_exit_actions_for_state(
-        machine,
-        current_state_id,
-        context,
-        is_validation_mode);
-    _{{ machine_class_name(model) }}_execute_transition_effect(transition, context);
+    if (_{{ machine_class_name(model) }}_run_exit_actions_for_state(
+            machine,
+            current_state_id,
+            context,
+            is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
+    if (_{{ machine_class_name(model) }}_execute_transition_effect(machine, transition, context) != {{ machine_macro_name(model) }}_SUCCESS) {
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
     --context->stack_size;
 
     if (transition->to_exit) {
@@ -1539,7 +1791,8 @@ static int _{{ machine_class_name(model) }}_execute_transition_on_context(
             context,
             transition->target_state_id,
             event_set,
-            is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+            is_validation_mode,
+            1) != {{ machine_macro_name(model) }}_SUCCESS) {
         return {{ machine_macro_name(model) }}_FAILURE;
     }
     return 0;
@@ -1581,7 +1834,11 @@ static int _{{ machine_class_name(model) }}_run_cycle_on_context(
             return {{ machine_macro_name(model) }}_FAILURE;
         }
         if (steps_taken >= {{ machine_macro_name(model) }}_MAX_DFS_STEPS) {
-            return 0;
+            _{{ machine_class_name(model) }}_set_error(
+                machine,
+                "Speculative DFS exceeded the step safety limit (%d) without reaching a stoppable state or pruning; the state machine likely contains an invalid unbounded pseudo-state or transition chain.",
+                {{ machine_macro_name(model) }}_MAX_DFS_STEPS);
+            return {{ machine_macro_name(model) }}_FAILURE;
         }
 
         frame = &context->stack[context->stack_size - 1u];
@@ -1620,7 +1877,13 @@ static int _{{ machine_class_name(model) }}_run_cycle_on_context(
                 continue;
             }
 
-            _{{ machine_class_name(model) }}_run_leaf_during(machine, state_id, context, is_validation_mode);
+            if (!_{{ machine_class_name(model) }}_is_stoppable_state(state_id)) {
+                return 0;
+            }
+
+            if (_{{ machine_class_name(model) }}_run_leaf_during(machine, state_id, context, is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+                return {{ machine_macro_name(model) }}_FAILURE;
+            }
             frame->mode = {{ machine_macro_name(model) }}_FRAME_MODE_AFTER_ENTRY;
             ++steps_taken;
             continue;
@@ -1681,6 +1944,18 @@ static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_validate_tr
 {
     _{{ machine_class_name(model) }}RuntimeContext sim_context;
     int ended;
+    int result;
+
+    if (machine != NULL) {
+        if (machine->validation_depth >= {{ machine_macro_name(model) }}_MAX_DFS_STEPS) {
+            _{{ machine_class_name(model) }}_set_error(
+                machine,
+                "Speculative DFS exceeded the step safety limit (%d) without reaching a stoppable state or pruning; the state machine likely contains an invalid unbounded pseudo-state or transition chain.",
+                {{ machine_macro_name(model) }}_MAX_DFS_STEPS);
+            return {{ machine_macro_name(model) }}_FAILURE;
+        }
+        ++machine->validation_depth;
+    }
 
     _{{ machine_class_name(model) }}_copy_context(&sim_context, context);
     ended = _{{ machine_class_name(model) }}_execute_transition_on_context(
@@ -1690,33 +1965,103 @@ static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_validate_tr
         event_set,
         1);
     if (machine != NULL && machine->last_error[0] != '\0') {
-        return {{ machine_macro_name(model) }}_FAILURE;
+        result = {{ machine_macro_name(model) }}_FAILURE;
+    } else if (ended) {
+        result = 1;
+    } else {
+        result = _{{ machine_class_name(model) }}_run_cycle_on_context(
+            machine,
+            &sim_context,
+            event_set,
+            &ended,
+            1,
+            1);
     }
-    if (ended) {
-        return 1;
+
+    if (machine != NULL && machine->validation_depth > 0) {
+        --machine->validation_depth;
     }
-    return _{{ machine_class_name(model) }}_run_cycle_on_context(
-        machine,
-        &sim_context,
-        event_set,
-        &ended,
-        0,
-        1);
+    return result;
+}
+
+static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_validate_initial_transition(
+    {{ machine_class_name(model) }} *machine,
+    const _{{ machine_class_name(model) }}RuntimeContext *context,
+    int transition_id,
+    const _{{ machine_class_name(model) }}EventSet *event_set)
+{
+    _{{ machine_class_name(model) }}RuntimeContext sim_context;
+    int ended;
+    int result;
+
+    if (machine != NULL) {
+        if (machine->validation_depth >= {{ machine_macro_name(model) }}_MAX_DFS_STEPS) {
+            _{{ machine_class_name(model) }}_set_error(
+                machine,
+                "Speculative DFS exceeded the step safety limit (%d) without reaching a stoppable state or pruning; the state machine likely contains an invalid unbounded pseudo-state or transition chain.",
+                {{ machine_macro_name(model) }}_MAX_DFS_STEPS);
+            return {{ machine_macro_name(model) }}_FAILURE;
+        }
+        ++machine->validation_depth;
+    }
+
+    _{{ machine_class_name(model) }}_copy_context(&sim_context, context);
+    if (_{{ machine_class_name(model) }}_execute_initial_transition_on_context(
+            machine,
+            &sim_context,
+            transition_id,
+            event_set,
+            1,
+            0) != {{ machine_macro_name(model) }}_SUCCESS) {
+        result = {{ machine_macro_name(model) }}_FAILURE;
+    } else {
+        ended = sim_context.stack_size == 0u;
+        if (ended) {
+            result = 1;
+        } else {
+            result = _{{ machine_class_name(model) }}_run_cycle_on_context(
+                machine,
+                &sim_context,
+                event_set,
+                &ended,
+                1,
+                1);
+        }
+    }
+
+    if (machine != NULL && machine->validation_depth > 0) {
+        --machine->validation_depth;
+    }
+    return result;
 }
 
 static int _{{ machine_class_name(model) }}_initialize_context(
     {{ machine_class_name(model) }} *machine,
     _{{ machine_class_name(model) }}RuntimeContext *context,
-    const _{{ machine_class_name(model) }}EventSet *event_set)
+    const _{{ machine_class_name(model) }}EventSet *event_set,
+    int is_validation_mode)
 {
     context->stack_size = 0u;
-    _{{ machine_class_name(model) }}_enter_state(machine, context, {{ state_enum(model.root_state) }}, event_set, 0);
+    if (_{{ machine_class_name(model) }}_enter_state(
+            machine,
+            context,
+            {{ state_enum(model.root_state) }},
+            event_set,
+            is_validation_mode,
+            1) != {{ machine_macro_name(model) }}_SUCCESS) {
+        return 0;
+    }
     return context->stack_size == 0u;
+}
+
+{{ machine_class_name(model) }} *{{ machine_class_name(model) }}_create_uninitialized(void)
+{
+    return ({{ machine_class_name(model) }} *)calloc(1u, sizeof({{ machine_class_name(model) }}));
 }
 
 {{ machine_class_name(model) }} *{{ machine_class_name(model) }}_create(void)
 {
-    {{ machine_class_name(model) }} *machine = ({{ machine_class_name(model) }} *)calloc(1u, sizeof({{ machine_class_name(model) }}));
+    {{ machine_class_name(model) }} *machine = {{ machine_class_name(model) }}_create_uninitialized();
     if (machine == NULL) {
         return NULL;
     }
@@ -1736,12 +2081,15 @@ int {{ machine_class_name(model) }}_init({{ machine_class_name(model) }} *machin
     }
 
     memset(machine, 0, sizeof(*machine));
-    _{{ machine_class_name(model) }}_reset_vars(&machine->vars);
+    if (_{{ machine_class_name(model) }}_reset_vars(machine, &machine->vars) != {{ machine_macro_name(model) }}_SUCCESS) {
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
     machine->stack_size = 1u;
     machine->stack[0].state_id = {{ state_enum(model.root_state) }};
     machine->stack[0].mode = {{ machine_macro_name(model) }}_FRAME_MODE_INIT_WAIT;
     machine->ended = 0;
     machine->entered_root = 0;
+    machine->initialized = 1;
     machine->_active_vars = NULL;
     _{{ machine_class_name(model) }}_clear_error(machine);
     return {{ machine_macro_name(model) }}_SUCCESS;
@@ -1752,42 +2100,49 @@ int {{ machine_class_name(model) }}_hot_start(
     {{ machine_class_name(model) }}StateId initial_state_id,
     const {{ machine_class_name(model) }}Vars *initial_vars)
 {
-    const {{ machine_class_name(model) }}Hooks *saved_hooks;
-    void *saved_hook_user_data;
-    const {{ machine_class_name(model) }}EventChecks *saved_event_checks;
-    void *saved_event_check_user_data;
-    int saved_event_checks_mounted;
+    {{ machine_class_name(model) }} saved_machine;
+    char hot_start_error[sizeof(machine->last_error)];
+    _{{ machine_class_name(model) }}RuntimeContext validation_context;
+    _{{ machine_class_name(model) }}EventSet validation_event_set;
+    int validation_ended;
+    int validation_success;
     int path_ids[{{ machine_macro_name(model) }}_MAX_STACK_DEPTH];
     size_t path_count;
     int current_state_id;
+    int target_state_id;
     size_t i;
 
     if (machine == NULL || initial_vars == NULL) {
         return {{ machine_macro_name(model) }}_FAILURE;
     }
 
-    saved_hooks = machine->hooks;
-    saved_hook_user_data = machine->hook_user_data;
-    saved_event_checks = machine->event_checks;
-    saved_event_check_user_data = machine->event_check_user_data;
-    saved_event_checks_mounted = machine->event_checks_mounted;
+    saved_machine = *machine;
+    hot_start_error[0] = '\0';
     memset(machine, 0, sizeof(*machine));
-    _{{ machine_class_name(model) }}_reset_vars(&machine->vars);
     machine->vars = *initial_vars;
+    target_state_id = initial_state_id;
     current_state_id = initial_state_id;
     if (!_{{ machine_class_name(model) }}_state_id_is_valid(current_state_id)) {
-        _{{ machine_class_name(model) }}_set_error(machine, "Invalid state id: %d", initial_state_id);
-        return {{ machine_macro_name(model) }}_FAILURE;
+        _{{ machine_class_name(model) }}_format_error_text(
+            hot_start_error,
+            sizeof(hot_start_error),
+            "Invalid state id: %d",
+            initial_state_id);
+        goto hot_start_failure;
     }
 
     path_count = 0u;
     while (current_state_id >= 0) {
+        if (path_count >= {{ machine_macro_name(model) }}_MAX_STACK_DEPTH) {
+            _{{ machine_class_name(model) }}_format_error_text(
+                hot_start_error,
+                sizeof(hot_start_error),
+                "Hot start target exceeds the structural stack-depth safety limit (%d) before execution; choose a shallower target state or simplify the state hierarchy.",
+                {{ machine_macro_name(model) }}_MAX_STACK_DEPTH);
+            goto hot_start_failure;
+        }
         path_ids[path_count++] = current_state_id;
         current_state_id = _{{ machine_class_name(model) }}_state_info[current_state_id].parent_state_id;
-        if (path_count > {{ machine_macro_name(model) }}_MAX_STACK_DEPTH) {
-            _{{ machine_class_name(model) }}_set_error(machine, "Hot-start path is too deep.");
-            return {{ machine_macro_name(model) }}_FAILURE;
-        }
     }
 
     machine->stack_size = 0u;
@@ -1803,18 +2158,58 @@ int {{ machine_class_name(model) }}_hot_start(
         }
         machine->stack[machine->stack_size].state_id = state_id;
         machine->stack[machine->stack_size].mode = mode;
+        machine->stack[machine->stack_size].plain_before_pending = 0;
         ++machine->stack_size;
     }
     machine->entered_root = 1;
     machine->ended = 0;
+    machine->initialized = 1;
     machine->_active_vars = NULL;
-    machine->hooks = saved_hooks;
-    machine->hook_user_data = saved_hook_user_data;
-    machine->event_checks = saved_event_checks;
-    machine->event_check_user_data = saved_event_check_user_data;
-    machine->event_checks_mounted = saved_event_checks_mounted;
+    machine->hooks = saved_machine.hooks;
+    machine->hook_user_data = saved_machine.hook_user_data;
+    machine->event_checks = saved_machine.event_checks;
+    machine->event_check_user_data = saved_machine.event_check_user_data;
+    machine->event_checks_mounted = saved_machine.event_checks_mounted;
     _{{ machine_class_name(model) }}_clear_error(machine);
+    if (machine->stack_size > {{ machine_macro_name(model) }}_MAX_STACK_DEPTH) {
+        _{{ machine_class_name(model) }}_format_error_text(
+            hot_start_error,
+            sizeof(hot_start_error),
+            "Hot start target exceeds the structural stack-depth safety limit (%d) before execution; choose a shallower target state or simplify the state hierarchy.",
+            {{ machine_macro_name(model) }}_MAX_STACK_DEPTH);
+        goto hot_start_failure;
+    }
+    if (!_{{ machine_class_name(model) }}_is_stoppable_state(target_state_id)) {
+        _{{ machine_class_name(model) }}_event_set_activate_all(&validation_event_set);
+        _{{ machine_class_name(model) }}_copy_from_machine(&validation_context, machine);
+        validation_ended = 0;
+        validation_success = _{{ machine_class_name(model) }}_run_cycle_on_context(
+            machine,
+            &validation_context,
+            &validation_event_set,
+            &validation_ended,
+            1,
+            1);
+        if (!validation_success && machine->last_error[0] != '\0') {
+            _{{ machine_class_name(model) }}_format_error_text(hot_start_error, sizeof(hot_start_error), "%s", machine->last_error);
+            goto hot_start_failure;
+        }
+        if (!validation_success) {
+            _{{ machine_class_name(model) }}_format_error_text(
+                hot_start_error,
+                sizeof(hot_start_error),
+                "Hot start target '%s' cannot reach a stoppable state",
+                _{{ machine_class_name(model) }}_state_info[target_state_id].path);
+            goto hot_start_failure;
+        }
+        _{{ machine_class_name(model) }}_clear_error(machine);
+    }
     return {{ machine_macro_name(model) }}_SUCCESS;
+
+hot_start_failure:
+    *machine = saved_machine;
+    _{{ machine_class_name(model) }}_set_error(machine, "%s", hot_start_error);
+    return {{ machine_macro_name(model) }}_FAILURE;
 }
 
 void {{ machine_class_name(model) }}_set_hooks(
@@ -1855,8 +2250,11 @@ void {{ machine_class_name(model) }}_set_event_checks(
 int {{ machine_class_name(model) }}_cycle(
     {{ machine_class_name(model) }} *machine)
 {
+    _{{ machine_class_name(model) }}RuntimeContext validation_context;
     _{{ machine_class_name(model) }}RuntimeContext sim_context;
     _{{ machine_class_name(model) }}EventSet event_set;
+    int validation_entered_root;
+    int validation_ended;
     int sim_entered_root;
     int sim_ended;
     int success;
@@ -1864,6 +2262,12 @@ int {{ machine_class_name(model) }}_cycle(
     if (machine == NULL) {
         return {{ machine_macro_name(model) }}_FAILURE;
     }
+    if (!machine->initialized) {
+        _{{ machine_class_name(model) }}_set_error(machine, "Machine is not initialized; call {{ machine_class_name(model) }}_init(...) or {{ machine_class_name(model) }}_hot_start(...) before cycle().");
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
+
+    _{{ machine_class_name(model) }}_clear_error(machine);
     if (machine->ended) {
         return {{ machine_macro_name(model) }}_SUCCESS;
     }
@@ -1871,16 +2275,40 @@ int {{ machine_class_name(model) }}_cycle(
         return {{ machine_macro_name(model) }}_FAILURE;
     }
 
-    _{{ machine_class_name(model) }}_copy_from_machine(&sim_context, machine);
-    sim_entered_root = machine->entered_root;
-    sim_ended = machine->ended;
-
     if (_{{ machine_class_name(model) }}_normalize_events(machine, NULL, 0u, &event_set) != {{ machine_macro_name(model) }}_SUCCESS) {
         return {{ machine_macro_name(model) }}_FAILURE;
     }
 
+    _{{ machine_class_name(model) }}_copy_from_machine(&validation_context, machine);
+    validation_entered_root = machine->entered_root;
+    validation_ended = machine->ended;
+
+    if (!validation_entered_root) {
+        validation_ended = _{{ machine_class_name(model) }}_initialize_context(machine, &validation_context, &event_set, 1);
+        validation_entered_root = 1;
+    }
+
+    success = _{{ machine_class_name(model) }}_run_cycle_on_context(
+        machine,
+        &validation_context,
+        &event_set,
+        &validation_ended,
+        1,
+        1);
+
+    if (!success) {
+        if (machine->last_error[0] != '\0') {
+            return {{ machine_macro_name(model) }}_FAILURE;
+        }
+        return {{ machine_macro_name(model) }}_SUCCESS;
+    }
+
+    _{{ machine_class_name(model) }}_copy_from_machine(&sim_context, machine);
+    sim_entered_root = machine->entered_root;
+    sim_ended = machine->ended;
+
     if (!sim_entered_root) {
-        sim_ended = _{{ machine_class_name(model) }}_initialize_context(machine, &sim_context, &event_set);
+        sim_ended = _{{ machine_class_name(model) }}_initialize_context(machine, &sim_context, &event_set, 0);
         sim_entered_root = 1;
     }
 
@@ -1918,6 +2346,14 @@ const {{ machine_class_name(model) }}Vars *{{ machine_class_name(model) }}_vars(
 int {{ machine_class_name(model) }}_is_ended(const {{ machine_class_name(model) }} *machine)
 {
     return machine != NULL ? machine->ended : 1;
+}
+
+{{ machine_class_name(model) }}StateId {{ machine_class_name(model) }}_current_state_id(const {{ machine_class_name(model) }} *machine)
+{
+    if (machine == NULL || machine->stack_size == 0u) {
+        return {{ machine_macro_name(model) }}_INVALID_STATE_ID;
+    }
+    return ({{ machine_class_name(model) }}StateId)machine->stack[machine->stack_size - 1u].state_id;
 }
 
 const char *{{ machine_class_name(model) }}_current_state_path(const {{ machine_class_name(model) }} *machine)

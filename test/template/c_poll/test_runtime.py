@@ -66,6 +66,31 @@ def _workflow_metadata_labels():
     ]
 
 
+def _duplicate_macro_define_names(header):
+    seen_names = set()
+    duplicates = []
+    for name in re.findall(r'^#define\s+(\w+)', header, flags=re.M):
+        if name in seen_names and name not in duplicates:
+            duplicates.append(name)
+        seen_names.add(name)
+    return duplicates
+
+
+def _public_generated_names(header):
+    macro_names = re.findall(r'^#define\s+(\w+)', header, flags=re.M)
+    hook_fields = re.findall(r'^\s+(on_\w+);', header, flags=re.M)
+    event_check_fields = re.findall(r'^\s+(check_\w+);', header, flags=re.M)
+    return macro_names + hook_fields + event_check_fields
+
+
+def _reserved_cxx_public_names(header):
+    return [
+        name
+        for name in _public_generated_names(header)
+        if '__' in name or re.search(r'(?:^|_)_[A-Z]', name)
+    ]
+
+
 def _normalized_lower_text(text):
     lines = []
     for line in text.lower().splitlines():
@@ -105,6 +130,431 @@ def _assert_generated_c_banner(source, *, template_name, root_name, extra_terms=
 
 @pytest.mark.unittest
 class TestCPollBuiltinTemplate:
+
+    def test_generated_context_metadata_uses_numeric_contract(self):
+        dsl_code = """
+        def int counter = 0;
+        state Root {
+            enter abstract Boot;
+            state Library {
+                enter abstract Shared;
+            }
+            state A {
+                enter FirstRef ref /Library.Shared;
+                during abstract Touch;
+            }
+            state B;
+            [*] -> A;
+            A -> B :: Go;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
+                header = f.read()
+            with open(artifacts["machine_c_file"], "r", encoding="utf-8") as f:
+                source = f.read()
+            with open(artifacts["readme_file"], "r", encoding="utf-8") as f:
+                readme = f.read()
+
+        assert "typedef int RootMachineActionId;" in header
+        assert "typedef int RootMachineStageId;" in header
+        assert "ROOT_MACHINE_INVALID_ACTION_ID" in header
+        assert "ROOT_MACHINE_STAGE_ENTER" in header
+        assert "RootMachine_current_state_id" in header
+
+        context_block = re.search(
+            r"struct RootMachineExecutionContext \{(?P<body>.*?)\};",
+            header,
+            flags=re.S,
+        ).group("body")
+        for forbidden in (
+            "const char *state_path",
+            "const char *action_name",
+            "const char *action_stage",
+            "const char *active_leaf",
+            "const char *call_stage",
+            "const char *abstract_target",
+            "const char *named_ref",
+        ):
+            assert forbidden not in context_block
+        assert "RootMachineStateId state_id;" in context_block
+        assert "RootMachineActionId action_id;" in context_block
+        assert "RootMachineStageId action_stage_id;" in context_block
+        assert "RootMachineStateId active_leaf_state_id;" in context_block
+        assert "RootMachineStageId call_stage_id;" in context_block
+        assert "RootMachineActionId abstract_target_id;" in context_block
+        assert "RootMachineActionId named_ref_id;" in context_block
+
+        assert "ctx->action_name" not in readme
+        assert "ctx->state_path" not in readme
+        assert "strcmp(ctx->" not in readme
+        assert "strcmp(ctx->" not in source
+
+        event_context_block = re.search(
+            r"struct RootMachineEventContext \{(?P<body>.*?)\};",
+            header,
+            flags=re.S,
+        ).group("body")
+        assert "event_path" not in event_context_block
+        assert "current_state_path" not in event_context_block
+        assert "RootMachineEventId event_id;" in event_context_block
+        assert "RootMachineStateId current_state_id;" in event_context_block
+
+    def test_generated_root_public_identifiers_avoid_reserved_shapes(self):
+        cases = [
+            {
+                "root_name": "_Root",
+                "class_name": "p_p5_z00005FRootMachine",
+                "macro_name": "P_P5_Z00005FROOT_MACHINE",
+                "state_slug": "p5_z00005FRoot_p4_Idle",
+            },
+            {
+                "root_name": "class",
+                "class_name": "class_Machine",
+                "macro_name": "P_P5_CLASS_MACHINE",
+                "state_slug": "p5_class_p4_Idle",
+            },
+        ]
+
+        for case in cases:
+            dsl_code = """
+            state {root_name} {{
+                state Idle;
+                [*] -> Idle;
+            }}
+            """.format(root_name=case["root_name"])
+
+            with render_c_artifacts(dsl_code) as artifacts:
+                with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
+                    header = f.read()
+
+                class_name = case["class_name"]
+                macro_name = case["macro_name"]
+                run = _compile_and_run_cpp_harness(
+                    artifacts,
+                    "root_reserved_safe_public_identifiers_" + case["root_name"].replace("_", "u"),
+                    textwrap.dedent(
+                        """
+                        #include "machine.h"
+
+                        int main()
+                        {{
+                            {class_name} machine;
+
+                            if (!{class_name}_init(&machine)) {{
+                                return 10;
+                            }}
+                            if (!{class_name}_cycle(&machine)) {{
+                                return 11;
+                            }}
+                            if ({class_name}_current_state_id(&machine) != {macro_name}_STATE_{state_slug}) {{
+                                return 12;
+                            }}
+                            if ({macro_name}_SUCCESS != 1) {{
+                                return 13;
+                            }}
+                            return 0;
+                        }}
+                        """.format(
+                            class_name=class_name,
+                            macro_name=macro_name,
+                            state_slug=case["state_slug"],
+                        )
+                    ),
+                )
+
+            assert "_ROOT_MACHINE" not in header
+            assert "CLASS__MACHINE" not in header
+            assert "#ifndef PYFCSTM_GENERATED_{macro_name}_H".format(
+                macro_name=case["macro_name"],
+            ) in header
+            assert "#define {macro_name}_API".format(
+                macro_name=case["macro_name"],
+            ) in header
+            assert _reserved_cxx_public_names(header) == []
+            assert run.returncode == 0, run.stderr
+
+    def test_generated_public_metadata_identifiers_resist_path_collisions(self):
+        dsl_code = """
+        def int trace = 0;
+        state Root {
+            state A {
+                state B {
+                    event Go;
+                    enter abstract Shared;
+                }
+                [*] -> B;
+            }
+            state A_B {
+                event Go;
+                enter abstract Shared;
+            }
+            [*] -> A_B;
+            A_B -> A :: Swap;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
+                header = f.read()
+
+            run = _compile_and_run_c_harness(
+                artifacts,
+                "collision_safe_public_metadata",
+                textwrap.dedent(
+                    r"""
+                    #include "machine.h"
+
+                    static int inactive_event(
+                        RootMachine *machine,
+                        const RootMachineEventContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        (void)machine;
+                        (void)ctx;
+                        (void)user_data;
+                        return 0;
+                    }
+
+                    static int swap_event(
+                        RootMachine *machine,
+                        const RootMachineEventContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        (void)machine;
+                        (void)user_data;
+                        return (
+                            ctx->event_id == ROOT_MACHINE_EVENT_P4_ROOT_P3_AZ00005FB_P4_SWAP &&
+                            ctx->current_state_id == ROOT_MACHINE_STATE_P4_ROOT_P3_AZ00005FB
+                        );
+                    }
+
+                    int main(void)
+                    {
+                        RootMachine machine;
+                        RootMachineHooks hooks = ROOTMACHINE_HOOKS_INIT;
+                        RootMachineEventChecks event_checks = ROOTMACHINE_EVENT_CHECKS_INIT;
+                        (void)hooks.on_p4_Root_p1_A_p1_B_p6_Shared;
+                        (void)hooks.on_p4_Root_p3_Az00005FB_p6_Shared;
+
+                        if (ROOT_MACHINE_STATE_P4_ROOT_P1_A_P1_B == ROOT_MACHINE_STATE_P4_ROOT_P3_AZ00005FB) {
+                            return 10;
+                        }
+                        if (ROOT_MACHINE_EVENT_P4_ROOT_P1_A_P1_B_P2_GO == ROOT_MACHINE_EVENT_P4_ROOT_P3_AZ00005FB_P2_GO) {
+                            return 11;
+                        }
+                        if (ROOT_MACHINE_ACTION_P4_ROOT_P1_A_P1_B_P6_SHARED == ROOT_MACHINE_ACTION_P4_ROOT_P3_AZ00005FB_P6_SHARED) {
+                            return 12;
+                        }
+                        if (!RootMachine_init(&machine)) {
+                            return 13;
+                        }
+                        event_checks.check_p4_Root_p3_Az00005FB_p4_Swap = swap_event;
+                        event_checks.check_p4_Root_p1_A_p1_B_p2_Go = inactive_event;
+                        event_checks.check_p4_Root_p3_Az00005FB_p2_Go = inactive_event;
+                        RootMachine_set_event_checks(&machine, &event_checks, NULL);
+                        if (!RootMachine_cycle(&machine)) {
+                            return 14;
+                        }
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P3_AZ00005FB) {
+                            return 15;
+                        }
+                        if (!RootMachine_cycle(&machine)) {
+                            return 16;
+                        }
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P1_A_P1_B) {
+                            return 17;
+                        }
+                        return 0;
+                    }
+                    """
+                ),
+            )
+
+        assert "#define ROOT_MACHINE_STATE_P4_ROOT_P1_A_B " not in header
+        assert "#define ROOT_MACHINE_EVENT_ROOT_A_B_GO " not in header
+        assert "#define ROOT_MACHINE_ACTION_ROOT_A_B_SHARED " not in header
+        assert _reserved_cxx_public_names(header) == []
+        assert run.returncode == 0, run.stderr
+
+    def test_generated_public_metadata_aliases_avoid_reserved_macros(self):
+        dsl_code = """
+        def int trace = 0;
+        state Count {
+            enter abstract Count;
+            state InvalidStateId {
+                enter abstract StageEnter;
+                event Count;
+                event InvalidEventId;
+            }
+            state ActionCount;
+            [*] -> InvalidStateId;
+            InvalidStateId -> ActionCount :: Count;
+            ActionCount -> InvalidStateId :: InvalidEventId;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
+                header = f.read()
+
+            duplicate_names = [
+                name
+                for name in _duplicate_macro_define_names(header)
+                if name != "COUNT_MACHINE_API"
+            ]
+            run = _compile_and_run_c_harness(
+                artifacts,
+                "reserved_public_metadata_aliases",
+                textwrap.dedent(
+                    r"""
+                    #include "machine.h"
+
+                    int main(void)
+                    {
+                        if (COUNT_MACHINE_STATE_COUNT != 3) {
+                            return 10;
+                        }
+                        if (COUNT_MACHINE_EVENT_COUNT != 3) {
+                            return 11;
+                        }
+                        if (COUNT_MACHINE_ACTION_COUNT != 2) {
+                            return 12;
+                        }
+                        if (COUNT_MACHINE_STAGE_ENTER != 0) {
+                            return 13;
+                        }
+                        if (COUNT_MACHINE_INVALID_STATE_ID >= 0) {
+                            return 14;
+                        }
+                        if (COUNT_MACHINE_INVALID_EVENT_ID >= 0) {
+                            return 15;
+                        }
+                        if (COUNT_MACHINE_STATE_P5_COUNT < 0) {
+                            return 16;
+                        }
+                        if (COUNT_MACHINE_STATE_P5_COUNT_P14_INVALIDSTATEID < 0) {
+                            return 17;
+                        }
+                        if (COUNT_MACHINE_EVENT_P5_COUNT_P14_INVALIDSTATEID_P5_COUNT < 0) {
+                            return 18;
+                        }
+                        if (COUNT_MACHINE_ACTION_P5_COUNT_P5_COUNT < 0) {
+                            return 19;
+                        }
+                        if (COUNT_MACHINE_ACTION_P5_COUNT_P14_INVALIDSTATEID_P10_STAGEENTER < 0) {
+                            return 20;
+                        }
+                        return 0;
+                    }
+                    """
+                ),
+            )
+
+        assert "#define COUNT_MACHINE_STATE_COUNT COUNT_MACHINE_STATE_" not in header
+        assert "#define COUNT_MACHINE_ACTION_COUNT COUNT_MACHINE_ACTION_" not in header
+        assert duplicate_names == []
+        assert _reserved_cxx_public_names(header) == []
+        assert run.returncode == 0, run.stderr
+
+    def test_generated_public_metadata_identifiers_preserve_case_and_underscores(self):
+        dsl_code = """
+        def int trace = 0;
+        state Count {
+            event Internal;
+            enter abstract Count;
+            state Internal {
+                event Count;
+                enter abstract InvalidActionId;
+                during abstract Shared;
+            }
+            state Internal_ {
+                event Count;
+                enter abstract Shared;
+            }
+            state A {
+                enter abstract Shared;
+            }
+            state a {
+                enter abstract Shared;
+            }
+            state A_B {
+                enter abstract Shared;
+            }
+            state A__B {
+                enter abstract Shared;
+            }
+            [*] -> Internal;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
+                header = f.read()
+
+            duplicate_names = [
+                name
+                for name in _duplicate_macro_define_names(header)
+                if name != "COUNT_MACHINE_API"
+            ]
+            run = _compile_and_run_c_harness(
+                artifacts,
+                "case_and_underscore_safe_public_metadata",
+                textwrap.dedent(
+                    r"""
+                    #include "machine.h"
+
+                    int main(void)
+                    {
+                        CountMachineHooks hooks = COUNTMACHINE_HOOKS_INIT;
+                        CountMachineEventChecks checks = COUNTMACHINE_EVENT_CHECKS_INIT;
+                        (void)hooks.on_p5_Count_p8_Internal_p15_InvalidActionId;
+                        (void)hooks.on_p5_Count_p8_Internal_p6_Shared;
+                        (void)hooks.on_p5_Count_p9_Internalz00005F_p6_Shared;
+                        (void)hooks.on_p5_Count_p1_A_p6_Shared;
+                        (void)hooks.on_p5_Count_p1_a_p6_Shared;
+                        (void)hooks.on_p5_Count_p3_Az00005FB_p6_Shared;
+                        (void)hooks.on_p5_Count_p4_Az00005Fz00005FB_p6_Shared;
+                        (void)checks.check_p5_Count_p8_Internal_p5_Count;
+                        (void)checks.check_p5_Count_p9_Internalz00005F_p5_Count;
+
+                        if (COUNT_MACHINE_STATE_p5_Count_p8_Internal == COUNT_MACHINE_STATE_p5_Count_p9_Internalz00005F) {
+                            return 10;
+                        }
+                        if (COUNT_MACHINE_STATE_p5_Count_p1_A == COUNT_MACHINE_STATE_p5_Count_p1_a) {
+                            return 11;
+                        }
+                        if (COUNT_MACHINE_STATE_p5_Count_p3_Az00005FB == COUNT_MACHINE_STATE_p5_Count_p4_Az00005Fz00005FB) {
+                            return 12;
+                        }
+                        if (COUNT_MACHINE_EVENT_p5_Count_p8_Internal_p5_Count == COUNT_MACHINE_EVENT_p5_Count_p9_Internalz00005F_p5_Count) {
+                            return 13;
+                        }
+                        if (COUNT_MACHINE_ACTION_p5_Count_p8_Internal_p6_Shared == COUNT_MACHINE_ACTION_p5_Count_p9_Internalz00005F_p6_Shared) {
+                            return 14;
+                        }
+                        if (COUNT_MACHINE_ACTION_p5_Count_p1_A_p6_Shared == COUNT_MACHINE_ACTION_p5_Count_p1_a_p6_Shared) {
+                            return 15;
+                        }
+                        if (COUNT_MACHINE_ACTION_p5_Count_p3_Az00005FB_p6_Shared == COUNT_MACHINE_ACTION_p5_Count_p4_Az00005Fz00005FB_p6_Shared) {
+                            return 16;
+                        }
+                        return 0;
+                    }
+                    """
+                ),
+            )
+
+        assert "#define COUNT_MACHINE_STATE_P5_COUNT_P1_A " not in header
+        assert "#define COUNT_MACHINE_ACTION_P5_COUNT_P1_A_P6_SHARED " not in header
+        assert "#define COUNT_MACHINE_STATE_COUNT_A_B " not in header
+        assert duplicate_names == []
+        assert _reserved_cxx_public_names(header) == []
+        assert run.returncode == 0, run.stderr
+
     def test_generated_machine_source_banners_document_file_contract(self):
         with render_c_artifacts(_representative_gate_dsl()) as artifacts:
             with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
@@ -154,6 +604,63 @@ class TestCPollBuiltinTemplate:
             assert runtime.current_state_path == ('System', 'Running')
             assert runtime.vars == {'counter': 111}
 
+    def test_generated_machine_create_failure_cannot_be_cycled(self):
+        dsl_code = """
+        def int counter = 1.5;
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            run = _compile_and_run_c_harness(
+                artifacts,
+                'create_failure_cycle_guard_test',
+                textwrap.dedent(
+                    r'''
+                    #include "machine.h"
+                    #include <string.h>
+
+                    int main(void)
+                    {
+                        RootMachine *machine = RootMachine_create();
+                        const char *message;
+
+                        if (machine == NULL) {
+                            return 10;
+                        }
+                        message = RootMachine_last_error(machine);
+                        if (message == NULL || strstr(message, "non-integer float") == NULL) {
+                            RootMachine_destroy(machine);
+                            return 11;
+                        }
+                        if (RootMachine_current_state_path(machine) != NULL) {
+                            RootMachine_destroy(machine);
+                            return 12;
+                        }
+                        if (RootMachine_cycle(machine)) {
+                            RootMachine_destroy(machine);
+                            return 13;
+                        }
+                        message = RootMachine_last_error(machine);
+                        if (message == NULL || strstr(message, "not initialized") == NULL) {
+                            RootMachine_destroy(machine);
+                            return 14;
+                        }
+                        if (RootMachine_current_state_path(machine) != NULL) {
+                            RootMachine_destroy(machine);
+                            return 15;
+                        }
+
+                        RootMachine_destroy(machine);
+                        return 0;
+                    }
+                    '''
+                ),
+            )
+            assert run.returncode == 0, run.stderr
+
     def test_generated_machine_requires_event_checks_before_cycle(self):
         dsl_code = """
         def int counter = 0;
@@ -191,7 +698,7 @@ class TestCPollBuiltinTemplate:
             hot_calls = []
 
             runtime.install_hooks({
-                'on_Root_System_A_AEnter': lambda ctx: hot_calls.append(
+                'on_p4_Root_p6_System_p1_A_p6_AEnter': lambda ctx: hot_calls.append(
                     ('hot', ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter'))
                 ),
             })
@@ -207,7 +714,7 @@ class TestCPollBuiltinTemplate:
             cold_calls = []
 
             runtime.install_hooks({
-                'on_Root_RootInit': lambda ctx: cold_calls.append(
+                'on_p4_Root_p8_RootInit': lambda ctx: cold_calls.append(
                     ('cold', ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter'))
                 ),
             })
@@ -216,6 +723,38 @@ class TestCPollBuiltinTemplate:
             assert runtime.current_state_path == ('Root', 'System', 'A')
             assert runtime.vars == {'counter': 1}
             assert cold_calls == [('cold', 'Root', 'enter', 0)]
+
+
+    def test_failed_hot_start_preserves_public_runtime_snapshot(self):
+        dsl_code = """
+        def int trace = 0;
+        state Root {
+            state Idle { during { trace = trace + 1; } }
+            state Composite {
+                state Blocked;
+                [*] -> Blocked : if [false];
+            }
+            [*] -> Idle;
+        }
+        """
+
+        with render_c_runtime(dsl_code) as (runtime, _):
+            runtime.cycle()
+            before_state = runtime.current_state_path
+            before_vars = dict(runtime.vars)
+            before_ended = runtime.is_ended
+
+            with pytest.raises(ValueError, match='cannot reach a stoppable state'):
+                runtime.hot_start('Root.Composite', {'trace': 5})
+
+            assert runtime.current_state_path == before_state
+            assert runtime.vars == before_vars
+            assert runtime.is_ended is before_ended
+
+            runtime.cycle()
+            assert runtime.current_state_path == before_state
+            assert runtime.vars == {'trace': before_vars['trace'] + 1}
+            assert runtime.is_ended is before_ended
 
     def test_generated_machine_exposes_read_only_event_check_context(self):
         dsl_code = """
@@ -234,7 +773,7 @@ class TestCPollBuiltinTemplate:
             calls = []
 
             runtime.install_event_checks({
-                'check_Root_A_Go': lambda ctx: calls.append(
+                'check_p4_Root_p1_A_p2_Go': lambda ctx: calls.append(
                     (ctx.event_path, ctx.get_full_state_path(), ctx.get_var('counter'))
                 ) or True,
             })
@@ -269,11 +808,11 @@ class TestCPollBuiltinTemplate:
             trace = []
 
             runtime.install_hooks({
-                'on_Root_RootInit': lambda ctx: trace.append(('hook', ctx.action_name, ctx.get_var('counter'))),
-                'on_Root_B_BEnter': lambda ctx: trace.append(('hook', ctx.action_name, ctx.get_var('counter'))),
+                'on_p4_Root_p8_RootInit': lambda ctx: trace.append(('hook', ctx.action_name, ctx.get_var('counter'))),
+                'on_p4_Root_p1_B_p6_BEnter': lambda ctx: trace.append(('hook', ctx.action_name, ctx.get_var('counter'))),
             })
             runtime.install_event_checks({
-                'check_Root_A_Go': lambda ctx: trace.append(('event', ctx.event_path, ctx.get_var('counter'))) or True,
+                'check_p4_Root_p1_A_p2_Go': lambda ctx: trace.append(('event', ctx.event_path, ctx.get_var('counter'))) or True,
             })
 
             runtime.cycle()
@@ -345,7 +884,7 @@ class TestCPollBuiltinTemplate:
             assert '_cycle(&machine)' in readme
             assert 'cycle(machine, event_ids, event_count)' not in readme
             assert 'fails fast' in readme
-            assert 'check_Root_A_Go' in readme
+            assert 'check_p4_Root_p1_A_p2_Go' in readme
             assert 'return non-zero' in readme
             assert 'return `0`' in readme
 
@@ -355,7 +894,7 @@ class TestCPollBuiltinTemplate:
             assert '_cycle(&machine)' in readme_zh
             assert 'cycle(machine, event_ids, event_count)' not in readme_zh
             assert '直接失败' in readme_zh
-            assert 'check_Root_A_Go' in readme_zh
+            assert 'check_p4_Root_p1_A_p2_Go' in readme_zh
             assert '返回非零' in readme_zh
             assert '返回 `0`' in readme_zh
 
@@ -372,6 +911,17 @@ class TestCPollBuiltinTemplate:
                 assert formatted_once == formatted_twice
                 assert "\t" not in formatted_once
 
+    def test_generated_hot_start_checks_stack_depth_before_path_write(self):
+        with render_c_artifacts(_representative_gate_dsl()) as artifacts:
+            with open(artifacts["machine_c_file"], "r", encoding="utf-8") as f:
+                source = f.read()
+
+            hot_start = source.index("int ControlMachine_hot_start(")
+            path_loop = source.index("path_count = 0u;", hot_start)
+            guard = source.index("if (path_count >=", path_loop)
+            write = source.index("path_ids[path_count++]", path_loop)
+
+            assert guard < write
 
     def test_generated_readme_code_blocks_are_formatter_friendly(self):
         with render_c_artifacts(_representative_gate_dsl()) as artifacts:
@@ -398,7 +948,6 @@ class TestCPollBuiltinTemplate:
                 textwrap.dedent(
                     r"""
                     #include "machine.h"
-                    #include <string.h>
 
                     typedef struct EventLog {
                         int allow_start;
@@ -419,8 +968,8 @@ class TestCPollBuiltinTemplate:
                         EventLog *log = (EventLog *)user_data;
                         (void)machine;
                         if (
-                            strcmp(ctx->event_path, "Control.Idle.Start") == 0 &&
-                            strcmp(ctx->current_state_path, "Control.Idle") == 0
+                            ctx->event_id == CONTROL_MACHINE_EVENT_P7_CONTROL_P4_IDLE_P5_START &&
+                            ctx->current_state_id == CONTROL_MACHINE_STATE_P7_CONTROL_P4_IDLE
                         ) {
                             log->seen_start += 1;
                         }
@@ -435,7 +984,7 @@ class TestCPollBuiltinTemplate:
                     {
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
-                        if (strcmp(ctx->action_name, "Control.Boot") == 0) {
+                        if (ctx->action_id == CONTROL_MACHINE_ACTION_P7_CONTROL_P4_BOOT) {
                             log->boot_calls += 1;
                         }
                     }
@@ -448,7 +997,7 @@ class TestCPollBuiltinTemplate:
                     {
                         HookLog *log = (HookLog *)user_data;
                         (void)machine;
-                        if (strcmp(ctx->action_name, "Control.Active.ActiveEnter") == 0) {
+                        if (ctx->action_id == CONTROL_MACHINE_ACTION_P7_CONTROL_P6_ACTIVE_P11_ACTIVEENTER) {
                             log->active_calls += 1;
                         }
                     }
@@ -468,16 +1017,16 @@ class TestCPollBuiltinTemplate:
                             return 11;
                         }
 
-                        hooks.on_Control_Boot = boot_hook;
-                        hooks.on_Control_Active_ActiveEnter = active_hook;
+                        hooks.on_p7_Control_p4_Boot = boot_hook;
+                        hooks.on_p7_Control_p6_Active_p11_ActiveEnter = active_hook;
                         ControlMachine_set_hooks(&machine, &hooks, &hooks_log);
-                        event_checks.check_Control_Idle_Start = check_start;
+                        event_checks.check_p7_Control_p4_Idle_p5_Start = check_start;
                         ControlMachine_set_event_checks(&machine, &event_checks, &log);
 
                         if (!ControlMachine_cycle(&machine)) {
                             return 12;
                         }
-                        if (strcmp(ControlMachine_current_state_path(&machine), "Control.Idle") != 0) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P4_IDLE) {
                             return 13;
                         }
                         if (ControlMachine_vars(&machine)->counter != 1) {
@@ -491,7 +1040,7 @@ class TestCPollBuiltinTemplate:
                         if (!ControlMachine_cycle(&machine)) {
                             return 16;
                         }
-                        if (strcmp(ControlMachine_current_state_path(&machine), "Control.Active.Work") != 0) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P6_ACTIVE_P4_WORK) {
                             return 17;
                         }
                         if (
@@ -524,7 +1073,6 @@ class TestCPollBuiltinTemplate:
                 textwrap.dedent(
                     r"""
                     #include "machine.h"
-                    #include <cstring>
 
                     struct EventLog {
                         int allow_start;
@@ -540,8 +1088,8 @@ class TestCPollBuiltinTemplate:
                         EventLog *log = static_cast<EventLog *>(user_data);
                         (void)machine;
                         if (
-                            std::strcmp(ctx->event_path, "Control.Idle.Start") == 0 &&
-                            std::strcmp(ctx->current_state_path, "Control.Idle") == 0
+                            ctx->event_id == CONTROL_MACHINE_EVENT_P7_CONTROL_P4_IDLE_P5_START &&
+                            ctx->current_state_id == CONTROL_MACHINE_STATE_P7_CONTROL_P4_IDLE
                         ) {
                             log->seen_start += 1;
                         }
@@ -557,20 +1105,20 @@ class TestCPollBuiltinTemplate:
                         if (!ControlMachine_init(&machine)) {
                             return 20;
                         }
-                        event_checks.check_Control_Idle_Start = check_start;
+                        event_checks.check_p7_Control_p4_Idle_p5_Start = check_start;
                         ControlMachine_set_event_checks(&machine, &event_checks, &log);
 
                         if (!ControlMachine_cycle(&machine)) {
                             return 21;
                         }
-                        if (std::strcmp(ControlMachine_current_state_path(&machine), "Control.Idle") != 0) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P4_IDLE) {
                             return 22;
                         }
                         log.allow_start = 1;
                         if (!ControlMachine_cycle(&machine)) {
                             return 23;
                         }
-                        if (std::strcmp(ControlMachine_current_state_path(&machine), "Control.Active.Work") != 0) {
+                        if (ControlMachine_current_state_id(&machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P6_ACTIVE_P4_WORK) {
                             return 24;
                         }
                         if (
@@ -609,7 +1157,6 @@ class TestCPollBuiltinTemplate:
                 textwrap.dedent(
                     r'''
                     #include "machine.h"
-                    #include <cstring>
 
                     int main()
                     {
@@ -620,7 +1167,7 @@ class TestCPollBuiltinTemplate:
                         if (!RootMachine_cycle(&machine)) {
                             return 31;
                         }
-                        if (std::strcmp(RootMachine_current_state_path(&machine), "Root.template") != 0) {
+                        if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_p4_Root_p8_template) {
                             return 32;
                         }
                         return 0;

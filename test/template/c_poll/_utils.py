@@ -1,4 +1,5 @@
 import ctypes
+import math
 import os
 import shutil
 import subprocess
@@ -12,7 +13,46 @@ from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.template import extract_template
-from pyfcstm.utils import to_c_identifier
+from pyfcstm.utils import (
+    to_c_identifier,
+    to_c_path_identifier,
+    to_c_public_identifier,
+    to_c_public_macro_identifier,
+)
+
+
+class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
+    pass
+
+
+class SimulationRuntimeDfsError(RuntimeError):
+    pass
+
+
+def _runtime_exception_from_message(message):
+    if 'evaluation failed:' in message:
+        cause_text = message.split('evaluation failed:', 1)[1].strip()
+        if 'division by zero' in cause_text or 'modulo' in cause_text:
+            cause = ZeroDivisionError(cause_text)
+        elif 'unsupported operand type' in cause_text:
+            cause = TypeError(cause_text)
+        else:
+            cause = ArithmeticError(cause_text)
+        return SimulationRuntimeExpressionError(message), cause
+    if (
+        'structural stack-depth safety limit' in message
+        or 'step safety limit' in message
+    ):
+        return SimulationRuntimeDfsError(message), None
+    if (
+        'non-integer float' in message
+        or 'must not be bool' in message
+        or 'must be int or float' in message
+        or 'must be finite' in message
+        or 'cannot reach a stoppable state' in message
+    ):
+        return ValueError(message), None
+    return RuntimeError(message), None
 
 
 def _find_cmake():
@@ -26,7 +66,7 @@ def _cmake_generator_args():
 
 
 def _machine_macro_name(model):
-    return '{name}_MACHINE'.format(name=to_c_identifier(model.root_state.name).upper())
+    return to_c_public_macro_identifier(model.root_state.name, '_MACHINE')
 
 
 def write_test_build_files(output_dir, model):
@@ -101,7 +141,7 @@ def write_test_build_files(output_dir, model):
             '    target_link_libraries(machine_static m)\n'
             '    target_link_libraries(machine_shared m)\n'
             'endif()\n'.format(
-                name=to_c_identifier(model.root_state.name) + 'Machine',
+                name=to_c_public_identifier(model.root_state.name, 'Machine'),
                 macro=macro_name,
             )
         )
@@ -208,7 +248,7 @@ def _load_runtime_library(shared_lib):
 
 def _collect_hook_info_rows(model):
     rows = []
-    seen = set()
+    seen_abstract_paths = set()
     for state in model.walk_states():
         groups = [
             state.list_on_enters(with_ids=True),
@@ -222,29 +262,61 @@ def _collect_hook_info_rows(model):
         for group in groups:
             for _, item in group:
                 resolved = item
-                for _ in range(16):
-                    if resolved.ref is None:
-                        break
+                seen_action_ids = set()
+                while resolved.ref is not None and id(resolved) not in seen_action_ids:
+                    seen_action_ids.add(id(resolved))
                     resolved = resolved.ref
-                if not resolved.is_abstract or resolved.func_name in seen:
+                if (
+                    not resolved.is_abstract
+                    or id(resolved) in seen_action_ids
+                    or resolved.func_name in seen_abstract_paths
+                ):
                     continue
-                seen.add(resolved.func_name)
+                seen_abstract_paths.add(resolved.func_name)
                 rows.append({
                     'dsl_action_path': resolved.func_name,
-                    'hook_field': 'on_{name}'.format(name=to_c_identifier(resolved.func_name)),
+                    'hook_field': 'on_{name}'.format(
+                        name=to_c_path_identifier(resolved.func_name.split('.'))
+                    ),
                     'owner_state_path': '.'.join(resolved.parent.path),
                     'action_stage': resolved.stage,
                 })
     return rows
 
 
+def _collect_action_paths(model):
+    paths = []
+    seen_paths = set()
+    for state in model.walk_states():
+        groups = [
+            state.list_on_enters(with_ids=True),
+            state.list_on_durings(aspect=None, with_ids=True),
+            state.list_on_exits(with_ids=True),
+            state.list_on_durings(aspect='before', with_ids=True),
+            state.list_on_durings(aspect='after', with_ids=True),
+            state.list_on_during_aspects(aspect='before', with_ids=True),
+            state.list_on_during_aspects(aspect='after', with_ids=True),
+        ]
+        for group in groups:
+            for _, item in group:
+                if item.func_name in seen_paths:
+                    continue
+                seen_paths.add(item.func_name)
+                paths.append(item.func_name)
+    return paths
+
+
 class _ExecutionContextView:
     def __init__(self, runtime, ctx_struct):
         self._runtime = runtime
         self._vars_ptr = ctx_struct.vars
-        self.action_name = ctx_struct.action_name.decode('utf-8')
-        self.action_stage = ctx_struct.action_stage.decode('utf-8')
-        self.state_path = ctx_struct.state_path.decode('utf-8')
+        self.action_name = runtime._action_path_from_id(ctx_struct.action_id)
+        self.action_stage = runtime._stage_name_from_id(ctx_struct.action_stage_id)
+        self.state_path = runtime._state_path_from_id(ctx_struct.state_id)
+        self.active_leaf = runtime._state_path_from_id(ctx_struct.active_leaf_state_id)
+        self.call_stage = runtime._stage_name_from_id(ctx_struct.call_stage_id)
+        self.abstract_target = runtime._action_path_from_id(ctx_struct.abstract_target_id)
+        self.named_ref = runtime._action_path_from_id(ctx_struct.named_ref_id)
 
     def get_var(self, name):
         return self._runtime._get_var_from_vars_ptr(self._vars_ptr, name)
@@ -263,9 +335,8 @@ class _EventContextView:
     def __init__(self, runtime, ctx_struct):
         self._runtime = runtime
         self._vars_ptr = ctx_struct.vars
-        self.event_path = ctx_struct.event_path.decode('utf-8')
-        state_path = ctx_struct.current_state_path
-        self.current_state_path = state_path.decode('utf-8') if state_path else ''
+        self.event_path = runtime._event_path_from_id(ctx_struct.event_id) or ''
+        self.current_state_path = runtime._state_path_from_id(ctx_struct.current_state_id) or ''
 
     def get_var(self, name):
         return self._runtime._get_var_from_vars_ptr(self._vars_ptr, name)
@@ -288,12 +359,13 @@ class _CPollRuntime:
         temporary_directories=None,
         dll_directory_handle=None,
         auto_install_event_checks=True,
+        initialize=True,
     ):
         self._lib = lib
         self._model = model
         self._temporary_directories = list(temporary_directories or [])
         self._dll_directory_handle = dll_directory_handle
-        self._prefix = '{name}Machine'.format(name=to_c_identifier(model.root_state.name))
+        self._prefix = to_c_public_identifier(model.root_state.name, 'Machine')
         self._var_types = {
             def_item.name: def_item.type for def_item in model.defines.values()
         }
@@ -312,12 +384,15 @@ class _CPollRuntime:
         self._event_ids = {
             path: index for index, path in enumerate(self._event_paths)
         }
+        self._action_paths = _collect_action_paths(model)
+        self._stage_names = ['enter', 'during', 'exit']
         self._event_field_names = {
-            path: 'check_{name}'.format(name=to_c_identifier(path))
+            path: 'check_{name}'.format(name=to_c_path_identifier(path.split('.')))
             for path in self._event_paths
         }
         self._vars_struct = self._build_vars_struct_type()
-        self._machine = self._bind_function('{prefix}_create', restype=ctypes.c_void_p)()
+        create_name = '{prefix}_create' if initialize else '{prefix}_create_uninitialized'
+        self._machine = self._bind_function(create_name, restype=ctypes.c_void_p)()
         self._destroy = self._bind_function('{prefix}_destroy', argtypes=[ctypes.c_void_p])
         self._hot_start = self._bind_function(
             '{prefix}_hot_start',
@@ -351,19 +426,29 @@ class _CPollRuntime:
         self._last_error = self._bind_function(
             '{prefix}_last_error', argtypes=[ctypes.c_void_p], restype=ctypes.c_char_p
         )
+        if self._machine is None:
+            raise MemoryError('failed to allocate generated C poll runtime machine.')
+        if initialize:
+            message = self._last_error(self._machine)
+            if message and message.decode('utf-8'):
+                self._raise_last_error()
 
         class _ContextStruct(ctypes.Structure):
             _fields_ = [
-                ('state_path', ctypes.c_char_p),
+                ('state_id', ctypes.c_int),
                 ('vars', ctypes.c_void_p),
-                ('action_name', ctypes.c_char_p),
-                ('action_stage', ctypes.c_char_p),
+                ('action_id', ctypes.c_int),
+                ('action_stage_id', ctypes.c_int),
+                ('active_leaf_state_id', ctypes.c_int),
+                ('call_stage_id', ctypes.c_int),
+                ('abstract_target_id', ctypes.c_int),
+                ('named_ref_id', ctypes.c_int),
             ]
 
         class _EventContextStruct(ctypes.Structure):
             _fields_ = [
-                ('event_path', ctypes.c_char_p),
-                ('current_state_path', ctypes.c_char_p),
+                ('event_id', ctypes.c_int),
+                ('current_state_id', ctypes.c_int),
                 ('vars', ctypes.c_void_p),
             ]
 
@@ -440,7 +525,31 @@ class _CPollRuntime:
 
     def _raise_last_error(self):
         message = self._last_error(self._machine)
-        raise RuntimeError(message.decode('utf-8') if message else 'unknown C runtime error')
+        text = message.decode('utf-8') if message else 'unknown C runtime error'
+        error, cause = _runtime_exception_from_message(text)
+        if cause is not None:
+            raise error from cause
+        raise error
+
+    def _state_path_from_id(self, state_id):
+        if state_id < 0 or state_id >= len(self._state_paths):
+            return None
+        return self._state_paths[state_id]
+
+    def _action_path_from_id(self, action_id):
+        if action_id < 0 or action_id >= len(self._action_paths):
+            return None
+        return self._action_paths[action_id]
+
+    def _event_path_from_id(self, event_id):
+        if event_id < 0 or event_id >= len(self._event_paths):
+            return None
+        return self._event_paths[event_id]
+
+    def _stage_name_from_id(self, stage_id):
+        if stage_id < 0 or stage_id >= len(self._stage_names):
+            return None
+        return self._stage_names[stage_id]
 
     def _get_var_from_vars_ptr(self, vars_ptr, name):
         values = ctypes.cast(vars_ptr, ctypes.POINTER(self._vars_struct)).contents
@@ -515,6 +624,36 @@ class _CPollRuntime:
         if not self._var_names:
             values._unused_placeholder = 0
         for name, value in initial_vars.items():
+            source = "initial_vars[{!r}]".format(name)
+            if type(value) is bool:
+                raise ValueError('{} must not be bool'.format(source))
+            if type(value) not in (int, float):
+                raise ValueError(
+                    '{} must be int or float, got {}'.format(
+                        source, type(value).__name__
+                    )
+                )
+            if type(value) is float and not math.isfinite(value):
+                raise ValueError(
+                    '{} for variable {!r} declared {} must be finite, got {!r}'.format(
+                        source, name, self._var_types[name], value
+                    )
+                )
+            if self._var_types[name] == 'int' and type(value) is float:
+                if value != int(value):
+                    raise ValueError(
+                        "Variable {!r} is int type, cannot assign float {!r}; "
+                        "non-integer float from {}".format(name, value, source)
+                    )
+                value = int(value)
+            elif self._var_types[name] == 'float':
+                value = float(value)
+                if not math.isfinite(value):
+                    raise ValueError(
+                        '{} for variable {!r} declared float must be finite, got {!r}'.format(
+                            source, name, value
+                        )
+                    )
             setattr(values, self._generated_var_names[name], value)
         return values
 
@@ -595,6 +734,14 @@ class _CPollRuntime:
             self._raise_last_error()
 
     def cycle(self, events=None):
+        if self.is_ended:
+            self._current_cycle_event_ids = set()
+            try:
+                if self._cycle(self._machine) != 1:
+                    self._raise_last_error()
+            finally:
+                self._current_cycle_event_ids = set()
+            return
         if events is None:
             event_ids = set()
         else:
@@ -697,6 +844,7 @@ def build_c_runtime(dsl_code, initial_state=None, initial_vars=None, auto_instal
         temporary_directories=temporary_directories,
         dll_directory_handle=dll_directory_handle,
         auto_install_event_checks=auto_install_event_checks,
+        initialize=initial_state is None,
     )
     if initial_state is not None:
         runtime.hot_start(initial_state, initial_vars or {})

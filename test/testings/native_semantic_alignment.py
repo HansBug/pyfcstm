@@ -2,16 +2,14 @@
 Native generated-runtime alignment helpers for semantic fixtures.
 
 This module adapts the schema v2 shared semantic fixture corpus to the built-in
-C and C poll templates. It owns the test-side runner names, capability-matrix
-validation, native public-observation adapter, and subprocess report helpers
-used by the C-family template alignment tests.
+C and C poll templates. It owns the test-side runner names, native
+public-observation adapter, subprocess crash isolation, and hard-failure report
+helpers used by the C-family template alignment tests.
 
 The module contains:
 
-* :class:`NativeCapabilityEntry` - One known native alignment capability row.
 * :class:`NativeAlignmentResult` - Serializable outcome of one native case run.
 * :class:`NativeAlignmentReport` - Aggregate report for one native runner.
-* :func:`load_native_capability_matrix` - Load and validate the matrix YAML.
 * :func:`run_native_alignment_case` - Execute one case in-process.
 * :func:`run_native_alignment_case_subprocess` - Execute one case safely in a
   child process so native crashes do not terminate pytest.
@@ -32,9 +30,7 @@ import signal
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
-
-import yaml
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from pyfcstm.simulate import (
     SimulationRuntimeActionReferenceError,
@@ -53,38 +49,9 @@ from test.testings.simulate_semantics import (
 GENERATED_C_ALIGNMENT = "generated_c_alignment"
 GENERATED_C_POLL_ALIGNMENT = "generated_c_poll_alignment"
 NATIVE_ALIGNMENT_RUNNERS = (GENERATED_C_ALIGNMENT, GENERATED_C_POLL_ALIGNMENT)
-CAPABILITY_MATRIX_PATH = os.path.abspath(
-    os.path.join(
-        os.path.dirname(__file__),
-        os.pardir,
-        "fixtures",
-        "simulate_semantics",
-        "runner_capabilities.yaml",
-    )
-)
-_REQUIRED_CAPABILITY_FIELDS = {
-    "runner",
-    "case",
-    "classification",
-    "observation",
-    "support",
-    "skip_reason",
-    "tracking",
-    "since",
-}
-_ALLOWED_CLASSIFICATIONS = {
-    "event_resolution",
-    "exception_type_mismatch",
-    "handler_mismatch",
-    "native_crash",
-    "native_timeout",
-    "parse_render_load",
-    "sigfpe",
-    "state_or_ended_mismatch",
-    "vars_mismatch",
-}
-# Worker failures are intentionally not allowed in the capability matrix:
-# harness/worker bugs must surface as unexpected or mismatched results.
+
+# Worker failures must surface as hard failures rather than being masked by
+# any external allow-list data.
 _WORKER_FAILURE_CLASSIFICATION = "worker_failure"
 # Windows reports native arithmetic traps as positive NTSTATUS values instead
 # of POSIX-style negative signals; these codes are equivalent to SIGFPE for
@@ -130,72 +97,6 @@ _SIMULATION_RUNTIME_EXCEPTIONS = (
 )
 
 
-class NativeAlignmentMatrixError(ValueError):
-    """
-    Raised when the native alignment capability matrix is malformed.
-
-    :param args: Positional message arguments accepted by :class:`ValueError`.
-    :type args: object
-
-    Example::
-
-        >>> err = NativeAlignmentMatrixError("bad native matrix")
-        >>> "matrix" in str(err)
-        True
-    """
-
-
-@dataclass(frozen=True)
-class NativeCapabilityEntry:
-    """
-    Known native alignment capability or expected-failure entry.
-
-    :param runner: Native alignment runner name.
-    :type runner: str
-    :param case: Shared semantic fixture case id.
-    :type case: str
-    :param classification: Stable failure classification for the case.
-    :type classification: str
-    :param observation: Public observation family affected by the entry.
-    :type observation: str
-    :param support: Support status, currently ``"expected_failure"`` for
-        native semantic alignment staging entries.
-    :type support: str
-    :param skip_reason: Human-readable reason for not treating the case as a
-        passing gate yet.
-    :type skip_reason: str
-    :param tracking: URL that tracks the native alignment gap.
-    :type tracking: str
-    :param since: Stable date, version, or commit for when the entry became
-        applicable. This is deliberately not named after a PR or roadmap item.
-    :type since: str
-
-    Example::
-
-        >>> entry = NativeCapabilityEntry(
-        ...     runner="generated_c_alignment",
-        ...     case="demo",
-        ...     classification="state_or_ended_mismatch",
-        ...     observation="state_or_ended",
-        ...     support="expected_failure",
-        ...     skip_reason="known gap",
-        ...     tracking="https://github.com/HansBug/pyfcstm/",
-        ...     since="2026-06-17",
-        ... )
-        >>> entry.runner
-        'generated_c_alignment'
-    """
-
-    runner: str
-    case: str
-    classification: str
-    observation: str
-    support: str
-    skip_reason: str
-    tracking: str
-    since: str
-
-
 @dataclass(frozen=True)
 class NativeAlignmentResult:
     """
@@ -209,13 +110,6 @@ class NativeAlignmentResult:
     :type status: str
     :param classification: Optional failure classification.
     :type classification: str, optional
-    :param expected_classification: Optional known-failure classification from
-        the capability matrix.
-    :type expected_classification: str, optional
-    :param support: Optional capability support state for the case.
-    :type support: str, optional
-    :param tracking: Optional URL that tracks the known native gap.
-    :type tracking: str, optional
     :param message: Short diagnostic message.
     :type message: str
     :param returncode: Subprocess return code when a child process was used.
@@ -234,9 +128,6 @@ class NativeAlignmentResult:
     classification: Optional[str]
     message: str
     returncode: Optional[int] = None
-    expected_classification: Optional[str] = None
-    support: Optional[str] = None
-    tracking: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -310,110 +201,9 @@ class NativeAlignmentReport:
         }
 
 
-def _matrix_error(message: str) -> NativeAlignmentMatrixError:
-    return NativeAlignmentMatrixError("native capability matrix: %s" % message)
-
-
 def _validate_runner_name(runner: str) -> None:
     if runner not in NATIVE_ALIGNMENT_RUNNERS:
         raise ValueError("unknown native alignment runner: %r" % runner)
-
-
-def load_native_capability_matrix(
-    path: str = CAPABILITY_MATRIX_PATH,
-) -> Tuple[NativeCapabilityEntry, ...]:
-    """
-    Load and validate the native runner capability matrix.
-
-    :param path: Path to the capability YAML file, defaults to the shared
-        fixture matrix path.
-    :type path: str, optional
-    :return: Validated capability entries.
-    :rtype: tuple[test.testings.native_semantic_alignment.NativeCapabilityEntry, ...]
-    :raises NativeAlignmentMatrixError: If the YAML schema is invalid.
-
-    Example::
-
-        >>> entries = load_native_capability_matrix()
-        >>> bool(entries)
-        False
-    """
-    with open(path, "r", encoding="utf-8") as file:
-        data = yaml.safe_load(file)
-    if not isinstance(data, dict):
-        raise _matrix_error("root must be a mapping")
-    if data.get("version") != 1:
-        raise _matrix_error("version must be 1")
-    raw_entries = data.get("known_failures")
-    if not isinstance(raw_entries, list):
-        raise _matrix_error("known_failures must be a list")
-
-    case_ids = {case.id for case in iter_semantic_cases()}
-    seen = set()
-    entries = []
-    for index, item in enumerate(raw_entries):
-        if not isinstance(item, dict):
-            raise _matrix_error("known_failures[%d] must be a mapping" % index)
-        missing = _REQUIRED_CAPABILITY_FIELDS - set(item.keys())
-        if missing:
-            raise _matrix_error(
-                "known_failures[%d] missing fields: %r" % (index, sorted(missing))
-            )
-        unknown = set(item.keys()) - _REQUIRED_CAPABILITY_FIELDS
-        if unknown:
-            raise _matrix_error(
-                "known_failures[%d] has unknown fields: %r" % (index, sorted(unknown))
-            )
-        entry = NativeCapabilityEntry(**item)
-        _validate_runner_name(entry.runner)
-        if entry.case not in case_ids:
-            raise _matrix_error(
-                "known_failures[%d] references unknown case %r" % (index, entry.case)
-            )
-        if entry.classification not in _ALLOWED_CLASSIFICATIONS:
-            raise _matrix_error(
-                "known_failures[%d] has unknown classification %r"
-                % (index, entry.classification)
-            )
-        if entry.support != "expected_failure":
-            raise _matrix_error(
-                "known_failures[%d].support must be 'expected_failure'" % index
-            )
-        if not entry.skip_reason:
-            raise _matrix_error("known_failures[%d].skip_reason is required" % index)
-        if not entry.tracking.startswith("https://github.com/HansBug/pyfcstm/"):
-            raise _matrix_error(
-                "known_failures[%d].tracking must be a pyfcstm URL" % index
-            )
-        if not entry.since:
-            raise _matrix_error("known_failures[%d].since is required" % index)
-        key = (entry.runner, entry.case)
-        if key in seen:
-            raise _matrix_error("duplicate entry for runner/case: %r" % (key,))
-        seen.add(key)
-        entries.append(entry)
-    return tuple(entries)
-
-
-def native_capability_by_runner_case(
-    entries: Optional[Iterable[NativeCapabilityEntry]] = None,
-) -> Dict[Tuple[str, str], NativeCapabilityEntry]:
-    """
-    Index capability entries by ``(runner, case_id)``.
-
-    :param entries: Optional entries to index, defaults to loading the matrix.
-    :type entries: typing.Iterable[NativeCapabilityEntry], optional
-    :return: Mapping from runner/case pairs to entries.
-    :rtype: dict
-
-    Example::
-
-        >>> matrix = native_capability_by_runner_case()
-        >>> matrix
-        {}
-    """
-    source = tuple(entries) if entries is not None else load_native_capability_matrix()
-    return {(entry.runner, entry.case): entry for entry in source}
 
 
 def _native_utils_for_runner(runner: str):
@@ -660,63 +450,17 @@ def _classify_exception(error: BaseException) -> str:
     return "state_or_ended_mismatch"
 
 
-def _apply_capability_entry(result: NativeAlignmentResult) -> NativeAlignmentResult:
-    if result.status not in {"passed", "failed"}:
-        return result
-
-    entry = native_capability_by_runner_case().get((result.runner, result.case_id))
-    if entry is None:
-        if result.status == "failed":
-            return NativeAlignmentResult(
-                result.runner,
-                result.case_id,
-                "unexpected_failure",
-                result.classification,
-                result.message,
-                result.returncode,
-            )
-        return result
-
-    if result.status == "passed":
+def _hard_failure_result(result: NativeAlignmentResult) -> NativeAlignmentResult:
+    if result.status == "failed":
         return NativeAlignmentResult(
             result.runner,
             result.case_id,
-            "unexpected_pass",
-            result.classification,
-            "known native alignment gap passed; update the capability matrix",
-            result.returncode,
-            expected_classification=entry.classification,
-            support=entry.support,
-            tracking=entry.tracking,
-        )
-
-    if result.classification == entry.classification:
-        return NativeAlignmentResult(
-            result.runner,
-            result.case_id,
-            "expected_failure",
+            "unexpected_failure",
             result.classification,
             result.message,
             result.returncode,
-            expected_classification=entry.classification,
-            support=entry.support,
-            tracking=entry.tracking,
         )
-
-    return NativeAlignmentResult(
-        result.runner,
-        result.case_id,
-        "classification_mismatch",
-        result.classification,
-        (
-            "%s; expected known-failure classification %s"
-            % (result.message, entry.classification)
-        ),
-        result.returncode,
-        expected_classification=entry.classification,
-        support=entry.support,
-        tracking=entry.tracking,
-    )
+    return result
 
 
 def _raw_native_alignment_case(
@@ -809,7 +553,7 @@ def run_native_alignment_case(runner: str, case: SemanticCase) -> NativeAlignmen
         >>> run_native_alignment_case("generated_c_alignment", case).status
         'passed'
     """
-    return _apply_capability_entry(_raw_native_alignment_case(runner, case))
+    return _hard_failure_result(_raw_native_alignment_case(runner, case))
 
 
 def _signal_name(returncode: int) -> str:
@@ -903,7 +647,7 @@ def run_native_alignment_case_subprocess(
             timeout=timeout,
         )
     except subprocess.TimeoutExpired as err:
-        return _apply_capability_entry(
+        return _hard_failure_result(
             NativeAlignmentResult(
                 runner,
                 case_id,
@@ -917,7 +661,7 @@ def run_native_alignment_case_subprocess(
         completed.returncode
     )
     if crash_classification != _WORKER_FAILURE_CLASSIFICATION:
-        return _apply_capability_entry(
+        return _hard_failure_result(
             NativeAlignmentResult(
                 runner,
                 case_id,
@@ -928,7 +672,7 @@ def run_native_alignment_case_subprocess(
             )
         )
     if completed.returncode != 0:
-        return _apply_capability_entry(
+        return _hard_failure_result(
             NativeAlignmentResult(
                 runner,
                 case_id,
@@ -940,7 +684,7 @@ def run_native_alignment_case_subprocess(
         )
     lines = [line for line in completed.stdout.splitlines() if line.strip()]
     if not lines:
-        return _apply_capability_entry(
+        return _hard_failure_result(
             NativeAlignmentResult(
                 runner,
                 case_id,
@@ -955,7 +699,7 @@ def run_native_alignment_case_subprocess(
     except json.JSONDecodeError as err:
         # json.loads raises JSONDecodeError when the worker exits successfully
         # but does not emit the expected final JSON result line.
-        return _apply_capability_entry(
+        return _hard_failure_result(
             NativeAlignmentResult(
                 runner,
                 case_id,
@@ -965,7 +709,7 @@ def run_native_alignment_case_subprocess(
                 completed.returncode,
             )
         )
-    return _apply_capability_entry(NativeAlignmentResult(**data))
+    return _hard_failure_result(NativeAlignmentResult(**data))
 
 
 def run_native_alignment_report(

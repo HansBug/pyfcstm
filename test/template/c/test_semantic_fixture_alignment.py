@@ -18,6 +18,3 @@ def test_generated_c_alignment_semantic_fixture(case):
 
     assert result.status == "passed", result.message
     assert result.classification is None
-    assert result.expected_classification is None
-    assert result.support is None
-    assert result.tracking is None

@@ -68,7 +68,9 @@
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
+#if !defined(PYFCSTM_GENERATED_NO_HEAP)
 #include <stdlib.h>
+#endif
 #include <string.h>
 
 #if defined(_MSC_VER) && !defined(__clang__) && (_MSC_VER < 1900)
@@ -2014,6 +2016,7 @@ static int _{{ machine_class_name(model) }}_initialize_context(
     return context->stack_size == 0u;
 }
 
+#if !defined(PYFCSTM_GENERATED_NO_HEAP)
 {{ machine_class_name(model) }} *{{ machine_class_name(model) }}_create_uninitialized(void)
 {
     return ({{ machine_class_name(model) }} *)calloc(1u, sizeof({{ machine_class_name(model) }}));
@@ -2033,6 +2036,7 @@ void {{ machine_class_name(model) }}_destroy({{ machine_class_name(model) }} *ma
 {
     free(machine);
 }
+#endif
 
 int {{ machine_class_name(model) }}_init({{ machine_class_name(model) }} *machine)
 {

@@ -150,26 +150,115 @@ ack 副作用的消费接口。
 
 ## 编译
 
-可直接使用 C99 编译器编译生成运行时：
+### 部署剖面
+
+生成运行时支持三种集成方式：
+
+1. **默认宿主 C99**：保留 `{{ machine_class_name(model) }}_create()` 和
+   `{{ machine_class_name(model) }}_destroy()`。该方式可以使用 C 标准库，适合普通主机、
+   工业 PC、嵌入式 Linux 或 hosted RTOS 构建。
+2. **调用方拥有对象**：由调用方自己持有 `{{ machine_class_name(model) }}` 对象，
+   例如放在栈上或静态存储区，然后调用
+   `{{ machine_class_name(model) }}_init(&machine)` 或
+   `{{ machine_class_name(model) }}_hot_start(...)`。当对象生命周期由驱动、调度器或设备
+   owner 管理时，推荐使用这种方式。
+3. **无堆剖面**：为 `machine.c` 以及所有包含 `machine.h` 的消费端源码定义
+   `PYFCSTM_GENERATED_NO_HEAP`。在该剖面下，生成物不会声明或编译堆分配 API，
+   `machine.c` 也不会为了 `calloc` / `free` 引入 `<stdlib.h>`。
+
+`PYFCSTM_GENERATED_NO_HEAP` 按“符号是否定义”判断，等价于
+`#if defined(PYFCSTM_GENERATED_NO_HEAP)` / `#ifdef` 语义。文档推荐写法是
+`-DPYFCSTM_GENERATED_NO_HEAP`；如果外部构建写成
+`-DPYFCSTM_GENERATED_NO_HEAP=1`，也必须选择同一个无堆剖面。
+
+### 对象生命周期示例
+
+```c
+{{ machine_class_name(model) }} stack_machine;
+static {{ machine_class_name(model) }} static_machine;
+
+{{ machine_class_name(model) }}_init(&stack_machine);
+{{ machine_class_name(model) }}_init(&static_machine);
+```
+
+默认宿主剖面还允许由生成运行时管理堆分配对象：
+
+```c
+{{ machine_class_name(model) }} *machine = {{ machine_class_name(model) }}_create();
+if (machine == NULL) {
+    return 1;
+}
+{{ machine_class_name(model) }}_destroy(machine);
+```
+
+### 单命令 C 构建
+
+下面这些例子按 gcc / clang 风格命令验证。可以把生成运行时和你的应用一起编译：
+
+```bash
+cc -std=c99 -Wall -Wextra -pedantic -O2 machine.c app.c -lm -o app
+```
+
+显式使用 gcc / clang 时可写成：
+
+```bash
+gcc -std=c99 -Wall -Wextra -pedantic -O2 machine.c app.c -lm -o app
+clang -std=c99 -Wall -Wextra -pedantic -O2 machine.c app.c -lm -o app
+```
+
+无堆构建需要让生成运行时和所有包含 `machine.h` 的消费端看到同一个宏：
+
+```bash
+cc -std=c99 -DPYFCSTM_GENERATED_NO_HEAP -Wall -Wextra -pedantic -O2 machine.c app.c -lm -o app
+```
+
+也可以分开编译对象文件：
 
 ```bash
 cc -std=c99 -Wall -Wextra -c machine.c -o machine.o
+cc -std=c99 -Wall -Wextra -c app.c -o app.o
+cc machine.o app.o -lm -o app
 ```
 
-如果是性能敏感的生产构建，建议至少使用：
+在 Windows 上，请使用对应工具链的库或 DLL 选项，并且不要强制链接 POSIX 数学库 `m`。
 
-```bash
-cc -std=c99 -O3 -DNDEBUG -c machine.c -o machine.o
+### CMake 集成
+
+最小静态库集成可以写成：
+
+```cmake
+cmake_minimum_required(VERSION 3.5)
+project(generated_machine_app C)
+
+add_library(machine STATIC machine.c)
+target_include_directories(machine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+set_target_properties(
+    machine
+    PROPERTIES
+    C_STANDARD 99
+    C_STANDARD_REQUIRED YES
+    C_EXTENSIONS NO
+)
+
+if(NOT WIN32)
+    target_link_libraries(machine PUBLIC m)
+endif()
+
+add_executable(app app.c)
+target_link_libraries(app PRIVATE machine)
 ```
 
-在类 POSIX 平台上，如果需要生成共享库，可以使用类似下面的命令：
+如果无堆库会被其他 target 消费，应把宏作为公开接口传播：
 
-```bash
-cc -std=c99 -shared -fPIC machine.c -lm -o libmachine.so
+```cmake
+target_compile_definitions(machine PUBLIC PYFCSTM_GENERATED_NO_HEAP)
 ```
 
-在 Windows 上，请改用对应编译器的 DLL 选项，并在导出符号时定义
-`{{ machine_macro_name(model) }}_BUILD_SHARED`。
+如果 `machine.c` 被封装到 interface-style wrapper target，可以在 wrapper target 上使用
+`INTERFACE PYFCSTM_GENERATED_NO_HEAP`。`PRIVATE` 只适合 `machine.c` 和所有包含
+`machine.h` 的消费端源码都编译进同一个最终 target、并且都能看到同一个宏的情况。
+
+### C++ 编译检查
 
 如果上层是 C++ 工程，也建议显式用 C++ 编译器做一次检查：
 
@@ -177,6 +266,13 @@ cc -std=c99 -shared -fPIC machine.c -lm -o libmachine.so
 g++ -x c++ -std=c++98 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o machine.o
 g++ -x c++ -std=c++17 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o machine.o
 ```
+
+### 边界说明
+
+- 无堆剖面只移除生成的堆分配辅助函数，不等于严格 freestanding 保证；生成运行时仍可能使用
+  `<math.h>`、`<string.h>` 或 `<stdio.h>` 等标准头。
+- 本生成运行时不宣称已经满足 MISRA、AUTOSAR、DO-178C、IEC 61508 或 ISO 26262 认证就绪要求。
+- 变量快照的二进制布局、端序转换和跨设备持久化不属于本公开契约。
 
 ### 链接与符号可见性
 
@@ -417,8 +513,8 @@ machine 对象在 C 中不是 opaque type，但其中多数字段都属于运行
 
 | 函数 | 作用 |
 | --- | --- |
-| `{{ machine_class_name(model) }}_create()` | 在堆上分配并初始化 machine |
-| `{{ machine_class_name(model) }}_destroy(machine)` | 销毁堆分配的 machine |
+| `{{ machine_class_name(model) }}_create()` | 在堆上分配并初始化 machine；仅默认宿主剖面可用，定义 `PYFCSTM_GENERATED_NO_HEAP` 时省略 |
+| `{{ machine_class_name(model) }}_destroy(machine)` | 销毁堆分配的 machine；仅默认宿主剖面可用，定义 `PYFCSTM_GENERATED_NO_HEAP` 时省略 |
 | `{{ machine_class_name(model) }}_init(machine)` | 冷启动初始化或重置 machine |
 | `{{ machine_class_name(model) }}_hot_start(machine, state_id, vars)` | 从指定生成状态 id 和变量快照启动 |
 | `{{ machine_class_name(model) }}_set_hooks(machine, hooks, user_data)` | 注册 abstract 生命周期 hook |
@@ -436,7 +532,9 @@ machine 对象在 C 中不是 opaque type，但其中多数字段都属于运行
 
 - `{{ machine_class_name(model) }}_create()` /
   `{{ machine_class_name(model) }}_destroy()`：
-  适用于希望由生成运行时管理堆分配生命周期的场景。
+  适用于希望由生成运行时管理堆分配生命周期的场景。它们只属于默认宿主剖面；无堆剖面下应由调用方自行分配
+  machine 对象，并调用 `{{ machine_class_name(model) }}_init()` 或
+  `{{ machine_class_name(model) }}_hot_start(...)`。
 - `{{ machine_class_name(model) }}_init()`：
   适用于栈上对象，或者对已有 machine 做重置。重置后应按需重新安装 hook 和 event-check 表。
 - `{{ machine_class_name(model) }}_hot_start()`：

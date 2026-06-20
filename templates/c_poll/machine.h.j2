@@ -384,12 +384,14 @@ struct {{ machine_class_name(model) }} {
 extern "C" {
 #endif
 
+#if !defined(PYFCSTM_GENERATED_NO_HEAP)
 /* Allocate a zeroed machine instance without evaluating DSL defaults. */
 {{ machine_macro_name(model) }}_API {{ machine_class_name(model) }} *{{ machine_class_name(model) }}_create_uninitialized(void);
 /* Allocate a machine instance and initialize it to cold-start state. */
 {{ machine_macro_name(model) }}_API {{ machine_class_name(model) }} *{{ machine_class_name(model) }}_create(void);
 /* Free an instance previously returned by `..._create()`. */
 {{ machine_macro_name(model) }}_API void {{ machine_class_name(model) }}_destroy({{ machine_class_name(model) }} *machine);
+#endif
 /* Reinitialize an existing instance to the generated DSL defaults. */
 {{ machine_macro_name(model) }}_API int {{ machine_class_name(model) }}_init({{ machine_class_name(model) }} *machine);
 /* Hot start from a generated state id plus a complete DSL variable snapshot. */

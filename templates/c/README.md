@@ -62,6 +62,36 @@ Generated C runtimes may be embedded in long-running control systems, so memory 
 
 When `machine.c.j2` or allocation-related parts of `machine.h.j2` change, run at least one representative generated harness under AddressSanitizer / LeakSanitizer, valgrind, or an equivalent platform tool when available. The harness should cover create/destroy, cold start, hot start, normal cycles, eventful cycles, hook installation, and error/rollback paths that are relevant to the change. If a leak is discovered and clearly predates the current change, record the reproduction and scope it for a dedicated fix instead of hiding it.
 
+## Deployment-profile maintenance discipline
+
+The `c` template has three deployment profiles that must be maintained
+together:
+
+| Profile | Public shape | Required checks |
+| --- | --- | --- |
+| Default hosted C99 | `..._create()`, `..._create_uninitialized()`, and `..._destroy()` are available. | Existing create/destroy, hot-start, hook, and shared semantic-alignment tests keep passing. |
+| Caller-owned object | Callers allocate `Machine` storage and use `..._init(&machine)` / `..._hot_start(...)`. | Native CMake harnesses cover stack storage, static storage, hook installation, eventful cycles, hot start, and failure paths without heap helpers. |
+| No-heap profile | `PYFCSTM_GENERATED_NO_HEAP` removes heap API declarations/definitions and the `<stdlib.h>` include that only served `calloc/free`. | Header preprocessing or generated-file checks prove heap API declarations disappear; link or symbol checks prove `calloc/free` are not referenced. |
+
+`PYFCSTM_GENERATED_NO_HEAP` is a symbol-presence contract. Template code should
+use `#if defined(PYFCSTM_GENERATED_NO_HEAP)` or equivalent `#ifdef` checks, not
+`#if PYFCSTM_GENERATED_NO_HEAP`. The documented consumer spelling is
+`-DPYFCSTM_GENERATED_NO_HEAP`; if an external build spells it as
+`-DPYFCSTM_GENERATED_NO_HEAP=1`, it must still select the same no-heap profile.
+
+Keep the three sides of that contract synchronized:
+
+- `machine.h.j2`: public heap declarations are removed in the no-heap profile;
+- `machine.c.j2`: heap implementations and the `<stdlib.h>` include are removed
+  in the no-heap profile;
+- generated README examples: CMake consumers propagate the macro with
+  `PUBLIC` / `INTERFACE`, or every final target that includes `machine.h` sees
+  the same definition.
+
+Native template tests must continue to use CMake as the build driver. User
+README files may show gcc / clang style one-command examples, but pytest should
+not grow a parallel handwritten host-compiler orchestration layer.
+
 ## Public integration surface
 
 `machine.h` is the public integration surface and should stay small, clear, and

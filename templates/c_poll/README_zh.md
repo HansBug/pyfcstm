@@ -44,6 +44,32 @@ Generated `c_poll` runtime 可能在控制应用中长期运行。因此资源 o
 
 修改 `machine.c.j2` 或 allocation 相关 public API 时，在工具可用的情况下，至少用一个代表性 generated harness 跑 AddressSanitizer / LeakSanitizer、valgrind 或等价平台工具。Harness 应覆盖 event-check installation、repeated cycles、hot start、hook callbacks 和 destroy paths。若发现当前改动范围外的既有 leak 或 ownership bug，应记录可复现 harness 并拆成专门修复。
 
+## 部署剖面维护纪律
+
+`c_poll` 模板和 `templates/c/` 共享 C-family 部署剖面，并额外把 event-check 表纳入公开集成面：
+
+| 剖面 | 公开形态 | 必要检查 |
+| --- | --- | --- |
+| 默认宿主 C99 | `..._create()`、`..._create_uninitialized()` 和 `..._destroy()` 可用。 | 既有 create/destroy、hot-start、hook、event-check 和共享语义对齐测试继续通过。 |
+| 调用方拥有对象 | 调用方自己分配 `Machine` 存储，使用 `..._init(&machine)` / `..._hot_start(...)`，并按需安装 hooks 与 event checks。 | CMake 驱动的本机 harness 覆盖栈上存储、静态存储、event-check 安装、hook 安装、hot start 和失败路径，且不依赖 heap helpers。 |
+| 无堆剖面 | `PYFCSTM_GENERATED_NO_HEAP` 移除 heap API 声明/定义，以及只服务于 `calloc/free` 的 `<stdlib.h>` include；event-check API 仍然可用。 | 头文件预处理或生成文件检查证明 heap API 声明消失；link 或 symbol 检查证明不引用 `calloc/free`；event-check CMake harness 仍能运行。 |
+
+`PYFCSTM_GENERATED_NO_HEAP` 是“符号是否存在”的契约。模板代码应使用
+`#if defined(PYFCSTM_GENERATED_NO_HEAP)` 或等价 `#ifdef`，不要使用
+`#if PYFCSTM_GENERATED_NO_HEAP`。文档推荐消费端写法为
+`-DPYFCSTM_GENERATED_NO_HEAP`；如果外部构建写成
+`-DPYFCSTM_GENERATED_NO_HEAP=1`，也必须选择同一个无堆剖面。
+
+这份契约有三侧必须同步：
+
+- `machine.h.j2`：无堆剖面下移除公开 heap 声明，同时保留 hook 和 event-check 声明；
+- `machine.c.j2`：无堆剖面下移除 heap 实现和 `<stdlib.h>` include；
+- 生成 README 示例：CMake 消费端使用 `PUBLIC` / `INTERFACE` 传播宏，或者所有包含
+  `machine.h` 的最终 target 都能看到同一定义。
+
+模板本机测试必须继续使用 CMake 作为构建驱动。用户 README 可以展示 gcc / clang 风格
+单命令示例，但 pytest 中不要新增一套手写宿主编译器调度层。
+
 ## 公开集成面
 
 `machine.h` 负责稳定集成契约：

@@ -891,6 +891,8 @@ class TestCPollBuiltinTemplate:
             assert 'Caller-owned object' in readme
             assert 'PYFCSTM_GENERATED_NO_HEAP' in readme
             assert 'target_compile_definitions(machine PUBLIC PYFCSTM_GENERATED_NO_HEAP)' in readme
+            assert 'default hosted profile only' in readme
+            assert 'omitted when `PYFCSTM_GENERATED_NO_HEAP` is defined' in readme
             assert 'if(NOT WIN32)' in readme
             assert 'gcc -std=c99' in readme
             assert 'clang -std=c99' in readme
@@ -909,6 +911,8 @@ class TestCPollBuiltinTemplate:
             assert '调用方拥有对象' in readme_zh
             assert 'PYFCSTM_GENERATED_NO_HEAP' in readme_zh
             assert 'target_compile_definitions(machine PUBLIC PYFCSTM_GENERATED_NO_HEAP)' in readme_zh
+            assert '仅默认宿主剖面可用' in readme_zh
+            assert '定义 `PYFCSTM_GENERATED_NO_HEAP` 时省略' in readme_zh
             assert 'if(NOT WIN32)' in readme_zh
             assert 'gcc -std=c99' in readme_zh
             assert 'clang -std=c99' in readme_zh
@@ -964,7 +968,12 @@ class TestCPollBuiltinTemplate:
 
             assert "#if !defined(PYFCSTM_GENERATED_NO_HEAP)" in header
             assert "#if !defined(PYFCSTM_GENERATED_NO_HEAP)" in source
-            assert source.index("#if !defined(PYFCSTM_GENERATED_NO_HEAP)") < source.index("#include <stdlib.h>")
+            assert re.search(
+                r"#if !defined\(PYFCSTM_GENERATED_NO_HEAP\)\n"
+                r"#include <stdlib\.h>\n"
+                r"#endif",
+                source,
+            )
 
             run = _compile_and_run_c_harness(
                 artifacts,
@@ -1113,6 +1122,35 @@ class TestCPollBuiltinTemplate:
                     "calloc=PYFCSTM_FORBIDDEN_CALLOC",
                     "free=PYFCSTM_FORBIDDEN_FREE",
                 ],
+            )
+            assert run.returncode == 0, run.stderr
+
+    def test_generated_machine_no_heap_profile_propagates_through_public_cmake_library(self):
+        with render_c_artifacts(_representative_gate_dsl()) as artifacts:
+            run = _compile_and_run_c_library_consumer(
+                artifacts,
+                "no_heap_poll_public_cmake_library",
+                textwrap.dedent(
+                    r"""
+                    #include "machine.h"
+
+                    #if !defined(PYFCSTM_GENERATED_NO_HEAP)
+                    #error "The no-heap profile must propagate to library consumers."
+                    #endif
+
+                    int main(void)
+                    {
+                        ControlMachine machine;
+                        ControlMachineEventChecks event_checks = CONTROLMACHINE_EVENT_CHECKS_INIT;
+                        if (!ControlMachine_init(&machine)) {
+                            return 10;
+                        }
+                        ControlMachine_set_event_checks(&machine, &event_checks, NULL);
+                        return 0;
+                    }
+                    """
+                ),
+                compile_definitions=["PYFCSTM_GENERATED_NO_HEAP"],
             )
             assert run.returncode == 0, run.stderr
 
@@ -1547,9 +1585,113 @@ def _compile_and_run_c_harness(
         stem,
         source_code,
         language='C',
-        standard='c++98',
+        standard=None,
         compile_definitions=compile_definitions,
         expect_build_success=expect_build_success,
+    )
+
+
+def _compile_and_run_c_library_consumer(
+    artifacts,
+    stem,
+    source_code,
+    *,
+    compile_definitions=None,
+):
+    cmake_executable = artifacts['cmake']
+    if cmake_executable is None:
+        pytest.skip('cmake is required for generated C template harness tests.')
+
+    project_dir = os.path.join(artifacts['output_dir'], stem + '_cmake_project')
+    build_dir = os.path.join(project_dir, 'build')
+    os.makedirs(project_dir, exist_ok=True)
+    os.makedirs(build_dir, exist_ok=True)
+
+    source_file = os.path.join(project_dir, stem + '.c')
+    cmakelists = os.path.join(project_dir, 'CMakeLists.txt')
+    with open(source_file, 'w', encoding='utf-8') as f:
+        f.write(source_code)
+    with open(cmakelists, 'w', encoding='utf-8') as f:
+        cmake_lines = [
+            'cmake_minimum_required(VERSION 3.5)',
+            'project({project_name} C)'.format(project_name=stem + '_project'),
+            '',
+            'add_library(machine STATIC "{machine_c_file}")'.format(
+                machine_c_file=artifacts['machine_c_file'].replace('\\', '/')
+            ),
+            'target_include_directories(',
+            '    machine',
+            '    PUBLIC',
+            '    "{machine_dir}"'.format(
+                machine_dir=artifacts['output_dir'].replace('\\', '/')
+            ),
+            ')',
+            'set_target_properties(',
+            '    machine',
+            '    PROPERTIES',
+            '    C_STANDARD 99',
+            '    C_STANDARD_REQUIRED YES',
+            '    C_EXTENSIONS NO',
+            ')',
+            '',
+        ]
+        if compile_definitions:
+            cmake_lines.extend([
+                'target_compile_definitions(',
+                '    machine',
+                '    PUBLIC',
+            ])
+            cmake_lines.extend(
+                '    {definition}'.format(definition=definition)
+                for definition in compile_definitions
+            )
+            cmake_lines.extend([
+                ')',
+                '',
+            ])
+        cmake_lines.extend([
+            'if (NOT WIN32)',
+            '    target_link_libraries(machine PUBLIC m)',
+            'endif()',
+            '',
+            'add_executable({target_name} "{source_file}")'.format(
+                target_name=stem,
+                source_file=source_file.replace('\\', '/'),
+            ),
+            'target_link_libraries({target_name} PRIVATE machine)'.format(
+                target_name=stem
+            ),
+            '',
+        ])
+        f.write('\n'.join(cmake_lines))
+
+    subprocess.run(
+        [cmake_executable]
+        + _cmake_generator_args()
+        + [
+            '-DCMAKE_POLICY_VERSION_MINIMUM=3.5',
+            os.path.abspath(project_dir),
+        ],
+        cwd=build_dir,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    subprocess.run(
+        [cmake_executable, '--build', '.', '--config', 'Release'],
+        cwd=build_dir,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    return subprocess.run(
+        [_find_built_executable(build_dir, stem)],
+        cwd=build_dir,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
 
 

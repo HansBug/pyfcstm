@@ -446,8 +446,8 @@ The machine object is not opaque in C, but most fields are runtime-owned.
 
 | Function | Purpose |
 | --- | --- |
-| `{{ machine_class_name(model) }}_create()` | Allocate and initialize a machine on the heap |
-| `{{ machine_class_name(model) }}_destroy(machine)` | Destroy a heap-allocated machine |
+| `{{ machine_class_name(model) }}_create()` | Allocate and initialize a machine on the heap; default hosted profile only, omitted when `PYFCSTM_GENERATED_NO_HEAP` is defined |
+| `{{ machine_class_name(model) }}_destroy(machine)` | Destroy a heap-allocated machine; default hosted profile only, omitted when `PYFCSTM_GENERATED_NO_HEAP` is defined |
 | `{{ machine_class_name(model) }}_init(machine)` | Cold-initialize or reset a machine |
 | `{{ machine_class_name(model) }}_hot_start(machine, state_id, vars)` | Start from a concrete generated state id and variable snapshot |
 | `{{ machine_class_name(model) }}_set_hooks(machine, hooks, user_data)` | Register abstract hooks |
@@ -463,7 +463,10 @@ The machine object is not opaque in C, but most fields are runtime-owned.
 ### Function Usage Notes
 
 - `{{ machine_class_name(model) }}_create()` / `{{ machine_class_name(model) }}_destroy()`:
-  use these if you want heap allocation managed by the generated runtime.
+  use these if you want heap allocation managed by the generated runtime. They
+  belong to the default hosted profile; in the no-heap profile, allocate the
+  machine object yourself and call `{{ machine_class_name(model) }}_init()` or
+  `{{ machine_class_name(model) }}_hot_start(...)`.
 - `{{ machine_class_name(model) }}_init()`:
   use this for stack-allocated machines or to reset an existing machine.
 - `{{ machine_class_name(model) }}_hot_start()`:

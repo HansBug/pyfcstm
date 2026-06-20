@@ -417,8 +417,8 @@ machine 对象在 C 中不是 opaque type，但其中多数字段都属于运行
 
 | 函数 | 作用 |
 | --- | --- |
-| `{{ machine_class_name(model) }}_create()` | 在堆上分配并初始化 machine |
-| `{{ machine_class_name(model) }}_destroy(machine)` | 销毁堆分配的 machine |
+| `{{ machine_class_name(model) }}_create()` | 在堆上分配并初始化 machine；仅默认宿主剖面可用，定义 `PYFCSTM_GENERATED_NO_HEAP` 时省略 |
+| `{{ machine_class_name(model) }}_destroy(machine)` | 销毁堆分配的 machine；仅默认宿主剖面可用，定义 `PYFCSTM_GENERATED_NO_HEAP` 时省略 |
 | `{{ machine_class_name(model) }}_init(machine)` | 冷启动初始化或重置 machine |
 | `{{ machine_class_name(model) }}_hot_start(machine, state_id, vars)` | 从指定生成状态 id 和变量快照启动 |
 | `{{ machine_class_name(model) }}_set_hooks(machine, hooks, user_data)` | 注册 abstract hook |
@@ -434,7 +434,9 @@ machine 对象在 C 中不是 opaque type，但其中多数字段都属于运行
 ### 函数使用说明
 
 - `{{ machine_class_name(model) }}_create()` / `{{ machine_class_name(model) }}_destroy()`：
-  适用于希望由生成运行时管理堆分配生命周期的场景。
+  适用于希望由生成运行时管理堆分配生命周期的场景。它们只属于默认宿主剖面；无堆剖面下应由调用方自行分配
+  machine 对象，并调用 `{{ machine_class_name(model) }}_init()` 或
+  `{{ machine_class_name(model) }}_hot_start(...)`。
 - `{{ machine_class_name(model) }}_init()`：
   适用于栈上对象，或者对已有 machine 做重置。
 - `{{ machine_class_name(model) }}_hot_start()`：

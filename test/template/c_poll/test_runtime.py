@@ -887,6 +887,14 @@ class TestCPollBuiltinTemplate:
             assert 'check_p4_Root_p1_A_p2_Go' in readme
             assert 'return non-zero' in readme
             assert 'return `0`' in readme
+            assert '### Deployment Profiles' in readme
+            assert 'Caller-owned object' in readme
+            assert 'PYFCSTM_GENERATED_NO_HEAP' in readme
+            assert 'target_compile_definitions(machine PUBLIC PYFCSTM_GENERATED_NO_HEAP)' in readme
+            assert 'if(NOT WIN32)' in readme
+            assert 'gcc -std=c99' in readme
+            assert 'clang -std=c99' in readme
+            assert 'strict freestanding guarantee' in readme
 
             assert 'EventChecks' in readme_zh
             assert 'EventCheckFn' in readme_zh
@@ -897,6 +905,14 @@ class TestCPollBuiltinTemplate:
             assert 'check_p4_Root_p1_A_p2_Go' in readme_zh
             assert '返回非零' in readme_zh
             assert '返回 `0`' in readme_zh
+            assert '### 部署剖面' in readme_zh
+            assert '调用方拥有对象' in readme_zh
+            assert 'PYFCSTM_GENERATED_NO_HEAP' in readme_zh
+            assert 'target_compile_definitions(machine PUBLIC PYFCSTM_GENERATED_NO_HEAP)' in readme_zh
+            assert 'if(NOT WIN32)' in readme_zh
+            assert 'gcc -std=c99' in readme_zh
+            assert 'clang -std=c99' in readme_zh
+            assert '不等于严格 freestanding 保证' in readme_zh
 
     def test_generated_machine_clang_format_converges_under_four_space_style(self):
         with render_c_artifacts(_representative_gate_dsl()) as artifacts:
@@ -938,6 +954,194 @@ class TestCPollBuiltinTemplate:
 
             assert "clang-format" in readme
             assert "clang-format" in readme_zh
+
+    def test_generated_machine_no_heap_profile_uses_caller_owned_objects_and_event_checks(self):
+        with render_c_artifacts(_representative_gate_dsl()) as artifacts:
+            with open(artifacts["machine_h_file"], "r", encoding="utf-8") as f:
+                header = f.read()
+            with open(artifacts["machine_c_file"], "r", encoding="utf-8") as f:
+                source = f.read()
+
+            assert "#if !defined(PYFCSTM_GENERATED_NO_HEAP)" in header
+            assert "#if !defined(PYFCSTM_GENERATED_NO_HEAP)" in source
+            assert source.index("#if !defined(PYFCSTM_GENERATED_NO_HEAP)") < source.index("#include <stdlib.h>")
+
+            run = _compile_and_run_c_harness(
+                artifacts,
+                "no_heap_poll_caller_owned_object",
+                textwrap.dedent(
+                    r"""
+                    #include "machine.h"
+
+                    #if !defined(PYFCSTM_GENERATED_NO_HEAP)
+                    #error "The no-heap profile must be visible to consumers."
+                    #endif
+
+                    typedef struct EventLog {
+                        int allow_start;
+                        int seen_start;
+                    } EventLog;
+
+                    typedef struct HookLog {
+                        int boot_calls;
+                        int active_calls;
+                    } HookLog;
+
+                    static int check_start(
+                        ControlMachine *machine,
+                        const ControlMachineEventContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        EventLog *log = (EventLog *)user_data;
+                        (void)machine;
+                        if (
+                            ctx->event_id == CONTROL_MACHINE_EVENT_P7_CONTROL_P4_IDLE_P5_START &&
+                            ctx->current_state_id == CONTROL_MACHINE_STATE_P7_CONTROL_P4_IDLE
+                        ) {
+                            log->seen_start += 1;
+                        }
+                        return log->allow_start;
+                    }
+
+                    static void boot_hook(
+                        ControlMachine *machine,
+                        const ControlMachineExecutionContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        HookLog *log = (HookLog *)user_data;
+                        (void)machine;
+                        if (ctx->action_id == CONTROL_MACHINE_ACTION_P7_CONTROL_P4_BOOT) {
+                            log->boot_calls += 1;
+                        }
+                    }
+
+                    static void active_hook(
+                        ControlMachine *machine,
+                        const ControlMachineExecutionContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        HookLog *log = (HookLog *)user_data;
+                        (void)machine;
+                        if (ctx->action_id == CONTROL_MACHINE_ACTION_P7_CONTROL_P6_ACTIVE_P11_ACTIVEENTER) {
+                            log->active_calls += 1;
+                        }
+                    }
+
+                    int main(void)
+                    {
+                        static ControlMachine static_machine;
+                        ControlMachine stack_machine;
+                        ControlMachineHooks hooks = CONTROLMACHINE_HOOKS_INIT;
+                        ControlMachineEventChecks event_checks = CONTROLMACHINE_EVENT_CHECKS_INIT;
+                        ControlMachineVars vars = {0};
+                        EventLog event_log = {0, 0};
+                        HookLog hook_log = {0, 0};
+
+                        if (!ControlMachine_init(&static_machine)) {
+                            return 10;
+                        }
+                        if (ControlMachine_cycle(&static_machine)) {
+                            return 11;
+                        }
+
+                        if (!ControlMachine_init(&stack_machine)) {
+                            return 12;
+                        }
+                        hooks.on_p7_Control_p4_Boot = boot_hook;
+                        hooks.on_p7_Control_p6_Active_p11_ActiveEnter = active_hook;
+                        ControlMachine_set_hooks(&stack_machine, &hooks, &hook_log);
+                        event_checks.check_p7_Control_p4_Idle_p5_Start = check_start;
+                        ControlMachine_set_event_checks(&stack_machine, &event_checks, &event_log);
+
+                        if (!ControlMachine_cycle(&stack_machine)) {
+                            return 13;
+                        }
+                        if (
+                            ControlMachine_current_state_id(&stack_machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P4_IDLE ||
+                            ControlMachine_vars(&stack_machine)->counter != (ControlMachineInt)1 ||
+                            hook_log.boot_calls != 1 ||
+                            hook_log.active_calls != 0
+                        ) {
+                            return 14;
+                        }
+
+                        event_log.allow_start = 1;
+                        if (!ControlMachine_cycle(&stack_machine)) {
+                            return 15;
+                        }
+                        if (
+                            ControlMachine_current_state_id(&stack_machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P6_ACTIVE_P4_WORK ||
+                            ControlMachine_vars(&stack_machine)->ready != (ControlMachineInt)1 ||
+                            ControlMachine_vars(&stack_machine)->counter != (ControlMachineInt)16 ||
+                            event_log.seen_start != 1 ||
+                            hook_log.active_calls != 1
+                        ) {
+                            return 16;
+                        }
+
+                        vars.counter = 7;
+                        vars.ready = 1;
+                        vars.gain = 3.0;
+                        if (!ControlMachine_hot_start(
+                                &stack_machine,
+                                CONTROL_MACHINE_STATE_P7_CONTROL_P6_ACTIVE_P4_WORK,
+                                &vars)) {
+                            return 17;
+                        }
+                        if (
+                            ControlMachine_current_state_id(&stack_machine) != CONTROL_MACHINE_STATE_P7_CONTROL_P6_ACTIVE_P4_WORK ||
+                            ControlMachine_vars(&stack_machine)->counter != (ControlMachineInt)7
+                        ) {
+                            return 18;
+                        }
+                        if (!ControlMachine_cycle(&stack_machine)) {
+                            return 19;
+                        }
+                        if (event_log.seen_start != 1 || hook_log.active_calls != 1) {
+                            return 20;
+                        }
+
+                        return 0;
+                    }
+                    """
+                ),
+                compile_definitions=[
+                    "PYFCSTM_GENERATED_NO_HEAP",
+                    "calloc=PYFCSTM_FORBIDDEN_CALLOC",
+                    "free=PYFCSTM_FORBIDDEN_FREE",
+                ],
+            )
+            assert run.returncode == 0, run.stderr
+
+    def test_generated_machine_no_heap_profile_removes_heap_api(self):
+        with render_c_artifacts(_representative_gate_dsl()) as artifacts:
+            run = _compile_and_run_c_harness(
+                artifacts,
+                "no_heap_poll_forbidden_heap_api",
+                textwrap.dedent(
+                    r"""
+                    #include "machine.h"
+
+                    int main(void)
+                    {
+                        ControlMachine *machine = ControlMachine_create();
+                        ControlMachine_destroy(machine);
+                        return 0;
+                    }
+                    """
+                ),
+                compile_definitions=["PYFCSTM_GENERATED_NO_HEAP=1"],
+                expect_build_success=False,
+            )
+            combined_output = run.stdout + run.stderr
+            assert run.returncode != 0
+            assert (
+                "ControlMachine_create" in combined_output
+                or "ControlMachine_destroy" in combined_output
+            )
 
 
     def test_generated_machine_c_event_checks_install_and_drive_cycle(self):
@@ -1212,7 +1416,16 @@ def _find_built_executable(build_dir, stem):
     )
 
 
-def _compile_and_run_harness_with_cmake(artifacts, stem, source_code, *, language, standard):
+def _compile_and_run_harness_with_cmake(
+    artifacts,
+    stem,
+    source_code,
+    *,
+    language,
+    standard,
+    compile_definitions=None,
+    expect_build_success=True,
+):
     cmake_executable = artifacts['cmake']
     if cmake_executable is None:
         pytest.skip('cmake is required for generated C template harness tests.')
@@ -1264,6 +1477,22 @@ def _compile_and_run_harness_with_cmake(artifacts, stem, source_code, *, languag
         cmake_lines.extend([
             ')',
             '',
+        ])
+        if compile_definitions:
+            cmake_lines.extend([
+                'target_compile_definitions(',
+                '    {target_name}'.format(target_name=stem),
+                '    PRIVATE',
+            ])
+            cmake_lines.extend(
+                '    {definition}'.format(definition=definition)
+                for definition in compile_definitions
+            )
+            cmake_lines.extend([
+                ')',
+                '',
+            ])
+        cmake_lines.extend([
             'if (NOT WIN32)',
             '    target_link_libraries({target_name} m)'.format(target_name=stem),
             'endif()',
@@ -1284,14 +1513,17 @@ def _compile_and_run_harness_with_cmake(artifacts, stem, source_code, *, languag
         stderr=subprocess.PIPE,
         text=True,
     )
-    subprocess.run(
+    build_result = subprocess.run(
         [cmake_executable, '--build', '.', '--config', 'Release'],
         cwd=build_dir,
-        check=True,
+        check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
     )
+    if not expect_build_success:
+        return build_result
+    build_result.check_returncode()
 
     return subprocess.run(
         [_find_built_executable(build_dir, stem)],
@@ -1302,13 +1534,22 @@ def _compile_and_run_harness_with_cmake(artifacts, stem, source_code, *, languag
     )
 
 
-def _compile_and_run_c_harness(artifacts, stem, source_code):
+def _compile_and_run_c_harness(
+    artifacts,
+    stem,
+    source_code,
+    *,
+    compile_definitions=None,
+    expect_build_success=True,
+):
     return _compile_and_run_harness_with_cmake(
         artifacts,
         stem,
         source_code,
         language='C',
         standard='c++98',
+        compile_definitions=compile_definitions,
+        expect_build_success=expect_build_success,
     )
 
 

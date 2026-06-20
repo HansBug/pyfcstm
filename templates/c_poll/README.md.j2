@@ -168,26 +168,123 @@ operation.
 
 ## Build
 
-Compile the generated runtime directly with a C99 compiler:
+### Deployment Profiles
+
+The generated runtime supports three integration profiles:
+
+1. **Default hosted C99**: keep `{{ machine_class_name(model) }}_create()` and
+   `{{ machine_class_name(model) }}_destroy()` available. This profile may use
+   the C standard library and is suitable for hosted systems such as desktop
+   tools, industrial PCs, embedded Linux, or hosted RTOS builds.
+2. **Caller-owned object**: allocate `{{ machine_class_name(model) }}` yourself,
+   for example on the stack or in static storage, and call
+   `{{ machine_class_name(model) }}_init(&machine)` or
+   `{{ machine_class_name(model) }}_hot_start(...)`. This is the preferred path
+   when object lifetime is controlled by a driver, scheduler, or device owner.
+3. **No-heap profile**: define `PYFCSTM_GENERATED_NO_HEAP` for both
+   `machine.c` and every source file that includes `machine.h`. In this profile
+   the heap API declarations and implementations are omitted, and `machine.c`
+   does not include `<stdlib.h>` for `calloc` / `free`.
+
+`PYFCSTM_GENERATED_NO_HEAP` is tested by symbol presence, using
+`#if defined(PYFCSTM_GENERATED_NO_HEAP)` / `#ifdef` semantics. The documented
+build form is `-DPYFCSTM_GENERATED_NO_HEAP`; an external build that spells it
+as `-DPYFCSTM_GENERATED_NO_HEAP=1` must still select the same no-heap profile.
+
+### Object Lifetime Examples
+
+```c
+{{ machine_class_name(model) }} stack_machine;
+static {{ machine_class_name(model) }} static_machine;
+
+{{ machine_class_name(model) }}_init(&stack_machine);
+{{ machine_class_name(model) }}_init(&static_machine);
+```
+
+The default hosted profile also allows heap-managed objects:
+
+```c
+{{ machine_class_name(model) }} *machine = {{ machine_class_name(model) }}_create();
+if (machine == NULL) {
+    return 1;
+}
+{{ machine_class_name(model) }}_destroy(machine);
+```
+
+### Single-command C Builds
+
+The examples below are validated with gcc / clang style command lines.
+Compile the generated runtime and your application together:
+
+```bash
+cc -std=c99 -Wall -Wextra -pedantic -O2 machine.c app.c -lm -o app
+```
+
+Equivalent explicit gcc / clang forms are:
+
+```bash
+gcc -std=c99 -Wall -Wextra -pedantic -O2 machine.c app.c -lm -o app
+clang -std=c99 -Wall -Wextra -pedantic -O2 machine.c app.c -lm -o app
+```
+
+For a no-heap build, define the same profile symbol for the generated runtime
+and every consumer that includes `machine.h`:
+
+```bash
+cc -std=c99 -DPYFCSTM_GENERATED_NO_HEAP -Wall -Wextra -pedantic -O2 machine.c app.c -lm -o app
+```
+
+A separate object build is also valid:
 
 ```bash
 cc -std=c99 -Wall -Wextra -c machine.c -o machine.o
+cc -std=c99 -Wall -Wextra -c app.c -o app.o
+cc machine.o app.o -lm -o app
 ```
 
-For optimized production builds:
+On Windows, use the equivalent library or DLL flags for your compiler toolchain
+and do not force-link the POSIX math library `m`.
 
-```bash
-cc -std=c99 -O3 -DNDEBUG -c machine.c -o machine.o
+### CMake Integration
+
+A minimal static-library integration can look like this:
+
+```cmake
+cmake_minimum_required(VERSION 3.5)
+project(generated_machine_app C)
+
+add_library(machine STATIC machine.c)
+target_include_directories(machine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+set_target_properties(
+    machine
+    PROPERTIES
+    C_STANDARD 99
+    C_STANDARD_REQUIRED YES
+    C_EXTENSIONS NO
+)
+
+if(NOT WIN32)
+    target_link_libraries(machine PUBLIC m)
+endif()
+
+add_executable(app app.c)
+target_link_libraries(app PRIVATE machine)
 ```
 
-On POSIX-like platforms, a shared-library build can look like this:
+For a no-heap library that is consumed by other targets, propagate the macro as
+part of the public interface:
 
-```bash
-cc -std=c99 -shared -fPIC machine.c -lm -o libmachine.so
+```cmake
+target_compile_definitions(machine PUBLIC PYFCSTM_GENERATED_NO_HEAP)
 ```
 
-On Windows, use the equivalent DLL flags for your compiler toolchain and
-define `{{ machine_macro_name(model) }}_BUILD_SHARED` when exporting symbols.
+If `machine.c` is compiled into an interface-style wrapper, use
+`INTERFACE PYFCSTM_GENERATED_NO_HEAP` on the wrapper target. A `PRIVATE`
+definition is only safe when `machine.c` and all consumer source files that
+include `machine.h` are compiled in the same final target and therefore see the
+same macro.
+
+### C++ Compile Checking
 
 Compile checking with a C++ compiler is also supported and recommended when
 your integration layer is C++:
@@ -196,6 +293,16 @@ your integration layer is C++:
 g++ -x c++ -std=c++98 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o machine.o
 g++ -x c++ -std=c++17 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o machine.o
 ```
+
+### Boundary Notes
+
+- The no-heap profile only removes generated heap allocation helpers. It is not
+  a strict freestanding guarantee; the generated runtime may still use standard
+  headers such as `<math.h>`, `<string.h>`, or `<stdio.h>`.
+- This generated runtime is not a claim of MISRA, AUTOSAR, DO-178C, IEC 61508,
+  or ISO 26262 certification readiness.
+- Binary layout, endian conversion, and cross-device persistence of variable
+  snapshots are outside this public contract.
 
 ### Linkage and Visibility
 

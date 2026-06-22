@@ -1,10 +1,13 @@
 cmake_minimum_required(VERSION 3.5)
 project(pyfcstm_native_toolchain_harness C CXX)
 
-set(CMAKE_C_STANDARD 99)
+set(PYFCSTM_NATIVE_C_STANDARD "99" CACHE STRING "C standard used for the native harness")
+set(PYFCSTM_NATIVE_CXX_STANDARD "98" CACHE STRING "C++ standard used for the header probe")
+
+set(CMAKE_C_STANDARD ${PYFCSTM_NATIVE_C_STANDARD})
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
-set(CMAKE_CXX_STANDARD 98)
+set(CMAKE_CXX_STANDARD ${PYFCSTM_NATIVE_CXX_STANDARD})
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 

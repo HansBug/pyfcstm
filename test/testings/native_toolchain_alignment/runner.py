@@ -8,7 +8,8 @@ used by template-side ``native_toolchain`` pytest files.
 
 The module contains:
 
-* :class:`NativeToolchainExecutionError` - Wrapper for native build/run failures.
+* :class:`NativeToolchainExecutionError` - Wrapper for native build, run, and
+  analysis failures.
 * :func:`run_native_toolchain_case` - Execute one case/profile/template tuple.
 * :func:`assert_observations_match_case` - Compare harness observations with the
   shared public fixture expectations.
@@ -37,6 +38,11 @@ from test.testings.native_toolchain_alignment.harness import (
     render_harness,
 )
 from test.testings.native_toolchain_alignment.profiles import (
+    BUILD_MODE_ANALYZE_ONLY,
+    BUILD_MODE_CMAKE_RUN,
+    BUILD_MODE_COMPILE_ONLY,
+    BUILD_MODE_CROSS_QEMU_RUN,
+    BUILD_MODE_SELF_HOSTED_COMPILE,
     ToolchainMissingError,
     ToolchainProfile,
     ensure_required_tools,
@@ -125,11 +131,16 @@ def _run_command(
     artifact_root: str,
     commands: List[NativeCommandRecord],
     timeout: int,
+    env: Optional[Mapping[str, str]] = None,
 ) -> subprocess.CompletedProcess:
     start = time.time()
     stdout_path = os.path.join(logs_dir, "%s.stdout.txt" % stage)
     stderr_path = os.path.join(logs_dir, "%s.stderr.txt" % stage)
     timed_out = False
+    run_env = None
+    if env:
+        run_env = os.environ.copy()
+        run_env.update(env)
     try:
         completed = subprocess.run(
             list(argv),
@@ -138,8 +149,12 @@ def _run_command(
             stderr=subprocess.PIPE,
             text=True,
             timeout=timeout,
+            env=run_env,
         )
     except subprocess.TimeoutExpired as err:
+        # TimeoutExpired: subprocess.run raises it when the configured command
+        # timeout expires; the timeout itself is an expected native-profile
+        # outcome and is converted into a structured command record.
         timed_out = True
         stdout = err.stdout or ""
         stderr = err.stderr or ""
@@ -173,9 +188,15 @@ def _version_text(
     commands: List[NativeCommandRecord],
     timeout: int,
 ) -> Optional[str]:
+    if not argv:
+        return None
+    if shutil.which(argv[0]) is None:
+        return None
+    executable = os.path.basename(argv[0]).lower()
+    version_flag = "/?" if executable in {"cl", "clang-cl"} else "--version"
     completed = _run_command(
         "version",
-        list(argv) + ["--version"],
+        list(argv) + [version_flag],
         logs_dir,
         logs_dir,
         artifact_root,
@@ -194,7 +215,9 @@ def _write_result(artifact_dir: str, result: NativeToolchainResult) -> Dict[str,
     return data
 
 
-def _artifact_paths(observations_path: Optional[str] = None) -> Sequence[str]:
+def _artifact_paths(
+    observations_path: Optional[str] = None, analysis_report_path: Optional[str] = None
+) -> Sequence[str]:
     paths = [
         "generated",
         "harness",
@@ -205,7 +228,50 @@ def _artifact_paths(observations_path: Optional[str] = None) -> Sequence[str]:
     ]
     if observations_path is not None:
         paths.append(observations_path)
+    if analysis_report_path is not None:
+        paths.append(analysis_report_path)
     return paths
+
+
+def _result_payload(
+    case: SemanticCase,
+    template_name: str,
+    profile: ToolchainProfile,
+    status: str,
+    classification: str,
+    message: str,
+    commands: Sequence[NativeCommandRecord],
+    returncode: Optional[int] = None,
+    duration_seconds: float = 0.0,
+    compiler_version: Optional[str] = None,
+    primary_tool_version: Optional[str] = None,
+    run_attempted: bool = False,
+    observations_path: Optional[str] = None,
+    analysis_report_path: Optional[str] = None,
+) -> NativeToolchainResult:
+    return NativeToolchainResult(
+        case_id=case.id,
+        template_name=template_name,
+        profile_name=profile.name,
+        build_mode=profile.build_mode,
+        compiler=profile.compiler,
+        compiler_version=compiler_version,
+        primary_tool=profile.primary_tool,
+        primary_tool_version=primary_tool_version,
+        optimization=profile.optimization,
+        status=status,
+        classification=classification,
+        message=message,
+        returncode=returncode,
+        duration_seconds=duration_seconds,
+        commands=commands,
+        artifact_paths=_artifact_paths(observations_path, analysis_report_path),
+        run_attempted=run_attempted,
+        observations_path=observations_path,
+        analysis_ruleset=profile.analysis_ruleset,
+        analysis_report_path=analysis_report_path,
+        report_only=profile.report_only,
+    )
 
 
 def _failure_result(
@@ -218,28 +284,27 @@ def _failure_result(
     artifact_dir: str,
     returncode: Optional[int] = None,
     duration_seconds: float = 0.0,
+    compiler_version: Optional[str] = None,
+    primary_tool_version: Optional[str] = None,
     run_attempted: bool = False,
     observations_path: Optional[str] = None,
+    analysis_report_path: Optional[str] = None,
 ) -> Dict[str, Any]:
-    result = NativeToolchainResult(
-        case_id=case.id,
-        template_name=template_name,
-        profile_name=profile.name,
-        build_mode=profile.build_mode,
-        compiler=profile.compiler,
-        compiler_version=None,
-        primary_tool=profile.primary_tool,
-        primary_tool_version=None,
-        optimization=profile.optimization,
-        status="failed",
-        classification=classification,
-        message=message,
-        returncode=returncode,
-        duration_seconds=duration_seconds,
-        commands=commands,
-        artifact_paths=_artifact_paths(observations_path),
-        run_attempted=run_attempted,
-        observations_path=observations_path,
+    result = _result_payload(
+        case,
+        template_name,
+        profile,
+        "failed",
+        classification,
+        message,
+        commands,
+        returncode,
+        duration_seconds,
+        compiler_version,
+        primary_tool_version,
+        run_attempted,
+        observations_path,
+        analysis_report_path,
     )
     _write_result(artifact_dir, result)
     raise NativeToolchainExecutionError(
@@ -288,10 +353,11 @@ def assert_observations_match_case(
     Example::
 
         >>> case = simulate_semantics.load_semantic_case("design_basic_simple_transition")
-        >>> assert_observations_match_case("c", case, [])
-        Traceback (most recent call last):
-        ...
-        AssertionError: ...
+        >>> try:
+        ...     assert_observations_match_case("c", case, [])
+        ... except AssertionError as err:
+        ...     "observation count mismatch" in str(err)
+        True
     """
     initial_expect = simulate_semantics._initial_constructor_expect(case)
     init_observations = [item for item in observations if item.get("phase") == "init"]
@@ -379,86 +445,334 @@ def _prepare_artifacts(
             shutil.copy2(src, os.path.join(harness_dir, name))
 
 
-def run_native_toolchain_case(
-    template_name: str,
-    case: SemanticCase,
-    profile: ToolchainProfile,
-    artifact_root: str,
-) -> Dict[str, Any]:
-    """
-    Execute one shared semantic fixture under a native toolchain profile.
-
-    :param template_name: Template name, either ``"c"`` or ``"c_poll"``.
-    :type template_name: str
-    :param case: Shared semantic fixture case.
-    :type case: test.testings.simulate_semantics.SemanticCase
-    :param profile: Selected native toolchain profile.
-    :type profile: test.testings.native_toolchain_alignment.profiles.ToolchainProfile
-    :param artifact_root: Root directory for result artifacts.
-    :type artifact_root: str
-    :return: Parsed ``result.json`` data for a passed case.
-    :rtype: dict
-    :raises NativeToolchainExecutionError: If profile setup, build, run, or
-        semantic assertion fails.
-
-    Example::
-
-        >>> from test.testings.native_toolchain_alignment.profiles import get_profile
-        >>> profile = get_profile("linux-gcc-o2")
-        >>> profile.build_mode
-        'cmake-run'
-    """
-    start = time.time()
-    artifact_dir = _case_artifact_dir(
-        artifact_root, template_name, profile.name, case.id
+def _cmake_configure_args(
+    profile: ToolchainProfile, harness_dir: str, build_dir: str
+) -> List[str]:
+    args = ["cmake", "-S", harness_dir, "-B", build_dir]
+    if profile.cmake_generator is not None:
+        args.extend(["-G", profile.cmake_generator])
+    args.extend(
+        [
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+            "-DCMAKE_C_COMPILER=%s" % profile.cc[0],
+            "-DCMAKE_CXX_COMPILER=%s" % profile.cxx[0],
+            "-DPYFCSTM_NATIVE_C_FLAGS=%s" % " ".join(profile.c_flags),
+            "-DPYFCSTM_NATIVE_CXX_FLAGS=%s" % " ".join(profile.cxx_flags),
+            "-DPYFCSTM_NATIVE_LINK_FLAGS=%s" % " ".join(profile.link_flags),
+        ]
     )
-    logs_dir = os.path.join(artifact_dir, "logs")
-    build_dir = os.path.join(artifact_dir, "build")
-    harness_dir = os.path.join(artifact_dir, "harness")
-    os.makedirs(logs_dir, exist_ok=True)
-    os.makedirs(build_dir, exist_ok=True)
-    commands: List[NativeCommandRecord] = []
+    args.extend(profile.cmake_args)
+    return args
 
-    try:
-        ensure_required_tools(profile)
-    except ToolchainMissingError as err:
-        # ToolchainMissingError: ensure_required_tools reports public profile
-        # binaries that are absent from PATH. Other exceptions indicate a bug in
-        # profile validation and should propagate.
+
+def _executable_path(build_dir: str) -> str:
+    candidates = [
+        os.path.join(build_dir, "native_harness"),
+        os.path.join(build_dir, "native_harness.exe"),
+        os.path.join(build_dir, "Release", "native_harness.exe"),
+        os.path.join(build_dir, "Debug", "native_harness.exe"),
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    return candidates[1] if os.name == "nt" else candidates[0]
+
+
+def _run_compile_command(
+    profile: ToolchainProfile,
+    stage: str,
+    argv: Sequence[str],
+    artifact_dir: str,
+    logs_dir: str,
+    commands: List[NativeCommandRecord],
+    output_path: str,
+    start: float,
+    case: SemanticCase,
+    template_name: str,
+    compiler_version: Optional[str],
+    primary_tool_version: Optional[str],
+) -> None:
+    completed = _run_command(
+        stage,
+        argv,
+        artifact_dir,
+        logs_dir,
+        artifact_dir,
+        commands,
+        profile.timeout_seconds,
+    )
+    timed_out = commands[-1].timed_out if commands else False
+    if completed.returncode != 0:
         _failure_result(
             case,
             template_name,
             profile,
-            "tool_missing",
-            "%s" % err,
+            "compile_timeout" if timed_out else "compile_failure",
+            "%s failed for %s/%s" % (stage, template_name, case.id),
             commands,
             artifact_dir,
-            duration_seconds=time.time() - start,
+            completed.returncode,
+            time.time() - start,
+            compiler_version,
+            primary_tool_version,
+        )
+    if not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
+        _failure_result(
+            case,
+            template_name,
+            profile,
+            "compile_failure",
+            "%s did not produce a non-empty object for %s/%s"
+            % (stage, template_name, case.id),
+            commands,
+            artifact_dir,
+            completed.returncode,
+            time.time() - start,
+            compiler_version,
+            primary_tool_version,
         )
 
-    _prepare_artifacts(template_name, case, artifact_dir)
-    compiler_version = _version_text(
-        profile.cc, logs_dir, artifact_dir, commands, profile.timeout_seconds
-    )
-    primary_tool_version = compiler_version
 
-    configure_args = [
-        "cmake",
-        "-S",
-        harness_dir,
-        "-B",
-        build_dir,
-        "-DCMAKE_BUILD_TYPE=Release",
-        "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
-        "-DCMAKE_C_COMPILER=%s" % profile.cc[0],
-        "-DCMAKE_CXX_COMPILER=%s" % profile.cxx[0],
-        "-DPYFCSTM_NATIVE_C_FLAGS=%s" % " ".join(profile.c_flags),
-        "-DPYFCSTM_NATIVE_CXX_FLAGS=%s" % " ".join(profile.cxx_flags),
-        "-DPYFCSTM_NATIVE_LINK_FLAGS=%s" % " ".join(profile.link_flags),
+def _run_compile_only_case(
+    template_name: str,
+    case: SemanticCase,
+    profile: ToolchainProfile,
+    artifact_dir: str,
+    logs_dir: str,
+    build_dir: str,
+    commands: List[NativeCommandRecord],
+    compiler_version: Optional[str],
+    primary_tool_version: Optional[str],
+    start: float,
+) -> Dict[str, Any]:
+    include_dir = os.path.join(artifact_dir, "harness")
+    if os.path.basename(profile.cc[0]).lower() in {"cl", "clang-cl"}:
+        include_flag = "/I" + include_dir
+
+        def c_output(path):
+            return ["/Fo" + path]
+
+        cxx_output = c_output
+        compile_flag = "/c"
+    else:
+        include_flag = "-I" + include_dir
+
+        def c_output(path):
+            return ["-o", path]
+
+        cxx_output = c_output
+        compile_flag = "-c"
+    compile_items = [
+        (
+            "compile-machine-c",
+            list(profile.cc)
+            + list(profile.c_flags)
+            + [
+                include_flag,
+                compile_flag,
+                os.path.join(artifact_dir, "harness", "machine.c"),
+            ],
+            os.path.join(build_dir, "machine.o"),
+        ),
+        (
+            "compile-harness-c",
+            list(profile.cc)
+            + list(profile.c_flags)
+            + [
+                include_flag,
+                compile_flag,
+                os.path.join(artifact_dir, "harness", "harness.c"),
+            ],
+            os.path.join(build_dir, "harness.o"),
+        ),
+        (
+            "compile-header-cxx",
+            list(profile.cxx)
+            + list(profile.cxx_flags)
+            + [include_flag, compile_flag, "-"],
+            os.path.join(build_dir, "cxx_header_probe.o"),
+        ),
     ]
+    header_probe = '#include "machine.h"\nint main(void) { return 0; }\n'
+    for stage, argv, output_path in compile_items:
+        argv = list(argv) + c_output(output_path)
+        if stage == "compile-header-cxx":
+            probe_path = os.path.join(build_dir, "cxx_header_probe.cpp")
+            _write_text(probe_path, header_probe)
+            argv = (
+                list(profile.cxx)
+                + list(profile.cxx_flags)
+                + [include_flag, compile_flag, probe_path]
+                + cxx_output(output_path)
+            )
+        _run_compile_command(
+            profile,
+            stage,
+            argv,
+            artifact_dir,
+            logs_dir,
+            commands,
+            output_path,
+            start,
+            case,
+            template_name,
+            compiler_version,
+            primary_tool_version,
+        )
+    result = _result_payload(
+        case,
+        template_name,
+        profile,
+        "passed",
+        "passed",
+        "compile-only passed",
+        commands,
+        0,
+        time.time() - start,
+        compiler_version,
+        primary_tool_version,
+        run_attempted=False,
+        observations_path=None,
+    )
+    return _write_result(artifact_dir, result)
+
+
+def _analysis_targets(artifact_dir: str) -> List[str]:
+    harness_dir = os.path.join(artifact_dir, "harness")
+    return [
+        os.path.join(harness_dir, "machine.c"),
+        os.path.join(harness_dir, "harness.c"),
+    ]
+
+
+def _analysis_argv(profile: ToolchainProfile, artifact_dir: str) -> List[str]:
+    args = list(profile.analysis_args)
+    targets = _analysis_targets(artifact_dir)
+    if "--" not in args:
+        return list(profile.analysis_tool) + args + targets
+    separator_index = args.index("--")
+    return (
+        list(profile.analysis_tool)
+        + args[:separator_index]
+        + targets
+        + ["--"]
+        + args[separator_index + 1 :]
+    )
+
+
+def _run_analyze_only_case(
+    template_name: str,
+    case: SemanticCase,
+    profile: ToolchainProfile,
+    artifact_dir: str,
+    logs_dir: str,
+    commands: List[NativeCommandRecord],
+    primary_tool_version: Optional[str],
+    start: float,
+) -> Dict[str, Any]:
+    report_path = os.path.join(artifact_dir, "analysis-report.txt")
+    argv = _analysis_argv(profile, artifact_dir)
+    completed = _run_command(
+        "analyze",
+        argv,
+        artifact_dir,
+        logs_dir,
+        artifact_dir,
+        commands,
+        profile.timeout_seconds,
+    )
+    stdout_rel = commands[-1].stdout_path if commands else None
+    stderr_rel = commands[-1].stderr_path if commands else None
+    report_parts = []
+    for rel_path in (stdout_rel, stderr_rel):
+        if rel_path is None:
+            continue
+        path = os.path.join(artifact_dir, rel_path)
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                report_parts.append(f.read())
+    _write_text(report_path, "\n".join(report_parts))
+    report_rel = _relative(report_path, artifact_dir)
+    timed_out = commands[-1].timed_out if commands else False
+    if timed_out or completed.returncode is None:
+        _failure_result(
+            case,
+            template_name,
+            profile,
+            "analysis_timeout",
+            "static analysis timed out for %s/%s" % (template_name, case.id),
+            commands,
+            artifact_dir,
+            completed.returncode,
+            time.time() - start,
+            primary_tool_version=primary_tool_version,
+            analysis_report_path=report_rel,
+        )
+    if completed.returncode not in (0,):
+        _failure_result(
+            case,
+            template_name,
+            profile,
+            "analysis_failure",
+            "static analysis failed for %s/%s with return code %r"
+            % (template_name, case.id, completed.returncode),
+            commands,
+            artifact_dir,
+            completed.returncode,
+            time.time() - start,
+            primary_tool_version=primary_tool_version,
+            analysis_report_path=report_rel,
+        )
+    if not os.path.exists(report_path):
+        _failure_result(
+            case,
+            template_name,
+            profile,
+            "analysis_failure",
+            "static analysis report is missing for %s/%s" % (template_name, case.id),
+            commands,
+            artifact_dir,
+            completed.returncode,
+            time.time() - start,
+            primary_tool_version=primary_tool_version,
+            analysis_report_path=report_rel,
+        )
+    result = _result_payload(
+        case,
+        template_name,
+        profile,
+        "passed",
+        "analysis_report_only",
+        "static analysis report-only profile completed",
+        commands,
+        completed.returncode,
+        time.time() - start,
+        compiler_version=None,
+        primary_tool_version=primary_tool_version,
+        run_attempted=False,
+        observations_path=None,
+        analysis_report_path=report_rel,
+    )
+    return _write_result(artifact_dir, result)
+
+
+def _run_cmake_case(
+    template_name: str,
+    case: SemanticCase,
+    profile: ToolchainProfile,
+    artifact_dir: str,
+    logs_dir: str,
+    build_dir: str,
+    harness_dir: str,
+    commands: List[NativeCommandRecord],
+    compiler_version: Optional[str],
+    primary_tool_version: Optional[str],
+    start: float,
+) -> Dict[str, Any]:
     completed = _run_command(
         "configure",
-        configure_args,
+        _cmake_configure_args(profile, harness_dir, build_dir),
         artifact_dir,
         logs_dir,
         artifact_dir,
@@ -477,6 +791,8 @@ def run_native_toolchain_case(
             artifact_dir,
             completed.returncode,
             time.time() - start,
+            compiler_version,
+            primary_tool_version,
         )
 
     completed = _run_command(
@@ -500,21 +816,24 @@ def run_native_toolchain_case(
             artifact_dir,
             completed.returncode,
             time.time() - start,
+            compiler_version,
+            primary_tool_version,
         )
 
-    exe_path = os.path.join(build_dir, "native_harness")
-    if os.name == "nt":
-        exe_path += ".exe"
+    exe_path = _executable_path(build_dir)
     observations_path = os.path.join(artifact_dir, "observations.jsonl")
+    run_argv = list(profile.run_prefix) + [exe_path, observations_path]
     completed = _run_command(
         "run",
-        [exe_path, observations_path],
+        run_argv,
         artifact_dir,
         logs_dir,
         artifact_dir,
         commands,
         profile.timeout_seconds,
+        env=profile.run_environment,
     )
+    observations_rel = _relative(observations_path, artifact_dir)
     if completed.returncode != 0:
         timed_out = commands[-1].timed_out if commands else False
         if timed_out:
@@ -534,8 +853,10 @@ def run_native_toolchain_case(
             artifact_dir,
             completed.returncode,
             time.time() - start,
+            compiler_version,
+            primary_tool_version,
             run_attempted=True,
-            observations_path=_relative(observations_path, artifact_dir),
+            observations_path=observations_rel,
         )
 
     observations = read_observations_jsonl(observations_path)
@@ -552,28 +873,149 @@ def run_native_toolchain_case(
             artifact_dir,
             completed.returncode,
             time.time() - start,
+            compiler_version,
+            primary_tool_version,
             run_attempted=True,
-            observations_path=_relative(observations_path, artifact_dir),
+            observations_path=observations_rel,
         )
 
-    result = NativeToolchainResult(
-        case_id=case.id,
-        template_name=template_name,
-        profile_name=profile.name,
-        build_mode=profile.build_mode,
-        compiler=profile.compiler,
-        compiler_version=compiler_version,
-        primary_tool=profile.primary_tool,
-        primary_tool_version=primary_tool_version,
-        optimization=profile.optimization,
-        status="passed",
-        classification="passed",
-        message="passed",
-        returncode=completed.returncode,
-        duration_seconds=time.time() - start,
-        commands=commands,
-        artifact_paths=_artifact_paths("observations.jsonl"),
+    result = _result_payload(
+        case,
+        template_name,
+        profile,
+        "passed",
+        "passed",
+        "passed",
+        commands,
+        completed.returncode,
+        time.time() - start,
+        compiler_version,
+        primary_tool_version,
         run_attempted=True,
-        observations_path=_relative(observations_path, artifact_dir),
+        observations_path=observations_rel,
     )
     return _write_result(artifact_dir, result)
+
+
+def run_native_toolchain_case(
+    template_name: str,
+    case: SemanticCase,
+    profile: ToolchainProfile,
+    artifact_root: str,
+) -> Dict[str, Any]:
+    """
+    Execute one shared semantic fixture under a native toolchain profile.
+
+    :param template_name: Template name, either ``"c"`` or ``"c_poll"``.
+    :type template_name: str
+    :param case: Shared semantic fixture case.
+    :type case: test.testings.simulate_semantics.SemanticCase
+    :param profile: Selected native toolchain profile.
+    :type profile: test.testings.native_toolchain_alignment.profiles.ToolchainProfile
+    :param artifact_root: Root directory for result artifacts.
+    :type artifact_root: str
+    :return: Parsed ``result.json`` data for a passed case.
+    :rtype: dict
+    :raises NativeToolchainExecutionError: If profile setup, build, run,
+        analysis, or semantic assertion fails.
+
+    Example::
+
+        >>> from test.testings.native_toolchain_alignment.profiles import get_profile
+        >>> profile = get_profile("linux-gcc-o2")
+        >>> profile.build_mode
+        'cmake-run'
+    """
+    start = time.time()
+    artifact_dir = _case_artifact_dir(
+        artifact_root, template_name, profile.name, case.id
+    )
+    logs_dir = os.path.join(artifact_dir, "logs")
+    build_dir = os.path.join(artifact_dir, "build")
+    harness_dir = os.path.join(artifact_dir, "harness")
+    os.makedirs(logs_dir, exist_ok=True)
+    os.makedirs(build_dir, exist_ok=True)
+    commands: List[NativeCommandRecord] = []
+
+    try:
+        ensure_required_tools(profile)
+    except ToolchainMissingError as err:
+        # ToolchainMissingError: ensure_required_tools reports profile binaries
+        # that are absent from PATH. Other exceptions indicate a bug in profile
+        # validation and should propagate.
+        _failure_result(
+            case,
+            template_name,
+            profile,
+            "tool_missing",
+            "%s" % err,
+            commands,
+            artifact_dir,
+            duration_seconds=time.time() - start,
+        )
+
+    _prepare_artifacts(template_name, case, artifact_dir)
+    compiler_version = _version_text(
+        profile.cc, logs_dir, artifact_dir, commands, profile.timeout_seconds
+    )
+    if profile.analysis_tool:
+        primary_tool_version = _version_text(
+            profile.analysis_tool,
+            logs_dir,
+            artifact_dir,
+            commands,
+            profile.timeout_seconds,
+        )
+    else:
+        primary_tool_version = compiler_version
+
+    if profile.build_mode in (BUILD_MODE_CMAKE_RUN, BUILD_MODE_CROSS_QEMU_RUN):
+        return _run_cmake_case(
+            template_name,
+            case,
+            profile,
+            artifact_dir,
+            logs_dir,
+            build_dir,
+            harness_dir,
+            commands,
+            compiler_version,
+            primary_tool_version,
+            start,
+        )
+    if profile.build_mode in (BUILD_MODE_COMPILE_ONLY, BUILD_MODE_SELF_HOSTED_COMPILE):
+        return _run_compile_only_case(
+            template_name,
+            case,
+            profile,
+            artifact_dir,
+            logs_dir,
+            build_dir,
+            commands,
+            compiler_version,
+            primary_tool_version,
+            start,
+        )
+    if profile.build_mode == BUILD_MODE_ANALYZE_ONLY:
+        return _run_analyze_only_case(
+            template_name,
+            case,
+            profile,
+            artifact_dir,
+            logs_dir,
+            commands,
+            primary_tool_version,
+            start,
+        )
+    _failure_result(
+        case,
+        template_name,
+        profile,
+        "profile_error",
+        "unsupported native toolchain build mode: %s" % profile.build_mode,
+        commands,
+        artifact_dir,
+        duration_seconds=time.time() - start,
+        compiler_version=compiler_version,
+        primary_tool_version=primary_tool_version,
+    )

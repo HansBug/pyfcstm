@@ -11,14 +11,27 @@ small module map for tests and reviewers.
    * - Module
      - Responsibility
    * - ``profiles``
-     - Explicit opt-in switch handling and native profile registry.
+     - Explicit opt-in switch handling, public profile registry, manual
+       self-hosted profile registry, and build-mode constants.
    * - ``harness``
      - Case-specific C harness and CMake project rendering.
    * - ``runner``
-     - Configure/build/run orchestration and observation checks.
+     - Configure/build/run, compile-only, analyze-only, and observation checks.
    * - ``report``
      - ``commands.json``, ``result.json``, and ``observations.jsonl`` schema
        helpers.
+
+.. list-table:: Runner families
+   :header-rows: 1
+
+   * - Family
+     - Profile examples
+   * - Runnable hosted / emulated
+     - ``linux-gcc-o2``, ``linux-aarch64-gcc-o2``, ``windows-msvc-o2``.
+   * - Compile only
+     - ``arm-none-eabi-gcc-o2`` and manual licensed-toolchain entries.
+   * - Analyze only
+     - ``linux-cppcheck`` and ``linux-clang-tidy``.
 
 Example::
 
@@ -29,12 +42,19 @@ Example::
 
 from .profiles import (
     ARTIFACT_DIR_ENV_VAR,
+    BUILD_MODE_ANALYZE_ONLY,
+    BUILD_MODE_CMAKE_RUN,
+    BUILD_MODE_COMPILE_ONLY,
+    BUILD_MODE_CROSS_QEMU_RUN,
+    BUILD_MODE_SELF_HOSTED_COMPILE,
     PROFILE_ENV_VAR,
     RUN_ENV_VAR,
     ProfileSelectionError,
     ToolchainMissingError,
     ToolchainProfile,
     get_profile,
+    iter_all_profiles,
+    iter_manual_profiles,
     iter_profiles,
     native_toolchain_enabled,
     resolve_selected_profile,
@@ -43,6 +63,11 @@ from .runner import NativeToolchainExecutionError, run_native_toolchain_case
 
 __all__ = [
     "ARTIFACT_DIR_ENV_VAR",
+    "BUILD_MODE_ANALYZE_ONLY",
+    "BUILD_MODE_CMAKE_RUN",
+    "BUILD_MODE_COMPILE_ONLY",
+    "BUILD_MODE_CROSS_QEMU_RUN",
+    "BUILD_MODE_SELF_HOSTED_COMPILE",
     "PROFILE_ENV_VAR",
     "RUN_ENV_VAR",
     "NativeToolchainExecutionError",
@@ -50,6 +75,8 @@ __all__ = [
     "ToolchainMissingError",
     "ToolchainProfile",
     "get_profile",
+    "iter_all_profiles",
+    "iter_manual_profiles",
     "iter_profiles",
     "native_toolchain_enabled",
     "resolve_selected_profile",

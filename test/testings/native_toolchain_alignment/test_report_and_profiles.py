@@ -8,6 +8,8 @@ from test.testings.native_toolchain_alignment.profiles import (
     ProfileSelectionError,
     ToolchainProfile,
     get_profile,
+    iter_all_profiles,
+    iter_manual_profiles,
     iter_profiles,
     missing_required_tools,
     native_toolchain_enabled,
@@ -20,16 +22,45 @@ from test.testings.native_toolchain_alignment.report import (
     validate_observation_data,
     validate_result_data,
 )
-from test.testings.native_toolchain_alignment.runner import _case_artifact_dir
+from test.testings.native_toolchain_alignment.runner import (
+    _analysis_argv,
+    _case_artifact_dir,
+)
 
 
 @pytest.mark.unittest
-def test_profiles_freeze_initial_public_profile_names():
-    assert [profile.name for profile in iter_profiles()] == [
+def test_profiles_cover_public_matrix_and_manual_entries():
+    profile_names = [profile.name for profile in iter_profiles()]
+
+    assert profile_names[:4] == [
+        "linux-gcc-o0",
         "linux-gcc-o2",
-        "linux-clang-o2",
+        "linux-gcc-o3",
+        "linux-gcc-os",
     ]
+    for name in [
+        "linux-clang-o0",
+        "linux-clang-o2",
+        "linux-gcc-m32-o2",
+        "linux-aarch64-gcc-o2",
+        "arm-none-eabi-gcc-o2",
+        "macos-appleclang-o2",
+        "windows-mingw-o2",
+        "windows-msvc-o2",
+        "windows-clangcl-o2",
+        "linux-clang-asan-ubsan",
+        "linux-cppcheck",
+        "linux-clang-tidy",
+    ]:
+        assert name in profile_names
     assert get_profile("linux-gcc-o2").build_mode == "cmake-run"
+    assert get_profile("arm-none-eabi-gcc-o2").build_mode == "compile-only"
+    assert get_profile("linux-cppcheck").build_mode == "analyze-only"
+    assert get_profile("linux-cppcheck").report_only is True
+    assert "-DPYFCSTM_NATIVE_C_STANDARD=11" in get_profile("windows-msvc-o2").cmake_args
+    assert all(profile.public_required for profile in iter_profiles())
+    assert all(not profile.public_required for profile in iter_manual_profiles())
+    assert get_profile("manual-armclang-compile") in iter_all_profiles()
 
 
 @pytest.mark.unittest
@@ -187,9 +218,70 @@ def test_result_schema_rejects_unknown_classification(tmp_path):
 
 
 @pytest.mark.unittest
+def test_report_schema_accepts_compile_and_analysis_classifications():
+    command = NativeCommandRecord("analyze", ["cppcheck", "machine.c"], "/tmp")
+    result = NativeToolchainResult(
+        "case",
+        "c",
+        "linux-cppcheck",
+        "analyze-only",
+        None,
+        None,
+        "cppcheck",
+        "cppcheck 2",
+        None,
+        "passed",
+        "analysis_report_only",
+        "report",
+        commands=[command],
+        analysis_ruleset="demo",
+        analysis_report_path="analysis-report.txt",
+        report_only=True,
+    ).to_dict()
+
+    validate_result_data(result)
+
+    result["classification"] = "compile_failure"
+    result["status"] = "failed"
+    validate_result_data(result)
+
+
+@pytest.mark.unittest
+def test_report_schema_accepts_compile_stage_variants():
+    for stage in ["compile-machine-c", "compile-harness-c", "compile-header-cxx"]:
+        validate_command_data(
+            NativeCommandRecord(stage, ["cc", "-c", "machine.c"], "/tmp").to_dict()
+        )
+
+
+@pytest.mark.unittest
 def test_case_artifact_directory_normalizes_relative_root(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     artifact_dir = _case_artifact_dir("artifacts", "c", "linux-gcc-o2", "case")
 
     assert artifact_dir == str(tmp_path / "artifacts" / "c" / "linux-gcc-o2" / "case")
+
+
+@pytest.mark.unittest
+def test_analysis_argv_inserts_targets_before_compile_separator(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    harness_dir = artifact_dir / "harness"
+    harness_dir.mkdir(parents=True)
+    profile = get_profile("linux-clang-tidy")
+
+    argv = _analysis_argv(profile, str(artifact_dir))
+
+    separator = argv.index("--")
+    assert str(harness_dir / "machine.c") in argv[:separator]
+    assert str(harness_dir / "harness.c") in argv[:separator]
+    assert "-std=c99" in argv[separator + 1 :]
+
+
+@pytest.mark.unittest
+def test_compile_only_profile_records_non_running_contract():
+    profile = get_profile("arm-none-eabi-gcc-o2")
+
+    assert profile.build_mode == "compile-only"
+    assert profile.run_prefix == ()
+    assert profile.compiler == "arm-none-eabi-gcc"

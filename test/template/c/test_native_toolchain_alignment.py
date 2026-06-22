@@ -24,4 +24,7 @@ def test_generated_c_native_toolchain_alignment(
     )
 
     assert result["status"] == "passed", result["message"]
-    assert result["classification"] == "passed"
+    expected_classification = (
+        "analysis_report_only" if result.get("report_only") else "passed"
+    )
+    assert result["classification"] == expected_classification

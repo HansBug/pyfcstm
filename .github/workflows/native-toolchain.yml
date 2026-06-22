@@ -1,6 +1,17 @@
 name: Native toolchain matrix
 
 on:
+  pull_request:
+    paths:
+      - .github/workflows/native-toolchain.yml
+      - test/conftest.py
+      - pytest.ini
+      - test/testings/native_toolchain_alignment/**
+      - test/template/c/test_native_toolchain_alignment.py
+      - test/template/c_poll/test_native_toolchain_alignment.py
+      - templates/c/**
+      - templates/c_poll/**
+      - pyfcstm/render/c_runtime.py
   workflow_dispatch:
     inputs:
       profile:
@@ -14,9 +25,13 @@ on:
 
 jobs:
   native-toolchain:
-    name: native-toolchain / ${{ inputs.profile }}
+    name: native-toolchain / ${{ matrix.profile }}
     runs-on: ubuntu-22.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.profile) || '["linux-gcc-o2", "linux-clang-o2"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -36,7 +51,7 @@ jobs:
       - name: Run native toolchain alignment
         env:
           PYFCSTM_RUN_NATIVE_TOOLCHAIN: '1'
-          PYFCSTM_NATIVE_TOOLCHAIN_PROFILE: ${{ inputs.profile }}
+          PYFCSTM_NATIVE_TOOLCHAIN_PROFILE: ${{ matrix.profile }}
           PYFCSTM_NATIVE_TOOLCHAIN_ARTIFACT_DIR: native-toolchain-artifacts
         run: |
           pytest -m native_toolchain \
@@ -47,6 +62,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: native-toolchain-${{ inputs.profile }}
+          name: native-toolchain-${{ matrix.profile }}
           path: native-toolchain-artifacts
           if-no-files-found: ignore

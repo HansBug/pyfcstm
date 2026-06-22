@@ -84,14 +84,29 @@ RESULT_CLASSIFICATION_VALUES = {
     "tool_missing",
     "configure_failure",
     "configure_timeout",
+    "compile_failure",
+    "compile_timeout",
     "build_failure",
     "build_timeout",
     "run_failure",
     "run_timeout",
     "runtime_mismatch",
     "native_crash",
+    "analysis_failure",
+    "analysis_timeout",
+    "analysis_report_only",
 }
-COMMAND_STAGE_VALUES = {"version", "configure", "build", "run", "compile", "analyze"}
+COMMAND_STAGE_VALUES = {
+    "version",
+    "configure",
+    "build",
+    "run",
+    "compile",
+    "compile-machine-c",
+    "compile-harness-c",
+    "compile-header-cxx",
+    "analyze",
+}
 OBSERVATION_PHASE_VALUES = {"init", "step", "error", "finish"}
 
 
@@ -177,7 +192,8 @@ class NativeToolchainResult:
     :type template_name: str
     :param profile_name: Native toolchain profile name.
     :type profile_name: str
-    :param build_mode: Build mode, currently ``"cmake-run"`` for native run profiles.
+    :param build_mode: Build mode, such as ``"cmake-run"``,
+        ``"compile-only"``, or ``"analyze-only"``.
     :type build_mode: str
     :param compiler: C compiler command or ``None``.
     :type compiler: str, optional

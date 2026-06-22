@@ -267,6 +267,15 @@ g++ -x c++ -std=c++98 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o mac
 g++ -x c++ -std=c++17 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o machine.o
 ```
 
+
+### 原生工具链证据
+
+仓库级原生工具链矩阵会在 pytest 中生成代表性的 `c` 和 `c_poll` 产物，并复用仿真器与模板对齐测试使用的同一套共享语义用例。公开 profile 覆盖宿主 GCC / Clang 优化等级、Linux 32 位、AArch64 + QEMU、AppleClang、Windows MinGW / MSVC / clang-cl、sanitizer 运行、ARM bare-metal compile-only 检查，以及 `cppcheck`、`clang-tidy` 这类 report-only 静态分析。
+
+这些 profile 是工程兼容性基线，不是认证声明。它们只能作为可复现证据，说明 generated public API 和共享语义在常见编译器族与构建模式下保持稳定。安全标准、编码规则签核、板级支持包、链接脚本和项目自己的 warning policy 仍然属于下游集成流程。
+
+如果 native matrix job 失败，应检查上传的 `result.json`、`commands.json`、命令日志、生成文件和 harness 文件。可运行 profile 还会包含 `observations.jsonl`；compile-only 和 analyze-only profile 按设计不会产生运行时观察记录。
+
 ### 边界说明
 
 - 无堆剖面只移除生成的堆分配辅助函数，不等于严格 freestanding 保证；生成运行时仍可能使用

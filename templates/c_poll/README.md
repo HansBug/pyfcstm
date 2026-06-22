@@ -96,6 +96,31 @@ Native template tests must continue to use CMake as the build driver. User
 README files may show gcc / clang style one-command examples, but pytest should
 not grow a parallel handwritten host-compiler orchestration layer.
 
+
+### Native toolchain matrix discipline
+
+The native toolchain pytest matrix is the cross-implementation evidence gate for
+`c_poll` generated artifacts. It uses the same shared semantic fixtures as the
+simulator and template-alignment tests, then swaps the backend to concrete
+compiler profiles. Keep profile names descriptive of the toolchain behavior,
+such as `linux-gcc-o2`, `linux-aarch64-gcc-o2`, `arm-none-eabi-gcc-o2`, or
+`linux-cppcheck`; do not put roadmap slice names into code identifiers, test
+ids, pydoc, or runtime messages.
+
+The public matrix has three levels:
+
+| Level | Examples | Meaning |
+| --- | --- | --- |
+| Runnable hosted / emulated profiles | Linux GCC/Clang optimization profiles, Linux 32-bit, AArch64+QEMU, macOS AppleClang, Windows MinGW/MSVC/clang-cl, sanitizer profiles | Compile, run the standalone harness for every shared semantic fixture, and compare public observations including event-check behavior. |
+| Compile-only profiles | ARM bare-metal GCC and future licensed self-hosted toolchains | Compile each generated `machine.c`, `harness.c`, and a C++ header probe to non-empty object files; do not pretend this is runtime evidence. |
+| Analyze-only profiles | `cppcheck`, `clang-tidy` | Scan each generated runtime plus harness and keep report-only artifacts; tool crashes, parse failures, and missing reports are failures. |
+
+When extending the matrix, update the profile registry, workflow trigger list,
+artifact expectations, and this handbook together. Public GitHub-hosted profiles
+must fail on missing tools rather than silently skipping. Licensed or vendor
+profiles must remain manual/self-hosted and must not block public CI unless a
+runner is explicitly configured.
+
 ## Public integration surface
 
 `machine.h` owns the stable integration contract:

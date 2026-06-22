@@ -70,6 +70,22 @@ Generated `c_poll` runtime 可能在控制应用中长期运行。因此资源 o
 模板本机测试必须继续使用 CMake 作为构建驱动。用户 README 可以展示 gcc / clang 风格
 单命令示例，但 pytest 中不要新增一套手写宿主编译器调度层。
 
+
+
+### 原生工具链矩阵维护纪律
+
+原生工具链 pytest 矩阵是 `c` 生成产物的跨实现证据门禁。它使用与仿真器和模板对齐测试相同的共享语义用例，只是把后端换成具体编译器 profile。Profile 名称应描述工具链行为，例如 `linux-gcc-o2`、`linux-aarch64-gcc-o2`、`arm-none-eabi-gcc-o2` 或 `linux-cppcheck`；不要把路线代号、PR 名称或流程阶段写进代码标识符、测试 id、pydoc 或 runtime message。
+
+公开矩阵分三层：
+
+| 层级 | 示例 | 含义 |
+| --- | --- | --- |
+| 可运行宿主 / 仿真 profile | Linux GCC/Clang 优化等级、Linux 32 位、AArch64+QEMU、macOS AppleClang、Windows MinGW/MSVC/clang-cl、sanitizer profile | 编译 standalone harness，运行每个共享语义用例，并比较公开观察面。 |
+| compile-only profile | ARM bare-metal GCC 和后续专有自托管工具链 | 编译每个 generated `machine.c`、`harness.c` 和 C++ header probe 到非空目标文件；不要把它包装成 runtime evidence。 |
+| analyze-only profile | `cppcheck`、`clang-tidy` | 扫描每个 generated runtime 与 harness，并保留 report-only artifacts；工具崩溃、解析失败和报告缺失仍然是失败。 |
+
+扩展矩阵时，profile registry、workflow 触发列表、artifact 预期和本维护手册必须一起更新。公共 GitHub-hosted profile 缺工具时必须失败，不能静默 skip。授权或厂商 profile 应保持 manual / self-hosted，除非显式配置 runner，否则不得阻塞公共 CI。
+
 ## 公开集成面
 
 `machine.h` 负责稳定集成契约：

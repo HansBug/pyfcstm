@@ -294,6 +294,29 @@ g++ -x c++ -std=c++98 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o mac
 g++ -x c++ -std=c++17 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o machine.o
 ```
 
+
+### Native Toolchain Evidence
+
+The repository-level native toolchain matrix builds representative generated
+`c` and `c_poll` artifacts through pytest with the same shared semantic fixture
+corpus used by the simulator and template-alignment tests. Public profiles cover
+hosted GCC / Clang optimization levels, 32-bit Linux, AArch64 with QEMU,
+AppleClang, Windows MinGW / MSVC / clang-cl, sanitizer runs, compile-only ARM
+bare-metal checks, and report-only static analysis such as `cppcheck` and
+`clang-tidy`.
+
+Those profiles are an engineering compatibility baseline, not a certification
+claim. Treat them as reproducible evidence that the generated public API and
+shared semantics survive common compiler families and build modes. Safety
+standards, coding-rule sign-off, board support packages, linker scripts, and
+project-specific warning policies remain the responsibility of the downstream
+integration process.
+
+When a native matrix job fails, inspect the uploaded `result.json`,
+`commands.json`, command logs, generated files, and harness files. Runnable
+profiles also include `observations.jsonl`; compile-only and analyze-only
+profiles intentionally do not produce runtime observations.
+
 ### Boundary Notes
 
 - The no-heap profile only removes generated heap allocation helpers. It is not

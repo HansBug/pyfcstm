@@ -293,6 +293,7 @@ def _assert_rendered_template_contracts(rendered_templates):
             _read_text(rendered_templates[name] / "README_zh.md"),
         ]:
             _assert_source_context_terms(generated_text)
+        assert "__extension__ long long" not in header_source
         _assert_c_runtime_includes_are_self_contained(header_source)
         _assert_c_runtime_includes_are_self_contained(runtime_source)
 

@@ -398,6 +398,12 @@ static int _{{ machine_class_name(model) }}_reset_vars(
 {{ render_c_reset_vars_body(model.defines, machine_class_name(model), machine_macro_name(model)) }}
 }
 
+static int _{{ machine_class_name(model) }}_is_stoppable_state(int state_id);
+
+static int _{{ machine_class_name(model) }}_is_self_transition(
+    int state_id,
+    int transition_id);
+
 static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_validate_transition(
     {{ machine_class_name(model) }} *machine,
     const _{{ machine_class_name(model) }}RuntimeContext *context,
@@ -1087,13 +1093,46 @@ static int {{ select_transition_state_name(state) }}(
     {{ machine_class_name(model) }} *machine,
     const _{{ machine_class_name(model) }}RuntimeContext *context,
     const _{{ machine_class_name(model) }}EventSet *event_set,
-    int validate_stoppable)
+    int validate_stoppable,
+    int is_validation_mode)
 {
     (void)machine;
     (void)context;
     (void)event_set;
     (void)validate_stoppable;
+    (void)is_validation_mode;
 {% if state.transitions_from | list -%}
+    if (validate_stoppable && is_validation_mode && context->stack_size > 0u && !_{{ machine_class_name(model) }}_is_stoppable_state(context->stack[context->stack_size - 1u].state_id)) {
+        int enabled_count = 0;
+        int enabled_transition_id = -1;
+{% for transition in state.transitions_from -%}
+{% set event_condition -%}
+{% if transition.event is not none -%}
+_{{ machine_class_name(model) }}_event_set_has(machine, context, event_set, {{ all_events.items.index(transition.event.path_name) }})
+{% else -%}
+1
+{% endif -%}
+{%- endset %}
+        if ({{ event_condition | trim | replace('\n', ' ') }}) {
+{% if transition.guard is not none %}
+            int guard_result = 0;
+            if ({{ transition_guard_method_name(state, loop.index) }}(machine, &context->vars, &guard_result) != {{ machine_macro_name(model) }}_SUCCESS) {
+                return -1;
+            }
+            if (guard_result) {
+                ++enabled_count;
+                enabled_transition_id = {{ normal_transition_id(state, loop.index) }};
+            }
+{% else %}
+            ++enabled_count;
+            enabled_transition_id = {{ normal_transition_id(state, loop.index) }};
+{% endif %}
+        }
+{% endfor -%}
+        if (enabled_count == 1) {
+            return enabled_transition_id;
+        }
+    }
 {% for transition in state.transitions_from -%}
 {% set event_condition -%}
 {% if transition.event is not none -%}
@@ -1104,17 +1143,23 @@ _{{ machine_class_name(model) }}_event_set_has(machine, context, event_set, {{ a
 {%- endset %}
 {% set branch_body -%}
 if (validate_stoppable) {
-    int is_valid = _{{ machine_class_name(model) }}_validate_transition(
-        machine,
-        context,
-        {{ normal_transition_id(state, loop.index) }},
-        event_set);
-    if (!is_valid) {
-        if (machine != NULL && machine->last_error[0] != '\0') {
-            return -1;
-        }
-    } else {
+    if (is_validation_mode && _{{ machine_class_name(model) }}_is_self_transition(
+            context->stack[context->stack_size - 1u].state_id,
+            {{ normal_transition_id(state, loop.index) }})) {
         return {{ normal_transition_id(state, loop.index) }};
+    } else {
+        int is_valid = _{{ machine_class_name(model) }}_validate_transition(
+            machine,
+            context,
+            {{ normal_transition_id(state, loop.index) }},
+            event_set);
+        if (!is_valid) {
+            if (machine != NULL && machine->last_error[0] != '\0') {
+                return -1;
+            }
+        } else {
+            return {{ normal_transition_id(state, loop.index) }};
+        }
     }
 } else {
     return {{ normal_transition_id(state, loop.index) }};
@@ -1606,6 +1651,14 @@ static int _{{ machine_class_name(model) }}_is_stoppable_state(int state_id)
     return state_info->is_leaf && !state_info->is_pseudo;
 }
 
+static int _{{ machine_class_name(model) }}_is_self_transition(
+    int state_id,
+    int transition_id)
+{
+    const _{{ machine_class_name(model) }}TransitionInfo *transition = &_{{ machine_class_name(model) }}_transitions[transition_id];
+    return !transition->to_exit && transition->target_state_id == state_id;
+}
+
 static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_validate_transition(
     {{ machine_class_name(model) }} *machine,
     const _{{ machine_class_name(model) }}RuntimeContext *context,
@@ -1616,7 +1669,8 @@ static int _{{ machine_class_name(model) }}_select_transition(
     {{ machine_class_name(model) }} *machine,
     const _{{ machine_class_name(model) }}RuntimeContext *context,
     const _{{ machine_class_name(model) }}EventSet *event_set,
-    int validate_stoppable)
+    int validate_stoppable,
+    int is_validation_mode)
 {
     if (context->stack_size == 0u) {
         return -1;
@@ -1629,7 +1683,8 @@ static int _{{ machine_class_name(model) }}_select_transition(
                 machine,
                 context,
                 event_set,
-                validate_stoppable);
+                validate_stoppable,
+                is_validation_mode);
 {% endfor %}
         default:
             return -1;
@@ -1861,7 +1916,8 @@ static int _{{ machine_class_name(model) }}_run_cycle_on_context(
                 machine,
                 context,
                 event_set,
-                1);
+                1,
+                is_validation_mode);
             if (transition_id < 0 && machine != NULL && machine->last_error[0] != '\0') {
                 return {{ machine_macro_name(model) }}_FAILURE;
             }
@@ -1907,7 +1963,8 @@ static int _{{ machine_class_name(model) }}_run_cycle_on_context(
                 machine,
                 context,
                 event_set,
-                validate_post_child_exit);
+                validate_post_child_exit,
+                is_validation_mode);
             if (transition_id < 0 && machine != NULL && machine->last_error[0] != '\0') {
                 return {{ machine_macro_name(model) }}_FAILURE;
             }

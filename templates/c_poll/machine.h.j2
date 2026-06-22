@@ -29,7 +29,7 @@ typedef __int64 PYFCSTM_GENERATED_INT64;
 #if defined(__SIZEOF_LONG__) && (__SIZEOF_LONG__ >= 8)
 typedef long PYFCSTM_GENERATED_INT64;
 #elif defined(__GNUC__)
-typedef __extension__ long long PYFCSTM_GENERATED_INT64;
+typedef long long PYFCSTM_GENERATED_INT64;
 #else
 typedef long PYFCSTM_GENERATED_INT64;
 #endif

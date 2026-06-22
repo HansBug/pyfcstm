@@ -20,6 +20,7 @@ from test.testings.native_toolchain_alignment.report import (
     validate_observation_data,
     validate_result_data,
 )
+from test.testings.native_toolchain_alignment.runner import _case_artifact_dir
 
 
 @pytest.mark.unittest
@@ -183,3 +184,12 @@ def test_result_schema_rejects_unknown_classification(tmp_path):
 
     with pytest.raises(ValueError, match="classification"):
         validate_result_data(result)
+
+
+@pytest.mark.unittest
+def test_case_artifact_directory_normalizes_relative_root(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    artifact_dir = _case_artifact_dir("artifacts", "c", "linux-gcc-o2", "case")
+
+    assert artifact_dir == str(tmp_path / "artifacts" / "c" / "linux-gcc-o2" / "case")

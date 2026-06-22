@@ -102,7 +102,7 @@ def _template_utils(template_name: str):
 def _case_artifact_dir(
     root_dir: str, template_name: str, profile_name: str, case_id: str
 ) -> str:
-    return os.path.join(root_dir, template_name, profile_name, case_id)
+    return os.path.join(os.path.abspath(root_dir), template_name, profile_name, case_id)
 
 
 def _relative(path: Optional[str], root: str) -> Optional[str]:

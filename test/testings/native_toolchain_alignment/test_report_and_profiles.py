@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -24,7 +25,9 @@ from test.testings.native_toolchain_alignment.report import (
 )
 from test.testings.native_toolchain_alignment.runner import (
     _analysis_argv,
+    _analysis_targets,
     _case_artifact_dir,
+    _tool_stem,
 )
 
 
@@ -264,18 +267,64 @@ def test_case_artifact_directory_normalizes_relative_root(tmp_path, monkeypatch)
 
 
 @pytest.mark.unittest
+def test_analysis_targets_cover_generated_and_harness_sources(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    for relative_path in [
+        "generated/machine.c",
+        "generated/machine.h",
+        "generated/future_runtime.cpp",
+        "harness/machine.c",
+        "harness/machine.h",
+        "harness/harness.c",
+        "harness/readme.txt",
+    ]:
+        path = artifact_dir / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("/* sentinel */\n", encoding="utf-8")
+
+    targets = {
+        str(path.relative_to(artifact_dir))
+        for path in map(Path, _analysis_targets(str(artifact_dir)))
+    }
+
+    assert targets == {
+        "generated/machine.c",
+        "generated/machine.h",
+        "harness/harness.c",
+        "harness/machine.c",
+        "harness/machine.h",
+    }
+
+
+@pytest.mark.unittest
 def test_analysis_argv_inserts_targets_before_compile_separator(tmp_path):
     artifact_dir = tmp_path / "artifact"
-    harness_dir = artifact_dir / "harness"
-    harness_dir.mkdir(parents=True)
+    for relative_path in [
+        "generated/machine.c",
+        "generated/machine.h",
+        "harness/machine.c",
+        "harness/harness.c",
+    ]:
+        path = artifact_dir / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("/* sentinel */\n", encoding="utf-8")
     profile = get_profile("linux-clang-tidy")
 
     argv = _analysis_argv(profile, str(artifact_dir))
 
     separator = argv.index("--")
-    assert str(harness_dir / "machine.c") in argv[:separator]
-    assert str(harness_dir / "harness.c") in argv[:separator]
+    assert str(artifact_dir / "generated" / "machine.c") in argv[:separator]
+    assert str(artifact_dir / "generated" / "machine.h") in argv[:separator]
+    assert str(artifact_dir / "harness" / "machine.c") in argv[:separator]
+    assert str(artifact_dir / "harness" / "harness.c") in argv[:separator]
     assert "-std=c99" in argv[separator + 1 :]
+
+
+@pytest.mark.unittest
+def test_tool_stem_accepts_windows_executable_suffixes():
+    assert _tool_stem(("cl",)) == "cl"
+    assert _tool_stem(("cl.exe",)) == "cl"
+    assert _tool_stem(("C:/VS/VC/Tools/MSVC/bin/clang-cl.exe",)) == "clang-cl"
 
 
 @pytest.mark.unittest

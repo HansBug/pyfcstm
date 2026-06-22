@@ -82,14 +82,48 @@ class _ObservationRuntime:
 
     @property
     def vars(self) -> Mapping[str, Any]:
+        """
+        Return the public variable snapshot from one native observation.
+
+        :return: Mapping from variable name to observed value.
+        :rtype: typing.Mapping[str, typing.Any]
+
+        Example::
+
+            >>> _ObservationRuntime({"vars": {"counter": 1}, "is_ended": False, "current_state": None}).vars
+            {'counter': 1}
+        """
         return self._observation["vars"]
 
     @property
     def is_ended(self) -> bool:
+        """
+        Return whether the native runtime reported terminal completion.
+
+        :return: ``True`` when the observation represents an ended machine.
+        :rtype: bool
+
+        Example::
+
+            >>> _ObservationRuntime({"vars": {}, "is_ended": True, "current_state": None}).is_ended
+            True
+        """
         return bool(self._observation["is_ended"])
 
     @property
     def current_state(self) -> Optional[_StateView]:
+        """
+        Return the observed active state path as a lightweight state view.
+
+        :return: State view for active machines, or ``None`` for ended machines.
+        :rtype: _StateView or None
+
+        Example::
+
+            >>> runtime = _ObservationRuntime({"vars": {}, "is_ended": False, "current_state": "Root.A"})
+            >>> runtime.current_state.path
+            ('Root', 'A')
+        """
         if self.is_ended or self._observation["current_state"] is None:
             return None
         return _StateView(self._observation["current_state"])
@@ -121,6 +155,12 @@ def _write_text(path: str, text: str) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
+
+
+def _tool_stem(argv: Sequence[str]) -> str:
+    if not argv:
+        return ""
+    return os.path.splitext(os.path.basename(argv[0]))[0].lower()
 
 
 def _run_command(
@@ -192,12 +232,12 @@ def _version_text(
         return None
     if shutil.which(argv[0]) is None:
         return None
-    executable = os.path.basename(argv[0]).lower()
+    executable = _tool_stem(argv)
     version_flag = "/?" if executable in {"cl", "clang-cl"} else "--version"
     completed = _run_command(
         "version",
         list(argv) + [version_flag],
-        logs_dir,
+        artifact_root,
         logs_dir,
         artifact_root,
         commands,
@@ -547,10 +587,11 @@ def _run_compile_only_case(
     start: float,
 ) -> Dict[str, Any]:
     include_dir = os.path.join(artifact_dir, "harness")
-    if os.path.basename(profile.cc[0]).lower() in {"cl", "clang-cl"}:
+    if _tool_stem(profile.cc) in {"cl", "clang-cl"}:
         include_flag = "/I" + include_dir
 
         def c_output(path):
+            """Return an MSVC-style output argument for one object file."""
             return ["/Fo" + path]
 
         cxx_output = c_output
@@ -559,6 +600,7 @@ def _run_compile_only_case(
         include_flag = "-I" + include_dir
 
         def c_output(path):
+            """Return a GCC-style output argument for one object file."""
             return ["-o", path]
 
         cxx_output = c_output
@@ -639,11 +681,17 @@ def _run_compile_only_case(
 
 
 def _analysis_targets(artifact_dir: str) -> List[str]:
-    harness_dir = os.path.join(artifact_dir, "harness")
-    return [
-        os.path.join(harness_dir, "machine.c"),
-        os.path.join(harness_dir, "harness.c"),
-    ]
+    """Return generated and harness source files for static-analysis profiles."""
+    targets = []
+    for relative_dir in ("generated", "harness"):
+        root = os.path.join(artifact_dir, relative_dir)
+        if not os.path.isdir(root):
+            continue
+        for dirpath, _, filenames in os.walk(root):
+            for filename in sorted(filenames):
+                if os.path.splitext(filename)[1].lower() in {".c", ".h"}:
+                    targets.append(os.path.join(dirpath, filename))
+    return sorted(targets)
 
 
 def _analysis_argv(profile: ToolchainProfile, artifact_dir: str) -> List[str]:

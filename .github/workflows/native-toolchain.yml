@@ -10,6 +10,7 @@ on:
       - pyfcstm/model/**
       - pyfcstm/render/**
       - pyfcstm/template/**
+      - pyfcstm/utils/**
       - templates/c/**
       - templates/c_poll/**
       - tools/package_templates.py
@@ -29,6 +30,7 @@ on:
       - pyfcstm/model/**
       - pyfcstm/render/**
       - pyfcstm/template/**
+      - pyfcstm/utils/**
       - templates/c/**
       - templates/c_poll/**
       - tools/package_templates.py

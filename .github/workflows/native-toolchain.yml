@@ -1,17 +1,46 @@
 name: Native toolchain matrix
 
 on:
-  pull_request:
+  push:
+    branches:
+      - main
     paths:
       - .github/workflows/native-toolchain.yml
+      - pyfcstm/dsl/**
+      - pyfcstm/model/**
+      - pyfcstm/render/**
+      - pyfcstm/template/**
+      - templates/c/**
+      - templates/c_poll/**
+      - tools/package_templates.py
       - test/conftest.py
       - pytest.ini
+      - test/testings/simulate_semantics.py
+      - test/testings/native_semantic_alignment.py
       - test/testings/native_toolchain_alignment/**
       - test/template/c/test_native_toolchain_alignment.py
       - test/template/c_poll/test_native_toolchain_alignment.py
+      - test/fixtures/simulate_semantics/**
+      - requirements*.txt
+  pull_request:
+    paths:
+      - .github/workflows/native-toolchain.yml
+      - pyfcstm/dsl/**
+      - pyfcstm/model/**
+      - pyfcstm/render/**
+      - pyfcstm/template/**
       - templates/c/**
       - templates/c_poll/**
-      - pyfcstm/render/c_runtime.py
+      - tools/package_templates.py
+      - test/conftest.py
+      - pytest.ini
+      - test/testings/simulate_semantics.py
+      - test/testings/native_semantic_alignment.py
+      - test/testings/native_toolchain_alignment/**
+      - test/template/c/test_native_toolchain_alignment.py
+      - test/template/c_poll/test_native_toolchain_alignment.py
+      - test/fixtures/simulate_semantics/**
+      - requirements*.txt
   workflow_dispatch:
     inputs:
       profile:

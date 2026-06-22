@@ -283,7 +283,7 @@ def test_analysis_targets_cover_generated_and_harness_sources(tmp_path):
         path.write_text("/* sentinel */\n", encoding="utf-8")
 
     targets = {
-        str(path.relative_to(artifact_dir))
+        path.relative_to(artifact_dir).as_posix()
         for path in map(Path, _analysis_targets(str(artifact_dir)))
     }
 

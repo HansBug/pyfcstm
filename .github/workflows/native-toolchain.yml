@@ -1,0 +1,52 @@
+name: Native toolchain matrix
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Native toolchain profile to run
+        required: true
+        default: linux-gcc-o2
+        type: choice
+        options:
+          - linux-gcc-o2
+          - linux-clang-o2
+
+jobs:
+  native-toolchain:
+    name: native-toolchain / ${{ inputs.profile }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install native tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake gcc g++ clang
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+          python -m pip install pytest-cov pytest-timeout
+      - name: Package templates
+        run: make tpl
+      - name: Run native toolchain alignment
+        env:
+          PYFCSTM_RUN_NATIVE_TOOLCHAIN: '1'
+          PYFCSTM_NATIVE_TOOLCHAIN_PROFILE: ${{ inputs.profile }}
+          PYFCSTM_NATIVE_TOOLCHAIN_ARTIFACT_DIR: native-toolchain-artifacts
+        run: |
+          pytest -m native_toolchain \
+            test/template/c/test_native_toolchain_alignment.py \
+            test/template/c_poll/test_native_toolchain_alignment.py \
+            --run-native-toolchain -q
+      - name: Upload native artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-toolchain-${{ inputs.profile }}
+          path: native-toolchain-artifacts
+          if-no-files-found: ignore

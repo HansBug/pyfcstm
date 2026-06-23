@@ -2,6 +2,7 @@ import os
 import shutil
 import subprocess
 import textwrap
+import zipfile
 from contextlib import contextmanager
 from tempfile import TemporaryDirectory
 
@@ -10,7 +11,26 @@ import pytest
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
-from pyfcstm.template import extract_template
+from tools.package_templates import package_templates
+
+
+def _repo_root():
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+
+
+def _extract_packaged_template(name, work_dir):
+    package_dir = os.path.join(work_dir, "package")
+    extraction_dir = os.path.join(work_dir, "extract")
+    os.makedirs(package_dir, exist_ok=True)
+    os.makedirs(extraction_dir, exist_ok=True)
+    package_templates(
+        os.path.join(_repo_root(), "templates"),
+        package_dir,
+        verbose=False,
+    )
+    with zipfile.ZipFile(os.path.join(package_dir, name + ".zip"), "r") as zf:
+        zf.extractall(extraction_dir)
+    return os.path.join(extraction_dir, name)
 
 
 def _find_cmake():
@@ -60,7 +80,7 @@ def render_cpp_poll_artifacts(dsl_code):
     model = parse_dsl_node_to_state_machine(ast_node)
 
     with TemporaryDirectory() as td:
-        template_dir = extract_template("cpp_poll", td)
+        template_dir = _extract_packaged_template("cpp_poll", td)
         output_dir = os.path.join(td, "out")
         StateMachineCodeRenderer(template_dir).render(
             model=model, output_dir=output_dir

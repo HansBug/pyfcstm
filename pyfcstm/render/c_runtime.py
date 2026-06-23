@@ -287,6 +287,63 @@ def _infer_expr_type(
     return None
 
 
+def _is_static_zero(expr: dsl_nodes.Expr) -> bool:
+    """
+    Return whether an expression is syntactically a zero literal.
+
+    The C runtime emitter uses this narrow check to keep generated code
+    compileable on toolchains that reject constant division or modulo by zero at
+    compile time. It deliberately does not fold arbitrary expressions: broader
+    arithmetic reasoning belongs in the inspect/verify layers, while code
+    generation only needs to mask denominator literals that are already guarded
+    by generated runtime diagnostics.
+
+    :param expr: Expression to inspect.
+    :type expr: pyfcstm.dsl.node.Expr
+    :return: ``True`` when the expression is a parenthesized or signed zero
+        literal.
+    :rtype: bool
+
+    Example::
+
+        >>> _is_static_zero(dsl_nodes.Integer("0"))
+        True
+        >>> _is_static_zero(dsl_nodes.BinaryOp(dsl_nodes.Integer("1"), "-", dsl_nodes.Integer("1")))
+        False
+    """
+    expr = _coerce_expr(expr)
+    if isinstance(expr, dsl_nodes.Paren):
+        return _is_static_zero(expr.expr)
+    if isinstance(expr, dsl_nodes.UnaryOp) and expr.op in {"+", "-"}:
+        return _is_static_zero(expr.expr)
+    if isinstance(expr, (dsl_nodes.Integer, dsl_nodes.HexInt)):
+        return expr.value == 0
+    if isinstance(expr, dsl_nodes.Float):
+        return expr.value == 0.0
+    return False
+
+
+def _safe_static_zero_result(value_type: Optional[str]) -> str:
+    """
+    Return a harmless placeholder for a statically failing expression.
+
+    :param value_type: Coarse DSL value type of the expression being replaced.
+    :type value_type: str, optional
+    :return: C literal with the requested coarse type.
+    :rtype: str
+
+    Example::
+
+        >>> _safe_static_zero_result("float")
+        '0.0'
+        >>> _safe_static_zero_result("int")
+        '0'
+    """
+    if value_type == "float":
+        return "0.0"
+    return "0"
+
+
 def _render_expr(
     expr: dsl_nodes.Expr,
     known_types: Mapping[str, str],
@@ -342,7 +399,10 @@ def _render_expr(
     if isinstance(expr, dsl_nodes.BinaryOp):
         left = _render_expr(expr.expr1, known_types, state_name_set)
         right = _render_expr(expr.expr2, known_types, state_name_set)
-        if expr.op in _INT_OPERATORS and (
+        value_type = _infer_expr_type(expr, known_types)
+        if expr.op in {"/", "%"} and _is_static_zero(expr.expr2):
+            text = _safe_static_zero_result(value_type)
+        elif expr.op in _INT_OPERATORS and (
             left.value_type == "float" or right.value_type == "float"
         ):
             text = "0"
@@ -362,7 +422,7 @@ def _render_expr(
             text = "((%s) == (%s))" % (left.text, right.text)
         else:
             text = "((%s) %s (%s))" % (left.text, expr.op, right.text)
-        return _ExprRenderResult(text, _infer_expr_type(expr, known_types))
+        return _ExprRenderResult(text, value_type)
     if isinstance(expr, dsl_nodes.ConditionalOp):
         cond = _render_expr(expr.cond, known_types, state_name_set)
         value_true = _render_expr(expr.value_true, known_types, state_name_set)
@@ -641,7 +701,7 @@ def _render_statement_sequence(
                     (
                         "%s(machine, "
                         "\"Variable '%s' is int type, cannot assign float %%.15g; "
-                        "non-integer float from operation block writeback\", "
+                        'non-integer float from operation block writeback", '
                         "%s);"
                     )
                     % (names.set_error, statement.name, temp_name),

@@ -1,0 +1,239 @@
+name: Native toolchain matrix
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/native-toolchain.yml
+      - pyfcstm/dsl/**
+      - pyfcstm/model/**
+      - pyfcstm/render/**
+      - pyfcstm/template/**
+      - pyfcstm/utils/**
+      - templates/c/**
+      - templates/c_poll/**
+      - tools/package_templates.py
+      - test/conftest.py
+      - pytest.ini
+      - test/testings/simulate_semantics.py
+      - test/testings/native_semantic_alignment.py
+      - test/testings/native_toolchain_alignment/**
+      - test/template/c/test_native_toolchain_alignment.py
+      - test/template/c_poll/test_native_toolchain_alignment.py
+      - test/fixtures/simulate_semantics/**
+      - requirements*.txt
+  pull_request:
+    paths:
+      - .github/workflows/native-toolchain.yml
+      - pyfcstm/dsl/**
+      - pyfcstm/model/**
+      - pyfcstm/render/**
+      - pyfcstm/template/**
+      - pyfcstm/utils/**
+      - templates/c/**
+      - templates/c_poll/**
+      - tools/package_templates.py
+      - test/conftest.py
+      - pytest.ini
+      - test/testings/simulate_semantics.py
+      - test/testings/native_semantic_alignment.py
+      - test/testings/native_toolchain_alignment/**
+      - test/template/c/test_native_toolchain_alignment.py
+      - test/template/c_poll/test_native_toolchain_alignment.py
+      - test/fixtures/simulate_semantics/**
+      - requirements*.txt
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Native toolchain profile to run
+        required: true
+        default: linux-gcc-o2
+        type: choice
+        options:
+          - linux-gcc-o0
+          - linux-gcc-o2
+          - linux-gcc-o3
+          - linux-gcc-os
+          - linux-clang-o0
+          - linux-clang-o2
+          - linux-clang-o3
+          - linux-clang-os
+          - linux-gcc-m32-o2
+          - linux-gcc-m32-os
+          - linux-aarch64-gcc-o2
+          - linux-aarch64-gcc-os
+          - arm-none-eabi-gcc-o2
+          - arm-none-eabi-gcc-os
+          - macos-appleclang-o2
+          - windows-mingw-o2
+          - windows-msvc-o2
+          - windows-clangcl-o2
+          - linux-clang-asan-ubsan
+          - linux-cppcheck
+          - linux-clang-tidy
+
+jobs:
+  native-linux:
+    name: native-toolchain / ${{ matrix.profile }}
+    runs-on: ubuntu-22.04
+    if: github.event_name != 'workflow_dispatch' || contains(fromJSON('["linux-gcc-o0","linux-gcc-o2","linux-gcc-o3","linux-gcc-os","linux-clang-o0","linux-clang-o2","linux-clang-o3","linux-clang-os","linux-gcc-m32-o2","linux-gcc-m32-os","linux-aarch64-gcc-o2","linux-aarch64-gcc-os","arm-none-eabi-gcc-o2","arm-none-eabi-gcc-os","linux-clang-asan-ubsan","linux-cppcheck","linux-clang-tidy"]'), inputs.profile)
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: ${{ fromJSON(github.event_name == 'workflow_dispatch' && contains(fromJSON('["linux-gcc-o0","linux-gcc-o2","linux-gcc-o3","linux-gcc-os","linux-clang-o0","linux-clang-o2","linux-clang-o3","linux-clang-os","linux-gcc-m32-o2","linux-gcc-m32-os","linux-aarch64-gcc-o2","linux-aarch64-gcc-os","arm-none-eabi-gcc-o2","arm-none-eabi-gcc-os","linux-clang-asan-ubsan","linux-cppcheck","linux-clang-tidy"]'), inputs.profile) && format('["{0}"]', inputs.profile) || github.event_name == 'workflow_dispatch' && '["linux-gcc-o2"]' || '["linux-gcc-o0","linux-gcc-o2","linux-gcc-o3","linux-gcc-os","linux-clang-o0","linux-clang-o2","linux-clang-o3","linux-clang-os","linux-gcc-m32-o2","linux-gcc-m32-os","linux-aarch64-gcc-o2","linux-aarch64-gcc-os","arm-none-eabi-gcc-o2","arm-none-eabi-gcc-os","linux-clang-asan-ubsan","linux-cppcheck","linux-clang-tidy"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install native tools
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          sudo apt-get update
+          case "$PROFILE" in
+            linux-gcc-o*|linux-gcc-os)
+              packages="cmake gcc g++"
+              ;;
+            linux-clang-o*|linux-clang-os|linux-clang-asan-ubsan)
+              packages="cmake clang"
+              ;;
+            linux-gcc-m32-*)
+              packages="cmake gcc g++ gcc-multilib g++-multilib"
+              ;;
+            linux-aarch64-*)
+              packages="cmake gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user"
+              ;;
+            arm-none-eabi-*)
+              packages="gcc-arm-none-eabi libnewlib-arm-none-eabi"
+              ;;
+            linux-cppcheck)
+              packages="cppcheck"
+              ;;
+            linux-clang-tidy)
+              packages="clang-tidy"
+              ;;
+            *)
+              echo "Unknown native toolchain profile: $PROFILE" >&2
+              exit 1
+              ;;
+          esac
+          sudo apt-get install -y --no-install-recommends $packages
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-test.txt
+      - name: Package templates
+        run: python -m tools.package_templates --source templates --output pyfcstm/template
+      - name: Run native toolchain alignment
+        env:
+          PYFCSTM_RUN_NATIVE_TOOLCHAIN: '1'
+          PYFCSTM_NATIVE_TOOLCHAIN_PROFILE: ${{ matrix.profile }}
+          PYFCSTM_NATIVE_TOOLCHAIN_ARTIFACT_DIR: native-toolchain-artifacts
+        run: |
+          pytest -m native_toolchain \
+            test/template/c/test_native_toolchain_alignment.py \
+            test/template/c_poll/test_native_toolchain_alignment.py \
+            --run-native-toolchain -q
+      - name: Upload native artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-toolchain-${{ matrix.profile }}
+          path: native-toolchain-artifacts
+          if-no-files-found: ignore
+
+  native-macos:
+    name: native-toolchain / macos-appleclang-o2
+    runs-on: macos-14
+    timeout-minutes: 90
+    if: github.event_name != 'workflow_dispatch' || inputs.profile == 'macos-appleclang-o2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install native tools
+        run: |
+          brew install cmake || true
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-test.txt
+      - name: Package templates
+        run: python -m tools.package_templates --source templates --output pyfcstm/template
+      - name: Run native toolchain alignment
+        env:
+          PYFCSTM_RUN_NATIVE_TOOLCHAIN: '1'
+          PYFCSTM_NATIVE_TOOLCHAIN_PROFILE: macos-appleclang-o2
+          PYFCSTM_NATIVE_TOOLCHAIN_ARTIFACT_DIR: native-toolchain-artifacts
+        run: |
+          pytest -m native_toolchain \
+            test/template/c/test_native_toolchain_alignment.py \
+            test/template/c_poll/test_native_toolchain_alignment.py \
+            --run-native-toolchain -q
+      - name: Upload native artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-toolchain-macos-appleclang-o2
+          path: native-toolchain-artifacts
+          if-no-files-found: ignore
+
+  native-windows:
+    name: native-toolchain / ${{ matrix.profile }}
+    runs-on: windows-2022
+    timeout-minutes: 90
+    if: github.event_name != 'workflow_dispatch' || contains(fromJSON('["windows-mingw-o2","windows-msvc-o2","windows-clangcl-o2"]'), inputs.profile)
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.profile) || '["windows-mingw-o2","windows-msvc-o2","windows-clangcl-o2"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: msys2/setup-msys2@v2
+        if: matrix.profile == 'windows-mingw-o2'
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+          path-type: inherit
+      - name: Install Windows host tools
+        shell: pwsh
+        run: |
+          choco install ninja -y --no-progress
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-test.txt
+      - name: Package templates
+        shell: pwsh
+        run: python -m tools.package_templates --source templates --output pyfcstm/template
+      - name: Run native toolchain alignment
+        shell: pwsh
+        env:
+          PYFCSTM_RUN_NATIVE_TOOLCHAIN: '1'
+          PYFCSTM_NATIVE_TOOLCHAIN_PROFILE: ${{ matrix.profile }}
+          PYFCSTM_NATIVE_TOOLCHAIN_ARTIFACT_DIR: native-toolchain-artifacts
+        run: |
+          pytest -m native_toolchain `
+            test/template/c/test_native_toolchain_alignment.py `
+            test/template/c_poll/test_native_toolchain_alignment.py `
+            --run-native-toolchain -q
+      - name: Upload native artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-toolchain-${{ matrix.profile }}
+          path: native-toolchain-artifacts
+          if-no-files-found: ignore

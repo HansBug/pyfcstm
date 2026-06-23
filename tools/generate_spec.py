@@ -15,6 +15,10 @@ HIDDEN_IMPORTS = [
     # the CI Build matrix green across the rename / refactor.
     'pyfcstm.diagnostics',
     'pyfcstm.diagnostics.codes',
+    # The built-in Python template imports this filter dynamically from
+    # config.yaml through hbutils.reflection.quick_import_object(), so static
+    # PyInstaller analysis cannot see the dependency from normal imports.
+    'pyfcstm.template._python_format',
 ]
 
 

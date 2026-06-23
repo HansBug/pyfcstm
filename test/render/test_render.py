@@ -1,4 +1,5 @@
 import os.path
+import pathlib
 import shutil
 from unittest import mock
 
@@ -273,6 +274,16 @@ class TestRenderRender:
 
             _ensure_output_parent_dir(output_file)
             _ensure_output_parent_dir('bare-file.txt')
+
+    def test_renderer_has_no_template_file_name_postprocessing(self):
+        render_source = pathlib.Path(__file__).parents[2] / 'pyfcstm' / 'render' / 'render.py'
+
+        source = render_source.read_text(encoding='utf-8')
+
+        assert 'machine.py.j2' not in source
+        assert 'os.path.basename(template_file)' not in source
+        assert 're.sub' not in source
+        assert 'import re' not in source
 
     def test_renderer_expr_render_supports_language_aliases(self, sample_model):
         with TemporaryDirectory() as template_dir:

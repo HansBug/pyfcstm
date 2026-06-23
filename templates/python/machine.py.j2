@@ -1,3 +1,5 @@
+{%- set state_items = model.walk_states() | list -%}
+{%- set define_items = model.defines.values() | list -%}
 {%- macro state_key(state) -%}{{ state | state_path }}{%- endmacro %}
 {%- set action_scan = namespace(items=[]) -%}
 {%- for scan_state in model.walk_states() -%}
@@ -59,6 +61,7 @@
 []
 {%- endif -%}
 {%- endmacro -%}
+{% filter python_runtime_source -%}
 """
 Auto-generated native Python state machine runtime for
 ``{{ model.root_state.name }}``.
@@ -133,8 +136,6 @@ from typing import Mapping, Optional, Tuple, Union
 
 Number = Union[int, float]
 _DSL_SOURCE = {{ (model.to_ast_node() | string) | tojson }}
-{% set state_items = model.walk_states() | list -%}
-{% set define_items = model.defines.values() | list -%}
 _STATE_PATHS = (
 {% for state in state_items %}
     {{ state | state_path | tojson }},
@@ -2051,3 +2052,4 @@ class {{ machine_class_name(model) }}:
 {% endif %}
 {% endfor %}
 {% endfor %}
+{% endfilter %}

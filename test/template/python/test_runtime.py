@@ -14,6 +14,7 @@ from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.template import extract_template
+from pyfcstm.template._python_format import clean_python_runtime_source
 
 
 def _workflow_metadata_labels():
@@ -104,6 +105,23 @@ def _assert_python_readme_code_blocks_are_formatter_friendly(markdown):
 
 @pytest.mark.unittest
 class TestPythonBuiltinTemplate:
+    def test_python_runtime_source_cleanup_normalizes_template_blank_lines(self):
+        source = (
+            'VALUES = (\n\n'
+            '    "a",\n\n'
+            ')\n\n'
+            'class Example:\n'
+            '    pass\n\n\n'
+        )
+
+        assert clean_python_runtime_source(source) == (
+            'VALUES = (\n'
+            '    "a",\n'
+            ')\n\n\n'
+            'class Example:\n'
+            '    pass\n'
+        )
+
     def test_generated_machine_source_banner_documents_file_contract(self):
         dsl_code = """
         def int counter = 0;

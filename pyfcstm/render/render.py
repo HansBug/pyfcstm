@@ -82,11 +82,40 @@ def _ensure_output_parent_dir(output_file: str) -> None:
 
     Example::
 
-        >>> _ensure_output_parent_dir('generated/machine.py')
+        >>> import os
+        >>> import tempfile
+        >>> with tempfile.TemporaryDirectory() as td:
+        ...     output_file = os.path.join(td, 'generated', 'machine.py')
+        ...     _ensure_output_parent_dir(output_file)
+        ...     os.path.isdir(os.path.dirname(output_file))
+        True
     """
     parent_dir = os.path.dirname(output_file)
     if parent_dir:
         os.makedirs(parent_dir, exist_ok=True)
+
+
+def _normalize_template_relpath(rel_file: str) -> str:
+    """
+    Normalize a template-relative path for ignore matching and output mapping.
+
+    On Windows this converts native backslash separators to forward slashes so
+    gitignore-style patterns match consistently. POSIX paths are returned
+    unchanged so literal backslashes in POSIX file names are not rewritten.
+
+    :param rel_file: Relative path produced while walking the template tree.
+    :type rel_file: str
+    :return: The relative path with POSIX separators.
+    :rtype: str
+
+    Example::
+
+        >>> _normalize_template_relpath('assets/nested/static.txt')
+        'assets/nested/static.txt'
+    """
+    if os.sep != '/':
+        rel_file = rel_file.replace(os.sep, '/')
+    return rel_file
 
 
 class StateMachineCodeRenderer:
@@ -284,7 +313,9 @@ class StateMachineCodeRenderer:
             for file in files:
                 _, ext = os.path.splitext(file)
                 current_file = os.path.abspath(os.path.join(root, file))
-                rel_file = os.path.relpath(current_file, self.template_dir)
+                rel_file = _normalize_template_relpath(
+                    os.path.relpath(current_file, self.template_dir)
+                )
                 if self._path_spec.match_file(rel_file):
                     continue
                 if ext == '.j2':

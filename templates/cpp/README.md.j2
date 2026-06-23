@@ -54,20 +54,20 @@
 {% endfor -%}
 # {{ machine_class_name(model) }}
 
-This directory contains the generated C++ template skeleton for the DSL root
+This directory contains the generated C++ wrapper runtime for the DSL root
 state `{{ model.root_state.name }}`. It includes the byte-identical C99 core
-from the `c` template plus minimal `machine.cpp` / `machine.hpp` wrapper files.
+from the `c` template plus `machine.cpp` / `machine.hpp` wrapper files.
 
 The generated C core files stay close to a 4-space `clang-format` style. The
-C++ wrapper files are intentionally minimal in this skeleton stage; the full
-facade API is added by a later template update.
+C++ wrapper is a thin C++98-compatible facade over the C API; it does not
+reimplement state-machine semantics.
 
 ## Generated Files
 
 - `machine.h`: public runtime header
 - `machine.c`: generated runtime implementation
-- `machine.hpp`: minimal C++ wrapper header skeleton
-- `machine.cpp`: minimal C++ wrapper implementation skeleton
+- `machine.hpp`: C++ wrapper header
+- `machine.cpp`: C++ wrapper implementation
 - `README.md`: English usage guide for this generated machine
 - `README_zh.md`: Chinese usage guide for this generated machine
 
@@ -119,16 +119,16 @@ This state machine does not declare abstract hooks.
 
 ## Runtime Overview
 
-This generated runtime is a self-contained C++ template skeleton specialized
-for the concrete DSL model. The execution semantics still live entirely in the
-C99 core files; the C++ files only provide an initial wrapper scaffold. It is intended to be used as a
-black-box runtime:
+This generated runtime is a self-contained C++ wrapper specialized for the
+concrete DSL model. The execution semantics still live entirely in the C99 core
+files; the C++ files provide a typed facade that forwards to the public C API.
+It is intended to be used as a black-box runtime:
 
 - `machine.h` is the stable C integration surface for application code
 - `machine.c` contains the generated execution logic and should usually be
   treated as an implementation detail
-- `machine.hpp` / `machine.cpp` are minimal C++ skeleton wrapper files in this
-  generated template version
+- `machine.hpp` / `machine.cpp` expose `MachineWrapper`, a C++98-compatible
+  facade over the generated C API
 - events are submitted by integer id, not by string
 - hot start restores a full variable snapshot into a generated state id
 - failed speculative transitions roll back to the previous committed machine
@@ -263,6 +263,75 @@ If `machine.c` is compiled into an interface-style wrapper, use
 definition is only safe when `machine.c` and all consumer source files that
 include `machine.h` are compiled in the same final target and therefore see the
 same macro.
+
+### Single-command C++ Wrapper Builds
+
+Compile the C core as C99, then compile `machine.cpp` and your C++ application
+as C++98. The wrapper is designed to work without exceptions, RTTI, STL
+containers, or default heap allocation.
+
+```bash
+gcc -std=c99 -Wall -Wextra -pedantic -O2 -c machine.c -o machine.o
+g++ -std=c++98 -fno-exceptions -fno-rtti -Wall -Wextra -pedantic -O2 -c machine.cpp -o machine_cpp.o
+g++ -std=c++98 -fno-exceptions -fno-rtti -Wall -Wextra -pedantic -O2 -c app.cpp -o app.o
+g++ machine.o machine_cpp.o app.o -lm -o app
+```
+
+A no-heap C++ wrapper build uses the same profile macro for the C core,
+`machine.cpp`, and every C++ source that includes `machine.hpp`:
+
+```bash
+gcc -std=c99 -DPYFCSTM_GENERATED_NO_HEAP -Wall -Wextra -pedantic -O2 -c machine.c -o machine.o
+g++ -std=c++98 -DPYFCSTM_GENERATED_NO_HEAP -fno-exceptions -fno-rtti -Wall -Wextra -pedantic -O2 -c machine.cpp -o machine_cpp.o
+g++ -std=c++98 -DPYFCSTM_GENERATED_NO_HEAP -fno-exceptions -fno-rtti -Wall -Wextra -pedantic -O2 -c app.cpp -o app.o
+g++ machine.o machine_cpp.o app.o -lm -o app
+```
+
+On Windows, keep the same source split but use your compiler's equivalent C99,
+C++98, RTTI, exception, library, and DLL flags; do not add `-lm` for MSVC-style
+linkers.
+
+### CMake C++ Wrapper Integration
+
+```cmake
+cmake_minimum_required(VERSION 3.5)
+project(generated_machine_cpp_app C CXX)
+
+add_library(machine STATIC machine.c machine.cpp)
+target_include_directories(machine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+set_target_properties(
+    machine
+    PROPERTIES
+    C_STANDARD 99
+    C_STANDARD_REQUIRED YES
+    C_EXTENSIONS NO
+    CXX_STANDARD 98
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
+
+if(MSVC)
+    target_compile_options(machine PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/GR->)
+else()
+    target_compile_options(
+        machine
+        PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
+        $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
+    )
+    target_link_libraries(machine PUBLIC m)
+endif()
+
+add_executable(app app.cpp)
+target_link_libraries(app PRIVATE machine)
+```
+
+For a no-heap wrapper target, keep the macro public so `machine.h` sees one
+consistent ABI from `machine.c`, `machine.cpp`, and all consumers:
+
+```cmake
+target_compile_definitions(machine PUBLIC PYFCSTM_GENERATED_NO_HEAP)
+```
 
 ### C++ Compile Checking
 
@@ -563,6 +632,39 @@ int main(void)
     return 0;
 }
 ```
+
+## C++ Wrapper Quick Start
+
+```cpp
+#include "machine.hpp"
+
+int main()
+{
+    pyfcstm_generated::{{ machine_class_name(model) }}_cpp::MachineWrapper machine;
+
+    if (!machine.cycle()) {
+        return 1;
+    }
+{% if event_ns.items %}
+    {{ machine_class_name(model) }}EventId event_id =
+        {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }};
+    if (!machine.cycle(event_id)) {
+        return 2;
+    }
+{% endif %}
+
+    const {{ machine_class_name(model) }}Vars *vars = machine.vars();
+    (void)vars;
+    (void)machine.is_ended();
+    return 0;
+}
+```
+
+`MachineWrapper` owns one embedded `{{ machine_class_name(model) }}` object. Use
+`native_handle()` when an existing C integration point needs the underlying
+handle. Use `set_hooks(...)` to mount the generated C hook table; the wrapper
+forwards the hook table and `void *user_data` without introducing virtual
+interfaces or heap-owned callback objects.
 
 ## Full Usage Guide
 

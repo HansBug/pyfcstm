@@ -1,9 +1,8 @@
 # cpp template maintainer handbook
 
-`cpp` is the experimental C++ built-in template skeleton. It emits the same
-C99 execution core as `templates/c/` plus minimal `machine.cpp` / `machine.hpp`
-wrapper files. The complete C++ facade API is intentionally outside this first
-slice and belongs to the follow-up wrapper work.
+`cpp` is the experimental C++ built-in template. It emits the same C99
+execution core as `templates/c/` plus `machine.cpp` / `machine.hpp` wrapper
+files that provide a C++98-compatible facade over the public C API.
 
 This file is maintainer-facing documentation for `templates/cpp/`. It is
 ignored by the renderer and is not copied to generated output. Generated-output
@@ -15,8 +14,8 @@ user guides come from `README.md.j2` / `README_zh.md.j2`.
 | --- | --- | --- |
 | `machine.h.j2` | File-level symlink to `../c/machine.h.j2` | `machine.h` |
 | `machine.c.j2` | File-level symlink to `../c/machine.c.j2` | `machine.c` |
-| `machine.hpp.j2` | Minimal C++ wrapper header skeleton | `machine.hpp` |
-| `machine.cpp.j2` | Minimal C++ wrapper implementation skeleton | `machine.cpp` |
+| `machine.hpp.j2` | C++ wrapper header | `machine.hpp` |
+| `machine.cpp.j2` | C++ wrapper implementation | `machine.cpp` |
 | `README.md.j2` | English generated-output guide | `README.md` |
 | `README_zh.md.j2` | Chinese generated-output guide | `README_zh.md` |
 | `config.yaml` | Independent renderer config with explicit C-family helper imports | Not copied |
@@ -33,6 +32,11 @@ C-family helpers such as `to_c_identifier`, `to_c_path_identifier`, and
 `render_c_action_body` are loaded from this template's `config.yaml`. Do not add
 these helpers back to the global default renderer environment.
 
-Until the full wrapper lands, keep `machine.cpp.j2` and `machine.hpp.j2` small,
-C++98-compatible, exception-free, RTTI-free, and free of STL container
-requirements. Runtime behavior still comes from the generated C core.
+Keep `machine.cpp.j2` and `machine.hpp.j2` C++98-compatible, exception-free,
+RTTI-free, and free of STL container requirements. Runtime behavior must remain
+in the generated C core; the wrapper should call only the public C API from
+`machine.h` and should not inspect runtime-owned struct fields directly.
+
+Generated README examples are part of the template contract. When changing the
+wrapper API or compile guidance, update both generated README templates and
+verify representative commands through template tests.

@@ -1,10 +1,10 @@
 /*
- * Generated C++ wrapper skeleton implementation for {{ model.root_state.name }}.
+ * Generated C++ wrapper implementation for {{ model.root_state.name }}.
  *
- * This file is emitted by the built-in `cpp` template and delegates storage and
- * execution to the generated C core. The current wrapper is intentionally small
- * so the first C++ template slice can validate packaging and build surfaces
- * before the full facade API lands.
+ * This file is emitted by the built-in `cpp` template and forwards wrapper
+ * calls to the generated C core. State-machine behavior remains in
+ * `machine.c`. The generated runtime is self-contained and does not
+ * require third-party runtime packages.
  */
 
 #include "machine.hpp"
@@ -13,14 +13,68 @@ namespace pyfcstm_generated {
 namespace {{ machine_class_name(model) }}_cpp {
 
 MachineWrapper::MachineWrapper() {
-    {{ machine_class_name(model) }}_init(&machine_);
+    (void){{ machine_class_name(model) }}_init(&machine_);
 }
 
-{{ machine_class_name(model) }} *MachineWrapper::native_handle() {
+int MachineWrapper::init() {
+    return {{ machine_class_name(model) }}_init(&machine_);
+}
+
+int MachineWrapper::hot_start(StateId state_id, const Vars &initial_vars) {
+    return {{ machine_class_name(model) }}_hot_start(
+        &machine_,
+        state_id,
+        &initial_vars);
+}
+
+int MachineWrapper::hot_start(StateId state_id, const Vars *initial_vars) {
+    return {{ machine_class_name(model) }}_hot_start(
+        &machine_,
+        state_id,
+        initial_vars);
+}
+
+void MachineWrapper::set_hooks(const Hooks *hooks, void *user_data) {
+    {{ machine_class_name(model) }}_set_hooks(&machine_, hooks, user_data);
+}
+
+int MachineWrapper::cycle(const EventId *event_ids, size_t event_count) {
+    return {{ machine_class_name(model) }}_cycle(&machine_, event_ids, event_count);
+}
+
+int MachineWrapper::cycle() {
+    return {{ machine_class_name(model) }}_cycle(&machine_, NULL, 0u);
+}
+
+int MachineWrapper::cycle(EventId event_id) {
+    return {{ machine_class_name(model) }}_cycle(&machine_, &event_id, 1u);
+}
+
+const MachineWrapper::Vars *MachineWrapper::vars() const {
+    return {{ machine_class_name(model) }}_vars(&machine_);
+}
+
+int MachineWrapper::is_ended() const {
+    return {{ machine_class_name(model) }}_is_ended(&machine_);
+}
+
+MachineWrapper::StateId MachineWrapper::current_state_id() const {
+    return {{ machine_class_name(model) }}_current_state_id(&machine_);
+}
+
+const char *MachineWrapper::current_state_path() const {
+    return {{ machine_class_name(model) }}_current_state_path(&machine_);
+}
+
+const char *MachineWrapper::last_error() const {
+    return {{ machine_class_name(model) }}_last_error(&machine_);
+}
+
+MachineWrapper::Machine *MachineWrapper::native_handle() {
     return &machine_;
 }
 
-const {{ machine_class_name(model) }} *MachineWrapper::native_handle() const {
+const MachineWrapper::Machine *MachineWrapper::native_handle() const {
     return &machine_;
 }
 

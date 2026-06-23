@@ -1,13 +1,11 @@
 /*
- * Generated C++ wrapper skeleton for {{ model.root_state.name }}.
+ * Generated C++ wrapper for {{ model.root_state.name }}.
  *
- * This file is emitted by the built-in `cpp` template and pairs with the
- * generated C core files `machine.h` and `machine.c`. The current wrapper is a
- * minimal integration scaffold; the complete C++ facade API is implemented by
- * the next template slice. Do not edit generated source directly; change the
- * FCSTM DSL/model and regenerate this file instead. The generated runtime is
- * self-contained and does not depend on pyfcstm or third-party runtime
- * packages.
+ * This file is emitted by the built-in `cpp` template and delegates all
+ * execution semantics to the generated C core files `machine.h` and
+ * `machine.c`. Do not edit generated source directly; change the FCSTM
+ * DSL/model and regenerate this file instead. The generated runtime is
+ * self-contained and does not require third-party runtime packages.
  */
 
 #ifndef PYFCSTM_GENERATED_{{ machine_macro_name(model) }}_CPP_HPP
@@ -20,16 +18,37 @@ namespace {{ machine_class_name(model) }}_cpp {
 
 class MachineWrapper {
 public:
+    typedef {{ machine_class_name(model) }} Machine;
+    typedef {{ machine_class_name(model) }}Vars Vars;
+    typedef {{ machine_class_name(model) }}StateId StateId;
+    typedef {{ machine_class_name(model) }}EventId EventId;
+    typedef {{ machine_class_name(model) }}Hooks Hooks;
+
     MachineWrapper();
 
-    {{ machine_class_name(model) }} *native_handle();
-    const {{ machine_class_name(model) }} *native_handle() const;
+    int init();
+    int hot_start(StateId state_id, const Vars &initial_vars);
+    int hot_start(StateId state_id, const Vars *initial_vars);
+    void set_hooks(const Hooks *hooks, void *user_data);
+
+    int cycle(const EventId *event_ids, size_t event_count);
+    int cycle();
+    int cycle(EventId event_id);
+
+    const Vars *vars() const;
+    int is_ended() const;
+    StateId current_state_id() const;
+    const char *current_state_path() const;
+    const char *last_error() const;
+
+    Machine *native_handle();
+    const Machine *native_handle() const;
 
 private:
     MachineWrapper(const MachineWrapper &);
     MachineWrapper &operator=(const MachineWrapper &);
 
-    {{ machine_class_name(model) }} machine_;
+    Machine machine_;
 };
 
 }  // namespace {{ machine_class_name(model) }}_cpp

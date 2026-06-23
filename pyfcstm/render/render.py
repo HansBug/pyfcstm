@@ -102,6 +102,8 @@ def _normalize_template_relpath(rel_file: str) -> str:
     On Windows this converts native backslash separators to forward slashes so
     gitignore-style patterns match consistently. POSIX paths are returned
     unchanged so literal backslashes in POSIX file names are not rewritten.
+    For example, when ``os.sep`` is ``'\\'``, the Windows-style path
+    ``'assets\\nested\\static.txt'`` becomes ``'assets/nested/static.txt'``.
 
     :param rel_file: Relative path produced while walking the template tree.
     :type rel_file: str

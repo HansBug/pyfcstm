@@ -259,6 +259,7 @@ class TestRenderRender:
 
     def test_output_path_helpers_handle_nested_and_separator_edges(self):
         assert _normalize_template_relpath('assets/nested/static.txt') == 'assets/nested/static.txt'
+        assert _normalize_template_relpath('assets\\nested\\static.txt') == 'assets\\nested\\static.txt'
         with mock.patch('pyfcstm.render.render.os.sep', '\\'):
             assert _normalize_template_relpath('assets\\nested\\static.txt') == 'assets/nested/static.txt'
 

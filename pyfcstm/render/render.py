@@ -71,6 +71,55 @@ from ..model import StateMachine
 from ..utils import auto_decode
 
 
+def _ensure_output_parent_dir(output_file: str) -> None:
+    """
+    Create the parent directory for an output file when one is present.
+
+    :param output_file: Path of the file that will be rendered or copied.
+    :type output_file: str
+    :return: ``None``.
+    :rtype: None
+
+    Example::
+
+        >>> import os
+        >>> import tempfile
+        >>> with tempfile.TemporaryDirectory() as td:
+        ...     output_file = os.path.join(td, 'generated', 'machine.py')
+        ...     _ensure_output_parent_dir(output_file)
+        ...     os.path.isdir(os.path.dirname(output_file))
+        True
+    """
+    parent_dir = os.path.dirname(output_file)
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
+
+
+def _normalize_template_relpath(rel_file: str) -> str:
+    """
+    Normalize a template-relative path for ignore matching and output mapping.
+
+    On Windows this converts native backslash separators to forward slashes so
+    gitignore-style patterns match consistently. POSIX paths are returned
+    unchanged so literal backslashes in POSIX file names are not rewritten.
+    For example, when ``os.sep`` is ``'\\'``, the Windows-style path
+    ``'assets\\nested\\static.txt'`` becomes ``'assets/nested/static.txt'``.
+
+    :param rel_file: Relative path produced while walking the template tree.
+    :type rel_file: str
+    :return: The relative path with POSIX separators.
+    :rtype: str
+
+    Example::
+
+        >>> _normalize_template_relpath('assets/nested/static.txt')
+        'assets/nested/static.txt'
+    """
+    if os.sep != '/':
+        rel_file = rel_file.replace(os.sep, '/')
+    return rel_file
+
+
 class StateMachineCodeRenderer:
     """
     Renderer for generating code from state machine models using templates.
@@ -266,7 +315,9 @@ class StateMachineCodeRenderer:
             for file in files:
                 _, ext = os.path.splitext(file)
                 current_file = os.path.abspath(os.path.join(root, file))
-                rel_file = os.path.relpath(current_file, self.template_dir)
+                rel_file = _normalize_template_relpath(
+                    os.path.relpath(current_file, self.template_dir)
+                )
                 if self._path_spec.match_file(rel_file):
                     continue
                 if ext == '.j2':
@@ -301,9 +352,7 @@ class StateMachineCodeRenderer:
             name: define.type for name, define in model.defines.items()
         }
         tp = self.env.from_string(auto_decode(pathlib.Path(template_file).read_bytes()))
-        if os.path.dirname(output_file):
-            os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        _ensure_output_parent_dir(output_file)
         try:
             rendered = tp.render(model=model)
             if os.path.basename(template_file) == 'machine.py.j2':
@@ -342,8 +391,7 @@ class StateMachineCodeRenderer:
         :raises IOError: If there is an error copying the file
         """
         _ = model
-        if os.path.dirname(output_file):
-            os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
+        _ensure_output_parent_dir(output_file)
         shutil.copyfile(src_file, output_file)
 
     def render(self, model: StateMachine, output_dir: str, clear_previous_directory: bool = False) -> None:

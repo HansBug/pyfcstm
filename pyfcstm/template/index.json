@@ -20,7 +20,7 @@
     },
     {
       "archive": "cpp.zip",
-      "description": "Experimental C++ template skeleton that reuses the C99 runtime core and emits C++ wrapper files.",
+      "description": "Experimental C++ template that reuses the C99 runtime core and emits C++ wrapper files.",
       "experimental": true,
       "language": "cpp",
       "name": "cpp",
@@ -29,7 +29,7 @@
     },
     {
       "archive": "cpp_poll.zip",
-      "description": "Experimental C++ poll template skeleton that reuses the C poll runtime core and emits C++ wrapper files.",
+      "description": "Experimental C++ poll template that reuses the C poll runtime core and emits C++ wrapper files.",
       "experimental": true,
       "language": "cpp",
       "name": "cpp_poll",

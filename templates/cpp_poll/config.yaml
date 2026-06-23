@@ -196,3 +196,4 @@ ignores:
   - 'README.md'
   - 'README_zh.md'
   - 'template.json'
+  - 'config.yaml'

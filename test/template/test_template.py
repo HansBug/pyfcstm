@@ -19,11 +19,15 @@ class TestBuiltinTemplateModule:
         templates = list_templates()
         assert "c" in templates
         assert "c_poll" in templates
+        assert "cpp" in templates
+        assert "cpp_poll" in templates
         assert "python" in templates
 
     def test_has_template(self):
         assert has_template("c") is True
         assert has_template("c_poll") is True
+        assert has_template("cpp") is True
+        assert has_template("cpp_poll") is True
         assert has_template("python") is True
         assert has_template("not_exists") is False
 
@@ -37,6 +41,18 @@ class TestBuiltinTemplateModule:
         assert info["name"] == "c_poll"
         assert info["archive"] == "c_poll.zip"
         assert info["language"] == "c"
+
+        info = get_template_info("cpp")
+        assert info["name"] == "cpp"
+        assert info["archive"] == "cpp.zip"
+        assert info["language"] == "cpp"
+        assert info["experimental"] is True
+
+        info = get_template_info("cpp_poll")
+        assert info["name"] == "cpp_poll"
+        assert info["archive"] == "cpp_poll.zip"
+        assert info["language"] == "cpp"
+        assert info["experimental"] is True
 
         info = get_template_info("python")
         assert info["name"] == "python"
@@ -68,6 +84,38 @@ class TestBuiltinTemplateModule:
             assert os.path.isfile(os.path.join(template_dir, "README_zh.md.j2"))
             assert os.path.isfile(os.path.join(template_dir, "machine.h.j2"))
             assert os.path.isfile(os.path.join(template_dir, "machine.c.j2"))
+            assert not os.path.exists(os.path.join(template_dir, "Makefile.j2"))
+            assert not os.path.exists(os.path.join(template_dir, "CMakeLists.txt.j2"))
+            assert not os.path.exists(os.path.join(template_dir, "__init__.py.j2"))
+
+        with TemporaryDirectory() as td:
+            template_dir = extract_template("cpp", td)
+            assert os.path.isdir(template_dir)
+            assert os.path.isfile(os.path.join(template_dir, "config.yaml"))
+            assert os.path.isfile(os.path.join(template_dir, "README.md"))
+            assert os.path.isfile(os.path.join(template_dir, "README_zh.md"))
+            assert os.path.isfile(os.path.join(template_dir, "README.md.j2"))
+            assert os.path.isfile(os.path.join(template_dir, "README_zh.md.j2"))
+            assert os.path.isfile(os.path.join(template_dir, "machine.h.j2"))
+            assert os.path.isfile(os.path.join(template_dir, "machine.c.j2"))
+            assert os.path.isfile(os.path.join(template_dir, "machine.hpp.j2"))
+            assert os.path.isfile(os.path.join(template_dir, "machine.cpp.j2"))
+            assert not os.path.exists(os.path.join(template_dir, "Makefile.j2"))
+            assert not os.path.exists(os.path.join(template_dir, "CMakeLists.txt.j2"))
+            assert not os.path.exists(os.path.join(template_dir, "__init__.py.j2"))
+
+        with TemporaryDirectory() as td:
+            template_dir = extract_template("cpp_poll", td)
+            assert os.path.isdir(template_dir)
+            assert os.path.isfile(os.path.join(template_dir, "config.yaml"))
+            assert os.path.isfile(os.path.join(template_dir, "README.md"))
+            assert os.path.isfile(os.path.join(template_dir, "README_zh.md"))
+            assert os.path.isfile(os.path.join(template_dir, "README.md.j2"))
+            assert os.path.isfile(os.path.join(template_dir, "README_zh.md.j2"))
+            assert os.path.isfile(os.path.join(template_dir, "machine.h.j2"))
+            assert os.path.isfile(os.path.join(template_dir, "machine.c.j2"))
+            assert os.path.isfile(os.path.join(template_dir, "machine.hpp.j2"))
+            assert os.path.isfile(os.path.join(template_dir, "machine.cpp.j2"))
             assert not os.path.exists(os.path.join(template_dir, "Makefile.j2"))
             assert not os.path.exists(os.path.join(template_dir, "CMakeLists.txt.j2"))
             assert not os.path.exists(os.path.join(template_dir, "__init__.py.j2"))

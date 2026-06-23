@@ -19,6 +19,24 @@
       "title": "C Poll"
     },
     {
+      "archive": "cpp.zip",
+      "description": "Experimental C++ template skeleton that reuses the C99 runtime core and emits C++ wrapper files.",
+      "experimental": true,
+      "language": "cpp",
+      "name": "cpp",
+      "root_dir": "cpp",
+      "title": "C++ Wrapper"
+    },
+    {
+      "archive": "cpp_poll.zip",
+      "description": "Experimental C++ poll template skeleton that reuses the C poll runtime core and emits C++ wrapper files.",
+      "experimental": true,
+      "language": "cpp",
+      "name": "cpp_poll",
+      "root_dir": "cpp_poll",
+      "title": "C++ Poll Wrapper"
+    },
+    {
       "archive": "python.zip",
       "description": "Native Python built-in template with embedded runtime logic.",
       "experimental": true,

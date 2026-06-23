@@ -1,0 +1,28 @@
+/*
+ * Generated C++ poll-wrapper skeleton implementation for {{ model.root_state.name }}.
+ *
+ * This file is emitted by the built-in `cpp_poll` template and delegates storage
+ * and execution to the generated C poll core. The current wrapper is
+ * intentionally small so the first C++ template slice can validate packaging and
+ * build surfaces before the full facade API lands.
+ */
+
+#include "machine.hpp"
+
+namespace pyfcstm_generated {
+namespace {{ machine_class_name(model) }}_cpp_poll {
+
+MachineWrapper::MachineWrapper() {
+    {{ machine_class_name(model) }}_init(&machine_);
+}
+
+{{ machine_class_name(model) }} *MachineWrapper::native_handle() {
+    return &machine_;
+}
+
+const {{ machine_class_name(model) }} *MachineWrapper::native_handle() const {
+    return &machine_;
+}
+
+}  // namespace {{ machine_class_name(model) }}_cpp_poll
+}  // namespace pyfcstm_generated

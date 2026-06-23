@@ -1,0 +1,38 @@
+/*
+ * Generated C++ wrapper skeleton for {{ model.root_state.name }}.
+ *
+ * This file is emitted by the built-in `cpp` template and pairs with the
+ * generated C core files `machine.h` and `machine.c`. The current wrapper is a
+ * minimal integration scaffold; the complete C++ facade API is implemented by
+ * the next template slice. Do not edit generated source directly; change the
+ * FCSTM DSL/model and regenerate this file instead. The generated runtime is
+ * self-contained and does not depend on pyfcstm or third-party runtime
+ * packages.
+ */
+
+#ifndef PYFCSTM_GENERATED_{{ machine_macro_name(model) }}_CPP_HPP
+#define PYFCSTM_GENERATED_{{ machine_macro_name(model) }}_CPP_HPP
+
+#include "machine.h"
+
+namespace pyfcstm_generated {
+namespace {{ machine_class_name(model) }}_cpp {
+
+class MachineWrapper {
+public:
+    MachineWrapper();
+
+    {{ machine_class_name(model) }} *native_handle();
+    const {{ machine_class_name(model) }} *native_handle() const;
+
+private:
+    MachineWrapper(const MachineWrapper &);
+    MachineWrapper &operator=(const MachineWrapper &);
+
+    {{ machine_class_name(model) }} machine_;
+};
+
+}  // namespace {{ machine_class_name(model) }}_cpp
+}  // namespace pyfcstm_generated
+
+#endif  // PYFCSTM_GENERATED_{{ machine_macro_name(model) }}_CPP_HPP

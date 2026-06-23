@@ -28,6 +28,18 @@ state Root {
 """
 
 
+_README_MULTI_EVENT_DSL = """
+state Root {
+    state Idle;
+    state Active;
+    state Done;
+    [*] -> Idle;
+    Idle -> Active :: Start;
+    Active -> Done :: Stop;
+}
+"""
+
+
 def _read(path):
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
@@ -287,6 +299,13 @@ def _compile_probe_source():
     )
 
 
+def _extract_cpp_code_block(markdown, heading):
+    pattern = r"## {heading}\n\n```cpp\n(.*?)\n```".format(heading=re.escape(heading))
+    match = re.search(pattern, markdown, re.S)
+    assert match is not None, "Cannot find C++ code block under {!r}.".format(heading)
+    return match.group(1)
+
+
 @pytest.mark.unittest
 class TestCppPollWrapperTemplate:
     def test_poll_wrapper_api_compiles_and_runs_with_cmake(self):
@@ -296,6 +315,28 @@ class TestCppPollWrapperTemplate:
                 artifacts,
                 "cpp_poll_wrapper_api",
                 _harness_source(),
+            )
+        assert result.returncode == 0, result.stderr
+
+    def test_poll_wrapper_generated_english_readme_quick_start_runs(self):
+        with render_cpp_poll_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
+            readme = _read(artifacts["readme_file"])
+            source = _extract_cpp_code_block(readme, "C++ Poll Wrapper Quick Start")
+            result = compile_and_run_cpp_poll_wrapper_harness(
+                artifacts,
+                "cpp_poll_readme_quick_start_en",
+                source,
+            )
+        assert result.returncode == 0, result.stderr
+
+    def test_poll_wrapper_generated_chinese_readme_quick_start_runs(self):
+        with render_cpp_poll_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
+            readme = _read(artifacts["readme_zh_file"])
+            source = _extract_cpp_code_block(readme, "C++ Poll Wrapper 快速开始")
+            result = compile_and_run_cpp_poll_wrapper_harness(
+                artifacts,
+                "cpp_poll_readme_quick_start_zh",
+                source,
             )
         assert result.returncode == 0, result.stderr
 

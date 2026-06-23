@@ -811,7 +811,10 @@ int main()
     pyfcstm_generated::{{ machine_class_name(model) }}_cpp_poll::MachineWrapper machine;
 {% if event_ns.items %}
     {{ machine_class_name(model) }}EventChecks event_checks = {{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT;
-    event_checks.{{ event_check_field_id_name(event_ns.items[0]) }} = event_check;
+    /* Fill every generated event-check field before cycle(). */
+{% for event_path in event_ns.items %}
+    event_checks.{{ event_check_field_id_name(event_path) }} = event_check;
+{% endfor %}
     machine.set_event_checks(&event_checks, 0);
 {% endif %}
 

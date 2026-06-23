@@ -410,6 +410,49 @@ int main(void)
 }
 ```
 
+## C++ Poll Wrapper 快速开始
+
+```cpp
+#include "machine.hpp"
+
+static int event_check(
+    {{ machine_class_name(model) }} *machine,
+    const {{ machine_class_name(model) }}EventContext *ctx,
+    void *user_data)
+{
+    (void)machine;
+    (void)ctx;
+    (void)user_data;
+    return 0;
+}
+
+int main()
+{
+    pyfcstm_generated::{{ machine_class_name(model) }}_cpp_poll::MachineWrapper machine;
+{% if event_ns.items %}
+    {{ machine_class_name(model) }}EventChecks event_checks = {{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT;
+    /* Fill every generated event-check field before cycle(). */
+{% for event_path in event_ns.items %}
+    event_checks.{{ event_check_field_id_name(event_path) }} = event_check;
+{% endfor %}
+    machine.set_event_checks(&event_checks, 0);
+{% endif %}
+
+    if (!machine.cycle()) {
+        return 1;
+    }
+
+    const {{ machine_class_name(model) }}Vars *vars = machine.vars();
+    (void)vars;
+    (void)machine.is_ended();
+    return 0;
+}
+```
+
+`MachineWrapper` 内嵌一个 `{{ machine_class_name(model) }}` 对象。对于声明了事件的
+状态机，调用 `cycle()` 前必须通过 `set_event_checks(...)` 挂载完整 generated
+event-check 表；上面的示例会填充每一个 generated `check_xxx` 字段。
+
 ## 公开头文件参考
 
 ### 核心宏

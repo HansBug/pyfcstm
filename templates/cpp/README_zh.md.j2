@@ -582,6 +582,38 @@ int main(void)
 }
 ```
 
+## C++ Wrapper 快速开始
+
+```cpp
+#include "machine.hpp"
+
+int main()
+{
+    pyfcstm_generated::{{ machine_class_name(model) }}_cpp::MachineWrapper machine;
+
+    if (!machine.cycle()) {
+        return 1;
+    }
+{% if event_ns.items %}
+    {{ machine_class_name(model) }}EventId event_id =
+        {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }};
+    if (!machine.cycle(event_id)) {
+        return 2;
+    }
+{% endif %}
+
+    const {{ machine_class_name(model) }}Vars *vars = machine.vars();
+    (void)vars;
+    (void)machine.is_ended();
+    return 0;
+}
+```
+
+`MachineWrapper` 持有一个内嵌的 `{{ machine_class_name(model) }}` 对象。
+当既有 C 集成点需要底层 handle 时，可以使用 `native_handle()`。
+使用 `set_hooks(...)` 挂载生成的 C hook 表；wrapper 只转发 hook 表和
+`void *user_data`，不会引入 virtual interface 或堆持有的 callback 对象。
+
 ## 全面使用指南
 
 ### 1. 冷启动

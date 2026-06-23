@@ -57,6 +57,7 @@ def _assert_wrapper_source_contract(artifacts):
     generated_code = _strip_comments(generated)
 
     assert "class MachineWrapper" in header
+    assert "#include <stddef.h>" in header
     assert "typedef RootMachine Machine;" in header
     assert "typedef RootMachineVars Vars;" in header
     assert "typedef RootMachineEventChecks EventChecks;" in header

@@ -36,6 +36,18 @@ state _Root {
 """
 
 
+_README_MULTI_EVENT_DSL = """
+state Root {
+    state Idle;
+    state Active;
+    state Done;
+    [*] -> Idle;
+    Idle -> Active :: Start;
+    Active -> Done :: Stop;
+}
+"""
+
+
 def _read(path):
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
@@ -53,6 +65,7 @@ def _assert_wrapper_source_contract(artifacts):
     generated_code = _strip_comments(generated)
 
     assert "class MachineWrapper" in header
+    assert "#include <stddef.h>" in header
     assert "typedef RootMachine Machine;" in header
     assert "typedef RootMachineVars Vars;" in header
     assert "typedef RootMachineEventId EventId;" in header
@@ -238,6 +251,13 @@ def _harness_source():
     )
 
 
+def _extract_cpp_code_block(markdown, heading):
+    pattern = r"## {heading}\n\n```cpp\n(.*?)\n```".format(heading=re.escape(heading))
+    match = re.search(pattern, markdown, re.S)
+    assert match is not None, "Cannot find C++ code block under {!r}.".format(heading)
+    return match.group(1)
+
+
 def _compile_probe_source():
     return textwrap.dedent(
         r"""
@@ -273,6 +293,28 @@ class TestCppWrapperTemplate:
                 artifacts,
                 "cpp_wrapper_api",
                 _harness_source(),
+            )
+        assert result.returncode == 0, result.stderr
+
+    def test_wrapper_generated_english_readme_quick_start_runs(self):
+        with render_cpp_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
+            readme = _read(artifacts["readme_file"])
+            source = _extract_cpp_code_block(readme, "C++ Wrapper Quick Start")
+            result = compile_and_run_cpp_wrapper_harness(
+                artifacts,
+                "cpp_readme_quick_start_en",
+                source,
+            )
+        assert result.returncode == 0, result.stderr
+
+    def test_wrapper_generated_chinese_readme_quick_start_runs(self):
+        with render_cpp_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
+            readme = _read(artifacts["readme_zh_file"])
+            source = _extract_cpp_code_block(readme, "C++ Wrapper 快速开始")
+            result = compile_and_run_cpp_wrapper_harness(
+                artifacts,
+                "cpp_readme_quick_start_zh",
+                source,
             )
         assert result.returncode == 0, result.stderr
 

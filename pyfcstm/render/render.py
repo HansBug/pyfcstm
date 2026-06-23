@@ -71,6 +71,24 @@ from ..model import StateMachine
 from ..utils import auto_decode
 
 
+def _ensure_output_parent_dir(output_file: str) -> None:
+    """
+    Create the parent directory for an output file when one is present.
+
+    :param output_file: Path of the file that will be rendered or copied.
+    :type output_file: str
+    :return: ``None``.
+    :rtype: None
+
+    Example::
+
+        >>> _ensure_output_parent_dir('generated/machine.py')
+    """
+    parent_dir = os.path.dirname(output_file)
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
+
+
 class StateMachineCodeRenderer:
     """
     Renderer for generating code from state machine models using templates.
@@ -301,9 +319,7 @@ class StateMachineCodeRenderer:
             name: define.type for name, define in model.defines.items()
         }
         tp = self.env.from_string(auto_decode(pathlib.Path(template_file).read_bytes()))
-        if os.path.dirname(output_file):
-            os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        _ensure_output_parent_dir(output_file)
         try:
             rendered = tp.render(model=model)
             if os.path.basename(template_file) == 'machine.py.j2':
@@ -342,8 +358,7 @@ class StateMachineCodeRenderer:
         :raises IOError: If there is an error copying the file
         """
         _ = model
-        if os.path.dirname(output_file):
-            os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
+        _ensure_output_parent_dir(output_file)
         shutil.copyfile(src_file, output_file)
 
     def render(self, model: StateMachine, output_dir: str, clear_previous_directory: bool = False) -> None:

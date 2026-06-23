@@ -144,7 +144,6 @@ class TestRenderRender:
         assert b'\r\n' not in data
         assert data == b'line1\nTrafficLight\nline3'
 
-
     def test_renderer_handles_nested_outputs_and_ignores(self, sample_model):
         with TemporaryDirectory() as template_dir:
             nested_template_dir = os.path.join(template_dir, 'nested')

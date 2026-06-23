@@ -280,6 +280,10 @@ class TestRenderRender:
 
         source = render_source.read_text(encoding='utf-8')
 
+        # This is an architectural boundary guard: the generic renderer must
+        # not restore Python-template-only post-processing keyed by a concrete
+        # built-in template file name. Behavioral tests cover rendering; this
+        # source-level check keeps the boundary violation from reappearing.
         assert 'machine.py.j2' not in source
         assert 'os.path.basename(template_file)' not in source
         assert 're.sub' not in source

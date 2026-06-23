@@ -10,5 +10,3 @@ clean\_python\_runtime\_source
 -----------------------------------------------------
 
 .. autofunction:: clean_python_runtime_source
-
-

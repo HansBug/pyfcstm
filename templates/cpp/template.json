@@ -1,0 +1,7 @@
+{
+  "name": "cpp",
+  "title": "C++ Wrapper",
+  "description": "Experimental C++ template skeleton that reuses the C99 runtime core and emits C++ wrapper files.",
+  "language": "cpp",
+  "experimental": true
+}

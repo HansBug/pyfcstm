@@ -42,6 +42,7 @@ Example::
     >>> renderer.render(StateMachine(defines={}, root_state=some_state), './output')
 
 """
+
 import copy
 import os.path
 import pathlib
@@ -55,17 +56,20 @@ import pathspec
 import yaml
 
 from .env import create_env
-from .expr import create_expr_render_template, fn_expr_render, _KNOWN_STYLES, _normalize_lang_style
+from .expr import (
+    create_expr_render_template,
+    fn_expr_render,
+    _KNOWN_STYLES,
+    _normalize_lang_style,
+)
 from .statement import (
-    create_stmt_render_template, fn_stmt_render, fn_stmts_render,
-    _KNOWN_STMT_STYLES, _normalize_stmt_style,
+    create_stmt_render_template,
+    fn_stmt_render,
+    fn_stmts_render,
+    _KNOWN_STMT_STYLES,
+    _normalize_stmt_style,
 )
 from .func import process_item_to_object
-from .c_runtime import (
-    render_c_action_body,
-    render_c_condition_body,
-    render_c_reset_vars_body,
-)
 from ..dsl import node as dsl_nodes
 from ..model import StateMachine
 from ..utils import auto_decode
@@ -103,7 +107,7 @@ class StateMachineCodeRenderer:
         >>> renderer.render(my_state_machine, './output', clear_previous_directory=True)
     """
 
-    def __init__(self, template_dir: str, config_file: str = 'config.yaml') -> None:
+    def __init__(self, template_dir: str, config_file: str = "config.yaml") -> None:
         """
         Initialize the StateMachineCodeRenderer.
 
@@ -117,7 +121,7 @@ class StateMachineCodeRenderer:
         self.config_file = os.path.join(self.template_dir, config_file)
 
         self.env = create_env()
-        self._ignore_patterns = ['.git']
+        self._ignore_patterns = [".git"]
         self._prepare_for_configs()
 
         self._path_spec = pathspec.PathSpec.from_lines(
@@ -138,14 +142,14 @@ class StateMachineCodeRenderer:
         :raises FileNotFoundError: If the configuration file does not exist
         :raises yaml.YAMLError: If the configuration file contains invalid YAML
         """
-        with open(self.config_file, 'r') as f:
+        with open(self.config_file, "r") as f:
             config_info = yaml.safe_load(f)
 
-        expr_styles = config_info.pop('expr_styles', None) or {}
-        expr_styles['default'] = expr_styles.get('default') or {'base_lang': 'dsl'}
+        expr_styles = config_info.pop("expr_styles", None) or {}
+        expr_styles["default"] = expr_styles.get("default") or {"base_lang": "dsl"}
         d_templates = copy.deepcopy(_KNOWN_STYLES)
         for style_name, expr_style in expr_styles.items():
-            lang_style = expr_style.pop('base_lang')
+            lang_style = expr_style.pop("base_lang")
             d_templates[style_name] = create_expr_render_template(
                 lang_style=lang_style,
                 ext_configs=expr_style,
@@ -153,8 +157,9 @@ class StateMachineCodeRenderer:
 
         expr_style_stack = []
 
-        def _fn_expr_render(node: Union[float, int, dict, dsl_nodes.Expr, Any],
-                            style: str = None) -> str:
+        def _fn_expr_render(
+            node: Union[float, int, dict, dsl_nodes.Expr, Any], style: str = None
+        ) -> str:
             """
             Render an expression node using the specified style.
 
@@ -168,7 +173,7 @@ class StateMachineCodeRenderer:
             :rtype: str
             """
             if style is None:
-                style = expr_style_stack[-1] if expr_style_stack else 'default'
+                style = expr_style_stack[-1] if expr_style_stack else "default"
             style = _normalize_lang_style(style)
             expr_style_stack.append(style)
             try:
@@ -180,49 +185,72 @@ class StateMachineCodeRenderer:
             finally:
                 expr_style_stack.pop()
 
-        self.env.globals['expr_render'] = _fn_expr_render
-        self.env.filters['expr_render'] = _fn_expr_render
+        self.env.globals["expr_render"] = _fn_expr_render
+        self.env.filters["expr_render"] = _fn_expr_render
 
-        stmt_styles = config_info.pop('stmt_styles', None) or {}
-        stmt_styles['default'] = stmt_styles.get('default') or {'base_lang': 'dsl'}
+        stmt_styles = config_info.pop("stmt_styles", None) or {}
+        stmt_styles["default"] = stmt_styles.get("default") or {"base_lang": "dsl"}
         d_stmt_templates = {
             style_name: create_stmt_render_template(style_name)
             for style_name in _KNOWN_STMT_STYLES.keys()
         }
         for style_name, stmt_style in stmt_styles.items():
             stmt_style = copy.deepcopy(stmt_style)
-            lang_style = stmt_style.pop('base_lang')
+            lang_style = stmt_style.pop("base_lang")
             d_stmt_templates[style_name] = create_stmt_render_template(
                 lang_style=lang_style,
                 ext_configs=stmt_style,
             )
 
-        def _fn_stmt_render(node, style: str = 'default', state_vars=None, var_types=None,
-                            visible_names=None, visible_var_types=None,
-                            indent: str = '    ', level: int = 0) -> str:
+        def _fn_stmt_render(
+            node,
+            style: str = "default",
+            state_vars=None,
+            var_types=None,
+            visible_names=None,
+            visible_var_types=None,
+            indent: str = "    ",
+            level: int = 0,
+        ) -> str:
             style = _normalize_stmt_style(style)
             return fn_stmt_render(
                 node=node,
                 templates=d_stmt_templates[style],
                 env=self.env,
-                state_vars=self.env.globals.get('_stmt_default_state_vars') if state_vars is None else state_vars,
-                var_types=self.env.globals.get('_stmt_default_var_types') if var_types is None else var_types,
+                state_vars=self.env.globals.get("_stmt_default_state_vars")
+                if state_vars is None
+                else state_vars,
+                var_types=self.env.globals.get("_stmt_default_var_types")
+                if var_types is None
+                else var_types,
                 visible_names=visible_names,
                 visible_var_types=visible_var_types,
                 indent=indent,
                 level=level,
             )
 
-        def _fn_stmts_render(nodes, style: str = 'default', state_vars=None, var_types=None,
-                             visible_names=None, visible_var_types=None,
-                             indent: str = '    ', level: int = 0, sep: str = '\n') -> str:
+        def _fn_stmts_render(
+            nodes,
+            style: str = "default",
+            state_vars=None,
+            var_types=None,
+            visible_names=None,
+            visible_var_types=None,
+            indent: str = "    ",
+            level: int = 0,
+            sep: str = "\n",
+        ) -> str:
             style = _normalize_stmt_style(style)
             return fn_stmts_render(
                 nodes=nodes,
                 templates=d_stmt_templates[style],
                 env=self.env,
-                state_vars=self.env.globals.get('_stmt_default_state_vars') if state_vars is None else state_vars,
-                var_types=self.env.globals.get('_stmt_default_var_types') if var_types is None else var_types,
+                state_vars=self.env.globals.get("_stmt_default_state_vars")
+                if state_vars is None
+                else state_vars,
+                var_types=self.env.globals.get("_stmt_default_var_types")
+                if var_types is None
+                else var_types,
                 visible_names=visible_names,
                 visible_var_types=visible_var_types,
                 indent=indent,
@@ -230,25 +258,24 @@ class StateMachineCodeRenderer:
                 sep=sep,
             )
 
-        self.env.globals['stmt_render'] = _fn_stmt_render
-        self.env.filters['stmt_render'] = _fn_stmt_render
-        self.env.globals['stmts_render'] = _fn_stmts_render
-        self.env.filters['stmts_render'] = _fn_stmts_render
-        self.env.globals['render_c_action_body'] = render_c_action_body
-        self.env.globals['render_c_condition_body'] = render_c_condition_body
-        self.env.globals['render_c_reset_vars_body'] = render_c_reset_vars_body
+        self.env.globals["stmt_render"] = _fn_stmt_render
+        self.env.filters["stmt_render"] = _fn_stmt_render
+        self.env.globals["stmts_render"] = _fn_stmts_render
+        self.env.filters["stmts_render"] = _fn_stmts_render
 
-        globals_ = config_info.pop('globals', None) or {}
+        globals_ = config_info.pop("globals", None) or {}
         for name, value in globals_.items():
             self.env.globals[name] = process_item_to_object(value, env=self.env)
-        filters_ = config_info.pop('filters', None) or {}
+
+        filters_ = config_info.pop("filters", None) or {}
         for name, value in filters_.items():
             self.env.filters[name] = process_item_to_object(value, env=self.env)
-        tests = config_info.pop('tests', None) or {}
+
+        tests = config_info.pop("tests", None) or {}
         for name, value in tests.items():
             self.env.tests[name] = process_item_to_object(value, env=self.env)
 
-        ignores = list(config_info.pop('ignores', None) or [])
+        ignores = list(config_info.pop("ignores", None) or [])
         self._ignore_patterns.extend(ignores)
 
     def _prepare_for_file_mapping(self) -> None:
@@ -269,7 +296,7 @@ class StateMachineCodeRenderer:
                 rel_file = os.path.relpath(current_file, self.template_dir)
                 if self._path_spec.match_file(rel_file):
                     continue
-                if ext == '.j2':
+                if ext == ".j2":
                     rel_file = os.path.splitext(rel_file)[0]
                     self._file_mappings[rel_file] = partial(
                         self.render_one_file,
@@ -281,7 +308,9 @@ class StateMachineCodeRenderer:
                         src_file=current_file,
                     )
 
-    def render_one_file(self, model: StateMachine, output_file: str, template_file: str) -> None:
+    def render_one_file(
+        self, model: StateMachine, output_file: str, template_file: str
+    ) -> None:
         """
         Render a single template file.
 
@@ -294,10 +323,10 @@ class StateMachineCodeRenderer:
         :raises jinja2.exceptions.TemplateError: If there is an error in the template
         :raises IOError: If there is an error reading or writing files
         """
-        previous_state_vars = self.env.globals.get('_stmt_default_state_vars')
-        previous_var_types = self.env.globals.get('_stmt_default_var_types')
-        self.env.globals['_stmt_default_state_vars'] = tuple(model.defines.keys())
-        self.env.globals['_stmt_default_var_types'] = {
+        previous_state_vars = self.env.globals.get("_stmt_default_state_vars")
+        previous_var_types = self.env.globals.get("_stmt_default_var_types")
+        self.env.globals["_stmt_default_state_vars"] = tuple(model.defines.keys())
+        self.env.globals["_stmt_default_var_types"] = {
             name: define.type for name, define in model.defines.items()
         }
         tp = self.env.from_string(auto_decode(pathlib.Path(template_file).read_bytes()))
@@ -306,30 +335,32 @@ class StateMachineCodeRenderer:
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
         try:
             rendered = tp.render(model=model)
-            if os.path.basename(template_file) == 'machine.py.j2':
-                rendered = re.sub(r'([\(\[\{]\n)\n+', r'\1', rendered)
-                rendered = re.sub(r'\n{3,}', '\n\n', rendered)
-                rendered = re.sub(r',\n\n([ \t]*["\]\}])', r',\n\1', rendered)
-                rendered = re.sub(r'\n\n(?=(?:class|def|@))', '\n\n\n', rendered)
+            if os.path.basename(template_file) == "machine.py.j2":
+                rendered = re.sub(r"([\(\[\{]\n)\n+", r"\1", rendered)
+                rendered = re.sub(r"\n{3,}", "\n\n", rendered)
+                rendered = re.sub(r',\n\n([ \t]*["\]\}])', r",\n\1", rendered)
+                rendered = re.sub(r"\n\n(?=(?:class|def|@))", "\n\n\n", rendered)
                 rendered = re.sub(
-                    r'\n([ \t]*)\n(?=[ \t]*[\]\)\}](?:,)?\n)',
-                    r'\n\1',
+                    r"\n([ \t]*)\n(?=[ \t]*[\]\)\}](?:,)?\n)",
+                    r"\n\1",
                     rendered,
                 )
-                rendered = re.sub(r'\n+\Z', '\n', rendered)
-            with open(output_file, 'w', encoding='utf-8', newline='\n') as f:
+                rendered = re.sub(r"\n+\Z", "\n", rendered)
+            with open(output_file, "w", encoding="utf-8", newline="\n") as f:
                 f.write(rendered)
         finally:
             if previous_state_vars is None:
-                self.env.globals.pop('_stmt_default_state_vars', None)
+                self.env.globals.pop("_stmt_default_state_vars", None)
             else:
-                self.env.globals['_stmt_default_state_vars'] = previous_state_vars
+                self.env.globals["_stmt_default_state_vars"] = previous_state_vars
             if previous_var_types is None:
-                self.env.globals.pop('_stmt_default_var_types', None)
+                self.env.globals.pop("_stmt_default_var_types", None)
             else:
-                self.env.globals['_stmt_default_var_types'] = previous_var_types
+                self.env.globals["_stmt_default_var_types"] = previous_var_types
 
-    def copy_one_file(self, model: StateMachine, output_file: str, src_file: str) -> None:
+    def copy_one_file(
+        self, model: StateMachine, output_file: str, src_file: str
+    ) -> None:
         """
         Copy a single file to the output directory.
 
@@ -346,7 +377,12 @@ class StateMachineCodeRenderer:
             os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
         shutil.copyfile(src_file, output_file)
 
-    def render(self, model: StateMachine, output_dir: str, clear_previous_directory: bool = False) -> None:
+    def render(
+        self,
+        model: StateMachine,
+        output_dir: str,
+        clear_previous_directory: bool = False,
+    ) -> None:
         """
         Render the state machine model to the output directory.
 
@@ -380,7 +416,9 @@ class StateMachineCodeRenderer:
                 elif os.path.islink(dst_file):
                     os.unlink(dst_file)
                 else:
-                    warnings.warn(f'Unable to clean file {dst_file!r}.')  # pragma: no cover
+                    warnings.warn(
+                        f"Unable to clean file {dst_file!r}."
+                    )  # pragma: no cover
 
         for rel_file, fn_op in self._file_mappings.items():
             dst_file = os.path.join(output_dir, rel_file)

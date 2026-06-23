@@ -79,16 +79,6 @@ globals:
     params:
       - action
     template: "on_{{ to_c_path_identifier(action.func_name.split('.')) }}"
-  event_check_field_name:
-    type: template
-    params:
-      - event_path
-    template: "check_{{ to_c_identifier(event_path) }}"
-  event_check_field_id_name:
-    type: template
-    params:
-      - event_path
-    template: "check_{{ to_c_path_identifier(event_path.split('.')) }}"
   hook_enum_name:
     type: template
     params:
@@ -161,16 +151,6 @@ filters:
     params:
       - action
     template: "{{ hook_field_id_name(action) }}"
-  event_check_field_name:
-    type: template
-    params:
-      - event_path
-    template: "{{ event_check_field_name(event_path) }}"
-  event_check_field_id_name:
-    type: template
-    params:
-      - event_path
-    template: "{{ event_check_field_id_name(event_path) }}"
   hook_enum_name:
     type: template
     params:
@@ -196,3 +176,4 @@ ignores:
   - 'README.md'
   - 'README_zh.md'
   - 'template.json'
+  - 'config.yaml'

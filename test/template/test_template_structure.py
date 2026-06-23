@@ -2,7 +2,9 @@
 
 import ast
 import json
+import os
 import re
+import stat
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -15,14 +17,23 @@ from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.template import extract_template, get_template_info, list_templates
-from tools.package_templates import package_templates
+from tools.package_templates import package_templates, _resolve_archive_source
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _TEMPLATES_DIR = _REPO_ROOT / "templates"
 _PACKAGED_TEMPLATE_DIR = _REPO_ROOT / "pyfcstm" / "template"
-_CURRENT_TEMPLATE_NAMES = ("c", "c_poll", "python")
-_TEMPLATE_LANGUAGE_VOCABULARY = {"c", "python", "java", "js", "rust", "ruby", "go"}
+_CURRENT_TEMPLATE_NAMES = ("c", "c_poll", "cpp", "cpp_poll", "python")
+_TEMPLATE_LANGUAGE_VOCABULARY = {
+    "c",
+    "cpp",
+    "python",
+    "java",
+    "js",
+    "rust",
+    "ruby",
+    "go",
+}
 _CONFIG_TOP_LEVEL_KEYS = {
     "expr_styles",
     "stmt_styles",
@@ -53,6 +64,30 @@ _REQUIRED_TEMPLATE_FILES = {
         "machine.h.j2",
         "machine.c.j2",
     },
+    "cpp": {
+        "README.md",
+        "README_zh.md",
+        "README.md.j2",
+        "README_zh.md.j2",
+        "config.yaml",
+        "template.json",
+        "machine.h.j2",
+        "machine.c.j2",
+        "machine.hpp.j2",
+        "machine.cpp.j2",
+    },
+    "cpp_poll": {
+        "README.md",
+        "README_zh.md",
+        "README.md.j2",
+        "README_zh.md.j2",
+        "config.yaml",
+        "template.json",
+        "machine.h.j2",
+        "machine.c.j2",
+        "machine.hpp.j2",
+        "machine.cpp.j2",
+    },
     "python": {
         "README.md",
         "README_zh.md",
@@ -66,6 +101,8 @@ _REQUIRED_TEMPLATE_FILES = {
 _RUNTIME_TEMPLATES = {
     "c": ("machine.h.j2", "machine.c.j2"),
     "c_poll": ("machine.h.j2", "machine.c.j2"),
+    "cpp": ("machine.h.j2", "machine.c.j2", "machine.hpp.j2", "machine.cpp.j2"),
+    "cpp_poll": ("machine.h.j2", "machine.c.j2", "machine.hpp.j2", "machine.cpp.j2"),
     "python": ("machine.py.j2",),
 }
 _ALLOWED_PYTHON_RUNTIME_IMPORTS = {"dataclasses", "math", "types", "typing"}
@@ -134,15 +171,30 @@ def representative_model():
     return parse_dsl_node_to_state_machine(ast_node)
 
 
+def _extract_archives(package_dir, output_root):
+    template_dirs = {}
+    for name in _CURRENT_TEMPLATE_NAMES:
+        archive_path = package_dir / "{name}.zip".format(name=name)
+        with zipfile.ZipFile(str(archive_path), "r") as zf:
+            zf.extractall(str(output_root / name))
+        template_dirs[name] = output_root / name / name
+    return template_dirs
+
+
 @pytest.fixture(scope="session")
 def rendered_templates(representative_model):
-    with TemporaryDirectory() as td:
-        output_root = Path(td)
-        yield _render_template_directories(
-            {name: _TEMPLATES_DIR / name for name in _CURRENT_TEMPLATE_NAMES},
-            representative_model,
-            output_root,
-        )
+    with TemporaryDirectory() as package_td:
+        with TemporaryDirectory() as extraction_td:
+            with TemporaryDirectory() as render_td:
+                package_root = Path(package_td)
+                extraction_root = Path(extraction_td)
+                output_root = Path(render_td)
+                package_templates(str(_TEMPLATES_DIR), str(package_root), verbose=False)
+                yield _render_template_directories(
+                    _extract_archives(package_root, extraction_root),
+                    representative_model,
+                    output_root,
+                )
 
 
 @pytest.fixture(scope="session")
@@ -273,17 +325,18 @@ def _assert_rendered_template_contracts(rendered_templates):
     )
     _assert_python_runtime_imports_are_self_contained(python_source)
 
-    for name in ["c", "c_poll"]:
+    for name in ["c", "c_poll", "cpp", "cpp_poll"]:
         header_source = _read_text(rendered_templates[name] / "machine.h")
         runtime_source = _read_text(rendered_templates[name] / "machine.c")
+        c_core_name = {"cpp": "c", "cpp_poll": "c_poll"}.get(name, name)
         _assert_banner_terms(
             _first_c_comment_block(header_source),
-            template_name=name,
+            template_name=c_core_name,
             root_name="Control",
         )
         _assert_banner_terms(
             _first_c_comment_block(runtime_source),
-            template_name=name,
+            template_name=c_core_name,
             root_name="Control",
         )
         for generated_text in [
@@ -296,6 +349,21 @@ def _assert_rendered_template_contracts(rendered_templates):
         assert "__extension__ long long" not in header_source
         _assert_c_runtime_includes_are_self_contained(header_source)
         _assert_c_runtime_includes_are_self_contained(runtime_source)
+
+    for name in ["cpp", "cpp_poll"]:
+        wrapper_header_source = _read_text(rendered_templates[name] / "machine.hpp")
+        wrapper_source = _read_text(rendered_templates[name] / "machine.cpp")
+        _assert_banner_terms(
+            _first_c_comment_block(wrapper_header_source),
+            template_name=name,
+            root_name="Control",
+        )
+        assert '#include "machine.h"' in wrapper_header_source
+        assert '#include "machine.hpp"' in wrapper_source
+        assert "pyfcstm" not in wrapper_source.replace("pyfcstm_generated", "")
+        assert "throw" not in wrapper_source
+        assert "try" not in wrapper_source
+        assert "catch" not in wrapper_source
 
 
 @pytest.mark.unittest
@@ -365,7 +433,18 @@ def test_template_readmes_keep_maintainer_and_generated_guidance_separate(
 ):
     root_readme = _read_text(_TEMPLATES_DIR / "README.md")
     root_readme_zh = _read_text(_TEMPLATES_DIR / "README_zh.md")
-    for expected in ["python", "c", "c_poll", "java", "js", "rust", "ruby", "go"]:
+    for expected in [
+        "python",
+        "c",
+        "c_poll",
+        "cpp",
+        "cpp_poll",
+        "java",
+        "js",
+        "rust",
+        "ruby",
+        "go",
+    ]:
         assert expected in root_readme
         assert expected in root_readme_zh
 
@@ -472,3 +551,150 @@ def test_extracted_builtin_templates_preserve_source_structure_contract():
             spec = _ignore_spec(config)
             for maintainer_file in _MAINTAINER_ONLY_FILES:
                 assert spec.match_file(maintainer_file)
+
+
+def _zip_payload(output_dir, template_name, rel_path):
+    with zipfile.ZipFile(
+        str(output_dir / "{name}.zip".format(name=template_name)), "r"
+    ) as zf:
+        info = zf.getinfo("{name}/{rel}".format(name=template_name, rel=rel_path))
+        payload = zf.read(info)
+    return info, payload
+
+
+@pytest.mark.unittest
+def test_cpp_templates_reuse_c_core_as_packaged_file_payloads():
+    with TemporaryDirectory() as td:
+        output_dir = Path(td)
+        package_templates(str(_TEMPLATES_DIR), str(output_dir), verbose=False)
+
+        for template_name, source_template in [("cpp", "c"), ("cpp_poll", "c_poll")]:
+            for rel_path in ["machine.c.j2", "machine.h.j2"]:
+                info, payload = _zip_payload(output_dir, template_name, rel_path)
+                assert stat.S_IFMT(info.external_attr >> 16) != stat.S_IFLNK
+                assert (
+                    payload
+                    == (_TEMPLATES_DIR / source_template / rel_path).read_bytes()
+                )
+                assert payload.strip() != (
+                    "../{source}/{rel}".format(source=source_template, rel=rel_path)
+                ).encode("utf-8")
+
+
+@pytest.mark.unittest
+def test_cpp_template_packaging_accepts_symlink_when_realpath_does_not_resolve(
+    monkeypatch,
+):
+    src_file = _TEMPLATES_DIR / "cpp" / "machine.c.j2"
+    target_file = _TEMPLATES_DIR / "c" / "machine.c.j2"
+    realpath = os.path.realpath
+
+    def unresolved_realpath(path):
+        if os.path.abspath(path) == os.path.abspath(str(src_file)):
+            return os.path.abspath(path)
+        return realpath(path)
+
+    monkeypatch.setattr(os.path, "realpath", unresolved_realpath)
+
+    assert _resolve_archive_source(
+        str(_TEMPLATES_DIR / "cpp"),
+        str(src_file),
+        "cpp",
+        "machine.c.j2",
+    ) == str(target_file)
+
+
+@pytest.mark.unittest
+def test_cpp_template_packaging_resolves_windows_symlink_text_stubs():
+    with TemporaryDirectory() as source_td, TemporaryDirectory() as output_td:
+        source_root = Path(source_td) / "templates"
+        output_dir = Path(output_td)
+        for name in ["c", "c_poll", "cpp", "cpp_poll"]:
+            src_dir = _TEMPLATES_DIR / name
+            dst_dir = source_root / name
+            dst_dir.mkdir(parents=True)
+            for item in src_dir.iterdir():
+                if item.is_file() or item.is_symlink():
+                    if item.is_symlink():
+                        target = Path(os.readlink(str(item))).as_posix()
+                        (dst_dir / item.name).write_text(
+                            target + "\n", encoding="utf-8"
+                        )
+                    else:
+                        (dst_dir / item.name).write_bytes(item.read_bytes())
+
+        package_templates(str(source_root), str(output_dir), verbose=False)
+
+        _, cpp_c_payload = _zip_payload(output_dir, "cpp", "machine.c.j2")
+        _, cpp_h_payload = _zip_payload(output_dir, "cpp", "machine.h.j2")
+        _, cpp_poll_c_payload = _zip_payload(output_dir, "cpp_poll", "machine.c.j2")
+        _, cpp_poll_h_payload = _zip_payload(output_dir, "cpp_poll", "machine.h.j2")
+        assert cpp_c_payload == (source_root / "c" / "machine.c.j2").read_bytes()
+        assert cpp_h_payload == (source_root / "c" / "machine.h.j2").read_bytes()
+        assert (
+            cpp_poll_c_payload == (source_root / "c_poll" / "machine.c.j2").read_bytes()
+        )
+        assert (
+            cpp_poll_h_payload == (source_root / "c_poll" / "machine.h.j2").read_bytes()
+        )
+
+
+@pytest.mark.unittest
+def test_cpp_template_packaging_rejects_unexpected_windows_symlink_text_stub():
+    with TemporaryDirectory() as source_td, TemporaryDirectory() as output_td:
+        source_root = Path(source_td) / "templates"
+        output_dir = Path(output_td)
+        for name in ["c", "c_poll", "cpp", "cpp_poll"]:
+            src_dir = _TEMPLATES_DIR / name
+            dst_dir = source_root / name
+            dst_dir.mkdir(parents=True)
+            for item in src_dir.iterdir():
+                if item.is_file() or item.is_symlink():
+                    if item.is_symlink():
+                        target = Path(os.readlink(str(item))).as_posix()
+                        (dst_dir / item.name).write_text(
+                            target + "\n", encoding="utf-8"
+                        )
+                    else:
+                        (dst_dir / item.name).write_bytes(item.read_bytes())
+
+        (source_root / "cpp" / "machine.c.j2").write_text(
+            "../c_poll/machine.c.j2", encoding="utf-8"
+        )
+
+        with pytest.raises(ValueError, match="expected checkout stub"):
+            package_templates(str(source_root), str(output_dir), verbose=False)
+
+
+@pytest.mark.unittest
+def test_cpp_c_core_generated_outputs_match_c_templates(rendered_templates):
+    for rel_path in ["machine.c", "machine.h"]:
+        assert _read_text(rendered_templates["cpp"] / rel_path) == _read_text(
+            rendered_templates["c"] / rel_path
+        )
+        assert _read_text(rendered_templates["cpp_poll"] / rel_path) == _read_text(
+            rendered_templates["c_poll"] / rel_path
+        )
+
+
+@pytest.mark.unittest
+def test_c_family_helpers_are_template_scoped():
+    python_renderer = StateMachineCodeRenderer(str(_TEMPLATES_DIR / "python"))
+    c_helper_names = {
+        "to_c_identifier",
+        "to_c_path_identifier",
+        "to_c_public_identifier",
+        "to_c_public_macro_identifier",
+        "is_c_public_identifier_reserved",
+        "render_c_action_body",
+        "render_c_condition_body",
+        "render_c_reset_vars_body",
+    }
+    assert not (c_helper_names & set(python_renderer.env.filters))
+    assert not (c_helper_names & set(python_renderer.env.globals))
+    assert "c_public_identifier_reserved" not in python_renderer.env.tests
+
+    for name in ["c", "c_poll", "cpp", "cpp_poll"]:
+        renderer = StateMachineCodeRenderer(str(_TEMPLATES_DIR / name))
+        assert c_helper_names <= (set(renderer.env.filters) | set(renderer.env.globals))
+        assert "c_public_identifier_reserved" in renderer.env.tests

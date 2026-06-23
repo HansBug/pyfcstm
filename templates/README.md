@@ -34,8 +34,10 @@ Root `templates/README*.md` files are not part of any template archive. Changing
 | `python` | `python` | Self-contained Python runtime template. |
 | `c` | `c` | Self-contained C99 runtime template with C++98 integration support. |
 | `c_poll` | `c` | Self-contained C99/C++98 runtime template using hook-polled events. |
+| `cpp` | `cpp` | Experimental C++ template skeleton that reuses the `c` core and emits wrapper files. |
+| `cpp_poll` | `cpp` | Experimental C++ poll template skeleton that reuses the `c_poll` core and emits wrapper files. |
 
-Template name and target language are related but not identical. For example, `c_poll` is a distinct template whose generated target language is still `c`.
+Template name and target language are related but not identical. For example, `c_poll` is a distinct template whose generated target language is still `c`, while `cpp_poll` is a distinct template whose generated target language is `cpp`.
 
 ## Reserved language vocabulary
 
@@ -49,7 +51,7 @@ Future templates are expected to use stable `template.json.language` values. The
 | Ruby | `ruby` | Leave room for Ruby source banners and dependency-free runtime design. |
 | Go | `go` | Leave room for Go source banners, `gofmt`, and standard-library-only runtime design. |
 
-Checks should distinguish current templates from reserved vocabulary. `python`, `c`, and `c_poll` are current template names. `java`, `js`, `rust`, `ruby`, and `go` are reserved target-language vocabulary and must not force empty directories to exist.
+Checks should distinguish current templates from reserved vocabulary. `python`, `c`, `c_poll`, `cpp`, and `cpp_poll` are current template names. `java`, `js`, `rust`, `ruby`, and `go` are reserved target-language vocabulary and must not force empty directories to exist.
 
 All future formatter or linter gates for these reserved languages inherit the same repository-wide standard: they are pragmatic quality gates for obvious generated-code roughness, not absolute style objectives. A future Java, JavaScript, Rust, Ruby, Go, or other template must document its formatter flow with that constraint before adding strict checks.
 
@@ -83,6 +85,8 @@ The core rendering call currently renders templates as `tp.render(model=model)`.
 | `ignores` | Git-style patterns excluded from rendering/copying. | Generation-time only. |
 
 Most keys are optional and default to an empty configuration. Generation-time dependencies such as Jinja2, PyYAML, `pathspec`, renderer helpers, and imported filters are allowed because they run inside `pyfcstm` during generation. They must not leak into generated runtime dependencies unless the generated target language explicitly owns that dependency and it is approved by the runtime policy below.
+
+Target-language-specific helpers should be loaded by the owning template through `type: import`. C-family helpers such as `to_c_identifier`, `to_c_path_identifier`, `render_c_action_body`, and `render_c_condition_body` belong to `c` / `c_poll` / `cpp` / `cpp_poll` configs rather than the default renderer environment.
 
 When a new `config.yaml` key is added in code, update this handbook, the affected template-level README files, and the structure checks together.
 

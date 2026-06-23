@@ -144,6 +144,39 @@ class TestRenderRender:
         assert b'\r\n' not in data
         assert data == b'line1\nTrafficLight\nline3'
 
+
+    def test_renderer_handles_nested_outputs_and_ignores(self, sample_model):
+        with TemporaryDirectory() as template_dir:
+            nested_template_dir = os.path.join(template_dir, 'nested')
+            nested_static_dir = os.path.join(template_dir, 'assets', 'nested')
+            ignored_dir = os.path.join(template_dir, 'assets', 'ignored')
+            os.makedirs(nested_template_dir, exist_ok=True)
+            os.makedirs(nested_static_dir, exist_ok=True)
+            os.makedirs(ignored_dir, exist_ok=True)
+
+            with open(os.path.join(template_dir, 'config.yaml'), 'w') as f:
+                f.write("ignores:\n  - 'assets/ignored/**'\n")
+            with open(os.path.join(nested_template_dir, 'rendered.txt.j2'), 'w') as f:
+                f.write('state={{ model.root_state.name }}')
+            with open(os.path.join(nested_static_dir, 'static.txt'), 'w') as f:
+                f.write('static asset')
+            with open(os.path.join(ignored_dir, 'skip.txt'), 'w') as f:
+                f.write('ignored asset')
+
+            renderer = StateMachineCodeRenderer(template_dir)
+
+            with TemporaryDirectory() as output_dir:
+                renderer.render(model=sample_model, output_dir=output_dir)
+
+                with open(os.path.join(output_dir, 'nested', 'rendered.txt'), 'r') as f:
+                    rendered = f.read()
+                with open(os.path.join(output_dir, 'assets', 'nested', 'static.txt'), 'r') as f:
+                    static = f.read()
+
+                assert rendered == 'state=TrafficLight'
+                assert static == 'static asset'
+                assert not os.path.exists(os.path.join(output_dir, 'assets', 'ignored', 'skip.txt'))
+
     def test_renderer_expr_render_supports_language_aliases(self, sample_model):
         with TemporaryDirectory() as template_dir:
             with open(os.path.join(template_dir, 'config.yaml'), 'w') as f:

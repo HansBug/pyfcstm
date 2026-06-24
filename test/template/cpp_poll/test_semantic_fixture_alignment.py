@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from test.template.cpp_shared import run_cpp_alignment_case
+from test.testings.native_toolchain_alignment.report import read_observations_jsonl
 from test.testings.simulate_semantics import iter_semantic_cases, load_semantic_case
 
 
@@ -26,6 +27,9 @@ def test_generated_cpp_poll_alignment_harness_uses_wrapper_api(tmp_path):
     harness_source = Path(artifacts.harness_dir, "harness.cpp").read_text(
         encoding="utf-8"
     )
+
+    observations = read_observations_jsonl(artifacts.observations_path)
+    assert all(item["api_return"] is None for item in observations)
 
     assert '#include "machine.hpp"' in harness_source
     assert '#include "machine.h"' not in harness_source

@@ -441,15 +441,16 @@ def assert_observations_match_case(
                 template_name,
             )
         else:
-            assert observation.get("api_return") == 1, (
-                "%s step %d expected successful API return, got %r last_error=%r"
-                % (
-                    case.id,
-                    index,
-                    observation.get("api_return"),
-                    observation.get("last_error"),
-                )
+            assert observation.get("last_error") in (None, ""), (
+                "%s step %d expected no native runtime error, got last_error=%r"
+                % (case.id, index, observation.get("last_error"))
             )
+            api_return = observation.get("api_return")
+            if api_return is not None:
+                assert api_return == 1, (
+                    "%s step %d expected successful native API return, got %r"
+                    % (case.id, index, api_return)
+                )
         runtime = _ObservationRuntime(observation)
         simulate_semantics._assert_runtime_expectation(
             runtime,

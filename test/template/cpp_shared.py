@@ -186,7 +186,8 @@ static void write_handler_calls(FILE *out)
     fputc(']', out);
 }
 
-{% if context.hooks %}static void record_hook({{ context.machine_class_name }} *machine_ptr, const {{ context.machine_class_name }}ExecutionContext *ctx, void *user_data)
+{% if context.hooks %}extern "C" {
+static void record_hook({{ context.machine_class_name }} *machine_ptr, const {{ context.machine_class_name }}ExecutionContext *ctx, void *user_data)
 {
     struct HandlerCall *call;
     (void)machine_ptr;
@@ -205,6 +206,7 @@ static void write_handler_calls(FILE *out)
 {% for variable in context.variables %}{% if variable.type == 'int' %}    call->{{ variable.field }}_is_int = ctx->vars->{{ variable.field }};
 {% else %}    call->{{ variable.field }}_is_float = ctx->vars->{{ variable.field }};
 {% endif %}{% endfor %}}
+}
 {% endif %}
 static void install_hooks(Wrapper *wrapper)
 {
@@ -217,7 +219,7 @@ static int run_cycle(Wrapper *wrapper, const {{ context.machine_class_name }}Eve
     return wrapper->cycle(events, event_count);
 }
 
-static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int cycle_index, const char **event_names, size_t event_count, int api_return, const char *last_error)
+static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int cycle_index, const char **event_names, size_t event_count, const char *last_error)
 {
     size_t i;
     const char *state_path = wrapper->current_state_path();
@@ -248,7 +250,7 @@ static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int c
     write_handler_calls(out);
     fputs(",\"last_error\":", out);
     json_string(out, last_error);
-    fprintf(out, ",\"api_return\":%d", api_return);
+    fputs(",\"api_return\":null", out);
     fputs("}\n", out);
 }
 
@@ -269,7 +271,7 @@ static void write_initial_error(FILE *out, const char *last_error)
     fputs(",\"handler_calls\":[]", out);
     fputs(",\"last_error\":", out);
     json_string(out, last_error);
-    fputs(",\"api_return\":0", out);
+    fputs(",\"api_return\":null", out);
     fputs("}\n", out);
 }
 
@@ -343,10 +345,13 @@ int main(int argc, char **argv)
 {% else %}            api_return = run_cycle(&wrapper, NULL, 0u);
 {% endif %}            if (!api_return) {
                 last_error = wrapper.last_error();
+                if (last_error == NULL || last_error[0] == '\0') {
+                    last_error = "Generated C++ wrapper cycle returned failure without diagnostic";
+                }
                 break;
             }
         }
-{% endif %}        write_observation(out, &wrapper, {{ step.index }}, 0, event_names, {{ step.events | length }}u, api_return, last_error);
+{% endif %}        write_observation(out, &wrapper, {{ step.index }}, 0, event_names, {{ step.events | length }}u, last_error);
     }
 {% endfor %}    fclose(out);
     return 0;
@@ -502,7 +507,8 @@ static void write_handler_calls(FILE *out)
     fputc(']', out);
 }
 
-{% if context.hooks %}static void record_hook({{ context.machine_class_name }} *machine_ptr, const {{ context.machine_class_name }}ExecutionContext *ctx, void *user_data)
+{% if context.hooks %}extern "C" {
+static void record_hook({{ context.machine_class_name }} *machine_ptr, const {{ context.machine_class_name }}ExecutionContext *ctx, void *user_data)
 {
     struct HandlerCall *call;
     (void)machine_ptr;
@@ -521,6 +527,7 @@ static void write_handler_calls(FILE *out)
 {% for variable in context.variables %}{% if variable.type == 'int' %}    call->{{ variable.field }}_is_int = ctx->vars->{{ variable.field }};
 {% else %}    call->{{ variable.field }}_is_float = ctx->vars->{{ variable.field }};
 {% endif %}{% endfor %}}
+}
 {% endif %}
 static void install_hooks(Wrapper *wrapper)
 {
@@ -528,6 +535,7 @@ static void install_hooks(Wrapper *wrapper)
 {% endfor %}    wrapper->set_hooks(&hooks, NULL);
 }
 
+extern "C" {
 static int check_event({{ context.machine_class_name }} *machine_ptr, const {{ context.machine_class_name }}EventContext *ctx, void *user_data)
 {
     size_t i;
@@ -540,6 +548,7 @@ static int check_event({{ context.machine_class_name }} *machine_ptr, const {{ c
     }
     return 0;
 }
+}
 
 static void install_event_checks(Wrapper *wrapper)
 {
@@ -550,6 +559,9 @@ static void install_event_checks(Wrapper *wrapper)
 static int run_cycle(Wrapper *wrapper, const {{ context.machine_class_name }}EventId *events, size_t event_count)
 {
     size_t i;
+    if (event_count > sizeof(active_events) / sizeof(active_events[0])) {
+        return 0;
+    }
     active_event_count = event_count;
     for (i = 0u; i < event_count; ++i) {
         active_events[i] = events[i];
@@ -557,7 +569,7 @@ static int run_cycle(Wrapper *wrapper, const {{ context.machine_class_name }}Eve
     return wrapper->cycle();
 }
 
-static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int cycle_index, const char **event_names, size_t event_count, int api_return, const char *last_error)
+static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int cycle_index, const char **event_names, size_t event_count, const char *last_error)
 {
     size_t i;
     const char *state_path = wrapper->current_state_path();
@@ -588,7 +600,7 @@ static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int c
     write_handler_calls(out);
     fputs(",\"last_error\":", out);
     json_string(out, last_error);
-    fprintf(out, ",\"api_return\":%d", api_return);
+    fputs(",\"api_return\":null", out);
     fputs("}\n", out);
 }
 
@@ -609,7 +621,7 @@ static void write_initial_error(FILE *out, const char *last_error)
     fputs(",\"handler_calls\":[]", out);
     fputs(",\"last_error\":", out);
     json_string(out, last_error);
-    fputs(",\"api_return\":0", out);
+    fputs(",\"api_return\":null", out);
     fputs("}\n", out);
 }
 
@@ -684,10 +696,13 @@ int main(int argc, char **argv)
 {% else %}            api_return = run_cycle(&wrapper, NULL, 0u);
 {% endif %}            if (!api_return) {
                 last_error = wrapper.last_error();
+                if (last_error == NULL || last_error[0] == '\0') {
+                    last_error = "Generated C++ wrapper cycle returned failure without diagnostic";
+                }
                 break;
             }
         }
-{% endif %}        write_observation(out, &wrapper, {{ step.index }}, 0, event_names, {{ step.events | length }}u, api_return, last_error);
+{% endif %}        write_observation(out, &wrapper, {{ step.index }}, 0, event_names, {{ step.events | length }}u, last_error);
     }
 {% endfor %}    fclose(out);
     return 0;

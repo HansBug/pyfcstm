@@ -109,15 +109,30 @@ static void json_string(FILE *out, const char *value)
 
 static void write_machine_int(FILE *out, {{ context.machine_class_name }}Int value)
 {
-#if defined(_MSC_VER) && !defined(__clang__)
-    fprintf(out, "%I64d", (__int64)value);
-#elif defined(__SIZEOF_LONG__) && (__SIZEOF_LONG__ >= 8)
-    fprintf(out, "%ld", (long)value);
-#elif defined(__GNUC__) || defined(__clang__)
-    fprintf(out, "%lld", (long long)value);
-#else
-    fprintf(out, "%ld", (long)value);
-#endif
+    char digits[64];
+    size_t count = 0u;
+    {{ context.machine_class_name }}Int quotient = value;
+
+    if (quotient == 0) {
+        fputc('0', out);
+        return;
+    }
+    if (quotient < 0) {
+        fputc('-', out);
+        while (quotient != 0) {
+            {{ context.machine_class_name }}Int next = quotient / 10;
+            digits[count++] = (char)('0' + (int)(next * 10 - quotient));
+            quotient = next;
+        }
+    } else {
+        while (quotient != 0) {
+            digits[count++] = (char)('0' + (int)(quotient % 10));
+            quotient = quotient / 10;
+        }
+    }
+    while (count > 0u) {
+        fputc((int)digits[--count], out);
+    }
 }
 
 static void write_vars(FILE *out, const {{ context.machine_class_name }}Vars *vars)
@@ -410,15 +425,30 @@ static void json_string(FILE *out, const char *value)
 
 static void write_machine_int(FILE *out, {{ context.machine_class_name }}Int value)
 {
-#if defined(_MSC_VER) && !defined(__clang__)
-    fprintf(out, "%I64d", (__int64)value);
-#elif defined(__SIZEOF_LONG__) && (__SIZEOF_LONG__ >= 8)
-    fprintf(out, "%ld", (long)value);
-#elif defined(__GNUC__) || defined(__clang__)
-    fprintf(out, "%lld", (long long)value);
-#else
-    fprintf(out, "%ld", (long)value);
-#endif
+    char digits[64];
+    size_t count = 0u;
+    {{ context.machine_class_name }}Int quotient = value;
+
+    if (quotient == 0) {
+        fputc('0', out);
+        return;
+    }
+    if (quotient < 0) {
+        fputc('-', out);
+        while (quotient != 0) {
+            {{ context.machine_class_name }}Int next = quotient / 10;
+            digits[count++] = (char)('0' + (int)(next * 10 - quotient));
+            quotient = next;
+        }
+    } else {
+        while (quotient != 0) {
+            digits[count++] = (char)('0' + (int)(quotient % 10));
+            quotient = quotient / 10;
+        }
+    }
+    while (count > 0u) {
+        fputc((int)digits[--count], out);
+    }
 }
 
 static void write_vars(FILE *out, const {{ context.machine_class_name }}Vars *vars)
@@ -845,6 +875,12 @@ def _run_command(
     return completed
 
 
+def _command_output_tail(output: str, limit: int = 4000) -> str:
+    if len(output) <= limit:
+        return output
+    return "...<truncated>\n" + output[-limit:]
+
+
 def _fail_command(
     stage: str,
     command: Sequence[str],
@@ -854,12 +890,18 @@ def _fail_command(
 ) -> None:
     raise AssertionError(
         "{stage} failed with return code {returncode}.\n"
-        "command: {command}\nstdout: {stdout}\nstderr: {stderr}".format(
+        "command: {command}\n"
+        "stdout: {stdout}\n"
+        "stderr: {stderr}\n"
+        "stdout tail:\n{stdout_tail}\n"
+        "stderr tail:\n{stderr_tail}".format(
             stage=stage,
             returncode=completed.returncode,
             command=" ".join(command),
             stdout=stdout_path,
             stderr=stderr_path,
+            stdout_tail=_command_output_tail(completed.stdout or ""),
+            stderr_tail=_command_output_tail(completed.stderr or ""),
         )
     )
 

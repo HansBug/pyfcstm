@@ -4,7 +4,8 @@ Guard C++ fixture harnesses against bypassing wrapper entrypoints.
 The tests exercise the lightweight source gate used before generated
 ``harness.cpp`` files are written for C++ shared semantic fixture alignment.
 They keep the fixture runner focused on ``machine.hpp`` wrapper APIs instead
-of direct ``machine.h`` C runtime entrypoints.
+of direct ``machine.h`` C runtime entrypoints. This is a closed regression
+corpus for fixture harness discipline, not a full C++ static analyzer.
 
 Example::
 
@@ -28,6 +29,8 @@ def test_cpp_wrapper_harness_accepts_wrapper_entrypoint_only():
     _assert_wrapper_only_harness(
         '#include "machine.hpp"\n'
         "#include <stdio.h>\n"
+        "// native_handle and RootMachine_cycle are diagnostic words only.\n"
+        'const char *diagnostic = "RootMachine_cycle";\n'
         "typedef pyfcstm_generated::Root_cpp::MachineWrapper Wrapper;\n"
         "static void use_wrapper(Wrapper *wrapper) { (void)wrapper->cycle(); }\n"
     )
@@ -58,6 +61,18 @@ def test_cpp_wrapper_harness_accepts_wrapper_entrypoint_only():
             id="nested-machine-header-with-comment",
         ),
         pytest.param(
+            '#include "machine.hpp"\n#include "MACHINE.H"\n',
+            id="case-variant-machine-header",
+        ),
+        pytest.param(
+            '#include "machine.hpp"\n/* temporary */ #include "machine.h"\n',
+            id="block-comment-prefix-machine-header",
+        ),
+        pytest.param(
+            '#include "machine.hpp"\n#define HEADER "machine.h"\n#include HEADER\n',
+            id="macro-indirect-machine-header",
+        ),
+        pytest.param(
             '#include "machine.hpp"\nRootMachine root;\n',
             id="bare-c-machine-object",
         ),
@@ -80,6 +95,18 @@ def test_cpp_wrapper_harness_accepts_wrapper_entrypoint_only():
         pytest.param(
             '#include "machine.hpp"\nvoid (*fn)(void) = &RootMachine_cycle;\n',
             id="direct-c-api-address",
+        ),
+        pytest.param(
+            '#include "machine.hpp"\n#define C_API(name) RootMachine_##name\nC_API(cycle)(root, events, count);\n',
+            id="token-paste-c-api-suffix",
+        ),
+        pytest.param(
+            '#include "machine.hpp"\n#define CYCLE RootMachine_cycle\nCYCLE(root, events, count);\n',
+            id="macro-alias-c-api-token",
+        ),
+        pytest.param(
+            '#include "machine.hpp"\n#define CALL(name) name##Machine_cycle(0, 0, 0)\nCALL(Root);\n',
+            id="token-paste-c-api-prefix",
         ),
         pytest.param(
             '#include "machine.hpp"\nwrapper.native_handle();\n',

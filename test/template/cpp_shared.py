@@ -45,7 +45,10 @@ from test.testings.native_toolchain_alignment.runner import (
 )
 from test.testings.simulate_semantics import SemanticCase
 
-_INCLUDE_DIRECTIVE_RE = re.compile(r"^\s*#\s*include\s*[<\"]([^>\"]+)[>\"]", re.M)
+_INCLUDE_DIRECTIVE_RE = re.compile(r"^\s*#\s*include\s*(?P<target>[^\n]+)", re.M)
+_INCLUDE_LITERAL_RE = re.compile(r'(?:(?:"([^"\n]+)")|(?:<([^>\n]+)>))')
+_NATIVE_HANDLE_CALL_RE = re.compile(r"\bnative_handle\s*\(")
+_TOKEN_PASTE_RE = re.compile(r"##")
 _DIRECT_C_TYPE_RE = re.compile(
     r"\b[A-Za-z_][A-Za-z0-9_]*Machine"
     r"(Vars|StateId|EventId|Int|Hooks|EventChecks|ExecutionContext|EventContext)?\b"
@@ -54,8 +57,7 @@ _DIRECT_C_API_RE = re.compile(
     r"\b[A-Za-z_][A-Za-z0-9_]*Machine_"
     r"(create_uninitialized|create|destroy|init|hot_start|set_hooks|"
     r"set_event_checks|cycle|vars|is_ended|current_state_id|"
-    r"current_state_path|current_state_name|last_error|dsl_source)"
-    r"\s*(?:\(|[,;=)\]&])"
+    r"current_state_path|current_state_name|last_error|dsl_source)\b"
 )
 _WRAPPER_HEADER_BASENAME = "machine.hpp"
 _CONTEXT_TEMPLATE_MAP = {"cpp": "c", "cpp_poll": "c_poll"}
@@ -949,6 +951,110 @@ def _render_harness(template_name: str, case: SemanticCase, harness_path: str) -
         f.write(rendered)
 
 
+def _mask_cpp_comments_and_literals(source: str, mask_literals: bool) -> str:
+    """
+    Replace C++ comments and optionally literals with whitespace.
+
+    Newlines are preserved so preprocessor directive checks still operate on
+    the same logical lines after block comments are removed. Include checks keep
+    literals intact because header names live in ``#include "..."`` tokens;
+    symbol checks mask literals so diagnostic strings cannot satisfy or trip
+    wrapper-only guard patterns.
+
+    :param source: C++ source text to inspect.
+    :type source: str
+    :param mask_literals: Whether string and character literals should also be
+        replaced by whitespace.
+    :type mask_literals: bool
+    :return: Source text with comments, and optionally literals, masked.
+    :rtype: str
+
+    Example::
+
+        >>> _mask_cpp_comments_and_literals('// #include "machine.hpp"\n', False)
+        '\n'
+        >>> _mask_cpp_comments_and_literals('"RootMachine_cycle"', True)
+        '                   '
+    """
+    output = []
+    index = 0
+    length = len(source)
+    while index < length:
+        char = source[index]
+        next_char = source[index + 1] if index + 1 < length else ""
+
+        if char == "/" and next_char == "/":
+            index += 2
+            while index < length and source[index] != "\n":
+                index += 1
+            if index < length:
+                output.append("\n")
+                index += 1
+        elif char == "/" and next_char == "*":
+            output.append(" ")
+            output.append(" ")
+            index += 2
+            while index < length:
+                current = source[index]
+                following = source[index + 1] if index + 1 < length else ""
+                if current == "*" and following == "/":
+                    output.append(" ")
+                    output.append(" ")
+                    index += 2
+                    break
+                output.append("\n" if current == "\n" else " ")
+                index += 1
+        elif mask_literals and char in {'"', "'"}:
+            quote = char
+            output.append(" ")
+            index += 1
+            while index < length:
+                current = source[index]
+                output.append("\n" if current == "\n" else " ")
+                index += 1
+                if current == "\\" and index < length:
+                    escaped = source[index]
+                    output.append("\n" if escaped == "\n" else " ")
+                    index += 1
+                elif current == quote:
+                    break
+        else:
+            output.append(char)
+            index += 1
+    return "".join(output)
+
+
+def _iter_include_targets(source: str) -> List[str]:
+    """
+    Return literal include targets from comment-masked C++ source.
+
+    Macro include directives are represented by an empty string so callers can
+    reject them conservatively without implementing a preprocessor.
+
+    :param source: C++ source text to inspect.
+    :type source: str
+    :return: Include targets; ``""`` means a non-literal include directive.
+    :rtype: list[str]
+
+    Example::
+
+        >>> _iter_include_targets('#include "machine.hpp"\n')
+        ['machine.hpp']
+        >>> _iter_include_targets('#include HEADER\n')
+        ['']
+    """
+    directive_source = _mask_cpp_comments_and_literals(source, mask_literals=False)
+    targets = []
+    for match in _INCLUDE_DIRECTIVE_RE.finditer(directive_source):
+        raw_target = match.group("target").strip()
+        literal_match = _INCLUDE_LITERAL_RE.match(raw_target)
+        if literal_match:
+            targets.append(literal_match.group(1) or literal_match.group(2))
+        else:
+            targets.append("")
+    return targets
+
+
 def _has_wrapper_header_include(source: str) -> bool:
     """
     Return whether a harness directly includes the C++ wrapper header.
@@ -969,9 +1075,9 @@ def _has_wrapper_header_include(source: str) -> bool:
         >>> _has_wrapper_header_include('// #include "machine.hpp"\n')
         False
     """
-    for match in _INCLUDE_DIRECTIVE_RE.finditer(source):
-        target = match.group(1).replace("\\", "/")
-        if os.path.basename(target) == _WRAPPER_HEADER_BASENAME:
+    for target in _iter_include_targets(source):
+        normalized_target = target.replace("\\", "/")
+        if os.path.basename(normalized_target).lower() == _WRAPPER_HEADER_BASENAME:
             return True
     return False
 
@@ -997,9 +1103,9 @@ def _has_direct_machine_header_include(source: str) -> bool:
         >>> _has_direct_machine_header_include('#include "machine.hpp"\n')
         False
     """
-    for match in _INCLUDE_DIRECTIVE_RE.finditer(source):
-        target = match.group(1).replace("\\", "/")
-        if os.path.basename(target) == "machine.h":
+    for target in _iter_include_targets(source):
+        normalized_target = target.replace("\\", "/")
+        if os.path.basename(normalized_target).lower() == "machine.h":
             return True
     return False
 
@@ -1010,8 +1116,15 @@ def _assert_wrapper_only_harness(source: str) -> None:
 
     Fixture-alignment harnesses are allowed to include only ``machine.hpp``
     directly. They may observe state through ``Wrapper::...`` aliases and
-    wrapper methods, but they must not directly include ``machine.h``, bind C
-    runtime typedef names, or call generated ``...Machine_*`` C functions.
+    wrapper methods, but they must not directly include ``machine.h``, use macro
+    includes, use token-paste macros, bind C runtime typedef names, or call
+    generated ``...Machine_*`` C functions.
+
+    .. note::
+       This is a conservative source-level gate, not a complete C++ parser or
+       preprocessor. It masks comments and string literals before symbol checks,
+       rejects every non-literal ``#include`` directive, and rejects token-paste
+       macros because fixture harnesses do not need those constructs.
 
     :param source: Rendered C++ harness source.
     :type source: str
@@ -1023,11 +1136,15 @@ def _assert_wrapper_only_harness(source: str) -> None:
 
         >>> _assert_wrapper_only_harness('#include "machine.hpp"\\n')
     """
+    include_targets = _iter_include_targets(source)
+    symbol_source = _mask_cpp_comments_and_literals(source, mask_literals=True)
+    assert include_targets and all(include_targets)
     assert _has_wrapper_header_include(source)
     assert not _has_direct_machine_header_include(source)
-    assert "native_handle" not in source
-    assert not _DIRECT_C_TYPE_RE.search(source)
-    assert not _DIRECT_C_API_RE.search(source)
+    assert not _TOKEN_PASTE_RE.search(symbol_source)
+    assert not _NATIVE_HANDLE_CALL_RE.search(symbol_source)
+    assert not _DIRECT_C_TYPE_RE.search(symbol_source)
+    assert not _DIRECT_C_API_RE.search(symbol_source)
 
 
 def _render_cmake(artifacts: CppAlignmentArtifacts, harness_path: str) -> None:

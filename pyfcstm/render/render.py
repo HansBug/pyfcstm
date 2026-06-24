@@ -210,7 +210,7 @@ class StateMachineCodeRenderer:
             config_info = yaml.safe_load(f)
         config_info = self._validate_config_info(config_info)
 
-        expr_styles = copy.deepcopy(config_info.pop("expr_styles", None) or {})
+        expr_styles = config_info.pop("expr_styles", None) or {}
         expr_styles["default"] = expr_styles.get("default") or {"base_lang": "dsl"}
         d_templates = copy.deepcopy(_KNOWN_STYLES)
         for style_name, expr_style in expr_styles.items():
@@ -331,9 +331,11 @@ class StateMachineCodeRenderer:
         globals_ = config_info.pop("globals", None) or {}
         for name, value in globals_.items():
             self.env.globals[name] = process_item_to_object(value, env=self.env)
+
         filters_ = config_info.pop("filters", None) or {}
         for name, value in filters_.items():
             self.env.filters[name] = process_item_to_object(value, env=self.env)
+
         tests = config_info.pop("tests", None) or {}
         for name, value in tests.items():
             self.env.tests[name] = process_item_to_object(value, env=self.env)

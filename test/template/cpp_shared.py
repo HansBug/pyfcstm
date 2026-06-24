@@ -107,6 +107,19 @@ static void json_string(FILE *out, const char *value)
     fputc('"', out);
 }
 
+static void write_machine_int(FILE *out, {{ context.machine_class_name }}Int value)
+{
+#if defined(_MSC_VER) && !defined(__clang__)
+    fprintf(out, "%I64d", (__int64)value);
+#elif defined(__SIZEOF_LONG__) && (__SIZEOF_LONG__ >= 8)
+    fprintf(out, "%ld", (long)value);
+#elif defined(__GNUC__) || defined(__clang__)
+    fprintf(out, "%lld", (long long)value);
+#else
+    fprintf(out, "%ld", (long)value);
+#endif
+}
+
 static void write_vars(FILE *out, const {{ context.machine_class_name }}Vars *vars)
 {
     fputc('{', out);
@@ -115,7 +128,7 @@ static void write_vars(FILE *out, const {{ context.machine_class_name }}Vars *va
     }
     json_string(out, {{ variable.name | tojson }});
     fputc(':', out);
-{% if variable.type == 'int' %}    fprintf(out, "%lld", (long long)vars->{{ variable.field }});
+{% if variable.type == 'int' %}    write_machine_int(out, vars->{{ variable.field }});
 {% else %}    fprintf(out, "%.17g", vars->{{ variable.field }});
 {% endif %}{% endfor %}    fputc('}', out);
 }
@@ -142,7 +155,7 @@ static void write_handler_calls(FILE *out)
         }
         json_string(out, {{ variable.name | tojson }});
         fputc(':', out);
-{% if variable.type == 'int' %}        fprintf(out, "%lld", (long long)call->{{ variable.field }}_is_int);
+{% if variable.type == 'int' %}        write_machine_int(out, call->{{ variable.field }}_is_int);
 {% else %}        fprintf(out, "%.17g", call->{{ variable.field }}_is_float);
 {% endif %}{% endfor %}        fputs("}", out);
         fputs(",\"active_leaf\":", out);
@@ -395,6 +408,19 @@ static void json_string(FILE *out, const char *value)
     fputc('"', out);
 }
 
+static void write_machine_int(FILE *out, {{ context.machine_class_name }}Int value)
+{
+#if defined(_MSC_VER) && !defined(__clang__)
+    fprintf(out, "%I64d", (__int64)value);
+#elif defined(__SIZEOF_LONG__) && (__SIZEOF_LONG__ >= 8)
+    fprintf(out, "%ld", (long)value);
+#elif defined(__GNUC__) || defined(__clang__)
+    fprintf(out, "%lld", (long long)value);
+#else
+    fprintf(out, "%ld", (long)value);
+#endif
+}
+
 static void write_vars(FILE *out, const {{ context.machine_class_name }}Vars *vars)
 {
     fputc('{', out);
@@ -403,7 +429,7 @@ static void write_vars(FILE *out, const {{ context.machine_class_name }}Vars *va
     }
     json_string(out, {{ variable.name | tojson }});
     fputc(':', out);
-{% if variable.type == 'int' %}    fprintf(out, "%lld", (long long)vars->{{ variable.field }});
+{% if variable.type == 'int' %}    write_machine_int(out, vars->{{ variable.field }});
 {% else %}    fprintf(out, "%.17g", vars->{{ variable.field }});
 {% endif %}{% endfor %}    fputc('}', out);
 }
@@ -430,7 +456,7 @@ static void write_handler_calls(FILE *out)
         }
         json_string(out, {{ variable.name | tojson }});
         fputc(':', out);
-{% if variable.type == 'int' %}        fprintf(out, "%lld", (long long)call->{{ variable.field }}_is_int);
+{% if variable.type == 'int' %}        write_machine_int(out, call->{{ variable.field }}_is_int);
 {% else %}        fprintf(out, "%.17g", call->{{ variable.field }}_is_float);
 {% endif %}{% endfor %}        fputs("}", out);
         fputs(",\"active_leaf\":", out);

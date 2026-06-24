@@ -15,16 +15,40 @@ stmt_styles:
     temp_type_fallback: double
 
 globals:
+  render_c_action_body:
+    type: import
+    from: pyfcstm.render.c_runtime.render_c_action_body
+  render_c_condition_body:
+    type: import
+    from: pyfcstm.render.c_runtime.render_c_condition_body
+  render_c_reset_vars_body:
+    type: import
+    from: pyfcstm.render.c_runtime.render_c_reset_vars_body
+  to_c_identifier:
+    type: import
+    from: pyfcstm.utils.to_c_identifier
+  to_c_path_identifier:
+    type: import
+    from: pyfcstm.utils.to_c_path_identifier
+  to_c_public_identifier:
+    type: import
+    from: pyfcstm.utils.to_c_public_identifier
+  to_c_public_macro_identifier:
+    type: import
+    from: pyfcstm.utils.to_c_public_macro_identifier
+  is_c_public_identifier_reserved:
+    type: import
+    from: pyfcstm.utils.is_c_public_identifier_reserved
   machine_class_name:
     type: template
     params:
       - model
-    template: "{{ model.root_state.name | to_c_public_identifier('Machine') }}"
+    template: "{{ to_c_public_identifier(model.root_state.name, 'Machine') }}"
   machine_macro_name:
     type: template
     params:
       - model
-    template: "{{ model.root_state.name | to_c_public_macro_identifier('_MACHINE') }}"
+    template: "{{ to_c_public_macro_identifier(model.root_state.name, '_MACHINE') }}"
   machine_header_guard:
     type: template
     params:
@@ -39,7 +63,7 @@ globals:
     type: template
     params:
       - state
-    template: "{{ state.path | to_c_path_identifier }}"
+    template: "{{ to_c_path_identifier(state.path) }}"
   state_enum_name:
     type: template
     params:
@@ -49,32 +73,32 @@ globals:
     type: template
     params:
       - action
-    template: "on_{{ action.func_name | to_c_identifier }}"
+    template: "on_{{ to_c_identifier(action.func_name) }}"
   hook_field_id_name:
     type: template
     params:
       - action
-    template: "on_{{ action.func_name.split('.') | to_c_path_identifier }}"
+    template: "on_{{ to_c_path_identifier(action.func_name.split('.')) }}"
   event_check_field_name:
     type: template
     params:
       - event_path
-    template: "check_{{ event_path | to_c_identifier }}"
+    template: "check_{{ to_c_identifier(event_path) }}"
   event_check_field_id_name:
     type: template
     params:
       - event_path
-    template: "check_{{ event_path.split('.') | to_c_path_identifier }}"
+    template: "check_{{ to_c_path_identifier(event_path.split('.')) }}"
   hook_enum_name:
     type: template
     params:
       - action
-    template: "{{ machine_macro_name(model) }}_HOOK_{{ action.func_name | to_c_identifier | upper }}"
+    template: "{{ machine_macro_name(model) }}_HOOK_{{ to_c_identifier(action.func_name) | upper }}"
   hook_enum_id_name:
     type: template
     params:
       - action
-    template: "{{ machine_macro_name(model) }}_HOOK_{{ action.func_name.split('.') | to_c_path_identifier }}"
+    template: "{{ machine_macro_name(model) }}_HOOK_{{ to_c_path_identifier(action.func_name.split('.')) }}"
   action_owner_path:
     type: template
     params:
@@ -82,6 +106,21 @@ globals:
     template: "{{ action.parent.path | join('.') }}"
 
 filters:
+  to_c_identifier:
+    type: import
+    from: pyfcstm.utils.to_c_identifier
+  to_c_path_identifier:
+    type: import
+    from: pyfcstm.utils.to_c_path_identifier
+  to_c_public_identifier:
+    type: import
+    from: pyfcstm.utils.to_c_public_identifier
+  to_c_public_macro_identifier:
+    type: import
+    from: pyfcstm.utils.to_c_public_macro_identifier
+  is_c_public_identifier_reserved:
+    type: import
+    from: pyfcstm.utils.is_c_public_identifier_reserved
   machine_class_name:
     type: template
     params:
@@ -147,6 +186,11 @@ filters:
     params:
       - action
     template: "{{ action_owner_path(action) }}"
+
+tests:
+  c_public_identifier_reserved:
+    type: import
+    from: pyfcstm.utils.is_c_public_identifier_reserved
 
 ignores:
   - 'README.md'

@@ -85,6 +85,14 @@ def test_cpp_wrapper_harness_accepts_wrapper_entrypoint_only():
             '#include "machine.hpp"\nwrapper.native_handle();\n',
             id="native-handle-access",
         ),
+        pytest.param(
+            '// #include "machine.hpp"\nstatic void use_wrapper(void) {}\n',
+            id="commented-wrapper-header-only",
+        ),
+        pytest.param(
+            'const char *header = "machine.hpp";\nstatic void use_wrapper(void) {}\n',
+            id="string-literal-wrapper-header-only",
+        ),
     ],
 )
 def test_cpp_wrapper_harness_rejects_direct_c_runtime_entrypoints(source):

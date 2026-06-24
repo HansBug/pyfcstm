@@ -57,7 +57,11 @@ _DIRECT_C_API_RE = re.compile(
     r"current_state_path|current_state_name|last_error|dsl_source)"
     r"\s*(?:\(|[,;=)\]&])"
 )
+_WRAPPER_HEADER_BASENAME = "machine.hpp"
+_CONTEXT_TEMPLATE_MAP = {"cpp": "c", "cpp_poll": "c_poll"}
 
+# Harness sections: wrapper aliases, hook/event recording helpers, JSON writers,
+# initialization or hot-start code, then shared fixture step execution.
 _CPP_TEMPLATE = r"""
 #include "machine.hpp"
 
@@ -375,6 +379,8 @@ int main(int argc, char **argv)
 }
 """
 
+# The poll harness mirrors ``_CPP_TEMPLATE`` but routes events through
+# ``set_event_checks()`` before invoking the zero-argument wrapper cycle.
 _CPP_POLL_TEMPLATE = r"""
 #include "machine.hpp"
 
@@ -726,6 +732,8 @@ int main(int argc, char **argv)
 }
 """
 
+_TEMPLATE_TEXT_MAP = {"cpp": _CPP_TEMPLATE, "cpp_poll": _CPP_POLL_TEMPLATE}
+
 _CMAKE_TEMPLATE = r"""
 cmake_minimum_required(VERSION 3.5)
 project(pyfcstm_cpp_shared_fixture_harness C CXX)
@@ -791,17 +799,58 @@ class CppAlignmentArtifacts:
 
 
 def _validate_template_name(template_name: str) -> None:
-    if template_name not in ("cpp", "cpp_poll"):
+    """
+    Validate that a C++ alignment helper received a supported template name.
+
+    :param template_name: Candidate template name.
+    :type template_name: str
+    :return: ``None``.
+    :rtype: None
+    :raises ValueError: If ``template_name`` is not ``"cpp"`` or
+        ``"cpp_poll"``.
+
+    Example::
+
+        >>> _validate_template_name("cpp")
+    """
+    if template_name not in _CONTEXT_TEMPLATE_MAP:
         raise ValueError("unsupported C++ alignment template: %r" % template_name)
 
 
 def _cmake_generator_args() -> List[str]:
+    """
+    Return platform-specific CMake generator arguments for fixture builds.
+
+    Windows CI uses MinGW for these generated wrapper harness tests, while
+    POSIX platforms can use CMake's default generator.
+
+    :return: Extra arguments for the CMake configure command.
+    :rtype: list[str]
+
+    Example::
+
+        >>> isinstance(_cmake_generator_args(), list)
+        True
+    """
     if os.name == "nt":
         return ["-G", "MinGW Makefiles"]
     return []
 
 
 def _find_cmake() -> str:
+    """
+    Locate the CMake executable required by generated C++ harness tests.
+
+    :return: Path to the ``cmake`` executable.
+    :rtype: str
+    :raises pytest.skip.Exception: If CMake is unavailable in the current
+        environment.
+
+    Example::
+
+        >>> bool(_find_cmake())  # doctest: +SKIP
+        True
+    """
     cmake = shutil.which("cmake")
     if cmake is None:
         pytest.skip("cmake is required for generated C++ alignment tests.")
@@ -809,6 +858,18 @@ def _find_cmake() -> str:
 
 
 def _environment() -> Environment:
+    """
+    Create the strict Jinja2 environment used for harness source templates.
+
+    :return: Jinja2 environment with the ``tojson`` filter registered.
+    :rtype: jinja2.Environment
+
+    Example::
+
+        >>> env = _environment()
+        >>> env.from_string('{{ value | tojson }}').render(value='x')
+        '"x"'
+    """
     env = Environment(
         undefined=StrictUndefined,
         autoescape=False,
@@ -822,6 +883,26 @@ def _environment() -> Environment:
 def _render_generated_template(
     template_name: str, case: SemanticCase, generated_dir: str
 ) -> None:
+    """
+    Render a built-in C++ wrapper template for one semantic fixture case.
+
+    :param template_name: Template under test, either ``"cpp"`` or
+        ``"cpp_poll"``.
+    :type template_name: str
+    :param case: Shared semantic fixture case used to build the state machine.
+    :type case: test.testings.simulate_semantics.SemanticCase
+    :param generated_dir: Directory where generated template files are written.
+    :type generated_dir: str
+    :return: ``None``.
+    :rtype: None
+
+    Example::
+
+        >>> from test.testings.simulate_semantics import load_semantic_case
+        >>> case = load_semantic_case("design_basic_simple_transition")
+        >>> case.id
+        'design_basic_simple_transition'
+    """
     model = simulate_semantics.build_state_machine_from_case(case)
     template_root = os.path.join(os.path.dirname(generated_dir), "template-src")
     template_dir = extract_template(template_name, template_root)
@@ -829,16 +910,70 @@ def _render_generated_template(
 
 
 def _render_harness(template_name: str, case: SemanticCase, harness_path: str) -> None:
-    base_context = build_harness_context(
-        "c_poll" if template_name == "cpp_poll" else "c", case
-    )
+    """
+    Render the C++98 fixture harness for one generated wrapper template.
+
+    The C++ wrapper templates reuse the existing C-family harness context, but
+    the mapping is explicit so new template variants cannot silently fall back
+    to the plain C context.
+
+    :param template_name: Template under test, either ``"cpp"`` or
+        ``"cpp_poll"``.
+    :type template_name: str
+    :param case: Shared semantic fixture case.
+    :type case: test.testings.simulate_semantics.SemanticCase
+    :param harness_path: Path where ``harness.cpp`` is written.
+    :type harness_path: str
+    :return: ``None``.
+    :rtype: None
+    :raises AssertionError: If the rendered harness bypasses the C++ wrapper
+        entrypoint.
+    :raises ValueError: If ``template_name`` is unsupported.
+
+    Example::
+
+        >>> from test.testings.simulate_semantics import load_semantic_case
+        >>> case = load_semantic_case("design_basic_simple_transition")
+        >>> case.id
+        'design_basic_simple_transition'
+    """
+    _validate_template_name(template_name)
+    context_template_name = _CONTEXT_TEMPLATE_MAP[template_name]
+    base_context = build_harness_context(context_template_name, case)
     context = replace(base_context, template_name=template_name)
-    template_text = _CPP_POLL_TEMPLATE if template_name == "cpp_poll" else _CPP_TEMPLATE
+    template_text = _TEMPLATE_TEXT_MAP[template_name]
     rendered = _environment().from_string(template_text).render(context=context)
     _assert_wrapper_only_harness(rendered)
     os.makedirs(os.path.dirname(harness_path), exist_ok=True)
     with open(harness_path, "w", encoding="utf-8") as f:
         f.write(rendered)
+
+
+def _has_wrapper_header_include(source: str) -> bool:
+    """
+    Return whether a harness directly includes the C++ wrapper header.
+
+    The check uses preprocessor include directives rather than substring
+    matching, so comments and string literals cannot satisfy the wrapper-entry
+    contract accidentally.
+
+    :param source: Rendered C++ harness source.
+    :type source: str
+    :return: Whether the source includes ``machine.hpp`` through a directive.
+    :rtype: bool
+
+    Example::
+
+        >>> _has_wrapper_header_include('#include "machine.hpp"\n')
+        True
+        >>> _has_wrapper_header_include('// #include "machine.hpp"\n')
+        False
+    """
+    for match in _INCLUDE_DIRECTIVE_RE.finditer(source):
+        target = match.group(1).replace("\\", "/")
+        if os.path.basename(target) == _WRAPPER_HEADER_BASENAME:
+            return True
+    return False
 
 
 def _has_direct_machine_header_include(source: str) -> bool:
@@ -888,7 +1023,7 @@ def _assert_wrapper_only_harness(source: str) -> None:
 
         >>> _assert_wrapper_only_harness('#include "machine.hpp"\\n')
     """
-    assert '#include "machine.hpp"' in source
+    assert _has_wrapper_header_include(source)
     assert not _has_direct_machine_header_include(source)
     assert "native_handle" not in source
     assert not _DIRECT_C_TYPE_RE.search(source)
@@ -896,6 +1031,26 @@ def _assert_wrapper_only_harness(source: str) -> None:
 
 
 def _render_cmake(artifacts: CppAlignmentArtifacts, harness_path: str) -> None:
+    """
+    Render the CMake project that compiles a generated wrapper harness.
+
+    The project always builds the generated C core, generated C++ wrapper, and
+    synthetic fixture harness together so fixture execution validates the same
+    wrapper entrypoint that downstream users compile.
+
+    :param artifacts: Artifact paths for this fixture run.
+    :type artifacts: CppAlignmentArtifacts
+    :param harness_path: Path to the rendered ``harness.cpp`` source file.
+    :type harness_path: str
+    :return: ``None``.
+    :rtype: None
+
+    Example::
+
+        >>> artifacts = CppAlignmentArtifacts("cpp", "demo", "/tmp/a", "/tmp/a/g", "/tmp/a/h", "/tmp/a/b", "/tmp/a/o.jsonl")
+        >>> artifacts.harness_dir
+        '/tmp/a/h'
+    """
     text = (
         _environment()
         .from_string(_CMAKE_TEMPLATE)
@@ -919,6 +1074,29 @@ def _render_cmake(artifacts: CppAlignmentArtifacts, harness_path: str) -> None:
 def _prepare_artifacts(
     template_name: str, case: SemanticCase, artifact_root: str
 ) -> CppAlignmentArtifacts:
+    """
+    Create generated sources, harness files, and build directories for a case.
+
+    :param template_name: Template under test, either ``"cpp"`` or
+        ``"cpp_poll"``.
+    :type template_name: str
+    :param case: Shared semantic fixture case.
+    :type case: test.testings.simulate_semantics.SemanticCase
+    :param artifact_root: Root directory for all run artifacts.
+    :type artifact_root: str
+    :return: Paths for generated sources, harness files, build output, and
+        observations.
+    :rtype: CppAlignmentArtifacts
+    :raises AssertionError: If the generated harness bypasses wrapper APIs.
+    :raises ValueError: If ``template_name`` is unsupported.
+
+    Example::
+
+        >>> from test.testings.simulate_semantics import load_semantic_case
+        >>> case = load_semantic_case("design_basic_simple_transition")
+        >>> case.id
+        'design_basic_simple_transition'
+    """
     generated_dir = os.path.join(artifact_root, "generated")
     harness_dir = os.path.join(artifact_root, "harness")
     build_dir = os.path.join(artifact_root, "build")
@@ -945,6 +1123,28 @@ def _prepare_artifacts(
 def _run_command(
     command: Sequence[str], cwd: str, stdout_path: str, stderr_path: str
 ) -> subprocess.CompletedProcess:
+    """
+    Run a command and persist command, stdout, and stderr logs.
+
+    :param command: Command arguments to execute.
+    :type command: collections.abc.Sequence[str]
+    :param cwd: Working directory for the child process.
+    :type cwd: str
+    :param stdout_path: File path receiving captured standard output.
+    :type stdout_path: str
+    :param stderr_path: File path receiving captured standard error.
+    :type stderr_path: str
+    :return: Completed process object with captured output.
+    :rtype: subprocess.CompletedProcess
+
+    Example::
+
+        >>> import tempfile
+        >>> root = tempfile.mkdtemp()
+        >>> result = _run_command(["python", "-c", "print('ok')"], root, os.path.join(root, "x.stdout.txt"), os.path.join(root, "x.stderr.txt"))
+        >>> result.returncode
+        0
+    """
     command_path = stdout_path.replace(".stdout.txt", ".command.txt")
     with open(command_path, "w", encoding="utf-8") as f:
         f.write(" ".join(command) + "\n")
@@ -976,6 +1176,33 @@ def _fail_command(
     stdout_path: str,
     stderr_path: str,
 ) -> None:
+    """
+    Raise an assertion with persisted log paths and bounded output tails.
+
+    :param stage: Human-readable stage name, such as ``"CMake build"``.
+    :type stage: str
+    :param command: Command arguments that failed.
+    :type command: collections.abc.Sequence[str]
+    :param completed: Completed process returned by :func:`_run_command`.
+    :type completed: subprocess.CompletedProcess
+    :param stdout_path: Path to the captured stdout log.
+    :type stdout_path: str
+    :param stderr_path: Path to the captured stderr log.
+    :type stderr_path: str
+    :return: ``None``.
+    :rtype: None
+    :raises AssertionError: Always, with command diagnostics.
+
+    Example::
+
+        >>> import subprocess
+        >>> proc = subprocess.CompletedProcess(["false"], 1, "", "boom")
+        >>> _fail_command("demo", ["false"], proc, "out", "err")
+        Traceback (most recent call last):
+        ...
+        AssertionError: demo failed with return code 1.
+        ...
+    """
     raise AssertionError(
         "{stage} failed with return code {returncode}.\n"
         "command: {command}\n"
@@ -995,6 +1222,23 @@ def _fail_command(
 
 
 def _find_executable(build_dir: str) -> str:
+    """
+    Locate the generated C++ harness executable under a CMake build tree.
+
+    :param build_dir: CMake build directory.
+    :type build_dir: str
+    :return: Path to the harness executable.
+    :rtype: str
+    :raises FileNotFoundError: If no platform-specific executable candidate
+        exists.
+
+    Example::
+
+        >>> _find_executable("/path/that/does/not/exist")
+        Traceback (most recent call last):
+        ...
+        FileNotFoundError: Cannot find C++ shared fixture harness executable under '/path/that/does/not/exist'.
+    """
     candidates = [
         os.path.join(build_dir, "cpp_shared_fixture_harness"),
         os.path.join(build_dir, "cpp_shared_fixture_harness.exe"),
@@ -1010,6 +1254,25 @@ def _find_executable(build_dir: str) -> str:
 
 
 def _build_and_run(artifacts: CppAlignmentArtifacts) -> None:
+    """
+    Configure, build, and execute a generated C++ fixture harness.
+
+    :param artifacts: Paths produced by :func:`_prepare_artifacts`.
+    :type artifacts: CppAlignmentArtifacts
+    :return: ``None``.
+    :rtype: None
+    :raises AssertionError: If CMake configure, CMake build, or harness
+        execution exits with a non-zero status.
+    :raises FileNotFoundError: If the harness executable cannot be located
+        after a successful build.
+    :raises pytest.skip.Exception: If CMake is unavailable.
+
+    Example::
+
+        >>> artifacts = CppAlignmentArtifacts("cpp", "demo", "/tmp/a", "/tmp/a/g", "/tmp/a/h", "/tmp/a/b", "/tmp/a/o.jsonl")
+        >>> artifacts.template_name
+        'cpp'
+    """
     cmake = _find_cmake()
     logs_dir = os.path.join(artifacts.root_dir, "logs")
     os.makedirs(logs_dir, exist_ok=True)
@@ -1084,7 +1347,8 @@ def run_cpp_alignment_case(
 
     Example::
 
-        >>> case = simulate_semantics.load_semantic_case("design_basic_simple_transition")
+        >>> from test.testings.simulate_semantics import load_semantic_case
+        >>> case = load_semantic_case("design_basic_simple_transition")
         >>> case.id
         'design_basic_simple_transition'
     """

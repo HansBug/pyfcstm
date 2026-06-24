@@ -137,34 +137,6 @@ def _normalize_template_relpath(rel_file: str) -> str:
     return rel_file
 
 
-def _copy_config_item_for_processing(value: Any) -> Any:
-    """
-    Return a safe item for configuration-object processing.
-
-    :func:`pyfcstm.render.func.process_item_to_object` intentionally consumes
-    dictionary inputs by popping keys. The renderer keeps that public contract
-    intact while passing a shallow copy for each configured global, filter, and
-    test so renderer setup does not mutate the parsed configuration tree.
-
-    :param value: Configuration item value.
-    :type value: Any
-    :return: A shallow copy for dictionaries, otherwise the original value.
-    :rtype: Any
-
-    Example::
-
-        >>> item = {'type': 'value', 'value': 1}
-        >>> copied = _copy_config_item_for_processing(item)
-        >>> copied is item
-        False
-        >>> item
-        {'type': 'value', 'value': 1}
-    """
-    if isinstance(value, dict):
-        return copy.copy(value)
-    return value
-
-
 class StateMachineCodeRenderer:
     """
     Renderer for generating code from state machine models using templates.
@@ -234,7 +206,9 @@ class StateMachineCodeRenderer:
         :raises ValueError: If the configuration root is not a mapping or
             contains unknown top-level keys.
         """
-        config_info = self._load_config_info()
+        with open(self.config_file, "r") as f:
+            config_info = yaml.safe_load(f)
+        config_info = self._validate_config_info(config_info)
 
         expr_styles = copy.deepcopy(config_info.pop("expr_styles", None) or {})
         expr_styles["default"] = expr_styles.get("default") or {"base_lang": "dsl"}
@@ -356,54 +330,44 @@ class StateMachineCodeRenderer:
 
         globals_ = config_info.pop("globals", None) or {}
         for name, value in globals_.items():
-            self.env.globals[name] = process_item_to_object(
-                _copy_config_item_for_processing(value),
-                env=self.env,
-            )
+            self.env.globals[name] = process_item_to_object(value, env=self.env)
         filters_ = config_info.pop("filters", None) or {}
         for name, value in filters_.items():
-            self.env.filters[name] = process_item_to_object(
-                _copy_config_item_for_processing(value),
-                env=self.env,
-            )
+            self.env.filters[name] = process_item_to_object(value, env=self.env)
         tests = config_info.pop("tests", None) or {}
         for name, value in tests.items():
-            self.env.tests[name] = process_item_to_object(
-                _copy_config_item_for_processing(value),
-                env=self.env,
-            )
+            self.env.tests[name] = process_item_to_object(value, env=self.env)
 
         ignores = list(config_info.pop("ignores", None) or [])
         self._ignore_patterns.extend(ignores)
 
-    def _load_config_info(self) -> dict:
+    def _validate_config_info(self, config_info: Any) -> dict:
         """
-        Load and validate the renderer configuration mapping.
+        Validate and isolate the renderer configuration mapping.
 
         Empty configuration files are accepted as empty mappings for backward
         compatibility. Non-mapping roots and unknown top-level keys fail early
         with diagnostics that include the source path, the offending key, and
-        the allowed key set.
+        the allowed key set. A deep copy is returned so later setup may consume
+        nested style and config-item dictionaries without mutating the loaded
+        YAML object held by callers or tests.
 
+        :param config_info: Object loaded from ``config.yaml``.
+        :type config_info: Any
         :return: Mutable configuration mapping for subsequent setup.
         :rtype: dict
-        :raises FileNotFoundError: If the configuration file does not exist.
-        :raises yaml.YAMLError: If the configuration file contains invalid YAML.
         :raises ValueError: If the loaded root is not a mapping or has unknown
             top-level keys.
 
         Example::
 
-            >>> import os
-            >>> import tempfile
-            >>> with tempfile.TemporaryDirectory() as td:
-            ...     _ = open(os.path.join(td, 'config.yaml'), 'w').close()
-            ...     renderer = StateMachineCodeRenderer(td)
-            ...     renderer._ignore_patterns
-            ['.git']
+            >>> renderer = StateMachineCodeRenderer.__new__(StateMachineCodeRenderer)
+            >>> renderer.config_file = 'config.yaml'
+            >>> renderer._validate_config_info(None)
+            {}
         """
-        with open(self.config_file, "r") as f:
-            config_info = yaml.safe_load(f) or {}
+        if config_info is None:
+            config_info = {}
 
         if not isinstance(config_info, dict):
             raise ValueError(
@@ -431,7 +395,7 @@ class StateMachineCodeRenderer:
                 )
             )
 
-        return copy.copy(config_info)
+        return copy.deepcopy(config_info)
 
     @contextmanager
     def _statement_default_context(self, model: StateMachine) -> Iterator[None]:

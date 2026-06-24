@@ -459,11 +459,12 @@ class TestRenderRender:
 
         assert rendered == "TrafficLight"
 
-    def test_renderer_rejects_non_mapping_config_root_with_path(self):
+    @pytest.mark.parametrize("config_text", ["- globals\n", "[]\n", "false\n"])
+    def test_renderer_rejects_non_mapping_config_root_with_path(self, config_text):
         with TemporaryDirectory() as template_dir:
             config_file = os.path.join(template_dir, "config.yaml")
             with open(config_file, "w") as f:
-                f.write("- globals\n")
+                f.write(config_text)
 
             with pytest.raises(ValueError) as exc_info:
                 StateMachineCodeRenderer(template_dir)

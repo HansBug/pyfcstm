@@ -11,11 +11,7 @@ from hbutils.system import TemporaryDirectory
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
-from pyfcstm.render.render import (
-    _ensure_output_parent_dir,
-    _normalize_template_relpath,
-    _output_relpath_to_native_path,
-)
+from pyfcstm.render.render import _ensure_output_parent_dir
 from ..testings import get_testfile, dir_compare, walk_files
 
 
@@ -278,73 +274,7 @@ class TestRenderRender:
 
                 assert rendered == "state=TrafficLight"
 
-    def test_renderer_normalizes_template_relative_paths_for_ignores(
-        self, sample_model
-    ):
-        with TemporaryDirectory() as template_dir:
-            nested_template_dir = os.path.join(template_dir, "nested")
-            nested_static_dir = os.path.join(template_dir, "assets", "nested")
-            ignored_dir = os.path.join(template_dir, "assets", "ignored")
-            os.makedirs(nested_template_dir, exist_ok=True)
-            os.makedirs(nested_static_dir, exist_ok=True)
-            os.makedirs(ignored_dir, exist_ok=True)
-
-            with open(os.path.join(template_dir, "config.yaml"), "w") as f:
-                f.write("ignores:\n  - 'assets/ignored/**'\n")
-            with open(os.path.join(nested_template_dir, "rendered.txt.j2"), "w") as f:
-                f.write("state={{ model.root_state.name }}")
-            with open(os.path.join(nested_static_dir, "static.txt"), "w") as f:
-                f.write("static asset")
-            with open(os.path.join(ignored_dir, "skip.txt"), "w") as f:
-                f.write("ignored asset")
-
-            original_relpath = os.path.relpath
-            original_sep = os.sep
-
-            def _windows_relpath(path, start=None):
-                return original_relpath(path, start).replace(original_sep, "\\")
-
-            with mock.patch("pyfcstm.render.render.os.sep", "\\"):
-                with mock.patch(
-                    "pyfcstm.render.render.os.path.relpath",
-                    side_effect=_windows_relpath,
-                ):
-                    renderer = StateMachineCodeRenderer(template_dir)
-
-            assert "nested/rendered.txt" in renderer._file_mappings
-            assert "assets/nested/static.txt" in renderer._file_mappings
-            assert "assets/ignored/skip.txt" not in renderer._file_mappings
-            assert all("\\" not in rel_file for rel_file in renderer._file_mappings)
-
-            with TemporaryDirectory() as output_dir:
-                renderer.render(model=sample_model, output_dir=output_dir)
-
-                assert os.path.exists(
-                    os.path.join(output_dir, "nested", "rendered.txt")
-                )
-                assert os.path.exists(
-                    os.path.join(output_dir, "assets", "nested", "static.txt")
-                )
-                assert not os.path.exists(
-                    os.path.join(output_dir, "assets", "ignored", "skip.txt")
-                )
-
-    def test_output_path_helpers_handle_nested_and_separator_edges(self):
-        assert (
-            _normalize_template_relpath("assets/nested/static.txt")
-            == "assets/nested/static.txt"
-        )
-        with mock.patch("pyfcstm.render.render.os.sep", "/"):
-            assert (
-                _normalize_template_relpath("assets\\nested\\static.txt")
-                == "assets\\nested\\static.txt"
-            )
-        with mock.patch("pyfcstm.render.render.os.sep", "\\"):
-            assert (
-                _normalize_template_relpath("assets\\nested\\static.txt")
-                == "assets/nested/static.txt"
-            )
-
+    def test_output_parent_dir_helper_handles_nested_and_bare_files(self):
         with TemporaryDirectory() as output_dir:
             output_file = os.path.join(output_dir, "nested", "rendered.txt")
 
@@ -354,24 +284,6 @@ class TestRenderRender:
 
             _ensure_output_parent_dir(output_file)
             _ensure_output_parent_dir("bare-file.txt")
-
-        assert _output_relpath_to_native_path(
-            "assets/nested/static.txt"
-        ) == os.path.join(
-            "assets",
-            "nested",
-            "static.txt",
-        )
-        with mock.patch("pyfcstm.render.render.os.sep", "/"):
-            assert (
-                _output_relpath_to_native_path("assets\\nested/static.txt")
-                == "assets\\nested/static.txt"
-            )
-        with mock.patch("pyfcstm.render.render.os.sep", "\\"):
-            assert (
-                _output_relpath_to_native_path("assets/nested/static.txt")
-                == "assets\\nested\\static.txt"
-            )
 
     def test_renderer_has_no_template_file_name_postprocessing(self):
         render_source = (

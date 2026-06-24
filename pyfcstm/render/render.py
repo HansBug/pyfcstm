@@ -116,55 +116,6 @@ def _ensure_output_parent_dir(output_file: str) -> None:
         os.makedirs(parent_dir, exist_ok=True)
 
 
-def _normalize_template_relpath(rel_file: str) -> str:
-    """
-    Normalize a template-relative path for ignore matching and output mapping.
-
-    On Windows this converts native backslash separators to forward slashes so
-    gitignore-style patterns match consistently. POSIX paths are returned
-    unchanged so literal backslashes in POSIX file names are not rewritten.
-    For example, when ``os.sep`` is ``'\\'``, the Windows-style path
-    ``'assets\\nested\\static.txt'`` becomes ``'assets/nested/static.txt'``.
-
-    :param rel_file: Relative path produced while walking the template tree.
-    :type rel_file: str
-    :return: The relative path with POSIX separators.
-    :rtype: str
-
-    Example::
-
-        >>> _normalize_template_relpath('assets/nested/static.txt')
-        'assets/nested/static.txt'
-    """
-    if os.sep != "/":
-        rel_file = rel_file.replace(os.sep, "/")
-    return rel_file
-
-
-def _output_relpath_to_native_path(rel_file: str) -> str:
-    """
-    Convert a normalized template-relative path to the native output path form.
-
-    File mappings keep POSIX separators for stable gitignore matching. Before
-    joining with the output directory, Windows converts those separators back to
-    :data:`os.sep` so downstream file I/O sees native paths. POSIX paths are
-    returned unchanged, preserving literal backslashes in POSIX file names.
-
-    :param rel_file: Template-relative path stored in ``_file_mappings``.
-    :type rel_file: str
-    :return: Relative path suitable for :func:`os.path.join` on this platform.
-    :rtype: str
-
-    Example::
-
-        >>> _output_relpath_to_native_path('assets/nested/static.txt')
-        'assets/nested/static.txt'
-    """
-    if os.sep != "/":
-        rel_file = rel_file.replace("/", os.sep)
-    return rel_file
-
-
 class StateMachineCodeRenderer:
     """
     Renderer for generating code from state machine models using templates.
@@ -569,9 +520,7 @@ class StateMachineCodeRenderer:
             for file in files:
                 _, ext = os.path.splitext(file)
                 current_file = os.path.abspath(os.path.join(root, file))
-                rel_file = _normalize_template_relpath(
-                    os.path.relpath(current_file, self.template_dir)
-                )
+                rel_file = os.path.relpath(current_file, self.template_dir)
                 if self._path_spec.match_file(rel_file):
                     continue
                 if ext == ".j2":
@@ -670,7 +619,5 @@ class StateMachineCodeRenderer:
                     )  # pragma: no cover
 
         for rel_file, fn_op in self._file_mappings.items():
-            dst_file = os.path.join(
-                output_dir, _output_relpath_to_native_path(rel_file)
-            )
+            dst_file = os.path.join(output_dir, rel_file)
             fn_op(model=model, output_file=dst_file)

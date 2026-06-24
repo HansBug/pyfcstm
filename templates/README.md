@@ -82,7 +82,28 @@ The core rendering call currently renders templates as `tp.render(model=model)`.
 | `tests` | Adds Jinja2 tests through declarative config items. | Generation-time only. |
 | `ignores` | Git-style patterns excluded from rendering/copying. | Generation-time only. |
 
-Most keys are optional and default to an empty configuration. Generation-time dependencies such as Jinja2, PyYAML, `pathspec`, renderer helpers, and imported filters are allowed because they run inside `pyfcstm` during generation. They must not leak into generated runtime dependencies unless the generated target language explicitly owns that dependency and it is approved by the runtime policy below.
+Most keys are optional and default to an empty configuration. An empty
+`config.yaml` is treated as an empty mapping. Unknown top-level keys are
+rejected instead of being ignored, so spelling mistakes fail close to the
+template directory that introduced them.
+
+Declarative entries under `globals`, `filters`, and `tests` support three item
+forms:
+
+| Item form | Required fields | Meaning | Trust boundary |
+| --- | --- | --- | --- |
+| `type: template` | `template`, optional ordered `params` | Build a callable from an inline Jinja2 snippet. | Trusted template source; generation-time only. |
+| `type: import` | `from` | Import a Python object and expose it to templates. | Trusted template code boundary; never use for untrusted templates. |
+| `type: value` | `value` | Expose a literal YAML value. | Generation-time only. |
+
+Generation-time dependencies such as Jinja2, PyYAML, `pathspec`, renderer
+helpers, and imported filters are allowed because they run inside `pyfcstm`
+during generation. They must not leak into generated runtime dependencies
+unless the generated target language explicitly owns that dependency and it is
+approved by the runtime policy below. Target-language-specific helpers should
+be loaded by the owning template through `type: import`; for example C-family
+runtime helpers belong in `templates/c/config.yaml` and
+`templates/c_poll/config.yaml`, not in the default renderer environment.
 
 When a new `config.yaml` key is added in code, update this handbook, the affected template-level README files, and the structure checks together.
 

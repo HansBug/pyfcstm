@@ -360,6 +360,33 @@ def test_template_configs_keep_renderer_contract_and_ignores():
 
 
 @pytest.mark.unittest
+def test_c_runtime_helpers_are_declared_by_c_template_configs_only():
+    render_source = _read_text(_REPO_ROOT / "pyfcstm" / "render" / "render.py")
+    for helper_name in [
+        "render_c_action_body",
+        "render_c_condition_body",
+        "render_c_reset_vars_body",
+    ]:
+        assert helper_name not in render_source
+
+    for name in ["c", "c_poll"]:
+        config = _load_config(name)
+        globals_config = config["globals"]
+        assert globals_config["render_c_action_body"] == {
+            "type": "import",
+            "from": "pyfcstm.render.c_runtime.render_c_action_body",
+        }
+        assert globals_config["render_c_condition_body"] == {
+            "type": "import",
+            "from": "pyfcstm.render.c_runtime.render_c_condition_body",
+        }
+        assert globals_config["render_c_reset_vars_body"] == {
+            "type": "import",
+            "from": "pyfcstm.render.c_runtime.render_c_reset_vars_body",
+        }
+
+
+@pytest.mark.unittest
 def test_template_readmes_keep_maintainer_and_generated_guidance_separate(
     rendered_templates,
 ):

@@ -15,6 +15,15 @@ stmt_styles:
     temp_type_fallback: double
 
 globals:
+  render_c_action_body:
+    type: import
+    from: pyfcstm.render.c_runtime.render_c_action_body
+  render_c_condition_body:
+    type: import
+    from: pyfcstm.render.c_runtime.render_c_condition_body
+  render_c_reset_vars_body:
+    type: import
+    from: pyfcstm.render.c_runtime.render_c_reset_vars_body
   machine_class_name:
     type: template
     params:

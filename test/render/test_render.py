@@ -233,6 +233,51 @@ class TestRenderRender:
                 assert static == "static asset"
                 assert not os.path.exists(stale_file)
 
+    @pytest.mark.skipif(
+        not hasattr(os, "symlink"),
+        reason="symlink support is not available on this platform",
+    )
+    def test_renderer_clear_previous_directory_unlinks_directory_symlinks(
+        self,
+        sample_model,
+    ):
+        with TemporaryDirectory() as template_dir:
+            with open(os.path.join(template_dir, "config.yaml"), "w") as f:
+                f.write("{}\n")
+            with open(os.path.join(template_dir, "rendered.txt.j2"), "w") as f:
+                f.write("state={{ model.root_state.name }}")
+
+            renderer = StateMachineCodeRenderer(template_dir)
+
+            with TemporaryDirectory() as output_dir:
+                with TemporaryDirectory() as external_dir:
+                    external_file = os.path.join(external_dir, "keep.txt")
+                    with open(external_file, "w") as f:
+                        f.write("external")
+
+                    stale_link = os.path.join(output_dir, "stale_link")
+                    try:
+                        os.symlink(external_dir, stale_link)
+                    except OSError as err:
+                        # OSError: some Windows runners expose os.symlink but
+                        # deny creating directory symlinks without privilege.
+                        pytest.skip(
+                            "directory symlink creation is unavailable: %s" % err
+                        )
+
+                    renderer.render(
+                        model=sample_model,
+                        output_dir=output_dir,
+                        clear_previous_directory=True,
+                    )
+
+                    assert os.path.exists(external_file)
+                    assert not os.path.lexists(stale_link)
+                    with open(os.path.join(output_dir, "rendered.txt"), "r") as f:
+                        rendered = f.read()
+
+                assert rendered == "state=TrafficLight"
+
     def test_renderer_normalizes_template_relative_paths_for_ignores(
         self, sample_model
     ):

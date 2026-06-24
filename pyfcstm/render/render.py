@@ -658,12 +658,12 @@ class StateMachineCodeRenderer:
         if clear_previous_directory:
             for file in os.listdir(output_dir):
                 dst_file = os.path.join(output_dir, file)
-                if os.path.isfile(dst_file):
+                if os.path.islink(dst_file):
+                    os.unlink(dst_file)
+                elif os.path.isfile(dst_file):
                     os.remove(dst_file)
                 elif os.path.isdir(dst_file):
                     shutil.rmtree(dst_file)
-                elif os.path.islink(dst_file):
-                    os.unlink(dst_file)
                 else:
                     warnings.warn(
                         f"Unable to clean file {dst_file!r}."

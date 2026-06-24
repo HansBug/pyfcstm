@@ -1164,6 +1164,23 @@ def _run_command(
 
 
 def _command_output_tail(output: str, limit: int = 4000) -> str:
+    """
+    Return a bounded diagnostic tail for command output.
+
+    :param output: Captured command output.
+    :type output: str
+    :param limit: Maximum number of trailing characters to keep, defaults to
+        ``4000``.
+    :type limit: int, optional
+    :return: Full output when short enough, otherwise a truncation marker plus
+        the trailing output segment.
+    :rtype: str
+
+    Example::
+
+        >>> _command_output_tail("abcdef", limit=3)
+        '...<truncated>\\ndef'
+    """
     if len(output) <= limit:
         return output
     return "...<truncated>\n" + output[-limit:]

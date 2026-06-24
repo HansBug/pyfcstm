@@ -45,10 +45,10 @@ from test.testings.native_toolchain_alignment.runner import (
 )
 from test.testings.simulate_semantics import SemanticCase
 
-_DIRECT_MACHINE_HEADER_RE = re.compile(r'^\s*#\s*include\s+"machine\.h"\s*$', re.M)
+_INCLUDE_DIRECTIVE_RE = re.compile(r"^\s*#\s*include\s+[<\"]([^>\"]+)[>\"]", re.M)
 _DIRECT_C_TYPE_RE = re.compile(
     r"\b[A-Za-z_][A-Za-z0-9_]*Machine"
-    r"(Vars|StateId|EventId|Int|Hooks|EventChecks|ExecutionContext|EventContext)\b"
+    r"(Vars|StateId|EventId|Int|Hooks|EventChecks|ExecutionContext|EventContext)?\b"
 )
 _DIRECT_C_API_RE = re.compile(
     r"\b[A-Za-z_][A-Za-z0-9_]*Machine_"
@@ -840,6 +840,34 @@ def _render_harness(template_name: str, case: SemanticCase, harness_path: str) -
         f.write(rendered)
 
 
+def _has_direct_machine_header_include(source: str) -> bool:
+    """
+    Return whether a harness directly includes the generated C header.
+
+    Direct harness entry must go through ``machine.hpp``. This helper rejects
+    quote, angle-bracket, and relative include spellings whose normalized
+    basename is ``machine.h`` while leaving ordinary standard-library includes
+    untouched.
+
+    :param source: Rendered C++ harness source.
+    :type source: str
+    :return: Whether the source directly includes ``machine.h``.
+    :rtype: bool
+
+    Example::
+
+        >>> _has_direct_machine_header_include('#include "machine.h"\n')
+        True
+        >>> _has_direct_machine_header_include('#include "machine.hpp"\n')
+        False
+    """
+    for match in _INCLUDE_DIRECTIVE_RE.finditer(source):
+        target = match.group(1).replace("\\", "/")
+        if os.path.basename(target) == "machine.h":
+            return True
+    return False
+
+
 def _assert_wrapper_only_harness(source: str) -> None:
     """
     Assert that generated fixture harnesses enter through the C++ wrapper.
@@ -860,7 +888,7 @@ def _assert_wrapper_only_harness(source: str) -> None:
         >>> _assert_wrapper_only_harness('#include "machine.hpp"\\n')
     """
     assert '#include "machine.hpp"' in source
-    assert not _DIRECT_MACHINE_HEADER_RE.search(source)
+    assert not _has_direct_machine_header_include(source)
     assert "native_handle" not in source
     assert not _DIRECT_C_TYPE_RE.search(source)
     assert not _DIRECT_C_API_RE.search(source)

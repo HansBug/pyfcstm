@@ -22,7 +22,7 @@ def test_generated_cpp_poll_alignment_semantic_fixture(case, tmp_path):
 @pytest.mark.unittest
 @pytest.mark.slow
 def test_generated_cpp_poll_alignment_harness_uses_wrapper_api(tmp_path):
-    case = load_semantic_case("design_basic_simple_transition")
+    case = load_semantic_case("abstract_hook_ref_context_reports_callsite_metadata")
     artifacts = run_cpp_alignment_case("cpp_poll", case, str(tmp_path / case.id))
     harness_source = Path(artifacts.harness_dir, "harness.cpp").read_text(
         encoding="utf-8"
@@ -34,6 +34,16 @@ def test_generated_cpp_poll_alignment_harness_uses_wrapper_api(tmp_path):
     assert '#include "machine.hpp"' in harness_source
     assert '#include "machine.h"' not in harness_source
     assert "native_handle" not in harness_source
+    assert "Wrapper::Vars" in harness_source
+    assert "Wrapper::EventId" in harness_source
+    assert "Wrapper::Hooks" in harness_source
+    assert "Wrapper::EventChecks" in harness_source
+    assert "Wrapper::ExecutionContext" in harness_source
+    assert "Wrapper::EventContext" in harness_source
+    assert not re.search(
+        r"\b[A-Za-z_][A-Za-z0-9_]*Machine(Vars|EventId|Hooks|EventChecks|ExecutionContext|EventContext)\b",
+        harness_source,
+    )
     assert not re.search(
         r"\b[A-Za-z_][A-Za-z0-9_]*Machine_(init|hot_start|cycle|set_hooks|set_event_checks)\s*\(",
         harness_source,

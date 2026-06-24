@@ -3,9 +3,11 @@ Shared C++ wrapper semantic-fixture alignment helpers.
 
 This module renders the built-in ``cpp`` and ``cpp_poll`` templates for one
 schema-v2 semantic fixture, generates a C++98 harness that drives only the
-public ``machine.hpp`` wrapper API, builds the generated C core plus C++ wrapper
-with CMake, and compares emitted public observations with the existing shared
-fixture expectations.
+public ``machine.hpp`` wrapper API, builds the generated C core plus C++
+wrapper with CMake, and compares emitted public observations with the existing
+shared fixture expectations. The generated harness intentionally includes only
+``machine.hpp`` directly and calls wrapper methods rather than the underlying
+``machine.h`` C entry points.
 
 The module contains:
 
@@ -22,6 +24,7 @@ Example::
     'design_basic_simple_transition'
 """
 
+import json
 import os
 import shutil
 import subprocess
@@ -49,7 +52,7 @@ _CPP_TEMPLATE = r"""
 
 typedef pyfcstm_generated::{{ context.machine_class_name }}_cpp::MachineWrapper Wrapper;
 
-static {{ context.machine_class_name }}Hooks hooks = {{ context.machine_class_name.upper() }}_HOOKS_INIT;
+static Wrapper::Hooks hooks = {{ context.machine_class_name.upper() }}_HOOKS_INIT;
 static const char *state_paths[] = {
 {% for state in context.states %}    {{ state.path | tojson }},
 {% endfor %}};
@@ -135,7 +138,7 @@ static void write_machine_int(FILE *out, {{ context.machine_class_name }}Int val
     }
 }
 
-static void write_vars(FILE *out, const {{ context.machine_class_name }}Vars *vars)
+static void write_vars(FILE *out, const Wrapper::Vars *vars)
 {
     fputc('{', out);
 {% for variable in context.variables %}    if ({{ loop.index0 }} > 0) {
@@ -187,7 +190,7 @@ static void write_handler_calls(FILE *out)
 }
 
 {% if context.hooks %}extern "C" {
-static void record_hook({{ context.machine_class_name }} *machine_ptr, const {{ context.machine_class_name }}ExecutionContext *ctx, void *user_data)
+static void record_hook(Wrapper::Machine *machine_ptr, const Wrapper::ExecutionContext *ctx, void *user_data)
 {
     struct HandlerCall *call;
     (void)machine_ptr;
@@ -214,7 +217,7 @@ static void install_hooks(Wrapper *wrapper)
 {% endfor %}    wrapper->set_hooks(&hooks, NULL);
 }
 
-static int run_cycle(Wrapper *wrapper, const {{ context.machine_class_name }}EventId *events, size_t event_count)
+static int run_cycle(Wrapper *wrapper, const Wrapper::EventId *events, size_t event_count)
 {
     return wrapper->cycle(events, event_count);
 }
@@ -223,7 +226,7 @@ static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int c
 {
     size_t i;
     const char *state_path = wrapper->current_state_path();
-    const {{ context.machine_class_name }}Vars *vars = wrapper->vars();
+    const Wrapper::Vars *vars = wrapper->vars();
     fputc('{', out);
     fputs("\"schema_version\":\"1\"", out);
     fputs(",\"case_id\":", out);
@@ -303,7 +306,7 @@ int main(int argc, char **argv)
 {% else %}    fclose(out);
     return 4;
 {% endif %}{% else %}    {
-        {{ context.machine_class_name }}Vars initial_vars;
+        Wrapper::Vars initial_vars;
         memset(&initial_vars, 0, sizeof(initial_vars));
 {% for assignment in context.initial.assignments %}        initial_vars.{{ assignment.field }} = {{ assignment.value }};
 {% endfor %}        if (!wrapper.hot_start({{ context.machine_macro_name }}_{{ context.initial.state_macro }}, &initial_vars)) {
@@ -335,7 +338,7 @@ int main(int argc, char **argv)
         last_error = {{ step.pre_error_message | tojson }};
 {% elif step.cycle_count == 0 %}        api_return = 1;
         last_error = NULL;
-{% else %}{% if step.events %}        {{ context.machine_class_name }}EventId event_ids[] = {
+{% else %}{% if step.events %}        Wrapper::EventId event_ids[] = {
 {% for event in step.events %}            {{ context.machine_macro_name }}_{{ event.macro }},
 {% endfor %}        };
 {% endif %}        api_return = 1;
@@ -366,10 +369,10 @@ _CPP_POLL_TEMPLATE = r"""
 
 typedef pyfcstm_generated::{{ context.machine_class_name }}_cpp_poll::MachineWrapper Wrapper;
 
-static {{ context.machine_class_name }}Hooks hooks = {{ context.machine_class_name.upper() }}_HOOKS_INIT;
-static {{ context.machine_class_name }}EventId active_events[64];
+static Wrapper::Hooks hooks = {{ context.machine_class_name.upper() }}_HOOKS_INIT;
+static Wrapper::EventId active_events[64];
 static size_t active_event_count = 0u;
-static {{ context.machine_class_name }}EventChecks event_checks = {{ context.machine_class_name.upper() }}_EVENT_CHECKS_INIT;
+static Wrapper::EventChecks event_checks = {{ context.machine_class_name.upper() }}_EVENT_CHECKS_INIT;
 
 static const char *state_paths[] = {
 {% for state in context.states %}    {{ state.path | tojson }},
@@ -456,7 +459,7 @@ static void write_machine_int(FILE *out, {{ context.machine_class_name }}Int val
     }
 }
 
-static void write_vars(FILE *out, const {{ context.machine_class_name }}Vars *vars)
+static void write_vars(FILE *out, const Wrapper::Vars *vars)
 {
     fputc('{', out);
 {% for variable in context.variables %}    if ({{ loop.index0 }} > 0) {
@@ -508,7 +511,7 @@ static void write_handler_calls(FILE *out)
 }
 
 {% if context.hooks %}extern "C" {
-static void record_hook({{ context.machine_class_name }} *machine_ptr, const {{ context.machine_class_name }}ExecutionContext *ctx, void *user_data)
+static void record_hook(Wrapper::Machine *machine_ptr, const Wrapper::ExecutionContext *ctx, void *user_data)
 {
     struct HandlerCall *call;
     (void)machine_ptr;
@@ -536,7 +539,7 @@ static void install_hooks(Wrapper *wrapper)
 }
 
 extern "C" {
-static int check_event({{ context.machine_class_name }} *machine_ptr, const {{ context.machine_class_name }}EventContext *ctx, void *user_data)
+static int check_event(Wrapper::Machine *machine_ptr, const Wrapper::EventContext *ctx, void *user_data)
 {
     size_t i;
     (void)machine_ptr;
@@ -556,7 +559,7 @@ static void install_event_checks(Wrapper *wrapper)
 {% endfor %}    wrapper->set_event_checks(&event_checks, NULL);
 }
 
-static int run_cycle(Wrapper *wrapper, const {{ context.machine_class_name }}EventId *events, size_t event_count)
+static int run_cycle(Wrapper *wrapper, const Wrapper::EventId *events, size_t event_count)
 {
     size_t i;
     if (event_count > sizeof(active_events) / sizeof(active_events[0])) {
@@ -573,7 +576,7 @@ static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int c
 {
     size_t i;
     const char *state_path = wrapper->current_state_path();
-    const {{ context.machine_class_name }}Vars *vars = wrapper->vars();
+    const Wrapper::Vars *vars = wrapper->vars();
     fputc('{', out);
     fputs("\"schema_version\":\"1\"", out);
     fputs(",\"case_id\":", out);
@@ -654,7 +657,7 @@ int main(int argc, char **argv)
 {% else %}    fclose(out);
     return 4;
 {% endif %}{% else %}    {
-        {{ context.machine_class_name }}Vars initial_vars;
+        Wrapper::Vars initial_vars;
         memset(&initial_vars, 0, sizeof(initial_vars));
 {% for assignment in context.initial.assignments %}        initial_vars.{{ assignment.field }} = {{ assignment.value }};
 {% endfor %}        if (!wrapper.hot_start({{ context.machine_macro_name }}_{{ context.initial.state_macro }}, &initial_vars)) {
@@ -686,7 +689,7 @@ int main(int argc, char **argv)
         last_error = {{ step.pre_error_message | tojson }};
 {% elif step.cycle_count == 0 %}        api_return = 1;
         last_error = NULL;
-{% else %}{% if step.events %}        {{ context.machine_class_name }}EventId event_ids[] = {
+{% else %}{% if step.events %}        Wrapper::EventId event_ids[] = {
 {% for event in step.events %}            {{ context.machine_macro_name }}_{{ event.macro }},
 {% endfor %}        };
 {% endif %}        api_return = 1;
@@ -798,6 +801,7 @@ def _environment() -> Environment:
         trim_blocks=True,
         lstrip_blocks=True,
     )
+    env.filters["tojson"] = json.dumps
     return env
 
 

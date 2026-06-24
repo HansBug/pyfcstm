@@ -7,6 +7,8 @@ from hbutils.testing import TextAligner
 _SLOW_TEST_PATH_PREFIXES = (
     os.path.join("test", "template", "c", ""),
     os.path.join("test", "template", "c_poll", ""),
+    os.path.join("test", "template", "cpp", ""),
+    os.path.join("test", "template", "cpp_poll", ""),
 )
 
 
@@ -82,9 +84,9 @@ def pytest_generate_tests(metafunc):
 def pytest_collection_modifyitems(config, items):
     """Auto-mark native C-family template tests and apply skip gates.
 
-    ``SKIP_SLOW_TESTS=1`` skips ordinary C/C poll template tests by path, but
-    explicitly enabled ``native_toolchain`` items take priority so explicit
-    native toolchain workflow runs are not accidentally converted into
+    ``SKIP_SLOW_TESTS=1`` skips ordinary native C-family template tests by
+    path, but explicitly enabled ``native_toolchain`` items take priority so
+    explicit native toolchain workflow runs are not accidentally converted into
     false-green skips.
     """
     from test.testings.native_toolchain_alignment.profiles import (
@@ -100,7 +102,7 @@ def pytest_collection_modifyitems(config, items):
         "on",
     )
     skip_marker = pytest.mark.skip(
-        reason="SKIP_SLOW_TESTS=1 — native-toolchain template tests skipped"
+        reason="SKIP_SLOW_TESTS=1 — native C-family template tests skipped"
     )
     native_disabled_marker = pytest.mark.skip(
         reason="native toolchain matrix requires explicit opt-in"

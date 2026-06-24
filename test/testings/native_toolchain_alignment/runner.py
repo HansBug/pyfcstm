@@ -130,9 +130,9 @@ class _ObservationRuntime:
 
 
 def _template_utils(template_name: str):
-    if template_name == "c":
+    if template_name in ("c", "cpp"):
         from test.template.c import _utils as template_utils
-    elif template_name == "c_poll":
+    elif template_name in ("c_poll", "cpp_poll"):
         from test.template.c_poll import _utils as template_utils
     else:
         raise ValueError("unsupported native toolchain template: %r" % template_name)

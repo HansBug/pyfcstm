@@ -73,6 +73,18 @@ def test_cpp_wrapper_harness_accepts_wrapper_entrypoint_only():
             id="macro-indirect-machine-header",
         ),
         pytest.param(
+            '#include "machine.hpp"\n#\\\ninclude "machine.h"\n',
+            id="line-continued-include-directive",
+        ),
+        pytest.param(
+            '#include "machine.hpp"\n#include "machine.\\\nh"\n',
+            id="line-continued-machine-header-name",
+        ),
+        pytest.param(
+            '#include "machine.hpp"\n#include "machine" ".h"\n',
+            id="split-machine-header-string-tokens",
+        ),
+        pytest.param(
             '#include "machine.hpp"\nRootMachine root;\n',
             id="bare-c-machine-object",
         ),
@@ -103,6 +115,10 @@ def test_cpp_wrapper_harness_accepts_wrapper_entrypoint_only():
         pytest.param(
             '#include "machine.hpp"\n#define CYCLE RootMachine_cycle\nCYCLE(root, events, count);\n',
             id="macro-alias-c-api-token",
+        ),
+        pytest.param(
+            '#include "machine.hpp"\nRootMachine_\\\ncycle(root, events, count);\n',
+            id="line-continued-c-api-token",
         ),
         pytest.param(
             '#include "machine.hpp"\n#define CALL(name) name##Machine_cycle(0, 0, 0)\nCALL(Root);\n',

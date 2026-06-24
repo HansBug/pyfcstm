@@ -47,6 +47,7 @@ from test.testings.simulate_semantics import SemanticCase
 
 _INCLUDE_DIRECTIVE_RE = re.compile(r"^\s*#\s*include\s*(?P<target>[^\n]+)", re.M)
 _INCLUDE_LITERAL_RE = re.compile(r'(?:(?:"([^"\n]+)")|(?:<([^>\n]+)>))')
+_LINE_CONTINUATION_RE = re.compile(r"\\\r?\n")
 _NATIVE_HANDLE_CALL_RE = re.compile(r"\bnative_handle\s*\(")
 _TOKEN_PASTE_RE = re.compile(r"##")
 _DIRECT_C_TYPE_RE = re.compile(
@@ -951,6 +952,28 @@ def _render_harness(template_name: str, case: SemanticCase, harness_path: str) -
         f.write(rendered)
 
 
+def _splice_cpp_line_continuations(source: str) -> str:
+    """
+    Remove C/C++ backslash-newline continuations before source checks.
+
+    The C preprocessor performs this splice before it recognizes comments or
+    directives. The wrapper-only guard mirrors that phase so split forms with
+    a trailing backslash before a newline cannot hide a direct ``machine.h``
+    include.
+
+    :param source: C++ source text to inspect.
+    :type source: str
+    :return: Source text after line-continuation splicing.
+    :rtype: str
+
+    Example::
+
+        >>> _splice_cpp_line_continuations('#\\\ninclude "machine.hpp"\n')
+        '#include "machine.hpp"\n'
+    """
+    return _LINE_CONTINUATION_RE.sub("", source)
+
+
 def _mask_cpp_comments_and_literals(source: str, mask_literals: bool) -> str:
     """
     Replace C++ comments and optionally literals with whitespace.
@@ -976,6 +999,7 @@ def _mask_cpp_comments_and_literals(source: str, mask_literals: bool) -> str:
         >>> _mask_cpp_comments_and_literals('"RootMachine_cycle"', True)
         '                   '
     """
+    source = _splice_cpp_line_continuations(source)
     output = []
     index = 0
     length = len(source)
@@ -1047,7 +1071,7 @@ def _iter_include_targets(source: str) -> List[str]:
     targets = []
     for match in _INCLUDE_DIRECTIVE_RE.finditer(directive_source):
         raw_target = match.group("target").strip()
-        literal_match = _INCLUDE_LITERAL_RE.match(raw_target)
+        literal_match = _INCLUDE_LITERAL_RE.fullmatch(raw_target)
         if literal_match:
             targets.append(literal_match.group(1) or literal_match.group(2))
         else:

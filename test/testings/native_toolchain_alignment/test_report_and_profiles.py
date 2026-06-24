@@ -26,9 +26,11 @@ from test.testings.native_toolchain_alignment.report import (
 from test.testings.native_toolchain_alignment.runner import (
     _analysis_argv,
     _analysis_targets,
+    _assert_successful_api_return,
     _case_artifact_dir,
     _tool_stem,
 )
+from test.testings.simulate_semantics import load_semantic_case
 
 
 @pytest.mark.unittest
@@ -179,6 +181,37 @@ def test_observation_schema_requires_version_and_public_fields():
     data["phase"] = "unknown"
     with pytest.raises(ValueError, match="phase"):
         validate_observation_data(data)
+
+
+@pytest.mark.unittest
+def test_native_observation_api_return_contract_is_template_specific():
+    """
+    Verify the successful-step API return contract for C and C++ harnesses.
+
+    :return: ``None``.
+    :rtype: None
+
+    Example::
+
+        >>> case = load_semantic_case("design_basic_simple_transition")
+        >>> case.id
+        'design_basic_simple_transition'
+    """
+    case = load_semantic_case("design_basic_simple_transition")
+
+    _assert_successful_api_return("c", case, 0, {"api_return": 1})
+    _assert_successful_api_return("c_poll", case, 0, {"api_return": 1})
+    _assert_successful_api_return("cpp", case, 0, {"api_return": None})
+    _assert_successful_api_return("cpp_poll", case, 0, {"api_return": None})
+
+    with pytest.raises(AssertionError, match="expected successful native API return"):
+        _assert_successful_api_return("c", case, 0, {"api_return": None})
+    with pytest.raises(AssertionError, match="expected successful native API return"):
+        _assert_successful_api_return("c_poll", case, 0, {"api_return": None})
+    with pytest.raises(AssertionError, match="expected C\\+\\+ wrapper harness"):
+        _assert_successful_api_return("cpp", case, 0, {"api_return": 1})
+    with pytest.raises(AssertionError, match="expected C\\+\\+ wrapper harness"):
+        _assert_successful_api_return("cpp_poll", case, 0, {"api_return": 1})
 
 
 @pytest.mark.unittest

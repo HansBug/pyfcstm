@@ -45,7 +45,7 @@ from test.testings.native_toolchain_alignment.runner import (
 )
 from test.testings.simulate_semantics import SemanticCase
 
-_INCLUDE_DIRECTIVE_RE = re.compile(r"^\s*#\s*include\s+[<\"]([^>\"]+)[>\"]", re.M)
+_INCLUDE_DIRECTIVE_RE = re.compile(r"^\s*#\s*include\s*[<\"]([^>\"]+)[>\"]", re.M)
 _DIRECT_C_TYPE_RE = re.compile(
     r"\b[A-Za-z_][A-Za-z0-9_]*Machine"
     r"(Vars|StateId|EventId|Int|Hooks|EventChecks|ExecutionContext|EventContext)?\b"
@@ -54,7 +54,8 @@ _DIRECT_C_API_RE = re.compile(
     r"\b[A-Za-z_][A-Za-z0-9_]*Machine_"
     r"(create_uninitialized|create|destroy|init|hot_start|set_hooks|"
     r"set_event_checks|cycle|vars|is_ended|current_state_id|"
-    r"current_state_path|current_state_name|last_error|dsl_source)\s*\("
+    r"current_state_path|current_state_name|last_error|dsl_source)"
+    r"\s*(?:\(|[,;=)\]&])"
 )
 
 _CPP_TEMPLATE = r"""

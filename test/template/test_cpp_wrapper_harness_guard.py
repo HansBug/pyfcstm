@@ -42,6 +42,10 @@ def test_cpp_wrapper_harness_accepts_wrapper_entrypoint_only():
             id="quoted-machine-header",
         ),
         pytest.param(
+            '#include "machine.hpp"\n#include"machine.h"\n',
+            id="quoted-machine-header-without-space",
+        ),
+        pytest.param(
             '#include "machine.hpp"\n#include <machine.h>\n',
             id="angle-machine-header",
         ),
@@ -72,6 +76,10 @@ def test_cpp_wrapper_harness_accepts_wrapper_entrypoint_only():
         pytest.param(
             '#include "machine.hpp"\nRootMachine_cycle(root, events, count);\n',
             id="direct-c-api-call",
+        ),
+        pytest.param(
+            '#include "machine.hpp"\nvoid (*fn)(void) = &RootMachine_cycle;\n',
+            id="direct-c-api-address",
         ),
         pytest.param(
             '#include "machine.hpp"\nwrapper.native_handle();\n',

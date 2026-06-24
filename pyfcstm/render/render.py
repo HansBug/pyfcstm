@@ -45,7 +45,6 @@ Example::
 import copy
 import os.path
 import pathlib
-import re
 import shutil
 import warnings
 from functools import partial
@@ -355,17 +354,6 @@ class StateMachineCodeRenderer:
         _ensure_output_parent_dir(output_file)
         try:
             rendered = tp.render(model=model)
-            if os.path.basename(template_file) == 'machine.py.j2':
-                rendered = re.sub(r'([\(\[\{]\n)\n+', r'\1', rendered)
-                rendered = re.sub(r'\n{3,}', '\n\n', rendered)
-                rendered = re.sub(r',\n\n([ \t]*["\]\}])', r',\n\1', rendered)
-                rendered = re.sub(r'\n\n(?=(?:class|def|@))', '\n\n\n', rendered)
-                rendered = re.sub(
-                    r'\n([ \t]*)\n(?=[ \t]*[\]\)\}](?:,)?\n)',
-                    r'\n\1',
-                    rendered,
-                )
-                rendered = re.sub(r'\n+\Z', '\n', rendered)
             with open(output_file, 'w', encoding='utf-8', newline='\n') as f:
                 f.write(rendered)
         finally:

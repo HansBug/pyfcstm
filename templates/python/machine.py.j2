@@ -1,3 +1,5 @@
+{%- set state_items = model.walk_states() | list -%}
+{%- set define_items = model.defines.values() | list -%}
 {%- macro state_key(state) -%}{{ state | state_path }}{%- endmacro %}
 {%- set action_scan = namespace(items=[]) -%}
 {%- for scan_state in model.walk_states() -%}
@@ -133,11 +135,8 @@ from typing import Mapping, Optional, Tuple, Union
 
 Number = Union[int, float]
 _DSL_SOURCE = {{ (model.to_ast_node() | string) | tojson }}
-{% set state_items = model.walk_states() | list -%}
-{% set define_items = model.defines.values() | list -%}
 _STATE_PATHS = (
-{% for state in state_items %}
-    {{ state | state_path | tojson }},
+{% for state in state_items %}    {{ state | state_path | tojson }},
 {% endfor -%}
 )
 {% set abstract_hook_scan = namespace(seen=[]) -%}
@@ -185,9 +184,7 @@ _ABSTRACT_HOOKS = {% if abstract_hook_scan.seen %}{
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
 {% endfor -%}
-{% if resolved.item.is_abstract and resolved.item.func_name not in abstract_const_ns.seen -%}
-{% set abstract_const_ns.seen = abstract_const_ns.seen + [resolved.item.func_name] %}
-    {{ resolved.item.func_name | tojson }}: {{ abstract_hook_method_name(resolved.item) | tojson }},
+{% if resolved.item.is_abstract and resolved.item.func_name not in abstract_const_ns.seen %}{% set abstract_const_ns.seen = abstract_const_ns.seen + [resolved.item.func_name] %}    {{ resolved.item.func_name | tojson }}: {{ abstract_hook_method_name(resolved.item) | tojson }},
 {% endif -%}
 {% endfor -%}
 {% endfor -%}
@@ -203,16 +200,12 @@ _EVENT_PATHS = ()
 _EVENT_PATHS = ({{ event_ns.items[0].path_name | tojson }},)
 {% else -%}
 _EVENT_PATHS = (
-{% for state in state_items %}
-{% for event in state.events.values() %}
-    {{ event.path_name | tojson }},
-{% endfor -%}
-{% endfor -%}
+{% for state in state_items %}{% for event in state.events.values() %}    {{ event.path_name | tojson }},
+{% endfor %}{% endfor -%}
 )
 {% endif -%}
 _EVENT_PATH_SET = set(_EVENT_PATHS)
 _STATE_PATH_TUPLES = tuple(tuple(path.split(".")) for path in _STATE_PATHS)
-
 
 
 class SimulationRuntimeDfsError(RuntimeError):
@@ -221,12 +214,10 @@ class SimulationRuntimeDfsError(RuntimeError):
     pass
 
 
-
 class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
     """Raised when a DSL guard or action expression fails during execution."""
 
     pass
-
 
 
 @dataclass(frozen=True)
@@ -289,7 +280,6 @@ class ReadOnlyExecutionContext:
         return ".".join(self.state_path)
 
 
-
 class {{ machine_class_name(model) }}:
     """
     Generated runtime for DSL root state ``{{ model.root_state.name }}``.
@@ -323,8 +313,7 @@ class {{ machine_class_name(model) }}:
 {{ '_EVENT_PATH_SET = _EVENT_PATH_SET' | indent(4, true) }}
     _ROOT_STATE_PATH = {{ state_key(model.root_state) | tojson }}
     _STATE_INFO = {
-{% for state in state_items %}
-        {{ state_key(state) | tojson }}: {
+{% for state in state_items %}        {{ state_key(state) | tojson }}: {
             "path": _STATE_PATH_TUPLES[{{ loop.index0 }}],
             "parent": {{ state_key(state.parent) | tojson if state.parent is not none else "None" }},
             "is_leaf": {{ state.is_leaf_state | repr }},
@@ -336,31 +325,18 @@ class {{ machine_class_name(model) }}:
             "during_after_actions": {{ render_action_entries(state, state.list_on_durings(aspect="after", with_ids=True), "during_after") }},
             "aspect_before_actions": {{ render_action_entries(state, state.list_on_during_aspects(aspect="before", with_ids=True), "aspect_before") }},
             "aspect_after_actions": {{ render_action_entries(state, state.list_on_during_aspects(aspect="after", with_ids=True), "aspect_after") }},
-{% if state.init_transitions %}
-            "initial_transition_ids": [
-{% for transition in state.init_transitions %}
-                {{ init_transition_id(state, loop.index) | tojson }},
-{% endfor %}
-            ],
-{% else %}
-            "initial_transition_ids": [],
-{% endif %}
-{% if state.transitions_from %}
-            "transition_ids": [
-{% for transition in state.transitions_from %}
-                {{ normal_transition_id(state, loop.index) | tojson }},
-{% endfor %}
-            ],
-{% else %}
-            "transition_ids": [],
-{% endif %}
-        },
-{% endfor %}
-    }
+{% if state.init_transitions %}            "initial_transition_ids": [
+{% for transition in state.init_transitions %}                {{ init_transition_id(state, loop.index) | tojson }},
+{% endfor %}            ],
+{% else %}            "initial_transition_ids": [],
+{% endif %}{% if state.transitions_from %}            "transition_ids": [
+{% for transition in state.transitions_from %}                {{ normal_transition_id(state, loop.index) | tojson }},
+{% endfor %}            ],
+{% else %}            "transition_ids": [],
+{% endif %}        },
+{% endfor %}    }
     _TRANSITIONS = {
-{% for state in state_items %}
-{% for transition in state.init_transitions %}
-        {{ init_transition_id(state, loop.index) | tojson }}: {
+{% for state in state_items %}{% for transition in state.init_transitions %}        {{ init_transition_id(state, loop.index) | tojson }}: {
             "target": {{ state_key(state.substates[transition.to_state]) | tojson }},
             "to_exit": False,
             "event_path": {{ transition.event.path_name | tojson if transition.event is not none else "None" }},
@@ -368,9 +344,7 @@ class {{ machine_class_name(model) }}:
             "guard": {{ init_guard_method_name(state, loop.index) | tojson if transition.guard is not none else "None" }},
             "effect": {{ init_effect_method_name(state, loop.index) | tojson if transition.effects else "None" }},
         },
-{% endfor %}
-{% for transition in state.transitions_from %}
-        {{ normal_transition_id(state, loop.index) | tojson }}: {
+{% endfor %}{% for transition in state.transitions_from %}        {{ normal_transition_id(state, loop.index) | tojson }}: {
             "target": {{ state_key(state.parent.substates[transition.to_state]) | tojson if transition.to_state != EXIT_STATE else "None" }},
             "to_exit": {{ (transition.to_state == EXIT_STATE) | repr }},
             "event_path": {{ transition.event.path_name | tojson if transition.event is not none else "None" }},
@@ -378,19 +352,14 @@ class {{ machine_class_name(model) }}:
             "guard": {{ transition_guard_method_name(state, loop.index) | tojson if transition.guard is not none else "None" }},
             "effect": {{ transition_effect_method_name(state, loop.index) | tojson if transition.effects else "None" }},
         },
-{% endfor %}
-{% endfor %}
-    }
+{% endfor %}{% endfor %}    }
 {% if define_items | length == 0 -%}
 {{ '_VAR_TYPES = {}' | indent(4, true) }}
 {% else -%}
 {{ '_VAR_TYPES = {' | indent(4, true) }}
-{% for def_item in define_items %}
-        {{ def_item.name | tojson }}: {{ def_item.type | tojson }},
-{% endfor %}
-    }
+{% for def_item in define_items %}        {{ def_item.name | tojson }}: {{ def_item.type | tojson }},
+{% endfor %}    }
 {% endif %}
-
     def _normalize_persistent_value(self, name, value, source):
         if name not in self._VAR_TYPES:
             raise ValueError(
@@ -499,7 +468,7 @@ class {{ machine_class_name(model) }}:
                         "initial_vars must provide all variables. Missing: %s"
                         % sorted(missing_vars)
                     )
-{%- for def_item in define_items %}
+{% for def_item in define_items %}
         if initial_vars is not None and {{ def_item.name | tojson }} in initial_vars:
             self._vars[{{ def_item.name | tojson }}] = self._normalize_persistent_value(
                 {{ def_item.name | tojson }},
@@ -515,9 +484,7 @@ class {{ machine_class_name(model) }}:
                 ),
                 "variable {{ def_item.name }} initializer",
             )
-{% endfor %}
-
-        self._ended = False
+{% endfor %}        self._ended = False
         self._entered_root = initial_state is not None
         self.cycle_count = 0
         if initial_state is None:
@@ -1542,512 +1509,170 @@ class {{ machine_class_name(model) }}:
 
         return None
 
-{% set hook_ns = namespace(seen=[]) %}
-{% for state in model.walk_states() %}
-{% for id_, item in state.list_on_enters(with_ids=True) %}
-{% set resolved = namespace(item=item, seen=[]) %}
-{% for _ in range(action_ref_hop_limit) %}
-{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
-{% set resolved.seen = resolved.seen + [resolved.item] %}
-{% set resolved.item = resolved.item.ref %}
+{%- macro render_abstract_hook_method(item) -%}
+def {{ abstract_hook_method_name(item) }}(self, ctx):
+    """
+    Protected extension hook for DSL abstract action ``{{ item.func_name }}``.
+
+    Owning state path: ``{{ item | action_owner_path }}``
+    Lifecycle stage: ``{{ item.stage }}``
+{% if item.aspect %}    Aspect: ``{{ item.aspect }}``
 {% endif %}
-{% endfor %}
-{% if resolved.item.is_abstract and resolved.item.func_name not in hook_ns.seen %}
-{% set hook_ns.seen = hook_ns.seen + [resolved.item.func_name] %}
-    def {{ abstract_hook_method_name(resolved.item) }}(self, ctx):
-        """
-        Protected extension hook for DSL abstract action ``{{ resolved.item.func_name }}``.
+    Override this method in a subclass when you want generated code
+    extension by inheritance. ``ctx`` contains a read-only snapshot of
+    variables at the time the abstract action is executed.
+{% if item.doc %}
+    DSL documentation::
 
-        Owning state path: ``{{ resolved.item | action_owner_path }}``
-        Lifecycle stage: ``{{ resolved.item.stage }}``
-
-        Override this method in a subclass when you want generated code
-        extension by inheritance. ``ctx`` contains a read-only snapshot of
-        variables at the time the abstract action is executed.
-
-{% if resolved.item.doc %}
-        DSL documentation::
-
-{{ resolved.item.doc | indent(12, true) }}
-
+{{ item.doc | indent(8, true) }}
 {% endif %}
-        DSL fragment::
+    DSL fragment::
 
-{{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
-        """
-        return None
+{{ (item.to_ast_node() | string) | indent(8, true) }}
+    """
+    return None
+{%- endmacro %}
+{%- macro render_action_method(state, method_kind, idx, item) -%}
+def {{ action_method_name(state, method_kind, idx) }}(self, vars_=None):
+    """
+    Execute the concrete DSL action block for ``{{ item | action_owner_path }}``.
 
+    Lifecycle stage: ``{{ item.stage }}``
+{% if item.aspect %}    Aspect: ``{{ item.aspect }}``
 {% endif %}
-{% if not resolved.item.is_abstract %}
-    def {{ action_method_name(state, 'enter', id_) }}(self, vars_=None):
-        """
-        Execute the concrete DSL action block for ``{{ resolved.item | action_owner_path }}``.
-
-        Lifecycle stage: ``{{ resolved.item.stage }}``
-
-        DSL fragment::
-
-{{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
-        """
-{% if resolved.item.operations %}
-        scope = vars_ if vars_ is not None else self._vars
-
-        def operations(local_scope):
-            _v = local_scope
-            _s = self._sign
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
-
-        self._execute_operation_block(operations, scope, "operation block writeback")
-{% else %}
-        pass
-{% endif %}
-
-{% endif %}
-{% endfor %}
-{% for id_, item in state.list_on_durings(aspect=None, with_ids=True) %}
-{% set resolved = namespace(item=item, seen=[]) %}
-{% for _ in range(action_ref_hop_limit) %}
-{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
-{% set resolved.seen = resolved.seen + [resolved.item] %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-{% if resolved.item.is_abstract and resolved.item.func_name not in hook_ns.seen %}
-{% set hook_ns.seen = hook_ns.seen + [resolved.item.func_name] %}
-    def {{ abstract_hook_method_name(resolved.item) }}(self, ctx):
-        """
-        Protected extension hook for DSL abstract action ``{{ resolved.item.func_name }}``.
-
-        Owning state path: ``{{ resolved.item | action_owner_path }}``
-        Lifecycle stage: ``{{ resolved.item.stage }}``
-
-        Override this method in a subclass when you want generated code
-        extension by inheritance. ``ctx`` contains a read-only snapshot of
-        variables at the time the abstract action is executed.
-
-{% if resolved.item.doc %}
-        DSL documentation::
-
-{{ resolved.item.doc | indent(12, true) }}
-
-{% endif %}
-        DSL fragment::
-
-{{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
-        """
-        return None
-
-{% endif %}
-{% if not resolved.item.is_abstract %}
-    def {{ action_method_name(state, 'during', id_) }}(self, vars_=None):
-        """
-        Execute the concrete DSL action block for ``{{ resolved.item | action_owner_path }}``.
-
-        Lifecycle stage: ``{{ resolved.item.stage }}``
-
-        DSL fragment::
-
-{{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
-        """
-{% if resolved.item.operations %}
-        scope = vars_ if vars_ is not None else self._vars
-
-        def operations(local_scope):
-            _v = local_scope
-            _s = self._sign
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
-
-        self._execute_operation_block(operations, scope, "operation block writeback")
-{% else %}
-        pass
-{% endif %}
-
-{% endif %}
-{% endfor %}
-{% for id_, item in state.list_on_exits(with_ids=True) %}
-{% set resolved = namespace(item=item, seen=[]) %}
-{% for _ in range(action_ref_hop_limit) %}
-{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
-{% set resolved.seen = resolved.seen + [resolved.item] %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-{% if resolved.item.is_abstract and resolved.item.func_name not in hook_ns.seen %}
-{% set hook_ns.seen = hook_ns.seen + [resolved.item.func_name] %}
-    def {{ abstract_hook_method_name(resolved.item) }}(self, ctx):
-        """
-        Protected extension hook for DSL abstract action ``{{ resolved.item.func_name }}``.
-
-        Owning state path: ``{{ resolved.item | action_owner_path }}``
-        Lifecycle stage: ``{{ resolved.item.stage }}``
-
-        Override this method in a subclass when you want generated code
-        extension by inheritance. ``ctx`` contains a read-only snapshot of
-        variables at the time the abstract action is executed.
-
-{% if resolved.item.doc %}
-        DSL documentation::
-
-{{ resolved.item.doc | indent(12, true) }}
-
-{% endif %}
-        DSL fragment::
-
-{{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
-        """
-        return None
-
-{% endif %}
-{% if not resolved.item.is_abstract %}
-    def {{ action_method_name(state, 'exit', id_) }}(self, vars_=None):
-        """
-        Execute the concrete DSL action block for ``{{ resolved.item | action_owner_path }}``.
-
-        Lifecycle stage: ``{{ resolved.item.stage }}``
-
-        DSL fragment::
-
-{{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
-        """
-{% if resolved.item.operations %}
-        scope = vars_ if vars_ is not None else self._vars
-
-        def operations(local_scope):
-            _v = local_scope
-            _s = self._sign
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
-
-        self._execute_operation_block(operations, scope, "operation block writeback")
-{% else %}
-        pass
-{% endif %}
-
-{% endif %}
-{% endfor %}
-{% for id_, item in state.list_on_durings(aspect='before', with_ids=True) %}
-{% set resolved = namespace(item=item, seen=[]) %}
-{% for _ in range(action_ref_hop_limit) %}
-{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
-{% set resolved.seen = resolved.seen + [resolved.item] %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-{% if resolved.item.is_abstract and resolved.item.func_name not in hook_ns.seen %}
-{% set hook_ns.seen = hook_ns.seen + [resolved.item.func_name] %}
-    def {{ abstract_hook_method_name(resolved.item) }}(self, ctx):
-        """
-        Protected extension hook for DSL abstract action ``{{ resolved.item.func_name }}``.
-
-        Owning state path: ``{{ resolved.item | action_owner_path }}``
-        Lifecycle stage: ``{{ resolved.item.stage }}``
-        Aspect: ``{{ resolved.item.aspect }}``
-
-        Override this method in a subclass when you want generated code
-        extension by inheritance. ``ctx`` contains a read-only snapshot of
-        variables at the time the abstract action is executed.
-
-{% if resolved.item.doc %}
-        DSL documentation::
-
-{{ resolved.item.doc | indent(12, true) }}
-
-{% endif %}
-        DSL fragment::
-
-{{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
-        """
-        return None
-
-{% endif %}
-{% if not resolved.item.is_abstract %}
-    def {{ action_method_name(state, 'during_before', id_) }}(self, vars_=None):
-        """
-        Execute the concrete DSL action block for ``{{ resolved.item | action_owner_path }}``.
-
-        Lifecycle stage: ``{{ resolved.item.stage }}``
-        Aspect: ``{{ resolved.item.aspect }}``
-
-        DSL fragment::
-
-{{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
-        """
-{% if resolved.item.operations %}
-        scope = vars_ if vars_ is not None else self._vars
-
-        def operations(local_scope):
-            _v = local_scope
-            _s = self._sign
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
-
-        self._execute_operation_block(operations, scope, "operation block writeback")
-{% else %}
-        pass
-{% endif %}
-
-{% endif %}
-{% endfor %}
-{% for id_, item in state.list_on_durings(aspect='after', with_ids=True) %}
-{% set resolved = namespace(item=item, seen=[]) %}
-{% for _ in range(action_ref_hop_limit) %}
-{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
-{% set resolved.seen = resolved.seen + [resolved.item] %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-{% if resolved.item.is_abstract and resolved.item.func_name not in hook_ns.seen %}
-{% set hook_ns.seen = hook_ns.seen + [resolved.item.func_name] %}
-    def {{ abstract_hook_method_name(resolved.item) }}(self, ctx):
-        """
-        Protected extension hook for DSL abstract action ``{{ resolved.item.func_name }}``.
-
-        Owning state path: ``{{ resolved.item | action_owner_path }}``
-        Lifecycle stage: ``{{ resolved.item.stage }}``
-        Aspect: ``{{ resolved.item.aspect }}``
-
-        Override this method in a subclass when you want generated code
-        extension by inheritance. ``ctx`` contains a read-only snapshot of
-        variables at the time the abstract action is executed.
-
-{% if resolved.item.doc %}
-        DSL documentation::
-
-{{ resolved.item.doc | indent(12, true) }}
-
-{% endif %}
-        DSL fragment::
-
-{{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
-        """
-        return None
-
-{% endif %}
-{% if not resolved.item.is_abstract %}
-    def {{ action_method_name(state, 'during_after', id_) }}(self, vars_=None):
-        """
-        Execute the concrete DSL action block for ``{{ resolved.item | action_owner_path }}``.
-
-        Lifecycle stage: ``{{ resolved.item.stage }}``
-        Aspect: ``{{ resolved.item.aspect }}``
-
-        DSL fragment::
-
-{{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
-        """
-{% if resolved.item.operations %}
-        scope = vars_ if vars_ is not None else self._vars
-
-        def operations(local_scope):
-            _v = local_scope
-            _s = self._sign
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
-
-        self._execute_operation_block(operations, scope, "operation block writeback")
-{% else %}
-        pass
-{% endif %}
-
-{% endif %}
-{% endfor %}
-{% for id_, item in state.list_on_during_aspects(aspect='before', with_ids=True) %}
-{% set resolved = namespace(item=item, seen=[]) %}
-{% for _ in range(action_ref_hop_limit) %}
-{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
-{% set resolved.seen = resolved.seen + [resolved.item] %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-{% if resolved.item.is_abstract and resolved.item.func_name not in hook_ns.seen %}
-{% set hook_ns.seen = hook_ns.seen + [resolved.item.func_name] %}
-    def {{ abstract_hook_method_name(resolved.item) }}(self, ctx):
-        """
-        Protected extension hook for DSL abstract action ``{{ resolved.item.func_name }}``.
-
-        Owning state path: ``{{ resolved.item | action_owner_path }}``
-        Lifecycle stage: ``{{ resolved.item.stage }}``
-        Aspect: ``{{ resolved.item.aspect }}``
-
-        Override this method in a subclass when you want generated code
-        extension by inheritance. ``ctx`` contains a read-only snapshot of
-        variables at the time the abstract action is executed.
-
-{% if resolved.item.doc %}
-        DSL documentation::
-
-{{ resolved.item.doc | indent(12, true) }}
-
-{% endif %}
-        DSL fragment::
-
-{{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
-        """
-        return None
-
-{% endif %}
-{% if not resolved.item.is_abstract %}
-    def {{ action_method_name(state, 'aspect_before', id_) }}(self, vars_=None):
-        """
-        Execute the concrete DSL action block for ``{{ resolved.item | action_owner_path }}``.
-
-        Lifecycle stage: ``{{ resolved.item.stage }}``
-        Aspect: ``{{ resolved.item.aspect }}``
-
-        DSL fragment::
-
-{{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
-        """
-{% if resolved.item.operations %}
-        scope = vars_ if vars_ is not None else self._vars
-
-        def operations(local_scope):
-            _v = local_scope
-            _s = self._sign
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
-
-        self._execute_operation_block(operations, scope, "operation block writeback")
-{% else %}
-        pass
-{% endif %}
-
-{% endif %}
-{% endfor %}
-{% for id_, item in state.list_on_during_aspects(aspect='after', with_ids=True) %}
-{% set resolved = namespace(item=item, seen=[]) %}
-{% for _ in range(action_ref_hop_limit) %}
-{% if resolved.item.ref is not none and resolved.item not in resolved.seen %}
-{% set resolved.seen = resolved.seen + [resolved.item] %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-{% if resolved.item.is_abstract and resolved.item.func_name not in hook_ns.seen %}
-{% set hook_ns.seen = hook_ns.seen + [resolved.item.func_name] %}
-    def {{ abstract_hook_method_name(resolved.item) }}(self, ctx):
-        """
-        Protected extension hook for DSL abstract action ``{{ resolved.item.func_name }}``.
-
-        Owning state path: ``{{ resolved.item | action_owner_path }}``
-        Lifecycle stage: ``{{ resolved.item.stage }}``
-        Aspect: ``{{ resolved.item.aspect }}``
-
-        Override this method in a subclass when you want generated code
-        extension by inheritance. ``ctx`` contains a read-only snapshot of
-        variables at the time the abstract action is executed.
-
-{% if resolved.item.doc %}
-        DSL documentation::
-
-{{ resolved.item.doc | indent(12, true) }}
-
-{% endif %}
-        DSL fragment::
-
-{{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
-        """
-        return None
-
-{% endif %}
-{% if not resolved.item.is_abstract %}
-    def {{ action_method_name(state, 'aspect_after', id_) }}(self, vars_=None):
-        """
-        Execute the concrete DSL action block for ``{{ resolved.item | action_owner_path }}``.
-
-        Lifecycle stage: ``{{ resolved.item.stage }}``
-        Aspect: ``{{ resolved.item.aspect }}``
-
-        DSL fragment::
-
-{{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
-        """
-{% if resolved.item.operations %}
-        scope = vars_ if vars_ is not None else self._vars
-
-        def operations(local_scope):
-            _v = local_scope
-            _s = self._sign
-{{ resolved.item.operations | stmts_render(style='python_runtime', indent='    ', level=3) }}
-
-        self._execute_operation_block(operations, scope, "operation block writeback")
-{% else %}
-        pass
-{% endif %}
-
-{% endif %}
-{% endfor %}
-{% for transition in state.init_transitions %}
-{% if transition.guard is not none %}
-    def {{ init_guard_method_name(state, loop.index) }}(self, vars_=None):
-        """
-        Evaluate the initial-transition guard for state ``{{ state | state_path }}``.
-
-        DSL fragment::
-
-{{ (transition.to_ast_node() | string) | indent(12, true) }}
-        """
-        scope = vars_ if vars_ is not None else self._vars
-        return bool(
-            self._evaluate_runtime_expr(
-                lambda scope=scope: {{ transition.guard.to_ast_node() | expr_render(style='python_scope_expr') }},
-                "transition guard",
-            )
+    DSL fragment::
+
+{{ (item.to_ast_node() | string) | indent(8, true) }}
+    """
+{% if item.operations %}    scope = vars_ if vars_ is not None else self._vars
+
+    def operations(local_scope):
+        _v = local_scope
+        _s = self._sign
+{{ item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+    self._execute_operation_block(operations, scope, "operation block writeback")
+{% else %}    pass
+{% endif -%}
+{%- endmacro %}
+{%- macro render_init_guard_method(state, idx, transition) -%}
+def {{ init_guard_method_name(state, idx) }}(self, vars_=None):
+    """
+    Evaluate the initial-transition guard for state ``{{ state | state_path }}``.
+
+    DSL fragment::
+
+{{ (transition.to_ast_node() | string) | indent(8, true) }}
+    """
+    scope = vars_ if vars_ is not None else self._vars
+    return bool(
+        self._evaluate_runtime_expr(
+            lambda scope=scope: {{ transition.guard.to_ast_node() | expr_render(style='python_scope_expr') }},
+            "transition guard",
         )
+    )
+{%- endmacro %}
+{%- macro render_init_effect_method(state, idx, transition) -%}
+def {{ init_effect_method_name(state, idx) }}(self, vars_=None):
+    """
+    Execute the initial-transition effect for state ``{{ state | state_path }}``.
 
-{% endif %}
-{% if transition.effects %}
-    def {{ init_effect_method_name(state, loop.index) }}(self, vars_=None):
-        """
-        Execute the initial-transition effect for state ``{{ state | state_path }}``.
+    DSL fragment::
 
-        DSL fragment::
+{{ (transition.to_ast_node() | string) | indent(8, true) }}
+    """
+    scope = vars_ if vars_ is not None else self._vars
 
-{{ (transition.to_ast_node() | string) | indent(12, true) }}
-        """
-        scope = vars_ if vars_ is not None else self._vars
+    def operations(local_scope):
+        _v = local_scope
+        _s = self._sign
+{{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=2) }}
 
-        def operations(local_scope):
-            _v = local_scope
-            _s = self._sign
-{{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=3) }}
+    self._execute_operation_block(operations, scope, "operation block writeback")
+{%- endmacro %}
+{%- macro render_transition_guard_method(state, idx, transition) -%}
+def {{ transition_guard_method_name(state, idx) }}(self, vars_=None):
+    """
+    Evaluate the transition guard from state ``{{ state | state_path }}``.
 
-        self._execute_operation_block(operations, scope, "operation block writeback")
+    DSL fragment::
 
-{% endif %}
-{% endfor %}
-{% for transition in state.transitions_from %}
-{% if transition.guard is not none %}
-    def {{ transition_guard_method_name(state, loop.index) }}(self, vars_=None):
-        """
-        Evaluate the transition guard from state ``{{ state | state_path }}``.
-
-        DSL fragment::
-
-{{ (transition.to_ast_node() | string) | indent(12, true) }}
-        """
-        scope = vars_ if vars_ is not None else self._vars
-        return bool(
-            self._evaluate_runtime_expr(
-                lambda scope=scope: {{ transition.guard.to_ast_node() | expr_render(style='python_scope_expr') }},
-                "transition guard",
-            )
+{{ (transition.to_ast_node() | string) | indent(8, true) }}
+    """
+    scope = vars_ if vars_ is not None else self._vars
+    return bool(
+        self._evaluate_runtime_expr(
+            lambda scope=scope: {{ transition.guard.to_ast_node() | expr_render(style='python_scope_expr') }},
+            "transition guard",
         )
+    )
+{%- endmacro %}
+{%- macro render_transition_effect_method(state, idx, transition) -%}
+def {{ transition_effect_method_name(state, idx) }}(self, vars_=None):
+    """
+    Execute the transition effect from state ``{{ state | state_path }}``.
 
-{% endif %}
-{% if transition.effects %}
-    def {{ transition_effect_method_name(state, loop.index) }}(self, vars_=None):
-        """
-        Execute the transition effect from state ``{{ state | state_path }}``.
+    DSL fragment::
 
-        DSL fragment::
+{{ (transition.to_ast_node() | string) | indent(8, true) }}
+    """
+    scope = vars_ if vars_ is not None else self._vars
 
-{{ (transition.to_ast_node() | string) | indent(12, true) }}
-        """
-        scope = vars_ if vars_ is not None else self._vars
+    def operations(local_scope):
+        _v = local_scope
+        _s = self._sign
+{{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=2) }}
 
-        def operations(local_scope):
-            _v = local_scope
-            _s = self._sign
-{{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=3) }}
-
-        self._execute_operation_block(operations, scope, "operation block writeback")
-
-{% endif %}
-{% endfor %}
-{% endfor %}
+    self._execute_operation_block(operations, scope, "operation block writeback")
+{%- endmacro %}
+{%- set hook_ns = namespace(seen=[]) -%}
+{%- set methods = namespace(items=[]) -%}
+{%- for state in state_items -%}
+{%- for method_kind, group in [
+    ('enter', state.list_on_enters(with_ids=True)),
+    ('during', state.list_on_durings(aspect=None, with_ids=True)),
+    ('exit', state.list_on_exits(with_ids=True)),
+    ('during_before', state.list_on_durings(aspect='before', with_ids=True)),
+    ('during_after', state.list_on_durings(aspect='after', with_ids=True)),
+    ('aspect_before', state.list_on_during_aspects(aspect='before', with_ids=True)),
+    ('aspect_after', state.list_on_during_aspects(aspect='after', with_ids=True)),
+] -%}
+{%- for id_, item in group -%}
+{%- set resolved = namespace(item=item, seen=[]) -%}
+{%- for _ in range(action_ref_hop_limit) -%}
+{%- if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
+{%- set resolved.seen = resolved.seen + [resolved.item] -%}
+{%- set resolved.item = resolved.item.ref -%}
+{%- endif -%}
+{%- endfor -%}
+{%- if resolved.item.is_abstract and resolved.item.func_name not in hook_ns.seen -%}
+{%- set hook_ns.seen = hook_ns.seen + [resolved.item.func_name] -%}
+{%- set methods.items = methods.items + [render_abstract_hook_method(resolved.item)] -%}
+{%- endif -%}
+{%- if not resolved.item.is_abstract -%}
+{%- set methods.items = methods.items + [render_action_method(state, method_kind, id_, resolved.item)] -%}
+{%- endif -%}
+{%- endfor -%}
+{%- endfor -%}
+{%- for transition in state.init_transitions -%}
+{%- if transition.guard is not none -%}
+{%- set methods.items = methods.items + [render_init_guard_method(state, loop.index, transition)] -%}
+{%- endif -%}
+{%- if transition.effects -%}
+{%- set methods.items = methods.items + [render_init_effect_method(state, loop.index, transition)] -%}
+{%- endif -%}
+{%- endfor -%}
+{%- for transition in state.transitions_from -%}
+{%- if transition.guard is not none -%}
+{%- set methods.items = methods.items + [render_transition_guard_method(state, loop.index, transition)] -%}
+{%- endif -%}
+{%- if transition.effects -%}
+{%- set methods.items = methods.items + [render_transition_effect_method(state, loop.index, transition)] -%}
+{%- endif -%}
+{%- endfor -%}
+{%- endfor -%}
+{%- if methods.items -%}
+{{ ('\n\n' ~ (methods.items | map('trim') | join('\n\n')) ~ '\n') | indent(4) }}
+{%- else -%}
+{{ '\n' }}
+{%- endif -%}

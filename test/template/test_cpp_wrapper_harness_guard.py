@@ -10,7 +10,7 @@ corpus for fixture harness discipline, not a full C++ static analyzer.
 Example::
 
     >>> from test.template.cpp_shared import _assert_wrapper_only_harness
-    >>> _assert_wrapper_only_harness('#include "machine.hpp"\n')
+    >>> _assert_wrapper_only_harness('#include \"machine.hpp\"' + chr(10))
 """
 
 import pytest
@@ -25,6 +25,10 @@ def test_cpp_wrapper_harness_accepts_wrapper_entrypoint_only():
 
     :return: ``None``.
     :rtype: None
+
+    Example::
+
+        >>> _assert_wrapper_only_harness('#include "machine.hpp"' + chr(10))
     """
     _assert_wrapper_only_harness(
         '#include "machine.hpp"\n'
@@ -146,6 +150,11 @@ def test_cpp_wrapper_harness_rejects_direct_c_runtime_entrypoints(source):
     :type source: str
     :return: ``None``.
     :rtype: None
+
+    Example::
+
+        >>> with pytest.raises(AssertionError):
+        ...     _assert_wrapper_only_harness('#include "machine.h"' + chr(10))
     """
     with pytest.raises(AssertionError):
         _assert_wrapper_only_harness(source)

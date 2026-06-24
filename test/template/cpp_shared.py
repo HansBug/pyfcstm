@@ -968,8 +968,9 @@ def _splice_cpp_line_continuations(source: str) -> str:
 
     Example::
 
-        >>> _splice_cpp_line_continuations('#\\\ninclude "machine.hpp"\n')
-        '#include "machine.hpp"\n'
+        >>> source = '#' + chr(92) + chr(10) + 'include "machine.hpp"' + chr(10)
+        >>> _splice_cpp_line_continuations(source) == '#include "machine.hpp"' + chr(10)
+        True
     """
     return _LINE_CONTINUATION_RE.sub("", source)
 
@@ -994,8 +995,9 @@ def _mask_cpp_comments_and_literals(source: str, mask_literals: bool) -> str:
 
     Example::
 
-        >>> _mask_cpp_comments_and_literals('// #include "machine.hpp"\n', False)
-        '\n'
+        >>> source = '// #include \"machine.hpp\"' + chr(10)
+        >>> _mask_cpp_comments_and_literals(source, False) == chr(10)
+        True
         >>> _mask_cpp_comments_and_literals('"RootMachine_cycle"', True)
         '                   '
     """
@@ -1062,9 +1064,9 @@ def _iter_include_targets(source: str) -> List[str]:
 
     Example::
 
-        >>> _iter_include_targets('#include "machine.hpp"\n')
+        >>> _iter_include_targets('#include \"machine.hpp\"' + chr(10))
         ['machine.hpp']
-        >>> _iter_include_targets('#include HEADER\n')
+        >>> _iter_include_targets('#include HEADER' + chr(10))
         ['']
     """
     directive_source = _mask_cpp_comments_and_literals(source, mask_literals=False)
@@ -1094,9 +1096,9 @@ def _has_wrapper_header_include(source: str) -> bool:
 
     Example::
 
-        >>> _has_wrapper_header_include('#include "machine.hpp"\n')
+        >>> _has_wrapper_header_include('#include \"machine.hpp\"' + chr(10))
         True
-        >>> _has_wrapper_header_include('// #include "machine.hpp"\n')
+        >>> _has_wrapper_header_include('// #include \"machine.hpp\"' + chr(10))
         False
     """
     for target in _iter_include_targets(source):
@@ -1122,9 +1124,9 @@ def _has_direct_machine_header_include(source: str) -> bool:
 
     Example::
 
-        >>> _has_direct_machine_header_include('#include "machine.h"\n')
+        >>> _has_direct_machine_header_include('#include \"machine.h\"' + chr(10))
         True
-        >>> _has_direct_machine_header_include('#include "machine.hpp"\n')
+        >>> _has_direct_machine_header_include('#include \"machine.hpp\"' + chr(10))
         False
     """
     for target in _iter_include_targets(source):
@@ -1158,7 +1160,7 @@ def _assert_wrapper_only_harness(source: str) -> None:
 
     Example::
 
-        >>> _assert_wrapper_only_harness('#include "machine.hpp"\\n')
+        >>> _assert_wrapper_only_harness('#include \"machine.hpp\"' + chr(10))
     """
     include_targets = _iter_include_targets(source)
     symbol_source = _mask_cpp_comments_and_literals(source, mask_literals=True)

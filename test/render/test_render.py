@@ -310,9 +310,12 @@ class TestRenderRender:
             _ensure_output_parent_dir(output_file)
             _ensure_output_parent_dir("bare-file.txt")
 
-        assert (
-            _output_relpath_to_native_path("assets/nested/static.txt")
-            == "assets/nested/static.txt"
+        assert _output_relpath_to_native_path(
+            "assets/nested/static.txt"
+        ) == os.path.join(
+            "assets",
+            "nested",
+            "static.txt",
         )
         with mock.patch("pyfcstm.render.render.os.sep", "/"):
             assert (
@@ -458,6 +461,60 @@ class TestRenderRender:
             "ignores",
         ):
             assert key in message
+
+    @pytest.mark.parametrize(
+        "config_text, section, style_name",
+        [
+            ("expr_styles:\n  missing_base: {}\n", "expr_styles", "missing_base"),
+            ("stmt_styles:\n  missing_base: {}\n", "stmt_styles", "missing_base"),
+        ],
+    )
+    def test_renderer_rejects_style_without_base_lang(
+        self,
+        config_text,
+        section,
+        style_name,
+    ):
+        with TemporaryDirectory() as template_dir:
+            config_file = os.path.join(template_dir, "config.yaml")
+            with open(config_file, "w") as f:
+                f.write(config_text)
+
+            with pytest.raises(ValueError) as exc_info:
+                StateMachineCodeRenderer(template_dir)
+
+        message = str(exc_info.value)
+        assert config_file in message
+        assert section in message
+        assert style_name in message
+        assert "base_lang" in message
+
+    @pytest.mark.parametrize(
+        "config_text, section, style_name",
+        [
+            ("expr_styles:\n  invalid_style: python\n", "expr_styles", "invalid_style"),
+            ("stmt_styles:\n  invalid_style: python\n", "stmt_styles", "invalid_style"),
+        ],
+    )
+    def test_renderer_rejects_non_mapping_style_config(
+        self,
+        config_text,
+        section,
+        style_name,
+    ):
+        with TemporaryDirectory() as template_dir:
+            config_file = os.path.join(template_dir, "config.yaml")
+            with open(config_file, "w") as f:
+                f.write(config_text)
+
+            with pytest.raises(ValueError) as exc_info:
+                StateMachineCodeRenderer(template_dir)
+
+        message = str(exc_info.value)
+        assert config_file in message
+        assert section in message
+        assert style_name in message
+        assert "mapping" in message
 
     @pytest.mark.parametrize("config_text", ["", "# empty\n"])
     def test_renderer_accepts_empty_config_files(self, config_text, sample_model):

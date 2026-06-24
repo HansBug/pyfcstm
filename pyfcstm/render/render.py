@@ -50,7 +50,7 @@ import shutil
 import warnings
 from contextlib import contextmanager
 from functools import partial
-from typing import Dict, Callable, Union, Any, ContextManager
+from typing import Dict, Callable, Union, Any, Iterator
 
 import pathspec
 import yaml
@@ -242,6 +242,23 @@ class StateMachineCodeRenderer:
         expr_styles["default"] = expr_styles.get("default") or {"base_lang": "dsl"}
         d_templates = copy.deepcopy(_KNOWN_STYLES)
         for style_name, expr_style in expr_styles.items():
+            if not isinstance(expr_style, dict):
+                raise ValueError(
+                    "Renderer config %s expr_styles.%s must be a mapping, got %s."
+                    % (
+                        self.config_file,
+                        style_name,
+                        type(expr_style).__name__,
+                    )
+                )
+            if "base_lang" not in expr_style:
+                raise ValueError(
+                    "Renderer config %s expr_styles.%s must define 'base_lang'."
+                    % (
+                        self.config_file,
+                        style_name,
+                    )
+                )
             lang_style = expr_style.pop("base_lang")
             d_templates[style_name] = create_expr_render_template(
                 lang_style=lang_style,
@@ -289,6 +306,23 @@ class StateMachineCodeRenderer:
         }
         for style_name, stmt_style in stmt_styles.items():
             stmt_style = copy.deepcopy(stmt_style)
+            if not isinstance(stmt_style, dict):
+                raise ValueError(
+                    "Renderer config %s stmt_styles.%s must be a mapping, got %s."
+                    % (
+                        self.config_file,
+                        style_name,
+                        type(stmt_style).__name__,
+                    )
+                )
+            if "base_lang" not in stmt_style:
+                raise ValueError(
+                    "Renderer config %s stmt_styles.%s must define 'base_lang'."
+                    % (
+                        self.config_file,
+                        style_name,
+                    )
+                )
             lang_style = stmt_style.pop("base_lang")
             d_stmt_templates[style_name] = create_stmt_render_template(
                 lang_style=lang_style,
@@ -428,7 +462,7 @@ class StateMachineCodeRenderer:
         return copy.deepcopy(config_info)
 
     @contextmanager
-    def _statement_default_context(self, model: StateMachine) -> ContextManager[None]:
+    def _statement_default_context(self, model: StateMachine) -> Iterator[None]:
         """
         Temporarily expose model variables as statement-render defaults.
 

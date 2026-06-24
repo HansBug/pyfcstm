@@ -16,14 +16,14 @@ from test.testings.simulate_semantics import iter_semantic_cases, load_semantic_
     ids=lambda case: case.id,
 )
 def test_generated_cpp_poll_alignment_semantic_fixture(case, tmp_path):
-    run_cpp_alignment_case("cpp_poll", case, str(tmp_path / case.id))
+    run_cpp_alignment_case("cpp_poll", case, str(tmp_path))
 
 
 @pytest.mark.unittest
 @pytest.mark.slow
 def test_generated_cpp_poll_alignment_harness_uses_wrapper_api(tmp_path):
     case = load_semantic_case("abstract_hook_ref_context_reports_callsite_metadata")
-    artifacts = run_cpp_alignment_case("cpp_poll", case, str(tmp_path / case.id))
+    artifacts = run_cpp_alignment_case("cpp_poll", case, str(tmp_path))
     harness_source = Path(artifacts.harness_dir, "harness.cpp").read_text(
         encoding="utf-8"
     )

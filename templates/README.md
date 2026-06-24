@@ -86,6 +86,20 @@ Most keys are optional and default to an empty configuration. Generation-time de
 
 When a new `config.yaml` key is added in code, update this handbook, the affected template-level README files, and the structure checks together.
 
+### Strict config keys and declarative item forms
+
+An empty `config.yaml` is treated as an empty mapping. Unknown top-level keys are rejected instead of being ignored, so spelling mistakes fail close to the template directory that introduced them.
+
+Declarative entries under `globals`, `filters`, and `tests` support three item forms:
+
+| Item form | Required fields | Meaning | Trust boundary |
+| --- | --- | --- | --- |
+| `type: template` | `template`, optional ordered `params` | Build a callable from an inline Jinja2 snippet. | Trusted template source; generation-time only. |
+| `type: import` | `from` | Import a Python object and expose it to templates. | Trusted template code boundary; never use for untrusted templates. |
+| `type: value` | `value` | Expose a literal YAML value. | Generation-time only. |
+
+Target-language-specific helpers should be loaded by the owning template through `type: import`; they should not be injected into the default renderer environment.
+
 ## `template.json` metadata contract
 
 Each packaged template directory should include `template.json`. The metadata loader is implemented in `tools.package_templates`.

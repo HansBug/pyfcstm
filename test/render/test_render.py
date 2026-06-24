@@ -1,8 +1,10 @@
 import os.path
 import pathlib
 import shutil
+import textwrap
 from unittest import mock
 
+import jinja2
 import pytest
 from hbutils.system import TemporaryDirectory
 
@@ -132,74 +134,83 @@ class TestRenderRender:
 
     def test_rendered_template_files_use_lf_newlines(self, sample_model):
         with TemporaryDirectory() as template_dir:
-            with open(os.path.join(template_dir, 'config.yaml'), 'w') as f:
-                f.write('{}\n')
-            with open(os.path.join(template_dir, 'multiline.txt.j2'), 'w', encoding='utf-8', newline='\n') as f:
-                f.write('line1\n{{ model.root_state.name }}\nline3')
+            with open(os.path.join(template_dir, "config.yaml"), "w") as f:
+                f.write("{}\n")
+            with open(
+                os.path.join(template_dir, "multiline.txt.j2"),
+                "w",
+                encoding="utf-8",
+                newline="\n",
+            ) as f:
+                f.write("line1\n{{ model.root_state.name }}\nline3")
 
             renderer = StateMachineCodeRenderer(template_dir)
 
             with TemporaryDirectory() as output_dir:
                 renderer.render(model=sample_model, output_dir=output_dir)
-                with open(os.path.join(output_dir, 'multiline.txt'), 'rb') as f:
+                with open(os.path.join(output_dir, "multiline.txt"), "rb") as f:
                     data = f.read()
 
-        assert b'\r\n' not in data
-        assert data == b'line1\nTrafficLight\nline3'
+        assert b"\r\n" not in data
+        assert data == b"line1\nTrafficLight\nline3"
 
     def test_renderer_handles_nested_outputs_and_ignores(self, sample_model):
         with TemporaryDirectory() as template_dir:
-            nested_template_dir = os.path.join(template_dir, 'nested')
-            nested_static_dir = os.path.join(template_dir, 'assets', 'nested')
-            ignored_dir = os.path.join(template_dir, 'assets', 'ignored')
+            nested_template_dir = os.path.join(template_dir, "nested")
+            nested_static_dir = os.path.join(template_dir, "assets", "nested")
+            ignored_dir = os.path.join(template_dir, "assets", "ignored")
             os.makedirs(nested_template_dir, exist_ok=True)
             os.makedirs(nested_static_dir, exist_ok=True)
             os.makedirs(ignored_dir, exist_ok=True)
 
-            with open(os.path.join(template_dir, 'config.yaml'), 'w') as f:
+            with open(os.path.join(template_dir, "config.yaml"), "w") as f:
                 f.write("ignores:\n  - 'assets/ignored/**'\n")
-            with open(os.path.join(nested_template_dir, 'rendered.txt.j2'), 'w') as f:
-                f.write('state={{ model.root_state.name }}')
-            with open(os.path.join(nested_static_dir, 'static.txt'), 'w') as f:
-                f.write('static asset')
-            with open(os.path.join(ignored_dir, 'skip.txt'), 'w') as f:
-                f.write('ignored asset')
+            with open(os.path.join(nested_template_dir, "rendered.txt.j2"), "w") as f:
+                f.write("state={{ model.root_state.name }}")
+            with open(os.path.join(nested_static_dir, "static.txt"), "w") as f:
+                f.write("static asset")
+            with open(os.path.join(ignored_dir, "skip.txt"), "w") as f:
+                f.write("ignored asset")
 
             renderer = StateMachineCodeRenderer(template_dir)
 
             with TemporaryDirectory() as output_dir:
                 renderer.render(model=sample_model, output_dir=output_dir)
 
-                with open(os.path.join(output_dir, 'nested', 'rendered.txt'), 'r') as f:
+                with open(os.path.join(output_dir, "nested", "rendered.txt"), "r") as f:
                     rendered = f.read()
-                with open(os.path.join(output_dir, 'assets', 'nested', 'static.txt'), 'r') as f:
+                with open(
+                    os.path.join(output_dir, "assets", "nested", "static.txt"), "r"
+                ) as f:
                     static = f.read()
 
-                assert rendered == 'state=TrafficLight'
-                assert static == 'static asset'
-                assert not os.path.exists(os.path.join(output_dir, 'assets', 'ignored', 'skip.txt'))
+                assert rendered == "state=TrafficLight"
+                assert static == "static asset"
+                assert not os.path.exists(
+                    os.path.join(output_dir, "assets", "ignored", "skip.txt")
+                )
 
     def test_renderer_recreates_nested_output_dirs_after_clear(self, sample_model):
         with TemporaryDirectory() as template_dir:
-            nested_template_dir = os.path.join(template_dir, 'nested')
-            nested_static_dir = os.path.join(template_dir, 'assets', 'nested')
+            nested_template_dir = os.path.join(template_dir, "nested")
+            nested_static_dir = os.path.join(template_dir, "assets", "nested")
             os.makedirs(nested_template_dir, exist_ok=True)
             os.makedirs(nested_static_dir, exist_ok=True)
 
-            with open(os.path.join(template_dir, 'config.yaml'), 'w') as f:
-                f.write('{}\n')
-            with open(os.path.join(nested_template_dir, 'rendered.txt.j2'), 'w') as f:
-                f.write('state={{ model.root_state.name }}')
-            with open(os.path.join(nested_static_dir, 'static.txt'), 'w') as f:
-                f.write('static asset')
+            with open(os.path.join(template_dir, "config.yaml"), "w") as f:
+                f.write("{}\n")
+            with open(os.path.join(nested_template_dir, "rendered.txt.j2"), "w") as f:
+                f.write("state={{ model.root_state.name }}")
+            with open(os.path.join(nested_static_dir, "static.txt"), "w") as f:
+                f.write("static asset")
 
             renderer = StateMachineCodeRenderer(template_dir)
 
             with TemporaryDirectory() as output_dir:
                 renderer.render(model=sample_model, output_dir=output_dir)
-                stale_file = os.path.join(output_dir, 'nested', 'stale.txt')
-                with open(stale_file, 'w') as f:
-                    f.write('stale')
+                stale_file = os.path.join(output_dir, "nested", "stale.txt")
+                with open(stale_file, "w") as f:
+                    f.write("stale")
 
                 renderer.render(
                     model=sample_model,
@@ -207,105 +218,129 @@ class TestRenderRender:
                     clear_previous_directory=True,
                 )
 
-                with open(os.path.join(output_dir, 'nested', 'rendered.txt'), 'r') as f:
+                with open(os.path.join(output_dir, "nested", "rendered.txt"), "r") as f:
                     rendered = f.read()
-                with open(os.path.join(output_dir, 'assets', 'nested', 'static.txt'), 'r') as f:
+                with open(
+                    os.path.join(output_dir, "assets", "nested", "static.txt"), "r"
+                ) as f:
                     static = f.read()
 
-                assert rendered == 'state=TrafficLight'
-                assert static == 'static asset'
+                assert rendered == "state=TrafficLight"
+                assert static == "static asset"
                 assert not os.path.exists(stale_file)
 
-    def test_renderer_normalizes_template_relative_paths_for_ignores(self, sample_model):
+    def test_renderer_normalizes_template_relative_paths_for_ignores(
+        self, sample_model
+    ):
         with TemporaryDirectory() as template_dir:
-            nested_template_dir = os.path.join(template_dir, 'nested')
-            nested_static_dir = os.path.join(template_dir, 'assets', 'nested')
-            ignored_dir = os.path.join(template_dir, 'assets', 'ignored')
+            nested_template_dir = os.path.join(template_dir, "nested")
+            nested_static_dir = os.path.join(template_dir, "assets", "nested")
+            ignored_dir = os.path.join(template_dir, "assets", "ignored")
             os.makedirs(nested_template_dir, exist_ok=True)
             os.makedirs(nested_static_dir, exist_ok=True)
             os.makedirs(ignored_dir, exist_ok=True)
 
-            with open(os.path.join(template_dir, 'config.yaml'), 'w') as f:
+            with open(os.path.join(template_dir, "config.yaml"), "w") as f:
                 f.write("ignores:\n  - 'assets/ignored/**'\n")
-            with open(os.path.join(nested_template_dir, 'rendered.txt.j2'), 'w') as f:
-                f.write('state={{ model.root_state.name }}')
-            with open(os.path.join(nested_static_dir, 'static.txt'), 'w') as f:
-                f.write('static asset')
-            with open(os.path.join(ignored_dir, 'skip.txt'), 'w') as f:
-                f.write('ignored asset')
+            with open(os.path.join(nested_template_dir, "rendered.txt.j2"), "w") as f:
+                f.write("state={{ model.root_state.name }}")
+            with open(os.path.join(nested_static_dir, "static.txt"), "w") as f:
+                f.write("static asset")
+            with open(os.path.join(ignored_dir, "skip.txt"), "w") as f:
+                f.write("ignored asset")
 
             original_relpath = os.path.relpath
             original_sep = os.sep
 
             def _windows_relpath(path, start=None):
-                return original_relpath(path, start).replace(original_sep, '\\')
+                return original_relpath(path, start).replace(original_sep, "\\")
 
-            with mock.patch('pyfcstm.render.render.os.sep', '\\'), mock.patch(
-                    'pyfcstm.render.render.os.path.relpath',
+            with mock.patch("pyfcstm.render.render.os.sep", "\\"):
+                with mock.patch(
+                    "pyfcstm.render.render.os.path.relpath",
                     side_effect=_windows_relpath,
-            ):
-                renderer = StateMachineCodeRenderer(template_dir)
+                ):
+                    renderer = StateMachineCodeRenderer(template_dir)
 
-            assert 'nested/rendered.txt' in renderer._file_mappings
-            assert 'assets/nested/static.txt' in renderer._file_mappings
-            assert 'assets/ignored/skip.txt' not in renderer._file_mappings
-            assert all('\\' not in rel_file for rel_file in renderer._file_mappings)
+            assert "nested/rendered.txt" in renderer._file_mappings
+            assert "assets/nested/static.txt" in renderer._file_mappings
+            assert "assets/ignored/skip.txt" not in renderer._file_mappings
+            assert all("\\" not in rel_file for rel_file in renderer._file_mappings)
 
             with TemporaryDirectory() as output_dir:
                 renderer.render(model=sample_model, output_dir=output_dir)
 
-                assert os.path.exists(os.path.join(output_dir, 'nested', 'rendered.txt'))
-                assert os.path.exists(os.path.join(output_dir, 'assets', 'nested', 'static.txt'))
-                assert not os.path.exists(os.path.join(output_dir, 'assets', 'ignored', 'skip.txt'))
+                assert os.path.exists(
+                    os.path.join(output_dir, "nested", "rendered.txt")
+                )
+                assert os.path.exists(
+                    os.path.join(output_dir, "assets", "nested", "static.txt")
+                )
+                assert not os.path.exists(
+                    os.path.join(output_dir, "assets", "ignored", "skip.txt")
+                )
 
     def test_output_path_helpers_handle_nested_and_separator_edges(self):
-        assert _normalize_template_relpath('assets/nested/static.txt') == 'assets/nested/static.txt'
-        with mock.patch('pyfcstm.render.render.os.sep', '/'):
-            assert _normalize_template_relpath('assets\\nested\\static.txt') == 'assets\\nested\\static.txt'
-        with mock.patch('pyfcstm.render.render.os.sep', '\\'):
-            assert _normalize_template_relpath('assets\\nested\\static.txt') == 'assets/nested/static.txt'
+        assert (
+            _normalize_template_relpath("assets/nested/static.txt")
+            == "assets/nested/static.txt"
+        )
+        with mock.patch("pyfcstm.render.render.os.sep", "/"):
+            assert (
+                _normalize_template_relpath("assets\\nested\\static.txt")
+                == "assets\\nested\\static.txt"
+            )
+        with mock.patch("pyfcstm.render.render.os.sep", "\\"):
+            assert (
+                _normalize_template_relpath("assets\\nested\\static.txt")
+                == "assets/nested/static.txt"
+            )
 
         with TemporaryDirectory() as output_dir:
-            output_file = os.path.join(output_dir, 'nested', 'rendered.txt')
+            output_file = os.path.join(output_dir, "nested", "rendered.txt")
 
             _ensure_output_parent_dir(output_file)
             assert os.path.isdir(os.path.dirname(output_file))
             assert not os.path.exists(output_file)
 
             _ensure_output_parent_dir(output_file)
-            _ensure_output_parent_dir('bare-file.txt')
+            _ensure_output_parent_dir("bare-file.txt")
 
     def test_renderer_has_no_template_file_name_postprocessing(self):
-        render_source = pathlib.Path(__file__).parents[2] / 'pyfcstm' / 'render' / 'render.py'
+        render_source = (
+            pathlib.Path(__file__).parents[2] / "pyfcstm" / "render" / "render.py"
+        )
 
-        source = render_source.read_text(encoding='utf-8')
+        source = render_source.read_text(encoding="utf-8")
 
         # This is an architectural boundary guard: the generic renderer must
         # not restore Python-template-only post-processing keyed by a concrete
         # built-in template file name. Behavioral tests cover rendering; this
         # source-level check keeps the boundary violation from reappearing.
-        assert 'machine.py.j2' not in source
-        assert 'os.path.basename(template_file)' not in source
-        assert 're.sub' not in source
-        assert 'import re' not in source
+        assert "machine.py.j2" not in source
+        assert "os.path.basename(template_file)" not in source
+        assert "re.sub" not in source
+        assert "import re" not in source
 
     def test_renderer_expr_render_supports_language_aliases(self, sample_model):
         with TemporaryDirectory() as template_dir:
-            with open(os.path.join(template_dir, 'config.yaml'), 'w') as f:
-                f.write('{}\n')
-            with open(os.path.join(template_dir, 'expr.txt.j2'), 'w') as f:
+            with open(os.path.join(template_dir, "config.yaml"), "w") as f:
+                f.write("{}\n")
+            with open(os.path.join(template_dir, "expr.txt.j2"), "w") as f:
                 f.write("{{ 2.0 | expr_render(style='javascript') }}")
 
             renderer = StateMachineCodeRenderer(template_dir)
 
             with TemporaryDirectory() as output_dir:
                 renderer.render(model=sample_model, output_dir=output_dir)
-                with open(os.path.join(output_dir, 'expr.txt'), 'r') as f:
+                with open(os.path.join(output_dir, "expr.txt"), "r") as f:
                     rendered = f.read()
 
         assert rendered == "2.0"
 
-    def test_renderer_expr_render_inherits_current_custom_style_recursively(self, sample_model):
+    def test_renderer_expr_render_inherits_current_custom_style_recursively(
+        self, sample_model
+    ):
         ast_node = parse_with_grammar_entry(
             """
         def int counter = 0;
@@ -323,14 +358,14 @@ class TestRenderRender:
         model = parse_dsl_node_to_state_machine(ast_node)
 
         with TemporaryDirectory() as template_dir:
-            with open(os.path.join(template_dir, 'config.yaml'), 'w') as f:
+            with open(os.path.join(template_dir, "config.yaml"), "w") as f:
                 f.write(
                     "expr_styles:\n"
                     "  python_vars:\n"
                     "    base_lang: python\n"
-                    "    Name: \"vars_[{{ node.name | tojson }}]\"\n"
+                    '    Name: "vars_[{{ node.name | tojson }}]"\n'
                 )
-            with open(os.path.join(template_dir, 'expr.txt.j2'), 'w') as f:
+            with open(os.path.join(template_dir, "expr.txt.j2"), "w") as f:
                 f.write(
                     "{{ model.root_state.init_transitions[0].guard.to_ast_node() "
                     "| expr_render(style='python_vars') }}"
@@ -340,7 +375,7 @@ class TestRenderRender:
 
             with TemporaryDirectory() as output_dir:
                 renderer.render(model=model, output_dir=output_dir)
-                with open(os.path.join(output_dir, 'expr.txt'), 'r') as f:
+                with open(os.path.join(output_dir, "expr.txt"), "r") as f:
                     rendered = f.read()
 
         assert rendered == 'vars_["counter"] >= 1'
@@ -361,14 +396,14 @@ class TestRenderRender:
         model = parse_dsl_node_to_state_machine(ast_node)
 
         with TemporaryDirectory() as template_dir:
-            with open(os.path.join(template_dir, 'config.yaml'), 'w') as f:
+            with open(os.path.join(template_dir, "config.yaml"), "w") as f:
                 f.write(
                     "expr_styles:\n"
                     "  python_names:\n"
                     "    base_lang: python\n"
-                    "    Name: \"{{ node.name }}\"\n"
+                    '    Name: "{{ node.name }}"\n'
                 )
-            with open(os.path.join(template_dir, 'expr.txt.j2'), 'w') as f:
+            with open(os.path.join(template_dir, "expr.txt.j2"), "w") as f:
                 f.write(
                     "{{ model.root_state.init_transitions[0].guard.to_ast_node() "
                     "| expr_render(style='python_names') }}"
@@ -378,12 +413,296 @@ class TestRenderRender:
 
             with TemporaryDirectory() as output_dir:
                 renderer.render(model=model, output_dir=output_dir)
-                with open(os.path.join(output_dir, 'expr.txt'), 'r') as f:
+                with open(os.path.join(output_dir, "expr.txt"), "r") as f:
                     rendered = f.read()
 
-        assert eval(rendered, {}, {'a': 1, 'b': -1, 'c': 0}) is True
+        assert eval(rendered, {}, {"a": 1, "b": -1, "c": 0}) is True
 
-    def test_renderer_injects_default_state_vars_and_var_types_for_default_cpp_stmt_rendering(self):
+    def test_renderer_rejects_unknown_config_keys_with_path_and_allowed_keys(self):
+        with TemporaryDirectory() as template_dir:
+            config_file = os.path.join(template_dir, "config.yaml")
+            with open(config_file, "w") as f:
+                f.write("globals_typo: {}\n")
+
+            with pytest.raises(ValueError) as exc_info:
+                StateMachineCodeRenderer(template_dir)
+
+        message = str(exc_info.value)
+        assert config_file in message
+        assert "globals_typo" in message
+        for key in (
+            "expr_styles",
+            "stmt_styles",
+            "globals",
+            "filters",
+            "tests",
+            "ignores",
+        ):
+            assert key in message
+
+    @pytest.mark.parametrize("config_text", ["", "# empty\n"])
+    def test_renderer_accepts_empty_config_files(self, config_text, sample_model):
+        with TemporaryDirectory() as template_dir:
+            with open(os.path.join(template_dir, "config.yaml"), "w") as f:
+                f.write(config_text)
+            with open(os.path.join(template_dir, "state.txt.j2"), "w") as f:
+                f.write("{{ model.root_state.name }}")
+
+            renderer = StateMachineCodeRenderer(template_dir)
+
+            with TemporaryDirectory() as output_dir:
+                renderer.render(model=sample_model, output_dir=output_dir)
+                with open(os.path.join(output_dir, "state.txt"), "r") as f:
+                    rendered = f.read()
+
+        assert rendered == "TrafficLight"
+
+    @pytest.mark.parametrize("config_text", ["- globals\n", "[]\n", "false\n"])
+    def test_renderer_rejects_non_mapping_config_root_with_path(self, config_text):
+        with TemporaryDirectory() as template_dir:
+            config_file = os.path.join(template_dir, "config.yaml")
+            with open(config_file, "w") as f:
+                f.write(config_text)
+
+            with pytest.raises(ValueError) as exc_info:
+                StateMachineCodeRenderer(template_dir)
+
+        message = str(exc_info.value)
+        assert config_file in message
+        assert "mapping" in message
+
+    def test_renderer_does_not_consume_config_item_dicts(self, sample_model):
+        template_config = {
+            "type": "template",
+            "params": ["value"],
+            "template": "{{ value }}!",
+        }
+        value_config = {
+            "type": "value",
+            "value": "OK",
+        }
+
+        with TemporaryDirectory() as template_dir:
+            with open(os.path.join(template_dir, "config.yaml"), "w") as f:
+                f.write(
+                    textwrap.dedent(
+                        """
+                        globals:
+                          shout:
+                            type: template
+                            params:
+                              - value
+                            template: "{{ value }}!"
+                          literal:
+                            type: value
+                            value: OK
+                        filters:
+                          echo:
+                            type: template
+                            params:
+                              - value
+                            template: "{{ value }}"
+                        tests:
+                          always_true:
+                            type: import
+                            from: builtins.bool
+                        """
+                    ).lstrip()
+                )
+            with open(os.path.join(template_dir, "result.txt.j2"), "w") as f:
+                f.write(
+                    "{{ shout(literal) }} {{ 'x' | echo }} {{ 'non-empty' is always_true }}"
+                )
+
+            with mock.patch("pyfcstm.render.render.yaml.safe_load") as safe_load:
+                loaded_config = {
+                    "globals": {
+                        "shout": template_config,
+                        "literal": value_config,
+                    },
+                    "filters": {
+                        "echo": {
+                            "type": "template",
+                            "params": ["value"],
+                            "template": "{{ value }}",
+                        },
+                    },
+                    "tests": {
+                        "always_true": {
+                            "type": "import",
+                            "from": "builtins.bool",
+                        },
+                    },
+                }
+                safe_load.return_value = loaded_config
+                renderer = StateMachineCodeRenderer(template_dir)
+
+            with TemporaryDirectory() as output_dir:
+                renderer.render(model=sample_model, output_dir=output_dir)
+                with open(os.path.join(output_dir, "result.txt"), "r") as f:
+                    rendered = f.read()
+
+        assert rendered == "OK! x True"
+        assert sorted(loaded_config) == ["filters", "globals", "tests"]
+        assert template_config == {
+            "type": "template",
+            "params": ["value"],
+            "template": "{{ value }}!",
+        }
+        assert value_config == {
+            "type": "value",
+            "value": "OK",
+        }
+
+    def test_statement_default_context_restores_after_template_error(
+        self, sample_model
+    ):
+        with TemporaryDirectory() as template_dir:
+            with open(os.path.join(template_dir, "config.yaml"), "w") as f:
+                f.write("{}\n")
+            template_file = os.path.join(template_dir, "broken.txt.j2")
+            with open(template_file, "w") as f:
+                f.write("{{ missing_call() }}")
+
+            renderer = StateMachineCodeRenderer(template_dir)
+            renderer.env.globals["_stmt_default_state_vars"] = ("previous",)
+            renderer.env.globals["_stmt_default_var_types"] = {"previous": "int"}
+
+            with TemporaryDirectory() as output_dir:
+                with pytest.raises(jinja2.exceptions.UndefinedError):
+                    renderer.render_one_file(
+                        model=sample_model,
+                        output_file=os.path.join(output_dir, "broken.txt"),
+                        template_file=template_file,
+                    )
+
+        assert renderer.env.globals["_stmt_default_state_vars"] == ("previous",)
+        assert renderer.env.globals["_stmt_default_var_types"] == {"previous": "int"}
+
+    def test_statement_default_context_restores_explicit_none_values(
+        self, sample_model
+    ):
+        with TemporaryDirectory() as template_dir:
+            with open(os.path.join(template_dir, "config.yaml"), "w") as f:
+                f.write("{}\n")
+            with open(os.path.join(template_dir, "state.txt.j2"), "w") as f:
+                f.write("{{ model.root_state.name }}")
+
+            renderer = StateMachineCodeRenderer(template_dir)
+            renderer.env.globals["_stmt_default_state_vars"] = None
+            renderer.env.globals["_stmt_default_var_types"] = None
+
+            with TemporaryDirectory() as output_dir:
+                renderer.render(model=sample_model, output_dir=output_dir)
+
+        assert "_stmt_default_state_vars" in renderer.env.globals
+        assert "_stmt_default_var_types" in renderer.env.globals
+        assert renderer.env.globals["_stmt_default_state_vars"] is None
+        assert renderer.env.globals["_stmt_default_var_types"] is None
+
+    def test_statement_default_context_does_not_leak_between_models(self):
+        ast_node_a = parse_with_grammar_entry(
+            """
+        def int counter = 0;
+        state RootA {
+            state A {
+                enter { counter = counter + 1; }
+            }
+            [*] -> A;
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+        ast_node_b = parse_with_grammar_entry(
+            """
+        def int other = 0;
+        state RootB {
+            state A {
+                enter { tmp = other + 1; other = tmp + 2; }
+            }
+            [*] -> A;
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+        model_a = parse_dsl_node_to_state_machine(ast_node_a)
+        model_b = parse_dsl_node_to_state_machine(ast_node_b)
+
+        with TemporaryDirectory() as template_dir:
+            with open(os.path.join(template_dir, "config.yaml"), "w") as f:
+                f.write("{}\n")
+            with open(os.path.join(template_dir, "stmt.txt.j2"), "w") as f:
+                f.write(
+                    "{{ model.root_state.substates['A'].on_enters[0].operations | stmts_render(style='c') }}"
+                )
+
+            renderer = StateMachineCodeRenderer(template_dir)
+
+            with TemporaryDirectory() as output_dir:
+                renderer.render(
+                    model=model_a, output_dir=output_dir, clear_previous_directory=True
+                )
+                with open(os.path.join(output_dir, "stmt.txt"), "r") as f:
+                    rendered_a = f.read()
+                renderer.render(
+                    model=model_b, output_dir=output_dir, clear_previous_directory=True
+                )
+                with open(os.path.join(output_dir, "stmt.txt"), "r") as f:
+                    rendered_b = f.read()
+
+        assert "scope->counter = scope->counter + 1;" == rendered_a
+        assert (
+            rendered_b == "int tmp;\ntmp = scope->other + 1;\nscope->other = tmp + 2;"
+        )
+
+    def test_explicit_statement_context_overrides_renderer_default(self):
+        ast_node = parse_with_grammar_entry(
+            """
+        def int counter = 0;
+        state Root {
+            state A {
+                enter { counter = counter + 1; }
+            }
+            [*] -> A;
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+        model = parse_dsl_node_to_state_machine(ast_node)
+
+        with TemporaryDirectory() as template_dir:
+            with open(os.path.join(template_dir, "config.yaml"), "w") as f:
+                f.write("{}\n")
+            with open(os.path.join(template_dir, "stmt.txt.j2"), "w") as f:
+                f.write(
+                    "{{ stmts_render(model.root_state.substates['A'].on_enters[0].operations, "
+                    "style='c', state_vars=(), var_types={}) }}"
+                )
+
+            renderer = StateMachineCodeRenderer(template_dir)
+
+            with TemporaryDirectory() as output_dir:
+                renderer.render(model=model, output_dir=output_dir)
+                with open(os.path.join(output_dir, "stmt.txt"), "r") as f:
+                    rendered = f.read()
+
+        assert rendered == "int counter;\ncounter = counter + 1;"
+        assert "scope->counter" not in rendered
+
+    def test_renderer_does_not_register_c_runtime_helpers_by_default(self):
+        with TemporaryDirectory() as template_dir:
+            with open(os.path.join(template_dir, "config.yaml"), "w") as f:
+                f.write("{}\n")
+
+            renderer = StateMachineCodeRenderer(template_dir)
+
+        assert "render_c_action_body" not in renderer.env.globals
+        assert "render_c_condition_body" not in renderer.env.globals
+        assert "render_c_reset_vars_body" not in renderer.env.globals
+
+    def test_renderer_injects_default_state_vars_and_var_types_for_default_cpp_stmt_rendering(
+        self,
+    ):
         ast_node = parse_with_grammar_entry(
             """
         def int counter = 0;
@@ -402,9 +721,9 @@ class TestRenderRender:
         model = parse_dsl_node_to_state_machine(ast_node)
 
         with TemporaryDirectory() as template_dir:
-            with open(os.path.join(template_dir, 'config.yaml'), 'w') as f:
-                f.write('{}\n')
-            with open(os.path.join(template_dir, 'stmt.txt.j2'), 'w') as f:
+            with open(os.path.join(template_dir, "config.yaml"), "w") as f:
+                f.write("{}\n")
+            with open(os.path.join(template_dir, "stmt.txt.j2"), "w") as f:
                 f.write(
                     "Enter operations:\n"
                     "{{ model.root_state.substates['A'].on_enters[0].operations "
@@ -415,7 +734,7 @@ class TestRenderRender:
 
             with TemporaryDirectory() as output_dir:
                 renderer.render(model=model, output_dir=output_dir)
-                with open(os.path.join(output_dir, 'stmt.txt'), 'r') as f:
+                with open(os.path.join(output_dir, "stmt.txt"), "r") as f:
                     rendered = f.read()
 
         assert rendered == (

@@ -26,6 +26,7 @@ Example::
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass, replace
@@ -43,6 +44,18 @@ from test.testings.native_toolchain_alignment.runner import (
     assert_observations_match_case,
 )
 from test.testings.simulate_semantics import SemanticCase
+
+_DIRECT_MACHINE_HEADER_RE = re.compile(r'^\s*#\s*include\s+"machine\.h"\s*$', re.M)
+_DIRECT_C_TYPE_RE = re.compile(
+    r"\b[A-Za-z_][A-Za-z0-9_]*Machine"
+    r"(Vars|StateId|EventId|Int|Hooks|EventChecks|ExecutionContext|EventContext)\b"
+)
+_DIRECT_C_API_RE = re.compile(
+    r"\b[A-Za-z_][A-Za-z0-9_]*Machine_"
+    r"(create_uninitialized|create|destroy|init|hot_start|set_hooks|"
+    r"set_event_checks|cycle|vars|is_ended|current_state_id|"
+    r"current_state_path|current_state_name|last_error|dsl_source)\s*\("
+)
 
 _CPP_TEMPLATE = r"""
 #include "machine.hpp"
@@ -70,7 +83,7 @@ struct HandlerCall {
     int call_stage_id;
     int abstract_target_id;
     int named_ref_id;
-{% for variable in context.variables %}    {{ context.machine_class_name }}Int {{ variable.field }}_is_int;
+{% for variable in context.variables %}    Wrapper::Int {{ variable.field }}_is_int;
     double {{ variable.field }}_is_float;
 {% endfor %}};
 
@@ -110,11 +123,11 @@ static void json_string(FILE *out, const char *value)
     fputc('"', out);
 }
 
-static void write_machine_int(FILE *out, {{ context.machine_class_name }}Int value)
+static void write_machine_int(FILE *out, Wrapper::Int value)
 {
     char digits[64];
     size_t count = 0u;
-    {{ context.machine_class_name }}Int quotient = value;
+    Wrapper::Int quotient = value;
 
     if (quotient == 0) {
         fputc('0', out);
@@ -123,7 +136,7 @@ static void write_machine_int(FILE *out, {{ context.machine_class_name }}Int val
     if (quotient < 0) {
         fputc('-', out);
         while (quotient != 0) {
-            {{ context.machine_class_name }}Int next = quotient / 10;
+            Wrapper::Int next = quotient / 10;
             digits[count++] = (char)('0' + (int)(next * 10 - quotient));
             quotient = next;
         }
@@ -391,7 +404,7 @@ struct HandlerCall {
     int call_stage_id;
     int abstract_target_id;
     int named_ref_id;
-{% for variable in context.variables %}    {{ context.machine_class_name }}Int {{ variable.field }}_is_int;
+{% for variable in context.variables %}    Wrapper::Int {{ variable.field }}_is_int;
     double {{ variable.field }}_is_float;
 {% endfor %}};
 
@@ -431,11 +444,11 @@ static void json_string(FILE *out, const char *value)
     fputc('"', out);
 }
 
-static void write_machine_int(FILE *out, {{ context.machine_class_name }}Int value)
+static void write_machine_int(FILE *out, Wrapper::Int value)
 {
     char digits[64];
     size_t count = 0u;
-    {{ context.machine_class_name }}Int quotient = value;
+    Wrapper::Int quotient = value;
 
     if (quotient == 0) {
         fputc('0', out);
@@ -444,7 +457,7 @@ static void write_machine_int(FILE *out, {{ context.machine_class_name }}Int val
     if (quotient < 0) {
         fputc('-', out);
         while (quotient != 0) {
-            {{ context.machine_class_name }}Int next = quotient / 10;
+            Wrapper::Int next = quotient / 10;
             digits[count++] = (char)('0' + (int)(next * 10 - quotient));
             quotient = next;
         }
@@ -821,9 +834,36 @@ def _render_harness(template_name: str, case: SemanticCase, harness_path: str) -
     context = replace(base_context, template_name=template_name)
     template_text = _CPP_POLL_TEMPLATE if template_name == "cpp_poll" else _CPP_TEMPLATE
     rendered = _environment().from_string(template_text).render(context=context)
+    _assert_wrapper_only_harness(rendered)
     os.makedirs(os.path.dirname(harness_path), exist_ok=True)
     with open(harness_path, "w", encoding="utf-8") as f:
         f.write(rendered)
+
+
+def _assert_wrapper_only_harness(source: str) -> None:
+    """
+    Assert that generated fixture harnesses enter through the C++ wrapper.
+
+    Fixture-alignment harnesses are allowed to include only ``machine.hpp``
+    directly. They may observe state through ``Wrapper::...`` aliases and
+    wrapper methods, but they must not directly include ``machine.h``, bind C
+    runtime typedef names, or call generated ``...Machine_*`` C functions.
+
+    :param source: Rendered C++ harness source.
+    :type source: str
+    :return: ``None``.
+    :rtype: None
+    :raises AssertionError: If the harness bypasses the C++ wrapper entrypoint.
+
+    Example::
+
+        >>> _assert_wrapper_only_harness('#include "machine.hpp"\\n')
+    """
+    assert '#include "machine.hpp"' in source
+    assert not _DIRECT_MACHINE_HEADER_RE.search(source)
+    assert "native_handle" not in source
+    assert not _DIRECT_C_TYPE_RE.search(source)
+    assert not _DIRECT_C_API_RE.search(source)
 
 
 def _render_cmake(artifacts: CppAlignmentArtifacts, harness_path: str) -> None:

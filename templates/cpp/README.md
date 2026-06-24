@@ -37,6 +37,13 @@ RTTI-free, and free of STL container requirements. Runtime behavior must remain
 in the generated C core; the wrapper should call only the public C API from
 `machine.h` and should not inspect runtime-owned struct fields directly.
 
+Shared semantic fixture alignment for this template must exercise the
+`machine.hpp` / `machine.cpp` wrapper surface. Fixture harnesses may compile
+`machine.c` and include it in the final executable, but the test entrypoint must
+be the C++ wrapper: harness sources should directly include only `machine.hpp`,
+use `Wrapper::...` aliases for generated runtime types, and call wrapper public
+methods instead of direct `...Machine_*` C functions.
+
 Generated README examples are part of the template contract. When changing the
 wrapper API or compile guidance, update both generated README templates and
 verify representative commands through template tests.

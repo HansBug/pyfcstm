@@ -463,6 +463,37 @@ class TestRenderRender:
             assert key in message
 
     @pytest.mark.parametrize(
+        "config_text, section, expected_text",
+        [
+            ("expr_styles: []\n", "expr_styles", "mapping"),
+            ("stmt_styles: []\n", "stmt_styles", "mapping"),
+            ("globals: []\n", "globals", "mapping"),
+            ("filters: []\n", "filters", "mapping"),
+            ("tests: []\n", "tests", "mapping"),
+            ("ignores: assets/**\n", "ignores", "list of string patterns"),
+            ("ignores:\n  - 123\n", "ignores[0]", "string pattern"),
+        ],
+    )
+    def test_renderer_rejects_invalid_top_level_config_section_types(
+        self,
+        config_text,
+        section,
+        expected_text,
+    ):
+        with TemporaryDirectory() as template_dir:
+            config_file = os.path.join(template_dir, "config.yaml")
+            with open(config_file, "w") as f:
+                f.write(config_text)
+
+            with pytest.raises(ValueError) as exc_info:
+                StateMachineCodeRenderer(template_dir)
+
+        message = str(exc_info.value)
+        assert config_file in message
+        assert section in message
+        assert expected_text in message
+
+    @pytest.mark.parametrize(
         "config_text, section, style_name",
         [
             ("expr_styles:\n  missing_base: {}\n", "expr_styles", "missing_base"),

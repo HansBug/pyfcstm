@@ -420,8 +420,8 @@ class StateMachineCodeRenderer:
         :type config_info: Any
         :return: Mutable configuration mapping for subsequent setup.
         :rtype: dict
-        :raises ValueError: If the loaded root is not a mapping or has unknown
-            top-level keys.
+        :raises ValueError: If the loaded root is not a mapping, has unknown
+            top-level keys, or gives a top-level section an invalid type.
 
         Example::
 
@@ -458,6 +458,48 @@ class StateMachineCodeRenderer:
                     allowed_keys,
                 )
             )
+
+        for section_name in (
+            "expr_styles",
+            "stmt_styles",
+            "globals",
+            "filters",
+            "tests",
+        ):
+            section_value = config_info.get(section_name)
+            if section_value is not None and not isinstance(section_value, dict):
+                raise ValueError(
+                    "Renderer config %s top-level key %r must be a mapping, got %s."
+                    % (
+                        self.config_file,
+                        section_name,
+                        type(section_value).__name__,
+                    )
+                )
+
+        ignore_patterns = config_info.get("ignores")
+        if ignore_patterns is not None:
+            if isinstance(ignore_patterns, (str, bytes)) or not isinstance(
+                ignore_patterns, list
+            ):
+                raise ValueError(
+                    "Renderer config %s top-level key 'ignores' must be a list "
+                    "of string patterns, got %s."
+                    % (
+                        self.config_file,
+                        type(ignore_patterns).__name__,
+                    )
+                )
+            for index, pattern in enumerate(ignore_patterns):
+                if not isinstance(pattern, str):
+                    raise ValueError(
+                        "Renderer config %s ignores[%d] must be a string pattern, got %s."
+                        % (
+                            self.config_file,
+                            index,
+                            type(pattern).__name__,
+                        )
+                    )
 
         return copy.deepcopy(config_info)
 

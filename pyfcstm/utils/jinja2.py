@@ -2,10 +2,11 @@
 Jinja2 environment augmentation utilities.
 
 This module provides helpers for enriching a :class:`jinja2.Environment` with
-Python built-ins, text-processing filters, and selected operating system
+Python built-ins, common text-processing filters, and selected operating system
 environment variables. It is intended to simplify template authoring by making
-common Python functions available as filters, tests, and globals, while also
-adding project-specific text utilities.
+common Python functions available as filters, tests, and globals, while keeping
+target-language-specific helpers opt-in through each template's
+``config.yaml``.
 
 The module contains the following public functions:
 
@@ -18,7 +19,10 @@ The module contains the following public functions:
 
 .. note::
    The added filters and globals are only attached to the environment instance
-   passed to the functions and do not affect other environments.
+   passed to the functions and do not affect other environments. C-family
+   identifier helpers are exported from this module for explicit template
+   imports, but they are not injected into every renderer environment by
+   default.
 
 Example::
 
@@ -279,10 +283,6 @@ def add_settings_for_env(env: jinja2.Environment) -> jinja2.Environment:
     2. Add text-processing filters:
        - ``normalize``: :func:`pyfcstm.utils.text.normalize`
        - ``to_identifier``: :func:`pyfcstm.utils.text.to_identifier`
-       - ``to_c_identifier``: :func:`pyfcstm.utils.text.to_c_identifier`
-       - ``to_c_path_identifier``: :func:`to_c_path_identifier`
-       - ``to_c_public_identifier``: :func:`to_c_public_identifier`
-       - ``to_c_public_macro_identifier``: :func:`to_c_public_macro_identifier`
     3. Add a global helper:
        - ``indent``: :func:`textwrap.indent`
     4. Add operating system environment variables as globals (only if the name
@@ -308,12 +308,6 @@ def add_settings_for_env(env: jinja2.Environment) -> jinja2.Environment:
     env = add_builtins_to_env(env)
     env.filters["normalize"] = normalize
     env.filters["to_identifier"] = to_identifier
-    env.filters["to_c_identifier"] = to_c_identifier
-    env.filters["to_c_path_identifier"] = to_c_path_identifier
-    env.filters["to_c_public_identifier"] = to_c_public_identifier
-    env.filters["to_c_public_macro_identifier"] = to_c_public_macro_identifier
-    env.filters["is_c_public_identifier_reserved"] = is_c_public_identifier_reserved
-    env.tests["c_public_identifier_reserved"] = is_c_public_identifier_reserved
     env.globals["indent"] = textwrap.indent
     for key, value in os.environ.items():
         if key not in env.globals:

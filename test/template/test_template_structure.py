@@ -360,16 +360,31 @@ def test_template_configs_keep_renderer_contract_and_ignores():
 
 
 @pytest.mark.unittest
-def test_c_runtime_helpers_are_declared_by_c_template_configs_only():
+def test_c_family_helpers_are_template_scoped():
     render_source = _read_text(_REPO_ROOT / "pyfcstm" / "render" / "render.py")
-    for helper_name in [
+    c_helper_names = {
+        "to_c_identifier",
+        "to_c_path_identifier",
+        "to_c_public_identifier",
+        "to_c_public_macro_identifier",
+        "is_c_public_identifier_reserved",
         "render_c_action_body",
         "render_c_condition_body",
         "render_c_reset_vars_body",
-    ]:
+    }
+    for helper_name in c_helper_names:
         assert helper_name not in render_source
 
+    python_renderer = StateMachineCodeRenderer(str(_TEMPLATES_DIR / "python"))
+    assert not (c_helper_names & set(python_renderer.env.filters))
+    assert not (c_helper_names & set(python_renderer.env.globals))
+    assert "c_public_identifier_reserved" not in python_renderer.env.tests
+
     for name in ["c", "c_poll"]:
+        renderer = StateMachineCodeRenderer(str(_TEMPLATES_DIR / name))
+        assert c_helper_names <= (set(renderer.env.filters) | set(renderer.env.globals))
+        assert "c_public_identifier_reserved" in renderer.env.tests
+
         config = _load_config(name)
         globals_config = config["globals"]
         assert globals_config["render_c_action_body"] == {
@@ -383,6 +398,14 @@ def test_c_runtime_helpers_are_declared_by_c_template_configs_only():
         assert globals_config["render_c_reset_vars_body"] == {
             "type": "import",
             "from": "pyfcstm.render.c_runtime.render_c_reset_vars_body",
+        }
+        assert config["filters"]["to_c_identifier"] == {
+            "type": "import",
+            "from": "pyfcstm.utils.to_c_identifier",
+        }
+        assert config["tests"]["c_public_identifier_reserved"] == {
+            "type": "import",
+            "from": "pyfcstm.utils.is_c_public_identifier_reserved",
         }
 
 

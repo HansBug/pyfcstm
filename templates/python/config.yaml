@@ -55,9 +55,6 @@ globals:
     template: "{{ action.parent.path | join('.') }}"
 
 filters:
-  python_runtime_source:
-    type: import
-    from: pyfcstm.template._python_format.clean_python_runtime_source
   machine_class_name:
     type: template
     params:

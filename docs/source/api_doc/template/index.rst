@@ -6,11 +6,6 @@ pyfcstm.template
 .. automodule:: pyfcstm.template
 
 
-.. toctree::
-    :maxdepth: 3
-
-    _python_format
-
 \_\_all\_\_
 -----------------------------------------------------
 

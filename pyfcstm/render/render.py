@@ -50,7 +50,7 @@ import shutil
 import warnings
 from contextlib import contextmanager
 from functools import partial
-from typing import Dict, Callable, Union, Any, Iterator
+from typing import Dict, Callable, Union, Any, ContextManager
 
 import pathspec
 import yaml
@@ -92,6 +92,9 @@ def _ensure_output_parent_dir(output_file: str) -> None:
     """
     Create the parent directory for an output file when one is present.
 
+    Bare file names such as ``'machine.py'`` have no parent directory, so
+    this helper intentionally leaves them unchanged.
+
     :param output_file: Path of the file that will be rendered or copied.
     :type output_file: str
     :return: ``None``.
@@ -106,6 +109,7 @@ def _ensure_output_parent_dir(output_file: str) -> None:
         ...     _ensure_output_parent_dir(output_file)
         ...     os.path.isdir(os.path.dirname(output_file))
         True
+        >>> _ensure_output_parent_dir('machine.py')
     """
     parent_dir = os.path.dirname(output_file)
     if parent_dir:
@@ -134,6 +138,30 @@ def _normalize_template_relpath(rel_file: str) -> str:
     """
     if os.sep != "/":
         rel_file = rel_file.replace(os.sep, "/")
+    return rel_file
+
+
+def _output_relpath_to_native_path(rel_file: str) -> str:
+    """
+    Convert a normalized template-relative path to the native output path form.
+
+    File mappings keep POSIX separators for stable gitignore matching. Before
+    joining with the output directory, Windows converts those separators back to
+    :data:`os.sep` so downstream file I/O sees native paths. POSIX paths are
+    returned unchanged, preserving literal backslashes in POSIX file names.
+
+    :param rel_file: Template-relative path stored in ``_file_mappings``.
+    :type rel_file: str
+    :return: Relative path suitable for :func:`os.path.join` on this platform.
+    :rtype: str
+
+    Example::
+
+        >>> _output_relpath_to_native_path('assets/nested/static.txt')
+        'assets/nested/static.txt'
+    """
+    if os.sep != "/":
+        rel_file = rel_file.replace("/", os.sep)
     return rel_file
 
 
@@ -400,7 +428,7 @@ class StateMachineCodeRenderer:
         return copy.deepcopy(config_info)
 
     @contextmanager
-    def _statement_default_context(self, model: StateMachine) -> Iterator[None]:
+    def _statement_default_context(self, model: StateMachine) -> ContextManager[None]:
         """
         Temporarily expose model variables as statement-render defaults.
 
@@ -413,7 +441,7 @@ class StateMachineCodeRenderer:
         :param model: State machine model being rendered.
         :type model: StateMachine
         :return: Context manager that restores previous globals on exit.
-        :rtype: typing.Iterator[None]
+        :rtype: typing.ContextManager[None]
 
         Example::
 
@@ -566,5 +594,7 @@ class StateMachineCodeRenderer:
                     )  # pragma: no cover
 
         for rel_file, fn_op in self._file_mappings.items():
-            dst_file = os.path.join(output_dir, rel_file)
+            dst_file = os.path.join(
+                output_dir, _output_relpath_to_native_path(rel_file)
+            )
             fn_op(model=model, output_file=dst_file)

@@ -11,7 +11,11 @@ from hbutils.system import TemporaryDirectory
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
-from pyfcstm.render.render import _ensure_output_parent_dir, _normalize_template_relpath
+from pyfcstm.render.render import (
+    _ensure_output_parent_dir,
+    _normalize_template_relpath,
+    _output_relpath_to_native_path,
+)
 from ..testings import get_testfile, dir_compare, walk_files
 
 
@@ -305,6 +309,21 @@ class TestRenderRender:
 
             _ensure_output_parent_dir(output_file)
             _ensure_output_parent_dir("bare-file.txt")
+
+        assert (
+            _output_relpath_to_native_path("assets/nested/static.txt")
+            == "assets/nested/static.txt"
+        )
+        with mock.patch("pyfcstm.render.render.os.sep", "/"):
+            assert (
+                _output_relpath_to_native_path("assets\\nested/static.txt")
+                == "assets\\nested/static.txt"
+            )
+        with mock.patch("pyfcstm.render.render.os.sep", "\\"):
+            assert (
+                _output_relpath_to_native_path("assets/nested/static.txt")
+                == "assets\\nested\\static.txt"
+            )
 
     def test_renderer_has_no_template_file_name_postprocessing(self):
         render_source = (

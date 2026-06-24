@@ -255,14 +255,12 @@ class TestRenderRender:
             def _windows_relpath(path, start=None):
                 return original_relpath(path, start).replace(original_sep, "\\")
 
-            with (
-                mock.patch("pyfcstm.render.render.os.sep", "\\"),
-                mock.patch(
+            with mock.patch("pyfcstm.render.render.os.sep", "\\"):
+                with mock.patch(
                     "pyfcstm.render.render.os.path.relpath",
                     side_effect=_windows_relpath,
-                ),
-            ):
-                renderer = StateMachineCodeRenderer(template_dir)
+                ):
+                    renderer = StateMachineCodeRenderer(template_dir)
 
             assert "nested/rendered.txt" in renderer._file_mappings
             assert "assets/nested/static.txt" in renderer._file_mappings

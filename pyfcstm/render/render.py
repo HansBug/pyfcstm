@@ -373,7 +373,7 @@ class StateMachineCodeRenderer:
 
         if not isinstance(config_info, dict):
             raise ValueError(
-                "Renderer config %r must be a mapping, got %s."
+                "Renderer config %s must be a mapping, got %s."
                 % (
                     self.config_file,
                     type(config_info).__name__,
@@ -388,7 +388,7 @@ class StateMachineCodeRenderer:
             allowed_keys = ", ".join(sorted(_CONFIG_ALLOWED_TOP_LEVEL_KEYS))
             unknown_key_text = ", ".join(repr(key) for key in unknown_keys)
             raise ValueError(
-                "Renderer config %r contains unknown top-level key(s): %s. "
+                "Renderer config %s contains unknown top-level key(s): %s. "
                 "Allowed keys: %s."
                 % (
                     self.config_file,

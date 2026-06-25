@@ -23,9 +23,11 @@
 # is documentation; a test asserts the two stay aligned):
 #   str | str_or_null | int | int_or_null | float | number | bool | dict | Span | list[str] | list[Span]
 #
-# Adding a new code: append a new top-level entry here AND add a fixture
-# test that triggers it from a real DSL snippet. The loader in `codes.py`
-# verifies the schema at import time.
+# Adding a new emitted code: append a new top-level entry here AND add a
+# fixture test that triggers it from a real DSL snippet. Catalog-only
+# contract codes may instead provide a parseable DSL snippet that documents
+# the intended trigger shape before the emitting analyzer lands. The loader
+# in `codes.py` verifies the schema at import time.
 
 E_UNDEFINED_VAR:
   severity: error
@@ -2065,6 +2067,335 @@ W_LITERAL_TYPE_NARROWING:
   example_dsl: |
     def int truncated = 3.5;
     state Root { state A; [*] -> A; }
+
+# ---------------------------------------------------------------------------
+# C/C++ deployment-profile numeric diagnostics catalog contract.
+# ---------------------------------------------------------------------------
+
+W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE:
+  severity: warning
+  span_object: expression
+  capability: pure_static
+  emit_tier: catalog_only
+  description: >-
+    An integer literal that would be rendered into a C/C++ family template
+    falls outside the default ``PYFCSTM_GENERATED_INT64`` signed range. This
+    warning is target-profile-specific: Python generated runtimes may not have
+    the same fixed-width integer carrying risk.
+  refs:
+    target_family:
+      type: str
+      required: true
+      description: Target family whose default deployment profile owns this risk.
+      enum: ['c_family']
+    target_templates:
+      type: list[str]
+      required: true
+      description: >-
+        Ordered target templates covered by this default C/C++ profile:
+        ``c``, ``c_poll``, ``cpp``, ``cpp_poll``.
+    runtime_note:
+      type: str
+      required: true
+      description: >-
+        Human-readable note that this is a C/C++ deployment-profile risk and
+        that Python generated runtimes may not have the same risk.
+    context:
+      type: str
+      required: true
+      description: Expression location where the literal appears.
+      enum: ['var_initializer', 'guard', 'transition_effect', 'lifecycle_action']
+    statement_kind:
+      type: str
+      required: false
+      description: Statement shape when the expression is an operation assignment RHS.
+      enum: ['operation_assignment']
+    expr_text:
+      type: str
+      required: true
+      description: Source text of the expression containing the literal.
+    literal_text:
+      type: str
+      required: true
+      description: Source text of the integer literal after applying a unary sign when present.
+    target_bits:
+      type: int
+      required: true
+      description: Target integer width in bits.
+    signed:
+      type: bool
+      required: true
+      description: Whether the target integer profile is signed.
+    min_value_text:
+      type: str
+      required: true
+      description: Decimal text of the minimum representable target value.
+    max_value_text:
+      type: str
+      required: true
+      description: Decimal text of the maximum representable target value.
+    var_name:
+      type: str
+      required: false
+      description: Variable receiving the literal when the location can be named.
+  for_llm:
+    summary: >-
+      A literal intended for C/C++ generated code exceeds the default 64-bit
+      signed integer profile. Treat this as a C/C++ deployment-profile warning,
+      not as proof that Python generated code is invalid.
+    recommended_actions:
+      - kind: reduce_literal
+        target: expression
+        rationale: Keep integer literals within the documented C/C++ target range when deploying to C-family templates.
+      - kind: choose_target_profile
+        target: deployment_plan
+        rationale: If the large value is intentional, document or verify a target profile that can carry it before generating C/C++ code.
+    do_not:
+      - "Do not describe this as a target-independent FCSTM model error; the risk is tied to the C/C++ default integer profile."
+      - "Do not flag the legal lower-bound spelling ``-9223372036854775808`` as out of range."
+  example_dsl: |
+    def int too_large = 9223372036854775808;
+    state Root { state A; [*] -> A; }
+
+W_NUMERIC_CONSTANT_DIVISION_BY_ZERO:
+  severity: warning
+  span_object: expression
+  capability: const_fold
+  emit_tier: catalog_only
+  description: >-
+    A ``/`` or ``%`` operation has a right-hand side that the lightweight
+    literal-only constant folder can classify as zero. This is reported as a
+    C/C++ deployment-profile risk because generated C/C++ code needs an
+    explicit definition or failure channel; Python runtime exception semantics
+    are different.
+  refs:
+    target_family:
+      type: str
+      required: true
+      description: Target family whose default deployment profile owns this risk.
+      enum: ['c_family']
+    target_templates:
+      type: list[str]
+      required: true
+      description: >-
+        Ordered target templates covered by this default C/C++ profile:
+        ``c``, ``c_poll``, ``cpp``, ``cpp_poll``.
+    runtime_note:
+      type: str
+      required: true
+      description: >-
+        Human-readable note that this is a C/C++ deployment-profile risk and
+        that Python generated runtimes may not have the same failure contract.
+    context:
+      type: str
+      required: true
+      description: Expression location where the operator appears.
+      enum: ['var_initializer', 'guard', 'transition_effect', 'lifecycle_action']
+    statement_kind:
+      type: str
+      required: false
+      description: Statement shape when the expression is an operation assignment RHS.
+      enum: ['operation_assignment']
+    expr_text:
+      type: str
+      required: true
+      description: Source text of the expression containing the operation.
+    operator:
+      type: str
+      required: true
+      description: Operator whose right-hand side folded to zero.
+      enum: ['/', '%']
+    rhs_text:
+      type: str
+      required: true
+      description: Source text of the right-hand side that folded to zero.
+  for_llm:
+    summary: >-
+      A division or modulo RHS is statically zero under the lightweight
+      literal-only folder. For C/C++ generated code this needs a design fix or
+      explicit failure policy; do not conflate it with Python's exception model.
+    recommended_actions:
+      - kind: fix_denominator
+        target: expression
+        rationale: Replace the zero RHS with a non-zero expression or guard the operation before C/C++ deployment.
+      - kind: add_failure_policy
+        target: deployment_plan
+        rationale: If zero is possible by design, define the C/C++ failure channel instead of leaving generated code behavior implicit.
+    do_not:
+      - "Do not require the whole expression to be literal-only; only the RHS of ``/`` or ``%`` needs to fold to zero."
+      - "Do not drop ``refs.operator`` when division and modulo share this code."
+  example_dsl: |
+    def int result = 0;
+    def int input = 1;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B effect { result = input / (1 - 1); };
+    }
+
+W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE:
+  severity: warning
+  span_object: expression
+  capability: const_fold
+  emit_tier: catalog_only
+  description: >-
+    A shift count folds to a constant below zero or not less than the default
+    C/C++ target integer width. This is a C/C++ 64-bit deployment-profile
+    portability risk; Python big-integer shifting is not the same target
+    contract.
+  refs:
+    target_family:
+      type: str
+      required: true
+      description: Target family whose default deployment profile owns this risk.
+      enum: ['c_family']
+    target_templates:
+      type: list[str]
+      required: true
+      description: >-
+        Ordered target templates covered by this default C/C++ profile:
+        ``c``, ``c_poll``, ``cpp``, ``cpp_poll``.
+    runtime_note:
+      type: str
+      required: true
+      description: >-
+        Human-readable note that this is a C/C++ deployment-profile risk and
+        that Python generated runtimes may not have the same fixed-width shift risk.
+    context:
+      type: str
+      required: true
+      description: Expression location where the shift appears.
+      enum: ['var_initializer', 'guard', 'transition_effect', 'lifecycle_action']
+    statement_kind:
+      type: str
+      required: false
+      description: Statement shape when the expression is an operation assignment RHS.
+      enum: ['operation_assignment']
+    expr_text:
+      type: str
+      required: true
+      description: Source text of the shift expression.
+    operator:
+      type: str
+      required: true
+      description: Shift operator.
+      enum: ['<<', '>>']
+    target_bits:
+      type: int
+      required: true
+      description: Target integer width in bits.
+    shift_count_text:
+      type: str
+      required: true
+      description: Source text of the shift count after lightweight folding.
+  for_llm:
+    summary: >-
+      A shift count is statically outside the C/C++ default 64-bit profile.
+      Treat this as a target-profile portability warning, not as a Python
+      generated-runtime error.
+    recommended_actions:
+      - kind: bound_shift_count
+        target: expression
+        rationale: Keep constant shift counts within ``0 <= count < 64`` for the default C/C++ profile.
+      - kind: use_verify_for_dynamic_count
+        target: deployment_plan
+        rationale: If the shift count is not constant, use the verify line to prove the range before C/C++ deployment.
+    do_not:
+      - "Do not report dynamic shift counts as proven unsafe from this catalog-only rule."
+      - "Do not fold negative or oversized shift operations into a normal numeric result."
+  example_dsl: |
+    def int flags = 1;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [(flags << 64) != 0];
+    }
+
+W_NUMERIC_FLOAT_BITWISE:
+  severity: warning
+  span_object: expression
+  capability: pure_static
+  emit_tier: catalog_only
+  description: >-
+    A value known to be ``float`` participates in a bitwise or shift operator
+    that belongs to the C/C++ integer operation profile. The warning is
+    target-profile-specific even when other runtimes may also reject some
+    float-bitwise shapes for different reasons.
+  refs:
+    target_family:
+      type: str
+      required: true
+      description: Target family whose default deployment profile owns this risk.
+      enum: ['c_family']
+    target_templates:
+      type: list[str]
+      required: true
+      description: >-
+        Ordered target templates covered by this default C/C++ profile:
+        ``c``, ``c_poll``, ``cpp``, ``cpp_poll``.
+    runtime_note:
+      type: str
+      required: true
+      description: >-
+        Human-readable note that this is a C/C++ integer-operation profile
+        risk and that other runtimes may fail for different reasons.
+    context:
+      type: str
+      required: true
+      description: Expression location where the bitwise operation appears.
+      enum: ['var_initializer', 'guard', 'transition_effect', 'lifecycle_action']
+    statement_kind:
+      type: str
+      required: false
+      description: Statement shape when the expression is an operation assignment RHS.
+      enum: ['operation_assignment']
+    expr_text:
+      type: str
+      required: true
+      description: Source text of the bitwise expression.
+    operator:
+      type: str
+      required: true
+      description: Bitwise or shift operator involving a float-shaped operand.
+      enum: ['&', '^', '|', '<<', '>>']
+    operand_types:
+      type: list[str]
+      required: true
+      description: >-
+        Operand type tags in expression order. Allowed members are ``int``,
+        ``float``, and ``unknown``.
+    operand_type_sources:
+      type: list[str]
+      required: true
+      description: >-
+        Evidence source for each operand type tag. Allowed members are
+        ``literal``, ``declared_var``, and ``local_expression``.
+  for_llm:
+    summary: >-
+      A float-shaped operand reaches a C/C++ integer bitwise operation. Keep
+      the diagnostic target-specific and use the operand type refs to explain
+      why the expression is considered risky.
+    recommended_actions:
+      - kind: use_integer_operand
+        target: expression
+        rationale: Replace the float operand with an integer flag/mask value when deploying to C/C++ templates.
+      - kind: change_variable_type
+        target: variable_definition
+        rationale: If the value is intended as a bit mask, declare and update it as an integer-shaped variable.
+    do_not:
+      - "Do not describe this only as a generic Python TypeError; the shared contract is about the C/C++ integer-operation profile."
+      - "Do not infer cross-statement temporary types for this first deterministic rule."
+  example_dsl: |
+    def float gain = 1.5;
+    def int flags = 1;
+    state Root {
+        state A {
+            during { flags = flags & gain; }
+        }
+        [*] -> A;
+    }
 
 W_ASPECT_NO_DESCENDANT_LEAF:
   severity: warning

@@ -66,3 +66,67 @@ object that the primary problem range is expected to identify. Some diagnostics
 allow reasonable precision differences across implementations: one side may
 cover an identifier while the other covers the containing declaration or
 transition, but both source slices must still hit the same problem object.
+
+## C/C++ deployment profile numeric contract
+
+The numeric diagnostics catalog also declares a target-specific contract for the
+current C/C++ family templates. This contract is intentionally separate from the
+core FCSTM model semantics: it describes risks that matter when a model is
+rendered into C/C++ generated code, not target-independent model errors.
+
+The default C/C++ deployment profile is:
+
+- `target_family`: `c_family`
+- `target_templates`: `c`, `c_poll`, `cpp`, `cpp_poll` in that order
+- DSL `int`: `PYFCSTM_GENERATED_INT64`, a 64-bit signed integer with range
+  `[-9223372036854775808, 9223372036854775807]`
+- DSL `float`: C/C++ `double`
+
+Python generated runtimes may not have the same risks. For example, Python
+integers are not bounded to this 64-bit C-family profile, and Python exception
+semantics for division by zero are not the same as a C/C++ deployment failure
+policy. Numeric diagnostic messages and `refs` payloads therefore must state the
+C/C++ target profile explicitly instead of reporting a generic FCSTM model
+error.
+
+### Numeric `refs` fields
+
+Every C/C++ numeric warning in the shared catalog carries these target fields:
+
+| Field | Contract |
+|---|---|
+| `target_family` | The string `c_family`. |
+| `target_templates` | The ordered list `c`, `c_poll`, `cpp`, `cpp_poll`; Python is not included. |
+| `runtime_note` | Human-readable note that distinguishes C/C++ deployment risk from Python generated runtime behavior. |
+| `context` | One of `var_initializer`, `guard`, `transition_effect`, `lifecycle_action`. |
+| `statement_kind` | Optional `operation_assignment` when the expression is an assignment right-hand side. |
+| `expr_text` | Source text for the expression shape being diagnosed. |
+
+Rule-specific fields are declared in `codes.yaml`. The first C/C++ numeric
+contract covers:
+
+- integer literals outside the default signed 64-bit range;
+- constant `/` or `%` with a right-hand side that folds to zero;
+- constant shift counts outside `0 <= count < 64`;
+- float-shaped operands in bitwise or shift operators.
+
+For the signed 64-bit boundary, a unary sign is interpreted together with the
+literal for contract classification: `9223372036854775808` is outside the upper
+bound, `-9223372036854775808` is the legal lower bound spelling, and
+`-9223372036854775809` is below the lower bound.
+
+### Lightweight constant folding boundary
+
+The numeric contract only assumes a lightweight, literal-only constant folder.
+It may fold numeric literals, unary `+` / `-`, parentheses, and literal-only
+uses of `+`, `-`, `*`, `/`, `%`, `<<`, `>>`, `&`, `^`, and `|` when both ends can
+represent the result consistently. It must not fold through division by zero,
+negative shifts, oversized shifts, variables, function calls, cross-statement
+constant propagation, block-local temporary inference, or algebraic rewrites such
+as `a - a` and `0 * x`.
+
+The shared catalog may contain `catalog_only` numeric codes. Those entries freeze
+code names and `refs` payloads before pyfcstm or jsfcstm emitters exist. They are
+not expected from `inspect_model()` or jsfcstm diagnostics until the corresponding
+analyzers land; tests for those entries should validate the catalog contract and
+parseable examples, not runtime emission.

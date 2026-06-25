@@ -98,11 +98,16 @@ _ALLOWED_CAPABILITIES = (
 #: * ``verify_pipeline`` — emitted only by the optional Python verify /
 #:   inspect adapter path. These codes are not part of the default static
 #:   inspect output and are not expected from jsfcstm.
+#: * ``catalog_only`` — declared in the shared catalog as a cross-end
+#:   contract but not emitted by any runtime pipeline yet. This is used when
+#:   a diagnostic contract must be frozen before the concrete pyfcstm /
+#:   jsfcstm analyzers land.
 _ALLOWED_EMIT_TIERS = (
     'static_pipeline',
     'lookup_api',
     'partial_static_pipeline',
     'verify_pipeline',
+    'catalog_only',
 )
 
 _ALLOWED_SUGGESTED_FIX_KINDS = ('insert', 'delete', 'replace')
@@ -288,8 +293,9 @@ class CodeSpec:
         end only (typically jsfcstm) — downstream LLM consumers should
         not block waiting for the missing end. ``'verify_pipeline'`` marks
         diagnostics emitted only by optional Python verify integration.
-        The field lets dispatchers register handlers based on the actual
-        emit channel.
+        ``'catalog_only'`` marks a shared catalog contract that no runtime
+        pipeline emits yet. The field lets dispatchers register handlers
+        based on the actual emit channel.
     :type emit_tier: str, optional
     :param span_object: Semantic source object identified by the primary
         diagnostic span. Repository entries declare this to make source-slice

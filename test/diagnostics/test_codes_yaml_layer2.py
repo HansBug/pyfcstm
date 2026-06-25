@@ -259,6 +259,22 @@ class TestCodesLoaderNegativePaths:
         registry = load_codes(path)
         assert registry['W_DEMO'].emit_tier == 'verify_pipeline'
 
+    def test_loader_accepts_catalog_only_emit_tier(self, tmp_path):
+        path = _write_yaml(tmp_path, """
+            W_DEMO:
+              severity: warning
+              description: catalog-only demo
+              capability: pure_static
+              emit_tier: catalog_only
+              refs:
+                expr_text:
+                  type: str
+                  required: true
+                  description: expression
+            """)
+        registry = load_codes(path)
+        assert registry['W_DEMO'].emit_tier == 'catalog_only'
+
     def test_loader_rejects_for_llm_not_a_dict(self, tmp_path):
         # ``for_llm`` declared as a string — must be a mapping.
         path = _write_yaml(tmp_path, """

@@ -65,6 +65,12 @@ export interface CodeSpec {
     description: string;
     refs?: Record<string, CodeFieldSpec>;
     capability?: 'pure_static' | 'const_fold' | 'requires_solver' | 'requires_simulation';
+    emit_tier?:
+        | 'static_pipeline'
+        | 'lookup_api'
+        | 'partial_static_pipeline'
+        | 'verify_pipeline'
+        | 'catalog_only';
     for_llm?: ForLlmSpec;
     suggested_fix?: SuggestedFixSpec;
     example_dsl?: string;

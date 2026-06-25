@@ -344,6 +344,22 @@ class TestCppWrapperTemplate:
             )
         assert result.returncode == 0, result.stderr
 
+    def test_wrapper_generated_chinese_readme_gcc_direct_commands_run(self):
+        with render_cpp_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
+            readme = _read(artifacts["readme_zh_file"])
+            source = _extract_cpp_code_block(readme, "C++ Wrapper 快速开始")
+            commands = _extract_named_bash_block(
+                readme,
+                "先把 C core 按 C99 编译",
+            )
+            result = run_readme_command_block(
+                artifacts,
+                "cpp_readme_gcc_direct_zh",
+                source,
+                commands,
+            )
+        assert result.returncode == 0, result.stderr
+
     def test_wrapper_generated_english_readme_clang_direct_commands_run(self):
         with render_cpp_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
             readme = _read(artifacts["readme_file"])
@@ -355,6 +371,22 @@ class TestCppWrapperTemplate:
             result = run_readme_command_block(
                 artifacts,
                 "cpp_readme_clang_direct_en",
+                source,
+                commands,
+            )
+        assert result.returncode == 0, result.stderr
+
+    def test_wrapper_generated_chinese_readme_clang_direct_commands_run(self):
+        with render_cpp_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
+            readme = _read(artifacts["readme_zh_file"])
+            source = _extract_cpp_code_block(readme, "C++ Wrapper 快速开始")
+            commands = _extract_named_bash_block(
+                readme,
+                "等价的 Clang / Clang++ 写法是：",
+            )
+            result = run_readme_command_block(
+                artifacts,
+                "cpp_readme_clang_direct_zh",
                 source,
                 commands,
             )

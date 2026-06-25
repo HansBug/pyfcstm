@@ -34,5 +34,10 @@ environment。
 或 STL 容器。运行时行为必须继续位于生成出的 C core 中；wrapper 应只调用
 `machine.h` 公开 C API，不应直接查看运行时拥有的结构体字段。
 
+共享语义 fixture 对齐必须测试 `machine.hpp` / `machine.cpp` wrapper 表面。fixture
+harness 可以编译 `machine.c` 并把它链接进最终可执行文件，但测试入口必须是 C++ wrapper：
+harness 源码只应直接 include `machine.hpp`，用 `Wrapper::...` aliases 访问生成运行时
+类型，并调用 wrapper public methods，而不是直接调用 `...Machine_*` C 函数。
+
 生成 README 示例属于模板契约。修改 wrapper API 或编译说明时，需要同步更新两份生成
 README 模板，并通过模板测试验证代表性命令。

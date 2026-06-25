@@ -130,9 +130,9 @@ class _ObservationRuntime:
 
 
 def _template_utils(template_name: str):
-    if template_name == "c":
+    if template_name in ("c", "cpp"):
         from test.template.c import _utils as template_utils
-    elif template_name == "c_poll":
+    elif template_name in ("c_poll", "cpp_poll"):
         from test.template.c_poll import _utils as template_utils
     else:
         raise ValueError("unsupported native toolchain template: %r" % template_name)
@@ -374,6 +374,53 @@ def _assert_expected_exception_from_observation(
         simulate_semantics._assert_exception(error, expect, case, field_path)
 
 
+def _assert_successful_api_return(
+    template_name: str,
+    case: SemanticCase,
+    step_index: int,
+    observation: Mapping[str, Any],
+) -> None:
+    """
+    Assert the native harness API-return observation for a successful step.
+
+    C and C polling harnesses expose the raw C runtime return code as part of
+    their public fixture observation, so a successful step must emit
+    ``api_return == 1``. C++ wrapper harnesses intentionally route through the
+    wrapper observation surface and do not expose the low-level C API return in
+    shared fixture records, so they must emit ``null`` instead.
+
+    :param template_name: Native template that emitted the observation.
+    :type template_name: str
+    :param case: Shared semantic fixture case.
+    :type case: test.testings.simulate_semantics.SemanticCase
+    :param step_index: Zero-based fixture step index.
+    :type step_index: int
+    :param observation: Parsed native observation record.
+    :type observation: typing.Mapping[str, typing.Any]
+    :return: ``None``.
+    :rtype: None
+    :raises AssertionError: If the observation violates the expected
+        template-specific API-return contract.
+
+    Example::
+
+        >>> case = simulate_semantics.load_semantic_case("design_basic_simple_transition")
+        >>> _assert_successful_api_return("cpp", case, 0, {"api_return": None})
+    """
+    api_return = observation.get("api_return")
+    if template_name in ("cpp", "cpp_poll"):
+        assert api_return is None, (
+            "%s step %d expected C++ wrapper harness to omit raw API return, got %r"
+            % (case.id, step_index, api_return)
+        )
+        return
+
+    assert api_return == 1, (
+        "%s step %d expected successful native API return, got %r"
+        % (case.id, step_index, api_return)
+    )
+
+
 def assert_observations_match_case(
     template_name: str, case: SemanticCase, observations: Sequence[Mapping[str, Any]]
 ) -> None:
@@ -441,15 +488,11 @@ def assert_observations_match_case(
                 template_name,
             )
         else:
-            assert observation.get("api_return") == 1, (
-                "%s step %d expected successful API return, got %r last_error=%r"
-                % (
-                    case.id,
-                    index,
-                    observation.get("api_return"),
-                    observation.get("last_error"),
-                )
+            assert observation.get("last_error") in (None, ""), (
+                "%s step %d expected no native runtime error, got last_error=%r"
+                % (case.id, index, observation.get("last_error"))
             )
+            _assert_successful_api_return(template_name, case, index, observation)
         runtime = _ObservationRuntime(observation)
         simulate_semantics._assert_runtime_expectation(
             runtime,

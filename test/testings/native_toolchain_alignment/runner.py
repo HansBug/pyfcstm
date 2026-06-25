@@ -2,9 +2,9 @@
 Pytest runner for native toolchain semantic alignment.
 
 This module drives one shared semantic fixture through a generated C-family
-runtime, a case-specific C harness, a concrete native toolchain profile, and a
-Python-side public-observation assertion pass. The runner is opt-in only and is
-used by template-side ``native_toolchain`` pytest files.
+runtime, a case-specific C or C++ harness, a concrete native toolchain profile,
+and a Python-side public-observation assertion pass. The runner is opt-in only
+and is used by template-side ``native_toolchain`` pytest files.
 
 The module contains:
 
@@ -28,12 +28,13 @@ import os
 import shutil
 import subprocess
 import time
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.template import extract_template
 from test.testings import simulate_semantics
 from test.testings.native_toolchain_alignment.harness import (
+    HarnessContext,
     render_cmake_project,
     render_harness,
 )
@@ -219,6 +220,27 @@ def _run_command(
         )
     )
     return completed
+
+
+def _analysis_stage(language: str) -> str:
+    """
+    Return the command-record stage for one static-analysis language bucket.
+
+    :param language: Static-analysis language bucket.
+    :type language: str
+    :return: Command stage name.
+    :rtype: str
+
+    Example::
+
+        >>> _analysis_stage("cxx")
+        'analyze-cxx'
+    """
+    if language == "c":
+        return "analyze-c"
+    if language == "cxx":
+        return "analyze-cxx"
+    raise ValueError("unsupported static-analysis language: %r" % language)
 
 
 def _version_text(
@@ -514,18 +536,29 @@ def _render_generated_template(
 
 def _prepare_artifacts(
     template_name: str, case: SemanticCase, artifact_dir: str
-) -> None:
+) -> HarnessContext:
     generated_dir = os.path.join(artifact_dir, "generated")
     harness_dir = os.path.join(artifact_dir, "harness")
     _render_generated_template(template_name, case, generated_dir)
+    harness_source_name = (
+        "harness.cpp" if template_name in ("cpp", "cpp_poll") else "harness.c"
+    )
     context = render_harness(
-        template_name, case, os.path.join(harness_dir, "harness.c")
+        template_name, case, os.path.join(harness_dir, harness_source_name)
     )
     render_cmake_project(context, os.path.join(harness_dir, "CMakeLists.txt"))
-    for name in ("machine.c", "machine.h", "README.md", "README_zh.md"):
+    for name in (
+        "machine.c",
+        "machine.h",
+        "machine.cpp",
+        "machine.hpp",
+        "README.md",
+        "README_zh.md",
+    ):
         src = os.path.join(generated_dir, name)
         if os.path.exists(src):
             shutil.copy2(src, os.path.join(harness_dir, name))
+    return context
 
 
 def _cmake_configure_args(
@@ -624,6 +657,7 @@ def _run_compile_only_case(
     artifact_dir: str,
     logs_dir: str,
     build_dir: str,
+    context: HarnessContext,
     commands: List[NativeCommandRecord],
     compiler_version: Optional[str],
     primary_tool_version: Optional[str],
@@ -659,29 +693,66 @@ def _run_compile_only_case(
                 os.path.join(artifact_dir, "harness", "machine.c"),
             ],
             os.path.join(build_dir, "machine.o"),
-        ),
-        (
-            "compile-harness-c",
-            list(profile.cc)
-            + list(profile.c_flags)
-            + [
-                include_flag,
-                compile_flag,
-                os.path.join(artifact_dir, "harness", "harness.c"),
-            ],
-            os.path.join(build_dir, "harness.o"),
-        ),
+            c_output,
+        )
+    ]
+    if context.uses_cpp_wrapper:
+        compile_items.extend(
+            [
+                (
+                    "compile-machine-cpp",
+                    list(profile.cxx)
+                    + list(profile.cxx_flags)
+                    + [
+                        include_flag,
+                        compile_flag,
+                        os.path.join(artifact_dir, "harness", "machine.cpp"),
+                    ],
+                    os.path.join(build_dir, "machine_cpp.o"),
+                    cxx_output,
+                ),
+                (
+                    "compile-harness-cpp",
+                    list(profile.cxx)
+                    + list(profile.cxx_flags)
+                    + [
+                        include_flag,
+                        compile_flag,
+                        os.path.join(artifact_dir, "harness", "harness.cpp"),
+                    ],
+                    os.path.join(build_dir, "harness.o"),
+                    cxx_output,
+                ),
+            ]
+        )
+        header_name = "machine.hpp"
+    else:
+        compile_items.append(
+            (
+                "compile-harness-c",
+                list(profile.cc)
+                + list(profile.c_flags)
+                + [
+                    include_flag,
+                    compile_flag,
+                    os.path.join(artifact_dir, "harness", "harness.c"),
+                ],
+                os.path.join(build_dir, "harness.o"),
+                c_output,
+            )
+        )
+        header_name = "machine.h"
+    compile_items.append(
         (
             "compile-header-cxx",
-            list(profile.cxx)
-            + list(profile.cxx_flags)
-            + [include_flag, compile_flag, "-"],
+            list(profile.cxx) + list(profile.cxx_flags) + [include_flag],
             os.path.join(build_dir, "cxx_header_probe.o"),
-        ),
-    ]
-    header_probe = '#include "machine.h"\nint main(void) { return 0; }\n'
-    for stage, argv, output_path in compile_items:
-        argv = list(argv) + c_output(output_path)
+            cxx_output,
+        )
+    )
+    header_probe = '#include "%s"\nint main(void) { return 0; }\n' % header_name
+    for stage, argv, output_path, output_args in compile_items:
+        argv = list(argv) + output_args(output_path)
         if stage == "compile-header-cxx":
             probe_path = os.path.join(build_dir, "cxx_header_probe.cpp")
             _write_text(probe_path, header_probe)
@@ -689,7 +760,7 @@ def _run_compile_only_case(
                 list(profile.cxx)
                 + list(profile.cxx_flags)
                 + [include_flag, compile_flag, probe_path]
-                + cxx_output(output_path)
+                + output_args(output_path)
             )
         _run_compile_command(
             profile,
@@ -723,33 +794,182 @@ def _run_compile_only_case(
     return _write_result(artifact_dir, result)
 
 
-def _analysis_targets(artifact_dir: str) -> List[str]:
-    """Return generated and harness source files for static-analysis profiles."""
+def _analysis_targets(artifact_dir: str, language: Optional[str] = None) -> List[str]:
+    """
+    Return generated and harness source files for static-analysis profiles.
+
+    :param artifact_dir: Native toolchain artifact directory.
+    :type artifact_dir: str
+    :param language: Optional language bucket, either ``"c"`` or ``"cxx"``.
+    :type language: str, optional
+    :return: Sorted source paths selected for analysis.
+    :rtype: list[str]
+
+    Example::
+
+        >>> isinstance(_analysis_targets("/path/that/does/not/exist"), list)
+        True
+    """
     targets = []
+    if language == "c":
+        extensions = {".c", ".h"}
+    elif language == "cxx":
+        extensions = {".cpp", ".hpp"}
+    elif language is None:
+        extensions = {".c", ".h", ".cpp", ".hpp"}
+    else:
+        raise ValueError("unsupported static-analysis language: %r" % language)
     for relative_dir in ("generated", "harness"):
         root = os.path.join(artifact_dir, relative_dir)
         if not os.path.isdir(root):
             continue
         for dirpath, _, filenames in os.walk(root):
             for filename in sorted(filenames):
-                if os.path.splitext(filename)[1].lower() in {".c", ".h"}:
+                if os.path.splitext(filename)[1].lower() in extensions:
                     targets.append(os.path.join(dirpath, filename))
     return sorted(targets)
 
 
-def _analysis_argv(profile: ToolchainProfile, artifact_dir: str) -> List[str]:
+def _analysis_compile_args(language: Optional[str]) -> List[str]:
+    """
+    Return compiler-style arguments for one static-analysis language bucket.
+
+    Mixed C/C++ analysis profiles are split by extension before execution so
+    clang-tidy and similar tools observe the same language-standard envelope as
+    the native build profiles. ``None`` keeps the historical mixed-target shape
+    for helper tests and callers that only need target insertion.
+
+    :param language: Optional language bucket, either ``"c"`` or ``"cxx"``.
+    :type language: str, optional
+    :return: Compile arguments passed after an analyzer's ``--`` separator.
+    :rtype: list[str]
+
+    Example::
+
+        >>> _analysis_compile_args("c")
+        ['-Iharness', '-x', 'c', '-std=c99']
+        >>> _analysis_compile_args("cxx")[-1]
+        '-std=c++98'
+    """
+    if language == "c":
+        return ["-Iharness", "-x", "c", "-std=c99"]
+    if language == "cxx":
+        return ["-Iharness", "-x", "c++", "-std=c++98"]
+    if language is None:
+        return ["-Iharness"]
+    raise ValueError("unsupported static-analysis language: %r" % language)
+
+
+def _analysis_standard_args(
+    profile: ToolchainProfile, language: Optional[str]
+) -> List[str]:
+    """
+    Return analyzer-native standard arguments for tools without ``--``.
+
+    :param profile: Static-analysis profile being executed.
+    :type profile: test.testings.native_toolchain_alignment.profiles.ToolchainProfile
+    :param language: Optional language bucket, either ``"c"`` or ``"cxx"``.
+    :type language: str, optional
+    :return: Tool-specific standard flags placed before targets.
+    :rtype: list[str]
+
+    Example::
+
+        >>> from test.testings.native_toolchain_alignment.profiles import get_profile
+        >>> _analysis_standard_args(get_profile("linux-cppcheck"), "c")
+        ['--std=c99']
+    """
+    if _tool_stem(profile.analysis_tool) != "cppcheck":
+        return []
+    if language == "c":
+        return ["--std=c99"]
+    if language == "cxx":
+        return ["--std=c++03"]
+    return []
+
+
+def _analysis_argv(
+    profile: ToolchainProfile, artifact_dir: str, language: Optional[str] = None
+) -> List[str]:
+    """
+    Build a static-analysis command for one language bucket.
+
+    :param profile: Static-analysis profile being executed.
+    :type profile: test.testings.native_toolchain_alignment.profiles.ToolchainProfile
+    :param artifact_dir: Native toolchain artifact directory.
+    :type artifact_dir: str
+    :param language: Optional language bucket, either ``"c"`` or ``"cxx"``.
+    :type language: str, optional
+    :return: Analyzer command line.
+    :rtype: list[str]
+
+    Example::
+
+        >>> from test.testings.native_toolchain_alignment.profiles import get_profile
+        >>> profile = get_profile("linux-clang-tidy")
+        >>> "--" in _analysis_argv(profile, "/path/that/does/not/exist", "cxx")
+        True
+    """
     args = list(profile.analysis_args)
-    targets = _analysis_targets(artifact_dir)
+    targets = _analysis_targets(artifact_dir, language)
     if "--" not in args:
-        return list(profile.analysis_tool) + args + targets
+        return (
+            list(profile.analysis_tool)
+            + args
+            + _analysis_standard_args(profile, language)
+            + targets
+        )
     separator_index = args.index("--")
+    compile_args = _analysis_compile_args(language)
     return (
         list(profile.analysis_tool)
         + args[:separator_index]
         + targets
         + ["--"]
-        + args[separator_index + 1 :]
+        + compile_args
+        + [
+            arg
+            for arg in args[separator_index + 1 :]
+            if arg
+            not in (
+                "-std=c99",
+                "-std=c++98",
+                "-std=c++03",
+                "-Iharness",
+                "-x",
+                "c",
+                "c++",
+            )
+        ]
     )
+
+
+def _analysis_invocations(
+    profile: ToolchainProfile, artifact_dir: str
+) -> List[Tuple[str, List[str]]]:
+    """
+    Return static-analysis invocations split by source-language bucket.
+
+    :param profile: Static-analysis profile being executed.
+    :type profile: test.testings.native_toolchain_alignment.profiles.ToolchainProfile
+    :param artifact_dir: Native toolchain artifact directory.
+    :type artifact_dir: str
+    :return: ``(language, argv)`` pairs for non-empty C and C++ target sets.
+    :rtype: list[tuple[str, list[str]]]
+
+    Example::
+
+        >>> from test.testings.native_toolchain_alignment.profiles import get_profile
+        >>> _analysis_invocations(get_profile("linux-clang-tidy"), "/missing")
+        []
+    """
+    invocations = []
+    for language in ("c", "cxx"):
+        if _analysis_targets(artifact_dir, language):
+            invocations.append(
+                (language, _analysis_argv(profile, artifact_dir, language))
+            )
+    return invocations
 
 
 def _run_analyze_only_case(
@@ -763,58 +983,72 @@ def _run_analyze_only_case(
     start: float,
 ) -> Dict[str, Any]:
     report_path = os.path.join(artifact_dir, "analysis-report.txt")
-    argv = _analysis_argv(profile, artifact_dir)
-    completed = _run_command(
-        "analyze",
-        argv,
-        artifact_dir,
-        logs_dir,
-        artifact_dir,
-        commands,
-        profile.timeout_seconds,
-    )
-    stdout_rel = commands[-1].stdout_path if commands else None
-    stderr_rel = commands[-1].stderr_path if commands else None
-    report_parts = []
-    for rel_path in (stdout_rel, stderr_rel):
-        if rel_path is None:
-            continue
-        path = os.path.join(artifact_dir, rel_path)
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                report_parts.append(f.read())
-    _write_text(report_path, "\n".join(report_parts))
-    report_rel = _relative(report_path, artifact_dir)
-    timed_out = commands[-1].timed_out if commands else False
-    if timed_out or completed.returncode is None:
-        _failure_result(
-            case,
-            template_name,
-            profile,
-            "analysis_timeout",
-            "static analysis timed out for %s/%s" % (template_name, case.id),
-            commands,
-            artifact_dir,
-            completed.returncode,
-            time.time() - start,
-            primary_tool_version=primary_tool_version,
-            analysis_report_path=report_rel,
-        )
-    if completed.returncode not in (0,):
+    if not _analysis_targets(artifact_dir):
         _failure_result(
             case,
             template_name,
             profile,
             "analysis_failure",
-            "static analysis failed for %s/%s with return code %r"
-            % (template_name, case.id, completed.returncode),
+            "static analysis targets are empty for %s/%s" % (template_name, case.id),
             commands,
             artifact_dir,
-            completed.returncode,
-            time.time() - start,
+            duration_seconds=time.time() - start,
             primary_tool_version=primary_tool_version,
-            analysis_report_path=report_rel,
         )
+    completed = None
+    for language, argv in _analysis_invocations(profile, artifact_dir):
+        completed = _run_command(
+            _analysis_stage(language),
+            argv,
+            artifact_dir,
+            logs_dir,
+            artifact_dir,
+            commands,
+            profile.timeout_seconds,
+        )
+        timed_out = commands[-1].timed_out if commands else False
+        if timed_out or completed.returncode is None:
+            _failure_result(
+                case,
+                template_name,
+                profile,
+                "analysis_timeout",
+                "static analysis timed out for %s/%s %s sources"
+                % (template_name, case.id, language),
+                commands,
+                artifact_dir,
+                completed.returncode,
+                time.time() - start,
+                primary_tool_version=primary_tool_version,
+            )
+        if completed.returncode not in (0,):
+            _failure_result(
+                case,
+                template_name,
+                profile,
+                "analysis_failure",
+                "static analysis failed for %s/%s %s sources with return code %r"
+                % (template_name, case.id, language, completed.returncode),
+                commands,
+                artifact_dir,
+                completed.returncode,
+                time.time() - start,
+                primary_tool_version=primary_tool_version,
+            )
+    report_parts = []
+    for command in commands:
+        if not command.stage.startswith("analyze"):
+            continue
+        report_parts.append("## %s" % " ".join(command.argv))
+        for rel_path in (command.stdout_path, command.stderr_path):
+            if rel_path is None:
+                continue
+            path = os.path.join(artifact_dir, rel_path)
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    report_parts.append(f.read())
+    _write_text(report_path, "\n".join(report_parts))
+    report_rel = _relative(report_path, artifact_dir)
     if not os.path.exists(report_path):
         _failure_result(
             case,
@@ -824,7 +1058,7 @@ def _run_analyze_only_case(
             "static analysis report is missing for %s/%s" % (template_name, case.id),
             commands,
             artifact_dir,
-            completed.returncode,
+            completed.returncode if completed is not None else None,
             time.time() - start,
             primary_tool_version=primary_tool_version,
             analysis_report_path=report_rel,
@@ -837,7 +1071,7 @@ def _run_analyze_only_case(
         "analysis_report_only",
         "static analysis report-only profile completed",
         commands,
-        completed.returncode,
+        completed.returncode if completed is not None else 0,
         time.time() - start,
         compiler_version=None,
         primary_tool_version=primary_tool_version,
@@ -1045,7 +1279,7 @@ def run_native_toolchain_case(
             duration_seconds=time.time() - start,
         )
 
-    _prepare_artifacts(template_name, case, artifact_dir)
+    context = _prepare_artifacts(template_name, case, artifact_dir)
     compiler_version = _version_text(
         profile.cc, logs_dir, artifact_dir, commands, profile.timeout_seconds
     )
@@ -1082,6 +1316,7 @@ def run_native_toolchain_case(
             artifact_dir,
             logs_dir,
             build_dir,
+            context,
             commands,
             compiler_version,
             primary_tool_version,

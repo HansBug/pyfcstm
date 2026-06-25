@@ -1,16 +1,18 @@
 """
-Standalone C harness generation for native toolchain semantic alignment.
+Standalone C-family harness generation for native toolchain alignment.
 
 This module converts a shared semantic fixture and rendered C-family runtime
-metadata into a small case-specific ``harness.c`` file. The harness uses only
-public generated APIs, executes fixture steps, writes public observations as
-JSON Lines, and leaves semantic assertion logic in Python.
+metadata into a small case-specific harness source file. C harnesses call the
+public generated C APIs through ``machine.h``. C++ harnesses call only the
+generated wrapper APIs through ``machine.hpp``. Each harness executes fixture
+steps, writes public observations as JSON Lines, and leaves semantic assertion
+logic in Python.
 
 The module contains:
 
 * :class:`HarnessContext` - Template context for one generated harness.
 * :func:`build_harness_context` - Convert a semantic case into template data.
-* :func:`render_harness` - Render ``harness.c`` for ``c`` or ``c_poll``.
+* :func:`render_harness` - Render ``harness.c`` or ``harness.cpp``.
 * :func:`render_cmake_project` - Render the native CMake project files.
 
 Example::
@@ -25,6 +27,7 @@ Example::
 import json
 import math
 import os
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
@@ -42,14 +45,29 @@ from test.testings import simulate_semantics
 from test.testings.simulate_semantics import SemanticCase
 
 _TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "harness_templates")
+_INCLUDE_DIRECTIVE_RE = re.compile(r"^\s*#\s*include\s*(?P<target>[^\n]+)", re.M)
+_INCLUDE_LITERAL_RE = re.compile(r'(?:(?:"([^"\n]+)")|(?:<([^>\n]+)>))')
+_LINE_CONTINUATION_RE = re.compile(r"\\\r?\n")
+_TOKEN_PASTE_RE = re.compile(r"##")
+_NATIVE_HANDLE_CALL_RE = re.compile(r"\bnative_handle\s*\(")
+_DIRECT_C_TYPE_RE = re.compile(
+    r"(?<!Wrapper::)\b(?:[A-Za-z_][A-Za-z0-9_]*Machine|Machine)"
+    r"(Vars|StateId|EventId|Int|Hooks|EventChecks|ExecutionContext|EventContext)?\b"
+)
+_DIRECT_C_API_RE = re.compile(
+    r"\b[A-Za-z_][A-Za-z0-9_]*Machine_"
+    r"(create_uninitialized|create|destroy|init|hot_start|set_hooks|"
+    r"set_event_checks|cycle|vars|is_ended|current_state_id|"
+    r"current_state_path|current_state_name|last_error|dsl_source)\b"
+)
 
 
 @dataclass(frozen=True)
 class HarnessContext:
     """
-    Template context for one native toolchain C harness.
+    Template context for one native toolchain harness.
 
-    :param template_name: Template under test, either ``"c"`` or ``"c_poll"``.
+    :param template_name: Template under test, such as ``"c"`` or ``"cpp"``.
     :type template_name: str
     :param case_id: Shared semantic fixture case id.
     :type case_id: str
@@ -71,6 +89,16 @@ class HarnessContext:
     :type steps: typing.Sequence[typing.Mapping[str, typing.Any]]
     :param initial: Initial hot-start descriptor, if any.
     :type initial: typing.Mapping[str, typing.Any], optional
+    :param initial_expect: Expected initial failure descriptor, if any.
+    :type initial_expect: typing.Mapping[str, typing.Any], optional
+    :param harness_source_name: Harness source filename.
+    :type harness_source_name: str
+    :param machine_source_names: Generated machine sources copied into the
+        harness project.
+    :type machine_source_names: typing.Sequence[str]
+    :param wrapper_namespace_suffix: Generated C++ wrapper namespace suffix,
+        if the harness uses a C++ wrapper.
+    :type wrapper_namespace_suffix: str, optional
 
     Example::
 
@@ -92,6 +120,51 @@ class HarnessContext:
     steps: Sequence[Mapping[str, Any]]
     initial: Optional[Mapping[str, Any]] = None
     initial_expect: Optional[Mapping[str, Any]] = None
+    harness_source_name: str = "harness.c"
+    machine_source_names: Sequence[str] = ("machine.c",)
+    wrapper_namespace_suffix: Optional[str] = None
+
+    @property
+    def uses_cpp_wrapper(self) -> bool:
+        """
+        Return whether this context renders a C++ wrapper harness.
+
+        :return: ``True`` for ``cpp`` and ``cpp_poll`` harnesses.
+        :rtype: bool
+
+        Example::
+
+            >>> build_harness_context("cpp", simulate_semantics.load_semantic_case("design_basic_simple_transition")).uses_cpp_wrapper
+            True
+        """
+        return self.wrapper_namespace_suffix is not None
+
+
+_CONTEXT_TEMPLATE_NAMES = {
+    "c": "c",
+    "c_poll": "c_poll",
+    "cpp": "c",
+    "cpp_poll": "c_poll",
+}
+_HARNESS_TEMPLATE_FILES = {
+    "c": "c_main.c.j2",
+    "c_poll": "c_poll_main.c.j2",
+    "cpp": "cpp_main.cpp.j2",
+    "cpp_poll": "cpp_poll_main.cpp.j2",
+}
+_HARNESS_SOURCE_NAMES = {
+    "c": "harness.c",
+    "c_poll": "harness.c",
+    "cpp": "harness.cpp",
+    "cpp_poll": "harness.cpp",
+}
+_MACHINE_SOURCE_NAMES = {
+    "c": ("machine.c",),
+    "c_poll": ("machine.c",),
+    "cpp": ("machine.c", "machine.cpp"),
+    "cpp_poll": ("machine.c", "machine.cpp"),
+}
+_WRAPPER_NAMESPACE_SUFFIX = {"cpp": "cpp", "cpp_poll": "cpp_poll"}
 
 
 def _parse_model(case: SemanticCase):
@@ -347,9 +420,9 @@ def _step_contexts(
 
 def build_harness_context(template_name: str, case: SemanticCase) -> HarnessContext:
     """
-    Build a C harness template context for a semantic fixture.
+    Build a native harness template context for a semantic fixture.
 
-    :param template_name: Template name, either ``"c"`` or ``"c_poll"``.
+    :param template_name: Template name, such as ``"c"`` or ``"cpp_poll"``.
     :type template_name: str
     :param case: Shared semantic fixture case.
     :type case: test.testings.simulate_semantics.SemanticCase
@@ -363,7 +436,7 @@ def build_harness_context(template_name: str, case: SemanticCase) -> HarnessCont
         >>> build_harness_context("c", case).template_name
         'c'
     """
-    if template_name not in ("c", "c_poll"):
+    if template_name not in _CONTEXT_TEMPLATE_NAMES:
         raise ValueError("unsupported native toolchain template: %r" % template_name)
     model = _parse_model(case)
     states = _state_rows(model)
@@ -395,6 +468,9 @@ def build_harness_context(template_name: str, case: SemanticCase) -> HarnessCont
             case.data.get("initial") or {}, state_macros, variables, initial_expect
         ),
         initial_expect=initial_expect,
+        harness_source_name=_HARNESS_SOURCE_NAMES[template_name],
+        machine_source_names=_MACHINE_SOURCE_NAMES[template_name],
+        wrapper_namespace_suffix=_WRAPPER_NAMESPACE_SUFFIX.get(template_name),
     )
 
 
@@ -410,17 +486,134 @@ def _environment() -> Environment:
     return env
 
 
+def _mask_cpp_comments_and_literals(source: str, mask_literals: bool) -> str:
+    """Replace C++ comments and optionally literals with whitespace.
+
+    :param source: C++ source text to inspect.
+    :type source: str
+    :param mask_literals: Whether string and character literals should also be
+        replaced by whitespace.
+    :type mask_literals: bool
+    :return: Source text with comments, and optionally literals, masked.
+    :rtype: str
+
+    Example::
+
+        >>> _mask_cpp_comments_and_literals('// #include "machine.h"\\n', False)
+        '\\n'
+    """
+    source = _LINE_CONTINUATION_RE.sub("", source)
+    output = []
+    index = 0
+    length = len(source)
+    while index < length:
+        char = source[index]
+        next_char = source[index + 1] if index + 1 < length else ""
+        if char == "/" and next_char == "/":
+            index += 2
+            while index < length and source[index] != "\n":
+                index += 1
+            if index < length:
+                output.append("\n")
+                index += 1
+        elif char == "/" and next_char == "*":
+            output.extend((" ", " "))
+            index += 2
+            while index < length:
+                current = source[index]
+                following = source[index + 1] if index + 1 < length else ""
+                if current == "*" and following == "/":
+                    output.extend((" ", " "))
+                    index += 2
+                    break
+                output.append("\n" if current == "\n" else " ")
+                index += 1
+        elif mask_literals and char in {'"', "'"}:
+            quote = char
+            output.append(" ")
+            index += 1
+            while index < length:
+                current = source[index]
+                output.append("\n" if current == "\n" else " ")
+                index += 1
+                if current == "\\" and index < length:
+                    escaped = source[index]
+                    output.append("\n" if escaped == "\n" else " ")
+                    index += 1
+                elif current == quote:
+                    break
+        else:
+            output.append(char)
+            index += 1
+    return "".join(output)
+
+
+def _iter_include_targets(source: str) -> List[str]:
+    """Return literal include targets from comment-masked C++ source.
+
+    :param source: C++ source text to inspect.
+    :type source: str
+    :return: Include targets; ``""`` means a non-literal include directive.
+    :rtype: list[str]
+
+    Example::
+
+        >>> _iter_include_targets('#include "machine.hpp"\\n')
+        ['machine.hpp']
+    """
+    directive_source = _mask_cpp_comments_and_literals(source, mask_literals=False)
+    targets = []
+    for match in _INCLUDE_DIRECTIVE_RE.finditer(directive_source):
+        raw_target = match.group("target").strip()
+        literal_match = _INCLUDE_LITERAL_RE.fullmatch(raw_target)
+        targets.append(
+            (literal_match.group(1) or literal_match.group(2)) if literal_match else ""
+        )
+    return targets
+
+
+def _assert_cpp_wrapper_harness_source(source: str) -> None:
+    """Assert that a C++ native harness enters through ``machine.hpp``.
+
+    :param source: Rendered C++ harness source.
+    :type source: str
+    :return: ``None``.
+    :rtype: None
+    :raises AssertionError: If the source bypasses the C++ wrapper surface.
+
+    Example::
+
+        >>> _assert_cpp_wrapper_harness_source('#include "machine.hpp"\\n')
+    """
+    include_targets = _iter_include_targets(source)
+    normalized_includes = [
+        os.path.basename(target.replace("\\", "/")).lower()
+        for target in include_targets
+    ]
+    symbol_source = _mask_cpp_comments_and_literals(source, mask_literals=True)
+    assert include_targets and all(include_targets)
+    assert "machine.hpp" in normalized_includes
+    assert "machine.h" not in normalized_includes
+    assert not _TOKEN_PASTE_RE.search(symbol_source)
+    assert not _NATIVE_HANDLE_CALL_RE.search(symbol_source)
+    symbol_source_without_alias = symbol_source.replace(
+        "MachineWrapper", "            "
+    )
+    assert not _DIRECT_C_TYPE_RE.search(symbol_source_without_alias)
+    assert not _DIRECT_C_API_RE.search(symbol_source)
+
+
 def render_harness(
     template_name: str, case: SemanticCase, output_path: str
 ) -> HarnessContext:
     """
-    Render a native C harness source file.
+    Render a native C-family harness source file.
 
-    :param template_name: Template name, either ``"c"`` or ``"c_poll"``.
+    :param template_name: Template name, such as ``"c"`` or ``"cpp_poll"``.
     :type template_name: str
     :param case: Shared semantic fixture case.
     :type case: test.testings.simulate_semantics.SemanticCase
-    :param output_path: Destination ``harness.c`` path.
+    :param output_path: Destination harness source path.
     :type output_path: str
     :return: Harness context used for rendering.
     :rtype: HarnessContext
@@ -435,8 +628,10 @@ def render_harness(
         'design_basic_simple_transition'
     """
     context = build_harness_context(template_name, case)
-    template_file = "c_poll_main.c.j2" if template_name == "c_poll" else "c_main.c.j2"
+    template_file = _HARNESS_TEMPLATE_FILES[template_name]
     text = _environment().get_template(template_file).render(context=context)
+    if context.uses_cpp_wrapper:
+        _assert_cpp_wrapper_harness_source(text)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(text)

@@ -13,6 +13,7 @@ import {refsWithSuggestedFix} from '../suggested-fix';
 import {collectConstFoldWarnings} from './const-fold';
 import {collectDataFlowWarnings} from './data-flow';
 import {collectNamingWarnings} from './naming';
+import {collectNumericWarnings} from './numeric';
 import {collectRedundancyWarnings} from './redundancy';
 import {collectStructuralWarnings} from './structural';
 import {collectThresholdWarnings, type ThresholdOptions} from './thresholds';
@@ -53,6 +54,7 @@ export function collectDesignHealthWarnings(
         ...collectNamingWarnings(actions),
         ...collectTypeWarnings(variables),
         ...collectDataFlowWarnings(variables, machine),
+        ...(machine ? collectNumericWarnings(machine) : []),
         ...collectRedundancyWarnings(transitions, events, states),
         ...collectTransitionInfos(states, transitions),
     ];

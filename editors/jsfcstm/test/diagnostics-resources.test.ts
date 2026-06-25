@@ -13,6 +13,8 @@ const numericCodes = [
 
 const cFamilyTargetTemplates = ['c', 'c_poll', 'cpp', 'cpp_poll'];
 const numericContexts = ['var_initializer', 'guard', 'transition_effect', 'lifecycle_action'];
+const operandTypes = ['int', 'float', 'unknown'];
+const operandTypeSources = ['literal', 'declared_var', 'local_expression'];
 
 describe('diagnostics resources (PR-A)', () => {
     describe('schema.json bundled', () => {
@@ -111,6 +113,9 @@ describe('diagnostics resources (PR-A)', () => {
                 }
                 assert.deepEqual(refs.target_family.enum, ['c_family']);
                 assert.equal(refs.target_templates.type, 'list[str]');
+                assert.deepEqual(refs.target_templates.item_enum, cFamilyTargetTemplates);
+                assert.deepEqual(refs.target_templates.exact_values, cFamilyTargetTemplates);
+                assert.ok(!refs.target_templates.exact_values?.includes('python'));
                 assert.deepEqual(refs.context.enum, numericContexts);
             }
         });
@@ -138,7 +143,9 @@ describe('diagnostics resources (PR-A)', () => {
             assert.equal(bitwiseRefs.operator?.required, true);
             assert.deepEqual(bitwiseRefs.operator?.enum, ['&', '^', '|', '<<', '>>']);
             assert.equal(bitwiseRefs.operand_types?.required, true);
+            assert.deepEqual(bitwiseRefs.operand_types?.item_enum, operandTypes);
             assert.equal(bitwiseRefs.operand_type_sources?.required, true);
+            assert.deepEqual(bitwiseRefs.operand_type_sources?.item_enum, operandTypeSources);
             assert.deepEqual(bitwiseRefs.statement_kind?.enum, ['operation_assignment']);
         });
 
@@ -146,7 +153,6 @@ describe('diagnostics resources (PR-A)', () => {
             const registry = loadCodesRegistry();
             assert.equal(registry.W_NUMERIC_SHIFT_REQUIRES_PROOF, undefined);
             assert.equal(registry.I_NUMERIC_VERIFY_RECOMMENDED, undefined);
-            assert.deepEqual(cFamilyTargetTemplates, ['c', 'c_poll', 'cpp', 'cpp_poll']);
         });
     });
 });

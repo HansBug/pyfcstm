@@ -22,6 +22,8 @@ export interface CodeFieldSpec {
     required?: boolean;
     description?: string;
     enum?: readonly string[];
+    item_enum?: readonly string[];
+    exact_values?: readonly string[];
 }
 
 /**

@@ -3266,6 +3266,47 @@ class TestInspectModelVerifyIntegration:
             )
             assert not inspect_module._type_matches_schema(value, field_spec)
 
+    def test_verify_refs_schema_honors_list_string_constraints(self):
+        registry = {
+            'W_TEST_NUMERIC_PROFILE': inspect_module.CodeSpec(
+                code='W_TEST_NUMERIC_PROFILE',
+                severity='warning',
+                description='test numeric profile',
+                emit_tier='verify_pipeline',
+                refs_schema={
+                    'target_family': inspect_module.CodeFieldSpec(
+                        name='target_family',
+                        type='str',
+                        required=True,
+                        description='target family',
+                        enum=('c_family',),
+                    ),
+                    'target_templates': inspect_module.CodeFieldSpec(
+                        name='target_templates',
+                        type='list[str]',
+                        required=True,
+                        description='target templates',
+                        item_enum=('c', 'c_poll'),
+                        exact_values=('c', 'c_poll'),
+                    ),
+                },
+            ),
+        }
+        valid_refs = {
+            'target_family': 'c_family',
+            'target_templates': ['c', 'c_poll'],
+        }
+        assert inspect_module._refs_match_code_schema(
+            'W_TEST_NUMERIC_PROFILE',
+            valid_refs,
+            _registry=registry,
+        )
+        assert not inspect_module._refs_match_code_schema(
+            'W_TEST_NUMERIC_PROFILE',
+            dict(valid_refs, target_templates=['python']),
+            _registry=registry,
+        )
+
     @pytest.mark.parametrize(
         'kind',
         ['unknown', 'timeout', 'undecidable_skip'],

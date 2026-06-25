@@ -54,7 +54,7 @@ from .analyzers import (
     collect_design_health_warnings,
     collect_expr_variables,
 )
-from .codes import CODE_REGISTRY, CodeFieldSpec
+from .codes import CODE_REGISTRY, CodeFieldSpec, CodeSpec
 from ..utils.validate import ModelDiagnostic, Span
 
 if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
@@ -2250,7 +2250,12 @@ def _type_matches_schema(value: Any, field_spec: CodeFieldSpec) -> bool:
     return True
 
 
-def _refs_match_code_schema(code: str, refs: Mapping[str, Any]) -> bool:
+def _refs_match_code_schema(
+        code: str,
+        refs: Mapping[str, Any],
+        *,
+        _registry: Mapping[str, CodeSpec] = CODE_REGISTRY,
+) -> bool:
     """Return whether refs satisfy the declared verify-adapter schema.
 
     The conversion layer uses this as a fail-closed guard: raw verify findings
@@ -2264,6 +2269,10 @@ def _refs_match_code_schema(code: str, refs: Mapping[str, Any]) -> bool:
     :type code: str
     :param refs: Candidate refs payload.
     :type refs: Mapping[str, Any]
+    :param _registry: Diagnostic code registry used for validation. Defaults
+        to :data:`CODE_REGISTRY`; tests may pass a synthetic registry to cover
+        schema predicates without mutating the global registry.
+    :type _registry: Mapping[str, CodeSpec], optional
     :return: ``True`` when the code may be emitted by the verify adapter and
         refs match its schema.
     :rtype: bool
@@ -2286,7 +2295,7 @@ def _refs_match_code_schema(code: str, refs: Mapping[str, Any]) -> bool:
         ... })
         True
     """
-    spec = CODE_REGISTRY.get(code)
+    spec = _registry.get(code)
     if spec is None:
         return False
     if spec.emit_tier != 'verify_pipeline' and code not in VERIFY_SHARED_STATIC_CODES:
@@ -2304,6 +2313,12 @@ def _refs_match_code_schema(code: str, refs: Mapping[str, Any]) -> bool:
         if field_spec.enum and value not in set(field_spec.enum):
             return False
         if not _type_matches_schema(value, field_spec):
+            return False
+        if field_spec.item_enum:
+            allowed_items = set(field_spec.item_enum)
+            if any(item not in allowed_items for item in value):
+                return False
+        if field_spec.exact_values and tuple(value) != field_spec.exact_values:
             return False
     return True
 
@@ -2427,6 +2442,39 @@ def _verify_diagnostics_from_results(
             continue
         diagnostics.extend(_structural_verify_diagnostics(result, states, events))
     return tuple(diagnostics)
+
+
+def _catalog_emittable_diagnostics(
+        diagnostics: Sequence[ModelDiagnostic],
+) -> Tuple[ModelDiagnostic, ...]:
+    """
+    Return diagnostics that are allowed to appear in inspect output.
+
+    Catalog-only codes freeze cross-end contracts before an analyzer is wired.
+    If a future analyzer accidentally emits such a code before the contract is
+    promoted to a real emit tier, the public inspect surface must fail closed
+    by dropping it.
+
+    :param diagnostics: Candidate diagnostics collected from inspect analyzers.
+    :type diagnostics: Sequence[ModelDiagnostic]
+    :return: Diagnostics whose code registry entry is not ``catalog_only``.
+    :rtype: Tuple[ModelDiagnostic, ...]
+
+    Example::
+
+        >>> _catalog_emittable_diagnostics((ModelDiagnostic(
+        ...     code='W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE',
+        ...     severity='warning',
+        ...     message='catalog-only test',
+        ... ),))
+        ()
+    """
+    return tuple(
+        diagnostic
+        for diagnostic in diagnostics
+        if CODE_REGISTRY.get(diagnostic.code) is None
+        or CODE_REGISTRY[diagnostic.code].emit_tier != 'catalog_only'
+    )
 
 
 def _deduplicate_model_diagnostics(
@@ -2586,6 +2634,7 @@ def inspect_model(
             events,
             actions,
         ))
+    diagnostics = list(_catalog_emittable_diagnostics(diagnostics))
     diagnostics = list(_deduplicate_model_diagnostics(diagnostics))
     return ModelInspect(
         root_state_path=root_state_path,

@@ -11,7 +11,9 @@
 #                        but the source slice must still hit this object.
 #   - `refs`           — payload schema for `ModelDiagnostic.refs`. Each
 #                        field declares its type, whether it is required,
-#                        and a short description. Field names are part of
+#                        and a short description. String fields may declare
+#                        `enum`; `list[str]` fields may declare `item_enum`
+#                        and/or `exact_values`. Field names are part of
 #                        the public contract; downstream consumers should
 #                        rely on these names verbatim.
 #   - `example_dsl`    — minimal DSL snippet that triggers the code (used
@@ -2094,6 +2096,8 @@ W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE:
       description: >-
         Ordered target templates covered by this default C/C++ profile:
         ``c``, ``c_poll``, ``cpp``, ``cpp_poll``.
+      item_enum: ['c', 'c_poll', 'cpp', 'cpp_poll']
+      exact_values: ['c', 'c_poll', 'cpp', 'cpp_poll']
     runtime_note:
       type: str
       required: true
@@ -2180,6 +2184,8 @@ W_NUMERIC_CONSTANT_DIVISION_BY_ZERO:
       description: >-
         Ordered target templates covered by this default C/C++ profile:
         ``c``, ``c_poll``, ``cpp``, ``cpp_poll``.
+      item_enum: ['c', 'c_poll', 'cpp', 'cpp_poll']
+      exact_values: ['c', 'c_poll', 'cpp', 'cpp_poll']
     runtime_note:
       type: str
       required: true
@@ -2256,6 +2262,8 @@ W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE:
       description: >-
         Ordered target templates covered by this default C/C++ profile:
         ``c``, ``c_poll``, ``cpp``, ``cpp_poll``.
+      item_enum: ['c', 'c_poll', 'cpp', 'cpp_poll']
+      exact_values: ['c', 'c_poll', 'cpp', 'cpp_poll']
     runtime_note:
       type: str
       required: true
@@ -2335,6 +2343,8 @@ W_NUMERIC_FLOAT_BITWISE:
       description: >-
         Ordered target templates covered by this default C/C++ profile:
         ``c``, ``c_poll``, ``cpp``, ``cpp_poll``.
+      item_enum: ['c', 'c_poll', 'cpp', 'cpp_poll']
+      exact_values: ['c', 'c_poll', 'cpp', 'cpp_poll']
     runtime_note:
       type: str
       required: true
@@ -2366,12 +2376,14 @@ W_NUMERIC_FLOAT_BITWISE:
       description: >-
         Operand type tags in expression order. Allowed members are ``int``,
         ``float``, and ``unknown``.
+      item_enum: ['int', 'float', 'unknown']
     operand_type_sources:
       type: list[str]
       required: true
       description: >-
         Evidence source for each operand type tag. Allowed members are
         ``literal``, ``declared_var``, and ``local_expression``.
+      item_enum: ['literal', 'declared_var', 'local_expression']
   for_llm:
     summary: >-
       A float-shaped operand reaches a C/C++ integer bitwise operation. Keep

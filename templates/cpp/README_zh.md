@@ -1,8 +1,8 @@
 # cpp 模板维护手册
 
-`cpp` 是实验性的内置 C++ 模板。它会生成与 `templates/c/` 相同的 C99
-执行 core，并额外生成 `machine.cpp` / `machine.hpp` wrapper 文件，提供覆盖公开
-C API 的 C++98-compatible facade。
+`cpp` 是早期一等内置 C++ 模板。它会生成与 `templates/c/` 相同的 C99 执行 core，
+并额外生成 `machine.cpp` / `machine.hpp` wrapper 文件，提供覆盖公开 C API 的
+C++98-compatible facade。
 
 本文件是 `templates/cpp/` 的模板维护文档。renderer 会忽略它，生成输出中不会复制它。
 面向生成物用户的说明来自 `README.md.j2` / `README_zh.md.j2`。
@@ -23,6 +23,10 @@ C API 的 C++98-compatible facade。
 
 ## 维护纪律
 
+`template.json` 在 C++ wrapper surface 仍处于早期推广期时会有意保留
+`experimental: true`。这个标记表示“早期一等模板”状态，而不是未实现模板：packaging、
+wrapper API smoke tests、共享语义 fixture 对齐和原生工具链矩阵覆盖都属于预期维护契约。
+
 C core symlink 只是仓库源码层面的复用机制。打包出的 `cpp.zip` 必须包含普通文件，
 不能包含 symlink entry；即使解压环境没有 `templates/c/`，也必须自包含可用。
 
@@ -38,6 +42,11 @@ environment。
 harness 可以编译 `machine.c` 并把它链接进最终可执行文件，但测试入口必须是 C++ wrapper：
 harness 源码只应直接 include `machine.hpp`，用 `Wrapper::...` aliases 访问生成运行时
 类型，并调用 wrapper public methods，而不是直接调用 `...Machine_*` C 函数。
+
+原生工具链检查应让 `cpp` 和 `c`、`c_poll`、`cpp_poll` 一起进入仓库级矩阵。C++
+harness 可以链接生成出的 C core，但被测试的公开集成面仍然是 C++ wrapper。Generated
+README 中的构建示例需要和矩阵实际覆盖的 profile 保持一致，包括 CMake、GCC/G++、
+Clang/Clang++、no-exception、no-RTTI 以及适用时的 no-heap 形式。
 
 生成 README 示例属于模板契约。修改 wrapper API 或编译说明时，需要同步更新两份生成
 README 模板，并通过模板测试验证代表性命令。

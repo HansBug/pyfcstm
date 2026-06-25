@@ -468,6 +468,59 @@ def test_template_readmes_keep_maintainer_and_generated_guidance_separate(
 
 
 @pytest.mark.unittest
+def test_cpp_template_documentation_describes_early_first_class_status(
+    rendered_templates,
+):
+    root_readme = _read_text(_TEMPLATES_DIR / "README.md")
+    root_readme_zh = _read_text(_TEMPLATES_DIR / "README_zh.md")
+    for text in [root_readme, root_readme_zh]:
+        lowered = text.lower()
+        assert "cpp" in lowered
+        assert "cpp_poll" in lowered
+        assert "early" in lowered or "早期" in text
+        assert "first-class" in lowered or "一等" in text
+        assert "experimental: true" in text
+        assert "skeleton" not in lowered
+        assert "prototype" not in lowered
+        assert "原型" not in text
+
+    expected_metadata_descriptions = {
+        "cpp": "Early-stage first-class C++ template",
+        "cpp_poll": "Early-stage first-class C++ poll template",
+    }
+    for name, expected_description in expected_metadata_descriptions.items():
+        metadata = _load_template_metadata(name)
+        assert metadata["experimental"] is True
+        assert expected_description in metadata["description"]
+
+        maintainer_readme = _read_text(_TEMPLATES_DIR / name / "README.md")
+        maintainer_readme_zh = _read_text(_TEMPLATES_DIR / name / "README_zh.md")
+        for text in [maintainer_readme, maintainer_readme_zh]:
+            lowered = text.lower()
+            assert "experimental: true" in text
+            assert "early" in lowered or "早期" in text
+            assert "first-class" in lowered or "一等" in text
+            assert "unimplemented" in lowered or "未实现" in text
+            assert "wrapper" in lowered
+            assert "native toolchain" in lowered or "原生工具链" in text
+            assert "skeleton" not in lowered
+            assert "prototype" not in lowered
+            assert "原型" not in text
+
+        generated_readme = _read_text(rendered_templates[name] / "README.md")
+        generated_readme_zh = _read_text(rendered_templates[name] / "README_zh.md")
+        for text in [generated_readme, generated_readme_zh]:
+            assert "`c`, `c_poll`, `cpp`, and `cpp_poll`" in text or (
+                "`c`、`c_poll`、`cpp` 和 `cpp_poll`" in text
+            )
+            assert "gcc -std=c99" in text
+            assert "g++ -std=c++98" in text
+            assert "clang -std=c99" in text
+            assert "clang++ -std=c++98" in text
+            assert "cmake_minimum_required" in text
+
+
+@pytest.mark.unittest
 def test_generated_sources_preserve_banner_source_context_and_dependency_boundary(
     rendered_templates,
     extracted_rendered_templates,

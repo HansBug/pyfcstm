@@ -90,13 +90,17 @@ describe('diagnostics resources (PR-A)', () => {
             }
         });
 
-        it('contains C/C++ numeric catalog-only diagnostics', () => {
+        it('contains C/C++ numeric partial-static diagnostics', () => {
             const registry = loadCodesRegistry();
             for (const code of numericCodes) {
                 const spec = registry[code];
                 assert.ok(spec, `${code} missing from bundled codes registry`);
                 assert.equal(spec.severity, 'warning', `${code} must stay warning-level`);
-                assert.equal(spec.emit_tier, 'catalog_only', `${code} must not emit before analyzers land`);
+                assert.equal(
+                    spec.emit_tier,
+                    'partial_static_pipeline',
+                    `${code} is emitted by the Python inspect analyzer before jsfcstm parity lands`
+                );
                 assert.equal(spec.span_object, 'expression', `${code} must identify an expression`);
                 assert.ok(spec.example_dsl, `${code} must keep a parseable example DSL contract`);
                 assert.ok(spec.for_llm, `${code} must keep LLM-facing guidance`);

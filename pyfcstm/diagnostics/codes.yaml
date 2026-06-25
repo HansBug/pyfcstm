@@ -2078,7 +2078,7 @@ W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE:
   severity: warning
   span_object: expression
   capability: pure_static
-  emit_tier: catalog_only
+  emit_tier: partial_static_pipeline
   description: >-
     An integer literal that would be rendered into a C/C++ family template
     falls outside the default ``PYFCSTM_GENERATED_INT64`` signed range. This
@@ -2165,7 +2165,7 @@ W_NUMERIC_CONSTANT_DIVISION_BY_ZERO:
   severity: warning
   span_object: expression
   capability: const_fold
-  emit_tier: catalog_only
+  emit_tier: partial_static_pipeline
   description: >-
     A ``/`` or ``%`` operation has a right-hand side that the lightweight
     literal-only constant folder can classify as zero. This is reported as a
@@ -2244,7 +2244,7 @@ W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE:
   severity: warning
   span_object: expression
   capability: const_fold
-  emit_tier: catalog_only
+  emit_tier: partial_static_pipeline
   description: >-
     A shift count folds to a constant below zero or not less than the default
     C/C++ target integer width. This is a C/C++ 64-bit deployment-profile
@@ -2325,7 +2325,7 @@ W_NUMERIC_FLOAT_BITWISE:
   severity: warning
   span_object: expression
   capability: pure_static
-  emit_tier: catalog_only
+  emit_tier: partial_static_pipeline
   description: >-
     A value known to be ``float`` participates in a bitwise or shift operator
     that belongs to the C/C++ integer operation profile. The warning is

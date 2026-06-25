@@ -1686,13 +1686,20 @@ def test_lookup_api_codes_never_fire_in_static_pipeline():
 
 
 @pytest.mark.unittest
-def test_partial_static_pipeline_codes_dont_fire_on_pyfcstm():
-    """I-b sibling: E_TYPE_MISMATCH is currently ``emit_tier:
-    partial_static_pipeline`` — jsfcstm has an analyzer that emits it
-    on type-confused expressions, pyfcstm has no such analyzer. This
-    test pins the "pyfcstm doesn't fire it" half so downstream
-    consumers know not to expect it from the Python side.
+def test_js_only_partial_static_pipeline_codes_dont_fire_on_pyfcstm():
+    """Partial-static codes may be implemented on only one diagnostic end.
+
+    ``E_TYPE_MISMATCH`` is currently jsfcstm-only; numeric C/C++ profile
+    warnings are Python-only until the matching jsfcstm analyzer lands. This
+    test pins only the jsfcstm-only half so Python-emitted partial-static
+    diagnostics remain allowed.
     """
+    pyfcstm_partial_codes = {
+        'W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE',
+        'W_NUMERIC_CONSTANT_DIVISION_BY_ZERO',
+        'W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE',
+        'W_NUMERIC_FLOAT_BITWISE',
+    }
     from pyfcstm.diagnostics import CODE_REGISTRY
 
     partial_codes = {
@@ -1700,13 +1707,14 @@ def test_partial_static_pipeline_codes_dont_fire_on_pyfcstm():
         for code, spec in CODE_REGISTRY.items()
         if spec.emit_tier == 'partial_static_pipeline'
     }
-    if not partial_codes:
-        pytest.skip('no partial_static_pipeline codes declared')
+    js_only_partial_codes = partial_codes - pyfcstm_partial_codes
+    if not js_only_partial_codes:
+        pytest.skip('no js-only partial_static_pipeline codes declared')
 
     for name, dsl, _ in SINGLE_FILE_FIXTURES:
         codes, _, _ = _collect_codes_from_dsl(dsl)
-        leaked = [c for c in codes if c in partial_codes]
+        leaked = [c for c in codes if c in js_only_partial_codes]
         assert not leaked, (
-            f'fixture {name}: pyfcstm emitted partial_static_pipeline code(s) {leaked}; '
-            f'these are currently implemented only on jsfcstm.'
+            f'fixture {name}: pyfcstm emitted js-only partial_static_pipeline '
+            f'code(s) {leaked}.'
         )

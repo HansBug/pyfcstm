@@ -34,8 +34,12 @@ Root `templates/README*.md` files are not part of any template archive. Changing
 | `python` | `python` | Self-contained Python runtime template. |
 | `c` | `c` | Self-contained C99 runtime template with C++98 integration support. |
 | `c_poll` | `c` | Self-contained C99/C++98 runtime template using hook-polled events. |
+| `cpp` | `cpp` | Early-stage first-class C++ runtime template that reuses the `c` core and emits C++ wrapper files. |
+| `cpp_poll` | `cpp` | Early-stage first-class C++ poll runtime template that reuses the `c_poll` core and emits C++ wrapper files. |
 
-Template name and target language are related but not identical. For example, `c_poll` is a distinct template whose generated target language is still `c`.
+Template name and target language are related but not identical. For example, `c_poll` is a distinct template whose generated target language is still `c`, while `cpp_poll` is a distinct template whose generated target language is `cpp`.
+
+`cpp` and `cpp_poll` intentionally keep `experimental: true` during their early rollout. In this context, experimental means early first-class template status: the wrapper APIs, shared semantic alignment, packaging, and native toolchain matrix are usable and tested, but the templates should remain explicitly marked as early-stage until later stabilization work removes that flag.
 
 ## Reserved language vocabulary
 
@@ -49,7 +53,7 @@ Future templates are expected to use stable `template.json.language` values. The
 | Ruby | `ruby` | Leave room for Ruby source banners and dependency-free runtime design. |
 | Go | `go` | Leave room for Go source banners, `gofmt`, and standard-library-only runtime design. |
 
-Checks should distinguish current templates from reserved vocabulary. `python`, `c`, and `c_poll` are current template names. `java`, `js`, `rust`, `ruby`, and `go` are reserved target-language vocabulary and must not force empty directories to exist.
+Checks should distinguish current templates from reserved vocabulary. `python`, `c`, `c_poll`, `cpp`, and `cpp_poll` are current template names. `java`, `js`, `rust`, `ruby`, and `go` are reserved target-language vocabulary and must not force empty directories to exist.
 
 All future formatter or linter gates for these reserved languages inherit the same repository-wide standard: they are pragmatic quality gates for obvious generated-code roughness, not absolute style objectives. A future Java, JavaScript, Rust, Ruby, Go, or other template must document its formatter flow with that constraint before adding strict checks.
 
@@ -84,6 +88,8 @@ The core rendering call currently renders templates as `tp.render(model=model)`.
 
 Most keys are optional and default to an empty configuration. Generation-time dependencies such as Jinja2, PyYAML, `pathspec`, renderer helpers, and imported filters are allowed because they run inside `pyfcstm` during generation. They must not leak into generated runtime dependencies unless the generated target language explicitly owns that dependency and it is approved by the runtime policy below.
 
+Target-language-specific helpers should be loaded by the owning template through `type: import`. C-family helpers such as `to_c_identifier`, `to_c_path_identifier`, `render_c_action_body`, and `render_c_condition_body` belong to `c` / `c_poll` / `cpp` / `cpp_poll` configs rather than the default renderer environment.
+
 When a new `config.yaml` key is added in code, update this handbook, the affected template-level README files, and the structure checks together.
 
 ### Strict config keys and declarative item forms
@@ -110,7 +116,7 @@ Each packaged template directory should include `template.json`. The metadata lo
 | `title` | Human-readable template title. |
 | `description` | Short description used by template discovery and documentation. |
 | `language` | Target language of generated code, not necessarily the template name. |
-| `experimental` | Whether the template is experimental. |
+| `experimental` | Whether the template is experimental. For current `cpp` / `cpp_poll`, this means early first-class template status rather than an unimplemented template. |
 | `archive` | Packaged archive filename. The packager writes this as `<name>.zip`. |
 | `root_dir` | Root directory inside the archive. The packager writes this as `<name>`. |
 

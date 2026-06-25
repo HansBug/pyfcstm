@@ -3,7 +3,7 @@ JSON report contracts for native toolchain semantic alignment.
 
 This module defines the first-version result, command, and observation schema
 used by the native toolchain pytest helper. The schema is intentionally test
-local: generated C/C poll artifacts write public observations, and Python-side
+local: generated C-family artifacts write public observations, and Python-side
 pytest code stores command logs and summary results beside the build artifacts.
 
 The module contains:
@@ -103,9 +103,13 @@ COMMAND_STAGE_VALUES = {
     "run",
     "compile",
     "compile-machine-c",
+    "compile-machine-cpp",
     "compile-harness-c",
+    "compile-harness-cpp",
     "compile-header-cxx",
     "analyze",
+    "analyze-c",
+    "analyze-cxx",
 }
 OBSERVATION_PHASE_VALUES = {"init", "step", "error", "finish"}
 

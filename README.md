@@ -69,7 +69,7 @@ pyfcstm aims to provide a complete solution from conceptual design to code imple
 | **FSM DSL**                     | A concise and readable DSL syntax for defining states, nesting, transitions, events, conditions, and effects.                         | Focus on state machine logic, not programming language details.                                                | [DSL Syntax Tutorial](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html)                      |
 | **Hierarchical State Machines** | Supports **nested states** and **composite state** lifecycles (`enter`, `during`, `exit`).                                            | Capable of modeling complex real-time systems and protocols, enhancing maintainability.                        | [DSL Syntax Tutorial - State Definitions](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html)  |
 | **Expression System**           | Built-in mathematical and logical expression parser supporting variable definition, conditional guards, and state effects (`effect`). | Allows defining the state machine's internal data and behavior at the DSL level.                               | [DSL Syntax Tutorial - Expression System](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html)  |
-| **Templated Code Generation**   | Based on the **Jinja2** template engine, rendering the state machine model into target code through packaged built-in templates or custom template directories. | Use built-in `python`, `c`, and `c_poll` templates as starting points, or generate for virtually any language with your own templates. | [Template Tutorial](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html)                     |
+| **Templated Code Generation**   | Based on the **Jinja2** template engine, rendering the state machine model into target code through packaged built-in templates or custom template directories. | Use built-in `python`, `c`, `c_poll`, `cpp`, and `cpp_poll` templates as starting points, or generate for virtually any language with your own templates. | [Template Tutorial](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html)                     |
 | **Cross-Language Support**      | Easily enables state machine code generation for embedded or high-performance languages like **C/C++** through the template system.   | Suitable for scenarios where state machine logic needs to be deployed across different platforms or languages. | [Template Tutorial - Expression Styles](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html) |
 | **PlantUML Integration**        | Directly converts DSL files into **PlantUML** code, with preset detail levels and fine-grained visualization options.                | Facilitates design review and documentation generation.                                                        | [Visualization Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/visualization/index.html)            |
 | **Simulation Runtime**          | Runs FCSTM models directly in Python or from an interactive CLI REPL / batch executor.                                                | Lets you validate behavior before committing to generated code.                                                | [Simulation Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/simulation/index.html)                  |
@@ -228,8 +228,8 @@ Custom templates are still supported with `-t/--template-dir`:
 pyfcstm generate -i traffic_light.fcstm -t ./templates/c -o ./generated/c --clear
 ```
 
-Built-in templates currently include `python`, `c`, and `c_poll`; they are packaged from the repository
-`templates/` tree and exposed through `pyfcstm generate --template ...`. A custom template directory must contain a
+Built-in templates currently include `python`, `c`, `c_poll`, `cpp`, and `cpp_poll`; they are packaged from the repository
+`templates/` tree and exposed through `pyfcstm generate --template ...`. The `cpp` and `cpp_poll` templates are early first-class C++ templates that keep `experimental: true` while their integration surface stabilizes. A custom template directory must contain a
 `config.yaml`; any `.j2` files are rendered, and non-template files are copied as-is.
 
 ### 2. Using the Python API
@@ -646,8 +646,8 @@ template_directory/
 └── ...                  # Directory structure is preserved
 ```
 
-pyfcstm ships packaged built-in templates declared in `pyfcstm/template/index.json`, currently `python`, `c`, and
-`c_poll`. Use them when you want a ready reference runtime:
+pyfcstm ships packaged built-in templates declared in `pyfcstm/template/index.json`, currently `python`, `c`,
+`c_poll`, `cpp`, and `cpp_poll`. Use them when you want a ready reference runtime:
 
 ```shell
 pyfcstm generate -i machine.fcstm --template python -o ./out --clear

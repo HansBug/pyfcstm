@@ -14,6 +14,17 @@ import os
 import zipfile
 
 
+# These files intentionally reuse another repository template by symlink;
+# packaging must archive the target payload so built-in template zips stay
+# self-contained and renderers never need to understand repository symlinks.
+_REUSED_TEMPLATE_TARGETS = {
+    ("cpp", "machine.c.j2"): "../c/machine.c.j2",
+    ("cpp", "machine.h.j2"): "../c/machine.h.j2",
+    ("cpp_poll", "machine.c.j2"): "../c_poll/machine.c.j2",
+    ("cpp_poll", "machine.h.j2"): "../c_poll/machine.h.j2",
+}
+
+
 def _iter_template_dirs(source_dir):
     for name in sorted(os.listdir(source_dir)):
         current = os.path.join(source_dir, name)
@@ -42,6 +53,78 @@ def _load_template_metadata(template_dir, name):
     return metadata
 
 
+def _normalized_archive_path(path):
+    return path.replace(os.sep, "/")
+
+
+def _reused_template_target(source_dir, root_name, rel_file):
+    target = _REUSED_TEMPLATE_TARGETS.get(
+        (root_name, _normalized_archive_path(rel_file))
+    )
+    if target is None:
+        return None
+    return os.path.abspath(os.path.join(source_dir, target))
+
+
+def _resolve_archive_source(source_dir, src_file, root_name, rel_file):
+    target_file = _reused_template_target(source_dir, root_name, rel_file)
+    if target_file is None:
+        return src_file
+
+    if not os.path.isfile(target_file):
+        raise FileNotFoundError(
+            "Template {template!r} reuses {rel!r}, but target file {target!r} is missing.".format(
+                template=root_name,
+                rel=rel_file,
+                target=target_file,
+            )
+        )
+
+    expected_stub = _REUSED_TEMPLATE_TARGETS[
+        (root_name, _normalized_archive_path(rel_file))
+    ].encode("utf-8")
+
+    if os.path.islink(src_file):
+        # os.path.realpath does not resolve repository symlinks reliably on all
+        # Windows checkout modes. os.readlink preserves the repository-level
+        # relative target text, so accept the checked-in target spelling before
+        # falling back to realpath comparison.
+        link_target = os.readlink(src_file).replace("\\", "/").encode("utf-8")
+        if link_target != expected_stub and os.path.realpath(
+            src_file
+        ) != os.path.realpath(target_file):
+            raise ValueError(
+                "Template {template!r} reuse file {rel!r} points to {actual!r}, expected {target!r}.".format(
+                    template=root_name,
+                    rel=rel_file,
+                    actual=os.path.realpath(src_file),
+                    target=os.path.realpath(target_file),
+                )
+            )
+        return target_file
+
+    with open(target_file, "rb") as f:
+        target_payload = f.read()
+    with open(src_file, "rb") as f:
+        source_payload = f.read()
+
+    if source_payload == target_payload:
+        return src_file
+
+    normalized_stub = source_payload.strip().replace(b"\\", b"/")
+    if normalized_stub == expected_stub:
+        return target_file
+
+    raise ValueError(
+        "Template {template!r} reuse file {rel!r} must be a symlink, an exact copied target, "
+        "or the expected checkout stub {stub!r}.".format(
+            template=root_name,
+            rel=rel_file,
+            stub=expected_stub.decode("utf-8"),
+        )
+    )
+
+
 def _package_one_template(source_dir, output_file, root_name):
     archived_files = []
     with zipfile.ZipFile(output_file, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -51,8 +134,14 @@ def _package_one_template(source_dir, output_file, root_name):
                 src_file = os.path.join(root, file)
                 rel_file = os.path.relpath(src_file, source_dir)
                 arcname = os.path.join(root_name, rel_file)
-                zf.write(src_file, arcname)
-                archived_files.append((src_file, arcname))
+                archive_src_file = _resolve_archive_source(
+                    source_dir,
+                    src_file,
+                    root_name,
+                    rel_file,
+                )
+                zf.write(archive_src_file, arcname)
+                archived_files.append((archive_src_file, arcname))
     return archived_files
 
 

@@ -1,0 +1,7 @@
+{
+  "name": "cpp_poll",
+  "title": "C++ Poll Wrapper",
+  "description": "Early-stage first-class C++ poll template that reuses the C poll runtime core and emits C++ wrapper files.",
+  "language": "cpp",
+  "experimental": true
+}

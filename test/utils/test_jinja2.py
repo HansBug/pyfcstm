@@ -296,3 +296,17 @@ class TestJinjaEnvironmentEnhancement:
         template = env_with_settings.from_string(template_str)
         result = template.render(**extra_params)
         assert result == expected_str
+
+    def test_env_with_settings_does_not_inject_c_family_helpers_by_default(
+        self, env_with_settings
+    ):
+        c_helper_names = {
+            "to_c_identifier",
+            "to_c_path_identifier",
+            "to_c_public_identifier",
+            "to_c_public_macro_identifier",
+            "is_c_public_identifier_reserved",
+        }
+
+        assert not (c_helper_names & set(env_with_settings.filters))
+        assert "c_public_identifier_reserved" not in env_with_settings.tests

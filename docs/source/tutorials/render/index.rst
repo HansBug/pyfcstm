@@ -202,6 +202,24 @@ How to think about each section:
 - ``tests``: Jinja2 tests for conditions such as ``value is my_test``.
 - ``ignores``: files or directories the renderer should skip.
 
+The renderer treats an empty ``config.yaml`` as an empty mapping. Unknown
+top-level keys fail fast with a message that names the unknown key, the allowed
+key set, and the config path.
+
+Entries under ``globals``, ``filters``, and ``tests`` support three declarative
+forms:
+
+- ``type: template`` builds a callable from an inline Jinja2 snippet. It uses a
+  ``template`` field and may use ordered ``params``.
+- ``type: import`` imports a Python object from its ``from`` field. This is a
+  trusted-template code boundary and must not be used for untrusted templates.
+- ``type: value`` exposes the literal ``value`` field.
+
+Target-language-specific helpers should live in the owning template's
+``config.yaml``. For example, C runtime helpers are registered by the C and
+C Poll templates instead of being injected by the default renderer
+environment.
+
 Use ``config.yaml`` when the logic is renderer-oriented or naming-oriented.
 Use a Jinja2 macro when the logic is mainly about repeated file structure.
 

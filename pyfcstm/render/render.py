@@ -46,11 +46,11 @@ Example::
 import copy
 import os.path
 import pathlib
-import re
 import shutil
 import warnings
+from contextlib import contextmanager
 from functools import partial
-from typing import Dict, Callable, Union, Any
+from typing import Dict, Callable, Union, Any, Iterator
 
 import pathspec
 import yaml
@@ -73,6 +73,47 @@ from .func import process_item_to_object
 from ..dsl import node as dsl_nodes
 from ..model import StateMachine
 from ..utils import auto_decode
+
+
+_CONFIG_ALLOWED_TOP_LEVEL_KEYS = frozenset(
+    {
+        "expr_styles",
+        "stmt_styles",
+        "globals",
+        "filters",
+        "tests",
+        "ignores",
+    }
+)
+_MISSING = object()
+
+
+def _ensure_output_parent_dir(output_file: str) -> None:
+    """
+    Create the parent directory for an output file when one is present.
+
+    Bare file names such as ``'machine.py'`` have no parent directory, so
+    this helper intentionally leaves them unchanged.
+
+    :param output_file: Path of the file that will be rendered or copied.
+    :type output_file: str
+    :return: ``None``.
+    :rtype: None
+
+    Example::
+
+        >>> import os
+        >>> import tempfile
+        >>> with tempfile.TemporaryDirectory() as td:
+        ...     output_file = os.path.join(td, 'generated', 'machine.py')
+        ...     _ensure_output_parent_dir(output_file)
+        ...     os.path.isdir(os.path.dirname(output_file))
+        True
+        >>> _ensure_output_parent_dir('machine.py')
+    """
+    parent_dir = os.path.dirname(output_file)
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
 
 
 class StateMachineCodeRenderer:
@@ -141,14 +182,34 @@ class StateMachineCodeRenderer:
 
         :raises FileNotFoundError: If the configuration file does not exist
         :raises yaml.YAMLError: If the configuration file contains invalid YAML
+        :raises ValueError: If the configuration root is not a mapping or
+            contains unknown top-level keys.
         """
         with open(self.config_file, "r") as f:
             config_info = yaml.safe_load(f)
+        config_info = self._validate_config_info(config_info)
 
         expr_styles = config_info.pop("expr_styles", None) or {}
         expr_styles["default"] = expr_styles.get("default") or {"base_lang": "dsl"}
         d_templates = copy.deepcopy(_KNOWN_STYLES)
         for style_name, expr_style in expr_styles.items():
+            if not isinstance(expr_style, dict):
+                raise ValueError(
+                    "Renderer config %s expr_styles.%s must be a mapping, got %s."
+                    % (
+                        self.config_file,
+                        style_name,
+                        type(expr_style).__name__,
+                    )
+                )
+            if "base_lang" not in expr_style:
+                raise ValueError(
+                    "Renderer config %s expr_styles.%s must define 'base_lang'."
+                    % (
+                        self.config_file,
+                        style_name,
+                    )
+                )
             lang_style = expr_style.pop("base_lang")
             d_templates[style_name] = create_expr_render_template(
                 lang_style=lang_style,
@@ -196,6 +257,23 @@ class StateMachineCodeRenderer:
         }
         for style_name, stmt_style in stmt_styles.items():
             stmt_style = copy.deepcopy(stmt_style)
+            if not isinstance(stmt_style, dict):
+                raise ValueError(
+                    "Renderer config %s stmt_styles.%s must be a mapping, got %s."
+                    % (
+                        self.config_file,
+                        style_name,
+                        type(stmt_style).__name__,
+                    )
+                )
+            if "base_lang" not in stmt_style:
+                raise ValueError(
+                    "Renderer config %s stmt_styles.%s must define 'base_lang'."
+                    % (
+                        self.config_file,
+                        style_name,
+                    )
+                )
             lang_style = stmt_style.pop("base_lang")
             d_stmt_templates[style_name] = create_stmt_render_template(
                 lang_style=lang_style,
@@ -278,6 +356,155 @@ class StateMachineCodeRenderer:
         ignores = list(config_info.pop("ignores", None) or [])
         self._ignore_patterns.extend(ignores)
 
+    def _validate_config_info(self, config_info: Any) -> dict:
+        """
+        Validate and isolate the renderer configuration mapping.
+
+        Empty configuration files are accepted as empty mappings for backward
+        compatibility. Non-mapping roots and unknown top-level keys fail early
+        with diagnostics that include the source path, the offending key, and
+        the allowed key set. A deep copy is returned so later setup may consume
+        nested style and config-item dictionaries without mutating the loaded
+        YAML object held by callers or tests.
+
+        :param config_info: Object loaded from ``config.yaml``.
+        :type config_info: Any
+        :return: Mutable configuration mapping for subsequent setup.
+        :rtype: dict
+        :raises ValueError: If the loaded root is not a mapping, has unknown
+            top-level keys, or gives a top-level section an invalid type.
+
+        Example::
+
+            >>> renderer = StateMachineCodeRenderer.__new__(StateMachineCodeRenderer)
+            >>> renderer.config_file = 'config.yaml'
+            >>> renderer._validate_config_info(None)
+            {}
+        """
+        if config_info is None:
+            config_info = {}
+
+        if not isinstance(config_info, dict):
+            raise ValueError(
+                "Renderer config %s must be a mapping, got %s."
+                % (
+                    self.config_file,
+                    type(config_info).__name__,
+                )
+            )
+
+        unknown_keys = sorted(
+            set(config_info.keys()) - _CONFIG_ALLOWED_TOP_LEVEL_KEYS,
+            key=str,
+        )
+        if unknown_keys:
+            allowed_keys = ", ".join(sorted(_CONFIG_ALLOWED_TOP_LEVEL_KEYS))
+            unknown_key_text = ", ".join(repr(key) for key in unknown_keys)
+            raise ValueError(
+                "Renderer config %s contains unknown top-level key(s): %s. "
+                "Allowed keys: %s."
+                % (
+                    self.config_file,
+                    unknown_key_text,
+                    allowed_keys,
+                )
+            )
+
+        for section_name in (
+            "expr_styles",
+            "stmt_styles",
+            "globals",
+            "filters",
+            "tests",
+        ):
+            section_value = config_info.get(section_name)
+            if section_value is not None and not isinstance(section_value, dict):
+                raise ValueError(
+                    "Renderer config %s top-level key %r must be a mapping, got %s."
+                    % (
+                        self.config_file,
+                        section_name,
+                        type(section_value).__name__,
+                    )
+                )
+
+        ignore_patterns = config_info.get("ignores")
+        if ignore_patterns is not None:
+            if isinstance(ignore_patterns, (str, bytes)) or not isinstance(
+                ignore_patterns, list
+            ):
+                raise ValueError(
+                    "Renderer config %s top-level key 'ignores' must be a list "
+                    "of string patterns, got %s."
+                    % (
+                        self.config_file,
+                        type(ignore_patterns).__name__,
+                    )
+                )
+            for index, pattern in enumerate(ignore_patterns):
+                if not isinstance(pattern, str):
+                    raise ValueError(
+                        "Renderer config %s ignores[%d] must be a string pattern, got %s."
+                        % (
+                            self.config_file,
+                            index,
+                            type(pattern).__name__,
+                        )
+                    )
+
+        return copy.deepcopy(config_info)
+
+    @contextmanager
+    def _statement_default_context(self, model: StateMachine) -> Iterator[None]:
+        """
+        Temporarily expose model variables as statement-render defaults.
+
+        Statement rendering filters accept explicit ``state_vars`` and
+        ``var_types`` arguments. Generated templates usually omit them, so the
+        renderer provides the current model's persistent variables through
+        environment globals for the duration of one rendered file and restores
+        any previous values afterwards.
+
+        :param model: State machine model being rendered.
+        :type model: StateMachine
+        :return: Context manager that restores previous globals on exit.
+        :rtype: typing.ContextManager[None]
+
+        Example::
+
+            >>> from pyfcstm.model import StateMachine, State
+            >>> root = State(name='Root', path=('Root',), substates={})
+            >>> renderer = StateMachineCodeRenderer.__new__(StateMachineCodeRenderer)
+            >>> renderer.env = create_env()
+            >>> model = StateMachine(defines={}, root_state=root)
+            >>> with renderer._statement_default_context(model):
+            ...     renderer.env.globals['_stmt_default_state_vars']
+            ()
+        """
+        previous_state_vars = self.env.globals.get(
+            "_stmt_default_state_vars",
+            _MISSING,
+        )
+        previous_var_types = self.env.globals.get(
+            "_stmt_default_var_types",
+            _MISSING,
+        )
+        self.env.globals["_stmt_default_state_vars"] = tuple(model.defines.keys())
+        self.env.globals["_stmt_default_var_types"] = {
+            name: define.type for name, define in model.defines.items()
+        }
+        try:
+            yield
+        finally:
+            if previous_state_vars is _MISSING:
+                self.env.globals.pop("_stmt_default_state_vars", None)
+            else:
+                self.env.globals["_stmt_default_state_vars"] = previous_state_vars
+            if previous_var_types is _MISSING:
+                self.env.globals.pop("_stmt_default_var_types", None)
+            else:
+                self.env.globals["_stmt_default_var_types"] = previous_var_types
+
     def _prepare_for_file_mapping(self) -> None:
         """
         Prepare file mappings for rendering or copying.
@@ -323,40 +550,12 @@ class StateMachineCodeRenderer:
         :raises jinja2.exceptions.TemplateError: If there is an error in the template
         :raises IOError: If there is an error reading or writing files
         """
-        previous_state_vars = self.env.globals.get("_stmt_default_state_vars")
-        previous_var_types = self.env.globals.get("_stmt_default_var_types")
-        self.env.globals["_stmt_default_state_vars"] = tuple(model.defines.keys())
-        self.env.globals["_stmt_default_var_types"] = {
-            name: define.type for name, define in model.defines.items()
-        }
         tp = self.env.from_string(auto_decode(pathlib.Path(template_file).read_bytes()))
-        if os.path.dirname(output_file):
-            os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        try:
+        _ensure_output_parent_dir(output_file)
+        with self._statement_default_context(model):
             rendered = tp.render(model=model)
-            if os.path.basename(template_file) == "machine.py.j2":
-                rendered = re.sub(r"([\(\[\{]\n)\n+", r"\1", rendered)
-                rendered = re.sub(r"\n{3,}", "\n\n", rendered)
-                rendered = re.sub(r',\n\n([ \t]*["\]\}])', r",\n\1", rendered)
-                rendered = re.sub(r"\n\n(?=(?:class|def|@))", "\n\n\n", rendered)
-                rendered = re.sub(
-                    r"\n([ \t]*)\n(?=[ \t]*[\]\)\}](?:,)?\n)",
-                    r"\n\1",
-                    rendered,
-                )
-                rendered = re.sub(r"\n+\Z", "\n", rendered)
             with open(output_file, "w", encoding="utf-8", newline="\n") as f:
                 f.write(rendered)
-        finally:
-            if previous_state_vars is None:
-                self.env.globals.pop("_stmt_default_state_vars", None)
-            else:
-                self.env.globals["_stmt_default_state_vars"] = previous_state_vars
-            if previous_var_types is None:
-                self.env.globals.pop("_stmt_default_var_types", None)
-            else:
-                self.env.globals["_stmt_default_var_types"] = previous_var_types
 
     def copy_one_file(
         self, model: StateMachine, output_file: str, src_file: str
@@ -373,8 +572,7 @@ class StateMachineCodeRenderer:
         :raises IOError: If there is an error copying the file
         """
         _ = model
-        if os.path.dirname(output_file):
-            os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
+        _ensure_output_parent_dir(output_file)
         shutil.copyfile(src_file, output_file)
 
     def render(
@@ -409,12 +607,12 @@ class StateMachineCodeRenderer:
         if clear_previous_directory:
             for file in os.listdir(output_dir):
                 dst_file = os.path.join(output_dir, file)
-                if os.path.isfile(dst_file):
+                if os.path.islink(dst_file):
+                    os.unlink(dst_file)
+                elif os.path.isfile(dst_file):
                     os.remove(dst_file)
                 elif os.path.isdir(dst_file):
                     shutil.rmtree(dst_file)
-                elif os.path.islink(dst_file):
-                    os.unlink(dst_file)
                 else:
                     warnings.warn(
                         f"Unable to clean file {dst_file!r}."

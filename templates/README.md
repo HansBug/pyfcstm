@@ -34,10 +34,12 @@ Root `templates/README*.md` files are not part of any template archive. Changing
 | `python` | `python` | Self-contained Python runtime template. |
 | `c` | `c` | Self-contained C99 runtime template with C++98 integration support. |
 | `c_poll` | `c` | Self-contained C99/C++98 runtime template using hook-polled events. |
-| `cpp` | `cpp` | Experimental C++ template skeleton that reuses the `c` core and emits wrapper files. |
-| `cpp_poll` | `cpp` | Experimental C++ poll template skeleton that reuses the `c_poll` core and emits wrapper files. |
+| `cpp` | `cpp` | Early-stage first-class C++ runtime template that reuses the `c` core and emits C++ wrapper files. |
+| `cpp_poll` | `cpp` | Early-stage first-class C++ poll runtime template that reuses the `c_poll` core and emits C++ wrapper files. |
 
 Template name and target language are related but not identical. For example, `c_poll` is a distinct template whose generated target language is still `c`, while `cpp_poll` is a distinct template whose generated target language is `cpp`.
+
+`cpp` and `cpp_poll` intentionally keep `experimental: true` during their early rollout. In this context, experimental means early first-class template status: the wrapper APIs, shared semantic alignment, packaging, and native toolchain matrix are usable and tested, but the templates should remain explicitly marked as early-stage until later stabilization work removes that flag.
 
 ## Reserved language vocabulary
 
@@ -114,7 +116,7 @@ Each packaged template directory should include `template.json`. The metadata lo
 | `title` | Human-readable template title. |
 | `description` | Short description used by template discovery and documentation. |
 | `language` | Target language of generated code, not necessarily the template name. |
-| `experimental` | Whether the template is experimental. |
+| `experimental` | Whether the template is experimental. For current `cpp` / `cpp_poll`, this means early first-class template status rather than an unimplemented template. |
 | `archive` | Packaged archive filename. The packager writes this as `<name>.zip`. |
 | `root_dir` | Root directory inside the archive. The packager writes this as `<name>`. |
 

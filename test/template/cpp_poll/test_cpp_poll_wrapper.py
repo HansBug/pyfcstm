@@ -3,6 +3,7 @@ import textwrap
 
 import pytest
 
+from test.template.cpp_readme_utils import run_readme_command_block
 from ._utils import (
     available_compiler_pair,
     compile_and_run_cpp_poll_wrapper_harness,
@@ -307,6 +308,15 @@ def _extract_cpp_code_block(markdown, heading):
     return match.group(1)
 
 
+def _extract_named_bash_block(markdown, marker):
+    pattern = r"{marker}.*?```bash\n(.*?)\n```".format(marker=re.escape(marker))
+    match = re.search(pattern, markdown, re.S)
+    assert match is not None, "Cannot find bash command block after {!r}.".format(
+        marker
+    )
+    return match.group(1)
+
+
 @pytest.mark.unittest
 class TestCppPollWrapperTemplate:
     def test_poll_wrapper_api_compiles_and_runs_with_cmake(self):
@@ -338,6 +348,70 @@ class TestCppPollWrapperTemplate:
                 artifacts,
                 "cpp_poll_readme_quick_start_zh",
                 source,
+            )
+        assert result.returncode == 0, result.stderr
+
+    def test_poll_wrapper_generated_english_readme_gcc_direct_commands_run(self):
+        with render_cpp_poll_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
+            readme = _read(artifacts["readme_file"])
+            source = _extract_cpp_code_block(readme, "C++ Poll Wrapper Quick Start")
+            commands = _extract_named_bash_block(
+                readme,
+                "Compile the C poll core as C99",
+            )
+            result = run_readme_command_block(
+                artifacts,
+                "cpp_poll_readme_gcc_direct_en",
+                source,
+                commands,
+            )
+        assert result.returncode == 0, result.stderr
+
+    def test_poll_wrapper_generated_chinese_readme_gcc_direct_commands_run(self):
+        with render_cpp_poll_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
+            readme = _read(artifacts["readme_zh_file"])
+            source = _extract_cpp_code_block(readme, "C++ Poll Wrapper 快速开始")
+            commands = _extract_named_bash_block(
+                readme,
+                "先把 C poll core 按 C99 编译",
+            )
+            result = run_readme_command_block(
+                artifacts,
+                "cpp_poll_readme_gcc_direct_zh",
+                source,
+                commands,
+            )
+        assert result.returncode == 0, result.stderr
+
+    def test_poll_wrapper_generated_english_readme_clang_direct_commands_run(self):
+        with render_cpp_poll_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
+            readme = _read(artifacts["readme_file"])
+            source = _extract_cpp_code_block(readme, "C++ Poll Wrapper Quick Start")
+            commands = _extract_named_bash_block(
+                readme,
+                "The equivalent Clang / Clang++ form is:",
+            )
+            result = run_readme_command_block(
+                artifacts,
+                "cpp_poll_readme_clang_direct_en",
+                source,
+                commands,
+            )
+        assert result.returncode == 0, result.stderr
+
+    def test_poll_wrapper_generated_chinese_readme_clang_direct_commands_run(self):
+        with render_cpp_poll_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
+            readme = _read(artifacts["readme_zh_file"])
+            source = _extract_cpp_code_block(readme, "C++ Poll Wrapper 快速开始")
+            commands = _extract_named_bash_block(
+                readme,
+                "等价的 Clang / Clang++ 写法是：",
+            )
+            result = run_readme_command_block(
+                artifacts,
+                "cpp_poll_readme_clang_direct_zh",
+                source,
+                commands,
             )
         assert result.returncode == 0, result.stderr
 

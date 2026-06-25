@@ -59,7 +59,7 @@ root state `{{ model.root_state.name }}`. It includes the byte-identical C poll
 core from the `c_poll` template plus `machine.cpp` / `machine.hpp` wrapper
 files.
 
-The generated C core files are intended to stay close to a 4-space
+The generated C poll core files are intended to stay close to a 4-space
 `clang-format` style. The C++ poll wrapper is a thin C++98-compatible facade
 over the C poll API; it does not reimplement state-machine semantics.
 
@@ -293,7 +293,7 @@ same macro.
 
 ### Single-command C++ Poll Wrapper Builds
 
-Compile the C core as C99, then compile `machine.cpp` and your C++ application
+Compile the C poll core as C99, then compile `machine.cpp` and your C++ application
 as C++98. The wrapper is designed to work without exceptions, RTTI, STL
 containers, or default heap allocation.
 
@@ -304,7 +304,16 @@ g++ -std=c++98 -fno-exceptions -fno-rtti -Wall -Wextra -pedantic -O2 -c app.cpp 
 g++ machine.o machine_cpp.o app.o -lm -o app
 ```
 
-A no-heap C++ wrapper build uses the same profile macro for the C core,
+The equivalent Clang / Clang++ form is:
+
+```bash
+clang -std=c99 -Wall -Wextra -pedantic -O2 -c machine.c -o machine.o
+clang++ -std=c++98 -fno-exceptions -fno-rtti -Wall -Wextra -pedantic -O2 -c machine.cpp -o machine_cpp.o
+clang++ -std=c++98 -fno-exceptions -fno-rtti -Wall -Wextra -pedantic -O2 -c app.cpp -o app.o
+clang++ machine.o machine_cpp.o app.o -lm -o app
+```
+
+A no-heap C++ poll-wrapper build uses the same profile macro for the C poll core,
 `machine.cpp`, and every C++ source that includes `machine.hpp`:
 
 ```bash
@@ -374,16 +383,17 @@ g++ -x c++ -std=c++17 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o mac
 ### Native Toolchain Evidence
 
 The repository-level native toolchain matrix builds representative generated
-`c` and `c_poll` artifacts through pytest with the same shared semantic fixture
-corpus used by the simulator and template-alignment tests. Public profiles cover
+`c`, `c_poll`, `cpp`, and `cpp_poll` artifacts through pytest with the same
+shared semantic fixture corpus used by the simulator and template-alignment
+tests. Public profiles cover
 hosted GCC / Clang optimization levels, 32-bit Linux, AArch64 with QEMU,
 AppleClang, Windows MinGW / MSVC / clang-cl, sanitizer runs, compile-only ARM
 bare-metal checks, and report-only static analysis such as `cppcheck` and
 `clang-tidy`.
 
 Those profiles are an engineering compatibility baseline, not a certification
-claim. Treat them as reproducible evidence that the generated public API and
-shared semantics survive common compiler families and build modes. Safety
+claim. Treat them as reproducible evidence that the generated C and C++ public
+APIs and shared semantics survive common compiler families and build modes. Safety
 standards, coding-rule sign-off, board support packages, linker scripts, and
 project-specific warning policies remain the responsibility of the downstream
 integration process.

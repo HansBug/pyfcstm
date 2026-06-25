@@ -277,6 +277,15 @@ g++ -std=c++98 -fno-exceptions -fno-rtti -Wall -Wextra -pedantic -O2 -c app.cpp 
 g++ machine.o machine_cpp.o app.o -lm -o app
 ```
 
+The equivalent Clang / Clang++ form is:
+
+```bash
+clang -std=c99 -Wall -Wextra -pedantic -O2 -c machine.c -o machine.o
+clang++ -std=c++98 -fno-exceptions -fno-rtti -Wall -Wextra -pedantic -O2 -c machine.cpp -o machine_cpp.o
+clang++ -std=c++98 -fno-exceptions -fno-rtti -Wall -Wextra -pedantic -O2 -c app.cpp -o app.o
+clang++ machine.o machine_cpp.o app.o -lm -o app
+```
+
 A no-heap C++ wrapper build uses the same profile macro for the C core,
 `machine.cpp`, and every C++ source that includes `machine.hpp`:
 
@@ -347,16 +356,17 @@ g++ -x c++ -std=c++17 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o mac
 ### Native Toolchain Evidence
 
 The repository-level native toolchain matrix builds representative generated
-`c` and `c_poll` artifacts through pytest with the same shared semantic fixture
-corpus used by the simulator and template-alignment tests. Public profiles cover
+`c`, `c_poll`, `cpp`, and `cpp_poll` artifacts through pytest with the same
+shared semantic fixture corpus used by the simulator and template-alignment
+tests. Public profiles cover
 hosted GCC / Clang optimization levels, 32-bit Linux, AArch64 with QEMU,
 AppleClang, Windows MinGW / MSVC / clang-cl, sanitizer runs, compile-only ARM
 bare-metal checks, and report-only static analysis such as `cppcheck` and
 `clang-tidy`.
 
 Those profiles are an engineering compatibility baseline, not a certification
-claim. Treat them as reproducible evidence that the generated public API and
-shared semantics survive common compiler families and build modes. Safety
+claim. Treat them as reproducible evidence that the generated C and C++ public
+APIs and shared semantics survive common compiler families and build modes. Safety
 standards, coding-rule sign-off, board support packages, linker scripts, and
 project-specific warning policies remain the responsibility of the downstream
 integration process.

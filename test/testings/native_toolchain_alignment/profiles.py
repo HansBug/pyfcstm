@@ -278,7 +278,14 @@ def _msvc_profile(name: str, cc: str, cxx: str, optimization: str) -> ToolchainP
         optimization=optimization,
         timeout_seconds=300,
         cmake_generator="Ninja",
-        cmake_args=("-DPYFCSTM_NATIVE_C_STANDARD=11",),
+        cmake_args=(
+            "-DPYFCSTM_NATIVE_C_STANDARD=11",
+            # MSVC and clang-cl do not provide a real C++98 mode. GNU-like
+            # profiles enforce C++98 directly; MSVC-family profiles request
+            # the oldest widely supported CMake dialect knob instead of
+            # relying on CMake accepting an unsupported C++98 requirement.
+            "-DPYFCSTM_NATIVE_CXX_STANDARD=14",
+        ),
     )
 
 

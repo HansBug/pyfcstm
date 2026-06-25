@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-typedef pyfcstm_generated::{{ context.machine_class_name }}_cpp_poll::MachineWrapper Wrapper;
+typedef pyfcstm_generated::{{ context.machine_class_name }}_{{ context.wrapper_namespace_suffix }}::MachineWrapper Wrapper;
 
 static Wrapper::Hooks hooks = {{ context.machine_class_name.upper() }}_HOOKS_INIT;
 static Wrapper::EventId active_events[64];

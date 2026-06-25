@@ -32,6 +32,8 @@ from test.testings.native_toolchain_alignment.report import (
 from test.testings.native_toolchain_alignment.runner import (
     _analysis_argv,
     _analysis_targets,
+    _analysis_invocations,
+    _analysis_stage,
     _assert_successful_api_return,
     _case_artifact_dir,
     _tool_stem,
@@ -75,6 +77,9 @@ def test_profiles_cover_public_matrix_and_manual_entries():
     assert "-fno-rtti" in get_profile("linux-gcc-o2").cxx_flags
     assert "/GR-" in get_profile("windows-msvc-o2").cxx_flags
     assert "-DPYFCSTM_NATIVE_C_STANDARD=11" in get_profile("windows-msvc-o2").cmake_args
+    assert (
+        "-DPYFCSTM_NATIVE_CXX_STANDARD=14" in get_profile("windows-msvc-o2").cmake_args
+    )
     assert all(profile.public_required for profile in iter_profiles())
     assert all(not profile.public_required for profile in iter_manual_profiles())
     assert get_profile("manual-armclang-compile") in iter_all_profiles()
@@ -267,7 +272,7 @@ def test_result_schema_rejects_unknown_classification(tmp_path):
 
 @pytest.mark.unittest
 def test_report_schema_accepts_compile_and_analysis_classifications():
-    command = NativeCommandRecord("analyze", ["cppcheck", "machine.c"], "/tmp")
+    command = NativeCommandRecord("analyze-c", ["cppcheck", "machine.c"], "/tmp")
     result = NativeToolchainResult(
         "case",
         "c",
@@ -302,6 +307,8 @@ def test_report_schema_accepts_compile_stage_variants():
         "compile-harness-c",
         "compile-harness-cpp",
         "compile-header-cxx",
+        "analyze-c",
+        "analyze-cxx",
     ]:
         validate_command_data(
             NativeCommandRecord(stage, ["cc", "-c", "machine.c"], "/tmp").to_dict()
@@ -336,6 +343,7 @@ def test_cpp_harness_context_and_source_are_wrapper_only(tmp_path):
     assert '#include "machine.hpp"' in source
     assert '#include "machine.h"' not in source
     assert "Wrapper::EventId" in source
+    assert "RootMachine_cpp::MachineWrapper" in source
     assert '\\"api_return\\":null' in source
 
 
@@ -363,6 +371,37 @@ def test_cpp_harness_wrapper_only_guard_rejects_direct_c_entrypoints():
         _assert_cpp_wrapper_harness_source(
             '#include "machine.hpp"\nvoid *x = wrapper.native_handle();\n'
         )
+    with pytest.raises(AssertionError):
+        _assert_cpp_wrapper_harness_source(
+            '#include "machine.hpp"\ntypedef struct Machine Machine;\n'
+        )
+
+
+@pytest.mark.unittest
+def test_cpp_harness_wrapper_only_guard_accepts_wrapper_hook_types(tmp_path):
+    """
+    Verify wrapper-only guard allows hook callbacks through wrapper types.
+
+    :param tmp_path: Temporary artifact directory provided by pytest.
+    :type tmp_path: pathlib.Path
+    :return: ``None``.
+    :rtype: None
+
+    Example::
+
+        >>> case = load_semantic_case("abstract_handler_context_metadata")
+        >>> case.id
+        'abstract_handler_context_metadata'
+    """
+    case = load_semantic_case("abstract_handler_context_metadata")
+    harness_path = tmp_path / "harness.cpp"
+
+    context = render_harness("cpp", case, str(harness_path))
+    source = harness_path.read_text(encoding="utf-8")
+
+    assert context.hooks
+    assert "Wrapper::Machine" in source
+    assert "record_hook" in source
 
 
 @pytest.mark.unittest
@@ -393,6 +432,7 @@ def test_cpp_poll_harness_context_exposes_event_checks(tmp_path):
     render_harness("cpp_poll", case, str(harness_path))
     source = harness_path.read_text(encoding="utf-8")
     assert "Wrapper::EventChecks" in source
+    assert "RootMachine_cpp_poll::MachineWrapper" in source
     assert "wrapper->set_event_checks" in source
     assert '#include "machine.h"' not in source
 
@@ -426,7 +466,7 @@ def test_cmake_project_lists_cpp_wrapper_sources(tmp_path):
     assert "harness.cpp" in text
     assert "machine.c" in text
     assert "machine.cpp" in text
-    assert "#include \\\"${CMAKE_CURRENT_SOURCE_DIR}/machine.hpp\\\"" in text
+    assert '#include \\"${CMAKE_CURRENT_SOURCE_DIR}/machine.hpp\\"' in text
 
 
 @pytest.mark.unittest
@@ -506,8 +546,62 @@ def test_analysis_argv_inserts_targets_before_compile_separator(tmp_path):
     assert str(artifact_dir / "harness" / "harness.c") in argv[:separator]
     assert str(artifact_dir / "harness" / "machine.cpp") in argv[:separator]
     assert str(artifact_dir / "harness" / "harness.cpp") in argv[:separator]
-    assert "-std=c99" not in argv[separator + 1 :]
     assert "-Iharness" in argv[separator + 1 :]
+    assert "-std=c99" not in argv[separator + 1 :]
+
+
+@pytest.mark.unittest
+def test_analysis_invocations_split_c_and_cpp_standards(tmp_path):
+    """
+    Verify static-analysis commands use language-specific standards.
+
+    :param tmp_path: Temporary artifact directory provided by pytest.
+    :type tmp_path: pathlib.Path
+    :return: ``None``.
+    :rtype: None
+
+    Example::
+
+        >>> profile = get_profile("linux-clang-tidy")
+        >>> profile.name
+        'linux-clang-tidy'
+    """
+    artifact_dir = tmp_path / "artifact"
+    for relative_path in [
+        "generated/machine.c",
+        "generated/machine.h",
+        "generated/machine.cpp",
+        "generated/machine.hpp",
+    ]:
+        path = artifact_dir / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("/* sentinel */\n", encoding="utf-8")
+
+    invocations = _analysis_invocations(
+        get_profile("linux-clang-tidy"), str(artifact_dir)
+    )
+
+    assert [language for language, _ in invocations] == ["c", "cxx"]
+    c_argv = invocations[0][1]
+    cxx_argv = invocations[1][1]
+    assert "-std=c99" in c_argv[c_argv.index("--") + 1 :]
+    assert "-std=c++98" in cxx_argv[cxx_argv.index("--") + 1 :]
+    assert str(artifact_dir / "generated" / "machine.c") in c_argv[: c_argv.index("--")]
+    assert (
+        str(artifact_dir / "generated" / "machine.cpp")
+        in cxx_argv[: cxx_argv.index("--")]
+    )
+
+    cppcheck_invocations = _analysis_invocations(
+        get_profile("linux-cppcheck"), str(artifact_dir)
+    )
+    assert "--std=c99" in cppcheck_invocations[0][1]
+    assert "--std=c++03" in cppcheck_invocations[1][1]
+    assert _analysis_stage("c") == "analyze-c"
+    assert _analysis_stage("cxx") == "analyze-cxx"
+
+    with pytest.raises(ValueError, match="unsupported static-analysis language"):
+        _analysis_stage("rust")
 
 
 @pytest.mark.unittest

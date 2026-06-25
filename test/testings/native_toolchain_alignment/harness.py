@@ -51,7 +51,7 @@ _LINE_CONTINUATION_RE = re.compile(r"\\\r?\n")
 _TOKEN_PASTE_RE = re.compile(r"##")
 _NATIVE_HANDLE_CALL_RE = re.compile(r"\bnative_handle\s*\(")
 _DIRECT_C_TYPE_RE = re.compile(
-    r"\b[A-Za-z_][A-Za-z0-9_]*Machine"
+    r"(?<!Wrapper::)\b(?:[A-Za-z_][A-Za-z0-9_]*Machine|Machine)"
     r"(Vars|StateId|EventId|Int|Hooks|EventChecks|ExecutionContext|EventContext)?\b"
 )
 _DIRECT_C_API_RE = re.compile(
@@ -596,7 +596,9 @@ def _assert_cpp_wrapper_harness_source(source: str) -> None:
     assert "machine.h" not in normalized_includes
     assert not _TOKEN_PASTE_RE.search(symbol_source)
     assert not _NATIVE_HANDLE_CALL_RE.search(symbol_source)
-    symbol_source_without_alias = symbol_source.replace("MachineWrapper", "            ")
+    symbol_source_without_alias = symbol_source.replace(
+        "MachineWrapper", "            "
+    )
     assert not _DIRECT_C_TYPE_RE.search(symbol_source_without_alias)
     assert not _DIRECT_C_API_RE.search(symbol_source)
 

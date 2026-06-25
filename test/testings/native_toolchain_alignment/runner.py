@@ -28,7 +28,7 @@ import os
 import shutil
 import subprocess
 import time
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.template import extract_template
@@ -220,6 +220,27 @@ def _run_command(
         )
     )
     return completed
+
+
+def _analysis_stage(language: str) -> str:
+    """
+    Return the command-record stage for one static-analysis language bucket.
+
+    :param language: Static-analysis language bucket.
+    :type language: str
+    :return: Command stage name.
+    :rtype: str
+
+    Example::
+
+        >>> _analysis_stage("cxx")
+        'analyze-cxx'
+    """
+    if language == "c":
+        return "analyze-c"
+    if language == "cxx":
+        return "analyze-cxx"
+    raise ValueError("unsupported static-analysis language: %r" % language)
 
 
 def _version_text(
@@ -773,10 +794,31 @@ def _run_compile_only_case(
     return _write_result(artifact_dir, result)
 
 
-def _analysis_targets(artifact_dir: str) -> List[str]:
-    """Return generated and harness source files for static-analysis profiles."""
+def _analysis_targets(artifact_dir: str, language: Optional[str] = None) -> List[str]:
+    """
+    Return generated and harness source files for static-analysis profiles.
+
+    :param artifact_dir: Native toolchain artifact directory.
+    :type artifact_dir: str
+    :param language: Optional language bucket, either ``"c"`` or ``"cxx"``.
+    :type language: str, optional
+    :return: Sorted source paths selected for analysis.
+    :rtype: list[str]
+
+    Example::
+
+        >>> isinstance(_analysis_targets("/path/that/does/not/exist"), list)
+        True
+    """
     targets = []
-    extensions = {".c", ".h", ".cpp", ".hpp"}
+    if language == "c":
+        extensions = {".c", ".h"}
+    elif language == "cxx":
+        extensions = {".cpp", ".hpp"}
+    elif language is None:
+        extensions = {".c", ".h", ".cpp", ".hpp"}
+    else:
+        raise ValueError("unsupported static-analysis language: %r" % language)
     for relative_dir in ("generated", "harness"):
         root = os.path.join(artifact_dir, relative_dir)
         if not os.path.isdir(root):
@@ -788,13 +830,97 @@ def _analysis_targets(artifact_dir: str) -> List[str]:
     return sorted(targets)
 
 
-def _analysis_argv(profile: ToolchainProfile, artifact_dir: str) -> List[str]:
+def _analysis_compile_args(language: Optional[str]) -> List[str]:
+    """
+    Return compiler-style arguments for one static-analysis language bucket.
+
+    Mixed C/C++ analysis profiles are split by extension before execution so
+    clang-tidy and similar tools observe the same language-standard envelope as
+    the native build profiles. ``None`` keeps the historical mixed-target shape
+    for helper tests and callers that only need target insertion.
+
+    :param language: Optional language bucket, either ``"c"`` or ``"cxx"``.
+    :type language: str, optional
+    :return: Compile arguments passed after an analyzer's ``--`` separator.
+    :rtype: list[str]
+
+    Example::
+
+        >>> _analysis_compile_args("c")
+        ['-Iharness', '-x', 'c', '-std=c99']
+        >>> _analysis_compile_args("cxx")[-1]
+        '-std=c++98'
+    """
+    if language == "c":
+        return ["-Iharness", "-x", "c", "-std=c99"]
+    if language == "cxx":
+        return ["-Iharness", "-x", "c++", "-std=c++98"]
+    if language is None:
+        return ["-Iharness"]
+    raise ValueError("unsupported static-analysis language: %r" % language)
+
+
+def _analysis_standard_args(
+    profile: ToolchainProfile, language: Optional[str]
+) -> List[str]:
+    """
+    Return analyzer-native standard arguments for tools without ``--``.
+
+    :param profile: Static-analysis profile being executed.
+    :type profile: test.testings.native_toolchain_alignment.profiles.ToolchainProfile
+    :param language: Optional language bucket, either ``"c"`` or ``"cxx"``.
+    :type language: str, optional
+    :return: Tool-specific standard flags placed before targets.
+    :rtype: list[str]
+
+    Example::
+
+        >>> from test.testings.native_toolchain_alignment.profiles import get_profile
+        >>> _analysis_standard_args(get_profile("linux-cppcheck"), "c")
+        ['--std=c99']
+    """
+    if _tool_stem(profile.analysis_tool) != "cppcheck":
+        return []
+    if language == "c":
+        return ["--std=c99"]
+    if language == "cxx":
+        return ["--std=c++03"]
+    return []
+
+
+def _analysis_argv(
+    profile: ToolchainProfile, artifact_dir: str, language: Optional[str] = None
+) -> List[str]:
+    """
+    Build a static-analysis command for one language bucket.
+
+    :param profile: Static-analysis profile being executed.
+    :type profile: test.testings.native_toolchain_alignment.profiles.ToolchainProfile
+    :param artifact_dir: Native toolchain artifact directory.
+    :type artifact_dir: str
+    :param language: Optional language bucket, either ``"c"`` or ``"cxx"``.
+    :type language: str, optional
+    :return: Analyzer command line.
+    :rtype: list[str]
+
+    Example::
+
+        >>> from test.testings.native_toolchain_alignment.profiles import get_profile
+        >>> profile = get_profile("linux-clang-tidy")
+        >>> "--" in _analysis_argv(profile, "/path/that/does/not/exist", "cxx")
+        True
+    """
     args = list(profile.analysis_args)
-    targets = _analysis_targets(artifact_dir)
+    targets = _analysis_targets(artifact_dir, language)
     if "--" not in args:
-        return list(profile.analysis_tool) + args + targets
+        return (
+            list(profile.analysis_tool)
+            + args
+            + _analysis_standard_args(profile, language)
+            + targets
+        )
     separator_index = args.index("--")
-    compile_args = ["-Iharness"]
+    compile_args = _analysis_compile_args(language)
     return (
         list(profile.analysis_tool)
         + args[:separator_index]
@@ -804,9 +930,46 @@ def _analysis_argv(profile: ToolchainProfile, artifact_dir: str) -> List[str]:
         + [
             arg
             for arg in args[separator_index + 1 :]
-            if arg not in ("-std=c99", "-std=c++98", "-Iharness")
+            if arg
+            not in (
+                "-std=c99",
+                "-std=c++98",
+                "-std=c++03",
+                "-Iharness",
+                "-x",
+                "c",
+                "c++",
+            )
         ]
     )
+
+
+def _analysis_invocations(
+    profile: ToolchainProfile, artifact_dir: str
+) -> List[Tuple[str, List[str]]]:
+    """
+    Return static-analysis invocations split by source-language bucket.
+
+    :param profile: Static-analysis profile being executed.
+    :type profile: test.testings.native_toolchain_alignment.profiles.ToolchainProfile
+    :param artifact_dir: Native toolchain artifact directory.
+    :type artifact_dir: str
+    :return: ``(language, argv)`` pairs for non-empty C and C++ target sets.
+    :rtype: list[tuple[str, list[str]]]
+
+    Example::
+
+        >>> from test.testings.native_toolchain_alignment.profiles import get_profile
+        >>> _analysis_invocations(get_profile("linux-clang-tidy"), "/missing")
+        []
+    """
+    invocations = []
+    for language in ("c", "cxx"):
+        if _analysis_targets(artifact_dir, language):
+            invocations.append(
+                (language, _analysis_argv(profile, artifact_dir, language))
+            )
+    return invocations
 
 
 def _run_analyze_only_case(
@@ -820,7 +983,6 @@ def _run_analyze_only_case(
     start: float,
 ) -> Dict[str, Any]:
     report_path = os.path.join(artifact_dir, "analysis-report.txt")
-    argv = _analysis_argv(profile, artifact_dir)
     if not _analysis_targets(artifact_dir):
         _failure_result(
             case,
@@ -833,57 +995,60 @@ def _run_analyze_only_case(
             duration_seconds=time.time() - start,
             primary_tool_version=primary_tool_version,
         )
-    completed = _run_command(
-        "analyze",
-        argv,
-        artifact_dir,
-        logs_dir,
-        artifact_dir,
-        commands,
-        profile.timeout_seconds,
-    )
-    stdout_rel = commands[-1].stdout_path if commands else None
-    stderr_rel = commands[-1].stderr_path if commands else None
+    completed = None
+    for language, argv in _analysis_invocations(profile, artifact_dir):
+        completed = _run_command(
+            _analysis_stage(language),
+            argv,
+            artifact_dir,
+            logs_dir,
+            artifact_dir,
+            commands,
+            profile.timeout_seconds,
+        )
+        timed_out = commands[-1].timed_out if commands else False
+        if timed_out or completed.returncode is None:
+            _failure_result(
+                case,
+                template_name,
+                profile,
+                "analysis_timeout",
+                "static analysis timed out for %s/%s %s sources"
+                % (template_name, case.id, language),
+                commands,
+                artifact_dir,
+                completed.returncode,
+                time.time() - start,
+                primary_tool_version=primary_tool_version,
+            )
+        if completed.returncode not in (0,):
+            _failure_result(
+                case,
+                template_name,
+                profile,
+                "analysis_failure",
+                "static analysis failed for %s/%s %s sources with return code %r"
+                % (template_name, case.id, language, completed.returncode),
+                commands,
+                artifact_dir,
+                completed.returncode,
+                time.time() - start,
+                primary_tool_version=primary_tool_version,
+            )
     report_parts = []
-    for rel_path in (stdout_rel, stderr_rel):
-        if rel_path is None:
+    for command in commands:
+        if not command.stage.startswith("analyze"):
             continue
-        path = os.path.join(artifact_dir, rel_path)
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                report_parts.append(f.read())
+        report_parts.append("## %s" % " ".join(command.argv))
+        for rel_path in (command.stdout_path, command.stderr_path):
+            if rel_path is None:
+                continue
+            path = os.path.join(artifact_dir, rel_path)
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    report_parts.append(f.read())
     _write_text(report_path, "\n".join(report_parts))
     report_rel = _relative(report_path, artifact_dir)
-    timed_out = commands[-1].timed_out if commands else False
-    if timed_out or completed.returncode is None:
-        _failure_result(
-            case,
-            template_name,
-            profile,
-            "analysis_timeout",
-            "static analysis timed out for %s/%s" % (template_name, case.id),
-            commands,
-            artifact_dir,
-            completed.returncode,
-            time.time() - start,
-            primary_tool_version=primary_tool_version,
-            analysis_report_path=report_rel,
-        )
-    if completed.returncode not in (0,):
-        _failure_result(
-            case,
-            template_name,
-            profile,
-            "analysis_failure",
-            "static analysis failed for %s/%s with return code %r"
-            % (template_name, case.id, completed.returncode),
-            commands,
-            artifact_dir,
-            completed.returncode,
-            time.time() - start,
-            primary_tool_version=primary_tool_version,
-            analysis_report_path=report_rel,
-        )
     if not os.path.exists(report_path):
         _failure_result(
             case,
@@ -893,7 +1058,7 @@ def _run_analyze_only_case(
             "static analysis report is missing for %s/%s" % (template_name, case.id),
             commands,
             artifact_dir,
-            completed.returncode,
+            completed.returncode if completed is not None else None,
             time.time() - start,
             primary_tool_version=primary_tool_version,
             analysis_report_path=report_rel,
@@ -906,7 +1071,7 @@ def _run_analyze_only_case(
         "analysis_report_only",
         "static analysis report-only profile completed",
         commands,
-        completed.returncode,
+        completed.returncode if completed is not None else 0,
         time.time() - start,
         compiler_version=None,
         primary_tool_version=primary_tool_version,

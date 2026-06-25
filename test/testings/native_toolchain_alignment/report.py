@@ -108,6 +108,8 @@ COMMAND_STAGE_VALUES = {
     "compile-harness-cpp",
     "compile-header-cxx",
     "analyze",
+    "analyze-c",
+    "analyze-cxx",
 }
 OBSERVATION_PHASE_VALUES = {"init", "step", "error", "finish"}
 

@@ -14,7 +14,7 @@ small module map for tests and reviewers.
      - Explicit opt-in switch handling, public profile registry, manual
        self-hosted profile registry, and build-mode constants.
    * - ``harness``
-     - Case-specific C harness and CMake project rendering.
+     - Case-specific C/C++ harness and CMake project rendering.
    * - ``runner``
      - Configure/build/run, compile-only, analyze-only, and observation checks.
    * - ``report``

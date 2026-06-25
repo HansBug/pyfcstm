@@ -1,0 +1,314 @@
+#include "machine.hpp"
+
+#include <stdio.h>
+#include <string.h>
+
+typedef pyfcstm_generated::{{ context.machine_class_name }}_cpp::MachineWrapper Wrapper;
+
+static Wrapper::Hooks hooks = {{ context.machine_class_name.upper() }}_HOOKS_INIT;
+static const char *state_paths[] = {
+{% for state in context.states %}    {{ state.path | tojson }},
+{% endfor %}};
+{% if context.actions %}static const char *action_paths[] = {
+{% for action in context.actions %}    {{ action.path | tojson }},
+{% endfor %}};
+{% else %}static const char **action_paths = NULL;
+{% endif %}static const char *stage_names[] = {"enter", "during", "exit"};
+
+struct HandlerCall {
+    int action_id;
+    int state_id;
+    int stage_id;
+    int active_leaf_id;
+    int call_stage_id;
+    int abstract_target_id;
+    int named_ref_id;
+{% for variable in context.variables %}    Wrapper::Int {{ variable.field }}_is_int;
+    double {{ variable.field }}_is_float;
+{% endfor %}};
+
+static struct HandlerCall handler_calls[512];
+static size_t handler_call_count = 0u;
+
+static const char *lookup_string(const char **items, size_t count, int id)
+{
+    if (id < 0 || (size_t)id >= count) {
+        return NULL;
+    }
+    return items[id];
+}
+
+static void json_string(FILE *out, const char *value)
+{
+    const unsigned char *cursor;
+    if (value == NULL) {
+        fputs("null", out);
+        return;
+    }
+    fputc('"', out);
+    for (cursor = (const unsigned char *)value; *cursor != '\0'; ++cursor) {
+        if (*cursor == '"' || *cursor == '\\') {
+            fputc('\\', out);
+            fputc((int)*cursor, out);
+        } else if (*cursor == '\n') {
+            fputs("\\n", out);
+        } else if (*cursor == '\r') {
+            fputs("\\r", out);
+        } else if (*cursor == '\t') {
+            fputs("\\t", out);
+        } else {
+            fputc((int)*cursor, out);
+        }
+    }
+    fputc('"', out);
+}
+
+static void write_machine_int(FILE *out, Wrapper::Int value)
+{
+    char digits[64];
+    size_t count = 0u;
+    Wrapper::Int quotient = value;
+
+    if (quotient == 0) {
+        fputc('0', out);
+        return;
+    }
+    if (quotient < 0) {
+        fputc('-', out);
+        while (quotient != 0) {
+            Wrapper::Int next = quotient / 10;
+            digits[count++] = (char)('0' + (int)(next * 10 - quotient));
+            quotient = next;
+        }
+    } else {
+        while (quotient != 0) {
+            digits[count++] = (char)('0' + (int)(quotient % 10));
+            quotient = quotient / 10;
+        }
+    }
+    while (count > 0u) {
+        fputc((int)digits[--count], out);
+    }
+}
+
+static void write_vars(FILE *out, const Wrapper::Vars *vars)
+{
+    fputc('{', out);
+{% for variable in context.variables %}    if ({{ loop.index0 }} > 0) {
+        fputc(',', out);
+    }
+    json_string(out, {{ variable.name | tojson }});
+    fputc(':', out);
+{% if variable.type == 'int' %}    write_machine_int(out, vars->{{ variable.field }});
+{% else %}    fprintf(out, "%.17g", vars->{{ variable.field }});
+{% endif %}{% endfor %}    fputc('}', out);
+}
+
+static void write_handler_calls(FILE *out)
+{
+    size_t i;
+    fputc('[', out);
+    for (i = 0u; i < handler_call_count; ++i) {
+        const struct HandlerCall *call = &handler_calls[i];
+        if (i > 0u) {
+            fputc(',', out);
+        }
+        fputc('{', out);
+        fputs("\"action\":", out);
+        json_string(out, lookup_string(action_paths, {{ context.actions | length }}u, call->action_id));
+        fputs(",\"state\":", out);
+        json_string(out, lookup_string(state_paths, sizeof(state_paths) / sizeof(state_paths[0]), call->state_id));
+        fputs(",\"stage\":", out);
+        json_string(out, lookup_string(stage_names, sizeof(stage_names) / sizeof(stage_names[0]), call->stage_id));
+        fputs(",\"vars\":{", out);
+{% for variable in context.variables %}        if ({{ loop.index0 }} > 0) {
+            fputc(',', out);
+        }
+        json_string(out, {{ variable.name | tojson }});
+        fputc(':', out);
+{% if variable.type == 'int' %}        write_machine_int(out, call->{{ variable.field }}_is_int);
+{% else %}        fprintf(out, "%.17g", call->{{ variable.field }}_is_float);
+{% endif %}{% endfor %}        fputs("}", out);
+        fputs(",\"active_leaf\":", out);
+        json_string(out, lookup_string(state_paths, sizeof(state_paths) / sizeof(state_paths[0]), call->active_leaf_id));
+        fputs(",\"call_stage\":", out);
+        json_string(out, lookup_string(stage_names, sizeof(stage_names) / sizeof(stage_names[0]), call->call_stage_id));
+        fputs(",\"abstract_target\":", out);
+        json_string(out, lookup_string(action_paths, {{ context.actions | length }}u, call->abstract_target_id));
+        fputs(",\"named_ref\":", out);
+        json_string(out, lookup_string(action_paths, {{ context.actions | length }}u, call->named_ref_id));
+        fputc('}', out);
+    }
+    fputc(']', out);
+}
+
+{% if context.hooks %}extern "C" {
+static void record_hook(Wrapper::Machine *machine_ptr, const Wrapper::ExecutionContext *ctx, void *user_data)
+{
+    struct HandlerCall *call;
+    (void)machine_ptr;
+    (void)user_data;
+    if (handler_call_count >= sizeof(handler_calls) / sizeof(handler_calls[0])) {
+        return;
+    }
+    call = &handler_calls[handler_call_count++];
+    call->action_id = ctx->action_id;
+    call->state_id = ctx->state_id;
+    call->stage_id = ctx->action_stage_id;
+    call->active_leaf_id = ctx->active_leaf_state_id;
+    call->call_stage_id = ctx->call_stage_id;
+    call->abstract_target_id = ctx->abstract_target_id;
+    call->named_ref_id = ctx->named_ref_id;
+{% for variable in context.variables %}{% if variable.type == 'int' %}    call->{{ variable.field }}_is_int = ctx->vars->{{ variable.field }};
+{% else %}    call->{{ variable.field }}_is_float = ctx->vars->{{ variable.field }};
+{% endif %}{% endfor %}}
+}
+{% endif %}
+static void install_hooks(Wrapper *wrapper)
+{
+{% for hook in context.hooks %}    hooks.{{ hook.field }} = record_hook;
+{% endfor %}    wrapper->set_hooks(&hooks, NULL);
+}
+
+static int run_cycle(Wrapper *wrapper, const Wrapper::EventId *events, size_t event_count)
+{
+    return wrapper->cycle(events, event_count);
+}
+
+static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int cycle_index, const char **event_names, size_t event_count, const char *last_error)
+{
+    size_t i;
+    const char *state_path = wrapper->current_state_path();
+    const Wrapper::Vars *vars = wrapper->vars();
+    fputc('{', out);
+    fputs("\"schema_version\":\"1\"", out);
+    fputs(",\"case_id\":", out);
+    json_string(out, {{ context.case_id | tojson }});
+    fputs(",\"template_name\":", out);
+    json_string(out, {{ context.template_name | tojson }});
+    fputs(",\"phase\":\"step\"", out);
+    fprintf(out, ",\"step_index\":%d,\"cycle_index\":%d", step_index, cycle_index);
+    fputs(",\"events\":[", out);
+    for (i = 0u; i < event_count; ++i) {
+        if (i > 0u) {
+            fputc(',', out);
+        }
+        json_string(out, event_names[i]);
+    }
+    fputs("]", out);
+    fputs(",\"current_state\":", out);
+    json_string(out, state_path);
+    fputs(",\"is_ended\":", out);
+    fputs(wrapper->is_ended() ? "true" : "false", out);
+    fputs(",\"vars\":", out);
+    write_vars(out, vars);
+    fputs(",\"handler_calls\":", out);
+    write_handler_calls(out);
+    fputs(",\"last_error\":", out);
+    json_string(out, last_error);
+    fputs(",\"api_return\":null", out);
+    fputs("}\n", out);
+}
+
+static void write_initial_error(FILE *out, const char *last_error)
+{
+    fputc('{', out);
+    fputs("\"schema_version\":\"1\"", out);
+    fputs(",\"case_id\":", out);
+    json_string(out, {{ context.case_id | tojson }});
+    fputs(",\"template_name\":", out);
+    json_string(out, {{ context.template_name | tojson }});
+    fputs(",\"phase\":\"init\"", out);
+    fputs(",\"step_index\":null,\"cycle_index\":null", out);
+    fputs(",\"events\":[]", out);
+    fputs(",\"current_state\":null", out);
+    fputs(",\"is_ended\":false", out);
+    fputs(",\"vars\":{}", out);
+    fputs(",\"handler_calls\":[]", out);
+    fputs(",\"last_error\":", out);
+    json_string(out, last_error);
+    fputs(",\"api_return\":null", out);
+    fputs("}\n", out);
+}
+
+int main(int argc, char **argv)
+{
+    FILE *out;
+    Wrapper wrapper;
+    int api_return;
+    size_t cycle_iter;
+    const char *last_error;
+    if (argc < 2) {
+        return 2;
+    }
+    out = fopen(argv[1], "w");
+    if (out == NULL) {
+        return 2;
+    }
+{% if not context.initial %}    if (!wrapper.init()) {
+{% if context.initial_expect %}        write_initial_error(out, wrapper.last_error());
+        fclose(out);
+        return 0;
+{% else %}        fclose(out);
+        return 3;
+{% endif %}    }
+{% endif %}    install_hooks(&wrapper);
+{% if context.initial %}{% if context.initial.synthetic_error %}{% if context.initial_expect %}    write_initial_error(out, {{ context.initial.error_message | tojson }});
+    fclose(out);
+    return 0;
+{% else %}    fclose(out);
+    return 4;
+{% endif %}{% else %}    {
+        Wrapper::Vars initial_vars;
+        memset(&initial_vars, 0, sizeof(initial_vars));
+{% for assignment in context.initial.assignments %}        initial_vars.{{ assignment.field }} = {{ assignment.value }};
+{% endfor %}        if (!wrapper.hot_start({{ context.machine_macro_name }}_{{ context.initial.state_macro }}, &initial_vars)) {
+{% if context.initial_expect %}            write_initial_error(out, wrapper.last_error());
+            fclose(out);
+            return 0;
+{% else %}            fclose(out);
+            return 5;
+{% endif %}        }
+{% if context.initial_expect %}        write_initial_error(out, "Expected initial failure but hot start succeeded");
+        fclose(out);
+        return 0;
+{% endif %}    }
+{% endif %}{% elif context.initial_expect %}    if (wrapper.last_error() != NULL && wrapper.last_error()[0] != '\0') {
+        write_initial_error(out, wrapper.last_error());
+        fclose(out);
+        return 0;
+    }
+    write_initial_error(out, "Expected initial failure but initialization succeeded");
+    fclose(out);
+    return 0;
+{% endif %}
+{% for step in context.steps %}    {
+{% if step.events %}        const char *event_names[] = {
+{% for event in step.events %}            {{ event.path | tojson }},
+{% endfor %}        };
+{% else %}        const char **event_names = NULL;
+{% endif %}{% if step.pre_error_message %}        api_return = 0;
+        last_error = {{ step.pre_error_message | tojson }};
+{% elif step.cycle_count == 0 %}        api_return = 1;
+        last_error = NULL;
+{% else %}{% if step.events %}        Wrapper::EventId event_ids[] = {
+{% for event in step.events %}            {{ context.machine_macro_name }}_{{ event.macro }},
+{% endfor %}        };
+{% endif %}        api_return = 1;
+        last_error = NULL;
+        for (cycle_iter = 0u; cycle_iter < {{ step.cycle_count }}u; ++cycle_iter) {
+{% if step.events %}            api_return = run_cycle(&wrapper, event_ids, {{ step.events | length }}u);
+{% else %}            api_return = run_cycle(&wrapper, NULL, 0u);
+{% endif %}            if (!api_return) {
+                last_error = wrapper.last_error();
+                if (last_error == NULL || last_error[0] == '\0') {
+                    last_error = "Generated C++ wrapper cycle returned failure without diagnostic";
+                }
+                break;
+            }
+        }
+{% endif %}        write_observation(out, &wrapper, {{ step.index }}, 0, event_names, {{ step.events | length }}u, last_error);
+    }
+{% endfor %}    fclose(out);
+    return 0;
+}

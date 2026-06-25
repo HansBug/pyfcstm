@@ -2,9 +2,9 @@
 Pytest runner for native toolchain semantic alignment.
 
 This module drives one shared semantic fixture through a generated C-family
-runtime, a case-specific C harness, a concrete native toolchain profile, and a
-Python-side public-observation assertion pass. The runner is opt-in only and is
-used by template-side ``native_toolchain`` pytest files.
+runtime, a case-specific C or C++ harness, a concrete native toolchain profile,
+and a Python-side public-observation assertion pass. The runner is opt-in only
+and is used by template-side ``native_toolchain`` pytest files.
 
 The module contains:
 
@@ -34,6 +34,7 @@ from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.template import extract_template
 from test.testings import simulate_semantics
 from test.testings.native_toolchain_alignment.harness import (
+    HarnessContext,
     render_cmake_project,
     render_harness,
 )
@@ -514,18 +515,29 @@ def _render_generated_template(
 
 def _prepare_artifacts(
     template_name: str, case: SemanticCase, artifact_dir: str
-) -> None:
+) -> HarnessContext:
     generated_dir = os.path.join(artifact_dir, "generated")
     harness_dir = os.path.join(artifact_dir, "harness")
     _render_generated_template(template_name, case, generated_dir)
+    harness_source_name = (
+        "harness.cpp" if template_name in ("cpp", "cpp_poll") else "harness.c"
+    )
     context = render_harness(
-        template_name, case, os.path.join(harness_dir, "harness.c")
+        template_name, case, os.path.join(harness_dir, harness_source_name)
     )
     render_cmake_project(context, os.path.join(harness_dir, "CMakeLists.txt"))
-    for name in ("machine.c", "machine.h", "README.md", "README_zh.md"):
+    for name in (
+        "machine.c",
+        "machine.h",
+        "machine.cpp",
+        "machine.hpp",
+        "README.md",
+        "README_zh.md",
+    ):
         src = os.path.join(generated_dir, name)
         if os.path.exists(src):
             shutil.copy2(src, os.path.join(harness_dir, name))
+    return context
 
 
 def _cmake_configure_args(
@@ -624,6 +636,7 @@ def _run_compile_only_case(
     artifact_dir: str,
     logs_dir: str,
     build_dir: str,
+    context: HarnessContext,
     commands: List[NativeCommandRecord],
     compiler_version: Optional[str],
     primary_tool_version: Optional[str],
@@ -659,29 +672,66 @@ def _run_compile_only_case(
                 os.path.join(artifact_dir, "harness", "machine.c"),
             ],
             os.path.join(build_dir, "machine.o"),
-        ),
-        (
-            "compile-harness-c",
-            list(profile.cc)
-            + list(profile.c_flags)
-            + [
-                include_flag,
-                compile_flag,
-                os.path.join(artifact_dir, "harness", "harness.c"),
-            ],
-            os.path.join(build_dir, "harness.o"),
-        ),
+            c_output,
+        )
+    ]
+    if context.uses_cpp_wrapper:
+        compile_items.extend(
+            [
+                (
+                    "compile-machine-cpp",
+                    list(profile.cxx)
+                    + list(profile.cxx_flags)
+                    + [
+                        include_flag,
+                        compile_flag,
+                        os.path.join(artifact_dir, "harness", "machine.cpp"),
+                    ],
+                    os.path.join(build_dir, "machine_cpp.o"),
+                    cxx_output,
+                ),
+                (
+                    "compile-harness-cpp",
+                    list(profile.cxx)
+                    + list(profile.cxx_flags)
+                    + [
+                        include_flag,
+                        compile_flag,
+                        os.path.join(artifact_dir, "harness", "harness.cpp"),
+                    ],
+                    os.path.join(build_dir, "harness.o"),
+                    cxx_output,
+                ),
+            ]
+        )
+        header_name = "machine.hpp"
+    else:
+        compile_items.append(
+            (
+                "compile-harness-c",
+                list(profile.cc)
+                + list(profile.c_flags)
+                + [
+                    include_flag,
+                    compile_flag,
+                    os.path.join(artifact_dir, "harness", "harness.c"),
+                ],
+                os.path.join(build_dir, "harness.o"),
+                c_output,
+            )
+        )
+        header_name = "machine.h"
+    compile_items.append(
         (
             "compile-header-cxx",
-            list(profile.cxx)
-            + list(profile.cxx_flags)
-            + [include_flag, compile_flag, "-"],
+            list(profile.cxx) + list(profile.cxx_flags) + [include_flag],
             os.path.join(build_dir, "cxx_header_probe.o"),
-        ),
-    ]
-    header_probe = '#include "machine.h"\nint main(void) { return 0; }\n'
-    for stage, argv, output_path in compile_items:
-        argv = list(argv) + c_output(output_path)
+            cxx_output,
+        )
+    )
+    header_probe = '#include "%s"\nint main(void) { return 0; }\n' % header_name
+    for stage, argv, output_path, output_args in compile_items:
+        argv = list(argv) + output_args(output_path)
         if stage == "compile-header-cxx":
             probe_path = os.path.join(build_dir, "cxx_header_probe.cpp")
             _write_text(probe_path, header_probe)
@@ -689,7 +739,7 @@ def _run_compile_only_case(
                 list(profile.cxx)
                 + list(profile.cxx_flags)
                 + [include_flag, compile_flag, probe_path]
-                + cxx_output(output_path)
+                + output_args(output_path)
             )
         _run_compile_command(
             profile,
@@ -726,13 +776,14 @@ def _run_compile_only_case(
 def _analysis_targets(artifact_dir: str) -> List[str]:
     """Return generated and harness source files for static-analysis profiles."""
     targets = []
+    extensions = {".c", ".h", ".cpp", ".hpp"}
     for relative_dir in ("generated", "harness"):
         root = os.path.join(artifact_dir, relative_dir)
         if not os.path.isdir(root):
             continue
         for dirpath, _, filenames in os.walk(root):
             for filename in sorted(filenames):
-                if os.path.splitext(filename)[1].lower() in {".c", ".h"}:
+                if os.path.splitext(filename)[1].lower() in extensions:
                     targets.append(os.path.join(dirpath, filename))
     return sorted(targets)
 
@@ -743,12 +794,18 @@ def _analysis_argv(profile: ToolchainProfile, artifact_dir: str) -> List[str]:
     if "--" not in args:
         return list(profile.analysis_tool) + args + targets
     separator_index = args.index("--")
+    compile_args = ["-Iharness"]
     return (
         list(profile.analysis_tool)
         + args[:separator_index]
         + targets
         + ["--"]
-        + args[separator_index + 1 :]
+        + compile_args
+        + [
+            arg
+            for arg in args[separator_index + 1 :]
+            if arg not in ("-std=c99", "-std=c++98", "-Iharness")
+        ]
     )
 
 
@@ -764,6 +821,18 @@ def _run_analyze_only_case(
 ) -> Dict[str, Any]:
     report_path = os.path.join(artifact_dir, "analysis-report.txt")
     argv = _analysis_argv(profile, artifact_dir)
+    if not _analysis_targets(artifact_dir):
+        _failure_result(
+            case,
+            template_name,
+            profile,
+            "analysis_failure",
+            "static analysis targets are empty for %s/%s" % (template_name, case.id),
+            commands,
+            artifact_dir,
+            duration_seconds=time.time() - start,
+            primary_tool_version=primary_tool_version,
+        )
     completed = _run_command(
         "analyze",
         argv,
@@ -1045,7 +1114,7 @@ def run_native_toolchain_case(
             duration_seconds=time.time() - start,
         )
 
-    _prepare_artifacts(template_name, case, artifact_dir)
+    context = _prepare_artifacts(template_name, case, artifact_dir)
     compiler_version = _version_text(
         profile.cc, logs_dir, artifact_dir, commands, profile.timeout_seconds
     )
@@ -1082,6 +1151,7 @@ def run_native_toolchain_case(
             artifact_dir,
             logs_dir,
             build_dir,
+            context,
             commands,
             compiler_version,
             primary_tool_version,

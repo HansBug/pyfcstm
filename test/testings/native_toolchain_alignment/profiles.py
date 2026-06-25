@@ -231,7 +231,15 @@ def _host_profile(
 ) -> ToolchainProfile:
     required = tuple(required_binaries or ("cmake", cc, cxx))
     c_flags = ("-std=c99", optimization, "-Wall", "-Wextra", "-pedantic")
-    cxx_flags = ("-std=c++98", optimization, "-Wall", "-Wextra", "-pedantic")
+    cxx_flags = (
+        "-std=c++98",
+        "-fno-exceptions",
+        "-fno-rtti",
+        optimization,
+        "-Wall",
+        "-Wextra",
+        "-pedantic",
+    )
     return ToolchainProfile(
         name=name,
         build_mode=BUILD_MODE_CMAKE_RUN
@@ -261,7 +269,7 @@ def _msvc_profile(name: str, cc: str, cxx: str, optimization: str) -> ToolchainP
         cc=(cc,),
         cxx=(cxx,),
         c_flags=(optimization, "/W4"),
-        cxx_flags=(optimization, "/W4", "/TP", "/permissive-"),
+        cxx_flags=(optimization, "/W4", "/TP", "/permissive-", "/GR-"),
         required_binaries=("cmake", "ninja", cc, cxx),
         missing_tool_message=(
             "Install CMake, Ninja, and the Visual Studio C/C++ tools before running %s."
@@ -283,7 +291,15 @@ def _compile_only_profile(
         cc=(cc,),
         cxx=(cxx,),
         c_flags=("-std=c99", optimization, "-Wall", "-Wextra", "-pedantic"),
-        cxx_flags=("-std=c++98", optimization, "-Wall", "-Wextra", "-pedantic"),
+        cxx_flags=(
+            "-std=c++98",
+            "-fno-exceptions",
+            "-fno-rtti",
+            optimization,
+            "-Wall",
+            "-Wextra",
+            "-pedantic",
+        ),
         required_binaries=tuple(required_binaries),
         missing_tool_message="Install %s before running %s."
         % (
@@ -330,7 +346,7 @@ def _manual_compile_profile(name: str, cc: str, cxx: str) -> ToolchainProfile:
         cc=(cc,),
         cxx=(cxx,),
         c_flags=("-std=c99", "-O2"),
-        cxx_flags=("-std=c++98", "-O2"),
+        cxx_flags=("-std=c++98", "-fno-exceptions", "-fno-rtti", "-O2"),
         required_binaries=(cc, cxx),
         missing_tool_message=(
             "Run this manual native toolchain profile only on a self-hosted runner "
@@ -438,7 +454,6 @@ _ANALYSIS_PROFILES = (
         "cppcheck",
         (
             "--enable=warning,style,performance,portability",
-            "--std=c99",
             "--inline-suppr",
         ),
         "cppcheck warning/style/performance/portability report-only",
@@ -451,7 +466,6 @@ _ANALYSIS_PROFILES = (
             "--checks=bugprone-*,clang-analyzer-*,performance-*",
             "-header-filter=.*",
             "--",
-            "-std=c99",
             "-Iharness",
         ),
         "clang-tidy bugprone/clang-analyzer/performance report-only",

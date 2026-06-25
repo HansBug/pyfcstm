@@ -125,8 +125,9 @@ negative shifts, oversized shifts, variables, function calls, cross-statement
 constant propagation, block-local temporary inference, or algebraic rewrites such
 as `a - a` and `0 * x`.
 
-The shared catalog may contain `catalog_only` numeric codes. Those entries freeze
-code names and `refs` payloads before pyfcstm or jsfcstm emitters exist. They are
-not expected from `inspect_model()` or jsfcstm diagnostics until the corresponding
-analyzers land; tests for those entries should validate the catalog contract and
-parseable examples, not runtime emission.
+The first Python numeric analyzer emits these warnings from `inspect_model()`
+under `emit_tier: partial_static_pipeline`. In this tier, the Python static
+inspect pipeline has landed while jsfcstm parity is still a follow-up task. Tests
+for these entries must therefore validate both the shared catalog contract and
+Python runtime emission, while jsfcstm-side behavior stays out of scope until its
+matching analyzer lands.

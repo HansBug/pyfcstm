@@ -13,6 +13,7 @@ pyfcstm.diagnostics.analyzers
     data_flow
     design_health
     naming
+    numeric
     redundancy
     structural
     thresholds

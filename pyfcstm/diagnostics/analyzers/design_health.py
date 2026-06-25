@@ -9,6 +9,7 @@ from ...utils.validate import ModelDiagnostic
 from .const_fold import collect_const_fold_warnings
 from .data_flow import collect_data_flow_warnings
 from .naming import collect_naming_warnings
+from .numeric import collect_numeric_warnings
 from .redundancy import collect_redundancy_warnings
 from .structural import collect_structural_warnings
 from .thresholds import collect_threshold_warnings
@@ -83,6 +84,7 @@ def collect_design_health_warnings(
     diagnostics.extend(collect_data_flow_warnings(variables, machine))
     diagnostics.extend(collect_redundancy_warnings(transitions, events, states))
     diagnostics.extend(collect_transition_infos(states, transitions))
+    diagnostics.extend(collect_numeric_warnings(machine))
     return _with_suggested_fixes(diagnostics)
 
 

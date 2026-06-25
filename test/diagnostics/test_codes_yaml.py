@@ -157,7 +157,10 @@ class TestLoaderValidation:
         """)
         reg = load_codes(path)
         assert 'E_FOO' in reg
-        assert reg['E_FOO'].refs_schema['bar'].type == 'str'
+        field = reg['E_FOO'].refs_schema['bar']
+        assert field.type == 'str'
+        assert field.item_enum is None
+        assert field.exact_values is None
 
     def test_rejects_unknown_severity(self, tmp_path):
         path = self._write_yaml(tmp_path, """

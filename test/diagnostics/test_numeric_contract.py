@@ -291,6 +291,7 @@ def _single_diagnostic(source: str, code: str):
     ("literal_text", "expect_warning"),
     [
         (TOO_LARGE_SIGNED_INT64_TEXT, True),
+        ("+" + TOO_LARGE_SIGNED_INT64_TEXT, True),
         (MIN_SIGNED_INT64_TEXT, False),
         (TOO_SMALL_SIGNED_INT64_TEXT, True),
     ],
@@ -499,6 +500,26 @@ def test_numeric_shift_dynamic_rhs_is_not_reported():
             ["float", "int"],
             ["local_expression", "declared_var"],
         ),
+        (
+            "(1 / 2) & flags",
+            ["float", "int"],
+            ["local_expression", "declared_var"],
+        ),
+        (
+            "sin(1) & flags",
+            ["float", "int"],
+            ["local_expression", "declared_var"],
+        ),
+        (
+            "abs(gain) & flags",
+            ["float", "int"],
+            ["local_expression", "declared_var"],
+        ),
+        (
+            "((flags > 0) ? 1.0 : 0) & flags",
+            ["float", "int"],
+            ["local_expression", "declared_var"],
+        ),
     ],
 )
 def test_numeric_float_bitwise_operand_evidence(
@@ -519,6 +540,20 @@ def test_numeric_float_bitwise_operand_evidence(
     )
     assert diagnostic.refs["operand_types"] == expected_types
     assert diagnostic.refs["operand_type_sources"] == expected_sources
+
+
+def test_numeric_float_bitwise_does_not_treat_int_local_expression_as_float():
+    diagnostics = _diagnostics_for(
+        """
+        def int flags = 1;
+        state Root {
+            state A { during { flags = (1 + 2) & flags; } }
+            [*] -> A;
+        }
+        """,
+        "W_NUMERIC_FLOAT_BITWISE",
+    )
+    assert diagnostics == []
 
 
 def test_numeric_float_shift_can_overlap_shift_count_warning():
@@ -559,6 +594,26 @@ def test_numeric_scans_operation_if_branch_conditions_and_nested_assignments():
         for diag in report.diagnostics
         if diag.code == "W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE"
     ]
+    assert len(diagnostics) == 1
+    assert diagnostics[0].refs["context"] == "lifecycle_action"
+    assert diagnostics[0].refs["statement_kind"] == "operation_assignment"
+
+
+def test_numeric_lifecycle_refs_do_not_duplicate_inline_action_warnings():
+    diagnostics = _diagnostics_for(
+        """
+        def int value = 1;
+        state Root {
+            state A {
+                enter abstract HardwareInit;
+                enter Inline { value = value / 0; }
+                enter ref Inline;
+            }
+            [*] -> A;
+        }
+        """,
+        "W_NUMERIC_CONSTANT_DIVISION_BY_ZERO",
+    )
     assert len(diagnostics) == 1
     assert diagnostics[0].refs["context"] == "lifecycle_action"
     assert diagnostics[0].refs["statement_kind"] == "operation_assignment"

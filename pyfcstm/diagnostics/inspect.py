@@ -2462,12 +2462,13 @@ def _catalog_emittable_diagnostics(
 
     Example::
 
-        >>> _catalog_emittable_diagnostics((ModelDiagnostic(
+        >>> diagnostic = ModelDiagnostic(
         ...     code='W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE',
         ...     severity='warning',
-        ...     message='catalog-only test',
-        ... ),))
-        ()
+        ...     message='partial-static test',
+        ... )
+        >>> _catalog_emittable_diagnostics((diagnostic,)) == (diagnostic,)
+        True
     """
     return tuple(
         diagnostic

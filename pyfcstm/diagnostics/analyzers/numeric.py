@@ -35,8 +35,21 @@ _MAX_SIGNED_INT64 = 2**63 - 1
 _MIN_SIGNED_INT64_TEXT = str(_MIN_SIGNED_INT64)
 _MAX_SIGNED_INT64_TEXT = str(_MAX_SIGNED_INT64)
 _BITWISE_OPERATORS = {"&", "^", "|", "<<", ">>"}
-_NUMERIC_RESULT_OPERATORS = {"+", "-", "*", "/", "%", "**", "&", "^", "|", "<<", ">>"}
 _ZERO_OPERATORS = {"/", "%"}
+_C_FAMILY_INTEGER_UFUNCS = {"ceil", "floor", "int", "round", "sign", "trunc"}
+_C_FAMILY_CONDITION_OPERATORS = {
+    "&&",
+    "||",
+    "=>",
+    "xor",
+    "iff",
+    "==",
+    "!=",
+    "<",
+    "<=",
+    ">",
+    ">=",
+}
 _SHIFT_OPERATORS = {"<<", ">>"}
 _RUNTIME_NOTES = {
     "W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE": (
@@ -383,12 +396,13 @@ def _infer_numeric_type(
     expr: "Expr",
     var_types: Dict[str, str],
 ) -> Tuple[str, str]:
-    from ...model.expr import BinaryOp, Float, Integer, UnaryOp, Variable
+    from ...model.expr import BinaryOp, Boolean, ConditionalOp, Float, Integer
+    from ...model.expr import UnaryOp, UFunc, Variable
 
+    if isinstance(expr, (Boolean, Integer)):
+        return "int", "literal"
     if isinstance(expr, Float):
         return "float", "literal"
-    if isinstance(expr, Integer):
-        return "int", "literal"
     if isinstance(expr, Variable):
         declared = var_types.get(expr.name)
         if declared == "float":
@@ -396,23 +410,42 @@ def _infer_numeric_type(
         if declared == "int":
             return "int", "declared_var"
         return "unknown", "declared_var"
-    if isinstance(expr, UnaryOp) and expr.op in {"+", "-"}:
+    if isinstance(expr, UnaryOp):
         inner_type, inner_source = _infer_numeric_type(expr.x, var_types)
         if inner_type in {"int", "float"}:
             return inner_type, inner_source
         return "unknown", "local_expression"
-    if isinstance(expr, BinaryOp):
-        if expr.op not in _NUMERIC_RESULT_OPERATORS:
-            return "unknown", "local_expression"
-        left_type, _ = _infer_numeric_type(expr.x, var_types)
-        right_type, _ = _infer_numeric_type(expr.y, var_types)
-        if left_type == "float" or right_type == "float":
-            return "float", "local_expression"
-        if left_type == "int" and right_type == "int":
-            if expr.op in {"/", "**"}:
-                return "unknown", "local_expression"
+    if isinstance(expr, UFunc):
+        if expr.func in _C_FAMILY_INTEGER_UFUNCS:
             return "int", "local_expression"
+        if expr.func == "abs":
+            inner_type, _inner_source = _infer_numeric_type(expr.x, var_types)
+            if inner_type in {"int", "float"}:
+                return inner_type, "local_expression"
+            return "unknown", "local_expression"
+        return "float", "local_expression"
+    if isinstance(expr, BinaryOp):
+        if expr.op in _BITWISE_OPERATORS or expr.op in _C_FAMILY_CONDITION_OPERATORS:
+            return "int", "local_expression"
+        if expr.op == "/":
+            return "float", "local_expression"
+        left_type, _left_source = _infer_numeric_type(expr.x, var_types)
+        right_type, _right_source = _infer_numeric_type(expr.y, var_types)
+        return _merge_numeric_types(left_type, right_type), "local_expression"
+    if isinstance(expr, ConditionalOp):
+        true_type, _true_source = _infer_numeric_type(expr.if_true, var_types)
+        false_type, _false_source = _infer_numeric_type(expr.if_false, var_types)
+        return _merge_numeric_types(true_type, false_type), "local_expression"
     return "unknown", "local_expression"
+
+
+def _merge_numeric_types(type_a: str, type_b: str) -> str:
+    known = {type_a, type_b} - {"unknown"}
+    if "float" in known:
+        return "float"
+    if known == {"int"}:
+        return "int"
+    return "unknown"
 
 
 def _signed_integer_literal(expr: "Expr") -> Optional[Tuple[str, int]]:

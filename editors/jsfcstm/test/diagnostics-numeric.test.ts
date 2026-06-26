@@ -10,7 +10,7 @@ import {
 } from '../src/diagnostics';
 import {buildStateMachineModel} from '../src/model';
 import {parseAstDocument} from '../src/ast';
-import {createDocument, packageModule} from './support';
+import {createDocument, packageModule, sliceByRange} from './support';
 
 const MIN_SIGNED_INT64_TEXT = '-9223372036854775808';
 const MAX_SIGNED_INT64_TEXT = '9223372036854775807';
@@ -139,6 +139,26 @@ state Root { state A; [*] -> A; }
             assert.equal(diagnostic.refs.target_bits, 64);
             assert.equal(diagnostic.refs.signed, true);
         }
+    });
+
+    it('surfaces numeric warnings through collectDocumentDiagnostics with refs and non-fallback source range', async () => {
+        const source = `
+def int value = ${TOO_LARGE_SIGNED_INT64_TEXT};
+state Root { state A; [*] -> A; }
+`;
+        const document = createDocument(source, '/tmp/diagnostics-numeric-editor-surface.fcstm');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const diagnostic = diagnostics.find(item => item.code === 'W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE');
+
+        assert.ok(diagnostic, 'expected collectDocumentDiagnostics to surface numeric warning');
+        assert.equal(diagnostic.message.includes('C/C++'), true);
+        assert.equal(diagnostic.message.includes('Python'), true);
+        assert.equal(diagnostic.data?.target_family, 'c_family');
+        assert.deepEqual(diagnostic.data?.target_templates, C_FAMILY_TARGET_TEMPLATES);
+        assert.equal(String(diagnostic.data?.runtime_note).includes('C/C++'), true);
+        assert.equal(String(diagnostic.data?.runtime_note).includes('Python'), true);
+        assert.equal(diagnostic.data?.__rangeFallback, undefined);
+        assert.equal(sliceByRange(source, diagnostic.range).includes(TOO_LARGE_SIGNED_INT64_TEXT), true);
     });
 
     it('deduplicates signed integer child literals under unary operators', async () => {

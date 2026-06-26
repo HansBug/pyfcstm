@@ -125,9 +125,10 @@ negative shifts, oversized shifts, variables, function calls, cross-statement
 constant propagation, block-local temporary inference, or algebraic rewrites such
 as `a - a` and `0 * x`.
 
-The first Python numeric analyzer emits these warnings from `inspect_model()`
-under `emit_tier: partial_static_pipeline`. In this tier, the Python static
-inspect pipeline has landed while jsfcstm parity is still a follow-up task. Tests
-for these entries must therefore validate both the shared catalog contract and
-Python runtime emission, while jsfcstm-side behavior stays out of scope until its
-matching analyzer lands.
+The numeric analyzer now emits these warnings under
+`emit_tier: static_pipeline` on both pyfcstm and jsfcstm. Tests for these entries
+must validate the shared catalog contract, Python `inspect_model()` /
+`build_inspect_json()` output, jsfcstm `inspectModel()` output, and the
+`collectDocumentDiagnostics()` editor surface. Numeric warnings are still
+C/C++ deployment-profile diagnostics: Python generated runtimes are documented as
+a different target semantics rather than part of the C/C++ target set.

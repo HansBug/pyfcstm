@@ -1686,20 +1686,15 @@ def test_lookup_api_codes_never_fire_in_static_pipeline():
 
 
 @pytest.mark.unittest
-def test_js_only_partial_static_pipeline_codes_dont_fire_on_pyfcstm():
-    """Partial-static codes may be implemented on only one diagnostic end.
+def test_partial_static_pipeline_codes_dont_fire_on_pyfcstm():
+    """Partial-static codes are intentionally absent from pyfcstm output.
 
-    ``E_TYPE_MISMATCH`` is currently jsfcstm-only; numeric C/C++ profile
-    warnings are Python-only until the matching jsfcstm analyzer lands. This
-    test pins only the jsfcstm-only half so Python-emitted partial-static
-    diagnostics remain allowed.
+    Numeric C/C++ profile warnings have been promoted to
+    ``emit_tier: static_pipeline`` after both Python and jsfcstm analyzers
+    landed. Any remaining ``partial_static_pipeline`` code is therefore a
+    one-ended diagnostic such as jsfcstm-only type-shape analysis and must not
+    leak from pyfcstm's static inspect surface.
     """
-    pyfcstm_partial_codes = {
-        'W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE',
-        'W_NUMERIC_CONSTANT_DIVISION_BY_ZERO',
-        'W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE',
-        'W_NUMERIC_FLOAT_BITWISE',
-    }
     from pyfcstm.diagnostics import CODE_REGISTRY
 
     partial_codes = {
@@ -1707,14 +1702,13 @@ def test_js_only_partial_static_pipeline_codes_dont_fire_on_pyfcstm():
         for code, spec in CODE_REGISTRY.items()
         if spec.emit_tier == 'partial_static_pipeline'
     }
-    js_only_partial_codes = partial_codes - pyfcstm_partial_codes
-    if not js_only_partial_codes:
-        pytest.skip('no js-only partial_static_pipeline codes declared')
+    if not partial_codes:
+        pytest.skip('no partial_static_pipeline codes declared')
 
     for name, dsl, _ in SINGLE_FILE_FIXTURES:
         codes, _, _ = _collect_codes_from_dsl(dsl)
-        leaked = [c for c in codes if c in js_only_partial_codes]
+        leaked = [c for c in codes if c in partial_codes]
         assert not leaked, (
-            f'fixture {name}: pyfcstm emitted js-only partial_static_pipeline '
+            f'fixture {name}: pyfcstm emitted partial_static_pipeline '
             f'code(s) {leaked}.'
         )

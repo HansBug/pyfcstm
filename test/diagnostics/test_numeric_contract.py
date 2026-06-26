@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from textwrap import dedent
 
 import pytest
@@ -105,10 +106,10 @@ def test_numeric_contract_declares_exact_code_set():
 
 
 @pytest.mark.parametrize("code", sorted(NUMERIC_CODES))
-def test_numeric_codes_are_partial_static_warning_contracts(code):
+def test_numeric_codes_are_static_pipeline_warning_contracts(code):
     spec = CODE_REGISTRY[code]
     assert spec.severity == "warning"
-    assert spec.emit_tier == "partial_static_pipeline"
+    assert spec.emit_tier == "static_pipeline"
     assert spec.span_object == "expression"
     assert spec.for_llm is not None
     assert spec.example_dsl
@@ -128,16 +129,55 @@ def test_numeric_example_dsls_emit_after_python_analyzer_lands(code):
         assert "Python" in diag.message
 
 
-def test_catalog_filter_allows_partial_static_numeric_diagnostics():
+def test_catalog_filter_allows_static_pipeline_numeric_diagnostics():
     diagnostic = ModelDiagnostic(
         code="W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE",
         severity="warning",
-        message="synthetic partial-static diagnostic",
+        message="synthetic static-pipeline diagnostic",
         span=None,
         refs=SYNTHETIC_REFS["W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE"],
     )
 
     assert _catalog_emittable_diagnostics((diagnostic,)) == (diagnostic,)
+
+
+def test_numeric_diagnostics_surface_in_build_inspect_json(tmp_path):
+    source = dedent(f"""
+        def int too_large = {TOO_LARGE_SIGNED_INT64_TEXT};
+        def int result = 0;
+        def int input = 1;
+        def int flags = 1;
+        def float gain = 1.5;
+        state Root {{
+            state A {{ during {{ flags = gain & flags; }} }}
+            state B;
+            [*] -> A;
+            A -> B : if [(flags << 64) != 0];
+            B -> A effect {{ result = input / (1 - 1); }};
+        }}
+    """)
+    path = tmp_path / "numeric_cli.fcstm"
+    path.write_text(source, encoding="utf-8")
+
+    from pyfcstm.entry.inspect import build_inspect_json
+
+    payload = json.loads(build_inspect_json(str(path)))
+    diagnostics_by_code = {
+        diagnostic["code"]: diagnostic
+        for diagnostic in payload["diagnostics"]
+        if diagnostic["code"] in NUMERIC_CODES
+    }
+
+    assert set(diagnostics_by_code) == NUMERIC_CODES
+    for code in NUMERIC_CODES:
+        diagnostic = diagnostics_by_code[code]
+        refs = diagnostic["refs"]
+        assert "C/C++" in diagnostic["message"]
+        assert "Python" in diagnostic["message"]
+        assert refs["target_family"] == "c_family"
+        assert refs["target_templates"] == C_FAMILY_TARGET_TEMPLATES
+        assert "C/C++" in refs["runtime_note"]
+        assert "Python" in refs["runtime_note"]
 
 
 @pytest.mark.parametrize("code", sorted(NUMERIC_CODES))
@@ -455,7 +495,12 @@ def test_numeric_division_dynamic_rhs_is_not_reported():
     assert diagnostics == []
 
 
-@pytest.mark.parametrize("shift_expr", ["flags << -1", "flags >> 64"])
+@pytest.mark.parametrize("shift_expr", [
+    "flags << -1",
+    "flags >> 64",
+    "flags << -9223372036854775808",
+    "flags >> 9223372036854775808",
+])
 def test_numeric_shift_constant_out_of_target_range_reports(shift_expr):
     diagnostic = _single_diagnostic(
         f"""

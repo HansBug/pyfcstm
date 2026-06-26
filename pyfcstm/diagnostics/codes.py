@@ -98,11 +98,16 @@ _ALLOWED_CAPABILITIES = (
 #: * ``verify_pipeline`` — emitted only by the optional Python verify /
 #:   inspect adapter path. These codes are not part of the default static
 #:   inspect output and are not expected from jsfcstm.
+#: * ``catalog_only`` — declared in the shared catalog as a cross-end
+#:   contract but not emitted by any runtime pipeline yet. This is used when
+#:   a diagnostic contract must be frozen before the concrete pyfcstm /
+#:   jsfcstm analyzers land.
 _ALLOWED_EMIT_TIERS = (
     'static_pipeline',
     'lookup_api',
     'partial_static_pipeline',
     'verify_pipeline',
+    'catalog_only',
 )
 
 _ALLOWED_SUGGESTED_FIX_KINDS = ('insert', 'delete', 'replace')
@@ -188,6 +193,26 @@ class CodeFieldSpec:
         runtime validator) checks that ``refs[field]`` is a member of the
         tuple. ``None`` means the field has no enumeration constraint.
     :type enum: Optional[Tuple[str, ...]]
+    :param item_enum: Optional tuple of allowed string values for items in a
+        ``list[str]`` field. ``None`` means list members are unconstrained
+        beyond being strings.
+    :type item_enum: Optional[Tuple[str, ...]]
+    :param exact_values: Optional exact ordered value contract for a
+        ``list[str]`` field. ``None`` means the list may contain any ordered
+        members allowed by ``item_enum`` and the base type token.
+    :type exact_values: Optional[Tuple[str, ...]]
+
+    Example::
+
+        >>> spec = CodeFieldSpec(
+        ...     name='target_templates',
+        ...     type='list[str]',
+        ...     required=True,
+        ...     description='Target templates.',
+        ...     exact_values=('c', 'c_poll'),
+        ... )
+        >>> spec.exact_values
+        ('c', 'c_poll')
     """
 
     name: str
@@ -195,6 +220,8 @@ class CodeFieldSpec:
     required: bool
     description: str
     enum: Optional[Tuple[str, ...]] = None
+    item_enum: Optional[Tuple[str, ...]] = None
+    exact_values: Optional[Tuple[str, ...]] = None
 
 
 @dataclass(frozen=True)
@@ -288,8 +315,9 @@ class CodeSpec:
         end only (typically jsfcstm) — downstream LLM consumers should
         not block waiting for the missing end. ``'verify_pipeline'`` marks
         diagnostics emitted only by optional Python verify integration.
-        The field lets dispatchers register handlers based on the actual
-        emit channel.
+        ``'catalog_only'`` marks a shared catalog contract that no runtime
+        pipeline emits yet. The field lets dispatchers register handlers
+        based on the actual emit channel.
     :type emit_tier: str, optional
     :param span_object: Semantic source object identified by the primary
         diagnostic span. Repository entries declare this to make source-slice
@@ -320,6 +348,67 @@ class CodeSpec:
 
 def _ctx(path: str, *bits: str) -> str:
     return f"codes.yaml at {path!r}: " + " ".join(bits)
+
+
+def _validate_string_list_field(
+        path: str,
+        code: str,
+        field_name: str,
+        raw: Mapping[str, Any],
+        key: str,
+) -> Optional[Tuple[str, ...]]:
+    """
+    Validate an optional string-list schema attribute.
+
+    :param path: Filesystem path for diagnostics in error messages.
+    :type path: str
+    :param code: Diagnostic code currently being loaded.
+    :type code: str
+    :param field_name: Refs field name currently being loaded.
+    :type field_name: str
+    :param raw: Raw YAML mapping for the refs field.
+    :type raw: Mapping[str, Any]
+    :param key: Attribute name to validate.
+    :type key: str
+    :return: Tuple of string values when present, otherwise ``None``.
+    :rtype: Optional[Tuple[str, ...]]
+    :raises CodesSchemaError: If ``key`` is present but is not a non-empty
+        YAML list of strings.
+
+    Example::
+
+        >>> _validate_string_list_field(
+        ...     'codes.yaml',
+        ...     'W_DEMO',
+        ...     'target_templates',
+        ...     {'exact_values': ['c', 'c_poll']},
+        ...     'exact_values',
+        ... )
+        ('c', 'c_poll')
+    """
+    raw_values = raw.get(key)
+    if raw_values is None:
+        return None
+    if not isinstance(raw_values, list):
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} field {field_name!r} {key!r} must be a list "
+            f"when present, got {type(raw_values).__name__}.",
+        ))
+    if not raw_values:
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} field {field_name!r} {key!r} must be non-empty "
+            f"when present.",
+        ))
+    for value in raw_values:
+        if not isinstance(value, str):
+            raise CodesSchemaError(_ctx(
+                path,
+                f"code {code!r} field {field_name!r} {key!r} members must "
+                f"be strings, got {type(value).__name__}: {value!r}.",
+            ))
+    return tuple(raw_values)
 
 
 def _validate_field(path: str, code: str, field_name: str, raw: Any) -> CodeFieldSpec:
@@ -353,30 +442,41 @@ def _validate_field(path: str, code: str, field_name: str, raw: Any) -> CodeFiel
         ))
     description = str(raw.get('description', ''))
 
-    raw_enum = raw.get('enum')
-    field_enum: Optional[Tuple[str, ...]] = None
-    if raw_enum is not None:
-        if not isinstance(raw_enum, list):
+    field_enum = _validate_string_list_field(path, code, field_name, raw, 'enum')
+    item_enum = _validate_string_list_field(path, code, field_name, raw, 'item_enum')
+    exact_values = _validate_string_list_field(
+        path,
+        code,
+        field_name,
+        raw,
+        'exact_values',
+    )
+    if field_enum is not None and field_type != 'str':
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} field {field_name!r} 'enum' may only be used "
+            f"with type 'str', got {field_type!r}.",
+        ))
+    if item_enum is not None and field_type != 'list[str]':
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} field {field_name!r} 'item_enum' may only be "
+            f"used with type 'list[str]', got {field_type!r}.",
+        ))
+    if exact_values is not None and field_type != 'list[str]':
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} field {field_name!r} 'exact_values' may only be "
+            f"used with type 'list[str]', got {field_type!r}.",
+        ))
+    if item_enum is not None and exact_values is not None:
+        extra = set(exact_values) - set(item_enum)
+        if extra:
             raise CodesSchemaError(_ctx(
                 path,
-                f"code {code!r} field {field_name!r} 'enum' must be a list "
-                f"when present,",
-                f"got {type(raw_enum).__name__}",
+                f"code {code!r} field {field_name!r} 'exact_values' contains "
+                f"members outside 'item_enum': {sorted(extra)!r}.",
             ))
-        if not raw_enum:
-            raise CodesSchemaError(_ctx(
-                path,
-                f"code {code!r} field {field_name!r} 'enum' must be non-empty "
-                f"when present.",
-            ))
-        for value in raw_enum:
-            if not isinstance(value, str):
-                raise CodesSchemaError(_ctx(
-                    path,
-                    f"code {code!r} field {field_name!r} 'enum' members must "
-                    f"be strings, got {type(value).__name__}: {value!r}",
-                ))
-        field_enum = tuple(raw_enum)
 
     return CodeFieldSpec(
         name=field_name,
@@ -384,6 +484,8 @@ def _validate_field(path: str, code: str, field_name: str, raw: Any) -> CodeFiel
         required=raw_required,
         description=description,
         enum=field_enum,
+        item_enum=item_enum,
+        exact_values=exact_values,
     )
 
 

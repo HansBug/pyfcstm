@@ -105,6 +105,18 @@ def assert_refs_match_schema(diag: ModelDiagnostic, *, context: str = '') -> Non
             f'has runtime type {type(value).__name__}, expected schema '
             f'type {field_spec.type!r}'
         )
+        if field_spec.item_enum:
+            allowed_items = set(field_spec.item_enum)
+            invalid_items = [item for item in value if item not in allowed_items]
+            assert not invalid_items, (
+                f'{prefix}{diag.code} refs[{field_name!r}] has items '
+                f'{invalid_items!r} outside item_enum {sorted(allowed_items)}'
+            )
+        if field_spec.exact_values:
+            assert tuple(value) == field_spec.exact_values, (
+                f'{prefix}{diag.code} refs[{field_name!r}] = {value!r} '
+                f'does not match exact_values {field_spec.exact_values!r}'
+            )
         if field_name == 'suggested_fix' and value is not None:
             _assert_suggested_fix_payload(value, prefix=prefix, code=diag.code)
 

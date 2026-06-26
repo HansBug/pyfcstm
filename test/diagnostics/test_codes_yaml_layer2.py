@@ -208,6 +208,73 @@ class TestCapabilityField:
 
 
 @pytest.mark.unittest
+class TestEmitTierField:
+    def test_loader_accepts_catalog_only_emit_tier(self, tmp_path):
+        path = _write_yaml(tmp_path, """
+            W_DEMO:
+              severity: warning
+              description: catalog-only demo
+              capability: pure_static
+              emit_tier: catalog_only
+              refs:
+                expr_text:
+                  type: str
+                  required: true
+                  description: expression
+            """)
+        registry = load_codes(path)
+        assert registry['W_DEMO'].emit_tier == 'catalog_only'
+
+    def test_loader_accepts_list_string_item_contracts(self, tmp_path):
+        path = _write_yaml(tmp_path, """
+            W_DEMO:
+              severity: warning
+              description: list string schema demo
+              refs:
+                target_templates:
+                  type: list[str]
+                  required: true
+                  description: target template set
+                  item_enum: [c, c_poll]
+                  exact_values: [c, c_poll]
+            """)
+        spec = load_codes(path)['W_DEMO'].refs_schema['target_templates']
+        assert spec.item_enum == ('c', 'c_poll')
+        assert spec.exact_values == ('c', 'c_poll')
+
+    def test_loader_rejects_list_contracts_on_scalar_types(self, tmp_path):
+        path = _write_yaml(tmp_path, """
+            W_DEMO:
+              severity: warning
+              description: bad list schema demo
+              refs:
+                target_family:
+                  type: str
+                  required: true
+                  description: target family
+                  item_enum: [c_family]
+            """)
+        with pytest.raises(CodesSchemaError, match='item_enum'):
+            load_codes(path)
+
+    def test_loader_rejects_exact_values_outside_item_enum(self, tmp_path):
+        path = _write_yaml(tmp_path, """
+            W_DEMO:
+              severity: warning
+              description: bad exact list schema demo
+              refs:
+                target_templates:
+                  type: list[str]
+                  required: true
+                  description: target templates
+                  item_enum: [c, c_poll]
+                  exact_values: [c, python]
+            """)
+        with pytest.raises(CodesSchemaError, match='exact_values'):
+            load_codes(path)
+
+
+@pytest.mark.unittest
 class TestExistingErrorCodesStillLoad:
     """The 14 Layer 1 ``E_*`` codes must keep loading without ``for_llm``."""
 

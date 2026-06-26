@@ -1687,11 +1687,13 @@ def test_lookup_api_codes_never_fire_in_static_pipeline():
 
 @pytest.mark.unittest
 def test_partial_static_pipeline_codes_dont_fire_on_pyfcstm():
-    """I-b sibling: E_TYPE_MISMATCH is currently ``emit_tier:
-    partial_static_pipeline`` — jsfcstm has an analyzer that emits it
-    on type-confused expressions, pyfcstm has no such analyzer. This
-    test pins the "pyfcstm doesn't fire it" half so downstream
-    consumers know not to expect it from the Python side.
+    """Partial-static codes are intentionally absent from pyfcstm output.
+
+    Numeric C/C++ profile warnings have been promoted to
+    ``emit_tier: static_pipeline`` after both Python and jsfcstm analyzers
+    landed. Any remaining ``partial_static_pipeline`` code is therefore a
+    one-ended diagnostic such as jsfcstm-only type-shape analysis and must not
+    leak from pyfcstm's static inspect surface.
     """
     from pyfcstm.diagnostics import CODE_REGISTRY
 
@@ -1707,6 +1709,6 @@ def test_partial_static_pipeline_codes_dont_fire_on_pyfcstm():
         codes, _, _ = _collect_codes_from_dsl(dsl)
         leaked = [c for c in codes if c in partial_codes]
         assert not leaked, (
-            f'fixture {name}: pyfcstm emitted partial_static_pipeline code(s) {leaked}; '
-            f'these are currently implemented only on jsfcstm.'
+            f'fixture {name}: pyfcstm emitted partial_static_pipeline '
+            f'code(s) {leaked}.'
         )

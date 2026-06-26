@@ -90,7 +90,7 @@ describe('diagnostics resources (PR-A)', () => {
             }
         });
 
-        it('contains C/C++ numeric partial-static diagnostics', () => {
+        it('contains C/C++ numeric static-pipeline diagnostics', () => {
             const registry = loadCodesRegistry();
             for (const code of numericCodes) {
                 const spec = registry[code];
@@ -98,8 +98,8 @@ describe('diagnostics resources (PR-A)', () => {
                 assert.equal(spec.severity, 'warning', `${code} must stay warning-level`);
                 assert.equal(
                     spec.emit_tier,
-                    'partial_static_pipeline',
-                    `${code} is emitted by the Python inspect analyzer before jsfcstm parity lands`
+                    'static_pipeline',
+                    `${code} must stay in the complete static inspect pipeline`
                 );
                 assert.equal(spec.span_object, 'expression', `${code} must identify an expression`);
                 assert.ok(spec.example_dsl, `${code} must keep a parseable example DSL contract`);

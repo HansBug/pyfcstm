@@ -2465,7 +2465,7 @@ def _catalog_emittable_diagnostics(
         >>> diagnostic = ModelDiagnostic(
         ...     code='W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE',
         ...     severity='warning',
-        ...     message='partial-static test',
+        ...     message='static-pipeline test',
         ... )
         >>> _catalog_emittable_diagnostics((diagnostic,)) == (diagnostic,)
         True

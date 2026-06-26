@@ -86,6 +86,14 @@ Generated `c_poll` runtime 可能在控制应用中长期运行。因此资源 o
 
 扩展矩阵时，profile registry、workflow 触发列表、artifact 预期和本维护手册必须一起更新。公共 GitHub-hosted profile 缺工具时必须失败，不能静默 skip。授权或厂商 profile 应保持 manual / self-hosted，除非显式配置 runner，否则不得阻塞公共 CI。
 
+### 部署安全表述纪律
+
+`c_poll` 部署工作是 generated control state-machine code 的工程基线，不是认证包。Maintainer README 和 generated README 可以说明该模板支持 C99、C++98-compatible integration、调用方拥有对象、无堆剖面、完整 event-check 安装、共享语义对齐和原生工具链矩阵证据。它们不能说或暗示 generated output 已经满足 MISRA、AUTOSAR、DO-178C、IEC 61508、ISO 26262 或其他 safety standard ready。
+
+下游职责必须明确保留给消费项目。板级支持包、链接脚本、中断策略、调度器集成、静态分析 waiver 处理、编码规则签核和认证证据都属于 consumer project。模板文档应帮助该项目找到正确的集成检查点，而不是假装完成这些下游流程。
+
+数值风险表述必须绑定目标。Inspect diagnostics 说的是默认 C/C++ deployment profile；不能把它们写成 target-independent FCSTM model error，也不能写成 Python 模板风险。后续 BitVec、BMC、fixed-point、numeric-profile、checked-arithmetic 或 generated failure channel 工作属于 verify 和 codegen 设计路线，不属于 README-only 模板补丁。
+
 ## 公开集成面
 
 `machine.h` 负责稳定集成契约：

@@ -57,6 +57,17 @@ generated README build examples aligned with the profiles that the matrix
 actually exercises, including CMake, GCC/G++, Clang/Clang++, no-exception,
 no-RTTI, and no-heap forms where applicable.
 
+Deployment-safety wording follows the same C-family boundary as
+`templates/c/`. This template provides a non-certified engineering baseline,
+not a certification package: C99 core, C++98 wrapper, caller-owned object and
+no-heap integration, shared semantic alignment, and native toolchain matrix
+evidence. Do not describe generated output as MISRA, AUTOSAR, DO-178C, IEC
+61508, ISO 26262, or other certification ready. Numeric inspect warnings are
+default C/C++ deployment-profile diagnostics, not target-independent FCSTM
+model errors or Python-template risks. Future BitVec, BMC, fixed-point,
+numeric-profile, checked-arithmetic, or generated failure channel work belongs
+to the verify and codegen design lines.
+
 Generated README examples are part of the template contract. When changing the
 wrapper API or compile guidance, update both generated README templates and
 verify representative commands through template tests.

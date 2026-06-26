@@ -468,6 +468,73 @@ def test_template_readmes_keep_maintainer_and_generated_guidance_separate(
 
 
 @pytest.mark.unittest
+def test_c_family_readmes_document_deployment_safety_boundaries(rendered_templates):
+    root_readme = _read_text(_TEMPLATES_DIR / "README.md")
+    root_readme_zh = _read_text(_TEMPLATES_DIR / "README_zh.md")
+
+    assert "C/C++ deployment safety wording" in root_readme
+    assert "C/C++ 部署安全表述" in root_readme_zh
+
+    for name in ["c", "c_poll", "cpp", "cpp_poll"]:
+        maintainer_readme = _read_text(_TEMPLATES_DIR / name / "README.md")
+        maintainer_readme_zh = _read_text(_TEMPLATES_DIR / name / "README_zh.md")
+        maintainer_readme_words = " ".join(maintainer_readme.split())
+        maintainer_readme_zh_words = " ".join(maintainer_readme_zh.split())
+        assert "engineering baseline" in maintainer_readme_words
+        assert "not a certification package" in maintainer_readme_words
+        assert "不是认证包" in maintainer_readme_zh_words
+        assert (
+            "Numeric inspect warning" in maintainer_readme
+            or "Numeric-risk wording" in maintainer_readme
+        )
+        assert (
+            "Numeric inspect warning" in maintainer_readme_zh
+            or "数值风险表述" in maintainer_readme_zh
+        )
+
+        generated_readme = _read_text(rendered_templates[name] / "README.md")
+        generated_readme_zh = _read_text(rendered_templates[name] / "README_zh.md")
+        for text in [generated_readme, generated_readme_zh]:
+            assert "pyfcstm inspect" in text
+            assert "C/C++ deployment-profile" in text
+            assert "Python" in text
+            assert "https://github.com/HansBug/pyfcstm/issues/254" in text
+            assert "https://github.com/HansBug/pyfcstm/issues/255" in text
+            for certification_term in [
+                "MISRA",
+                "AUTOSAR",
+                "DO-178C",
+                "IEC 61508",
+                "ISO 26262",
+            ]:
+                assert certification_term in text
+            assert "non-reentrant" in text
+            assert "volatile" in text
+            assert "DMA" in text
+
+        assert "Integration Preflight Checklist" in generated_readme
+        assert "engineering evidence" in generated_readme
+        assert "集成前检查清单" in generated_readme_zh
+        assert "工程证据" in generated_readme_zh
+
+    for name in ["c_poll", "cpp_poll"]:
+        generated_readme = _read_text(rendered_templates[name] / "README.md")
+        generated_readme_zh = _read_text(rendered_templates[name] / "README_zh.md")
+        assert "complete" in generated_readme
+        assert "EventChecks" in generated_readme
+        assert "完整" in generated_readme_zh
+        assert "EventChecks" in generated_readme_zh
+
+    for name in ["cpp", "cpp_poll"]:
+        generated_readme = _read_text(rendered_templates[name] / "README.md")
+        generated_readme_zh = _read_text(rendered_templates[name] / "README_zh.md")
+        assert "wrapper surface" in generated_readme
+        assert "MachineWrapper" in generated_readme
+        assert "wrapper surface" in generated_readme_zh
+        assert "MachineWrapper" in generated_readme_zh
+
+
+@pytest.mark.unittest
 def test_cpp_template_documentation_describes_early_first_class_status(
     rendered_templates,
 ):

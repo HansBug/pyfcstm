@@ -75,6 +75,12 @@ interface SignedIntegerLiteral {
 type NumericType = 'int' | 'float' | 'unknown';
 type NumericTypeSource = 'literal' | 'declared_var' | 'local_expression';
 
+interface FoldedExactInteger {
+    kind: 'exactInteger';
+    sign: -1 | 1;
+    digits: string;
+}
+
 /**
  * Collect C/C++ deployment-profile numeric warnings for a model.
  */
@@ -247,22 +253,16 @@ function constantZeroDivisionDiagnostic(context: ExpressionContext, expr: Expr):
 
 function shiftCountDiagnostic(context: ExpressionContext, expr: Expr): ModelDiagnosticJson[] {
     if (!(expr instanceof BinaryOp) || !SHIFT_OPERATORS.has(expr.op)) return [];
-    const rhsValue = foldNumericExpression(expr.y);
-    if (
-        typeof rhsValue !== 'number'
-        || !Number.isFinite(rhsValue)
-        || !(rhsValue < 0 || rhsValue >= TARGET_BITS)
-    ) {
-        return [];
-    }
+    const shiftCountText = outOfRangeShiftCountText(foldNumericExpression(expr.y));
+    if (shiftCountText === null) return [];
     const refs = baseRefs('W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE', context, exprText(expr));
     refs.operator = expr.op;
     refs.target_bits = TARGET_BITS;
-    refs.shift_count_text = numberText(rhsValue);
+    refs.shift_count_text = shiftCountText;
     return [diagnostic(
         'W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE',
         `C/C++ default deployment profile risk: the shift count of operator ${JSON.stringify(expr.op)} `
-            + `folds to ${numberText(rhsValue)}, outside 0 <= count < ${TARGET_BITS}; `
+            + `folds to ${shiftCountText}, outside 0 <= count < ${TARGET_BITS}; `
             + 'Python generated runtimes do not represent the same fixed-width shift contract.',
         refs,
     )];
@@ -342,8 +342,9 @@ function inferNumericType(
 }
 
 function mergeNumericTypes(typeA: NumericType, typeB: NumericType): NumericType {
-    if (typeA === 'float' || typeB === 'float') return 'float';
-    if (typeA === 'int' && typeB === 'int') return 'int';
+    const known = new Set([typeA, typeB].filter((type): type is Exclude<NumericType, 'unknown'> => type !== 'unknown'));
+    if (known.has('float')) return 'float';
+    if (known.size === 1 && known.has('int')) return 'int';
     return 'unknown';
 }
 
@@ -410,6 +411,35 @@ function compareUnsignedDecimal(left: string, right: string): number {
     }
     if (leftNormalized === rightNormalized) return 0;
     return leftNormalized < rightNormalized ? -1 : 1;
+}
+
+function outOfRangeShiftCountText(value: unknown): string | null {
+    if (typeof value === 'number') {
+        if (!Number.isFinite(value) || !(value < 0 || value >= TARGET_BITS)) return null;
+        return numberText(value);
+    }
+
+    const exactInteger = foldedExactInteger(value);
+    if (exactInteger === null) return null;
+    if (exactInteger.sign < 0 && exactInteger.digits !== '0') {
+        return `-${exactInteger.digits}`;
+    }
+    return compareUnsignedDecimal(exactInteger.digits, String(TARGET_BITS)) >= 0
+        ? exactInteger.digits
+        : null;
+}
+
+function foldedExactInteger(value: unknown): FoldedExactInteger | null {
+    if (typeof value !== 'object' || value === null) return null;
+    const maybe = value as Record<string, unknown>;
+    if (maybe.kind !== 'exactInteger') return null;
+    if (maybe.sign !== -1 && maybe.sign !== 1) return null;
+    if (typeof maybe.digits !== 'string' || !/^\d+$/.test(maybe.digits)) return null;
+    return {
+        kind: 'exactInteger',
+        sign: maybe.sign,
+        digits: normalizeDecimalDigits(maybe.digits),
+    };
 }
 
 function addSmallDecimal(raw: string, value: number): string {

@@ -97,6 +97,13 @@ function assertTargetProfileRefs(diagnostic: ModelDiagnosticJson): void {
     assert.equal(String(diagnostic.refs.runtime_note).includes('Python'), true);
 }
 
+function expectedBitwiseOperator(expr: string): string {
+    for (const operator of ['<<', '>>', '&', '^', '|']) {
+        if (expr.includes(operator)) return operator;
+    }
+    throw new Error(`missing bitwise operator in ${expr}`);
+}
+
 describe('diagnostics/numeric', () => {
     it('keeps nullable analyzer entry as a no-op', () => {
         assert.deepEqual(collectNumericWarnings(null), []);
@@ -132,6 +139,16 @@ state Root { state A; [*] -> A; }
             assert.equal(diagnostic.refs.target_bits, 64);
             assert.equal(diagnostic.refs.signed, true);
         }
+    });
+
+    it('deduplicates signed integer child literals under unary operators', async () => {
+        const diagnostics = diagnosticsFor(await numericDiagnostics(`
+def int value = ${TOO_SMALL_SIGNED_INT64_TEXT};
+state Root { state A; [*] -> A; }
+`), 'W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE');
+
+        assert.equal(diagnostics.length, 1);
+        assert.equal(diagnostics[0].refs.literal_text, TOO_SMALL_SIGNED_INT64_TEXT);
     });
 
     it('uses RHS-only constant folding for division and modulo by zero', async () => {
@@ -173,6 +190,8 @@ state Root {
     A -> B effect {
         flags = flags << -1;
         flags = flags >> 64;
+        flags = flags << -9223372036854775808;
+        flags = flags >> 9223372036854775808;
         flags = flags << 0;
         flags = flags << 63;
         flags = flags << amount;
@@ -182,7 +201,12 @@ state Root {
 
         assert.deepEqual(
             diagnostics.map(item => [item.refs.operator, item.refs.shift_count_text]),
-            [['<<', '-1'], ['>>', '64']],
+            [
+                ['<<', '-1'],
+                ['>>', '64'],
+                ['<<', '-9223372036854775808'],
+                ['>>', '9223372036854775808'],
+            ],
         );
         for (const diagnostic of diagnostics) {
             assertTargetProfileRefs(diagnostic);
@@ -196,6 +220,7 @@ state Root {
         for (const [expr, expectedTypes, expectedSources] of [
             ['1.5 & flags', ['float', 'int'], ['literal', 'declared_var']],
             ['gain | flags', ['float', 'int'], ['declared_var', 'declared_var']],
+            ['gain >> flags', ['float', 'int'], ['declared_var', 'declared_var']],
             ['(gain + 1.0) ^ flags', ['float', 'int'], ['local_expression', 'declared_var']],
             ['(1 / 2) & flags', ['float', 'int'], ['local_expression', 'declared_var']],
             ['sin(1) & flags', ['float', 'int'], ['local_expression', 'declared_var']],
@@ -214,10 +239,25 @@ state Root {
             assert.equal(diagnostics.length, 1, expr);
             const diagnostic = diagnostics[0];
             assertTargetProfileRefs(diagnostic);
-            assert.equal(diagnostic.refs.operator, expr.includes('<<') ? '<<' : expr.match(/[&^|]/)![0]);
+            assert.equal(diagnostic.refs.operator, expectedBitwiseOperator(expr));
             assert.deepEqual(diagnostic.refs.operand_types, expectedTypes, expr);
             assert.deepEqual(diagnostic.refs.operand_type_sources, expectedSources, expr);
         }
+    });
+
+    it('keeps known int evidence when local expressions contain unknown variables', async () => {
+        const diagnostics = diagnosticsFor(await numericDiagnostics(`
+def int flags = 1;
+def float gain = 1.5;
+state Root {
+    state A { during { tmp = 1; flags = (tmp + 1) & gain; } }
+    [*] -> A;
+}
+`), 'W_NUMERIC_FLOAT_BITWISE');
+
+        assert.equal(diagnostics.length, 1);
+        assert.deepEqual(diagnostics[0].refs.operand_types, ['int', 'float']);
+        assert.deepEqual(diagnostics[0].refs.operand_type_sources, ['local_expression', 'declared_var']);
     });
 
     it('does not report int-shaped local expressions as float bitwise risks', async () => {

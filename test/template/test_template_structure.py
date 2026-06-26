@@ -500,17 +500,32 @@ def test_c_family_readmes_document_deployment_safety_boundaries(rendered_templat
             assert "Python" in text
             assert "https://github.com/HansBug/pyfcstm/issues/254" in text
             assert "https://github.com/HansBug/pyfcstm/issues/255" in text
-            for certification_term in [
-                "MISRA",
-                "AUTOSAR",
-                "DO-178C",
-                "IEC 61508",
-                "ISO 26262",
-            ]:
-                assert certification_term in text
             assert "non-reentrant" in text
             assert "volatile" in text
             assert "DMA" in text
+
+        generated_readme_words = " ".join(generated_readme.split())
+        generated_readme_zh_words = " ".join(generated_readme_zh.split())
+        assert (
+            "This generated runtime is not a claim of MISRA, AUTOSAR, "
+            "DO-178C, IEC 61508, or ISO 26262 certification readiness."
+            in generated_readme_words
+        )
+        assert (
+            "They do not make this generated runtime MISRA, AUTOSAR, DO-178C, "
+            "IEC 61508, ISO 26262, or other certification ready by themselves."
+            in generated_readme_words
+        )
+        assert (
+            "本生成运行时不宣称已经满足 MISRA、AUTOSAR、DO-178C、IEC 61508 "
+            "或 ISO 26262 认证就绪要求。"
+            in generated_readme_zh_words
+        )
+        assert (
+            "它们本身不会让生成运行时达到 MISRA、AUTOSAR、DO-178C、IEC 61508、"
+            "ISO 26262 或其他认证 ready。"
+            in generated_readme_zh_words
+        )
 
         assert "Integration Preflight Checklist" in generated_readme
         assert "engineering evidence" in generated_readme

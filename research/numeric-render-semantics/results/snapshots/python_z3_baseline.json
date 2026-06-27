@@ -1,8 +1,370 @@
 {
+  "alignment_cases": [
+    {
+      "ast_type": "UFunc",
+      "case_id": "builtin_python_style:round",
+      "fcstm_expression": "round(A)",
+      "operator": "round",
+      "render_expression": "round(A)",
+      "render_path": "builtin_python_style",
+      "semantic_case_id": "round",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "UFunc",
+      "case_id": "python_expr:round",
+      "fcstm_expression": "round(A)",
+      "operator": "round",
+      "render_expression": "round(self._vars[\"A\"])",
+      "render_path": "templates.python.expr_styles.python_expr",
+      "semantic_case_id": "round",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "UFunc",
+      "case_id": "python_scope_expr:round",
+      "fcstm_expression": "round(A)",
+      "operator": "round",
+      "render_expression": "round(scope[\"A\"])",
+      "render_path": "templates.python.expr_styles.python_scope_expr",
+      "semantic_case_id": "round",
+      "status": "rendered"
+    },
+    {
+      "case_id": "python_runtime_assignment:round",
+      "fcstm_expression": "round(A)",
+      "operator": "round",
+      "render_expression": "_v[\"A\"] = self._evaluate_runtime_expr(\n    lambda: round(_v[\"A\"]),\n    \"operation assignment to \\u0027A\\u0027\",\n)",
+      "render_path": "templates.python.stmt_styles.python_runtime",
+      "sample": "assign_state_var",
+      "semantic_case_id": "round",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "UFunc",
+      "case_id": "builtin_python_style:abs",
+      "fcstm_expression": "abs(A)",
+      "operator": "abs",
+      "render_expression": "abs(A)",
+      "render_path": "builtin_python_style",
+      "semantic_case_id": "abs",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "UFunc",
+      "case_id": "python_expr:abs",
+      "fcstm_expression": "abs(A)",
+      "operator": "abs",
+      "render_expression": "abs(self._vars[\"A\"])",
+      "render_path": "templates.python.expr_styles.python_expr",
+      "semantic_case_id": "abs",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "UFunc",
+      "case_id": "python_scope_expr:abs",
+      "fcstm_expression": "abs(A)",
+      "operator": "abs",
+      "render_expression": "abs(scope[\"A\"])",
+      "render_path": "templates.python.expr_styles.python_scope_expr",
+      "semantic_case_id": "abs",
+      "status": "rendered"
+    },
+    {
+      "case_id": "python_runtime_assignment:abs",
+      "fcstm_expression": "abs(A)",
+      "operator": "abs",
+      "render_expression": "_v[\"A\"] = self._evaluate_runtime_expr(\n    lambda: abs(_v[\"A\"]),\n    \"operation assignment to \\u0027A\\u0027\",\n)",
+      "render_path": "templates.python.stmt_styles.python_runtime",
+      "sample": "assign_state_var",
+      "semantic_case_id": "abs",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "UFunc",
+      "case_id": "builtin_python_style:sign",
+      "fcstm_expression": "sign(A)",
+      "operator": "sign",
+      "render_expression": "int(((A) > 0) - ((A) < 0))",
+      "render_path": "builtin_python_style",
+      "semantic_case_id": "sign",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "UFunc",
+      "case_id": "python_expr:sign",
+      "fcstm_expression": "sign(A)",
+      "operator": "sign",
+      "render_expression": "self._sign(self._vars[\"A\"])",
+      "render_path": "templates.python.expr_styles.python_expr",
+      "semantic_case_id": "sign",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "UFunc",
+      "case_id": "python_scope_expr:sign",
+      "fcstm_expression": "sign(A)",
+      "operator": "sign",
+      "render_expression": "self._sign(scope[\"A\"])",
+      "render_path": "templates.python.expr_styles.python_scope_expr",
+      "semantic_case_id": "sign",
+      "status": "rendered"
+    },
+    {
+      "case_id": "python_runtime_assignment:sign",
+      "fcstm_expression": "sign(A)",
+      "operator": "sign",
+      "render_expression": "_v[\"A\"] = self._evaluate_runtime_expr(\n    lambda: _s(_v[\"A\"]),\n    \"operation assignment to \\u0027A\\u0027\",\n)",
+      "render_path": "templates.python.stmt_styles.python_runtime",
+      "sample": "assign_state_var",
+      "semantic_case_id": "sign",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "UFunc",
+      "case_id": "builtin_python_style:cbrt",
+      "fcstm_expression": "cbrt(A)",
+      "operator": "cbrt",
+      "render_expression": "math.copysign(abs(A) ** (1.0 / 3.0), A)",
+      "render_path": "builtin_python_style",
+      "semantic_case_id": "cbrt",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "UFunc",
+      "case_id": "python_expr:cbrt",
+      "fcstm_expression": "cbrt(A)",
+      "operator": "cbrt",
+      "render_expression": "math.copysign(abs(self._vars[\"A\"]) ** (1.0 / 3.0), self._vars[\"A\"])",
+      "render_path": "templates.python.expr_styles.python_expr",
+      "semantic_case_id": "cbrt",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "UFunc",
+      "case_id": "python_scope_expr:cbrt",
+      "fcstm_expression": "cbrt(A)",
+      "operator": "cbrt",
+      "render_expression": "math.copysign(abs(scope[\"A\"]) ** (1.0 / 3.0), scope[\"A\"])",
+      "render_path": "templates.python.expr_styles.python_scope_expr",
+      "semantic_case_id": "cbrt",
+      "status": "rendered"
+    },
+    {
+      "case_id": "python_runtime_assignment:cbrt",
+      "fcstm_expression": "cbrt(A)",
+      "operator": "cbrt",
+      "render_expression": "_v[\"A\"] = self._evaluate_runtime_expr(\n    lambda: math.copysign(abs(_v[\"A\"]) ** (1.0 / 3.0), _v[\"A\"]),\n    \"operation assignment to \\u0027A\\u0027\",\n)",
+      "render_path": "templates.python.stmt_styles.python_runtime",
+      "sample": "assign_state_var",
+      "semantic_case_id": "cbrt",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "BinaryOp",
+      "case_id": "builtin_python_style:pow",
+      "fcstm_expression": "A ** B",
+      "operator": "**",
+      "render_expression": "A ** B",
+      "render_path": "builtin_python_style",
+      "semantic_case_id": "pow",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "BinaryOp",
+      "case_id": "python_expr:pow",
+      "fcstm_expression": "A ** B",
+      "operator": "**",
+      "render_expression": "self._vars[\"A\"] ** self._vars[\"B\"]",
+      "render_path": "templates.python.expr_styles.python_expr",
+      "semantic_case_id": "pow",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "BinaryOp",
+      "case_id": "python_scope_expr:pow",
+      "fcstm_expression": "A ** B",
+      "operator": "**",
+      "render_expression": "scope[\"A\"] ** scope[\"B\"]",
+      "render_path": "templates.python.expr_styles.python_scope_expr",
+      "semantic_case_id": "pow",
+      "status": "rendered"
+    },
+    {
+      "case_id": "python_runtime_assignment:pow",
+      "fcstm_expression": "A ** B",
+      "operator": "**",
+      "render_expression": "_v[\"A\"] = self._evaluate_runtime_expr(\n    lambda: _v[\"A\"] ** B,\n    \"operation assignment to \\u0027A\\u0027\",\n)",
+      "render_path": "templates.python.stmt_styles.python_runtime",
+      "sample": "assign_state_var",
+      "semantic_case_id": "pow",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "BinaryOp",
+      "case_id": "builtin_python_style:integer_division",
+      "fcstm_expression": "A / B",
+      "operator": "/",
+      "render_expression": "A / B",
+      "render_path": "builtin_python_style",
+      "semantic_case_id": "integer_division",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "BinaryOp",
+      "case_id": "python_expr:integer_division",
+      "fcstm_expression": "A / B",
+      "operator": "/",
+      "render_expression": "self._vars[\"A\"] / self._vars[\"B\"]",
+      "render_path": "templates.python.expr_styles.python_expr",
+      "semantic_case_id": "integer_division",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "BinaryOp",
+      "case_id": "python_scope_expr:integer_division",
+      "fcstm_expression": "A / B",
+      "operator": "/",
+      "render_expression": "scope[\"A\"] / scope[\"B\"]",
+      "render_path": "templates.python.expr_styles.python_scope_expr",
+      "semantic_case_id": "integer_division",
+      "status": "rendered"
+    },
+    {
+      "case_id": "python_runtime_assignment:integer_division",
+      "fcstm_expression": "A / B",
+      "operator": "/",
+      "render_expression": "_v[\"A\"] = self._evaluate_runtime_expr(\n    lambda: _v[\"A\"] / B,\n    \"operation assignment to \\u0027A\\u0027\",\n)",
+      "render_path": "templates.python.stmt_styles.python_runtime",
+      "sample": "assign_state_var",
+      "semantic_case_id": "integer_division",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "BinaryOp",
+      "case_id": "builtin_python_style:modulo",
+      "fcstm_expression": "A % B",
+      "operator": "%",
+      "render_expression": "A % B",
+      "render_path": "builtin_python_style",
+      "semantic_case_id": "modulo",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "BinaryOp",
+      "case_id": "python_expr:modulo",
+      "fcstm_expression": "A % B",
+      "operator": "%",
+      "render_expression": "self._vars[\"A\"] % self._vars[\"B\"]",
+      "render_path": "templates.python.expr_styles.python_expr",
+      "semantic_case_id": "modulo",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "BinaryOp",
+      "case_id": "python_scope_expr:modulo",
+      "fcstm_expression": "A % B",
+      "operator": "%",
+      "render_expression": "scope[\"A\"] % scope[\"B\"]",
+      "render_path": "templates.python.expr_styles.python_scope_expr",
+      "semantic_case_id": "modulo",
+      "status": "rendered"
+    },
+    {
+      "case_id": "python_runtime_assignment:modulo",
+      "fcstm_expression": "A % B",
+      "operator": "%",
+      "render_expression": "_v[\"A\"] = self._evaluate_runtime_expr(\n    lambda: _v[\"A\"] % B,\n    \"operation assignment to \\u0027A\\u0027\",\n)",
+      "render_path": "templates.python.stmt_styles.python_runtime",
+      "sample": "assign_state_var",
+      "semantic_case_id": "modulo",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "BinaryOp",
+      "case_id": "builtin_python_style:signed_left_shift",
+      "fcstm_expression": "A << B",
+      "operator": "<<",
+      "render_expression": "A << B",
+      "render_path": "builtin_python_style",
+      "semantic_case_id": "signed_left_shift",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "BinaryOp",
+      "case_id": "python_expr:signed_left_shift",
+      "fcstm_expression": "A << B",
+      "operator": "<<",
+      "render_expression": "self._vars[\"A\"] << self._vars[\"B\"]",
+      "render_path": "templates.python.expr_styles.python_expr",
+      "semantic_case_id": "signed_left_shift",
+      "status": "rendered"
+    },
+    {
+      "ast_type": "BinaryOp",
+      "case_id": "python_scope_expr:signed_left_shift",
+      "fcstm_expression": "A << B",
+      "operator": "<<",
+      "render_expression": "scope[\"A\"] << scope[\"B\"]",
+      "render_path": "templates.python.expr_styles.python_scope_expr",
+      "semantic_case_id": "signed_left_shift",
+      "status": "rendered"
+    },
+    {
+      "case_id": "python_runtime_assignment:signed_left_shift",
+      "fcstm_expression": "A << B",
+      "operator": "<<",
+      "render_expression": "_v[\"A\"] = self._evaluate_runtime_expr(\n    lambda: _v[\"A\"] << B,\n    \"operation assignment to \\u0027A\\u0027\",\n)",
+      "render_path": "templates.python.stmt_styles.python_runtime",
+      "sample": "assign_state_var",
+      "semantic_case_id": "signed_left_shift",
+      "status": "rendered"
+    },
+    {
+      "ast_type": null,
+      "case_id": "builtin_python_style:bitwise_not",
+      "fcstm_expression": "~A",
+      "operator": "~",
+      "render_expression": "",
+      "render_path": "builtin_python_style",
+      "semantic_case_id": "bitwise_not",
+      "status": "parse_failed"
+    },
+    {
+      "ast_type": null,
+      "case_id": "python_expr:bitwise_not",
+      "fcstm_expression": "~A",
+      "operator": "~",
+      "render_expression": "",
+      "render_path": "templates.python.expr_styles.python_expr",
+      "semantic_case_id": "bitwise_not",
+      "status": "parse_failed"
+    },
+    {
+      "ast_type": null,
+      "case_id": "python_scope_expr:bitwise_not",
+      "fcstm_expression": "~A",
+      "operator": "~",
+      "render_expression": "",
+      "render_path": "templates.python.expr_styles.python_scope_expr",
+      "semantic_case_id": "bitwise_not",
+      "status": "parse_failed"
+    },
+    {
+      "case_id": "python_runtime_assignment:bitwise_not",
+      "fcstm_expression": "~A",
+      "operator": "~",
+      "render_expression": "",
+      "render_path": "templates.python.stmt_styles.python_runtime",
+      "sample": "assign_state_var",
+      "semantic_case_id": "bitwise_not",
+      "status": "parse_failed"
+    }
+  ],
   "generator": {
     "determinism": "No wall-clock timestamp is stored; concrete Z3 model values are not used as core facts.",
     "research_path": "research/numeric-render-semantics",
-    "source_commit": "62838a82539fd7cda753399a0bf04d536c6ac574",
+    "source_commit": "ffe985ec3981f1c0443f7b384d1130d558a9994a",
     "source_commit_policy": "Best-effort commit at generation time; mapping and schema validation are the stable comparison keys.",
     "tool": "tools/numeric_render_probe.py"
   },
@@ -432,7 +794,7 @@
   "source_mapping_sha256": "d79b2fc4eb981eb794def52fc8fa2589c87e836673106eabdc589081eb8ad2da",
   "toolchain": {
     "python": {
-      "executable": "/mnt/data/deepghs/hansbug/pyfcstm-2/venv/bin/python",
+      "executable": "python",
       "implementation": "CPython",
       "version": "3.10.19"
     },

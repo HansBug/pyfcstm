@@ -1,18 +1,27 @@
 """
-Probe numeric render-semantics research artifacts.
+Provide probe entry points for numeric render-semantics research.
 
-This module provides lightweight, repository-local probe entry points for the
-numeric render-semantics research track.  The environment mode records local
-runtime/toolchain inventory without compiling or executing native target code.
-The Python/Z3 baseline mode records the current Python render/runtime facts and
-Z3 encoding capability boundaries used by later exhaustive and summary work.
+The lightweight ``env`` mode records local environment data without running
+native workloads. The C-family smoke modes compile and execute small programs
+whose expressions are rendered from the repository's R0
+``render_mapping.json`` snapshot, so the probe follows the same renderer and
+template facts that later exhaustive harnesses will use. Shared JSON, mapping,
+and command-dispatch helpers are mode-neutral. The Python/Z3 baseline mode joins the same runner without replacing the
+C-family modes. Smoke case identifiers are render-path scoped; cross-artifact
+semantic joins should prefer the rendered FCSTM operator and source expression,
+or a future explicit semantic identifier, while render-path fields distinguish
+target-language outputs for the same semantic expression.
 
 The module contains:
 
 * :func:`build_environment_report` - Collect lightweight local environment data.
+* :func:`build_c_family_smoke_report` - Run C or C++ smoke cases from R0 mapping.
 * :func:`build_python_z3_baseline` - Build the Python/Z3 capability baseline.
 * :func:`check_python_z3_baseline` - Validate the generated or committed baseline.
-* :func:`main` - Command-line entry point for research probe modes.
+* :func:`validate_probe_summary` - Validate the lightweight probe-summary contract.
+* :func:`_stable_json` - Serialize research artifacts consistently.
+* :func:`main` - Command-line entry point with ``env``, ``c-smoke``,
+  ``cpp-smoke`` and ``python-z3-baseline`` modes.
 
 Example::
 
@@ -35,10 +44,27 @@ import os
 import platform
 import re
 import shutil
+
+import jinja2
 import subprocess
 import sys
+import tempfile
+import time
+from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 _REPO_ROOT_FOR_SCRIPT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT_FOR_SCRIPT) not in sys.path:
@@ -55,19 +81,23 @@ from pyfcstm.solver.expr import python_round_to_z3  # noqa: E402
 from tools.numeric_render_mapping import build_render_mapping  # noqa: E402
 
 _JSON_OBJECT = Dict[str, Any]
-_RESEARCH_PATH = Path("research/numeric-render-semantics")
-_RENDER_MAPPING_SNAPSHOT = _RESEARCH_PATH / "results/snapshots/render_mapping.json"
+_RESEARCH_PATH = "research/numeric-render-semantics"
+_DEFAULT_MAPPING_PATH = "%s/results/snapshots/render_mapping.json" % _RESEARCH_PATH
 _PYTHON_Z3_BASELINE_SNAPSHOT = (
-    _RESEARCH_PATH / "results/snapshots/python_z3_baseline.json"
+    "%s/results/snapshots/python_z3_baseline.json" % _RESEARCH_PATH
 )
-_PYTHON_Z3_BASELINE_SCHEMA = _RESEARCH_PATH / "schemas/python_z3_baseline.schema.json"
+_PYTHON_Z3_BASELINE_SCHEMA = "%s/schemas/python_z3_baseline.schema.json" % (
+    _RESEARCH_PATH
+)
 _COMMANDS = [
     "python",
     "git",
     "cc",
+    "c99",
     "gcc",
-    "g++",
     "clang",
+    "c++",
+    "g++",
     "clang++",
     "java",
     "javac",
@@ -78,6 +108,14 @@ _COMMANDS = [
     "npm",
     "tsc",
     "z3",
+]
+_C_SANITIZER_FLAGS = [
+    "-fsanitize=undefined,signed-integer-overflow,shift,integer-divide-by-zero",
+    "-fno-sanitize-recover=all",
+]
+_CPP_SANITIZER_FLAGS = [
+    "-fsanitize=undefined,signed-integer-overflow,shift,integer-divide-by-zero",
+    "-fno-sanitize-recover=all",
 ]
 _Z3_SORTS = ["Int", "Real", "BitVec", "FP"]
 _Z3_SUPPORT_LEVELS = {"exact", "approximate", "uninterpreted", "unsupported"}
@@ -111,6 +149,91 @@ _UFUNC_NAMES = [
 ]
 
 
+@dataclass(frozen=True)
+class NumericSmokeCase:
+    """
+    Describe one FCSTM numeric expression smoke case.
+
+    :param case_id: Stable case identifier used in JSON output.
+    :type case_id: str
+    :param operator: Operator or function family covered by the case.
+    :type operator: str
+    :param fcstm_expression: FCSTM numeric expression to render.
+    :type fcstm_expression: str
+    :param a_value: Value assigned to variable ``A``.
+    :type a_value: int
+    :param b_value: Value assigned to variable ``B``.
+    :type b_value: int
+    :param expects_undefined_behavior: Whether sanitizer failure is expected to
+        be informative for the case.
+    :type expects_undefined_behavior: bool
+
+    Example::
+
+        >>> case = NumericSmokeCase('pow', '**', 'A ** B', 3, 2)
+        >>> case.operator
+        '**'
+    """
+
+    case_id: str
+    operator: str
+    fcstm_expression: str
+    a_value: int
+    b_value: int
+    expects_undefined_behavior: bool = False
+
+
+@dataclass(frozen=True)
+class RenderPath:
+    """
+    Describe one render path extracted from ``render_mapping.json``.
+
+    :param path_id: Stable render-path identifier used in case ids.
+    :type path_id: str
+    :param language: Summary language, such as ``"c"`` or ``"cpp"``.
+    :type language: str
+    :param compile_language: Compiler family used for the generated smoke file.
+    :type compile_language: str
+    :param lang_style: Built-in renderer style to use.
+    :type lang_style: str
+    :param expression_core_language: Renderer core language used to build
+        ``render_templates``.
+    :type expression_core_language: str
+    :param ext_configs: Template expression overrides from R0 mapping.
+    :type ext_configs: Mapping[str, str]
+    :param render_templates: Fully merged expression templates read from the
+        mapping snapshot.
+    :type render_templates: Mapping[str, str]
+    :param mapping_sources: Mapping paths that justify the render path.
+    :type mapping_sources: Tuple[str, ...]
+    :param template_name: Optional built-in template name represented by this path.
+    :type template_name: Optional[str]
+    :param wrapper_language: Optional wrapper language for generated template
+        paths that reuse a core language.
+    :type wrapper_language: Optional[str]
+
+    Example::
+
+        >>> path = RenderPath(
+        ...     'builtin_c_style', 'c', 'c', 'c', 'c', {},
+        ...     {'Name': '{{ node.name }}'}, ('builtin_expr_styles.styles.c',),
+        ... )
+        >>> path.compile_language
+        'c'
+    """
+
+    path_id: str
+    language: str
+    compile_language: str
+    lang_style: str
+    expression_core_language: str
+    ext_configs: Mapping[str, str]
+    render_templates: Mapping[str, str]
+    mapping_sources: Tuple[str, ...]
+    template_name: Optional[str] = None
+    wrapper_language: Optional[str] = None
+
+
 def _command_version(path: str) -> Optional[str]:
     """
     Return a short version string for an executable when available.
@@ -127,8 +250,6 @@ def _command_version(path: str) -> Optional[str]:
         True
     """
     args = [path, "--version"]
-    if os.path.basename(path).startswith("python"):
-        args = [path, "--version"]
     try:
         result = subprocess.run(
             args,
@@ -148,6 +269,73 @@ def _command_version(path: str) -> Optional[str]:
         return None
     output = result.stdout.strip().splitlines()
     return output[0] if output else None
+
+
+def _stable_json(value: Any) -> str:
+    """
+    Serialize a research artifact as stable, human-readable JSON.
+
+    :param value: JSON-compatible value.
+    :type value: Any
+    :return: Stable JSON text ending in a newline.
+    :rtype: str
+
+    Example::
+
+        >>> _stable_json({'b': 1, 'a': 2}).splitlines()[1]
+        '  "a": 2,'
+    """
+    return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+
+
+def _read_json(path: Union[str, Path]) -> _JSON_OBJECT:
+    """
+    Read a JSON object from disk.
+
+    :param path: JSON file path.
+    :type path: Union[str, pathlib.Path]
+    :return: Parsed JSON object.
+    :rtype: Dict[str, Any]
+    :raises ValueError: If the file does not contain a JSON object.
+    :raises json.JSONDecodeError: If the JSON text is invalid.
+    :raises OSError: If the file cannot be read.
+
+    Example::
+
+        >>> import tempfile
+        >>> p = Path(tempfile.gettempdir()) / 'pyfcstm-json-object-example.json'
+        >>> _ = p.write_text('{"ok": true}', encoding='utf-8')
+        >>> _read_json(p)['ok']
+        True
+    """
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("JSON payload must be an object")
+    return data
+
+
+def _write_payload(output_path: Union[str, Path], payload: Mapping[str, Any]) -> None:
+    """
+    Write a JSON payload to disk with parent directories created.
+
+    :param output_path: Destination path.
+    :type output_path: Union[str, pathlib.Path]
+    :param payload: JSON-compatible payload.
+    :type payload: Mapping[str, Any]
+    :return: ``None``.
+    :rtype: None
+
+    Example::
+
+        >>> import tempfile
+        >>> path = Path(tempfile.gettempdir()) / 'pyfcstm-probe-write-example.json'
+        >>> _write_payload(path, {'ok': True})
+        >>> '"ok": true' in path.read_text(encoding='utf-8')
+        True
+    """
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_stable_json(payload), encoding="utf-8")
 
 
 def _probe_command(name: str) -> _JSON_OBJECT:
@@ -174,27 +362,1342 @@ def _probe_command(name: str) -> _JSON_OBJECT:
     }
 
 
-def _repo_relative(path: Union[str, Path], repo_root: Union[str, Path]) -> str:
+def build_environment_report(repo_root: Union[str, Path] = ".") -> _JSON_OBJECT:
     """
-    Return a stable repository-relative path string.
+    Build a lightweight environment report for future probe planning.
 
-    :param path: Path to relativize.
-    :type path: Union[str, pathlib.Path]
-    :param repo_root: Repository root path.
+    :param repo_root: Repository root path, defaults to the current directory.
+    :type repo_root: Union[str, pathlib.Path], optional
+    :return: JSON-compatible environment report.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> report = build_environment_report('.')
+        >>> report['mode']
+        'env'
+    """
+    root = Path(repo_root).resolve()
+    return {
+        "schema_version": 1,
+        "mode": "env",
+        "native_runner_enabled": False,
+        "repository": {
+            "root": str(root),
+            "research_path": _RESEARCH_PATH,
+        },
+        "python": {
+            "executable": sys.executable,
+            "version": sys.version.split()[0],
+            "implementation": platform.python_implementation(),
+        },
+        "platform": {
+            "system": platform.system(),
+            "release": platform.release(),
+            "machine": platform.machine(),
+            "processor": platform.processor(),
+        },
+        "resources": {
+            "cpu_count": os.cpu_count(),
+        },
+        "available_commands": [_probe_command(name) for name in _COMMANDS],
+        "notes": [
+            "Environment mode is inventory-only and does not compile or execute target-language probes.",
+            "C-family smoke modes compile tiny programs and keep artifacts in gitignored local output paths.",
+        ],
+    }
+
+
+def _as_repo_path(repo_root: Union[str, Path]) -> Path:
+    """
+    Normalize a repository root path.
+
+    :param repo_root: Repository root path supplied by a caller or CLI.
     :type repo_root: Union[str, pathlib.Path]
-    :return: POSIX-style repository-relative path.
+    :return: Absolute repository root path.
+    :rtype: pathlib.Path
+
+    Example::
+
+        >>> _as_repo_path('.').is_absolute()
+        True
+    """
+    return Path(repo_root).resolve()
+
+
+def _resolve_mapping_path(repo_root: Path, mapping_path: Union[str, Path]) -> Path:
+    """
+    Resolve a render-mapping path against the repository root.
+
+    :param repo_root: Absolute repository root.
+    :type repo_root: pathlib.Path
+    :param mapping_path: Absolute or repository-relative mapping path.
+    :type mapping_path: Union[str, pathlib.Path]
+    :return: Absolute mapping path.
+    :rtype: pathlib.Path
+
+    Example::
+
+        >>> _resolve_mapping_path(Path('.').resolve(), _DEFAULT_MAPPING_PATH).is_absolute()
+        True
+    """
+    path = Path(mapping_path)
+    if path.is_absolute():
+        return path
+    return repo_root / path
+
+
+def _load_render_mapping(
+    repo_root: Path, mapping_path: Union[str, Path]
+) -> _JSON_OBJECT:
+    """
+    Load a render-mapping snapshot.
+
+    :param repo_root: Absolute repository root.
+    :type repo_root: pathlib.Path
+    :param mapping_path: Absolute or repository-relative mapping path.
+    :type mapping_path: Union[str, pathlib.Path]
+    :return: Parsed render-mapping snapshot.
+    :rtype: Dict[str, Any]
+    :raises ValueError: If the snapshot root is not a JSON object.
+    :raises json.JSONDecodeError: If the snapshot file is invalid JSON.
+
+    Example::
+
+        >>> mapping = _load_render_mapping(Path('.').resolve(), _DEFAULT_MAPPING_PATH)
+        >>> mapping['schema_version']
+        1
+    """
+    resolved = _resolve_mapping_path(repo_root, mapping_path)
+    try:
+        return _read_json(resolved)
+    except ValueError as err:
+        # ValueError: _read_json rejects non-object JSON, which is invalid for
+        # the render mapping contract and should surface with path context.
+        raise ValueError("Render mapping must be a JSON object: %s" % resolved) from err
+
+
+def _risk_cases() -> List[NumericSmokeCase]:
+    """
+    Return the C-family numeric risk cases covered by smoke probes.
+
+    :return: Stable smoke-case definitions.
+    :rtype: List[NumericSmokeCase]
+
+    Example::
+
+        >>> any(case.case_id == 'cbrt' for case in _risk_cases())
+        True
+    """
+    return [
+        NumericSmokeCase("round", "round", "round(A)", -9, 2),
+        NumericSmokeCase("abs", "abs", "abs(A)", -9, 2),
+        NumericSmokeCase("sign", "sign", "sign(A)", -9, 2),
+        NumericSmokeCase("cbrt", "cbrt", "cbrt(A)", -9, 2),
+        NumericSmokeCase("pow", "**", "A ** B", 3, 2),
+        NumericSmokeCase("signed_left_shift", "<<", "A << B", -9, 2, True),
+        NumericSmokeCase("integer_division", "/", "A / B", 7, 2),
+        NumericSmokeCase("divide_by_zero", "/", "A / B", 7, 0, True),
+    ]
+
+
+def _template_expr_overrides(
+    mapping: Mapping[str, Any], template_name: str, style_name: str = "c_scope_expr"
+) -> Mapping[str, str]:
+    """
+    Return expression overrides for one template style from R0 mapping.
+
+    :param mapping: Render-mapping snapshot.
+    :type mapping: Mapping[str, Any]
+    :param template_name: Template name under ``templates``.
+    :type template_name: str
+    :param style_name: Template expression style name, defaults to
+        ``"c_scope_expr"``.
+    :type style_name: str, optional
+    :return: Expression override mapping.
+    :rtype: Mapping[str, str]
+
+    Example::
+
+        >>> mapping = _load_render_mapping(Path('.').resolve(), _DEFAULT_MAPPING_PATH)
+        >>> _template_expr_overrides(mapping, 'c')['Name'].startswith('scope->')
+        True
+    """
+    templates = mapping["templates"]
+    style = templates[template_name]["expr_styles"][style_name]
+    return dict(style.get("overrides") or {})
+
+
+def _format_mapping_path(path: Sequence[Union[str, int]]) -> str:
+    """
+    Format a mapping path for diagnostics.
+
+    :param path: Sequence of string keys and list indexes.
+    :type path: Sequence[Union[str, int]]
+    :return: Human-readable mapping path.
     :rtype: str
 
     Example::
 
-        >>> _repo_relative('tools/numeric_render_probe.py', '.')
-        'tools/numeric_render_probe.py'
+        >>> _format_mapping_path(('cxx_paths', 'template_generated_paths', 0))
+        'cxx_paths.template_generated_paths[0]'
     """
-    root = Path(repo_root).resolve()
-    target = Path(path)
-    if not target.is_absolute():
-        target = root / target
-    return target.resolve().relative_to(root).as_posix()
+    parts = []
+    for item in path:
+        if isinstance(item, int):
+            if parts:
+                parts[-1] = "%s[%d]" % (parts[-1], item)
+            else:
+                parts.append("[%d]" % item)
+        else:
+            parts.append(item)
+    return ".".join(parts) if parts else "<root>"
+
+
+def _mapping_value(
+    root: Mapping[str, Any],
+    path: Sequence[Union[str, int]],
+    expected_type: Optional[Any] = None,
+) -> Any:
+    """
+    Return a nested value from the render-mapping snapshot.
+
+    :param root: Render-mapping root object.
+    :type root: Mapping[str, Any]
+    :param path: Sequence of dictionary keys and list indexes.
+    :type path: Sequence[Union[str, int]]
+    :param expected_type: Optional expected Python type or type tuple.
+    :type expected_type: Optional[Any], optional
+    :return: Nested mapping value.
+    :rtype: Any
+    :raises ValueError: If a path segment is missing or has the wrong type.
+
+    Example::
+
+        >>> _mapping_value({'a': [{'b': 1}]}, ('a', 0, 'b'))
+        1
+    """
+    current: Any = root
+    visited: List[Union[str, int]] = []
+    for item in path:
+        visited.append(item)
+        if isinstance(item, int):
+            if not isinstance(current, list) or item >= len(current):
+                raise ValueError(
+                    "missing mapping path: %s" % _format_mapping_path(visited)
+                )
+            current = current[item]
+        else:
+            if not isinstance(current, dict) or item not in current:
+                raise ValueError(
+                    "missing mapping path: %s" % _format_mapping_path(visited)
+                )
+            current = current[item]
+    if expected_type is not None and not isinstance(current, expected_type):
+        raise ValueError(
+            "mapping path %s must be %s, got %s"
+            % (
+                _format_mapping_path(path),
+                getattr(expected_type, "__name__", repr(expected_type)),
+                type(current).__name__,
+            )
+        )
+    return current
+
+
+def _string_mapping(
+    value: Mapping[str, Any], path: Sequence[Union[str, int]]
+) -> Dict[str, str]:
+    """
+    Validate and copy a string-keyed string mapping.
+
+    :param value: Mapping value to copy.
+    :type value: Mapping[str, Any]
+    :param path: Source mapping path used for diagnostics.
+    :type path: Sequence[Union[str, int]]
+    :return: Copied mapping.
+    :rtype: Dict[str, str]
+    :raises ValueError: If any key or value is not a string.
+
+    Example::
+
+        >>> _string_mapping({'Name': '{{ node.name }}'}, ('x',))
+        {'Name': '{{ node.name }}'}
+    """
+    copied = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not isinstance(item, str):
+            raise ValueError(
+                "mapping path %s must contain only string keys and values"
+                % _format_mapping_path(path)
+            )
+        copied[key] = item
+    return copied
+
+
+def _builtin_style_templates(
+    mapping: Mapping[str, Any], style_name: str
+) -> Dict[str, str]:
+    """
+    Return built-in expression templates from the mapping snapshot.
+
+    :param mapping: Render-mapping snapshot.
+    :type mapping: Mapping[str, Any]
+    :param style_name: Built-in expression style name.
+    :type style_name: str
+    :return: Template mapping for the style.
+    :rtype: Dict[str, str]
+    :raises ValueError: If the style or its templates are missing.
+
+    Example::
+
+        >>> mapping = _load_render_mapping(Path('.').resolve(), _DEFAULT_MAPPING_PATH)
+        >>> _builtin_style_templates(mapping, 'c')['BinaryOp(**)'].startswith('pow(')
+        True
+    """
+    path = ("builtin_expr_styles", "styles", style_name, "templates")
+    value = _mapping_value(mapping, path, dict)
+    return _string_mapping(value, path)
+
+
+def _merge_expr_templates(
+    base_templates: Mapping[str, str], overrides: Mapping[str, str]
+) -> Dict[str, str]:
+    """
+    Merge base expression templates with mapping-provided overrides.
+
+    This mirrors :func:`pyfcstm.render.expr.create_expr_render_template` so a
+    generic override such as ``UFunc`` replaces operator-specific built-in
+    templates for that family.
+
+    :param base_templates: Base templates from ``builtin_expr_styles``.
+    :type base_templates: Mapping[str, str]
+    :param overrides: Template-specific override mapping.
+    :type overrides: Mapping[str, str]
+    :return: Merged expression-template mapping.
+    :rtype: Dict[str, str]
+
+    Example::
+
+        >>> _merge_expr_templates({'UFunc(abs)': 'old', 'UFunc': 'base'}, {'UFunc': 'new'})
+        {'UFunc': 'new'}
+    """
+    templates = dict(base_templates)
+    ext_configs = dict(overrides)
+    for generic_key in ("UFunc", "UnaryOp", "BinaryOp"):
+        if generic_key in ext_configs:
+            prefix = generic_key + "("
+            templates = {
+                key: value
+                for key, value in templates.items()
+                if key != generic_key and not key.startswith(prefix)
+            }
+    templates.update(ext_configs)
+    return templates
+
+
+def _template_expr_style(
+    mapping: Mapping[str, Any], template_name: str, style_name: str = "c_scope_expr"
+) -> Mapping[str, Any]:
+    """
+    Return one template expression style from the mapping snapshot.
+
+    :param mapping: Render-mapping snapshot.
+    :type mapping: Mapping[str, Any]
+    :param template_name: Built-in template name.
+    :type template_name: str
+    :param style_name: Expression style name, defaults to ``"c_scope_expr"``.
+    :type style_name: str, optional
+    :return: Style mapping with ``base_lang`` and ``overrides`` fields.
+    :rtype: Mapping[str, Any]
+    :raises ValueError: If the style is missing.
+
+    Example::
+
+        >>> mapping = _load_render_mapping(Path('.').resolve(), _DEFAULT_MAPPING_PATH)
+        >>> _template_expr_style(mapping, 'cpp')['base_lang']
+        'c'
+    """
+    path = ("templates", template_name, "expr_styles", style_name)
+    return _mapping_value(mapping, path, dict)
+
+
+def _template_render_path(
+    mapping: Mapping[str, Any],
+    path_id: str,
+    language: str,
+    template_name: str,
+    style_name: str = "c_scope_expr",
+    cxx_path_index: Optional[int] = None,
+    compile_language: Optional[str] = None,
+) -> RenderPath:
+    """
+    Build a template render path from mapping snapshot fields.
+
+    :param mapping: Render-mapping snapshot.
+    :type mapping: Mapping[str, Any]
+    :param path_id: Stable render-path identifier.
+    :type path_id: str
+    :param language: Summary language for the path.
+    :type language: str
+    :param template_name: Built-in template name.
+    :type template_name: str
+    :param style_name: Template expression style name, defaults to
+        ``"c_scope_expr"``.
+    :type style_name: str, optional
+    :param cxx_path_index: Optional index into
+        ``cxx_paths.template_generated_paths`` for C++ wrapper paths.
+    :type cxx_path_index: Optional[int], optional
+    :param compile_language: Optional compiler family override. C++ wrapper
+        paths use this to compile C-style expressions in a C++ translation unit.
+    :type compile_language: Optional[str], optional
+    :return: Render path using templates derived from mapping data.
+    :rtype: RenderPath
+    :raises ValueError: If required mapping facts are missing or inconsistent.
+
+    Example::
+
+        >>> mapping = _load_render_mapping(Path('.').resolve(), _DEFAULT_MAPPING_PATH)
+        >>> _template_render_path(mapping, 'template_c_core', 'c', 'c').compile_language
+        'c'
+    """
+    style = _template_expr_style(mapping, template_name, style_name)
+    if cxx_path_index is not None:
+        cxx_style_path = (
+            "cxx_paths",
+            "template_generated_paths",
+            cxx_path_index,
+            "expr_styles",
+            style_name,
+        )
+        cxx_style = _mapping_value(mapping, cxx_style_path, dict)
+        if dict(cxx_style) != dict(style):
+            raise ValueError(
+                "mapping path %s does not match templates.%s.expr_styles.%s"
+                % (_format_mapping_path(cxx_style_path), template_name, style_name)
+            )
+    base_lang = style.get("base_lang")
+    if base_lang not in {"c", "cpp"}:
+        raise ValueError(
+            "templates.%s.expr_styles.%s.base_lang must be c or cpp, got %r"
+            % (template_name, style_name, base_lang)
+        )
+    overrides_path = (
+        "templates",
+        template_name,
+        "expr_styles",
+        style_name,
+        "overrides",
+    )
+    overrides = _string_mapping(
+        _mapping_value(mapping, overrides_path, dict), overrides_path
+    )
+    base_templates = _builtin_style_templates(mapping, str(base_lang))
+    sources = [
+        "builtin_expr_styles.styles.%s" % base_lang,
+        "templates.%s.expr_styles.%s" % (template_name, style_name),
+    ]
+    if cxx_path_index is not None:
+        sources.insert(
+            0,
+            "cxx_paths.template_generated_paths[%d].expr_styles.%s"
+            % (cxx_path_index, style_name),
+        )
+    return RenderPath(
+        path_id,
+        language,
+        compile_language or str(base_lang),
+        str(base_lang),
+        str(base_lang),
+        overrides,
+        _merge_expr_templates(base_templates, overrides),
+        tuple(sources),
+        template_name=template_name,
+        wrapper_language=language if language != base_lang else None,
+    )
+
+
+def _cxx_template_path_index(mapping: Mapping[str, Any], template_name: str) -> int:
+    """
+    Return the C++ generated-template path index for a template name.
+
+    :param mapping: Render-mapping snapshot.
+    :type mapping: Mapping[str, Any]
+    :param template_name: Expected template name such as ``"cpp"``.
+    :type template_name: str
+    :return: Index under ``cxx_paths.template_generated_paths``.
+    :rtype: int
+    :raises ValueError: If the C++ path is missing.
+
+    Example::
+
+        >>> mapping = _load_render_mapping(Path('.').resolve(), _DEFAULT_MAPPING_PATH)
+        >>> _cxx_template_path_index(mapping, 'cpp') >= 0
+        True
+    """
+    paths = _mapping_value(mapping, ("cxx_paths", "template_generated_paths"), list)
+    for index, item in enumerate(paths):
+        if isinstance(item, dict) and item.get("template") == template_name:
+            return index
+    raise ValueError("missing C++ template path: %s" % template_name)
+
+
+def _builtin_render_path(
+    mapping: Mapping[str, Any], path_id: str, language: str, style_name: str
+) -> RenderPath:
+    """
+    Build a built-in renderer path from mapping snapshot fields.
+
+    :param mapping: Render-mapping snapshot.
+    :type mapping: Mapping[str, Any]
+    :param path_id: Stable render-path identifier.
+    :type path_id: str
+    :param language: Summary language for the path.
+    :type language: str
+    :param style_name: Built-in expression style name.
+    :type style_name: str
+    :return: Render path using built-in templates from the mapping snapshot.
+    :rtype: RenderPath
+    :raises ValueError: If required C++ path facts are missing or inconsistent.
+
+    Example::
+
+        >>> mapping = _load_render_mapping(Path('.').resolve(), _DEFAULT_MAPPING_PATH)
+        >>> _builtin_render_path(mapping, 'builtin_cpp_style', 'cpp', 'cpp').compile_language
+        'cpp'
+    """
+    templates = _builtin_style_templates(mapping, style_name)
+    sources = ["builtin_expr_styles.styles.%s" % style_name]
+    if style_name == "cpp":
+        cxx_path = _mapping_value(mapping, ("cxx_paths", "builtin_cpp_style"), dict)
+        if cxx_path.get("base_lang") != "cpp":
+            raise ValueError("cxx_paths.builtin_cpp_style.base_lang must be cpp")
+        cxx_templates = _mapping_value(
+            mapping, ("cxx_paths", "builtin_cpp_style", "templates"), dict
+        )
+        if (
+            _string_mapping(
+                cxx_templates, ("cxx_paths", "builtin_cpp_style", "templates")
+            )
+            != templates
+        ):
+            raise ValueError(
+                "cxx_paths.builtin_cpp_style.templates does not match "
+                "builtin_expr_styles.styles.cpp.templates"
+            )
+        sources.insert(0, "cxx_paths.builtin_cpp_style")
+    return RenderPath(
+        path_id,
+        language,
+        style_name,
+        style_name,
+        style_name,
+        {},
+        templates,
+        tuple(sources),
+    )
+
+
+def _render_paths_for_mode(mode: str, mapping: Mapping[str, Any]) -> List[RenderPath]:
+    """
+    Build render paths for a C-family smoke mode from R0 mapping.
+
+    :param mode: Probe mode, either ``"c-smoke"`` or ``"cpp-smoke"``.
+    :type mode: str
+    :param mapping: Render-mapping snapshot.
+    :type mapping: Mapping[str, Any]
+    :return: Render paths to probe.
+    :rtype: List[RenderPath]
+    :raises ValueError: If ``mode`` is not a C-family smoke mode.
+
+    Example::
+
+        >>> mapping = _load_render_mapping(Path('.').resolve(), _DEFAULT_MAPPING_PATH)
+        >>> [path.path_id for path in _render_paths_for_mode('cpp-smoke', mapping)][0]
+        'builtin_cpp_style'
+    """
+    if mode == "c-smoke":
+        return [
+            _builtin_render_path(mapping, "builtin_c_style", "c", "c"),
+            _template_render_path(mapping, "template_c_core", "c", "c"),
+            _template_render_path(mapping, "template_c_poll_core", "c", "c_poll"),
+        ]
+    if mode == "cpp-smoke":
+        cpp_index = _cxx_template_path_index(mapping, "cpp")
+        cpp_poll_index = _cxx_template_path_index(mapping, "cpp_poll")
+        return [
+            _builtin_render_path(mapping, "builtin_cpp_style", "cpp", "cpp"),
+            _template_render_path(
+                mapping,
+                "template_cpp_c_core",
+                "cpp",
+                "cpp",
+                cxx_path_index=cpp_index,
+                compile_language="cpp",
+            ),
+            _template_render_path(
+                mapping,
+                "template_cpp_poll_c_core",
+                "cpp",
+                "cpp_poll",
+                cxx_path_index=cpp_poll_index,
+                compile_language="cpp",
+            ),
+        ]
+    raise ValueError("Unsupported C-family smoke mode: %s" % mode)
+
+
+def _render_case_expression(case: NumericSmokeCase, render_path: RenderPath) -> str:
+    """
+    Render a smoke-case expression through the production expression renderer.
+
+    :param case: Smoke case to render.
+    :type case: NumericSmokeCase
+    :param render_path: Render path from R0 mapping.
+    :type render_path: RenderPath
+    :return: Target-language expression text.
+    :rtype: str
+
+    Example::
+
+        >>> case = NumericSmokeCase('pow', '**', 'A ** B', 3, 2)
+        >>> path = RenderPath(
+        ...     'builtin_c_style', 'c', 'c', 'c', 'c', {},
+        ...     {
+        ...         'Name': '{{ node.name }}',
+        ...         'BinaryOp(**)': 'pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})',
+        ...     },
+        ...     ('builtin_expr_styles.styles.c',),
+        ... )
+        >>> _render_case_expression(case, path)
+        'pow(A, B)'
+    """
+    from pyfcstm.model.expr import parse_expr_from_string
+    from pyfcstm.render.expr import fn_expr_render
+    from pyfcstm.utils import to_c_identifier
+
+    env = jinja2.Environment()
+    env.filters["to_c_identifier"] = to_c_identifier
+    env.globals["to_c_identifier"] = to_c_identifier
+    expr = parse_expr_from_string(case.fcstm_expression, mode="numeric")
+    render = partial(
+        fn_expr_render, templates=dict(render_path.render_templates), env=env
+    )
+    env.globals["expr_render"] = render
+    env.filters["expr_render"] = render
+    return render(node=expr.to_ast_node())
+
+
+def _compiler_candidates(compile_language: str) -> List[str]:
+    """
+    Return compiler candidates for a compile language.
+
+    :param compile_language: ``"c"`` or ``"cpp"``.
+    :type compile_language: str
+    :return: Candidate executable names.
+    :rtype: List[str]
+
+    Example::
+
+        >>> 'cc' in _compiler_candidates('c')
+        True
+    """
+    if compile_language == "c":
+        return [os.environ.get("CC", ""), "cc", "gcc", "clang", "c99"]
+    if compile_language == "cpp":
+        return [os.environ.get("CXX", ""), "c++", "g++", "clang++"]
+    return []
+
+
+def _find_compiler(compile_language: str) -> _JSON_OBJECT:
+    """
+    Find a compiler for one compile language.
+
+    :param compile_language: ``"c"`` or ``"cpp"``.
+    :type compile_language: str
+    :return: Compiler metadata.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> info = _find_compiler('c')
+        >>> 'available' in info
+        True
+    """
+    checked = []
+    for candidate in _compiler_candidates(compile_language):
+        if not candidate:
+            continue
+        checked.append(candidate)
+        path = shutil.which(candidate)
+        if path:
+            return {
+                "available": True,
+                "name": candidate,
+                "path": path,
+                "version": _command_version(path),
+                "checked": checked,
+            }
+    return {
+        "available": False,
+        "name": None,
+        "path": None,
+        "version": None,
+        "checked": checked,
+    }
+
+
+def _run_command(args: Sequence[str], timeout: int, cwd: Path) -> _JSON_OBJECT:
+    """
+    Run one subprocess command and capture structured diagnostics.
+
+    :param args: Command argument vector.
+    :type args: Sequence[str]
+    :param timeout: Timeout in seconds.
+    :type timeout: int
+    :param cwd: Working directory.
+    :type cwd: pathlib.Path
+    :return: Command result metadata.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> result = _run_command([sys.executable, '--version'], 10, Path('.').resolve())
+        >>> result['returncode'] == 0
+        True
+    """
+    started = time.monotonic()
+    try:
+        result = subprocess.run(
+            list(args),
+            cwd=str(cwd),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            timeout=timeout,
+            check=False,
+        )
+    except OSError as err:
+        # OSError: subprocess could not start the compiler or generated binary;
+        # expose this as command metadata instead of hiding the probe outcome.
+        return {
+            "args": list(args),
+            "returncode": None,
+            "stdout": "",
+            "stderr": str(err),
+            "timed_out": False,
+            "duration_seconds": round(time.monotonic() - started, 6),
+            "start_error": err.__class__.__name__,
+        }
+    except subprocess.TimeoutExpired as err:
+        # TimeoutExpired: native smoke programs must not hang the research
+        # command; report the timeout as a runtime/compile diagnostic.
+        return {
+            "args": list(args),
+            "returncode": None,
+            "stdout": err.stdout or "",
+            "stderr": err.stderr or "",
+            "timed_out": True,
+            "duration_seconds": round(time.monotonic() - started, 6),
+            "start_error": None,
+        }
+    return {
+        "args": list(args),
+        "returncode": result.returncode,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "timed_out": False,
+        "duration_seconds": round(time.monotonic() - started, 6),
+        "start_error": None,
+    }
+
+
+def _base_compile_flags(compile_language: str) -> List[str]:
+    """
+    Return compile-only flags for one compile language.
+
+    :param compile_language: ``"c"`` or ``"cpp"``.
+    :type compile_language: str
+    :return: Compiler flags.
+    :rtype: List[str]
+
+    Example::
+
+        >>> '-Wall' in _base_compile_flags('c')
+        True
+    """
+    if compile_language == "c":
+        return ["-std=c99", "-Wall", "-Wextra", "-Werror=implicit-function-declaration"]
+    return ["-Wall", "-Wextra"]
+
+
+def _sanitizer_flags(compile_language: str) -> List[str]:
+    """
+    Return sanitizer flags for one compile language.
+
+    :param compile_language: ``"c`` or ``"cpp"``.
+    :type compile_language: str
+    :return: Sanitizer flags.
+    :rtype: List[str]
+
+    Example::
+
+        >>> _sanitizer_flags('c')[0].startswith('-fsanitize=')
+        True
+    """
+    if compile_language == "c":
+        return list(_C_SANITIZER_FLAGS)
+    return list(_CPP_SANITIZER_FLAGS)
+
+
+def _link_flags(compile_language: str) -> List[str]:
+    """
+    Return linker flags for one compile language.
+
+    :param compile_language: ``"c"`` or ``"cpp"``.
+    :type compile_language: str
+    :return: Linker flags.
+    :rtype: List[str]
+
+    Example::
+
+        >>> '-lm' in _link_flags('c')
+        True
+    """
+    return ["-lm"]
+
+
+def _source_for_case(
+    expression: str, case: NumericSmokeCase, compile_language: str
+) -> str:
+    """
+    Build a tiny C or C++ source file for one rendered expression.
+
+    :param expression: Rendered expression text.
+    :type expression: str
+    :param case: Smoke case whose values populate variables.
+    :type case: NumericSmokeCase
+    :param compile_language: ``"c"`` or ``"cpp"``.
+    :type compile_language: str
+    :return: Source code.
+    :rtype: str
+
+    Example::
+
+        >>> 'int main' in _source_for_case('A + B', NumericSmokeCase('add', '+', 'A + B', 1, 2), 'c')
+        True
+    """
+    if compile_language == "cpp":
+        return (
+            """#include <cmath>\n#include <cstdlib>\n#include <iostream>\n\nstruct Scope { long long A; long long B; };\n\nint main() {\n    long long A = %(a)dLL;\n    long long B = %(b)dLL;\n    Scope scope_value = {A, B};\n    Scope *scope = &scope_value;\n    volatile double result = static_cast<double>(%(expr)s);\n    std::cout << result << "\\n";\n    return 0;\n}\n"""
+            % {
+                "a": case.a_value,
+                "b": case.b_value,
+                "expr": expression,
+            }
+        )
+    return (
+        """#include <math.h>\n#include <stdint.h>\n#include <stdio.h>\n#include <stdlib.h>\n\nstruct Scope { int64_t A; int64_t B; };\n\nint main(void) {\n    int64_t A = %(a)dLL;\n    int64_t B = %(b)dLL;\n    struct Scope scope_value = {A, B};\n    struct Scope *scope = &scope_value;\n    volatile double result = (double)(%(expr)s);\n    printf("%%.17g\\n", result);\n    return 0;\n}\n"""
+        % {
+            "a": case.a_value,
+            "b": case.b_value,
+            "expr": expression,
+        }
+    )
+
+
+def _compile_and_link(
+    compiler: Mapping[str, Any],
+    source_path: Path,
+    binary_path: Path,
+    compile_language: str,
+    timeout: int,
+    extra_flags: Optional[Iterable[str]] = None,
+) -> Tuple[str, _JSON_OBJECT]:
+    """
+    Compile and link one smoke source file.
+
+    :param compiler: Compiler metadata from :func:`_find_compiler`.
+    :type compiler: Mapping[str, Any]
+    :param source_path: Source file path.
+    :type source_path: pathlib.Path
+    :param binary_path: Output binary path.
+    :type binary_path: pathlib.Path
+    :param compile_language: ``"c"`` or ``"cpp"``.
+    :type compile_language: str
+    :param timeout: Command timeout in seconds.
+    :type timeout: int
+    :param extra_flags: Optional extra compile/link flags.
+    :type extra_flags: Optional[Iterable[str]], optional
+    :return: Tuple of step status and command metadata.
+    :rtype: Tuple[str, Dict[str, Any]]
+
+    Example::
+
+        >>> compiler = _find_compiler('c')
+        >>> isinstance(compiler['available'], bool)
+        True
+    """
+    object_path = source_path.with_suffix(".o")
+    compiler_path = str(compiler["path"])
+    flags = _base_compile_flags(compile_language) + list(extra_flags or [])
+    compile_command = (
+        [compiler_path] + flags + ["-c", str(source_path), "-o", str(object_path)]
+    )
+    compile_result = _run_command(compile_command, timeout, source_path.parent)
+    commands = {"compile": compile_result}
+    if compile_result["timed_out"] or compile_result["returncode"] != 0:
+        return "compile_failed", commands
+    link_command = (
+        [compiler_path, str(object_path), "-o", str(binary_path)]
+        + list(extra_flags or [])
+        + _link_flags(compile_language)
+    )
+    link_result = _run_command(link_command, timeout, source_path.parent)
+    commands["link"] = link_result
+    if link_result["timed_out"] or link_result["returncode"] != 0:
+        return "link_failed", commands
+    return "linked", commands
+
+
+def _check_sanitizer_available(
+    compiler: Mapping[str, Any], compile_language: str, work_dir: Path, timeout: int
+) -> _JSON_OBJECT:
+    """
+    Check whether the selected compiler accepts the sanitizer flags.
+
+    :param compiler: Compiler metadata from :func:`_find_compiler`.
+    :type compiler: Mapping[str, Any]
+    :param compile_language: ``"c"`` or ``"cpp"``.
+    :type compile_language: str
+    :param work_dir: Temporary working directory.
+    :type work_dir: pathlib.Path
+    :param timeout: Command timeout in seconds.
+    :type timeout: int
+    :return: Sanitizer availability metadata.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> import tempfile
+        >>> compiler = _find_compiler('c')
+        >>> with tempfile.TemporaryDirectory() as tmp:
+        ...     info = ({'available': False} if not compiler['available'] else _check_sanitizer_available(compiler, 'c', Path(tmp), 1))
+        >>> 'available' in info
+        True
+    """
+    source_path = work_dir / (
+        "sanitizer_check.%s" % ("c" if compile_language == "c" else "cpp")
+    )
+    binary_path = work_dir / "sanitizer_check"
+    if compile_language == "cpp":
+        source_path.write_text("int main() { return 0; }\n", encoding="utf-8")
+    else:
+        source_path.write_text("int main(void) { return 0; }\n", encoding="utf-8")
+    status, commands = _compile_and_link(
+        compiler,
+        source_path,
+        binary_path,
+        compile_language,
+        timeout,
+        extra_flags=_sanitizer_flags(compile_language),
+    )
+    return {
+        "available": status == "linked",
+        "status": "available" if status == "linked" else "sanitizer_unavailable",
+        "flags": _sanitizer_flags(compile_language),
+        "commands": commands,
+    }
+
+
+def _run_one_case(
+    case: NumericSmokeCase,
+    render_path: RenderPath,
+    compiler: Mapping[str, Any],
+    sanitizer: Mapping[str, Any],
+    work_dir: Path,
+    timeout: int,
+) -> _JSON_OBJECT:
+    """
+    Compile and run one rendered smoke case.
+
+    :param case: Smoke case definition.
+    :type case: NumericSmokeCase
+    :param render_path: Render path definition.
+    :type render_path: RenderPath
+    :param compiler: Compiler metadata for ``render_path.compile_language``.
+    :type compiler: Mapping[str, Any]
+    :param sanitizer: Sanitizer availability metadata.
+    :type sanitizer: Mapping[str, Any]
+    :param work_dir: Temporary working directory.
+    :type work_dir: pathlib.Path
+    :param timeout: Per-command timeout in seconds.
+    :type timeout: int
+    :return: JSON-compatible case result.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> case = NumericSmokeCase('pow', '**', 'A ** B', 3, 2)
+        >>> path = RenderPath(
+        ...     'builtin_c_style', 'c', 'c', 'c', 'c', {},
+        ...     {
+        ...         'Name': '{{ node.name }}',
+        ...         'BinaryOp(**)': 'pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})',
+        ...     },
+        ...     ('builtin_expr_styles.styles.c',),
+        ... )
+        >>> result = _run_one_case(case, path, {'available': False}, {'available': False}, Path('.').resolve(), 1)
+        >>> result['status']
+        'unavailable'
+    """
+    rendered = _render_case_expression(case, render_path)
+    case_id = "%s:%s" % (render_path.path_id, case.case_id)
+    result = {
+        "case_id": case_id,
+        "operator": case.operator,
+        "fcstm_expression": case.fcstm_expression,
+        "render_expression": rendered,
+        "render_path": render_path.path_id,
+        "compile_language": render_path.compile_language,
+        "mapping_sources": list(render_path.mapping_sources),
+        "status": "unknown",
+        "reason": None,
+        "commands": {},
+        "sanitizer": {
+            "available": bool(sanitizer.get("available")),
+            "status": sanitizer.get("status", "sanitizer_unavailable"),
+        },
+    }
+    if not compiler.get("available"):
+        result["status"] = "unavailable"
+        result["reason"] = "compiler_unavailable"
+        return result
+
+    case_dir = work_dir / case_id.replace(":", "__")
+    case_dir.mkdir(parents=True, exist_ok=True)
+    suffix = "c" if render_path.compile_language == "c" else "cpp"
+    source_path = case_dir / ("case.%s" % suffix)
+    binary_path = case_dir / "case"
+    source_path.write_text(
+        _source_for_case(rendered, case, render_path.compile_language),
+        encoding="utf-8",
+    )
+    result["source_path"] = str(source_path)
+
+    build_status, commands = _compile_and_link(
+        compiler,
+        source_path,
+        binary_path,
+        render_path.compile_language,
+        timeout,
+    )
+    result["commands"].update(commands)
+    if build_status != "linked":
+        result["status"] = build_status
+        result["reason"] = build_status
+        return result
+
+    run_result = _run_command([str(binary_path)], timeout, case_dir)
+    result["commands"]["run"] = run_result
+    if run_result["timed_out"] or run_result["returncode"] != 0:
+        result["status"] = "runtime_failed"
+        result["reason"] = (
+            "program_timed_out"
+            if run_result["timed_out"]
+            else "program_returned_nonzero"
+        )
+    else:
+        result["status"] = "passed"
+
+    if sanitizer.get("available"):
+        sanitizer_binary = case_dir / "case_sanitized"
+        sanitizer_status, sanitizer_commands = _compile_and_link(
+            compiler,
+            source_path,
+            sanitizer_binary,
+            render_path.compile_language,
+            timeout,
+            extra_flags=_sanitizer_flags(render_path.compile_language),
+        )
+        sanitizer_result = {
+            "available": True,
+            "status": sanitizer_status,
+            "commands": sanitizer_commands,
+        }
+        if sanitizer_status == "linked":
+            sanitizer_run = _run_command([str(sanitizer_binary)], timeout, case_dir)
+            sanitizer_result["commands"]["run"] = sanitizer_run
+            if sanitizer_run["timed_out"] or sanitizer_run["returncode"] != 0:
+                sanitizer_result["status"] = "sanitizer_failed"
+                if result["status"] == "passed":
+                    result["status"] = "sanitizer_failed"
+                    result["reason"] = "sanitizer_detected_numeric_undefined_behavior"
+            else:
+                sanitizer_result["status"] = "passed"
+        result["sanitizer"] = sanitizer_result
+    return result
+
+
+def validate_probe_summary(summary: Mapping[str, Any]) -> List[str]:
+    """
+    Validate the lightweight probe-summary contract used by smoke probes.
+
+    The validation intentionally avoids a third-party JSON Schema dependency so
+    the research command remains usable in minimal environments.
+
+    :param summary: Probe summary to validate.
+    :type summary: Mapping[str, Any]
+    :return: Human-readable diagnostics. Empty means valid.
+    :rtype: List[str]
+
+    Example::
+
+        >>> errors = validate_probe_summary({'schema_version': 1})
+        >>> errors[:4]
+        ['missing required key: source_mapping_sha256', 'missing required key: language', 'missing required key: toolchain', 'missing required key: cases']
+    """
+    errors = []
+    required = [
+        "schema_version",
+        "source_mapping_sha256",
+        "language",
+        "toolchain",
+        "cases",
+    ]
+    for key in required:
+        if key not in summary:
+            errors.append("missing required key: %s" % key)
+    if summary.get("schema_version") != 1:
+        errors.append("schema_version must be 1")
+    source_sha = summary.get("source_mapping_sha256")
+    if not isinstance(source_sha, str) or len(source_sha) != 64:
+        errors.append("source_mapping_sha256 must be a 64-character hex string")
+    if not isinstance(summary.get("toolchain"), dict):
+        errors.append("toolchain must be a mapping")
+    cases = summary.get("cases")
+    allowed_statuses = {
+        "passed",
+        "compile_failed",
+        "link_failed",
+        "runtime_failed",
+        "sanitizer_failed",
+        "skipped",
+        "unavailable",
+        "unknown",
+    }
+    if not isinstance(cases, list):
+        errors.append("cases must be a list")
+        return errors
+    for index, case in enumerate(cases):
+        if not isinstance(case, dict):
+            errors.append("case %d must be a mapping" % index)
+            continue
+        for key in ["case_id", "render_expression", "status"]:
+            if key not in case:
+                errors.append("case %d missing required key: %s" % (index, key))
+        if case.get("status") not in allowed_statuses:
+            errors.append(
+                "case %d has invalid status: %r" % (index, case.get("status"))
+            )
+    return errors
+
+
+def _summary_status(cases: Sequence[Mapping[str, Any]]) -> str:
+    """
+    Compute an aggregate status for a probe summary.
+
+    :param cases: Case result mappings.
+    :type cases: Sequence[Mapping[str, Any]]
+    :return: Aggregate status string.
+    :rtype: str
+
+    Example::
+
+        >>> _summary_status([{'status': 'passed'}])
+        'passed'
+    """
+    statuses = {case.get("status") for case in cases}
+    if not cases:
+        return "skipped"
+    if statuses <= {"unavailable"}:
+        return "unavailable"
+    if statuses <= {"passed"}:
+        return "passed"
+    if statuses & {
+        "compile_failed",
+        "link_failed",
+        "runtime_failed",
+        "sanitizer_failed",
+    }:
+        return "completed_with_findings"
+    return "completed"
+
+
+def build_c_family_smoke_report(
+    mode: str,
+    repo_root: Union[str, Path] = ".",
+    mapping_path: Union[str, Path] = _DEFAULT_MAPPING_PATH,
+    work_dir: Optional[Union[str, Path]] = None,
+    timeout: int = 10,
+) -> _JSON_OBJECT:
+    """
+    Build and run a C-family smoke probe report.
+
+    :param mode: Smoke mode, either ``"c-smoke"`` or ``"cpp-smoke"``.
+    :type mode: str
+    :param repo_root: Repository root path, defaults to the current directory.
+    :type repo_root: Union[str, pathlib.Path], optional
+    :param mapping_path: Render-mapping path, defaults to the committed R0
+        snapshot.
+    :type mapping_path: Union[str, pathlib.Path], optional
+    :param work_dir: Optional directory for temporary compile artifacts.
+    :type work_dir: Optional[Union[str, pathlib.Path]], optional
+    :param timeout: Per-command timeout in seconds, defaults to ``10``.
+    :type timeout: int, optional
+    :return: JSON-compatible smoke summary.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> report = build_c_family_smoke_report('c-smoke', timeout=1)
+        >>> report['schema_version']
+        1
+    """
+    root = _as_repo_path(repo_root)
+    mapping_file = _resolve_mapping_path(root, mapping_path)
+    mapping = _load_render_mapping(root, mapping_file)
+    source_mapping_sha256 = mapping.get("mapping_sha256")
+    if not isinstance(source_mapping_sha256, str):
+        source_mapping_sha256 = ""
+    try:
+        render_paths = _render_paths_for_mode(mode, mapping)
+    except ValueError as err:
+        # ValueError: _render_paths_for_mode validates the required R0 mapping
+        # paths (for example cxx_paths and template expression styles). Invalid
+        # mapping input is a structured probe outcome, not an uncaught CLI crash.
+        cases = [
+            {
+                "case_id": "invalid_mapping:%s" % case.case_id,
+                "operator": case.operator,
+                "fcstm_expression": case.fcstm_expression,
+                "render_expression": "",
+                "render_path": "invalid_mapping",
+                "compile_language": "c" if mode == "c-smoke" else "cpp",
+                "mapping_sources": [],
+                "status": "skipped",
+                "reason": str(err),
+                "commands": {},
+                "sanitizer": {"available": False, "status": "mapping_invalid"},
+            }
+            for case in _risk_cases()
+        ]
+        summary = {
+            "schema_version": 1,
+            "mode": mode,
+            "source_mapping_path": str(mapping_file),
+            "source_mapping_sha256": source_mapping_sha256,
+            "language": "c" if mode == "c-smoke" else "cpp",
+            "summary_status": "invalid",
+            "mapping_errors": [str(err)],
+            "toolchain": {
+                "compilers": {},
+                "sanitizers": {},
+                "timeout_seconds": timeout,
+                "work_dir": "",
+            },
+            "render_paths": [],
+            "cases": cases,
+        }
+        errors = validate_probe_summary(summary)
+        if errors:
+            summary["validation_errors"] = errors
+        return summary
+    compile_languages = sorted({path.compile_language for path in render_paths})
+    compilers = {language: _find_compiler(language) for language in compile_languages}
+
+    if work_dir is None:
+        temp_parent = root / _RESEARCH_PATH / "results" / "local"
+        temp_parent.mkdir(parents=True, exist_ok=True)
+        temp_context = tempfile.TemporaryDirectory(
+            prefix=mode + "-", dir=str(temp_parent)
+        )
+        cleanup = temp_context.cleanup
+        active_work_dir = Path(temp_context.name)
+    else:
+        active_work_dir = Path(work_dir).resolve()
+        active_work_dir.mkdir(parents=True, exist_ok=True)
+        cleanup = None
+
+    try:
+        sanitizers = {}
+        for language, compiler in compilers.items():
+            if compiler.get("available"):
+                sanitizer_dir = active_work_dir / ("sanitizer-%s" % language)
+                sanitizer_dir.mkdir(parents=True, exist_ok=True)
+                sanitizers[language] = _check_sanitizer_available(
+                    compiler, language, sanitizer_dir, timeout
+                )
+            else:
+                sanitizers[language] = {
+                    "available": False,
+                    "status": "compiler_unavailable",
+                    "flags": _sanitizer_flags(language),
+                    "commands": {},
+                }
+
+        cases = []
+        for render_path in render_paths:
+            compiler = compilers[render_path.compile_language]
+            sanitizer = sanitizers[render_path.compile_language]
+            for case in _risk_cases():
+                cases.append(
+                    _run_one_case(
+                        case,
+                        render_path,
+                        compiler,
+                        sanitizer,
+                        active_work_dir,
+                        timeout,
+                    )
+                )
+
+        summary = {
+            "schema_version": 1,
+            "mode": mode,
+            "source_mapping_path": str(mapping_file),
+            "source_mapping_sha256": source_mapping_sha256,
+            "language": "c" if mode == "c-smoke" else "cpp",
+            "summary_status": _summary_status(cases),
+            "toolchain": {
+                "compilers": compilers,
+                "sanitizers": sanitizers,
+                "timeout_seconds": timeout,
+                "work_dir": str(active_work_dir),
+            },
+            "render_paths": [
+                {
+                    "path_id": path.path_id,
+                    "language": path.language,
+                    "compile_language": path.compile_language,
+                    "lang_style": path.lang_style,
+                    "expression_core_language": path.expression_core_language,
+                    "mapping_sources": list(path.mapping_sources),
+                    "template_name": path.template_name,
+                    "wrapper_language": path.wrapper_language,
+                }
+                for path in render_paths
+            ],
+            "cases": cases,
+        }
+        errors = validate_probe_summary(summary)
+        if errors:
+            summary["summary_status"] = "invalid"
+            summary["validation_errors"] = errors
+        return summary
+    finally:
+        if cleanup is not None:
+            cleanup()
 
 
 def _git_output(repo_root: Union[str, Path], args: Sequence[str]) -> Optional[str]:
@@ -251,95 +1754,6 @@ def _git_commit(repo_root: Union[str, Path]) -> Optional[str]:
         True
     """
     return _git_output(repo_root, ["rev-parse", "HEAD"])
-
-
-def build_environment_report(repo_root: Union[str, Path] = ".") -> _JSON_OBJECT:
-    """
-    Build a lightweight environment report for future probe planning.
-
-    :param repo_root: Repository root path, defaults to the current directory.
-    :type repo_root: Union[str, pathlib.Path], optional
-    :return: JSON-compatible environment report.
-    :rtype: Dict[str, Any]
-
-    Example::
-
-        >>> report = build_environment_report('.')
-        >>> report['mode']
-        'env'
-    """
-    root = Path(repo_root).resolve()
-    return {
-        "schema_version": 1,
-        "mode": "env",
-        "native_runner_enabled": False,
-        "repository": {
-            "root": str(root),
-            "research_path": "research/numeric-render-semantics",
-        },
-        "python": {
-            "executable": sys.executable,
-            "version": sys.version.split()[0],
-            "implementation": platform.python_implementation(),
-        },
-        "platform": {
-            "system": platform.system(),
-            "release": platform.release(),
-            "machine": platform.machine(),
-            "processor": platform.processor(),
-        },
-        "resources": {
-            "cpu_count": os.cpu_count(),
-        },
-        "available_commands": [_probe_command(name) for name in _COMMANDS],
-        "notes": [
-            "Environment mode is inventory-only and does not compile or execute target-language probes.",
-            "Native runners are intentionally deferred to dedicated probe work.",
-        ],
-    }
-
-
-def _stable_json(value: Any) -> str:
-    """
-    Serialize a value as stable, human-readable JSON.
-
-    :param value: JSON-compatible value.
-    :type value: Any
-    :return: Stable JSON text ending in a newline.
-    :rtype: str
-
-    Example::
-
-        >>> _stable_json({'b': 1, 'a': 2}).splitlines()[1]
-        '  "a": 2,'
-    """
-    return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-
-
-def _read_json(path: Union[str, Path]) -> _JSON_OBJECT:
-    """
-    Read a JSON object from disk.
-
-    :param path: JSON file path.
-    :type path: Union[str, pathlib.Path]
-    :return: Parsed JSON object.
-    :rtype: Dict[str, Any]
-    :raises ValueError: If the file does not contain a JSON object.
-    :raises json.JSONDecodeError: If the JSON text is invalid.
-    :raises OSError: If the file cannot be read.
-
-    Example::
-
-        >>> import tempfile
-        >>> p = Path(tempfile.gettempdir()) / 'pyfcstm-json-object-example.json'
-        >>> _ = p.write_text('{"ok": true}', encoding='utf-8')
-        >>> _read_json(p)['ok']
-        True
-    """
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise ValueError("JSON payload must be an object")
-    return data
 
 
 def _python_sign(value: Union[int, float]) -> int:
@@ -1598,7 +3012,85 @@ def _build_z3_capability_matrix(mapping: Mapping[str, Any]) -> List[_JSON_OBJECT
     return rows
 
 
-def build_python_z3_baseline(repo_root: Union[str, Path] = ".") -> _JSON_OBJECT:
+
+def _python_alignment_cases(mapping: Mapping[str, Any], repo_root: Union[str, Path]) -> List[_JSON_OBJECT]:
+    """
+    Build Python baseline cases using the shared probe join fields.
+
+    :param mapping: R0 render mapping snapshot.
+    :type mapping: Mapping[str, Any]
+    :param repo_root: Repository root path used to load the Python template.
+    :type repo_root: Union[str, pathlib.Path]
+    :return: Render-path scoped Python alignment cases.
+    :rtype: List[Dict[str, Any]]
+
+    Example::
+
+        >>> cases = _python_alignment_cases({'builtin_expr_styles': {'styles': {}}}, '.')
+        >>> {'case_id', 'operator', 'fcstm_expression', 'render_path', 'render_expression'} <= set(cases[0])
+        True
+    """
+    renderer = StateMachineCodeRenderer(str(Path(repo_root).resolve() / "templates/python"))
+    semantic_cases = [
+        ("round", "round", "round(A)"),
+        ("abs", "abs", "abs(A)"),
+        ("sign", "sign", "sign(A)"),
+        ("cbrt", "cbrt", "cbrt(A)"),
+        ("pow", "**", "A ** B"),
+        ("integer_division", "/", "A / B"),
+        ("modulo", "%", "A % B"),
+        ("signed_left_shift", "<<", "A << B"),
+        ("bitwise_not", "~", "~A"),
+    ]
+    cases: List[_JSON_OBJECT] = []
+    for semantic_id, operator, expression in semantic_cases:
+        builtin = _render_python_expr(expression)
+        cases.append(
+            {
+                "case_id": "builtin_python_style:%s" % semantic_id,
+                "semantic_case_id": semantic_id,
+                "operator": operator,
+                "fcstm_expression": expression,
+                "render_path": "builtin_python_style",
+                "render_expression": builtin.get("rendered", ""),
+                "status": builtin.get("status", "unknown"),
+                "ast_type": builtin.get("ast_type"),
+            }
+        )
+        for style in ["python_expr", "python_scope_expr"]:
+            rendered = _render_template_python_expr(renderer, expression, style)
+            cases.append(
+                {
+                    "case_id": "%s:%s" % (style, semantic_id),
+                    "semantic_case_id": semantic_id,
+                    "operator": operator,
+                    "fcstm_expression": expression,
+                    "render_path": "templates.python.expr_styles.%s" % style,
+                    "render_expression": rendered.get("rendered", ""),
+                    "status": rendered.get("status", "unknown"),
+                    "ast_type": rendered.get("ast_type"),
+                }
+            )
+        assignment = _render_template_python_assignment(renderer, expression)
+        cases.append(
+            {
+                "case_id": "python_runtime_assignment:%s" % semantic_id,
+                "semantic_case_id": semantic_id,
+                "operator": operator,
+                "fcstm_expression": expression,
+                "render_path": "templates.python.stmt_styles.python_runtime",
+                "render_expression": assignment.get("rendered", ""),
+                "status": assignment.get("status", "unknown"),
+                "sample": assignment.get("sample"),
+            }
+        )
+    return cases
+
+
+def build_python_z3_baseline(
+    repo_root: Union[str, Path] = ".",
+    mapping_path: Union[str, Path] = _DEFAULT_MAPPING_PATH,
+) -> _JSON_OBJECT:
     """
     Build the Python/Z3 numeric semantics baseline snapshot.
 
@@ -1608,6 +3100,9 @@ def build_python_z3_baseline(repo_root: Union[str, Path] = ".") -> _JSON_OBJECT:
 
     :param repo_root: Repository root path, defaults to the current directory.
     :type repo_root: Union[str, pathlib.Path], optional
+    :param mapping_path: Render-mapping snapshot path, defaults to the committed
+        R0 snapshot.
+    :type mapping_path: Union[str, pathlib.Path], optional
     :return: JSON-compatible Python/Z3 baseline payload.
     :rtype: Dict[str, Any]
 
@@ -1617,9 +3112,12 @@ def build_python_z3_baseline(repo_root: Union[str, Path] = ".") -> _JSON_OBJECT:
         >>> baseline['mode']
         'python-z3-baseline'
     """
-    root = Path(repo_root).resolve()
-    mapping = build_render_mapping(root)
-    mapping_sha = mapping["mapping_sha256"]
+    root = _as_repo_path(repo_root)
+    mapping_file = _resolve_mapping_path(root, mapping_path)
+    mapping = _load_render_mapping(root, mapping_file)
+    mapping_sha = mapping.get("mapping_sha256")
+    if not isinstance(mapping_sha, str):
+        mapping_sha = ""
     return {
         "schema_version": 1,
         "mode": "python-z3-baseline",
@@ -1628,19 +3126,19 @@ def build_python_z3_baseline(repo_root: Union[str, Path] = ".") -> _JSON_OBJECT:
         "render_mapping_sha256": mapping_sha,
         "generator": {
             "tool": "tools/numeric_render_probe.py",
-            "research_path": _RESEARCH_PATH.as_posix(),
+            "research_path": _RESEARCH_PATH,
             "source_commit": _git_commit(root),
             "source_commit_policy": "Best-effort commit at generation time; mapping and schema validation are the stable comparison keys.",
             "determinism": "No wall-clock timestamp is stored; concrete Z3 model values are not used as core facts.",
         },
         "repository": {
             "root": ".",
-            "render_mapping_snapshot": _RENDER_MAPPING_SNAPSHOT.as_posix(),
-            "schema_path": _PYTHON_Z3_BASELINE_SCHEMA.as_posix(),
+            "render_mapping_snapshot": mapping_file.relative_to(root).as_posix(),
+            "schema_path": _PYTHON_Z3_BASELINE_SCHEMA,
         },
         "toolchain": {
             "python": {
-                "executable": sys.executable,
+                "executable": Path(sys.executable).name,
                 "version": sys.version.split()[0],
                 "implementation": platform.python_implementation(),
             },
@@ -1650,6 +3148,7 @@ def build_python_z3_baseline(repo_root: Union[str, Path] = ".") -> _JSON_OBJECT:
             },
         },
         "python_render_paths": _build_python_render_paths(mapping, root),
+        "alignment_cases": _python_alignment_cases(mapping, root),
         "python_runtime_samples": _build_python_runtime_samples(),
         "z3_representative_samples": _build_z3_representative_samples(),
         "z3_capability_matrix": _build_z3_capability_matrix(mapping),
@@ -1952,6 +3451,27 @@ def validate_python_z3_baseline(payload: Mapping[str, Any]) -> List[str]:
         errors.append("mode must be python-z3-baseline")
     if payload.get("language") != "python-z3":
         errors.append("language must be python-z3")
+    alignment_cases = payload.get("alignment_cases")
+    if not isinstance(alignment_cases, list) or not alignment_cases:
+        errors.append("alignment_cases must be a non-empty list")
+    else:
+        required_join_keys = {
+            "case_id",
+            "operator",
+            "fcstm_expression",
+            "render_path",
+            "render_expression",
+        }
+        for index, case in enumerate(alignment_cases):
+            if not isinstance(case, Mapping):
+                errors.append("alignment_cases[%d] must be a mapping" % index)
+                continue
+            missing = sorted(required_join_keys - set(case))
+            if missing:
+                errors.append(
+                    "alignment_cases[%d] missing shared join fields: %s"
+                    % (index, ", ".join(missing))
+                )
     for key in ["source_mapping_sha256", "render_mapping_sha256"]:
         value = payload.get(key)
         if (
@@ -2322,6 +3842,9 @@ def _baseline_comparison_payload(payload: Mapping[str, Any]) -> _JSON_OBJECT:
     generator = comparable.get("generator")
     if isinstance(generator, dict):
         generator["source_commit"] = "<ignored>"
+    repository = comparable.get("repository")
+    if isinstance(repository, dict):
+        repository["render_mapping_snapshot"] = _DEFAULT_MAPPING_PATH
     toolchain = comparable.get("toolchain")
     if isinstance(toolchain, dict):
         python_info = toolchain.get("python")
@@ -2405,12 +3928,18 @@ def _first_baseline_difference(
     return None
 
 
-def check_python_z3_baseline(repo_root: Union[str, Path] = ".") -> _JSON_OBJECT:
+def check_python_z3_baseline(
+    repo_root: Union[str, Path] = ".",
+    mapping_path: Union[str, Path] = _DEFAULT_MAPPING_PATH,
+) -> _JSON_OBJECT:
     """
     Build and validate the Python/Z3 baseline snapshot contract.
 
     :param repo_root: Repository root path, defaults to the current directory.
     :type repo_root: Union[str, pathlib.Path], optional
+    :param mapping_path: Render-mapping snapshot path checked against live drift,
+        defaults to the committed R0 snapshot.
+    :type mapping_path: Union[str, pathlib.Path], optional
     :return: Check result with ``ok`` and ``errors`` fields.
     :rtype: Dict[str, Any]
 
@@ -2420,11 +3949,18 @@ def check_python_z3_baseline(repo_root: Union[str, Path] = ".") -> _JSON_OBJECT:
         >>> isinstance(result['ok'], bool)
         True
     """
-    root = Path(repo_root).resolve()
-    live = build_python_z3_baseline(root)
+    root = _as_repo_path(repo_root)
+    live = build_python_z3_baseline(root, mapping_path=mapping_path)
     errors = [
         "live baseline: %s" % error for error in validate_python_z3_baseline(live)
     ]
+    live_mapping = build_render_mapping(root)
+    live_mapping_sha = live_mapping.get("mapping_sha256")
+    if live_mapping_sha != live.get("source_mapping_sha256"):
+        errors.append(
+            "render_mapping snapshot drift: snapshot %r does not match live %r"
+            % (live.get("source_mapping_sha256"), live_mapping_sha)
+        )
     schema = None
     schema_path = root / _PYTHON_Z3_BASELINE_SCHEMA
     try:
@@ -2483,33 +4019,8 @@ def check_python_z3_baseline(repo_root: Union[str, Path] = ".") -> _JSON_OBJECT:
         "schema_version": live["schema_version"],
         "source_mapping_sha256": live["source_mapping_sha256"],
         "snapshot_present": snapshot_present,
-        "snapshot_path": _PYTHON_Z3_BASELINE_SNAPSHOT.as_posix(),
+        "snapshot_path": _PYTHON_Z3_BASELINE_SNAPSHOT,
     }
-
-
-def _write_payload(output_path: Union[str, Path], payload: Mapping[str, Any]) -> None:
-    """
-    Write a JSON payload to disk with parent directories created.
-
-    :param output_path: Destination path.
-    :type output_path: Union[str, pathlib.Path]
-    :param payload: JSON-compatible payload.
-    :type payload: Mapping[str, Any]
-    :return: ``None``.
-    :rtype: None
-
-    Example::
-
-        >>> import tempfile
-        >>> path = Path(tempfile.gettempdir()) / 'pyfcstm-probe-write-example.json'
-        >>> _write_payload(path, {'ok': True})
-        >>> '"ok": true' in path.read_text(encoding='utf-8')
-        True
-    """
-    path = Path(output_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_stable_json(payload), encoding="utf-8")
-
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     """
@@ -2532,13 +4043,36 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "mode",
         nargs="?",
         default="env",
-        choices=["env", "python-z3-baseline"],
-        help="Probe mode. Use 'env' for inventory or 'python-z3-baseline' for Python/Z3 baseline output.",
+        choices=["env", "c-smoke", "cpp-smoke", "python-z3-baseline"],
+        help=(
+            "Probe mode. Current modes are 'env', 'c-smoke', 'cpp-smoke', "
+            "and 'python-z3-baseline'; later research PRs should append modes "
+            "here without replacing existing ones."
+        ),
     )
     parser.add_argument(
         "--repo-root",
         default=".",
         help="Repository root to describe, defaults to the current directory.",
+    )
+    parser.add_argument(
+        "--mapping",
+        default=_DEFAULT_MAPPING_PATH,
+        help=(
+            "Render mapping JSON path for smoke modes, defaults to "
+            + _DEFAULT_MAPPING_PATH
+            + "."
+        ),
+    )
+    parser.add_argument(
+        "--work-dir",
+        help="Optional directory for smoke compile artifacts.",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=10,
+        help="Per-command timeout in seconds for smoke modes.",
     )
     parser.add_argument(
         "--output",
@@ -2550,6 +4084,28 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="Validate the selected probe contract instead of writing the full payload.",
     )
     return parser
+
+
+def _write_or_print(payload: Mapping[str, Any], output: Optional[str]) -> None:
+    """
+    Write a JSON payload to a file or standard output.
+
+    :param payload: JSON-compatible payload.
+    :type payload: Mapping[str, Any]
+    :param output: Optional output file path.
+    :type output: Optional[str]
+    :return: ``None``.
+    :rtype: None
+
+    Example::
+
+        >>> _write_or_print({'ok': True}, None)  # doctest: +ELLIPSIS
+        {...
+    """
+    if output:
+        _write_payload(output, payload)
+    else:
+        print(_stable_json(payload), end="")
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -2572,27 +4128,29 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.check:
             parser.error("--check is currently supported only for python-z3-baseline")
         report = build_environment_report(args.repo_root)
-        payload = _stable_json(report)
-        if args.output:
-            _write_payload(args.output, report)
-        else:
-            print(payload, end="")
+        _write_or_print(report, args.output)
+        return 0
+
+    if args.mode in {"c-smoke", "cpp-smoke"}:
+        if args.check:
+            parser.error("--check is currently supported only for python-z3-baseline")
+        report = build_c_family_smoke_report(
+            args.mode,
+            repo_root=args.repo_root,
+            mapping_path=args.mapping,
+            work_dir=args.work_dir,
+            timeout=args.timeout,
+        )
+        _write_or_print(report, args.output)
         return 0
 
     if args.mode == "python-z3-baseline":
         if args.check:
-            result = check_python_z3_baseline(args.repo_root)
-            payload = _stable_json(result)
-            if args.output:
-                _write_payload(args.output, result)
-            else:
-                print(payload, end="")
+            result = check_python_z3_baseline(args.repo_root, mapping_path=args.mapping)
+            _write_or_print(result, args.output)
             return 0 if result["ok"] else 1
-        report = build_python_z3_baseline(args.repo_root)
-        if args.output:
-            _write_payload(args.output, report)
-        else:
-            print(_stable_json(report), end="")
+        report = build_python_z3_baseline(args.repo_root, mapping_path=args.mapping)
+        _write_or_print(report, args.output)
         return 0
 
     parser.error("unsupported mode: %s" % args.mode)

@@ -13,35 +13,75 @@
     "repository",
     "toolchain",
     "python_render_paths",
+    "alignment_cases",
     "python_runtime_samples",
     "z3_representative_samples",
     "z3_capability_matrix",
     "representative_notes"
   ],
   "properties": {
-    "schema_version": {"const": 1},
-    "mode": {"const": "python-z3-baseline"},
-    "language": {"const": "python-z3"},
-    "source_mapping_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "render_mapping_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "schema_version": {
+      "const": 1
+    },
+    "mode": {
+      "const": "python-z3-baseline"
+    },
+    "language": {
+      "const": "python-z3"
+    },
+    "source_mapping_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "render_mapping_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "generator": {
       "type": "object",
-      "required": ["tool", "research_path", "source_commit", "source_commit_policy", "determinism"],
+      "required": [
+        "tool",
+        "research_path",
+        "source_commit",
+        "source_commit_policy",
+        "determinism"
+      ],
       "properties": {
-        "tool": {"type": "string"},
-        "research_path": {"type": "string"},
-        "source_commit": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
-        "source_commit_policy": {"type": "string"},
-        "determinism": {"type": "string"}
+        "tool": {
+          "type": "string"
+        },
+        "research_path": {
+          "type": "string"
+        },
+        "source_commit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "source_commit_policy": {
+          "type": "string"
+        },
+        "determinism": {
+          "type": "string"
+        }
       }
     },
     "repository": {
       "type": "object",
-      "required": ["root", "render_mapping_snapshot", "schema_path"]
+      "required": [
+        "root",
+        "render_mapping_snapshot",
+        "schema_path"
+      ]
     },
     "toolchain": {
       "type": "object",
-      "required": ["python", "z3"]
+      "required": [
+        "python",
+        "z3"
+      ]
     },
     "python_render_paths": {
       "type": "object",
@@ -56,7 +96,15 @@
     },
     "python_runtime_samples": {
       "type": "object",
-      "required": ["constants", "round_half_cases", "sign_cases", "cbrt_cases", "division_modulo_cases", "bitwise_cases", "shift_cases"]
+      "required": [
+        "constants",
+        "round_half_cases",
+        "sign_cases",
+        "cbrt_cases",
+        "division_modulo_cases",
+        "bitwise_cases",
+        "shift_cases"
+      ]
     },
     "z3_representative_samples": {
       "type": "object",
@@ -71,52 +119,168 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["fcstm_operator", "kind", "render_paths", "risk_level", "z3_support"],
+        "required": [
+          "fcstm_operator",
+          "kind",
+          "render_paths",
+          "risk_level",
+          "z3_support"
+        ],
         "properties": {
-          "fcstm_operator": {"type": "string"},
-          "kind": {"type": "string"},
+          "fcstm_operator": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
           "render_paths": {
             "type": "array",
             "minItems": 1,
             "items": {
               "type": "object",
-              "required": ["source", "mapping_path", "template_key", "status"],
+              "required": [
+                "source",
+                "mapping_path",
+                "template_key",
+                "status"
+              ],
               "properties": {
-                "source": {"type": "string"},
-                "mapping_path": {"type": "string"},
-                "template_key": {"type": "string"},
-                "status": {"type": "string"},
-                "template": {"type": "string"},
-                "note": {"type": "string"},
-                "style": {"type": "string"}
+                "source": {
+                  "type": "string"
+                },
+                "mapping_path": {
+                  "type": "string"
+                },
+                "template_key": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "template": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "style": {
+                  "type": "string"
+                }
               }
             }
           },
-          "risk_level": {"enum": ["low", "medium", "high", "unknown"]},
+          "risk_level": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "unknown"
+            ]
+          },
           "z3_support": {
             "type": "object",
-            "required": ["Int", "Real", "BitVec", "FP"],
+            "required": [
+              "Int",
+              "Real",
+              "BitVec",
+              "FP"
+            ],
             "additionalProperties": false,
             "properties": {
-              "Int": {"$ref": "#/$defs/support"},
-              "Real": {"$ref": "#/$defs/support"},
-              "BitVec": {"$ref": "#/$defs/support"},
-              "FP": {"$ref": "#/$defs/support"}
+              "Int": {
+                "$ref": "#/$defs/support"
+              },
+              "Real": {
+                "$ref": "#/$defs/support"
+              },
+              "BitVec": {
+                "$ref": "#/$defs/support"
+              },
+              "FP": {
+                "$ref": "#/$defs/support"
+              }
             }
           }
         }
       }
     },
-    "representative_notes": {"type": "array"}
+    "representative_notes": {
+      "type": "array"
+    },
+    "alignment_cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "case_id",
+          "operator",
+          "fcstm_expression",
+          "render_path",
+          "render_expression"
+        ],
+        "properties": {
+          "case_id": {
+            "type": "string"
+          },
+          "semantic_case_id": {
+            "type": "string"
+          },
+          "operator": {
+            "type": "string"
+          },
+          "fcstm_expression": {
+            "type": "string"
+          },
+          "render_path": {
+            "type": "string"
+          },
+          "render_expression": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "ast_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sample": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": true
+      }
+    }
   },
   "$defs": {
     "support": {
       "type": "object",
-      "required": ["status", "strategy", "note"],
+      "required": [
+        "status",
+        "strategy",
+        "note"
+      ],
       "properties": {
-        "status": {"enum": ["exact", "approximate", "uninterpreted", "unsupported"]},
-        "strategy": {"type": "string"},
-        "note": {"type": "string"}
+        "status": {
+          "enum": [
+            "exact",
+            "approximate",
+            "uninterpreted",
+            "unsupported"
+          ]
+        },
+        "strategy": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
       }
     }
   }

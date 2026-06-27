@@ -1,23 +1,38 @@
 # Probe 设计说明
 
-PR-1 提供 `tools/numeric_render_probe.py env`，用于输出本地 Python、平台和可用命令清单；PR-3 新增 `python-z3-baseline`，用于输出 Python render/runtime 小样例和 Z3 capability matrix。PR-1 的 R0 契约校验由 `tools/numeric_render_mapping.py --check` 承担；PR-3 的 baseline 契约校验由 `tools/numeric_render_probe.py python-z3-baseline --check` 承担。整个调研系列都不新增 `test/` 路径；任何会调用 native compiler、Node.js、Java、Rust、Go 或重型 Z3 求解的 probe 都应在后续子 PR 中继续落在 `tools/` / `research/` 与 gitignored `results/local/` 下。
+`tools/numeric_render_probe.py env` 用于输出本地 Python、平台和可用命令清单；`c-smoke` / `cpp-smoke` 用于从 R0 `render_mapping.json` 读取 C-family 渲染路径并编译运行小型 smoke 程序；`python-z3-baseline` 用于从同一 R0 snapshot 记录 Python renderer / Python template / statement override 事实和 Z3 capability matrix。R0 mapping 的契约校验由 `tools/numeric_render_mapping.py --check` 承担。后续语言 smoke 和 exhaustive/shard runner 应继续追加到同一 probe CLI、同一 mapping digest 约定和同一 artifact 目录结构中，而不是重建独立 harness。整个调研系列都不新增 `test/` 路径；任何会调用 native compiler、Node.js、Java、Rust、Go 或 Z3 求解的 probe 都应继续落在 `tools/` / `research/` 与 gitignored `results/local/` 下。
 
-## Python + Z3 baseline
+## 当前累计入口
 
-`python-z3-baseline` 读取 R0 `render_mapping.json` 的 live mapping，生成 `results/snapshots/python_z3_baseline.json`。该 snapshot 固定以下边界：
+```bash
+python tools/numeric_render_probe.py env \
+  --output research/numeric-render-semantics/results/local/env.json
+python tools/numeric_render_probe.py c-smoke \
+  --mapping research/numeric-render-semantics/results/snapshots/render_mapping.json \
+  --output research/numeric-render-semantics/results/local/c_smoke.json
+python tools/numeric_render_probe.py cpp-smoke \
+  --mapping research/numeric-render-semantics/results/snapshots/render_mapping.json \
+  --output research/numeric-render-semantics/results/local/cpp_smoke.json
+python tools/numeric_render_probe.py python-z3-baseline \
+  --mapping research/numeric-render-semantics/results/snapshots/render_mapping.json \
+  --output research/numeric-render-semantics/results/snapshots/python_z3_baseline.json
+python tools/numeric_render_probe.py python-z3-baseline --check
+```
 
-- Python 是 P3 / 无限精度 / 仿真兼容基线，不是默认定长 profile。
-- Python render path 同时记录 builtin Python style、`templates/python/config.yaml` 的 `python_expr` / `python_scope_expr` override，以及 statement runtime `_s(...)` override。
-- `python_expr` / `python_scope_expr` / `python_runtime` 不只记录 raw override template，也记录 `sign(A)`、`round(A)`、`cbrt(A)`、`sqrt(A)` 等代表性表达式经真实 renderer 渲染后的成品，避免后续 PR 只读配置字符串而误判运行路径。
-- `round`、`sign`、`cbrt`、常量、division/modulo、shift、bitwise 和 unary `~` 都有代表性样例或显式 parse-status 记录。
-- Z3 额外记录轻量 construction sample：当前 z3py `Int` bitwise 构造为 `type_error`，`BitVec` bitwise 构造成功，用作后续 fixed-width profile 的边界证据。
-- Z3 matrix 对每个 operator / UFunc 按 `Int`、`Real`、`BitVec`、`FP` 记录 `exact`、`approximate`、`uninterpreted` 或 `unsupported`；当前 solver 直接 `NotImplementedError` 拒绝的 `cbrt`、三角、双曲、指数和对数函数按当前事实标为 `unsupported`，未来如引入 uninterpreted / obligation 编码再单独更新。
-- baseline 默认不保存依赖 solver model 选择的数值；若未来加入 model-valued 字段，必须记录 Z3 seed / relevant `set_param` 与 `z3-solver` 版本。
-- `python-z3-baseline --check` 同时执行轻量 schema 形状校验、手写语义断言和 live-vs-snapshot 字节级稳定比较；schema 文件不是只作文档说明。
+## C/C++ smoke runner
+
+Smoke summary 必须写入 `source_mapping_sha256`，并与所读取 mapping 的 `mapping_sha256` 一致。`cases[]` 至少覆盖 `round`、`abs`、`sign`、`cbrt`、`pow`、带符号 shift、整数 division 和除零风险。每个 case 都应保留可供 PR-6 汇总的 join 字段：`operator`、`fcstm_expression`、`case_id`、`render_path` 和 `render_expression`。跨 C/C++、Python 与 Z3 的语义汇总应优先按 `operator` + `fcstm_expression`（或显式 `semantic_case_id`）聚合；当前 `case_id` 允许保持 render-path scoped，用于区分同一语义表达式在不同 renderer 路径下的具体 smoke case，`render_path` / `render_expression` 则继续记录目标语言渲染差异。缺 compiler、缺 sanitizer flag 或 partial toolchain availability 通过 `toolchain`、`sanitizer`、`status` 和 `reason` 字段结构化记录；编译失败、链接失败、运行失败和 sanitizer failure 都是有效调研结果。
+
+## Python/Z3 baseline runner
+
+`python-z3-baseline` 默认读取 `research/numeric-render-semantics/results/snapshots/render_mapping.json`，避免手写与 renderer 脱节的表达式表；`--check` 会同时校验 committed `python_z3_baseline.json`、专用 schema、semantic invariants、snapshot-vs-live payload，以及 committed R0 mapping 与 live render mapping 的 drift。baseline 的 `alignment_cases[]` 使用与 smoke runner 相同的 join 字段：`case_id`、`operator`、`fcstm_expression`、`render_path` 和 `render_expression`，并额外提供 `semantic_case_id` 方便 PR-6 先按语义表达式聚合，再按 render path 展开。
+
+Python 输出作为 P3 / 无限精度 / 仿真兼容基线使用，不作为后续 solver / verify 的定长默认语义。Z3 capability matrix 记录 `Int` / `Real` / `BitVec` / `FP` 的 `exact`、`approximate`、`uninterpreted` 或 `unsupported` 等级；当前 baseline 避免记录不稳定 solver model 值，只记录可复跑的 capability、render path 和代表性 counterexample。
 
 ## 后续 runner 约束
 
 - runner 必须读取 R0 `render_mapping.json`，不要手写与 renderer 脱节的表达式表。
+- 后续 runner 应保留可跨 artifact join 的 `operator` / `fcstm_expression` 字段，并在需要时补充稳定的 `semantic_case_id`；`case_id` 可继续作为单个 runner 内的 render-path scoped case 标识，避免 PR-6 为 C/C++、Python 和 Z3 再造第三套对齐 case model。
 - 编译失败、链接失败、运行时异常、sanitizer trap 都是结果，不得静默替换为“更合理”的 helper。
 - 每次运行前探测 CPU、内存、磁盘、工具链版本和可承受并行度。
 - Heavy 输出写入 `results/local/`，小型 summary / digest 才能提交。

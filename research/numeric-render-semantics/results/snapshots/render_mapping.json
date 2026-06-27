@@ -1,0 +1,1064 @@
+{
+  "builtin_expr_styles": {
+    "aliases": {
+      "c++": "cpp",
+      "cc": "cpp",
+      "cxx": "cpp",
+      "golang": "go",
+      "javascript": "js",
+      "node": "js",
+      "nodejs": "js",
+      "py": "python",
+      "python3": "python",
+      "rs": "rust",
+      "rustlang": "rust",
+      "typescript": "ts"
+    },
+    "styles": {
+      "c": {
+        "base_lang": "c",
+        "templates": {
+          "BinaryOp": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "BinaryOp(**)": "pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})",
+          "BinaryOp(=>)": "((!({{ node.expr1 | expr_render }})) || ({{ node.expr2 | expr_render }}))",
+          "BinaryOp(iff)": "(({{ node.expr1 | expr_render }}) == ({{ node.expr2 | expr_render }}))",
+          "BinaryOp(xor)": "(({{ node.expr1 | expr_render }}) != ({{ node.expr2 | expr_render }}))",
+          "Boolean": "{{ (1 if node.value else 0) | hex }}",
+          "ConditionalOp": "({{ node.cond | expr_render }}) ? {{ node.value_true | expr_render }} : {{ node.value_false | expr_render }}",
+          "Constant": "{{ node.value | repr }}",
+          "Float": "{{ node.value | repr }}",
+          "HexInt": "{{ node.value | hex }}",
+          "Integer": "{{ node.value | repr }}",
+          "Name": "{{ node.name }}",
+          "Paren": "({{ node.expr | expr_render }})",
+          "UFunc": "{{ node.func }}({{ node.expr | expr_render }})",
+          "UnaryOp": "{{ node.op }}{{ node.expr | expr_render }}"
+        }
+      },
+      "cpp": {
+        "base_lang": "cpp",
+        "templates": {
+          "BinaryOp": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "BinaryOp(**)": "std::pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})",
+          "BinaryOp(=>)": "((!({{ node.expr1 | expr_render }})) || ({{ node.expr2 | expr_render }}))",
+          "BinaryOp(iff)": "(({{ node.expr1 | expr_render }}) == ({{ node.expr2 | expr_render }}))",
+          "BinaryOp(xor)": "(({{ node.expr1 | expr_render }}) != ({{ node.expr2 | expr_render }}))",
+          "Boolean": "{{ \"true\" if node.value else \"false\" }}",
+          "ConditionalOp": "({{ node.cond | expr_render }}) ? {{ node.value_true | expr_render }} : {{ node.value_false | expr_render }}",
+          "Constant": "{{ node.value | repr }}",
+          "Float": "{{ node.value | repr }}",
+          "HexInt": "{{ node.value | hex }}",
+          "Integer": "{{ node.value | repr }}",
+          "Name": "{{ node.name }}",
+          "Paren": "({{ node.expr | expr_render }})",
+          "UFunc": "std::{{ node.func }}({{ node.expr | expr_render }})",
+          "UnaryOp": "{{ node.op }}{{ node.expr | expr_render }}"
+        }
+      },
+      "dsl": {
+        "base_lang": "dsl",
+        "templates": {
+          "BinaryOp": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "BinaryOp(=>)": "{{ node.expr1 | expr_render }} => {{ node.expr2 | expr_render }}",
+          "BinaryOp(iff)": "{{ node.expr1 | expr_render }} iff {{ node.expr2 | expr_render }}",
+          "BinaryOp(xor)": "{{ node.expr1 | expr_render }} xor {{ node.expr2 | expr_render }}",
+          "Boolean": "{{ node.value | repr }}",
+          "ConditionalOp": "({{ node.cond | expr_render }}) ? {{ node.value_true | expr_render }} : {{ node.value_false | expr_render }}",
+          "Constant": "{{ node.value | repr }}",
+          "Float": "{{ node.value | repr }}",
+          "HexInt": "{{ node.value | hex }}",
+          "Integer": "{{ node.value | repr }}",
+          "Name": "{{ node.name }}",
+          "Paren": "({{ node.expr | expr_render }})",
+          "UFunc": "{{ node.func }}({{ node.expr | expr_render }})",
+          "UnaryOp": "{{ node.op }}{{ node.expr | expr_render }}"
+        }
+      },
+      "go": {
+        "base_lang": "go",
+        "templates": {
+          "BinaryOp": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "BinaryOp(**)": "math.Pow(float64({{ node.expr1 | expr_render }}), float64({{ node.expr2 | expr_render }}))",
+          "BinaryOp(=>)": "((!({{ node.expr1 | expr_render }})) || ({{ node.expr2 | expr_render }}))",
+          "BinaryOp(iff)": "(({{ node.expr1 | expr_render }}) == ({{ node.expr2 | expr_render }}))",
+          "BinaryOp(xor)": "(({{ node.expr1 | expr_render }}) != ({{ node.expr2 | expr_render }}))",
+          "Boolean": "{{ \"true\" if node.value else \"false\" }}",
+          "ConditionalOp": "func() {{ go_expr_type(node) }} { if {{ node.cond | expr_render }} { return {{ node.value_true | expr_render }} }; return {{ node.value_false | expr_render }} }()",
+          "Constant": "{{ \"math.Pi\" if node.value == \"pi\" else (\"math.E\" if node.value == \"e\" else (\"(2 * math.Pi)\" if node.value == \"tau\" else node.value | repr)) }}",
+          "Float": "{{ node.value | repr }}",
+          "HexInt": "{{ node.value | hex }}",
+          "Integer": "{{ node.value | repr }}",
+          "Name": "{{ node.name }}",
+          "Paren": "({{ node.expr | expr_render }})",
+          "UFunc": "math.{{ node.func | capitalize }}(float64({{ node.expr | expr_render }}))",
+          "UFunc(abs)": "{{ go_abs_expr(node.expr | expr_render, node.expr) }}",
+          "UFunc(ceil)": "int(math.Ceil(float64({{ node.expr | expr_render }})))",
+          "UFunc(floor)": "int(math.Floor(float64({{ node.expr | expr_render }})))",
+          "UFunc(round)": "int(math.Round(float64({{ node.expr | expr_render }})))",
+          "UFunc(trunc)": "int(math.Trunc(float64({{ node.expr | expr_render }})))",
+          "UnaryOp": "{{ node.op }}{{ node.expr | expr_render }}"
+        }
+      },
+      "java": {
+        "base_lang": "java",
+        "templates": {
+          "BinaryOp": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "BinaryOp(**)": "Math.pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})",
+          "BinaryOp(=>)": "((!({{ node.expr1 | expr_render }})) || ({{ node.expr2 | expr_render }}))",
+          "BinaryOp(iff)": "(({{ node.expr1 | expr_render }}) == ({{ node.expr2 | expr_render }}))",
+          "BinaryOp(xor)": "(({{ node.expr1 | expr_render }}) != ({{ node.expr2 | expr_render }}))",
+          "Boolean": "{{ \"true\" if node.value else \"false\" }}",
+          "ConditionalOp": "{{ node.cond | expr_render }} ? {{ node.value_true | expr_render }} : {{ node.value_false | expr_render }}",
+          "Constant": "{{ \"Math.PI\" if node.value == \"pi\" else (\"Math.E\" if node.value == \"e\" else (\"(2.0 * Math.PI)\" if node.value == \"tau\" else node.value | repr)) }}",
+          "Float": "{{ node.value | repr }}",
+          "HexInt": "{{ node.value | hex }}",
+          "Integer": "{{ node.value | repr }}",
+          "Name": "{{ node.name }}",
+          "Paren": "({{ node.expr | expr_render }})",
+          "UFunc": "Math.{{ node.func }}({{ node.expr | expr_render }})",
+          "UFunc(trunc)": "({{ node.expr | expr_render }}) >= 0 ? Math.floor({{ node.expr | expr_render }}) : Math.ceil({{ node.expr | expr_render }})",
+          "UnaryOp": "{{ node.op }}{{ node.expr | expr_render }}"
+        }
+      },
+      "js": {
+        "base_lang": "js",
+        "templates": {
+          "BinaryOp": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "BinaryOp(**)": "Math.pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})",
+          "BinaryOp(=>)": "((!({{ node.expr1 | expr_render }})) || ({{ node.expr2 | expr_render }}))",
+          "BinaryOp(iff)": "(({{ node.expr1 | expr_render }}) == ({{ node.expr2 | expr_render }}))",
+          "BinaryOp(xor)": "(({{ node.expr1 | expr_render }}) != ({{ node.expr2 | expr_render }}))",
+          "Boolean": "{{ \"true\" if node.value else \"false\" }}",
+          "ConditionalOp": "({{ node.cond | expr_render }}) ? {{ node.value_true | expr_render }} : {{ node.value_false | expr_render }}",
+          "Constant": "{{ \"Math.PI\" if node.value == \"pi\" else (\"Math.E\" if node.value == \"e\" else (\"(2 * Math.PI)\" if node.value == \"tau\" else node.value | repr)) }}",
+          "Float": "{{ node.value | repr }}",
+          "HexInt": "{{ node.value | hex }}",
+          "Integer": "{{ node.value | repr }}",
+          "Name": "{{ node.name }}",
+          "Paren": "({{ node.expr | expr_render }})",
+          "UFunc": "Math.{{ node.func }}({{ node.expr | expr_render }})",
+          "UnaryOp": "{{ node.op }}{{ node.expr | expr_render }}"
+        }
+      },
+      "python": {
+        "base_lang": "python",
+        "templates": {
+          "BinaryOp": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "BinaryOp(!=)": "{{ py_condition_operand(node.expr1 | expr_render, node.expr1) }} != {{ py_condition_operand(node.expr2 | expr_render, node.expr2) }}",
+          "BinaryOp(&&)": "{{ node.expr1 | expr_render }} and {{ node.expr2 | expr_render }}",
+          "BinaryOp(==)": "{{ py_condition_operand(node.expr1 | expr_render, node.expr1) }} == {{ py_condition_operand(node.expr2 | expr_render, node.expr2) }}",
+          "BinaryOp(=>)": "((not ({{ node.expr1 | expr_render }})) or ({{ node.expr2 | expr_render }}))",
+          "BinaryOp(iff)": "(({{ node.expr1 | expr_render }}) == ({{ node.expr2 | expr_render }}))",
+          "BinaryOp(xor)": "(({{ node.expr1 | expr_render }}) != ({{ node.expr2 | expr_render }}))",
+          "BinaryOp(||)": "{{ node.expr1 | expr_render }} or {{ node.expr2 | expr_render }}",
+          "Boolean": "{{ node.value | repr }}",
+          "ConditionalOp": "{{ node.value_true | expr_render }} if {{ node.cond | expr_render }} else {{ node.value_false | expr_render }}",
+          "Constant": "{{ node.value | repr }}",
+          "Float": "{{ node.value | repr }}",
+          "HexInt": "{{ node.value | hex }}",
+          "Integer": "{{ node.value | repr }}",
+          "Name": "{{ node.name }}",
+          "Paren": "({{ node.expr | expr_render }})",
+          "UFunc": "{{ node.func }}({{ node.expr | expr_render }})",
+          "UFunc(abs)": "abs({{ node.expr | expr_render }})",
+          "UFunc(acos)": "math.acos({{ node.expr | expr_render }})",
+          "UFunc(acosh)": "math.acosh({{ node.expr | expr_render }})",
+          "UFunc(asin)": "math.asin({{ node.expr | expr_render }})",
+          "UFunc(asinh)": "math.asinh({{ node.expr | expr_render }})",
+          "UFunc(atan)": "math.atan({{ node.expr | expr_render }})",
+          "UFunc(atanh)": "math.atanh({{ node.expr | expr_render }})",
+          "UFunc(cbrt)": "math.copysign(abs({{ node.expr | expr_render }}) ** (1.0 / 3.0), {{ node.expr | expr_render }})",
+          "UFunc(ceil)": "math.ceil({{ node.expr | expr_render }})",
+          "UFunc(cos)": "math.cos({{ node.expr | expr_render }})",
+          "UFunc(cosh)": "math.cosh({{ node.expr | expr_render }})",
+          "UFunc(exp)": "math.exp({{ node.expr | expr_render }})",
+          "UFunc(floor)": "math.floor({{ node.expr | expr_render }})",
+          "UFunc(log)": "math.log({{ node.expr | expr_render }})",
+          "UFunc(log10)": "math.log10({{ node.expr | expr_render }})",
+          "UFunc(log1p)": "math.log1p({{ node.expr | expr_render }})",
+          "UFunc(log2)": "math.log2({{ node.expr | expr_render }})",
+          "UFunc(round)": "round({{ node.expr | expr_render }})",
+          "UFunc(sign)": "int((({{ node.expr | expr_render }}) > 0) - (({{ node.expr | expr_render }}) < 0))",
+          "UFunc(sin)": "math.sin({{ node.expr | expr_render }})",
+          "UFunc(sinh)": "math.sinh({{ node.expr | expr_render }})",
+          "UFunc(sqrt)": "math.sqrt({{ node.expr | expr_render }})",
+          "UFunc(tan)": "math.tan({{ node.expr | expr_render }})",
+          "UFunc(tanh)": "math.tanh({{ node.expr | expr_render }})",
+          "UFunc(trunc)": "math.trunc({{ node.expr | expr_render }})",
+          "UnaryOp": "{{ node.op }}{{ node.expr | expr_render }}",
+          "UnaryOp(!)": "not {{ node.expr | expr_render }}"
+        }
+      },
+      "rust": {
+        "base_lang": "rust",
+        "templates": {
+          "BinaryOp": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "BinaryOp(**)": "({{ node.expr1 | expr_render }} as f64).powf({{ node.expr2 | expr_render }} as f64)",
+          "BinaryOp(=>)": "((!({{ node.expr1 | expr_render }})) || ({{ node.expr2 | expr_render }}))",
+          "BinaryOp(iff)": "(({{ node.expr1 | expr_render }}) == ({{ node.expr2 | expr_render }}))",
+          "BinaryOp(xor)": "(({{ node.expr1 | expr_render }}) != ({{ node.expr2 | expr_render }}))",
+          "Boolean": "{{ \"true\" if node.value else \"false\" }}",
+          "ConditionalOp": "(if {{ node.cond | expr_render }} { {{ node.value_true | expr_render }} } else { {{ node.value_false | expr_render }} })",
+          "Constant": "{{ \"std::f64::consts::PI\" if node.value == \"pi\" else (\"std::f64::consts::E\" if node.value == \"e\" else (\"std::f64::consts::TAU\" if node.value == \"tau\" else node.value | repr)) }}",
+          "Float": "{{ node.value | repr }}",
+          "HexInt": "{{ node.value | hex }}",
+          "Integer": "{{ node.value | repr }}",
+          "Name": "{{ node.name }}",
+          "Paren": "({{ node.expr | expr_render }})",
+          "UFunc": "({{ node.expr | expr_render }} as f64).{{ node.func }}()",
+          "UFunc(abs)": "({{ node.expr | expr_render }}).abs()",
+          "UFunc(ceil)": "({{ node.expr | expr_render }} as f64).ceil() as i64",
+          "UFunc(floor)": "({{ node.expr | expr_render }} as f64).floor() as i64",
+          "UFunc(log)": "({{ node.expr | expr_render }} as f64).ln()",
+          "UFunc(log10)": "({{ node.expr | expr_render }} as f64).log10()",
+          "UFunc(log1p)": "({{ node.expr | expr_render }} as f64).ln_1p()",
+          "UFunc(log2)": "({{ node.expr | expr_render }} as f64).log2()",
+          "UFunc(round)": "({{ node.expr | expr_render }} as f64).round() as i64",
+          "UFunc(trunc)": "({{ node.expr | expr_render }} as f64).trunc() as i64",
+          "UnaryOp": "{{ node.op }}{{ node.expr | expr_render }}"
+        }
+      },
+      "ts": {
+        "base_lang": "ts",
+        "templates": {
+          "BinaryOp": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "BinaryOp(**)": "Math.pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})",
+          "BinaryOp(=>)": "((!({{ node.expr1 | expr_render }})) || ({{ node.expr2 | expr_render }}))",
+          "BinaryOp(iff)": "(({{ node.expr1 | expr_render }}) == ({{ node.expr2 | expr_render }}))",
+          "BinaryOp(xor)": "(({{ node.expr1 | expr_render }}) != ({{ node.expr2 | expr_render }}))",
+          "Boolean": "{{ \"true\" if node.value else \"false\" }}",
+          "ConditionalOp": "({{ node.cond | expr_render }}) ? {{ node.value_true | expr_render }} : {{ node.value_false | expr_render }}",
+          "Constant": "{{ \"Math.PI\" if node.value == \"pi\" else (\"Math.E\" if node.value == \"e\" else (\"(2 * Math.PI)\" if node.value == \"tau\" else node.value | repr)) }}",
+          "Float": "{{ node.value | repr }}",
+          "HexInt": "{{ node.value | hex }}",
+          "Integer": "{{ node.value | repr }}",
+          "Name": "{{ node.name }}",
+          "Paren": "({{ node.expr | expr_render }})",
+          "UFunc": "Math.{{ node.func }}({{ node.expr | expr_render }})",
+          "UnaryOp": "{{ node.op }}{{ node.expr | expr_render }}"
+        }
+      }
+    }
+  },
+  "builtin_stmt_styles": {
+    "aliases": {
+      "c++": "cpp",
+      "cc": "cpp",
+      "cxx": "cpp",
+      "golang": "go",
+      "javascript": "js",
+      "node": "js",
+      "nodejs": "js",
+      "py": "python",
+      "python3": "python",
+      "rs": "rust",
+      "rustlang": "rust",
+      "typescript": "ts"
+    },
+    "styles": {
+      "c": {
+        "assign": "{{ target }} = {{ expr }};",
+        "base_lang": "c",
+        "block_end": "}",
+        "declare_temp": "{{ temp_type }} {{ name }};",
+        "elif": "} else if ({{ condition }}) {",
+        "else": "} else {",
+        "expr_lang": "c",
+        "expr_templates": {},
+        "if": "if ({{ condition }}) {",
+        "pass": "/* no-op */",
+        "state_var_target": "scope->{{ name }}",
+        "temp_type_aliases": {
+          "float": "double",
+          "int": "int"
+        },
+        "temp_type_fallback": "double",
+        "temp_var_target": "{{ name }}"
+      },
+      "cpp": {
+        "assign": "{{ target }} = {{ expr }};",
+        "base_lang": "cpp",
+        "block_end": "}",
+        "declare_temp": "{{ temp_type }} {{ name }};",
+        "elif": "} else if ({{ condition }}) {",
+        "else": "} else {",
+        "expr_lang": "cpp",
+        "expr_templates": {},
+        "if": "if ({{ condition }}) {",
+        "pass": "/* no-op */",
+        "state_var_target": "scope->{{ name }}",
+        "temp_type_aliases": {
+          "float": "double",
+          "int": "int"
+        },
+        "temp_type_fallback": "double",
+        "temp_var_target": "{{ name }}"
+      },
+      "dsl": {
+        "assign": "{{ target }} = {{ expr }};",
+        "base_lang": "dsl",
+        "block_end": "}",
+        "declare_temp": null,
+        "elif": "} else if [{{ condition }}] {",
+        "else": "} else {",
+        "expr_lang": "dsl",
+        "expr_templates": {},
+        "if": "if [{{ condition }}] {",
+        "pass": "",
+        "state_var_target": "{{ name }}",
+        "temp_type_aliases": {},
+        "temp_type_fallback": null,
+        "temp_var_target": "{{ name }}"
+      },
+      "go": {
+        "assign": "{{ target }} = {{ expr }}",
+        "base_lang": "go",
+        "block_end": "}",
+        "declare_temp": "var {{ name }} {{ temp_type }}",
+        "elif": "} else if {{ condition }} {",
+        "else": "} else {",
+        "expr_lang": "go",
+        "expr_templates": {},
+        "if": "if {{ condition }} {",
+        "pass": "// no-op",
+        "state_var_target": "scope.{{ name }}",
+        "temp_type_aliases": {
+          "float": "float64",
+          "int": "int"
+        },
+        "temp_type_fallback": "float64",
+        "temp_var_target": "{{ name }}"
+      },
+      "java": {
+        "assign": "{{ target }} = {{ expr }};",
+        "base_lang": "java",
+        "block_end": "}",
+        "declare_temp": "{{ temp_type }} {{ name }};",
+        "elif": "} else if ({{ condition }}) {",
+        "else": "} else {",
+        "expr_lang": "java",
+        "expr_templates": {},
+        "if": "if ({{ condition }}) {",
+        "pass": "// no-op",
+        "state_var_target": "scope.{{ name }}",
+        "temp_type_aliases": {
+          "float": "double",
+          "int": "int"
+        },
+        "temp_type_fallback": "double",
+        "temp_var_target": "{{ name }}"
+      },
+      "js": {
+        "assign": "{{ target }} = {{ expr }};",
+        "base_lang": "js",
+        "block_end": "}",
+        "declare_temp": "let {{ name }};",
+        "elif": "} else if ({{ condition }}) {",
+        "else": "} else {",
+        "expr_lang": "js",
+        "expr_templates": {},
+        "if": "if ({{ condition }}) {",
+        "pass": "// no-op",
+        "state_var_target": "scope.{{ name }}",
+        "temp_type_aliases": {},
+        "temp_type_fallback": null,
+        "temp_var_target": "{{ name }}"
+      },
+      "python": {
+        "assign": "{{ target }} = {{ expr }}",
+        "base_lang": "python",
+        "block_end": null,
+        "declare_temp": null,
+        "elif": "elif {{ condition }}:",
+        "else": "else:",
+        "expr_lang": "python",
+        "expr_templates": {},
+        "if": "if {{ condition }}:",
+        "pass": "pass",
+        "state_var_target": "scope[{{ name | tojson }}]",
+        "temp_type_aliases": {},
+        "temp_type_fallback": null,
+        "temp_var_target": "{{ name }}"
+      },
+      "rust": {
+        "assign": "{{ target }} = {{ expr }};",
+        "base_lang": "rust",
+        "block_end": "}",
+        "declare_temp": "let mut {{ name }}: {{ temp_type }};",
+        "elif": "} else if {{ condition }} {",
+        "else": "} else {",
+        "expr_lang": "rust",
+        "expr_templates": {},
+        "if": "if {{ condition }} {",
+        "pass": "// no-op",
+        "state_var_target": "scope.{{ name }}",
+        "temp_type_aliases": {
+          "float": "f64",
+          "int": "i64"
+        },
+        "temp_type_fallback": "f64",
+        "temp_var_target": "{{ name }}"
+      },
+      "ts": {
+        "assign": "{{ target }} = {{ expr }};",
+        "base_lang": "ts",
+        "block_end": "}",
+        "declare_temp": "let {{ name }}: {{ temp_type }};",
+        "elif": "} else if ({{ condition }}) {",
+        "else": "} else {",
+        "expr_lang": "ts",
+        "expr_templates": {},
+        "if": "if ({{ condition }}) {",
+        "pass": "// no-op",
+        "state_var_target": "scope.{{ name }}",
+        "temp_type_aliases": {
+          "float": "number",
+          "int": "number"
+        },
+        "temp_type_fallback": "number",
+        "temp_var_target": "{{ name }}"
+      }
+    }
+  },
+  "cxx_paths": {
+    "builtin_cpp_style": {
+      "base_lang": "cpp",
+      "notes": [
+        "Standalone renderer path emits std::* expressions such as std::pow."
+      ],
+      "source": "pyfcstm.render.expr._CPP_STYLE",
+      "templates": {
+        "BinaryOp": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+        "BinaryOp(**)": "std::pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})",
+        "BinaryOp(=>)": "((!({{ node.expr1 | expr_render }})) || ({{ node.expr2 | expr_render }}))",
+        "BinaryOp(iff)": "(({{ node.expr1 | expr_render }}) == ({{ node.expr2 | expr_render }}))",
+        "BinaryOp(xor)": "(({{ node.expr1 | expr_render }}) != ({{ node.expr2 | expr_render }}))",
+        "Boolean": "{{ \"true\" if node.value else \"false\" }}",
+        "ConditionalOp": "({{ node.cond | expr_render }}) ? {{ node.value_true | expr_render }} : {{ node.value_false | expr_render }}",
+        "Constant": "{{ node.value | repr }}",
+        "Float": "{{ node.value | repr }}",
+        "HexInt": "{{ node.value | hex }}",
+        "Integer": "{{ node.value | repr }}",
+        "Name": "{{ node.name }}",
+        "Paren": "({{ node.expr | expr_render }})",
+        "UFunc": "std::{{ node.func }}({{ node.expr | expr_render }})",
+        "UnaryOp": "{{ node.op }}{{ node.expr | expr_render }}"
+      }
+    },
+    "template_generated_paths": [
+      {
+        "expr_styles": {
+          "c_scope_expr": {
+            "base_lang": "c",
+            "overrides": {
+              "Name": "scope->{{ node.name | to_c_identifier }}"
+            }
+          }
+        },
+        "generated_artifacts": [
+          "templates/c/machine.c.j2",
+          "templates/c/machine.h.j2",
+          "templates/cpp/machine.cpp.j2",
+          "templates/cpp/machine.hpp.j2"
+        ],
+        "notes": [
+          "Current C++ wrapper template path reuses C-style expression configuration via base_lang: c."
+        ],
+        "source": "templates/cpp/config.yaml",
+        "stmt_styles": {
+          "c_runtime": {
+            "base_lang": "c",
+            "expr_templates": {},
+            "overrides": {
+              "declare_temp": "{{ temp_type }} {{ name | to_c_identifier }};",
+              "state_var_target": "scope->{{ name | to_c_identifier }}",
+              "temp_type_aliases": {
+                "float": "double",
+                "int": "PYFCSTM_GENERATED_INT64"
+              },
+              "temp_type_fallback": "double",
+              "temp_var_target": "{{ name | to_c_identifier }}"
+            },
+            "stmt_overrides": {
+              "declare_temp": "{{ temp_type }} {{ name | to_c_identifier }};",
+              "state_var_target": "scope->{{ name | to_c_identifier }}",
+              "temp_type_aliases": {
+                "float": "double",
+                "int": "PYFCSTM_GENERATED_INT64"
+              },
+              "temp_type_fallback": "double",
+              "temp_var_target": "{{ name | to_c_identifier }}"
+            }
+          }
+        },
+        "template": "cpp"
+      },
+      {
+        "expr_styles": {
+          "c_scope_expr": {
+            "base_lang": "c",
+            "overrides": {
+              "Name": "scope->{{ node.name | to_c_identifier }}"
+            }
+          }
+        },
+        "generated_artifacts": [
+          "templates/c_poll/machine.c.j2",
+          "templates/c_poll/machine.h.j2",
+          "templates/cpp_poll/machine.cpp.j2",
+          "templates/cpp_poll/machine.hpp.j2"
+        ],
+        "notes": [
+          "Current C++ wrapper template path reuses C-style expression configuration via base_lang: c."
+        ],
+        "source": "templates/cpp_poll/config.yaml",
+        "stmt_styles": {
+          "c_runtime": {
+            "base_lang": "c",
+            "expr_templates": {},
+            "overrides": {
+              "declare_temp": "{{ temp_type }} {{ name | to_c_identifier }};",
+              "state_var_target": "scope->{{ name | to_c_identifier }}",
+              "temp_type_aliases": {
+                "float": "double",
+                "int": "PYFCSTM_GENERATED_INT64"
+              },
+              "temp_type_fallback": "double",
+              "temp_var_target": "{{ name | to_c_identifier }}"
+            },
+            "stmt_overrides": {
+              "declare_temp": "{{ temp_type }} {{ name | to_c_identifier }};",
+              "state_var_target": "scope->{{ name | to_c_identifier }}",
+              "temp_type_aliases": {
+                "float": "double",
+                "int": "PYFCSTM_GENERATED_INT64"
+              },
+              "temp_type_fallback": "double",
+              "temp_var_target": "{{ name | to_c_identifier }}"
+            }
+          }
+        },
+        "template": "cpp_poll"
+      }
+    ]
+  },
+  "generated_at_utc": null,
+  "generator": {
+    "provenance": "stable snapshot; repository identity is captured by source and packaged-template digests",
+    "research_path": "research/numeric-render-semantics",
+    "tool": "tools/numeric_render_mapping.py"
+  },
+  "mapping_sha256": "b3819a4df946d90c4c5aec56048b075cb7545f748847595dceb769680572c99e",
+  "packaged_templates": {
+    "entries": [
+      {
+        "archive": "c.zip",
+        "archive_declared": true,
+        "archive_path": "pyfcstm/template/c.zip",
+        "archive_snapshot_policy": "archive zip files are gitignored build outputs; the committed snapshot records index metadata and source digests instead of hashing local archive payloads",
+        "language": "c",
+        "metadata": {
+          "archive": "c.zip",
+          "description": "Native C99 built-in template with embedded runtime logic and abstract hook callbacks.",
+          "experimental": true,
+          "language": "c",
+          "name": "c",
+          "root_dir": "c",
+          "title": "C99"
+        },
+        "name": "c",
+        "root_dir": "c",
+        "source_archive_sync_status": "source-and-archive-declared",
+        "source_digest": {
+          "file_count": 8,
+          "sha256": "194e5d2bda778ee94f18f8e2d478ba9fd581822ee022d7c8592f35feff8dc29a"
+        }
+      },
+      {
+        "archive": "c_poll.zip",
+        "archive_declared": true,
+        "archive_path": "pyfcstm/template/c_poll.zip",
+        "archive_snapshot_policy": "archive zip files are gitignored build outputs; the committed snapshot records index metadata and source digests instead of hashing local archive payloads",
+        "language": "c",
+        "metadata": {
+          "archive": "c_poll.zip",
+          "description": "Native C99 / C++98 built-in template with hook-polled events and embedded runtime logic.",
+          "experimental": true,
+          "language": "c",
+          "name": "c_poll",
+          "root_dir": "c_poll",
+          "title": "C Poll"
+        },
+        "name": "c_poll",
+        "root_dir": "c_poll",
+        "source_archive_sync_status": "source-and-archive-declared",
+        "source_digest": {
+          "file_count": 8,
+          "sha256": "639824b90d9b0af371c77c889d49e055baf876f55ce95883dcafd80b6ae28e7e"
+        }
+      },
+      {
+        "archive": "cpp.zip",
+        "archive_declared": true,
+        "archive_path": "pyfcstm/template/cpp.zip",
+        "archive_snapshot_policy": "archive zip files are gitignored build outputs; the committed snapshot records index metadata and source digests instead of hashing local archive payloads",
+        "language": "cpp",
+        "metadata": {
+          "archive": "cpp.zip",
+          "description": "Early-stage first-class C++ template that reuses the C99 runtime core and emits C++ wrapper files.",
+          "experimental": true,
+          "language": "cpp",
+          "name": "cpp",
+          "root_dir": "cpp",
+          "title": "C++ Wrapper"
+        },
+        "name": "cpp",
+        "root_dir": "cpp",
+        "source_archive_sync_status": "source-and-archive-declared",
+        "source_digest": {
+          "file_count": 10,
+          "sha256": "6753886a3f13fd7a32aca502dfb23185cf7b86737fb95f39b0db546499707e06"
+        }
+      },
+      {
+        "archive": "cpp_poll.zip",
+        "archive_declared": true,
+        "archive_path": "pyfcstm/template/cpp_poll.zip",
+        "archive_snapshot_policy": "archive zip files are gitignored build outputs; the committed snapshot records index metadata and source digests instead of hashing local archive payloads",
+        "language": "cpp",
+        "metadata": {
+          "archive": "cpp_poll.zip",
+          "description": "Early-stage first-class C++ poll template that reuses the C poll runtime core and emits C++ wrapper files.",
+          "experimental": true,
+          "language": "cpp",
+          "name": "cpp_poll",
+          "root_dir": "cpp_poll",
+          "title": "C++ Poll Wrapper"
+        },
+        "name": "cpp_poll",
+        "root_dir": "cpp_poll",
+        "source_archive_sync_status": "source-and-archive-declared",
+        "source_digest": {
+          "file_count": 10,
+          "sha256": "f33c9bbab27baa8804f0e4a2d7b193d2c82ea832fb6dd986abffd2daaf553933"
+        }
+      },
+      {
+        "archive": "python.zip",
+        "archive_declared": true,
+        "archive_path": "pyfcstm/template/python.zip",
+        "archive_snapshot_policy": "archive zip files are gitignored build outputs; the committed snapshot records index metadata and source digests instead of hashing local archive payloads",
+        "language": "python",
+        "metadata": {
+          "archive": "python.zip",
+          "description": "Native Python built-in template with embedded runtime logic.",
+          "experimental": true,
+          "language": "python",
+          "name": "python",
+          "root_dir": "python",
+          "title": "Python"
+        },
+        "name": "python",
+        "root_dir": "python",
+        "source_archive_sync_status": "source-and-archive-declared",
+        "source_digest": {
+          "file_count": 7,
+          "sha256": "63fcd4154ebac3f6b3e3461d45a6b4785569a58b9d687fb5222245af37f051a0"
+        }
+      }
+    ],
+    "index_exists": true,
+    "index_path": "pyfcstm/template/index.json",
+    "index_sha256": "ccbe23659c02f1fbd5943115a56836c85728c5510944d6cf675b76b1e12278f0"
+  },
+  "renderer_helper_inventory": [
+    {
+      "layer": "builtin expression renderer",
+      "module": "pyfcstm.render.expr",
+      "name": "py_condition_operand",
+      "purpose": "Parenthesizes Python condition-valued comparison operands."
+    },
+    {
+      "layer": "builtin expression renderer",
+      "module": "pyfcstm.render.expr",
+      "name": "go_expr_type",
+      "purpose": "Chooses the Go conditional-expression closure return type."
+    },
+    {
+      "layer": "builtin expression renderer",
+      "module": "pyfcstm.render.expr",
+      "name": "go_abs_expr",
+      "purpose": "Chooses integer or floating Go abs rendering based on inferred DSL type."
+    },
+    {
+      "layer": "solver helper",
+      "module": "pyfcstm.solver.expr",
+      "name": "python_round_to_z3",
+      "purpose": "Encodes Python half-even single-argument round semantics for Z3."
+    },
+    {
+      "layer": "C runtime template helper",
+      "module": "pyfcstm.render.c_runtime",
+      "name": "render_c_action_body",
+      "purpose": "Renders fallible generated C action bodies with runtime diagnostics."
+    },
+    {
+      "layer": "C runtime template helper",
+      "module": "pyfcstm.render.c_runtime",
+      "name": "render_c_condition_body",
+      "purpose": "Renders fallible generated C transition-guard condition bodies."
+    },
+    {
+      "layer": "Python generated runtime helper",
+      "module": "templates/python/machine.py.j2",
+      "name": "_sign",
+      "purpose": "Implements sign for Python generated runtime expression paths."
+    },
+    {
+      "layer": "Python generated runtime helper alias",
+      "module": "templates/python/machine.py.j2",
+      "name": "_s",
+      "purpose": "Local alias used by python_runtime statement expr_templates for sign."
+    }
+  ],
+  "repository": {
+    "packaged_template_root": "pyfcstm/template",
+    "root": ".",
+    "template_source_root": "templates"
+  },
+  "runtime_semantics_notes": {
+    "bitwise_not": {
+      "current_dsl_numeric_unary_rule": "PLUS | MINUS",
+      "operator": "~",
+      "reason": "Issue #280 requires the R0 inventory to record '~' explicitly so later solver/template work does not guess from Z3 or C semantics.",
+      "status": "not inferred from runtime; current parser grammar does not accept numeric unary '~'"
+    }
+  },
+  "schema_version": 1,
+  "templates": {
+    "c": {
+      "config_path": "templates/c/config.yaml",
+      "expr_styles": {
+        "c_scope_expr": {
+          "base_lang": "c",
+          "overrides": {
+            "Name": "scope->{{ node.name | to_c_identifier }}"
+          }
+        }
+      },
+      "files": [
+        "README.md",
+        "README.md.j2",
+        "README_zh.md",
+        "README_zh.md.j2",
+        "config.yaml",
+        "machine.c.j2",
+        "machine.h.j2",
+        "template.json"
+      ],
+      "generated_artifacts": [
+        "templates/c/machine.c.j2",
+        "templates/c/machine.h.j2"
+      ],
+      "ignored_static_files": [
+        "README.md",
+        "README_zh.md",
+        "template.json"
+      ],
+      "name": "c",
+      "path": "templates/c",
+      "source_digest": {
+        "file_count": 8,
+        "sha256": "194e5d2bda778ee94f18f8e2d478ba9fd581822ee022d7c8592f35feff8dc29a"
+      },
+      "stmt_styles": {
+        "c_runtime": {
+          "base_lang": "c",
+          "expr_templates": {},
+          "overrides": {
+            "declare_temp": "{{ temp_type }} {{ name | to_c_identifier }};",
+            "state_var_target": "scope->{{ name | to_c_identifier }}",
+            "temp_type_aliases": {
+              "float": "double",
+              "int": "PYFCSTM_GENERATED_INT64"
+            },
+            "temp_type_fallback": "double",
+            "temp_var_target": "{{ name | to_c_identifier }}"
+          },
+          "stmt_overrides": {
+            "declare_temp": "{{ temp_type }} {{ name | to_c_identifier }};",
+            "state_var_target": "scope->{{ name | to_c_identifier }}",
+            "temp_type_aliases": {
+              "float": "double",
+              "int": "PYFCSTM_GENERATED_INT64"
+            },
+            "temp_type_fallback": "double",
+            "temp_var_target": "{{ name | to_c_identifier }}"
+          }
+        }
+      }
+    },
+    "c_poll": {
+      "config_path": "templates/c_poll/config.yaml",
+      "expr_styles": {
+        "c_scope_expr": {
+          "base_lang": "c",
+          "overrides": {
+            "Name": "scope->{{ node.name | to_c_identifier }}"
+          }
+        }
+      },
+      "files": [
+        "README.md",
+        "README.md.j2",
+        "README_zh.md",
+        "README_zh.md.j2",
+        "config.yaml",
+        "machine.c.j2",
+        "machine.h.j2",
+        "template.json"
+      ],
+      "generated_artifacts": [
+        "templates/c_poll/machine.c.j2",
+        "templates/c_poll/machine.h.j2"
+      ],
+      "ignored_static_files": [
+        "README.md",
+        "README_zh.md",
+        "template.json"
+      ],
+      "name": "c_poll",
+      "path": "templates/c_poll",
+      "source_digest": {
+        "file_count": 8,
+        "sha256": "639824b90d9b0af371c77c889d49e055baf876f55ce95883dcafd80b6ae28e7e"
+      },
+      "stmt_styles": {
+        "c_runtime": {
+          "base_lang": "c",
+          "expr_templates": {},
+          "overrides": {
+            "declare_temp": "{{ temp_type }} {{ name | to_c_identifier }};",
+            "state_var_target": "scope->{{ name | to_c_identifier }}",
+            "temp_type_aliases": {
+              "float": "double",
+              "int": "PYFCSTM_GENERATED_INT64"
+            },
+            "temp_type_fallback": "double",
+            "temp_var_target": "{{ name | to_c_identifier }}"
+          },
+          "stmt_overrides": {
+            "declare_temp": "{{ temp_type }} {{ name | to_c_identifier }};",
+            "state_var_target": "scope->{{ name | to_c_identifier }}",
+            "temp_type_aliases": {
+              "float": "double",
+              "int": "PYFCSTM_GENERATED_INT64"
+            },
+            "temp_type_fallback": "double",
+            "temp_var_target": "{{ name | to_c_identifier }}"
+          }
+        }
+      }
+    },
+    "cpp": {
+      "config_path": "templates/cpp/config.yaml",
+      "expr_styles": {
+        "c_scope_expr": {
+          "base_lang": "c",
+          "overrides": {
+            "Name": "scope->{{ node.name | to_c_identifier }}"
+          }
+        }
+      },
+      "files": [
+        "README.md",
+        "README.md.j2",
+        "README_zh.md",
+        "README_zh.md.j2",
+        "config.yaml",
+        "machine.c.j2",
+        "machine.cpp.j2",
+        "machine.h.j2",
+        "machine.hpp.j2",
+        "template.json"
+      ],
+      "generated_artifacts": [
+        "templates/c/machine.c.j2",
+        "templates/c/machine.h.j2",
+        "templates/cpp/machine.cpp.j2",
+        "templates/cpp/machine.hpp.j2"
+      ],
+      "ignored_static_files": [
+        "README.md",
+        "README_zh.md",
+        "config.yaml",
+        "template.json"
+      ],
+      "name": "cpp",
+      "path": "templates/cpp",
+      "source_digest": {
+        "file_count": 10,
+        "sha256": "6753886a3f13fd7a32aca502dfb23185cf7b86737fb95f39b0db546499707e06"
+      },
+      "stmt_styles": {
+        "c_runtime": {
+          "base_lang": "c",
+          "expr_templates": {},
+          "overrides": {
+            "declare_temp": "{{ temp_type }} {{ name | to_c_identifier }};",
+            "state_var_target": "scope->{{ name | to_c_identifier }}",
+            "temp_type_aliases": {
+              "float": "double",
+              "int": "PYFCSTM_GENERATED_INT64"
+            },
+            "temp_type_fallback": "double",
+            "temp_var_target": "{{ name | to_c_identifier }}"
+          },
+          "stmt_overrides": {
+            "declare_temp": "{{ temp_type }} {{ name | to_c_identifier }};",
+            "state_var_target": "scope->{{ name | to_c_identifier }}",
+            "temp_type_aliases": {
+              "float": "double",
+              "int": "PYFCSTM_GENERATED_INT64"
+            },
+            "temp_type_fallback": "double",
+            "temp_var_target": "{{ name | to_c_identifier }}"
+          }
+        }
+      }
+    },
+    "cpp_poll": {
+      "config_path": "templates/cpp_poll/config.yaml",
+      "expr_styles": {
+        "c_scope_expr": {
+          "base_lang": "c",
+          "overrides": {
+            "Name": "scope->{{ node.name | to_c_identifier }}"
+          }
+        }
+      },
+      "files": [
+        "README.md",
+        "README.md.j2",
+        "README_zh.md",
+        "README_zh.md.j2",
+        "config.yaml",
+        "machine.c.j2",
+        "machine.cpp.j2",
+        "machine.h.j2",
+        "machine.hpp.j2",
+        "template.json"
+      ],
+      "generated_artifacts": [
+        "templates/c_poll/machine.c.j2",
+        "templates/c_poll/machine.h.j2",
+        "templates/cpp_poll/machine.cpp.j2",
+        "templates/cpp_poll/machine.hpp.j2"
+      ],
+      "ignored_static_files": [
+        "README.md",
+        "README_zh.md",
+        "config.yaml",
+        "template.json"
+      ],
+      "name": "cpp_poll",
+      "path": "templates/cpp_poll",
+      "source_digest": {
+        "file_count": 10,
+        "sha256": "f33c9bbab27baa8804f0e4a2d7b193d2c82ea832fb6dd986abffd2daaf553933"
+      },
+      "stmt_styles": {
+        "c_runtime": {
+          "base_lang": "c",
+          "expr_templates": {},
+          "overrides": {
+            "declare_temp": "{{ temp_type }} {{ name | to_c_identifier }};",
+            "state_var_target": "scope->{{ name | to_c_identifier }}",
+            "temp_type_aliases": {
+              "float": "double",
+              "int": "PYFCSTM_GENERATED_INT64"
+            },
+            "temp_type_fallback": "double",
+            "temp_var_target": "{{ name | to_c_identifier }}"
+          },
+          "stmt_overrides": {
+            "declare_temp": "{{ temp_type }} {{ name | to_c_identifier }};",
+            "state_var_target": "scope->{{ name | to_c_identifier }}",
+            "temp_type_aliases": {
+              "float": "double",
+              "int": "PYFCSTM_GENERATED_INT64"
+            },
+            "temp_type_fallback": "double",
+            "temp_var_target": "{{ name | to_c_identifier }}"
+          }
+        }
+      }
+    },
+    "python": {
+      "config_path": "templates/python/config.yaml",
+      "expr_styles": {
+        "python_expr": {
+          "base_lang": "python",
+          "overrides": {
+            "Name": "self._vars[{{ node.name | tojson }}]",
+            "UFunc(sign)": "self._sign({{ node.expr | expr_render }})"
+          }
+        },
+        "python_scope_expr": {
+          "base_lang": "python",
+          "overrides": {
+            "Name": "scope[{{ node.name | tojson }}]",
+            "UFunc(sign)": "self._sign({{ node.expr | expr_render }})"
+          }
+        }
+      },
+      "files": [
+        "README.md",
+        "README.md.j2",
+        "README_zh.md",
+        "README_zh.md.j2",
+        "config.yaml",
+        "machine.py.j2",
+        "template.json"
+      ],
+      "generated_artifacts": [
+        "templates/python/machine.py.j2"
+      ],
+      "ignored_static_files": [
+        "README.md",
+        "README_zh.md",
+        "template.json"
+      ],
+      "name": "python",
+      "path": "templates/python",
+      "source_digest": {
+        "file_count": 7,
+        "sha256": "63fcd4154ebac3f6b3e3461d45a6b4785569a58b9d687fb5222245af37f051a0"
+      },
+      "stmt_styles": {
+        "python_runtime": {
+          "base_lang": "python",
+          "expr_templates": {
+            "UFunc(sign)": "_s({{ node.expr | expr_render }})"
+          },
+          "overrides": {
+            "assign": "{{ target }} = self._evaluate_runtime_expr(\n    lambda: {{ expr }},\n    {{ (\"operation assignment to '\" ~ name ~ \"'\") | tojson }},\n)",
+            "elif": "elif self._evaluate_runtime_expr(\n    lambda: {{ condition }},\n    \"if-block condition\",\n):",
+            "expr_lang": "python",
+            "if": "if self._evaluate_runtime_expr(\n    lambda: {{ condition }},\n    \"if-block condition\",\n):",
+            "state_var_target": "_v[{{ name | tojson }}]",
+            "temp_var_target": "{{ name }}"
+          },
+          "stmt_overrides": {
+            "assign": "{{ target }} = self._evaluate_runtime_expr(\n    lambda: {{ expr }},\n    {{ (\"operation assignment to '\" ~ name ~ \"'\") | tojson }},\n)",
+            "elif": "elif self._evaluate_runtime_expr(\n    lambda: {{ condition }},\n    \"if-block condition\",\n):",
+            "expr_lang": "python",
+            "if": "if self._evaluate_runtime_expr(\n    lambda: {{ condition }},\n    \"if-block condition\",\n):",
+            "state_var_target": "_v[{{ name | tojson }}]",
+            "temp_var_target": "{{ name }}"
+          }
+        }
+      }
+    }
+  }
+}

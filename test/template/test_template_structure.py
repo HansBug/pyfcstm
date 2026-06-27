@@ -2,10 +2,7 @@
 
 import ast
 import json
-import os
 import re
-import stat
-import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -17,7 +14,6 @@ from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.template import extract_template, get_template_info, list_templates
-from tools.package_templates import package_templates, _resolve_archive_source
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -171,34 +167,8 @@ def representative_model():
     return parse_dsl_node_to_state_machine(ast_node)
 
 
-def _extract_archives(package_dir, output_root):
-    template_dirs = {}
-    for name in _CURRENT_TEMPLATE_NAMES:
-        archive_path = package_dir / "{name}.zip".format(name=name)
-        with zipfile.ZipFile(str(archive_path), "r") as zf:
-            zf.extractall(str(output_root / name))
-        template_dirs[name] = output_root / name / name
-    return template_dirs
-
-
 @pytest.fixture(scope="session")
 def rendered_templates(representative_model):
-    with TemporaryDirectory() as package_td:
-        with TemporaryDirectory() as extraction_td:
-            with TemporaryDirectory() as render_td:
-                package_root = Path(package_td)
-                extraction_root = Path(extraction_td)
-                output_root = Path(render_td)
-                package_templates(str(_TEMPLATES_DIR), str(package_root), verbose=False)
-                yield _render_template_directories(
-                    _extract_archives(package_root, extraction_root),
-                    representative_model,
-                    output_root,
-                )
-
-
-@pytest.fixture(scope="session")
-def extracted_rendered_templates(representative_model):
     with TemporaryDirectory() as extraction_td, TemporaryDirectory() as render_td:
         extraction_root = Path(extraction_td)
         output_root = Path(render_td)
@@ -518,13 +488,11 @@ def test_c_family_readmes_document_deployment_safety_boundaries(rendered_templat
         )
         assert (
             "本生成运行时不宣称已经满足 MISRA、AUTOSAR、DO-178C、IEC 61508 "
-            "或 ISO 26262 认证就绪要求。"
-            in generated_readme_zh_words
+            "或 ISO 26262 认证就绪要求。" in generated_readme_zh_words
         )
         assert (
             "它们本身不会让生成运行时达到 MISRA、AUTOSAR、DO-178C、IEC 61508、"
-            "ISO 26262 或其他认证 ready。"
-            in generated_readme_zh_words
+            "ISO 26262 或其他认证 ready。" in generated_readme_zh_words
         )
 
         assert "Integration Preflight Checklist" in generated_readme
@@ -605,10 +573,8 @@ def test_cpp_template_documentation_describes_early_first_class_status(
 @pytest.mark.unittest
 def test_generated_sources_preserve_banner_source_context_and_dependency_boundary(
     rendered_templates,
-    extracted_rendered_templates,
 ):
     _assert_rendered_template_contracts(rendered_templates)
-    _assert_rendered_template_contracts(extracted_rendered_templates)
 
 
 @pytest.mark.unittest
@@ -626,53 +592,6 @@ def test_generated_source_templates_keep_source_metadata_wording():
 
 
 @pytest.mark.unittest
-def test_packaging_output_preserves_metadata_and_archive_roots():
-    with TemporaryDirectory() as td:
-        output_dir = Path(td)
-        stale_zip = output_dir / "stale.zip"
-        stale_zip.write_bytes(b"stale")
-
-        package_templates(str(_TEMPLATES_DIR), str(output_dir), verbose=False)
-
-        assert not stale_zip.exists()
-        index = _read_json(output_dir / "index.json")
-        assert [item["name"] for item in index["templates"]] == list(
-            _repository_template_names()
-        )
-
-        for item in index["templates"]:
-            name = item["name"]
-            repo_metadata = _load_template_metadata(name)
-            assert item["archive"] == "{name}.zip".format(name=name)
-            assert item["root_dir"] == name
-            for key in ["title", "description", "language", "experimental"]:
-                assert item[key] == repo_metadata[key]
-
-            archive_path = output_dir / item["archive"]
-            assert archive_path.is_file()
-            with zipfile.ZipFile(str(archive_path), "r") as zf:
-                names = zf.namelist()
-            assert names
-            assert all(path.startswith(name + "/") for path in names)
-            archived_rel_paths = {path[len(name) + 1 :] for path in names}
-            assert _REQUIRED_TEMPLATE_FILES[name] <= archived_rel_paths
-            assert not any("__pycache__" in path for path in names)
-
-
-@pytest.mark.unittest
-def test_distribution_metadata_keeps_template_assets_declared():
-    setup_text = _read_text(_REPO_ROOT / "setup.py")
-    manifest_text = _read_text(_REPO_ROOT / "MANIFEST.in")
-
-    assert "from tools.package_templates import package_templates" in setup_text
-    assert "package_templates(" in setup_text
-    assert "package_data" in setup_text
-    assert "*.zip" in setup_text
-    assert "*.json" in setup_text
-    assert "recursive-include pyfcstm/template *.zip *.json" in manifest_text
-
-
-@pytest.mark.unittest
 def test_extracted_builtin_templates_preserve_source_structure_contract():
     with TemporaryDirectory() as td:
         for name in _repository_template_names():
@@ -686,119 +605,6 @@ def test_extracted_builtin_templates_preserve_source_structure_contract():
             spec = _ignore_spec(config)
             for maintainer_file in _MAINTAINER_ONLY_FILES:
                 assert spec.match_file(maintainer_file)
-
-
-def _zip_payload(output_dir, template_name, rel_path):
-    with zipfile.ZipFile(
-        str(output_dir / "{name}.zip".format(name=template_name)), "r"
-    ) as zf:
-        info = zf.getinfo("{name}/{rel}".format(name=template_name, rel=rel_path))
-        payload = zf.read(info)
-    return info, payload
-
-
-@pytest.mark.unittest
-def test_cpp_templates_reuse_c_core_as_packaged_file_payloads():
-    with TemporaryDirectory() as td:
-        output_dir = Path(td)
-        package_templates(str(_TEMPLATES_DIR), str(output_dir), verbose=False)
-
-        for template_name, source_template in [("cpp", "c"), ("cpp_poll", "c_poll")]:
-            for rel_path in ["machine.c.j2", "machine.h.j2"]:
-                info, payload = _zip_payload(output_dir, template_name, rel_path)
-                assert stat.S_IFMT(info.external_attr >> 16) != stat.S_IFLNK
-                assert (
-                    payload
-                    == (_TEMPLATES_DIR / source_template / rel_path).read_bytes()
-                )
-                assert payload.strip() != (
-                    "../{source}/{rel}".format(source=source_template, rel=rel_path)
-                ).encode("utf-8")
-
-
-@pytest.mark.unittest
-def test_cpp_template_packaging_accepts_symlink_when_realpath_does_not_resolve(
-    monkeypatch,
-):
-    src_file = _TEMPLATES_DIR / "cpp" / "machine.c.j2"
-    target_file = _TEMPLATES_DIR / "c" / "machine.c.j2"
-    realpath = os.path.realpath
-
-    def unresolved_realpath(path):
-        if os.path.abspath(path) == os.path.abspath(str(src_file)):
-            return os.path.abspath(path)
-        return realpath(path)
-
-    monkeypatch.setattr(os.path, "realpath", unresolved_realpath)
-
-    assert _resolve_archive_source(
-        str(_TEMPLATES_DIR / "cpp"),
-        str(src_file),
-        "cpp",
-        "machine.c.j2",
-    ) == str(target_file)
-
-
-@pytest.mark.unittest
-def test_cpp_template_packaging_resolves_windows_symlink_text_stubs():
-    with TemporaryDirectory() as source_td, TemporaryDirectory() as output_td:
-        source_root = Path(source_td) / "templates"
-        output_dir = Path(output_td)
-        for name in ["c", "c_poll", "cpp", "cpp_poll"]:
-            src_dir = _TEMPLATES_DIR / name
-            dst_dir = source_root / name
-            dst_dir.mkdir(parents=True)
-            for item in src_dir.iterdir():
-                if item.is_file() or item.is_symlink():
-                    if item.is_symlink():
-                        target = Path(os.readlink(str(item))).as_posix()
-                        (dst_dir / item.name).write_text(
-                            target + "\n", encoding="utf-8"
-                        )
-                    else:
-                        (dst_dir / item.name).write_bytes(item.read_bytes())
-
-        package_templates(str(source_root), str(output_dir), verbose=False)
-
-        _, cpp_c_payload = _zip_payload(output_dir, "cpp", "machine.c.j2")
-        _, cpp_h_payload = _zip_payload(output_dir, "cpp", "machine.h.j2")
-        _, cpp_poll_c_payload = _zip_payload(output_dir, "cpp_poll", "machine.c.j2")
-        _, cpp_poll_h_payload = _zip_payload(output_dir, "cpp_poll", "machine.h.j2")
-        assert cpp_c_payload == (source_root / "c" / "machine.c.j2").read_bytes()
-        assert cpp_h_payload == (source_root / "c" / "machine.h.j2").read_bytes()
-        assert (
-            cpp_poll_c_payload == (source_root / "c_poll" / "machine.c.j2").read_bytes()
-        )
-        assert (
-            cpp_poll_h_payload == (source_root / "c_poll" / "machine.h.j2").read_bytes()
-        )
-
-
-@pytest.mark.unittest
-def test_cpp_template_packaging_rejects_unexpected_windows_symlink_text_stub():
-    with TemporaryDirectory() as source_td, TemporaryDirectory() as output_td:
-        source_root = Path(source_td) / "templates"
-        output_dir = Path(output_td)
-        for name in ["c", "c_poll", "cpp", "cpp_poll"]:
-            src_dir = _TEMPLATES_DIR / name
-            dst_dir = source_root / name
-            dst_dir.mkdir(parents=True)
-            for item in src_dir.iterdir():
-                if item.is_file() or item.is_symlink():
-                    if item.is_symlink():
-                        target = Path(os.readlink(str(item))).as_posix()
-                        (dst_dir / item.name).write_text(
-                            target + "\n", encoding="utf-8"
-                        )
-                    else:
-                        (dst_dir / item.name).write_bytes(item.read_bytes())
-
-        (source_root / "cpp" / "machine.c.j2").write_text(
-            "../c_poll/machine.c.j2", encoding="utf-8"
-        )
-
-        with pytest.raises(ValueError, match="expected checkout stub"):
-            package_templates(str(source_root), str(output_dir), verbose=False)
 
 
 @pytest.mark.unittest

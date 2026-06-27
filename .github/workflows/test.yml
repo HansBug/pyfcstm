@@ -158,6 +158,11 @@ jobs:
         shell: bash
         run: |
           make unittest IS_WIN=${{ env.IS_WIN }} IS_MAC=${{ env.IS_MAC }}
+      - name: Run template maintenance checks
+        shell: bash
+        run: |
+          make template_packaging_check
+          make template_source_install_check
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v1
         with:

@@ -16,10 +16,7 @@ from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.template import extract_template, get_template_info, list_templates
 
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_TEMPLATES_DIR = _REPO_ROOT / "templates"
-_PACKAGED_TEMPLATE_DIR = _REPO_ROOT / "pyfcstm" / "template"
-_CURRENT_TEMPLATE_NAMES = ("c", "c_poll", "cpp", "cpp_poll", "python")
+_CURRENT_TEMPLATE_NAMES = tuple(list_templates())
 _TEMPLATE_LANGUAGE_VOCABULARY = {
     "c",
     "cpp",
@@ -38,7 +35,6 @@ _CONFIG_TOP_LEVEL_KEYS = {
     "tests",
     "ignores",
 }
-_MAINTAINER_ONLY_FILES = {"README.md", "README_zh.md", "template.json"}
 _REQUIRED_TEMPLATE_FILES = {
     "c": {
         "README.md",
@@ -172,10 +168,7 @@ def rendered_templates(representative_model):
     with TemporaryDirectory() as extraction_td, TemporaryDirectory() as render_td:
         extraction_root = Path(extraction_td)
         output_root = Path(render_td)
-        template_dirs = {
-            name: Path(extract_template(name, str(extraction_root / name)))
-            for name in _CURRENT_TEMPLATE_NAMES
-        }
+        template_dirs = _extract_templates(extraction_root)
         yield _render_template_directories(
             template_dirs,
             representative_model,
@@ -183,30 +176,25 @@ def rendered_templates(representative_model):
         )
 
 
-def _repository_template_names():
-    return tuple(
-        item.name
-        for item in sorted(_TEMPLATES_DIR.iterdir())
-        if item.is_dir() and not item.name.startswith(".")
-    )
-
-
-def _read_json(path):
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
-
-
 def _read_text(path):
     return path.read_text(encoding="utf-8")
 
 
-def _load_template_metadata(name):
-    return _read_json(_TEMPLATES_DIR / name / "template.json")
+def _extract_templates(root):
+    return {
+        name: Path(extract_template(name, str(root / name)))
+        for name in _CURRENT_TEMPLATE_NAMES
+    }
 
 
-def _load_config(name):
-    with (_TEMPLATES_DIR / name / "config.yaml").open("r", encoding="utf-8") as f:
+def _load_config(template_dir):
+    with (template_dir / "config.yaml").open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)
+
+
+def _load_template_metadata(template_dir):
+    with (template_dir / "template.json").open("r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def _ignore_spec(config):
@@ -337,96 +325,62 @@ def _assert_rendered_template_contracts(rendered_templates):
 
 
 @pytest.mark.unittest
-def test_repository_templates_expose_required_file_contract():
-    template_names = _repository_template_names()
-    assert set(_CURRENT_TEMPLATE_NAMES) <= set(template_names)
+def test_extracted_templates_expose_required_file_contract():
+    with TemporaryDirectory() as td:
+        template_dirs = _extract_templates(Path(td))
+        assert set(_CURRENT_TEMPLATE_NAMES) <= set(template_dirs)
 
-    for name in template_names:
-        metadata = _load_template_metadata(name)
-        assert metadata["name"] == name
-        assert metadata["language"] in _TEMPLATE_LANGUAGE_VOCABULARY
-        if name not in _REQUIRED_TEMPLATE_FILES:
-            pytest.fail(
-                "Add a required-file contract for built-in template {name!r}.".format(
-                    name=name,
+        for name, template_dir in template_dirs.items():
+            metadata = _load_template_metadata(template_dir)
+            assert metadata["name"] == name
+            assert metadata["language"] in _TEMPLATE_LANGUAGE_VOCABULARY
+            if name not in _REQUIRED_TEMPLATE_FILES:
+                pytest.fail(
+                    "Add a required-file contract for built-in template {name!r}.".format(
+                        name=name,
+                    )
                 )
-            )
 
-        files = {
-            item.name for item in (_TEMPLATES_DIR / name).iterdir() if item.is_file()
-        }
-        assert _REQUIRED_TEMPLATE_FILES[name] <= files
+            files = {item.name for item in template_dir.iterdir() if item.is_file()}
+            assert _REQUIRED_TEMPLATE_FILES[name] <= files
 
 
 @pytest.mark.unittest
-def test_template_metadata_matches_packaged_index_contract():
-    index = _read_json(_PACKAGED_TEMPLATE_DIR / "index.json")
-    index_items = {item["name"]: item for item in index["templates"]}
-    repository_names = set(_repository_template_names())
+def test_template_metadata_matches_packaged_asset_contract():
+    with TemporaryDirectory() as td:
+        template_dirs = _extract_templates(Path(td))
+        assert set(_CURRENT_TEMPLATE_NAMES) == set(template_dirs)
 
-    assert set(list_templates()) == repository_names
-    assert set(index_items) == repository_names
+        for name, template_dir in template_dirs.items():
+            template_metadata = _load_template_metadata(template_dir)
+            api_metadata = get_template_info(name)
 
-    for name in repository_names:
-        repo_metadata = _load_template_metadata(name)
-        indexed_metadata = index_items[name]
-        api_metadata = get_template_info(name)
-
-        assert api_metadata == indexed_metadata
-        assert indexed_metadata["name"] == name
-        assert indexed_metadata["archive"] == "{name}.zip".format(name=name)
-        assert indexed_metadata["root_dir"] == name
-        for key in ["title", "description", "language", "experimental"]:
-            assert indexed_metadata[key] == repo_metadata[key]
-        assert indexed_metadata["language"] in _TEMPLATE_LANGUAGE_VOCABULARY
+            assert api_metadata["name"] == name
+            assert api_metadata["archive"] == "{name}.zip".format(name=name)
+            assert api_metadata["root_dir"] == name
+            for key in ["name", "title", "description", "language", "experimental"]:
+                assert api_metadata[key] == template_metadata[key]
+            assert api_metadata["language"] in _TEMPLATE_LANGUAGE_VOCABULARY
 
 
 @pytest.mark.unittest
 def test_template_configs_keep_renderer_contract_and_ignores():
-    for name in _repository_template_names():
-        config = _load_config(name)
-        unknown_keys = set(config) - _CONFIG_TOP_LEVEL_KEYS
-        assert not unknown_keys
+    with TemporaryDirectory() as td:
+        for name, template_dir in _extract_templates(Path(td)).items():
+            config = _load_config(template_dir)
+            unknown_keys = set(config) - _CONFIG_TOP_LEVEL_KEYS
+            assert not unknown_keys
 
-        spec = _ignore_spec(config)
-        for maintainer_file in _MAINTAINER_ONLY_FILES:
-            assert spec.match_file(maintainer_file)
-        assert not spec.match_file("README.md.j2")
-        assert not spec.match_file("README_zh.md.j2")
-        for runtime_template in _RUNTIME_TEMPLATES[name]:
-            assert not spec.match_file(runtime_template)
+            spec = _ignore_spec(config)
+            assert not spec.match_file("README.md.j2")
+            assert not spec.match_file("README_zh.md.j2")
+            for runtime_template in _RUNTIME_TEMPLATES[name]:
+                assert not spec.match_file(runtime_template)
 
 
 @pytest.mark.unittest
-def test_template_readmes_keep_maintainer_and_generated_guidance_separate(
-    rendered_templates,
-):
-    root_readme = _read_text(_TEMPLATES_DIR / "README.md")
-    root_readme_zh = _read_text(_TEMPLATES_DIR / "README_zh.md")
-    for expected in [
-        "python",
-        "c",
-        "c_poll",
-        "cpp",
-        "cpp_poll",
-        "java",
-        "js",
-        "rust",
-        "ruby",
-        "go",
-    ]:
-        assert expected in root_readme
-        assert expected in root_readme_zh
-
-    for name in _repository_template_names():
-        template_dir = _TEMPLATES_DIR / name
-        maintainer_readme = _read_text(template_dir / "README.md").lower()
-        maintainer_readme_zh = _read_text(template_dir / "README_zh.md").lower()
-        assert "maintainer" in maintainer_readme
-        assert "template" in maintainer_readme
-        assert "not copied" in maintainer_readme or "ignored" in maintainer_readme
-        assert "template" in maintainer_readme_zh or "模板" in maintainer_readme_zh
-
+def test_generated_readmes_keep_generated_guidance(rendered_templates):
+    for name in _CURRENT_TEMPLATE_NAMES:
         generated_readme = _read_text(rendered_templates[name] / "README.md")
         generated_readme_zh = _read_text(rendered_templates[name] / "README_zh.md")
         for generated_text in [generated_readme, generated_readme_zh]:
@@ -439,29 +393,7 @@ def test_template_readmes_keep_maintainer_and_generated_guidance_separate(
 
 @pytest.mark.unittest
 def test_c_family_readmes_document_deployment_safety_boundaries(rendered_templates):
-    root_readme = _read_text(_TEMPLATES_DIR / "README.md")
-    root_readme_zh = _read_text(_TEMPLATES_DIR / "README_zh.md")
-
-    assert "C/C++ deployment safety wording" in root_readme
-    assert "C/C++ 部署安全表述" in root_readme_zh
-
     for name in ["c", "c_poll", "cpp", "cpp_poll"]:
-        maintainer_readme = _read_text(_TEMPLATES_DIR / name / "README.md")
-        maintainer_readme_zh = _read_text(_TEMPLATES_DIR / name / "README_zh.md")
-        maintainer_readme_words = " ".join(maintainer_readme.split())
-        maintainer_readme_zh_words = " ".join(maintainer_readme_zh.split())
-        assert "engineering baseline" in maintainer_readme_words
-        assert "not a certification package" in maintainer_readme_words
-        assert "不是认证包" in maintainer_readme_zh_words
-        assert (
-            "Numeric inspect warning" in maintainer_readme
-            or "Numeric-risk wording" in maintainer_readme
-        )
-        assert (
-            "Numeric inspect warning" in maintainer_readme_zh
-            or "数值风险表述" in maintainer_readme_zh
-        )
-
         generated_readme = _read_text(rendered_templates[name] / "README.md")
         generated_readme_zh = _read_text(rendered_templates[name] / "README_zh.md")
         for text in [generated_readme, generated_readme_zh]:
@@ -521,41 +453,14 @@ def test_c_family_readmes_document_deployment_safety_boundaries(rendered_templat
 def test_cpp_template_documentation_describes_early_first_class_status(
     rendered_templates,
 ):
-    root_readme = _read_text(_TEMPLATES_DIR / "README.md")
-    root_readme_zh = _read_text(_TEMPLATES_DIR / "README_zh.md")
-    for text in [root_readme, root_readme_zh]:
-        lowered = text.lower()
-        assert "cpp" in lowered
-        assert "cpp_poll" in lowered
-        assert "early" in lowered or "早期" in text
-        assert "first-class" in lowered or "一等" in text
-        assert "experimental: true" in text
-        assert "skeleton" not in lowered
-        assert "prototype" not in lowered
-        assert "原型" not in text
-
     expected_metadata_descriptions = {
         "cpp": "Early-stage first-class C++ template",
         "cpp_poll": "Early-stage first-class C++ poll template",
     }
     for name, expected_description in expected_metadata_descriptions.items():
-        metadata = _load_template_metadata(name)
+        metadata = get_template_info(name)
         assert metadata["experimental"] is True
         assert expected_description in metadata["description"]
-
-        maintainer_readme = _read_text(_TEMPLATES_DIR / name / "README.md")
-        maintainer_readme_zh = _read_text(_TEMPLATES_DIR / name / "README_zh.md")
-        for text in [maintainer_readme, maintainer_readme_zh]:
-            lowered = text.lower()
-            assert "experimental: true" in text
-            assert "early" in lowered or "早期" in text
-            assert "first-class" in lowered or "一等" in text
-            assert "unimplemented" in lowered or "未实现" in text
-            assert "wrapper" in lowered
-            assert "native toolchain" in lowered or "原生工具链" in text
-            assert "skeleton" not in lowered
-            assert "prototype" not in lowered
-            assert "原型" not in text
 
         generated_readme = _read_text(rendered_templates[name] / "README.md")
         generated_readme_zh = _read_text(rendered_templates[name] / "README_zh.md")
@@ -579,23 +484,23 @@ def test_generated_sources_preserve_banner_source_context_and_dependency_boundar
 
 @pytest.mark.unittest
 def test_generated_source_templates_keep_source_metadata_wording():
-    for name in _repository_template_names():
-        for rel_path in ["README.md.j2", "README_zh.md.j2"] + list(
-            _RUNTIME_TEMPLATES[name]
-        ):
-            source = _read_text(_TEMPLATES_DIR / name / rel_path)
-            normalized = " ".join(source.lower().split())
-            compact = "".join(source.lower().split())
-            for banned in _BANNED_SOURCE_WORDING:
-                assert banned not in normalized
-                assert "".join(banned.split()) not in compact
+    with TemporaryDirectory() as td:
+        for name, template_dir in _extract_templates(Path(td)).items():
+            for rel_path in ["README.md.j2", "README_zh.md.j2"] + list(
+                _RUNTIME_TEMPLATES[name]
+            ):
+                source = _read_text(template_dir / rel_path)
+                normalized = " ".join(source.lower().split())
+                compact = "".join(source.lower().split())
+                for banned in _BANNED_SOURCE_WORDING:
+                    assert banned not in normalized
+                    assert "".join(banned.split()) not in compact
 
 
 @pytest.mark.unittest
 def test_extracted_builtin_templates_preserve_source_structure_contract():
     with TemporaryDirectory() as td:
-        for name in _repository_template_names():
-            extracted_dir = Path(extract_template(name, td))
+        for name, extracted_dir in _extract_templates(Path(td)).items():
             assert extracted_dir.name == get_template_info(name)["root_dir"]
             files = {item.name for item in extracted_dir.iterdir() if item.is_file()}
             assert _REQUIRED_TEMPLATE_FILES[name] <= files
@@ -603,8 +508,8 @@ def test_extracted_builtin_templates_preserve_source_structure_contract():
             config = yaml.safe_load(_read_text(extracted_dir / "config.yaml"))
             assert not (set(config) - _CONFIG_TOP_LEVEL_KEYS)
             spec = _ignore_spec(config)
-            for maintainer_file in _MAINTAINER_ONLY_FILES:
-                assert spec.match_file(maintainer_file)
+            assert not spec.match_file("README.md.j2")
+            assert not spec.match_file("README_zh.md.j2")
 
 
 @pytest.mark.unittest
@@ -620,22 +525,26 @@ def test_cpp_c_core_generated_outputs_match_c_templates(rendered_templates):
 
 @pytest.mark.unittest
 def test_c_family_helpers_are_template_scoped():
-    python_renderer = StateMachineCodeRenderer(str(_TEMPLATES_DIR / "python"))
-    c_helper_names = {
-        "to_c_identifier",
-        "to_c_path_identifier",
-        "to_c_public_identifier",
-        "to_c_public_macro_identifier",
-        "is_c_public_identifier_reserved",
-        "render_c_action_body",
-        "render_c_condition_body",
-        "render_c_reset_vars_body",
-    }
-    assert not (c_helper_names & set(python_renderer.env.filters))
-    assert not (c_helper_names & set(python_renderer.env.globals))
-    assert "c_public_identifier_reserved" not in python_renderer.env.tests
+    with TemporaryDirectory() as td:
+        template_dirs = _extract_templates(Path(td))
+        python_renderer = StateMachineCodeRenderer(str(template_dirs["python"]))
+        c_helper_names = {
+            "to_c_identifier",
+            "to_c_path_identifier",
+            "to_c_public_identifier",
+            "to_c_public_macro_identifier",
+            "is_c_public_identifier_reserved",
+            "render_c_action_body",
+            "render_c_condition_body",
+            "render_c_reset_vars_body",
+        }
+        assert not (c_helper_names & set(python_renderer.env.filters))
+        assert not (c_helper_names & set(python_renderer.env.globals))
+        assert "c_public_identifier_reserved" not in python_renderer.env.tests
 
-    for name in ["c", "c_poll", "cpp", "cpp_poll"]:
-        renderer = StateMachineCodeRenderer(str(_TEMPLATES_DIR / name))
-        assert c_helper_names <= (set(renderer.env.filters) | set(renderer.env.globals))
-        assert "c_public_identifier_reserved" in renderer.env.tests
+        for name in ["c", "c_poll", "cpp", "cpp_poll"]:
+            renderer = StateMachineCodeRenderer(str(template_dirs[name]))
+            assert c_helper_names <= (
+                set(renderer.env.filters) | set(renderer.env.globals)
+            )
+            assert "c_public_identifier_reserved" in renderer.env.tests

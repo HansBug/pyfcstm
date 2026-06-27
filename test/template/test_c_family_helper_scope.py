@@ -6,16 +6,19 @@ built-in template structure tests so target-language template structure changes
 can advance independently from renderer-boundary cleanup.
 """
 
+import inspect
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
 import yaml
 
+import pyfcstm.render.render as render_module
 from pyfcstm.render import StateMachineCodeRenderer
+from pyfcstm.template import extract_template
 
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_TEMPLATES_DIR = _REPO_ROOT / "templates"
+_TEMPLATE_NAMES = ("c", "c_poll", "cpp", "cpp_poll")
 
 _C_HELPER_NAMES = {
     "to_c_identifier",
@@ -29,80 +32,87 @@ _C_HELPER_NAMES = {
 }
 
 
-def _read_text(path: Path) -> str:
+def _load_config(template_dir: Path) -> dict:
     """
-    Read UTF-8 text from a repository file.
+    Load an extracted built-in template configuration file.
 
-    :param path: Path to the text file.
-    :type path: pathlib.Path
-    :return: File contents decoded as UTF-8.
-    :rtype: str
-
-    Example::
-
-        >>> text = _read_text(_TEMPLATES_DIR / 'python' / 'config.yaml')
-        >>> 'expr_styles' in text
-        True
-    """
-    return path.read_text(encoding="utf-8")
-
-
-def _load_config(name: str) -> dict:
-    """
-    Load a built-in template configuration file.
-
-    :param name: Built-in template directory name.
-    :type name: str
+    :param template_dir: Extracted built-in template directory.
+    :type template_dir: pathlib.Path
     :return: Parsed YAML configuration mapping.
     :rtype: dict
 
     Example::
 
-        >>> config = _load_config('c')
+        >>> with TemporaryDirectory() as td:
+        ...     path = Path(extract_template('c', td))
+        ...     config = _load_config(path)
         >>> 'globals' in config
         True
     """
-    with (_TEMPLATES_DIR / name / "config.yaml").open("r", encoding="utf-8") as f:
+    with (template_dir / "config.yaml").open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)
+
+
+def _extract_templates(root: Path) -> dict:
+    """
+    Extract C-family and Python built-in templates for boundary checks.
+
+    :param root: Temporary directory used as extraction root.
+    :type root: pathlib.Path
+    :return: Mapping from template names to extracted template directories.
+    :rtype: dict
+
+    Example::
+
+        >>> with TemporaryDirectory() as td:
+        ...     paths = _extract_templates(Path(td))
+        >>> 'python' in paths
+        True
+    """
+    names = ("python",) + _TEMPLATE_NAMES
+    return {name: Path(extract_template(name, str(root / name))) for name in names}
 
 
 @pytest.mark.unittest
 def test_c_family_helpers_are_template_scoped():
-    render_source = _read_text(_REPO_ROOT / "pyfcstm" / "render" / "render.py")
+    render_source = inspect.getsource(render_module)
     for helper_name in _C_HELPER_NAMES:
         assert helper_name not in render_source
 
-    python_renderer = StateMachineCodeRenderer(str(_TEMPLATES_DIR / "python"))
-    assert not (_C_HELPER_NAMES & set(python_renderer.env.filters))
-    assert not (_C_HELPER_NAMES & set(python_renderer.env.globals))
-    assert "c_public_identifier_reserved" not in python_renderer.env.tests
+    with TemporaryDirectory() as td:
+        template_dirs = _extract_templates(Path(td))
 
-    for name in ["c", "c_poll"]:
-        renderer = StateMachineCodeRenderer(str(_TEMPLATES_DIR / name))
-        assert _C_HELPER_NAMES <= (
-            set(renderer.env.filters) | set(renderer.env.globals)
-        )
-        assert "c_public_identifier_reserved" in renderer.env.tests
+        python_renderer = StateMachineCodeRenderer(str(template_dirs["python"]))
+        assert not (_C_HELPER_NAMES & set(python_renderer.env.filters))
+        assert not (_C_HELPER_NAMES & set(python_renderer.env.globals))
+        assert "c_public_identifier_reserved" not in python_renderer.env.tests
 
-        config = _load_config(name)
-        globals_config = config["globals"]
-        assert globals_config["render_c_action_body"] == {
-            "type": "import",
-            "from": "pyfcstm.render.c_runtime.render_c_action_body",
-        }
-        assert globals_config["render_c_condition_body"] == {
-            "type": "import",
-            "from": "pyfcstm.render.c_runtime.render_c_condition_body",
-        }
-        assert globals_config["render_c_reset_vars_body"] == {
-            "type": "import",
-            "from": "pyfcstm.render.c_runtime.render_c_reset_vars_body",
-        }
-        assert config["filters"]["to_c_identifier"] == {
-            "type": "import",
-            "from": "pyfcstm.utils.to_c_identifier",
-        }
-        assert config["tests"]["c_public_identifier_reserved"] == {
-            "type": "import",
-            "from": "pyfcstm.utils.is_c_public_identifier_reserved",
-        }
+        for name in _TEMPLATE_NAMES:
+            renderer = StateMachineCodeRenderer(str(template_dirs[name]))
+            assert _C_HELPER_NAMES <= (
+                set(renderer.env.filters) | set(renderer.env.globals)
+            )
+            assert "c_public_identifier_reserved" in renderer.env.tests
+
+            config = _load_config(template_dirs[name])
+            globals_config = config["globals"]
+            assert globals_config["render_c_action_body"] == {
+                "type": "import",
+                "from": "pyfcstm.render.c_runtime.render_c_action_body",
+            }
+            assert globals_config["render_c_condition_body"] == {
+                "type": "import",
+                "from": "pyfcstm.render.c_runtime.render_c_condition_body",
+            }
+            assert globals_config["render_c_reset_vars_body"] == {
+                "type": "import",
+                "from": "pyfcstm.render.c_runtime.render_c_reset_vars_body",
+            }
+            assert config["filters"]["to_c_identifier"] == {
+                "type": "import",
+                "from": "pyfcstm.utils.to_c_identifier",
+            }
+            assert config["tests"]["c_public_identifier_reserved"] == {
+                "type": "import",
+                "from": "pyfcstm.utils.is_c_public_identifier_reserved",
+            }

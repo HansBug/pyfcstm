@@ -2,7 +2,7 @@
   "generator": {
     "determinism": "No wall-clock timestamp is stored; concrete Z3 model values are not used as core facts.",
     "research_path": "research/numeric-render-semantics",
-    "source_commit": "c4b8897f421bcb2e4db62fd13df7955e0b92badc",
+    "source_commit": "62838a82539fd7cda753399a0bf04d536c6ac574",
     "source_commit_policy": "Best-effort commit at generation time; mapping and schema validation are the stable comparison keys.",
     "tool": "tools/numeric_render_probe.py"
   },
@@ -97,6 +97,48 @@
         "status": "parse_failed"
       }
     ],
+    "statement_rendered_expressions": [
+      {
+        "expr": "sign(A)",
+        "rendered": "_v[\"A\"] = self._evaluate_runtime_expr(\n    lambda: _s(_v[\"A\"]),\n    \"operation assignment to \\u0027A\\u0027\",\n)",
+        "sample": "assign_state_var",
+        "status": "rendered",
+        "style": "python_runtime",
+        "target": "A"
+      },
+      {
+        "expr": "round(A)",
+        "rendered": "_v[\"A\"] = self._evaluate_runtime_expr(\n    lambda: round(_v[\"A\"]),\n    \"operation assignment to \\u0027A\\u0027\",\n)",
+        "sample": "assign_state_var",
+        "status": "rendered",
+        "style": "python_runtime",
+        "target": "A"
+      },
+      {
+        "expr": "cbrt(A)",
+        "rendered": "_v[\"A\"] = self._evaluate_runtime_expr(\n    lambda: math.copysign(abs(_v[\"A\"]) ** (1.0 / 3.0), _v[\"A\"]),\n    \"operation assignment to \\u0027A\\u0027\",\n)",
+        "sample": "assign_state_var",
+        "status": "rendered",
+        "style": "python_runtime",
+        "target": "A"
+      },
+      {
+        "expr": "sqrt(A)",
+        "rendered": "_v[\"A\"] = self._evaluate_runtime_expr(\n    lambda: math.sqrt(_v[\"A\"]),\n    \"operation assignment to \\u0027A\\u0027\",\n)",
+        "sample": "assign_state_var",
+        "status": "rendered",
+        "style": "python_runtime",
+        "target": "A"
+      },
+      {
+        "condition": "sign(A) > 0",
+        "expr": "sign(A)",
+        "rendered": "if self._evaluate_runtime_expr(\n    lambda: _s(_v[\"A\"]) > 0,\n    \"if-block condition\",\n):\n    _v[\"A\"] = self._evaluate_runtime_expr(\n        lambda: _s(_v[\"A\"]),\n        \"operation assignment to \\u0027A\\u0027\",\n    )",
+        "sample": "if_assign_state_var",
+        "status": "rendered",
+        "style": "python_runtime"
+      }
+    ],
     "template_expr_styles": {
       "python_expr": {
         "base_lang": "python",
@@ -113,6 +155,64 @@
         }
       }
     },
+    "template_rendered_expressions": [
+      {
+        "ast_type": "UFunc",
+        "expr": "sign(A)",
+        "rendered": "self._sign(self._vars[\"A\"])",
+        "status": "rendered",
+        "style": "python_expr"
+      },
+      {
+        "ast_type": "UFunc",
+        "expr": "round(A)",
+        "rendered": "round(self._vars[\"A\"])",
+        "status": "rendered",
+        "style": "python_expr"
+      },
+      {
+        "ast_type": "UFunc",
+        "expr": "cbrt(A)",
+        "rendered": "math.copysign(abs(self._vars[\"A\"]) ** (1.0 / 3.0), self._vars[\"A\"])",
+        "status": "rendered",
+        "style": "python_expr"
+      },
+      {
+        "ast_type": "UFunc",
+        "expr": "sqrt(A)",
+        "rendered": "math.sqrt(self._vars[\"A\"])",
+        "status": "rendered",
+        "style": "python_expr"
+      },
+      {
+        "ast_type": "UFunc",
+        "expr": "sign(A)",
+        "rendered": "self._sign(scope[\"A\"])",
+        "status": "rendered",
+        "style": "python_scope_expr"
+      },
+      {
+        "ast_type": "UFunc",
+        "expr": "round(A)",
+        "rendered": "round(scope[\"A\"])",
+        "status": "rendered",
+        "style": "python_scope_expr"
+      },
+      {
+        "ast_type": "UFunc",
+        "expr": "cbrt(A)",
+        "rendered": "math.copysign(abs(scope[\"A\"]) ** (1.0 / 3.0), scope[\"A\"])",
+        "status": "rendered",
+        "style": "python_scope_expr"
+      },
+      {
+        "ast_type": "UFunc",
+        "expr": "sqrt(A)",
+        "rendered": "math.sqrt(scope[\"A\"])",
+        "status": "rendered",
+        "style": "python_scope_expr"
+      }
+    ],
     "template_stmt_styles": {
       "python_runtime": {
         "base_lang": "python",
@@ -1039,13 +1139,13 @@
         },
         "Int": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         },
         "Real": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         }
       }
     },
@@ -1075,13 +1175,13 @@
         },
         "Int": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         },
         "Real": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         }
       }
     },
@@ -1111,13 +1211,13 @@
         },
         "Int": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         },
         "Real": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         }
       }
     },
@@ -1147,13 +1247,13 @@
         },
         "Int": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         },
         "Real": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         }
       }
     },
@@ -1183,13 +1283,13 @@
         },
         "Int": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         },
         "Real": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         }
       }
     },
@@ -1219,13 +1319,13 @@
         },
         "Int": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         },
         "Real": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         }
       }
     },
@@ -1255,13 +1355,13 @@
         },
         "Int": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         },
         "Real": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         }
       }
     },
@@ -1291,13 +1391,13 @@
         },
         "Int": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         },
         "Real": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         }
       }
     },
@@ -1327,13 +1427,13 @@
         },
         "Int": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         },
         "Real": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         }
       }
     },
@@ -1363,13 +1463,13 @@
         },
         "Int": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         },
         "Real": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         }
       }
     },
@@ -1399,13 +1499,13 @@
         },
         "Int": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         },
         "Real": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         }
       }
     },
@@ -1435,13 +1535,13 @@
         },
         "Int": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         },
         "Real": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         }
       }
     },
@@ -1507,13 +1607,13 @@
         },
         "Int": {
           "note": "Current solver helper raises NotImplementedError for cbrt.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or polynomial obligation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or polynomial obligations"
         },
         "Real": {
           "note": "Current solver helper raises NotImplementedError for cbrt.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or polynomial obligation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or polynomial obligations"
         }
       }
     },
@@ -1603,13 +1703,13 @@
         },
         "Int": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         },
         "Real": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         }
       }
     },
@@ -1639,13 +1739,13 @@
         },
         "Int": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         },
         "Real": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         }
       }
     },
@@ -1675,13 +1775,13 @@
         },
         "Int": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         },
         "Real": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         }
       }
     },
@@ -1711,13 +1811,13 @@
         },
         "Int": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         },
         "Real": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         }
       }
     },
@@ -1747,13 +1847,13 @@
         },
         "Int": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         },
         "Real": {
           "note": "Current solver helper raises NotImplementedError for this transcendental function.",
-          "status": "uninterpreted",
-          "strategy": "uninterpreted or approximation"
+          "status": "unsupported",
+          "strategy": "no current encoding; future work may add uninterpreted or approximation obligations"
         }
       }
     },

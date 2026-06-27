@@ -45,7 +45,14 @@
     },
     "python_render_paths": {
       "type": "object",
-      "required": ["builtin_python_style", "template_expr_styles", "template_stmt_styles", "representative_rendered_expressions"]
+      "required": [
+        "builtin_python_style",
+        "template_expr_styles",
+        "template_stmt_styles",
+        "representative_rendered_expressions",
+        "template_rendered_expressions",
+        "statement_rendered_expressions"
+      ]
     },
     "python_runtime_samples": {
       "type": "object",

@@ -33,6 +33,7 @@ import json
 import math
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -46,8 +47,10 @@ if str(_REPO_ROOT_FOR_SCRIPT) not in sys.path:
 import z3  # noqa: E402
 
 from pyfcstm.dsl.error import GrammarParseError  # noqa: E402
+from pyfcstm.dsl import node as dsl_nodes  # noqa: E402
 from pyfcstm.model.expr import parse_expr_from_string  # noqa: E402
 from pyfcstm.render.expr import render_expr_node  # noqa: E402
+from pyfcstm.render.render import StateMachineCodeRenderer  # noqa: E402
 from pyfcstm.solver.expr import python_round_to_z3  # noqa: E402
 from tools.numeric_render_mapping import build_render_mapping  # noqa: E402
 
@@ -434,6 +437,208 @@ def _render_python_expr(expr_text: str) -> _JSON_OBJECT:
         "status": "rendered",
         "rendered": rendered,
         "ast_type": type(expr.to_ast_node()).__name__,
+    }
+
+
+def _render_template_python_expr(
+    renderer: StateMachineCodeRenderer, expr_text: str, style: str
+) -> _JSON_OBJECT:
+    """
+    Render a numeric expression through the packaged Python template renderer.
+
+    :param renderer: Prepared Python template renderer.
+    :type renderer: pyfcstm.render.render.StateMachineCodeRenderer
+    :param expr_text: FCSTM numeric expression text.
+    :type expr_text: str
+    :param style: Template expression style name, such as ``'python_expr'``.
+    :type style: str
+    :return: Render result with style, parse status, and rendered text.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> renderer = StateMachineCodeRenderer('templates/python')
+        >>> row = _render_template_python_expr(renderer, 'sign(A)', 'python_scope_expr')
+        >>> row['rendered']
+        'self._sign(scope["A"])'
+    """
+    try:
+        expr = parse_expr_from_string(expr_text, mode="numeric")
+        rendered = renderer.env.globals["expr_render"](
+            expr.to_ast_node(), style=style
+        )
+    except GrammarParseError as err:
+        # GrammarParseError: parse_expr_from_string rejects expressions outside
+        # the current numeric grammar; preserve the failed probe row.
+        return {
+            "style": style,
+            "expr": expr_text,
+            "status": "parse_failed",
+            "error_type": type(err).__name__,
+            "error": str(err),
+        }
+    except (KeyError, ValueError, TypeError) as err:
+        # KeyError: the requested renderer style is absent; ValueError/TypeError:
+        # model conversion or renderer templates rejected the parsed expression.
+        return {
+            "style": style,
+            "expr": expr_text,
+            "status": "failed",
+            "error_type": type(err).__name__,
+            "error": str(err),
+        }
+    return {
+        "style": style,
+        "expr": expr_text,
+        "status": "rendered",
+        "rendered": rendered,
+        "ast_type": type(expr.to_ast_node()).__name__,
+    }
+
+
+def _render_template_python_assignment(
+    renderer: StateMachineCodeRenderer, expr_text: str, style: str = "python_runtime"
+) -> _JSON_OBJECT:
+    """
+    Render a representative assignment through a Python template statement style.
+
+    :param renderer: Prepared Python template renderer.
+    :type renderer: pyfcstm.render.render.StateMachineCodeRenderer
+    :param expr_text: FCSTM numeric expression assigned to state variable ``A``.
+    :type expr_text: str
+    :param style: Statement style name, defaults to ``'python_runtime'``.
+    :type style: str, optional
+    :return: Render result with statement style and rendered text.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> renderer = StateMachineCodeRenderer('templates/python')
+        >>> row = _render_template_python_assignment(renderer, 'sign(A)')
+        >>> '_s(_v["A"])' in row['rendered']
+        True
+    """
+    try:
+        expr = parse_expr_from_string(expr_text, mode="numeric")
+        stmt = dsl_nodes.OperationAssignment("A", expr.to_ast_node())
+        rendered = renderer.env.globals["stmt_render"](
+            stmt,
+            style=style,
+            state_vars={"A"},
+            var_types={"A": "int"},
+        )
+    except GrammarParseError as err:
+        # GrammarParseError: the representative expression is not accepted by
+        # the numeric grammar and therefore cannot form an assignment probe.
+        return {
+            "style": style,
+            "sample": "assign_state_var",
+            "expr": expr_text,
+            "status": "parse_failed",
+            "error_type": type(err).__name__,
+            "error": str(err),
+        }
+    except (KeyError, ValueError, TypeError) as err:
+        # KeyError: the requested statement style is absent; ValueError/TypeError:
+        # model conversion or statement rendering rejected the sample.
+        return {
+            "style": style,
+            "sample": "assign_state_var",
+            "expr": expr_text,
+            "status": "failed",
+            "error_type": type(err).__name__,
+            "error": str(err),
+        }
+    return {
+        "style": style,
+        "sample": "assign_state_var",
+        "target": "A",
+        "expr": expr_text,
+        "status": "rendered",
+        "rendered": rendered,
+    }
+
+
+def _render_template_python_if(
+    renderer: StateMachineCodeRenderer,
+    condition_text: str,
+    body_expr_text: str,
+    style: str = "python_runtime",
+) -> _JSON_OBJECT:
+    """
+    Render a representative ``if`` block through a Python statement style.
+
+    :param renderer: Prepared Python template renderer.
+    :type renderer: pyfcstm.render.render.StateMachineCodeRenderer
+    :param condition_text: FCSTM logical expression for the branch condition.
+    :type condition_text: str
+    :param body_expr_text: FCSTM numeric expression assigned inside the branch.
+    :type body_expr_text: str
+    :param style: Statement style name, defaults to ``'python_runtime'``.
+    :type style: str, optional
+    :return: Render result for the representative branch sample.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> renderer = StateMachineCodeRenderer('templates/python')
+        >>> row = _render_template_python_if(renderer, 'sign(A) > 0', 'sign(A)')
+        >>> 'if self._evaluate_runtime_expr' in row['rendered']
+        True
+    """
+    try:
+        condition = parse_expr_from_string(condition_text, mode="logical")
+        body_expr = parse_expr_from_string(body_expr_text, mode="numeric")
+        stmt = dsl_nodes.OperationIf(
+            [
+                dsl_nodes.OperationIfBranch(
+                    condition.to_ast_node(),
+                    [
+                        dsl_nodes.OperationAssignment(
+                            "A",
+                            body_expr.to_ast_node(),
+                        )
+                    ],
+                )
+            ]
+        )
+        rendered = renderer.env.globals["stmt_render"](
+            stmt,
+            style=style,
+            state_vars={"A"},
+            var_types={"A": "int"},
+        )
+    except GrammarParseError as err:
+        # GrammarParseError: either the logical condition or numeric body
+        # expression is outside the accepted grammar.
+        return {
+            "style": style,
+            "sample": "if_assign_state_var",
+            "condition": condition_text,
+            "expr": body_expr_text,
+            "status": "parse_failed",
+            "error_type": type(err).__name__,
+            "error": str(err),
+        }
+    except (KeyError, ValueError, TypeError) as err:
+        # KeyError: the requested statement style is absent; ValueError/TypeError:
+        # model conversion or statement rendering rejected the if sample.
+        return {
+            "style": style,
+            "sample": "if_assign_state_var",
+            "condition": condition_text,
+            "expr": body_expr_text,
+            "status": "failed",
+            "error_type": type(err).__name__,
+            "error": str(err),
+        }
+    return {
+        "style": style,
+        "sample": "if_assign_state_var",
+        "condition": condition_text,
+        "expr": body_expr_text,
+        "status": "rendered",
+        "rendered": rendered,
     }
 
 
@@ -851,8 +1056,8 @@ def _z3_support_for_operator(operator: str) -> Mapping[str, _JSON_OBJECT]:
     if operator == "cbrt":
         return {
             sort: _support(
-                "uninterpreted" if sort in {"Int", "Real"} else "unsupported",
-                "uninterpreted or polynomial obligation"
+                "unsupported",
+                "no current encoding; future work may add uninterpreted or polynomial obligations"
                 if sort in {"Int", "Real"}
                 else "none",
                 "Current solver helper raises NotImplementedError for cbrt.",
@@ -880,8 +1085,10 @@ def _z3_support_for_operator(operator: str) -> Mapping[str, _JSON_OBJECT]:
     }:
         return {
             sort: _support(
-                "uninterpreted" if sort in {"Int", "Real"} else "unsupported",
-                "uninterpreted or approximation" if sort in {"Int", "Real"} else "none",
+                "unsupported",
+                "no current encoding; future work may add uninterpreted or approximation obligations"
+                if sort in {"Int", "Real"}
+                else "none",
                 "Current solver helper raises NotImplementedError for this transcendental function.",
             )
             for sort in _Z3_SORTS
@@ -1241,18 +1448,22 @@ def _template_path(mapping: Mapping[str, Any], path: Sequence[str]) -> Optional[
     return current if isinstance(current, str) else None
 
 
-def _build_python_render_paths(mapping: Mapping[str, Any]) -> _JSON_OBJECT:
+def _build_python_render_paths(
+    mapping: Mapping[str, Any], repo_root: Union[str, Path]
+) -> _JSON_OBJECT:
     """
     Collect Python render-path facts from the R0 mapping.
 
     :param mapping: R0 render mapping.
     :type mapping: Mapping[str, Any]
+    :param repo_root: Repository root path used to load the Python template.
+    :type repo_root: Union[str, pathlib.Path]
     :return: Python render path inventory.
     :rtype: Dict[str, Any]
 
     Example::
 
-        >>> data = _build_python_render_paths({'builtin_expr_styles': {'styles': {}}})
+        >>> data = _build_python_render_paths({'builtin_expr_styles': {'styles': {}}}, '.')
         >>> 'builtin_python_style' in data
         True
     """
@@ -1263,6 +1474,10 @@ def _build_python_render_paths(mapping: Mapping[str, Any]) -> _JSON_OBJECT:
         .get("templates", {})
     )
     python_template = mapping.get("templates", {}).get("python", {})
+    python_renderer = StateMachineCodeRenderer(
+        str(Path(repo_root).resolve() / "templates/python")
+    )
+    rendered_expr_samples = ["sign(A)", "round(A)", "cbrt(A)", "sqrt(A)"]
     return {
         "builtin_python_style": {
             "base_lang": _template_path(
@@ -1303,6 +1518,22 @@ def _build_python_render_paths(mapping: Mapping[str, Any]) -> _JSON_OBJECT:
                 "tau",
                 "~A",
             ]
+        ],
+        "template_rendered_expressions": [
+            _render_template_python_expr(python_renderer, expr, style)
+            for style in ["python_expr", "python_scope_expr"]
+            for expr in rendered_expr_samples
+        ],
+        "statement_rendered_expressions": [
+            _render_template_python_assignment(python_renderer, expr)
+            for expr in rendered_expr_samples
+        ]
+        + [
+            _render_template_python_if(
+                python_renderer,
+                "sign(A) > 0",
+                "sign(A)",
+            )
         ],
     }
 
@@ -1418,7 +1649,7 @@ def build_python_z3_baseline(repo_root: Union[str, Path] = ".") -> _JSON_OBJECT:
                 "seed_policy": "Capability rows avoid solver model dependence; future model-valued rows must record a fixed seed.",
             },
         },
-        "python_render_paths": _build_python_render_paths(mapping),
+        "python_render_paths": _build_python_render_paths(mapping, root),
         "python_runtime_samples": _build_python_runtime_samples(),
         "z3_representative_samples": _build_z3_representative_samples(),
         "z3_capability_matrix": _build_z3_capability_matrix(mapping),
@@ -1479,6 +1710,225 @@ def _validate_support_matrix(row: Mapping[str, Any], path: str) -> List[str]:
                     "%s.z3_support.%s.%s must be a non-empty string" % (path, sort, key)
                 )
     return errors
+
+
+def _json_type_matches(value: Any, type_name: str) -> bool:
+    """
+    Return whether a Python value satisfies a small JSON Schema type name.
+
+    :param value: JSON-compatible value.
+    :type value: Any
+    :param type_name: JSON Schema type name.
+    :type type_name: str
+    :return: Whether the value matches the requested schema type.
+    :rtype: bool
+
+    Example::
+
+        >>> _json_type_matches({'ok': True}, 'object')
+        True
+        >>> _json_type_matches(True, 'integer')
+        False
+    """
+    if type_name == "object":
+        return isinstance(value, Mapping)
+    if type_name == "array":
+        return isinstance(value, list)
+    if type_name == "string":
+        return isinstance(value, str)
+    if type_name == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if type_name == "number":
+        return (isinstance(value, int) and not isinstance(value, bool)) or isinstance(
+            value, float
+        )
+    if type_name == "boolean":
+        return isinstance(value, bool)
+    if type_name == "null":
+        return value is None
+    return False
+
+
+def _resolve_local_schema_ref(root_schema: Mapping[str, Any], ref: str) -> Any:
+    """
+    Resolve a local ``#/`` JSON Schema reference.
+
+    :param root_schema: Root schema document.
+    :type root_schema: Mapping[str, Any]
+    :param ref: Local reference string.
+    :type ref: str
+    :return: Referenced schema fragment.
+    :rtype: Any
+    :raises ValueError: If ``ref`` is not a supported local reference.
+    :raises KeyError: If the reference path does not exist.
+
+    Example::
+
+        >>> _resolve_local_schema_ref({'$defs': {'x': {'type': 'string'}}}, '#/$defs/x')['type']
+        'string'
+    """
+    if not ref.startswith("#/"):
+        raise ValueError("only local JSON Schema references are supported: %s" % ref)
+    current: Any = root_schema
+    for raw_part in ref[2:].split("/"):
+        part = raw_part.replace("~1", "/").replace("~0", "~")
+        if not isinstance(current, Mapping):
+            raise KeyError(ref)
+        current = current[part]
+    return current
+
+
+def _validate_json_schema_fragment(
+    value: Any,
+    schema: Mapping[str, Any],
+    root_schema: Mapping[str, Any],
+    path: str,
+) -> List[str]:
+    """
+    Validate one value against the repository's lightweight schema subset.
+
+    The helper intentionally implements only the JSON Schema keywords used by
+    the research artifact schemas: ``$ref``, ``type``, ``required``,
+    ``properties``, object ``additionalProperties``, ``const``, ``enum``,
+    ``pattern``, ``minItems`` and homogeneous ``items``.
+
+    :param value: JSON-compatible value to validate.
+    :type value: Any
+    :param schema: Schema fragment.
+    :type schema: Mapping[str, Any]
+    :param root_schema: Root schema document used for local references.
+    :type root_schema: Mapping[str, Any]
+    :param path: Human-readable JSON path for diagnostics.
+    :type path: str
+    :return: Validation diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> _validate_json_schema_fragment({'a': 1}, {'type': 'object', 'required': ['a']}, {}, '$')
+        []
+    """
+    errors: List[str] = []
+    ref = schema.get("$ref")
+    if isinstance(ref, str):
+        try:
+            target = _resolve_local_schema_ref(root_schema, ref)
+        except (ValueError, KeyError) as err:
+            # ValueError: the schema used an unsupported reference form;
+            # KeyError: the local reference path is absent from the schema.
+            return ["%s has unresolved schema reference %r: %s" % (path, ref, err)]
+        if not isinstance(target, Mapping):
+            return ["%s schema reference %r did not resolve to an object" % (path, ref)]
+        return _validate_json_schema_fragment(value, target, root_schema, path)
+
+    expected_type = schema.get("type")
+    if isinstance(expected_type, str):
+        expected_types = [expected_type]
+    elif isinstance(expected_type, list):
+        expected_types = [item for item in expected_type if isinstance(item, str)]
+    else:
+        expected_types = []
+    if expected_types and not any(
+        _json_type_matches(value, type_name) for type_name in expected_types
+    ):
+        errors.append("%s must match type %s" % (path, " or ".join(expected_types)))
+        return errors
+
+    if "const" in schema and value != schema["const"]:
+        errors.append("%s must equal %r" % (path, schema["const"]))
+    enum_values = schema.get("enum")
+    if isinstance(enum_values, list) and value not in enum_values:
+        errors.append("%s must be one of %r" % (path, enum_values))
+    pattern = schema.get("pattern")
+    if isinstance(pattern, str) and isinstance(value, str):
+        try:
+            matched = re.search(pattern, value) is not None
+        except re.error as err:
+            # re.error: the repository schema contains an invalid regular
+            # expression and therefore cannot validate this field.
+            errors.append("%s has invalid schema pattern %r: %s" % (path, pattern, err))
+        else:
+            if not matched:
+                errors.append("%s must match pattern %r" % (path, pattern))
+
+    if isinstance(value, Mapping):
+        required = schema.get("required")
+        if isinstance(required, list):
+            for key in required:
+                if isinstance(key, str) and key not in value:
+                    errors.append("%s missing required key %s" % (path, key))
+        properties = schema.get("properties")
+        if isinstance(properties, Mapping):
+            if schema.get("additionalProperties") is False:
+                extra_keys = sorted(set(value) - set(properties))
+                for key in extra_keys:
+                    errors.append("%s has unexpected key %s" % (path, key))
+            for key, child_schema in properties.items():
+                if key not in value or not isinstance(child_schema, Mapping):
+                    continue
+                errors.extend(
+                    _validate_json_schema_fragment(
+                        value[key],
+                        child_schema,
+                        root_schema,
+                        "%s.%s" % (path, key),
+                    )
+                )
+        additional = schema.get("additionalProperties")
+        if isinstance(additional, Mapping):
+            known_keys = set(properties) if isinstance(properties, Mapping) else set()
+            for key, child_value in value.items():
+                if key in known_keys:
+                    continue
+                errors.extend(
+                    _validate_json_schema_fragment(
+                        child_value,
+                        additional,
+                        root_schema,
+                        "%s.%s" % (path, key),
+                    )
+                )
+
+    if isinstance(value, list):
+        min_items = schema.get("minItems")
+        if isinstance(min_items, int) and len(value) < min_items:
+            errors.append("%s must contain at least %d items" % (path, min_items))
+        item_schema = schema.get("items")
+        if isinstance(item_schema, Mapping):
+            for index, item in enumerate(value):
+                errors.extend(
+                    _validate_json_schema_fragment(
+                        item,
+                        item_schema,
+                        root_schema,
+                        "%s[%d]" % (path, index),
+                    )
+                )
+    return errors
+
+
+def _validate_payload_with_schema(
+    payload: Mapping[str, Any], schema: Mapping[str, Any]
+) -> List[str]:
+    """
+    Validate a payload against a loaded research artifact schema.
+
+    :param payload: JSON-compatible artifact payload.
+    :type payload: Mapping[str, Any]
+    :param schema: Loaded JSON Schema document.
+    :type schema: Mapping[str, Any]
+    :return: Validation diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> _validate_payload_with_schema(
+        ...     {'schema_version': 1},
+        ...     {'type': 'object', 'required': ['schema_version']},
+        ... )
+        []
+    """
+    return _validate_json_schema_fragment(payload, schema, schema, "$")
 
 
 def validate_python_z3_baseline(payload: Mapping[str, Any]) -> List[str]:
@@ -1575,6 +2025,70 @@ def validate_python_z3_baseline(payload: Mapping[str, Any]) -> List[str]:
                 errors.append(
                     "~A representative expression must record current parse_failed status"
                 )
+        template_rendered = render_paths.get("template_rendered_expressions")
+        if not isinstance(template_rendered, list) or not template_rendered:
+            errors.append(
+                "python_render_paths.template_rendered_expressions must be non-empty"
+            )
+        else:
+            template_by_key = {
+                (item.get("style"), item.get("expr")): item
+                for item in template_rendered
+                if isinstance(item, Mapping)
+            }
+            for style in ["python_expr", "python_scope_expr"]:
+                for expr in ["sign(A)", "round(A)", "cbrt(A)", "sqrt(A)"]:
+                    row = template_by_key.get((style, expr))
+                    if row is None:
+                        errors.append(
+                            "missing template rendered expression: %s %s"
+                            % (style, expr)
+                        )
+                    elif row.get("status") != "rendered":
+                        errors.append(
+                            "template rendered expression %s %s must render"
+                            % (style, expr)
+                        )
+            sign_expr = template_by_key.get(("python_expr", "sign(A)"), {})
+            if sign_expr.get("rendered") != 'self._sign(self._vars["A"])':
+                errors.append(
+                    "python_expr sign(A) must render through self._sign(self._vars[\"A\"])"
+                )
+            sign_scope = template_by_key.get(("python_scope_expr", "sign(A)"), {})
+            if sign_scope.get("rendered") != 'self._sign(scope["A"])':
+                errors.append(
+                    "python_scope_expr sign(A) must render through self._sign(scope[\"A\"])"
+                )
+        statement_rendered = render_paths.get("statement_rendered_expressions")
+        if not isinstance(statement_rendered, list) or not statement_rendered:
+            errors.append(
+                "python_render_paths.statement_rendered_expressions must be non-empty"
+            )
+        else:
+            statement_by_key = {
+                (item.get("style"), item.get("sample"), item.get("expr")): item
+                for item in statement_rendered
+                if isinstance(item, Mapping)
+            }
+            sign_assignment = statement_by_key.get(
+                ("python_runtime", "assign_state_var", "sign(A)"), {}
+            )
+            sign_rendered = sign_assignment.get("rendered")
+            if not isinstance(sign_rendered, str) or '_s(_v["A"])' not in sign_rendered:
+                errors.append(
+                    "python_runtime sign(A) assignment must render through _s(_v[\"A\"])"
+                )
+            if not any(
+                isinstance(item, Mapping)
+                and item.get("style") == "python_runtime"
+                and item.get("sample") == "if_assign_state_var"
+                and isinstance(item.get("rendered"), str)
+                and "if self._evaluate_runtime_expr" in item.get("rendered")
+                for item in statement_rendered
+            ):
+                errors.append(
+                    "python_runtime statement samples must include a rendered if-block"
+                )
 
     samples = payload.get("python_runtime_samples")
     if not isinstance(samples, Mapping):
@@ -1604,6 +2118,29 @@ def validate_python_z3_baseline(payload: Mapping[str, Any]) -> List[str]:
             errors.append(
                 "python_runtime_samples.round_half_cases must include half-even examples"
             )
+        else:
+            round_by_input = {
+                item.get("input"): item for item in round_cases if isinstance(item, Mapping)
+            }
+            for value, expected_python, expected_z3 in [
+                ("-2.5", -2, "-2"),
+                ("0.5", 0, "0"),
+                ("2.5", 2, "2"),
+            ]:
+                row = round_by_input.get(value)
+                if row is None:
+                    errors.append("missing round half case for %s" % value)
+                    continue
+                if row.get("python_round") != expected_python:
+                    errors.append(
+                        "round(%s) must be Python half-even value %r"
+                        % (value, expected_python)
+                    )
+                if row.get("z3_python_round_to_z3") != expected_z3:
+                    errors.append(
+                        "python_round_to_z3(%s) must simplify to %s"
+                        % (value, expected_z3)
+                    )
         sign_cases = samples.get("sign_cases")
         if not isinstance(sign_cases, list) or not any(
             item.get("python_sign") == -1
@@ -1613,6 +2150,13 @@ def validate_python_z3_baseline(payload: Mapping[str, Any]) -> List[str]:
             errors.append(
                 "python_runtime_samples.sign_cases must include a negative sign example"
             )
+        elif not any(
+            isinstance(item, Mapping)
+            and item.get("input") == "-3"
+            and item.get("python_sign") == -1
+            for item in sign_cases
+        ):
+            errors.append("python sign sample for -3 must be -1")
         cbrt_cases = samples.get("cbrt_cases")
         if not isinstance(cbrt_cases, list) or not any(
             str(item.get("input")) == "-8"
@@ -1620,6 +2164,14 @@ def validate_python_z3_baseline(payload: Mapping[str, Any]) -> List[str]:
             if isinstance(item, Mapping)
         ):
             errors.append("python_runtime_samples.cbrt_cases must include -8")
+        shift_cases = samples.get("shift_cases")
+        if not isinstance(shift_cases, list) or not any(
+            isinstance(item, Mapping)
+            and item.get("expression") == "-8 >> 1"
+            and item.get("python_value") == -4
+            for item in shift_cases
+        ):
+            errors.append("python_runtime_samples.shift_cases must include -8 >> 1 == -4")
 
     z3_samples = payload.get("z3_representative_samples")
     if not isinstance(z3_samples, Mapping):
@@ -1695,6 +2247,28 @@ def validate_python_z3_baseline(payload: Mapping[str, Any]) -> List[str]:
                 errors.append(
                     "z3_capability_matrix '%' Int support must not be exact for Python modulo baseline"
                 )
+        for unsupported_func in [
+            "cbrt",
+            "sin",
+            "cos",
+            "tan",
+            "exp",
+            "log",
+            "log10",
+            "log2",
+            "log1p",
+        ]:
+            row = rows_by_operator.get(unsupported_func)
+            if not isinstance(row, Mapping):
+                continue
+            support = row.get("z3_support", {})
+            for sort in ["Int", "Real"]:
+                item = support.get(sort) if isinstance(support, Mapping) else None
+                if isinstance(item, Mapping) and item.get("status") != "unsupported":
+                    errors.append(
+                        "z3_capability_matrix %s %s support must be unsupported for current solver fact"
+                        % (unsupported_func, sort)
+                    )
         for index, row in enumerate(matrix):
             if not isinstance(row, Mapping):
                 errors.append("z3_capability_matrix[%d] must be a mapping" % index)
@@ -1851,6 +2425,19 @@ def check_python_z3_baseline(repo_root: Union[str, Path] = ".") -> _JSON_OBJECT:
     errors = [
         "live baseline: %s" % error for error in validate_python_z3_baseline(live)
     ]
+    schema = None
+    schema_path = root / _PYTHON_Z3_BASELINE_SCHEMA
+    try:
+        schema = _read_json(schema_path)
+    except (OSError, json.JSONDecodeError, ValueError) as err:
+        # OSError: schema cannot be read; JSONDecodeError: invalid JSON;
+        # ValueError: top-level schema JSON is not an object.
+        errors.append("schema cannot be loaded: %s" % err)
+    if schema is not None:
+        errors.extend(
+            "live schema: %s" % error
+            for error in _validate_payload_with_schema(live, schema)
+        )
     snapshot_path = root / _PYTHON_Z3_BASELINE_SNAPSHOT
     snapshot_present = snapshot_path.is_file()
     if not snapshot_present:
@@ -1867,6 +2454,11 @@ def check_python_z3_baseline(repo_root: Union[str, Path] = ".") -> _JSON_OBJECT:
                 "snapshot: %s" % error
                 for error in validate_python_z3_baseline(snapshot)
             )
+            if schema is not None:
+                errors.extend(
+                    "snapshot schema: %s" % error
+                    for error in _validate_payload_with_schema(snapshot, schema)
+                )
             snapshot_difference = _first_baseline_difference(
                 _baseline_comparison_payload(live),
                 _baseline_comparison_payload(snapshot),

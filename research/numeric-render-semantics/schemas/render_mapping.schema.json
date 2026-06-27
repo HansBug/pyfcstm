@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HansBug/pyfcstm/research/numeric-render-semantics/schemas/render_mapping.schema.json",
+  "title": "Numeric render mapping snapshot",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generator",
+    "repository",
+    "builtin_expr_styles",
+    "builtin_stmt_styles",
+    "templates",
+    "packaged_templates",
+    "renderer_helper_inventory",
+    "cxx_paths",
+    "runtime_semantics_notes",
+    "mapping_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "generated_at_utc": {"type": ["string", "null"]},
+    "mapping_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "generator": {"type": "object", "required": ["tool", "research_path"]},
+    "repository": {"type": "object", "required": ["template_source_root", "packaged_template_root"]},
+    "builtin_expr_styles": {"type": "object", "required": ["styles"]},
+    "builtin_stmt_styles": {"type": "object", "required": ["styles"]},
+    "templates": {"type": "object"},
+    "packaged_templates": {"type": "object", "required": ["entries"]},
+    "renderer_helper_inventory": {"type": "array"},
+    "cxx_paths": {"type": "object", "required": ["builtin_cpp_style", "template_generated_paths"]},
+    "runtime_semantics_notes": {"type": "object"}
+  }
+}

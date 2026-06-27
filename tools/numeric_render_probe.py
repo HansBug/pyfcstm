@@ -1,10 +1,10 @@
 """
 Provide probe-entry stubs for numeric render-semantics research.
 
-PR-1 deliberately does not run native compilers or language runtimes. This
-module therefore exposes only an environment-report mode and a documented CLI
-surface that later PRs can extend with C/C++, Python/Z3, Java/Rust, Go, and
-JavaScript probe runners.
+The lightweight environment mode deliberately does not run native compilers or
+language runtimes. This module therefore exposes only an environment-report mode
+and a documented CLI surface that later work can extend with C/C++, Python/Z3,
+Java/Rust, Go, and JavaScript probe runners.
 
 The module contains:
 
@@ -89,7 +89,7 @@ def _command_version(path: str) -> Optional[str]:
         return None
     except subprocess.TimeoutExpired:
         # TimeoutExpired: version probes are best-effort and must not hang the
-        # PR-1 environment stub.
+        # lightweight environment stub.
         return None
     output = result.stdout.strip().splitlines()
     return output[0] if output else None
@@ -159,8 +159,8 @@ def build_environment_report(repo_root: Union[str, Path] = ".") -> _JSON_OBJECT:
         },
         "available_commands": [_probe_command(name) for name in _COMMANDS],
         "notes": [
-            "PR-1 env mode is inventory-only and does not compile or execute target-language probes.",
-            "Native runners are intentionally deferred to later sub PRs.",
+            "Environment mode is inventory-only and does not compile or execute target-language probes.",
+            "Native runners are intentionally deferred to dedicated probe work.",
         ],
     }
 
@@ -187,7 +187,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         nargs="?",
         default="env",
         choices=["env"],
-        help="Probe mode. PR-1 supports only 'env'.",
+        help="Probe mode. The current lightweight entry point supports only 'env'.",
     )
     parser.add_argument(
         "--repo-root",

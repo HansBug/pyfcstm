@@ -3,8 +3,8 @@ Build render-mapping snapshots for numeric semantics research.
 
 This module inspects the repository's production expression renderer,
 statement renderer, built-in template source directories, and packaged template
-metadata. The resulting JSON snapshot is the R0 input for the numeric
-render-semantics research line: later probe runners should consume this mapping
+metadata. The resulting JSON snapshot is the baseline input for the numeric
+render-semantics research line: probe runners should consume this mapping
 instead of hand-copying assumptions about how FCSTM expressions are rendered.
 
 The module contains:
@@ -683,7 +683,7 @@ def _collect_renderer_helper_inventory() -> List[_JSON_OBJECT]:
 
 def _collect_cxx_paths(templates: Mapping[str, Any]) -> _JSON_OBJECT:
     """
-    Collect the two distinct C++ render paths required by issue #280.
+    Collect the two distinct C++ render paths used by the mapping snapshot.
 
     :param templates: Repository-source template metadata keyed by name.
     :type templates: Mapping[str, Any]
@@ -724,7 +724,7 @@ def _collect_cxx_paths(templates: Mapping[str, Any]) -> _JSON_OBJECT:
 
 def _runtime_semantics_notes() -> _JSON_OBJECT:
     """
-    Return hand-authored runtime semantic notes required by R0.
+    Return hand-authored runtime semantic notes for mapping consumers.
 
     :return: Runtime semantic note mapping.
     :rtype: Dict[str, Any]
@@ -740,8 +740,8 @@ def _runtime_semantics_notes() -> _JSON_OBJECT:
             "current_dsl_numeric_unary_rule": "PLUS | MINUS",
             "status": "not inferred from runtime; current parser grammar does not accept numeric unary '~'",
             "reason": (
-                "Issue #280 requires the R0 inventory to record '~' explicitly so later "
-                "solver/template work does not guess from Z3 or C semantics."
+                "The mapping records '~' explicitly so solver and template work "
+                "does not guess from Z3 or C semantics."
             ),
         }
     }
@@ -1017,11 +1017,11 @@ def _require_mapping_path(
 
 def _validate_render_mapping(mapping: Mapping[str, Any]) -> List[str]:
     """
-    Validate the R0 mapping contract without using repository unit tests.
+    Validate the numeric render mapping contract without repository unit tests.
 
-    The research PR keeps validation close to the tool instead of adding files
-    under ``test/``. The checks intentionally cover production renderer facts
-    that later probe PRs depend on: template overrides, C++ dual paths,
+    The research tooling keeps validation close to the tool instead of adding
+    files under ``test/``. The checks intentionally cover production renderer
+    facts that probe runners depend on: template overrides, C++ dual paths,
     packaged-template digests, helper inventory, and semantic notes.
 
     :param mapping: Mapping payload returned by :func:`build_render_mapping`.
@@ -1193,11 +1193,11 @@ def _validate_render_mapping(mapping: Mapping[str, Any]) -> List[str]:
 
 def check_render_mapping(repo_root: Union[str, Path] = ".") -> _JSON_OBJECT:
     """
-    Build and validate the R0 mapping snapshot.
+    Build and validate the numeric render mapping snapshot.
 
-    This is the PR-1 self-check entry point. It validates both the live
-    renderer/template contract and the committed snapshot without adding
-    anything under the repository ``test/`` tree.
+    This self-check entry point validates both the live renderer/template
+    contract and the committed snapshot without adding anything under the
+    repository ``test/`` tree.
 
     :param repo_root: Repository root path, defaults to the current directory.
     :type repo_root: Union[str, pathlib.Path], optional
@@ -1283,7 +1283,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Validate the R0 research mapping contract without using test/.",
+        help="Validate the numeric render mapping contract without using test/.",
     )
     return parser
 

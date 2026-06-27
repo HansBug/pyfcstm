@@ -548,7 +548,7 @@
     "research_path": "research/numeric-render-semantics",
     "tool": "tools/numeric_render_mapping.py"
   },
-  "mapping_sha256": "b3819a4df946d90c4c5aec56048b075cb7545f748847595dceb769680572c99e",
+  "mapping_sha256": "d79b2fc4eb981eb794def52fc8fa2589c87e836673106eabdc589081eb8ad2da",
   "packaged_templates": {
     "entries": [
       {
@@ -730,7 +730,7 @@
     "bitwise_not": {
       "current_dsl_numeric_unary_rule": "PLUS | MINUS",
       "operator": "~",
-      "reason": "Issue #280 requires the R0 inventory to record '~' explicitly so later solver/template work does not guess from Z3 or C semantics.",
+      "reason": "The mapping records '~' explicitly so solver and template work does not guess from Z3 or C semantics.",
       "status": "not inferred from runtime; current parser grammar does not accept numeric unary '~'"
     }
   },

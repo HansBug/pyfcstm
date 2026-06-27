@@ -1045,7 +1045,7 @@ For built-in template work, the current design bar is defined by the `python` te
   validation, put that check in a maintenance command outside the unit-test suite (for example under [tools/](tools/)) and run
   it explicitly.
 - Python unit tests must enter built-in template behavior through production package/runtime surfaces. Tests may use
-  packaged template assets through :mod:`pyfcstm.template`, `pyfcstm.template.extract_template(...)`,
+  packaged template assets through `pyfcstm.template`, `pyfcstm.template.extract_template(...)`,
   `pyfcstm.template.list_templates()`, `pyfcstm.template.get_template_info(...)`,
   `StateMachineCodeRenderer` pointed at an extracted packaged template, or CLI paths such as
   `pyfcstm generate --template ...`. Tests may also create throwaway templates under their own temporary directories or

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HansBug/pyfcstm/research/numeric-render-semantics/schemas/probe_summary.schema.json",
+  "title": "Numeric render probe summary",
+  "type": "object",
+  "required": ["schema_version", "source_mapping_sha256", "language", "toolchain", "cases"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "source_mapping_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "language": {"type": "string"},
+    "toolchain": {"type": "object"},
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["case_id", "render_expression", "status"],
+        "properties": {
+          "case_id": {"type": "string"},
+          "render_expression": {"type": "string"},
+          "status": {"enum": ["passed", "compile_failed", "link_failed", "runtime_failed", "skipped", "unknown"]}
+        }
+      }
+    }
+  }
+}

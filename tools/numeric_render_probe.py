@@ -8,7 +8,10 @@ whose expressions are rendered from the repository's R0
 template facts that later exhaustive harnesses will use. Shared JSON, mapping,
 and command-dispatch helpers are kept mode-neutral so later Python/Z3 and
 language-specific probes can join this runner without replacing the C-family
-modes.
+modes. Smoke case identifiers are render-path scoped; cross-artifact semantic
+joins should prefer the rendered FCSTM operator and source expression, or a
+future explicit semantic identifier, while render-path fields distinguish
+target-language outputs for the same semantic expression.
 
 The module contains:
 

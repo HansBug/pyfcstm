@@ -111,6 +111,7 @@ make unittest RANGE_DIR=./config                     # Specific directory
 make unittest COV_TYPES="xml term-missing"           # With coverage types
 make unittest MIN_COVERAGE=80                        # With minimum coverage
 make unittest WORKERS=4                              # With parallel workers
+make test_boundary_check                              # Validate pytest boundary rules
 
 # Run a single test file or function directly:
 pytest test/simulate/test_semantic_fixtures.py -v
@@ -1069,6 +1070,9 @@ For built-in template work, the current design bar is defined by the `python` te
 - `make unittest` intentionally depends on `make tpl` so packaged built-in template assets are refreshed before the
   Python unit-test suite runs. Do not remove that dependency merely to avoid packaging work in tests; instead, keep
   pytest on packaged/public inputs and move source-template maintenance coverage to explicit tooling commands.
+- Run `make test_boundary_check` when changing test infrastructure, template tests, maintenance tooling, or
+  repository guidance that affects the pytest boundary. This command is a pytest-external guard for direct `tools.*`
+  imports/execution, repo-root `templates/` access, and source-install smoke markers under [test/](test/).
 - Shared test utilities and fixtures in [test/testings/](test/testings/)
 - Sample DSL files in [test/testfile/sample_codes/](test/testfile/sample_codes/) (auto-generate tests via `make sample`)
 - Negative cases in [test/testfile/sample_neg_codes/](test/testfile/sample_neg_codes/)

@@ -152,6 +152,10 @@ jobs:
           else
             echo "SKIP_SLOW_TESTS=" >> "$GITHUB_ENV"
           fi
+      - name: Run test boundary check
+        shell: bash
+        run: |
+          make test_boundary_check
       - name: Run unittest
         env:
           CI: 'true'

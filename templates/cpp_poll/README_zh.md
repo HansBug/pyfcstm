@@ -47,5 +47,8 @@ harness 可以链接生成出的 C poll core，但被测试的公开集成面仍
 Generated README 中的构建示例需要和矩阵实际覆盖的 profile 保持一致，包括 CMake、
 GCC/G++、Clang/Clang++、no-exception、no-RTTI 以及适用时的 no-heap 形式。
 
+部署安全表述沿用 `templates/c_poll/` 的 C-family 边界。该模板提供的是非认证工程基线，不是认证包：
+C99 poll core、C++98 wrapper、调用方拥有对象与无堆集成、完整 event-check 安装、共享语义对齐和原生工具链矩阵证据。不要把 generated output 描述为 MISRA、AUTOSAR、DO-178C、IEC 61508、ISO 26262 或其他认证 ready。Numeric inspect warning 是默认 C/C++ deployment-profile diagnostics，不是 target-independent FCSTM model error，也不是 Python 模板风险。后续 BitVec、BMC、fixed-point、numeric-profile、checked-arithmetic 或 generated failure channel 工作属于 verify 和 codegen 设计路线。
+
 生成 README 示例属于模板契约。修改 wrapper API 或编译说明时，需要同步更新两份生成
 README 模板，并通过模板测试验证代表性命令。

@@ -364,6 +364,19 @@ g++ -x c++ -std=c++17 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o mac
 - 本生成运行时不宣称已经满足 MISRA、AUTOSAR、DO-178C、IEC 61508 或 ISO 26262 认证就绪要求。
 - 变量快照的二进制布局、端序转换和跨设备持久化不属于本公开契约。
 
+### 集成前检查清单
+
+把这份生成运行时接入 controller、firmware 或 hardware adapter 前，请在下游项目中确认：
+
+- C poll core 按 C99 编译，`machine.hpp` / `machine.cpp` 与应用按 C++98-compatible code 编译。预期的 C++ 入口是 wrapper surface，而不是 application 直接调用 C poll core。
+- 选择一种内存剖面：默认宿主剖面、调用方拥有对象，或 `PYFCSTM_GENERATED_NO_HEAP`。无堆剖面只移除生成的分配辅助函数，不等于完整 freestanding 或安全认证剖面。
+- 安装应用依赖的所有 abstract hook。Hook 是只读扩展点；不要在 hook callback 中修改 generated persistent variables。
+- 如果 machine 声明了 events，在调用 wrapper cycle API 前必须安装完整的 `{{ machine_class_name(model) }}EventChecks` 表。Event-check callback 应是只读 probe，并且第一次结果在同一 cycle 内保持稳定。
+- 将同一个 `MachineWrapper` / `{{ machine_class_name(model) }}` 实例视为 non-reentrant。ISR、scheduler 或多线程代码可能接触同一实例时，应在外层串行化 `init`、`hot_start`、`cycle`、hook/event-check registration 以及 state/variable reads。
+- `volatile` registers、DMA buffers、communication frames 和 device I/O 应放在外层 adapter 中。不要为了直接访问硬件而把它们伪装成 generated persistent variables；应通过 event checks、hooks 或 application-owned adapter code 桥接。
+- C/C++ 部署前运行 `pyfcstm inspect` 并审阅 numeric warnings。这些 diagnostics 描述默认 C/C++ deployment-profile risks；Python generated runtime 的数值和异常语义不同。后续 BitVec / BMC / fixed-point proof 工作见 <https://github.com/HansBug/pyfcstm/issues/254>；未来 codegen numeric strategy 工作见 <https://github.com/HansBug/pyfcstm/issues/255>。
+- Native toolchain matrix results、sanitizer runs、`cppcheck` 和 `clang-tidy` 只能作为工程证据。它们本身不会让生成运行时达到 MISRA、AUTOSAR、DO-178C、IEC 61508、ISO 26262 或其他认证 ready。
+
 ### 链接与符号可见性
 
 - `{{ machine_macro_name(model) }}_API` 是所有公开函数统一使用的符号可见性宏。

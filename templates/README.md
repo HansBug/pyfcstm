@@ -209,6 +209,40 @@ This policy applies equally to existing formatter flows and future ones. New tem
 
 For target languages that manage memory or other resources explicitly, template maintainers must also treat resource lifetime as part of runtime correctness. Generated runtimes can be embedded in long-running control systems, so generated code must have a clear ownership model for allocations, initialization, hot start, cycle execution, hook/event-check registration, and destruction. C/C++ templates and future native or resource-owning templates should run representative sanitizer, leak-check, valgrind, or equivalent harnesses when runtime source templates change. If an existing leak or resource-lifetime issue is discovered outside the current change scope, record it with a reproducible harness instead of silently ignoring it.
 
+## C/C++ deployment safety wording
+
+The current C-family templates (`c`, `c_poll`, `cpp`, and `cpp_poll`) provide a
+deployment-hardened engineering baseline for generated control-state-machine
+runtimes. That baseline includes C99 execution cores, C++98-compatible
+integration surfaces where applicable, caller-owned object and no-heap
+profiles, shared semantic alignment, and native toolchain matrix evidence.
+
+This is not a safety-certification claim. Maintainer and generated-output
+documentation must not describe these templates as MISRA, AUTOSAR, DO-178C, IEC
+61508, ISO 26262, or other certification-ready runtimes. The correct wording is
+that they are non-certified generated-code baselines intended to support later
+project-specific static analysis, coding-rule review, board-support integration,
+and certification evidence work.
+
+Keep responsibilities separated:
+
+- `pyfcstm inspect` owns lightweight model diagnostics, including current C/C++
+  default deployment-profile numeric warnings.
+- The formal verification line owns future BitVec, BMC, fixed-point, and
+  numeric-profile proof work.
+- The code generation line owns future generated-code numeric strategies such
+  as checked arithmetic or target-specific failure channels.
+- Template READMEs own integration boundaries, resource lifetime, compiler
+  profiles, hook/event-check installation, concurrency assumptions, external
+  I/O adapters, and certification wording.
+
+Generated C/C++ family READMEs must give downstream users a short integration
+preflight checklist. A user who only receives generated output should be able to
+see the compiler/profile boundary, memory-ownership choice, event/hook
+requirements, single-instance concurrency assumption, external-device adapter
+boundary, numeric-inspect entry point, and evidence-vs-certification boundary
+without reading this maintainer handbook.
+
 ## Source context contract
 
 The current renderer passes the model object but does not pass raw source text. Therefore generated artifacts must label model text precisely:

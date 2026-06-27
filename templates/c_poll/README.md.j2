@@ -327,6 +327,41 @@ profiles intentionally do not produce runtime observations.
 - Binary layout, endian conversion, and cross-device persistence of variable
   snapshots are outside this public contract.
 
+### Integration Preflight Checklist
+
+Before integrating this generated runtime into controller, firmware, or hardware
+adapter code, confirm the following points in the downstream project:
+
+- Compile the C poll core as C99 and choose one memory profile: default hosted,
+  caller-owned object, or `PYFCSTM_GENERATED_NO_HEAP`. The no-heap profile only
+  removes generated allocation helpers; it is not a full freestanding or safety
+  certification profile.
+- Install every abstract hook that the application depends on. Hooks are
+  read-only extension points; do not mutate generated persistent variables from
+  hook callbacks.
+- For machines that declare events, install a complete
+  `{{ machine_class_name(model) }}EventChecks` table before calling
+  `{{ machine_class_name(model) }}_cycle(...)`. Event-check callbacks should be
+  read-only probes whose first result remains stable for one cycle.
+- Treat one `{{ machine_class_name(model) }}` instance as non-reentrant. Serialize
+  `init`, `hot_start`, `cycle`, hook/event-check registration, and
+  state/variable reads when ISR, scheduler, or multi-threaded code can touch the
+  same instance.
+- Keep volatile registers, DMA buffers, communication frames, and device I/O in
+  an outer adapter. Do not model them as generated persistent variables merely
+  to access hardware directly; bridge them through event checks, hooks, or
+  application-owned adapter code.
+- Run `pyfcstm inspect` before C/C++ deployment and review numeric warnings.
+  Those diagnostics describe default C/C++ deployment-profile risks; Python
+  generated runtimes have different numeric and exception behavior. Follow-up
+  BitVec / BMC / fixed-point proof work is tracked in
+  <https://github.com/HansBug/pyfcstm/issues/254>, and future codegen numeric
+  strategy work is tracked in <https://github.com/HansBug/pyfcstm/issues/255>.
+- Treat native toolchain matrix results, sanitizer runs, `cppcheck`, and
+  `clang-tidy` as engineering evidence only. They do not make this generated
+  runtime MISRA, AUTOSAR, DO-178C, IEC 61508, ISO 26262, or other certification
+  ready by themselves.
+
 ### Linkage and Visibility
 
 - `{{ machine_macro_name(model) }}_API` is the generated symbol-visibility macro

@@ -117,6 +117,29 @@ must fail on missing tools rather than silently skipping. Licensed or vendor
 profiles must remain manual/self-hosted and must not block public CI unless a
 runner is explicitly configured.
 
+### Deployment safety wording discipline
+
+The C-family deployment work is an engineering baseline for generated control
+state-machine code, not a certification package. Maintainer and generated
+READMEs may say that the template supports C99, C++98-compatible integration,
+caller-owned objects, the no-heap profile, shared semantic alignment, and native
+toolchain matrix evidence. They must not say or imply that generated output is
+MISRA, AUTOSAR, DO-178C, IEC 61508, ISO 26262, or other safety-standard ready.
+
+Keep downstream responsibility explicit. Board support packages, linker
+scripts, interrupt policy, scheduler integration, static-analysis waiver
+handling, coding-rule sign-off, and certification evidence belong to the
+consumer project. Template documentation should help that project find the
+right integration checkpoints without pretending to complete those downstream
+processes.
+
+Numeric-risk wording is target-specific. The inspect diagnostics are about the
+default C/C++ deployment profile; they should not be described as
+target-independent FCSTM model errors or Python-template risks. Future BitVec,
+BMC, fixed-point, numeric-profile, checked-arithmetic, or generated failure
+channel work belongs to the verify and codegen design lines, not to README-only
+template patches.
+
 ## Public integration surface
 
 `machine.h` is the public integration surface and should stay small, clear, and

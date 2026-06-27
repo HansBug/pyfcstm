@@ -37,6 +37,7 @@ import sys
 import tempfile
 import time
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
@@ -124,14 +125,28 @@ class RenderPath:
     :type compile_language: str
     :param lang_style: Built-in renderer style to use.
     :type lang_style: str
+    :param expression_core_language: Renderer core language used to build
+        ``render_templates``.
+    :type expression_core_language: str
     :param ext_configs: Template expression overrides from R0 mapping.
     :type ext_configs: Mapping[str, str]
+    :param render_templates: Fully merged expression templates read from the
+        mapping snapshot.
+    :type render_templates: Mapping[str, str]
     :param mapping_sources: Mapping paths that justify the render path.
     :type mapping_sources: Tuple[str, ...]
+    :param template_name: Optional built-in template name represented by this path.
+    :type template_name: Optional[str]
+    :param wrapper_language: Optional wrapper language for generated template
+        paths that reuse a core language.
+    :type wrapper_language: Optional[str]
 
     Example::
 
-        >>> path = RenderPath('builtin_c_style', 'c', 'c', 'c', {}, ('builtin_expr_styles.styles.c',))
+        >>> path = RenderPath(
+        ...     'builtin_c_style', 'c', 'c', 'c', {}, {'Name': '{{ node.name }}'},
+        ...     ('builtin_expr_styles.styles.c',),
+        ... )
         >>> path.compile_language
         'c'
     """
@@ -140,8 +155,12 @@ class RenderPath:
     language: str
     compile_language: str
     lang_style: str
+    expression_core_language: str
     ext_configs: Mapping[str, str]
+    render_templates: Mapping[str, str]
     mapping_sources: Tuple[str, ...]
+    template_name: Optional[str] = None
+    wrapper_language: Optional[str] = None
 
 
 def _command_version(path: str) -> Optional[str]:
@@ -160,8 +179,6 @@ def _command_version(path: str) -> Optional[str]:
         True
     """
     args = [path, "--version"]
-    if os.path.basename(path).startswith("python"):
-        args = [path, "--version"]
     try:
         result = subprocess.run(
             args,
@@ -322,7 +339,7 @@ def _load_render_mapping(
 
 def _risk_cases() -> List[NumericSmokeCase]:
     """
-    Return the C-family numeric risk cases covered by PR-2.
+    Return the C-family numeric risk cases covered by smoke probes.
 
     :return: Stable smoke-case definitions.
     :rtype: List[NumericSmokeCase]
@@ -371,6 +388,376 @@ def _template_expr_overrides(
     return dict(style.get("overrides") or {})
 
 
+def _format_mapping_path(path: Sequence[Union[str, int]]) -> str:
+    """
+    Format a mapping path for diagnostics.
+
+    :param path: Sequence of string keys and list indexes.
+    :type path: Sequence[Union[str, int]]
+    :return: Human-readable mapping path.
+    :rtype: str
+
+    Example::
+
+        >>> _format_mapping_path(('cxx_paths', 'template_generated_paths', 0))
+        'cxx_paths.template_generated_paths[0]'
+    """
+    parts = []
+    for item in path:
+        if isinstance(item, int):
+            if parts:
+                parts[-1] = "%s[%d]" % (parts[-1], item)
+            else:
+                parts.append("[%d]" % item)
+        else:
+            parts.append(item)
+    return ".".join(parts) if parts else "<root>"
+
+
+def _mapping_value(
+    root: Mapping[str, Any],
+    path: Sequence[Union[str, int]],
+    expected_type: Optional[Any] = None,
+) -> Any:
+    """
+    Return a nested value from the render-mapping snapshot.
+
+    :param root: Render-mapping root object.
+    :type root: Mapping[str, Any]
+    :param path: Sequence of dictionary keys and list indexes.
+    :type path: Sequence[Union[str, int]]
+    :param expected_type: Optional expected Python type or type tuple.
+    :type expected_type: Optional[Any], optional
+    :return: Nested mapping value.
+    :rtype: Any
+    :raises ValueError: If a path segment is missing or has the wrong type.
+
+    Example::
+
+        >>> _mapping_value({'a': [{'b': 1}]}, ('a', 0, 'b'))
+        1
+    """
+    current: Any = root
+    visited: List[Union[str, int]] = []
+    for item in path:
+        visited.append(item)
+        if isinstance(item, int):
+            if not isinstance(current, list) or item >= len(current):
+                raise ValueError(
+                    "missing mapping path: %s" % _format_mapping_path(visited)
+                )
+            current = current[item]
+        else:
+            if not isinstance(current, dict) or item not in current:
+                raise ValueError(
+                    "missing mapping path: %s" % _format_mapping_path(visited)
+                )
+            current = current[item]
+    if expected_type is not None and not isinstance(current, expected_type):
+        raise ValueError(
+            "mapping path %s must be %s, got %s"
+            % (
+                _format_mapping_path(path),
+                getattr(expected_type, "__name__", repr(expected_type)),
+                type(current).__name__,
+            )
+        )
+    return current
+
+
+def _string_mapping(
+    value: Mapping[str, Any], path: Sequence[Union[str, int]]
+) -> Dict[str, str]:
+    """
+    Validate and copy a string-keyed string mapping.
+
+    :param value: Mapping value to copy.
+    :type value: Mapping[str, Any]
+    :param path: Source mapping path used for diagnostics.
+    :type path: Sequence[Union[str, int]]
+    :return: Copied mapping.
+    :rtype: Dict[str, str]
+    :raises ValueError: If any key or value is not a string.
+
+    Example::
+
+        >>> _string_mapping({'Name': '{{ node.name }}'}, ('x',))
+        {'Name': '{{ node.name }}'}
+    """
+    copied = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not isinstance(item, str):
+            raise ValueError(
+                "mapping path %s must contain only string keys and values"
+                % _format_mapping_path(path)
+            )
+        copied[key] = item
+    return copied
+
+
+def _builtin_style_templates(
+    mapping: Mapping[str, Any], style_name: str
+) -> Dict[str, str]:
+    """
+    Return built-in expression templates from the mapping snapshot.
+
+    :param mapping: Render-mapping snapshot.
+    :type mapping: Mapping[str, Any]
+    :param style_name: Built-in expression style name.
+    :type style_name: str
+    :return: Template mapping for the style.
+    :rtype: Dict[str, str]
+    :raises ValueError: If the style or its templates are missing.
+
+    Example::
+
+        >>> mapping = _load_render_mapping(Path('.').resolve(), _DEFAULT_MAPPING_PATH)
+        >>> _builtin_style_templates(mapping, 'c')['BinaryOp(**)'].startswith('pow(')
+        True
+    """
+    path = ("builtin_expr_styles", "styles", style_name, "templates")
+    value = _mapping_value(mapping, path, dict)
+    return _string_mapping(value, path)
+
+
+def _merge_expr_templates(
+    base_templates: Mapping[str, str], overrides: Mapping[str, str]
+) -> Dict[str, str]:
+    """
+    Merge base expression templates with mapping-provided overrides.
+
+    This mirrors :func:`pyfcstm.render.expr.create_expr_render_template` so a
+    generic override such as ``UFunc`` replaces operator-specific built-in
+    templates for that family.
+
+    :param base_templates: Base templates from ``builtin_expr_styles``.
+    :type base_templates: Mapping[str, str]
+    :param overrides: Template-specific override mapping.
+    :type overrides: Mapping[str, str]
+    :return: Merged expression-template mapping.
+    :rtype: Dict[str, str]
+
+    Example::
+
+        >>> _merge_expr_templates({'UFunc(abs)': 'old', 'UFunc': 'base'}, {'UFunc': 'new'})
+        {'UFunc': 'new'}
+    """
+    templates = dict(base_templates)
+    ext_configs = dict(overrides)
+    for generic_key in ("UFunc", "UnaryOp", "BinaryOp"):
+        if generic_key in ext_configs:
+            prefix = generic_key + "("
+            templates = {
+                key: value
+                for key, value in templates.items()
+                if key != generic_key and not key.startswith(prefix)
+            }
+    templates.update(ext_configs)
+    return templates
+
+
+def _template_expr_style(
+    mapping: Mapping[str, Any], template_name: str, style_name: str = "c_scope_expr"
+) -> Mapping[str, Any]:
+    """
+    Return one template expression style from the mapping snapshot.
+
+    :param mapping: Render-mapping snapshot.
+    :type mapping: Mapping[str, Any]
+    :param template_name: Built-in template name.
+    :type template_name: str
+    :param style_name: Expression style name, defaults to ``"c_scope_expr"``.
+    :type style_name: str, optional
+    :return: Style mapping with ``base_lang`` and ``overrides`` fields.
+    :rtype: Mapping[str, Any]
+    :raises ValueError: If the style is missing.
+
+    Example::
+
+        >>> mapping = _load_render_mapping(Path('.').resolve(), _DEFAULT_MAPPING_PATH)
+        >>> _template_expr_style(mapping, 'cpp')['base_lang']
+        'c'
+    """
+    path = ("templates", template_name, "expr_styles", style_name)
+    return _mapping_value(mapping, path, dict)
+
+
+def _template_render_path(
+    mapping: Mapping[str, Any],
+    path_id: str,
+    language: str,
+    template_name: str,
+    style_name: str = "c_scope_expr",
+    cxx_path_index: Optional[int] = None,
+    compile_language: Optional[str] = None,
+) -> RenderPath:
+    """
+    Build a template render path from mapping snapshot fields.
+
+    :param mapping: Render-mapping snapshot.
+    :type mapping: Mapping[str, Any]
+    :param path_id: Stable render-path identifier.
+    :type path_id: str
+    :param language: Summary language for the path.
+    :type language: str
+    :param template_name: Built-in template name.
+    :type template_name: str
+    :param style_name: Template expression style name, defaults to
+        ``"c_scope_expr"``.
+    :type style_name: str, optional
+    :param cxx_path_index: Optional index into
+        ``cxx_paths.template_generated_paths`` for C++ wrapper paths.
+    :type cxx_path_index: Optional[int], optional
+    :param compile_language: Optional compiler family override. C++ wrapper
+        paths use this to compile C-style expressions in a C++ translation unit.
+    :type compile_language: Optional[str], optional
+    :return: Render path using templates derived from mapping data.
+    :rtype: RenderPath
+    :raises ValueError: If required mapping facts are missing or inconsistent.
+
+    Example::
+
+        >>> mapping = _load_render_mapping(Path('.').resolve(), _DEFAULT_MAPPING_PATH)
+        >>> _template_render_path(mapping, 'template_c_core', 'c', 'c').compile_language
+        'c'
+    """
+    style = _template_expr_style(mapping, template_name, style_name)
+    if cxx_path_index is not None:
+        cxx_style_path = (
+            "cxx_paths",
+            "template_generated_paths",
+            cxx_path_index,
+            "expr_styles",
+            style_name,
+        )
+        cxx_style = _mapping_value(mapping, cxx_style_path, dict)
+        if dict(cxx_style) != dict(style):
+            raise ValueError(
+                "mapping path %s does not match templates.%s.expr_styles.%s"
+                % (_format_mapping_path(cxx_style_path), template_name, style_name)
+            )
+    base_lang = style.get("base_lang")
+    if base_lang not in {"c", "cpp"}:
+        raise ValueError(
+            "templates.%s.expr_styles.%s.base_lang must be c or cpp, got %r"
+            % (template_name, style_name, base_lang)
+        )
+    overrides_path = (
+        "templates",
+        template_name,
+        "expr_styles",
+        style_name,
+        "overrides",
+    )
+    overrides = _string_mapping(
+        _mapping_value(mapping, overrides_path, dict), overrides_path
+    )
+    base_templates = _builtin_style_templates(mapping, str(base_lang))
+    sources = [
+        "builtin_expr_styles.styles.%s" % base_lang,
+        "templates.%s.expr_styles.%s" % (template_name, style_name),
+    ]
+    if cxx_path_index is not None:
+        sources.insert(
+            0,
+            "cxx_paths.template_generated_paths[%d].expr_styles.%s"
+            % (cxx_path_index, style_name),
+        )
+    return RenderPath(
+        path_id,
+        language,
+        compile_language or str(base_lang),
+        str(base_lang),
+        str(base_lang),
+        overrides,
+        _merge_expr_templates(base_templates, overrides),
+        tuple(sources),
+        template_name=template_name,
+        wrapper_language=language if language != base_lang else None,
+    )
+
+
+def _cxx_template_path_index(mapping: Mapping[str, Any], template_name: str) -> int:
+    """
+    Return the C++ generated-template path index for a template name.
+
+    :param mapping: Render-mapping snapshot.
+    :type mapping: Mapping[str, Any]
+    :param template_name: Expected template name such as ``"cpp"``.
+    :type template_name: str
+    :return: Index under ``cxx_paths.template_generated_paths``.
+    :rtype: int
+    :raises ValueError: If the C++ path is missing.
+
+    Example::
+
+        >>> mapping = _load_render_mapping(Path('.').resolve(), _DEFAULT_MAPPING_PATH)
+        >>> _cxx_template_path_index(mapping, 'cpp') >= 0
+        True
+    """
+    paths = _mapping_value(mapping, ("cxx_paths", "template_generated_paths"), list)
+    for index, item in enumerate(paths):
+        if isinstance(item, dict) and item.get("template") == template_name:
+            return index
+    raise ValueError("missing C++ template path: %s" % template_name)
+
+
+def _builtin_render_path(
+    mapping: Mapping[str, Any], path_id: str, language: str, style_name: str
+) -> RenderPath:
+    """
+    Build a built-in renderer path from mapping snapshot fields.
+
+    :param mapping: Render-mapping snapshot.
+    :type mapping: Mapping[str, Any]
+    :param path_id: Stable render-path identifier.
+    :type path_id: str
+    :param language: Summary language for the path.
+    :type language: str
+    :param style_name: Built-in expression style name.
+    :type style_name: str
+    :return: Render path using built-in templates from the mapping snapshot.
+    :rtype: RenderPath
+    :raises ValueError: If required C++ path facts are missing or inconsistent.
+
+    Example::
+
+        >>> mapping = _load_render_mapping(Path('.').resolve(), _DEFAULT_MAPPING_PATH)
+        >>> _builtin_render_path(mapping, 'builtin_cpp_style', 'cpp', 'cpp').compile_language
+        'cpp'
+    """
+    templates = _builtin_style_templates(mapping, style_name)
+    sources = ["builtin_expr_styles.styles.%s" % style_name]
+    if style_name == "cpp":
+        cxx_path = _mapping_value(mapping, ("cxx_paths", "builtin_cpp_style"), dict)
+        if cxx_path.get("base_lang") != "cpp":
+            raise ValueError("cxx_paths.builtin_cpp_style.base_lang must be cpp")
+        cxx_templates = _mapping_value(
+            mapping, ("cxx_paths", "builtin_cpp_style", "templates"), dict
+        )
+        if (
+            _string_mapping(
+                cxx_templates, ("cxx_paths", "builtin_cpp_style", "templates")
+            )
+            != templates
+        ):
+            raise ValueError(
+                "cxx_paths.builtin_cpp_style.templates does not match "
+                "builtin_expr_styles.styles.cpp.templates"
+            )
+        sources.insert(0, "cxx_paths.builtin_cpp_style")
+    return RenderPath(
+        path_id,
+        language,
+        style_name,
+        style_name,
+        style_name,
+        {},
+        templates,
+        tuple(sources),
+    )
+
+
 def _render_paths_for_mode(mode: str, mapping: Mapping[str, Any]) -> List[RenderPath]:
     """
     Build render paths for a C-family smoke mode from R0 mapping.
@@ -391,62 +778,30 @@ def _render_paths_for_mode(mode: str, mapping: Mapping[str, Any]) -> List[Render
     """
     if mode == "c-smoke":
         return [
-            RenderPath(
-                "builtin_c_style",
-                "c",
-                "c",
-                "c",
-                {},
-                ("builtin_expr_styles.styles.c",),
-            ),
-            RenderPath(
-                "template_c_core",
-                "c",
-                "c",
-                "c",
-                _template_expr_overrides(mapping, "c"),
-                ("templates.c.expr_styles.c_scope_expr",),
-            ),
-            RenderPath(
-                "template_c_poll_core",
-                "c",
-                "c",
-                "c",
-                _template_expr_overrides(mapping, "c_poll"),
-                ("templates.c_poll.expr_styles.c_scope_expr",),
-            ),
+            _builtin_render_path(mapping, "builtin_c_style", "c", "c"),
+            _template_render_path(mapping, "template_c_core", "c", "c"),
+            _template_render_path(mapping, "template_c_poll_core", "c", "c_poll"),
         ]
     if mode == "cpp-smoke":
+        cpp_index = _cxx_template_path_index(mapping, "cpp")
+        cpp_poll_index = _cxx_template_path_index(mapping, "cpp_poll")
         return [
-            RenderPath(
-                "builtin_cpp_style",
-                "cpp",
-                "cpp",
-                "cpp",
-                {},
-                ("cxx_paths.builtin_cpp_style", "builtin_expr_styles.styles.cpp"),
-            ),
-            RenderPath(
+            _builtin_render_path(mapping, "builtin_cpp_style", "cpp", "cpp"),
+            _template_render_path(
+                mapping,
                 "template_cpp_c_core",
                 "cpp",
-                "c",
-                "c",
-                _template_expr_overrides(mapping, "cpp"),
-                (
-                    "cxx_paths.template_generated_paths[cpp]",
-                    "templates.cpp.expr_styles.c_scope_expr",
-                ),
+                "cpp",
+                cxx_path_index=cpp_index,
+                compile_language="cpp",
             ),
-            RenderPath(
+            _template_render_path(
+                mapping,
                 "template_cpp_poll_c_core",
                 "cpp",
-                "c",
-                "c",
-                _template_expr_overrides(mapping, "cpp_poll"),
-                (
-                    "cxx_paths.template_generated_paths[cpp_poll]",
-                    "templates.cpp_poll.expr_styles.c_scope_expr",
-                ),
+                "cpp_poll",
+                cxx_path_index=cpp_poll_index,
+                compile_language="cpp",
             ),
         ]
     raise ValueError("Unsupported C-family smoke mode: %s" % mode)
@@ -471,19 +826,19 @@ def _render_case_expression(case: NumericSmokeCase, render_path: RenderPath) -> 
         'pow(A, B)'
     """
     from pyfcstm.model.expr import parse_expr_from_string
-    from pyfcstm.render.expr import render_expr_node
+    from pyfcstm.render.expr import fn_expr_render
     from pyfcstm.utils import to_c_identifier
 
     env = jinja2.Environment()
     env.filters["to_c_identifier"] = to_c_identifier
     env.globals["to_c_identifier"] = to_c_identifier
     expr = parse_expr_from_string(case.fcstm_expression, mode="numeric")
-    return render_expr_node(
-        expr.to_ast_node(),
-        lang_style=render_path.lang_style,
-        ext_configs=dict(render_path.ext_configs),
-        env=env,
+    render = partial(
+        fn_expr_render, templates=dict(render_path.render_templates), env=env
     )
+    env.globals["expr_render"] = render
+    env.filters["expr_render"] = render
+    return render(node=expr.to_ast_node())
 
 
 def _compiler_candidates(compile_language: str) -> List[str]:
@@ -932,7 +1287,7 @@ def _run_one_case(
 
 def validate_probe_summary(summary: Mapping[str, Any]) -> List[str]:
     """
-    Validate the lightweight probe-summary contract used by PR-2.
+    Validate the lightweight probe-summary contract used by smoke probes.
 
     The validation intentionally avoids a third-party JSON Schema dependency so
     the research command remains usable in minimal environments.
@@ -1058,7 +1413,52 @@ def build_c_family_smoke_report(
     root = _as_repo_path(repo_root)
     mapping_file = _resolve_mapping_path(root, mapping_path)
     mapping = _load_render_mapping(root, mapping_file)
-    render_paths = _render_paths_for_mode(mode, mapping)
+    source_mapping_sha256 = mapping.get("mapping_sha256")
+    if not isinstance(source_mapping_sha256, str):
+        source_mapping_sha256 = ""
+    try:
+        render_paths = _render_paths_for_mode(mode, mapping)
+    except ValueError as err:
+        # ValueError: _render_paths_for_mode validates the required R0 mapping
+        # paths (for example cxx_paths and template expression styles). Invalid
+        # mapping input is a structured probe outcome, not an uncaught CLI crash.
+        cases = [
+            {
+                "case_id": "invalid_mapping:%s" % case.case_id,
+                "operator": case.operator,
+                "fcstm_expression": case.fcstm_expression,
+                "render_expression": "",
+                "render_path": "invalid_mapping",
+                "compile_language": "c" if mode == "c-smoke" else "cpp",
+                "mapping_sources": [],
+                "status": "skipped",
+                "reason": str(err),
+                "commands": {},
+                "sanitizer": {"available": False, "status": "mapping_invalid"},
+            }
+            for case in _risk_cases()
+        ]
+        summary = {
+            "schema_version": 1,
+            "mode": mode,
+            "source_mapping_path": str(mapping_file),
+            "source_mapping_sha256": source_mapping_sha256,
+            "language": "c" if mode == "c-smoke" else "cpp",
+            "summary_status": "invalid",
+            "mapping_errors": [str(err)],
+            "toolchain": {
+                "compilers": {},
+                "sanitizers": {},
+                "timeout_seconds": timeout,
+                "work_dir": "",
+            },
+            "render_paths": [],
+            "cases": cases,
+        }
+        errors = validate_probe_summary(summary)
+        if errors:
+            summary["validation_errors"] = errors
+        return summary
     compile_languages = sorted({path.compile_language for path in render_paths})
     compilers = {language: _find_compiler(language) for language in compile_languages}
 
@@ -1112,7 +1512,7 @@ def build_c_family_smoke_report(
             "schema_version": 1,
             "mode": mode,
             "source_mapping_path": str(mapping_file),
-            "source_mapping_sha256": mapping["mapping_sha256"],
+            "source_mapping_sha256": source_mapping_sha256,
             "language": "c" if mode == "c-smoke" else "cpp",
             "summary_status": _summary_status(cases),
             "toolchain": {
@@ -1127,7 +1527,10 @@ def build_c_family_smoke_report(
                     "language": path.language,
                     "compile_language": path.compile_language,
                     "lang_style": path.lang_style,
+                    "expression_core_language": path.expression_core_language,
                     "mapping_sources": list(path.mapping_sources),
+                    "template_name": path.template_name,
+                    "wrapper_language": path.wrapper_language,
                 }
                 for path in render_paths
             ],

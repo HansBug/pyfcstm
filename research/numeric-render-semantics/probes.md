@@ -1,6 +1,6 @@
 # Probe 设计说明
 
-PR-1 提供 `tools/numeric_render_probe.py env`，用于输出本地 Python、平台和可用命令清单；PR-2 增加 `c-smoke` / `cpp-smoke`，用于从 R0 `render_mapping.json` 读取 C-family 渲染路径并编译运行小型 smoke 程序。PR-1 的契约校验由 `tools/numeric_render_mapping.py --check` 承担。整个调研系列都不新增 `test/` 路径；任何会调用 native compiler、Node.js、Java、Rust、Go 或 Z3 求解的 probe 都应继续落在 `tools/` / `research/` 与 gitignored `results/local/` 下。
+`tools/numeric_render_probe.py env` 用于输出本地 Python、平台和可用命令清单；`c-smoke` / `cpp-smoke` 用于从 R0 `render_mapping.json` 读取 C-family 渲染路径并编译运行小型 smoke 程序。R0 mapping 的契约校验由 `tools/numeric_render_mapping.py --check` 承担。整个调研系列都不新增 `test/` 路径；任何会调用 native compiler、Node.js、Java、Rust、Go 或 Z3 求解的 probe 都应继续落在 `tools/` / `research/` 与 gitignored `results/local/` 下。
 
 ## C/C++ smoke runner
 

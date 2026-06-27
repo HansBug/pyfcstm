@@ -5,13 +5,17 @@ The lightweight ``env`` mode records local environment data without running
 native workloads. The C-family smoke modes compile and execute small programs
 whose expressions are rendered from the repository's R0
 ``render_mapping.json`` snapshot, so the probe follows the same renderer and
-template facts that later exhaustive harnesses will use.
+template facts that later exhaustive harnesses will use. Shared JSON, mapping,
+and command-dispatch helpers are kept mode-neutral so later Python/Z3 and
+language-specific probes can join this runner without replacing the C-family
+modes.
 
 The module contains:
 
 * :func:`build_environment_report` - Collect lightweight local environment data.
 * :func:`build_c_family_smoke_report` - Run C or C++ smoke cases from R0 mapping.
 * :func:`validate_probe_summary` - Validate the lightweight probe-summary contract.
+* :func:`_stable_json` - Serialize research artifacts consistently.
 * :func:`main` - Command-line entry point with ``env``, ``c-smoke`` and
   ``cpp-smoke`` modes.
 
@@ -144,8 +148,8 @@ class RenderPath:
     Example::
 
         >>> path = RenderPath(
-        ...     'builtin_c_style', 'c', 'c', 'c', {}, {'Name': '{{ node.name }}'},
-        ...     ('builtin_expr_styles.styles.c',),
+        ...     'builtin_c_style', 'c', 'c', 'c', 'c', {},
+        ...     {'Name': '{{ node.name }}'}, ('builtin_expr_styles.styles.c',),
         ... )
         >>> path.compile_language
         'c'
@@ -198,6 +202,73 @@ def _command_version(path: str) -> Optional[str]:
         return None
     output = result.stdout.strip().splitlines()
     return output[0] if output else None
+
+
+def _stable_json(value: Any) -> str:
+    """
+    Serialize a research artifact as stable, human-readable JSON.
+
+    :param value: JSON-compatible value.
+    :type value: Any
+    :return: Stable JSON text ending in a newline.
+    :rtype: str
+
+    Example::
+
+        >>> _stable_json({'b': 1, 'a': 2}).splitlines()[1]
+        '  "a": 2,'
+    """
+    return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+
+
+def _read_json(path: Union[str, Path]) -> _JSON_OBJECT:
+    """
+    Read a JSON object from disk.
+
+    :param path: JSON file path.
+    :type path: Union[str, pathlib.Path]
+    :return: Parsed JSON object.
+    :rtype: Dict[str, Any]
+    :raises ValueError: If the file does not contain a JSON object.
+    :raises json.JSONDecodeError: If the JSON text is invalid.
+    :raises OSError: If the file cannot be read.
+
+    Example::
+
+        >>> import tempfile
+        >>> p = Path(tempfile.gettempdir()) / 'pyfcstm-json-object-example.json'
+        >>> _ = p.write_text('{"ok": true}', encoding='utf-8')
+        >>> _read_json(p)['ok']
+        True
+    """
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("JSON payload must be an object")
+    return data
+
+
+def _write_payload(output_path: Union[str, Path], payload: Mapping[str, Any]) -> None:
+    """
+    Write a JSON payload to disk with parent directories created.
+
+    :param output_path: Destination path.
+    :type output_path: Union[str, pathlib.Path]
+    :param payload: JSON-compatible payload.
+    :type payload: Mapping[str, Any]
+    :return: ``None``.
+    :rtype: None
+
+    Example::
+
+        >>> import tempfile
+        >>> path = Path(tempfile.gettempdir()) / 'pyfcstm-probe-write-example.json'
+        >>> _write_payload(path, {'ok': True})
+        >>> '"ok": true' in path.read_text(encoding='utf-8')
+        True
+    """
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_stable_json(payload), encoding="utf-8")
 
 
 def _probe_command(name: str) -> _JSON_OBJECT:
@@ -331,10 +402,12 @@ def _load_render_mapping(
         1
     """
     resolved = _resolve_mapping_path(repo_root, mapping_path)
-    mapping = json.loads(resolved.read_text(encoding="utf-8"))
-    if not isinstance(mapping, dict):
-        raise ValueError("Render mapping must be a JSON object: %s" % resolved)
-    return mapping
+    try:
+        return _read_json(resolved)
+    except ValueError as err:
+        # ValueError: _read_json rejects non-object JSON, which is invalid for
+        # the render mapping contract and should surface with path context.
+        raise ValueError("Render mapping must be a JSON object: %s" % resolved) from err
 
 
 def _risk_cases() -> List[NumericSmokeCase]:
@@ -821,7 +894,14 @@ def _render_case_expression(case: NumericSmokeCase, render_path: RenderPath) -> 
     Example::
 
         >>> case = NumericSmokeCase('pow', '**', 'A ** B', 3, 2)
-        >>> path = RenderPath('builtin_c_style', 'c', 'c', 'c', {}, ('builtin_expr_styles.styles.c',))
+        >>> path = RenderPath(
+        ...     'builtin_c_style', 'c', 'c', 'c', 'c', {},
+        ...     {
+        ...         'Name': '{{ node.name }}',
+        ...         'BinaryOp(**)': 'pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})',
+        ...     },
+        ...     ('builtin_expr_styles.styles.c',),
+        ... )
         >>> _render_case_expression(case, path)
         'pow(A, B)'
     """
@@ -1192,7 +1272,14 @@ def _run_one_case(
     Example::
 
         >>> case = NumericSmokeCase('pow', '**', 'A ** B', 3, 2)
-        >>> path = RenderPath('builtin_c_style', 'c', 'c', 'c', {}, ('builtin_expr_styles.styles.c',))
+        >>> path = RenderPath(
+        ...     'builtin_c_style', 'c', 'c', 'c', 'c', {},
+        ...     {
+        ...         'Name': '{{ node.name }}',
+        ...         'BinaryOp(**)': 'pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})',
+        ...     },
+        ...     ('builtin_expr_styles.styles.c',),
+        ... )
         >>> result = _run_one_case(case, path, {'available': False}, {'available': False}, Path('.').resolve(), 1)
         >>> result['status']
         'unavailable'
@@ -1568,7 +1655,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         nargs="?",
         default="env",
         choices=["env", "c-smoke", "cpp-smoke"],
-        help="Probe mode: 'env', 'c-smoke', or 'cpp-smoke'.",
+        help=(
+            "Probe mode. Current modes are 'env', 'c-smoke', and "
+            "'cpp-smoke'; later research PRs should append modes here "
+            "without replacing existing ones."
+        ),
     )
     parser.add_argument(
         "--repo-root",
@@ -1617,13 +1708,10 @@ def _write_or_print(payload: Mapping[str, Any], output: Optional[str]) -> None:
         >>> _write_or_print({'ok': True}, None)  # doctest: +ELLIPSIS
         {...
     """
-    text = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     if output:
-        output_path = Path(output)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(text, encoding="utf-8")
+        _write_payload(output, payload)
     else:
-        print(text, end="")
+        print(_stable_json(payload), end="")
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -1644,7 +1732,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
     if args.mode == "env":
         report = build_environment_report(args.repo_root)
-    else:
+        _write_or_print(report, args.output)
+        return 0
+
+    if args.mode in {"c-smoke", "cpp-smoke"}:
         report = build_c_family_smoke_report(
             args.mode,
             repo_root=args.repo_root,
@@ -1652,8 +1743,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             work_dir=args.work_dir,
             timeout=args.timeout,
         )
-    _write_or_print(report, args.output)
-    return 0
+        _write_or_print(report, args.output)
+        return 0
+
+    parser.error("unsupported mode: %s" % args.mode)
+    return 2  # pragma: no cover
 
 
 if __name__ == "__main__":  # pragma: no cover

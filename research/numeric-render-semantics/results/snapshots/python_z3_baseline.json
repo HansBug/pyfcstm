@@ -1,0 +1,2083 @@
+{
+  "generator": {
+    "determinism": "No wall-clock timestamp is stored; concrete Z3 model values are not used as core facts.",
+    "research_path": "research/numeric-render-semantics",
+    "source_commit": "c4b8897f421bcb2e4db62fd13df7955e0b92badc",
+    "source_commit_policy": "Best-effort commit at generation time; mapping and schema validation are the stable comparison keys.",
+    "tool": "tools/numeric_render_probe.py"
+  },
+  "language": "python-z3",
+  "mode": "python-z3-baseline",
+  "python_render_paths": {
+    "builtin_python_style": {
+      "base_lang": "python",
+      "templates": {
+        "BinaryOp": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+        "Constant": "{{ node.value | repr }}",
+        "Name": "{{ node.name }}",
+        "UFunc(abs)": "abs({{ node.expr | expr_render }})",
+        "UFunc(cbrt)": "math.copysign(abs({{ node.expr | expr_render }}) ** (1.0 / 3.0), {{ node.expr | expr_render }})",
+        "UFunc(round)": "round({{ node.expr | expr_render }})",
+        "UFunc(sign)": "int((({{ node.expr | expr_render }}) > 0) - (({{ node.expr | expr_render }}) < 0))",
+        "UFunc(sqrt)": "math.sqrt({{ node.expr | expr_render }})",
+        "UnaryOp": "{{ node.op }}{{ node.expr | expr_render }}"
+      }
+    },
+    "representative_rendered_expressions": [
+      {
+        "ast_type": "BinaryOp",
+        "expr": "A + 1",
+        "rendered": "A + 1",
+        "status": "rendered"
+      },
+      {
+        "ast_type": "BinaryOp",
+        "expr": "A / 2",
+        "rendered": "A / 2",
+        "status": "rendered"
+      },
+      {
+        "ast_type": "BinaryOp",
+        "expr": "A % 2",
+        "rendered": "A % 2",
+        "status": "rendered"
+      },
+      {
+        "ast_type": "BinaryOp",
+        "expr": "A << 1",
+        "rendered": "A << 1",
+        "status": "rendered"
+      },
+      {
+        "ast_type": "BinaryOp",
+        "expr": "A & 0xff",
+        "rendered": "A & 255",
+        "status": "rendered"
+      },
+      {
+        "ast_type": "UFunc",
+        "expr": "round(A)",
+        "rendered": "round(A)",
+        "status": "rendered"
+      },
+      {
+        "ast_type": "UFunc",
+        "expr": "sign(A)",
+        "rendered": "int(((A) > 0) - ((A) < 0))",
+        "status": "rendered"
+      },
+      {
+        "ast_type": "UFunc",
+        "expr": "cbrt(A)",
+        "rendered": "math.copysign(abs(A) ** (1.0 / 3.0), A)",
+        "status": "rendered"
+      },
+      {
+        "ast_type": "UFunc",
+        "expr": "sqrt(A)",
+        "rendered": "math.sqrt(A)",
+        "status": "rendered"
+      },
+      {
+        "ast_type": "Constant",
+        "expr": "pi",
+        "rendered": "3.141592653589793",
+        "status": "rendered"
+      },
+      {
+        "ast_type": "Constant",
+        "expr": "tau",
+        "rendered": "6.283185307179586",
+        "status": "rendered"
+      },
+      {
+        "error": "Found 1 errors during parsing:\nError 1: Syntax error at line 1, column 0: Invalid character or token",
+        "error_type": "GrammarParseError",
+        "expr": "~A",
+        "status": "parse_failed"
+      }
+    ],
+    "template_expr_styles": {
+      "python_expr": {
+        "base_lang": "python",
+        "overrides": {
+          "Name": "self._vars[{{ node.name | tojson }}]",
+          "UFunc(sign)": "self._sign({{ node.expr | expr_render }})"
+        }
+      },
+      "python_scope_expr": {
+        "base_lang": "python",
+        "overrides": {
+          "Name": "scope[{{ node.name | tojson }}]",
+          "UFunc(sign)": "self._sign({{ node.expr | expr_render }})"
+        }
+      }
+    },
+    "template_stmt_styles": {
+      "python_runtime": {
+        "base_lang": "python",
+        "expr_templates": {
+          "UFunc(sign)": "_s({{ node.expr | expr_render }})"
+        },
+        "overrides": {
+          "assign": "{{ target }} = self._evaluate_runtime_expr(\n    lambda: {{ expr }},\n    {{ (\"operation assignment to '\" ~ name ~ \"'\") | tojson }},\n)",
+          "elif": "elif self._evaluate_runtime_expr(\n    lambda: {{ condition }},\n    \"if-block condition\",\n):",
+          "expr_lang": "python",
+          "if": "if self._evaluate_runtime_expr(\n    lambda: {{ condition }},\n    \"if-block condition\",\n):",
+          "state_var_target": "_v[{{ name | tojson }}]",
+          "temp_var_target": "{{ name }}"
+        },
+        "stmt_overrides": {
+          "assign": "{{ target }} = self._evaluate_runtime_expr(\n    lambda: {{ expr }},\n    {{ (\"operation assignment to '\" ~ name ~ \"'\") | tojson }},\n)",
+          "elif": "elif self._evaluate_runtime_expr(\n    lambda: {{ condition }},\n    \"if-block condition\",\n):",
+          "expr_lang": "python",
+          "if": "if self._evaluate_runtime_expr(\n    lambda: {{ condition }},\n    \"if-block condition\",\n):",
+          "state_var_target": "_v[{{ name | tojson }}]",
+          "temp_var_target": "{{ name }}"
+        }
+      }
+    }
+  },
+  "python_runtime_samples": {
+    "bitwise_cases": [
+      {
+        "expression": "~-3",
+        "python_value": 2
+      },
+      {
+        "expression": "~-1",
+        "python_value": 0
+      },
+      {
+        "expression": "~0",
+        "python_value": -1
+      },
+      {
+        "expression": "~1",
+        "python_value": -2
+      },
+      {
+        "expression": "~2",
+        "python_value": -3
+      }
+    ],
+    "cbrt_cases": [
+      {
+        "input": -27,
+        "python_cbrt_workaround_repr": "-3.0"
+      },
+      {
+        "input": -8,
+        "python_cbrt_workaround_repr": "-2.0"
+      },
+      {
+        "input": -1,
+        "python_cbrt_workaround_repr": "-1.0"
+      },
+      {
+        "input": 0,
+        "python_cbrt_workaround_repr": "0.0"
+      },
+      {
+        "input": 1,
+        "python_cbrt_workaround_repr": "1.0"
+      },
+      {
+        "input": 8,
+        "python_cbrt_workaround_repr": "2.0"
+      },
+      {
+        "input": 27,
+        "python_cbrt_workaround_repr": "3.0"
+      }
+    ],
+    "constants": [
+      {
+        "hex": "0x1.921fb54442d18p+1",
+        "name": "pi",
+        "render": {
+          "ast_type": "Constant",
+          "expr": "pi",
+          "rendered": "3.141592653589793",
+          "status": "rendered"
+        },
+        "repr": "3.141592653589793"
+      },
+      {
+        "hex": "0x1.5bf0a8b145769p+1",
+        "name": "E",
+        "render": {
+          "ast_type": "Constant",
+          "expr": "E",
+          "rendered": "2.718281828459045",
+          "status": "rendered"
+        },
+        "repr": "2.718281828459045"
+      },
+      {
+        "hex": "0x1.921fb54442d18p+2",
+        "name": "tau",
+        "render": {
+          "ast_type": "Constant",
+          "expr": "tau",
+          "rendered": "6.283185307179586",
+          "status": "rendered"
+        },
+        "repr": "6.283185307179586"
+      }
+    ],
+    "division_modulo_cases": [
+      {
+        "expression": "-3 / 2",
+        "note": "Python renderer uses true division for '/' expressions.",
+        "python_value_repr": "-1.5"
+      },
+      {
+        "expression": "-3 % 2",
+        "note": "Python modulo keeps the divisor sign.",
+        "python_value_repr": "1"
+      }
+    ],
+    "round_half_cases": [
+      {
+        "input": "-2.5",
+        "python_round": -2,
+        "z3_python_round_to_z3": "-2"
+      },
+      {
+        "input": "-1.5",
+        "python_round": -2,
+        "z3_python_round_to_z3": "-2"
+      },
+      {
+        "input": "-0.5",
+        "python_round": 0,
+        "z3_python_round_to_z3": "0"
+      },
+      {
+        "input": "0.5",
+        "python_round": 0,
+        "z3_python_round_to_z3": "0"
+      },
+      {
+        "input": "1.5",
+        "python_round": 2,
+        "z3_python_round_to_z3": "2"
+      },
+      {
+        "input": "2.5",
+        "python_round": 2,
+        "z3_python_round_to_z3": "2"
+      },
+      {
+        "input": "3.5",
+        "python_round": 4,
+        "z3_python_round_to_z3": "4"
+      }
+    ],
+    "shift_cases": [
+      {
+        "expression": "1 << 3",
+        "python_value": 8
+      },
+      {
+        "expression": "-8 >> 1",
+        "python_value": -4
+      }
+    ],
+    "sign_cases": [
+      {
+        "input": "-3",
+        "python_sign": -1
+      },
+      {
+        "input": "-0.0",
+        "python_sign": 0
+      },
+      {
+        "input": "0",
+        "python_sign": 0
+      },
+      {
+        "input": "4.5",
+        "python_sign": 1
+      }
+    ]
+  },
+  "render_mapping_sha256": "d79b2fc4eb981eb794def52fc8fa2589c87e836673106eabdc589081eb8ad2da",
+  "repository": {
+    "render_mapping_snapshot": "research/numeric-render-semantics/results/snapshots/render_mapping.json",
+    "root": ".",
+    "schema_path": "research/numeric-render-semantics/schemas/python_z3_baseline.schema.json"
+  },
+  "representative_notes": [
+    {
+      "summary": "Python samples are a P3 infinite-precision simulation-compatible baseline, not the fixed-width default profile.",
+      "topic": "python-infinite-precision"
+    },
+    {
+      "summary": "Z3 arithmetic division and modulo are total at zero; later solver work must carry definedness obligations.",
+      "topic": "z3-totalized-division"
+    },
+    {
+      "summary": "Current solver helpers raise NotImplementedError for trigonometric, hyperbolic, logarithmic and exponential functions.",
+      "topic": "transcendental-functions"
+    },
+    {
+      "summary": "The parser currently rejects '~A' in numeric expressions. The Z3 samples also record TypeError for Int bitwise construction, while BitVec provides fixed-width bitwise operations.",
+      "topic": "bitwise-not"
+    }
+  ],
+  "schema_version": 1,
+  "source_mapping_sha256": "d79b2fc4eb981eb794def52fc8fa2589c87e836673106eabdc589081eb8ad2da",
+  "toolchain": {
+    "python": {
+      "executable": "/mnt/data/deepghs/hansbug/pyfcstm-2/venv/bin/python",
+      "implementation": "CPython",
+      "version": "3.10.19"
+    },
+    "z3": {
+      "python_package_version": "4.15.4",
+      "seed_policy": "Capability rows avoid solver model dependence; future model-valued rows must record a fixed seed."
+    }
+  },
+  "z3_capability_matrix": [
+    {
+      "fcstm_operator": "+",
+      "kind": "binary_arithmetic",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.BinaryOp",
+          "note": "No specialized BinaryOp(+) entry exists; the generic renderer emits the AST operator token.",
+          "source": "builtin_expr_styles.python",
+          "status": "generic_template",
+          "template": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "template_key": "BinaryOp"
+        }
+      ],
+      "risk_level": "low",
+      "z3_support": {
+        "BitVec": {
+          "note": "Exact for a selected bit width; overflow wraps by BitVec semantics.",
+          "status": "exact",
+          "strategy": "native fixed-width bit-vector arithmetic"
+        },
+        "FP": {
+          "note": "Exact for chosen FP sort and rounding mode, not Python int semantics.",
+          "status": "approximate",
+          "strategy": "IEEE-754 floating-point theory"
+        },
+        "Int": {
+          "note": "Exact over mathematical integers.",
+          "status": "exact",
+          "strategy": "native arithmetic"
+        },
+        "Real": {
+          "note": "Exact over mathematical reals.",
+          "status": "exact",
+          "strategy": "native arithmetic"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "-",
+      "kind": "binary_arithmetic",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.BinaryOp",
+          "note": "No specialized BinaryOp(-) entry exists; the generic renderer emits the AST operator token.",
+          "source": "builtin_expr_styles.python",
+          "status": "generic_template",
+          "template": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "template_key": "BinaryOp"
+        }
+      ],
+      "risk_level": "low",
+      "z3_support": {
+        "BitVec": {
+          "note": "Exact for a selected bit width; overflow wraps by BitVec semantics.",
+          "status": "exact",
+          "strategy": "native fixed-width bit-vector arithmetic"
+        },
+        "FP": {
+          "note": "Exact for chosen FP sort and rounding mode, not Python int semantics.",
+          "status": "approximate",
+          "strategy": "IEEE-754 floating-point theory"
+        },
+        "Int": {
+          "note": "Exact over mathematical integers.",
+          "status": "exact",
+          "strategy": "native arithmetic"
+        },
+        "Real": {
+          "note": "Exact over mathematical reals.",
+          "status": "exact",
+          "strategy": "native arithmetic"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "*",
+      "kind": "binary_arithmetic",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.BinaryOp",
+          "note": "No specialized BinaryOp(*) entry exists; the generic renderer emits the AST operator token.",
+          "source": "builtin_expr_styles.python",
+          "status": "generic_template",
+          "template": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "template_key": "BinaryOp"
+        }
+      ],
+      "risk_level": "low",
+      "z3_support": {
+        "BitVec": {
+          "note": "Exact for a selected bit width; overflow wraps by BitVec semantics.",
+          "status": "exact",
+          "strategy": "native fixed-width bit-vector arithmetic"
+        },
+        "FP": {
+          "note": "Exact for chosen FP sort and rounding mode, not Python int semantics.",
+          "status": "approximate",
+          "strategy": "IEEE-754 floating-point theory"
+        },
+        "Int": {
+          "note": "Exact over mathematical integers.",
+          "status": "exact",
+          "strategy": "native arithmetic"
+        },
+        "Real": {
+          "note": "Exact over mathematical reals.",
+          "status": "exact",
+          "strategy": "native arithmetic"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "/",
+      "kind": "binary_arithmetic",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.BinaryOp",
+          "note": "No specialized BinaryOp(/) entry exists; the generic renderer emits the AST operator token.",
+          "source": "builtin_expr_styles.python",
+          "status": "generic_template",
+          "template": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "template_key": "BinaryOp"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "BitVec division is width-bound and needs a signedness profile.",
+          "status": "exact",
+          "strategy": "signed/unsigned operator must be chosen explicitly"
+        },
+        "FP": {
+          "note": "FP division follows selected rounding/NaN/Inf semantics, not Python integers.",
+          "status": "approximate",
+          "strategy": "IEEE-754 division"
+        },
+        "Int": {
+          "note": "Z3 Int division is integer-valued and totalized at divisor zero; it is not exact for the Python renderer's true-division baseline.",
+          "status": "approximate",
+          "strategy": "integer division with definedness and Python-compatibility obligations"
+        },
+        "Real": {
+          "note": "Z3 Real division is totalized at zero; probes must record non-zero obligations.",
+          "status": "exact",
+          "strategy": "real division with definedness obligation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "%",
+      "kind": "binary_arithmetic",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.BinaryOp",
+          "note": "No specialized BinaryOp(%) entry exists; the generic renderer emits the AST operator token.",
+          "source": "builtin_expr_styles.python",
+          "status": "generic_template",
+          "template": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "template_key": "BinaryOp"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "BitVec remainder is width-bound and needs a signedness profile.",
+          "status": "exact",
+          "strategy": "signed/unsigned remainder operator must be chosen explicitly"
+        },
+        "FP": {
+          "note": "FP remainder is outside current solver helper coverage.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Z3 Int modulo is totalized at divisor zero and does not match Python modulo when the divisor is negative.",
+          "status": "approximate",
+          "strategy": "integer modulo with divisor-sign and definedness obligations"
+        },
+        "Real": {
+          "note": "Real modulo is not a native Z3 arithmetic operator.",
+          "status": "unsupported",
+          "strategy": "none"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "**",
+      "kind": "binary_arithmetic",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.BinaryOp",
+          "note": "No specialized BinaryOp(**) entry exists; the generic renderer emits the AST operator token.",
+          "source": "builtin_expr_styles.python",
+          "status": "generic_template",
+          "template": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "template_key": "BinaryOp"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "No generic FCSTM BitVec power profile is defined.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "No FP power encoding is used by current solver helpers.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Nonlinear/exponential constraints can be incomplete or slow.",
+          "status": "approximate",
+          "strategy": "native exponent where accepted by z3py"
+        },
+        "Real": {
+          "note": "General real exponentiation is not a stable exact solver baseline.",
+          "status": "approximate",
+          "strategy": "native exponent where accepted by z3py"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "&",
+      "kind": "bitwise",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.BinaryOp",
+          "note": "No specialized BinaryOp(&) entry exists; the generic renderer emits the AST operator token.",
+          "source": "builtin_expr_styles.python",
+          "status": "generic_template",
+          "template": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "template_key": "BinaryOp"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Requires explicit width and signedness policy for shifts/division-like operations.",
+          "status": "exact",
+          "strategy": "native fixed-width bit-vector operator"
+        },
+        "FP": {
+          "note": "Bitwise operators are not defined over FP values.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "The representative construction samples record TypeError for Int bitwise construction; use BitVec for fixed-width bitwise profiles.",
+          "status": "unsupported",
+          "strategy": "no native Int bitwise operator"
+        },
+        "Real": {
+          "note": "Bitwise operators are not defined over Real.",
+          "status": "unsupported",
+          "strategy": "none"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "|",
+      "kind": "bitwise",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.BinaryOp",
+          "note": "No specialized BinaryOp(|) entry exists; the generic renderer emits the AST operator token.",
+          "source": "builtin_expr_styles.python",
+          "status": "generic_template",
+          "template": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "template_key": "BinaryOp"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Requires explicit width and signedness policy for shifts/division-like operations.",
+          "status": "exact",
+          "strategy": "native fixed-width bit-vector operator"
+        },
+        "FP": {
+          "note": "Bitwise operators are not defined over FP values.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "The representative construction samples record TypeError for Int bitwise construction; use BitVec for fixed-width bitwise profiles.",
+          "status": "unsupported",
+          "strategy": "no native Int bitwise operator"
+        },
+        "Real": {
+          "note": "Bitwise operators are not defined over Real.",
+          "status": "unsupported",
+          "strategy": "none"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "^",
+      "kind": "bitwise",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.BinaryOp",
+          "note": "No specialized BinaryOp(^) entry exists; the generic renderer emits the AST operator token.",
+          "source": "builtin_expr_styles.python",
+          "status": "generic_template",
+          "template": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "template_key": "BinaryOp"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Requires explicit width and signedness policy for shifts/division-like operations.",
+          "status": "exact",
+          "strategy": "native fixed-width bit-vector operator"
+        },
+        "FP": {
+          "note": "Bitwise operators are not defined over FP values.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "The representative construction samples record TypeError for Int bitwise construction; use BitVec for fixed-width bitwise profiles.",
+          "status": "unsupported",
+          "strategy": "no native Int bitwise operator"
+        },
+        "Real": {
+          "note": "Bitwise operators are not defined over Real.",
+          "status": "unsupported",
+          "strategy": "none"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "<<",
+      "kind": "bitwise",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.BinaryOp",
+          "note": "No specialized BinaryOp(<<) entry exists; the generic renderer emits the AST operator token.",
+          "source": "builtin_expr_styles.python",
+          "status": "generic_template",
+          "template": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "template_key": "BinaryOp"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Requires explicit width and signedness policy for shifts/division-like operations.",
+          "status": "exact",
+          "strategy": "native fixed-width bit-vector operator"
+        },
+        "FP": {
+          "note": "Bitwise operators are not defined over FP values.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "The representative construction samples record TypeError for Int bitwise construction; use BitVec for fixed-width bitwise profiles.",
+          "status": "unsupported",
+          "strategy": "no native Int bitwise operator"
+        },
+        "Real": {
+          "note": "Bitwise operators are not defined over Real.",
+          "status": "unsupported",
+          "strategy": "none"
+        }
+      }
+    },
+    {
+      "fcstm_operator": ">>",
+      "kind": "bitwise",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.BinaryOp",
+          "note": "No specialized BinaryOp(>>) entry exists; the generic renderer emits the AST operator token.",
+          "source": "builtin_expr_styles.python",
+          "status": "generic_template",
+          "template": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "template_key": "BinaryOp"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Requires explicit width and signedness policy for shifts/division-like operations.",
+          "status": "exact",
+          "strategy": "native fixed-width bit-vector operator"
+        },
+        "FP": {
+          "note": "Bitwise operators are not defined over FP values.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "The representative construction samples record TypeError for Int bitwise construction; use BitVec for fixed-width bitwise profiles.",
+          "status": "unsupported",
+          "strategy": "no native Int bitwise operator"
+        },
+        "Real": {
+          "note": "Bitwise operators are not defined over Real.",
+          "status": "unsupported",
+          "strategy": "none"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "~",
+      "kind": "bitwise",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UnaryOp",
+          "note": "No specialized UnaryOp(~) entry exists; the generic renderer emits the AST operator token.",
+          "source": "builtin_expr_styles.python",
+          "status": "generic_template",
+          "template": "{{ node.op }}{{ node.expr | expr_render }}",
+          "template_key": "UnaryOp"
+        },
+        {
+          "mapping_path": "$.runtime_semantics_notes.bitwise_not",
+          "note": "not inferred from runtime; current parser grammar does not accept numeric unary '~'",
+          "source": "runtime_semantics_notes.bitwise_not",
+          "status": "parser_rejected",
+          "template_key": "~"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Requires explicit width and signedness policy for shifts/division-like operations.",
+          "status": "exact",
+          "strategy": "native fixed-width bit-vector operator"
+        },
+        "FP": {
+          "note": "Bitwise operators are not defined over FP values.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "The representative construction samples record TypeError for Int bitwise construction; use BitVec for fixed-width bitwise profiles.",
+          "status": "unsupported",
+          "strategy": "no native Int bitwise operator"
+        },
+        "Real": {
+          "note": "Bitwise operators are not defined over Real.",
+          "status": "unsupported",
+          "strategy": "none"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "<",
+      "kind": "comparison",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.BinaryOp",
+          "note": "No specialized BinaryOp(<) entry exists; the generic renderer emits the AST operator token.",
+          "source": "builtin_expr_styles.python",
+          "status": "generic_template",
+          "template": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "template_key": "BinaryOp"
+        }
+      ],
+      "risk_level": "medium",
+      "z3_support": {
+        "BitVec": {
+          "note": "Equality is direct; ordering needs signed/unsigned policy.",
+          "status": "exact",
+          "strategy": "native comparison with signedness choice for ordering"
+        },
+        "FP": {
+          "note": "NaN and signed-zero behavior differ from Python numeric baseline.",
+          "status": "approximate",
+          "strategy": "IEEE-754 comparison"
+        },
+        "Int": {
+          "note": "Produces a Bool expression.",
+          "status": "exact",
+          "strategy": "native comparison"
+        },
+        "Real": {
+          "note": "Produces a Bool expression.",
+          "status": "exact",
+          "strategy": "native comparison"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "<=",
+      "kind": "comparison",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.BinaryOp",
+          "note": "No specialized BinaryOp(<=) entry exists; the generic renderer emits the AST operator token.",
+          "source": "builtin_expr_styles.python",
+          "status": "generic_template",
+          "template": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "template_key": "BinaryOp"
+        }
+      ],
+      "risk_level": "medium",
+      "z3_support": {
+        "BitVec": {
+          "note": "Equality is direct; ordering needs signed/unsigned policy.",
+          "status": "exact",
+          "strategy": "native comparison with signedness choice for ordering"
+        },
+        "FP": {
+          "note": "NaN and signed-zero behavior differ from Python numeric baseline.",
+          "status": "approximate",
+          "strategy": "IEEE-754 comparison"
+        },
+        "Int": {
+          "note": "Produces a Bool expression.",
+          "status": "exact",
+          "strategy": "native comparison"
+        },
+        "Real": {
+          "note": "Produces a Bool expression.",
+          "status": "exact",
+          "strategy": "native comparison"
+        }
+      }
+    },
+    {
+      "fcstm_operator": ">",
+      "kind": "comparison",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.BinaryOp",
+          "note": "No specialized BinaryOp(>) entry exists; the generic renderer emits the AST operator token.",
+          "source": "builtin_expr_styles.python",
+          "status": "generic_template",
+          "template": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "template_key": "BinaryOp"
+        }
+      ],
+      "risk_level": "medium",
+      "z3_support": {
+        "BitVec": {
+          "note": "Equality is direct; ordering needs signed/unsigned policy.",
+          "status": "exact",
+          "strategy": "native comparison with signedness choice for ordering"
+        },
+        "FP": {
+          "note": "NaN and signed-zero behavior differ from Python numeric baseline.",
+          "status": "approximate",
+          "strategy": "IEEE-754 comparison"
+        },
+        "Int": {
+          "note": "Produces a Bool expression.",
+          "status": "exact",
+          "strategy": "native comparison"
+        },
+        "Real": {
+          "note": "Produces a Bool expression.",
+          "status": "exact",
+          "strategy": "native comparison"
+        }
+      }
+    },
+    {
+      "fcstm_operator": ">=",
+      "kind": "comparison",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.BinaryOp",
+          "note": "No specialized BinaryOp(>=) entry exists; the generic renderer emits the AST operator token.",
+          "source": "builtin_expr_styles.python",
+          "status": "generic_template",
+          "template": "{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}",
+          "template_key": "BinaryOp"
+        }
+      ],
+      "risk_level": "medium",
+      "z3_support": {
+        "BitVec": {
+          "note": "Equality is direct; ordering needs signed/unsigned policy.",
+          "status": "exact",
+          "strategy": "native comparison with signedness choice for ordering"
+        },
+        "FP": {
+          "note": "NaN and signed-zero behavior differ from Python numeric baseline.",
+          "status": "approximate",
+          "strategy": "IEEE-754 comparison"
+        },
+        "Int": {
+          "note": "Produces a Bool expression.",
+          "status": "exact",
+          "strategy": "native comparison"
+        },
+        "Real": {
+          "note": "Produces a Bool expression.",
+          "status": "exact",
+          "strategy": "native comparison"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "==",
+      "kind": "comparison",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.BinaryOp(==)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "{{ py_condition_operand(node.expr1 | expr_render, node.expr1) }} == {{ py_condition_operand(node.expr2 | expr_render, node.expr2) }}",
+          "template_key": "BinaryOp(==)"
+        }
+      ],
+      "risk_level": "medium",
+      "z3_support": {
+        "BitVec": {
+          "note": "Equality is direct; ordering needs signed/unsigned policy.",
+          "status": "exact",
+          "strategy": "native comparison with signedness choice for ordering"
+        },
+        "FP": {
+          "note": "NaN and signed-zero behavior differ from Python numeric baseline.",
+          "status": "approximate",
+          "strategy": "IEEE-754 comparison"
+        },
+        "Int": {
+          "note": "Produces a Bool expression.",
+          "status": "exact",
+          "strategy": "native comparison"
+        },
+        "Real": {
+          "note": "Produces a Bool expression.",
+          "status": "exact",
+          "strategy": "native comparison"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "!=",
+      "kind": "comparison",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.BinaryOp(!=)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "{{ py_condition_operand(node.expr1 | expr_render, node.expr1) }} != {{ py_condition_operand(node.expr2 | expr_render, node.expr2) }}",
+          "template_key": "BinaryOp(!=)"
+        }
+      ],
+      "risk_level": "medium",
+      "z3_support": {
+        "BitVec": {
+          "note": "Equality is direct; ordering needs signed/unsigned policy.",
+          "status": "exact",
+          "strategy": "native comparison with signedness choice for ordering"
+        },
+        "FP": {
+          "note": "NaN and signed-zero behavior differ from Python numeric baseline.",
+          "status": "approximate",
+          "strategy": "IEEE-754 comparison"
+        },
+        "Int": {
+          "note": "Produces a Bool expression.",
+          "status": "exact",
+          "strategy": "native comparison"
+        },
+        "Real": {
+          "note": "Produces a Bool expression.",
+          "status": "exact",
+          "strategy": "native comparison"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "sin",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(sin)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.sin({{ node.expr | expr_render }})",
+          "template_key": "UFunc(sin)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        },
+        "Real": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "cos",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(cos)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.cos({{ node.expr | expr_render }})",
+          "template_key": "UFunc(cos)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        },
+        "Real": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "tan",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(tan)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.tan({{ node.expr | expr_render }})",
+          "template_key": "UFunc(tan)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        },
+        "Real": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "asin",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(asin)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.asin({{ node.expr | expr_render }})",
+          "template_key": "UFunc(asin)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        },
+        "Real": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "acos",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(acos)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.acos({{ node.expr | expr_render }})",
+          "template_key": "UFunc(acos)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        },
+        "Real": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "atan",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(atan)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.atan({{ node.expr | expr_render }})",
+          "template_key": "UFunc(atan)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        },
+        "Real": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "sinh",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(sinh)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.sinh({{ node.expr | expr_render }})",
+          "template_key": "UFunc(sinh)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        },
+        "Real": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "cosh",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(cosh)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.cosh({{ node.expr | expr_render }})",
+          "template_key": "UFunc(cosh)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        },
+        "Real": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "tanh",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(tanh)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.tanh({{ node.expr | expr_render }})",
+          "template_key": "UFunc(tanh)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        },
+        "Real": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "asinh",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(asinh)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.asinh({{ node.expr | expr_render }})",
+          "template_key": "UFunc(asinh)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        },
+        "Real": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "acosh",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(acosh)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.acosh({{ node.expr | expr_render }})",
+          "template_key": "UFunc(acosh)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        },
+        "Real": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "atanh",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(atanh)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.atanh({{ node.expr | expr_render }})",
+          "template_key": "UFunc(atanh)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        },
+        "Real": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "sqrt",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(sqrt)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.sqrt({{ node.expr | expr_render }})",
+          "template_key": "UFunc(sqrt)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper does not encode sqrt over BitVec.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper does not encode sqrt over FP.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Exact algebraic support depends on downstream solver fragment.",
+          "status": "approximate",
+          "strategy": "convert to Real and use z3.Sqrt"
+        },
+        "Real": {
+          "note": "Z3 algebraic support exists, but this is not a Python math.sqrt domain check.",
+          "status": "approximate",
+          "strategy": "z3.Sqrt"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "cbrt",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(cbrt)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.copysign(abs({{ node.expr | expr_render }}) ** (1.0 / 3.0), {{ node.expr | expr_render }})",
+          "template_key": "UFunc(cbrt)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper raises NotImplementedError for cbrt.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper raises NotImplementedError for cbrt.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Current solver helper raises NotImplementedError for cbrt.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or polynomial obligation"
+        },
+        "Real": {
+          "note": "Current solver helper raises NotImplementedError for cbrt.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or polynomial obligation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "sign",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(sign)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "int((({{ node.expr | expr_render }}) > 0) - (({{ node.expr | expr_render }}) < 0))",
+          "template_key": "UFunc(sign)"
+        },
+        {
+          "mapping_path": "$.templates.python.expr_styles.python_expr.overrides.UFunc(sign)",
+          "source": "templates.python.expr_styles.python_expr",
+          "status": "specialized_override",
+          "style": "python_expr",
+          "template": "self._sign({{ node.expr | expr_render }})",
+          "template_key": "UFunc(sign)"
+        },
+        {
+          "mapping_path": "$.templates.python.expr_styles.python_scope_expr.overrides.UFunc(sign)",
+          "source": "templates.python.expr_styles.python_scope_expr",
+          "status": "specialized_override",
+          "style": "python_scope_expr",
+          "template": "self._sign({{ node.expr | expr_render }})",
+          "template_key": "UFunc(sign)"
+        },
+        {
+          "mapping_path": "$.templates.python.stmt_styles.python_runtime.expr_templates.UFunc(sign)",
+          "source": "templates.python.stmt_styles.python_runtime",
+          "status": "specialized_override",
+          "style": "python_runtime",
+          "template": "_s({{ node.expr | expr_render }})",
+          "template_key": "UFunc(sign)"
+        }
+      ],
+      "risk_level": "medium",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper does not encode these over BitVec.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper does not encode these over FP.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Exact for Int operands.",
+          "status": "exact",
+          "strategy": "piecewise arithmetic helper"
+        },
+        "Real": {
+          "note": "Exact for Real arithmetic; round follows Python half-even helper.",
+          "status": "exact",
+          "strategy": "piecewise arithmetic helper"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "exp",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(exp)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.exp({{ node.expr | expr_render }})",
+          "template_key": "UFunc(exp)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        },
+        "Real": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "log",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(log)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.log({{ node.expr | expr_render }})",
+          "template_key": "UFunc(log)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        },
+        "Real": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "log10",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(log10)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.log10({{ node.expr | expr_render }})",
+          "template_key": "UFunc(log10)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        },
+        "Real": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "log2",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(log2)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.log2({{ node.expr | expr_render }})",
+          "template_key": "UFunc(log2)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        },
+        "Real": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "log1p",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(log1p)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.log1p({{ node.expr | expr_render }})",
+          "template_key": "UFunc(log1p)"
+        }
+      ],
+      "risk_level": "high",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        },
+        "Real": {
+          "note": "Current solver helper raises NotImplementedError for this transcendental function.",
+          "status": "uninterpreted",
+          "strategy": "uninterpreted or approximation"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "abs",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(abs)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "abs({{ node.expr | expr_render }})",
+          "template_key": "UFunc(abs)"
+        }
+      ],
+      "risk_level": "medium",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper does not encode these over BitVec.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper does not encode these over FP.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Exact for Int operands.",
+          "status": "exact",
+          "strategy": "piecewise arithmetic helper"
+        },
+        "Real": {
+          "note": "Exact for Real arithmetic; round follows Python half-even helper.",
+          "status": "exact",
+          "strategy": "piecewise arithmetic helper"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "ceil",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(ceil)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.ceil({{ node.expr | expr_render }})",
+          "template_key": "UFunc(ceil)"
+        }
+      ],
+      "risk_level": "medium",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper does not encode these over BitVec.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper does not encode these over FP.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Exact for Int operands.",
+          "status": "exact",
+          "strategy": "piecewise arithmetic helper"
+        },
+        "Real": {
+          "note": "Exact for Real arithmetic; round follows Python half-even helper.",
+          "status": "exact",
+          "strategy": "piecewise arithmetic helper"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "floor",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(floor)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.floor({{ node.expr | expr_render }})",
+          "template_key": "UFunc(floor)"
+        }
+      ],
+      "risk_level": "medium",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper does not encode these over BitVec.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper does not encode these over FP.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Exact for Int operands.",
+          "status": "exact",
+          "strategy": "piecewise arithmetic helper"
+        },
+        "Real": {
+          "note": "Exact for Real arithmetic; round follows Python half-even helper.",
+          "status": "exact",
+          "strategy": "piecewise arithmetic helper"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "round",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(round)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "round({{ node.expr | expr_render }})",
+          "template_key": "UFunc(round)"
+        }
+      ],
+      "risk_level": "medium",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper does not encode these over BitVec.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper does not encode these over FP.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Exact for Int operands.",
+          "status": "exact",
+          "strategy": "piecewise arithmetic helper"
+        },
+        "Real": {
+          "note": "Exact for Real arithmetic; round follows Python half-even helper.",
+          "status": "exact",
+          "strategy": "piecewise arithmetic helper"
+        }
+      }
+    },
+    {
+      "fcstm_operator": "trunc",
+      "kind": "ufunc",
+      "render_paths": [
+        {
+          "mapping_path": "$.builtin_expr_styles.styles.python.templates.UFunc(trunc)",
+          "source": "builtin_expr_styles.python",
+          "status": "specialized_template",
+          "template": "math.trunc({{ node.expr | expr_render }})",
+          "template_key": "UFunc(trunc)"
+        }
+      ],
+      "risk_level": "medium",
+      "z3_support": {
+        "BitVec": {
+          "note": "Current solver helper does not encode these over BitVec.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "FP": {
+          "note": "Current solver helper does not encode these over FP.",
+          "status": "unsupported",
+          "strategy": "none"
+        },
+        "Int": {
+          "note": "Exact for Int operands.",
+          "status": "exact",
+          "strategy": "piecewise arithmetic helper"
+        },
+        "Real": {
+          "note": "Exact for Real arithmetic; round follows Python half-even helper.",
+          "status": "exact",
+          "strategy": "piecewise arithmetic helper"
+        }
+      }
+    }
+  ],
+  "z3_representative_samples": {
+    "bitvec_bitwise_operator_results": [
+      {
+        "case_id": "bitvec-and",
+        "sort": "BitVec(8)",
+        "status": "built",
+        "z3_expr": "8"
+      },
+      {
+        "case_id": "bitvec-or",
+        "sort": "BitVec(8)",
+        "status": "built",
+        "z3_expr": "14"
+      },
+      {
+        "case_id": "bitvec-xor",
+        "sort": "BitVec(8)",
+        "status": "built",
+        "z3_expr": "6"
+      },
+      {
+        "case_id": "bitvec-left-shift-wrap",
+        "sort": "BitVec(8)",
+        "status": "built",
+        "z3_expr": "0"
+      },
+      {
+        "case_id": "bitvec-right-shift-signed",
+        "sort": "BitVec(8)",
+        "status": "built",
+        "z3_expr": "248"
+      },
+      {
+        "case_id": "bitvec-bitwise-not",
+        "sort": "BitVec(8)",
+        "status": "built",
+        "z3_expr": "255"
+      }
+    ],
+    "int_bitwise_operator_results": [
+      {
+        "case_id": "int-and",
+        "error": "unsupported operand type(s) for &: 'ArithRef' and 'ArithRef'",
+        "error_type": "TypeError",
+        "status": "type_error"
+      },
+      {
+        "case_id": "int-or",
+        "error": "unsupported operand type(s) for |: 'ArithRef' and 'ArithRef'",
+        "error_type": "TypeError",
+        "status": "type_error"
+      },
+      {
+        "case_id": "int-xor",
+        "error": "unsupported operand type(s) for ^: 'ArithRef' and 'ArithRef'",
+        "error_type": "TypeError",
+        "status": "type_error"
+      },
+      {
+        "case_id": "int-left-shift",
+        "error": "unsupported operand type(s) for <<: 'ArithRef' and 'IntNumRef'",
+        "error_type": "TypeError",
+        "status": "type_error"
+      },
+      {
+        "case_id": "int-right-shift",
+        "error": "unsupported operand type(s) for >>: 'ArithRef' and 'IntNumRef'",
+        "error_type": "TypeError",
+        "status": "type_error"
+      },
+      {
+        "case_id": "int-bitwise-not",
+        "error": "bad operand type for unary ~: 'ArithRef'",
+        "error_type": "TypeError",
+        "status": "type_error"
+      }
+    ],
+    "int_division_modulo_python_mismatch_cases": [
+      {
+        "denominator": 2,
+        "division_matches_python": false,
+        "modulo_matches_python": true,
+        "numerator": 3,
+        "python_modulo": 1,
+        "python_true_division_repr": "1.5",
+        "z3_int_division": "1",
+        "z3_int_modulo": "1"
+      },
+      {
+        "denominator": -2,
+        "division_matches_python": false,
+        "modulo_matches_python": false,
+        "numerator": 3,
+        "python_modulo": -1,
+        "python_true_division_repr": "-1.5",
+        "z3_int_division": "-1",
+        "z3_int_modulo": "1"
+      },
+      {
+        "denominator": 2,
+        "division_matches_python": false,
+        "modulo_matches_python": true,
+        "numerator": -3,
+        "python_modulo": 1,
+        "python_true_division_repr": "-1.5",
+        "z3_int_division": "-2",
+        "z3_int_modulo": "1"
+      },
+      {
+        "denominator": -2,
+        "division_matches_python": false,
+        "modulo_matches_python": false,
+        "numerator": -3,
+        "python_modulo": -1,
+        "python_true_division_repr": "1.5",
+        "z3_int_division": "2",
+        "z3_int_modulo": "1"
+      }
+    ],
+    "native_function_availability": [
+      {
+        "available": true,
+        "function": "Sqrt"
+      },
+      {
+        "available": false,
+        "function": "Sin"
+      },
+      {
+        "available": false,
+        "function": "Cos"
+      },
+      {
+        "available": false,
+        "function": "Exp"
+      },
+      {
+        "available": false,
+        "function": "Log"
+      }
+    ]
+  }
+}

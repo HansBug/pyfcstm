@@ -22,13 +22,33 @@ git check-ignore research/numeric-render-semantics/results/local/dummy-output.js
 make rst_auto
 ```
 
+## PR-3 验收
+
+```bash
+python tools/numeric_render_mapping.py --check
+
+python tools/numeric_render_probe.py env \
+  --output research/numeric-render-semantics/results/local/env.json
+
+python tools/numeric_render_probe.py python-z3-baseline \
+  --output research/numeric-render-semantics/results/snapshots/python_z3_baseline.json
+
+python tools/numeric_render_probe.py python-z3-baseline --check
+
+git check-ignore research/numeric-render-semantics/results/local/dummy-output.jsonl
+
+SKIP_SLOW_TESTS=1 make unittest
+```
+
+`python_z3_baseline.json` 只保存小型可审阅 snapshot：Python render/runtime 样例、Z3 `Int` / `Real` / `BitVec` / `FP` capability matrix、mapping digest、generator commit 和工具链版本。它不保存 heavy exhaustive 原始输出，也不把 Python 无限精度行为提升为默认定长 profile。
+
 ## 后续子 PR
 
 | 子 PR | 状态 | 内容 |
 |---|---|---|
-| PR-1 | 🟡 当前 | 落库框架、R0 mapping、env stub、轻量 schema；确立整个调研系列不修改 `test/` 路径。 |
+| PR-1 | 🟢 已完成 | 落库框架、R0 mapping、env stub、轻量 schema；确立整个调研系列不修改 `test/` 路径。 |
 | PR-2 | 🟡 后续 | C/C++ smoke probe。 |
-| PR-3 | 🟡 后续 | Python + Z3 基线。 |
+| PR-3 | 🟡 当前 | Python + Z3 基线、`python-z3-baseline` probe、small snapshot 与 schema。 |
 | PR-4 | 🟡 后续 | Java / Rust smoke probe。 |
 | PR-5 | 🟡 后续 | Go / JS / TS smoke probe。 |
 | PR-6 | 🟡 后续 | 8-bit exhaustive 与 16-bit shard harness。 |

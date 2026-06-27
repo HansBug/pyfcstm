@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HansBug/pyfcstm/research/numeric-render-semantics/schemas/python_z3_baseline.schema.json",
+  "title": "Python and Z3 numeric baseline summary",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "mode",
+    "language",
+    "source_mapping_sha256",
+    "render_mapping_sha256",
+    "generator",
+    "repository",
+    "toolchain",
+    "python_render_paths",
+    "python_runtime_samples",
+    "z3_representative_samples",
+    "z3_capability_matrix",
+    "representative_notes"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "mode": {"const": "python-z3-baseline"},
+    "language": {"const": "python-z3"},
+    "source_mapping_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "render_mapping_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "generator": {
+      "type": "object",
+      "required": ["tool", "research_path", "source_commit", "source_commit_policy", "determinism"],
+      "properties": {
+        "tool": {"type": "string"},
+        "research_path": {"type": "string"},
+        "source_commit": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
+        "source_commit_policy": {"type": "string"},
+        "determinism": {"type": "string"}
+      }
+    },
+    "repository": {
+      "type": "object",
+      "required": ["root", "render_mapping_snapshot", "schema_path"]
+    },
+    "toolchain": {
+      "type": "object",
+      "required": ["python", "z3"]
+    },
+    "python_render_paths": {
+      "type": "object",
+      "required": ["builtin_python_style", "template_expr_styles", "template_stmt_styles", "representative_rendered_expressions"]
+    },
+    "python_runtime_samples": {
+      "type": "object",
+      "required": ["constants", "round_half_cases", "sign_cases", "cbrt_cases", "division_modulo_cases", "bitwise_cases", "shift_cases"]
+    },
+    "z3_representative_samples": {
+      "type": "object",
+      "required": [
+        "int_bitwise_operator_results",
+        "bitvec_bitwise_operator_results",
+        "native_function_availability",
+        "int_division_modulo_python_mismatch_cases"
+      ]
+    },
+    "z3_capability_matrix": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["fcstm_operator", "kind", "render_paths", "risk_level", "z3_support"],
+        "properties": {
+          "fcstm_operator": {"type": "string"},
+          "kind": {"type": "string"},
+          "render_paths": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["source", "mapping_path", "template_key", "status"],
+              "properties": {
+                "source": {"type": "string"},
+                "mapping_path": {"type": "string"},
+                "template_key": {"type": "string"},
+                "status": {"type": "string"},
+                "template": {"type": "string"},
+                "note": {"type": "string"},
+                "style": {"type": "string"}
+              }
+            }
+          },
+          "risk_level": {"enum": ["low", "medium", "high", "unknown"]},
+          "z3_support": {
+            "type": "object",
+            "required": ["Int", "Real", "BitVec", "FP"],
+            "additionalProperties": false,
+            "properties": {
+              "Int": {"$ref": "#/$defs/support"},
+              "Real": {"$ref": "#/$defs/support"},
+              "BitVec": {"$ref": "#/$defs/support"},
+              "FP": {"$ref": "#/$defs/support"}
+            }
+          }
+        }
+      }
+    },
+    "representative_notes": {"type": "array"}
+  },
+  "$defs": {
+    "support": {
+      "type": "object",
+      "required": ["status", "strategy", "note"],
+      "properties": {
+        "status": {"enum": ["exact", "approximate", "uninterpreted", "unsupported"]},
+        "strategy": {"type": "string"},
+        "note": {"type": "string"}
+      }
+    }
+  }
+}

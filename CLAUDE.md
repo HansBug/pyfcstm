@@ -1044,6 +1044,31 @@ For built-in template work, the current design bar is defined by the `python` te
   migration indexes. If fixture inventories, test documentation, or other test-tree maintenance data need executable
   validation, put that check in a maintenance command outside the unit-test suite (for example under [tools/](tools/)) and run
   it explicitly.
+- Python unit tests must enter built-in template behavior through production package/runtime surfaces. Tests may use
+  packaged template assets through :mod:`pyfcstm.template`, `pyfcstm.template.extract_template(...)`,
+  `pyfcstm.template.list_templates()`, `pyfcstm.template.get_template_info(...)`,
+  `StateMachineCodeRenderer` pointed at an extracted packaged template, or CLI paths such as
+  `pyfcstm generate --template ...`. Tests may also create throwaway templates under their own temporary directories or
+  under [test/](test/) when the test target is the renderer itself.
+- Python unit tests must not directly read, render, compare, or assert against repository root `templates/` source
+  directories. Avoid source-layout shortcuts such as `_REPO_ROOT / "templates"`,
+  `Path(__file__).parents[...] / "templates"`, or `os.path.join(..., "templates")` in [test/](test/) when the behavior
+  under test can be reached through packaged template assets or public CLI/runtime entry points.
+- Python unit tests must not import `tools.*`, execute `tools.*`, or assert private helper behavior from maintenance
+  scripts. Packaging, release, source-template packaging, source-install smoke, symlink/stub resolution, and similar
+  maintenance checks should live as explicit commands under [tools/](tools/) or Makefile targets, not as default
+  `pytest -m unittest` cases. Do not delete that coverage when migrating it out of pytest; keep a reproducible
+  maintenance command.
+- Keep generated README executable documentation tests in pytest when they validate runnable quick starts,
+  compile/run commands, formatter-friendly code blocks, public API examples, or integration commands emitted by
+  generated artifacts. Do not use pytest primarily to assert repo-source maintainer README wording, prose inventories,
+  comment-only text, or documentation synchronization that is not production behavior.
+- Native template tests are part of the unit-test contract when they verify generated runtime behavior. C / C++ /
+  C++ wrapper native compile, native run, CMake, ctypes, formatter, and native alignment checks must be preserved when
+  their inputs are generated through packaged template or public API paths.
+- `make unittest` intentionally depends on `make tpl` so packaged built-in template assets are refreshed before the
+  Python unit-test suite runs. Do not remove that dependency merely to avoid packaging work in tests; instead, keep
+  pytest on packaged/public inputs and move source-template maintenance coverage to explicit tooling commands.
 - Shared test utilities and fixtures in [test/testings/](test/testings/)
 - Sample DSL files in [test/testfile/sample_codes/](test/testfile/sample_codes/) (auto-generate tests via `make sample`)
 - Negative cases in [test/testfile/sample_neg_codes/](test/testfile/sample_neg_codes/)

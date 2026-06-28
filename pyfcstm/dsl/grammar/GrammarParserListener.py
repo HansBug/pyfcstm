@@ -89,6 +89,54 @@ class GrammarParserListener(ParseTreeListener):
     ):
         pass
 
+    # Enter a parse tree produced by GrammarParser#entry_combo_transition_trigger.
+    def enterEntry_combo_transition_trigger(
+        self, ctx: GrammarParser.Entry_combo_transition_triggerContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#entry_combo_transition_trigger.
+    def exitEntry_combo_transition_trigger(
+        self, ctx: GrammarParser.Entry_combo_transition_triggerContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#entry_chain_combo_trigger.
+    def enterEntry_chain_combo_trigger(
+        self, ctx: GrammarParser.Entry_chain_combo_triggerContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#entry_chain_combo_trigger.
+    def exitEntry_chain_combo_trigger(
+        self, ctx: GrammarParser.Entry_chain_combo_triggerContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#entry_chain_combo_leading_guard.
+    def enterEntry_chain_combo_leading_guard(
+        self, ctx: GrammarParser.Entry_chain_combo_leading_guardContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#entry_chain_combo_leading_guard.
+    def exitEntry_chain_combo_leading_guard(
+        self, ctx: GrammarParser.Entry_chain_combo_leading_guardContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#entry_chain_combo_trigger_term.
+    def enterEntry_chain_combo_trigger_term(
+        self, ctx: GrammarParser.Entry_chain_combo_trigger_termContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#entry_chain_combo_trigger_term.
+    def exitEntry_chain_combo_trigger_term(
+        self, ctx: GrammarParser.Entry_chain_combo_trigger_termContext
+    ):
+        pass
+
     # Enter a parse tree produced by GrammarParser#combo_transition_trigger.
     def enterCombo_transition_trigger(
         self, ctx: GrammarParser.Combo_transition_triggerContext

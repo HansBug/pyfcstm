@@ -103,6 +103,15 @@ class TestComboTransitionTriggerParsing:
                 ],
             ),
             (
+                "[*] -> S1 :: A.E1 + /Bus.E2;",
+                INIT_STATE,
+                "S1",
+                [
+                    ("event", "chain", ChainID(["A", "E1"])),
+                    ("event", "absolute", ChainID(["Bus", "E2"], is_absolute=True)),
+                ],
+            ),
+            (
                 "S1 -> [*] :: E1 + [x > 0];",
                 "S1",
                 EXIT_STATE,
@@ -129,6 +138,8 @@ class TestComboTransitionTriggerParsing:
         )
         assert transition.to_state is expected_to or transition.to_state == expected_to
         assert transition.combo_trigger is not None
+        assert transition.event_id is None
+        assert transition.event_scope is None
         assert transition.condition_expr is None
         assert len(transition.combo_trigger.terms) == len(expected_terms)
 
@@ -143,14 +154,24 @@ class TestComboTransitionTriggerParsing:
                 assert isinstance(term, ComboGuardTerm)
                 assert str(term.condition_expr) == condition_text
 
-    def test_single_entry_event_keeps_legacy_chain_origin(self):
+    @pytest.mark.parametrize(
+        ["source", "expected_event"],
+        [
+            ("[*] -> S1 :: E1;", ChainID(["E1"])),
+            ("[*] -> S1 :: A.E1;", ChainID(["A", "E1"])),
+            ("[*] -> S1 :: /Bus.E1;", ChainID(["Bus", "E1"], is_absolute=True)),
+        ],
+    )
+    def test_single_entry_event_keeps_legacy_chain_origin(self, source, expected_event):
         transition = parse_with_grammar_entry(
-            "[*] -> S1 :: E1;", entry_name="transition_definition"
+            source, entry_name="transition_definition"
         )
 
         assert transition.combo_trigger is None
-        assert transition.event_id == ChainID(["E1"])
-        assert transition.event_scope == "chain"
+        assert transition.event_id == expected_event
+        assert transition.event_scope == (
+            "absolute" if expected_event.is_absolute else "chain"
+        )
 
     def test_entry_combo_terms_follow_legacy_chain_origin(self):
         transition = parse_with_grammar_entry(
@@ -174,6 +195,17 @@ class TestComboTransitionTriggerParsing:
         assert transition.combo_trigger is not None
         assert not transition.combo_trigger.is_combo
         assert transition.event_id is None
+        assert transition.condition_expr == BinaryOp(Name("x"), ">", Integer("0"))
+        assert str(transition) == "S1 -> S2 : if [x > 0];"
+
+    def test_legacy_guard_keeps_legacy_condition_only(self):
+        transition = parse_with_grammar_entry(
+            "S1 -> S2 : if [x > 0];", entry_name="transition_definition"
+        )
+
+        assert transition.combo_trigger is None
+        assert transition.event_id is None
+        assert transition.event_scope is None
         assert transition.condition_expr == BinaryOp(Name("x"), ">", Integer("0"))
         assert str(transition) == "S1 -> S2 : if [x > 0];"
 

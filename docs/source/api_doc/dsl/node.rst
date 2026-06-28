@@ -292,7 +292,7 @@ ComboTransitionTrigger
 -----------------------------------------------------
 
 .. autoclass:: ComboTransitionTrigger
-    :members: canonical_text,is_combo,scope_prefix,terms,trigger_span
+    :members: canonical_text,is_combo,scope_prefix,terms,trigger_span,legacy_guard_syntax
 
 
 TransitionDefinition

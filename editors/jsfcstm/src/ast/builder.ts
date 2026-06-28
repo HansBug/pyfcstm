@@ -64,6 +64,39 @@ const COND_BINARY_OPERATOR_ALIASES: Record<string, string> = {
     implies: '=>',
 };
 
+const EXPR_PRECEDENCE: Record<string, number> = {
+    function_call: 90,
+    'unary+': 80,
+    'unary-': 80,
+    '!': 80,
+    not: 80,
+    '**': 70,
+    '*': 60,
+    '/': 60,
+    '%': 60,
+    '+': 50,
+    '-': 50,
+    '<<': 40,
+    '>>': 40,
+    '&': 35,
+    '^': 30,
+    '|': 25,
+    '<': 20,
+    '>': 20,
+    '<=': 20,
+    '>=': 20,
+    '==': 20,
+    '!=': 20,
+    iff: 20,
+    '&&': 15,
+    and: 15,
+    xor: 12,
+    '||': 10,
+    or: 10,
+    '=>': 7,
+    '?:': 5,
+};
+
 interface ParseTreeContext extends ParseTreeNode {
     from_state?: { text?: string };
     to_state?: { text?: string };
@@ -80,6 +113,10 @@ interface ParseTreeContext extends ParseTreeNode {
     isabs?: { text?: string };
     num_expression?: () => ParseTreeContext;
     combo_transition_trigger?: () => ParseTreeContext | undefined;
+    entry_combo_transition_trigger?: () => ParseTreeContext | undefined;
+    entry_chain_combo_trigger?: () => ParseTreeContext | undefined;
+    entry_chain_combo_leading_guard?: (index?: number | null) => ParseTreeContext[] | ParseTreeContext | undefined;
+    entry_chain_combo_trigger_term?: (index?: number | null) => ParseTreeContext[] | ParseTreeContext | undefined;
     local_combo_trigger?: () => ParseTreeContext | undefined;
     chain_combo_trigger?: () => ParseTreeContext | undefined;
     local_combo_event_term?: () => ParseTreeContext | undefined;
@@ -367,6 +404,94 @@ function buildLocalEventPath(
         segments: path,
         path,
     };
+}
+
+function buildEntryEventPath(eventPath: FcstmAstChainPath): FcstmAstChainPath {
+    return {
+        ...eventPath,
+        range: makeCopiedRange(eventPath.range),
+        isAbsolute: eventPath.isAbsolute,
+        is_absolute: eventPath.is_absolute,
+        segments: [...eventPath.segments],
+        path: [...eventPath.path],
+    };
+}
+
+function expressionPrecedence(expression: FcstmAstExpression): number | null {
+    if (expression.expressionKind === 'binary') {
+        return EXPR_PRECEDENCE[canonicalizeBinaryOperator(expression.op, expression.expressionType)] ?? null;
+    }
+    if (expression.expressionKind === 'conditional') return EXPR_PRECEDENCE['?:'];
+    if (expression.expressionKind === 'unary') return EXPR_PRECEDENCE[unaryPrecedenceKey(expression.op)] ?? null;
+    return null;
+}
+
+function unaryPrecedenceKey(op: string): string {
+    const canonical = canonicalizeUnaryOperator(op);
+    return canonical === '+' || canonical === '-' ? `unary${canonical}` : canonical;
+}
+
+function canonicalExpressionText(expression: FcstmAstExpression | undefined): string | null {
+    if (!expression) return null;
+    switch (expression.expressionKind) {
+        case 'literal':
+            return expression.valueText.toLowerCase();
+        case 'identifier':
+            return expression.name;
+        case 'mathConst':
+            return expression.name;
+        case 'parenthesized': {
+            const inner = canonicalExpressionText(expression.expression);
+            return inner === null ? null : `(${inner})`;
+        }
+        case 'function': {
+            const argument = canonicalExpressionText(expression.argument);
+            return argument === null ? null : `${expression.functionName}(${argument})`;
+        }
+        case 'unary': {
+            const op = canonicalizeUnaryOperator(expression.op);
+            const myPrecedence = EXPR_PRECEDENCE[unaryPrecedenceKey(expression.op)];
+            let value = canonicalExpressionText(expression.operand);
+            if (value === null) return null;
+            const valuePrecedence = expressionPrecedence(expression.operand);
+            if (valuePrecedence !== null && valuePrecedence <= myPrecedence) {
+                value = `(${value})`;
+            }
+            return `${op}${value}`;
+        }
+        case 'binary': {
+            const op = canonicalizeBinaryOperator(expression.op, expression.expressionType);
+            const myPrecedence = EXPR_PRECEDENCE[op];
+            let left = canonicalExpressionText(expression.left);
+            let right = canonicalExpressionText(expression.right);
+            if (left === null || right === null) return null;
+            const leftPrecedence = expressionPrecedence(expression.left);
+            if (leftPrecedence !== null && leftPrecedence < myPrecedence) {
+                left = `(${left})`;
+            }
+            const rightPrecedence = expressionPrecedence(expression.right);
+            if (rightPrecedence !== null && rightPrecedence <= myPrecedence) {
+                right = `(${right})`;
+            }
+            return `${left} ${op} ${right}`;
+        }
+        case 'conditional': {
+            const myPrecedence = EXPR_PRECEDENCE['?:'];
+            const condition = canonicalExpressionText(expression.condition);
+            let whenTrue = canonicalExpressionText(expression.whenTrue);
+            let whenFalse = canonicalExpressionText(expression.whenFalse);
+            if (condition === null || whenTrue === null || whenFalse === null) return null;
+            const truePrecedence = expressionPrecedence(expression.whenTrue);
+            if (truePrecedence !== null && truePrecedence <= myPrecedence) {
+                whenTrue = `(${whenTrue})`;
+            }
+            const falsePrecedence = expressionPrecedence(expression.whenFalse);
+            if (falsePrecedence !== null && falsePrecedence <= myPrecedence) {
+                whenFalse = `(${whenFalse})`;
+            }
+            return `(${condition}) ? ${whenTrue} : ${whenFalse}`;
+        }
+    }
 }
 
 function buildActionPyNodeType(
@@ -740,7 +865,8 @@ function buildGuardTermValueRange(
 }
 
 function guardTermCanonicalText(condition: FcstmAstExpression | undefined, guardTermNode: ParseTreeContext): string {
-    return condition ? `[${condition.text}]` : nodeText(guardTermNode);
+    const canonical = canonicalExpressionText(condition);
+    return canonical !== null ? `[${canonical}]` : nodeText(guardTermNode);
 }
 
 function buildEventComboTerm(
@@ -835,7 +961,8 @@ function buildComboTriggerFromSyntax(
     node: ParseTreeContext,
     document: TextDocumentLike
 ): FcstmAstComboTrigger | undefined {
-    const comboNode = getNodeByMethod(node, 'combo_transition_trigger');
+    const entryComboNode = getNodeByMethod(node, 'entry_combo_transition_trigger');
+    const comboNode = getNodeByMethod(node, 'combo_transition_trigger') || entryComboNode;
     if (!comboNode) {
         return undefined;
     }
@@ -863,8 +990,8 @@ function buildComboTriggerFromSyntax(
             range: termRange,
             text: nodeText(comboNode).slice(Math.max(0, leftBracket), rightBracket >= leftBracket ? rightBracket + 1 : undefined),
             termKind: 'guard',
-            canonicalText: `[${condition.text}]`,
-            canonical_text: `[${condition.text}]`,
+            canonicalText: guardTermCanonicalText(condition, comboNode),
+            canonical_text: guardTermCanonicalText(condition, comboNode),
             removalRange: termRange,
             removal_range: termRange,
             valueRange,
@@ -873,9 +1000,24 @@ function buildComboTriggerFromSyntax(
             condition_expr: condition,
         });
     } else {
+        const entryTriggerNode = getNodeByMethod(comboNode, 'entry_chain_combo_trigger');
         const localTriggerNode = getNodeByMethod(comboNode, 'local_combo_trigger');
         const chainTriggerNode = getNodeByMethod(comboNode, 'chain_combo_trigger');
-        if (localTriggerNode) {
+        if (entryTriggerNode) {
+            scopePrefix = '::';
+            for (const leading of getNodesByMethod(entryTriggerNode, 'entry_chain_combo_leading_guard')) {
+                const guardNode = getNodeByMethod(leading, 'combo_guard_term');
+                if (guardNode) terms.push(buildGuardComboTerm(guardNode, document));
+            }
+            const eventNode = getNodeByMethod(entryTriggerNode, 'combo_event_term');
+            if (eventNode) terms.push(buildEventComboTerm(eventNode, 'chain', document));
+            for (const termNode of getNodesByMethod(entryTriggerNode, 'entry_chain_combo_trigger_term')) {
+                const event = getNodeByMethod(termNode, 'combo_event_term');
+                const guard = getNodeByMethod(termNode, 'combo_guard_term');
+                if (event) terms.push(buildEventComboTerm(event, 'chain', document));
+                if (guard) terms.push(buildGuardComboTerm(guard, document));
+            }
+        } else if (localTriggerNode) {
             scopePrefix = '::';
             for (const leading of getNodesByMethod(localTriggerNode, 'local_combo_leading_guard')) {
                 const guardNode = getNodeByMethod(leading, 'combo_guard_term');
@@ -909,6 +1051,13 @@ function buildComboTriggerFromSyntax(
     }
 
     applyComboRemovalRanges(terms);
+    const isCombo = terms.length > 1;
+    const isPureGuardAlias = Boolean(
+        getNodeByMethod(getNodeByMethod(comboNode, 'chain_combo_trigger'), 'chain_combo_guard_alias')
+    );
+    if (!isCombo && !isPureGuardAlias) {
+        return undefined;
+    }
     const canonicalText = `${scopePrefix} ${terms.map(term => term.canonicalText).join(' + ')}`;
     return {
         kind: 'comboTrigger',
@@ -919,8 +1068,8 @@ function buildComboTriggerFromSyntax(
         canonicalText,
         canonical_text: canonicalText,
         terms,
-        isCombo: terms.length > 1,
-        is_combo: terms.length > 1,
+        isCombo,
+        is_combo: isCombo,
     };
 }
 
@@ -970,9 +1119,20 @@ function buildTrigger(
         return buildChainTriggerFromNode(directChainNode, document);
     }
 
-    const comboNode = getNodeByMethod(node, 'combo_transition_trigger');
+    const entryComboNode = getNodeByMethod(node, 'entry_combo_transition_trigger');
+    const comboNode = getNodeByMethod(node, 'combo_transition_trigger') || entryComboNode;
     if (!comboNode) {
         return undefined;
+    }
+
+    const entryTriggerNode = getNodeByMethod(comboNode, 'entry_chain_combo_trigger');
+    if (entryTriggerNode) {
+        const isSingleEntryEvent = getNodesByMethod(entryTriggerNode, 'entry_chain_combo_leading_guard').length === 0
+            && getNodesByMethod(entryTriggerNode, 'entry_chain_combo_trigger_term').length === 0;
+        const eventTermNode = isSingleEntryEvent
+            ? getNodeByMethod(entryTriggerNode, 'combo_event_term')
+            : undefined;
+        return eventTermNode ? buildChainTriggerFromNode(eventTermNode, document) : undefined;
     }
 
     const localTriggerNode = getNodeByMethod(comboNode, 'local_combo_trigger');
@@ -1002,7 +1162,8 @@ function buildTransitionGuard(
         return buildExpression(directCondNode, document);
     }
 
-    const comboNode = getNodeByMethod(node, 'combo_transition_trigger');
+    const comboNode = getNodeByMethod(node, 'combo_transition_trigger')
+        || getNodeByMethod(node, 'entry_combo_transition_trigger');
     if (!comboNode) {
         return undefined;
     }
@@ -1038,7 +1199,9 @@ function buildTransitionLikeBase(
     const eventId = trigger
         ? trigger.kind === 'localTrigger'
             ? buildLocalEventPath(sourceKind, tokenText(node.from_state), trigger.eventName, trigger.range)
-            : trigger.eventPath
+            : sourceKind === 'init'
+                ? buildEntryEventPath(trigger.eventPath)
+                : trigger.eventPath
         : undefined;
     const fromState = sourceKind === 'init'
         ? 'INIT_STATE'

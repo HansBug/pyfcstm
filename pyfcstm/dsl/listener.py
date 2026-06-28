@@ -760,26 +760,26 @@ class GrammarParseListener(GrammarListener):
         if combo_trigger is not None:
             if from_state is INIT_STATE:
                 self._normalize_entry_combo_trigger(combo_trigger)
-            condition_expr = self._single_guard_alias_expr(combo_trigger)
-            event_term = self._first_combo_event_term(combo_trigger)
-            if condition_expr is None and event_term is not None:
-                event_id = event_term.event_id
-                event_scope = event_term.event_scope
-                if (
-                    not combo_trigger.is_combo
-                    and from_state is INIT_STATE
-                    and event_scope == "local"
-                ):
-                    event_scope = "chain"
-                if (
-                    event_scope == "local"
-                    and isinstance(from_state, str)
-                    and not event_id.is_absolute
-                    and len(event_id.path) == 1
-                ):
-                    event_id = ChainID([from_state, event_id.path[0]])
-            if combo_trigger.is_combo or condition_expr is not None:
+            if combo_trigger.is_combo:
                 stored_combo_trigger = combo_trigger
+            else:
+                condition_expr = self._single_guard_alias_expr(combo_trigger)
+                event_term = self._first_combo_event_term(combo_trigger)
+                if condition_expr is not None:
+                    if not combo_trigger.legacy_guard_syntax:
+                        stored_combo_trigger = combo_trigger
+                elif event_term is not None:
+                    event_id = event_term.event_id
+                    event_scope = event_term.event_scope
+                    if from_state is INIT_STATE and event_scope == "local":
+                        event_scope = "chain"
+                    if (
+                        event_scope == "local"
+                        and isinstance(from_state, str)
+                        and not event_id.is_absolute
+                        and len(event_id.path) == 1
+                    ):
+                        event_id = ChainID([from_state, event_id.path[0]])
 
         node = TransitionDefinition(
             from_state=from_state,
@@ -805,7 +805,7 @@ class GrammarParseListener(GrammarListener):
         node = self._build_transition_node(
             from_state=INIT_STATE,
             to_state=ctx.to_state.text,
-            trigger_ctx=ctx.combo_transition_trigger(),
+            trigger_ctx=ctx.entry_combo_transition_trigger(),
             post_operations=self.nodes[ctx.operational_statement_set()]
             if ctx.operational_statement_set()
             else [],
@@ -854,6 +854,102 @@ class GrammarParseListener(GrammarListener):
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
+
+    def exitEntry_chain_combo_leading_guard(
+        self, ctx: GrammarParser.Entry_chain_combo_leading_guardContext
+    ) -> None:
+        """
+        Bind a leading guard term in an entry combo trigger.
+
+        :param ctx: Parse context for a guard term followed by ``+``.
+        :type ctx: GrammarParser.Entry_chain_combo_leading_guardContext
+        """
+        super().exitEntry_chain_combo_leading_guard(ctx)
+        self.nodes[ctx] = self.nodes[ctx.combo_guard_term()]
+
+    def exitEntry_chain_combo_trigger_term(
+        self, ctx: GrammarParser.Entry_chain_combo_trigger_termContext
+    ) -> None:
+        """
+        Bind an entry combo continuation term.
+
+        :param ctx: Parse context for an entry combo continuation term.
+        :type ctx: GrammarParser.Entry_chain_combo_trigger_termContext
+        """
+        super().exitEntry_chain_combo_trigger_term(ctx)
+        if ctx.combo_guard_term():
+            self.nodes[ctx] = self.nodes[ctx.combo_guard_term()]
+        else:
+            self.nodes[ctx] = self.nodes[ctx.combo_event_term()]
+
+    def exitEntry_chain_combo_trigger(
+        self, ctx: GrammarParser.Entry_chain_combo_triggerContext
+    ) -> None:
+        """
+        Build an entry combo trigger using legacy entry chain scope.
+
+        :param ctx: Parse context for the entry chain combo trigger.
+        :type ctx: GrammarParser.Entry_chain_combo_triggerContext
+        """
+        super().exitEntry_chain_combo_trigger(ctx)
+        terms = []
+        term_contexts = []
+        for leading_guard in ctx.entry_chain_combo_leading_guard():
+            terms.append(self.nodes[leading_guard])
+            term_contexts.append(leading_guard.combo_guard_term())
+
+        event_id = self.nodes[ctx.combo_event_term()]
+        terms.append(
+            ComboEventTerm(
+                event_id=event_id,
+                event_scope="absolute" if event_id.is_absolute else "chain",
+                term_span=_ctx_span(ctx.combo_event_term()),
+                removal_span=_ctx_span(ctx.combo_event_term()),
+            )
+        )
+        term_contexts.append(ctx.combo_event_term())
+
+        for term_ctx in ctx.entry_chain_combo_trigger_term():
+            term_node = self.nodes[term_ctx]
+            if isinstance(term_node, ChainID):
+                term = ComboEventTerm(
+                    event_id=term_node,
+                    event_scope="absolute" if term_node.is_absolute else "chain",
+                    term_span=_ctx_span(term_ctx),
+                    removal_span=_ctx_span(term_ctx),
+                )
+            else:
+                term = term_node
+            terms.append(term)
+            term_contexts.append(
+                term_ctx.combo_event_term() or term_ctx.combo_guard_term()
+            )
+
+        _assign_combo_removal_spans(terms, term_contexts)
+        self.nodes[ctx] = ComboTransitionTrigger(
+            scope_prefix="::",
+            terms=terms,
+            trigger_span=_ctx_span(ctx),
+        )
+
+    def exitEntry_combo_transition_trigger(
+        self, ctx: GrammarParser.Entry_combo_transition_triggerContext
+    ) -> None:
+        """
+        Build the entry transition trigger suffix.
+
+        :param ctx: Parse context for the entry transition trigger suffix.
+        :type ctx: GrammarParser.Entry_combo_transition_triggerContext
+        """
+        super().exitEntry_combo_transition_trigger(ctx)
+        if ctx.entry_chain_combo_trigger():
+            trigger = self.nodes[ctx.entry_chain_combo_trigger()]
+        elif ctx.chain_combo_trigger():
+            trigger = self.nodes[ctx.chain_combo_trigger()]
+        else:
+            trigger = self._guard_trigger_from_legacy_syntax(ctx)
+        trigger.trigger_span = _ctx_span(ctx)
+        self.nodes[ctx] = trigger
 
     def exitCombo_event_term(self, ctx: GrammarParser.Combo_event_termContext) -> None:
         """
@@ -1073,9 +1169,7 @@ class GrammarParseListener(GrammarListener):
                 event_scope="chain",
             )
 
-    def _guard_trigger_from_legacy_syntax(
-        self, ctx: GrammarParser.Combo_transition_triggerContext
-    ) -> ComboTransitionTrigger:
+    def _guard_trigger_from_legacy_syntax(self, ctx) -> ComboTransitionTrigger:
         cond = ctx.cond_expression()
         term_start = ctx.LBRACK().symbol
         term_stop = ctx.RBRACK().symbol
@@ -1089,6 +1183,7 @@ class GrammarParseListener(GrammarListener):
             scope_prefix=":",
             terms=[term],
             trigger_span=_ctx_span(ctx),
+            legacy_guard_syntax=True,
         )
 
     def exitCombo_transition_trigger(

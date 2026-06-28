@@ -52,7 +52,7 @@ state_definition
     ;
 
 transition_definition
-    : INIT_MARKER ARROW to_state=ID combo_transition_trigger?
+    : INIT_MARKER ARROW to_state=ID entry_combo_transition_trigger?
       (SEMI | EFFECT LBRACE operational_statement_set RBRACE)
         # entryTransitionDefinition
     | from_state=ID ARROW to_state=ID combo_transition_trigger?
@@ -61,6 +61,25 @@ transition_definition
     | from_state=ID ARROW INIT_MARKER combo_transition_trigger?
       (SEMI | EFFECT LBRACE operational_statement_set RBRACE)
         # exitTransitionDefinition
+    ;
+
+entry_combo_transition_trigger
+    : COLONCOLON entry_chain_combo_trigger
+    | COLON IF LBRACK cond_expression RBRACK
+    | COLON chain_combo_trigger
+    ;
+
+entry_chain_combo_trigger
+    : entry_chain_combo_leading_guard* combo_event_term (PLUS entry_chain_combo_trigger_term)*
+    ;
+
+entry_chain_combo_leading_guard
+    : combo_guard_term PLUS
+    ;
+
+entry_chain_combo_trigger_term
+    : combo_event_term
+    | combo_guard_term
     ;
 
 combo_transition_trigger

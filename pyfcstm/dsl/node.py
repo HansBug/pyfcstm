@@ -1372,6 +1372,9 @@ class ComboTransitionTrigger(ASTNode):
     :type terms: List[ComboTriggerTerm]
     :param trigger_span: Source span covering the trigger suffix.
     :type trigger_span: pyfcstm.utils.validate.Span, optional
+    :param legacy_guard_syntax: Whether this object came from the legacy
+        ``: if [guard]`` spelling rather than the new pure guard alias.
+    :type legacy_guard_syntax: bool
 
     Example::
 
@@ -1386,6 +1389,7 @@ class ComboTransitionTrigger(ASTNode):
     scope_prefix: str
     terms: List[ComboTriggerTerm]
     trigger_span: Optional[Span] = field(default=None, repr=False, compare=False)
+    legacy_guard_syntax: bool = field(default=False, repr=False, compare=False)
 
     @property
     def canonical_text(self) -> str:

@@ -682,20 +682,28 @@ describe('jsfcstm AST builder', () => {
             'state Root {',
             '    state A;',
             '    state B;',
+            '    [*] -> A :: /Bus.Boot;',
             '    A -> B :: E1 + [x > 0] + E2;',
             '    A -> B : [x > 0];',
+            '    A -> B : if [x > 0];',
             '}',
         ].join('\n');
         const document = createDocument(source, '/tmp/ast-combo-trigger.fcstm');
 
         const ast = await packageModule.parseAstDocument(document);
-        const comboTransition = ast?.rootState?.transitions[0];
-        const aliasTransition = ast?.rootState?.transitions[1];
+        const entryTransition = ast?.rootState?.transitions[0];
+        const comboTransition = ast?.rootState?.transitions[1];
+        const aliasTransition = ast?.rootState?.transitions[2];
+        const legacyGuardTransition = ast?.rootState?.transitions[3];
+
+        assert.equal(entryTransition?.trigger?.kind, 'chainTrigger');
+        assert.equal(entryTransition?.event_id?.text, '/Bus.Boot');
+        assert.equal(entryTransition?.combo_trigger, undefined);
 
         assert.equal(comboTransition?.trigger, undefined);
         assert.equal(comboTransition?.event_id, undefined);
         assert.equal(comboTransition?.condition_expr, undefined);
-        assert.equal(comboTransition?.combo_trigger?.canonical_text, ':: E1 + [x>0] + E2');
+        assert.equal(comboTransition?.combo_trigger?.canonical_text, ':: E1 + [x > 0] + E2');
         assert.equal(comboTransition?.combo_trigger?.is_combo, true);
         assert.deepEqual(
             comboTransition?.combo_trigger?.terms.map(term => [
@@ -705,7 +713,7 @@ describe('jsfcstm AST builder', () => {
             ]),
             [
                 ['event', 'E1', 'local'],
-                ['guard', '[x>0]', undefined],
+                ['guard', '[x > 0]', undefined],
                 ['event', 'E2', 'local'],
             ],
         );
@@ -725,8 +733,13 @@ describe('jsfcstm AST builder', () => {
         assert.ok(aliasTransition?.condition_expr);
         assert.equal(aliasTransition?.trigger, undefined);
         assert.equal(aliasTransition?.event_id, undefined);
-        assert.equal(aliasTransition?.combo_trigger?.canonical_text, ': [x>0]');
+        assert.equal(aliasTransition?.combo_trigger?.canonical_text, ': [x > 0]');
         assert.equal(aliasTransition?.combo_trigger?.is_combo, false);
+
+        assert.ok(legacyGuardTransition?.condition_expr);
+        assert.equal(legacyGuardTransition?.trigger, undefined);
+        assert.equal(legacyGuardTransition?.event_id, undefined);
+        assert.equal(legacyGuardTransition?.combo_trigger, undefined);
     });
 
     it('covers synthetic AST fallback branches that the grammar rarely emits directly', () => {

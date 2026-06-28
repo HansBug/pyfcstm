@@ -113,6 +113,67 @@ def _event_origin_from_id(
 
 _COMBO_STATE_PREFIX = "__combo_"
 _COMBO_DIGEST_SIZE = 12
+_COMBO_DISPLAY_PREFIX = "combo after "
+_COMBO_HEX_DIGITS = frozenset("0123456789abcdef")
+
+
+def _is_combo_pseudo_export_name(name: str) -> bool:
+    """Return whether a state name looks like an exported combo pseudo name."""
+    digest_tag_size = _COMBO_DIGEST_SIZE + 2
+    if (
+        not name.startswith(_COMBO_STATE_PREFIX)
+        or len(name) <= len(_COMBO_STATE_PREFIX) + digest_tag_size
+    ):
+        return False
+    digest_tag = name[-digest_tag_size:]
+    return (
+        digest_tag.startswith("_h")
+        and len(digest_tag[2:]) == _COMBO_DIGEST_SIZE
+        and all(char in _COMBO_HEX_DIGITS for char in digest_tag[2:])
+    )
+
+
+def _is_combo_pseudo_referenced_by_owner(
+    name: str, owner_node: Optional[dsl_nodes.StateDefinition]
+) -> bool:
+    """Return whether an exported combo pseudo is wired into owner transitions."""
+    if owner_node is None:
+        return False
+    has_incoming = False
+    has_outgoing = False
+    for transition in owner_node.transitions:
+        has_incoming = has_incoming or transition.to_state == name
+        has_outgoing = has_outgoing or transition.from_state == name
+    return has_incoming and has_outgoing
+
+
+def _is_exported_combo_pseudo_node(
+    node: dsl_nodes.StateDefinition,
+    owner_node: Optional[dsl_nodes.StateDefinition] = None,
+) -> bool:
+    """Return whether an AST node is an exported generated combo pseudo state."""
+    if not node.is_pseudo or not node.name.startswith(_COMBO_STATE_PREFIX):
+        return False
+    if getattr(node, "_generated_combo_pseudo", False):
+        return True
+    has_export_shape = (
+        _is_combo_pseudo_export_name(node.name)
+        and node.extra_name is not None
+        and node.extra_name.startswith(_COMBO_DISPLAY_PREFIX)
+        and len(node.extra_name) > len(_COMBO_DISPLAY_PREFIX)
+        and not node.events
+        and not node.imports
+        and not node.substates
+        and not node.transitions
+        and not node.force_transitions
+        and not node.enters
+        and not node.durings
+        and not node.exits
+        and not node.during_aspects
+    )
+    return has_export_shape and _is_combo_pseudo_referenced_by_owner(
+        node.name, owner_node
+    )
 
 
 def _combo_payload_digest(payload: str) -> str:
@@ -2699,11 +2760,13 @@ def parse_dsl_node_to_state_machine(
         return IfBlock(branches=branches, _span=_node_span(if_node))
 
     def _recursive_build_states(
-        node: dsl_nodes.StateDefinition, current_path: Tuple[str, ...]
+        node: dsl_nodes.StateDefinition,
+        current_path: Tuple[str, ...],
+        owner_node: Optional[dsl_nodes.StateDefinition] = None,
     ) -> State:
         current_path = tuple((*current_path, node.name))
         if node.name.startswith(_COMBO_STATE_PREFIX) and not (
-            node.is_pseudo and getattr(node, "_generated_combo_pseudo", False)
+            _is_exported_combo_pseudo_node(node, owner_node)
         ):
             sink.emit(
                 ModelDiagnostic(
@@ -2727,7 +2790,7 @@ def parse_dsl_node_to_state_machine(
         for subnode in node.substates:
             if subnode.name not in d_substates:
                 d_substates[subnode.name] = _recursive_build_states(
-                    subnode, current_path=current_path
+                    subnode, current_path=current_path, owner_node=node
                 )
                 substate_first_spans[subnode.name] = getattr(subnode, "_span", None)
             else:
@@ -3829,7 +3892,7 @@ def parse_dsl_node_to_state_machine(
                     )
                 return state
 
-            display = "combo after " + " + ".join(term_texts)
+            display = _COMBO_DISPLAY_PREFIX + " + ".join(term_texts)
             state = State(
                 name=name,
                 extra_name=display,

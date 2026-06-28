@@ -340,10 +340,17 @@ def _parse_message_labels(
     skips = []
     for match in _LABEL_RE.finditer(message or ""):
         kind = match.group(1)
-        token = match.group(2).strip()
+        raw_token = match.group(2)
+        token = raw_token.strip()
         if not token:
             raise TemplateSuiteDetectionError(
                 "empty {0} label suite token".format(kind)
+            )
+        if raw_token != token:
+            raise TemplateSuiteDetectionError(
+                "whitespace is not allowed in {0} label suite token: {1!r}".format(
+                    kind, raw_token
+                )
             )
         expanded = _expand_suite_token(token)
         label_text = match.group(0)
@@ -1009,6 +1016,18 @@ def _run_self_check_cases() -> None:
         "fixed suite excluded from dynamic matrix",
     )
 
+    result = detect_template_suites(
+        ["templates/c/machine.c.j2"], "[tpl:c] [skip-slow]", "local"
+    )
+    _require_equal(
+        result["matrix"]["include"],
+        [
+            {"suite": "c", "reason": "path:templates/c/machine.c.j2"},
+            {"suite": "cpp", "reason": "path:templates/c/machine.c.j2"},
+        ],
+        "protected path reason precedence",
+    )
+
     empty = detect_template_suites([], "", "local")
     _require_equal(
         empty,
@@ -1031,6 +1050,18 @@ def _run_self_check_cases() -> None:
     )
     _expect_detection_error(
         "empty label", lambda: detect_template_suites([], "[tpl:]", "local")
+    )
+    _expect_detection_error(
+        "leading label whitespace",
+        lambda: detect_template_suites([], "[tpl: c]", "local"),
+    )
+    _expect_detection_error(
+        "trailing label whitespace",
+        lambda: detect_template_suites([], "[tpl:c ]", "local"),
+    )
+    _expect_detection_error(
+        "skip label whitespace",
+        lambda: detect_template_suites([], "[skip-tpl: c]", "local"),
     )
     _expect_detection_error(
         "unknown include",

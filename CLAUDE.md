@@ -153,7 +153,8 @@ Recognized suite tokens are `default`, `template_core`, `template_representative
 `cpp_poll`, and `all`. The special `all` token expands to `python,c,c_poll,cpp,cpp_poll`; fixed/default suites do not
 enter the detector's dynamic `matrix.include` output.
 
-Commit-message labels use exact bracketed forms such as `[tpl:c]`, `[tpl:c_poll]`, `[tpl:all]`, and `[skip-tpl:c]`.
+Commit-message labels use exact bracketed forms such as `[tpl:c]`, `[tpl:c_poll]`, `[tpl:all]`, and `[skip-tpl:c]`;
+whitespace inside the brackets is invalid, so `[tpl: c]` and `[tpl:c ]` fail instead of normalizing to `c`.
 Multiple labels may be combined. Each bracketed label accepts one suite token only; use repeated labels such as
 `[tpl:c] [tpl:c_poll]` instead of comma-separated text inside one label. The parser is context-free: a live label inside
 prose or a Markdown code block is still parsed as an instruction, so use neutral examples such as `tpl:c` when

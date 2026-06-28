@@ -149,6 +149,27 @@ python tools/detect_template_suites.py \
   --json
 ```
 
+Run selected template suites locally with the companion runner:
+
+```bash
+python tools/run_template_suites.py --check
+PYFCSTM_TEMPLATE_SUITES=python make template_unittest
+PYFCSTM_TEMPLATE_SUITES=c,c_poll make template_unittest
+PYFCSTM_TEMPLATE_SUITES=cpp,cpp_poll make template_unittest
+PYFCSTM_TEMPLATE_SUITES=template_representative make template_unittest
+PYFCSTM_TEMPLATE_SUITES=all make template_unittest TEMPLATE_UNITTEST_ARGS="--dry-run"
+PYFCSTM_RUN_NATIVE_TOOLCHAIN=1 make template_unittest TEMPLATE_UNITTEST_ARGS="--include-suites c --run-native-toolchain"
+```
+
+`make template_unittest` depends on `tpl`, so it refreshes packaged built-in template assets before running pytest;
+direct `python tools/run_template_suites.py ...` invocations package templates by default unless `--no-package` is passed. The
+runner clears any inherited `SKIP_SLOW_TESTS`, `PYFCSTM_TEMPLATE_SUITES`, and `PYFCSTM_SKIP_TEMPLATE_SUITES` values from
+the pytest subprocess for explicit template-suite runs; otherwise selecting `c`, `c_poll`, `cpp`, or `cpp_poll` could
+become a false-green skip or leak selector state into tests. Explicit suite selection does not automatically add the
+`default` lightweight set; use `PYFCSTM_TEMPLATE_SUITES=default,c` when you want contract checks plus one full suite.
+Native toolchain tests remain explicit opt-in through `--run-native-toolchain` or `PYFCSTM_RUN_NATIVE_TOOLCHAIN=1`, and
+the opt-in requires at least one selected C-family suite (`c`, `c_poll`, `cpp`, or `cpp_poll`).
+
 Recognized suite tokens are `default`, `template_core`, `template_representative`, `python`, `c`, `c_poll`, `cpp`,
 `cpp_poll`, and `all`. The special `all` token expands to `python,c,c_poll,cpp,cpp_poll`; fixed/default suites do not
 enter the detector's dynamic `matrix.include` output.

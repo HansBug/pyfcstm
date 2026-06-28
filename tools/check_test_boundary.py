@@ -60,12 +60,6 @@ _OS_COMMAND_METHODS = {
     "spawnvp",
     "spawnvpe",
 }
-_SOURCE_INSTALL_MARKERS = (
-    "--target",
-    "source install",
-    "source-install",
-    "install_dir",
-)
 _REPO_ROOT_NAME_FRAGMENTS = (
     "repo_root",
     "repository_root",
@@ -266,6 +260,12 @@ def collect_defined_names(tree: ast.AST) -> Set[str]:
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             names.add(node.name)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                names.add(alias.asname or alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                names.add(alias.asname or alias.name)
         elif isinstance(node, ast.Assign):
             for target in node.targets:
                 names.update(assigned_target_names(target))
@@ -410,6 +410,30 @@ def parent_chain_depth(node: ast.AST) -> int:
     return 0
 
 
+def subscript_integer(node: ast.Subscript) -> Optional[int]:
+    """
+    Return an integer literal subscript index when available.
+
+    :param node: Subscript node to inspect.
+    :type node: ast.Subscript
+    :return: Integer index, or ``None`` when not statically literal.
+    :rtype: int, optional
+
+    Example::
+
+        >>> subscript_integer(ast.parse('x[2]').body[0].value)
+        2
+    """
+    slice_node = node.slice
+    value = getattr(slice_node, "value", slice_node)
+    if isinstance(value, int):
+        return value
+    if AST_CONSTANT_TYPE is not None and isinstance(value, AST_CONSTANT_TYPE):
+        if isinstance(value.value, int):
+            return value.value
+    return None
+
+
 def is_exact_segment(node: ast.AST, segment: str) -> bool:
     """
     Return whether ``node`` is exactly a string path segment.
@@ -503,6 +527,30 @@ def expression_runs_tools_script(node: ast.AST) -> bool:
     return any(command_text_runs_tools_script(value) for value in values)
 
 
+def expression_runs_source_install_command(node: ast.AST) -> bool:
+    """
+    Return whether a command expression performs a source install.
+
+    :param node: AST node for a subprocess or shell command argument.
+    :type node: ast.AST
+    :return: ``True`` when string literals form ``pip install`` of local source.
+    :rtype: bool
+
+    Example::
+
+        >>> expression_runs_source_install_command(ast.parse('["python", "-m", "pip", "install", "."]').body[0].value)
+        True
+        >>> expression_runs_source_install_command(ast.parse('["pip", "install", "pytest"]').body[0].value)
+        False
+    """
+    if isinstance(node, ast.Name):
+        return False
+    values = collect_string_literals(node)
+    return any(
+        string_contains_source_install_marker(value) for value in values
+    ) or string_contains_source_install_marker(" ".join(values))
+
+
 def command_literals_form_tools_script_path(values: Sequence[str]) -> bool:
     """
     Return whether string literals combine into a ``tools/*.py`` path.
@@ -530,6 +578,11 @@ def string_contains_source_install_marker(value: str) -> bool:
     """
     Return whether a string literal describes a source-install smoke path.
 
+    The check intentionally requires a ``pip install`` command shape before
+    treating local paths or ``--target`` as source-install smoke evidence. This
+    avoids blocking ordinary test configuration keys such as ``install_dir`` or
+    native compiler flags such as ``--target``.
+
     :param value: String literal value to inspect.
     :type value: str
     :return: ``True`` when the literal looks like a source-install smoke command.
@@ -541,18 +594,19 @@ def string_contains_source_install_marker(value: str) -> bool:
         False
         >>> string_contains_source_install_marker('python -m pip install .')
         True
+        >>> string_contains_source_install_marker('clang --target x86_64-linux-gnu')
+        False
     """
-    lowered = value.lower()
-    if any(marker in lowered for marker in _SOURCE_INSTALL_MARKERS):
-        return True
-    normalized = lowered.replace("\\", "/")
+    normalized = value.lower().replace("\\", "/")
     tokens = normalized.split()
     for index in range(len(tokens) - 1):
         if tokens[index] != "pip" or tokens[index + 1] != "install":
             continue
         install_args = tokens[index + 2 :]
         for arg in install_args:
-            if arg in {"-e", "--editable", ".", "./", "..", "../"}:
+            if arg in {"-e", "--editable", ".", "./", "..", "../", "--target"}:
+                return True
+            if arg.startswith("--target="):
                 return True
             if arg.startswith("./") or arg.startswith("../"):
                 return True
@@ -607,6 +661,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         self.os_path_abspath_aliases = set()  # type: Set[str]
         self.repo_root_aliases = set()  # type: Set[str]
         self.tools_command_aliases = set()  # type: Set[str]
+        self.source_install_command_aliases = set()  # type: Set[str]
         self.package_templates_aliases = set()  # type: Set[str]
 
     def add_finding(self, node: ast.AST, rule: str, message: str) -> None:
@@ -800,8 +855,10 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     self.repo_root_aliases.add(name)
                 if self.is_dynamic_tools_import_call(value):
                     self.dynamic_tools_aliases.add(name)
-                if expression_runs_tools_script(value):
+                if self.expression_or_alias_runs_tools_script(value):
                     self.tools_command_aliases.add(name)
+                if self.expression_or_alias_runs_source_install_command(value):
+                    self.source_install_command_aliases.add(name)
 
     def _target_names(self, node: ast.AST) -> List[str]:
         """
@@ -872,6 +929,12 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 TOOLS_EXEC_RULE,
                 "pytest files must not execute repository tools scripts from subprocess or shell commands",
             )
+        if self.is_command_call_running_source_install(node):
+            self.add_finding(
+                node,
+                SOURCE_INSTALL_RULE,
+                "pytest files must not run source-install smoke commands",
+            )
         if self.is_repo_source_template_access(node):
             self.add_finding(
                 node,
@@ -936,8 +999,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
 
         Example::
 
-            >>> tree = ast.parse('"--target"')
-            >>> visitor = TestBoundaryVisitor(Path('x.py'), '"--target"', set())
+            >>> tree = ast.parse('"python -m pip install --target ./vendor ."')
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '"python -m pip install --target ./vendor ."', set())
             >>> visitor.visit(tree)
             >>> visitor.findings[0].rule
             'source-install-smoke'
@@ -956,8 +1019,9 @@ class TestBoundaryVisitor(ast.NodeVisitor):
 
         Example::
 
-            >>> visitor = TestBoundaryVisitor(Path('x.py'), '"install_dir"', set())
-            >>> visitor._visit_string_marker(ast.parse('"install_dir"').body[0].value)
+            >>> source = '"python -m pip install --target ./vendor ."'
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), source, set())
+            >>> visitor._visit_string_marker(ast.parse(source).body[0].value)
             >>> visitor.findings[0].rule
             'source-install-smoke'
         """
@@ -988,27 +1052,58 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
             >>> visitor.is_dynamic_tools_import_call(ast.parse('__import__("tools.x")').body[0].value)
             True
+            >>> visitor.is_dynamic_tools_import_call(ast.parse('__import__(name="tools.x")').body[0].value)
+            True
+            >>> visitor.importlib_aliases.add('import_module')
+            >>> visitor.is_dynamic_tools_import_call(ast.parse('import_module(".x", package="tools")').body[0].value)
+            True
         """
         if not isinstance(node, ast.Call):
             return False
         func_name = dotted_name(node.func)
         if func_name == "__import__":
-            return bool(
-                node.args and is_tools_module_name(literal_string(node.args[0]) or "")
-            )
+            return self.dynamic_import_target_is_tools(node)
         if isinstance(node.func, ast.Attribute):
             if node.func.attr == "import_module" and isinstance(
                 node.func.value, ast.Name
             ):
                 if node.func.value.id in self.importlib_aliases:
-                    return bool(
-                        node.args
-                        and is_tools_module_name(literal_string(node.args[0]) or "")
-                    )
+                    return self.dynamic_import_target_is_tools(node)
         if isinstance(node.func, ast.Name) and node.func.id in self.importlib_aliases:
-            return bool(
-                node.args and is_tools_module_name(literal_string(node.args[0]) or "")
-            )
+            return self.dynamic_import_target_is_tools(node)
+        return False
+
+    def dynamic_import_target_is_tools(self, node: ast.Call) -> bool:
+        """
+        Return whether a dynamic import call targets ``tools``.
+
+        :param node: Dynamic import call expression.
+        :type node: ast.Call
+        :return: ``True`` when positional or keyword import arguments resolve to ``tools``.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> call = ast.parse('import_module(name="tools.x")').body[0].value
+            >>> visitor.dynamic_import_target_is_tools(call)
+            True
+        """
+        name = None
+        package = None
+        if node.args:
+            name = literal_string(node.args[0])
+        for keyword in node.keywords:
+            if keyword.arg == "name":
+                name = literal_string(keyword.value)
+            elif keyword.arg == "package":
+                package = literal_string(keyword.value)
+        if name is None:
+            return False
+        if is_tools_module_name(name):
+            return True
+        if name.startswith(".") and package is not None:
+            return is_tools_module_name(package)
         return False
 
     def is_tools_attribute_call(self, node: ast.Call) -> bool:
@@ -1044,19 +1139,19 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         Example::
 
             >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.dynamic_tools_aliases.add('tools_module')
             >>> visitor.is_getattr_tools_call(ast.parse('getattr(tools_module, "x")').body[0].value)
             True
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.is_getattr_tools_call(ast.parse('getattr(tools, "x")').body[0].value)
+            False
         """
         if dotted_name(node.func) != "getattr" or not node.args:
             return False
         target = node.args[0]
         if isinstance(target, ast.Name):
             name = target.id
-            if name in self.tools_aliases or name in self.dynamic_tools_aliases:
-                return True
-            return (
-                name == "tools" or name == "tools_module" or name.startswith("tools_")
-            )
+            return name in self.tools_aliases or name in self.dynamic_tools_aliases
         return False
 
     def _attribute_root_name(self, node: ast.AST) -> Optional[str]:
@@ -1141,6 +1236,37 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             )
         return False
 
+    def is_command_call_running_source_install(self, node: ast.Call) -> bool:
+        """
+        Return whether a subprocess or shell call performs a source install.
+
+        :param node: Call expression node.
+        :type node: ast.Call
+        :return: ``True`` for command calls such as ``pip install .``.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.is_command_call_running_source_install(ast.parse('subprocess.run(["python", "-m", "pip", "install", "."])').body[0].value)
+            True
+        """
+        if self.is_subprocess_command_call(node):
+            return any(
+                self.expression_or_alias_runs_source_install_command(command)
+                for command in self.subprocess_command_arguments(node)
+            )
+        os_method = self.os_command_method_name(node)
+        if os_method is not None:
+            command_args = (
+                node.args[1:] if os_method.startswith("spawn") else node.args[:1]
+            )
+            return any(
+                self.expression_or_alias_runs_source_install_command(command)
+                for command in command_args
+            )
+        return False
+
     def subprocess_command_arguments(self, node: ast.Call) -> List[ast.AST]:
         """
         Return command argument expressions for a subprocess call.
@@ -1160,7 +1286,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         if node.args:
             return [node.args[0]]
         for keyword in node.keywords:
-            if keyword.arg == "args":
+            if keyword.arg in {"args", "argv"}:
                 return [keyword.value]
         return []
 
@@ -1189,6 +1315,30 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         ):
             return True
         return expression_runs_tools_script(node)
+
+    def expression_or_alias_runs_source_install_command(self, node: ast.AST) -> bool:
+        """
+        Return whether ``node`` is a source-install command or known alias.
+
+        :param node: Command expression node.
+        :type node: ast.AST
+        :return: ``True`` when the expression performs a source install.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.source_install_command_aliases.add('cmd')
+            >>> visitor.expression_or_alias_runs_source_install_command(ast.Name(id='cmd'))
+            True
+        """
+        if any(
+            isinstance(child, ast.Name)
+            and child.id in self.source_install_command_aliases
+            for child in ast.walk(node)
+        ):
+            return True
+        return expression_runs_source_install_command(node)
 
     def is_subprocess_command_call(self, node: ast.Call) -> bool:
         """
@@ -1257,6 +1407,65 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 return node.func.id
         return None
 
+    @property
+    def repo_root_parent_index(self) -> int:
+        """
+        Return the ``Path(__file__).parents`` index that reaches repo root.
+
+        :return: Parent index for this file's repository root.
+        :rtype: int
+
+        Example::
+
+            >>> TestBoundaryVisitor(Path('test/x.py'), '', set()).repo_root_parent_index
+            1
+        """
+        return len(self.path.parent.parts)
+
+    @property
+    def repo_root_dirname_depth(self) -> int:
+        """
+        Return nested ``dirname`` depth needed to reach repo root.
+
+        :return: Number of ``dirname`` hops from ``__file__`` to repo root.
+        :rtype: int
+
+        Example::
+
+            >>> TestBoundaryVisitor(Path('test/x.py'), '', set()).repo_root_dirname_depth
+            2
+        """
+        return self.repo_root_parent_index + 1
+
+    def file_parents_expr_reaches_repo_root(self, node: ast.AST) -> bool:
+        """
+        Return whether a ``__file__`` parent expression reaches repo root.
+
+        :param node: AST node to inspect.
+        :type node: ast.AST
+        :return: ``True`` when the parent expression reaches this file's repo root.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('test/sub/x.py'), '', set())
+            >>> visitor.file_parents_expr_reaches_repo_root(ast.parse('Path(__file__).parents[0]').body[0].value)
+            False
+            >>> visitor.file_parents_expr_reaches_repo_root(ast.parse('Path(__file__).parents[2]').body[0].value)
+            True
+        """
+        for child in ast.walk(node):
+            if isinstance(child, ast.Subscript):
+                value = child.value
+                if isinstance(value, ast.Attribute) and value.attr == "parents":
+                    if node_contains_name(value.value, "__file__"):
+                        index = subscript_integer(child)
+                        if index is not None and index >= self.repo_root_parent_index:
+                            return True
+            if parent_chain_depth(child) >= self.repo_root_dirname_depth:
+                return True
+        return False
+
     def is_repo_root_tainted(self, node: ast.AST) -> bool:
         """
         Return whether an expression is rooted at the repository directory.
@@ -1274,10 +1483,10 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         """
         if isinstance(node, ast.Name):
             return node.id in self.repo_root_aliases or is_repo_root_name(node.id)
-        if is_file_parents_expr(node):
+        if self.file_parents_expr_reaches_repo_root(node):
             return True
         if isinstance(node, ast.Call):
-            if self.os_path_dirname_depth(node) >= 2:
+            if self.os_path_dirname_depth(node) >= self.repo_root_dirname_depth:
                 return True
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
             return self.is_repo_root_tainted(node.left) or self.is_repo_root_tainted(

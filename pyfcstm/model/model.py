@@ -2724,9 +2724,10 @@ def parse_dsl_node_to_state_machine(
         owner_node: Optional[dsl_nodes.StateDefinition] = None,
     ) -> State:
         current_path = tuple((*current_path, node.name))
-        if node.name.startswith(_COMBO_STATE_PREFIX) and not (
-            _is_exported_combo_pseudo_node(node, owner_node, current_path[:-1])
-        ):
+        is_exported_combo_pseudo = _is_exported_combo_pseudo_node(
+            node, owner_node, current_path[:-1]
+        )
+        if node.name.startswith(_COMBO_STATE_PREFIX) and not is_exported_combo_pseudo:
             sink.emit(
                 ModelDiagnostic(
                     code="E_COMBO_RESERVED_STATE_NAME",
@@ -3179,6 +3180,8 @@ def parse_dsl_node_to_state_machine(
             named_functions=named_functions,
             _span=_node_span(node),
         )
+        if is_exported_combo_pseudo:
+            my_state._generated_combo_pseudo = True
         if my_state.is_pseudo and not my_state.is_leaf_state:
             sink.emit(
                 ModelDiagnostic(
@@ -4184,11 +4187,13 @@ def parse_dsl_node_to_state_machine(
                 if id(candidate) in processed_combo_transition_ids:
                     j += 1
                     continue
+
+                candidate_projection_key = _combo_projection_key(candidate)
+                if candidate_projection_key != projection_key:
+                    j += 1
+                    continue
+
                 if not _is_combo_transition(candidate):
-                    if _combo_projection_key(candidate) == projection_key:
-                        break
-                    break
-                if _combo_projection_key(candidate) != projection_key:
                     break
                 if not _transition_endpoints_usable(candidate):
                     j += 1

@@ -392,7 +392,7 @@ class TestComboModelExpansion:
             prefix_edges[1].combo_priority_run_identity
         )
 
-    def test_different_chooser_transition_breaks_physical_combo_run(self):
+    def test_different_chooser_transition_does_not_break_logical_combo_run(self):
         model = _build_model(
             """
             state Root {
@@ -408,28 +408,65 @@ class TestComboModelExpansion:
             """
         )
 
-        indexed_transitions = list(enumerate(model.root_state.transitions))
-        plain_index = next(
-            index
-            for index, item in indexed_transitions
-            if item.from_state == "S2" and item.to_state == "S4"
+        transitions = model.root_state.transitions
+        assert any(
+            item.from_state == "S2" and item.to_state == "S4" for item in transitions
         )
         s1_prefix_edges = [
-            (index, item)
-            for index, item in indexed_transitions
+            item
+            for item in transitions
             if item.from_state == "S1"
             and item.combo_origin_refs
             and item.combo_origin_refs[0].role == "prefix"
         ]
 
-        assert len(s1_prefix_edges) == 2
-        assert s1_prefix_edges[0][0] < plain_index < s1_prefix_edges[1][0]
-        assert s1_prefix_edges[0][1].to_state != s1_prefix_edges[1][1].to_state
+        assert len(s1_prefix_edges) == 1
+        assert len(s1_prefix_edges[0].combo_origin_refs) == 2
 
         runtime = SimulationRuntime(model)
         runtime.cycle()
         runtime.cycle(["Root.S1.E1", "Root.S1.E3"])
         assert runtime.current_state.path == ("Root", "S3")
+
+    def test_interleaved_different_chooser_transition_does_not_rename_prefix(self):
+        base = _build_model(
+            """
+            state Root {
+                state S1;
+                state S2;
+                state S3;
+                state S4;
+                [*] -> S1;
+                S1 -> S2 :: E1 + E2;
+                S1 -> S3 :: E1 + E3;
+                S2 -> S4 :: Other;
+            }
+            """
+        )
+        inserted = _build_model(
+            """
+            state Root {
+                state S1;
+                state S2;
+                state S3;
+                state S4;
+                [*] -> S1;
+                S1 -> S2 :: E1 + E2;
+                S2 -> S4 :: Other;
+                S1 -> S3 :: E1 + E3;
+            }
+            """
+        )
+
+        def _combo_names(model):
+            return [
+                state.name
+                for state in model.root_state.substates.values()
+                if state.is_pseudo
+            ]
+
+        assert _combo_names(base) == _combo_names(inserted)
+        assert len(_combo_names(inserted)) == 1
 
     def test_identical_combos_reuse_pseudo_and_emit_terminal_edges(self):
         model = _build_model(
@@ -488,6 +525,31 @@ class TestComboModelExpansion:
         runtime.cycle()
         runtime.cycle(["Root.A.E1", "Root.A.E2"])
         assert runtime.current_state.path == ("Root", "B")
+
+    def test_generated_combo_pseudo_ast_export_can_round_trip_repeatedly(self):
+        model = _build_model(
+            """
+            state Root {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B :: E1 + E2;
+            }
+            """
+        )
+
+        first_round_tripped = parse_dsl_node_to_state_machine(model.to_ast_node())
+        second_round_tripped = parse_dsl_node_to_state_machine(
+            first_round_tripped.to_ast_node()
+        )
+
+        assert [
+            item.name
+            for item in second_round_tripped.root_state.substates.values()
+            if item.is_pseudo
+        ] == [
+            item.name for item in model.root_state.substates.values() if item.is_pseudo
+        ]
 
     def test_generated_combo_pseudo_text_export_uses_reserved_prefix(self):
         model = _build_model(

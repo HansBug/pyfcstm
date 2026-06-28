@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "C/C++ to Z3 numeric alignment contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mode",
+    "languages",
+    "source_mapping_sha256",
+    "render_mapping_sha256",
+    "python_z3_baseline_sha256",
+    "c_smoke_facts_sha256",
+    "cpp_smoke_facts_sha256",
+    "generator",
+    "repository",
+    "contract_fields",
+    "render_paths",
+    "coverage",
+    "contracts",
+    "representative_notes"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "mode": {"const": "c-cpp-z3-alignment"},
+    "languages": {
+      "type": "array",
+      "minItems": 2,
+      "items": {"type": "string", "enum": ["c", "cpp"]}
+    },
+    "source_mapping_sha256": {"$ref": "#/$defs/sha256"},
+    "render_mapping_sha256": {"$ref": "#/$defs/sha256"},
+    "python_z3_baseline_sha256": {"$ref": "#/$defs/sha256"},
+    "c_smoke_facts_sha256": {"$ref": "#/$defs/sha256"},
+    "cpp_smoke_facts_sha256": {"$ref": "#/$defs/sha256"},
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tool",
+        "research_path",
+        "source_commit",
+        "source_commit_policy",
+        "determinism"
+      ],
+      "properties": {
+        "tool": {"type": "string"},
+        "research_path": {"type": "string"},
+        "source_commit": {"type": ["string", "null"]},
+        "source_commit_policy": {"type": "string"},
+        "determinism": {"type": "string"}
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "root",
+        "render_mapping_snapshot",
+        "python_z3_baseline_snapshot",
+        "schema_path"
+      ],
+      "properties": {
+        "root": {"type": "string"},
+        "render_mapping_snapshot": {"type": "string"},
+        "python_z3_baseline_snapshot": {"type": "string"},
+        "schema_path": {"type": "string"}
+      }
+    },
+    "contract_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["core_triple", "required_fields", "outcome_enum", "shift_obligation_kinds"],
+      "properties": {
+        "core_triple": {"type": "array", "minItems": 3, "items": {"type": "string"}},
+        "required_fields": {"type": "array", "minItems": 10, "items": {"type": "string"}},
+        "outcome_enum": {"type": "array", "minItems": 7, "items": {"$ref": "#/$defs/outcome"}},
+        "shift_obligation_kinds": {"type": "array", "minItems": 4, "items": {"type": "string"}}
+      }
+    },
+    "render_paths": {
+      "type": "array",
+      "minItems": 6,
+      "items": {"$ref": "#/$defs/render_path"}
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operators", "operator_families", "render_paths", "note"],
+      "properties": {
+        "operators": {"type": "array", "minItems": 20, "items": {"type": "string"}},
+        "operator_families": {"type": "array", "minItems": 8, "items": {"type": "string"}},
+        "render_paths": {"type": "array", "minItems": 6, "items": {"type": "string"}},
+        "note": {"type": "string"}
+      }
+    },
+    "contracts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/contract"}
+    },
+    "representative_notes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/note"}
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "compile_failed",
+        "exact",
+        "exact_with_obligations",
+        "profile_dependent",
+        "runtime_trap",
+        "ub",
+        "unsupported"
+      ]
+    },
+    "render_path": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path_id",
+        "language",
+        "compile_language",
+        "lang_style",
+        "expression_core_language",
+        "mapping_sources",
+        "template_name",
+        "wrapper_language"
+      ],
+      "properties": {
+        "path_id": {"type": "string"},
+        "language": {"type": "string"},
+        "compile_language": {"type": "string"},
+        "lang_style": {"type": "string"},
+        "expression_core_language": {"type": "string"},
+        "mapping_sources": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "template_name": {"type": ["string", "null"]},
+        "wrapper_language": {"type": ["string", "null"]}
+      }
+    },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_id",
+        "semantic_case_id",
+        "render_path",
+        "language",
+        "compile_language",
+        "mapping_sources",
+        "operator",
+        "operator_family",
+        "fcstm_expression",
+        "render_expression",
+        "render_status",
+        "target_semantics",
+        "definedness",
+        "z3_sort",
+        "z3_profile",
+        "value_expr",
+        "obligations",
+        "outcome",
+        "evidence",
+        "counterexamples"
+      ],
+      "properties": {
+        "contract_id": {"type": "string"},
+        "semantic_case_id": {"type": "string"},
+        "render_path": {"type": "string"},
+        "language": {"type": "string"},
+        "compile_language": {"type": "string"},
+        "mapping_sources": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "operator": {"type": "string"},
+        "operator_family": {"type": "string"},
+        "fcstm_expression": {"type": "string"},
+        "render_expression": {"type": "string"},
+        "render_status": {"type": "string"},
+        "target_semantics": {"type": "string"},
+        "definedness": {"type": "string"},
+        "z3_sort": {"type": "string"},
+        "z3_profile": {"type": "string"},
+        "value_expr": {"type": "string"},
+        "obligations": {"type": "array", "items": {"$ref": "#/$defs/obligation"}},
+        "outcome": {"$ref": "#/$defs/outcome"},
+        "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}},
+        "counterexamples": {"type": "array", "items": {"$ref": "#/$defs/counterexample"}}
+      }
+    },
+    "obligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "predicate", "trigger", "evidence"],
+      "properties": {
+        "kind": {"type": "string"},
+        "predicate": {"type": "string"},
+        "trigger": {"type": "string"},
+        "evidence": {"type": "string"}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "source", "summary"],
+      "properties": {
+        "kind": {"type": "string"},
+        "source": {"type": "string"},
+        "summary": {"type": "string"}
+      }
+    },
+    "counterexample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case_id", "values", "expected_issue", "reproduction"],
+      "properties": {
+        "case_id": {"type": "string"},
+        "values": {"type": "object"},
+        "expected_issue": {"type": "string"},
+        "reproduction": {"type": "string"}
+      }
+    },
+    "note": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["topic", "summary"],
+      "properties": {
+        "topic": {"type": "string"},
+        "summary": {"type": "string"}
+      }
+    }
+  }
+}

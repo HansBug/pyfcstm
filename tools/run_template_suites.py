@@ -25,7 +25,7 @@ import os
 import shlex
 import subprocess
 import sys
-from typing import Iterable, List, Mapping, MutableMapping, Optional, Sequence
+from typing import Callable, Iterable, List, Mapping, MutableMapping, Optional, Sequence
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _REPO_ROOT not in sys.path:
@@ -323,9 +323,16 @@ def build_template_pytest_command(
         ['-m', 'pytest', 'test/template/python']
     """
     targets = expand_template_suite_targets(selected_suites)
+    native_targets = []
     if run_native_toolchain:
         for suite in selected_suites:
-            targets.extend(_NATIVE_TOOLCHAIN_TARGETS_BY_SUITE.get(suite, ()))
+            native_targets.extend(_NATIVE_TOOLCHAIN_TARGETS_BY_SUITE.get(suite, ()))
+        if not native_targets:
+            raise TemplateSuiteRunnerError(
+                "native toolchain opt-in requires at least one selected "
+                "C-family suite: c, c_poll, cpp, or cpp_poll"
+            )
+        targets.extend(native_targets)
         targets = _ordered_targets(targets)
     if not targets:
         raise TemplateSuiteRunnerError("no template pytest targets selected")
@@ -400,6 +407,8 @@ def _runner_environment(run_native_toolchain: bool) -> MutableMapping[str, str]:
     env = os.environ.copy()
     env["UNITTEST"] = "1"
     env["SKIP_SLOW_TESTS"] = ""
+    env.pop("PYFCSTM_TEMPLATE_SUITES", None)
+    env.pop("PYFCSTM_SKIP_TEMPLATE_SUITES", None)
     if run_native_toolchain:
         env["PYFCSTM_RUN_NATIVE_TOOLCHAIN"] = "1"
     return env
@@ -422,7 +431,15 @@ def _collect_targets_exist(repo_root: str, targets: Sequence[str]) -> None:
         >>> callable(_collect_targets_exist)
         True
     """
-    command = [sys.executable, "-m", "pytest", "--collect-only", "-q"]
+    command = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "--collect-only",
+        "-q",
+        "-m",
+        "unittest",
+    ]
     command.extend(targets)
     completed = subprocess.run(
         command,
@@ -439,6 +456,30 @@ def _collect_targets_exist(repo_root: str, targets: Sequence[str]) -> None:
         )
 
 
+def _run_with_suite_environment_cleared(func: Callable[[], None]) -> None:
+    """
+    Run a callable while suite selection environment variables are hidden.
+
+    :param func: Zero-argument callable to execute.
+    :type func: typing.Callable[[], None]
+    :return: ``None``.
+    :rtype: None
+
+    Example::
+
+        >>> _run_with_suite_environment_cleared(lambda: None)
+    """
+    saved_include = os.environ.pop("PYFCSTM_TEMPLATE_SUITES", None)
+    saved_skip = os.environ.pop("PYFCSTM_SKIP_TEMPLATE_SUITES", None)
+    try:
+        func()
+    finally:
+        if saved_include is not None:
+            os.environ["PYFCSTM_TEMPLATE_SUITES"] = saved_include
+        if saved_skip is not None:
+            os.environ["PYFCSTM_SKIP_TEMPLATE_SUITES"] = saved_skip
+
+
 def run_self_check() -> None:
     """
     Run the template suite runner self-check.
@@ -451,6 +492,22 @@ def run_self_check() -> None:
     Example::
 
         >>> run_self_check()
+    """
+    _run_with_suite_environment_cleared(_run_self_check_cases)
+
+
+def _run_self_check_cases() -> None:
+    """
+    Execute runner self-check cases with suite env vars cleared.
+
+    :return: ``None``.
+    :rtype: None
+    :raises TemplateSuiteRunnerError: If any runner mapping is invalid.
+    :raises TemplateSuiteDetectionError: If detector compatibility regresses.
+
+    Example::
+
+        >>> _run_self_check_cases()
     """
     repo_root = _repo_root()
     for token in LEGAL_INPUT_SUITES:
@@ -490,7 +547,9 @@ def run_self_check() -> None:
                 )
             )
     default_targets = expand_template_suite_targets(("default",))
-    for target in ("test/template/python",) + _CPP_WRAPPER_SMOKE_TARGETS:
+    for target in _TEMPLATE_CORE_TARGETS + (
+        "test/template/python",
+    ) + _CPP_WRAPPER_SMOKE_TARGETS:
         if target not in default_targets:
             raise TemplateSuiteRunnerError(
                 "default suite does not include expected target: {0}".format(target)
@@ -523,6 +582,14 @@ def run_self_check() -> None:
     if "--run-native-toolchain" not in native_command:
         raise TemplateSuiteRunnerError(
             "native toolchain opt-in did not pass pytest's explicit opt-in flag"
+        )
+    try:
+        build_template_pytest_command(["python"], run_native_toolchain=True)
+    except TemplateSuiteRunnerError:
+        pass
+    else:
+        raise TemplateSuiteRunnerError(
+            "native toolchain opt-in without a C-family suite did not fail"
         )
     try:
         _selected_suites_from_inputs([], "", "local", "java", None)
@@ -583,7 +650,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--run-native-toolchain",
         action="store_true",
-        help="Append explicit native toolchain tests and pass pytest opt-in.",
+        help=(
+            "Append explicit native toolchain tests for selected C-family "
+            "suites and pass pytest opt-in."
+        ),
     )
     parser.add_argument(
         "--no-package",
@@ -753,6 +823,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 4, "run_template_suites: cannot package templates: {0}\n".format(err)
             )
 
+    sys.stdout.flush()
     return subprocess.call(command, cwd=repo_root, env=_runner_environment(run_native))
 
 

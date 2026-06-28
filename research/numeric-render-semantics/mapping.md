@@ -22,3 +22,12 @@
 ## PR-3 Python/Z3 baseline 使用方式
 
 `tools/numeric_render_probe.py python-z3-baseline` 会读取 live R0 mapping，并在 snapshot 中记录 `source_mapping_sha256` / `render_mapping_sha256`。如果 R0 mapping digest 变化，`python-z3-baseline --check` 会要求重新生成 Python/Z3 baseline snapshot，避免 PR-6 / PR-7 读取过期的 render path 事实。
+
+
+## PR-4 Java/Rust smoke 使用方式
+
+`tools/numeric_render_probe.py java-rust-smoke` 继续默认读取 `research/numeric-render-semantics/results/snapshots/render_mapping.json`，并在 payload 中记录 `source_mapping_sha256` / `render_mapping_sha256`，以便后续 `--check` 对 committed R0 mapping 和 live render mapping 做 drift 校验。R0 snapshot 已包含 builtin `java` / `rust` expression styles，但当前 repository-source templates 只有 `c`、`c_poll`、`cpp`、`cpp_poll` 和 `python`；没有 `templates/java` / `templates/rust`。因此 PR-4 的 Java/Rust facts 是 native smoke facts，不是 template-generated facts。
+
+Java/Rust case 仍使用 PR-6 shared join key：`case_id`、`operator`、`fcstm_expression`、`render_path`、`render_expression`。其中 `render_path` 使用 `native_java` 或 `native_rust`，并通过 `native_only=true` / `native_only_reason` 明确说明没有当前模板路径。后续若新增 Java/Rust built-in template，应新增 template render path，不应回写或伪造 PR-4 native-only facts。
+
+官方资料摘要与 mapping 的关系也固定下来：Java case 的 source notes 引用 Java Language Specification（JLS）对 integer overflow、division / remainder、shift count masking 和 narrowing conversion 的规定，并引用 Java SE `Math.*Exact`（例如 `Math.addExact`、`Math.multiplyExact`）作为 checked arithmetic reference；Rust case 的 source notes 引用 Rust Reference 对 overflow、debug / release / `overflow-checks`、division / remainder、shift 和 cast 的规定，并引用 Rust standard library `wrapping_*`、`checked_*`、`overflowing_*`、`saturating_*` 作为显式语义族。

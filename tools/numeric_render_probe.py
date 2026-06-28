@@ -6,8 +6,7 @@ native workloads. The C-family smoke modes compile and execute small programs
 whose expressions are rendered from the repository's R0
 ``render_mapping.json`` snapshot, so the probe follows the same renderer and
 template facts that later exhaustive harnesses will use. Shared JSON, mapping,
-and command-dispatch helpers are mode-neutral. The Python/Z3 baseline mode joins the same runner without replacing the
-C-family modes. Smoke case identifiers are render-path scoped; cross-artifact
+and command-dispatch helpers are mode-neutral. The Python/Z3 baseline and Java/Rust native smoke modes join the same runner without replacing the C-family modes. Smoke case identifiers are render-path scoped; cross-artifact
 semantic joins should prefer the rendered FCSTM operator and source expression,
 or a future explicit semantic identifier, while render-path fields distinguish
 target-language outputs for the same semantic expression.
@@ -18,10 +17,12 @@ The module contains:
 * :func:`build_c_family_smoke_report` - Run C or C++ smoke cases from R0 mapping.
 * :func:`build_python_z3_baseline` - Build the Python/Z3 capability baseline.
 * :func:`check_python_z3_baseline` - Validate the generated or committed baseline.
+* :func:`build_java_rust_smoke_report` - Build Java/Rust native smoke facts.
+* :func:`check_java_rust_smoke` - Validate Java/Rust smoke contract invariants.
 * :func:`validate_probe_summary` - Validate the lightweight probe-summary contract.
 * :func:`_stable_json` - Serialize research artifacts consistently.
 * :func:`main` - Command-line entry point with ``env``, ``c-smoke``,
-  ``cpp-smoke`` and ``python-z3-baseline`` modes.
+  ``cpp-smoke``, ``python-z3-baseline``, ``java-smoke``, ``rust-smoke`` and ``java-rust-smoke`` modes.
 
 Example::
 
@@ -89,6 +90,14 @@ _PYTHON_Z3_BASELINE_SNAPSHOT = (
 _PYTHON_Z3_BASELINE_SCHEMA = "%s/schemas/python_z3_baseline.schema.json" % (
     _RESEARCH_PATH
 )
+_JAVA_RUST_SMOKE_SNAPSHOT = "%s/results/snapshots/java_rust_smoke.json" % (
+    _RESEARCH_PATH
+)
+_JAVA_RUST_SMOKE_SCHEMA = "%s/schemas/java_rust_smoke.schema.json" % (
+    _RESEARCH_PATH
+)
+_NATIVE_ONLY_REASON = "no_java_or_rust_template_in_current_repository"
+_JAVA_RUST_MODES = {"java-smoke", "rust-smoke", "java-rust-smoke"}
 _COMMANDS = [
     "python",
     "git",
@@ -232,6 +241,64 @@ class RenderPath:
     mapping_sources: Tuple[str, ...]
     template_name: Optional[str] = None
     wrapper_language: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class NativeSmokeCase:
+    """
+    Describe one Java or Rust native smoke case.
+
+    Java and Rust templates do not exist in the current repository, so these
+    cases are native runner facts that preserve the shared join-key shape used
+    by C-family smoke reports and the Python/Z3 baseline.
+
+    :param case_id: Stable language-local case identifier.
+    :type case_id: str
+    :param language: Target language, either ``"java"`` or ``"rust"``.
+    :type language: str
+    :param operator: FCSTM operator or function family represented by the case.
+    :type operator: str
+    :param fcstm_expression: Closest FCSTM expression for cross-artifact joins.
+    :type fcstm_expression: str
+    :param render_expression: Native expression text used by the smoke program.
+    :type render_expression: str
+    :param native_api_family: Native semantic family, such as ``"plain-int32"``
+        or ``"checked"``.
+    :type native_api_family: str
+    :param source_note_ids: Official-source note ids supporting the case.
+    :type source_note_ids: Tuple[str, ...]
+    :param declarations: Target-language declarations emitted before the
+        expression.
+    :type declarations: str
+    :param a_value: Value passed as FCSTM-like variable ``A``.
+    :type a_value: Union[int, float]
+    :param b_value: Value passed as FCSTM-like variable ``B``.
+    :type b_value: Union[int, float]
+    :param profile: Primary profile for Java cases, defaults to ``None`` for
+        Rust cases that expand across multiple profiles.
+    :type profile: Optional[str], optional
+
+    Example::
+
+        >>> case = NativeSmokeCase(
+        ...     'add_overflow', 'java', '+', 'A + B', 'a + b',
+        ...     'plain-int32', ('jls-integer-overflow',), 'int a = 1; int b = 2;'
+        ... )
+        >>> case.operator
+        '+'
+    """
+
+    case_id: str
+    language: str
+    operator: str
+    fcstm_expression: str
+    render_expression: str
+    native_api_family: str
+    source_note_ids: Tuple[str, ...]
+    declarations: str
+    a_value: Union[int, float] = 0
+    b_value: Union[int, float] = 0
+    profile: Optional[str] = None
 
 
 def _command_version(path: str) -> Optional[str]:
@@ -947,6 +1014,958 @@ def _render_paths_for_mode(mode: str, mapping: Mapping[str, Any]) -> List[Render
     raise ValueError("Unsupported C-family smoke mode: %s" % mode)
 
 
+def _render_native_expr(expr_text: str, lang_style: str) -> str:
+    """
+    Render a numeric expression with a built-in native language style.
+
+    :param expr_text: FCSTM numeric expression text.
+    :type expr_text: str
+    :param lang_style: Built-in expression style, such as ``"java"`` or
+        ``"rust"``.
+    :type lang_style: str
+    :return: Rendered expression text.
+    :rtype: str
+
+    Example::
+
+        >>> _render_native_expr('A ** B', 'java')
+        'Math.pow(A, B)'
+    """
+    expr = parse_expr_from_string(expr_text, mode="numeric")
+    return render_expr_node(expr.to_ast_node(), lang_style=lang_style)
+
+
+def _official_source_notes(language: str) -> List[_JSON_OBJECT]:
+    """
+    Return official source notes for Java or Rust smoke probes.
+
+    :param language: ``"java"`` or ``"rust"``.
+    :type language: str
+    :return: Source-backed notes used by smoke cases.
+    :rtype: List[Dict[str, Any]]
+
+    Example::
+
+        >>> any(note['id'] == 'jls-integer-overflow' for note in _official_source_notes('java'))
+        True
+    """
+    if language == "java":
+        return [
+            {
+                "id": "jls-integer-overflow",
+                "source": "Java Language Specification, Java SE 21, chapter 15",
+                "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html",
+                "summary": "Java integer operators use fixed primitive widths; integer overflow wraps silently except where a library method such as Math.*Exact specifies an exception.",
+            },
+            {
+                "id": "jls-div-rem",
+                "source": "Java Language Specification, Java SE 21, sections 15.17.2 and 15.17.3",
+                "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html#jls-15.17.2",
+                "summary": "Integer division and remainder throw ArithmeticException on zero divisors; remainder has the dividend sign.",
+            },
+            {
+                "id": "jls-shift-mask",
+                "source": "Java Language Specification, Java SE 21, section 15.19",
+                "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html#jls-15.19",
+                "summary": "Java masks int shift counts to five low bits and long shift counts to six low bits.",
+            },
+            {
+                "id": "jls-narrowing-conversion",
+                "source": "Java Language Specification, Java SE 21, section 5.1.3",
+                "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-5.html#jls-5.1.3",
+                "summary": "Narrowing primitive conversions may lose high-order bits, precision or range.",
+            },
+            {
+                "id": "java-math-exact",
+                "source": "Java SE 21 java.lang.Math API",
+                "url": "https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Math.html",
+                "summary": "Math.*Exact methods provide checked integer arithmetic and throw ArithmeticException on overflow.",
+            },
+            {
+                "id": "java-math-floating",
+                "source": "Java SE 21 java.lang.Math API",
+                "url": "https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Math.html",
+                "summary": "Math.pow and Math.round expose floating-point math semantics that differ from pure fixed-width integer arithmetic.",
+            },
+        ]
+    if language == "rust":
+        return [
+            {
+                "id": "rust-reference-overflow",
+                "source": "Rust Reference: Expressions / operator overflow",
+                "url": "https://doc.rust-lang.org/reference/expressions/operator-expr.html#overflow",
+                "summary": "Rust integer overflow checking depends on debug assertions and overflow-checks settings; overflow can panic or wrap depending on profile.",
+            },
+            {
+                "id": "rust-reference-div-rem-shift",
+                "source": "Rust Reference: arithmetic and bitwise expressions",
+                "url": "https://doc.rust-lang.org/reference/expressions/operator-expr.html",
+                "summary": "Division by zero, remainder by zero and invalid shifts are checked error cases; shift and arithmetic behavior is profile-sensitive for overflow.",
+            },
+            {
+                "id": "rust-reference-cast",
+                "source": "Rust Reference: type cast expressions",
+                "url": "https://doc.rust-lang.org/reference/expressions/operator-expr.html#type-cast-expressions",
+                "summary": "Rust numeric casts use explicit `as` conversions with specified integer truncation or float conversion behavior.",
+            },
+            {
+                "id": "rust-std-overflowing-apis",
+                "source": "Rust standard library primitive integer methods",
+                "url": "https://doc.rust-lang.org/std/primitive.i32.html",
+                "summary": "Primitive integer methods expose wrapping_*, checked_*, overflowing_* and saturating_* semantic families.",
+            },
+            {
+                "id": "rust-std-float-methods",
+                "source": "Rust standard library primitive f64 methods",
+                "url": "https://doc.rust-lang.org/std/primitive.f64.html",
+                "summary": "Floating methods such as powf, round and signum use f64 semantics before any explicit integer cast or profile-specific wrapper.",
+            },
+        ]
+    raise ValueError("Unsupported official source language: %s" % language)
+
+
+def _java_smoke_cases() -> List[NativeSmokeCase]:
+    """
+    Return the Java native smoke case plan.
+
+    :return: Java smoke cases.
+    :rtype: List[NativeSmokeCase]
+
+    Example::
+
+        >>> any(case.case_id == 'math_add_exact_overflow' for case in _java_smoke_cases())
+        True
+    """
+    return [
+        NativeSmokeCase(
+            "int_add_overflow_wrap",
+            "java",
+            "+",
+            "A + B",
+            _render_native_expr("A + B", "java"),
+            "plain-int32",
+            ("jls-integer-overflow",),
+            "int A = Integer.MAX_VALUE;\n        int B = 1;",
+            2147483647,
+            1,
+            profile="java-int32",
+        ),
+        NativeSmokeCase(
+            "int_division_truncates",
+            "java",
+            "/",
+            "A / B",
+            _render_native_expr("A / B", "java"),
+            "plain-int32",
+            ("jls-div-rem",),
+            "int A = -7;\n        int B = 2;",
+            -7,
+            2,
+            profile="java-int32",
+        ),
+        NativeSmokeCase(
+            "int_remainder_dividend_sign",
+            "java",
+            "%",
+            "A % B",
+            _render_native_expr("A % B", "java"),
+            "plain-int32",
+            ("jls-div-rem",),
+            "int A = -7;\n        int B = 2;",
+            -7,
+            2,
+            profile="java-int32",
+        ),
+        NativeSmokeCase(
+            "division_by_zero_exception",
+            "java",
+            "/",
+            "A / B",
+            _render_native_expr("A / B", "java"),
+            "plain-int32",
+            ("jls-div-rem",),
+            "int A = 7;\n        int B = 0;",
+            7,
+            0,
+            profile="java-int32",
+        ),
+        NativeSmokeCase(
+            "bitwise_and_mask",
+            "java",
+            "&",
+            "A & B",
+            _render_native_expr("A & B", "java"),
+            "plain-int32",
+            ("jls-integer-overflow",),
+            "int A = 0b1010;\n        int B = 0b1100;",
+            10,
+            12,
+            profile="java-int32",
+        ),
+        NativeSmokeCase(
+            "unary_minus_min_wrap",
+            "java",
+            "unary-",
+            "-A",
+            _render_native_expr("-A", "java"),
+            "plain-int32",
+            ("jls-integer-overflow",),
+            "int A = Integer.MIN_VALUE;\n        int B = 0;",
+            -2147483648,
+            0,
+            profile="java-int32",
+        ),
+        NativeSmokeCase(
+            "shift_count_masking",
+            "java",
+            "<<",
+            "A << B",
+            _render_native_expr("A << B", "java"),
+            "plain-int32",
+            ("jls-shift-mask",),
+            "int A = 1;\n        int B = 32;",
+            1,
+            32,
+            profile="java-int32",
+        ),
+        NativeSmokeCase(
+            "narrowing_int_to_byte",
+            "java",
+            "cast",
+            "A",
+            "(byte) A",
+            "narrowing-cast",
+            ("jls-narrowing-conversion",),
+            "int A = 128;\n        int B = 0;",
+            128,
+            0,
+            profile="java-int8-cast",
+        ),
+        NativeSmokeCase(
+            "math_pow_promotes_double",
+            "java",
+            "**",
+            "A ** B",
+            _render_native_expr("A ** B", "java"),
+            "math-floating",
+            ("java-math-floating",),
+            "int A = 3;\n        int B = 2;",
+            3,
+            2,
+            profile="java-double-math",
+        ),
+        NativeSmokeCase(
+            "math_round_half_up",
+            "java",
+            "round",
+            "round(A)",
+            "Math.round(A)",
+            "math-floating",
+            ("java-math-floating",),
+            "double A = -2.5;\n        int B = 0;",
+            -2,
+            0,
+            profile="java-double-math",
+        ),
+        NativeSmokeCase(
+            "math_add_exact_overflow",
+            "java",
+            "+",
+            "A + B",
+            "Math.addExact(A, B)",
+            "checked-exact",
+            ("java-math-exact",),
+            "int A = Integer.MAX_VALUE;\n        int B = 1;",
+            2147483647,
+            1,
+            profile="java-int32-checked",
+        ),
+        NativeSmokeCase(
+            "math_multiply_exact_overflow",
+            "java",
+            "*",
+            "A * B",
+            "Math.multiplyExact(A, B)",
+            "checked-exact",
+            ("java-math-exact",),
+            "int A = 1073741824;\n        int B = 2;",
+            1073741824,
+            2,
+            profile="java-int32-checked",
+        ),
+        NativeSmokeCase(
+            "math_sign_missing",
+            "java",
+            "sign",
+            "sign(A)",
+            _render_native_expr("sign(A)", "java"),
+            "renderer-fallback",
+            ("java-math-exact",),
+            "int A = -9;\n        int B = 0;",
+            -9,
+            0,
+            profile="java-renderer-fallback",
+        ),
+    ]
+
+
+def _rust_smoke_cases() -> List[NativeSmokeCase]:
+    """
+    Return the Rust native smoke case plan.
+
+    :return: Rust smoke cases.
+    :rtype: List[NativeSmokeCase]
+
+    Example::
+
+        >>> any(case.case_id == 'checked_add_overflow' for case in _rust_smoke_cases())
+        True
+    """
+    return [
+        NativeSmokeCase(
+            "plain_i32_add_overflow",
+            "rust",
+            "+",
+            "A + B",
+            _render_native_expr("A + B", "rust"),
+            "plain-i32",
+            ("rust-reference-overflow",),
+            "let A: i32 = opaque_i32(i32::MAX);\n    let B: i32 = opaque_i32(1);",
+            2147483647,
+            1,
+        ),
+        NativeSmokeCase(
+            "plain_i32_division",
+            "rust",
+            "/",
+            "A / B",
+            _render_native_expr("A / B", "rust"),
+            "plain-i32",
+            ("rust-reference-div-rem-shift",),
+            "let A: i32 = opaque_i32(-7);\n    let B: i32 = opaque_i32(2);",
+            -7,
+            2,
+        ),
+        NativeSmokeCase(
+            "plain_i32_remainder",
+            "rust",
+            "%",
+            "A % B",
+            _render_native_expr("A % B", "rust"),
+            "plain-i32",
+            ("rust-reference-div-rem-shift",),
+            "let A: i32 = opaque_i32(-7);\n    let B: i32 = opaque_i32(2);",
+            -7,
+            2,
+        ),
+        NativeSmokeCase(
+            "plain_i32_division_by_zero",
+            "rust",
+            "/",
+            "A / B",
+            _render_native_expr("A / B", "rust"),
+            "plain-i32",
+            ("rust-reference-div-rem-shift",),
+            "let A: i32 = opaque_i32(7);\n    let B: i32 = opaque_i32(0);",
+            7,
+            0,
+        ),
+        NativeSmokeCase(
+            "plain_i32_bitwise_and",
+            "rust",
+            "&",
+            "A & B",
+            _render_native_expr("A & B", "rust"),
+            "plain-i32",
+            ("rust-reference-div-rem-shift",),
+            "let A: i32 = opaque_i32(0b1010);\n    let B: i32 = opaque_i32(0b1100);",
+            10,
+            12,
+        ),
+        NativeSmokeCase(
+            "plain_i32_unary_minus_min",
+            "rust",
+            "unary-",
+            "-A",
+            _render_native_expr("-A", "rust"),
+            "plain-i32",
+            ("rust-reference-overflow",),
+            "let A: i32 = opaque_i32(i32::MIN);\n    let B: i32 = opaque_i32(0);",
+            -2147483648,
+            0,
+        ),
+        NativeSmokeCase(
+            "plain_i32_shift_invalid",
+            "rust",
+            "<<",
+            "A << B",
+            _render_native_expr("A << B", "rust"),
+            "plain-i32",
+            ("rust-reference-div-rem-shift",),
+            "let A: i32 = opaque_i32(1);\n    let B: u32 = opaque_u32(32);",
+            1,
+            32,
+        ),
+        NativeSmokeCase(
+            "cast_i32_to_i8",
+            "rust",
+            "cast",
+            "A",
+            "A as i8",
+            "cast",
+            ("rust-reference-cast",),
+            "let A: i32 = opaque_i32(128);\n    let B: i32 = opaque_i32(0);",
+            128,
+            0,
+        ),
+        NativeSmokeCase(
+            "powf_promotes_f64",
+            "rust",
+            "**",
+            "A ** B",
+            _render_native_expr("A ** B", "rust"),
+            "math-floating",
+            ("rust-reference-cast", "rust-std-float-methods"),
+            "let A: i64 = opaque_i64(3);\n    let B: i64 = opaque_i64(2);",
+            3,
+            2,
+        ),
+        NativeSmokeCase(
+            "round_cast_i64",
+            "rust",
+            "round",
+            "round(A)",
+            _render_native_expr("round(A)", "rust"),
+            "math-floating",
+            ("rust-reference-cast", "rust-std-float-methods"),
+            "let A: i64 = opaque_i64(-2);\n    let B: i64 = opaque_i64(0);",
+            -2,
+            0,
+        ),
+        NativeSmokeCase(
+            "wrapping_add_overflow",
+            "rust",
+            "+",
+            "A + B",
+            "A.wrapping_add(B)",
+            "wrapping",
+            ("rust-std-overflowing-apis",),
+            "let A: i32 = opaque_i32(i32::MAX);\n    let B: i32 = opaque_i32(1);",
+            2147483647,
+            1,
+        ),
+        NativeSmokeCase(
+            "checked_add_overflow",
+            "rust",
+            "+",
+            "A + B",
+            "A.checked_add(B)",
+            "checked",
+            ("rust-std-overflowing-apis",),
+            "let A: i32 = opaque_i32(i32::MAX);\n    let B: i32 = opaque_i32(1);",
+            2147483647,
+            1,
+        ),
+        NativeSmokeCase(
+            "overflowing_add_overflow",
+            "rust",
+            "+",
+            "A + B",
+            "A.overflowing_add(B)",
+            "overflowing",
+            ("rust-std-overflowing-apis",),
+            "let A: i32 = opaque_i32(i32::MAX);\n    let B: i32 = opaque_i32(1);",
+            2147483647,
+            1,
+        ),
+        NativeSmokeCase(
+            "saturating_add_overflow",
+            "rust",
+            "+",
+            "A + B",
+            "A.saturating_add(B)",
+            "saturating",
+            ("rust-std-overflowing-apis",),
+            "let A: i32 = opaque_i32(i32::MAX);\n    let B: i32 = opaque_i32(1);",
+            2147483647,
+            1,
+        ),
+        NativeSmokeCase(
+            "float_sign_renderer_missing",
+            "rust",
+            "sign",
+            "sign(A)",
+            _render_native_expr("sign(A)", "rust"),
+            "renderer-fallback",
+            ("rust-reference-cast", "rust-std-float-methods"),
+            "let A: i64 = opaque_i64(-9);\n    let B: i64 = opaque_i64(0);",
+            -9,
+            0,
+        ),
+    ]
+
+
+def _native_case_base(
+    case: NativeSmokeCase,
+    profile: str,
+    render_path: str,
+) -> _JSON_OBJECT:
+    """
+    Build shared JSON fields for a native smoke case.
+
+    :param case: Native smoke case.
+    :type case: NativeSmokeCase
+    :param profile: Profile used for the concrete run.
+    :type profile: str
+    :param render_path: Native render path identifier.
+    :type render_path: str
+    :return: JSON-compatible base fields.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> case = _java_smoke_cases()[0]
+        >>> _native_case_base(case, 'java-int32', 'native_java')['native_only']
+        True
+    """
+    return {
+        "case_id": "%s:%s" % (profile, case.case_id),
+        "semantic_case_id": case.case_id,
+        "language": case.language,
+        "profile": profile,
+        "operator": case.operator,
+        "fcstm_expression": case.fcstm_expression,
+        "render_path": render_path,
+        "render_expression": case.render_expression,
+        "native_api_family": case.native_api_family,
+        "native_only": True,
+        "native_only_reason": _NATIVE_ONLY_REASON,
+        "inputs": {"A": case.a_value, "B": case.b_value},
+        "source_note_ids": list(case.source_note_ids),
+        "status": "unknown",
+        "outcome": "unknown",
+        "reason": None,
+        "commands": {},
+    }
+
+
+def _java_source_for_case(case: NativeSmokeCase) -> str:
+    """
+    Build Java source for one native smoke case.
+
+    :param case: Java smoke case.
+    :type case: NativeSmokeCase
+    :return: Java source text.
+    :rtype: str
+
+    Example::
+
+        >>> 'class ProbeCase' in _java_source_for_case(_java_smoke_cases()[0])
+        True
+    """
+    return (
+        """public final class ProbeCase {
+    public static void main(String[] args) {
+        %(declarations)s
+        try {
+            Object result = %(expression)s;
+            System.out.println(\"VALUE=\" + String.valueOf(result));
+        } catch (RuntimeException err) {
+            System.out.println(\"EXCEPTION=\" + err.getClass().getName() + \":\" + err.getMessage());
+            System.exit(10);
+        }
+    }
+}
+"""
+        % {
+            "declarations": case.declarations,
+            "expression": case.render_expression,
+        }
+    )
+
+
+def _rust_value_expression(case: NativeSmokeCase) -> str:
+    """
+    Return Rust formatting expression for a case result.
+
+    :param case: Rust smoke case.
+    :type case: NativeSmokeCase
+    :return: Rust expression that can be formatted with ``{:?}``.
+    :rtype: str
+
+    Example::
+
+        >>> _rust_value_expression(_rust_smoke_cases()[0])
+        'A + B'
+    """
+    return case.render_expression
+
+
+def _rust_source_for_case(case: NativeSmokeCase) -> str:
+    """
+    Build Rust source for one native smoke case.
+
+    :param case: Rust smoke case.
+    :type case: NativeSmokeCase
+    :return: Rust source text.
+    :rtype: str
+
+    Example::
+
+        >>> 'fn main' in _rust_source_for_case(_rust_smoke_cases()[0])
+        True
+    """
+    return (
+        """#![allow(non_snake_case)]
+#![allow(unused_variables)]
+
+#[inline(never)]
+fn opaque_i32(value: i32) -> i32 {
+    std::hint::black_box(value)
+}
+
+#[inline(never)]
+fn opaque_i64(value: i64) -> i64 {
+    std::hint::black_box(value)
+}
+
+#[inline(never)]
+fn opaque_u32(value: u32) -> u32 {
+    std::hint::black_box(value)
+}
+
+fn main() {
+    %(declarations)s
+    let result = %(expression)s;
+    println!(\"VALUE={:?}\", result);
+}
+"""
+        % {
+            "declarations": case.declarations,
+            "expression": _rust_value_expression(case),
+        }
+    )
+
+
+def _java_toolchain() -> _JSON_OBJECT:
+    """
+    Return Java toolchain metadata.
+
+    :return: Java and ``javac`` availability metadata.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> info = _java_toolchain()
+        >>> 'java' in info and 'javac' in info
+        True
+    """
+    return {"java": _probe_command("java"), "javac": _probe_command("javac")}
+
+
+def _rust_toolchain() -> _JSON_OBJECT:
+    """
+    Return Rust toolchain metadata.
+
+    :return: ``rustc`` and optional ``cargo`` availability metadata.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> info = _rust_toolchain()
+        >>> 'rustc' in info and 'cargo' in info
+        True
+    """
+    return {"rustc": _probe_command("rustc"), "cargo": _probe_command("cargo")}
+
+
+def _run_java_case(
+    case: NativeSmokeCase,
+    toolchain: Mapping[str, Any],
+    work_dir: Path,
+    timeout: int,
+) -> _JSON_OBJECT:
+    """
+    Compile and run one Java smoke case.
+
+    :param case: Java smoke case definition.
+    :type case: NativeSmokeCase
+    :param toolchain: Java toolchain metadata.
+    :type toolchain: Mapping[str, Any]
+    :param work_dir: Temporary work directory.
+    :type work_dir: pathlib.Path
+    :param timeout: Per-command timeout in seconds.
+    :type timeout: int
+    :return: JSON-compatible case result.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> result = _run_java_case(_java_smoke_cases()[0], {'java': {'available': False}, 'javac': {'available': False}}, Path('.').resolve(), 1)
+        >>> result['status']
+        'unavailable'
+    """
+    profile = case.profile or "java-int32"
+    result = _native_case_base(case, profile, "native_java")
+    if not toolchain.get("java", {}).get("available"):
+        result["status"] = "unavailable"
+        result["outcome"] = "unavailable"
+        result["reason"] = "java_unavailable"
+        return result
+
+    case_dir = work_dir / result["case_id"].replace(":", "__")
+    case_dir.mkdir(parents=True, exist_ok=True)
+    source_path = case_dir / "ProbeCase.java"
+    source_path.write_text(_java_source_for_case(case), encoding="utf-8")
+    result["source_path"] = str(source_path)
+    java_path = str(toolchain["java"]["path"])
+    if toolchain.get("javac", {}).get("available"):
+        javac_path = str(toolchain["javac"]["path"])
+        compile_result = _run_command(
+            [javac_path, str(source_path.name)], timeout, case_dir
+        )
+        result["commands"]["compile"] = compile_result
+        if compile_result["timed_out"] or compile_result["returncode"] != 0:
+            result["status"] = "compile_failed"
+            result["outcome"] = "compile_failed"
+            result["reason"] = "javac_failed"
+            return result
+        run_command = [java_path, "-cp", str(case_dir), "ProbeCase"]
+    else:
+        result["compile_strategy"] = "java_source_file_launcher"
+        run_command = [java_path, str(source_path.name)]
+    run_result = _run_command(run_command, timeout, case_dir)
+    result["commands"]["run"] = run_result
+    if run_result["timed_out"]:
+        result["status"] = "runtime_failed"
+        result["outcome"] = "runtime_trap"
+        result["reason"] = "java_timed_out"
+    elif run_result["returncode"] != 0:
+        if run_result.get("stdout", "").startswith("EXCEPTION="):
+            result["status"] = "runtime_failed"
+            result["outcome"] = "runtime_trap"
+            result["reason"] = "java_exception_or_nonzero"
+        else:
+            result["status"] = "compile_failed"
+            result["outcome"] = "compile_failed"
+            result["reason"] = "java_source_launcher_failed"
+    else:
+        result["status"] = "passed"
+        result["outcome"] = "observed"
+    result["stdout"] = run_result.get("stdout", "").strip()
+    result["stderr"] = run_result.get("stderr", "").strip()
+    return result
+
+
+def _snapshot_command_result(command: Any) -> Any:
+    """
+    Normalize command metadata for committed smoke snapshots.
+
+    :param command: Command result or nested JSON-like value.
+    :type command: Any
+    :return: Snapshot-safe value with local paths removed.
+    :rtype: Any
+
+    Example::
+
+        >>> _snapshot_command_result({'args': ['/tmp/case.java'], 'stdout': 'ok'})['args']
+        ['<path>']
+        >>> _snapshot_command_result({'stdout': 'EXCEPTION=/ by zero'})['stdout']
+        'EXCEPTION=/ by zero'
+    """
+    if isinstance(command, dict):
+        normalized = {}
+        for key, value in command.items():
+            if key == "duration_seconds":
+                normalized[key] = "<duration>"
+            elif key in {"path", "source_path", "cwd"}:
+                normalized[key] = "<path>" if value else value
+            else:
+                normalized[key] = _snapshot_command_result(value)
+        return normalized
+    if isinstance(command, list):
+        return ["<path>" if isinstance(item, str) and "/" in item else item for item in command]
+    return command
+
+
+def _snapshot_native_case(case: Mapping[str, Any]) -> _JSON_OBJECT:
+    """
+    Return a native smoke case suitable for committed snapshots.
+
+    :param case: Full local case result.
+    :type case: Mapping[str, Any]
+    :return: Snapshot case with local path details removed.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> _snapshot_native_case({'case_id': 'x', 'source_path': '/tmp/x'})['source_path']
+        '<local>'
+    """
+    snapshot = json.loads(_stable_json(case))
+    if "source_path" in snapshot:
+        snapshot["source_path"] = "<local>"
+    commands = snapshot.get("commands")
+    if isinstance(commands, dict):
+        snapshot["commands"] = _snapshot_command_result(commands)
+    return snapshot
+
+
+def _snapshot_toolchain_info(toolchain: Mapping[str, Any]) -> _JSON_OBJECT:
+    """
+    Return snapshot-safe toolchain metadata.
+
+    :param toolchain: Full toolchain metadata.
+    :type toolchain: Mapping[str, Any]
+    :return: Toolchain metadata with executable paths removed.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> _snapshot_toolchain_info({'java': {'path': '/usr/bin/java'}})['java']['path']
+        '<path>'
+    """
+    snapshot = json.loads(_stable_json(toolchain))
+    for item in snapshot.values():
+        if isinstance(item, dict) and "path" in item:
+            item["path"] = "<path>" if item.get("path") else None
+    return snapshot
+
+
+def _snapshot_native_report(report: Mapping[str, Any]) -> _JSON_OBJECT:
+    """
+    Return a Java or Rust report suitable for committed snapshots.
+
+    :param report: Full Java or Rust smoke report.
+    :type report: Mapping[str, Any]
+    :return: Snapshot-safe report.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> _snapshot_native_report({'toolchain': {'work_dir': '/tmp'}, 'cases': []})['toolchain']['work_dir']
+        '<local>'
+    """
+    snapshot = json.loads(_stable_json(report))
+    toolchain = snapshot.get("toolchain")
+    if isinstance(toolchain, dict):
+        if "work_dir" in toolchain:
+            toolchain["work_dir"] = "<local>"
+        if isinstance(toolchain.get("java"), dict):
+            toolchain["java"] = _snapshot_toolchain_info(toolchain["java"])
+        if isinstance(toolchain.get("rust"), dict):
+            toolchain["rust"] = _snapshot_toolchain_info(toolchain["rust"])
+    cases = snapshot.get("cases")
+    if isinstance(cases, list):
+        snapshot["cases"] = [
+            _snapshot_native_case(case) if isinstance(case, Mapping) else case
+            for case in cases
+        ]
+    return snapshot
+
+
+def _rust_profiles() -> List[_JSON_OBJECT]:
+    """
+    Return Rust profile definitions for smoke runs.
+
+    :return: Rust profile metadata.
+    :rtype: List[Dict[str, Any]]
+
+    Example::
+
+        >>> [profile['name'] for profile in _rust_profiles()][0]
+        'debug'
+    """
+    return [
+        {"name": "debug", "flags": ["-C", "opt-level=0"], "overflow_checks": "default_debug"},
+        {"name": "release", "flags": ["-C", "opt-level=3"], "overflow_checks": "default_release"},
+        {
+            "name": "overflow-checks-on",
+            "flags": ["-C", "opt-level=3", "-C", "overflow-checks=yes"],
+            "overflow_checks": "forced_on",
+        },
+        {
+            "name": "overflow-checks-off",
+            "flags": ["-C", "opt-level=0", "-C", "overflow-checks=no"],
+            "overflow_checks": "forced_off",
+        },
+    ]
+
+
+def _run_rust_case(
+    case: NativeSmokeCase,
+    profile: Mapping[str, Any],
+    toolchain: Mapping[str, Any],
+    work_dir: Path,
+    timeout: int,
+) -> _JSON_OBJECT:
+    """
+    Compile and run one Rust smoke case under a profile.
+
+    :param case: Rust smoke case definition.
+    :type case: NativeSmokeCase
+    :param profile: Rust profile metadata.
+    :type profile: Mapping[str, Any]
+    :param toolchain: Rust toolchain metadata.
+    :type toolchain: Mapping[str, Any]
+    :param work_dir: Temporary work directory.
+    :type work_dir: pathlib.Path
+    :param timeout: Per-command timeout in seconds.
+    :type timeout: int
+    :return: JSON-compatible case result.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> result = _run_rust_case(_rust_smoke_cases()[0], _rust_profiles()[0], {'rustc': {'available': False}}, Path('.').resolve(), 1)
+        >>> result['status']
+        'unavailable'
+    """
+    profile_name = str(profile["name"])
+    result = _native_case_base(case, profile_name, "native_rust")
+    result["overflow_checks"] = profile["overflow_checks"]
+    if not toolchain.get("rustc", {}).get("available"):
+        result["status"] = "unavailable"
+        result["outcome"] = "unavailable"
+        result["reason"] = "rustc_unavailable"
+        return result
+
+    case_dir = work_dir / result["case_id"].replace(":", "__")
+    case_dir.mkdir(parents=True, exist_ok=True)
+    source_path = case_dir / "case.rs"
+    binary_path = case_dir / "case"
+    source_path.write_text(_rust_source_for_case(case), encoding="utf-8")
+    result["source_path"] = str(source_path)
+    rustc_path = str(toolchain["rustc"]["path"])
+    compile_command = (
+        [rustc_path, str(source_path), "-o", str(binary_path)]
+        + list(profile.get("flags", []))
+    )
+    compile_result = _run_command(compile_command, timeout, case_dir)
+    result["commands"]["compile"] = compile_result
+    if compile_result["timed_out"] or compile_result["returncode"] != 0:
+        result["status"] = "compile_failed"
+        result["outcome"] = "compile_failed"
+        result["reason"] = "rustc_failed"
+        return result
+    run_result = _run_command([str(binary_path)], timeout, case_dir)
+    result["commands"]["run"] = run_result
+    if run_result["timed_out"]:
+        result["status"] = "runtime_failed"
+        result["outcome"] = "runtime_trap"
+        result["reason"] = "rust_timed_out"
+    elif run_result["returncode"] != 0:
+        result["status"] = "runtime_failed"
+        result["outcome"] = "runtime_trap"
+        result["reason"] = "rust_panic_or_nonzero"
+    else:
+        result["status"] = "passed"
+        result["outcome"] = "observed"
+    result["stdout"] = run_result.get("stdout", "").strip()
+    result["stderr"] = run_result.get("stderr", "").strip()
+    return result
+
+
 def _render_case_expression(case: NumericSmokeCase, render_path: RenderPath) -> str:
     """
     Render a smoke-case expression through the production expression renderer.
@@ -1500,6 +2519,582 @@ def validate_probe_summary(summary: Mapping[str, Any]) -> List[str]:
             errors.append(
                 "case %d has invalid status: %r" % (index, case.get("status"))
             )
+    return errors
+
+
+def _native_smoke_schema_path(mode: str) -> str:
+    """
+    Return the schema path for a Java/Rust smoke mode.
+
+    :param mode: Java/Rust smoke mode.
+    :type mode: str
+    :return: Repository-relative schema path.
+    :rtype: str
+
+    Example::
+
+        >>> _native_smoke_schema_path('java-rust-smoke').endswith('java_rust_smoke.schema.json')
+        True
+    """
+    if mode not in _JAVA_RUST_MODES:
+        raise ValueError("Unsupported Java/Rust smoke mode: %s" % mode)
+    return _JAVA_RUST_SMOKE_SCHEMA
+
+
+def _native_smoke_repository(mapping_file: Path, root: Path, mode: str) -> _JSON_OBJECT:
+    """
+    Build repository metadata for Java/Rust smoke payloads.
+
+    :param mapping_file: Resolved mapping snapshot path.
+    :type mapping_file: pathlib.Path
+    :param root: Repository root.
+    :type root: pathlib.Path
+    :param mode: Java/Rust smoke mode.
+    :type mode: str
+    :return: Repository metadata.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> repo = _native_smoke_repository(Path('.').resolve() / _DEFAULT_MAPPING_PATH, Path('.').resolve(), 'java-smoke')
+        >>> repo['root']
+        '.'
+    """
+    try:
+        mapping_snapshot = mapping_file.relative_to(root).as_posix()
+    except ValueError:
+        # ValueError: caller supplied an absolute mapping path outside the repo;
+        # keep it explicit because committed snapshots use repo-relative paths.
+        mapping_snapshot = str(mapping_file)
+    return {
+        "root": ".",
+        "render_mapping_snapshot": mapping_snapshot,
+        "schema_path": _native_smoke_schema_path(mode),
+    }
+
+
+def _native_smoke_generator(root: Path) -> _JSON_OBJECT:
+    """
+    Build generator metadata for Java/Rust smoke payloads.
+
+    :param root: Repository root.
+    :type root: pathlib.Path
+    :return: Generator metadata.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> _native_smoke_generator(Path('.').resolve())['tool']
+        'tools/numeric_render_probe.py'
+    """
+    return {
+        "tool": "tools/numeric_render_probe.py",
+        "research_path": _RESEARCH_PATH,
+        "source_commit": _git_commit(root),
+        "source_commit_policy": "Best-effort commit at generation time; schema, mapping digest and case-plan invariants are stable comparison keys.",
+        "determinism": "Native tool availability and compiler/runtime results are environment-dependent; --check validates shape and invariants rather than exact stdout.",
+    }
+
+
+def _build_java_smoke_report(
+    repo_root: Union[str, Path] = ".",
+    mapping_path: Union[str, Path] = _DEFAULT_MAPPING_PATH,
+    work_dir: Optional[Union[str, Path]] = None,
+    timeout: int = 10,
+) -> _JSON_OBJECT:
+    """
+    Build a Java native smoke report.
+
+    :param repo_root: Repository root path, defaults to the current directory.
+    :type repo_root: Union[str, pathlib.Path], optional
+    :param mapping_path: Render-mapping path, defaults to the committed R0
+        snapshot.
+    :type mapping_path: Union[str, pathlib.Path], optional
+    :param work_dir: Optional directory for temporary compile artifacts.
+    :type work_dir: Optional[Union[str, pathlib.Path]], optional
+    :param timeout: Per-command timeout in seconds, defaults to ``10``.
+    :type timeout: int, optional
+    :return: JSON-compatible Java smoke summary.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> report = _build_java_smoke_report(timeout=1)
+        >>> report['language']
+        'java'
+    """
+    root = _as_repo_path(repo_root)
+    mapping_file = _resolve_mapping_path(root, mapping_path)
+    mapping = _load_render_mapping(root, mapping_file)
+    mapping_sha = mapping.get("mapping_sha256")
+    if not isinstance(mapping_sha, str):
+        mapping_sha = ""
+    toolchain = _java_toolchain()
+    if work_dir is None:
+        temp_parent = root / _RESEARCH_PATH / "results" / "local"
+        temp_parent.mkdir(parents=True, exist_ok=True)
+        temp_context = tempfile.TemporaryDirectory(
+            prefix="java-smoke-", dir=str(temp_parent)
+        )
+        cleanup = temp_context.cleanup
+        active_work_dir = Path(temp_context.name)
+    else:
+        active_work_dir = Path(work_dir).resolve()
+        active_work_dir.mkdir(parents=True, exist_ok=True)
+        cleanup = None
+    try:
+        cases = [
+            _run_java_case(case, toolchain, active_work_dir, timeout)
+            for case in _java_smoke_cases()
+        ]
+        payload = {
+            "schema_version": 1,
+            "mode": "java-smoke",
+            "language": "java",
+            "source_mapping_sha256": mapping_sha,
+            "render_mapping_sha256": mapping_sha,
+            "summary_status": _summary_status(cases),
+            "generator": _native_smoke_generator(root),
+            "repository": _native_smoke_repository(mapping_file, root, "java-smoke"),
+            "toolchain": {
+                "java": toolchain,
+                "timeout_seconds": timeout,
+                "work_dir": str(active_work_dir),
+            },
+            "render_paths": [
+                {
+                    "path_id": "native_java",
+                    "language": "java",
+                    "kind": "native_only",
+                    "native_only_reason": _NATIVE_ONLY_REASON,
+                    "mapping_sources": ["builtin_expr_styles.styles.java"],
+                }
+            ],
+            "official_source_notes": _official_source_notes("java"),
+            "cases": cases,
+        }
+        errors = validate_java_rust_smoke(payload, expected_mode="java-smoke")
+        if errors:
+            payload["summary_status"] = "invalid"
+            payload["validation_errors"] = errors
+        return payload
+    finally:
+        if cleanup is not None:
+            cleanup()
+
+
+def _build_rust_smoke_report(
+    repo_root: Union[str, Path] = ".",
+    mapping_path: Union[str, Path] = _DEFAULT_MAPPING_PATH,
+    work_dir: Optional[Union[str, Path]] = None,
+    timeout: int = 10,
+) -> _JSON_OBJECT:
+    """
+    Build a Rust native smoke report.
+
+    :param repo_root: Repository root path, defaults to the current directory.
+    :type repo_root: Union[str, pathlib.Path], optional
+    :param mapping_path: Render-mapping path, defaults to the committed R0
+        snapshot.
+    :type mapping_path: Union[str, pathlib.Path], optional
+    :param work_dir: Optional directory for temporary compile artifacts.
+    :type work_dir: Optional[Union[str, pathlib.Path]], optional
+    :param timeout: Per-command timeout in seconds, defaults to ``10``.
+    :type timeout: int, optional
+    :return: JSON-compatible Rust smoke summary.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> report = _build_rust_smoke_report(timeout=1)
+        >>> report['language']
+        'rust'
+    """
+    root = _as_repo_path(repo_root)
+    mapping_file = _resolve_mapping_path(root, mapping_path)
+    mapping = _load_render_mapping(root, mapping_file)
+    mapping_sha = mapping.get("mapping_sha256")
+    if not isinstance(mapping_sha, str):
+        mapping_sha = ""
+    toolchain = _rust_toolchain()
+    if work_dir is None:
+        temp_parent = root / _RESEARCH_PATH / "results" / "local"
+        temp_parent.mkdir(parents=True, exist_ok=True)
+        temp_context = tempfile.TemporaryDirectory(
+            prefix="rust-smoke-", dir=str(temp_parent)
+        )
+        cleanup = temp_context.cleanup
+        active_work_dir = Path(temp_context.name)
+    else:
+        active_work_dir = Path(work_dir).resolve()
+        active_work_dir.mkdir(parents=True, exist_ok=True)
+        cleanup = None
+    try:
+        cases = []
+        profiles = _rust_profiles()
+        for profile in profiles:
+            for case in _rust_smoke_cases():
+                cases.append(
+                    _run_rust_case(case, profile, toolchain, active_work_dir, timeout)
+                )
+        payload = {
+            "schema_version": 1,
+            "mode": "rust-smoke",
+            "language": "rust",
+            "source_mapping_sha256": mapping_sha,
+            "render_mapping_sha256": mapping_sha,
+            "summary_status": _summary_status(cases),
+            "generator": _native_smoke_generator(root),
+            "repository": _native_smoke_repository(mapping_file, root, "rust-smoke"),
+            "toolchain": {
+                "rust": toolchain,
+                "profiles": profiles,
+                "timeout_seconds": timeout,
+                "work_dir": str(active_work_dir),
+            },
+            "render_paths": [
+                {
+                    "path_id": "native_rust",
+                    "language": "rust",
+                    "kind": "native_only",
+                    "native_only_reason": _NATIVE_ONLY_REASON,
+                    "mapping_sources": ["builtin_expr_styles.styles.rust"],
+                }
+            ],
+            "official_source_notes": _official_source_notes("rust"),
+            "cases": cases,
+        }
+        errors = validate_java_rust_smoke(payload, expected_mode="rust-smoke")
+        if errors:
+            payload["summary_status"] = "invalid"
+            payload["validation_errors"] = errors
+        return payload
+    finally:
+        if cleanup is not None:
+            cleanup()
+
+
+def build_java_rust_smoke_report(
+    mode: str,
+    repo_root: Union[str, Path] = ".",
+    mapping_path: Union[str, Path] = _DEFAULT_MAPPING_PATH,
+    work_dir: Optional[Union[str, Path]] = None,
+    timeout: int = 10,
+) -> _JSON_OBJECT:
+    """
+    Build Java, Rust or aggregate Java/Rust smoke reports.
+
+    :param mode: ``"java-smoke"``, ``"rust-smoke"`` or ``"java-rust-smoke"``.
+    :type mode: str
+    :param repo_root: Repository root path, defaults to the current directory.
+    :type repo_root: Union[str, pathlib.Path], optional
+    :param mapping_path: Render-mapping path, defaults to the committed R0
+        snapshot.
+    :type mapping_path: Union[str, pathlib.Path], optional
+    :param work_dir: Optional directory for temporary compile artifacts.
+    :type work_dir: Optional[Union[str, pathlib.Path]], optional
+    :param timeout: Per-command timeout in seconds, defaults to ``10``.
+    :type timeout: int, optional
+    :return: JSON-compatible smoke payload.
+    :rtype: Dict[str, Any]
+    :raises ValueError: If ``mode`` is not a Java/Rust smoke mode.
+
+    Example::
+
+        >>> report = build_java_rust_smoke_report('java-rust-smoke', timeout=1)
+        >>> report['mode']
+        'java-rust-smoke'
+    """
+    if mode == "java-smoke":
+        return _build_java_smoke_report(repo_root, mapping_path, work_dir, timeout)
+    if mode == "rust-smoke":
+        return _build_rust_smoke_report(repo_root, mapping_path, work_dir, timeout)
+    if mode != "java-rust-smoke":
+        raise ValueError("Unsupported Java/Rust smoke mode: %s" % mode)
+
+    root = _as_repo_path(repo_root)
+    mapping_file = _resolve_mapping_path(root, mapping_path)
+    java_work_dir = None
+    rust_work_dir = None
+    if work_dir is not None:
+        base_work_dir = Path(work_dir).resolve()
+        java_work_dir = base_work_dir / "java"
+        rust_work_dir = base_work_dir / "rust"
+    java_report = _snapshot_native_report(
+        _build_java_smoke_report(root, mapping_file, java_work_dir, timeout)
+    )
+    rust_report = _snapshot_native_report(
+        _build_rust_smoke_report(root, mapping_file, rust_work_dir, timeout)
+    )
+    mapping_sha = java_report.get("source_mapping_sha256", "")
+    languages = {"java": java_report, "rust": rust_report}
+    cases = list(java_report.get("cases", [])) + list(rust_report.get("cases", []))
+    payload = {
+        "schema_version": 1,
+        "mode": "java-rust-smoke",
+        "language": "java-rust",
+        "source_mapping_sha256": mapping_sha,
+        "render_mapping_sha256": mapping_sha,
+        "summary_status": _summary_status(cases),
+        "generator": _native_smoke_generator(root),
+        "repository": _native_smoke_repository(mapping_file, root, "java-rust-smoke"),
+        "toolchain": {
+            "java": java_report.get("toolchain", {}).get("java", {}),
+            "rust": rust_report.get("toolchain", {}).get("rust", {}),
+            "timeout_seconds": timeout,
+        },
+        "languages": languages,
+        "official_source_notes": {
+            "java": java_report.get("official_source_notes", []),
+            "rust": rust_report.get("official_source_notes", []),
+        },
+        "cases": cases,
+    }
+    errors = validate_java_rust_smoke(payload, expected_mode="java-rust-smoke")
+    if errors:
+        payload["summary_status"] = "invalid"
+        payload["validation_errors"] = errors
+    return payload
+
+
+def _required_native_case_ids(language: str) -> List[str]:
+    """
+    Return expected case ids for a Java or Rust smoke report.
+
+    :param language: ``"java"`` or ``"rust"``.
+    :type language: str
+    :return: Expected semantic case ids.
+    :rtype: List[str]
+
+    Example::
+
+        >>> 'shift_count_masking' in _required_native_case_ids('java')
+        True
+    """
+    if language == "java":
+        return [case.case_id for case in _java_smoke_cases()]
+    if language == "rust":
+        return [case.case_id for case in _rust_smoke_cases()]
+    raise ValueError("Unsupported native case language: %s" % language)
+
+
+def _validate_native_cases(
+    cases: Any, language: str, path: str, require_all_profiles: bool = False
+) -> List[str]:
+    """
+    Validate native smoke cases for shared join-key compatibility.
+
+    :param cases: Case list to validate.
+    :type cases: Any
+    :param language: Expected language.
+    :type language: str
+    :param path: Human-readable path.
+    :type path: str
+    :param require_all_profiles: Whether Rust profile coverage must be checked.
+    :type require_all_profiles: bool, optional
+    :return: Validation diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> _validate_native_cases([], 'java', '$.cases')[:1]
+        ['$.cases must be a non-empty list']
+    """
+    errors: List[str] = []
+    if not isinstance(cases, list) or not cases:
+        return ["%s must be a non-empty list" % path]
+    required_fields = {
+        "case_id",
+        "operator",
+        "fcstm_expression",
+        "render_path",
+        "render_expression",
+        "language",
+        "profile",
+        "status",
+        "outcome",
+        "native_only",
+        "native_only_reason",
+        "native_api_family",
+        "source_note_ids",
+    }
+    seen_semantic_ids = set()
+    profile_seen: Dict[str, set] = {}
+    allowed_statuses = {
+        "passed",
+        "compile_failed",
+        "runtime_failed",
+        "skipped",
+        "unavailable",
+        "unknown",
+    }
+    allowed_outcomes = {
+        "observed",
+        "compile_failed",
+        "runtime_trap",
+        "unavailable",
+        "unknown",
+    }
+    for index, case in enumerate(cases):
+        case_path = "%s[%d]" % (path, index)
+        if not isinstance(case, Mapping):
+            errors.append("%s must be a mapping" % case_path)
+            continue
+        missing = sorted(required_fields - set(case))
+        if missing:
+            errors.append("%s missing required fields: %s" % (case_path, ", ".join(missing)))
+        if case.get("language") != language:
+            errors.append("%s.language must be %s" % (case_path, language))
+        if case.get("status") not in allowed_statuses:
+            errors.append("%s.status is invalid: %r" % (case_path, case.get("status")))
+        if case.get("outcome") not in allowed_outcomes:
+            errors.append("%s.outcome is invalid: %r" % (case_path, case.get("outcome")))
+        if case.get("native_only") is not True:
+            errors.append("%s.native_only must be true" % case_path)
+        if case.get("native_only_reason") != _NATIVE_ONLY_REASON:
+            errors.append("%s.native_only_reason is invalid" % case_path)
+        source_ids = case.get("source_note_ids")
+        if not isinstance(source_ids, list) or not source_ids:
+            errors.append("%s.source_note_ids must be a non-empty list" % case_path)
+        semantic_id = case.get("semantic_case_id")
+        if isinstance(semantic_id, str) and semantic_id:
+            seen_semantic_ids.add(semantic_id)
+            profile = str(case.get("profile"))
+            profile_seen.setdefault(semantic_id, set()).add(profile)
+    missing_cases = sorted(set(_required_native_case_ids(language)) - seen_semantic_ids)
+    for case_id in missing_cases:
+        errors.append("%s missing semantic case: %s" % (path, case_id))
+    if require_all_profiles:
+        expected_profiles = {profile["name"] for profile in _rust_profiles()}
+        for case_id in _required_native_case_ids(language):
+            if case_id in missing_cases:
+                continue
+            actual_profiles = profile_seen.get(case_id, set())
+            if actual_profiles != expected_profiles:
+                errors.append(
+                    "%s semantic case %s must cover Rust profiles %s, got %s"
+                    % (path, case_id, sorted(expected_profiles), sorted(actual_profiles))
+                )
+    return errors
+
+
+def validate_java_rust_smoke(
+    payload: Mapping[str, Any], expected_mode: Optional[str] = None
+) -> List[str]:
+    """
+    Validate Java/Rust smoke payload invariants without repository tests.
+
+    :param payload: Java, Rust or aggregate Java/Rust smoke payload.
+    :type payload: Mapping[str, Any]
+    :param expected_mode: Optional expected mode.
+    :type expected_mode: Optional[str], optional
+    :return: Validation diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> validate_java_rust_smoke({'schema_version': 1}, expected_mode='java-smoke')[:2]
+        ['mode must be java-smoke', "mode must be one of ['java-rust-smoke', 'java-smoke', 'rust-smoke']"]
+    """
+    errors: List[str] = []
+    mode = payload.get("mode")
+    if expected_mode is not None and mode != expected_mode:
+        errors.append("mode must be %s" % expected_mode)
+    if mode not in _JAVA_RUST_MODES:
+        errors.append("mode must be one of %s" % sorted(_JAVA_RUST_MODES))
+    expected_language = {
+        "java-smoke": "java",
+        "rust-smoke": "rust",
+        "java-rust-smoke": "java-rust",
+    }.get(str(expected_mode or mode))
+    if expected_language and payload.get("language") != expected_language:
+        errors.append("language must be %s" % expected_language)
+    if payload.get("schema_version") != 1:
+        errors.append("schema_version must be 1")
+    for key in ["source_mapping_sha256", "render_mapping_sha256"]:
+        value = payload.get(key)
+        if (
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(ch not in "0123456789abcdef" for ch in value)
+        ):
+            errors.append("%s must be a lowercase 64-character sha256 hex string" % key)
+    if payload.get("source_mapping_sha256") != payload.get("render_mapping_sha256"):
+        errors.append("source_mapping_sha256 and render_mapping_sha256 must match")
+    for key in ["generator", "repository", "toolchain"]:
+        if not isinstance(payload.get(key), Mapping):
+            errors.append("%s must be a mapping" % key)
+    if mode == "java-smoke":
+        errors.extend(_validate_native_cases(payload.get("cases"), "java", "$.cases"))
+    elif mode == "rust-smoke":
+        errors.extend(
+            _validate_native_cases(
+                payload.get("cases"), "rust", "$.cases", require_all_profiles=True
+            )
+        )
+    elif mode == "java-rust-smoke":
+        languages = payload.get("languages")
+        if not isinstance(languages, Mapping):
+            errors.append("languages must be a mapping")
+        else:
+            java_payload = languages.get("java")
+            rust_payload = languages.get("rust")
+            if not isinstance(java_payload, Mapping):
+                errors.append("languages.java must be a mapping")
+            else:
+                errors.extend(
+                    "languages.java: %s" % error
+                    for error in validate_java_rust_smoke(
+                        java_payload, expected_mode="java-smoke"
+                    )
+                )
+            if not isinstance(rust_payload, Mapping):
+                errors.append("languages.rust must be a mapping")
+            else:
+                errors.extend(
+                    "languages.rust: %s" % error
+                    for error in validate_java_rust_smoke(
+                        rust_payload, expected_mode="rust-smoke"
+                    )
+                )
+        all_cases = payload.get("cases")
+        java_cases = (
+            [
+                case
+                for case in all_cases
+                if isinstance(case, Mapping) and case.get("language") == "java"
+            ]
+            if isinstance(all_cases, list)
+            else []
+        )
+        rust_cases = (
+            [
+                case
+                for case in all_cases
+                if isinstance(case, Mapping) and case.get("language") == "rust"
+            ]
+            if isinstance(all_cases, list)
+            else []
+        )
+        errors.extend(_validate_native_cases(java_cases, "java", "$.cases.java"))
+        errors.extend(
+            _validate_native_cases(
+                rust_cases, "rust", "$.cases.rust", require_all_profiles=True
+            )
+        )
+    notes = payload.get("official_source_notes")
+    if mode in {"java-smoke", "rust-smoke"} and (
+        not isinstance(notes, list) or not notes
+    ):
+        errors.append("official_source_notes must be a non-empty list")
+    if mode == "java-rust-smoke":
+        if not isinstance(notes, Mapping):
+            errors.append("official_source_notes must be a mapping")
+        else:
+            for language in ["java", "rust"]:
+                value = notes.get(language)
+                if not isinstance(value, list) or not value:
+                    errors.append("official_source_notes.%s must be a non-empty list" % language)
     return errors
 
 
@@ -4022,6 +5617,106 @@ def check_python_z3_baseline(
         "snapshot_path": _PYTHON_Z3_BASELINE_SNAPSHOT,
     }
 
+
+def check_java_rust_smoke(
+    mode: str,
+    repo_root: Union[str, Path] = ".",
+    mapping_path: Union[str, Path] = _DEFAULT_MAPPING_PATH,
+) -> _JSON_OBJECT:
+    """
+    Build and validate the Java/Rust smoke contract.
+
+    :param mode: ``"java-smoke"``, ``"rust-smoke"`` or
+        ``"java-rust-smoke"``.
+    :type mode: str
+    :param repo_root: Repository root path, defaults to the current directory.
+    :type repo_root: Union[str, pathlib.Path], optional
+    :param mapping_path: Render-mapping snapshot path checked against live
+        drift, defaults to the committed R0 snapshot.
+    :type mapping_path: Union[str, pathlib.Path], optional
+    :return: Check result with ``ok`` and ``errors`` fields.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> result = check_java_rust_smoke('java-smoke', '.')
+        >>> isinstance(result['ok'], bool)
+        True
+    """
+    if mode not in _JAVA_RUST_MODES:
+        raise ValueError("Unsupported Java/Rust smoke mode: %s" % mode)
+    root = _as_repo_path(repo_root)
+    live = build_java_rust_smoke_report(mode, root, mapping_path=mapping_path)
+    errors = [
+        "live smoke: %s" % error
+        for error in validate_java_rust_smoke(live, expected_mode=mode)
+    ]
+    live_mapping = build_render_mapping(root)
+    live_mapping_sha = live_mapping.get("mapping_sha256")
+    if live_mapping_sha != live.get("source_mapping_sha256"):
+        errors.append(
+            "render_mapping snapshot drift: snapshot %r does not match live %r"
+            % (live.get("source_mapping_sha256"), live_mapping_sha)
+        )
+    schema = None
+    schema_path = root / _JAVA_RUST_SMOKE_SCHEMA
+    try:
+        schema = _read_json(schema_path)
+    except (OSError, json.JSONDecodeError, ValueError) as err:
+        # OSError: schema cannot be read; JSONDecodeError: invalid JSON;
+        # ValueError: top-level schema JSON is not an object.
+        errors.append("schema cannot be loaded: %s" % err)
+    if schema is not None:
+        errors.extend(
+            "live schema: %s" % error
+            for error in _validate_payload_with_schema(live, schema)
+        )
+
+    snapshot_path = root / _JAVA_RUST_SMOKE_SNAPSHOT
+    snapshot_present = snapshot_path.is_file()
+    if mode == "java-rust-smoke":
+        if not snapshot_present:
+            errors.append("expected snapshot is missing: %s" % snapshot_path)
+        else:
+            try:
+                snapshot = _read_json(snapshot_path)
+            except (OSError, json.JSONDecodeError, ValueError) as err:
+                # OSError: snapshot cannot be read; JSONDecodeError: invalid
+                # JSON; ValueError: top-level JSON is not an object.
+                errors.append("snapshot cannot be loaded: %s" % err)
+            else:
+                errors.extend(
+                    "snapshot: %s" % error
+                    for error in validate_java_rust_smoke(
+                        snapshot, expected_mode="java-rust-smoke"
+                    )
+                )
+                if schema is not None:
+                    errors.extend(
+                        "snapshot schema: %s" % error
+                        for error in _validate_payload_with_schema(snapshot, schema)
+                    )
+                if snapshot.get("source_mapping_sha256") != live.get(
+                    "source_mapping_sha256"
+                ):
+                    errors.append(
+                        "snapshot source_mapping_sha256 %r does not match live %r"
+                        % (
+                            snapshot.get("source_mapping_sha256"),
+                            live.get("source_mapping_sha256"),
+                        )
+                    )
+    return {
+        "ok": not errors,
+        "errors": errors,
+        "schema_version": live["schema_version"],
+        "source_mapping_sha256": live["source_mapping_sha256"],
+        "snapshot_present": snapshot_present,
+        "snapshot_path": _JAVA_RUST_SMOKE_SNAPSHOT,
+        "mode": mode,
+    }
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     """
     Build the probe command-line argument parser.
@@ -4043,11 +5738,20 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "mode",
         nargs="?",
         default="env",
-        choices=["env", "c-smoke", "cpp-smoke", "python-z3-baseline"],
+        choices=[
+            "env",
+            "c-smoke",
+            "cpp-smoke",
+            "python-z3-baseline",
+            "java-smoke",
+            "rust-smoke",
+            "java-rust-smoke",
+        ],
         help=(
             "Probe mode. Current modes are 'env', 'c-smoke', 'cpp-smoke', "
-            "and 'python-z3-baseline'; later research PRs should append modes "
-            "here without replacing existing ones."
+            "'python-z3-baseline', 'java-smoke', 'rust-smoke' and "
+            "'java-rust-smoke'; later research PRs should append modes here "
+            "without replacing existing ones."
         ),
     )
     parser.add_argument(
@@ -4150,6 +5854,25 @@ def main(argv: Optional[List[str]] = None) -> int:
             _write_or_print(result, args.output)
             return 0 if result["ok"] else 1
         report = build_python_z3_baseline(args.repo_root, mapping_path=args.mapping)
+        _write_or_print(report, args.output)
+        return 0
+
+    if args.mode in _JAVA_RUST_MODES:
+        if args.check:
+            result = check_java_rust_smoke(
+                args.mode,
+                args.repo_root,
+                mapping_path=args.mapping,
+            )
+            _write_or_print(result, args.output)
+            return 0 if result["ok"] else 1
+        report = build_java_rust_smoke_report(
+            args.mode,
+            repo_root=args.repo_root,
+            mapping_path=args.mapping,
+            work_dir=args.work_dir,
+            timeout=args.timeout,
+        )
         _write_or_print(report, args.output)
         return 0
 

@@ -1,0 +1,4427 @@
+{
+  "cases": [
+    {
+      "case_id": "java-int32:int_add_overflow_wrap",
+      "commands": {
+        "run": {
+          "args": [
+            "<path>",
+            "ProbeCase.java"
+          ],
+          "duration_seconds": "<duration>",
+          "returncode": 0,
+          "start_error": null,
+          "stderr": "",
+          "stdout": "VALUE=-2147483648\n",
+          "timed_out": false
+        }
+      },
+      "compile_strategy": "java_source_file_launcher",
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "java",
+      "native_api_family": "plain-int32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "observed",
+      "profile": "java-int32",
+      "reason": null,
+      "render_expression": "A + B",
+      "render_path": "native_java",
+      "semantic_case_id": "int_add_overflow_wrap",
+      "source_note_ids": [
+        "jls-integer-overflow"
+      ],
+      "source_path": "<local>",
+      "status": "passed",
+      "stderr": "",
+      "stdout": "VALUE=-2147483648"
+    },
+    {
+      "case_id": "java-int32:int_division_truncates",
+      "commands": {
+        "run": {
+          "args": [
+            "<path>",
+            "ProbeCase.java"
+          ],
+          "duration_seconds": "<duration>",
+          "returncode": 0,
+          "start_error": null,
+          "stderr": "",
+          "stdout": "VALUE=-3\n",
+          "timed_out": false
+        }
+      },
+      "compile_strategy": "java_source_file_launcher",
+      "fcstm_expression": "A / B",
+      "inputs": {
+        "A": -7,
+        "B": 2
+      },
+      "language": "java",
+      "native_api_family": "plain-int32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "/",
+      "outcome": "observed",
+      "profile": "java-int32",
+      "reason": null,
+      "render_expression": "A / B",
+      "render_path": "native_java",
+      "semantic_case_id": "int_division_truncates",
+      "source_note_ids": [
+        "jls-div-rem"
+      ],
+      "source_path": "<local>",
+      "status": "passed",
+      "stderr": "",
+      "stdout": "VALUE=-3"
+    },
+    {
+      "case_id": "java-int32:int_remainder_dividend_sign",
+      "commands": {
+        "run": {
+          "args": [
+            "<path>",
+            "ProbeCase.java"
+          ],
+          "duration_seconds": "<duration>",
+          "returncode": 0,
+          "start_error": null,
+          "stderr": "",
+          "stdout": "VALUE=-1\n",
+          "timed_out": false
+        }
+      },
+      "compile_strategy": "java_source_file_launcher",
+      "fcstm_expression": "A % B",
+      "inputs": {
+        "A": -7,
+        "B": 2
+      },
+      "language": "java",
+      "native_api_family": "plain-int32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "%",
+      "outcome": "observed",
+      "profile": "java-int32",
+      "reason": null,
+      "render_expression": "A % B",
+      "render_path": "native_java",
+      "semantic_case_id": "int_remainder_dividend_sign",
+      "source_note_ids": [
+        "jls-div-rem"
+      ],
+      "source_path": "<local>",
+      "status": "passed",
+      "stderr": "",
+      "stdout": "VALUE=-1"
+    },
+    {
+      "case_id": "java-int32:division_by_zero_exception",
+      "commands": {
+        "run": {
+          "args": [
+            "<path>",
+            "ProbeCase.java"
+          ],
+          "duration_seconds": "<duration>",
+          "returncode": 10,
+          "start_error": null,
+          "stderr": "",
+          "stdout": "EXCEPTION=java.lang.ArithmeticException:/ by zero\n",
+          "timed_out": false
+        }
+      },
+      "compile_strategy": "java_source_file_launcher",
+      "fcstm_expression": "A / B",
+      "inputs": {
+        "A": 7,
+        "B": 0
+      },
+      "language": "java",
+      "native_api_family": "plain-int32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "/",
+      "outcome": "runtime_trap",
+      "profile": "java-int32",
+      "reason": "java_exception_or_nonzero",
+      "render_expression": "A / B",
+      "render_path": "native_java",
+      "semantic_case_id": "division_by_zero_exception",
+      "source_note_ids": [
+        "jls-div-rem"
+      ],
+      "source_path": "<local>",
+      "status": "runtime_failed",
+      "stderr": "",
+      "stdout": "EXCEPTION=java.lang.ArithmeticException:/ by zero"
+    },
+    {
+      "case_id": "java-int32:bitwise_and_mask",
+      "commands": {
+        "run": {
+          "args": [
+            "<path>",
+            "ProbeCase.java"
+          ],
+          "duration_seconds": "<duration>",
+          "returncode": 0,
+          "start_error": null,
+          "stderr": "",
+          "stdout": "VALUE=8\n",
+          "timed_out": false
+        }
+      },
+      "compile_strategy": "java_source_file_launcher",
+      "fcstm_expression": "A & B",
+      "inputs": {
+        "A": 10,
+        "B": 12
+      },
+      "language": "java",
+      "native_api_family": "plain-int32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "&",
+      "outcome": "observed",
+      "profile": "java-int32",
+      "reason": null,
+      "render_expression": "A & B",
+      "render_path": "native_java",
+      "semantic_case_id": "bitwise_and_mask",
+      "source_note_ids": [
+        "jls-integer-overflow"
+      ],
+      "source_path": "<local>",
+      "status": "passed",
+      "stderr": "",
+      "stdout": "VALUE=8"
+    },
+    {
+      "case_id": "java-int32:unary_minus_min_wrap",
+      "commands": {
+        "run": {
+          "args": [
+            "<path>",
+            "ProbeCase.java"
+          ],
+          "duration_seconds": "<duration>",
+          "returncode": 0,
+          "start_error": null,
+          "stderr": "",
+          "stdout": "VALUE=-2147483648\n",
+          "timed_out": false
+        }
+      },
+      "compile_strategy": "java_source_file_launcher",
+      "fcstm_expression": "-A",
+      "inputs": {
+        "A": -2147483648,
+        "B": 0
+      },
+      "language": "java",
+      "native_api_family": "plain-int32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "unary-",
+      "outcome": "observed",
+      "profile": "java-int32",
+      "reason": null,
+      "render_expression": "-A",
+      "render_path": "native_java",
+      "semantic_case_id": "unary_minus_min_wrap",
+      "source_note_ids": [
+        "jls-integer-overflow"
+      ],
+      "source_path": "<local>",
+      "status": "passed",
+      "stderr": "",
+      "stdout": "VALUE=-2147483648"
+    },
+    {
+      "case_id": "java-int32:shift_count_masking",
+      "commands": {
+        "run": {
+          "args": [
+            "<path>",
+            "ProbeCase.java"
+          ],
+          "duration_seconds": "<duration>",
+          "returncode": 0,
+          "start_error": null,
+          "stderr": "",
+          "stdout": "VALUE=1\n",
+          "timed_out": false
+        }
+      },
+      "compile_strategy": "java_source_file_launcher",
+      "fcstm_expression": "A << B",
+      "inputs": {
+        "A": 1,
+        "B": 32
+      },
+      "language": "java",
+      "native_api_family": "plain-int32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "<<",
+      "outcome": "observed",
+      "profile": "java-int32",
+      "reason": null,
+      "render_expression": "A << B",
+      "render_path": "native_java",
+      "semantic_case_id": "shift_count_masking",
+      "source_note_ids": [
+        "jls-shift-mask"
+      ],
+      "source_path": "<local>",
+      "status": "passed",
+      "stderr": "",
+      "stdout": "VALUE=1"
+    },
+    {
+      "case_id": "java-int8-cast:narrowing_int_to_byte",
+      "commands": {
+        "run": {
+          "args": [
+            "<path>",
+            "ProbeCase.java"
+          ],
+          "duration_seconds": "<duration>",
+          "returncode": 0,
+          "start_error": null,
+          "stderr": "",
+          "stdout": "VALUE=-128\n",
+          "timed_out": false
+        }
+      },
+      "compile_strategy": "java_source_file_launcher",
+      "fcstm_expression": "A",
+      "inputs": {
+        "A": 128,
+        "B": 0
+      },
+      "language": "java",
+      "native_api_family": "narrowing-cast",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "cast",
+      "outcome": "observed",
+      "profile": "java-int8-cast",
+      "reason": null,
+      "render_expression": "(byte) A",
+      "render_path": "native_java",
+      "semantic_case_id": "narrowing_int_to_byte",
+      "source_note_ids": [
+        "jls-narrowing-conversion"
+      ],
+      "source_path": "<local>",
+      "status": "passed",
+      "stderr": "",
+      "stdout": "VALUE=-128"
+    },
+    {
+      "case_id": "java-double-math:math_pow_promotes_double",
+      "commands": {
+        "run": {
+          "args": [
+            "<path>",
+            "ProbeCase.java"
+          ],
+          "duration_seconds": "<duration>",
+          "returncode": 0,
+          "start_error": null,
+          "stderr": "",
+          "stdout": "VALUE=9.0\n",
+          "timed_out": false
+        }
+      },
+      "compile_strategy": "java_source_file_launcher",
+      "fcstm_expression": "A ** B",
+      "inputs": {
+        "A": 3,
+        "B": 2
+      },
+      "language": "java",
+      "native_api_family": "math-floating",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "**",
+      "outcome": "observed",
+      "profile": "java-double-math",
+      "reason": null,
+      "render_expression": "Math.pow(A, B)",
+      "render_path": "native_java",
+      "semantic_case_id": "math_pow_promotes_double",
+      "source_note_ids": [
+        "java-math-floating"
+      ],
+      "source_path": "<local>",
+      "status": "passed",
+      "stderr": "",
+      "stdout": "VALUE=9.0"
+    },
+    {
+      "case_id": "java-double-math:math_round_half_up",
+      "commands": {
+        "run": {
+          "args": [
+            "<path>",
+            "ProbeCase.java"
+          ],
+          "duration_seconds": "<duration>",
+          "returncode": 0,
+          "start_error": null,
+          "stderr": "",
+          "stdout": "VALUE=-2\n",
+          "timed_out": false
+        }
+      },
+      "compile_strategy": "java_source_file_launcher",
+      "fcstm_expression": "round(A)",
+      "inputs": {
+        "A": -2,
+        "B": 0
+      },
+      "language": "java",
+      "native_api_family": "math-floating",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "round",
+      "outcome": "observed",
+      "profile": "java-double-math",
+      "reason": null,
+      "render_expression": "Math.round(A)",
+      "render_path": "native_java",
+      "semantic_case_id": "math_round_half_up",
+      "source_note_ids": [
+        "java-math-floating"
+      ],
+      "source_path": "<local>",
+      "status": "passed",
+      "stderr": "",
+      "stdout": "VALUE=-2"
+    },
+    {
+      "case_id": "java-int32-checked:math_add_exact_overflow",
+      "commands": {
+        "run": {
+          "args": [
+            "<path>",
+            "ProbeCase.java"
+          ],
+          "duration_seconds": "<duration>",
+          "returncode": 10,
+          "start_error": null,
+          "stderr": "",
+          "stdout": "EXCEPTION=java.lang.ArithmeticException:integer overflow\n",
+          "timed_out": false
+        }
+      },
+      "compile_strategy": "java_source_file_launcher",
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "java",
+      "native_api_family": "checked-exact",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "runtime_trap",
+      "profile": "java-int32-checked",
+      "reason": "java_exception_or_nonzero",
+      "render_expression": "Math.addExact(A, B)",
+      "render_path": "native_java",
+      "semantic_case_id": "math_add_exact_overflow",
+      "source_note_ids": [
+        "java-math-exact"
+      ],
+      "source_path": "<local>",
+      "status": "runtime_failed",
+      "stderr": "",
+      "stdout": "EXCEPTION=java.lang.ArithmeticException:integer overflow"
+    },
+    {
+      "case_id": "java-int32-checked:math_multiply_exact_overflow",
+      "commands": {
+        "run": {
+          "args": [
+            "<path>",
+            "ProbeCase.java"
+          ],
+          "duration_seconds": "<duration>",
+          "returncode": 10,
+          "start_error": null,
+          "stderr": "",
+          "stdout": "EXCEPTION=java.lang.ArithmeticException:integer overflow\n",
+          "timed_out": false
+        }
+      },
+      "compile_strategy": "java_source_file_launcher",
+      "fcstm_expression": "A * B",
+      "inputs": {
+        "A": 1073741824,
+        "B": 2
+      },
+      "language": "java",
+      "native_api_family": "checked-exact",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "*",
+      "outcome": "runtime_trap",
+      "profile": "java-int32-checked",
+      "reason": "java_exception_or_nonzero",
+      "render_expression": "Math.multiplyExact(A, B)",
+      "render_path": "native_java",
+      "semantic_case_id": "math_multiply_exact_overflow",
+      "source_note_ids": [
+        "java-math-exact"
+      ],
+      "source_path": "<local>",
+      "status": "runtime_failed",
+      "stderr": "",
+      "stdout": "EXCEPTION=java.lang.ArithmeticException:integer overflow"
+    },
+    {
+      "case_id": "java-renderer-fallback:math_sign_missing",
+      "commands": {
+        "run": {
+          "args": [
+            "<path>",
+            "ProbeCase.java"
+          ],
+          "duration_seconds": "<duration>",
+          "returncode": 1,
+          "start_error": null,
+          "stderr": "ProbeCase.java:6: error: cannot find symbol\n            Object result = Math.sign(A);\n                                ^\n  symbol:   method sign(int)\n  location: class Math\n1 error\nerror: compilation failed\n",
+          "stdout": "",
+          "timed_out": false
+        }
+      },
+      "compile_strategy": "java_source_file_launcher",
+      "fcstm_expression": "sign(A)",
+      "inputs": {
+        "A": -9,
+        "B": 0
+      },
+      "language": "java",
+      "native_api_family": "renderer-fallback",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "sign",
+      "outcome": "compile_failed",
+      "profile": "java-renderer-fallback",
+      "reason": "java_source_launcher_failed",
+      "render_expression": "Math.sign(A)",
+      "render_path": "native_java",
+      "semantic_case_id": "math_sign_missing",
+      "source_note_ids": [
+        "java-math-exact"
+      ],
+      "source_path": "<local>",
+      "status": "compile_failed",
+      "stderr": "ProbeCase.java:6: error: cannot find symbol\n            Object result = Math.sign(A);\n                                ^\n  symbol:   method sign(int)\n  location: class Math\n1 error\nerror: compilation failed",
+      "stdout": ""
+    },
+    {
+      "case_id": "debug:plain_i32_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "default_debug",
+      "profile": "debug",
+      "reason": "rustc_unavailable",
+      "render_expression": "A + B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_add_overflow",
+      "source_note_ids": [
+        "rust-reference-overflow"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "debug:plain_i32_division",
+      "commands": {},
+      "fcstm_expression": "A / B",
+      "inputs": {
+        "A": -7,
+        "B": 2
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "/",
+      "outcome": "unavailable",
+      "overflow_checks": "default_debug",
+      "profile": "debug",
+      "reason": "rustc_unavailable",
+      "render_expression": "A / B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_division",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "debug:plain_i32_remainder",
+      "commands": {},
+      "fcstm_expression": "A % B",
+      "inputs": {
+        "A": -7,
+        "B": 2
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "%",
+      "outcome": "unavailable",
+      "overflow_checks": "default_debug",
+      "profile": "debug",
+      "reason": "rustc_unavailable",
+      "render_expression": "A % B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_remainder",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "debug:plain_i32_division_by_zero",
+      "commands": {},
+      "fcstm_expression": "A / B",
+      "inputs": {
+        "A": 7,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "/",
+      "outcome": "unavailable",
+      "overflow_checks": "default_debug",
+      "profile": "debug",
+      "reason": "rustc_unavailable",
+      "render_expression": "A / B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_division_by_zero",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "debug:plain_i32_bitwise_and",
+      "commands": {},
+      "fcstm_expression": "A & B",
+      "inputs": {
+        "A": 10,
+        "B": 12
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "&",
+      "outcome": "unavailable",
+      "overflow_checks": "default_debug",
+      "profile": "debug",
+      "reason": "rustc_unavailable",
+      "render_expression": "A & B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_bitwise_and",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "debug:plain_i32_unary_minus_min",
+      "commands": {},
+      "fcstm_expression": "-A",
+      "inputs": {
+        "A": -2147483648,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "unary-",
+      "outcome": "unavailable",
+      "overflow_checks": "default_debug",
+      "profile": "debug",
+      "reason": "rustc_unavailable",
+      "render_expression": "-A",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_unary_minus_min",
+      "source_note_ids": [
+        "rust-reference-overflow"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "debug:plain_i32_shift_invalid",
+      "commands": {},
+      "fcstm_expression": "A << B",
+      "inputs": {
+        "A": 1,
+        "B": 32
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "<<",
+      "outcome": "unavailable",
+      "overflow_checks": "default_debug",
+      "profile": "debug",
+      "reason": "rustc_unavailable",
+      "render_expression": "A << B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_shift_invalid",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "debug:cast_i32_to_i8",
+      "commands": {},
+      "fcstm_expression": "A",
+      "inputs": {
+        "A": 128,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "cast",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "cast",
+      "outcome": "unavailable",
+      "overflow_checks": "default_debug",
+      "profile": "debug",
+      "reason": "rustc_unavailable",
+      "render_expression": "A as i8",
+      "render_path": "native_rust",
+      "semantic_case_id": "cast_i32_to_i8",
+      "source_note_ids": [
+        "rust-reference-cast"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "debug:powf_promotes_f64",
+      "commands": {},
+      "fcstm_expression": "A ** B",
+      "inputs": {
+        "A": 3,
+        "B": 2
+      },
+      "language": "rust",
+      "native_api_family": "math-floating",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "**",
+      "outcome": "unavailable",
+      "overflow_checks": "default_debug",
+      "profile": "debug",
+      "reason": "rustc_unavailable",
+      "render_expression": "(A as f64).powf(B as f64)",
+      "render_path": "native_rust",
+      "semantic_case_id": "powf_promotes_f64",
+      "source_note_ids": [
+        "rust-reference-cast",
+        "rust-std-float-methods"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "debug:round_cast_i64",
+      "commands": {},
+      "fcstm_expression": "round(A)",
+      "inputs": {
+        "A": -2,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "math-floating",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "round",
+      "outcome": "unavailable",
+      "overflow_checks": "default_debug",
+      "profile": "debug",
+      "reason": "rustc_unavailable",
+      "render_expression": "(A as f64).round() as i64",
+      "render_path": "native_rust",
+      "semantic_case_id": "round_cast_i64",
+      "source_note_ids": [
+        "rust-reference-cast",
+        "rust-std-float-methods"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "debug:wrapping_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "wrapping",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "default_debug",
+      "profile": "debug",
+      "reason": "rustc_unavailable",
+      "render_expression": "A.wrapping_add(B)",
+      "render_path": "native_rust",
+      "semantic_case_id": "wrapping_add_overflow",
+      "source_note_ids": [
+        "rust-std-overflowing-apis"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "debug:checked_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "checked",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "default_debug",
+      "profile": "debug",
+      "reason": "rustc_unavailable",
+      "render_expression": "A.checked_add(B)",
+      "render_path": "native_rust",
+      "semantic_case_id": "checked_add_overflow",
+      "source_note_ids": [
+        "rust-std-overflowing-apis"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "debug:overflowing_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "overflowing",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "default_debug",
+      "profile": "debug",
+      "reason": "rustc_unavailable",
+      "render_expression": "A.overflowing_add(B)",
+      "render_path": "native_rust",
+      "semantic_case_id": "overflowing_add_overflow",
+      "source_note_ids": [
+        "rust-std-overflowing-apis"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "debug:saturating_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "saturating",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "default_debug",
+      "profile": "debug",
+      "reason": "rustc_unavailable",
+      "render_expression": "A.saturating_add(B)",
+      "render_path": "native_rust",
+      "semantic_case_id": "saturating_add_overflow",
+      "source_note_ids": [
+        "rust-std-overflowing-apis"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "debug:float_sign_renderer_missing",
+      "commands": {},
+      "fcstm_expression": "sign(A)",
+      "inputs": {
+        "A": -9,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "renderer-fallback",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "sign",
+      "outcome": "unavailable",
+      "overflow_checks": "default_debug",
+      "profile": "debug",
+      "reason": "rustc_unavailable",
+      "render_expression": "(A as f64).sign()",
+      "render_path": "native_rust",
+      "semantic_case_id": "float_sign_renderer_missing",
+      "source_note_ids": [
+        "rust-reference-cast",
+        "rust-std-float-methods"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "release:plain_i32_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "default_release",
+      "profile": "release",
+      "reason": "rustc_unavailable",
+      "render_expression": "A + B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_add_overflow",
+      "source_note_ids": [
+        "rust-reference-overflow"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "release:plain_i32_division",
+      "commands": {},
+      "fcstm_expression": "A / B",
+      "inputs": {
+        "A": -7,
+        "B": 2
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "/",
+      "outcome": "unavailable",
+      "overflow_checks": "default_release",
+      "profile": "release",
+      "reason": "rustc_unavailable",
+      "render_expression": "A / B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_division",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "release:plain_i32_remainder",
+      "commands": {},
+      "fcstm_expression": "A % B",
+      "inputs": {
+        "A": -7,
+        "B": 2
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "%",
+      "outcome": "unavailable",
+      "overflow_checks": "default_release",
+      "profile": "release",
+      "reason": "rustc_unavailable",
+      "render_expression": "A % B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_remainder",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "release:plain_i32_division_by_zero",
+      "commands": {},
+      "fcstm_expression": "A / B",
+      "inputs": {
+        "A": 7,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "/",
+      "outcome": "unavailable",
+      "overflow_checks": "default_release",
+      "profile": "release",
+      "reason": "rustc_unavailable",
+      "render_expression": "A / B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_division_by_zero",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "release:plain_i32_bitwise_and",
+      "commands": {},
+      "fcstm_expression": "A & B",
+      "inputs": {
+        "A": 10,
+        "B": 12
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "&",
+      "outcome": "unavailable",
+      "overflow_checks": "default_release",
+      "profile": "release",
+      "reason": "rustc_unavailable",
+      "render_expression": "A & B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_bitwise_and",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "release:plain_i32_unary_minus_min",
+      "commands": {},
+      "fcstm_expression": "-A",
+      "inputs": {
+        "A": -2147483648,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "unary-",
+      "outcome": "unavailable",
+      "overflow_checks": "default_release",
+      "profile": "release",
+      "reason": "rustc_unavailable",
+      "render_expression": "-A",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_unary_minus_min",
+      "source_note_ids": [
+        "rust-reference-overflow"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "release:plain_i32_shift_invalid",
+      "commands": {},
+      "fcstm_expression": "A << B",
+      "inputs": {
+        "A": 1,
+        "B": 32
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "<<",
+      "outcome": "unavailable",
+      "overflow_checks": "default_release",
+      "profile": "release",
+      "reason": "rustc_unavailable",
+      "render_expression": "A << B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_shift_invalid",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "release:cast_i32_to_i8",
+      "commands": {},
+      "fcstm_expression": "A",
+      "inputs": {
+        "A": 128,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "cast",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "cast",
+      "outcome": "unavailable",
+      "overflow_checks": "default_release",
+      "profile": "release",
+      "reason": "rustc_unavailable",
+      "render_expression": "A as i8",
+      "render_path": "native_rust",
+      "semantic_case_id": "cast_i32_to_i8",
+      "source_note_ids": [
+        "rust-reference-cast"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "release:powf_promotes_f64",
+      "commands": {},
+      "fcstm_expression": "A ** B",
+      "inputs": {
+        "A": 3,
+        "B": 2
+      },
+      "language": "rust",
+      "native_api_family": "math-floating",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "**",
+      "outcome": "unavailable",
+      "overflow_checks": "default_release",
+      "profile": "release",
+      "reason": "rustc_unavailable",
+      "render_expression": "(A as f64).powf(B as f64)",
+      "render_path": "native_rust",
+      "semantic_case_id": "powf_promotes_f64",
+      "source_note_ids": [
+        "rust-reference-cast",
+        "rust-std-float-methods"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "release:round_cast_i64",
+      "commands": {},
+      "fcstm_expression": "round(A)",
+      "inputs": {
+        "A": -2,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "math-floating",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "round",
+      "outcome": "unavailable",
+      "overflow_checks": "default_release",
+      "profile": "release",
+      "reason": "rustc_unavailable",
+      "render_expression": "(A as f64).round() as i64",
+      "render_path": "native_rust",
+      "semantic_case_id": "round_cast_i64",
+      "source_note_ids": [
+        "rust-reference-cast",
+        "rust-std-float-methods"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "release:wrapping_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "wrapping",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "default_release",
+      "profile": "release",
+      "reason": "rustc_unavailable",
+      "render_expression": "A.wrapping_add(B)",
+      "render_path": "native_rust",
+      "semantic_case_id": "wrapping_add_overflow",
+      "source_note_ids": [
+        "rust-std-overflowing-apis"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "release:checked_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "checked",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "default_release",
+      "profile": "release",
+      "reason": "rustc_unavailable",
+      "render_expression": "A.checked_add(B)",
+      "render_path": "native_rust",
+      "semantic_case_id": "checked_add_overflow",
+      "source_note_ids": [
+        "rust-std-overflowing-apis"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "release:overflowing_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "overflowing",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "default_release",
+      "profile": "release",
+      "reason": "rustc_unavailable",
+      "render_expression": "A.overflowing_add(B)",
+      "render_path": "native_rust",
+      "semantic_case_id": "overflowing_add_overflow",
+      "source_note_ids": [
+        "rust-std-overflowing-apis"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "release:saturating_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "saturating",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "default_release",
+      "profile": "release",
+      "reason": "rustc_unavailable",
+      "render_expression": "A.saturating_add(B)",
+      "render_path": "native_rust",
+      "semantic_case_id": "saturating_add_overflow",
+      "source_note_ids": [
+        "rust-std-overflowing-apis"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "release:float_sign_renderer_missing",
+      "commands": {},
+      "fcstm_expression": "sign(A)",
+      "inputs": {
+        "A": -9,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "renderer-fallback",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "sign",
+      "outcome": "unavailable",
+      "overflow_checks": "default_release",
+      "profile": "release",
+      "reason": "rustc_unavailable",
+      "render_expression": "(A as f64).sign()",
+      "render_path": "native_rust",
+      "semantic_case_id": "float_sign_renderer_missing",
+      "source_note_ids": [
+        "rust-reference-cast",
+        "rust-std-float-methods"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-on:plain_i32_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_on",
+      "profile": "overflow-checks-on",
+      "reason": "rustc_unavailable",
+      "render_expression": "A + B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_add_overflow",
+      "source_note_ids": [
+        "rust-reference-overflow"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-on:plain_i32_division",
+      "commands": {},
+      "fcstm_expression": "A / B",
+      "inputs": {
+        "A": -7,
+        "B": 2
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "/",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_on",
+      "profile": "overflow-checks-on",
+      "reason": "rustc_unavailable",
+      "render_expression": "A / B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_division",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-on:plain_i32_remainder",
+      "commands": {},
+      "fcstm_expression": "A % B",
+      "inputs": {
+        "A": -7,
+        "B": 2
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "%",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_on",
+      "profile": "overflow-checks-on",
+      "reason": "rustc_unavailable",
+      "render_expression": "A % B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_remainder",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-on:plain_i32_division_by_zero",
+      "commands": {},
+      "fcstm_expression": "A / B",
+      "inputs": {
+        "A": 7,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "/",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_on",
+      "profile": "overflow-checks-on",
+      "reason": "rustc_unavailable",
+      "render_expression": "A / B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_division_by_zero",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-on:plain_i32_bitwise_and",
+      "commands": {},
+      "fcstm_expression": "A & B",
+      "inputs": {
+        "A": 10,
+        "B": 12
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "&",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_on",
+      "profile": "overflow-checks-on",
+      "reason": "rustc_unavailable",
+      "render_expression": "A & B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_bitwise_and",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-on:plain_i32_unary_minus_min",
+      "commands": {},
+      "fcstm_expression": "-A",
+      "inputs": {
+        "A": -2147483648,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "unary-",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_on",
+      "profile": "overflow-checks-on",
+      "reason": "rustc_unavailable",
+      "render_expression": "-A",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_unary_minus_min",
+      "source_note_ids": [
+        "rust-reference-overflow"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-on:plain_i32_shift_invalid",
+      "commands": {},
+      "fcstm_expression": "A << B",
+      "inputs": {
+        "A": 1,
+        "B": 32
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "<<",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_on",
+      "profile": "overflow-checks-on",
+      "reason": "rustc_unavailable",
+      "render_expression": "A << B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_shift_invalid",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-on:cast_i32_to_i8",
+      "commands": {},
+      "fcstm_expression": "A",
+      "inputs": {
+        "A": 128,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "cast",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "cast",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_on",
+      "profile": "overflow-checks-on",
+      "reason": "rustc_unavailable",
+      "render_expression": "A as i8",
+      "render_path": "native_rust",
+      "semantic_case_id": "cast_i32_to_i8",
+      "source_note_ids": [
+        "rust-reference-cast"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-on:powf_promotes_f64",
+      "commands": {},
+      "fcstm_expression": "A ** B",
+      "inputs": {
+        "A": 3,
+        "B": 2
+      },
+      "language": "rust",
+      "native_api_family": "math-floating",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "**",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_on",
+      "profile": "overflow-checks-on",
+      "reason": "rustc_unavailable",
+      "render_expression": "(A as f64).powf(B as f64)",
+      "render_path": "native_rust",
+      "semantic_case_id": "powf_promotes_f64",
+      "source_note_ids": [
+        "rust-reference-cast",
+        "rust-std-float-methods"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-on:round_cast_i64",
+      "commands": {},
+      "fcstm_expression": "round(A)",
+      "inputs": {
+        "A": -2,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "math-floating",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "round",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_on",
+      "profile": "overflow-checks-on",
+      "reason": "rustc_unavailable",
+      "render_expression": "(A as f64).round() as i64",
+      "render_path": "native_rust",
+      "semantic_case_id": "round_cast_i64",
+      "source_note_ids": [
+        "rust-reference-cast",
+        "rust-std-float-methods"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-on:wrapping_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "wrapping",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_on",
+      "profile": "overflow-checks-on",
+      "reason": "rustc_unavailable",
+      "render_expression": "A.wrapping_add(B)",
+      "render_path": "native_rust",
+      "semantic_case_id": "wrapping_add_overflow",
+      "source_note_ids": [
+        "rust-std-overflowing-apis"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-on:checked_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "checked",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_on",
+      "profile": "overflow-checks-on",
+      "reason": "rustc_unavailable",
+      "render_expression": "A.checked_add(B)",
+      "render_path": "native_rust",
+      "semantic_case_id": "checked_add_overflow",
+      "source_note_ids": [
+        "rust-std-overflowing-apis"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-on:overflowing_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "overflowing",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_on",
+      "profile": "overflow-checks-on",
+      "reason": "rustc_unavailable",
+      "render_expression": "A.overflowing_add(B)",
+      "render_path": "native_rust",
+      "semantic_case_id": "overflowing_add_overflow",
+      "source_note_ids": [
+        "rust-std-overflowing-apis"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-on:saturating_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "saturating",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_on",
+      "profile": "overflow-checks-on",
+      "reason": "rustc_unavailable",
+      "render_expression": "A.saturating_add(B)",
+      "render_path": "native_rust",
+      "semantic_case_id": "saturating_add_overflow",
+      "source_note_ids": [
+        "rust-std-overflowing-apis"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-on:float_sign_renderer_missing",
+      "commands": {},
+      "fcstm_expression": "sign(A)",
+      "inputs": {
+        "A": -9,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "renderer-fallback",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "sign",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_on",
+      "profile": "overflow-checks-on",
+      "reason": "rustc_unavailable",
+      "render_expression": "(A as f64).sign()",
+      "render_path": "native_rust",
+      "semantic_case_id": "float_sign_renderer_missing",
+      "source_note_ids": [
+        "rust-reference-cast",
+        "rust-std-float-methods"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-off:plain_i32_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_off",
+      "profile": "overflow-checks-off",
+      "reason": "rustc_unavailable",
+      "render_expression": "A + B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_add_overflow",
+      "source_note_ids": [
+        "rust-reference-overflow"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-off:plain_i32_division",
+      "commands": {},
+      "fcstm_expression": "A / B",
+      "inputs": {
+        "A": -7,
+        "B": 2
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "/",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_off",
+      "profile": "overflow-checks-off",
+      "reason": "rustc_unavailable",
+      "render_expression": "A / B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_division",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-off:plain_i32_remainder",
+      "commands": {},
+      "fcstm_expression": "A % B",
+      "inputs": {
+        "A": -7,
+        "B": 2
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "%",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_off",
+      "profile": "overflow-checks-off",
+      "reason": "rustc_unavailable",
+      "render_expression": "A % B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_remainder",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-off:plain_i32_division_by_zero",
+      "commands": {},
+      "fcstm_expression": "A / B",
+      "inputs": {
+        "A": 7,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "/",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_off",
+      "profile": "overflow-checks-off",
+      "reason": "rustc_unavailable",
+      "render_expression": "A / B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_division_by_zero",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-off:plain_i32_bitwise_and",
+      "commands": {},
+      "fcstm_expression": "A & B",
+      "inputs": {
+        "A": 10,
+        "B": 12
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "&",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_off",
+      "profile": "overflow-checks-off",
+      "reason": "rustc_unavailable",
+      "render_expression": "A & B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_bitwise_and",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-off:plain_i32_unary_minus_min",
+      "commands": {},
+      "fcstm_expression": "-A",
+      "inputs": {
+        "A": -2147483648,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "unary-",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_off",
+      "profile": "overflow-checks-off",
+      "reason": "rustc_unavailable",
+      "render_expression": "-A",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_unary_minus_min",
+      "source_note_ids": [
+        "rust-reference-overflow"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-off:plain_i32_shift_invalid",
+      "commands": {},
+      "fcstm_expression": "A << B",
+      "inputs": {
+        "A": 1,
+        "B": 32
+      },
+      "language": "rust",
+      "native_api_family": "plain-i32",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "<<",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_off",
+      "profile": "overflow-checks-off",
+      "reason": "rustc_unavailable",
+      "render_expression": "A << B",
+      "render_path": "native_rust",
+      "semantic_case_id": "plain_i32_shift_invalid",
+      "source_note_ids": [
+        "rust-reference-div-rem-shift"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-off:cast_i32_to_i8",
+      "commands": {},
+      "fcstm_expression": "A",
+      "inputs": {
+        "A": 128,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "cast",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "cast",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_off",
+      "profile": "overflow-checks-off",
+      "reason": "rustc_unavailable",
+      "render_expression": "A as i8",
+      "render_path": "native_rust",
+      "semantic_case_id": "cast_i32_to_i8",
+      "source_note_ids": [
+        "rust-reference-cast"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-off:powf_promotes_f64",
+      "commands": {},
+      "fcstm_expression": "A ** B",
+      "inputs": {
+        "A": 3,
+        "B": 2
+      },
+      "language": "rust",
+      "native_api_family": "math-floating",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "**",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_off",
+      "profile": "overflow-checks-off",
+      "reason": "rustc_unavailable",
+      "render_expression": "(A as f64).powf(B as f64)",
+      "render_path": "native_rust",
+      "semantic_case_id": "powf_promotes_f64",
+      "source_note_ids": [
+        "rust-reference-cast",
+        "rust-std-float-methods"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-off:round_cast_i64",
+      "commands": {},
+      "fcstm_expression": "round(A)",
+      "inputs": {
+        "A": -2,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "math-floating",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "round",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_off",
+      "profile": "overflow-checks-off",
+      "reason": "rustc_unavailable",
+      "render_expression": "(A as f64).round() as i64",
+      "render_path": "native_rust",
+      "semantic_case_id": "round_cast_i64",
+      "source_note_ids": [
+        "rust-reference-cast",
+        "rust-std-float-methods"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-off:wrapping_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "wrapping",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_off",
+      "profile": "overflow-checks-off",
+      "reason": "rustc_unavailable",
+      "render_expression": "A.wrapping_add(B)",
+      "render_path": "native_rust",
+      "semantic_case_id": "wrapping_add_overflow",
+      "source_note_ids": [
+        "rust-std-overflowing-apis"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-off:checked_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "checked",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_off",
+      "profile": "overflow-checks-off",
+      "reason": "rustc_unavailable",
+      "render_expression": "A.checked_add(B)",
+      "render_path": "native_rust",
+      "semantic_case_id": "checked_add_overflow",
+      "source_note_ids": [
+        "rust-std-overflowing-apis"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-off:overflowing_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "overflowing",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_off",
+      "profile": "overflow-checks-off",
+      "reason": "rustc_unavailable",
+      "render_expression": "A.overflowing_add(B)",
+      "render_path": "native_rust",
+      "semantic_case_id": "overflowing_add_overflow",
+      "source_note_ids": [
+        "rust-std-overflowing-apis"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-off:saturating_add_overflow",
+      "commands": {},
+      "fcstm_expression": "A + B",
+      "inputs": {
+        "A": 2147483647,
+        "B": 1
+      },
+      "language": "rust",
+      "native_api_family": "saturating",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "+",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_off",
+      "profile": "overflow-checks-off",
+      "reason": "rustc_unavailable",
+      "render_expression": "A.saturating_add(B)",
+      "render_path": "native_rust",
+      "semantic_case_id": "saturating_add_overflow",
+      "source_note_ids": [
+        "rust-std-overflowing-apis"
+      ],
+      "status": "unavailable"
+    },
+    {
+      "case_id": "overflow-checks-off:float_sign_renderer_missing",
+      "commands": {},
+      "fcstm_expression": "sign(A)",
+      "inputs": {
+        "A": -9,
+        "B": 0
+      },
+      "language": "rust",
+      "native_api_family": "renderer-fallback",
+      "native_only": true,
+      "native_only_reason": "no_java_or_rust_template_in_current_repository",
+      "operator": "sign",
+      "outcome": "unavailable",
+      "overflow_checks": "forced_off",
+      "profile": "overflow-checks-off",
+      "reason": "rustc_unavailable",
+      "render_expression": "(A as f64).sign()",
+      "render_path": "native_rust",
+      "semantic_case_id": "float_sign_renderer_missing",
+      "source_note_ids": [
+        "rust-reference-cast",
+        "rust-std-float-methods"
+      ],
+      "status": "unavailable"
+    }
+  ],
+  "generator": {
+    "determinism": "Native tool availability and compiler/runtime results are environment-dependent; --check validates shape and invariants rather than exact stdout.",
+    "research_path": "research/numeric-render-semantics",
+    "source_commit": "97c35ddad1bb2641a8ada87cd23bff752e508770",
+    "source_commit_policy": "Best-effort commit at generation time; schema, mapping digest and case-plan invariants are stable comparison keys.",
+    "tool": "tools/numeric_render_probe.py"
+  },
+  "language": "java-rust",
+  "languages": {
+    "java": {
+      "cases": [
+        {
+          "case_id": "java-int32:int_add_overflow_wrap",
+          "commands": {
+            "run": {
+              "args": [
+                "<path>",
+                "ProbeCase.java"
+              ],
+              "duration_seconds": "<duration>",
+              "returncode": 0,
+              "start_error": null,
+              "stderr": "",
+              "stdout": "VALUE=-2147483648\n",
+              "timed_out": false
+            }
+          },
+          "compile_strategy": "java_source_file_launcher",
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "java",
+          "native_api_family": "plain-int32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "observed",
+          "profile": "java-int32",
+          "reason": null,
+          "render_expression": "A + B",
+          "render_path": "native_java",
+          "semantic_case_id": "int_add_overflow_wrap",
+          "source_note_ids": [
+            "jls-integer-overflow"
+          ],
+          "source_path": "<local>",
+          "status": "passed",
+          "stderr": "",
+          "stdout": "VALUE=-2147483648"
+        },
+        {
+          "case_id": "java-int32:int_division_truncates",
+          "commands": {
+            "run": {
+              "args": [
+                "<path>",
+                "ProbeCase.java"
+              ],
+              "duration_seconds": "<duration>",
+              "returncode": 0,
+              "start_error": null,
+              "stderr": "",
+              "stdout": "VALUE=-3\n",
+              "timed_out": false
+            }
+          },
+          "compile_strategy": "java_source_file_launcher",
+          "fcstm_expression": "A / B",
+          "inputs": {
+            "A": -7,
+            "B": 2
+          },
+          "language": "java",
+          "native_api_family": "plain-int32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "/",
+          "outcome": "observed",
+          "profile": "java-int32",
+          "reason": null,
+          "render_expression": "A / B",
+          "render_path": "native_java",
+          "semantic_case_id": "int_division_truncates",
+          "source_note_ids": [
+            "jls-div-rem"
+          ],
+          "source_path": "<local>",
+          "status": "passed",
+          "stderr": "",
+          "stdout": "VALUE=-3"
+        },
+        {
+          "case_id": "java-int32:int_remainder_dividend_sign",
+          "commands": {
+            "run": {
+              "args": [
+                "<path>",
+                "ProbeCase.java"
+              ],
+              "duration_seconds": "<duration>",
+              "returncode": 0,
+              "start_error": null,
+              "stderr": "",
+              "stdout": "VALUE=-1\n",
+              "timed_out": false
+            }
+          },
+          "compile_strategy": "java_source_file_launcher",
+          "fcstm_expression": "A % B",
+          "inputs": {
+            "A": -7,
+            "B": 2
+          },
+          "language": "java",
+          "native_api_family": "plain-int32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "%",
+          "outcome": "observed",
+          "profile": "java-int32",
+          "reason": null,
+          "render_expression": "A % B",
+          "render_path": "native_java",
+          "semantic_case_id": "int_remainder_dividend_sign",
+          "source_note_ids": [
+            "jls-div-rem"
+          ],
+          "source_path": "<local>",
+          "status": "passed",
+          "stderr": "",
+          "stdout": "VALUE=-1"
+        },
+        {
+          "case_id": "java-int32:division_by_zero_exception",
+          "commands": {
+            "run": {
+              "args": [
+                "<path>",
+                "ProbeCase.java"
+              ],
+              "duration_seconds": "<duration>",
+              "returncode": 10,
+              "start_error": null,
+              "stderr": "",
+              "stdout": "EXCEPTION=java.lang.ArithmeticException:/ by zero\n",
+              "timed_out": false
+            }
+          },
+          "compile_strategy": "java_source_file_launcher",
+          "fcstm_expression": "A / B",
+          "inputs": {
+            "A": 7,
+            "B": 0
+          },
+          "language": "java",
+          "native_api_family": "plain-int32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "/",
+          "outcome": "runtime_trap",
+          "profile": "java-int32",
+          "reason": "java_exception_or_nonzero",
+          "render_expression": "A / B",
+          "render_path": "native_java",
+          "semantic_case_id": "division_by_zero_exception",
+          "source_note_ids": [
+            "jls-div-rem"
+          ],
+          "source_path": "<local>",
+          "status": "runtime_failed",
+          "stderr": "",
+          "stdout": "EXCEPTION=java.lang.ArithmeticException:/ by zero"
+        },
+        {
+          "case_id": "java-int32:bitwise_and_mask",
+          "commands": {
+            "run": {
+              "args": [
+                "<path>",
+                "ProbeCase.java"
+              ],
+              "duration_seconds": "<duration>",
+              "returncode": 0,
+              "start_error": null,
+              "stderr": "",
+              "stdout": "VALUE=8\n",
+              "timed_out": false
+            }
+          },
+          "compile_strategy": "java_source_file_launcher",
+          "fcstm_expression": "A & B",
+          "inputs": {
+            "A": 10,
+            "B": 12
+          },
+          "language": "java",
+          "native_api_family": "plain-int32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "&",
+          "outcome": "observed",
+          "profile": "java-int32",
+          "reason": null,
+          "render_expression": "A & B",
+          "render_path": "native_java",
+          "semantic_case_id": "bitwise_and_mask",
+          "source_note_ids": [
+            "jls-integer-overflow"
+          ],
+          "source_path": "<local>",
+          "status": "passed",
+          "stderr": "",
+          "stdout": "VALUE=8"
+        },
+        {
+          "case_id": "java-int32:unary_minus_min_wrap",
+          "commands": {
+            "run": {
+              "args": [
+                "<path>",
+                "ProbeCase.java"
+              ],
+              "duration_seconds": "<duration>",
+              "returncode": 0,
+              "start_error": null,
+              "stderr": "",
+              "stdout": "VALUE=-2147483648\n",
+              "timed_out": false
+            }
+          },
+          "compile_strategy": "java_source_file_launcher",
+          "fcstm_expression": "-A",
+          "inputs": {
+            "A": -2147483648,
+            "B": 0
+          },
+          "language": "java",
+          "native_api_family": "plain-int32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "unary-",
+          "outcome": "observed",
+          "profile": "java-int32",
+          "reason": null,
+          "render_expression": "-A",
+          "render_path": "native_java",
+          "semantic_case_id": "unary_minus_min_wrap",
+          "source_note_ids": [
+            "jls-integer-overflow"
+          ],
+          "source_path": "<local>",
+          "status": "passed",
+          "stderr": "",
+          "stdout": "VALUE=-2147483648"
+        },
+        {
+          "case_id": "java-int32:shift_count_masking",
+          "commands": {
+            "run": {
+              "args": [
+                "<path>",
+                "ProbeCase.java"
+              ],
+              "duration_seconds": "<duration>",
+              "returncode": 0,
+              "start_error": null,
+              "stderr": "",
+              "stdout": "VALUE=1\n",
+              "timed_out": false
+            }
+          },
+          "compile_strategy": "java_source_file_launcher",
+          "fcstm_expression": "A << B",
+          "inputs": {
+            "A": 1,
+            "B": 32
+          },
+          "language": "java",
+          "native_api_family": "plain-int32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "<<",
+          "outcome": "observed",
+          "profile": "java-int32",
+          "reason": null,
+          "render_expression": "A << B",
+          "render_path": "native_java",
+          "semantic_case_id": "shift_count_masking",
+          "source_note_ids": [
+            "jls-shift-mask"
+          ],
+          "source_path": "<local>",
+          "status": "passed",
+          "stderr": "",
+          "stdout": "VALUE=1"
+        },
+        {
+          "case_id": "java-int8-cast:narrowing_int_to_byte",
+          "commands": {
+            "run": {
+              "args": [
+                "<path>",
+                "ProbeCase.java"
+              ],
+              "duration_seconds": "<duration>",
+              "returncode": 0,
+              "start_error": null,
+              "stderr": "",
+              "stdout": "VALUE=-128\n",
+              "timed_out": false
+            }
+          },
+          "compile_strategy": "java_source_file_launcher",
+          "fcstm_expression": "A",
+          "inputs": {
+            "A": 128,
+            "B": 0
+          },
+          "language": "java",
+          "native_api_family": "narrowing-cast",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "cast",
+          "outcome": "observed",
+          "profile": "java-int8-cast",
+          "reason": null,
+          "render_expression": "(byte) A",
+          "render_path": "native_java",
+          "semantic_case_id": "narrowing_int_to_byte",
+          "source_note_ids": [
+            "jls-narrowing-conversion"
+          ],
+          "source_path": "<local>",
+          "status": "passed",
+          "stderr": "",
+          "stdout": "VALUE=-128"
+        },
+        {
+          "case_id": "java-double-math:math_pow_promotes_double",
+          "commands": {
+            "run": {
+              "args": [
+                "<path>",
+                "ProbeCase.java"
+              ],
+              "duration_seconds": "<duration>",
+              "returncode": 0,
+              "start_error": null,
+              "stderr": "",
+              "stdout": "VALUE=9.0\n",
+              "timed_out": false
+            }
+          },
+          "compile_strategy": "java_source_file_launcher",
+          "fcstm_expression": "A ** B",
+          "inputs": {
+            "A": 3,
+            "B": 2
+          },
+          "language": "java",
+          "native_api_family": "math-floating",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "**",
+          "outcome": "observed",
+          "profile": "java-double-math",
+          "reason": null,
+          "render_expression": "Math.pow(A, B)",
+          "render_path": "native_java",
+          "semantic_case_id": "math_pow_promotes_double",
+          "source_note_ids": [
+            "java-math-floating"
+          ],
+          "source_path": "<local>",
+          "status": "passed",
+          "stderr": "",
+          "stdout": "VALUE=9.0"
+        },
+        {
+          "case_id": "java-double-math:math_round_half_up",
+          "commands": {
+            "run": {
+              "args": [
+                "<path>",
+                "ProbeCase.java"
+              ],
+              "duration_seconds": "<duration>",
+              "returncode": 0,
+              "start_error": null,
+              "stderr": "",
+              "stdout": "VALUE=-2\n",
+              "timed_out": false
+            }
+          },
+          "compile_strategy": "java_source_file_launcher",
+          "fcstm_expression": "round(A)",
+          "inputs": {
+            "A": -2,
+            "B": 0
+          },
+          "language": "java",
+          "native_api_family": "math-floating",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "round",
+          "outcome": "observed",
+          "profile": "java-double-math",
+          "reason": null,
+          "render_expression": "Math.round(A)",
+          "render_path": "native_java",
+          "semantic_case_id": "math_round_half_up",
+          "source_note_ids": [
+            "java-math-floating"
+          ],
+          "source_path": "<local>",
+          "status": "passed",
+          "stderr": "",
+          "stdout": "VALUE=-2"
+        },
+        {
+          "case_id": "java-int32-checked:math_add_exact_overflow",
+          "commands": {
+            "run": {
+              "args": [
+                "<path>",
+                "ProbeCase.java"
+              ],
+              "duration_seconds": "<duration>",
+              "returncode": 10,
+              "start_error": null,
+              "stderr": "",
+              "stdout": "EXCEPTION=java.lang.ArithmeticException:integer overflow\n",
+              "timed_out": false
+            }
+          },
+          "compile_strategy": "java_source_file_launcher",
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "java",
+          "native_api_family": "checked-exact",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "runtime_trap",
+          "profile": "java-int32-checked",
+          "reason": "java_exception_or_nonzero",
+          "render_expression": "Math.addExact(A, B)",
+          "render_path": "native_java",
+          "semantic_case_id": "math_add_exact_overflow",
+          "source_note_ids": [
+            "java-math-exact"
+          ],
+          "source_path": "<local>",
+          "status": "runtime_failed",
+          "stderr": "",
+          "stdout": "EXCEPTION=java.lang.ArithmeticException:integer overflow"
+        },
+        {
+          "case_id": "java-int32-checked:math_multiply_exact_overflow",
+          "commands": {
+            "run": {
+              "args": [
+                "<path>",
+                "ProbeCase.java"
+              ],
+              "duration_seconds": "<duration>",
+              "returncode": 10,
+              "start_error": null,
+              "stderr": "",
+              "stdout": "EXCEPTION=java.lang.ArithmeticException:integer overflow\n",
+              "timed_out": false
+            }
+          },
+          "compile_strategy": "java_source_file_launcher",
+          "fcstm_expression": "A * B",
+          "inputs": {
+            "A": 1073741824,
+            "B": 2
+          },
+          "language": "java",
+          "native_api_family": "checked-exact",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "*",
+          "outcome": "runtime_trap",
+          "profile": "java-int32-checked",
+          "reason": "java_exception_or_nonzero",
+          "render_expression": "Math.multiplyExact(A, B)",
+          "render_path": "native_java",
+          "semantic_case_id": "math_multiply_exact_overflow",
+          "source_note_ids": [
+            "java-math-exact"
+          ],
+          "source_path": "<local>",
+          "status": "runtime_failed",
+          "stderr": "",
+          "stdout": "EXCEPTION=java.lang.ArithmeticException:integer overflow"
+        },
+        {
+          "case_id": "java-renderer-fallback:math_sign_missing",
+          "commands": {
+            "run": {
+              "args": [
+                "<path>",
+                "ProbeCase.java"
+              ],
+              "duration_seconds": "<duration>",
+              "returncode": 1,
+              "start_error": null,
+              "stderr": "ProbeCase.java:6: error: cannot find symbol\n            Object result = Math.sign(A);\n                                ^\n  symbol:   method sign(int)\n  location: class Math\n1 error\nerror: compilation failed\n",
+              "stdout": "",
+              "timed_out": false
+            }
+          },
+          "compile_strategy": "java_source_file_launcher",
+          "fcstm_expression": "sign(A)",
+          "inputs": {
+            "A": -9,
+            "B": 0
+          },
+          "language": "java",
+          "native_api_family": "renderer-fallback",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "sign",
+          "outcome": "compile_failed",
+          "profile": "java-renderer-fallback",
+          "reason": "java_source_launcher_failed",
+          "render_expression": "Math.sign(A)",
+          "render_path": "native_java",
+          "semantic_case_id": "math_sign_missing",
+          "source_note_ids": [
+            "java-math-exact"
+          ],
+          "source_path": "<local>",
+          "status": "compile_failed",
+          "stderr": "ProbeCase.java:6: error: cannot find symbol\n            Object result = Math.sign(A);\n                                ^\n  symbol:   method sign(int)\n  location: class Math\n1 error\nerror: compilation failed",
+          "stdout": ""
+        }
+      ],
+      "generator": {
+        "determinism": "Native tool availability and compiler/runtime results are environment-dependent; --check validates shape and invariants rather than exact stdout.",
+        "research_path": "research/numeric-render-semantics",
+        "source_commit": "97c35ddad1bb2641a8ada87cd23bff752e508770",
+        "source_commit_policy": "Best-effort commit at generation time; schema, mapping digest and case-plan invariants are stable comparison keys.",
+        "tool": "tools/numeric_render_probe.py"
+      },
+      "language": "java",
+      "mode": "java-smoke",
+      "official_source_notes": [
+        {
+          "id": "jls-integer-overflow",
+          "source": "Java Language Specification, Java SE 21, chapter 15",
+          "summary": "Java integer operators use fixed primitive widths; integer overflow wraps silently except where a library method such as Math.*Exact specifies an exception.",
+          "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html"
+        },
+        {
+          "id": "jls-div-rem",
+          "source": "Java Language Specification, Java SE 21, sections 15.17.2 and 15.17.3",
+          "summary": "Integer division and remainder throw ArithmeticException on zero divisors; remainder has the dividend sign.",
+          "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html#jls-15.17.2"
+        },
+        {
+          "id": "jls-shift-mask",
+          "source": "Java Language Specification, Java SE 21, section 15.19",
+          "summary": "Java masks int shift counts to five low bits and long shift counts to six low bits.",
+          "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html#jls-15.19"
+        },
+        {
+          "id": "jls-narrowing-conversion",
+          "source": "Java Language Specification, Java SE 21, section 5.1.3",
+          "summary": "Narrowing primitive conversions may lose high-order bits, precision or range.",
+          "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-5.html#jls-5.1.3"
+        },
+        {
+          "id": "java-math-exact",
+          "source": "Java SE 21 java.lang.Math API",
+          "summary": "Math.*Exact methods provide checked integer arithmetic and throw ArithmeticException on overflow.",
+          "url": "https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Math.html"
+        },
+        {
+          "id": "java-math-floating",
+          "source": "Java SE 21 java.lang.Math API",
+          "summary": "Math.pow and Math.round expose floating-point math semantics that differ from pure fixed-width integer arithmetic.",
+          "url": "https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Math.html"
+        }
+      ],
+      "render_mapping_sha256": "d79b2fc4eb981eb794def52fc8fa2589c87e836673106eabdc589081eb8ad2da",
+      "render_paths": [
+        {
+          "kind": "native_only",
+          "language": "java",
+          "mapping_sources": [
+            "builtin_expr_styles.styles.java"
+          ],
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "path_id": "native_java"
+        }
+      ],
+      "repository": {
+        "render_mapping_snapshot": "research/numeric-render-semantics/results/snapshots/render_mapping.json",
+        "root": ".",
+        "schema_path": "research/numeric-render-semantics/schemas/java_rust_smoke.schema.json"
+      },
+      "schema_version": 1,
+      "source_mapping_sha256": "d79b2fc4eb981eb794def52fc8fa2589c87e836673106eabdc589081eb8ad2da",
+      "summary_status": "completed_with_findings",
+      "toolchain": {
+        "java": {
+          "java": {
+            "available": true,
+            "name": "java",
+            "path": "<path>",
+            "version": "openjdk 21.0.11 2026-04-21"
+          },
+          "javac": {
+            "available": false,
+            "name": "javac",
+            "path": null,
+            "version": null
+          }
+        },
+        "timeout_seconds": 10,
+        "work_dir": "<local>"
+      }
+    },
+    "rust": {
+      "cases": [
+        {
+          "case_id": "debug:plain_i32_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "default_debug",
+          "profile": "debug",
+          "reason": "rustc_unavailable",
+          "render_expression": "A + B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_add_overflow",
+          "source_note_ids": [
+            "rust-reference-overflow"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "debug:plain_i32_division",
+          "commands": {},
+          "fcstm_expression": "A / B",
+          "inputs": {
+            "A": -7,
+            "B": 2
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "/",
+          "outcome": "unavailable",
+          "overflow_checks": "default_debug",
+          "profile": "debug",
+          "reason": "rustc_unavailable",
+          "render_expression": "A / B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_division",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "debug:plain_i32_remainder",
+          "commands": {},
+          "fcstm_expression": "A % B",
+          "inputs": {
+            "A": -7,
+            "B": 2
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "%",
+          "outcome": "unavailable",
+          "overflow_checks": "default_debug",
+          "profile": "debug",
+          "reason": "rustc_unavailable",
+          "render_expression": "A % B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_remainder",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "debug:plain_i32_division_by_zero",
+          "commands": {},
+          "fcstm_expression": "A / B",
+          "inputs": {
+            "A": 7,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "/",
+          "outcome": "unavailable",
+          "overflow_checks": "default_debug",
+          "profile": "debug",
+          "reason": "rustc_unavailable",
+          "render_expression": "A / B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_division_by_zero",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "debug:plain_i32_bitwise_and",
+          "commands": {},
+          "fcstm_expression": "A & B",
+          "inputs": {
+            "A": 10,
+            "B": 12
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "&",
+          "outcome": "unavailable",
+          "overflow_checks": "default_debug",
+          "profile": "debug",
+          "reason": "rustc_unavailable",
+          "render_expression": "A & B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_bitwise_and",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "debug:plain_i32_unary_minus_min",
+          "commands": {},
+          "fcstm_expression": "-A",
+          "inputs": {
+            "A": -2147483648,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "unary-",
+          "outcome": "unavailable",
+          "overflow_checks": "default_debug",
+          "profile": "debug",
+          "reason": "rustc_unavailable",
+          "render_expression": "-A",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_unary_minus_min",
+          "source_note_ids": [
+            "rust-reference-overflow"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "debug:plain_i32_shift_invalid",
+          "commands": {},
+          "fcstm_expression": "A << B",
+          "inputs": {
+            "A": 1,
+            "B": 32
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "<<",
+          "outcome": "unavailable",
+          "overflow_checks": "default_debug",
+          "profile": "debug",
+          "reason": "rustc_unavailable",
+          "render_expression": "A << B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_shift_invalid",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "debug:cast_i32_to_i8",
+          "commands": {},
+          "fcstm_expression": "A",
+          "inputs": {
+            "A": 128,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "cast",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "cast",
+          "outcome": "unavailable",
+          "overflow_checks": "default_debug",
+          "profile": "debug",
+          "reason": "rustc_unavailable",
+          "render_expression": "A as i8",
+          "render_path": "native_rust",
+          "semantic_case_id": "cast_i32_to_i8",
+          "source_note_ids": [
+            "rust-reference-cast"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "debug:powf_promotes_f64",
+          "commands": {},
+          "fcstm_expression": "A ** B",
+          "inputs": {
+            "A": 3,
+            "B": 2
+          },
+          "language": "rust",
+          "native_api_family": "math-floating",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "**",
+          "outcome": "unavailable",
+          "overflow_checks": "default_debug",
+          "profile": "debug",
+          "reason": "rustc_unavailable",
+          "render_expression": "(A as f64).powf(B as f64)",
+          "render_path": "native_rust",
+          "semantic_case_id": "powf_promotes_f64",
+          "source_note_ids": [
+            "rust-reference-cast",
+            "rust-std-float-methods"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "debug:round_cast_i64",
+          "commands": {},
+          "fcstm_expression": "round(A)",
+          "inputs": {
+            "A": -2,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "math-floating",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "round",
+          "outcome": "unavailable",
+          "overflow_checks": "default_debug",
+          "profile": "debug",
+          "reason": "rustc_unavailable",
+          "render_expression": "(A as f64).round() as i64",
+          "render_path": "native_rust",
+          "semantic_case_id": "round_cast_i64",
+          "source_note_ids": [
+            "rust-reference-cast",
+            "rust-std-float-methods"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "debug:wrapping_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "wrapping",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "default_debug",
+          "profile": "debug",
+          "reason": "rustc_unavailable",
+          "render_expression": "A.wrapping_add(B)",
+          "render_path": "native_rust",
+          "semantic_case_id": "wrapping_add_overflow",
+          "source_note_ids": [
+            "rust-std-overflowing-apis"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "debug:checked_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "checked",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "default_debug",
+          "profile": "debug",
+          "reason": "rustc_unavailable",
+          "render_expression": "A.checked_add(B)",
+          "render_path": "native_rust",
+          "semantic_case_id": "checked_add_overflow",
+          "source_note_ids": [
+            "rust-std-overflowing-apis"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "debug:overflowing_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "overflowing",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "default_debug",
+          "profile": "debug",
+          "reason": "rustc_unavailable",
+          "render_expression": "A.overflowing_add(B)",
+          "render_path": "native_rust",
+          "semantic_case_id": "overflowing_add_overflow",
+          "source_note_ids": [
+            "rust-std-overflowing-apis"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "debug:saturating_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "saturating",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "default_debug",
+          "profile": "debug",
+          "reason": "rustc_unavailable",
+          "render_expression": "A.saturating_add(B)",
+          "render_path": "native_rust",
+          "semantic_case_id": "saturating_add_overflow",
+          "source_note_ids": [
+            "rust-std-overflowing-apis"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "debug:float_sign_renderer_missing",
+          "commands": {},
+          "fcstm_expression": "sign(A)",
+          "inputs": {
+            "A": -9,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "renderer-fallback",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "sign",
+          "outcome": "unavailable",
+          "overflow_checks": "default_debug",
+          "profile": "debug",
+          "reason": "rustc_unavailable",
+          "render_expression": "(A as f64).sign()",
+          "render_path": "native_rust",
+          "semantic_case_id": "float_sign_renderer_missing",
+          "source_note_ids": [
+            "rust-reference-cast",
+            "rust-std-float-methods"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "release:plain_i32_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "default_release",
+          "profile": "release",
+          "reason": "rustc_unavailable",
+          "render_expression": "A + B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_add_overflow",
+          "source_note_ids": [
+            "rust-reference-overflow"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "release:plain_i32_division",
+          "commands": {},
+          "fcstm_expression": "A / B",
+          "inputs": {
+            "A": -7,
+            "B": 2
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "/",
+          "outcome": "unavailable",
+          "overflow_checks": "default_release",
+          "profile": "release",
+          "reason": "rustc_unavailable",
+          "render_expression": "A / B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_division",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "release:plain_i32_remainder",
+          "commands": {},
+          "fcstm_expression": "A % B",
+          "inputs": {
+            "A": -7,
+            "B": 2
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "%",
+          "outcome": "unavailable",
+          "overflow_checks": "default_release",
+          "profile": "release",
+          "reason": "rustc_unavailable",
+          "render_expression": "A % B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_remainder",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "release:plain_i32_division_by_zero",
+          "commands": {},
+          "fcstm_expression": "A / B",
+          "inputs": {
+            "A": 7,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "/",
+          "outcome": "unavailable",
+          "overflow_checks": "default_release",
+          "profile": "release",
+          "reason": "rustc_unavailable",
+          "render_expression": "A / B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_division_by_zero",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "release:plain_i32_bitwise_and",
+          "commands": {},
+          "fcstm_expression": "A & B",
+          "inputs": {
+            "A": 10,
+            "B": 12
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "&",
+          "outcome": "unavailable",
+          "overflow_checks": "default_release",
+          "profile": "release",
+          "reason": "rustc_unavailable",
+          "render_expression": "A & B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_bitwise_and",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "release:plain_i32_unary_minus_min",
+          "commands": {},
+          "fcstm_expression": "-A",
+          "inputs": {
+            "A": -2147483648,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "unary-",
+          "outcome": "unavailable",
+          "overflow_checks": "default_release",
+          "profile": "release",
+          "reason": "rustc_unavailable",
+          "render_expression": "-A",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_unary_minus_min",
+          "source_note_ids": [
+            "rust-reference-overflow"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "release:plain_i32_shift_invalid",
+          "commands": {},
+          "fcstm_expression": "A << B",
+          "inputs": {
+            "A": 1,
+            "B": 32
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "<<",
+          "outcome": "unavailable",
+          "overflow_checks": "default_release",
+          "profile": "release",
+          "reason": "rustc_unavailable",
+          "render_expression": "A << B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_shift_invalid",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "release:cast_i32_to_i8",
+          "commands": {},
+          "fcstm_expression": "A",
+          "inputs": {
+            "A": 128,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "cast",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "cast",
+          "outcome": "unavailable",
+          "overflow_checks": "default_release",
+          "profile": "release",
+          "reason": "rustc_unavailable",
+          "render_expression": "A as i8",
+          "render_path": "native_rust",
+          "semantic_case_id": "cast_i32_to_i8",
+          "source_note_ids": [
+            "rust-reference-cast"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "release:powf_promotes_f64",
+          "commands": {},
+          "fcstm_expression": "A ** B",
+          "inputs": {
+            "A": 3,
+            "B": 2
+          },
+          "language": "rust",
+          "native_api_family": "math-floating",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "**",
+          "outcome": "unavailable",
+          "overflow_checks": "default_release",
+          "profile": "release",
+          "reason": "rustc_unavailable",
+          "render_expression": "(A as f64).powf(B as f64)",
+          "render_path": "native_rust",
+          "semantic_case_id": "powf_promotes_f64",
+          "source_note_ids": [
+            "rust-reference-cast",
+            "rust-std-float-methods"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "release:round_cast_i64",
+          "commands": {},
+          "fcstm_expression": "round(A)",
+          "inputs": {
+            "A": -2,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "math-floating",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "round",
+          "outcome": "unavailable",
+          "overflow_checks": "default_release",
+          "profile": "release",
+          "reason": "rustc_unavailable",
+          "render_expression": "(A as f64).round() as i64",
+          "render_path": "native_rust",
+          "semantic_case_id": "round_cast_i64",
+          "source_note_ids": [
+            "rust-reference-cast",
+            "rust-std-float-methods"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "release:wrapping_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "wrapping",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "default_release",
+          "profile": "release",
+          "reason": "rustc_unavailable",
+          "render_expression": "A.wrapping_add(B)",
+          "render_path": "native_rust",
+          "semantic_case_id": "wrapping_add_overflow",
+          "source_note_ids": [
+            "rust-std-overflowing-apis"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "release:checked_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "checked",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "default_release",
+          "profile": "release",
+          "reason": "rustc_unavailable",
+          "render_expression": "A.checked_add(B)",
+          "render_path": "native_rust",
+          "semantic_case_id": "checked_add_overflow",
+          "source_note_ids": [
+            "rust-std-overflowing-apis"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "release:overflowing_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "overflowing",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "default_release",
+          "profile": "release",
+          "reason": "rustc_unavailable",
+          "render_expression": "A.overflowing_add(B)",
+          "render_path": "native_rust",
+          "semantic_case_id": "overflowing_add_overflow",
+          "source_note_ids": [
+            "rust-std-overflowing-apis"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "release:saturating_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "saturating",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "default_release",
+          "profile": "release",
+          "reason": "rustc_unavailable",
+          "render_expression": "A.saturating_add(B)",
+          "render_path": "native_rust",
+          "semantic_case_id": "saturating_add_overflow",
+          "source_note_ids": [
+            "rust-std-overflowing-apis"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "release:float_sign_renderer_missing",
+          "commands": {},
+          "fcstm_expression": "sign(A)",
+          "inputs": {
+            "A": -9,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "renderer-fallback",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "sign",
+          "outcome": "unavailable",
+          "overflow_checks": "default_release",
+          "profile": "release",
+          "reason": "rustc_unavailable",
+          "render_expression": "(A as f64).sign()",
+          "render_path": "native_rust",
+          "semantic_case_id": "float_sign_renderer_missing",
+          "source_note_ids": [
+            "rust-reference-cast",
+            "rust-std-float-methods"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-on:plain_i32_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_on",
+          "profile": "overflow-checks-on",
+          "reason": "rustc_unavailable",
+          "render_expression": "A + B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_add_overflow",
+          "source_note_ids": [
+            "rust-reference-overflow"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-on:plain_i32_division",
+          "commands": {},
+          "fcstm_expression": "A / B",
+          "inputs": {
+            "A": -7,
+            "B": 2
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "/",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_on",
+          "profile": "overflow-checks-on",
+          "reason": "rustc_unavailable",
+          "render_expression": "A / B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_division",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-on:plain_i32_remainder",
+          "commands": {},
+          "fcstm_expression": "A % B",
+          "inputs": {
+            "A": -7,
+            "B": 2
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "%",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_on",
+          "profile": "overflow-checks-on",
+          "reason": "rustc_unavailable",
+          "render_expression": "A % B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_remainder",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-on:plain_i32_division_by_zero",
+          "commands": {},
+          "fcstm_expression": "A / B",
+          "inputs": {
+            "A": 7,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "/",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_on",
+          "profile": "overflow-checks-on",
+          "reason": "rustc_unavailable",
+          "render_expression": "A / B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_division_by_zero",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-on:plain_i32_bitwise_and",
+          "commands": {},
+          "fcstm_expression": "A & B",
+          "inputs": {
+            "A": 10,
+            "B": 12
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "&",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_on",
+          "profile": "overflow-checks-on",
+          "reason": "rustc_unavailable",
+          "render_expression": "A & B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_bitwise_and",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-on:plain_i32_unary_minus_min",
+          "commands": {},
+          "fcstm_expression": "-A",
+          "inputs": {
+            "A": -2147483648,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "unary-",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_on",
+          "profile": "overflow-checks-on",
+          "reason": "rustc_unavailable",
+          "render_expression": "-A",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_unary_minus_min",
+          "source_note_ids": [
+            "rust-reference-overflow"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-on:plain_i32_shift_invalid",
+          "commands": {},
+          "fcstm_expression": "A << B",
+          "inputs": {
+            "A": 1,
+            "B": 32
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "<<",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_on",
+          "profile": "overflow-checks-on",
+          "reason": "rustc_unavailable",
+          "render_expression": "A << B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_shift_invalid",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-on:cast_i32_to_i8",
+          "commands": {},
+          "fcstm_expression": "A",
+          "inputs": {
+            "A": 128,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "cast",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "cast",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_on",
+          "profile": "overflow-checks-on",
+          "reason": "rustc_unavailable",
+          "render_expression": "A as i8",
+          "render_path": "native_rust",
+          "semantic_case_id": "cast_i32_to_i8",
+          "source_note_ids": [
+            "rust-reference-cast"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-on:powf_promotes_f64",
+          "commands": {},
+          "fcstm_expression": "A ** B",
+          "inputs": {
+            "A": 3,
+            "B": 2
+          },
+          "language": "rust",
+          "native_api_family": "math-floating",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "**",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_on",
+          "profile": "overflow-checks-on",
+          "reason": "rustc_unavailable",
+          "render_expression": "(A as f64).powf(B as f64)",
+          "render_path": "native_rust",
+          "semantic_case_id": "powf_promotes_f64",
+          "source_note_ids": [
+            "rust-reference-cast",
+            "rust-std-float-methods"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-on:round_cast_i64",
+          "commands": {},
+          "fcstm_expression": "round(A)",
+          "inputs": {
+            "A": -2,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "math-floating",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "round",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_on",
+          "profile": "overflow-checks-on",
+          "reason": "rustc_unavailable",
+          "render_expression": "(A as f64).round() as i64",
+          "render_path": "native_rust",
+          "semantic_case_id": "round_cast_i64",
+          "source_note_ids": [
+            "rust-reference-cast",
+            "rust-std-float-methods"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-on:wrapping_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "wrapping",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_on",
+          "profile": "overflow-checks-on",
+          "reason": "rustc_unavailable",
+          "render_expression": "A.wrapping_add(B)",
+          "render_path": "native_rust",
+          "semantic_case_id": "wrapping_add_overflow",
+          "source_note_ids": [
+            "rust-std-overflowing-apis"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-on:checked_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "checked",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_on",
+          "profile": "overflow-checks-on",
+          "reason": "rustc_unavailable",
+          "render_expression": "A.checked_add(B)",
+          "render_path": "native_rust",
+          "semantic_case_id": "checked_add_overflow",
+          "source_note_ids": [
+            "rust-std-overflowing-apis"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-on:overflowing_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "overflowing",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_on",
+          "profile": "overflow-checks-on",
+          "reason": "rustc_unavailable",
+          "render_expression": "A.overflowing_add(B)",
+          "render_path": "native_rust",
+          "semantic_case_id": "overflowing_add_overflow",
+          "source_note_ids": [
+            "rust-std-overflowing-apis"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-on:saturating_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "saturating",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_on",
+          "profile": "overflow-checks-on",
+          "reason": "rustc_unavailable",
+          "render_expression": "A.saturating_add(B)",
+          "render_path": "native_rust",
+          "semantic_case_id": "saturating_add_overflow",
+          "source_note_ids": [
+            "rust-std-overflowing-apis"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-on:float_sign_renderer_missing",
+          "commands": {},
+          "fcstm_expression": "sign(A)",
+          "inputs": {
+            "A": -9,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "renderer-fallback",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "sign",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_on",
+          "profile": "overflow-checks-on",
+          "reason": "rustc_unavailable",
+          "render_expression": "(A as f64).sign()",
+          "render_path": "native_rust",
+          "semantic_case_id": "float_sign_renderer_missing",
+          "source_note_ids": [
+            "rust-reference-cast",
+            "rust-std-float-methods"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-off:plain_i32_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_off",
+          "profile": "overflow-checks-off",
+          "reason": "rustc_unavailable",
+          "render_expression": "A + B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_add_overflow",
+          "source_note_ids": [
+            "rust-reference-overflow"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-off:plain_i32_division",
+          "commands": {},
+          "fcstm_expression": "A / B",
+          "inputs": {
+            "A": -7,
+            "B": 2
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "/",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_off",
+          "profile": "overflow-checks-off",
+          "reason": "rustc_unavailable",
+          "render_expression": "A / B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_division",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-off:plain_i32_remainder",
+          "commands": {},
+          "fcstm_expression": "A % B",
+          "inputs": {
+            "A": -7,
+            "B": 2
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "%",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_off",
+          "profile": "overflow-checks-off",
+          "reason": "rustc_unavailable",
+          "render_expression": "A % B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_remainder",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-off:plain_i32_division_by_zero",
+          "commands": {},
+          "fcstm_expression": "A / B",
+          "inputs": {
+            "A": 7,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "/",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_off",
+          "profile": "overflow-checks-off",
+          "reason": "rustc_unavailable",
+          "render_expression": "A / B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_division_by_zero",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-off:plain_i32_bitwise_and",
+          "commands": {},
+          "fcstm_expression": "A & B",
+          "inputs": {
+            "A": 10,
+            "B": 12
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "&",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_off",
+          "profile": "overflow-checks-off",
+          "reason": "rustc_unavailable",
+          "render_expression": "A & B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_bitwise_and",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-off:plain_i32_unary_minus_min",
+          "commands": {},
+          "fcstm_expression": "-A",
+          "inputs": {
+            "A": -2147483648,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "unary-",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_off",
+          "profile": "overflow-checks-off",
+          "reason": "rustc_unavailable",
+          "render_expression": "-A",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_unary_minus_min",
+          "source_note_ids": [
+            "rust-reference-overflow"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-off:plain_i32_shift_invalid",
+          "commands": {},
+          "fcstm_expression": "A << B",
+          "inputs": {
+            "A": 1,
+            "B": 32
+          },
+          "language": "rust",
+          "native_api_family": "plain-i32",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "<<",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_off",
+          "profile": "overflow-checks-off",
+          "reason": "rustc_unavailable",
+          "render_expression": "A << B",
+          "render_path": "native_rust",
+          "semantic_case_id": "plain_i32_shift_invalid",
+          "source_note_ids": [
+            "rust-reference-div-rem-shift"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-off:cast_i32_to_i8",
+          "commands": {},
+          "fcstm_expression": "A",
+          "inputs": {
+            "A": 128,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "cast",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "cast",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_off",
+          "profile": "overflow-checks-off",
+          "reason": "rustc_unavailable",
+          "render_expression": "A as i8",
+          "render_path": "native_rust",
+          "semantic_case_id": "cast_i32_to_i8",
+          "source_note_ids": [
+            "rust-reference-cast"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-off:powf_promotes_f64",
+          "commands": {},
+          "fcstm_expression": "A ** B",
+          "inputs": {
+            "A": 3,
+            "B": 2
+          },
+          "language": "rust",
+          "native_api_family": "math-floating",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "**",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_off",
+          "profile": "overflow-checks-off",
+          "reason": "rustc_unavailable",
+          "render_expression": "(A as f64).powf(B as f64)",
+          "render_path": "native_rust",
+          "semantic_case_id": "powf_promotes_f64",
+          "source_note_ids": [
+            "rust-reference-cast",
+            "rust-std-float-methods"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-off:round_cast_i64",
+          "commands": {},
+          "fcstm_expression": "round(A)",
+          "inputs": {
+            "A": -2,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "math-floating",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "round",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_off",
+          "profile": "overflow-checks-off",
+          "reason": "rustc_unavailable",
+          "render_expression": "(A as f64).round() as i64",
+          "render_path": "native_rust",
+          "semantic_case_id": "round_cast_i64",
+          "source_note_ids": [
+            "rust-reference-cast",
+            "rust-std-float-methods"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-off:wrapping_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "wrapping",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_off",
+          "profile": "overflow-checks-off",
+          "reason": "rustc_unavailable",
+          "render_expression": "A.wrapping_add(B)",
+          "render_path": "native_rust",
+          "semantic_case_id": "wrapping_add_overflow",
+          "source_note_ids": [
+            "rust-std-overflowing-apis"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-off:checked_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "checked",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_off",
+          "profile": "overflow-checks-off",
+          "reason": "rustc_unavailable",
+          "render_expression": "A.checked_add(B)",
+          "render_path": "native_rust",
+          "semantic_case_id": "checked_add_overflow",
+          "source_note_ids": [
+            "rust-std-overflowing-apis"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-off:overflowing_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "overflowing",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_off",
+          "profile": "overflow-checks-off",
+          "reason": "rustc_unavailable",
+          "render_expression": "A.overflowing_add(B)",
+          "render_path": "native_rust",
+          "semantic_case_id": "overflowing_add_overflow",
+          "source_note_ids": [
+            "rust-std-overflowing-apis"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-off:saturating_add_overflow",
+          "commands": {},
+          "fcstm_expression": "A + B",
+          "inputs": {
+            "A": 2147483647,
+            "B": 1
+          },
+          "language": "rust",
+          "native_api_family": "saturating",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "+",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_off",
+          "profile": "overflow-checks-off",
+          "reason": "rustc_unavailable",
+          "render_expression": "A.saturating_add(B)",
+          "render_path": "native_rust",
+          "semantic_case_id": "saturating_add_overflow",
+          "source_note_ids": [
+            "rust-std-overflowing-apis"
+          ],
+          "status": "unavailable"
+        },
+        {
+          "case_id": "overflow-checks-off:float_sign_renderer_missing",
+          "commands": {},
+          "fcstm_expression": "sign(A)",
+          "inputs": {
+            "A": -9,
+            "B": 0
+          },
+          "language": "rust",
+          "native_api_family": "renderer-fallback",
+          "native_only": true,
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "operator": "sign",
+          "outcome": "unavailable",
+          "overflow_checks": "forced_off",
+          "profile": "overflow-checks-off",
+          "reason": "rustc_unavailable",
+          "render_expression": "(A as f64).sign()",
+          "render_path": "native_rust",
+          "semantic_case_id": "float_sign_renderer_missing",
+          "source_note_ids": [
+            "rust-reference-cast",
+            "rust-std-float-methods"
+          ],
+          "status": "unavailable"
+        }
+      ],
+      "generator": {
+        "determinism": "Native tool availability and compiler/runtime results are environment-dependent; --check validates shape and invariants rather than exact stdout.",
+        "research_path": "research/numeric-render-semantics",
+        "source_commit": "97c35ddad1bb2641a8ada87cd23bff752e508770",
+        "source_commit_policy": "Best-effort commit at generation time; schema, mapping digest and case-plan invariants are stable comparison keys.",
+        "tool": "tools/numeric_render_probe.py"
+      },
+      "language": "rust",
+      "mode": "rust-smoke",
+      "official_source_notes": [
+        {
+          "id": "rust-reference-overflow",
+          "source": "Rust Reference: Expressions / operator overflow",
+          "summary": "Rust integer overflow checking depends on debug assertions and overflow-checks settings; overflow can panic or wrap depending on profile.",
+          "url": "https://doc.rust-lang.org/reference/expressions/operator-expr.html#overflow"
+        },
+        {
+          "id": "rust-reference-div-rem-shift",
+          "source": "Rust Reference: arithmetic and bitwise expressions",
+          "summary": "Division by zero, remainder by zero and invalid shifts are checked error cases; shift and arithmetic behavior is profile-sensitive for overflow.",
+          "url": "https://doc.rust-lang.org/reference/expressions/operator-expr.html"
+        },
+        {
+          "id": "rust-reference-cast",
+          "source": "Rust Reference: type cast expressions",
+          "summary": "Rust numeric casts use explicit `as` conversions with specified integer truncation or float conversion behavior.",
+          "url": "https://doc.rust-lang.org/reference/expressions/operator-expr.html#type-cast-expressions"
+        },
+        {
+          "id": "rust-std-overflowing-apis",
+          "source": "Rust standard library primitive integer methods",
+          "summary": "Primitive integer methods expose wrapping_*, checked_*, overflowing_* and saturating_* semantic families.",
+          "url": "https://doc.rust-lang.org/std/primitive.i32.html"
+        },
+        {
+          "id": "rust-std-float-methods",
+          "source": "Rust standard library primitive f64 methods",
+          "summary": "Floating methods such as powf, round and signum use f64 semantics before any explicit integer cast or profile-specific wrapper.",
+          "url": "https://doc.rust-lang.org/std/primitive.f64.html"
+        }
+      ],
+      "render_mapping_sha256": "d79b2fc4eb981eb794def52fc8fa2589c87e836673106eabdc589081eb8ad2da",
+      "render_paths": [
+        {
+          "kind": "native_only",
+          "language": "rust",
+          "mapping_sources": [
+            "builtin_expr_styles.styles.rust"
+          ],
+          "native_only_reason": "no_java_or_rust_template_in_current_repository",
+          "path_id": "native_rust"
+        }
+      ],
+      "repository": {
+        "render_mapping_snapshot": "research/numeric-render-semantics/results/snapshots/render_mapping.json",
+        "root": ".",
+        "schema_path": "research/numeric-render-semantics/schemas/java_rust_smoke.schema.json"
+      },
+      "schema_version": 1,
+      "source_mapping_sha256": "d79b2fc4eb981eb794def52fc8fa2589c87e836673106eabdc589081eb8ad2da",
+      "summary_status": "unavailable",
+      "toolchain": {
+        "profiles": [
+          {
+            "flags": [
+              "-C",
+              "opt-level=0"
+            ],
+            "name": "debug",
+            "overflow_checks": "default_debug"
+          },
+          {
+            "flags": [
+              "-C",
+              "opt-level=3"
+            ],
+            "name": "release",
+            "overflow_checks": "default_release"
+          },
+          {
+            "flags": [
+              "-C",
+              "opt-level=3",
+              "-C",
+              "overflow-checks=yes"
+            ],
+            "name": "overflow-checks-on",
+            "overflow_checks": "forced_on"
+          },
+          {
+            "flags": [
+              "-C",
+              "opt-level=0",
+              "-C",
+              "overflow-checks=no"
+            ],
+            "name": "overflow-checks-off",
+            "overflow_checks": "forced_off"
+          }
+        ],
+        "rust": {
+          "cargo": {
+            "available": false,
+            "name": "cargo",
+            "path": null,
+            "version": null
+          },
+          "rustc": {
+            "available": false,
+            "name": "rustc",
+            "path": null,
+            "version": null
+          }
+        },
+        "timeout_seconds": 10,
+        "work_dir": "<local>"
+      }
+    }
+  },
+  "mode": "java-rust-smoke",
+  "official_source_notes": {
+    "java": [
+      {
+        "id": "jls-integer-overflow",
+        "source": "Java Language Specification, Java SE 21, chapter 15",
+        "summary": "Java integer operators use fixed primitive widths; integer overflow wraps silently except where a library method such as Math.*Exact specifies an exception.",
+        "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html"
+      },
+      {
+        "id": "jls-div-rem",
+        "source": "Java Language Specification, Java SE 21, sections 15.17.2 and 15.17.3",
+        "summary": "Integer division and remainder throw ArithmeticException on zero divisors; remainder has the dividend sign.",
+        "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html#jls-15.17.2"
+      },
+      {
+        "id": "jls-shift-mask",
+        "source": "Java Language Specification, Java SE 21, section 15.19",
+        "summary": "Java masks int shift counts to five low bits and long shift counts to six low bits.",
+        "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html#jls-15.19"
+      },
+      {
+        "id": "jls-narrowing-conversion",
+        "source": "Java Language Specification, Java SE 21, section 5.1.3",
+        "summary": "Narrowing primitive conversions may lose high-order bits, precision or range.",
+        "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-5.html#jls-5.1.3"
+      },
+      {
+        "id": "java-math-exact",
+        "source": "Java SE 21 java.lang.Math API",
+        "summary": "Math.*Exact methods provide checked integer arithmetic and throw ArithmeticException on overflow.",
+        "url": "https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Math.html"
+      },
+      {
+        "id": "java-math-floating",
+        "source": "Java SE 21 java.lang.Math API",
+        "summary": "Math.pow and Math.round expose floating-point math semantics that differ from pure fixed-width integer arithmetic.",
+        "url": "https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Math.html"
+      }
+    ],
+    "rust": [
+      {
+        "id": "rust-reference-overflow",
+        "source": "Rust Reference: Expressions / operator overflow",
+        "summary": "Rust integer overflow checking depends on debug assertions and overflow-checks settings; overflow can panic or wrap depending on profile.",
+        "url": "https://doc.rust-lang.org/reference/expressions/operator-expr.html#overflow"
+      },
+      {
+        "id": "rust-reference-div-rem-shift",
+        "source": "Rust Reference: arithmetic and bitwise expressions",
+        "summary": "Division by zero, remainder by zero and invalid shifts are checked error cases; shift and arithmetic behavior is profile-sensitive for overflow.",
+        "url": "https://doc.rust-lang.org/reference/expressions/operator-expr.html"
+      },
+      {
+        "id": "rust-reference-cast",
+        "source": "Rust Reference: type cast expressions",
+        "summary": "Rust numeric casts use explicit `as` conversions with specified integer truncation or float conversion behavior.",
+        "url": "https://doc.rust-lang.org/reference/expressions/operator-expr.html#type-cast-expressions"
+      },
+      {
+        "id": "rust-std-overflowing-apis",
+        "source": "Rust standard library primitive integer methods",
+        "summary": "Primitive integer methods expose wrapping_*, checked_*, overflowing_* and saturating_* semantic families.",
+        "url": "https://doc.rust-lang.org/std/primitive.i32.html"
+      },
+      {
+        "id": "rust-std-float-methods",
+        "source": "Rust standard library primitive f64 methods",
+        "summary": "Floating methods such as powf, round and signum use f64 semantics before any explicit integer cast or profile-specific wrapper.",
+        "url": "https://doc.rust-lang.org/std/primitive.f64.html"
+      }
+    ]
+  },
+  "render_mapping_sha256": "d79b2fc4eb981eb794def52fc8fa2589c87e836673106eabdc589081eb8ad2da",
+  "repository": {
+    "render_mapping_snapshot": "research/numeric-render-semantics/results/snapshots/render_mapping.json",
+    "root": ".",
+    "schema_path": "research/numeric-render-semantics/schemas/java_rust_smoke.schema.json"
+  },
+  "schema_version": 1,
+  "source_mapping_sha256": "d79b2fc4eb981eb794def52fc8fa2589c87e836673106eabdc589081eb8ad2da",
+  "summary_status": "completed_with_findings",
+  "toolchain": {
+    "java": {
+      "java": {
+        "available": true,
+        "name": "java",
+        "path": "<path>",
+        "version": "openjdk 21.0.11 2026-04-21"
+      },
+      "javac": {
+        "available": false,
+        "name": "javac",
+        "path": null,
+        "version": null
+      }
+    },
+    "rust": {
+      "cargo": {
+        "available": false,
+        "name": "cargo",
+        "path": null,
+        "version": null
+      },
+      "rustc": {
+        "available": false,
+        "name": "rustc",
+        "path": null,
+        "version": null
+      }
+    },
+    "timeout_seconds": 10
+  }
+}

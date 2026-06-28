@@ -94,6 +94,26 @@ class NameScope:
     :type importlib_aliases: Set[str]
     :param builtins_aliases: Names that expose the :mod:`builtins` module.
     :type builtins_aliases: Set[str]
+    :param pathlib_aliases: Names that expose the :mod:`pathlib` module.
+    :type pathlib_aliases: Set[str]
+    :param path_class_aliases: Names that expose :class:`pathlib.Path`.
+    :type path_class_aliases: Set[str]
+    :param pytest_aliases: Names that expose the :mod:`pytest` module.
+    :type pytest_aliases: Set[str]
+    :param pytest_importorskip_aliases: Names imported from
+        :func:`pytest.importorskip`.
+    :type pytest_importorskip_aliases: Set[str]
+    :param runpy_aliases: Names that expose the :mod:`runpy` module.
+    :type runpy_aliases: Set[str]
+    :param runpy_run_module_aliases: Names imported from
+        :func:`runpy.run_module`.
+    :type runpy_run_module_aliases: Set[str]
+    :param runpy_run_path_aliases: Names imported from :func:`runpy.run_path`.
+    :type runpy_run_path_aliases: Set[str]
+    :param sys_aliases: Names that expose the :mod:`sys` module.
+    :type sys_aliases: Set[str]
+    :param sys_modules_aliases: Names imported from :data:`sys.modules`.
+    :type sys_modules_aliases: Set[str]
     :param subprocess_aliases: Names that expose the :mod:`subprocess` module.
     :type subprocess_aliases: Set[str]
     :param subprocess_function_aliases: Names imported from subprocess command helpers.
@@ -111,8 +131,16 @@ class NameScope:
     :type os_path_dirname_aliases: Set[str]
     :param os_path_abspath_aliases: Names imported from ``os.path.abspath``.
     :type os_path_abspath_aliases: Set[str]
+    :param os_getcwd_aliases: Names imported from ``os.getcwd``.
+    :type os_getcwd_aliases: Set[str]
     :param repo_root_aliases: Names assigned from repository-root expressions.
     :type repo_root_aliases: Set[str]
+    :param template_segment_aliases: Names assigned from the exact path segment
+        ``"templates"``.
+    :type template_segment_aliases: Set[str]
+    :param tools_module_name_aliases: Names assigned from ``tools`` module-name
+        strings.
+    :type tools_module_name_aliases: Set[str]
     :param tools_command_aliases: Names assigned from commands that execute tools scripts.
     :type tools_command_aliases: Set[str]
     :param source_install_command_aliases: Names assigned from source-install commands.
@@ -135,6 +163,15 @@ class NameScope:
     dynamic_tools_aliases: Set[str]
     importlib_aliases: Set[str]
     builtins_aliases: Set[str]
+    pathlib_aliases: Set[str]
+    path_class_aliases: Set[str]
+    pytest_aliases: Set[str]
+    pytest_importorskip_aliases: Set[str]
+    runpy_aliases: Set[str]
+    runpy_run_module_aliases: Set[str]
+    runpy_run_path_aliases: Set[str]
+    sys_aliases: Set[str]
+    sys_modules_aliases: Set[str]
     subprocess_aliases: Set[str]
     subprocess_function_aliases: Set[str]
     os_aliases: Set[str]
@@ -143,7 +180,10 @@ class NameScope:
     os_path_join_aliases: Set[str]
     os_path_dirname_aliases: Set[str]
     os_path_abspath_aliases: Set[str]
+    os_getcwd_aliases: Set[str]
     repo_root_aliases: Set[str]
+    template_segment_aliases: Set[str]
+    tools_module_name_aliases: Set[str]
     tools_command_aliases: Set[str]
     source_install_command_aliases: Set[str]
     package_templates_aliases: Set[str]
@@ -156,6 +196,11 @@ class NameScope:
         shadowing_names: Optional[Set[str]] = None,
         importlib_aliases: Optional[Set[str]] = None,
         builtins_aliases: Optional[Set[str]] = None,
+        pathlib_aliases: Optional[Set[str]] = None,
+        path_class_aliases: Optional[Set[str]] = None,
+        pytest_aliases: Optional[Set[str]] = None,
+        runpy_aliases: Optional[Set[str]] = None,
+        sys_aliases: Optional[Set[str]] = None,
         subprocess_aliases: Optional[Set[str]] = None,
         os_aliases: Optional[Set[str]] = None,
         is_class_body: bool = False,
@@ -172,6 +217,17 @@ class NameScope:
         :type importlib_aliases: Set[str], optional
         :param builtins_aliases: Predefined builtins aliases, defaults to ``None``.
         :type builtins_aliases: Set[str], optional
+        :param pathlib_aliases: Predefined pathlib aliases, defaults to ``None``.
+        :type pathlib_aliases: Set[str], optional
+        :param path_class_aliases: Predefined Path class aliases, defaults to
+            ``None``.
+        :type path_class_aliases: Set[str], optional
+        :param pytest_aliases: Predefined pytest aliases, defaults to ``None``.
+        :type pytest_aliases: Set[str], optional
+        :param runpy_aliases: Predefined runpy aliases, defaults to ``None``.
+        :type runpy_aliases: Set[str], optional
+        :param sys_aliases: Predefined sys aliases, defaults to ``None``.
+        :type sys_aliases: Set[str], optional
         :param subprocess_aliases: Predefined subprocess aliases, defaults to ``None``.
         :type subprocess_aliases: Set[str], optional
         :param os_aliases: Predefined os aliases, defaults to ``None``.
@@ -194,6 +250,15 @@ class NameScope:
             dynamic_tools_aliases=set(),
             importlib_aliases=set(importlib_aliases or set()),
             builtins_aliases=set(builtins_aliases or set()),
+            pathlib_aliases=set(pathlib_aliases or set()),
+            path_class_aliases=set(path_class_aliases or set()),
+            pytest_aliases=set(pytest_aliases or set()),
+            pytest_importorskip_aliases=set(),
+            runpy_aliases=set(runpy_aliases or set()),
+            runpy_run_module_aliases=set(),
+            runpy_run_path_aliases=set(),
+            sys_aliases=set(sys_aliases or set()),
+            sys_modules_aliases=set(),
             subprocess_aliases=set(subprocess_aliases or set()),
             subprocess_function_aliases=set(),
             os_aliases=set(os_aliases or set()),
@@ -202,7 +267,10 @@ class NameScope:
             os_path_join_aliases=set(),
             os_path_dirname_aliases=set(),
             os_path_abspath_aliases=set(),
+            os_getcwd_aliases=set(),
             repo_root_aliases=set(),
+            template_segment_aliases=set(),
+            tools_module_name_aliases=set(),
             tools_command_aliases=set(),
             source_install_command_aliases=set(),
             package_templates_aliases=set(),
@@ -340,7 +408,7 @@ def dotted_name(node: ast.AST) -> Optional[str]:
 
 def literal_string(node: ast.AST) -> Optional[str]:
     """
-    Return a string literal value from an AST node.
+    Return a statically known string value from an AST node.
 
     :param node: AST node to inspect.
     :type node: ast.AST
@@ -351,12 +419,34 @@ def literal_string(node: ast.AST) -> Optional[str]:
 
         >>> literal_string(ast.parse('"x"').body[0].value)
         'x'
+        >>> literal_string(ast.parse('"tem" + "plates"').body[0].value)
+        'templates'
+        >>> literal_string(ast.parse('f"tools.package_templates"').body[0].value)
+        'tools.package_templates'
     """
     if AST_STR_TYPE is not None and isinstance(node, AST_STR_TYPE):
         return getattr(node, "s")
     if AST_CONSTANT_TYPE is not None and isinstance(node, AST_CONSTANT_TYPE):
         if isinstance(node.value, str):
             return node.value
+    if isinstance(node, ast.JoinedStr):
+        parts = []
+        for value in node.values:
+            if isinstance(value, ast.FormattedValue):
+                if value.format_spec is not None:
+                    return None
+                part = literal_string(value.value)
+            else:
+                part = literal_string(value)
+            if part is None:
+                return None
+            parts.append(part)
+        return "".join(parts)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = literal_string(node.left)
+        right = literal_string(node.right)
+        if left is not None and right is not None:
+            return left + right
     return None
 
 
@@ -619,6 +709,35 @@ def is_tools_module_name(name: str) -> bool:
         True
     """
     return name == "tools" or name.startswith("tools.")
+
+
+def is_pip_command_token(token: str) -> bool:
+    """
+    Return whether ``token`` is a direct pip executable name.
+
+    :param token: Command token to inspect.
+    :type token: str
+    :return: ``True`` for ``pip`` and versioned ``pip`` executable names.
+    :rtype: bool
+
+    Example::
+
+        >>> is_pip_command_token('pip')
+        True
+        >>> is_pip_command_token('pip3.10')
+        True
+        >>> is_pip_command_token('pip-tools')
+        False
+    """
+    if token == "pip":
+        return True
+    if not token.startswith("pip"):
+        return False
+    suffix = token[3:]
+    if not suffix:
+        return True
+    parts = suffix.split(".")
+    return all(part.isdigit() for part in parts)
 
 
 def is_repo_root_name(name: str) -> bool:
@@ -938,13 +1057,19 @@ def string_contains_source_install_marker(value: str) -> bool:
         False
         >>> string_contains_source_install_marker('python -m pip install .')
         True
+        >>> string_contains_source_install_marker('pip3 install .')
+        True
+        >>> string_contains_source_install_marker('pip3.10 install --target /tmp/x .')
+        True
+        >>> string_contains_source_install_marker('pip-tools install .')
+        False
         >>> string_contains_source_install_marker('clang --target x86_64-linux-gnu')
         False
     """
     normalized = value.lower().replace("\\", "/")
     tokens = normalized.split()
     for index in range(len(tokens) - 1):
-        if tokens[index] != "pip" or tokens[index + 1] != "install":
+        if not is_pip_command_token(tokens[index]) or tokens[index + 1] != "install":
             continue
         install_args = tokens[index + 2 :]
         for arg in install_args:
@@ -999,6 +1124,11 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 shadowing_names=shadowing_names,
                 importlib_aliases={"importlib"},
                 builtins_aliases={"builtins"},
+                pathlib_aliases={"pathlib"},
+                path_class_aliases={"Path"},
+                pytest_aliases={"pytest"},
+                runpy_aliases={"runpy"},
+                sys_aliases={"sys"},
                 subprocess_aliases={"subprocess"},
                 os_aliases={"os"},
             )
@@ -1141,6 +1271,141 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         return self.visible_names("builtins_aliases")
 
     @property
+    def pathlib_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for the :mod:`pathlib` module.
+
+        :return: Visible pathlib aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> 'pathlib' in TestBoundaryVisitor(Path('x.py'), '', set()).pathlib_aliases
+            True
+        """
+        return self.visible_names("pathlib_aliases")
+
+    @property
+    def path_class_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for :class:`pathlib.Path`.
+
+        :return: Visible ``Path`` class aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> 'Path' in TestBoundaryVisitor(Path('x.py'), '', set()).path_class_aliases
+            True
+        """
+        return self.visible_names("path_class_aliases")
+
+    @property
+    def pytest_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for the :mod:`pytest` module.
+
+        :return: Visible pytest aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> 'pytest' in TestBoundaryVisitor(Path('x.py'), '', set()).pytest_aliases
+            True
+        """
+        return self.visible_names("pytest_aliases")
+
+    @property
+    def pytest_importorskip_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for :func:`pytest.importorskip`.
+
+        :return: Visible ``importorskip`` aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> TestBoundaryVisitor(Path('x.py'), '', set()).pytest_importorskip_aliases
+            set()
+        """
+        return self.visible_names("pytest_importorskip_aliases")
+
+    @property
+    def runpy_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for the :mod:`runpy` module.
+
+        :return: Visible runpy aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> 'runpy' in TestBoundaryVisitor(Path('x.py'), '', set()).runpy_aliases
+            True
+        """
+        return self.visible_names("runpy_aliases")
+
+    @property
+    def runpy_run_module_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for :func:`runpy.run_module`.
+
+        :return: Visible ``run_module`` aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> TestBoundaryVisitor(Path('x.py'), '', set()).runpy_run_module_aliases
+            set()
+        """
+        return self.visible_names("runpy_run_module_aliases")
+
+    @property
+    def runpy_run_path_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for :func:`runpy.run_path`.
+
+        :return: Visible ``run_path`` aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> TestBoundaryVisitor(Path('x.py'), '', set()).runpy_run_path_aliases
+            set()
+        """
+        return self.visible_names("runpy_run_path_aliases")
+
+    @property
+    def sys_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for the :mod:`sys` module.
+
+        :return: Visible sys aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> 'sys' in TestBoundaryVisitor(Path('x.py'), '', set()).sys_aliases
+            True
+        """
+        return self.visible_names("sys_aliases")
+
+    @property
+    def sys_modules_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for :data:`sys.modules`.
+
+        :return: Visible ``sys.modules`` aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> TestBoundaryVisitor(Path('x.py'), '', set()).sys_modules_aliases
+            set()
+        """
+        return self.visible_names("sys_modules_aliases")
+
+    @property
     def subprocess_aliases(self) -> Set[str]:
         """
         Return visible aliases for the :mod:`subprocess` module.
@@ -1273,6 +1538,21 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         return self.visible_names("os_path_abspath_aliases")
 
     @property
+    def os_getcwd_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for :func:`os.getcwd`.
+
+        :return: Visible ``getcwd`` aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> TestBoundaryVisitor(Path('x.py'), '', set()).os_getcwd_aliases
+            set()
+        """
+        return self.visible_names("os_getcwd_aliases")
+
+    @property
     def repo_root_aliases(self) -> Set[str]:
         """
         Return visible repository-root aliases.
@@ -1288,6 +1568,36 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             True
         """
         return self.visible_names("repo_root_aliases")
+
+    @property
+    def template_segment_aliases(self) -> Set[str]:
+        """
+        Return aliases for the exact ``templates`` path segment.
+
+        :return: Visible template-segment aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> TestBoundaryVisitor(Path('x.py'), '', set()).template_segment_aliases
+            set()
+        """
+        return self.visible_names("template_segment_aliases")
+
+    @property
+    def tools_module_name_aliases(self) -> Set[str]:
+        """
+        Return aliases for ``tools`` module-name strings.
+
+        :return: Visible tools-module-name aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> TestBoundaryVisitor(Path('x.py'), '', set()).tools_module_name_aliases
+            set()
+        """
+        return self.visible_names("tools_module_name_aliases")
 
     @property
     def tools_command_aliases(self) -> Set[str]:
@@ -1650,6 +1960,14 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 self.current_scope.importlib_aliases.add(local_name)
             elif alias.name == "builtins":
                 self.current_scope.builtins_aliases.add(local_name)
+            elif alias.name == "pathlib":
+                self.current_scope.pathlib_aliases.add(local_name)
+            elif alias.name == "pytest":
+                self.current_scope.pytest_aliases.add(local_name)
+            elif alias.name == "runpy":
+                self.current_scope.runpy_aliases.add(local_name)
+            elif alias.name == "sys":
+                self.current_scope.sys_aliases.add(local_name)
             elif alias.name == "subprocess":
                 self.current_scope.subprocess_aliases.add(local_name)
             elif alias.name == "os":
@@ -1695,6 +2013,34 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "__import__":
                     self.current_scope.importlib_aliases.add(alias.asname or alias.name)
+        elif module == "pathlib":
+            for alias in node.names:
+                if alias.name == "Path":
+                    self.current_scope.path_class_aliases.add(
+                        alias.asname or alias.name
+                    )
+        elif module == "pytest":
+            for alias in node.names:
+                if alias.name == "importorskip":
+                    self.current_scope.pytest_importorskip_aliases.add(
+                        alias.asname or alias.name
+                    )
+        elif module == "runpy":
+            for alias in node.names:
+                if alias.name == "run_module":
+                    self.current_scope.runpy_run_module_aliases.add(
+                        alias.asname or alias.name
+                    )
+                elif alias.name == "run_path":
+                    self.current_scope.runpy_run_path_aliases.add(
+                        alias.asname or alias.name
+                    )
+        elif module == "sys":
+            for alias in node.names:
+                if alias.name == "modules":
+                    self.current_scope.sys_modules_aliases.add(
+                        alias.asname or alias.name
+                    )
         elif module == "subprocess":
             for alias in node.names:
                 if alias.name in _SUBPROCESS_METHODS:
@@ -1709,6 +2055,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     self.current_scope.os_function_alias_methods[local_name] = (
                         alias.name
                     )
+                elif alias.name == "getcwd":
+                    self.current_scope.os_getcwd_aliases.add(alias.asname or alias.name)
         elif module == "os.path":
             for alias in node.names:
                 if alias.name == "join":
@@ -1792,6 +2140,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         source_install_command = self.expression_or_alias_runs_source_install_command(
             value
         )
+        template_segment = self.expression_has_exact_segment(value, "templates")
+        tools_module_name = self.expression_denotes_tools_module(value)
         for target in targets:
             for name in self._target_names(target):
                 self.clear_scope_aliases(name)
@@ -1799,6 +2149,10 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     self.current_scope.repo_root_aliases.add(name)
                 if dynamic_tools_import:
                     self.current_scope.dynamic_tools_aliases.add(name)
+                if template_segment:
+                    self.current_scope.template_segment_aliases.add(name)
+                if tools_module_name:
+                    self.current_scope.tools_module_name_aliases.add(name)
                 if tools_command:
                     self.current_scope.tools_command_aliases.add(name)
                 if source_install_command:
@@ -1825,6 +2179,15 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         self.current_scope.dynamic_tools_aliases.discard(name)
         self.current_scope.importlib_aliases.discard(name)
         self.current_scope.builtins_aliases.discard(name)
+        self.current_scope.pathlib_aliases.discard(name)
+        self.current_scope.path_class_aliases.discard(name)
+        self.current_scope.pytest_aliases.discard(name)
+        self.current_scope.pytest_importorskip_aliases.discard(name)
+        self.current_scope.runpy_aliases.discard(name)
+        self.current_scope.runpy_run_module_aliases.discard(name)
+        self.current_scope.runpy_run_path_aliases.discard(name)
+        self.current_scope.sys_aliases.discard(name)
+        self.current_scope.sys_modules_aliases.discard(name)
         self.current_scope.subprocess_aliases.discard(name)
         self.current_scope.subprocess_function_aliases.discard(name)
         self.current_scope.os_aliases.discard(name)
@@ -1833,7 +2196,10 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         self.current_scope.os_path_join_aliases.discard(name)
         self.current_scope.os_path_dirname_aliases.discard(name)
         self.current_scope.os_path_abspath_aliases.discard(name)
+        self.current_scope.os_getcwd_aliases.discard(name)
         self.current_scope.repo_root_aliases.discard(name)
+        self.current_scope.template_segment_aliases.discard(name)
+        self.current_scope.tools_module_name_aliases.discard(name)
         self.current_scope.tools_command_aliases.discard(name)
         self.current_scope.source_install_command_aliases.discard(name)
         self.current_scope.package_templates_aliases.discard(name)
@@ -1908,6 +2274,12 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 PACKAGE_TEMPLATES_RULE,
                 "pytest files must not call tools.package_templates from unit tests",
             )
+        if self.is_sys_modules_tools_get_call(node):
+            self.add_finding(
+                node,
+                TOOLS_DYNAMIC_RULE,
+                "pytest files must not load repository tools modules from sys.modules",
+            )
         if self.is_command_call_running_tools(node):
             self.add_finding(
                 node,
@@ -1925,6 +2297,31 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 node,
                 SOURCE_TEMPLATE_RULE,
                 "pytest files must not access the repository-source templates directory directly",
+            )
+        self.generic_visit(node)
+
+    def visit_Subscript(self, node: ast.Subscript) -> None:  # noqa: N802
+        """
+        Visit subscript expressions and report ``sys.modules`` tool lookups.
+
+        :param node: Subscript expression node.
+        :type node: ast.Subscript
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> source = 'sys.modules["tools.package_templates"]'
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), source, set())
+            >>> visitor.visit(ast.parse(source))
+            >>> visitor.findings[0].rule
+            'tools-dynamic-import'
+        """
+        if self.is_sys_modules_tools_subscript(node):
+            self.add_finding(
+                node,
+                TOOLS_DYNAMIC_RULE,
+                "pytest files must not load repository tools modules from sys.modules",
             )
         self.generic_visit(node)
 
@@ -2113,12 +2510,22 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             True
             >>> visitor.is_dynamic_tools_import_call(ast.parse('import_module(".x", "tools")').body[0].value)
             True
+            >>> visitor.is_dynamic_tools_import_call(ast.parse('pytest.importorskip("tools.package_templates")').body[0].value)
+            True
+            >>> visitor.is_dynamic_tools_import_call(ast.parse('runpy.run_module("tools.package_templates")').body[0].value)
+            True
         """
         if not isinstance(node, ast.Call):
             return False
         func_name = dotted_name(node.func)
         if func_name == "__import__":
             return self.dynamic_import_target_is_tools(node)
+        if self.is_pytest_importorskip_call(node):
+            return self.dynamic_import_target_is_tools(node)
+        if self.is_runpy_run_module_call(node):
+            return self.dynamic_import_target_is_tools(node)
+        if self.is_runpy_run_path_call(node) and node.args:
+            return self.expression_or_alias_runs_tools_script(node.args[0])
         if isinstance(node.func, ast.Attribute):
             if node.func.attr == "__import__" and isinstance(node.func.value, ast.Name):
                 if node.func.value.id in self.builtins_aliases:
@@ -2131,6 +2538,77 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         if isinstance(node.func, ast.Name) and node.func.id in self.importlib_aliases:
             return self.dynamic_import_target_is_tools(node)
         return False
+
+    def is_pytest_importorskip_call(self, node: ast.Call) -> bool:
+        """
+        Return whether ``node`` calls :func:`pytest.importorskip`.
+
+        :param node: Call expression node.
+        :type node: ast.Call
+        :return: ``True`` when the callee is a visible ``importorskip`` helper.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.is_pytest_importorskip_call(ast.parse('pytest.importorskip("x")').body[0].value)
+            True
+        """
+        if isinstance(node.func, ast.Attribute):
+            if node.func.attr == "importorskip" and isinstance(
+                node.func.value, ast.Name
+            ):
+                return node.func.value.id in self.pytest_aliases
+        return (
+            isinstance(node.func, ast.Name)
+            and node.func.id in self.pytest_importorskip_aliases
+        )
+
+    def is_runpy_run_module_call(self, node: ast.Call) -> bool:
+        """
+        Return whether ``node`` calls :func:`runpy.run_module`.
+
+        :param node: Call expression node.
+        :type node: ast.Call
+        :return: ``True`` when the callee is a visible ``run_module`` helper.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.is_runpy_run_module_call(ast.parse('runpy.run_module("x")').body[0].value)
+            True
+        """
+        if isinstance(node.func, ast.Attribute):
+            if node.func.attr == "run_module" and isinstance(node.func.value, ast.Name):
+                return node.func.value.id in self.runpy_aliases
+        return (
+            isinstance(node.func, ast.Name)
+            and node.func.id in self.runpy_run_module_aliases
+        )
+
+    def is_runpy_run_path_call(self, node: ast.Call) -> bool:
+        """
+        Return whether ``node`` calls :func:`runpy.run_path`.
+
+        :param node: Call expression node.
+        :type node: ast.Call
+        :return: ``True`` when the callee is a visible ``run_path`` helper.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.is_runpy_run_path_call(ast.parse('runpy.run_path("x.py")').body[0].value)
+            True
+        """
+        if isinstance(node.func, ast.Attribute):
+            if node.func.attr == "run_path" and isinstance(node.func.value, ast.Name):
+                return node.func.value.id in self.runpy_aliases
+        return (
+            isinstance(node.func, ast.Name)
+            and node.func.id in self.runpy_run_path_aliases
+        )
 
     def dynamic_import_target_is_tools(self, node: ast.Call) -> bool:
         """
@@ -2147,18 +2625,22 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> call = ast.parse('import_module(name="tools.x")').body[0].value
             >>> visitor.dynamic_import_target_is_tools(call)
             True
+            >>> visitor.current_scope.tools_module_name_aliases.add('module_name')
+            >>> call = ast.parse('import_module(module_name)').body[0].value
+            >>> visitor.dynamic_import_target_is_tools(call)
+            True
         """
         name = None
         package = None
         if node.args:
-            name = literal_string(node.args[0])
+            name = self.static_module_name(node.args[0])
         if len(node.args) > 1:
-            package = literal_string(node.args[1])
+            package = self.static_module_name(node.args[1])
         for keyword in node.keywords:
             if keyword.arg == "name":
-                name = literal_string(keyword.value)
+                name = self.static_module_name(keyword.value)
             elif keyword.arg == "package":
-                package = literal_string(keyword.value)
+                package = self.static_module_name(keyword.value)
         if name is None:
             return False
         if is_tools_module_name(name):
@@ -2166,6 +2648,47 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         if name.startswith(".") and package is not None:
             return is_tools_module_name(package)
         return False
+
+    def static_module_name(self, node: ast.AST) -> Optional[str]:
+        """
+        Return a statically known module-name string.
+
+        :param node: AST expression node.
+        :type node: ast.AST
+        :return: Module name, ``"tools"`` for tools-name aliases, or ``None``.
+        :rtype: str, optional
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.current_scope.tools_module_name_aliases.add('name')
+            >>> visitor.static_module_name(ast.Name(id='name'))
+            'tools'
+        """
+        value = literal_string(node)
+        if value is not None:
+            return value
+        if isinstance(node, ast.Name) and node.id in self.tools_module_name_aliases:
+            return "tools"
+        return None
+
+    def expression_denotes_tools_module(self, node: ast.AST) -> bool:
+        """
+        Return whether an expression denotes a ``tools`` module-name string.
+
+        :param node: AST expression node.
+        :type node: ast.AST
+        :return: ``True`` for tools-module literals or known aliases.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.expression_denotes_tools_module(ast.parse('"tools" + ".x"').body[0].value)
+            True
+        """
+        value = self.static_module_name(node)
+        return value is not None and is_tools_module_name(value)
 
     def is_tools_attribute_call(self, node: ast.Call) -> bool:
         """
@@ -2269,6 +2792,74 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             if root in self.tools_aliases or root in self.dynamic_tools_aliases:
                 return True
         return name == "package_templates" and name not in self.defined_names
+
+    def is_sys_modules_expr(self, node: ast.AST) -> bool:
+        """
+        Return whether ``node`` denotes :data:`sys.modules`.
+
+        :param node: AST expression node.
+        :type node: ast.AST
+        :return: ``True`` for ``sys.modules`` or imported ``modules`` aliases.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.is_sys_modules_expr(ast.parse('sys.modules').body[0].value)
+            True
+        """
+        if isinstance(node, ast.Name):
+            return node.id in self.sys_modules_aliases
+        if isinstance(node, ast.Attribute) and node.attr == "modules":
+            return (
+                isinstance(node.value, ast.Name) and node.value.id in self.sys_aliases
+            )
+        return False
+
+    def is_sys_modules_tools_subscript(self, node: ast.Subscript) -> bool:
+        """
+        Return whether ``node`` reads a ``tools`` module from ``sys.modules``.
+
+        :param node: Subscript expression node.
+        :type node: ast.Subscript
+        :return: ``True`` when the lookup key names a ``tools`` module.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> expr = ast.parse('sys.modules["tools.package_templates"]').body[0].value
+            >>> visitor.is_sys_modules_tools_subscript(expr)
+            True
+        """
+        if not self.is_sys_modules_expr(node.value):
+            return False
+        key = node.slice
+        if AST_INDEX_TYPE is not None and isinstance(key, AST_INDEX_TYPE):
+            key = key.value
+        return self.expression_denotes_tools_module(key)
+
+    def is_sys_modules_tools_get_call(self, node: ast.Call) -> bool:
+        """
+        Return whether ``node`` calls ``sys.modules.get`` for ``tools``.
+
+        :param node: Call expression node.
+        :type node: ast.Call
+        :return: ``True`` when ``get`` receives a ``tools`` module name.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> call = ast.parse('sys.modules.get("tools.package_templates")').body[0].value
+            >>> visitor.is_sys_modules_tools_get_call(call)
+            True
+        """
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "get":
+            return False
+        if not self.is_sys_modules_expr(node.func.value):
+            return False
+        return bool(node.args) and self.expression_denotes_tools_module(node.args[0])
 
     def is_command_call_running_tools(self, node: ast.Call) -> bool:
         """
@@ -2609,6 +3200,12 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         if isinstance(node, ast.Call):
             if self.os_path_dirname_depth(node) >= self.repo_root_dirname_depth:
                 return True
+            if self.is_path_cwd_call(node) or self.is_os_getcwd_call(node):
+                return True
+            if self.is_workspace_environment_call(node):
+                return True
+        if self.is_workspace_environment_subscript(node):
+            return True
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
             return self.is_repo_root_tainted(node.left) or self.is_repo_root_tainted(
                 node.right
@@ -2623,7 +3220,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 return any(self.is_repo_root_tainted(arg) for arg in node.args)
             if dotted_name(node.func) in {"format", "builtins.format"}:
                 return any(self.is_repo_root_tainted(arg) for arg in node.args)
-            if dotted_name(node.func) in {"Path", "pathlib.Path"} and node.args:
+            if self.is_path_constructor_call(node) and node.args:
                 if self.is_repo_root_tainted(node.args[0]):
                     return True
                 return any(is_exact_segment(arg, "templates") for arg in node.args[1:])
@@ -2634,6 +3231,150 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             if self.is_os_path_join_call(node) and node.args:
                 return self.is_repo_root_tainted(node.args[0])
         return False
+
+    def is_path_constructor_call(self, node: ast.Call) -> bool:
+        """
+        Return whether ``node`` constructs a :class:`pathlib.Path`.
+
+        :param node: Call expression node.
+        :type node: ast.Call
+        :return: ``True`` when the callee is a visible ``Path`` constructor.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.is_path_constructor_call(ast.parse('Path("x")').body[0].value)
+            True
+        """
+        if isinstance(node.func, ast.Name):
+            return node.func.id in self.path_class_aliases
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "Path":
+            return (
+                isinstance(node.func.value, ast.Name)
+                and node.func.value.id in self.pathlib_aliases
+            )
+        return False
+
+    def is_path_cwd_call(self, node: ast.Call) -> bool:
+        """
+        Return whether ``node`` calls ``Path.cwd``.
+
+        :param node: Call expression node.
+        :type node: ast.Call
+        :return: ``True`` for visible ``Path.cwd`` helpers.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.is_path_cwd_call(ast.parse('Path.cwd()').body[0].value)
+            True
+        """
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "cwd":
+            return False
+        value = node.func.value
+        if isinstance(value, ast.Name):
+            return value.id in self.path_class_aliases
+        if isinstance(value, ast.Attribute) and value.attr == "Path":
+            return (
+                isinstance(value.value, ast.Name)
+                and value.value.id in self.pathlib_aliases
+            )
+        return False
+
+    def is_os_getcwd_call(self, node: ast.Call) -> bool:
+        """
+        Return whether ``node`` calls :func:`os.getcwd`.
+
+        :param node: Call expression node.
+        :type node: ast.Call
+        :return: ``True`` for visible ``getcwd`` helpers.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.is_os_getcwd_call(ast.parse('os.getcwd()').body[0].value)
+            True
+        """
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "getcwd":
+            return (
+                isinstance(node.func.value, ast.Name)
+                and node.func.value.id in self.os_aliases
+            )
+        return (
+            isinstance(node.func, ast.Name) and node.func.id in self.os_getcwd_aliases
+        )
+
+    def is_os_environ_expr(self, node: ast.AST) -> bool:
+        """
+        Return whether ``node`` denotes :data:`os.environ`.
+
+        :param node: AST expression node.
+        :type node: ast.AST
+        :return: ``True`` for visible ``os.environ`` aliases.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.is_os_environ_expr(ast.parse('os.environ').body[0].value)
+            True
+        """
+        return (
+            isinstance(node, ast.Attribute)
+            and node.attr == "environ"
+            and isinstance(node.value, ast.Name)
+            and node.value.id in self.os_aliases
+        )
+
+    def is_workspace_environment_subscript(self, node: ast.AST) -> bool:
+        """
+        Return whether ``node`` reads a workspace-root environment variable.
+
+        :param node: AST expression node.
+        :type node: ast.AST
+        :return: ``True`` for ``os.environ["GITHUB_WORKSPACE"]``.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> expr = ast.parse('os.environ["GITHUB_WORKSPACE"]').body[0].value
+            >>> visitor.is_workspace_environment_subscript(expr)
+            True
+        """
+        if not isinstance(node, ast.Subscript):
+            return False
+        if not self.is_os_environ_expr(node.value):
+            return False
+        key = node.slice
+        if AST_INDEX_TYPE is not None and isinstance(key, AST_INDEX_TYPE):
+            key = key.value
+        return literal_string(key) == "GITHUB_WORKSPACE"
+
+    def is_workspace_environment_call(self, node: ast.Call) -> bool:
+        """
+        Return whether ``node`` calls ``os.environ.get`` for workspace root.
+
+        :param node: Call expression node.
+        :type node: ast.Call
+        :return: ``True`` for ``os.environ.get("GITHUB_WORKSPACE")``.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> call = ast.parse('os.environ.get("GITHUB_WORKSPACE")').body[0].value
+            >>> visitor.is_workspace_environment_call(call)
+            True
+        """
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "get":
+            return False
+        if not self.is_os_environ_expr(node.func.value):
+            return False
+        return bool(node.args) and literal_string(node.args[0]) == "GITHUB_WORKSPACE"
 
     def is_repo_root_tainted_format_call(self, node: ast.Call) -> bool:
         """
@@ -2798,21 +3539,29 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         if isinstance(node, ast.Call):
             if self.is_repo_root_tainted_format_call(node):
                 return self.expression_has_exact_segment(node.func.value, "templates")
-            if dotted_name(node.func) in {"Path", "pathlib.Path"} and node.args:
+            if self.is_path_constructor_call(node) and node.args:
                 if self.is_repo_root_tainted(node.args[0]):
                     return any(
-                        is_exact_segment(arg, "templates") for arg in node.args[1:]
+                        self.expression_has_exact_segment(arg, "templates")
+                        for arg in node.args[1:]
                     )
             if isinstance(node.func, ast.Attribute) and node.func.attr == "joinpath":
                 if self.is_repo_root_tainted(node.func.value):
-                    return any(is_exact_segment(arg, "templates") for arg in node.args)
+                    return any(
+                        self.expression_has_exact_segment(arg, "templates")
+                        for arg in node.args
+                    )
             if self.is_os_path_join_call(node) and node.args:
                 if self.is_repo_root_tainted(node.args[0]):
                     return any(
-                        is_exact_segment(arg, "templates") for arg in node.args[1:]
+                        self.expression_has_exact_segment(arg, "templates")
+                        for arg in node.args[1:]
                     )
                 if any(self.is_repo_root_tainted(arg) for arg in node.args):
-                    return any(is_exact_segment(arg, "templates") for arg in node.args)
+                    return any(
+                        self.expression_has_exact_segment(arg, "templates")
+                        for arg in node.args
+                    )
         return False
 
     def expression_has_exact_segment(self, node: ast.AST, segment: str) -> bool:
@@ -2834,6 +3583,9 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         """
         if is_exact_segment(node, segment):
             return True
+        if isinstance(node, ast.Name):
+            if segment == "templates" and node.id in self.template_segment_aliases:
+                return True
         if isinstance(node, ast.JoinedStr):
             return any(
                 self.expression_has_exact_segment(value, segment)
@@ -2848,7 +3600,9 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 node.left, segment
             ) or self.expression_has_exact_segment(node.right, segment)
         if isinstance(node, ast.Call):
-            return any(is_exact_segment(arg, segment) for arg in node.args)
+            return any(
+                self.expression_has_exact_segment(arg, segment) for arg in node.args
+            )
         return False
 
 

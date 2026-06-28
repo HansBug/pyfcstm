@@ -303,8 +303,9 @@ def _reject_runner_owned_pytest_args(pytest_args: Sequence[str]) -> None:
 
     Native toolchain selection is a two-part contract: the runner must append
     both the native pytest targets and pytest's ``--run-native-toolchain`` flag.
-    Allowing the flag through raw pytest passthrough arguments would enable the
-    pytest option without adding the native targets, which creates a
+    Allowing the flag through raw pytest passthrough arguments, including
+    ``-o addopts=...`` or ``--override-ini=addopts=...`` injection, would enable
+    the pytest option without adding the native targets, which creates a
     false-green footgun.
 
     :param pytest_args: Extra pytest arguments requested by the caller.
@@ -323,15 +324,22 @@ def _reject_runner_owned_pytest_args(pytest_args: Sequence[str]) -> None:
         ...     print(str(err))
         pytest passthrough must not include --run-native-toolchain; use runner --run-native-toolchain or PYFCSTM_RUN_NATIVE_TOOLCHAIN=1
     """
+    previous_argument = None
     for argument in pytest_args:
-        if argument == "--run-native-toolchain" or argument.startswith(
-            "--run-native-toolchain="
-        ):
+        if "--run-native-toolchain" in argument:
             raise TemplateSuiteRunnerError(
                 "pytest passthrough must not include --run-native-toolchain; "
                 "use runner --run-native-toolchain or "
                 "PYFCSTM_RUN_NATIVE_TOOLCHAIN=1"
             )
+        if previous_argument in ("-c", "--config-file") or argument.startswith(
+            "--config-file="
+        ):
+            raise TemplateSuiteRunnerError(
+                "pytest passthrough must not include pytest config-file "
+                "overrides; native opt-in must stay runner-owned"
+            )
+        previous_argument = argument
 
 
 def _selected_suites_from_inputs(
@@ -479,6 +487,7 @@ def _runner_environment(run_native_toolchain: bool) -> MutableMapping[str, str]:
     env.pop("PYFCSTM_TEMPLATE_SUITES", None)
     env.pop("PYFCSTM_SKIP_TEMPLATE_SUITES", None)
     env.pop("PYFCSTM_RUN_NATIVE_TOOLCHAIN", None)
+    env.pop("PYTEST_ADDOPTS", None)
     if run_native_toolchain:
         env["PYFCSTM_RUN_NATIVE_TOOLCHAIN"] = "1"
     return env
@@ -514,6 +523,7 @@ def _collect_targets_exist(repo_root: str, targets: Sequence[str]) -> None:
     completed = subprocess.run(
         command,
         cwd=repo_root,
+        env=_runner_environment(False),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -665,6 +675,36 @@ def _run_self_check_cases() -> None:
         raise TemplateSuiteRunnerError(
             "raw pytest native opt-in passthrough did not fail"
         )
+    for pytest_args in (
+        ["-o", "addopts=--run-native-toolchain"],
+        ["--override-ini", "addopts=--run-native-toolchain"],
+        ["--override-ini=addopts=--run-native-toolchain"],
+    ):
+        try:
+            build_template_pytest_command(["c"], pytest_args=pytest_args)
+        except TemplateSuiteRunnerError:
+            pass
+        else:
+            raise TemplateSuiteRunnerError(
+                "pytest addopts native opt-in passthrough did not fail: {0!r}".format(
+                    pytest_args
+                )
+            )
+    for pytest_args in (
+        ["-c", "/tmp/pytest.ini"],
+        ["--config-file", "/tmp/pytest.ini"],
+        ["--config-file=/tmp/pytest.ini"],
+    ):
+        try:
+            build_template_pytest_command(["c"], pytest_args=pytest_args)
+        except TemplateSuiteRunnerError:
+            pass
+        else:
+            raise TemplateSuiteRunnerError(
+                "pytest config override passthrough did not fail: {0!r}".format(
+                    pytest_args
+                )
+            )
     try:
         build_template_pytest_command(
             ["c"],

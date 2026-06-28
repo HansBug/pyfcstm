@@ -238,6 +238,46 @@ def expand_template_suite_targets(suites: Sequence[str]) -> List[str]:
     return _ordered_targets(targets)
 
 
+def expand_template_pytest_targets(
+    selected_suites: Sequence[str],
+    run_native_toolchain: bool = False,
+) -> List[str]:
+    """
+    Expand selected suites into the exact pytest targets for one run.
+
+    :param selected_suites: Concrete suite names selected by the detector or
+        runner.
+    :type selected_suites: collections.abc.Sequence[str]
+    :param run_native_toolchain: Whether to add native toolchain alignment
+        targets for selected C-family suites, defaults to ``False``.
+    :type run_native_toolchain: bool, optional
+    :return: Ordered pytest targets for the requested run.
+    :rtype: list[str]
+    :raises TemplateSuiteRunnerError: If no pytest target is selected or
+        native toolchain tests are requested without a C-family suite.
+
+    Example::
+
+        >>> expand_template_pytest_targets(['python'])
+        ['test/template/python']
+    """
+    targets = expand_template_suite_targets(selected_suites)
+    native_targets = []
+    if run_native_toolchain:
+        for suite in selected_suites:
+            native_targets.extend(_NATIVE_TOOLCHAIN_TARGETS_BY_SUITE.get(suite, ()))
+        if not native_targets:
+            raise TemplateSuiteRunnerError(
+                "native toolchain opt-in requires at least one selected "
+                "C-family suite: c, c_poll, cpp, or cpp_poll"
+            )
+        targets.extend(native_targets)
+        targets = _ordered_targets(targets)
+    if not targets:
+        raise TemplateSuiteRunnerError("no template pytest targets selected")
+    return targets
+
+
 def _native_toolchain_enabled(value: Optional[str], cli_enabled: bool) -> bool:
     """
     Return whether native toolchain tests are explicitly enabled.
@@ -255,6 +295,43 @@ def _native_toolchain_enabled(value: Optional[str], cli_enabled: bool) -> bool:
         True
     """
     return cli_enabled or (value or "").strip().lower() in _ENABLE_VALUES
+
+
+def _reject_runner_owned_pytest_args(pytest_args: Sequence[str]) -> None:
+    """
+    Reject pytest passthrough arguments that must be runner-owned.
+
+    Native toolchain selection is a two-part contract: the runner must append
+    both the native pytest targets and pytest's ``--run-native-toolchain`` flag.
+    Allowing the flag through raw pytest passthrough arguments would enable the
+    pytest option without adding the native targets, which creates a
+    false-green footgun.
+
+    :param pytest_args: Extra pytest arguments requested by the caller.
+    :type pytest_args: collections.abc.Sequence[str]
+    :return: ``None``.
+    :rtype: None
+    :raises TemplateSuiteRunnerError: If a runner-owned option is passed
+        through as a raw pytest argument.
+
+    Example::
+
+        >>> _reject_runner_owned_pytest_args(['-q'])
+        >>> try:
+        ...     _reject_runner_owned_pytest_args(['--run-native-toolchain'])
+        ... except TemplateSuiteRunnerError as err:
+        ...     print(str(err))
+        pytest passthrough must not include --run-native-toolchain; use runner --run-native-toolchain or PYFCSTM_RUN_NATIVE_TOOLCHAIN=1
+    """
+    for argument in pytest_args:
+        if argument == "--run-native-toolchain" or argument.startswith(
+            "--run-native-toolchain="
+        ):
+            raise TemplateSuiteRunnerError(
+                "pytest passthrough must not include --run-native-toolchain; "
+                "use runner --run-native-toolchain or "
+                "PYFCSTM_RUN_NATIVE_TOOLCHAIN=1"
+            )
 
 
 def _selected_suites_from_inputs(
@@ -322,27 +399,19 @@ def build_template_pytest_command(
         >>> build_template_pytest_command(['python'])[1:4]
         ['-m', 'pytest', 'test/template/python']
     """
-    targets = expand_template_suite_targets(selected_suites)
-    native_targets = []
-    if run_native_toolchain:
-        for suite in selected_suites:
-            native_targets.extend(_NATIVE_TOOLCHAIN_TARGETS_BY_SUITE.get(suite, ()))
-        if not native_targets:
-            raise TemplateSuiteRunnerError(
-                "native toolchain opt-in requires at least one selected "
-                "C-family suite: c, c_poll, cpp, or cpp_poll"
-            )
-        targets.extend(native_targets)
-        targets = _ordered_targets(targets)
-    if not targets:
-        raise TemplateSuiteRunnerError("no template pytest targets selected")
+    pytest_args = list(pytest_args or [])
+    _reject_runner_owned_pytest_args(pytest_args)
+    targets = expand_template_pytest_targets(
+        selected_suites,
+        run_native_toolchain=run_native_toolchain,
+    )
 
     command = [sys.executable, "-m", "pytest"]
     command.extend(targets)
     command.extend(["-sv", "-m", "unittest"])
     if run_native_toolchain:
         command.append("--run-native-toolchain")
-    command.extend(pytest_args or [])
+    command.extend(pytest_args)
     return command
 
 
@@ -447,7 +516,7 @@ def _collect_targets_exist(repo_root: str, targets: Sequence[str]) -> None:
         cwd=repo_root,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        universal_newlines=True,
+        text=True,
     )
     if completed.returncode != 0:
         raise TemplateSuiteRunnerError(
@@ -587,6 +656,26 @@ def _run_self_check_cases() -> None:
     else:
         raise TemplateSuiteRunnerError(
             "native toolchain opt-in without a C-family suite did not fail"
+        )
+    try:
+        build_template_pytest_command(["c"], pytest_args=["--run-native-toolchain"])
+    except TemplateSuiteRunnerError:
+        pass
+    else:
+        raise TemplateSuiteRunnerError(
+            "raw pytest native opt-in passthrough did not fail"
+        )
+    try:
+        build_template_pytest_command(
+            ["c"],
+            pytest_args=["--run-native-toolchain"],
+            run_native_toolchain=True,
+        )
+    except TemplateSuiteRunnerError:
+        pass
+    else:
+        raise TemplateSuiteRunnerError(
+            "duplicate raw pytest native opt-in passthrough did not fail"
         )
     try:
         _selected_suites_from_inputs([], "", "local", "java", None)
@@ -796,7 +885,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "selected_suites": selected_suites,
         "command": command,
         "command_text": _format_command(command),
-        "target_count": len(command) - 6 - len(pytest_args) - (1 if run_native else 0),
+        "target_count": len(
+            expand_template_pytest_targets(
+                selected_suites,
+                run_native_toolchain=run_native,
+            )
+        ),
         "run_native_toolchain": run_native,
     }
     if args.json:

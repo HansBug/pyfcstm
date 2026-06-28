@@ -2457,6 +2457,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     self.current_scope.os_getcwd_aliases.add(alias.asname or alias.name)
                 elif alias.name == "path":
                     self.current_scope.os_path_aliases.add(alias.asname or alias.name)
+                elif alias.name == "pardir":
+                    self.current_scope.string_aliases[alias.asname or alias.name] = ".."
         elif module == "os.path":
             for alias in node.names:
                 if alias.name == "*":
@@ -2466,6 +2468,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                         _OS_PATH_PASSTHROUGH_HELPERS
                     )
                     self.current_scope.os_path_split_aliases.add("split")
+                    self.current_scope.string_aliases["pardir"] = ".."
                 elif alias.name == "join":
                     self.current_scope.os_path_join_aliases.add(
                         alias.asname or alias.name
@@ -2486,6 +2489,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     self.current_scope.os_path_split_aliases.add(
                         alias.asname or alias.name
                     )
+                elif alias.name == "pardir":
+                    self.current_scope.string_aliases[alias.asname or alias.name] = ".."
         self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802
@@ -2707,6 +2712,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> 'repo_root' in visitor.repo_root_aliases
             True
         """
+        if self._visit_static_unpack(targets, value):
+            return
         if self._visit_path_split_unpack(targets, value):
             return
         repo_root_tainted = self.is_repo_root_tainted(value)
@@ -2775,6 +2782,35 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     self.current_scope.tools_command_aliases.add(name)
                 if source_install_command:
                     self.current_scope.source_install_command_aliases.add(name)
+
+    def _visit_static_unpack(self, targets: Sequence[ast.AST], value: ast.AST) -> bool:
+        """
+        Track aliases introduced by static tuple or list unpacking.
+
+        :param targets: Assignment targets.
+        :type targets: Sequence[ast.AST]
+        :param value: Assigned iterable expression.
+        :type value: ast.AST
+        :return: ``True`` when static unpacking was handled.
+        :rtype: bool
+
+        Example::
+
+            >>> source = 'import importlib' + chr(10) + 'importer, _ = (importlib.import_module, None)' + chr(10) + 'importer("tools.package_templates")'
+            >>> visitor = TestBoundaryVisitor(Path('test/x.py'), source, set())
+            >>> visitor.visit(ast.parse(source))
+            >>> visitor.findings[0].rule
+            'tools-dynamic-import'
+        """
+        if len(targets) != 1 or not isinstance(targets[0], (ast.Tuple, ast.List)):
+            return False
+        elements = self.static_iterable_elements(value)
+        unpack_target = targets[0]
+        if not elements or len(elements) != len(unpack_target.elts):
+            return False
+        for target, element in zip(unpack_target.elts, elements):
+            self._visit_assignment_targets([target], element)
+        return True
 
     def _visit_path_split_unpack(
         self, targets: Sequence[ast.AST], value: ast.AST
@@ -2966,8 +3002,18 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
             >>> visitor.expression_denotes_importlib_module(ast.Name(id='importlib'))
             True
+            >>> expr = ast.parse('__import__("importlib")').body[0].value
+            >>> visitor.expression_denotes_importlib_module(expr)
+            True
         """
-        return isinstance(node, ast.Name) and node.id in self.importlib_aliases
+        if isinstance(node, ast.Name):
+            return node.id in self.importlib_aliases
+        if isinstance(node, ast.Call) and self.is_module_import_call(node):
+            name = self.dynamic_import_target_module_name(node)
+            return name is not None and (
+                name == "importlib" or name.startswith("importlib.")
+            )
+        return False
 
     def expression_denotes_importlib_import_module(self, node: ast.AST) -> bool:
         """
@@ -2989,10 +3035,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             True
         """
         if isinstance(node, ast.Attribute) and node.attr == "import_module":
-            return (
-                isinstance(node.value, ast.Name)
-                and node.value.id in self.importlib_aliases
-            )
+            return self.expression_denotes_importlib_module(node.value)
         if isinstance(node, ast.Call) and dotted_name(node.func) == "getattr":
             if len(node.args) < 2:
                 return False
@@ -3654,6 +3697,56 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         if isinstance(node.func, ast.Name) and node.func.id in self.importlib_aliases:
             return self.dynamic_import_target_is_tools(node)
         return False
+
+    def is_module_import_call(self, node: ast.Call) -> bool:
+        """
+        Return whether ``node`` calls a visible module import helper.
+
+        :param node: Call expression node.
+        :type node: ast.Call
+        :return: ``True`` for ``__import__`` and ``importlib.import_module`` forms.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.is_module_import_call(ast.parse('__import__("x")').body[0].value)
+            True
+            >>> visitor.is_module_import_call(ast.parse('importlib.import_module("x")').body[0].value)
+            True
+        """
+        func_name = dotted_name(node.func)
+        if func_name == "__import__" or self.expression_denotes_builtin_import(
+            node.func
+        ):
+            return True
+        if self.expression_denotes_importlib_import_module(node.func):
+            return True
+        return (
+            isinstance(node.func, ast.Name) and node.func.id in self.importlib_aliases
+        )
+
+    def dynamic_import_target_module_name(self, node: ast.Call) -> Optional[str]:
+        """
+        Return the statically visible target name of a dynamic import call.
+
+        :param node: Dynamic import call expression.
+        :type node: ast.Call
+        :return: Imported module name, or ``None`` when dynamic.
+        :rtype: str, optional
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.dynamic_import_target_module_name(ast.parse('__import__("importlib")').body[0].value)
+            'importlib'
+        """
+        args = self.static_call_arguments(node)
+        name = self.static_module_name(args[0]) if args else None
+        for keyword in node.keywords:
+            if keyword.arg == "name":
+                name = self.static_module_name(keyword.value)
+        return name
 
     def expression_denotes_builtin_import(self, node: ast.AST) -> bool:
         """
@@ -5102,10 +5195,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             return True
         if not isinstance(node.func, ast.Attribute) or node.func.attr != function_name:
             return False
-        return (
-            isinstance(node.func.value, ast.Name)
-            and node.func.value.id in self.os_path_aliases
-        )
+        return self.expression_denotes_os_path_module(node.func.value)
 
     def os_path_dirname_depth(self, node: ast.AST) -> int:
         """

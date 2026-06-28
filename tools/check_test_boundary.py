@@ -4361,14 +4361,22 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> call = ast.parse('subprocess.run(args=["python"])').body[0].value
             >>> len(visitor.subprocess_command_arguments(call))
             1
+            >>> call = ast.parse('subprocess.run(["python", cmd + "/tools/x.py"])').body[0].value
+            >>> len(visitor.subprocess_command_arguments(call))
+            2
             >>> call = ast.parse('subprocess.run(cmd=["python"])').body[0].value
             >>> len(visitor.subprocess_command_arguments(call))
             1
         """
         if node.args:
-            return [node.args[0]]
+            first_arg = node.args[0]
+            if isinstance(first_arg, (ast.List, ast.Tuple)):
+                return list(first_arg.elts)
+            return [first_arg]
         for keyword in node.keywords:
             if keyword.arg in {"args", "argv", "cmd"}:
+                if isinstance(keyword.value, (ast.List, ast.Tuple)):
+                    return list(keyword.value.elts)
                 return [keyword.value]
         return []
 
@@ -4684,9 +4692,16 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor.current_scope.repo_root_aliases.add('segments')
             >>> visitor.is_repo_root_tainted(ast.parse('*segments').body[0].value)
             True
+            >>> visitor = TestBoundaryVisitor(Path('test/x.py'), '', set())
+            >>> visitor.current_scope.path_parent_hop_aliases['head'] = 2
+            >>> visitor.is_repo_root_tainted(ast.parse('head').body[0].value)
+            True
         """
         if isinstance(node, ast.Name):
-            return node.id in self.repo_root_aliases
+            parent_hops = self.path_parent_hop_aliases.get(node.id)
+            return node.id in self.repo_root_aliases or (
+                parent_hops is not None and parent_hops >= self.repo_root_dirname_depth
+            )
         if isinstance(node, ast.Starred):
             return self.is_repo_root_tainted(node.value)
         if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
@@ -4762,6 +4777,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> expr = ast.parse('os.path.dirname(__file__)').body[0].value
             >>> visitor.path_argument_sequence_parent_hops([expr, ast.Constant(value='..')])
             2
+            >>> visitor.path_argument_sequence_parent_hops([expr, ast.Constant(value='../templates')])
+            2
         """
         if not arguments:
             return None
@@ -4773,6 +4790,9 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             if segment == "..":
                 hops += 1
             elif segment is not None:
+                hops += sum(
+                    1 for path_segment in path_segments(segment) if path_segment == ".."
+                )
                 continue
             else:
                 return None
@@ -5601,6 +5621,15 @@ def scan_source(path: Path, relative_path: Path, source: str) -> List[BoundaryFi
         >>> [finding.rule for finding in scan_source(Path('x.py'), Path('test/x.py'), source)]
         ['repo-source-templates']
         >>> source = 'import os' + chr(10) + 'base = os.path.dirname(__file__)' + chr(10) + 'os.path.join(base, "..", "templates")'
+        >>> [finding.rule for finding in scan_source(Path('x.py'), Path('test/x.py'), source)]
+        ['repo-source-templates']
+        >>> source = 'import os' + chr(10) + 'base = os.path.dirname(__file__)' + chr(10) + 'os.path.join(base, "../templates")'
+        >>> [finding.rule for finding in scan_source(Path('x.py'), Path('test/x.py'), source)]
+        ['repo-source-templates']
+        >>> source = 'import subprocess' + chr(10) + 'cmd = "tools"' + chr(10) + 'subprocess.run(["python", cmd + "/check_test_boundary.py"])'
+        >>> [finding.rule for finding in scan_source(Path('x.py'), Path('test/x.py'), source)]
+        ['tools-exec']
+        >>> source = 'import os' + chr(10) + 'head, tail = os.path.split(os.path.dirname(__file__))' + chr(10) + 'os.path.join(head, "templates", tail)'
         >>> [finding.rule for finding in scan_source(Path('x.py'), Path('test/x.py'), source)]
         ['repo-source-templates']
         >>> source = 'import pathlib' + chr(10) + 'from pathlib import Path' + chr(10) + 'repo = Path(__file__).resolve().parents[1]' + chr(10) + 'pathlib.PurePath(repo, "templates")'

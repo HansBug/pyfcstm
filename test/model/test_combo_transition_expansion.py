@@ -489,7 +489,7 @@ class TestComboModelExpansion:
         runtime.cycle(["Root.A.E1", "Root.A.E2"])
         assert runtime.current_state.path == ("Root", "B")
 
-    def test_generated_combo_pseudo_round_trips_through_dsl_text_export(self):
+    def test_generated_combo_pseudo_text_export_uses_reserved_prefix(self):
         model = _build_model(
             """
             state Root {
@@ -502,93 +502,8 @@ class TestComboModelExpansion:
         )
 
         exported = str(model.to_ast_node())
+
         assert "pseudo state __combo_" in exported
-        parsed = parse_with_grammar_entry(exported, entry_name="state_machine_dsl")
-        round_tripped = parse_dsl_node_to_state_machine(parsed)
-
-        assert [
-            item.name
-            for item in round_tripped.root_state.substates.values()
-            if item.is_pseudo
-        ] == [
-            item.name for item in model.root_state.substates.values() if item.is_pseudo
-        ]
-        runtime = SimulationRuntime(round_tripped)
-        runtime.cycle()
-        runtime.cycle(["Root.A.E1", "Root.A.E2"])
-        assert runtime.current_state.path == ("Root", "B")
-
-    @pytest.mark.parametrize(
-        "source",
-        [
-            """
-            def int x = 1;
-            state Root {
-                state A;
-                state B;
-                [*] -> A;
-                A -> B :: [x > 0] + E1;
-            }
-            """,
-            """
-            state Root {
-                state Bus {
-                    state Idle;
-                    [*] -> Idle;
-                }
-                state A;
-                state B;
-                [*] -> A;
-                A -> B : /Bus.E1 + /Bus.E2;
-            }
-            """,
-            """
-            state Root {
-                state Parent {
-                    state A;
-                    state B;
-                    [*] -> A;
-                    A -> B :: E1 + E2;
-                }
-                [*] -> Parent;
-            }
-            """,
-            """
-            state Root {
-                state A;
-                state B;
-                [*] -> A;
-                A -> B : A.E1 + A.E2;
-            }
-            """,
-            """
-            state Root {
-                state A;
-                [*] -> A : E1 + E2;
-            }
-            """,
-            """
-            state Root {
-                state Bus {
-                    state Idle;
-                    [*] -> Idle;
-                }
-                state A;
-                state B;
-                [*] -> A;
-                A -> B : A.E1 + /Bus.E2;
-            }
-            """,
-        ],
-    )
-    def test_generated_combo_pseudo_dsl_text_export_variants_round_trip(self, source):
-        model = _build_model(source)
-
-        exported = str(model.to_ast_node())
-        parsed = parse_with_grammar_entry(exported, entry_name="state_machine_dsl")
-        round_tripped = parse_dsl_node_to_state_machine(parsed)
-
-        assert str(round_tripped.to_ast_node()) == exported
 
     def test_nested_same_name_sources_keep_distinct_pseudo_names(self):
         model = _build_model(
@@ -775,6 +690,31 @@ class TestComboModelExpansion:
                 [*] -> A;
                 A -> __combo_root_a__e1_h000000000000 :: E1;
                 __combo_root_a__e1_h000000000000 -> B : A.E2;
+            }
+            """,
+            entry_name="state_machine_dsl",
+        )
+
+        with pytest.raises(ModelValidationError) as exc_info:
+            parse_dsl_node_to_state_machine(program)
+        assert any(
+            diag.code == "E_COMBO_RESERVED_STATE_NAME"
+            for diag in exc_info.value.diagnostics
+        )
+
+    def test_reserved_combo_export_shape_even_when_semantically_valid_is_rejected(self):
+        program = parse_with_grammar_entry(
+            """
+            state Root {
+                state A {
+                    event E1;
+                    event E2;
+                }
+                state B;
+                pseudo state __combo_root_a__e1_hbafca7f66598 named 'combo after E1';
+                [*] -> A;
+                A -> __combo_root_a__e1_hbafca7f66598 :: E1;
+                __combo_root_a__e1_hbafca7f66598 -> B : A.E2;
             }
             """,
             entry_name="state_machine_dsl",

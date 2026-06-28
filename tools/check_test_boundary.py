@@ -26,7 +26,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Set
+from typing import Dict, Iterable, List, Optional, Sequence, Set
 
 
 AST_CONSTANT_TYPE = getattr(ast, "Constant", None)
@@ -102,6 +102,9 @@ class NameScope:
     :type os_aliases: Set[str]
     :param os_function_aliases: Names imported from OS command helpers.
     :type os_function_aliases: Set[str]
+    :param os_function_alias_methods: Original OS command helper names by local
+        alias.
+    :type os_function_alias_methods: Dict[str, str]
     :param os_path_join_aliases: Names imported from ``os.path.join``.
     :type os_path_join_aliases: Set[str]
     :param os_path_dirname_aliases: Names imported from ``os.path.dirname``.
@@ -136,6 +139,7 @@ class NameScope:
     subprocess_function_aliases: Set[str]
     os_aliases: Set[str]
     os_function_aliases: Set[str]
+    os_function_alias_methods: Dict[str, str]
     os_path_join_aliases: Set[str]
     os_path_dirname_aliases: Set[str]
     os_path_abspath_aliases: Set[str]
@@ -194,6 +198,7 @@ class NameScope:
             subprocess_function_aliases=set(),
             os_aliases=set(os_aliases or set()),
             os_function_aliases=set(),
+            os_function_alias_methods={},
             os_path_join_aliases=set(),
             os_path_dirname_aliases=set(),
             os_path_abspath_aliases=set(),
@@ -1198,6 +1203,31 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         return self.visible_names("os_function_aliases")
 
     @property
+    def os_function_alias_methods(self) -> Dict[str, str]:
+        """
+        Return visible original helper names for OS command aliases.
+
+        :return: Mapping from local alias to original :mod:`os` helper name.
+        :rtype: Dict[str, str]
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.current_scope.os_function_alias_methods['run_exec'] = 'execvp'
+            >>> visitor.os_function_alias_methods['run_exec']
+            'execvp'
+        """
+        visible = {}
+        shadowed = set()
+        for scope in reversed(self.scope_stack):
+            for name, method_name in scope.os_function_alias_methods.items():
+                if name not in shadowed:
+                    visible[name] = method_name
+            shadowed.update(scope.shadowing_names)
+            shadowed.update(scope.defined_names)
+        return visible
+
+    @property
     def os_path_join_aliases(self) -> Set[str]:
         """
         Return visible aliases for ``os.path.join``.
@@ -1674,8 +1704,10 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         elif module == "os":
             for alias in node.names:
                 if alias.name in _OS_COMMAND_METHODS:
-                    self.current_scope.os_function_aliases.add(
-                        alias.asname or alias.name
+                    local_name = alias.asname or alias.name
+                    self.current_scope.os_function_aliases.add(local_name)
+                    self.current_scope.os_function_alias_methods[local_name] = (
+                        alias.name
                     )
         elif module == "os.path":
             for alias in node.names:
@@ -1797,6 +1829,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         self.current_scope.subprocess_function_aliases.discard(name)
         self.current_scope.os_aliases.discard(name)
         self.current_scope.os_function_aliases.discard(name)
+        self.current_scope.os_function_alias_methods.pop(name, None)
         self.current_scope.os_path_join_aliases.discard(name)
         self.current_scope.os_path_dirname_aliases.discard(name)
         self.current_scope.os_path_abspath_aliases.discard(name)
@@ -2321,8 +2354,15 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> call = ast.parse('os.execv("python", ["python", "tools/x.py"])').body[0].value
             >>> len(visitor.os_command_arguments(call, 'execv'))
             2
+            >>> call = ast.parse('os.spawnve(os.P_WAIT, "python", ["python"], {"PYTHONPATH": "tools/x.py"})').body[0].value
+            >>> len(visitor.os_command_arguments(call, 'spawnve'))
+            2
         """
         if method_name.startswith("spawn"):
+            if method_name in {"spawnle", "spawnlpe"} and len(node.args) > 3:
+                return node.args[1:-1]
+            if method_name in {"spawnve", "spawnvpe"}:
+                return node.args[1:3]
             return node.args[1:]
         if method_name.startswith("exec"):
             if method_name in {"execle", "execlpe"} and len(node.args) > 2:
@@ -2460,6 +2500,10 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
             >>> visitor.os_command_method_name(ast.parse('os.system("true")').body[0].value)
             'system'
+            >>> source = 'from os import execvp as run_exec'
+            >>> visitor.visit(ast.parse(source))
+            >>> visitor.os_command_method_name(ast.parse('run_exec("python", ["python"])').body[0].value)
+            'execvp'
         """
         if isinstance(node.func, ast.Attribute):
             if node.func.attr in _OS_COMMAND_METHODS and isinstance(
@@ -2469,7 +2513,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     return node.func.attr
         if isinstance(node.func, ast.Name):
             if node.func.id in self.os_function_aliases:
-                return node.func.id
+                return self.os_function_alias_methods.get(node.func.id, node.func.id)
         return None
 
     @property

@@ -43,7 +43,8 @@
       "pattern": "^[0-9a-f]{64}$"
     },
     "summary_status": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "generator": {
       "type": "object",
@@ -228,7 +229,8 @@
           "pattern": "^[0-9a-f]{64}$"
         },
         "summary_status": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "generator": {
           "type": "object",
@@ -289,16 +291,20 @@
             ],
             "properties": {
               "id": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1
               },
               "source": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1
               },
               "summary": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1
               },
               "url": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1
               }
             }
           }
@@ -381,8 +387,16 @@
           "properties": {
             "language": {
               "const": "java"
+            },
+            "render_path": {
+              "const": "native_java"
             }
-          }
+          },
+          "required": [
+            "language",
+            "render_path"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -395,8 +409,16 @@
           "properties": {
             "language": {
               "const": "rust"
+            },
+            "render_path": {
+              "const": "native_rust"
             }
-          }
+          },
+          "required": [
+            "language",
+            "render_path"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -423,10 +445,12 @@
       ],
       "properties": {
         "case_id": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "semantic_case_id": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "language": {
           "enum": [
@@ -435,19 +459,28 @@
           ]
         },
         "profile": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "operator": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "fcstm_expression": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "render_path": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "enum": [
+            "native_java",
+            "native_rust"
+          ]
         },
         "render_expression": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "native_api_family": {
           "enum": [

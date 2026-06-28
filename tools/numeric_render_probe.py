@@ -2960,6 +2960,16 @@ def _validate_native_cases(
 
         >>> _validate_native_cases([], 'java', '$.cases')[:1]
         ['$.cases must be a non-empty list']
+        >>> java_cases = [
+        ...     _native_case_base(case, case.profile or 'java-int32', 'native_java')
+        ...     for case in _java_smoke_cases()
+        ... ]
+        >>> java_cases[0]['render_path'] = 'native_rust'
+        >>> '$.cases[0].render_path must be native_java' in _validate_native_cases(java_cases, 'java', '$.cases')
+        True
+        >>> java_cases[0]['render_expression'] = ''
+        >>> '$.cases[0].render_expression must be a non-empty string' in _validate_native_cases(java_cases, 'java', '$.cases')
+        True
     """
     errors: List[str] = []
     if not isinstance(cases, list) or not cases:
@@ -2979,6 +2989,17 @@ def _validate_native_cases(
         "native_api_family",
         "source_note_ids",
     }
+    shared_join_fields = [
+        "case_id",
+        "operator",
+        "fcstm_expression",
+        "render_path",
+        "render_expression",
+    ]
+    expected_render_path = {
+        "java": "native_java",
+        "rust": "native_rust",
+    }[language]
     seen_semantic_ids = set()
     profile_seen: Dict[str, set] = {}
     allowed_statuses = {
@@ -3006,8 +3027,15 @@ def _validate_native_cases(
             errors.append(
                 "%s missing required fields: %s" % (case_path, ", ".join(missing))
             )
+        for field in shared_join_fields:
+            if not isinstance(case.get(field), str) or not case.get(field):
+                errors.append("%s.%s must be a non-empty string" % (case_path, field))
         if case.get("language") != language:
             errors.append("%s.language must be %s" % (case_path, language))
+        if case.get("render_path") != expected_render_path:
+            errors.append(
+                "%s.render_path must be %s" % (case_path, expected_render_path)
+            )
         if case.get("status") not in allowed_statuses:
             errors.append("%s.status is invalid: %r" % (case_path, case.get("status")))
         if case.get("outcome") not in allowed_outcomes:
@@ -4964,7 +4992,7 @@ def _validate_json_schema_fragment(
     the research artifact schemas: ``$ref``, ``allOf``, ``if`` / ``then``,
     ``type``, ``required``, ``properties``, object
     ``additionalProperties``, ``const``, ``enum``, ``pattern``,
-    ``minItems`` and homogeneous ``items``.
+    string ``minLength``, ``minItems`` and homogeneous ``items``.
 
     :param value: JSON-compatible value to validate.
     :type value: Any
@@ -4987,6 +5015,8 @@ def _validate_json_schema_fragment(
         ... }
         >>> _validate_json_schema_fragment({'kind': 'x'}, schema, {}, '$')
         ['$.then missing required key value']
+        >>> _validate_json_schema_fragment('', {'type': 'string', 'minLength': 1}, {}, '$')
+        ['$ must contain at least 1 characters']
     """
     errors: List[str] = []
     ref = schema.get("$ref")
@@ -5064,6 +5094,10 @@ def _validate_json_schema_fragment(
         else:
             if not matched:
                 errors.append("%s must match pattern %r" % (path, pattern))
+    min_length = schema.get("minLength")
+    if isinstance(min_length, int) and isinstance(value, str):
+        if len(value) < min_length:
+            errors.append("%s must contain at least %d characters" % (path, min_length))
 
     if isinstance(value, Mapping):
         required = schema.get("required")

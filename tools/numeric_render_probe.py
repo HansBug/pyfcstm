@@ -6,10 +6,13 @@ native workloads. The C-family smoke modes compile and execute small programs
 whose expressions are rendered from the repository's R0
 ``render_mapping.json`` snapshot, so the probe follows the same renderer and
 template facts that later exhaustive harnesses will use. Shared JSON, mapping,
-and command-dispatch helpers are mode-neutral. The Python/Z3 baseline and Java/Rust native smoke modes join the same runner without replacing the C-family modes. Smoke case identifiers are render-path scoped; cross-artifact
-semantic joins should prefer the rendered FCSTM operator and source expression,
-or a future explicit semantic identifier, while render-path fields distinguish
-target-language outputs for the same semantic expression.
+and command-dispatch helpers are mode-neutral. The Python/Z3 baseline,
+Java/Rust native smoke, and C/C++ to Z3 alignment modes join the same runner
+without replacing the C-family modes. Smoke case identifiers are render-path
+scoped; cross-artifact semantic joins should prefer the rendered FCSTM operator
+and source expression, or a future explicit semantic identifier, while
+render-path fields distinguish target-language outputs for the same semantic
+expression.
 
 The module contains:
 
@@ -19,10 +22,13 @@ The module contains:
 * :func:`check_python_z3_baseline` - Validate the generated or committed baseline.
 * :func:`build_java_rust_smoke_report` - Build Java/Rust native smoke facts.
 * :func:`check_java_rust_smoke` - Validate Java/Rust smoke contract invariants.
+* :func:`build_c_cpp_z3_alignment` - Build the C/C++ to Z3 alignment snapshot.
+* :func:`check_c_cpp_z3_alignment` - Validate the committed alignment snapshot.
 * :func:`validate_probe_summary` - Validate the lightweight probe-summary contract.
 * :func:`_stable_json` - Serialize research artifacts consistently.
 * :func:`main` - Command-line entry point with ``env``, ``c-smoke``,
-  ``cpp-smoke``, ``python-z3-baseline``, ``java-smoke``, ``rust-smoke`` and ``java-rust-smoke`` modes.
+  ``cpp-smoke``, ``python-z3-baseline``, ``java-smoke``, ``rust-smoke``,
+  ``java-rust-smoke`` and ``c-cpp-z3-alignment`` modes.
 
 Example::
 
@@ -39,6 +45,7 @@ Example::
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -79,6 +86,7 @@ from pyfcstm.model.expr import parse_expr_from_string  # noqa: E402
 from pyfcstm.render.expr import render_expr_node  # noqa: E402
 from pyfcstm.render.render import StateMachineCodeRenderer  # noqa: E402
 from pyfcstm.solver.expr import python_round_to_z3  # noqa: E402
+from pyfcstm.utils import add_settings_for_env  # noqa: E402
 from tools.numeric_render_mapping import build_render_mapping  # noqa: E402
 
 _JSON_OBJECT = Dict[str, Any]
@@ -90,12 +98,16 @@ _PYTHON_Z3_BASELINE_SNAPSHOT = (
 _PYTHON_Z3_BASELINE_SCHEMA = "%s/schemas/python_z3_baseline.schema.json" % (
     _RESEARCH_PATH
 )
+_C_CPP_Z3_ALIGNMENT_SNAPSHOT = (
+    "%s/results/snapshots/c_cpp_z3_alignment.json" % _RESEARCH_PATH
+)
+_C_CPP_Z3_ALIGNMENT_SCHEMA = "%s/schemas/c_cpp_z3_alignment.schema.json" % (
+    _RESEARCH_PATH
+)
 _JAVA_RUST_SMOKE_SNAPSHOT = "%s/results/snapshots/java_rust_smoke.json" % (
     _RESEARCH_PATH
 )
-_JAVA_RUST_SMOKE_SCHEMA = "%s/schemas/java_rust_smoke.schema.json" % (
-    _RESEARCH_PATH
-)
+_JAVA_RUST_SMOKE_SCHEMA = "%s/schemas/java_rust_smoke.schema.json" % (_RESEARCH_PATH)
 _NATIVE_ONLY_REASON = "no_java_or_rust_template_in_current_repository"
 _JAVA_RUST_MODES = {"java-smoke", "rust-smoke", "java-rust-smoke"}
 _COMMANDS = [
@@ -129,6 +141,29 @@ _CPP_SANITIZER_FLAGS = [
 _Z3_SORTS = ["Int", "Real", "BitVec", "FP"]
 _Z3_SUPPORT_LEVELS = {"exact", "approximate", "uninterpreted", "unsupported"}
 _RISK_LEVELS = {"low", "medium", "high", "unknown"}
+_C_CPP_ALIGNMENT_OUTCOMES = {
+    "exact",
+    "exact_with_obligations",
+    "profile_dependent",
+    "unsupported",
+    "compile_failed",
+    "runtime_trap",
+    "ub",
+}
+_C_CPP_ALIGNMENT_RENDER_PATHS = [
+    "builtin_c_style",
+    "template_c_core",
+    "template_c_poll_core",
+    "builtin_cpp_style",
+    "template_cpp_c_core",
+    "template_cpp_poll_c_core",
+]
+_C_CPP_ALIGNMENT_REQUIRED_SHIFT_OBLIGATIONS = {
+    "valid_shift_count",
+    "non_negative_shift_count",
+    "no_signed_left_shift_ub",
+    "signed_right_shift_profile",
+}
 _UFUNC_NAMES = [
     "sin",
     "cos",
@@ -403,6 +438,23 @@ def _write_payload(output_path: Union[str, Path], payload: Mapping[str, Any]) ->
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_stable_json(payload), encoding="utf-8")
+
+
+def _payload_sha256(payload: Any) -> str:
+    """
+    Return the SHA-256 digest for a stable JSON payload.
+
+    :param payload: JSON-compatible payload.
+    :type payload: Any
+    :return: Lowercase SHA-256 digest.
+    :rtype: str
+
+    Example::
+
+        >>> _payload_sha256({'b': 1, 'a': 2}) == _payload_sha256({'a': 2, 'b': 1})
+        True
+    """
+    return hashlib.sha256(_stable_json(payload).encode("utf-8")).hexdigest()
 
 
 def _probe_command(name: str) -> _JSON_OBJECT:
@@ -1563,8 +1615,7 @@ def _java_source_for_case(case: NativeSmokeCase) -> str:
         >>> 'class ProbeCase' in _java_source_for_case(_java_smoke_cases()[0])
         True
     """
-    return (
-        """public final class ProbeCase {
+    return """public final class ProbeCase {
     public static void main(String[] args) {
         %(declarations)s
         try {
@@ -1576,12 +1627,10 @@ def _java_source_for_case(case: NativeSmokeCase) -> str:
         }
     }
 }
-"""
-        % {
-            "declarations": case.declarations,
-            "expression": case.render_expression,
-        }
-    )
+""" % {
+        "declarations": case.declarations,
+        "expression": case.render_expression,
+    }
 
 
 def _rust_value_expression(case: NativeSmokeCase) -> str:
@@ -1615,8 +1664,7 @@ def _rust_source_for_case(case: NativeSmokeCase) -> str:
         >>> 'fn main' in _rust_source_for_case(_rust_smoke_cases()[0])
         True
     """
-    return (
-        """#![allow(non_snake_case)]
+    return """#![allow(non_snake_case)]
 #![allow(unused_variables)]
 
 #[inline(never)]
@@ -1639,12 +1687,10 @@ fn main() {
     let result = %(expression)s;
     println!(\"VALUE={:?}\", result);
 }
-"""
-        % {
-            "declarations": case.declarations,
-            "expression": _rust_value_expression(case),
-        }
-    )
+""" % {
+        "declarations": case.declarations,
+        "expression": _rust_value_expression(case),
+    }
 
 
 def _java_toolchain() -> _JSON_OBJECT:
@@ -1784,7 +1830,10 @@ def _snapshot_command_result(command: Any) -> Any:
                 normalized[key] = _snapshot_command_result(value)
         return normalized
     if isinstance(command, list):
-        return ["<path>" if isinstance(item, str) and "/" in item else item for item in command]
+        return [
+            "<path>" if isinstance(item, str) and "/" in item else item
+            for item in command
+        ]
     return command
 
 
@@ -1877,8 +1926,16 @@ def _rust_profiles() -> List[_JSON_OBJECT]:
         'debug'
     """
     return [
-        {"name": "debug", "flags": ["-C", "opt-level=0"], "overflow_checks": "default_debug"},
-        {"name": "release", "flags": ["-C", "opt-level=3"], "overflow_checks": "default_release"},
+        {
+            "name": "debug",
+            "flags": ["-C", "opt-level=0"],
+            "overflow_checks": "default_debug",
+        },
+        {
+            "name": "release",
+            "flags": ["-C", "opt-level=3"],
+            "overflow_checks": "default_release",
+        },
         {
             "name": "overflow-checks-on",
             "flags": ["-C", "opt-level=3", "-C", "overflow-checks=yes"],
@@ -1937,9 +1994,8 @@ def _run_rust_case(
     source_path.write_text(_rust_source_for_case(case), encoding="utf-8")
     result["source_path"] = str(source_path)
     rustc_path = str(toolchain["rustc"]["path"])
-    compile_command = (
-        [rustc_path, str(source_path), "-o", str(binary_path)]
-        + list(profile.get("flags", []))
+    compile_command = [rustc_path, str(source_path), "-o", str(binary_path)] + list(
+        profile.get("flags", [])
     )
     compile_result = _run_command(compile_command, timeout, case_dir)
     result["commands"]["compile"] = compile_result
@@ -1995,7 +2051,7 @@ def _render_case_expression(case: NumericSmokeCase, render_path: RenderPath) -> 
     from pyfcstm.render.expr import fn_expr_render
     from pyfcstm.utils import to_c_identifier
 
-    env = jinja2.Environment()
+    env = add_settings_for_env(jinja2.Environment())
     env.filters["to_c_identifier"] = to_c_identifier
     env.globals["to_c_identifier"] = to_c_identifier
     expr = parse_expr_from_string(case.fcstm_expression, mode="numeric")
@@ -2942,13 +2998,17 @@ def _validate_native_cases(
             continue
         missing = sorted(required_fields - set(case))
         if missing:
-            errors.append("%s missing required fields: %s" % (case_path, ", ".join(missing)))
+            errors.append(
+                "%s missing required fields: %s" % (case_path, ", ".join(missing))
+            )
         if case.get("language") != language:
             errors.append("%s.language must be %s" % (case_path, language))
         if case.get("status") not in allowed_statuses:
             errors.append("%s.status is invalid: %r" % (case_path, case.get("status")))
         if case.get("outcome") not in allowed_outcomes:
-            errors.append("%s.outcome is invalid: %r" % (case_path, case.get("outcome")))
+            errors.append(
+                "%s.outcome is invalid: %r" % (case_path, case.get("outcome"))
+            )
         if case.get("native_only") is not True:
             errors.append("%s.native_only must be true" % case_path)
         if case.get("native_only_reason") != _NATIVE_ONLY_REASON:
@@ -2973,7 +3033,12 @@ def _validate_native_cases(
             if actual_profiles != expected_profiles:
                 errors.append(
                     "%s semantic case %s must cover Rust profiles %s, got %s"
-                    % (path, case_id, sorted(expected_profiles), sorted(actual_profiles))
+                    % (
+                        path,
+                        case_id,
+                        sorted(expected_profiles),
+                        sorted(actual_profiles),
+                    )
                 )
     return errors
 
@@ -3094,7 +3159,9 @@ def validate_java_rust_smoke(
             for language in ["java", "rust"]:
                 value = notes.get(language)
                 if not isinstance(value, list) or not value:
-                    errors.append("official_source_notes.%s must be a non-empty list" % language)
+                    errors.append(
+                        "official_source_notes.%s must be a non-empty list" % language
+                    )
     return errors
 
 
@@ -3473,9 +3540,7 @@ def _render_template_python_expr(
     """
     try:
         expr = parse_expr_from_string(expr_text, mode="numeric")
-        rendered = renderer.env.globals["expr_render"](
-            expr.to_ast_node(), style=style
-        )
+        rendered = renderer.env.globals["expr_render"](expr.to_ast_node(), style=style)
     except GrammarParseError as err:
         # GrammarParseError: parse_expr_from_string rejects expressions outside
         # the current numeric grammar; preserve the failed probe row.
@@ -4607,8 +4672,9 @@ def _build_z3_capability_matrix(mapping: Mapping[str, Any]) -> List[_JSON_OBJECT
     return rows
 
 
-
-def _python_alignment_cases(mapping: Mapping[str, Any], repo_root: Union[str, Path]) -> List[_JSON_OBJECT]:
+def _python_alignment_cases(
+    mapping: Mapping[str, Any], repo_root: Union[str, Path]
+) -> List[_JSON_OBJECT]:
     """
     Build Python baseline cases using the shared probe join fields.
 
@@ -4625,7 +4691,9 @@ def _python_alignment_cases(mapping: Mapping[str, Any], repo_root: Union[str, Pa
         >>> {'case_id', 'operator', 'fcstm_expression', 'render_path', 'render_expression'} <= set(cases[0])
         True
     """
-    renderer = StateMachineCodeRenderer(str(Path(repo_root).resolve() / "templates/python"))
+    renderer = StateMachineCodeRenderer(
+        str(Path(repo_root).resolve() / "templates/python")
+    )
     semantic_cases = [
         ("round", "round", "round(A)"),
         ("abs", "abs", "abs(A)"),
@@ -5208,12 +5276,12 @@ def validate_python_z3_baseline(payload: Mapping[str, Any]) -> List[str]:
             sign_expr = template_by_key.get(("python_expr", "sign(A)"), {})
             if sign_expr.get("rendered") != 'self._sign(self._vars["A"])':
                 errors.append(
-                    "python_expr sign(A) must render through self._sign(self._vars[\"A\"])"
+                    'python_expr sign(A) must render through self._sign(self._vars["A"])'
                 )
             sign_scope = template_by_key.get(("python_scope_expr", "sign(A)"), {})
             if sign_scope.get("rendered") != 'self._sign(scope["A"])':
                 errors.append(
-                    "python_scope_expr sign(A) must render through self._sign(scope[\"A\"])"
+                    'python_scope_expr sign(A) must render through self._sign(scope["A"])'
                 )
         statement_rendered = render_paths.get("statement_rendered_expressions")
         if not isinstance(statement_rendered, list) or not statement_rendered:
@@ -5232,7 +5300,7 @@ def validate_python_z3_baseline(payload: Mapping[str, Any]) -> List[str]:
             sign_rendered = sign_assignment.get("rendered")
             if not isinstance(sign_rendered, str) or '_s(_v["A"])' not in sign_rendered:
                 errors.append(
-                    "python_runtime sign(A) assignment must render through _s(_v[\"A\"])"
+                    'python_runtime sign(A) assignment must render through _s(_v["A"])'
                 )
             if not any(
                 isinstance(item, Mapping)
@@ -5276,7 +5344,9 @@ def validate_python_z3_baseline(payload: Mapping[str, Any]) -> List[str]:
             )
         else:
             round_by_input = {
-                item.get("input"): item for item in round_cases if isinstance(item, Mapping)
+                item.get("input"): item
+                for item in round_cases
+                if isinstance(item, Mapping)
             }
             for value, expected_python, expected_z3 in [
                 ("-2.5", -2, "-2"),
@@ -5327,7 +5397,9 @@ def validate_python_z3_baseline(payload: Mapping[str, Any]) -> List[str]:
             and item.get("python_value") == -4
             for item in shift_cases
         ):
-            errors.append("python_runtime_samples.shift_cases must include -8 >> 1 == -4")
+            errors.append(
+                "python_runtime_samples.shift_cases must include -8 >> 1 == -4"
+            )
 
     z3_samples = payload.get("z3_representative_samples")
     if not isinstance(z3_samples, Mapping):
@@ -5368,8 +5440,7 @@ def validate_python_z3_baseline(payload: Mapping[str, Any]) -> List[str]:
                     "Z3 Int division mismatch cases must include a Python true-division mismatch"
                 )
             if not any(
-                isinstance(item, Mapping)
-                and item.get("modulo_matches_python") is False
+                isinstance(item, Mapping) and item.get("modulo_matches_python") is False
                 for item in mismatch_cases
             ):
                 errors.append(
@@ -5381,7 +5452,9 @@ def validate_python_z3_baseline(payload: Mapping[str, Any]) -> List[str]:
         errors.append("z3_capability_matrix must be a non-empty array")
     else:
         rows_by_operator = {
-            item.get("fcstm_operator"): item for item in matrix if isinstance(item, Mapping)
+            item.get("fcstm_operator"): item
+            for item in matrix
+            if isinstance(item, Mapping)
         }
         operators = set(rows_by_operator)
         for required in ["round", "sign", "cbrt", "~", "/", "%"]:
@@ -5390,9 +5463,10 @@ def validate_python_z3_baseline(payload: Mapping[str, Any]) -> List[str]:
         division_row = rows_by_operator.get("/")
         if isinstance(division_row, Mapping):
             division_int = division_row.get("z3_support", {}).get("Int", {})
-            if isinstance(division_int, Mapping) and division_int.get(
-                "status"
-            ) == "exact":
+            if (
+                isinstance(division_int, Mapping)
+                and division_int.get("status") == "exact"
+            ):
                 errors.append(
                     "z3_capability_matrix '/' Int support must not be exact for Python true-division baseline"
                 )
@@ -5759,6 +5833,1420 @@ def check_java_rust_smoke(
     }
 
 
+def _alignment_render_paths(mapping: Mapping[str, Any]) -> List[RenderPath]:
+    """
+    Return all C-family render paths required by the alignment pilot.
+
+    :param mapping: Render-mapping snapshot.
+    :type mapping: Mapping[str, Any]
+    :return: C and C++ render paths, including C++ paths that reuse C
+        expression templates.
+    :rtype: List[RenderPath]
+
+    Example::
+
+        >>> mapping = _load_render_mapping(Path('.').resolve(), _DEFAULT_MAPPING_PATH)
+        >>> len(_alignment_render_paths(mapping)) >= 4
+        True
+    """
+    return _render_paths_for_mode("c-smoke", mapping) + _render_paths_for_mode(
+        "cpp-smoke", mapping
+    )
+
+
+def _c_family_smoke_facts(
+    mode: str,
+    repo_root: Union[str, Path] = ".",
+    mapping_path: Union[str, Path] = _DEFAULT_MAPPING_PATH,
+) -> _JSON_OBJECT:
+    """
+    Build deterministic C-family smoke facts without native compilation.
+
+    The digest produced from this payload is the schema-level smoke-fact input
+    for the C/C++ alignment snapshot. Live ``c-smoke`` and ``cpp-smoke`` runs
+    may still record compiler outcomes under ``results/local/``, but this
+    helper stays toolchain-independent so ``--check`` remains usable on hosts
+    without a native C or C++ compiler.
+
+    :param mode: Smoke mode, either ``"c-smoke"`` or ``"cpp-smoke"``.
+    :type mode: str
+    :param repo_root: Repository root path, defaults to the current directory.
+    :type repo_root: Union[str, pathlib.Path], optional
+    :param mapping_path: Render-mapping snapshot path.
+    :type mapping_path: Union[str, pathlib.Path], optional
+    :return: Deterministic smoke-fact payload.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> facts = _c_family_smoke_facts('c-smoke')
+        >>> facts['mode']
+        'c-smoke-facts'
+    """
+    root = _as_repo_path(repo_root)
+    mapping_file = _resolve_mapping_path(root, mapping_path)
+    mapping = _load_render_mapping(root, mapping_file)
+    render_paths = _render_paths_for_mode(mode, mapping)
+    cases = []
+    for render_path in render_paths:
+        for case in _risk_cases():
+            rendered = _render_case_expression(case, render_path)
+            cases.append(
+                {
+                    "case_id": "%s:%s" % (render_path.path_id, case.case_id),
+                    "semantic_case_id": case.case_id,
+                    "operator": case.operator,
+                    "fcstm_expression": case.fcstm_expression,
+                    "render_path": render_path.path_id,
+                    "render_expression": rendered,
+                    "mapping_sources": list(render_path.mapping_sources),
+                    "expects_undefined_behavior": case.expects_undefined_behavior,
+                }
+            )
+    return {
+        "schema_version": 1,
+        "mode": "%s-facts" % mode,
+        "source_mapping_sha256": mapping.get("mapping_sha256", ""),
+        "render_paths": [
+            {
+                "path_id": path.path_id,
+                "language": path.language,
+                "compile_language": path.compile_language,
+                "lang_style": path.lang_style,
+                "expression_core_language": path.expression_core_language,
+                "mapping_sources": list(path.mapping_sources),
+                "template_name": path.template_name,
+                "wrapper_language": path.wrapper_language,
+            }
+            for path in render_paths
+        ],
+        "cases": cases,
+    }
+
+
+def _render_contract_expression(
+    expr_text: str, render_path: RenderPath
+) -> _JSON_OBJECT:
+    """
+    Render one alignment expression for a C-family render path.
+
+    :param expr_text: FCSTM expression text.
+    :type expr_text: str
+    :param render_path: Render path used for target-language output.
+    :type render_path: RenderPath
+    :return: Render result with ``status`` and either ``rendered`` or error
+        metadata.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> mapping = _load_render_mapping(Path('.').resolve(), _DEFAULT_MAPPING_PATH)
+        >>> path = _render_paths_for_mode('c-smoke', mapping)[0]
+        >>> _render_contract_expression('A + B', path)['status']
+        'rendered'
+    """
+    from pyfcstm.render.expr import fn_expr_render
+    from pyfcstm.utils import to_c_identifier
+
+    env = add_settings_for_env(jinja2.Environment())
+    env.filters["to_c_identifier"] = to_c_identifier
+    env.globals["to_c_identifier"] = to_c_identifier
+    render = partial(
+        fn_expr_render, templates=dict(render_path.render_templates), env=env
+    )
+    env.globals["expr_render"] = render
+    env.filters["expr_render"] = render
+    try:
+        expr = parse_expr_from_string(expr_text, mode="generic")
+        rendered = render(node=expr.to_ast_node())
+    except GrammarParseError as err:
+        # GrammarParseError: current FCSTM grammar rejects this expression
+        # shape; the alignment snapshot records that as an unsupported contract row.
+        return {
+            "status": "parse_failed",
+            "error_type": type(err).__name__,
+            "error": str(err),
+        }
+    except (ValueError, TypeError) as err:
+        # ValueError: expression conversion rejected the parsed tree; TypeError:
+        # renderer/template helpers rejected the AST. Both are alignment facts.
+        return {
+            "status": "render_failed",
+            "error_type": type(err).__name__,
+            "error": str(err),
+        }
+    return {
+        "status": "rendered",
+        "rendered": rendered,
+        "ast_type": type(expr.to_ast_node()).__name__,
+    }
+
+
+def _obligation(kind: str, predicate: str, trigger: str, evidence: str) -> _JSON_OBJECT:
+    """
+    Build one alignment obligation row.
+
+    :param kind: Stable obligation kind.
+    :type kind: str
+    :param predicate: Z3-oriented predicate or structured-text condition.
+    :type predicate: str
+    :param trigger: Scenario that requires the obligation.
+    :type trigger: str
+    :param evidence: Evidence note for the obligation.
+    :type evidence: str
+    :return: JSON-compatible obligation.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> _obligation('divisor_nonzero', 'B != 0', 'division', 'C rule')['kind']
+        'divisor_nonzero'
+    """
+    return {
+        "kind": kind,
+        "predicate": predicate,
+        "trigger": trigger,
+        "evidence": evidence,
+    }
+
+
+def _counterexample(
+    case_id: str,
+    values: Mapping[str, Any],
+    expected_issue: str,
+    reproduction: str,
+) -> _JSON_OBJECT:
+    """
+    Build one compact counterexample row.
+
+    :param case_id: Stable counterexample identifier.
+    :type case_id: str
+    :param values: Input values for the example.
+    :type values: Mapping[str, Any]
+    :param expected_issue: Issue demonstrated by the example.
+    :type expected_issue: str
+    :param reproduction: Short reproduction expression or command.
+    :type reproduction: str
+    :return: JSON-compatible counterexample.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> _counterexample('div0', {'B': 0}, 'division by zero', 'A / B')['case_id']
+        'div0'
+    """
+    return {
+        "case_id": case_id,
+        "values": dict(values),
+        "expected_issue": expected_issue,
+        "reproduction": reproduction,
+    }
+
+
+def _c_cpp_alignment_cases() -> List[_JSON_OBJECT]:
+    """
+    Return semantic cases covered by the C/C++ alignment pilot.
+
+    :return: Semantic case definitions.
+    :rtype: List[Dict[str, Any]]
+
+    Example::
+
+        >>> any(case['operator'] == '~' for case in _c_cpp_alignment_cases())
+        True
+    """
+    return [
+        {
+            "semantic_case_id": "add",
+            "operator": "+",
+            "operator_family": "binary_arithmetic",
+            "fcstm_expression": "A + B",
+        },
+        {
+            "semantic_case_id": "subtract",
+            "operator": "-",
+            "operator_family": "binary_arithmetic",
+            "fcstm_expression": "A - B",
+        },
+        {
+            "semantic_case_id": "multiply",
+            "operator": "*",
+            "operator_family": "binary_arithmetic",
+            "fcstm_expression": "A * B",
+        },
+        {
+            "semantic_case_id": "divide",
+            "operator": "/",
+            "operator_family": "binary_arithmetic",
+            "fcstm_expression": "A / B",
+        },
+        {
+            "semantic_case_id": "modulo",
+            "operator": "%",
+            "operator_family": "binary_arithmetic",
+            "fcstm_expression": "A % B",
+        },
+        {
+            "semantic_case_id": "unary_minus",
+            "operator": "unary-",
+            "operator_family": "unary_arithmetic",
+            "fcstm_expression": "-A",
+        },
+        {
+            "semantic_case_id": "bitwise_not",
+            "operator": "~",
+            "operator_family": "bitwise",
+            "fcstm_expression": "~A",
+        },
+        {
+            "semantic_case_id": "bitwise_and",
+            "operator": "&",
+            "operator_family": "bitwise",
+            "fcstm_expression": "A & B",
+        },
+        {
+            "semantic_case_id": "bitwise_or",
+            "operator": "|",
+            "operator_family": "bitwise",
+            "fcstm_expression": "A | B",
+        },
+        {
+            "semantic_case_id": "bitwise_xor",
+            "operator": "^",
+            "operator_family": "bitwise",
+            "fcstm_expression": "A ^ B",
+        },
+        {
+            "semantic_case_id": "shift_left",
+            "operator": "<<",
+            "operator_family": "shift",
+            "fcstm_expression": "A << B",
+        },
+        {
+            "semantic_case_id": "shift_right",
+            "operator": ">>",
+            "operator_family": "shift",
+            "fcstm_expression": "A >> B",
+        },
+        {
+            "semantic_case_id": "less_than",
+            "operator": "<",
+            "operator_family": "comparison",
+            "fcstm_expression": "A < B",
+        },
+        {
+            "semantic_case_id": "less_equal",
+            "operator": "<=",
+            "operator_family": "comparison",
+            "fcstm_expression": "A <= B",
+        },
+        {
+            "semantic_case_id": "greater_than",
+            "operator": ">",
+            "operator_family": "comparison",
+            "fcstm_expression": "A > B",
+        },
+        {
+            "semantic_case_id": "greater_equal",
+            "operator": ">=",
+            "operator_family": "comparison",
+            "fcstm_expression": "A >= B",
+        },
+        {
+            "semantic_case_id": "equal",
+            "operator": "==",
+            "operator_family": "comparison",
+            "fcstm_expression": "A == B",
+        },
+        {
+            "semantic_case_id": "not_equal",
+            "operator": "!=",
+            "operator_family": "comparison",
+            "fcstm_expression": "A != B",
+        },
+        {
+            "semantic_case_id": "pow",
+            "operator": "pow",
+            "operator_family": "math",
+            "fcstm_expression": "A ** B",
+        },
+        {
+            "semantic_case_id": "round",
+            "operator": "round",
+            "operator_family": "math",
+            "fcstm_expression": "round(A)",
+        },
+        {
+            "semantic_case_id": "abs",
+            "operator": "abs",
+            "operator_family": "math",
+            "fcstm_expression": "abs(A)",
+        },
+        {
+            "semantic_case_id": "sign",
+            "operator": "sign",
+            "operator_family": "math",
+            "fcstm_expression": "sign(A)",
+        },
+        {
+            "semantic_case_id": "cbrt",
+            "operator": "cbrt",
+            "operator_family": "math",
+            "fcstm_expression": "cbrt(A)",
+        },
+        {
+            "semantic_case_id": "integer_constant",
+            "operator": "integer_constant",
+            "operator_family": "constant",
+            "fcstm_expression": "42",
+        },
+        {
+            "semantic_case_id": "float_constant",
+            "operator": "float_constant",
+            "operator_family": "constant",
+            "fcstm_expression": "3.5",
+        },
+        {
+            "semantic_case_id": "narrowing_writeback",
+            "operator": "writeback",
+            "operator_family": "writeback",
+            "fcstm_expression": "A ** B",
+        },
+    ]
+
+
+def _contract_common_evidence(
+    render_path: RenderPath, render_result: Mapping[str, Any]
+) -> List[_JSON_OBJECT]:
+    """
+    Build common evidence entries for one alignment row.
+
+    :param render_path: Render path represented by the row.
+    :type render_path: RenderPath
+    :param render_result: Render result for the row expression.
+    :type render_result: Mapping[str, Any]
+    :return: Evidence entries.
+    :rtype: List[Dict[str, Any]]
+
+    Example::
+
+        >>> mapping = _load_render_mapping(Path('.').resolve(), _DEFAULT_MAPPING_PATH)
+        >>> path = _render_paths_for_mode('c-smoke', mapping)[0]
+        >>> bool(_contract_common_evidence(path, {'status': 'rendered'}))
+        True
+    """
+    evidence = [
+        {
+            "kind": "render_mapping",
+            "source": source,
+            "summary": "Render path source recorded in render_mapping.json.",
+        }
+        for source in render_path.mapping_sources
+    ]
+    evidence.append(
+        {
+            "kind": "render_result",
+            "source": render_path.path_id,
+            "summary": "Expression render status is %s." % render_result.get("status"),
+        }
+    )
+    return evidence
+
+
+def _alignment_semantics_for_case(
+    case: Mapping[str, str], render_path: RenderPath, render_result: Mapping[str, Any]
+) -> _JSON_OBJECT:
+    """
+    Build semantic fields for one C/C++ alignment contract row.
+
+    :param case: Semantic case definition.
+    :type case: Mapping[str, str]
+    :param render_path: Render path represented by the row.
+    :type render_path: RenderPath
+    :param render_result: Render result for the row expression.
+    :type render_result: Mapping[str, Any]
+    :return: Semantic fields merged into the contract row.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> mapping = _load_render_mapping(Path('.').resolve(), _DEFAULT_MAPPING_PATH)
+        >>> path = _render_paths_for_mode('c-smoke', mapping)[0]
+        >>> data = _alignment_semantics_for_case(_c_cpp_alignment_cases()[0], path, {'status': 'rendered'})
+        >>> data['outcome']
+        'exact_with_obligations'
+    """
+    operator_name = case["operator"]
+    family = case["operator_family"]
+    language_prefix = "C++" if render_path.language == "cpp" else "C"
+    if render_result.get("status") != "rendered":
+        return {
+            "target_semantics": (
+                "Current FCSTM parser or renderer rejects this expression before "
+                "target-language semantics apply."
+            ),
+            "definedness": "unsupported_by_current_fcstm_grammar_or_renderer",
+            "z3_sort": "unsupported",
+            "z3_profile": "unsupported",
+            "value_expr": "unsupported",
+            "obligations": [],
+            "outcome": "unsupported",
+            "counterexamples": [
+                _counterexample(
+                    "%s:%s:parse" % (render_path.path_id, case["semantic_case_id"]),
+                    {"expression": case["fcstm_expression"]},
+                    str(render_result.get("error_type", "render_failed")),
+                    case["fcstm_expression"],
+                )
+            ],
+        }
+
+    if family == "comparison":
+        return {
+            "target_semantics": "%s relational comparison over promoted operands."
+            % language_prefix,
+            "definedness": "defined_if_operand_evaluation_is_defined",
+            "z3_sort": "Bool",
+            "z3_profile": "signed-fixed-width-candidate:int64",
+            "value_expr": "signed_bv_compare(%s, A, B)" % operator_name,
+            "obligations": [],
+            "outcome": "exact",
+            "counterexamples": [],
+        }
+    if family == "constant":
+        z3_sort = "BitVec(64)" if operator_name == "integer_constant" else "FP64"
+        z3_profile = (
+            "signed-fixed-width-candidate:int64"
+            if operator_name == "integer_constant"
+            else "float-double"
+        )
+        return {
+            "target_semantics": "%s literal rendering for %s."
+            % (language_prefix, operator_name),
+            "definedness": "defined",
+            "z3_sort": z3_sort,
+            "z3_profile": z3_profile,
+            "value_expr": "literal(%s)" % case["fcstm_expression"],
+            "obligations": [],
+            "outcome": "exact",
+            "counterexamples": [],
+        }
+    if family == "writeback":
+        return {
+            "target_semantics": (
+                "%s assignment of an expression result back into a generated "
+                "signed integer storage slot."
+            )
+            % language_prefix,
+            "definedness": "defined_if_source_expression_and_conversion_are_defined",
+            "z3_sort": "BitVec(64)",
+            "z3_profile": "promotion-and-writeback:int64",
+            "value_expr": "writeback_int64(value_expr(A ** B))",
+            "obligations": [
+                _obligation(
+                    "source_expression_defined",
+                    "all source expression obligations hold",
+                    "writeback source evaluation",
+                    "The alignment contract composes source expression obligations before writeback.",
+                ),
+                _obligation(
+                    "representable_in_target_width",
+                    "INT64_MIN <= mathematical_result <= INT64_MAX",
+                    "integer writeback",
+                    "C/C++ conversion to a signed integer target must not rely on out-of-range behavior.",
+                ),
+            ],
+            "outcome": "exact_with_obligations",
+            "counterexamples": [
+                _counterexample(
+                    "%s:writeback:pow-overflow" % render_path.path_id,
+                    {"A": 2, "B": 63, "target": "int64"},
+                    "mathematical result is outside signed 64-bit writeback range",
+                    "A ** B",
+                )
+            ],
+        }
+    if operator_name == "sign":
+        return {
+            "target_semantics": (
+                "%s render path currently emits a sign function call but C and "
+                "standard C++ do not provide a portable unary sign math function."
+            )
+            % language_prefix,
+            "definedness": "not_defined_by_portable_c_family_library",
+            "z3_sort": "unsupported",
+            "z3_profile": "math-library-availability",
+            "value_expr": "unsupported",
+            "obligations": [],
+            "outcome": "compile_failed",
+            "counterexamples": [
+                _counterexample(
+                    "%s:sign:compile" % render_path.path_id,
+                    {"A": -9},
+                    "portable C/C++ sign function is unavailable",
+                    str(render_result.get("rendered", "sign(A)")),
+                )
+            ],
+        }
+    if operator_name == "abs":
+        return {
+            "target_semantics": "%s absolute-value call selected by the render path."
+            % language_prefix,
+            "definedness": "profile_dependent_overload_and_min_value",
+            "z3_sort": "BitVec(64)",
+            "z3_profile": "math-overload-and-writeback:int64",
+            "value_expr": "if signed(A) < 0 then -A else A",
+            "obligations": [
+                _obligation(
+                    "abs_overload_matches_operand_width",
+                    "selected abs overload preserves the operand width",
+                    "math overload resolution",
+                    "C render paths may emit abs(A), which is not width-neutral for int64 operands.",
+                ),
+                _obligation(
+                    "no_abs_min",
+                    "A != INT_MIN(width)",
+                    "absolute value of signed minimum",
+                    "The negated signed minimum is not representable in the same signed width.",
+                ),
+            ],
+            "outcome": "profile_dependent",
+            "counterexamples": [
+                _counterexample(
+                    "%s:abs:min" % render_path.path_id,
+                    {"A": -128, "width": 8},
+                    "abs(INT_MIN) is not representable in the same signed width",
+                    str(render_result.get("rendered", "abs(A)")),
+                )
+            ],
+        }
+    if operator_name in {"pow", "round", "cbrt"}:
+        function_name = {"pow": "pow", "round": "round", "cbrt": "cbrt"}[operator_name]
+        return {
+            "target_semantics": "%s math-library %s evaluation."
+            % (language_prefix, function_name),
+            "definedness": "defined_if_math_result_is_supported_and_writeback_is_defined",
+            "z3_sort": "FP64",
+            "z3_profile": "float-double-math",
+            "value_expr": "%s_fp64(%s)" % (function_name, case["fcstm_expression"]),
+            "obligations": [
+                _obligation(
+                    "math_function_available",
+                    "%s is available in the selected language standard/library"
+                    % function_name,
+                    "math function call",
+                    "C-family smoke probes record compile/link facts for math functions.",
+                ),
+                _obligation(
+                    "finite_float_result",
+                    "isFinite(result)",
+                    "floating-point math result",
+                    "Later writeback or solver profiles must not silently collapse NaN or infinity.",
+                ),
+            ],
+            "outcome": "exact_with_obligations",
+            "counterexamples": [],
+        }
+    if operator_name in {"+", "-", "*"} or operator_name == "unary-":
+        predicate = (
+            "no_signed_overflow(%s)" % case["fcstm_expression"]
+            if operator_name != "unary-"
+            else "A != INT_MIN(width)"
+        )
+        return {
+            "target_semantics": "%s signed integer arithmetic over promoted operands."
+            % language_prefix,
+            "definedness": "defined_if_no_signed_overflow",
+            "z3_sort": "BitVec(64)",
+            "z3_profile": "signed-fixed-width-candidate:int64",
+            "value_expr": "signed_bv_%s(%s)"
+            % (case["semantic_case_id"], case["fcstm_expression"]),
+            "obligations": [
+                _obligation(
+                    "no_signed_overflow",
+                    predicate,
+                    "signed arithmetic",
+                    "BitVec wrap is only a candidate value; C/C++ signed overflow is not defined behavior.",
+                )
+            ],
+            "outcome": "exact_with_obligations",
+            "counterexamples": [
+                _counterexample(
+                    "%s:%s:overflow" % (render_path.path_id, case["semantic_case_id"]),
+                    {"A": 127, "B": 1, "width": 8},
+                    "signed overflow would be required to match BitVec wrap",
+                    case["fcstm_expression"],
+                )
+            ],
+        }
+    if operator_name in {"/", "%"}:
+        return {
+            "target_semantics": "%s signed integer %s over promoted operands."
+            % (language_prefix, "division" if operator_name == "/" else "remainder"),
+            "definedness": "defined_if_divisor_nonzero_and_min_div_minus_one_absent",
+            "z3_sort": "BitVec(64)",
+            "z3_profile": "signed-fixed-width-candidate:int64",
+            "value_expr": ("bvsdiv(A, B)" if operator_name == "/" else "bvsrem(A, B)"),
+            "obligations": [
+                _obligation(
+                    "divisor_nonzero",
+                    "B != 0",
+                    "division or remainder",
+                    "Division by zero is not a defined C/C++ integer operation.",
+                ),
+                _obligation(
+                    "no_min_div_minus_one",
+                    "not (A == INT_MIN(width) and B == -1)",
+                    "signed division or remainder",
+                    "The signed minimum divided by -1 is not representable.",
+                ),
+            ],
+            "outcome": "exact_with_obligations",
+            "counterexamples": [
+                _counterexample(
+                    "%s:%s:div-zero" % (render_path.path_id, case["semantic_case_id"]),
+                    {"A": 7, "B": 0},
+                    "division by zero",
+                    case["fcstm_expression"],
+                ),
+                _counterexample(
+                    "%s:%s:min-div-minus-one"
+                    % (render_path.path_id, case["semantic_case_id"]),
+                    {"A": -128, "B": -1, "width": 8},
+                    "signed minimum divided by -1",
+                    case["fcstm_expression"],
+                ),
+            ],
+        }
+    if family == "shift":
+        obligations = [
+            _obligation(
+                "valid_shift_count",
+                "B < width",
+                "shift count",
+                "C/C++ shifts require a count smaller than the promoted operand width.",
+            ),
+            _obligation(
+                "non_negative_shift_count",
+                "B >= 0",
+                "shift count",
+                "C/C++ shifts do not define negative shift counts.",
+            ),
+        ]
+        if operator_name == "<<":
+            obligations.append(
+                _obligation(
+                    "no_signed_left_shift_ub",
+                    "A >= 0 and left_shift_result_representable(A, B, width)",
+                    "signed left shift",
+                    "Signed left shift has additional definedness constraints beyond BitVec shift.",
+                )
+            )
+            outcome = "exact_with_obligations"
+            value_expr = "bvshl(A, B)"
+            counterexamples = [
+                _counterexample(
+                    "%s:shift-left:negative" % render_path.path_id,
+                    {"A": -1, "B": 1, "width": 8},
+                    "signed left shift of a negative value is not a portable defined operation",
+                    case["fcstm_expression"],
+                )
+            ]
+        else:
+            obligations.append(
+                _obligation(
+                    "signed_right_shift_profile",
+                    "profile selects arithmetic or logical right shift for negative lhs",
+                    "signed right shift",
+                    "Right shift of a negative signed value is implementation-defined/profile-dependent.",
+                )
+            )
+            outcome = "profile_dependent"
+            value_expr = "bvashr(A, B) under arithmetic-shift profile"
+            counterexamples = [
+                _counterexample(
+                    "%s:shift-right:negative" % render_path.path_id,
+                    {"A": -8, "B": 1, "width": 8},
+                    "negative signed right shift depends on implementation profile",
+                    case["fcstm_expression"],
+                )
+            ]
+        return {
+            "target_semantics": "%s signed integer shift." % language_prefix,
+            "definedness": "defined_if_shift_obligations_hold",
+            "z3_sort": "BitVec(64)",
+            "z3_profile": "signed-fixed-width-candidate:int64",
+            "value_expr": value_expr,
+            "obligations": obligations,
+            "outcome": outcome,
+            "counterexamples": counterexamples,
+        }
+    if family == "bitwise":
+        return {
+            "target_semantics": "%s signed integer bitwise operation."
+            % language_prefix,
+            "definedness": "profile_dependent_for_negative_signed_representation",
+            "z3_sort": "BitVec(64)",
+            "z3_profile": "signed-fixed-width-candidate:int64",
+            "value_expr": "bv%s(A, B)"
+            % {"&": "and", "|": "or", "^": "xor"}.get(operator_name, "not"),
+            "obligations": [
+                _obligation(
+                    "two_complement_representation_profile",
+                    "profile fixes signed representation as two's complement",
+                    "signed bitwise operation",
+                    "BitVec bitwise operations model representation bits, so signed representation is part of the profile.",
+                )
+            ],
+            "outcome": "profile_dependent",
+            "counterexamples": [
+                _counterexample(
+                    "%s:%s:negative-representation"
+                    % (render_path.path_id, case["semantic_case_id"]),
+                    {"A": -1, "B": 1},
+                    "negative signed operand requires an explicit representation profile",
+                    case["fcstm_expression"],
+                )
+            ],
+        }
+    return {
+        "target_semantics": "%s target semantics not classified yet." % language_prefix,
+        "definedness": "unsupported",
+        "z3_sort": "unsupported",
+        "z3_profile": "unsupported",
+        "value_expr": "unsupported",
+        "obligations": [],
+        "outcome": "unsupported",
+        "counterexamples": [
+            _counterexample(
+                "%s:%s:unclassified" % (render_path.path_id, case["semantic_case_id"]),
+                {},
+                "alignment case is not classified",
+                case["fcstm_expression"],
+            )
+        ],
+    }
+
+
+def _build_c_cpp_alignment_contracts(mapping: Mapping[str, Any]) -> List[_JSON_OBJECT]:
+    """
+    Build C/C++ alignment contract rows from mapping render paths.
+
+    :param mapping: Render-mapping snapshot.
+    :type mapping: Mapping[str, Any]
+    :return: Alignment contract rows.
+    :rtype: List[Dict[str, Any]]
+
+    Example::
+
+        >>> mapping = _load_render_mapping(Path('.').resolve(), _DEFAULT_MAPPING_PATH)
+        >>> contracts = _build_c_cpp_alignment_contracts(mapping)
+        >>> bool(contracts)
+        True
+    """
+    contracts = []
+    for render_path in _alignment_render_paths(mapping):
+        for case in _c_cpp_alignment_cases():
+            render_result = _render_contract_expression(
+                case["fcstm_expression"], render_path
+            )
+            semantics = _alignment_semantics_for_case(case, render_path, render_result)
+            rendered = render_result.get("rendered")
+            contracts.append(
+                {
+                    "contract_id": "%s:%s"
+                    % (render_path.path_id, case["semantic_case_id"]),
+                    "semantic_case_id": case["semantic_case_id"],
+                    "render_path": render_path.path_id,
+                    "language": render_path.language,
+                    "compile_language": render_path.compile_language,
+                    "mapping_sources": list(render_path.mapping_sources),
+                    "operator": case["operator"],
+                    "operator_family": case["operator_family"],
+                    "fcstm_expression": case["fcstm_expression"],
+                    "render_expression": rendered if isinstance(rendered, str) else "",
+                    "render_status": render_result.get("status", "unknown"),
+                    "target_semantics": semantics["target_semantics"],
+                    "definedness": semantics["definedness"],
+                    "z3_sort": semantics["z3_sort"],
+                    "z3_profile": semantics["z3_profile"],
+                    "value_expr": semantics["value_expr"],
+                    "obligations": semantics["obligations"],
+                    "outcome": semantics["outcome"],
+                    "evidence": _contract_common_evidence(render_path, render_result)
+                    + [
+                        {
+                            "kind": "contract_semantics",
+                            "source": case["semantic_case_id"],
+                            "summary": semantics["target_semantics"],
+                        }
+                    ],
+                    "counterexamples": semantics["counterexamples"],
+                }
+            )
+    return contracts
+
+
+def _load_python_z3_baseline_snapshot(repo_root: Path) -> _JSON_OBJECT:
+    """
+    Load the committed Python/Z3 baseline snapshot.
+
+    :param repo_root: Repository root.
+    :type repo_root: pathlib.Path
+    :return: Parsed Python/Z3 baseline snapshot.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> baseline = _load_python_z3_baseline_snapshot(Path('.').resolve())
+        >>> baseline['mode']
+        'python-z3-baseline'
+    """
+    return _read_json(repo_root / _PYTHON_Z3_BASELINE_SNAPSHOT)
+
+
+def build_c_cpp_z3_alignment(
+    repo_root: Union[str, Path] = ".",
+    mapping_path: Union[str, Path] = _DEFAULT_MAPPING_PATH,
+) -> _JSON_OBJECT:
+    """
+    Build the C/C++ to Z3 alignment contract snapshot.
+
+    :param repo_root: Repository root path, defaults to the current directory.
+    :type repo_root: Union[str, pathlib.Path], optional
+    :param mapping_path: Render-mapping snapshot path, defaults to the committed
+        R0 snapshot.
+    :type mapping_path: Union[str, pathlib.Path], optional
+    :return: JSON-compatible C/C++ alignment payload.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> alignment = build_c_cpp_z3_alignment('.')
+        >>> alignment['mode']
+        'c-cpp-z3-alignment'
+    """
+    root = _as_repo_path(repo_root)
+    mapping_file = _resolve_mapping_path(root, mapping_path)
+    mapping = _load_render_mapping(root, mapping_file)
+    mapping_sha = mapping.get("mapping_sha256")
+    if not isinstance(mapping_sha, str):
+        mapping_sha = ""
+    python_baseline = _load_python_z3_baseline_snapshot(root)
+    python_baseline_sha = _payload_sha256(_baseline_comparison_payload(python_baseline))
+    c_facts = _c_family_smoke_facts("c-smoke", root, mapping_file)
+    cpp_facts = _c_family_smoke_facts("cpp-smoke", root, mapping_file)
+    contracts = _build_c_cpp_alignment_contracts(mapping)
+    return {
+        "schema_version": 1,
+        "mode": "c-cpp-z3-alignment",
+        "languages": ["c", "cpp"],
+        "source_mapping_sha256": mapping_sha,
+        "render_mapping_sha256": mapping_sha,
+        "python_z3_baseline_sha256": python_baseline_sha,
+        "c_smoke_facts_sha256": _payload_sha256(c_facts),
+        "cpp_smoke_facts_sha256": _payload_sha256(cpp_facts),
+        "generator": {
+            "tool": "tools/numeric_render_probe.py",
+            "research_path": _RESEARCH_PATH,
+            "source_commit": _git_commit(root),
+            "source_commit_policy": "Best-effort commit at generation time; mapping, baseline and smoke fact digests are the stable comparison keys.",
+            "determinism": "No native compiler output, wall-clock timestamp or solver model value is stored in the committed alignment snapshot.",
+        },
+        "repository": {
+            "root": ".",
+            "render_mapping_snapshot": mapping_file.relative_to(root).as_posix(),
+            "python_z3_baseline_snapshot": _PYTHON_Z3_BASELINE_SNAPSHOT,
+            "schema_path": _C_CPP_Z3_ALIGNMENT_SCHEMA,
+        },
+        "contract_fields": {
+            "core_triple": ["value_expr", "obligations", "outcome"],
+            "required_fields": [
+                "render_path",
+                "operator",
+                "operator_family",
+                "fcstm_expression",
+                "target_semantics",
+                "definedness",
+                "z3_sort",
+                "z3_profile",
+                "value_expr",
+                "obligations",
+                "outcome",
+                "evidence",
+            ],
+            "outcome_enum": sorted(_C_CPP_ALIGNMENT_OUTCOMES),
+            "shift_obligation_kinds": sorted(
+                _C_CPP_ALIGNMENT_REQUIRED_SHIFT_OBLIGATIONS
+            ),
+        },
+        "render_paths": [
+            {
+                "path_id": path.path_id,
+                "language": path.language,
+                "compile_language": path.compile_language,
+                "lang_style": path.lang_style,
+                "expression_core_language": path.expression_core_language,
+                "mapping_sources": list(path.mapping_sources),
+                "template_name": path.template_name,
+                "wrapper_language": path.wrapper_language,
+            }
+            for path in _alignment_render_paths(mapping)
+        ],
+        "coverage": {
+            "operators": sorted({contract["operator"] for contract in contracts}),
+            "operator_families": sorted(
+                {contract["operator_family"] for contract in contracts}
+            ),
+            "render_paths": sorted({contract["render_path"] for contract in contracts}),
+            "note": "Each semantic case is expanded across all C-family render paths; unsupported parser/render cases remain explicit contract rows.",
+        },
+        "contracts": contracts,
+        "representative_notes": [
+            {
+                "topic": "bitvec-is-candidate-not-definedness",
+                "summary": "BitVec expressions describe candidate values only; C/C++ signed overflow, invalid shifts and division traps stay in obligations or non-exact outcomes.",
+            },
+            {
+                "topic": "cxx-render-path-split",
+                "summary": "The snapshot keeps builtin _CPP_STYLE separate from C++ templates that reuse C expression templates via base_lang: c.",
+            },
+            {
+                "topic": "toolchain-independent-check",
+                "summary": "The committed snapshot uses deterministic render and smoke facts; live native smoke output belongs in results/local/.",
+            },
+        ],
+    }
+
+
+def _validate_alignment_obligation(
+    obligation: Mapping[str, Any], path: str
+) -> List[str]:
+    """
+    Validate one C/C++ alignment obligation row.
+
+    :param obligation: Obligation payload.
+    :type obligation: Mapping[str, Any]
+    :param path: Diagnostic path.
+    :type path: str
+    :return: Validation diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> _validate_alignment_obligation({'kind': 'x'}, 'o')[:1]
+        ['o.predicate must be a non-empty string']
+    """
+    errors = []
+    for key in ["kind", "predicate", "trigger", "evidence"]:
+        if not isinstance(obligation.get(key), str) or not obligation.get(key):
+            errors.append("%s.%s must be a non-empty string" % (path, key))
+    return errors
+
+
+def validate_c_cpp_z3_alignment(payload: Mapping[str, Any]) -> List[str]:
+    """
+    Validate the C/C++ to Z3 alignment contract.
+
+    :param payload: Alignment payload.
+    :type payload: Mapping[str, Any]
+    :return: Human-readable diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> validate_c_cpp_z3_alignment({'schema_version': 1})[:2]
+        ['mode must be c-cpp-z3-alignment', 'languages must be [\"c\", \"cpp\"]']
+    """
+    errors: List[str] = []
+    if payload.get("schema_version") != 1:
+        errors.append("schema_version must be 1")
+    if payload.get("mode") != "c-cpp-z3-alignment":
+        errors.append("mode must be c-cpp-z3-alignment")
+    if payload.get("languages") != ["c", "cpp"]:
+        errors.append('languages must be ["c", "cpp"]')
+    for key in [
+        "source_mapping_sha256",
+        "render_mapping_sha256",
+        "python_z3_baseline_sha256",
+        "c_smoke_facts_sha256",
+        "cpp_smoke_facts_sha256",
+    ]:
+        value = payload.get(key)
+        if (
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(ch not in "0123456789abcdef" for ch in value)
+        ):
+            errors.append("%s must be a lowercase 64-character sha256 hex string" % key)
+    if payload.get("source_mapping_sha256") != payload.get("render_mapping_sha256"):
+        errors.append("source_mapping_sha256 and render_mapping_sha256 must match")
+
+    fields = payload.get("contract_fields")
+    if not isinstance(fields, Mapping):
+        errors.append("contract_fields must be a mapping")
+    else:
+        if fields.get("core_triple") != ["value_expr", "obligations", "outcome"]:
+            errors.append("contract_fields.core_triple must name the core triple")
+        if set(fields.get("outcome_enum", [])) != _C_CPP_ALIGNMENT_OUTCOMES:
+            errors.append(
+                "contract_fields.outcome_enum must match the closed outcome enum"
+            )
+        if set(fields.get("shift_obligation_kinds", [])) != (
+            _C_CPP_ALIGNMENT_REQUIRED_SHIFT_OBLIGATIONS
+        ):
+            errors.append(
+                "contract_fields.shift_obligation_kinds must match required shift obligations"
+            )
+
+    render_paths = payload.get("render_paths")
+    if not isinstance(render_paths, list) or not render_paths:
+        errors.append("render_paths must be a non-empty array")
+    else:
+        render_path_ids = {
+            item.get("path_id") for item in render_paths if isinstance(item, Mapping)
+        }
+        for path_id in _C_CPP_ALIGNMENT_RENDER_PATHS:
+            if path_id not in render_path_ids:
+                errors.append("render_paths missing %s" % path_id)
+
+    contracts = payload.get("contracts")
+    if not isinstance(contracts, list) or not contracts:
+        errors.append("contracts must be a non-empty array")
+        return errors
+
+    required_contract_keys = {
+        "contract_id",
+        "semantic_case_id",
+        "render_path",
+        "operator",
+        "operator_family",
+        "fcstm_expression",
+        "render_expression",
+        "render_status",
+        "target_semantics",
+        "definedness",
+        "z3_sort",
+        "z3_profile",
+        "value_expr",
+        "obligations",
+        "outcome",
+        "evidence",
+        "counterexamples",
+    }
+    expected_cases = {
+        str(case["semantic_case_id"]): {
+            "operator": str(case["operator"]),
+            "operator_family": str(case["operator_family"]),
+            "fcstm_expression": str(case["fcstm_expression"]),
+        }
+        for case in _c_cpp_alignment_cases()
+    }
+    expected_contract_ids = {
+        "%s:%s" % (render_path, semantic_case_id)
+        for render_path in _C_CPP_ALIGNMENT_RENDER_PATHS
+        for semantic_case_id in expected_cases
+    }
+    seen_contract_ids: Dict[str, str] = {}
+    seen_contract_pairs: Dict[Tuple[str, str], str] = {}
+    operators = set()
+    families = set()
+    contract_render_paths = set()
+    for index, contract in enumerate(contracts):
+        path = "contracts[%d]" % index
+        if not isinstance(contract, Mapping):
+            errors.append("%s must be a mapping" % path)
+            continue
+        missing = sorted(required_contract_keys - set(contract))
+        if missing:
+            errors.append("%s missing required key %s" % (path, missing[0]))
+            continue
+        contract_id = contract.get("contract_id")
+        semantic_case_id = contract.get("semantic_case_id")
+        render_path = contract.get("render_path")
+        operator_name = contract.get("operator")
+        operators.add(operator_name)
+        families.add(contract.get("operator_family"))
+        contract_render_paths.add(render_path)
+        if isinstance(contract_id, str):
+            previous_path = seen_contract_ids.get(contract_id)
+            if previous_path is not None:
+                errors.append(
+                    "%s.contract_id duplicates %s from %s"
+                    % (path, contract_id, previous_path)
+                )
+            else:
+                seen_contract_ids[contract_id] = path
+        if isinstance(render_path, str) and isinstance(semantic_case_id, str):
+            pair_key = (render_path, semantic_case_id)
+            previous_path = seen_contract_pairs.get(pair_key)
+            if previous_path is not None:
+                errors.append(
+                    "%s duplicates render_path/semantic_case_id %s:%s from %s"
+                    % (path, render_path, semantic_case_id, previous_path)
+                )
+            else:
+                seen_contract_pairs[pair_key] = path
+            expected_contract_id = "%s:%s" % pair_key
+            if contract_id != expected_contract_id:
+                errors.append(
+                    "%s.contract_id must equal %s" % (path, expected_contract_id)
+                )
+        if render_path not in _C_CPP_ALIGNMENT_RENDER_PATHS:
+            errors.append("%s.render_path is not a required C-family path" % path)
+        expected_case = expected_cases.get(str(semantic_case_id))
+        if expected_case is None:
+            errors.append("%s.semantic_case_id is not a required alignment case" % path)
+        else:
+            for key, expected_value in expected_case.items():
+                if contract.get(key) != expected_value:
+                    errors.append(
+                        "%s.%s must be %r for semantic case %s"
+                        % (path, key, expected_value, semantic_case_id)
+                    )
+        if contract.get("outcome") not in _C_CPP_ALIGNMENT_OUTCOMES:
+            errors.append(
+                "%s.outcome has invalid value %r" % (path, contract.get("outcome"))
+            )
+        for key in [
+            "contract_id",
+            "semantic_case_id",
+            "render_path",
+            "operator",
+            "operator_family",
+            "fcstm_expression",
+            "target_semantics",
+            "definedness",
+            "z3_sort",
+            "z3_profile",
+            "value_expr",
+        ]:
+            if not isinstance(contract.get(key), str) or not contract.get(key):
+                errors.append("%s.%s must be a non-empty string" % (path, key))
+        obligations = contract.get("obligations")
+        obligation_kinds = set()
+        if not isinstance(obligations, list):
+            errors.append("%s.obligations must be an array" % path)
+        else:
+            for obligation_index, obligation in enumerate(obligations):
+                if not isinstance(obligation, Mapping):
+                    errors.append(
+                        "%s.obligations[%d] must be a mapping"
+                        % (path, obligation_index)
+                    )
+                    continue
+                obligation_kinds.add(obligation.get("kind"))
+                errors.extend(
+                    _validate_alignment_obligation(
+                        obligation, "%s.obligations[%d]" % (path, obligation_index)
+                    )
+                )
+        required_shift_kinds = set()
+        if operator_name == "<<":
+            required_shift_kinds = {
+                "valid_shift_count",
+                "non_negative_shift_count",
+                "no_signed_left_shift_ub",
+            }
+        elif operator_name == ">>":
+            required_shift_kinds = {
+                "valid_shift_count",
+                "non_negative_shift_count",
+                "signed_right_shift_profile",
+            }
+        if required_shift_kinds and not required_shift_kinds <= obligation_kinds:
+            missing = sorted(required_shift_kinds - obligation_kinds)
+            errors.append(
+                "%s shift obligations missing: %s" % (path, ", ".join(missing))
+            )
+        evidence = contract.get("evidence")
+        if not isinstance(evidence, list) or not evidence:
+            errors.append("%s.evidence must be a non-empty array" % path)
+        counterexamples = contract.get("counterexamples")
+        if not isinstance(counterexamples, list):
+            errors.append("%s.counterexamples must be an array" % path)
+        elif (
+            contract.get("outcome")
+            in {
+                "profile_dependent",
+                "unsupported",
+                "compile_failed",
+                "runtime_trap",
+                "ub",
+            }
+            and not counterexamples
+        ):
+            errors.append(
+                "%s.%s outcome must include a counterexample"
+                % (path, contract.get("outcome"))
+            )
+
+    required_operators = {
+        "+",
+        "-",
+        "*",
+        "/",
+        "%",
+        "unary-",
+        "~",
+        "&",
+        "|",
+        "^",
+        "<<",
+        ">>",
+        "<",
+        "<=",
+        ">",
+        ">=",
+        "==",
+        "!=",
+        "pow",
+        "round",
+        "abs",
+        "sign",
+        "cbrt",
+        "integer_constant",
+        "float_constant",
+        "writeback",
+    }
+    for operator_name in sorted(required_operators - operators):
+        errors.append("contracts missing operator %s" % operator_name)
+    for family_name in [
+        "binary_arithmetic",
+        "unary_arithmetic",
+        "bitwise",
+        "shift",
+        "comparison",
+        "math",
+        "constant",
+        "writeback",
+    ]:
+        if family_name not in families:
+            errors.append("contracts missing operator_family %s" % family_name)
+    for path_id in _C_CPP_ALIGNMENT_RENDER_PATHS:
+        if path_id not in contract_render_paths:
+            errors.append("contracts missing render_path %s" % path_id)
+    missing_contract_ids = sorted(expected_contract_ids - set(seen_contract_ids))
+    extra_contract_ids = sorted(set(seen_contract_ids) - expected_contract_ids)
+    for contract_id in missing_contract_ids:
+        errors.append("contracts missing required contract_id %s" % contract_id)
+    for contract_id in extra_contract_ids:
+        errors.append("contracts contain unexpected contract_id %s" % contract_id)
+    return errors
+
+
+def _c_cpp_alignment_comparison_payload(payload: Mapping[str, Any]) -> _JSON_OBJECT:
+    """
+    Return a deterministic comparison view of an alignment payload.
+
+    :param payload: Alignment payload.
+    :type payload: Mapping[str, Any]
+    :return: Payload with volatile provenance fields normalized.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> _c_cpp_alignment_comparison_payload({'generator': {'source_commit': 'x'}})['generator']['source_commit']
+        '<ignored>'
+    """
+    comparable = json.loads(_stable_json(payload))
+    generator = comparable.get("generator")
+    if isinstance(generator, dict):
+        generator["source_commit"] = "<ignored>"
+    repository = comparable.get("repository")
+    if isinstance(repository, dict):
+        repository["render_mapping_snapshot"] = _DEFAULT_MAPPING_PATH
+    return comparable
+
+
+def check_c_cpp_z3_alignment(
+    repo_root: Union[str, Path] = ".",
+    mapping_path: Union[str, Path] = _DEFAULT_MAPPING_PATH,
+) -> _JSON_OBJECT:
+    """
+    Build and validate the committed C/C++ to Z3 alignment snapshot.
+
+    :param repo_root: Repository root path, defaults to the current directory.
+    :type repo_root: Union[str, pathlib.Path], optional
+    :param mapping_path: Render-mapping snapshot path checked against live drift,
+        defaults to the committed R0 snapshot.
+    :type mapping_path: Union[str, pathlib.Path], optional
+    :return: Check result with ``ok`` and ``errors`` fields.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> result = check_c_cpp_z3_alignment('.')
+        >>> isinstance(result['ok'], bool)
+        True
+    """
+    root = _as_repo_path(repo_root)
+    live = build_c_cpp_z3_alignment(root, mapping_path=mapping_path)
+    errors = [
+        "live alignment: %s" % error for error in validate_c_cpp_z3_alignment(live)
+    ]
+    live_mapping = build_render_mapping(root)
+    live_mapping_sha = live_mapping.get("mapping_sha256")
+    if live_mapping_sha != live.get("source_mapping_sha256"):
+        errors.append(
+            "render_mapping snapshot drift: snapshot %r does not match live %r"
+            % (live.get("source_mapping_sha256"), live_mapping_sha)
+        )
+    schema = None
+    schema_path = root / _C_CPP_Z3_ALIGNMENT_SCHEMA
+    try:
+        schema = _read_json(schema_path)
+    except (OSError, json.JSONDecodeError, ValueError) as err:
+        # OSError: schema cannot be read; JSONDecodeError: invalid JSON;
+        # ValueError: top-level schema JSON is not an object.
+        errors.append("schema cannot be loaded: %s" % err)
+    if schema is not None:
+        errors.extend(
+            "live schema: %s" % error
+            for error in _validate_payload_with_schema(live, schema)
+        )
+    snapshot_path = root / _C_CPP_Z3_ALIGNMENT_SNAPSHOT
+    snapshot_present = snapshot_path.is_file()
+    if not snapshot_present:
+        errors.append("expected snapshot is missing: %s" % snapshot_path)
+    else:
+        try:
+            snapshot = _read_json(snapshot_path)
+        except (OSError, json.JSONDecodeError, ValueError) as err:
+            # OSError: snapshot cannot be read; JSONDecodeError: invalid JSON;
+            # ValueError: top-level JSON is not an object.
+            errors.append("snapshot cannot be loaded: %s" % err)
+        else:
+            errors.extend(
+                "snapshot: %s" % error
+                for error in validate_c_cpp_z3_alignment(snapshot)
+            )
+            if schema is not None:
+                errors.extend(
+                    "snapshot schema: %s" % error
+                    for error in _validate_payload_with_schema(snapshot, schema)
+                )
+            snapshot_difference = _first_baseline_difference(
+                _c_cpp_alignment_comparison_payload(live),
+                _c_cpp_alignment_comparison_payload(snapshot),
+            )
+            if snapshot_difference:
+                errors.append(
+                    "snapshot does not match live alignment: %s" % snapshot_difference
+                )
+    return {
+        "ok": not errors,
+        "errors": errors,
+        "schema_version": live["schema_version"],
+        "source_mapping_sha256": live["source_mapping_sha256"],
+        "python_z3_baseline_sha256": live["python_z3_baseline_sha256"],
+        "c_smoke_facts_sha256": live["c_smoke_facts_sha256"],
+        "cpp_smoke_facts_sha256": live["cpp_smoke_facts_sha256"],
+        "snapshot_present": snapshot_present,
+        "snapshot_path": _C_CPP_Z3_ALIGNMENT_SNAPSHOT,
+    }
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     """
     Build the probe command-line argument parser.
@@ -5788,12 +7276,13 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             "java-smoke",
             "rust-smoke",
             "java-rust-smoke",
+            "c-cpp-z3-alignment",
         ],
         help=(
             "Probe mode. Current modes are 'env', 'c-smoke', 'cpp-smoke', "
-            "'python-z3-baseline', 'java-smoke', 'rust-smoke' and "
-            "'java-rust-smoke'; later research PRs should append modes here "
-            "without replacing existing ones."
+            "'python-z3-baseline', 'java-smoke', 'rust-smoke', "
+            "'java-rust-smoke' and 'c-cpp-z3-alignment'; later research "
+            "PRs should append modes here without replacing existing ones."
         ),
     )
     parser.add_argument(
@@ -5872,14 +7361,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
     if args.mode == "env":
         if args.check:
-            parser.error("--check is currently supported only for python-z3-baseline")
+            parser.error(
+                "--check is supported for python-z3-baseline, java-smoke, "
+                "rust-smoke, java-rust-smoke and c-cpp-z3-alignment"
+            )
         report = build_environment_report(args.repo_root)
         _write_or_print(report, args.output)
         return 0
 
     if args.mode in {"c-smoke", "cpp-smoke"}:
         if args.check:
-            parser.error("--check is currently supported only for python-z3-baseline")
+            parser.error(
+                "--check is supported for python-z3-baseline, java-smoke, "
+                "rust-smoke, java-rust-smoke and c-cpp-z3-alignment"
+            )
         report = build_c_family_smoke_report(
             args.mode,
             repo_root=args.repo_root,
@@ -5902,19 +7397,25 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.mode in _JAVA_RUST_MODES:
         if args.check:
             result = check_java_rust_smoke(
-                args.mode,
-                args.repo_root,
-                mapping_path=args.mapping,
+                args.mode, args.repo_root, mapping_path=args.mapping
             )
             _write_or_print(result, args.output)
-            return 0 if result["ok"] else 1
-        report = build_java_rust_smoke_report(
+            return 0 if result.get("ok") else 1
+        payload = build_java_rust_smoke_report(
             args.mode,
-            repo_root=args.repo_root,
+            args.repo_root,
             mapping_path=args.mapping,
-            work_dir=args.work_dir,
             timeout=args.timeout,
         )
+        _write_or_print(payload, args.output)
+        return 0
+
+    if args.mode == "c-cpp-z3-alignment":
+        if args.check:
+            result = check_c_cpp_z3_alignment(args.repo_root, mapping_path=args.mapping)
+            _write_or_print(result, args.output)
+            return 0 if result["ok"] else 1
+        report = build_c_cpp_z3_alignment(args.repo_root, mapping_path=args.mapping)
         _write_or_print(report, args.output)
         return 0
 

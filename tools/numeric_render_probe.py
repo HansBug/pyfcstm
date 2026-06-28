@@ -1317,7 +1317,7 @@ def _java_smoke_cases() -> List[NativeSmokeCase]:
             "math-floating",
             ("java-math-floating",),
             "double A = -2.5;\n        int B = 0;",
-            -2,
+            -2.5,
             0,
             profile="java-double-math",
         ),
@@ -1581,6 +1581,8 @@ def _native_case_base(
         >>> case = _java_smoke_cases()[0]
         >>> _native_case_base(case, 'java-int32', 'native_java')['native_only']
         True
+        >>> _native_case_base(_java_smoke_cases()[9], 'java-double-math', 'native_java')['inputs']['A']
+        -2.5
     """
     return {
         "case_id": "%s:%s" % (profile, case.case_id),
@@ -2939,6 +2941,29 @@ def _required_native_case_ids(language: str) -> List[str]:
     raise ValueError("Unsupported native case language: %s" % language)
 
 
+def _native_case_plan_by_id(language: str) -> Mapping[str, NativeSmokeCase]:
+    """
+    Return native smoke case plans keyed by semantic case id.
+
+    :param language: ``"java"`` or ``"rust"``.
+    :type language: str
+    :return: Case plan mapping.
+    :rtype: Mapping[str, NativeSmokeCase]
+    :raises ValueError: If ``language`` is not a supported native smoke
+        language.
+
+    Example::
+
+        >>> _native_case_plan_by_id('java')['math_round_half_up'].a_value
+        -2.5
+    """
+    if language == "java":
+        return {case.case_id: case for case in _java_smoke_cases()}
+    if language == "rust":
+        return {case.case_id: case for case in _rust_smoke_cases()}
+    raise ValueError("Unsupported native case language: %s" % language)
+
+
 def _validate_native_cases(
     cases: Any, language: str, path: str, require_all_profiles: bool = False
 ) -> List[str]:
@@ -2970,12 +2995,20 @@ def _validate_native_cases(
         >>> java_cases[0]['render_expression'] = ''
         >>> '$.cases[0].render_expression must be a non-empty string' in _validate_native_cases(java_cases, 'java', '$.cases')
         True
+        >>> java_cases = [
+        ...     _native_case_base(case, case.profile or 'java-int32', 'native_java')
+        ...     for case in _java_smoke_cases()
+        ... ]
+        >>> java_cases[9]['inputs']['A'] = -2
+        >>> '$.cases[9].inputs.A must match case plan value -2.5' in _validate_native_cases(java_cases, 'java', '$.cases')
+        True
     """
     errors: List[str] = []
     if not isinstance(cases, list) or not cases:
         return ["%s must be a non-empty list" % path]
     required_fields = {
         "case_id",
+        "semantic_case_id",
         "operator",
         "fcstm_expression",
         "render_path",
@@ -3000,6 +3033,7 @@ def _validate_native_cases(
         "java": "native_java",
         "rust": "native_rust",
     }[language]
+    case_plan = _native_case_plan_by_id(language)
     seen_semantic_ids = set()
     profile_seen: Dict[str, set] = {}
     allowed_statuses = {
@@ -3030,6 +3064,10 @@ def _validate_native_cases(
         for field in shared_join_fields:
             if not isinstance(case.get(field), str) or not case.get(field):
                 errors.append("%s.%s must be a non-empty string" % (case_path, field))
+        semantic_id = case.get("semantic_case_id")
+        if not isinstance(semantic_id, str) or not semantic_id:
+            errors.append("%s.semantic_case_id must be a non-empty string" % case_path)
+            semantic_id = None
         if case.get("language") != language:
             errors.append("%s.language must be %s" % (case_path, language))
         if case.get("render_path") != expected_render_path:
@@ -3049,8 +3087,52 @@ def _validate_native_cases(
         source_ids = case.get("source_note_ids")
         if not isinstance(source_ids, list) or not source_ids:
             errors.append("%s.source_note_ids must be a non-empty list" % case_path)
-        semantic_id = case.get("semantic_case_id")
-        if isinstance(semantic_id, str) and semantic_id:
+        if semantic_id is not None:
+            plan = case_plan.get(semantic_id)
+            if plan is None:
+                errors.append("%s.semantic_case_id is not in the case plan" % case_path)
+            else:
+                expected_profile = plan.profile or str(case.get("profile"))
+                if not require_all_profiles and case.get("profile") != expected_profile:
+                    errors.append(
+                        "%s.profile must match case plan profile %s"
+                        % (case_path, expected_profile)
+                    )
+                expected_case_id = "%s:%s" % (case.get("profile"), semantic_id)
+                if case.get("case_id") != expected_case_id:
+                    errors.append(
+                        "%s.case_id must match profile-scoped id %s"
+                        % (case_path, expected_case_id)
+                    )
+                for field, expected_value in [
+                    ("operator", plan.operator),
+                    ("fcstm_expression", plan.fcstm_expression),
+                    ("render_expression", plan.render_expression),
+                    ("native_api_family", plan.native_api_family),
+                ]:
+                    if case.get(field) != expected_value:
+                        errors.append(
+                            "%s.%s must match case plan value %r"
+                            % (case_path, field, expected_value)
+                        )
+                if source_ids != list(plan.source_note_ids):
+                    errors.append(
+                        "%s.source_note_ids must match case plan value %r"
+                        % (case_path, list(plan.source_note_ids))
+                    )
+                inputs = case.get("inputs")
+                if not isinstance(inputs, Mapping):
+                    errors.append("%s.inputs must be a mapping" % case_path)
+                else:
+                    for key, expected_value in [
+                        ("A", plan.a_value),
+                        ("B", plan.b_value),
+                    ]:
+                        if not _json_number_equals(inputs.get(key), expected_value):
+                            errors.append(
+                                "%s.inputs.%s must match case plan value %r"
+                                % (case_path, key, expected_value)
+                            )
             seen_semantic_ids.add(semantic_id)
             profile = str(case.get("profile"))
             profile_seen.setdefault(semantic_id, set()).add(profile)
@@ -4948,6 +5030,35 @@ def _json_type_matches(value: Any, type_name: str) -> bool:
     if type_name == "null":
         return value is None
     return False
+
+
+def _json_number_equals(actual: Any, expected: Union[int, float]) -> bool:
+    """
+    Return whether a JSON number exactly matches an expected case-plan value.
+
+    Python booleans compare equal to ``0`` and ``1``, but JSON booleans are not
+    numeric smoke inputs. This helper keeps case-plan drift checks strict at the
+    Python/JSON boundary.
+
+    :param actual: JSON value from a smoke payload.
+    :type actual: Any
+    :param expected: Expected numeric case-plan value.
+    :type expected: Union[int, float]
+    :return: Whether ``actual`` is a non-boolean number equal to ``expected``.
+    :rtype: bool
+
+    Example::
+
+        >>> _json_number_equals(1, 1)
+        True
+        >>> _json_number_equals(True, 1)
+        False
+    """
+    if isinstance(actual, bool):
+        return False
+    if not isinstance(actual, (int, float)):
+        return False
+    return actual == expected
 
 
 def _resolve_local_schema_ref(root_schema: Mapping[str, Any], ref: str) -> Any:

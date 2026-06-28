@@ -388,7 +388,7 @@
       "compile_strategy": "java_source_file_launcher",
       "fcstm_expression": "round(A)",
       "inputs": {
-        "A": -2,
+        "A": -2.5,
         "B": 0
       },
       "language": "java",
@@ -2049,7 +2049,7 @@
   "generator": {
     "determinism": "Native tool availability and compiler/runtime results are environment-dependent; --check validates shape and invariants rather than exact stdout.",
     "research_path": "research/numeric-render-semantics",
-    "source_commit": "97c35ddad1bb2641a8ada87cd23bff752e508770",
+    "source_commit": "33bdf5337ef11b78b7987a48f9fd0b33f20cd1e1",
     "source_commit_policy": "Best-effort commit at generation time; schema, mapping digest and case-plan invariants are stable comparison keys.",
     "tool": "tools/numeric_render_probe.py"
   },
@@ -2445,7 +2445,7 @@
           "compile_strategy": "java_source_file_launcher",
           "fcstm_expression": "round(A)",
           "inputs": {
-            "A": -2,
+            "A": -2.5,
             "B": 0
           },
           "language": "java",
@@ -2594,7 +2594,7 @@
       "generator": {
         "determinism": "Native tool availability and compiler/runtime results are environment-dependent; --check validates shape and invariants rather than exact stdout.",
         "research_path": "research/numeric-render-semantics",
-        "source_commit": "97c35ddad1bb2641a8ada87cd23bff752e508770",
+        "source_commit": "33bdf5337ef11b78b7987a48f9fd0b33f20cd1e1",
         "source_commit_policy": "Best-effort commit at generation time; schema, mapping digest and case-plan invariants are stable comparison keys.",
         "tool": "tools/numeric_render_probe.py"
       },
@@ -4195,7 +4195,7 @@
       "generator": {
         "determinism": "Native tool availability and compiler/runtime results are environment-dependent; --check validates shape and invariants rather than exact stdout.",
         "research_path": "research/numeric-render-semantics",
-        "source_commit": "97c35ddad1bb2641a8ada87cd23bff752e508770",
+        "source_commit": "33bdf5337ef11b78b7987a48f9fd0b33f20cd1e1",
         "source_commit_policy": "Best-effort commit at generation time; schema, mapping digest and case-plan invariants are stable comparison keys.",
         "tool": "tools/numeric_render_probe.py"
       },

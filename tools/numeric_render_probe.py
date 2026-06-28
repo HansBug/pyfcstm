@@ -6,13 +6,13 @@ native workloads. The C-family smoke modes compile and execute small programs
 whose expressions are rendered from the repository's R0
 ``render_mapping.json`` snapshot, so the probe follows the same renderer and
 template facts that later exhaustive harnesses will use. Shared JSON, mapping,
-and command-dispatch helpers are mode-neutral. The Python/Z3 baseline mode
-joins the same runner without replacing the C-family modes. The C/C++ to Z3
-alignment mode adds a deterministic schema-level contract over those earlier
-facts. Smoke case identifiers are render-path scoped; cross-artifact semantic
-joins should prefer the rendered FCSTM operator and source expression, or a
-future explicit semantic identifier, while render-path fields distinguish
-target-language outputs for the same semantic expression.
+and command-dispatch helpers are mode-neutral. The Python/Z3 baseline,
+Java/Rust native smoke, and C/C++ to Z3 alignment modes join the same runner
+without replacing the C-family modes. Smoke case identifiers are render-path
+scoped; cross-artifact semantic joins should prefer the rendered FCSTM operator
+and source expression, or a future explicit semantic identifier, while
+render-path fields distinguish target-language outputs for the same semantic
+expression.
 
 The module contains:
 
@@ -20,12 +20,15 @@ The module contains:
 * :func:`build_c_family_smoke_report` - Run C or C++ smoke cases from R0 mapping.
 * :func:`build_python_z3_baseline` - Build the Python/Z3 capability baseline.
 * :func:`check_python_z3_baseline` - Validate the generated or committed baseline.
+* :func:`build_java_rust_smoke_report` - Build Java/Rust native smoke facts.
+* :func:`check_java_rust_smoke` - Validate Java/Rust smoke contract invariants.
 * :func:`build_c_cpp_z3_alignment` - Build the C/C++ to Z3 alignment snapshot.
 * :func:`check_c_cpp_z3_alignment` - Validate the committed alignment snapshot.
 * :func:`validate_probe_summary` - Validate the lightweight probe-summary contract.
 * :func:`_stable_json` - Serialize research artifacts consistently.
 * :func:`main` - Command-line entry point with ``env``, ``c-smoke``,
-  ``cpp-smoke``, ``python-z3-baseline`` and ``c-cpp-z3-alignment`` modes.
+  ``cpp-smoke``, ``python-z3-baseline``, ``java-smoke``, ``rust-smoke``,
+  ``java-rust-smoke`` and ``c-cpp-z3-alignment`` modes.
 
 Example::
 
@@ -49,8 +52,6 @@ import os
 import platform
 import re
 import shutil
-
-import jinja2
 import subprocess
 import sys
 import tempfile
@@ -61,6 +62,7 @@ from pathlib import Path
 from typing import (
     Any,
     Callable,
+    cast,
     Dict,
     Iterable,
     List,
@@ -70,6 +72,8 @@ from typing import (
     Tuple,
     Union,
 )
+
+import jinja2
 
 _REPO_ROOT_FOR_SCRIPT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT_FOR_SCRIPT) not in sys.path:
@@ -101,6 +105,94 @@ _C_CPP_Z3_ALIGNMENT_SNAPSHOT = (
 _C_CPP_Z3_ALIGNMENT_SCHEMA = "%s/schemas/c_cpp_z3_alignment.schema.json" % (
     _RESEARCH_PATH
 )
+_JAVA_RUST_SMOKE_SNAPSHOT = "%s/results/snapshots/java_rust_smoke.json" % (
+    _RESEARCH_PATH
+)
+_JAVA_RUST_SMOKE_SNAPSHOT_SHA256 = _JAVA_RUST_SMOKE_SNAPSHOT + ".sha256"
+_JAVA_RUST_SMOKE_SCHEMA = "%s/schemas/java_rust_smoke.schema.json" % (_RESEARCH_PATH)
+_NATIVE_ONLY_REASON = "no_java_or_rust_template_in_current_repository"
+_JAVA_RUST_MODES = {"java-smoke", "rust-smoke", "java-rust-smoke"}
+_NATIVE_SUMMARY_STATUSES = {
+    "passed",
+    "unavailable",
+    "completed_with_findings",
+    "completed",
+    "skipped",
+    "invalid",
+}
+_NATIVE_CASE_STATUS_OUTCOMES = {
+    "passed": "observed",
+    "compile_failed": "compile_failed",
+    "runtime_failed": "runtime_trap",
+    "skipped": "unavailable",
+    "unavailable": "unavailable",
+}
+_JAVA_NON_PASSING_CASE_IDS = {
+    "division_by_zero_exception",
+    "math_add_exact_overflow",
+    "math_multiply_exact_overflow",
+    "math_sign_missing",
+}
+_RUST_ALWAYS_PASSING_CASE_IDS = {
+    "cast_i32_to_i8",
+    "checked_add_overflow",
+    "overflowing_add_overflow",
+    "plain_i32_bitwise_and",
+    "plain_i32_division",
+    "plain_i32_remainder",
+    "powf_promotes_f64",
+    "round_cast_i64",
+    "saturating_add_overflow",
+    "wrapping_add_overflow",
+}
+_RUST_PROFILE_SENSITIVE_TRAP_CASE_IDS = {
+    "plain_i32_add_overflow",
+    "plain_i32_shift_invalid",
+    "plain_i32_unary_minus_min",
+}
+_RUST_OVERFLOW_CHECKED_PROFILES = {"debug", "overflow-checks-on"}
+_RUST_OVERFLOW_UNCHECKED_PROFILES = {"release", "overflow-checks-off"}
+_RUST_ALWAYS_RUNTIME_FAILED_CASE_IDS = {"plain_i32_division_by_zero"}
+_RUST_ALWAYS_COMPILE_FAILED_CASE_IDS = {"float_sign_renderer_missing"}
+_JAVA_EXPECTED_STDOUT = {
+    "bitwise_and_mask": "VALUE=8",
+    "division_by_zero_exception": "EXCEPTION=java.lang.ArithmeticException:/ by zero",
+    "int_add_overflow_wrap": "VALUE=-2147483648",
+    "int_division_truncates": "VALUE=-3",
+    "int_remainder_dividend_sign": "VALUE=-1",
+    "math_add_exact_overflow": "EXCEPTION=java.lang.ArithmeticException:integer overflow",
+    "math_multiply_exact_overflow": (
+        "EXCEPTION=java.lang.ArithmeticException:integer overflow"
+    ),
+    "math_pow_promotes_double": "VALUE=9.0",
+    "math_round_half_up": "VALUE=-2",
+    "narrowing_int_to_byte": "VALUE=-128",
+    "shift_count_masking": "VALUE=1",
+    "unary_minus_min_wrap": "VALUE=-2147483648",
+}
+_RUST_EXPECTED_STDOUT = {
+    "cast_i32_to_i8": "VALUE=-128",
+    "checked_add_overflow": "VALUE=None",
+    "overflowing_add_overflow": "VALUE=(-2147483648, true)",
+    "plain_i32_bitwise_and": "VALUE=8",
+    "plain_i32_division": "VALUE=-3",
+    "plain_i32_remainder": "VALUE=-1",
+    "powf_promotes_f64": "VALUE=9.0",
+    "round_cast_i64": "VALUE=-2",
+    "saturating_add_overflow": "VALUE=2147483647",
+    "wrapping_add_overflow": "VALUE=-2147483648",
+}
+_RUST_PROFILE_EXPECTED_STDOUT = {
+    "plain_i32_add_overflow": "VALUE=-2147483648",
+    "plain_i32_shift_invalid": "VALUE=1",
+    "plain_i32_unary_minus_min": "VALUE=-2147483648",
+}
+_RUST_RUNTIME_FAILURE_MARKERS = {
+    "plain_i32_add_overflow": "overflow",
+    "plain_i32_division_by_zero": "divide by zero",
+    "plain_i32_shift_invalid": "shift",
+    "plain_i32_unary_minus_min": "overflow",
+}
 _COMMANDS = [
     "python",
     "git",
@@ -269,6 +361,64 @@ class RenderPath:
     wrapper_language: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class NativeSmokeCase:
+    """
+    Describe one Java or Rust native smoke case.
+
+    Java and Rust templates do not exist in the current repository, so these
+    cases are native runner facts that preserve the shared join-key shape used
+    by C-family smoke reports and the Python/Z3 baseline.
+
+    :param case_id: Stable language-local case identifier.
+    :type case_id: str
+    :param language: Target language, either ``"java"`` or ``"rust"``.
+    :type language: str
+    :param operator: FCSTM operator or function family represented by the case.
+    :type operator: str
+    :param fcstm_expression: Closest FCSTM expression for cross-artifact joins.
+    :type fcstm_expression: str
+    :param render_expression: Native expression text used by the smoke program.
+    :type render_expression: str
+    :param native_api_family: Native semantic family, such as ``"plain-int32"``
+        or ``"checked"``.
+    :type native_api_family: str
+    :param source_note_ids: Official-source note ids supporting the case.
+    :type source_note_ids: Tuple[str, ...]
+    :param declarations: Target-language declarations emitted before the
+        expression.
+    :type declarations: str
+    :param a_value: Value passed as FCSTM-like variable ``A``.
+    :type a_value: Union[int, float]
+    :param b_value: Value passed as FCSTM-like variable ``B``.
+    :type b_value: Union[int, float]
+    :param profile: Primary profile for Java cases, defaults to ``None`` for
+        Rust cases that expand across multiple profiles.
+    :type profile: Optional[str], optional
+
+    Example::
+
+        >>> case = NativeSmokeCase(
+        ...     'add_overflow', 'java', '+', 'A + B', 'a + b',
+        ...     'plain-int32', ('jls-integer-overflow',), 'int a = 1; int b = 2;'
+        ... )
+        >>> case.operator
+        '+'
+    """
+
+    case_id: str
+    language: str
+    operator: str
+    fcstm_expression: str
+    render_expression: str
+    native_api_family: str
+    source_note_ids: Tuple[str, ...]
+    declarations: str
+    a_value: Union[int, float] = 0
+    b_value: Union[int, float] = 0
+    profile: Optional[str] = None
+
+
 def _command_version(path: str) -> Optional[str]:
     """
     Return a short version string for an executable when available.
@@ -388,6 +538,64 @@ def _payload_sha256(payload: Any) -> str:
         True
     """
     return hashlib.sha256(_stable_json(payload).encode("utf-8")).hexdigest()
+
+
+def _text_file_sha256(path: Union[str, Path]) -> str:
+    """
+    Return the SHA-256 digest for LF-normalized UTF-8 file text.
+
+    :param path: Text file path.
+    :type path: Union[str, pathlib.Path]
+    :return: Lowercase SHA-256 digest.
+    :rtype: str
+    :raises OSError: If the file cannot be read.
+    :raises UnicodeDecodeError: If the file is not valid UTF-8 text.
+
+    Example::
+
+        >>> import tempfile
+        >>> path = Path(tempfile.gettempdir()) / 'pyfcstm-probe-sha256-example.txt'
+        >>> _ = path.write_text('a\\r\\nb\\n', encoding='utf-8')
+        >>> len(_text_file_sha256(path))
+        64
+    """
+    text = Path(path).read_text(encoding="utf-8")
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _read_sha256_sidecar(path: Union[str, Path]) -> str:
+    """
+    Read a ``sha256sum``-style sidecar file.
+
+    :param path: Sidecar file path.
+    :type path: Union[str, pathlib.Path]
+    :return: Lowercase SHA-256 digest from the first whitespace-separated
+        field.
+    :rtype: str
+    :raises OSError: If the sidecar cannot be read.
+    :raises UnicodeDecodeError: If the sidecar is not valid UTF-8 text.
+    :raises ValueError: If the sidecar does not contain a valid digest.
+
+    Example::
+
+        >>> import tempfile
+        >>> path = Path(tempfile.gettempdir()) / 'pyfcstm-probe-sha256-sidecar.txt'
+        >>> _ = path.write_text('0' * 64 + '  payload.json\\n', encoding='utf-8')
+        >>> _read_sha256_sidecar(path) == '0' * 64
+        True
+    """
+    fields = Path(path).read_text(encoding="utf-8").strip().split()
+    if not fields:
+        raise ValueError("empty sha256 sidecar")
+    digest = fields[0]
+    if (
+        len(digest) != 64
+        or any(ch not in "0123456789abcdef" for ch in digest)
+        or digest.lower() != digest
+    ):
+        raise ValueError("invalid sha256 digest: %r" % digest)
+    return digest
 
 
 def _probe_command(name: str) -> _JSON_OBJECT:
@@ -999,6 +1207,966 @@ def _render_paths_for_mode(mode: str, mapping: Mapping[str, Any]) -> List[Render
     raise ValueError("Unsupported C-family smoke mode: %s" % mode)
 
 
+def _render_native_expr(expr_text: str, lang_style: str) -> str:
+    """
+    Render a numeric expression with a built-in native language style.
+
+    :param expr_text: FCSTM numeric expression text.
+    :type expr_text: str
+    :param lang_style: Built-in expression style, such as ``"java"`` or
+        ``"rust"``.
+    :type lang_style: str
+    :return: Rendered expression text.
+    :rtype: str
+
+    Example::
+
+        >>> _render_native_expr('A ** B', 'java')
+        'Math.pow(A, B)'
+    """
+    expr = parse_expr_from_string(expr_text, mode="numeric")
+    return render_expr_node(expr.to_ast_node(), lang_style=lang_style)
+
+
+def _official_source_notes(language: str) -> List[_JSON_OBJECT]:
+    """
+    Return official source notes for Java or Rust smoke probes.
+
+    :param language: ``"java"`` or ``"rust"``.
+    :type language: str
+    :return: Source-backed notes used by smoke cases.
+    :rtype: List[Dict[str, Any]]
+    :raises ValueError: If ``language`` is not a supported native smoke
+        language.
+
+    Example::
+
+        >>> any(note['id'] == 'jls-integer-overflow' for note in _official_source_notes('java'))
+        True
+    """
+    if language == "java":
+        return [
+            {
+                "id": "jls-integer-overflow",
+                "source": "Java Language Specification, Java SE 21, chapter 15",
+                "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html",
+                "summary": "Java integer operators use fixed primitive widths; integer overflow wraps silently except where a library method such as Math.*Exact specifies an exception.",
+            },
+            {
+                "id": "jls-div-rem",
+                "source": "Java Language Specification, Java SE 21, sections 15.17.2 and 15.17.3",
+                "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html#jls-15.17.2",
+                "summary": "Integer division and remainder throw ArithmeticException on zero divisors; remainder has the dividend sign.",
+            },
+            {
+                "id": "jls-shift-mask",
+                "source": "Java Language Specification, Java SE 21, section 15.19",
+                "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html#jls-15.19",
+                "summary": "Java masks int shift counts to five low bits and long shift counts to six low bits.",
+            },
+            {
+                "id": "jls-narrowing-conversion",
+                "source": "Java Language Specification, Java SE 21, section 5.1.3",
+                "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-5.html#jls-5.1.3",
+                "summary": "Narrowing primitive conversions may lose high-order bits, precision or range.",
+            },
+            {
+                "id": "java-math-exact",
+                "source": "Java SE 21 java.lang.Math API",
+                "url": "https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Math.html",
+                "summary": "Math.*Exact methods provide checked integer arithmetic and throw ArithmeticException on overflow.",
+            },
+            {
+                "id": "java-math-floating",
+                "source": "Java SE 21 java.lang.Math API",
+                "url": "https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Math.html",
+                "summary": "Math.pow and Math.round expose floating-point math semantics that differ from pure fixed-width integer arithmetic.",
+            },
+        ]
+    if language == "rust":
+        return [
+            {
+                "id": "rust-reference-overflow",
+                "source": "Rust Reference: Expressions / operator overflow",
+                "url": "https://doc.rust-lang.org/reference/expressions/operator-expr.html#overflow",
+                "summary": "Rust integer overflow checking depends on debug assertions and overflow-checks settings; overflow can panic or wrap depending on profile.",
+            },
+            {
+                "id": "rust-reference-div-rem-shift",
+                "source": "Rust Reference: arithmetic and bitwise expressions",
+                "url": "https://doc.rust-lang.org/reference/expressions/operator-expr.html",
+                "summary": "Division by zero, remainder by zero and invalid shifts are checked error cases; shift and arithmetic behavior is profile-sensitive for overflow.",
+            },
+            {
+                "id": "rust-reference-cast",
+                "source": "Rust Reference: type cast expressions",
+                "url": "https://doc.rust-lang.org/reference/expressions/operator-expr.html#type-cast-expressions",
+                "summary": "Rust numeric casts use explicit `as` conversions with specified integer truncation or float conversion behavior.",
+            },
+            {
+                "id": "rust-std-overflowing-apis",
+                "source": "Rust standard library primitive integer methods",
+                "url": "https://doc.rust-lang.org/std/primitive.i32.html",
+                "summary": "Primitive integer methods expose wrapping_*, checked_*, overflowing_* and saturating_* semantic families.",
+            },
+            {
+                "id": "rust-std-float-methods",
+                "source": "Rust standard library primitive f64 methods",
+                "url": "https://doc.rust-lang.org/std/primitive.f64.html",
+                "summary": "Floating methods such as powf, round and signum use f64 semantics before any explicit integer cast or profile-specific wrapper.",
+            },
+        ]
+    raise ValueError("Unsupported official source language: %s" % language)
+
+
+def _java_smoke_cases() -> List[NativeSmokeCase]:
+    """
+    Return the Java native smoke case plan.
+
+    :return: Java smoke cases.
+    :rtype: List[NativeSmokeCase]
+
+    Example::
+
+        >>> any(case.case_id == 'math_add_exact_overflow' for case in _java_smoke_cases())
+        True
+    """
+    return [
+        NativeSmokeCase(
+            "int_add_overflow_wrap",
+            "java",
+            "+",
+            "A + B",
+            _render_native_expr("A + B", "java"),
+            "plain-int32",
+            ("jls-integer-overflow",),
+            "int A = Integer.MAX_VALUE;\n        int B = 1;",
+            2147483647,
+            1,
+            profile="java-int32",
+        ),
+        NativeSmokeCase(
+            "int_division_truncates",
+            "java",
+            "/",
+            "A / B",
+            _render_native_expr("A / B", "java"),
+            "plain-int32",
+            ("jls-div-rem",),
+            "int A = -7;\n        int B = 2;",
+            -7,
+            2,
+            profile="java-int32",
+        ),
+        NativeSmokeCase(
+            "int_remainder_dividend_sign",
+            "java",
+            "%",
+            "A % B",
+            _render_native_expr("A % B", "java"),
+            "plain-int32",
+            ("jls-div-rem",),
+            "int A = -7;\n        int B = 2;",
+            -7,
+            2,
+            profile="java-int32",
+        ),
+        NativeSmokeCase(
+            "division_by_zero_exception",
+            "java",
+            "/",
+            "A / B",
+            _render_native_expr("A / B", "java"),
+            "plain-int32",
+            ("jls-div-rem",),
+            "int A = 7;\n        int B = 0;",
+            7,
+            0,
+            profile="java-int32",
+        ),
+        NativeSmokeCase(
+            "bitwise_and_mask",
+            "java",
+            "&",
+            "A & B",
+            _render_native_expr("A & B", "java"),
+            "plain-int32",
+            ("jls-integer-overflow",),
+            "int A = 0b1010;\n        int B = 0b1100;",
+            10,
+            12,
+            profile="java-int32",
+        ),
+        NativeSmokeCase(
+            "unary_minus_min_wrap",
+            "java",
+            "unary-",
+            "-A",
+            _render_native_expr("-A", "java"),
+            "plain-int32",
+            ("jls-integer-overflow",),
+            "int A = Integer.MIN_VALUE;\n        int B = 0;",
+            -2147483648,
+            0,
+            profile="java-int32",
+        ),
+        NativeSmokeCase(
+            "shift_count_masking",
+            "java",
+            "<<",
+            "A << B",
+            _render_native_expr("A << B", "java"),
+            "plain-int32",
+            ("jls-shift-mask",),
+            "int A = 1;\n        int B = 32;",
+            1,
+            32,
+            profile="java-int32",
+        ),
+        NativeSmokeCase(
+            "narrowing_int_to_byte",
+            "java",
+            "cast",
+            "A",
+            "(byte) A",
+            "narrowing-cast",
+            ("jls-narrowing-conversion",),
+            "int A = 128;\n        int B = 0;",
+            128,
+            0,
+            profile="java-int8-cast",
+        ),
+        NativeSmokeCase(
+            "math_pow_promotes_double",
+            "java",
+            "**",
+            "A ** B",
+            _render_native_expr("A ** B", "java"),
+            "math-floating",
+            ("java-math-floating",),
+            "int A = 3;\n        int B = 2;",
+            3,
+            2,
+            profile="java-double-math",
+        ),
+        NativeSmokeCase(
+            "math_round_half_up",
+            "java",
+            "round",
+            "round(A)",
+            "Math.round(A)",
+            "math-floating",
+            ("java-math-floating",),
+            "double A = -2.5;\n        int B = 0;",
+            -2.5,
+            0,
+            profile="java-double-math",
+        ),
+        NativeSmokeCase(
+            "math_add_exact_overflow",
+            "java",
+            "+",
+            "A + B",
+            "Math.addExact(A, B)",
+            "checked-exact",
+            ("java-math-exact",),
+            "int A = Integer.MAX_VALUE;\n        int B = 1;",
+            2147483647,
+            1,
+            profile="java-int32-checked",
+        ),
+        NativeSmokeCase(
+            "math_multiply_exact_overflow",
+            "java",
+            "*",
+            "A * B",
+            "Math.multiplyExact(A, B)",
+            "checked-exact",
+            ("java-math-exact",),
+            "int A = 1073741824;\n        int B = 2;",
+            1073741824,
+            2,
+            profile="java-int32-checked",
+        ),
+        NativeSmokeCase(
+            "math_sign_missing",
+            "java",
+            "sign",
+            "sign(A)",
+            _render_native_expr("sign(A)", "java"),
+            "renderer-fallback",
+            ("java-math-exact",),
+            "int A = -9;\n        int B = 0;",
+            -9,
+            0,
+            profile="java-renderer-fallback",
+        ),
+    ]
+
+
+def _rust_smoke_cases() -> List[NativeSmokeCase]:
+    """
+    Return the Rust native smoke case plan.
+
+    :return: Rust smoke cases.
+    :rtype: List[NativeSmokeCase]
+
+    Example::
+
+        >>> any(case.case_id == 'checked_add_overflow' for case in _rust_smoke_cases())
+        True
+    """
+    return [
+        NativeSmokeCase(
+            "plain_i32_add_overflow",
+            "rust",
+            "+",
+            "A + B",
+            _render_native_expr("A + B", "rust"),
+            "plain-i32",
+            ("rust-reference-overflow",),
+            "let A: i32 = opaque_i32(i32::MAX);\n    let B: i32 = opaque_i32(1);",
+            2147483647,
+            1,
+        ),
+        NativeSmokeCase(
+            "plain_i32_division",
+            "rust",
+            "/",
+            "A / B",
+            _render_native_expr("A / B", "rust"),
+            "plain-i32",
+            ("rust-reference-div-rem-shift",),
+            "let A: i32 = opaque_i32(-7);\n    let B: i32 = opaque_i32(2);",
+            -7,
+            2,
+        ),
+        NativeSmokeCase(
+            "plain_i32_remainder",
+            "rust",
+            "%",
+            "A % B",
+            _render_native_expr("A % B", "rust"),
+            "plain-i32",
+            ("rust-reference-div-rem-shift",),
+            "let A: i32 = opaque_i32(-7);\n    let B: i32 = opaque_i32(2);",
+            -7,
+            2,
+        ),
+        NativeSmokeCase(
+            "plain_i32_division_by_zero",
+            "rust",
+            "/",
+            "A / B",
+            _render_native_expr("A / B", "rust"),
+            "plain-i32",
+            ("rust-reference-div-rem-shift",),
+            "let A: i32 = opaque_i32(7);\n    let B: i32 = opaque_i32(0);",
+            7,
+            0,
+        ),
+        NativeSmokeCase(
+            "plain_i32_bitwise_and",
+            "rust",
+            "&",
+            "A & B",
+            _render_native_expr("A & B", "rust"),
+            "plain-i32",
+            ("rust-reference-div-rem-shift",),
+            "let A: i32 = opaque_i32(0b1010);\n    let B: i32 = opaque_i32(0b1100);",
+            10,
+            12,
+        ),
+        NativeSmokeCase(
+            "plain_i32_unary_minus_min",
+            "rust",
+            "unary-",
+            "-A",
+            _render_native_expr("-A", "rust"),
+            "plain-i32",
+            ("rust-reference-overflow",),
+            "let A: i32 = opaque_i32(i32::MIN);\n    let B: i32 = opaque_i32(0);",
+            -2147483648,
+            0,
+        ),
+        NativeSmokeCase(
+            "plain_i32_shift_invalid",
+            "rust",
+            "<<",
+            "A << B",
+            _render_native_expr("A << B", "rust"),
+            "plain-i32",
+            ("rust-reference-div-rem-shift",),
+            "let A: i32 = opaque_i32(1);\n    let B: u32 = opaque_u32(32);",
+            1,
+            32,
+        ),
+        NativeSmokeCase(
+            "cast_i32_to_i8",
+            "rust",
+            "cast",
+            "A",
+            "A as i8",
+            "cast",
+            ("rust-reference-cast",),
+            "let A: i32 = opaque_i32(128);\n    let B: i32 = opaque_i32(0);",
+            128,
+            0,
+        ),
+        NativeSmokeCase(
+            "powf_promotes_f64",
+            "rust",
+            "**",
+            "A ** B",
+            _render_native_expr("A ** B", "rust"),
+            "math-floating",
+            ("rust-reference-cast", "rust-std-float-methods"),
+            "let A: i64 = opaque_i64(3);\n    let B: i64 = opaque_i64(2);",
+            3,
+            2,
+        ),
+        NativeSmokeCase(
+            "round_cast_i64",
+            "rust",
+            "round",
+            "round(A)",
+            _render_native_expr("round(A)", "rust"),
+            "math-floating",
+            ("rust-reference-cast", "rust-std-float-methods"),
+            "let A: i64 = opaque_i64(-2);\n    let B: i64 = opaque_i64(0);",
+            -2,
+            0,
+        ),
+        NativeSmokeCase(
+            "wrapping_add_overflow",
+            "rust",
+            "+",
+            "A + B",
+            "A.wrapping_add(B)",
+            "wrapping",
+            ("rust-std-overflowing-apis",),
+            "let A: i32 = opaque_i32(i32::MAX);\n    let B: i32 = opaque_i32(1);",
+            2147483647,
+            1,
+        ),
+        NativeSmokeCase(
+            "checked_add_overflow",
+            "rust",
+            "+",
+            "A + B",
+            "A.checked_add(B)",
+            "checked",
+            ("rust-std-overflowing-apis",),
+            "let A: i32 = opaque_i32(i32::MAX);\n    let B: i32 = opaque_i32(1);",
+            2147483647,
+            1,
+        ),
+        NativeSmokeCase(
+            "overflowing_add_overflow",
+            "rust",
+            "+",
+            "A + B",
+            "A.overflowing_add(B)",
+            "overflowing",
+            ("rust-std-overflowing-apis",),
+            "let A: i32 = opaque_i32(i32::MAX);\n    let B: i32 = opaque_i32(1);",
+            2147483647,
+            1,
+        ),
+        NativeSmokeCase(
+            "saturating_add_overflow",
+            "rust",
+            "+",
+            "A + B",
+            "A.saturating_add(B)",
+            "saturating",
+            ("rust-std-overflowing-apis",),
+            "let A: i32 = opaque_i32(i32::MAX);\n    let B: i32 = opaque_i32(1);",
+            2147483647,
+            1,
+        ),
+        NativeSmokeCase(
+            "float_sign_renderer_missing",
+            "rust",
+            "sign",
+            "sign(A)",
+            _render_native_expr("sign(A)", "rust"),
+            "renderer-fallback",
+            ("rust-reference-cast", "rust-std-float-methods"),
+            "let A: i64 = opaque_i64(-9);\n    let B: i64 = opaque_i64(0);",
+            -9,
+            0,
+        ),
+    ]
+
+
+def _native_case_base(
+    case: NativeSmokeCase,
+    profile: str,
+    render_path: str,
+) -> _JSON_OBJECT:
+    """
+    Build shared JSON fields for a native smoke case.
+
+    :param case: Native smoke case.
+    :type case: NativeSmokeCase
+    :param profile: Profile used for the concrete run.
+    :type profile: str
+    :param render_path: Native render path identifier.
+    :type render_path: str
+    :return: JSON-compatible base fields.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> case = _java_smoke_cases()[0]
+        >>> _native_case_base(case, 'java-int32', 'native_java')['native_only']
+        True
+        >>> _native_case_base(_java_smoke_cases()[9], 'java-double-math', 'native_java')['inputs']['A']
+        -2.5
+    """
+    return {
+        "case_id": "%s:%s" % (profile, case.case_id),
+        "semantic_case_id": case.case_id,
+        "language": case.language,
+        "profile": profile,
+        "operator": case.operator,
+        "fcstm_expression": case.fcstm_expression,
+        "render_path": render_path,
+        "render_expression": case.render_expression,
+        "native_api_family": case.native_api_family,
+        "native_only": True,
+        "native_only_reason": _NATIVE_ONLY_REASON,
+        "inputs": {"A": case.a_value, "B": case.b_value},
+        "source_note_ids": list(case.source_note_ids),
+        "status": "unknown",
+        "outcome": "unknown",
+        "reason": None,
+        "commands": {},
+    }
+
+
+def _java_source_for_case(case: NativeSmokeCase) -> str:
+    """
+    Build Java source for one native smoke case.
+
+    :param case: Java smoke case.
+    :type case: NativeSmokeCase
+    :return: Java source text.
+    :rtype: str
+
+    Example::
+
+        >>> 'class ProbeCase' in _java_source_for_case(_java_smoke_cases()[0])
+        True
+    """
+    return """public final class ProbeCase {
+    public static void main(String[] args) {
+        %(declarations)s
+        try {
+            Object result = %(expression)s;
+            System.out.println(\"VALUE=\" + String.valueOf(result));
+        } catch (RuntimeException err) {
+            System.out.println(\"EXCEPTION=\" + err.getClass().getName() + \":\" + err.getMessage());
+            System.exit(10);
+        }
+    }
+}
+""" % {
+        "declarations": case.declarations,
+        "expression": case.render_expression,
+    }
+
+
+def _rust_value_expression(case: NativeSmokeCase) -> str:
+    """
+    Return Rust formatting expression for a case result.
+
+    :param case: Rust smoke case.
+    :type case: NativeSmokeCase
+    :return: Rust expression that can be formatted with ``{:?}``.
+    :rtype: str
+
+    Example::
+
+        >>> _rust_value_expression(_rust_smoke_cases()[0])
+        'A + B'
+    """
+    return case.render_expression
+
+
+def _rust_source_for_case(case: NativeSmokeCase) -> str:
+    """
+    Build Rust source for one native smoke case.
+
+    :param case: Rust smoke case.
+    :type case: NativeSmokeCase
+    :return: Rust source text.
+    :rtype: str
+
+    Example::
+
+        >>> 'fn main' in _rust_source_for_case(_rust_smoke_cases()[0])
+        True
+    """
+    return """#![allow(non_snake_case)]
+#![allow(unused_variables)]
+
+#[inline(never)]
+fn opaque_i32(value: i32) -> i32 {
+    std::hint::black_box(value)
+}
+
+#[inline(never)]
+fn opaque_i64(value: i64) -> i64 {
+    std::hint::black_box(value)
+}
+
+#[inline(never)]
+fn opaque_u32(value: u32) -> u32 {
+    std::hint::black_box(value)
+}
+
+fn main() {
+    %(declarations)s
+    let result = %(expression)s;
+    println!(\"VALUE={:?}\", result);
+}
+""" % {
+        "declarations": case.declarations,
+        "expression": _rust_value_expression(case),
+    }
+
+
+def _java_toolchain() -> _JSON_OBJECT:
+    """
+    Return Java toolchain metadata.
+
+    :return: Java and ``javac`` availability metadata.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> info = _java_toolchain()
+        >>> 'java' in info and 'javac' in info
+        True
+    """
+    return {"java": _probe_command("java"), "javac": _probe_command("javac")}
+
+
+def _rust_toolchain() -> _JSON_OBJECT:
+    """
+    Return Rust toolchain metadata.
+
+    :return: ``rustc`` and optional ``cargo`` availability metadata.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> info = _rust_toolchain()
+        >>> 'rustc' in info and 'cargo' in info
+        True
+    """
+    return {"rustc": _probe_command("rustc"), "cargo": _probe_command("cargo")}
+
+
+def _run_java_case(
+    case: NativeSmokeCase,
+    toolchain: Mapping[str, Any],
+    work_dir: Path,
+    timeout: int,
+) -> _JSON_OBJECT:
+    """
+    Compile and run one Java smoke case.
+
+    :param case: Java smoke case definition.
+    :type case: NativeSmokeCase
+    :param toolchain: Java toolchain metadata.
+    :type toolchain: Mapping[str, Any]
+    :param work_dir: Temporary work directory.
+    :type work_dir: pathlib.Path
+    :param timeout: Per-command timeout in seconds.
+    :type timeout: int
+    :return: JSON-compatible case result.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> result = _run_java_case(_java_smoke_cases()[0], {'java': {'available': False}, 'javac': {'available': False}}, Path('.').resolve(), 1)
+        >>> result['status']
+        'unavailable'
+    """
+    profile = case.profile or "java-int32"
+    result = _native_case_base(case, profile, "native_java")
+    if not toolchain.get("java", {}).get("available"):
+        result["status"] = "unavailable"
+        result["outcome"] = "unavailable"
+        result["reason"] = "java_unavailable"
+        return result
+
+    case_dir = work_dir / result["case_id"].replace(":", "__")
+    case_dir.mkdir(parents=True, exist_ok=True)
+    source_path = case_dir / "ProbeCase.java"
+    source_path.write_text(_java_source_for_case(case), encoding="utf-8")
+    result["source_path"] = str(source_path)
+    java_path = str(toolchain["java"]["path"])
+    if toolchain.get("javac", {}).get("available"):
+        javac_path = str(toolchain["javac"]["path"])
+        compile_result = _run_command(
+            [javac_path, str(source_path.name)], timeout, case_dir
+        )
+        result["commands"]["compile"] = compile_result
+        if compile_result["timed_out"] or compile_result["returncode"] != 0:
+            result["status"] = "compile_failed"
+            result["outcome"] = "compile_failed"
+            result["reason"] = "javac_failed"
+            return result
+        run_command = [java_path, "-cp", str(case_dir), "ProbeCase"]
+    else:
+        result["compile_strategy"] = "java_source_file_launcher"
+        run_command = [java_path, str(source_path.name)]
+    run_result = _run_command(run_command, timeout, case_dir)
+    result["commands"]["run"] = run_result
+    if run_result["timed_out"]:
+        result["status"] = "runtime_failed"
+        result["outcome"] = "runtime_trap"
+        result["reason"] = "java_timed_out"
+    elif run_result["returncode"] != 0:
+        if run_result.get("stdout", "").startswith("EXCEPTION="):
+            result["status"] = "runtime_failed"
+            result["outcome"] = "runtime_trap"
+            result["reason"] = "java_exception_or_nonzero"
+        else:
+            result["status"] = "compile_failed"
+            result["outcome"] = "compile_failed"
+            result["reason"] = "java_source_launcher_failed"
+    else:
+        result["status"] = "passed"
+        result["outcome"] = "observed"
+    result["stdout"] = run_result.get("stdout", "").strip()
+    result["stderr"] = run_result.get("stderr", "").strip()
+    return result
+
+
+def _snapshot_command_result(command: Any) -> Any:
+    """
+    Normalize command metadata for committed smoke snapshots.
+
+    :param command: Command result or nested JSON-like value.
+    :type command: Any
+    :return: Snapshot-safe value with local paths removed.
+    :rtype: Any
+
+    Example::
+
+        >>> _snapshot_command_result({'args': ['/tmp/case.java'], 'stdout': 'ok'})['args']
+        ['<path>']
+        >>> _snapshot_command_result({'stdout': 'EXCEPTION=/ by zero'})['stdout']
+        'EXCEPTION=/ by zero'
+    """
+    if isinstance(command, dict):
+        normalized = {}
+        for key, value in command.items():
+            if key == "duration_seconds":
+                normalized[key] = "<duration>"
+            elif key in {"path", "source_path", "cwd"}:
+                normalized[key] = "<path>" if value else value
+            else:
+                normalized[key] = _snapshot_command_result(value)
+        return normalized
+    if isinstance(command, list):
+        return [
+            "<path>" if isinstance(item, str) and "/" in item else item
+            for item in command
+        ]
+    return command
+
+
+def _snapshot_native_case(case: Mapping[str, Any]) -> _JSON_OBJECT:
+    """
+    Return a native smoke case suitable for committed snapshots.
+
+    :param case: Full local case result.
+    :type case: Mapping[str, Any]
+    :return: Snapshot case with local path details removed.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> _snapshot_native_case({'case_id': 'x', 'source_path': '/tmp/x'})['source_path']
+        '<local>'
+    """
+    snapshot = json.loads(_stable_json(case))
+    if "source_path" in snapshot:
+        snapshot["source_path"] = "<local>"
+    commands = snapshot.get("commands")
+    if isinstance(commands, dict):
+        snapshot["commands"] = _snapshot_command_result(commands)
+    return snapshot
+
+
+def _snapshot_toolchain_info(toolchain: Mapping[str, Any]) -> _JSON_OBJECT:
+    """
+    Return snapshot-safe toolchain metadata.
+
+    :param toolchain: Full toolchain metadata.
+    :type toolchain: Mapping[str, Any]
+    :return: Toolchain metadata with executable paths removed.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> _snapshot_toolchain_info({'java': {'path': '/usr/bin/java'}})['java']['path']
+        '<path>'
+    """
+    snapshot = json.loads(_stable_json(toolchain))
+    for item in snapshot.values():
+        if isinstance(item, dict) and "path" in item:
+            item["path"] = "<path>" if item.get("path") else None
+    return snapshot
+
+
+def _snapshot_native_report(report: Mapping[str, Any]) -> _JSON_OBJECT:
+    """
+    Return a Java or Rust report suitable for committed snapshots.
+
+    :param report: Full Java or Rust smoke report.
+    :type report: Mapping[str, Any]
+    :return: Snapshot-safe report.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> _snapshot_native_report({'toolchain': {'work_dir': '/tmp'}, 'cases': []})['toolchain']['work_dir']
+        '<local>'
+    """
+    snapshot = json.loads(_stable_json(report))
+    toolchain = snapshot.get("toolchain")
+    if isinstance(toolchain, dict):
+        if "work_dir" in toolchain:
+            toolchain["work_dir"] = "<local>"
+        if isinstance(toolchain.get("java"), dict):
+            toolchain["java"] = _snapshot_toolchain_info(toolchain["java"])
+        if isinstance(toolchain.get("rust"), dict):
+            toolchain["rust"] = _snapshot_toolchain_info(toolchain["rust"])
+    cases = snapshot.get("cases")
+    if isinstance(cases, list):
+        snapshot["cases"] = [
+            _snapshot_native_case(case) if isinstance(case, Mapping) else case
+            for case in cases
+        ]
+    return snapshot
+
+
+def _rust_profiles() -> List[_JSON_OBJECT]:
+    """
+    Return Rust profile definitions for smoke runs.
+
+    :return: Rust profile metadata.
+    :rtype: List[Dict[str, Any]]
+
+    Example::
+
+        >>> [profile['name'] for profile in _rust_profiles()][0]
+        'debug'
+    """
+    return [
+        {
+            "name": "debug",
+            "flags": ["-C", "opt-level=0"],
+            "overflow_checks": "default_debug",
+        },
+        {
+            "name": "release",
+            "flags": ["-C", "opt-level=3"],
+            "overflow_checks": "default_release",
+        },
+        {
+            "name": "overflow-checks-on",
+            "flags": ["-C", "opt-level=3", "-C", "overflow-checks=yes"],
+            "overflow_checks": "forced_on",
+        },
+        {
+            "name": "overflow-checks-off",
+            "flags": ["-C", "opt-level=0", "-C", "overflow-checks=no"],
+            "overflow_checks": "forced_off",
+        },
+    ]
+
+
+def _run_rust_case(
+    case: NativeSmokeCase,
+    profile: Mapping[str, Any],
+    toolchain: Mapping[str, Any],
+    work_dir: Path,
+    timeout: int,
+) -> _JSON_OBJECT:
+    """
+    Compile and run one Rust smoke case under a profile.
+
+    :param case: Rust smoke case definition.
+    :type case: NativeSmokeCase
+    :param profile: Rust profile metadata.
+    :type profile: Mapping[str, Any]
+    :param toolchain: Rust toolchain metadata.
+    :type toolchain: Mapping[str, Any]
+    :param work_dir: Temporary work directory.
+    :type work_dir: pathlib.Path
+    :param timeout: Per-command timeout in seconds.
+    :type timeout: int
+    :return: JSON-compatible case result.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> result = _run_rust_case(_rust_smoke_cases()[0], _rust_profiles()[0], {'rustc': {'available': False}}, Path('.').resolve(), 1)
+        >>> result['status']
+        'unavailable'
+    """
+    profile_name = str(profile["name"])
+    result = _native_case_base(case, profile_name, "native_rust")
+    result["overflow_checks"] = profile["overflow_checks"]
+    if not toolchain.get("rustc", {}).get("available"):
+        result["status"] = "unavailable"
+        result["outcome"] = "unavailable"
+        result["reason"] = "rustc_unavailable"
+        return result
+
+    case_dir = work_dir / result["case_id"].replace(":", "__")
+    case_dir.mkdir(parents=True, exist_ok=True)
+    source_path = case_dir / "case.rs"
+    binary_path = case_dir / "case"
+    source_path.write_text(_rust_source_for_case(case), encoding="utf-8")
+    result["source_path"] = str(source_path)
+    rustc_path = str(toolchain["rustc"]["path"])
+    compile_command = [rustc_path, str(source_path), "-o", str(binary_path)] + list(
+        profile.get("flags", [])
+    )
+    compile_result = _run_command(compile_command, timeout, case_dir)
+    result["commands"]["compile"] = compile_result
+    if compile_result["timed_out"] or compile_result["returncode"] != 0:
+        result["status"] = "compile_failed"
+        result["outcome"] = "compile_failed"
+        result["reason"] = "rustc_failed"
+        return result
+    run_result = _run_command([str(binary_path)], timeout, case_dir)
+    result["commands"]["run"] = run_result
+    if run_result["timed_out"]:
+        result["status"] = "runtime_failed"
+        result["outcome"] = "runtime_trap"
+        result["reason"] = "rust_timed_out"
+    elif run_result["returncode"] != 0:
+        result["status"] = "runtime_failed"
+        result["outcome"] = "runtime_trap"
+        result["reason"] = "rust_panic_or_nonzero"
+    else:
+        result["status"] = "passed"
+        result["outcome"] = "observed"
+    result["stdout"] = run_result.get("stdout", "").strip()
+    result["stderr"] = run_result.get("stderr", "").strip()
+    return result
+
+
 def _render_case_expression(case: NumericSmokeCase, render_path: RenderPath) -> str:
     """
     Render a smoke-case expression through the production expression renderer.
@@ -1552,6 +2720,1740 @@ def validate_probe_summary(summary: Mapping[str, Any]) -> List[str]:
             errors.append(
                 "case %d has invalid status: %r" % (index, case.get("status"))
             )
+    return errors
+
+
+def _native_smoke_schema_path(mode: str) -> str:
+    """
+    Return the schema path for a Java/Rust smoke mode.
+
+    :param mode: Java/Rust smoke mode.
+    :type mode: str
+    :return: Repository-relative schema path.
+    :rtype: str
+    :raises ValueError: If ``mode`` is not a supported Java/Rust smoke mode.
+
+    Example::
+
+        >>> _native_smoke_schema_path('java-rust-smoke').endswith('java_rust_smoke.schema.json')
+        True
+    """
+    if mode not in _JAVA_RUST_MODES:
+        raise ValueError("Unsupported Java/Rust smoke mode: %s" % mode)
+    return _JAVA_RUST_SMOKE_SCHEMA
+
+
+def _native_smoke_repository(mapping_file: Path, root: Path, mode: str) -> _JSON_OBJECT:
+    """
+    Build repository metadata for Java/Rust smoke payloads.
+
+    :param mapping_file: Resolved mapping snapshot path.
+    :type mapping_file: pathlib.Path
+    :param root: Repository root.
+    :type root: pathlib.Path
+    :param mode: Java/Rust smoke mode.
+    :type mode: str
+    :return: Repository metadata.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> repo = _native_smoke_repository(Path('.').resolve() / _DEFAULT_MAPPING_PATH, Path('.').resolve(), 'java-smoke')
+        >>> repo['root']
+        '.'
+    """
+    try:
+        mapping_snapshot = mapping_file.relative_to(root).as_posix()
+    except ValueError:
+        # ValueError: caller supplied an absolute mapping path outside the repo;
+        # keep it explicit because committed snapshots use repo-relative paths.
+        mapping_snapshot = str(mapping_file)
+    return {
+        "root": ".",
+        "render_mapping_snapshot": mapping_snapshot,
+        "schema_path": _native_smoke_schema_path(mode),
+    }
+
+
+def _native_smoke_generator(root: Path) -> _JSON_OBJECT:
+    """
+    Build generator metadata for Java/Rust smoke payloads.
+
+    :param root: Repository root.
+    :type root: pathlib.Path
+    :return: Generator metadata.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> _native_smoke_generator(Path('.').resolve())['tool']
+        'tools/numeric_render_probe.py'
+    """
+    return {
+        "tool": "tools/numeric_render_probe.py",
+        "research_path": _RESEARCH_PATH,
+        "source_commit": _git_commit(root),
+        "source_commit_policy": "Best-effort commit at generation time; schema, mapping digest and case-plan invariants are stable comparison keys.",
+        "determinism": "Native tool availability and compiler/runtime results are environment-dependent; --check validates shape and invariants rather than exact stdout.",
+    }
+
+
+def _build_java_smoke_report(
+    repo_root: Union[str, Path] = ".",
+    mapping_path: Union[str, Path] = _DEFAULT_MAPPING_PATH,
+    work_dir: Optional[Union[str, Path]] = None,
+    timeout: int = 10,
+) -> _JSON_OBJECT:
+    """
+    Build a Java native smoke report.
+
+    :param repo_root: Repository root path, defaults to the current directory.
+    :type repo_root: Union[str, pathlib.Path], optional
+    :param mapping_path: Render-mapping path, defaults to the committed R0
+        snapshot.
+    :type mapping_path: Union[str, pathlib.Path], optional
+    :param work_dir: Optional directory for temporary compile artifacts.
+    :type work_dir: Optional[Union[str, pathlib.Path]], optional
+    :param timeout: Per-command timeout in seconds, defaults to ``10``.
+    :type timeout: int, optional
+    :return: JSON-compatible Java smoke summary.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> report = _build_java_smoke_report(timeout=1)
+        >>> report['language']
+        'java'
+    """
+    root = _as_repo_path(repo_root)
+    mapping_file = _resolve_mapping_path(root, mapping_path)
+    mapping = _load_render_mapping(root, mapping_file)
+    mapping_sha = mapping.get("mapping_sha256")
+    if not isinstance(mapping_sha, str):
+        mapping_sha = ""
+    toolchain = _java_toolchain()
+    if work_dir is None:
+        temp_parent = root / _RESEARCH_PATH / "results" / "local"
+        temp_parent.mkdir(parents=True, exist_ok=True)
+        temp_context = tempfile.TemporaryDirectory(
+            prefix="java-smoke-", dir=str(temp_parent)
+        )
+        cleanup = temp_context.cleanup
+        active_work_dir = Path(temp_context.name)
+    else:
+        active_work_dir = Path(work_dir).resolve()
+        active_work_dir.mkdir(parents=True, exist_ok=True)
+        cleanup = None
+    try:
+        cases = [
+            _run_java_case(case, toolchain, active_work_dir, timeout)
+            for case in _java_smoke_cases()
+        ]
+        payload = {
+            "schema_version": 1,
+            "mode": "java-smoke",
+            "language": "java",
+            "source_mapping_sha256": mapping_sha,
+            "render_mapping_sha256": mapping_sha,
+            "summary_status": _summary_status(cases),
+            "generator": _native_smoke_generator(root),
+            "repository": _native_smoke_repository(mapping_file, root, "java-smoke"),
+            "toolchain": {
+                "java": toolchain,
+                "timeout_seconds": timeout,
+                "work_dir": str(active_work_dir),
+            },
+            "render_paths": [
+                {
+                    "path_id": "native_java",
+                    "language": "java",
+                    "kind": "native_only",
+                    "native_only_reason": _NATIVE_ONLY_REASON,
+                    "mapping_sources": ["builtin_expr_styles.styles.java"],
+                }
+            ],
+            "official_source_notes": _official_source_notes("java"),
+            "cases": cases,
+        }
+        errors = validate_java_rust_smoke(payload, expected_mode="java-smoke")
+        if errors:
+            payload["summary_status"] = "invalid"
+            payload["validation_errors"] = errors
+        return payload
+    finally:
+        if cleanup is not None:
+            cleanup()
+
+
+def _build_rust_smoke_report(
+    repo_root: Union[str, Path] = ".",
+    mapping_path: Union[str, Path] = _DEFAULT_MAPPING_PATH,
+    work_dir: Optional[Union[str, Path]] = None,
+    timeout: int = 10,
+) -> _JSON_OBJECT:
+    """
+    Build a Rust native smoke report.
+
+    :param repo_root: Repository root path, defaults to the current directory.
+    :type repo_root: Union[str, pathlib.Path], optional
+    :param mapping_path: Render-mapping path, defaults to the committed R0
+        snapshot.
+    :type mapping_path: Union[str, pathlib.Path], optional
+    :param work_dir: Optional directory for temporary compile artifacts.
+    :type work_dir: Optional[Union[str, pathlib.Path]], optional
+    :param timeout: Per-command timeout in seconds, defaults to ``10``.
+    :type timeout: int, optional
+    :return: JSON-compatible Rust smoke summary.
+    :rtype: Dict[str, Any]
+
+    Example::
+
+        >>> report = _build_rust_smoke_report(timeout=1)
+        >>> report['language']
+        'rust'
+    """
+    root = _as_repo_path(repo_root)
+    mapping_file = _resolve_mapping_path(root, mapping_path)
+    mapping = _load_render_mapping(root, mapping_file)
+    mapping_sha = mapping.get("mapping_sha256")
+    if not isinstance(mapping_sha, str):
+        mapping_sha = ""
+    toolchain = _rust_toolchain()
+    if work_dir is None:
+        temp_parent = root / _RESEARCH_PATH / "results" / "local"
+        temp_parent.mkdir(parents=True, exist_ok=True)
+        temp_context = tempfile.TemporaryDirectory(
+            prefix="rust-smoke-", dir=str(temp_parent)
+        )
+        cleanup = temp_context.cleanup
+        active_work_dir = Path(temp_context.name)
+    else:
+        active_work_dir = Path(work_dir).resolve()
+        active_work_dir.mkdir(parents=True, exist_ok=True)
+        cleanup = None
+    try:
+        cases = []
+        profiles = _rust_profiles()
+        for profile in profiles:
+            for case in _rust_smoke_cases():
+                cases.append(
+                    _run_rust_case(case, profile, toolchain, active_work_dir, timeout)
+                )
+        payload = {
+            "schema_version": 1,
+            "mode": "rust-smoke",
+            "language": "rust",
+            "source_mapping_sha256": mapping_sha,
+            "render_mapping_sha256": mapping_sha,
+            "summary_status": _summary_status(cases),
+            "generator": _native_smoke_generator(root),
+            "repository": _native_smoke_repository(mapping_file, root, "rust-smoke"),
+            "toolchain": {
+                "rust": toolchain,
+                "profiles": profiles,
+                "timeout_seconds": timeout,
+                "work_dir": str(active_work_dir),
+            },
+            "render_paths": [
+                {
+                    "path_id": "native_rust",
+                    "language": "rust",
+                    "kind": "native_only",
+                    "native_only_reason": _NATIVE_ONLY_REASON,
+                    "mapping_sources": ["builtin_expr_styles.styles.rust"],
+                }
+            ],
+            "official_source_notes": _official_source_notes("rust"),
+            "cases": cases,
+        }
+        errors = validate_java_rust_smoke(payload, expected_mode="rust-smoke")
+        if errors:
+            payload["summary_status"] = "invalid"
+            payload["validation_errors"] = errors
+        return payload
+    finally:
+        if cleanup is not None:
+            cleanup()
+
+
+def build_java_rust_smoke_report(
+    mode: str,
+    repo_root: Union[str, Path] = ".",
+    mapping_path: Union[str, Path] = _DEFAULT_MAPPING_PATH,
+    work_dir: Optional[Union[str, Path]] = None,
+    timeout: int = 10,
+) -> _JSON_OBJECT:
+    """
+    Build Java, Rust or aggregate Java/Rust smoke reports.
+
+    :param mode: ``"java-smoke"``, ``"rust-smoke"`` or ``"java-rust-smoke"``.
+    :type mode: str
+    :param repo_root: Repository root path, defaults to the current directory.
+    :type repo_root: Union[str, pathlib.Path], optional
+    :param mapping_path: Render-mapping path, defaults to the committed R0
+        snapshot.
+    :type mapping_path: Union[str, pathlib.Path], optional
+    :param work_dir: Optional directory for temporary compile artifacts.
+    :type work_dir: Optional[Union[str, pathlib.Path]], optional
+    :param timeout: Per-command timeout in seconds, defaults to ``10``.
+    :type timeout: int, optional
+    :return: JSON-compatible smoke payload.
+    :rtype: Dict[str, Any]
+    :raises ValueError: If ``mode`` is not a Java/Rust smoke mode.
+
+    Example::
+
+        >>> report = build_java_rust_smoke_report('java-rust-smoke', timeout=1)
+        >>> report['mode']
+        'java-rust-smoke'
+    """
+    if mode == "java-smoke":
+        return _build_java_smoke_report(repo_root, mapping_path, work_dir, timeout)
+    if mode == "rust-smoke":
+        return _build_rust_smoke_report(repo_root, mapping_path, work_dir, timeout)
+    if mode != "java-rust-smoke":
+        raise ValueError("Unsupported Java/Rust smoke mode: %s" % mode)
+
+    root = _as_repo_path(repo_root)
+    mapping_file = _resolve_mapping_path(root, mapping_path)
+    java_work_dir = None
+    rust_work_dir = None
+    if work_dir is not None:
+        base_work_dir = Path(work_dir).resolve()
+        java_work_dir = base_work_dir / "java"
+        rust_work_dir = base_work_dir / "rust"
+    java_report = _snapshot_native_report(
+        _build_java_smoke_report(root, mapping_file, java_work_dir, timeout)
+    )
+    rust_report = _snapshot_native_report(
+        _build_rust_smoke_report(root, mapping_file, rust_work_dir, timeout)
+    )
+    mapping_sha = java_report.get("source_mapping_sha256", "")
+    languages = {"java": java_report, "rust": rust_report}
+    cases = list(java_report.get("cases", [])) + list(rust_report.get("cases", []))
+    payload = {
+        "schema_version": 1,
+        "mode": "java-rust-smoke",
+        "language": "java-rust",
+        "source_mapping_sha256": mapping_sha,
+        "render_mapping_sha256": mapping_sha,
+        "summary_status": _summary_status(cases),
+        "generator": _native_smoke_generator(root),
+        "repository": _native_smoke_repository(mapping_file, root, "java-rust-smoke"),
+        "toolchain": {
+            "java": java_report.get("toolchain", {}).get("java", {}),
+            "rust": rust_report.get("toolchain", {}).get("rust", {}),
+            "timeout_seconds": timeout,
+        },
+        "languages": languages,
+        "official_source_notes": {
+            "java": java_report.get("official_source_notes", []),
+            "rust": rust_report.get("official_source_notes", []),
+        },
+        "cases": cases,
+    }
+    errors = validate_java_rust_smoke(payload, expected_mode="java-rust-smoke")
+    if errors:
+        payload["summary_status"] = "invalid"
+        payload["validation_errors"] = errors
+    return payload
+
+
+def _required_native_case_ids(language: str) -> List[str]:
+    """
+    Return expected case ids for a Java or Rust smoke report.
+
+    :param language: ``"java"`` or ``"rust"``.
+    :type language: str
+    :return: Expected semantic case ids.
+    :rtype: List[str]
+    :raises ValueError: If ``language`` is not a supported native smoke
+        language.
+
+    Example::
+
+        >>> 'shift_count_masking' in _required_native_case_ids('java')
+        True
+    """
+    if language == "java":
+        return [case.case_id for case in _java_smoke_cases()]
+    if language == "rust":
+        return [case.case_id for case in _rust_smoke_cases()]
+    raise ValueError("Unsupported native case language: %s" % language)
+
+
+def _native_case_plan_by_id(language: str) -> Mapping[str, NativeSmokeCase]:
+    """
+    Return native smoke case plans keyed by semantic case id.
+
+    :param language: ``"java"`` or ``"rust"``.
+    :type language: str
+    :return: Case plan mapping.
+    :rtype: Mapping[str, NativeSmokeCase]
+    :raises ValueError: If ``language`` is not a supported native smoke
+        language.
+
+    Example::
+
+        >>> _native_case_plan_by_id('java')['math_round_half_up'].a_value
+        -2.5
+    """
+    if language == "java":
+        return {case.case_id: case for case in _java_smoke_cases()}
+    if language == "rust":
+        return {case.case_id: case for case in _rust_smoke_cases()}
+    raise ValueError("Unsupported native case language: %s" % language)
+
+
+def _validate_native_cases(
+    cases: Any, language: str, path: str, require_all_profiles: bool = False
+) -> List[str]:
+    """
+    Validate native smoke cases for shared join-key compatibility.
+
+    :param cases: Case list to validate.
+    :type cases: Any
+    :param language: Expected language.
+    :type language: str
+    :param path: Human-readable path.
+    :type path: str
+    :param require_all_profiles: Whether Rust profile coverage must be checked.
+    :type require_all_profiles: bool, optional
+    :return: Validation diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> _validate_native_cases([], 'java', '$.cases')[:1]
+        ['$.cases must be a non-empty list']
+        >>> java_cases = [
+        ...     _native_case_base(case, case.profile or 'java-int32', 'native_java')
+        ...     for case in _java_smoke_cases()
+        ... ]
+        >>> java_cases[0]['render_path'] = 'native_rust'
+        >>> '$.cases[0].render_path must be native_java' in _validate_native_cases(java_cases, 'java', '$.cases')
+        True
+        >>> java_cases[0]['render_expression'] = ''
+        >>> '$.cases[0].render_expression must be a non-empty string' in _validate_native_cases(java_cases, 'java', '$.cases')
+        True
+        >>> java_cases = [
+        ...     _native_case_base(case, case.profile or 'java-int32', 'native_java')
+        ...     for case in _java_smoke_cases()
+        ... ]
+        >>> java_cases[9]['inputs']['A'] = -2
+        >>> '$.cases[9].inputs.A must match case plan value -2.5' in _validate_native_cases(java_cases, 'java', '$.cases')
+        True
+        >>> java_cases[9]['inputs']['C'] = 99
+        >>> '$.cases[9].inputs has unexpected keys: C' in _validate_native_cases(java_cases, 'java', '$.cases')
+        True
+        >>> java_cases = [
+        ...     _native_case_base(case, case.profile or 'java-int32', 'native_java')
+        ...     for case in _java_smoke_cases()
+        ... ]
+        >>> java_cases[0]['status'] = 'passed'
+        >>> '$.cases[0].passed status requires observed outcome' in _validate_native_cases(java_cases, 'java', '$.cases')
+        True
+        >>> duplicated = java_cases + [dict(java_cases[0])]
+        >>> any('duplicate case_id' in error for error in _validate_native_cases(duplicated, 'java', '$.cases'))
+        True
+    """
+    errors: List[str] = []
+    if not isinstance(cases, list) or not cases:
+        return ["%s must be a non-empty list" % path]
+    required_fields = {
+        "case_id",
+        "semantic_case_id",
+        "operator",
+        "fcstm_expression",
+        "render_path",
+        "render_expression",
+        "language",
+        "profile",
+        "status",
+        "outcome",
+        "native_only",
+        "native_only_reason",
+        "native_api_family",
+        "source_note_ids",
+        "commands",
+    }
+    shared_join_fields = [
+        "case_id",
+        "operator",
+        "fcstm_expression",
+        "render_path",
+        "render_expression",
+    ]
+    expected_render_path = {
+        "java": "native_java",
+        "rust": "native_rust",
+    }[language]
+    case_plan = _native_case_plan_by_id(language)
+    required_case_ids = _required_native_case_ids(language)
+    expected_count = len(required_case_ids)
+    if require_all_profiles:
+        expected_count *= len(_rust_profiles())
+    if len(cases) != expected_count:
+        errors.append(
+            "%s must contain exactly %d %s cases, got %d"
+            % (path, expected_count, language, len(cases))
+        )
+    seen_case_ids: Dict[str, str] = {}
+    seen_join_keys: Dict[Tuple[str, str, str, str, str], str] = {}
+    seen_semantic_ids = set()
+    seen_semantic_paths: Dict[str, str] = {}
+    seen_profile_pairs: Dict[Tuple[str, str], str] = {}
+    profile_seen: Dict[str, set] = {}
+    allowed_statuses = {
+        "passed",
+        "compile_failed",
+        "runtime_failed",
+        "skipped",
+        "unavailable",
+        "unknown",
+    }
+    allowed_outcomes = {
+        "observed",
+        "compile_failed",
+        "runtime_trap",
+        "unavailable",
+        "unknown",
+    }
+    for index, case in enumerate(cases):
+        case_path = "%s[%d]" % (path, index)
+        if not isinstance(case, Mapping):
+            errors.append("%s must be a mapping" % case_path)
+            continue
+        missing = sorted(required_fields - set(case))
+        if missing:
+            errors.append(
+                "%s missing required fields: %s" % (case_path, ", ".join(missing))
+            )
+        for field in shared_join_fields:
+            if not isinstance(case.get(field), str) or not case.get(field):
+                errors.append("%s.%s must be a non-empty string" % (case_path, field))
+        case_id = case.get("case_id")
+        if isinstance(case_id, str) and case_id:
+            previous_path = seen_case_ids.get(case_id)
+            if previous_path is not None:
+                errors.append(
+                    "%s duplicate case_id %r from %s"
+                    % (case_path, case_id, previous_path)
+                )
+            else:
+                seen_case_ids[case_id] = case_path
+        join_values = tuple(case.get(field) for field in shared_join_fields)
+        if all(isinstance(value, str) and value for value in join_values):
+            join_key = cast(Tuple[str, str, str, str, str], join_values)
+            previous_path = seen_join_keys.get(join_key)
+            if previous_path is not None:
+                errors.append(
+                    "%s duplicate shared join key %r from %s"
+                    % (case_path, join_key, previous_path)
+                )
+            else:
+                seen_join_keys[join_key] = case_path
+        semantic_id = case.get("semantic_case_id")
+        if not isinstance(semantic_id, str) or not semantic_id:
+            errors.append("%s.semantic_case_id must be a non-empty string" % case_path)
+            semantic_id = None
+        if case.get("language") != language:
+            errors.append("%s.language must be %s" % (case_path, language))
+        if case.get("render_path") != expected_render_path:
+            errors.append(
+                "%s.render_path must be %s" % (case_path, expected_render_path)
+            )
+        if case.get("status") not in allowed_statuses:
+            errors.append("%s.status is invalid: %r" % (case_path, case.get("status")))
+        if case.get("outcome") not in allowed_outcomes:
+            errors.append(
+                "%s.outcome is invalid: %r" % (case_path, case.get("outcome"))
+            )
+        expected_outcome = _NATIVE_CASE_STATUS_OUTCOMES.get(str(case.get("status")))
+        if expected_outcome is not None and case.get("outcome") != expected_outcome:
+            errors.append(
+                "%s.%s status requires %s outcome"
+                % (case_path, case.get("status"), expected_outcome)
+            )
+        if case.get("status") == "passed" and case.get("reason") is not None:
+            errors.append("%s.passed status requires null reason" % case_path)
+        if case.get("status") in {"compile_failed", "runtime_failed", "unavailable"}:
+            if not isinstance(case.get("reason"), str) or not case.get("reason"):
+                errors.append(
+                    "%s.%s status requires a non-empty reason"
+                    % (case_path, case.get("status"))
+                )
+        if case.get("native_only") is not True:
+            errors.append("%s.native_only must be true" % case_path)
+        if case.get("native_only_reason") != _NATIVE_ONLY_REASON:
+            errors.append("%s.native_only_reason is invalid" % case_path)
+        source_ids = case.get("source_note_ids")
+        if not isinstance(source_ids, list) or not source_ids:
+            errors.append("%s.source_note_ids must be a non-empty list" % case_path)
+        if semantic_id is not None:
+            plan = case_plan.get(semantic_id)
+            if plan is None:
+                errors.append("%s.semantic_case_id is not in the case plan" % case_path)
+            else:
+                expected_profile = plan.profile or str(case.get("profile"))
+                if not require_all_profiles and case.get("profile") != expected_profile:
+                    errors.append(
+                        "%s.profile must match case plan profile %s"
+                        % (case_path, expected_profile)
+                    )
+                expected_case_id = "%s:%s" % (case.get("profile"), semantic_id)
+                if case.get("case_id") != expected_case_id:
+                    errors.append(
+                        "%s.case_id must match profile-scoped id %s"
+                        % (case_path, expected_case_id)
+                    )
+                for field, expected_value in [
+                    ("operator", plan.operator),
+                    ("fcstm_expression", plan.fcstm_expression),
+                    ("render_expression", plan.render_expression),
+                    ("native_api_family", plan.native_api_family),
+                ]:
+                    if case.get(field) != expected_value:
+                        errors.append(
+                            "%s.%s must match case plan value %r"
+                            % (case_path, field, expected_value)
+                        )
+                if source_ids != list(plan.source_note_ids):
+                    errors.append(
+                        "%s.source_note_ids must match case plan value %r"
+                        % (case_path, list(plan.source_note_ids))
+                    )
+                inputs = case.get("inputs")
+                if not isinstance(inputs, Mapping):
+                    errors.append("%s.inputs must be a mapping" % case_path)
+                else:
+                    allowed_input_keys = {"A", "B"}
+                    extra_input_keys = sorted(set(inputs) - allowed_input_keys)
+                    if extra_input_keys:
+                        errors.append(
+                            "%s.inputs has unexpected keys: %s"
+                            % (case_path, ", ".join(extra_input_keys))
+                        )
+                    for key, expected_value in [
+                        ("A", plan.a_value),
+                        ("B", plan.b_value),
+                    ]:
+                        if not _json_number_equals(inputs.get(key), expected_value):
+                            errors.append(
+                                "%s.inputs.%s must match case plan value %r"
+                                % (case_path, key, expected_value)
+                            )
+                commands = case.get("commands")
+                if not isinstance(commands, Mapping):
+                    errors.append("%s.commands must be a mapping" % case_path)
+                else:
+                    for command_name, command_result in commands.items():
+                        if not isinstance(command_name, str) or not command_name:
+                            errors.append(
+                                "%s.commands has an invalid command key" % case_path
+                            )
+                            continue
+                        errors.extend(
+                            _validate_command_result(
+                                command_result,
+                                "%s.commands.%s" % (case_path, command_name),
+                            )
+                        )
+                    if case.get("status") == "passed" and "run" not in commands:
+                        errors.append(
+                            "%s.passed status requires commands.run" % case_path
+                        )
+                    if case.get("status") == "runtime_failed" and "run" not in commands:
+                        errors.append(
+                            "%s.runtime_failed status requires commands.run" % case_path
+                        )
+                    if case.get("status") == "compile_failed" and not commands:
+                        errors.append(
+                            "%s.compile_failed status requires command diagnostics"
+                            % case_path
+                        )
+                    if case.get("status") == "unavailable" and commands:
+                        errors.append(
+                            "%s.unavailable status requires empty commands" % case_path
+                        )
+            profile = str(case.get("profile"))
+            if require_all_profiles:
+                profile_pair = (semantic_id, profile)
+                previous_path = seen_profile_pairs.get(profile_pair)
+                if previous_path is not None:
+                    errors.append(
+                        "%s duplicate semantic/profile pair %s:%s from %s"
+                        % (case_path, semantic_id, profile, previous_path)
+                    )
+                else:
+                    seen_profile_pairs[profile_pair] = case_path
+            else:
+                previous_path = seen_semantic_paths.get(semantic_id)
+                if previous_path is not None:
+                    errors.append(
+                        "%s duplicate semantic_case_id %r from %s"
+                        % (case_path, semantic_id, previous_path)
+                    )
+                else:
+                    seen_semantic_paths[semantic_id] = case_path
+            seen_semantic_ids.add(semantic_id)
+            profile_seen.setdefault(semantic_id, set()).add(profile)
+    missing_cases = sorted(set(required_case_ids) - seen_semantic_ids)
+    for case_id in missing_cases:
+        errors.append("%s missing semantic case: %s" % (path, case_id))
+    if require_all_profiles:
+        expected_profiles = {profile["name"] for profile in _rust_profiles()}
+        for case_id in _required_native_case_ids(language):
+            if case_id in missing_cases:
+                continue
+            actual_profiles = profile_seen.get(case_id, set())
+            if actual_profiles != expected_profiles:
+                errors.append(
+                    "%s semantic case %s must cover Rust profiles %s, got %s"
+                    % (
+                        path,
+                        case_id,
+                        sorted(expected_profiles),
+                        sorted(actual_profiles),
+                    )
+                )
+    return errors
+
+
+def _validate_command_result(command: Any, path: str) -> List[str]:
+    """
+    Validate one captured native command result.
+
+    :param command: Command result payload.
+    :type command: Any
+    :param path: Human-readable path.
+    :type path: str
+    :return: Validation diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> _validate_command_result({'args': [], 'returncode': 0, 'stdout': '', 'stderr': '', 'timed_out': False, 'duration_seconds': '<duration>', 'start_error': None}, '$.commands.run')
+        []
+        >>> _validate_command_result({}, '$.commands.run')[:1]
+        ['$.commands.run missing required fields: args, duration_seconds, returncode, start_error, stderr, stdout, timed_out']
+    """
+    if not isinstance(command, Mapping):
+        return ["%s must be a mapping" % path]
+    errors = []
+    required_fields = {
+        "args",
+        "returncode",
+        "stdout",
+        "stderr",
+        "timed_out",
+        "duration_seconds",
+        "start_error",
+    }
+    missing = sorted(required_fields - set(command))
+    if missing:
+        errors.append("%s missing required fields: %s" % (path, ", ".join(missing)))
+    args = command.get("args")
+    if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
+        errors.append("%s.args must be a string array" % path)
+    returncode = command.get("returncode")
+    if returncode is not None and (
+        not isinstance(returncode, int) or isinstance(returncode, bool)
+    ):
+        errors.append("%s.returncode must be an integer or null" % path)
+    for key in ["stdout", "stderr"]:
+        if not isinstance(command.get(key), str):
+            errors.append("%s.%s must be a string" % (path, key))
+    if not isinstance(command.get("timed_out"), bool):
+        errors.append("%s.timed_out must be a boolean" % path)
+    duration = command.get("duration_seconds")
+    if not (
+        (isinstance(duration, (int, float)) and not isinstance(duration, bool))
+        or isinstance(duration, str)
+    ):
+        errors.append("%s.duration_seconds must be a number or snapshot string" % path)
+    start_error = command.get("start_error")
+    if start_error is not None and not isinstance(start_error, str):
+        errors.append("%s.start_error must be a string or null" % path)
+    return errors
+
+
+def _normalized_stdout(value: Any) -> str:
+    """
+    Normalize captured stdout for exact evidence comparisons.
+
+    :param value: Captured stdout value from a case or command payload.
+    :type value: Any
+    :return: Stripped stdout text, or an empty string for non-string values.
+    :rtype: str
+
+    Example::
+
+        >>> _normalized_stdout('VALUE=1\\n')
+        'VALUE=1'
+        >>> _normalized_stdout(None)
+        ''
+    """
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _command_arg_basename(arg: Any) -> str:
+    """
+    Return a snapshot-stable command argument basename.
+
+    Snapshot command arguments replace absolute local paths with ``"<path>"``.
+    This helper lets validators accept both live paths and committed snapshot
+    placeholders while still rejecting unrelated command vectors such as
+    ``["echo", "fake"]``.
+
+    :param arg: Command argument value.
+    :type arg: Any
+    :return: Basename-like argument text.
+    :rtype: str
+
+    Example::
+
+        >>> _command_arg_basename('/tmp/ProbeCase.java')
+        'ProbeCase.java'
+        >>> _command_arg_basename('<path>')
+        '<path>'
+    """
+    if not isinstance(arg, str):
+        return ""
+    if arg == "<path>":
+        return arg
+    return os.path.basename(arg)
+
+
+def _java_run_args_are_valid(args: Any) -> bool:
+    """
+    Return whether a Java run command matches the smoke runner shapes.
+
+    :param args: Command argument vector.
+    :type args: Any
+    :return: Whether the vector is a Java source-file launcher or classpath run.
+    :rtype: bool
+
+    Example::
+
+        >>> _java_run_args_are_valid(['<path>', 'ProbeCase.java'])
+        True
+        >>> _java_run_args_are_valid(['java', '-cp', '.', 'ProbeCase'])
+        True
+        >>> _java_run_args_are_valid([])
+        False
+        >>> _java_run_args_are_valid(['echo', 'fake'])
+        False
+    """
+    if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
+        return False
+    if len(args) not in {2, 4}:
+        return False
+    if _command_arg_basename(args[0]) not in {"java", "<path>"}:
+        return False
+    if len(args) == 2:
+        return _command_arg_basename(args[1]) == "ProbeCase.java"
+    return args[1] == "-cp" and bool(args[2]) and args[3] == "ProbeCase"
+
+
+def _java_compile_args_are_valid(args: Any) -> bool:
+    """
+    Return whether a Java compile command matches the smoke runner shape.
+
+    :param args: Command argument vector.
+    :type args: Any
+    :return: Whether the vector compiles ``ProbeCase.java``.
+    :rtype: bool
+
+    Example::
+
+        >>> _java_compile_args_are_valid(['javac', 'ProbeCase.java'])
+        True
+        >>> _java_compile_args_are_valid(['echo', 'fake'])
+        False
+    """
+    return (
+        isinstance(args, list)
+        and len(args) == 2
+        and _command_arg_basename(args[0]) in {"javac", "<path>"}
+        and _command_arg_basename(args[1]) == "ProbeCase.java"
+    )
+
+
+def _rust_compile_args_are_valid(args: Any, profile: str) -> bool:
+    """
+    Return whether a Rust compile command matches the smoke runner profile.
+
+    :param args: Command argument vector.
+    :type args: Any
+    :param profile: Rust profile name from the case payload.
+    :type profile: str
+    :return: Whether the vector compiles ``case.rs`` with the expected flags.
+    :rtype: bool
+
+    Example::
+
+        >>> _rust_compile_args_are_valid(['rustc', '<path>', '-o', '<path>', '-C', 'opt-level=0'], 'debug')
+        True
+        >>> _rust_compile_args_are_valid(['rustc', 'case.rs', '-o', 'not-case', '-C', 'opt-level=0'], 'debug')
+        False
+        >>> _rust_compile_args_are_valid(['echo', 'fake'], 'debug')
+        False
+    """
+    if not isinstance(args, list) or len(args) < 4:
+        return False
+    if not all(isinstance(item, str) for item in args):
+        return False
+    if _command_arg_basename(args[0]) not in {"rustc", "<path>"}:
+        return False
+    if _command_arg_basename(args[1]) not in {"case.rs", "<path>"}:
+        return False
+    if args[2] != "-o":
+        return False
+    if _command_arg_basename(args[3]) not in {"case", "<path>"}:
+        return False
+    expected_flags = None
+    for profile_def in _rust_profiles():
+        if profile_def["name"] == profile:
+            expected_flags = list(profile_def["flags"])
+            break
+    if expected_flags is None:
+        return False
+    return args[4:] == expected_flags
+
+
+def _rust_run_args_are_valid(args: Any) -> bool:
+    """
+    Return whether a Rust run command matches the smoke runner shape.
+
+    :param args: Command argument vector.
+    :type args: Any
+    :return: Whether the vector runs the compiled ``case`` binary.
+    :rtype: bool
+
+    Example::
+
+        >>> _rust_run_args_are_valid(['<path>'])
+        True
+        >>> _rust_run_args_are_valid([123])
+        False
+        >>> _rust_run_args_are_valid(['echo', 'fake'])
+        False
+    """
+    return (
+        isinstance(args, list)
+        and len(args) == 1
+        and isinstance(args[0], str)
+        and _command_arg_basename(args[0]) in {"case", "<path>"}
+    )
+
+
+def _validate_native_status_expectation(
+    case: Mapping[str, Any], language: str, case_path: str
+) -> List[str]:
+    """
+    Validate known status expectations for environment-independent cases.
+
+    Java source-file launcher behavior is deterministic enough for the current
+    native-only snapshot: arithmetic traps and the intentionally unsupported
+    ``sign`` renderer fallback must not be rewritten as successful observations.
+    Rust source snippets also have deterministic pass/trap/compile-failure
+    classes once ``rustc`` is available; profile-sensitive overflow checks are
+    keyed by the committed Rust profile names.
+
+    :param case: Native case result.
+    :type case: Mapping[str, Any]
+    :param language: Expected language.
+    :type language: str
+    :param case_path: Human-readable path.
+    :type case_path: str
+    :return: Validation diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> case = _native_case_base(_java_smoke_cases()[3], 'java-int32', 'native_java')
+        >>> case['status'] = 'passed'
+        >>> _validate_native_status_expectation(case, 'java', '$.cases[3]')[0]
+        '$.cases[3].status must be runtime_failed for Java case division_by_zero_exception'
+        >>> rust = _native_case_base(_rust_smoke_cases()[0], 'debug', 'native_rust')
+        >>> rust['status'] = 'passed'
+        >>> _validate_native_status_expectation(rust, 'rust', '$.cases[0]')[0]
+        '$.cases[0].status must be runtime_failed for Rust case debug:plain_i32_add_overflow'
+    """
+    semantic_id = case.get("semantic_case_id")
+    profile = str(case.get("profile"))
+    if language == "java":
+        if semantic_id == "math_sign_missing":
+            expected_status = "compile_failed"
+        elif semantic_id in _JAVA_NON_PASSING_CASE_IDS:
+            expected_status = "runtime_failed"
+        else:
+            expected_status = "passed"
+    elif language == "rust":
+        if semantic_id in _RUST_ALWAYS_COMPILE_FAILED_CASE_IDS:
+            expected_status = "compile_failed"
+        elif semantic_id in _RUST_ALWAYS_RUNTIME_FAILED_CASE_IDS:
+            expected_status = "runtime_failed"
+        elif semantic_id in _RUST_PROFILE_SENSITIVE_TRAP_CASE_IDS:
+            if profile in _RUST_OVERFLOW_CHECKED_PROFILES:
+                expected_status = "runtime_failed"
+            elif profile in _RUST_OVERFLOW_UNCHECKED_PROFILES:
+                expected_status = "passed"
+            else:
+                return [
+                    "%s.profile is not a known Rust profile for case %s: %r"
+                    % (case_path, semantic_id, case.get("profile"))
+                ]
+        elif semantic_id in _RUST_ALWAYS_PASSING_CASE_IDS:
+            expected_status = "passed"
+        else:
+            return [
+                "%s.semantic_case_id has no Rust status expectation: %r"
+                % (case_path, semantic_id)
+            ]
+    else:
+        return []
+    if case.get("status") != expected_status:
+        language_name = "Java" if language == "java" else "Rust"
+        expected_case = (
+            "%s:%s" % (profile, semantic_id) if language == "rust" else semantic_id
+        )
+        return [
+            "%s.status must be %s for %s case %s"
+            % (case_path, expected_status, language_name, expected_case)
+        ]
+    return []
+
+
+def _command_result_succeeded(command: Any) -> bool:
+    """
+    Return whether a captured command result represents a clean success.
+
+    :param command: Command result payload.
+    :type command: Any
+    :return: Whether the command exited with code ``0`` without timing out or
+        failing to start.
+    :rtype: bool
+
+    Example::
+
+        >>> _command_result_succeeded({'returncode': 0, 'timed_out': False, 'start_error': None})
+        True
+        >>> _command_result_succeeded({'returncode': None, 'timed_out': True, 'start_error': None})
+        False
+    """
+    return (
+        isinstance(command, Mapping)
+        and command.get("returncode") == 0
+        and command.get("timed_out") is False
+        and command.get("start_error") is None
+    )
+
+
+def _command_result_failed(command: Any) -> bool:
+    """
+    Return whether a captured command result represents a failure.
+
+    :param command: Command result payload.
+    :type command: Any
+    :return: Whether the command timed out, failed to start, or exited with a
+        non-zero code.
+    :rtype: bool
+
+    Example::
+
+        >>> _command_result_failed({'returncode': 1, 'timed_out': False, 'start_error': None})
+        True
+        >>> _command_result_failed({'returncode': 0, 'timed_out': False, 'start_error': None})
+        False
+    """
+    if not isinstance(command, Mapping):
+        return False
+    return (
+        command.get("timed_out") is True
+        or isinstance(command.get("start_error"), str)
+        or (
+            isinstance(command.get("returncode"), int)
+            and command.get("returncode") != 0
+        )
+    )
+
+
+def _validate_rust_available_commands(
+    case: Mapping[str, Any], case_path: str
+) -> List[str]:
+    """
+    Validate command evidence for a Rust case when ``rustc`` is available.
+
+    :param case: Rust smoke case result.
+    :type case: Mapping[str, Any]
+    :param case_path: Human-readable path.
+    :type case_path: str
+    :return: Validation diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> case = _native_case_base(_rust_smoke_cases()[1], 'debug', 'native_rust')
+        >>> case['status'] = 'passed'
+        >>> case['commands'] = {'run': {'returncode': 0, 'timed_out': False, 'start_error': None}}
+        >>> _validate_rust_available_commands(case, '$.cases[1]')[0]
+        '$.cases[1].commands.compile is required when rustc is available'
+    """
+    commands = case.get("commands")
+    if not isinstance(commands, Mapping):
+        return []
+    errors: List[str] = []
+    status = case.get("status")
+    profile = str(case.get("profile"))
+    semantic_id = str(case.get("semantic_case_id"))
+    compile_result = commands.get("compile")
+    run_result = commands.get("run")
+    if "compile" not in commands:
+        errors.append(
+            "%s.commands.compile is required when rustc is available" % case_path
+        )
+    elif not _rust_compile_args_are_valid(
+        compile_result.get("args") if isinstance(compile_result, Mapping) else None,
+        profile,
+    ):
+        errors.append(
+            "%s.commands.compile.args must invoke rustc case.rs with profile %s"
+            % (case_path, profile)
+        )
+    elif status in {"passed", "runtime_failed"} and not _command_result_succeeded(
+        compile_result
+    ):
+        errors.append(
+            "%s.commands.compile must succeed for Rust status %s" % (case_path, status)
+        )
+    elif status == "compile_failed" and not _command_result_failed(compile_result):
+        errors.append(
+            "%s.commands.compile must fail for Rust compile_failed status" % case_path
+        )
+    if status in {"passed", "runtime_failed"}:
+        if "run" not in commands:
+            errors.append(
+                "%s.commands.run is required for Rust status %s" % (case_path, status)
+            )
+        elif not _rust_run_args_are_valid(
+            run_result.get("args") if isinstance(run_result, Mapping) else None
+        ):
+            errors.append(
+                "%s.commands.run.args must execute the Rust case binary" % case_path
+            )
+        elif status == "passed" and not _command_result_succeeded(run_result):
+            errors.append(
+                "%s.commands.run must succeed for Rust passed status" % case_path
+            )
+        elif status == "runtime_failed" and not _command_result_failed(run_result):
+            errors.append(
+                "%s.commands.run must fail for Rust runtime_failed status" % case_path
+            )
+        if status == "passed" and isinstance(run_result, Mapping):
+            expected_stdout = _RUST_EXPECTED_STDOUT.get(
+                semantic_id, _RUST_PROFILE_EXPECTED_STDOUT.get(semantic_id)
+            )
+            if expected_stdout is not None:
+                command_stdout = _normalized_stdout(run_result.get("stdout"))
+                case_stdout = _normalized_stdout(case.get("stdout"))
+                if command_stdout != expected_stdout:
+                    errors.append(
+                        "%s.commands.run.stdout must be %r"
+                        % (case_path, expected_stdout)
+                    )
+                if case_stdout != expected_stdout:
+                    errors.append("%s.stdout must be %r" % (case_path, expected_stdout))
+        if status == "runtime_failed" and isinstance(run_result, Mapping):
+            marker = _RUST_RUNTIME_FAILURE_MARKERS.get(semantic_id)
+            combined_output = (
+                _normalized_stdout(run_result.get("stdout"))
+                + "\n"
+                + _normalized_stdout(run_result.get("stderr"))
+                + "\n"
+                + _normalized_stdout(case.get("stdout"))
+                + "\n"
+                + _normalized_stdout(case.get("stderr"))
+            ).lower()
+            if marker is not None and marker not in combined_output:
+                errors.append(
+                    "%s runtime failure output must mention %r" % (case_path, marker)
+                )
+    elif status == "compile_failed" and "run" in commands:
+        errors.append(
+            "%s.commands.run must be absent for Rust compile_failed status" % case_path
+        )
+    if status == "compile_failed" and semantic_id == "float_sign_renderer_missing":
+        combined_output = ""
+        if isinstance(compile_result, Mapping):
+            combined_output += _normalized_stdout(compile_result.get("stdout"))
+            combined_output += "\n" + _normalized_stdout(compile_result.get("stderr"))
+        combined_output += "\n" + _normalized_stdout(case.get("stdout"))
+        combined_output += "\n" + _normalized_stdout(case.get("stderr"))
+        if "sign" not in combined_output.lower():
+            errors.append(
+                "%s compile failure output must mention missing sign support"
+                % case_path
+            )
+    return errors
+
+
+def _validate_java_available_commands(
+    case: Mapping[str, Any], case_path: str
+) -> List[str]:
+    """
+    Validate command evidence for a Java case when ``java`` is available.
+
+    Java smoke cases may use either ``javac`` plus a class-file run or the Java
+    source-file launcher. In the launcher path, a source compilation failure is
+    observed as a failed ``run`` command.
+
+    :param case: Java smoke case result.
+    :type case: Mapping[str, Any]
+    :param case_path: Human-readable path.
+    :type case_path: str
+    :return: Validation diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> case = _native_case_base(_java_smoke_cases()[0], 'java-int32', 'native_java')
+        >>> case['status'] = 'passed'
+        >>> case['commands'] = {'run': {'args': ['<path>', 'ProbeCase.java'], 'returncode': 1, 'timed_out': False, 'start_error': None}}
+        >>> _validate_java_available_commands(case, '$.cases[0]')[0]
+        '$.cases[0].commands.run must succeed for Java passed status'
+        >>> case['commands']['run'].update({'returncode': 0, 'stdout': 'VALUE=0\\n'})
+        >>> any('stdout must be' in error for error in _validate_java_available_commands(case, '$.cases[0]'))
+        True
+        >>> case['commands']['run']['stdout'] = 'VALUE=-2147483648\\n'
+        >>> case['commands']['run']['args'] = ['echo', 'fake']
+        >>> any('commands.run.args' in error for error in _validate_java_available_commands(case, '$.cases[0]'))
+        True
+    """
+    commands = case.get("commands")
+    if not isinstance(commands, Mapping):
+        return []
+    errors: List[str] = []
+    status = case.get("status")
+    semantic_id = str(case.get("semantic_case_id"))
+    compile_result = commands.get("compile")
+    run_result = commands.get("run")
+    if "compile" in commands:
+        if not _java_compile_args_are_valid(
+            compile_result.get("args") if isinstance(compile_result, Mapping) else None
+        ):
+            errors.append(
+                "%s.commands.compile.args must invoke javac ProbeCase.java" % case_path
+            )
+    if "compile" in commands and status in {"passed", "runtime_failed"}:
+        if not _command_result_succeeded(compile_result):
+            errors.append(
+                "%s.commands.compile must succeed for Java status %s"
+                % (case_path, status)
+            )
+    if status == "passed":
+        if "run" not in commands:
+            errors.append(
+                "%s.commands.run is required for Java passed status" % case_path
+            )
+        elif not _java_run_args_are_valid(
+            run_result.get("args") if isinstance(run_result, Mapping) else None
+        ):
+            errors.append("%s.commands.run.args must execute ProbeCase" % case_path)
+        elif not _command_result_succeeded(run_result):
+            errors.append(
+                "%s.commands.run must succeed for Java passed status" % case_path
+            )
+        if isinstance(run_result, Mapping):
+            expected_stdout = _JAVA_EXPECTED_STDOUT.get(semantic_id)
+            command_stdout = _normalized_stdout(run_result.get("stdout"))
+            case_stdout = _normalized_stdout(case.get("stdout"))
+            if expected_stdout is not None and command_stdout != expected_stdout:
+                errors.append(
+                    "%s.commands.run.stdout must be %r" % (case_path, expected_stdout)
+                )
+            if expected_stdout is not None and case_stdout != expected_stdout:
+                errors.append("%s.stdout must be %r" % (case_path, expected_stdout))
+    elif status == "runtime_failed":
+        if "run" not in commands:
+            errors.append(
+                "%s.commands.run is required for Java runtime_failed status" % case_path
+            )
+        elif not _java_run_args_are_valid(
+            run_result.get("args") if isinstance(run_result, Mapping) else None
+        ):
+            errors.append("%s.commands.run.args must execute ProbeCase" % case_path)
+        elif not _command_result_failed(run_result):
+            errors.append(
+                "%s.commands.run must fail for Java runtime_failed status" % case_path
+            )
+        if isinstance(run_result, Mapping):
+            expected_stdout = _JAVA_EXPECTED_STDOUT.get(semantic_id)
+            command_stdout = _normalized_stdout(run_result.get("stdout"))
+            case_stdout = _normalized_stdout(case.get("stdout"))
+            if expected_stdout is not None and command_stdout != expected_stdout:
+                errors.append(
+                    "%s.commands.run.stdout must be %r" % (case_path, expected_stdout)
+                )
+            if expected_stdout is not None and case_stdout != expected_stdout:
+                errors.append("%s.stdout must be %r" % (case_path, expected_stdout))
+    elif status == "compile_failed":
+        compile_failed = "compile" in commands and _command_result_failed(
+            compile_result
+        )
+        source_launcher_failed = "compile" not in commands and _command_result_failed(
+            run_result
+        )
+        if "run" in commands and not _java_run_args_are_valid(
+            run_result.get("args") if isinstance(run_result, Mapping) else None
+        ):
+            errors.append("%s.commands.run.args must execute ProbeCase" % case_path)
+        if not (compile_failed or source_launcher_failed):
+            errors.append(
+                "%s.compile_failed status requires a failed Java compile or source-launch command"
+                % case_path
+            )
+        if semantic_id == "math_sign_missing":
+            combined_output = ""
+            if isinstance(compile_result, Mapping):
+                combined_output += _normalized_stdout(compile_result.get("stdout"))
+                combined_output += "\n" + _normalized_stdout(
+                    compile_result.get("stderr")
+                )
+            if isinstance(run_result, Mapping):
+                combined_output += "\n" + _normalized_stdout(run_result.get("stdout"))
+                combined_output += "\n" + _normalized_stdout(run_result.get("stderr"))
+            combined_output += "\n" + _normalized_stdout(case.get("stdout"))
+            combined_output += "\n" + _normalized_stdout(case.get("stderr"))
+            if "sign" not in combined_output:
+                errors.append(
+                    "%s compile failure output must mention missing Math.sign support"
+                    % case_path
+                )
+    return errors
+
+
+def _native_tool_available(payload: Mapping[str, Any], language: str) -> Optional[bool]:
+    """
+    Return native tool availability recorded in a smoke payload.
+
+    :param payload: Java or Rust smoke payload.
+    :type payload: Mapping[str, Any]
+    :param language: Native language, either ``"java"`` or ``"rust"``.
+    :type language: str
+    :return: Recorded availability, or ``None`` when metadata is incomplete.
+    :rtype: Optional[bool]
+
+    Example::
+
+        >>> _native_tool_available({'toolchain': {'rust': {'rustc': {'available': False}}}}, 'rust')
+        False
+    """
+    executable_name = {"java": "java", "rust": "rustc"}.get(language)
+    if executable_name is None:
+        return None
+    toolchain = payload.get("toolchain")
+    if not isinstance(toolchain, Mapping):
+        return None
+    language_tools = toolchain.get(language)
+    if not isinstance(language_tools, Mapping):
+        return None
+    executable = language_tools.get(executable_name)
+    if not isinstance(executable, Mapping):
+        return None
+    available = executable.get("available")
+    if isinstance(available, bool):
+        return available
+    return None
+
+
+def _validate_native_toolchain_availability(
+    payload: Mapping[str, Any], language: str, path: str
+) -> List[str]:
+    """
+    Validate that native executable availability metadata is explicit.
+
+    The Java/Rust smoke validators use the recorded executable availability to
+    decide whether available-case or unavailable-case status invariants must be
+    enforced. Missing metadata must therefore be reported as invalid instead of
+    silently disabling both validation paths.
+
+    :param payload: Java or Rust smoke payload.
+    :type payload: Mapping[str, Any]
+    :param language: Native language, either ``"java"`` or ``"rust"``.
+    :type language: str
+    :param path: Human-readable path to the ``toolchain`` object.
+    :type path: str
+    :return: Validation diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> _validate_native_toolchain_availability({'toolchain': {}}, 'java', '$.toolchain')
+        ['$.toolchain.java must be a mapping']
+        >>> payload = {'toolchain': {'rust': {'rustc': {'available': False}}}}
+        >>> _validate_native_toolchain_availability(payload, 'rust', '$.toolchain')
+        []
+        >>> payload = {'toolchain': {'rust': {'rustc': {'available': 'yes'}}}}
+        >>> _validate_native_toolchain_availability(payload, 'rust', '$.toolchain')
+        ['$.toolchain.rust.rustc.available must be a boolean']
+    """
+    executable_name = {"java": "java", "rust": "rustc"}.get(language)
+    if executable_name is None:
+        return []
+    toolchain = payload.get("toolchain")
+    if not isinstance(toolchain, Mapping):
+        return []
+    language_tools = toolchain.get(language)
+    if not isinstance(language_tools, Mapping):
+        return ["%s.%s must be a mapping" % (path, language)]
+    executable = language_tools.get(executable_name)
+    if not isinstance(executable, Mapping):
+        return ["%s.%s.%s must be a mapping" % (path, language, executable_name)]
+    available = executable.get("available")
+    if not isinstance(available, bool):
+        return [
+            "%s.%s.%s.available must be a boolean" % (path, language, executable_name)
+        ]
+    return []
+
+
+def _validate_unavailable_native_cases(
+    payload: Mapping[str, Any], cases: Any, language: str, path: str
+) -> List[str]:
+    """
+    Validate case statuses when the native executable is unavailable.
+
+    :param payload: Java or Rust smoke payload.
+    :type payload: Mapping[str, Any]
+    :param cases: Case list from the payload.
+    :type cases: Any
+    :param language: Native language, either ``"java"`` or ``"rust"``.
+    :type language: str
+    :param path: Human-readable path.
+    :type path: str
+    :return: Validation diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> payload = {'toolchain': {'rust': {'rustc': {'available': False}}}}
+        >>> cases = [_native_case_base(_rust_smoke_cases()[0], 'debug', 'native_rust')]
+        >>> cases[0]['status'] = 'passed'
+        >>> _validate_unavailable_native_cases(payload, cases, 'rust', '$.cases')[0]
+        '$.cases[0].status must be unavailable when rustc is unavailable'
+    """
+    if _native_tool_available(payload, language) is not False or not isinstance(
+        cases, list
+    ):
+        return []
+    executable_name = {"java": "java", "rust": "rustc"}[language]
+    expected_reason = "%s_unavailable" % executable_name
+    errors = []
+    for index, case in enumerate(cases):
+        if not isinstance(case, Mapping):
+            continue
+        case_path = "%s[%d]" % (path, index)
+        if case.get("status") != "unavailable":
+            errors.append(
+                "%s.status must be unavailable when %s is unavailable"
+                % (case_path, executable_name)
+            )
+        if case.get("outcome") != "unavailable":
+            errors.append(
+                "%s.outcome must be unavailable when %s is unavailable"
+                % (case_path, executable_name)
+            )
+        if case.get("reason") != expected_reason:
+            errors.append(
+                "%s.reason must be %s when %s is unavailable"
+                % (case_path, expected_reason, executable_name)
+            )
+        commands = case.get("commands")
+        if isinstance(commands, Mapping) and commands:
+            errors.append(
+                "%s.commands must be empty when %s is unavailable"
+                % (case_path, executable_name)
+            )
+    return errors
+
+
+def _validate_available_native_cases(
+    payload: Mapping[str, Any], cases: Any, language: str, path: str
+) -> List[str]:
+    """
+    Validate deterministic case statuses when a native executable is available.
+
+    :param payload: Java or Rust smoke payload.
+    :type payload: Mapping[str, Any]
+    :param cases: Case list from the payload.
+    :type cases: Any
+    :param language: Native language, either ``"java"`` or ``"rust"``.
+    :type language: str
+    :param path: Human-readable path.
+    :type path: str
+    :return: Validation diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> payload = {'toolchain': {'java': {'java': {'available': True}}}}
+        >>> cases = [_native_case_base(_java_smoke_cases()[3], 'java-int32', 'native_java')]
+        >>> cases[0]['status'] = 'passed'
+        >>> _validate_available_native_cases(payload, cases, 'java', '$.cases')[0]
+        '$.cases[0].status must be runtime_failed for Java case division_by_zero_exception'
+    """
+    if _native_tool_available(payload, language) is not True or not isinstance(
+        cases, list
+    ):
+        return []
+    errors = []
+    for index, case in enumerate(cases):
+        if isinstance(case, Mapping):
+            errors.extend(
+                _validate_native_status_expectation(
+                    case, language, "%s[%d]" % (path, index)
+                )
+            )
+            if language == "java":
+                errors.extend(
+                    _validate_java_available_commands(case, "%s[%d]" % (path, index))
+                )
+            elif language == "rust":
+                errors.extend(
+                    _validate_rust_available_commands(case, "%s[%d]" % (path, index))
+                )
+    return errors
+
+
+def validate_java_rust_smoke(
+    payload: Mapping[str, Any], expected_mode: Optional[str] = None
+) -> List[str]:
+    """
+    Validate Java/Rust smoke payload invariants without repository tests.
+
+    :param payload: Java, Rust or aggregate Java/Rust smoke payload.
+    :type payload: Mapping[str, Any]
+    :param expected_mode: Optional expected mode.
+    :type expected_mode: Optional[str], optional
+    :return: Validation diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> validate_java_rust_smoke({'schema_version': 1}, expected_mode='java-smoke')[:2]
+        ['mode must be java-smoke', "mode must be one of ['java-rust-smoke', 'java-smoke', 'rust-smoke']"]
+        >>> 'summary_status must be a non-empty string' in validate_java_rust_smoke({'schema_version': 1}, expected_mode='java-smoke')
+        True
+        >>> payload = _build_java_smoke_report(timeout=1)
+        >>> payload['summary_status'] = 'passed'
+        >>> any('summary_status must match cases' in error for error in validate_java_rust_smoke(payload, expected_mode='java-smoke'))
+        True
+        >>> payload = build_java_rust_smoke_report('java-rust-smoke', timeout=1)
+        >>> payload['cases'] = list(payload['languages']['java']['cases'])
+        >>> 'cases must equal languages.java.cases + languages.rust.cases' in validate_java_rust_smoke(payload, expected_mode='java-rust-smoke')
+        True
+        >>> payload = build_java_rust_smoke_report('java-rust-smoke', timeout=1)
+        >>> payload['toolchain'] = {}
+        >>> '$.toolchain.java must be a mapping' in validate_java_rust_smoke(payload, expected_mode='java-rust-smoke')
+        True
+    """
+    errors: List[str] = []
+    mode = payload.get("mode")
+    summary_status = payload.get("summary_status")
+    if expected_mode is not None and mode != expected_mode:
+        errors.append("mode must be %s" % expected_mode)
+    if mode not in _JAVA_RUST_MODES:
+        errors.append("mode must be one of %s" % sorted(_JAVA_RUST_MODES))
+    expected_language = {
+        "java-smoke": "java",
+        "rust-smoke": "rust",
+        "java-rust-smoke": "java-rust",
+    }.get(str(expected_mode or mode))
+    if expected_language and payload.get("language") != expected_language:
+        errors.append("language must be %s" % expected_language)
+    if payload.get("schema_version") != 1:
+        errors.append("schema_version must be 1")
+    if not isinstance(summary_status, str) or not summary_status:
+        errors.append("summary_status must be a non-empty string")
+    elif summary_status not in _NATIVE_SUMMARY_STATUSES:
+        errors.append("summary_status is invalid: %r" % summary_status)
+    for key in ["source_mapping_sha256", "render_mapping_sha256"]:
+        value = payload.get(key)
+        if (
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(ch not in "0123456789abcdef" for ch in value)
+        ):
+            errors.append("%s must be a lowercase 64-character sha256 hex string" % key)
+    if payload.get("source_mapping_sha256") != payload.get("render_mapping_sha256"):
+        errors.append("source_mapping_sha256 and render_mapping_sha256 must match")
+    for key in ["generator", "repository", "toolchain"]:
+        if not isinstance(payload.get(key), Mapping):
+            errors.append("%s must be a mapping" % key)
+    if mode == "java-smoke":
+        cases = payload.get("cases")
+        errors.extend(
+            _validate_native_toolchain_availability(payload, "java", "$.toolchain")
+        )
+        errors.extend(_validate_native_cases(cases, "java", "$.cases"))
+        errors.extend(
+            _validate_unavailable_native_cases(payload, cases, "java", "$.cases")
+        )
+        errors.extend(
+            _validate_available_native_cases(payload, cases, "java", "$.cases")
+        )
+        if isinstance(cases, list) and isinstance(summary_status, str):
+            expected_summary = _summary_status(cases)
+            if summary_status != expected_summary:
+                errors.append(
+                    "summary_status must match cases: expected %s, got %s"
+                    % (expected_summary, summary_status)
+                )
+    elif mode == "rust-smoke":
+        cases = payload.get("cases")
+        errors.extend(
+            _validate_native_toolchain_availability(payload, "rust", "$.toolchain")
+        )
+        errors.extend(
+            _validate_native_cases(cases, "rust", "$.cases", require_all_profiles=True)
+        )
+        errors.extend(
+            _validate_unavailable_native_cases(payload, cases, "rust", "$.cases")
+        )
+        errors.extend(
+            _validate_available_native_cases(payload, cases, "rust", "$.cases")
+        )
+        if isinstance(cases, list) and isinstance(summary_status, str):
+            expected_summary = _summary_status(cases)
+            if summary_status != expected_summary:
+                errors.append(
+                    "summary_status must match cases: expected %s, got %s"
+                    % (expected_summary, summary_status)
+                )
+    elif mode == "java-rust-smoke":
+        languages = payload.get("languages")
+        all_cases = payload.get("cases")
+        errors.extend(
+            _validate_native_toolchain_availability(payload, "java", "$.toolchain")
+        )
+        errors.extend(
+            _validate_native_toolchain_availability(payload, "rust", "$.toolchain")
+        )
+        top_java_available = _native_tool_available(payload, "java")
+        top_rust_available = _native_tool_available(payload, "rust")
+        if not isinstance(languages, Mapping):
+            errors.append("languages must be a mapping")
+        else:
+            java_payload = languages.get("java")
+            rust_payload = languages.get("rust")
+            if not isinstance(java_payload, Mapping):
+                errors.append("languages.java must be a mapping")
+            else:
+                errors.extend(
+                    "languages.java: %s" % error
+                    for error in validate_java_rust_smoke(
+                        java_payload, expected_mode="java-smoke"
+                    )
+                )
+                nested_java_available = _native_tool_available(java_payload, "java")
+                if top_java_available is not None and nested_java_available is not None:
+                    if top_java_available != nested_java_available:
+                        errors.append(
+                            "toolchain.java.java.available must match "
+                            "languages.java.toolchain.java.java.available"
+                        )
+            if not isinstance(rust_payload, Mapping):
+                errors.append("languages.rust must be a mapping")
+            else:
+                errors.extend(
+                    "languages.rust: %s" % error
+                    for error in validate_java_rust_smoke(
+                        rust_payload, expected_mode="rust-smoke"
+                    )
+                )
+                nested_rust_available = _native_tool_available(rust_payload, "rust")
+                if top_rust_available is not None and nested_rust_available is not None:
+                    if top_rust_available != nested_rust_available:
+                        errors.append(
+                            "toolchain.rust.rustc.available must match "
+                            "languages.rust.toolchain.rust.rustc.available"
+                        )
+            if isinstance(java_payload, Mapping) and isinstance(rust_payload, Mapping):
+                expected_cases = list(java_payload.get("cases", [])) + list(
+                    rust_payload.get("cases", [])
+                )
+                if all_cases != expected_cases:
+                    errors.append(
+                        "cases must equal languages.java.cases + languages.rust.cases"
+                    )
+        java_cases = (
+            [
+                case
+                for case in all_cases
+                if isinstance(case, Mapping) and case.get("language") == "java"
+            ]
+            if isinstance(all_cases, list)
+            else []
+        )
+        rust_cases = (
+            [
+                case
+                for case in all_cases
+                if isinstance(case, Mapping) and case.get("language") == "rust"
+            ]
+            if isinstance(all_cases, list)
+            else []
+        )
+        errors.extend(_validate_native_cases(java_cases, "java", "$.cases.java"))
+        errors.extend(
+            _validate_native_cases(
+                rust_cases, "rust", "$.cases.rust", require_all_profiles=True
+            )
+        )
+        errors.extend(
+            _validate_unavailable_native_cases(
+                payload, java_cases, "java", "$.cases.java"
+            )
+        )
+        errors.extend(
+            _validate_available_native_cases(
+                payload, java_cases, "java", "$.cases.java"
+            )
+        )
+        errors.extend(
+            _validate_unavailable_native_cases(
+                payload, rust_cases, "rust", "$.cases.rust"
+            )
+        )
+        errors.extend(
+            _validate_available_native_cases(
+                payload, rust_cases, "rust", "$.cases.rust"
+            )
+        )
+        if isinstance(all_cases, list) and isinstance(summary_status, str):
+            expected_summary = _summary_status(all_cases)
+            if summary_status != expected_summary:
+                errors.append(
+                    "summary_status must match cases: expected %s, got %s"
+                    % (expected_summary, summary_status)
+                )
+    notes = payload.get("official_source_notes")
+    if mode in {"java-smoke", "rust-smoke"} and (
+        not isinstance(notes, list) or not notes
+    ):
+        errors.append("official_source_notes must be a non-empty list")
+    if mode == "java-rust-smoke":
+        if not isinstance(notes, Mapping):
+            errors.append("official_source_notes must be a mapping")
+        else:
+            for language in ["java", "rust"]:
+                value = notes.get(language)
+                if not isinstance(value, list) or not value:
+                    errors.append(
+                        "official_source_notes.%s must be a non-empty list" % language
+                    )
     return errors
 
 
@@ -3301,6 +6203,35 @@ def _json_type_matches(value: Any, type_name: str) -> bool:
     return False
 
 
+def _json_number_equals(actual: Any, expected: Union[int, float]) -> bool:
+    """
+    Return whether a JSON number exactly matches an expected case-plan value.
+
+    Python booleans compare equal to ``0`` and ``1``, but JSON booleans are not
+    numeric smoke inputs. This helper keeps case-plan drift checks strict at the
+    Python/JSON boundary.
+
+    :param actual: JSON value from a smoke payload.
+    :type actual: Any
+    :param expected: Expected numeric case-plan value.
+    :type expected: Union[int, float]
+    :return: Whether ``actual`` is a non-boolean number equal to ``expected``.
+    :rtype: bool
+
+    Example::
+
+        >>> _json_number_equals(1, 1)
+        True
+        >>> _json_number_equals(True, 1)
+        False
+    """
+    if isinstance(actual, bool):
+        return False
+    if not isinstance(actual, (int, float)):
+        return False
+    return actual == expected
+
+
 def _resolve_local_schema_ref(root_schema: Mapping[str, Any], ref: str) -> Any:
     """
     Resolve a local ``#/`` JSON Schema reference.
@@ -3340,9 +6271,12 @@ def _validate_json_schema_fragment(
     Validate one value against the repository's lightweight schema subset.
 
     The helper intentionally implements only the JSON Schema keywords used by
-    the research artifact schemas: ``$ref``, ``type``, ``required``,
-    ``properties``, object ``additionalProperties``, ``const``, ``enum``,
-    ``pattern``, ``minItems`` and homogeneous ``items``.
+    the research artifact schemas: ``$ref``, ``allOf``, ``anyOf``,
+    ``if`` / ``then``, ``not``, ``type``, ``required``, ``properties``,
+    object ``additionalProperties``, ``const``, ``enum``, ``pattern``,
+    string ``minLength``, object ``minProperties`` / ``maxProperties``,
+    array ``minItems`` / ``maxItems`` / ``prefixItems`` and homogeneous
+    ``items``.
 
     :param value: JSON-compatible value to validate.
     :type value: Any
@@ -3359,6 +6293,22 @@ def _validate_json_schema_fragment(
 
         >>> _validate_json_schema_fragment({'a': 1}, {'type': 'object', 'required': ['a']}, {}, '$')
         []
+        >>> schema = {
+        ...     'if': {'properties': {'kind': {'const': 'x'}}},
+        ...     'then': {'required': ['value']},
+        ... }
+        >>> _validate_json_schema_fragment({'kind': 'x'}, schema, {}, '$')
+        ['$.then missing required key value']
+        >>> _validate_json_schema_fragment('', {'type': 'string', 'minLength': 1}, {}, '$')
+        ['$ must contain at least 1 characters']
+        >>> _validate_json_schema_fragment({}, {'type': 'object', 'minProperties': 1}, {}, '$')
+        ['$ must contain at least 1 properties']
+        >>> _validate_json_schema_fragment({'ok': True}, {'not': {'properties': {'ok': {'const': True}}}}, {}, '$')
+        ['$ must not match disallowed schema']
+        >>> _validate_json_schema_fragment(['a', 'b'], {'prefixItems': [{'const': 'a'}, {'const': 'c'}]}, {}, '$')
+        ["$[1] must equal 'c'"]
+        >>> _validate_json_schema_fragment('x', {'anyOf': [{'const': 'a'}, {'const': 'b'}]}, {}, '$')
+        ['$ must match at least one anyOf schema']
     """
     errors: List[str] = []
     ref = schema.get("$ref")
@@ -3372,6 +6322,69 @@ def _validate_json_schema_fragment(
         if not isinstance(target, Mapping):
             return ["%s schema reference %r did not resolve to an object" % (path, ref)]
         return _validate_json_schema_fragment(value, target, root_schema, path)
+
+    all_of = schema.get("allOf")
+    if isinstance(all_of, list):
+        for index, child_schema in enumerate(all_of):
+            if not isinstance(child_schema, Mapping):
+                errors.append("%s.allOf[%d] must be a schema object" % (path, index))
+                continue
+            errors.extend(
+                _validate_json_schema_fragment(
+                    value,
+                    child_schema,
+                    root_schema,
+                    "%s.allOf[%d]" % (path, index),
+                )
+            )
+
+    any_of = schema.get("anyOf")
+    if isinstance(any_of, list):
+        matched = False
+        for child_schema in any_of:
+            if not isinstance(child_schema, Mapping):
+                continue
+            child_errors = _validate_json_schema_fragment(
+                value,
+                child_schema,
+                root_schema,
+                "%s.anyOf" % path,
+            )
+            if not child_errors:
+                matched = True
+                break
+        if not matched:
+            errors.append("%s must match at least one anyOf schema" % path)
+
+    if_schema = schema.get("if")
+    then_schema = schema.get("then")
+    if isinstance(if_schema, Mapping) and isinstance(then_schema, Mapping):
+        condition_errors = _validate_json_schema_fragment(
+            value,
+            if_schema,
+            root_schema,
+            "%s.if" % path,
+        )
+        if not condition_errors:
+            errors.extend(
+                _validate_json_schema_fragment(
+                    value,
+                    then_schema,
+                    root_schema,
+                    "%s.then" % path,
+                )
+            )
+
+    not_schema = schema.get("not")
+    if isinstance(not_schema, Mapping):
+        not_errors = _validate_json_schema_fragment(
+            value,
+            not_schema,
+            root_schema,
+            "%s.not" % path,
+        )
+        if not not_errors:
+            errors.append("%s must not match disallowed schema" % path)
 
     expected_type = schema.get("type")
     if isinstance(expected_type, str):
@@ -3402,8 +6415,22 @@ def _validate_json_schema_fragment(
         else:
             if not matched:
                 errors.append("%s must match pattern %r" % (path, pattern))
+    min_length = schema.get("minLength")
+    if isinstance(min_length, int) and isinstance(value, str):
+        if len(value) < min_length:
+            errors.append("%s must contain at least %d characters" % (path, min_length))
 
     if isinstance(value, Mapping):
+        min_properties = schema.get("minProperties")
+        if isinstance(min_properties, int) and len(value) < min_properties:
+            errors.append(
+                "%s must contain at least %d properties" % (path, min_properties)
+            )
+        max_properties = schema.get("maxProperties")
+        if isinstance(max_properties, int) and len(value) > max_properties:
+            errors.append(
+                "%s must contain at most %d properties" % (path, max_properties)
+            )
         required = schema.get("required")
         if isinstance(required, list):
             for key in required:
@@ -3445,6 +6472,24 @@ def _validate_json_schema_fragment(
         min_items = schema.get("minItems")
         if isinstance(min_items, int) and len(value) < min_items:
             errors.append("%s must contain at least %d items" % (path, min_items))
+        max_items = schema.get("maxItems")
+        if isinstance(max_items, int) and len(value) > max_items:
+            errors.append("%s must contain at most %d items" % (path, max_items))
+        prefix_items = schema.get("prefixItems")
+        if isinstance(prefix_items, list):
+            for index, child_schema in enumerate(prefix_items):
+                if index >= len(value):
+                    break
+                if not isinstance(child_schema, Mapping):
+                    continue
+                errors.extend(
+                    _validate_json_schema_fragment(
+                        value[index],
+                        child_schema,
+                        root_schema,
+                        "%s[%d]" % (path, index),
+                    )
+                )
         item_schema = schema.get("items")
         if isinstance(item_schema, Mapping):
             for index, item in enumerate(value):
@@ -4079,6 +7124,136 @@ def check_python_z3_baseline(
         "source_mapping_sha256": live["source_mapping_sha256"],
         "snapshot_present": snapshot_present,
         "snapshot_path": _PYTHON_Z3_BASELINE_SNAPSHOT,
+    }
+
+
+def check_java_rust_smoke(
+    mode: str,
+    repo_root: Union[str, Path] = ".",
+    mapping_path: Union[str, Path] = _DEFAULT_MAPPING_PATH,
+    work_dir: Optional[Union[str, Path]] = None,
+    timeout: int = 10,
+) -> _JSON_OBJECT:
+    """
+    Build and validate the Java/Rust smoke contract.
+
+    :param mode: ``"java-smoke"``, ``"rust-smoke"`` or
+        ``"java-rust-smoke"``.
+    :type mode: str
+    :param repo_root: Repository root path, defaults to the current directory.
+    :type repo_root: Union[str, pathlib.Path], optional
+    :param mapping_path: Render-mapping snapshot path checked against live
+        drift, defaults to the committed R0 snapshot.
+    :type mapping_path: Union[str, pathlib.Path], optional
+    :param work_dir: Optional directory for temporary compile artifacts.
+    :type work_dir: Optional[Union[str, pathlib.Path]], optional
+    :param timeout: Per-command timeout in seconds, defaults to ``10``.
+    :type timeout: int, optional
+    :return: Check result with ``ok``, ``errors`` and snapshot enforcement
+        fields.
+    :rtype: Dict[str, Any]
+    :raises ValueError: If ``mode`` is not a Java/Rust smoke mode.
+
+    Example::
+
+        >>> result = check_java_rust_smoke('java-smoke', '.')
+        >>> isinstance(result['ok'], bool)
+        True
+    """
+    if mode not in _JAVA_RUST_MODES:
+        raise ValueError("Unsupported Java/Rust smoke mode: %s" % mode)
+    root = _as_repo_path(repo_root)
+    live = build_java_rust_smoke_report(
+        mode, root, mapping_path=mapping_path, work_dir=work_dir, timeout=timeout
+    )
+    errors = [
+        "live smoke: %s" % error
+        for error in validate_java_rust_smoke(live, expected_mode=mode)
+    ]
+    live_mapping = build_render_mapping(root)
+    live_mapping_sha = live_mapping.get("mapping_sha256")
+    if live_mapping_sha != live.get("source_mapping_sha256"):
+        errors.append(
+            "render_mapping snapshot drift: snapshot %r does not match live %r"
+            % (live.get("source_mapping_sha256"), live_mapping_sha)
+        )
+    schema = None
+    schema_path = root / _JAVA_RUST_SMOKE_SCHEMA
+    try:
+        schema = _read_json(schema_path)
+    except (OSError, json.JSONDecodeError, ValueError) as err:
+        # OSError: schema cannot be read; JSONDecodeError: invalid JSON;
+        # ValueError: top-level schema JSON is not an object.
+        errors.append("schema cannot be loaded: %s" % err)
+    if schema is not None:
+        errors.extend(
+            "live schema: %s" % error
+            for error in _validate_payload_with_schema(live, schema)
+        )
+
+    snapshot_path = root / _JAVA_RUST_SMOKE_SNAPSHOT
+    snapshot_present = snapshot_path.is_file()
+    if mode == "java-rust-smoke":
+        if not snapshot_present:
+            errors.append("expected snapshot is missing: %s" % snapshot_path)
+        else:
+            snapshot_sidecar = root / _JAVA_RUST_SMOKE_SNAPSHOT_SHA256
+            if not snapshot_sidecar.is_file():
+                errors.append(
+                    "expected snapshot sha256 sidecar is missing: %s" % snapshot_sidecar
+                )
+            else:
+                try:
+                    expected_snapshot_sha = _read_sha256_sidecar(snapshot_sidecar)
+                    actual_snapshot_sha = _text_file_sha256(snapshot_path)
+                except (OSError, UnicodeDecodeError, ValueError) as err:
+                    # OSError: snapshot or sidecar cannot be read;
+                    # UnicodeDecodeError: committed text is not valid UTF-8;
+                    # ValueError: sidecar content is not a sha256 digest.
+                    errors.append("snapshot sha256 cannot be verified: %s" % err)
+                else:
+                    if actual_snapshot_sha != expected_snapshot_sha:
+                        errors.append(
+                            "snapshot sha256 %r does not match sidecar %r"
+                            % (actual_snapshot_sha, expected_snapshot_sha)
+                        )
+            try:
+                snapshot = _read_json(snapshot_path)
+            except (OSError, json.JSONDecodeError, ValueError) as err:
+                # OSError: snapshot cannot be read; JSONDecodeError: invalid
+                # JSON; ValueError: top-level JSON is not an object.
+                errors.append("snapshot cannot be loaded: %s" % err)
+            else:
+                errors.extend(
+                    "snapshot: %s" % error
+                    for error in validate_java_rust_smoke(
+                        snapshot, expected_mode="java-rust-smoke"
+                    )
+                )
+                if schema is not None:
+                    errors.extend(
+                        "snapshot schema: %s" % error
+                        for error in _validate_payload_with_schema(snapshot, schema)
+                    )
+                if snapshot.get("source_mapping_sha256") != live.get(
+                    "source_mapping_sha256"
+                ):
+                    errors.append(
+                        "snapshot source_mapping_sha256 %r does not match live %r"
+                        % (
+                            snapshot.get("source_mapping_sha256"),
+                            live.get("source_mapping_sha256"),
+                        )
+                    )
+    return {
+        "ok": not errors,
+        "errors": errors,
+        "schema_version": live["schema_version"],
+        "source_mapping_sha256": live["source_mapping_sha256"],
+        "snapshot_present": snapshot_present,
+        "snapshot_enforced": mode == "java-rust-smoke",
+        "snapshot_path": _JAVA_RUST_SMOKE_SNAPSHOT,
+        "mode": mode,
     }
 
 
@@ -5522,11 +8697,15 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             "c-smoke",
             "cpp-smoke",
             "python-z3-baseline",
+            "java-smoke",
+            "rust-smoke",
+            "java-rust-smoke",
             "c-cpp-z3-alignment",
         ],
         help=(
             "Probe mode. Current modes are 'env', 'c-smoke', 'cpp-smoke', "
-            "'python-z3-baseline', and 'c-cpp-z3-alignment'; later research "
+            "'python-z3-baseline', 'java-smoke', 'rust-smoke', "
+            "'java-rust-smoke' and 'c-cpp-z3-alignment'; later research "
             "PRs should append modes here without replacing existing ones."
         ),
     )
@@ -5607,8 +8786,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.mode == "env":
         if args.check:
             parser.error(
-                "--check is supported only for python-z3-baseline and "
-                "c-cpp-z3-alignment"
+                "--check is supported for python-z3-baseline, java-smoke, "
+                "rust-smoke, java-rust-smoke and c-cpp-z3-alignment"
             )
         report = build_environment_report(args.repo_root)
         _write_or_print(report, args.output)
@@ -5617,8 +8796,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.mode in {"c-smoke", "cpp-smoke"}:
         if args.check:
             parser.error(
-                "--check is supported only for python-z3-baseline and "
-                "c-cpp-z3-alignment"
+                "--check is supported for python-z3-baseline, java-smoke, "
+                "rust-smoke, java-rust-smoke and c-cpp-z3-alignment"
             )
         report = build_c_family_smoke_report(
             args.mode,
@@ -5637,6 +8816,27 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 0 if result["ok"] else 1
         report = build_python_z3_baseline(args.repo_root, mapping_path=args.mapping)
         _write_or_print(report, args.output)
+        return 0
+
+    if args.mode in _JAVA_RUST_MODES:
+        if args.check:
+            result = check_java_rust_smoke(
+                args.mode,
+                args.repo_root,
+                mapping_path=args.mapping,
+                work_dir=args.work_dir,
+                timeout=args.timeout,
+            )
+            _write_or_print(result, args.output)
+            return 0 if result.get("ok") else 1
+        payload = build_java_rust_smoke_report(
+            args.mode,
+            args.repo_root,
+            mapping_path=args.mapping,
+            work_dir=args.work_dir,
+            timeout=args.timeout,
+        )
+        _write_or_print(payload, args.output)
         return 0
 
     if args.mode == "c-cpp-z3-alignment":

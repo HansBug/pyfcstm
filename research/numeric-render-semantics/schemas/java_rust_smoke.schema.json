@@ -1,0 +1,4384 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HansBug/pyfcstm/research/numeric-render-semantics/schemas/java_rust_smoke.schema.json",
+  "title": "Java and Rust numeric smoke summary",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "mode",
+    "language",
+    "source_mapping_sha256",
+    "render_mapping_sha256",
+    "summary_status",
+    "generator",
+    "repository",
+    "toolchain",
+    "official_source_notes",
+    "cases"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "mode": {
+      "enum": [
+        "java-smoke",
+        "rust-smoke",
+        "java-rust-smoke"
+      ]
+    },
+    "language": {
+      "enum": [
+        "java",
+        "rust",
+        "java-rust"
+      ]
+    },
+    "source_mapping_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "render_mapping_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "summary_status": {
+      "enum": [
+        "passed",
+        "unavailable",
+        "completed_with_findings",
+        "completed",
+        "skipped",
+        "invalid"
+      ]
+    },
+    "generator": {
+      "type": "object",
+      "required": [
+        "tool",
+        "research_path",
+        "source_commit",
+        "source_commit_policy",
+        "determinism"
+      ],
+      "properties": {
+        "tool": {
+          "type": "string"
+        },
+        "research_path": {
+          "type": "string"
+        },
+        "source_commit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "source_commit_policy": {
+          "type": "string"
+        },
+        "determinism": {
+          "type": "string"
+        }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "required": [
+        "root",
+        "render_mapping_snapshot",
+        "schema_path"
+      ]
+    },
+    "toolchain": {
+      "type": "object",
+      "properties": {
+        "java": {
+          "type": "object",
+          "properties": {
+            "java": {
+              "type": "object",
+              "required": [
+                "available"
+              ],
+              "properties": {
+                "available": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        },
+        "rust": {
+          "type": "object",
+          "properties": {
+            "rustc": {
+              "type": "object",
+              "required": [
+                "available"
+              ],
+              "properties": {
+                "available": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "render_paths": {
+      "type": "array"
+    },
+    "official_source_notes": {
+      "type": [
+        "array",
+        "object"
+      ]
+    },
+    "languages": {
+      "type": "object",
+      "required": [
+        "java",
+        "rust"
+      ],
+      "properties": {
+        "java": {
+          "$ref": "#/$defs/java_payload"
+        },
+        "rust": {
+          "$ref": "#/$defs/rust_payload"
+        }
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/native_case"
+      }
+    },
+    "validation_errors": {
+      "type": "array"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "const": "java-smoke"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "language",
+          "toolchain"
+        ],
+        "properties": {
+          "language": {
+            "const": "java"
+          },
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "java"
+            ],
+            "properties": {
+              "java": {
+                "type": "object",
+                "required": [
+                  "java"
+                ],
+                "properties": {
+                  "java": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "const": "rust-smoke"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "language",
+          "toolchain"
+        ],
+        "properties": {
+          "language": {
+            "const": "rust"
+          },
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "rust"
+            ],
+            "properties": {
+              "rust": {
+                "type": "object",
+                "required": [
+                  "rustc"
+                ],
+                "properties": {
+                  "rustc": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "const": "java-rust-smoke"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "language",
+          "languages",
+          "toolchain"
+        ],
+        "properties": {
+          "language": {
+            "const": "java-rust"
+          },
+          "languages": {
+            "type": "object",
+            "required": [
+              "java",
+              "rust"
+            ]
+          },
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "java",
+              "rust"
+            ],
+            "properties": {
+              "java": {
+                "type": "object",
+                "required": [
+                  "java"
+                ],
+                "properties": {
+                  "java": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              },
+              "rust": {
+                "type": "object",
+                "required": [
+                  "rustc"
+                ],
+                "properties": {
+                  "rustc": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "Committed rust-unavailable snapshot shape",
+      "if": {
+        "required": [
+          "toolchain"
+        ],
+        "properties": {
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "rust"
+            ],
+            "properties": {
+              "rust": {
+                "type": "object",
+                "required": [
+                  "rustc"
+                ],
+                "properties": {
+                  "rustc": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "cases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/rust_unavailable_case_guard"
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "Aggregate Java available metadata consistency guard",
+      "if": {
+        "required": [
+          "toolchain",
+          "languages"
+        ],
+        "properties": {
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "java"
+            ],
+            "properties": {
+              "java": {
+                "type": "object",
+                "required": [
+                  "java"
+                ],
+                "properties": {
+                  "java": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "languages"
+        ],
+        "properties": {
+          "languages": {
+            "type": "object",
+            "required": [
+              "java"
+            ],
+            "properties": {
+              "java": {
+                "type": "object",
+                "required": [
+                  "toolchain"
+                ],
+                "properties": {
+                  "toolchain": {
+                    "type": "object",
+                    "required": [
+                      "java"
+                    ],
+                    "properties": {
+                      "java": {
+                        "type": "object",
+                        "required": [
+                          "java"
+                        ],
+                        "properties": {
+                          "java": {
+                            "type": "object",
+                            "required": [
+                              "available"
+                            ],
+                            "properties": {
+                              "available": {
+                                "const": true
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "Aggregate Java unavailable metadata consistency guard",
+      "if": {
+        "required": [
+          "toolchain",
+          "languages"
+        ],
+        "properties": {
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "java"
+            ],
+            "properties": {
+              "java": {
+                "type": "object",
+                "required": [
+                  "java"
+                ],
+                "properties": {
+                  "java": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "languages"
+        ],
+        "properties": {
+          "languages": {
+            "type": "object",
+            "required": [
+              "java"
+            ],
+            "properties": {
+              "java": {
+                "type": "object",
+                "required": [
+                  "toolchain"
+                ],
+                "properties": {
+                  "toolchain": {
+                    "type": "object",
+                    "required": [
+                      "java"
+                    ],
+                    "properties": {
+                      "java": {
+                        "type": "object",
+                        "required": [
+                          "java"
+                        ],
+                        "properties": {
+                          "java": {
+                            "type": "object",
+                            "required": [
+                              "available"
+                            ],
+                            "properties": {
+                              "available": {
+                                "const": false
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "Aggregate Rust available metadata consistency guard",
+      "if": {
+        "required": [
+          "toolchain",
+          "languages"
+        ],
+        "properties": {
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "rust"
+            ],
+            "properties": {
+              "rust": {
+                "type": "object",
+                "required": [
+                  "rustc"
+                ],
+                "properties": {
+                  "rustc": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "languages"
+        ],
+        "properties": {
+          "languages": {
+            "type": "object",
+            "required": [
+              "rust"
+            ],
+            "properties": {
+              "rust": {
+                "type": "object",
+                "required": [
+                  "toolchain"
+                ],
+                "properties": {
+                  "toolchain": {
+                    "type": "object",
+                    "required": [
+                      "rust"
+                    ],
+                    "properties": {
+                      "rust": {
+                        "type": "object",
+                        "required": [
+                          "rustc"
+                        ],
+                        "properties": {
+                          "rustc": {
+                            "type": "object",
+                            "required": [
+                              "available"
+                            ],
+                            "properties": {
+                              "available": {
+                                "const": true
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "Aggregate Rust unavailable metadata consistency guard",
+      "if": {
+        "required": [
+          "toolchain",
+          "languages"
+        ],
+        "properties": {
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "rust"
+            ],
+            "properties": {
+              "rust": {
+                "type": "object",
+                "required": [
+                  "rustc"
+                ],
+                "properties": {
+                  "rustc": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "languages"
+        ],
+        "properties": {
+          "languages": {
+            "type": "object",
+            "required": [
+              "rust"
+            ],
+            "properties": {
+              "rust": {
+                "type": "object",
+                "required": [
+                  "toolchain"
+                ],
+                "properties": {
+                  "toolchain": {
+                    "type": "object",
+                    "required": [
+                      "rust"
+                    ],
+                    "properties": {
+                      "rust": {
+                        "type": "object",
+                        "required": [
+                          "rustc"
+                        ],
+                        "properties": {
+                          "rustc": {
+                            "type": "object",
+                            "required": [
+                              "available"
+                            ],
+                            "properties": {
+                              "available": {
+                                "const": false
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "Java unavailable aggregate case outcome guard",
+      "if": {
+        "required": [
+          "toolchain"
+        ],
+        "properties": {
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "java"
+            ],
+            "properties": {
+              "java": {
+                "type": "object",
+                "required": [
+                  "java"
+                ],
+                "properties": {
+                  "java": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/java_unavailable_payload_guard"
+      }
+    },
+    {
+      "description": "Java available aggregate case outcome guard",
+      "if": {
+        "required": [
+          "toolchain"
+        ],
+        "properties": {
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "java"
+            ],
+            "properties": {
+              "java": {
+                "type": "object",
+                "required": [
+                  "java"
+                ],
+                "properties": {
+                  "java": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/java_available_payload_guard"
+      }
+    },
+    {
+      "description": "Aggregate Rust unavailable case outcome guard",
+      "if": {
+        "required": [
+          "toolchain"
+        ],
+        "properties": {
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "rust"
+            ],
+            "properties": {
+              "rust": {
+                "type": "object",
+                "required": [
+                  "rustc"
+                ],
+                "properties": {
+                  "rustc": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/rust_unavailable_payload_guard"
+      }
+    },
+    {
+      "description": "Rust available aggregate case outcome guard",
+      "if": {
+        "required": [
+          "toolchain"
+        ],
+        "properties": {
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "rust"
+            ],
+            "properties": {
+              "rust": {
+                "type": "object",
+                "required": [
+                  "rustc"
+                ],
+                "properties": {
+                  "rustc": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/rust_available_payload_guard"
+      }
+    }
+  ],
+  "$defs": {
+    "single_language_payload": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "mode",
+        "language",
+        "source_mapping_sha256",
+        "render_mapping_sha256",
+        "summary_status",
+        "generator",
+        "repository",
+        "toolchain",
+        "render_paths",
+        "official_source_notes",
+        "cases"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "source_mapping_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "render_mapping_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "summary_status": {
+          "enum": [
+            "passed",
+            "unavailable",
+            "completed_with_findings",
+            "completed",
+            "skipped",
+            "invalid"
+          ]
+        },
+        "generator": {
+          "type": "object",
+          "required": [
+            "tool",
+            "research_path",
+            "source_commit",
+            "source_commit_policy",
+            "determinism"
+          ],
+          "properties": {
+            "tool": {
+              "type": "string"
+            },
+            "research_path": {
+              "type": "string"
+            },
+            "source_commit": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "source_commit_policy": {
+              "type": "string"
+            },
+            "determinism": {
+              "type": "string"
+            }
+          }
+        },
+        "repository": {
+          "type": "object",
+          "required": [
+            "root",
+            "render_mapping_snapshot",
+            "schema_path"
+          ]
+        },
+        "toolchain": {
+          "type": "object"
+        },
+        "render_paths": {
+          "type": "array",
+          "minItems": 1
+        },
+        "official_source_notes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "source",
+              "summary",
+              "url"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "summary": {
+                "type": "string",
+                "minLength": 1
+              },
+              "url": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/native_case"
+          }
+        }
+      }
+    },
+    "java_payload": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/single_language_payload"
+        },
+        {
+          "type": "object",
+          "required": [
+            "mode",
+            "language",
+            "cases"
+          ],
+          "properties": {
+            "mode": {
+              "const": "java-smoke"
+            },
+            "language": {
+              "const": "java"
+            },
+            "cases": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/java_case"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "toolchain"
+            ],
+            "properties": {
+              "toolchain": {
+                "type": "object",
+                "required": [
+                  "java"
+                ],
+                "properties": {
+                  "java": {
+                    "type": "object",
+                    "required": [
+                      "java"
+                    ],
+                    "properties": {
+                      "java": {
+                        "type": "object",
+                        "required": [
+                          "available"
+                        ],
+                        "properties": {
+                          "available": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "description": "Java unavailable payload case outcomes",
+          "if": {
+            "required": [
+              "toolchain"
+            ],
+            "properties": {
+              "toolchain": {
+                "type": "object",
+                "required": [
+                  "java"
+                ],
+                "properties": {
+                  "java": {
+                    "type": "object",
+                    "required": [
+                      "java"
+                    ],
+                    "properties": {
+                      "java": {
+                        "type": "object",
+                        "required": [
+                          "available"
+                        ],
+                        "properties": {
+                          "available": {
+                            "const": false
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/java_unavailable_payload_guard"
+          }
+        },
+        {
+          "description": "Java available payload case outcomes",
+          "if": {
+            "required": [
+              "toolchain"
+            ],
+            "properties": {
+              "toolchain": {
+                "type": "object",
+                "required": [
+                  "java"
+                ],
+                "properties": {
+                  "java": {
+                    "type": "object",
+                    "required": [
+                      "java"
+                    ],
+                    "properties": {
+                      "java": {
+                        "type": "object",
+                        "required": [
+                          "available"
+                        ],
+                        "properties": {
+                          "available": {
+                            "const": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/java_available_payload_guard"
+          }
+        }
+      ]
+    },
+    "rust_payload": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/single_language_payload"
+        },
+        {
+          "type": "object",
+          "required": [
+            "mode",
+            "language",
+            "cases"
+          ],
+          "properties": {
+            "mode": {
+              "const": "rust-smoke"
+            },
+            "language": {
+              "const": "rust"
+            },
+            "cases": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/rust_case"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "toolchain"
+            ],
+            "properties": {
+              "toolchain": {
+                "type": "object",
+                "required": [
+                  "rust"
+                ],
+                "properties": {
+                  "rust": {
+                    "type": "object",
+                    "required": [
+                      "rustc"
+                    ],
+                    "properties": {
+                      "rustc": {
+                        "type": "object",
+                        "required": [
+                          "available"
+                        ],
+                        "properties": {
+                          "available": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "description": "Rust unavailable payload case shape",
+          "if": {
+            "required": [
+              "toolchain"
+            ],
+            "properties": {
+              "toolchain": {
+                "type": "object",
+                "required": [
+                  "rust"
+                ],
+                "properties": {
+                  "rust": {
+                    "type": "object",
+                    "required": [
+                      "rustc"
+                    ],
+                    "properties": {
+                      "rustc": {
+                        "type": "object",
+                        "required": [
+                          "available"
+                        ],
+                        "properties": {
+                          "available": {
+                            "const": false
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "cases": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/rust_unavailable_case_guard"
+                }
+              }
+            }
+          }
+        },
+        {
+          "description": "Rust available payload case outcomes",
+          "if": {
+            "required": [
+              "toolchain"
+            ],
+            "properties": {
+              "toolchain": {
+                "type": "object",
+                "required": [
+                  "rust"
+                ],
+                "properties": {
+                  "rust": {
+                    "type": "object",
+                    "required": [
+                      "rustc"
+                    ],
+                    "properties": {
+                      "rustc": {
+                        "type": "object",
+                        "required": [
+                          "available"
+                        ],
+                        "properties": {
+                          "available": {
+                            "const": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/rust_available_payload_guard"
+          }
+        }
+      ]
+    },
+    "java_case": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/native_case"
+        },
+        {
+          "properties": {
+            "language": {
+              "const": "java"
+            },
+            "render_path": {
+              "const": "native_java"
+            }
+          },
+          "required": [
+            "language",
+            "render_path"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "rust_case": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/native_case"
+        },
+        {
+          "properties": {
+            "language": {
+              "const": "rust"
+            },
+            "render_path": {
+              "const": "native_rust"
+            }
+          },
+          "required": [
+            "language",
+            "render_path"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "native_case": {
+      "type": "object",
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "language"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "render_path"
+            ],
+            "properties": {
+              "render_path": {
+                "const": "native_java"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "render_path"
+            ],
+            "properties": {
+              "render_path": {
+                "const": "native_rust"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "const": "passed"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "outcome",
+              "reason",
+              "commands"
+            ],
+            "properties": {
+              "outcome": {
+                "const": "observed"
+              },
+              "reason": {
+                "type": "null"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "const": "runtime_failed"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "outcome",
+              "reason",
+              "commands"
+            ],
+            "properties": {
+              "outcome": {
+                "const": "runtime_trap"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "const": "compile_failed"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "outcome",
+              "reason",
+              "commands"
+            ],
+            "properties": {
+              "outcome": {
+                "const": "compile_failed"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              },
+              "commands": {
+                "type": "object",
+                "minProperties": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "const": "unavailable"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "outcome",
+              "reason",
+              "commands"
+            ],
+            "properties": {
+              "outcome": {
+                "const": "unavailable"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              },
+              "commands": {
+                "type": "object",
+                "maxProperties": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "const": "skipped"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "outcome"
+            ],
+            "properties": {
+              "outcome": {
+                "const": "unavailable"
+              }
+            }
+          }
+        }
+      ],
+      "required": [
+        "case_id",
+        "semantic_case_id",
+        "language",
+        "profile",
+        "operator",
+        "fcstm_expression",
+        "render_path",
+        "render_expression",
+        "native_api_family",
+        "native_only",
+        "native_only_reason",
+        "inputs",
+        "source_note_ids",
+        "status",
+        "outcome",
+        "reason",
+        "commands"
+      ],
+      "properties": {
+        "case_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "semantic_case_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "language": {
+          "enum": [
+            "java",
+            "rust"
+          ]
+        },
+        "profile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fcstm_expression": {
+          "type": "string",
+          "minLength": 1
+        },
+        "render_path": {
+          "type": "string",
+          "minLength": 1,
+          "enum": [
+            "native_java",
+            "native_rust"
+          ]
+        },
+        "render_expression": {
+          "type": "string",
+          "minLength": 1
+        },
+        "native_api_family": {
+          "enum": [
+            "plain-int32",
+            "plain-i32",
+            "checked-exact",
+            "narrowing-cast",
+            "cast",
+            "math-floating",
+            "renderer-fallback",
+            "wrapping",
+            "checked",
+            "overflowing",
+            "saturating"
+          ]
+        },
+        "native_only": {
+          "const": true
+        },
+        "native_only_reason": {
+          "const": "no_java_or_rust_template_in_current_repository"
+        },
+        "inputs": {
+          "type": "object",
+          "required": [
+            "A",
+            "B"
+          ],
+          "properties": {
+            "A": {
+              "type": "number"
+            },
+            "B": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": false
+        },
+        "source_note_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "compile_failed",
+            "runtime_failed",
+            "skipped",
+            "unavailable",
+            "unknown"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "observed",
+            "compile_failed",
+            "runtime_trap",
+            "unavailable",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commands": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/command_result"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "command_result": {
+      "type": "object",
+      "required": [
+        "args",
+        "returncode",
+        "stdout",
+        "stderr",
+        "timed_out",
+        "duration_seconds",
+        "start_error"
+      ],
+      "properties": {
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "returncode": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "timed_out": {
+          "type": "boolean"
+        },
+        "duration_seconds": {
+          "type": [
+            "number",
+            "string"
+          ]
+        },
+        "start_error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "rust_unavailable_case_guard": {
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "language"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "status",
+              "outcome",
+              "reason",
+              "commands"
+            ],
+            "properties": {
+              "status": {
+                "const": "unavailable"
+              },
+              "outcome": {
+                "const": "unavailable"
+              },
+              "reason": {
+                "const": "rustc_unavailable"
+              },
+              "commands": {
+                "type": "object",
+                "maxProperties": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "rust_available_payload_guard": {
+      "type": "object",
+      "required": [
+        "cases"
+      ],
+      "properties": {
+        "cases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rust_available_case_guard"
+          }
+        }
+      }
+    },
+    "rust_available_case_guard": {
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "enum": [
+                  "cast_i32_to_i8",
+                  "checked_add_overflow",
+                  "overflowing_add_overflow",
+                  "plain_i32_bitwise_and",
+                  "plain_i32_division",
+                  "plain_i32_remainder",
+                  "powf_promotes_f64",
+                  "round_cast_i64",
+                  "saturating_add_overflow",
+                  "wrapping_add_overflow"
+                ]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/passed_case_guard"
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "plain_i32_division_by_zero"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/runtime_failed_case_guard"
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "float_sign_renderer_missing"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/compile_failed_case_guard"
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "profile",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "profile": {
+                "enum": [
+                  "debug",
+                  "overflow-checks-on"
+                ]
+              },
+              "semantic_case_id": {
+                "enum": [
+                  "plain_i32_add_overflow",
+                  "plain_i32_shift_invalid",
+                  "plain_i32_unary_minus_min"
+                ]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/runtime_failed_case_guard"
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "profile",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "profile": {
+                "enum": [
+                  "release",
+                  "overflow-checks-off"
+                ]
+              },
+              "semantic_case_id": {
+                "enum": [
+                  "plain_i32_add_overflow",
+                  "plain_i32_shift_invalid",
+                  "plain_i32_unary_minus_min"
+                ]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/passed_case_guard"
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "cast_i32_to_i8"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=-128"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=-128\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "checked_add_overflow"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=None"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=None\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "overflowing_add_overflow"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=(-2147483648, true)"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=(-2147483648, true)\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "plain_i32_bitwise_and"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=8"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=8\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "plain_i32_division"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=-3"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=-3\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "plain_i32_remainder"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=-1"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=-1\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "powf_promotes_f64"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=9.0"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=9.0\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "round_cast_i64"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=-2"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=-2\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "saturating_add_overflow"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=2147483647"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=2147483647\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "wrapping_add_overflow"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=-2147483648"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=-2147483648\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id",
+              "profile"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "plain_i32_add_overflow"
+              },
+              "profile": {
+                "enum": [
+                  "release",
+                  "overflow-checks-off"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=-2147483648"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=-2147483648\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id",
+              "profile"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "plain_i32_shift_invalid"
+              },
+              "profile": {
+                "enum": [
+                  "release",
+                  "overflow-checks-off"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=1"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=1\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id",
+              "profile"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "plain_i32_unary_minus_min"
+              },
+              "profile": {
+                "enum": [
+                  "release",
+                  "overflow-checks-off"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=-2147483648"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=-2147483648\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id",
+              "status"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "plain_i32_add_overflow"
+              },
+              "status": {
+                "const": "runtime_failed"
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "stderr"
+                ],
+                "properties": {
+                  "stderr": {
+                    "pattern": "overflow"
+                  }
+                }
+              },
+              {
+                "required": [
+                  "commands"
+                ],
+                "properties": {
+                  "commands": {
+                    "required": [
+                      "run"
+                    ],
+                    "properties": {
+                      "run": {
+                        "required": [
+                          "stderr"
+                        ],
+                        "properties": {
+                          "stderr": {
+                            "pattern": "overflow"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "commands"
+                ],
+                "properties": {
+                  "commands": {
+                    "required": [
+                      "run"
+                    ],
+                    "properties": {
+                      "run": {
+                        "required": [
+                          "stdout"
+                        ],
+                        "properties": {
+                          "stdout": {
+                            "pattern": "overflow"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id",
+              "status"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "plain_i32_division_by_zero"
+              },
+              "status": {
+                "const": "runtime_failed"
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "stderr"
+                ],
+                "properties": {
+                  "stderr": {
+                    "pattern": "divide by zero"
+                  }
+                }
+              },
+              {
+                "required": [
+                  "commands"
+                ],
+                "properties": {
+                  "commands": {
+                    "required": [
+                      "run"
+                    ],
+                    "properties": {
+                      "run": {
+                        "required": [
+                          "stderr"
+                        ],
+                        "properties": {
+                          "stderr": {
+                            "pattern": "divide by zero"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "commands"
+                ],
+                "properties": {
+                  "commands": {
+                    "required": [
+                      "run"
+                    ],
+                    "properties": {
+                      "run": {
+                        "required": [
+                          "stdout"
+                        ],
+                        "properties": {
+                          "stdout": {
+                            "pattern": "divide by zero"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id",
+              "status"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "plain_i32_shift_invalid"
+              },
+              "status": {
+                "const": "runtime_failed"
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "stderr"
+                ],
+                "properties": {
+                  "stderr": {
+                    "pattern": "shift"
+                  }
+                }
+              },
+              {
+                "required": [
+                  "commands"
+                ],
+                "properties": {
+                  "commands": {
+                    "required": [
+                      "run"
+                    ],
+                    "properties": {
+                      "run": {
+                        "required": [
+                          "stderr"
+                        ],
+                        "properties": {
+                          "stderr": {
+                            "pattern": "shift"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "commands"
+                ],
+                "properties": {
+                  "commands": {
+                    "required": [
+                      "run"
+                    ],
+                    "properties": {
+                      "run": {
+                        "required": [
+                          "stdout"
+                        ],
+                        "properties": {
+                          "stdout": {
+                            "pattern": "shift"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id",
+              "status"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "plain_i32_unary_minus_min"
+              },
+              "status": {
+                "const": "runtime_failed"
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "stderr"
+                ],
+                "properties": {
+                  "stderr": {
+                    "pattern": "overflow"
+                  }
+                }
+              },
+              {
+                "required": [
+                  "commands"
+                ],
+                "properties": {
+                  "commands": {
+                    "required": [
+                      "run"
+                    ],
+                    "properties": {
+                      "run": {
+                        "required": [
+                          "stderr"
+                        ],
+                        "properties": {
+                          "stderr": {
+                            "pattern": "overflow"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "commands"
+                ],
+                "properties": {
+                  "commands": {
+                    "required": [
+                      "run"
+                    ],
+                    "properties": {
+                      "run": {
+                        "required": [
+                          "stdout"
+                        ],
+                        "properties": {
+                          "stdout": {
+                            "pattern": "overflow"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "float_sign_renderer_missing"
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "stderr"
+                ],
+                "properties": {
+                  "stderr": {
+                    "pattern": "sign"
+                  }
+                }
+              },
+              {
+                "required": [
+                  "commands"
+                ],
+                "properties": {
+                  "commands": {
+                    "required": [
+                      "compile"
+                    ],
+                    "properties": {
+                      "compile": {
+                        "required": [
+                          "stderr"
+                        ],
+                        "properties": {
+                          "stderr": {
+                            "pattern": "sign"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "passed_case_guard": {
+      "required": [
+        "status",
+        "outcome",
+        "reason",
+        "commands"
+      ],
+      "properties": {
+        "status": {
+          "const": "passed"
+        },
+        "outcome": {
+          "const": "observed"
+        },
+        "reason": {
+          "type": "null"
+        },
+        "commands": {
+          "type": "object",
+          "required": [
+            "compile",
+            "run"
+          ],
+          "properties": {
+            "compile": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/succeeded_command_guard"
+                },
+                {
+                  "properties": {
+                    "args": {
+                      "$ref": "#/$defs/rust_compile_args"
+                    }
+                  }
+                }
+              ]
+            },
+            "run": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/succeeded_command_guard"
+                },
+                {
+                  "properties": {
+                    "args": {
+                      "$ref": "#/$defs/rust_run_args"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "runtime_failed_case_guard": {
+      "required": [
+        "status",
+        "outcome",
+        "reason",
+        "commands"
+      ],
+      "properties": {
+        "status": {
+          "const": "runtime_failed"
+        },
+        "outcome": {
+          "const": "runtime_trap"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commands": {
+          "type": "object",
+          "required": [
+            "compile",
+            "run"
+          ],
+          "properties": {
+            "compile": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/succeeded_command_guard"
+                },
+                {
+                  "properties": {
+                    "args": {
+                      "$ref": "#/$defs/rust_compile_args"
+                    }
+                  }
+                }
+              ]
+            },
+            "run": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/failed_command_guard"
+                },
+                {
+                  "properties": {
+                    "args": {
+                      "$ref": "#/$defs/rust_run_args"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "compile_failed_case_guard": {
+      "required": [
+        "status",
+        "outcome",
+        "reason",
+        "commands"
+      ],
+      "properties": {
+        "status": {
+          "const": "compile_failed"
+        },
+        "outcome": {
+          "const": "compile_failed"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commands": {
+          "type": "object",
+          "required": [
+            "compile"
+          ],
+          "properties": {
+            "compile": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/failed_command_guard"
+                },
+                {
+                  "properties": {
+                    "args": {
+                      "$ref": "#/$defs/rust_compile_args"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "not": {
+        "required": [
+          "commands"
+        ],
+        "properties": {
+          "commands": {
+            "required": [
+              "run"
+            ]
+          }
+        }
+      }
+    },
+    "succeeded_command_guard": {
+      "required": [
+        "returncode",
+        "timed_out",
+        "start_error"
+      ],
+      "properties": {
+        "returncode": {
+          "const": 0
+        },
+        "timed_out": {
+          "const": false
+        },
+        "start_error": {
+          "type": "null"
+        }
+      }
+    },
+    "failed_command_guard": {
+      "required": [
+        "returncode"
+      ],
+      "properties": {
+        "returncode": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "not": {
+        "$ref": "#/$defs/succeeded_command_guard"
+      }
+    },
+    "rust_unavailable_payload_guard": {
+      "type": "object",
+      "required": [
+        "cases"
+      ],
+      "properties": {
+        "cases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rust_unavailable_case_guard"
+          }
+        }
+      }
+    },
+    "java_available_payload_guard": {
+      "type": "object",
+      "required": [
+        "cases"
+      ],
+      "properties": {
+        "cases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/java_available_case_guard"
+          }
+        }
+      }
+    },
+    "java_available_case_guard": {
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "enum": [
+                  "bitwise_and_mask",
+                  "int_add_overflow_wrap",
+                  "int_division_truncates",
+                  "int_remainder_dividend_sign",
+                  "math_pow_promotes_double",
+                  "math_round_half_up",
+                  "narrowing_int_to_byte",
+                  "shift_count_masking",
+                  "unary_minus_min_wrap"
+                ]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/java_passed_case_guard"
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "enum": [
+                  "division_by_zero_exception",
+                  "math_add_exact_overflow",
+                  "math_multiply_exact_overflow"
+                ]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/java_runtime_failed_case_guard"
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "const": "math_sign_missing"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/java_compile_failed_case_guard"
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "const": "bitwise_and_mask"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=8"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=8\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "const": "division_by_zero_exception"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "EXCEPTION=java.lang.ArithmeticException:/ by zero"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "EXCEPTION=java.lang.ArithmeticException:/ by zero\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "const": "int_add_overflow_wrap"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=-2147483648"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=-2147483648\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "const": "int_division_truncates"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=-3"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=-3\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "const": "int_remainder_dividend_sign"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=-1"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=-1\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "const": "math_add_exact_overflow"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "EXCEPTION=java.lang.ArithmeticException:integer overflow"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "EXCEPTION=java.lang.ArithmeticException:integer overflow\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "const": "math_multiply_exact_overflow"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "EXCEPTION=java.lang.ArithmeticException:integer overflow"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "EXCEPTION=java.lang.ArithmeticException:integer overflow\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "const": "math_pow_promotes_double"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=9.0"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=9.0\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "const": "math_round_half_up"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=-2"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=-2\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "const": "narrowing_int_to_byte"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=-128"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=-128\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "const": "shift_count_masking"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=1"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=1\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "const": "unary_minus_min_wrap"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stdout",
+              "commands"
+            ],
+            "properties": {
+              "stdout": {
+                "const": "VALUE=-2147483648"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ],
+                "properties": {
+                  "run": {
+                    "required": [
+                      "stdout"
+                    ],
+                    "properties": {
+                      "stdout": {
+                        "const": "VALUE=-2147483648\n"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "const": "math_sign_missing"
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "stderr"
+                ],
+                "properties": {
+                  "stderr": {
+                    "pattern": "sign"
+                  }
+                }
+              },
+              {
+                "required": [
+                  "commands"
+                ],
+                "properties": {
+                  "commands": {
+                    "required": [
+                      "run"
+                    ],
+                    "properties": {
+                      "run": {
+                        "required": [
+                          "stderr"
+                        ],
+                        "properties": {
+                          "stderr": {
+                            "pattern": "sign"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "commands"
+                ],
+                "properties": {
+                  "commands": {
+                    "required": [
+                      "compile"
+                    ],
+                    "properties": {
+                      "compile": {
+                        "required": [
+                          "stderr"
+                        ],
+                        "properties": {
+                          "stderr": {
+                            "pattern": "sign"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "java_passed_case_guard": {
+      "required": [
+        "status",
+        "outcome",
+        "reason",
+        "commands"
+      ],
+      "properties": {
+        "status": {
+          "const": "passed"
+        },
+        "outcome": {
+          "const": "observed"
+        },
+        "reason": {
+          "type": "null"
+        },
+        "commands": {
+          "type": "object",
+          "required": [
+            "run"
+          ],
+          "properties": {
+            "compile": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/succeeded_command_guard"
+                },
+                {
+                  "properties": {
+                    "args": {
+                      "$ref": "#/$defs/java_compile_args"
+                    }
+                  }
+                }
+              ]
+            },
+            "run": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/succeeded_command_guard"
+                },
+                {
+                  "properties": {
+                    "args": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/java_source_launcher_args"
+                        },
+                        {
+                          "$ref": "#/$defs/java_classpath_run_args"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "java_runtime_failed_case_guard": {
+      "required": [
+        "status",
+        "outcome",
+        "reason",
+        "commands"
+      ],
+      "properties": {
+        "status": {
+          "const": "runtime_failed"
+        },
+        "outcome": {
+          "const": "runtime_trap"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commands": {
+          "type": "object",
+          "required": [
+            "run"
+          ],
+          "properties": {
+            "compile": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/succeeded_command_guard"
+                },
+                {
+                  "properties": {
+                    "args": {
+                      "$ref": "#/$defs/java_compile_args"
+                    }
+                  }
+                }
+              ]
+            },
+            "run": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/failed_command_guard"
+                },
+                {
+                  "properties": {
+                    "args": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/java_source_launcher_args"
+                        },
+                        {
+                          "$ref": "#/$defs/java_classpath_run_args"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "java_compile_failed_case_guard": {
+      "required": [
+        "status",
+        "outcome",
+        "reason",
+        "commands"
+      ],
+      "properties": {
+        "status": {
+          "const": "compile_failed"
+        },
+        "outcome": {
+          "const": "compile_failed"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commands": {
+          "type": "object",
+          "minProperties": 1,
+          "properties": {
+            "compile": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/failed_command_guard"
+                },
+                {
+                  "properties": {
+                    "args": {
+                      "$ref": "#/$defs/java_compile_args"
+                    }
+                  }
+                }
+              ]
+            },
+            "run": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/failed_command_guard"
+                },
+                {
+                  "properties": {
+                    "args": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/java_source_launcher_args"
+                        },
+                        {
+                          "$ref": "#/$defs/java_classpath_run_args"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "java_unavailable_payload_guard": {
+      "type": "object",
+      "required": [
+        "cases"
+      ],
+      "properties": {
+        "cases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/java_unavailable_case_guard"
+          }
+        }
+      }
+    },
+    "java_unavailable_case_guard": {
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "language"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "status",
+              "outcome",
+              "reason",
+              "commands"
+            ],
+            "properties": {
+              "status": {
+                "const": "unavailable"
+              },
+              "outcome": {
+                "const": "unavailable"
+              },
+              "reason": {
+                "const": "java_unavailable"
+              },
+              "commands": {
+                "type": "object",
+                "maxProperties": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "java_source_launcher_args": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "anyOf": [
+            {
+              "const": "<path>"
+            },
+            {
+              "pattern": "(^|.*[\\\\/])java(\\.exe)?$"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "const": "ProbeCase.java"
+            },
+            {
+              "pattern": "(^|.*[\\\\/])ProbeCase\\.java$"
+            }
+          ]
+        }
+      ]
+    },
+    "java_classpath_run_args": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        {
+          "anyOf": [
+            {
+              "const": "<path>"
+            },
+            {
+              "pattern": "(^|.*[\\\\/])java(\\.exe)?$"
+            }
+          ]
+        },
+        {
+          "const": "-cp"
+        },
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "const": "ProbeCase"
+        }
+      ]
+    },
+    "java_compile_args": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "anyOf": [
+            {
+              "const": "<path>"
+            },
+            {
+              "pattern": "(^|.*[\\\\/])javac(\\.exe)?$"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "const": "ProbeCase.java"
+            },
+            {
+              "pattern": "(^|.*[\\\\/])ProbeCase\\.java$"
+            }
+          ]
+        }
+      ]
+    },
+    "rust_run_args": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "prefixItems": [
+        {
+          "anyOf": [
+            {
+              "const": "<path>"
+            },
+            {
+              "pattern": "(^|.*[\\\\/])case(\\.exe)?$"
+            }
+          ]
+        }
+      ]
+    },
+    "rust_compile_args": {
+      "type": "array",
+      "anyOf": [
+        {
+          "minItems": 6,
+          "maxItems": 6,
+          "prefixItems": [
+            {
+              "anyOf": [
+                {
+                  "const": "<path>"
+                },
+                {
+                  "pattern": "(^|.*[\\\\/])rustc(\\.exe)?$"
+                }
+              ]
+            },
+            {
+              "anyOf": [
+                {
+                  "const": "<path>"
+                },
+                {
+                  "pattern": "(^|.*[\\\\/])case\\.rs$"
+                }
+              ]
+            },
+            {
+              "const": "-o"
+            },
+            {
+              "anyOf": [
+                {
+                  "const": "<path>"
+                },
+                {
+                  "pattern": "(^|.*[\\\\/])case(\\.exe)?$"
+                }
+              ]
+            },
+            {
+              "const": "-C"
+            },
+            {
+              "const": "opt-level=0"
+            }
+          ]
+        },
+        {
+          "minItems": 6,
+          "maxItems": 6,
+          "prefixItems": [
+            {
+              "anyOf": [
+                {
+                  "const": "<path>"
+                },
+                {
+                  "pattern": "(^|.*[\\\\/])rustc(\\.exe)?$"
+                }
+              ]
+            },
+            {
+              "anyOf": [
+                {
+                  "const": "<path>"
+                },
+                {
+                  "pattern": "(^|.*[\\\\/])case\\.rs$"
+                }
+              ]
+            },
+            {
+              "const": "-o"
+            },
+            {
+              "anyOf": [
+                {
+                  "const": "<path>"
+                },
+                {
+                  "pattern": "(^|.*[\\\\/])case(\\.exe)?$"
+                }
+              ]
+            },
+            {
+              "const": "-C"
+            },
+            {
+              "const": "opt-level=3"
+            }
+          ]
+        },
+        {
+          "minItems": 8,
+          "maxItems": 8,
+          "prefixItems": [
+            {
+              "anyOf": [
+                {
+                  "const": "<path>"
+                },
+                {
+                  "pattern": "(^|.*[\\\\/])rustc(\\.exe)?$"
+                }
+              ]
+            },
+            {
+              "anyOf": [
+                {
+                  "const": "<path>"
+                },
+                {
+                  "pattern": "(^|.*[\\\\/])case\\.rs$"
+                }
+              ]
+            },
+            {
+              "const": "-o"
+            },
+            {
+              "anyOf": [
+                {
+                  "const": "<path>"
+                },
+                {
+                  "pattern": "(^|.*[\\\\/])case(\\.exe)?$"
+                }
+              ]
+            },
+            {
+              "const": "-C"
+            },
+            {
+              "const": "opt-level=3"
+            },
+            {
+              "const": "-C"
+            },
+            {
+              "const": "overflow-checks=yes"
+            }
+          ]
+        },
+        {
+          "minItems": 8,
+          "maxItems": 8,
+          "prefixItems": [
+            {
+              "anyOf": [
+                {
+                  "const": "<path>"
+                },
+                {
+                  "pattern": "(^|.*[\\\\/])rustc(\\.exe)?$"
+                }
+              ]
+            },
+            {
+              "anyOf": [
+                {
+                  "const": "<path>"
+                },
+                {
+                  "pattern": "(^|.*[\\\\/])case\\.rs$"
+                }
+              ]
+            },
+            {
+              "const": "-o"
+            },
+            {
+              "anyOf": [
+                {
+                  "const": "<path>"
+                },
+                {
+                  "pattern": "(^|.*[\\\\/])case(\\.exe)?$"
+                }
+              ]
+            },
+            {
+              "const": "-C"
+            },
+            {
+              "const": "opt-level=0"
+            },
+            {
+              "const": "-C"
+            },
+            {
+              "const": "overflow-checks=no"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

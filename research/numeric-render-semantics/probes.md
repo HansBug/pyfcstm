@@ -1,6 +1,6 @@
 # Probe 设计说明
 
-`tools/numeric_render_probe.py env` 用于输出本地 Python、平台和可用命令清单；`c-smoke` / `cpp-smoke` 用于从 R0 `render_mapping.json` 读取 C-family 渲染路径并编译运行小型 smoke 程序；`python-z3-baseline` 用于从同一 R0 snapshot 记录 Python renderer / Python template / statement override 事实和 Z3 capability matrix；`c-cpp-z3-alignment` 用于生成和校验 C/C++ ↔ Z3 alignment contract。R0 mapping 的契约校验由 `tools/numeric_render_mapping.py --check` 承担。后续语言 smoke 和 exhaustive/shard runner 应继续追加到同一 probe CLI、同一 mapping digest 约定和同一 artifact 目录结构中，而不是重建独立 harness。整个调研系列都不新增 `test/` 路径；任何会调用 native compiler、Node.js、Java、Rust、Go 或 Z3 求解的 probe 都应继续落在 `tools/` / `research/` 与 gitignored `results/local/` 下。
+`tools/numeric_render_probe.py env` 用于输出本地 Python、平台和可用命令清单；`c-smoke` / `cpp-smoke` 用于从 R0 `render_mapping.json` 读取 C-family 渲染路径并编译运行小型 smoke 程序；`python-z3-baseline` 用于从同一 R0 snapshot 记录 Python renderer / Python template / statement override 事实和 Z3 capability matrix；`java-smoke` / `rust-smoke` / `java-rust-smoke` 在同一 dispatcher 中追加 Java/Rust native smoke facts；`c-cpp-z3-alignment` 用于生成和校验 C/C++ ↔ Z3 alignment contract。R0 mapping 的契约校验由 `tools/numeric_render_mapping.py --check` 承担。后续语言 smoke 和 exhaustive/shard runner 应继续追加到同一 probe CLI、同一 mapping digest 约定和同一 artifact 目录结构中，而不是重建独立 harness。整个调研系列都不新增 `test/` 路径；任何会调用 native compiler、Node.js、Java、Rust、Go 或 Z3 求解的 probe 都应继续落在 `tools/` / `research/` 与 gitignored `results/local/` 下。
 
 ## 当前累计入口
 
@@ -17,6 +17,16 @@ python tools/numeric_render_probe.py python-z3-baseline \
   --mapping research/numeric-render-semantics/results/snapshots/render_mapping.json \
   --output research/numeric-render-semantics/results/snapshots/python_z3_baseline.json
 python tools/numeric_render_probe.py python-z3-baseline --check
+python tools/numeric_render_probe.py java-smoke \
+  --mapping research/numeric-render-semantics/results/snapshots/render_mapping.json \
+  --output research/numeric-render-semantics/results/local/java_smoke.json
+python tools/numeric_render_probe.py rust-smoke \
+  --mapping research/numeric-render-semantics/results/snapshots/render_mapping.json \
+  --output research/numeric-render-semantics/results/local/rust_smoke.json
+python tools/numeric_render_probe.py java-rust-smoke \
+  --mapping research/numeric-render-semantics/results/snapshots/render_mapping.json \
+  --output research/numeric-render-semantics/results/snapshots/java_rust_smoke.json
+python tools/numeric_render_probe.py java-rust-smoke --check
 python tools/numeric_render_probe.py c-cpp-z3-alignment \
   --mapping research/numeric-render-semantics/results/snapshots/render_mapping.json \
   --output research/numeric-render-semantics/results/snapshots/c_cpp_z3_alignment.json
@@ -33,9 +43,17 @@ Smoke summary 必须写入 `source_mapping_sha256`，并与所读取 mapping 的
 
 Python 输出作为 P3 / 无限精度 / 仿真兼容基线使用，不作为后续 solver / verify 的定长默认语义。Z3 capability matrix 记录 `Int` / `Real` / `BitVec` / `FP` 的 `exact`、`approximate`、`uninterpreted` 或 `unsupported` 等级；当前 baseline 避免记录不稳定 solver model 值，只记录可复跑的 capability、render path 和代表性 counterexample。
 
+## Java/Rust native smoke runner
+
+当前仓库没有 `templates/java` 或 `templates/rust`，因此 Java/Rust smoke 不伪造 template render path；所有 case 都显式记录 `native_only=true` 与 `native_only_reason="no_java_or_rust_template_in_current_repository"`。为便于 PR-6C / PR-6E 复用同一 join 口径，每条 Java/Rust case 仍保留 `case_id`、`operator`、`fcstm_expression`、`render_path` 和 `render_expression`，并额外记录 `language`、`profile`、`native_api_family`、`source_note_ids`、`status` 和 `outcome`。
+
+`java-smoke` 和 `rust-smoke` 是单语言 payload，推荐写入 gitignored `results/local/`；`java-rust-smoke` 是聚合 payload，唯一负责生成可提交的 `results/snapshots/java_rust_smoke.json`，避免两条单语言命令通过 `_write_payload` 覆盖同一路径。可提交聚合 snapshot 必须同时提交 `java_rust_smoke.json.sha256`，该 sidecar 由 `make sha256` 生成，并让 `java-rust-smoke --check` 能拒绝手写 outcome/status/commands 的内容漂移。`--check` 对 Java/Rust 做 schema、case plan、shared join key、toolchain availability boolean、status/outcome/commands 一致性、R0 mapping live drift、sha256 sidecar 和 committed aggregate snapshot 校验；其中 `snapshot_enforced=true` 只会出现在 `java-rust-smoke --check`，单语言 `--check` 即便报告 `snapshot_present` 也只表示聚合 snapshot 文件存在，不会把单语言 probe 误当成 snapshot 内容校验入口。由于 `javac`、`java`、`rustc`、`cargo` availability 在本地与 CI 之间可能不同，check 不要求 committed aggregate snapshot 与本机 live payload 的 availability 或每条 stdout 完全一致；但对 toolchain 可用且语义确定的 case，会校验 command args、case-level stdout/stderr 与 `commands.*.stdout/stderr` 是否匹配该 case contract，避免把手写 `echo` 或伪造 `VALUE=...` 当成 native evidence。
+
+Java smoke 的 source-backed notes 指向 Java Language Specification（JLS）和 Java SE `Math` API，覆盖 integer overflow、division / remainder、shift count masking、narrowing conversion、`Math.pow` / `Math.round` 与 `Math.addExact` / `Math.multiplyExact`。Rust smoke 的 source-backed notes 指向 Rust Reference 和 Rust standard library，覆盖 debug / release / `overflow-checks`、division / remainder、invalid shift、cast，以及 `std::primitive::i32` 的 `wrapping_*`、`checked_*`、`overflowing_*` 和 `saturating_*` families。
+
 ## C/C++ ↔ Z3 alignment runner
 
-`c-cpp-z3-alignment` 是 PR-6A 的试点入口。它默认读取 committed R0 `render_mapping.json` 和 `python_z3_baseline.json`，再从 C-family render paths 构造小型 deterministic alignment snapshot。该 snapshot 不运行 native compiler，不保存 sanitizer 输出，也不提交 exhaustive 原始数据；live C/C++ 编译事实仍由 `c-smoke` / `cpp-smoke` 写入 gitignored `results/local/`。
+`c-cpp-z3-alignment` 是 C/C++ ↔ Z3 的试点入口。它默认读取 committed R0 `render_mapping.json` 和 `python_z3_baseline.json`，再从 C-family render paths 构造小型 deterministic alignment snapshot。该 snapshot 不运行 native compiler，不保存 sanitizer 输出，也不提交 exhaustive 原始数据；live C/C++ 编译事实仍由 `c-smoke` / `cpp-smoke` 写入 gitignored `results/local/`。
 
 每条 contract 至少包含：
 

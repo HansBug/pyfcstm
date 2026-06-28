@@ -51,7 +51,11 @@ from typing import Optional, Union, List, Dict, Tuple, Iterator, Set
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
-from .imports import assemble_state_machine_imports
+from .imports import (
+    assemble_state_machine_imports,
+    _is_trusted_generated_combo_pseudo_node,
+    _mark_generated_combo_pseudo_node,
+)
 from .plantuml import PlantUMLOptions, PlantUMLOptionsInput, format_state_name
 from ..diagnostics.sink import DiagnosticSink
 from ..diagnostics.sink import _emit as _emit_or_raise
@@ -114,6 +118,8 @@ def _event_origin_from_id(
 _COMBO_STATE_PREFIX = "__combo_"
 _COMBO_DIGEST_SIZE = 12
 _COMBO_DISPLAY_PREFIX = "combo after "
+
+
 def _is_exported_combo_pseudo_node(
     node: dsl_nodes.StateDefinition,
     owner_node: Optional[dsl_nodes.StateDefinition] = None,
@@ -122,7 +128,7 @@ def _is_exported_combo_pseudo_node(
     """Return whether an AST node is an exported generated combo pseudo state."""
     if not node.is_pseudo or not node.name.startswith(_COMBO_STATE_PREFIX):
         return False
-    return bool(getattr(node, "_generated_combo_pseudo", False))
+    return _is_trusted_generated_combo_pseudo_node(node)
 
 
 def _combo_payload_digest(payload: str) -> str:
@@ -1608,7 +1614,7 @@ class State(AstExportable, PlantUMLExportable):
             and self.name.startswith(_COMBO_STATE_PREFIX)
             and getattr(self, "_generated_combo_pseudo", False)
         ):
-            node._generated_combo_pseudo = True
+            _mark_generated_combo_pseudo_node(node)
         return node
 
     def to_plantuml(

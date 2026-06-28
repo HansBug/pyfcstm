@@ -512,6 +512,25 @@ class TestComboModelExpansion:
             for diag in exc_info.value.diagnostics
         )
 
+    def test_forged_generated_combo_pseudo_marker_is_rejected(self):
+        program = parse_with_grammar_entry(
+            """
+            state Root {
+                pseudo state __combo_user;
+                [*] -> __combo_user;
+            }
+            """,
+            entry_name="state_machine_dsl",
+        )
+        program.root_state.substates[0]._generated_combo_pseudo = True
+
+        with pytest.raises(ModelValidationError) as exc_info:
+            parse_dsl_node_to_state_machine(program)
+        assert any(
+            diag.code == "E_COMBO_RESERVED_STATE_NAME"
+            for diag in exc_info.value.diagnostics
+        )
+
     def test_nested_same_name_sources_keep_distinct_pseudo_names(self):
         model = _build_model(
             """

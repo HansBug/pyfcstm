@@ -29,8 +29,9 @@ checks defined by PR79.
 
 import os
 import re
+import weakref
 from dataclasses import dataclass, fields, is_dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..diagnostics.sink import DiagnosticSink, _emit as _emit_or_raise
 from ..dsl import node as dsl_nodes
@@ -44,7 +45,63 @@ __all__ = [
 ]
 
 
-_GENERATED_COMBO_PSEUDO_ATTR = "_generated_combo_pseudo"
+_TRUSTED_GENERATED_COMBO_PSEUDO_NODE_IDS: Set[int] = set()
+_TRUSTED_GENERATED_COMBO_PSEUDO_NODE_REFS: Dict[int, Any] = {}
+
+
+def _generated_combo_pseudo_node_fingerprint(
+    node: dsl_nodes.StateDefinition,
+) -> Tuple[Any, ...]:
+    """Return the mutable-field fingerprint for a trusted combo pseudo AST."""
+    return (
+        node.name,
+        node.extra_name,
+        node.is_pseudo,
+        tuple(node.events),
+        tuple(node.imports),
+        tuple(node.substates),
+        tuple(node.transitions),
+        tuple(node.enters),
+        tuple(node.durings),
+        tuple(node.exits),
+        tuple(node.during_aspects),
+        tuple(node.force_transitions),
+    )
+
+
+def _forget_generated_combo_pseudo_node(node_id: int) -> None:
+    """Forget an exported combo pseudo AST node after it is garbage collected."""
+    _TRUSTED_GENERATED_COMBO_PSEUDO_NODE_IDS.discard(node_id)
+    _TRUSTED_GENERATED_COMBO_PSEUDO_NODE_REFS.pop(node_id, None)
+
+
+def _mark_generated_combo_pseudo_node(node: dsl_nodes.StateDefinition) -> None:
+    """Mark an exported combo pseudo AST node as trusted in this process."""
+    node_id = id(node)
+    _TRUSTED_GENERATED_COMBO_PSEUDO_NODE_IDS.add(node_id)
+    _TRUSTED_GENERATED_COMBO_PSEUDO_NODE_REFS[node_id] = (
+        weakref.ref(
+            node,
+            lambda _ref, node_id=node_id: _forget_generated_combo_pseudo_node(node_id),
+        ),
+        _generated_combo_pseudo_node_fingerprint(node),
+    )
+
+
+def _is_trusted_generated_combo_pseudo_node(
+    node: dsl_nodes.StateDefinition,
+) -> bool:
+    """Return whether ``node`` is a process-local trusted combo pseudo export."""
+    node_id = id(node)
+    item = _TRUSTED_GENERATED_COMBO_PSEUDO_NODE_REFS.get(node_id)
+    if item is None:
+        return False
+    ref, fingerprint = item
+    return (
+        node_id in _TRUSTED_GENERATED_COMBO_PSEUDO_NODE_IDS
+        and ref() is node
+        and _generated_combo_pseudo_node_fingerprint(node) == fingerprint
+    )
 
 
 def _emit_import_diag(
@@ -179,8 +236,8 @@ def _clone_ast_node(node):
             for field in fields(node)
         }
         cloned = node.__class__(**values)
-        if getattr(node, _GENERATED_COMBO_PSEUDO_ATTR, False):
-            setattr(cloned, _GENERATED_COMBO_PSEUDO_ATTR, True)
+        if _is_trusted_generated_combo_pseudo_node(node):
+            _mark_generated_combo_pseudo_node(cloned)
         return cloned
     else:
         return node

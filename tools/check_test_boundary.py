@@ -2409,7 +2409,11 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     self.current_scope.importlib_aliases.add(alias.asname or alias.name)
         elif module == "pathlib":
             for alias in node.names:
-                if alias.name in _PATH_CONSTRUCTOR_NAMES:
+                if alias.name == "*":
+                    self.current_scope.path_class_aliases.update(
+                        _PATH_CONSTRUCTOR_NAMES
+                    )
+                elif alias.name in _PATH_CONSTRUCTOR_NAMES:
                     self.current_scope.path_class_aliases.add(
                         alias.asname or alias.name
                     )
@@ -2455,7 +2459,14 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     self.current_scope.os_path_aliases.add(alias.asname or alias.name)
         elif module == "os.path":
             for alias in node.names:
-                if alias.name == "join":
+                if alias.name == "*":
+                    self.current_scope.os_path_join_aliases.add("join")
+                    self.current_scope.os_path_dirname_aliases.add("dirname")
+                    self.current_scope.os_path_abspath_aliases.update(
+                        _OS_PATH_PASSTHROUGH_HELPERS
+                    )
+                    self.current_scope.os_path_split_aliases.add("split")
+                elif alias.name == "join":
                     self.current_scope.os_path_join_aliases.add(
                         alias.asname or alias.name
                     )
@@ -2692,7 +2703,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 self.clear_scope_aliases(name)
                 if static_string is not None:
                     self.current_scope.string_aliases[name] = static_string
-                if repo_root_tainted or is_repo_root_name(name):
+                if repo_root_tainted:
                     self.current_scope.repo_root_aliases.add(name)
                 if path_parent_hops is not None:
                     self.current_scope.path_parent_hop_aliases[name] = path_parent_hops
@@ -3317,8 +3328,9 @@ class TestBoundaryVisitor(ast.NodeVisitor):
 
         Example::
 
-            >>> tree = ast.parse('_REPO_ROOT / "templates"')
-            >>> visitor = TestBoundaryVisitor(Path('x.py'), '_REPO_ROOT / "templates"', set())
+            >>> source = '_REPO_ROOT = Path(__file__).resolve().parents[1]' + chr(10) + '_REPO_ROOT / "templates"'
+            >>> tree = ast.parse(source)
+            >>> visitor = TestBoundaryVisitor(Path('test/x.py'), source, set())
             >>> visitor.visit(tree)
             >>> visitor.findings[0].rule
             'repo-source-templates'
@@ -3342,8 +3354,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
 
         Example::
 
-            >>> source = 'f"{_REPO_ROOT}/templates"'
-            >>> visitor = TestBoundaryVisitor(Path('x.py'), source, set())
+            >>> source = 'repo_root = Path(__file__).resolve().parents[1]' + chr(10) + 'f"{repo_root}/templates"'
+            >>> visitor = TestBoundaryVisitor(Path('test/x.py'), source, set())
             >>> visitor.visit(ast.parse(source))
             >>> visitor.findings[0].rule
             'repo-source-templates'
@@ -4471,7 +4483,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             True
         """
         if isinstance(node, ast.Name):
-            return node.id in self.repo_root_aliases or is_repo_root_name(node.id)
+            return node.id in self.repo_root_aliases
         if isinstance(node, ast.Starred):
             return self.is_repo_root_tainted(node.value)
         if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
@@ -4582,7 +4594,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             parent_hops = self.path_parent_hop_aliases.get(node.id)
             if parent_hops is not None:
                 return parent_hops
-            if node.id in self.repo_root_aliases or is_repo_root_name(node.id):
+            if node.id in self.repo_root_aliases:
                 return self.repo_root_dirname_depth
         if isinstance(node, ast.Starred):
             if self.is_repo_root_tainted(node.value):
@@ -5060,6 +5072,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         Example::
 
             >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.current_scope.repo_root_aliases.add('_REPO_ROOT')
             >>> visitor.is_repo_source_template_access(ast.parse('_REPO_ROOT / "templates"').body[0].value)
             True
             >>> source = 'os.path.join(str(_REPO_ROOT), "templates")'
@@ -5395,6 +5408,12 @@ def scan_source(path: Path, relative_path: Path, source: str) -> List[BoundaryFi
         >>> source = 'from os.path import dirname, join, normpath' + chr(10) + 'join(normpath(join(dirname(__file__), "..")), "templates")'
         >>> [finding.rule for finding in scan_source(Path('x.py'), Path('test/x.py'), source)]
         ['repo-source-templates']
+        >>> source = 'from os.path import *' + chr(10) + 'join(dirname(__file__), "..", "templates")'
+        >>> [finding.rule for finding in scan_source(Path('x.py'), Path('test/x.py'), source)]
+        ['repo-source-templates']
+        >>> source = 'repo_root = tmp_path' + chr(10) + 'repo_root / "templates"'
+        >>> scan_source(Path('x.py'), Path('test/x.py'), source)
+        []
     """
     tree = ast.parse(source, filename=str(path))
     visitor = TestBoundaryVisitor(

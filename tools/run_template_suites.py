@@ -324,6 +324,7 @@ def _reject_runner_owned_pytest_args(pytest_args: Sequence[str]) -> None:
         ...     print(str(err))
         pytest passthrough must not include --run-native-toolchain; use runner --run-native-toolchain or PYFCSTM_RUN_NATIVE_TOOLCHAIN=1
     """
+    config_options_with_value = ("--config-file", "--rootdir", "--confcutdir")
     previous_argument = None
     for argument in pytest_args:
         if "--run-native-toolchain" in argument:
@@ -332,12 +333,18 @@ def _reject_runner_owned_pytest_args(pytest_args: Sequence[str]) -> None:
                 "use runner --run-native-toolchain or "
                 "PYFCSTM_RUN_NATIVE_TOOLCHAIN=1"
             )
-        if previous_argument in ("-c", "--config-file") or argument.startswith(
-            "--config-file="
+        if (
+            argument == "-c"
+            or argument.startswith("-c")
+            or previous_argument in config_options_with_value
+            or any(
+                argument.startswith(option + "=")
+                for option in config_options_with_value
+            )
         ):
             raise TemplateSuiteRunnerError(
-                "pytest passthrough must not include pytest config-file "
-                "overrides; native opt-in must stay runner-owned"
+                "pytest passthrough must not include pytest configuration "
+                "discovery overrides; native opt-in must stay runner-owned"
             )
         previous_argument = argument
 
@@ -692,8 +699,13 @@ def _run_self_check_cases() -> None:
             )
     for pytest_args in (
         ["-c", "/tmp/pytest.ini"],
+        ["-c/tmp/pytest.ini"],
         ["--config-file", "/tmp/pytest.ini"],
         ["--config-file=/tmp/pytest.ini"],
+        ["--rootdir", "/tmp"],
+        ["--rootdir=/tmp"],
+        ["--confcutdir", "/tmp"],
+        ["--confcutdir=/tmp"],
     ):
         try:
             build_template_pytest_command(["c"], pytest_args=pytest_args)

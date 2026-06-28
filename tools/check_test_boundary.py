@@ -61,7 +61,6 @@ _OS_COMMAND_METHODS = {
     "spawnvpe",
 }
 _SOURCE_INSTALL_MARKERS = (
-    "pip install",
     "--target",
     "source install",
     "source-install",
@@ -527,6 +526,39 @@ def command_literals_form_tools_script_path(values: Sequence[str]) -> bool:
     return has_tools_segment and has_python_file
 
 
+def string_contains_source_install_marker(value: str) -> bool:
+    """
+    Return whether a string literal describes a source-install smoke path.
+
+    :param value: String literal value to inspect.
+    :type value: str
+    :return: ``True`` when the literal looks like a source-install smoke command.
+    :rtype: bool
+
+    Example::
+
+        >>> string_contains_source_install_marker('pip install pytest')
+        False
+        >>> string_contains_source_install_marker('python -m pip install .')
+        True
+    """
+    lowered = value.lower()
+    if any(marker in lowered for marker in _SOURCE_INSTALL_MARKERS):
+        return True
+    normalized = lowered.replace("\\", "/")
+    tokens = normalized.split()
+    for index in range(len(tokens) - 1):
+        if tokens[index] != "pip" or tokens[index + 1] != "install":
+            continue
+        install_args = tokens[index + 2 :]
+        for arg in install_args:
+            if arg in {"-e", "--editable", ".", "./", "..", "../"}:
+                return True
+            if arg.startswith("./") or arg.startswith("../"):
+                return True
+    return False
+
+
 class TestBoundaryVisitor(ast.NodeVisitor):
     """
     Visit a test module AST and collect boundary violations.
@@ -898,7 +930,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         Visit Python 3.7 string literals for source-install markers.
 
         :param node: String node.
-        :type node: ast.Str
+        :type node: ast.AST
         :return: ``None``.
         :rtype: None
 
@@ -934,15 +966,13 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         value = literal_string(node)
         if value is None:
             return
-        lowered = value.lower()
-        for marker in _SOURCE_INSTALL_MARKERS:
-            if marker in lowered:
-                self.add_finding(
-                    node,
-                    SOURCE_INSTALL_RULE,
-                    "pytest files must not contain source-install smoke-test markers",
-                )
-                return
+        if string_contains_source_install_marker(value):
+            self.add_finding(
+                node,
+                SOURCE_INSTALL_RULE,
+                "pytest files must not contain source-install smoke-test markers",
+            )
+            return
 
     def is_dynamic_tools_import_call(self, node: ast.AST) -> bool:
         """
@@ -1000,11 +1030,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         if not isinstance(node.func, ast.Attribute):
             return False
         root = self._attribute_root_name(node.func)
-        return (
-            root == "tools"
-            or root in self.tools_aliases
-            or root in self.dynamic_tools_aliases
-        )
+        return root in self.tools_aliases or root in self.dynamic_tools_aliases
 
     def is_getattr_tools_call(self, node: ast.Call) -> bool:
         """
@@ -1153,8 +1179,14 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor.tools_command_aliases.add('cmd')
             >>> visitor.expression_or_alias_runs_tools_script(ast.Name(id='cmd'))
             True
+            >>> expr = ast.parse('str(cmd)').body[0].value
+            >>> visitor.expression_or_alias_runs_tools_script(expr)
+            True
         """
-        if isinstance(node, ast.Name) and node.id in self.tools_command_aliases:
+        if any(
+            isinstance(child, ast.Name) and child.id in self.tools_command_aliases
+            for child in ast.walk(node)
+        ):
             return True
         return expression_runs_tools_script(node)
 

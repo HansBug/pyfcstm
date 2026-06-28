@@ -68,6 +68,126 @@ _REPO_ROOT_NAME_FRAGMENTS = (
 )
 
 
+@dataclass
+class NameScope:
+    """
+    Track bindings and tainted aliases visible inside one lexical scope.
+
+    :param defined_names: Names bound by ordinary statements in the scope.
+    :type defined_names: Set[str]
+    :param tools_aliases: Names known to refer to repository ``tools`` modules.
+    :type tools_aliases: Set[str]
+    :param dynamic_tools_aliases: Names assigned from dynamic ``tools`` imports.
+    :type dynamic_tools_aliases: Set[str]
+    :param importlib_aliases: Names that expose ``importlib.import_module``.
+    :type importlib_aliases: Set[str]
+    :param builtins_aliases: Names that expose the :mod:`builtins` module.
+    :type builtins_aliases: Set[str]
+    :param subprocess_aliases: Names that expose the :mod:`subprocess` module.
+    :type subprocess_aliases: Set[str]
+    :param subprocess_function_aliases: Names imported from subprocess command helpers.
+    :type subprocess_function_aliases: Set[str]
+    :param os_aliases: Names that expose the :mod:`os` module.
+    :type os_aliases: Set[str]
+    :param os_function_aliases: Names imported from OS command helpers.
+    :type os_function_aliases: Set[str]
+    :param os_path_join_aliases: Names imported from ``os.path.join``.
+    :type os_path_join_aliases: Set[str]
+    :param os_path_dirname_aliases: Names imported from ``os.path.dirname``.
+    :type os_path_dirname_aliases: Set[str]
+    :param os_path_abspath_aliases: Names imported from ``os.path.abspath``.
+    :type os_path_abspath_aliases: Set[str]
+    :param repo_root_aliases: Names assigned from repository-root expressions.
+    :type repo_root_aliases: Set[str]
+    :param tools_command_aliases: Names assigned from commands that execute tools scripts.
+    :type tools_command_aliases: Set[str]
+    :param source_install_command_aliases: Names assigned from source-install commands.
+    :type source_install_command_aliases: Set[str]
+    :param package_templates_aliases: Names imported from ``tools.package_templates``.
+    :type package_templates_aliases: Set[str]
+    :param is_class_body: Whether this scope models a class namespace.
+    :type is_class_body: bool
+
+    Example::
+
+        >>> scope = NameScope.create(defined_names={'tools'})
+        >>> 'tools' in scope.defined_names
+        True
+    """
+
+    defined_names: Set[str]
+    tools_aliases: Set[str]
+    dynamic_tools_aliases: Set[str]
+    importlib_aliases: Set[str]
+    builtins_aliases: Set[str]
+    subprocess_aliases: Set[str]
+    subprocess_function_aliases: Set[str]
+    os_aliases: Set[str]
+    os_function_aliases: Set[str]
+    os_path_join_aliases: Set[str]
+    os_path_dirname_aliases: Set[str]
+    os_path_abspath_aliases: Set[str]
+    repo_root_aliases: Set[str]
+    tools_command_aliases: Set[str]
+    source_install_command_aliases: Set[str]
+    package_templates_aliases: Set[str]
+    is_class_body: bool = False
+
+    @classmethod
+    def create(
+        cls,
+        defined_names: Optional[Set[str]] = None,
+        importlib_aliases: Optional[Set[str]] = None,
+        builtins_aliases: Optional[Set[str]] = None,
+        subprocess_aliases: Optional[Set[str]] = None,
+        os_aliases: Optional[Set[str]] = None,
+        is_class_body: bool = False,
+    ) -> "NameScope":
+        """
+        Create a scope with optional predefined bindings.
+
+        :param defined_names: Ordinary names bound in this scope, defaults to ``None``.
+        :type defined_names: Set[str], optional
+        :param importlib_aliases: Predefined importlib aliases, defaults to ``None``.
+        :type importlib_aliases: Set[str], optional
+        :param builtins_aliases: Predefined builtins aliases, defaults to ``None``.
+        :type builtins_aliases: Set[str], optional
+        :param subprocess_aliases: Predefined subprocess aliases, defaults to ``None``.
+        :type subprocess_aliases: Set[str], optional
+        :param os_aliases: Predefined os aliases, defaults to ``None``.
+        :type os_aliases: Set[str], optional
+        :param is_class_body: Whether the scope is a class namespace, defaults to ``False``.
+        :type is_class_body: bool, optional
+        :return: New lexical scope state.
+        :rtype: NameScope
+
+        Example::
+
+            >>> scope = NameScope.create(importlib_aliases={'importlib'})
+            >>> 'importlib' in scope.importlib_aliases
+            True
+        """
+        return cls(
+            defined_names=set(defined_names or set()),
+            tools_aliases=set(),
+            dynamic_tools_aliases=set(),
+            importlib_aliases=set(importlib_aliases or set()),
+            builtins_aliases=set(builtins_aliases or set()),
+            subprocess_aliases=set(subprocess_aliases or set()),
+            subprocess_function_aliases=set(),
+            os_aliases=set(os_aliases or set()),
+            os_function_aliases=set(),
+            os_path_join_aliases=set(),
+            os_path_dirname_aliases=set(),
+            os_path_abspath_aliases=set(),
+            repo_root_aliases=set(),
+            tools_command_aliases=set(),
+            source_install_command_aliases=set(),
+            package_templates_aliases=set(),
+            is_class_body=is_class_body,
+        )
+
+
 @dataclass(frozen=True)
 class BoundaryFinding:
     """
@@ -242,11 +362,11 @@ def collect_string_literals(node: ast.AST) -> List[str]:
 
 def collect_defined_names(tree: ast.AST) -> Set[str]:
     """
-    Collect names defined by functions, classes, and assignments.
+    Collect module-scope names defined by statements.
 
     :param tree: Parsed Python AST.
     :type tree: ast.AST
-    :return: Defined names.
+    :return: Module-scope defined names.
     :rtype: Set[str]
 
     Example::
@@ -257,22 +377,121 @@ def collect_defined_names(tree: ast.AST) -> Set[str]:
         >>> tree = ast.parse('package_templates = lambda: None')
         >>> 'package_templates' in collect_defined_names(tree)
         True
+        >>> tree = ast.parse('def f():\\n    tools = object()')
+        >>> 'tools' in collect_defined_names(tree)
+        False
+    """
+    return collect_scope_defined_names(getattr(tree, "body", []))
+
+
+def collect_scope_defined_names(statements: Sequence[ast.AST]) -> Set[str]:
+    """
+    Collect names bound directly in a lexical statement scope.
+
+    Nested function and class bodies are intentionally not traversed because
+    their local bindings must not shadow sibling functions in the containing
+    module.
+
+    :param statements: Statements that make up one lexical scope body.
+    :type statements: Sequence[ast.AST]
+    :return: Names bound in that scope.
+    :rtype: Set[str]
+
+    Example::
+
+        >>> tree = ast.parse('def f():\\n    tools = object()\\ndef g(): pass')
+        >>> sorted(collect_scope_defined_names(tree.body))
+        ['f', 'g']
+        >>> func = tree.body[0]
+        >>> 'tools' in collect_scope_defined_names(func.body)
+        True
     """
     names = set()
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            names.add(node.name)
-        elif isinstance(node, ast.Import):
-            for alias in node.names:
-                names.add(alias.asname or alias.name.split(".")[0])
-        elif isinstance(node, ast.ImportFrom):
-            for alias in node.names:
-                names.add(alias.asname or alias.name)
-        elif isinstance(node, ast.Assign):
-            for target in node.targets:
-                names.update(assigned_target_names(target))
-        elif isinstance(node, ast.AnnAssign):
-            names.update(assigned_target_names(node.target))
+    for statement in statements:
+        names.update(statement_defined_names(statement))
+    return names
+
+
+def statement_defined_names(statement: ast.AST) -> Set[str]:
+    """
+    Collect names bound by one statement in its current lexical scope.
+
+    :param statement: Statement node to inspect.
+    :type statement: ast.AST
+    :return: Names bound by the statement or nested same-scope branches.
+    :rtype: Set[str]
+
+    Example::
+
+        >>> statement_defined_names(ast.parse('for tools in items:\\n    pass').body[0])
+        {'tools'}
+    """
+    names = set()
+    if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return {statement.name}
+    if isinstance(statement, ast.Import):
+        for alias in statement.names:
+            names.add(alias.asname or alias.name.split(".")[0])
+    elif isinstance(statement, ast.ImportFrom):
+        for alias in statement.names:
+            names.add(alias.asname or alias.name)
+    elif isinstance(statement, ast.Assign):
+        for target in statement.targets:
+            names.update(assigned_target_names(target))
+    elif isinstance(statement, ast.AnnAssign):
+        names.update(assigned_target_names(statement.target))
+    elif isinstance(statement, ast.AugAssign):
+        names.update(assigned_target_names(statement.target))
+    elif isinstance(statement, (ast.For, ast.AsyncFor)):
+        names.update(assigned_target_names(statement.target))
+        names.update(collect_scope_defined_names(statement.body))
+        names.update(collect_scope_defined_names(statement.orelse))
+    elif isinstance(statement, (ast.With, ast.AsyncWith)):
+        for item in statement.items:
+            if item.optional_vars is not None:
+                names.update(assigned_target_names(item.optional_vars))
+        names.update(collect_scope_defined_names(statement.body))
+    elif isinstance(statement, ast.If):
+        names.update(collect_scope_defined_names(statement.body))
+        names.update(collect_scope_defined_names(statement.orelse))
+    elif isinstance(statement, ast.While):
+        names.update(collect_scope_defined_names(statement.body))
+        names.update(collect_scope_defined_names(statement.orelse))
+    elif isinstance(statement, ast.Try):
+        names.update(collect_scope_defined_names(statement.body))
+        names.update(collect_scope_defined_names(statement.orelse))
+        names.update(collect_scope_defined_names(statement.finalbody))
+        for handler in statement.handlers:
+            if handler.name:
+                names.add(handler.name)
+            names.update(collect_scope_defined_names(handler.body))
+    return names
+
+
+def function_argument_names(arguments: ast.arguments) -> Set[str]:
+    """
+    Collect names bound by a function or lambda argument list.
+
+    :param arguments: Function argument node.
+    :type arguments: ast.arguments
+    :return: Argument names bound in the function scope.
+    :rtype: Set[str]
+
+    Example::
+
+        >>> func = ast.parse('def f(pos, /, x, *args, y, **kwargs): pass').body[0]
+        >>> sorted(function_argument_names(func.args))
+        ['args', 'kwargs', 'pos', 'x', 'y']
+    """
+    names = set()
+    for argument in list(getattr(arguments, "posonlyargs", [])) + list(arguments.args):
+        names.add(argument.arg)
+    for argument in arguments.kwonlyargs:
+        names.add(argument.arg)
+    if arguments.vararg is not None:
+        names.add(arguments.vararg.arg)
+    if arguments.kwarg is not None:
+        names.add(arguments.kwarg.arg)
     return names
 
 
@@ -657,23 +876,321 @@ class TestBoundaryVisitor(ast.NodeVisitor):
     ) -> None:
         self.path = path
         self.source_lines = source.splitlines()
-        self.defined_names = defined_names
         self.docstring_node_ids = docstring_node_ids or set()
         self.findings = []  # type: List[BoundaryFinding]
-        self.tools_aliases = set()  # type: Set[str]
-        self.dynamic_tools_aliases = set()  # type: Set[str]
-        self.importlib_aliases = {"importlib"}  # type: Set[str]
-        self.subprocess_aliases = {"subprocess"}  # type: Set[str]
-        self.subprocess_function_aliases = set()  # type: Set[str]
-        self.os_aliases = {"os"}  # type: Set[str]
-        self.os_function_aliases = set()  # type: Set[str]
-        self.os_path_join_aliases = set()  # type: Set[str]
-        self.os_path_dirname_aliases = set()  # type: Set[str]
-        self.os_path_abspath_aliases = set()  # type: Set[str]
-        self.repo_root_aliases = set()  # type: Set[str]
-        self.tools_command_aliases = set()  # type: Set[str]
-        self.source_install_command_aliases = set()  # type: Set[str]
-        self.package_templates_aliases = set()  # type: Set[str]
+        self.scope_stack = [
+            NameScope.create(
+                defined_names=defined_names,
+                importlib_aliases={"importlib"},
+                builtins_aliases={"builtins"},
+                subprocess_aliases={"subprocess"},
+                os_aliases={"os"},
+            )
+        ]  # type: List[NameScope]
+
+    @property
+    def current_scope(self) -> NameScope:
+        """
+        Return the innermost lexical scope currently being visited.
+
+        :return: Current lexical scope state.
+        :rtype: NameScope
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.current_scope.defined_names
+            set()
+        """
+        return self.scope_stack[-1]
+
+    def visible_names(self, attribute: str) -> Set[str]:
+        """
+        Return one scope attribute with lexical shadowing applied.
+
+        Ordinary ``defined_names`` are returned as the visible union because
+        they model names that are already declared in the reachable lexical
+        scopes and suppress unresolved bare ``tools`` call diagnostics. Tainted
+        aliases use Python's lexical shadowing rule, so a local variable named
+        ``subprocess`` or ``importlib`` blocks the module-level alias of the
+        same name.
+
+        :param attribute: :class:`NameScope` set attribute name.
+        :type attribute: str
+        :return: Names visible from outer scopes through the current scope.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', {'tools'})
+            >>> 'tools' in visitor.visible_names('defined_names')
+            True
+            >>> visitor.current_scope.importlib_aliases.add('importlib')
+            >>> visitor.push_scope({'importlib'})
+            >>> 'importlib' in visitor.visible_names('importlib_aliases')
+            False
+        """
+        if attribute == "defined_names":
+            names = set()
+            for scope in self.scope_stack:
+                names.update(scope.defined_names)
+            return names
+        names = set()
+        shadowed = set()
+        for scope in reversed(self.scope_stack):
+            names.update(
+                name for name in getattr(scope, attribute) if name not in shadowed
+            )
+            shadowed.update(scope.defined_names)
+        return names
+
+    @property
+    def defined_names(self) -> Set[str]:
+        """
+        Return ordinary names visible in the current lexical scope.
+
+        :return: Visible ordinary bindings.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', {'tools'})
+            >>> visitor.defined_names
+            {'tools'}
+        """
+        return self.visible_names("defined_names")
+
+    @property
+    def tools_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for repository ``tools`` modules.
+
+        :return: Visible tools aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.tools_aliases
+            set()
+        """
+        return self.visible_names("tools_aliases")
+
+    @property
+    def dynamic_tools_aliases(self) -> Set[str]:
+        """
+        Return visible aliases produced by dynamic ``tools`` imports.
+
+        :return: Visible dynamic tools aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.current_scope.dynamic_tools_aliases.add('mod')
+            >>> 'mod' in visitor.dynamic_tools_aliases
+            True
+        """
+        return self.visible_names("dynamic_tools_aliases")
+
+    @property
+    def importlib_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for :mod:`importlib` helpers.
+
+        :return: Visible importlib aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> 'importlib' in TestBoundaryVisitor(Path('x.py'), '', set()).importlib_aliases
+            True
+        """
+        return self.visible_names("importlib_aliases")
+
+    @property
+    def builtins_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for the :mod:`builtins` module.
+
+        :return: Visible builtins aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> 'builtins' in TestBoundaryVisitor(Path('x.py'), '', set()).builtins_aliases
+            True
+        """
+        return self.visible_names("builtins_aliases")
+
+    @property
+    def subprocess_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for the :mod:`subprocess` module.
+
+        :return: Visible subprocess aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> 'subprocess' in TestBoundaryVisitor(Path('x.py'), '', set()).subprocess_aliases
+            True
+        """
+        return self.visible_names("subprocess_aliases")
+
+    @property
+    def subprocess_function_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for subprocess command functions.
+
+        :return: Visible subprocess function aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.current_scope.subprocess_function_aliases.add('run')
+            >>> 'run' in visitor.subprocess_function_aliases
+            True
+        """
+        return self.visible_names("subprocess_function_aliases")
+
+    @property
+    def os_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for the :mod:`os` module.
+
+        :return: Visible OS aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> 'os' in TestBoundaryVisitor(Path('x.py'), '', set()).os_aliases
+            True
+        """
+        return self.visible_names("os_aliases")
+
+    @property
+    def os_function_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for OS command helpers.
+
+        :return: Visible OS command aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> TestBoundaryVisitor(Path('x.py'), '', set()).os_function_aliases
+            set()
+        """
+        return self.visible_names("os_function_aliases")
+
+    @property
+    def os_path_join_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for ``os.path.join``.
+
+        :return: Visible join aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> TestBoundaryVisitor(Path('x.py'), '', set()).os_path_join_aliases
+            set()
+        """
+        return self.visible_names("os_path_join_aliases")
+
+    @property
+    def os_path_dirname_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for ``os.path.dirname``.
+
+        :return: Visible dirname aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> TestBoundaryVisitor(Path('x.py'), '', set()).os_path_dirname_aliases
+            set()
+        """
+        return self.visible_names("os_path_dirname_aliases")
+
+    @property
+    def os_path_abspath_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for ``os.path.abspath``.
+
+        :return: Visible abspath aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> TestBoundaryVisitor(Path('x.py'), '', set()).os_path_abspath_aliases
+            set()
+        """
+        return self.visible_names("os_path_abspath_aliases")
+
+    @property
+    def repo_root_aliases(self) -> Set[str]:
+        """
+        Return visible repository-root aliases.
+
+        :return: Visible repository-root aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.current_scope.repo_root_aliases.add('repo_root')
+            >>> 'repo_root' in visitor.repo_root_aliases
+            True
+        """
+        return self.visible_names("repo_root_aliases")
+
+    @property
+    def tools_command_aliases(self) -> Set[str]:
+        """
+        Return visible command aliases that execute repository tools scripts.
+
+        :return: Visible tools command aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> TestBoundaryVisitor(Path('x.py'), '', set()).tools_command_aliases
+            set()
+        """
+        return self.visible_names("tools_command_aliases")
+
+    @property
+    def source_install_command_aliases(self) -> Set[str]:
+        """
+        Return visible command aliases that perform source installs.
+
+        :return: Visible source-install command aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> TestBoundaryVisitor(Path('x.py'), '', set()).source_install_command_aliases
+            set()
+        """
+        return self.visible_names("source_install_command_aliases")
+
+    @property
+    def package_templates_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for ``tools.package_templates`` helpers.
+
+        :return: Visible package-template helper aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> TestBoundaryVisitor(Path('x.py'), '', set()).package_templates_aliases
+            set()
+        """
+        return self.visible_names("package_templates_aliases")
 
     def add_finding(self, node: ast.AST, rule: str, message: str) -> None:
         """
@@ -712,6 +1229,222 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             )
         )
 
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+        """
+        Visit a function body with its own lexical bindings.
+
+        :param node: Function definition node.
+        :type node: ast.FunctionDef
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> source = 'def f():' + chr(10) + '    tools = object()' + chr(10) + '    tools.x()'
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), source, set())
+            >>> visitor.visit(ast.parse(source))
+            >>> visitor.findings
+            []
+        """
+        self.visit_function_like(node, node.args, node.body)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
+        """
+        Visit an async function body with its own lexical bindings.
+
+        :param node: Async function definition node.
+        :type node: ast.AsyncFunctionDef
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> source = 'async def f():' + chr(10) + '    tools = object()' + chr(10) + '    tools.x()'
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), source, set())
+            >>> visitor.visit(ast.parse(source))
+            >>> visitor.findings
+            []
+        """
+        self.visit_function_like(node, node.args, node.body)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:  # noqa: N802
+        """
+        Visit a lambda expression with argument bindings in scope.
+
+        :param node: Lambda node.
+        :type node: ast.Lambda
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> source = 'fn = lambda tools: tools.x()'
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), source, set())
+            >>> visitor.visit(ast.parse(source))
+            >>> visitor.findings
+            []
+        """
+        self.visit_argument_expressions(node.args)
+        self.visit_callable_body(function_argument_names(node.args), [node.body])
+
+    def visit_function_like(
+        self, node: ast.AST, arguments: ast.arguments, body: Sequence[ast.AST]
+    ) -> None:
+        """
+        Visit decorators, defaults, and a function body with proper scope.
+
+        :param node: Function-like node.
+        :type node: ast.AST
+        :param arguments: Function argument list.
+        :type arguments: ast.arguments
+        :param body: Function body statements.
+        :type body: Sequence[ast.AST]
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> source = 'def f(tools):' + chr(10) + '    tools.x()'
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), source, set())
+            >>> visitor.visit(ast.parse(source))
+            >>> visitor.findings
+            []
+        """
+        for decorator in getattr(node, "decorator_list", []):
+            self.visit(decorator)
+        returns = getattr(node, "returns", None)
+        if returns is not None:
+            self.visit(returns)
+        self.visit_argument_expressions(arguments)
+        bound_names = function_argument_names(arguments) | collect_scope_defined_names(
+            body
+        )
+        self.visit_callable_body(bound_names, body)
+
+    def visit_argument_expressions(self, arguments: ast.arguments) -> None:
+        """
+        Visit default values and annotations outside the callee local scope.
+
+        :param arguments: Function or lambda argument list.
+        :type arguments: ast.arguments
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> source = 'fn = lambda x=__import__("tools.x"): x'
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), source, set())
+            >>> visitor.visit(ast.parse(source))
+            >>> [finding.rule for finding in visitor.findings]
+            ['tools-dynamic-import']
+        """
+        all_arguments = (
+            list(getattr(arguments, "posonlyargs", []))
+            + list(arguments.args)
+            + list(arguments.kwonlyargs)
+        )
+        for argument in all_arguments:
+            annotation = getattr(argument, "annotation", None)
+            if annotation is not None:
+                self.visit(annotation)
+        for argument in (arguments.vararg, arguments.kwarg):
+            if argument is not None and argument.annotation is not None:
+                self.visit(argument.annotation)
+        for default in list(arguments.defaults) + list(arguments.kw_defaults):
+            if default is not None:
+                self.visit(default)
+
+    def visit_callable_body(
+        self, defined_names: Set[str], body: Sequence[ast.AST]
+    ) -> None:
+        """
+        Visit a function-like body while excluding class namespaces.
+
+        Python function and lambda bodies close over surrounding function scopes,
+        but class-body names are not lexical locals for methods. Excluding class
+        scopes here prevents class attributes such as ``tools`` or
+        ``subprocess`` from hiding forbidden module-level calls inside methods.
+
+        :param defined_names: Names bound by arguments and local statements.
+        :type defined_names: Set[str]
+        :param body: Function or lambda body nodes to visit.
+        :type body: Sequence[ast.AST]
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> source = 'class C:' + chr(10) + '    tools = object()' + chr(10) + '    def m(self):' + chr(10) + '        tools.x()'
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), source, set())
+            >>> visitor.visit(ast.parse(source))
+            >>> [finding.rule for finding in visitor.findings]
+            ['tools-call']
+        """
+        parent_stack = self.scope_stack
+        callable_scope = NameScope.create(defined_names=defined_names)
+        # Class namespaces are intentionally filtered here because Python
+        # method bodies do not close over class-body assignments.
+        self.scope_stack = [
+            scope for scope in parent_stack if not scope.is_class_body
+        ] + [callable_scope]
+        try:
+            for node in body:
+                self.visit(node)
+        finally:
+            self.scope_stack = parent_stack
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:  # noqa: N802
+        """
+        Visit a class body with class-local bindings.
+
+        :param node: Class definition node.
+        :type node: ast.ClassDef
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> source = 'class C:' + chr(10) + '    tools = object()' + chr(10) + '    tools.x()'
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), source, set())
+            >>> visitor.visit(ast.parse(source))
+            >>> visitor.findings
+            []
+        """
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for base in node.bases:
+            self.visit(base)
+        for keyword in node.keywords:
+            self.visit(keyword.value)
+        self.push_scope(collect_scope_defined_names(node.body), is_class_body=True)
+        try:
+            for statement in node.body:
+                self.visit(statement)
+        finally:
+            self.scope_stack.pop()
+
+    def push_scope(self, defined_names: Set[str], is_class_body: bool = False) -> None:
+        """
+        Push a lexical scope with ordinary bindings but no inherited taint.
+
+        :param defined_names: Names bound by the new scope.
+        :type defined_names: Set[str]
+        :param is_class_body: Whether the scope models a class namespace, defaults to ``False``.
+        :type is_class_body: bool, optional
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.push_scope({'tools'})
+            >>> 'tools' in visitor.defined_names
+            True
+        """
+        self.scope_stack.append(
+            NameScope.create(defined_names=defined_names, is_class_body=is_class_body)
+        )
+
     def visit_Import(self, node: ast.Import) -> None:  # noqa: N802
         """
         Visit an ``import`` statement.
@@ -732,18 +1465,20 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         for alias in node.names:
             local_name = alias.asname or alias.name.split(".")[0]
             if is_tools_module_name(alias.name):
-                self.tools_aliases.add(local_name)
+                self.current_scope.tools_aliases.add(local_name)
                 self.add_finding(
                     node,
                     TOOLS_IMPORT_RULE,
                     "pytest files must not import repository tools modules directly",
                 )
             elif alias.name == "importlib":
-                self.importlib_aliases.add(local_name)
+                self.current_scope.importlib_aliases.add(local_name)
+            elif alias.name == "builtins":
+                self.current_scope.builtins_aliases.add(local_name)
             elif alias.name == "subprocess":
-                self.subprocess_aliases.add(local_name)
+                self.current_scope.subprocess_aliases.add(local_name)
             elif alias.name == "os":
-                self.os_aliases.add(local_name)
+                self.current_scope.os_aliases.add(local_name)
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # noqa: N802
@@ -771,7 +1506,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     alias.name == "package_templates"
                     or module == "tools.package_templates"
                 ):
-                    self.package_templates_aliases.add(local_name)
+                    self.current_scope.package_templates_aliases.add(local_name)
             self.add_finding(
                 node,
                 TOOLS_IMPORT_RULE,
@@ -780,23 +1515,37 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         elif module == "importlib":
             for alias in node.names:
                 if alias.name == "import_module":
-                    self.importlib_aliases.add(alias.asname or alias.name)
+                    self.current_scope.importlib_aliases.add(alias.asname or alias.name)
+        elif module == "builtins":
+            for alias in node.names:
+                if alias.name == "__import__":
+                    self.current_scope.importlib_aliases.add(alias.asname or alias.name)
         elif module == "subprocess":
             for alias in node.names:
                 if alias.name in _SUBPROCESS_METHODS:
-                    self.subprocess_function_aliases.add(alias.asname or alias.name)
+                    self.current_scope.subprocess_function_aliases.add(
+                        alias.asname or alias.name
+                    )
         elif module == "os":
             for alias in node.names:
                 if alias.name in _OS_COMMAND_METHODS:
-                    self.os_function_aliases.add(alias.asname or alias.name)
+                    self.current_scope.os_function_aliases.add(
+                        alias.asname or alias.name
+                    )
         elif module == "os.path":
             for alias in node.names:
                 if alias.name == "join":
-                    self.os_path_join_aliases.add(alias.asname or alias.name)
+                    self.current_scope.os_path_join_aliases.add(
+                        alias.asname or alias.name
+                    )
                 elif alias.name == "dirname":
-                    self.os_path_dirname_aliases.add(alias.asname or alias.name)
+                    self.current_scope.os_path_dirname_aliases.add(
+                        alias.asname or alias.name
+                    )
                 elif alias.name == "abspath":
-                    self.os_path_abspath_aliases.add(alias.asname or alias.name)
+                    self.current_scope.os_path_abspath_aliases.add(
+                        alias.asname or alias.name
+                    )
         self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802
@@ -863,13 +1612,13 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         for target in targets:
             for name in self._target_names(target):
                 if self.is_repo_root_tainted(value) or is_repo_root_name(name):
-                    self.repo_root_aliases.add(name)
+                    self.current_scope.repo_root_aliases.add(name)
                 if self.is_dynamic_tools_import_call(value):
-                    self.dynamic_tools_aliases.add(name)
+                    self.current_scope.dynamic_tools_aliases.add(name)
                 if self.expression_or_alias_runs_tools_script(value):
-                    self.tools_command_aliases.add(name)
+                    self.current_scope.tools_command_aliases.add(name)
                 if self.expression_or_alias_runs_source_install_command(value):
-                    self.source_install_command_aliases.add(name)
+                    self.current_scope.source_install_command_aliases.add(name)
 
     def _target_names(self, node: ast.AST) -> List[str]:
         """
@@ -915,6 +1664,13 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 node,
                 TOOLS_DYNAMIC_RULE,
                 "pytest files must not dynamically import repository tools modules",
+            )
+        dynamic_code_rule = self.dynamic_code_boundary_rule(node)
+        if dynamic_code_rule is not None:
+            self.add_finding(
+                node,
+                dynamic_code_rule,
+                "pytest files must not execute dynamic code that violates test-boundary rules",
             )
         if self.is_tools_attribute_call(node):
             self.add_finding(
@@ -1049,6 +1805,45 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             )
             return
 
+    def dynamic_code_boundary_rule(self, node: ast.Call) -> Optional[str]:
+        """
+        Return the first boundary rule found inside literal ``exec``/``eval`` code.
+
+        :param node: Call expression node.
+        :type node: ast.Call
+        :return: First nested boundary rule, or ``None``.
+        :rtype: str, optional
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.dynamic_code_boundary_rule(ast.parse('exec("import tools")').body[0].value)
+            'tools-import'
+            >>> visitor.dynamic_code_boundary_rule(ast.parse('eval("tools.x()")').body[0].value)
+            'tools-call'
+        """
+        if dotted_name(node.func) not in {"exec", "eval"} or not node.args:
+            return None
+        source = literal_string(node.args[0])
+        if source is None:
+            return None
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            # SyntaxError: exec/eval literal is not parseable Python source, so the
+            # static boundary guard cannot inspect it as nested code.
+            return None
+        visitor = TestBoundaryVisitor(
+            self.path,
+            source,
+            collect_defined_names(tree),
+            collect_docstring_node_ids(tree),
+        )
+        visitor.visit(tree)
+        if visitor.findings:
+            return visitor.findings[0].rule
+        return None
+
     def is_dynamic_tools_import_call(self, node: ast.AST) -> bool:
         """
         Return whether ``node`` dynamically imports ``tools``.
@@ -1065,7 +1860,12 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             True
             >>> visitor.is_dynamic_tools_import_call(ast.parse('__import__(name="tools.x")').body[0].value)
             True
-            >>> visitor.importlib_aliases.add('import_module')
+            >>> visitor.is_dynamic_tools_import_call(ast.parse('builtins.__import__("tools.x")').body[0].value)
+            True
+            >>> visitor.current_scope.builtins_aliases.add('bi')
+            >>> visitor.is_dynamic_tools_import_call(ast.parse('bi.__import__("tools.x")').body[0].value)
+            True
+            >>> visitor.current_scope.importlib_aliases.add('import_module')
             >>> visitor.is_dynamic_tools_import_call(ast.parse('import_module(".x", package="tools")').body[0].value)
             True
             >>> visitor.is_dynamic_tools_import_call(ast.parse('import_module(".x", "tools")').body[0].value)
@@ -1077,6 +1877,9 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         if func_name == "__import__":
             return self.dynamic_import_target_is_tools(node)
         if isinstance(node.func, ast.Attribute):
+            if node.func.attr == "__import__" and isinstance(node.func.value, ast.Name):
+                if node.func.value.id in self.builtins_aliases:
+                    return self.dynamic_import_target_is_tools(node)
             if node.func.attr == "import_module" and isinstance(
                 node.func.value, ast.Name
             ):
@@ -1139,7 +1942,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor.is_tools_attribute_call(ast.parse('tools.x()').body[0].value)
             False
             >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
-            >>> visitor.tools_aliases.add('tools')
+            >>> visitor.current_scope.tools_aliases.add('tools')
             >>> visitor.is_tools_attribute_call(ast.parse('tools.x()').body[0].value)
             True
         """
@@ -1162,7 +1965,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         Example::
 
             >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
-            >>> visitor.dynamic_tools_aliases.add('tools_module')
+            >>> visitor.current_scope.dynamic_tools_aliases.add('tools_module')
             >>> visitor.is_getattr_tools_call(ast.parse('getattr(tools_module, "x")').body[0].value)
             True
             >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
@@ -1325,7 +2128,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         Example::
 
             >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
-            >>> visitor.tools_command_aliases.add('cmd')
+            >>> visitor.current_scope.tools_command_aliases.add('cmd')
             >>> visitor.expression_or_alias_runs_tools_script(ast.Name(id='cmd'))
             True
             >>> expr = ast.parse('str(cmd)').body[0].value
@@ -1351,7 +2154,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         Example::
 
             >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
-            >>> visitor.source_install_command_aliases.add('cmd')
+            >>> visitor.current_scope.source_install_command_aliases.add('cmd')
             >>> visitor.expression_or_alias_runs_source_install_command(ast.Name(id='cmd'))
             True
         """
@@ -1471,8 +2274,13 @@ class TestBoundaryVisitor(ast.NodeVisitor):
 
         Example::
 
+            >>> visitor = TestBoundaryVisitor(Path('test/x.py'), '', set())
+            >>> visitor.file_parents_expr_reaches_repo_root(ast.parse('Path(__file__).parents[1]').body[0].value)
+            True
             >>> visitor = TestBoundaryVisitor(Path('test/sub/x.py'), '', set())
             >>> visitor.file_parents_expr_reaches_repo_root(ast.parse('Path(__file__).parents[0]').body[0].value)
+            False
+            >>> visitor.file_parents_expr_reaches_repo_root(ast.parse('Path(__file__).parents[1]').body[0].value)
             False
             >>> visitor.file_parents_expr_reaches_repo_root(ast.parse('Path(__file__).parents[2]').body[0].value)
             True

@@ -340,7 +340,15 @@ def _parse_message_labels(
     """
     includes = []
     skips = []
-    for bracket_match in _BRACKET_RE.finditer(message or ""):
+    message_text = message or ""
+    for match in _LABEL_RE.finditer(message_text):
+        if (match.start() > 0 and message_text[match.start() - 1] == "[") or (
+            match.end() < len(message_text) and message_text[match.end()] == "]"
+        ):
+            raise TemplateSuiteDetectionError(
+                "malformed template label: {0}".format(match.group(0))
+            )
+    for bracket_match in _BRACKET_RE.finditer(message_text):
         label_text = bracket_match.group(0)
         label_body = bracket_match.group(1)
         if _LABEL_RE.fullmatch(label_text):
@@ -349,7 +357,7 @@ def _parse_message_labels(
             raise TemplateSuiteDetectionError(
                 "malformed template label: {0}".format(label_text)
             )
-    for match in _LABEL_RE.finditer(message or ""):
+    for match in _LABEL_RE.finditer(message_text):
         kind = match.group(1)
         raw_token = match.group(2)
         token = raw_token.strip()
@@ -1093,6 +1101,26 @@ def _run_self_check_cases() -> None:
     _expect_detection_error(
         "missing label colon",
         lambda: detect_template_suites([], "[tpl c]", "local"),
+    )
+    _expect_detection_error(
+        "extra closing label bracket",
+        lambda: detect_template_suites([], "[tpl:c]]", "local"),
+    )
+    _expect_detection_error(
+        "nested opening label bracket",
+        lambda: detect_template_suites([], "[[tpl:c]]", "local"),
+    )
+    _expect_detection_error(
+        "extra closing skip label bracket",
+        lambda: detect_template_suites([], "[skip-tpl:c]]", "local"),
+    )
+    _expect_detection_error(
+        "nested opening skip label bracket",
+        lambda: detect_template_suites([], "[[skip-tpl:c]]", "local"),
+    )
+    _expect_detection_error(
+        "extra bracket cannot skip manual suite",
+        lambda: detect_template_suites([], "[tpl:c] [skip-tpl:c]]", "local"),
     )
     _expect_detection_error(
         "unknown include",

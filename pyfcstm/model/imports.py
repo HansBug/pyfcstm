@@ -44,6 +44,9 @@ __all__ = [
 ]
 
 
+_GENERATED_COMBO_PSEUDO_ATTR = "_generated_combo_pseudo"
+
+
 def _emit_import_diag(
         sink: Optional[DiagnosticSink], code: str, message: str, **refs: Any
 ) -> None:
@@ -175,7 +178,10 @@ def _clone_ast_node(node):
             field.name: _clone_ast_node(getattr(node, field.name))
             for field in fields(node)
         }
-        return node.__class__(**values)
+        cloned = node.__class__(**values)
+        if getattr(node, _GENERATED_COMBO_PSEUDO_ATTR, False):
+            setattr(cloned, _GENERATED_COMBO_PSEUDO_ATTR, True)
+        return cloned
     else:
         return node
 

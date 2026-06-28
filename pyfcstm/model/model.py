@@ -1577,7 +1577,7 @@ class State(AstExportable, PlantUMLExportable):
         :return: A state definition AST node
         :rtype: dsl_nodes.StateDefinition
         """
-        return dsl_nodes.StateDefinition(
+        node = dsl_nodes.StateDefinition(
             name=self.name,
             extra_name=self.extra_name,
             events=[event.to_ast_node() for _, event in self.events.items()],
@@ -1593,6 +1593,9 @@ class State(AstExportable, PlantUMLExportable):
             during_aspects=[item.to_ast_node() for item in self.on_during_aspects],
             is_pseudo=bool(self.is_pseudo),
         )
+        if self.is_pseudo and self.name.startswith(_COMBO_STATE_PREFIX):
+            node._generated_combo_pseudo = True
+        return node
 
     def to_plantuml(
         self,
@@ -2699,7 +2702,9 @@ def parse_dsl_node_to_state_machine(
         node: dsl_nodes.StateDefinition, current_path: Tuple[str, ...]
     ) -> State:
         current_path = tuple((*current_path, node.name))
-        if node.name.startswith(_COMBO_STATE_PREFIX):
+        if node.name.startswith(_COMBO_STATE_PREFIX) and not (
+            node.is_pseudo and getattr(node, "_generated_combo_pseudo", False)
+        ):
             sink.emit(
                 ModelDiagnostic(
                     code="E_COMBO_RESERVED_STATE_NAME",
@@ -3667,6 +3672,7 @@ def parse_dsl_node_to_state_machine(
             )
 
         combo_name_payloads: Dict[str, str] = {}
+        combo_digest_payloads: Dict[Tuple[Tuple[str, ...], str], str] = {}
 
         def _term_name_slug(term: dsl_nodes.ComboTriggerTerm) -> str:
             if isinstance(term, dsl_nodes.ComboGuardTerm):
@@ -3751,6 +3757,7 @@ def parse_dsl_node_to_state_machine(
             payload = json.dumps(payload_obj, ensure_ascii=False, sort_keys=True)
             digest = _combo_payload_digest(payload)
             short_digest = digest[:_COMBO_DIGEST_SIZE]
+            digest_key = (current_state.path, short_digest)
             source_label = (
                 "entry" if chooser_key[1] == "entry" else ".".join(chooser_key[2])
             )
@@ -3758,6 +3765,27 @@ def parse_dsl_node_to_state_machine(
             slug_parts.extend(_term_name_slug(term) for term in consumed_terms)
             slug = sequence_safe(slug_parts)
             name = f"{_COMBO_STATE_PREFIX}{slug}_h{short_digest}"
+
+            existing_digest_payload = combo_digest_payloads.get(digest_key)
+            if existing_digest_payload is not None and existing_digest_payload != payload:
+                sink.emit(
+                    ModelDiagnostic(
+                        code="E_COMBO_PSEUDO_NAME_COLLISION",
+                        severity="error",
+                        message=(
+                            f"Generated combo pseudo state digest {short_digest!r} "
+                            "collides for distinct semantic payloads."
+                        ),
+                        span=None,
+                        refs={
+                            "state_path": ".".join(current_state.path),
+                            "pseudo_name": name,
+                            "payload_digest": digest,
+                        },
+                    )
+                )
+            elif existing_digest_payload is None:
+                combo_digest_payloads[digest_key] = payload
 
             existing_payload = combo_name_payloads.get(name)
             if existing_payload is not None and existing_payload != payload:
@@ -3850,7 +3878,7 @@ def parse_dsl_node_to_state_machine(
                 )
             )
 
-        combo_preorder_counter = [0]
+        combo_preorder_counter = 0
 
         def _emit_combo_edge_for_term(
             alternatives: Tuple[_ComboAlternative, ...],
@@ -3920,6 +3948,7 @@ def parse_dsl_node_to_state_machine(
             consumed_term_keys: Tuple[Tuple[object, ...], ...],
             projection_key: Tuple[object, ...],
         ) -> None:
+            nonlocal combo_preorder_counter
             i = 0
             while i < len(alternatives):
                 alternative = alternatives[i]
@@ -3931,8 +3960,8 @@ def parse_dsl_node_to_state_machine(
                 term = alternative.terms[term_index]
                 term_key = _combo_term_semantic_key(alternative.transnode, term)
                 if remaining == 1:
-                    order_index = combo_preorder_counter[0]
-                    combo_preorder_counter[0] += 1
+                    order_index = combo_preorder_counter
+                    combo_preorder_counter += 1
                     effects = _parse_transition_effects(alternative.transnode)
                     _emit_combo_edge_for_term(
                         (alternative,),
@@ -3991,8 +4020,8 @@ def parse_dsl_node_to_state_machine(
                         group_tuple[0].semantic_duplicate_discriminator
                     ),
                 )
-                order_index = combo_preorder_counter[0]
-                combo_preorder_counter[0] += 1
+                order_index = combo_preorder_counter
+                combo_preorder_counter += 1
                 reuse_group_id = (
                     f"{run_anchor_origin_id}:prefix:{term_index}:{order_index}"
                 )
@@ -4027,7 +4056,7 @@ def parse_dsl_node_to_state_machine(
                 )
                 i = j
 
-        def _normal_transition(transnode) -> Optional[Transition]:
+        def _normal_transition(transnode) -> Transition:
             _emit_dangling_transition_diagnostics(transnode)
 
             if transnode.from_state is dsl_nodes.INIT_STATE:
@@ -4069,10 +4098,15 @@ def parse_dsl_node_to_state_machine(
         def _combo_projection_key(transnode) -> Tuple[object, ...]:
             if transnode.from_state is dsl_nodes.INIT_STATE:
                 return (current_state.path, "entry", "INIT_MARKER")
+            source_state_name = (
+                transnode.from_state
+                if isinstance(transnode.from_state, str)
+                else str(transnode.from_state)
+            )
             return (
                 current_state.path,
                 "state",
-                (*current_state.path, transnode.from_state),
+                (*current_state.path, source_state_name),
             )
 
         def _is_combo_transition(transnode) -> bool:
@@ -4106,8 +4140,7 @@ def parse_dsl_node_to_state_machine(
 
             if not _is_combo_transition(transnode):
                 transition = _normal_transition(transnode)
-                if transition is not None:
-                    transitions.append(transition)
+                transitions.append(transition)
                 i += 1
                 continue
 
@@ -4128,11 +4161,9 @@ def parse_dsl_node_to_state_machine(
                 if not _is_combo_transition(candidate):
                     if _combo_projection_key(candidate) == projection_key:
                         break
-                    j += 1
-                    continue
+                    break
                 if _combo_projection_key(candidate) != projection_key:
-                    j += 1
-                    continue
+                    break
                 if not _transition_endpoints_usable(candidate):
                     j += 1
                     continue

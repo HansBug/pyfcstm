@@ -392,32 +392,104 @@ class TestComboModelExpansion:
             prefix_edges[1].combo_priority_run_identity
         )
 
-    def test_same_source_combos_share_across_other_source_transition(self):
+    def test_different_chooser_transition_breaks_physical_combo_run(self):
         model = _build_model(
             """
             state Root {
                 state S1;
                 state S2;
                 state S3;
-                state Other;
+                state S4;
                 [*] -> S1;
                 S1 -> S2 :: E1 + E2;
-                Other -> S3 :: E1 + E4;
+                S2 -> S4 :: Other;
                 S1 -> S3 :: E1 + E3;
             }
             """
         )
 
+        indexed_transitions = list(enumerate(model.root_state.transitions))
+        plain_index = next(
+            index
+            for index, item in indexed_transitions
+            if item.from_state == "S2" and item.to_state == "S4"
+        )
         s1_prefix_edges = [
-            item
-            for item in model.root_state.transitions
+            (index, item)
+            for index, item in indexed_transitions
             if item.from_state == "S1"
             and item.combo_origin_refs
             and item.combo_origin_refs[0].role == "prefix"
         ]
 
-        assert len(s1_prefix_edges) == 1
-        assert len(s1_prefix_edges[0].combo_origin_refs) == 2
+        assert len(s1_prefix_edges) == 2
+        assert s1_prefix_edges[0][0] < plain_index < s1_prefix_edges[1][0]
+        assert s1_prefix_edges[0][1].to_state != s1_prefix_edges[1][1].to_state
+
+        runtime = SimulationRuntime(model)
+        runtime.cycle()
+        runtime.cycle(["Root.S1.E1", "Root.S1.E3"])
+        assert runtime.current_state.path == ("Root", "S3")
+
+    def test_identical_combos_reuse_pseudo_and_emit_terminal_edges(self):
+        model = _build_model(
+            """
+            state Root {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B :: E1 + E2;
+                A -> B :: E1 + E2;
+            }
+            """
+        )
+
+        pseudo_states = [
+            item for item in model.root_state.substates.values() if item.is_pseudo
+        ]
+        generated = [
+            item for item in model.root_state.transitions if item.combo_origin_refs
+        ]
+        prefix_edges = [
+            item for item in generated if item.combo_origin_refs[0].role == "prefix"
+        ]
+        terminal_edges = [
+            item
+            for item in generated
+            if item.combo_origin_refs[0].role == "terminal"
+        ]
+
+        assert len(pseudo_states) == 1
+        assert len(prefix_edges) == 1
+        assert len(prefix_edges[0].combo_origin_refs) == 2
+        assert len(terminal_edges) == 2
+        assert {item.from_state for item in terminal_edges} == {pseudo_states[0].name}
+
+    def test_generated_combo_pseudo_round_trips_through_ast_export(self):
+        model = _build_model(
+            """
+            state Root {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B :: E1 + E2;
+            }
+            """
+        )
+
+        round_tripped = parse_dsl_node_to_state_machine(model.to_ast_node())
+
+        assert [
+            item.name
+            for item in round_tripped.root_state.substates.values()
+            if item.is_pseudo
+        ] == [
+            item.name for item in model.root_state.substates.values() if item.is_pseudo
+        ]
+        runtime = SimulationRuntime(round_tripped)
+        runtime.cycle()
+        runtime.cycle(["Root.A.E1", "Root.A.E2"])
+        assert runtime.current_state.path == ("Root", "B")
 
     def test_nested_same_name_sources_keep_distinct_pseudo_names(self):
         model = _build_model(
@@ -558,11 +630,9 @@ class TestComboModelExpansion:
                 state S1;
                 state S2;
                 state S3;
-                state S4;
                 [*] -> S1;
                 S1 -> S2 :: E1 + E2;
-                S1 -> S4 :: E1;
-                S1 -> S3 :: E1 + E3;
+                S1 -> S3 :: E3 + E4;
             }
             """,
             entry_name="state_machine_dsl",

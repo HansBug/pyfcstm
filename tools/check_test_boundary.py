@@ -23,9 +23,14 @@ from __future__ import annotations
 import argparse
 import ast
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Set
+
+
+AST_CONSTANT_TYPE = getattr(ast, "Constant", None)
+AST_STR_TYPE = getattr(ast, "Str", None) if sys.version_info < (3, 8) else None
 
 
 TOOLS_IMPORT_RULE = "tools-import"
@@ -210,9 +215,9 @@ def literal_string(node: ast.AST) -> Optional[str]:
         >>> literal_string(ast.parse('"x"').body[0].value)
         'x'
     """
-    if isinstance(node, ast.Str):
-        return node.s
-    if hasattr(ast, "Constant") and isinstance(node, ast.Constant):
+    if AST_STR_TYPE is not None and isinstance(node, AST_STR_TYPE):
+        return getattr(node, "s")
+    if AST_CONSTANT_TYPE is not None and isinstance(node, AST_CONSTANT_TYPE):
         if isinstance(node.value, str):
             return node.value
     return None
@@ -242,7 +247,7 @@ def collect_string_literals(node: ast.AST) -> List[str]:
 
 def collect_defined_names(tree: ast.AST) -> Set[str]:
     """
-    Collect names defined by functions and classes in a source tree.
+    Collect names defined by functions, classes, and assignments.
 
     :param tree: Parsed Python AST.
     :type tree: ast.AST
@@ -254,11 +259,42 @@ def collect_defined_names(tree: ast.AST) -> Set[str]:
         >>> tree = ast.parse('def f(): pass')
         >>> collect_defined_names(tree)
         {'f'}
+        >>> tree = ast.parse('package_templates = lambda: None')
+        >>> 'package_templates' in collect_defined_names(tree)
+        True
     """
     names = set()
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                names.update(assigned_target_names(target))
+        elif isinstance(node, ast.AnnAssign):
+            names.update(assigned_target_names(node.target))
+    return names
+
+
+def assigned_target_names(node: ast.AST) -> Set[str]:
+    """
+    Return simple names assigned by an assignment target.
+
+    :param node: Assignment target node.
+    :type node: ast.AST
+    :return: Assigned identifier names.
+    :rtype: Set[str]
+
+    Example::
+
+        >>> assigned_target_names(ast.parse('a = 1').body[0].targets[0])
+        {'a'}
+    """
+    if isinstance(node, ast.Name):
+        return {node.id}
+    names = set()
+    if isinstance(node, (ast.Tuple, ast.List)):
+        for item in node.elts:
+            names.update(assigned_target_names(item))
     return names
 
 
@@ -320,7 +356,7 @@ def node_contains_name(node: ast.AST, name: str) -> bool:
 
 def is_file_parents_expr(node: ast.AST) -> bool:
     """
-    Return whether ``node`` looks like ``Path(__file__).parents[...]``.
+    Return whether ``node`` climbs from ``__file__`` toward parent paths.
 
     :param node: AST node to inspect.
     :type node: ast.AST
@@ -332,6 +368,12 @@ def is_file_parents_expr(node: ast.AST) -> bool:
         >>> expr = ast.parse('Path(__file__).resolve().parents[2]').body[0].value
         >>> is_file_parents_expr(expr)
         True
+        >>> expr = ast.parse('Path(__file__).resolve().parent.parent').body[0].value
+        >>> is_file_parents_expr(expr)
+        True
+        >>> expr = ast.parse('Path(__file__).resolve().parent').body[0].value
+        >>> is_file_parents_expr(expr)
+        False
     """
     for child in ast.walk(node):
         if isinstance(child, ast.Subscript):
@@ -339,7 +381,34 @@ def is_file_parents_expr(node: ast.AST) -> bool:
             if isinstance(value, ast.Attribute) and value.attr == "parents":
                 if node_contains_name(value.value, "__file__"):
                     return True
+        if parent_chain_depth(child) >= 2:
+            return True
     return False
+
+
+def parent_chain_depth(node: ast.AST) -> int:
+    """
+    Return the number of consecutive ``.parent`` hops from a ``__file__`` path.
+
+    :param node: AST node to inspect.
+    :type node: ast.AST
+    :return: Number of consecutive ``.parent`` attributes rooted at ``__file__``.
+    :rtype: int
+
+    Example::
+
+        >>> expr = ast.parse('Path(__file__).resolve().parent.parent').body[0].value
+        >>> parent_chain_depth(expr)
+        2
+    """
+    depth = 0
+    current = node
+    while isinstance(current, ast.Attribute) and current.attr == "parent":
+        depth += 1
+        current = current.value
+    if depth and node_contains_name(current, "__file__"):
+        return depth
+    return 0
 
 
 def is_exact_segment(node: ast.AST, segment: str) -> bool:
@@ -418,15 +487,44 @@ def expression_runs_tools_script(node: ast.AST) -> bool:
 
         >>> expression_runs_tools_script(ast.parse('["python", "-m", "tools.x"]').body[0].value)
         True
+        >>> expression_runs_tools_script(ast.parse('Path("tools") / "x.py"').body[0].value)
+        True
     """
     if isinstance(node, ast.Name):
         return False
-    if isinstance(node, (ast.List, ast.Tuple)):
-        return command_sequence_runs_tools_script(collect_string_literals(node))
     values = collect_string_literals(node)
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return command_sequence_runs_tools_script(
+            values
+        ) or command_literals_form_tools_script_path(values)
     if command_sequence_runs_tools_script(values):
         return True
+    if command_literals_form_tools_script_path(values):
+        return True
     return any(command_text_runs_tools_script(value) for value in values)
+
+
+def command_literals_form_tools_script_path(values: Sequence[str]) -> bool:
+    """
+    Return whether string literals combine into a ``tools/*.py`` path.
+
+    :param values: String literal values from a command expression.
+    :type values: Sequence[str]
+    :return: ``True`` when literals contain a ``tools`` segment and a Python file.
+    :rtype: bool
+
+    Example::
+
+        >>> command_literals_form_tools_script_path(['tools', 'x.py'])
+        True
+    """
+    normalized_values = [value.replace("\\", "/") for value in values]
+    has_tools_segment = any(
+        value == "tools" or "/tools/" in "/{value}/".format(value=value.strip("/"))
+        for value in normalized_values
+    )
+    has_python_file = any(value.endswith(".py") for value in normalized_values)
+    return has_tools_segment and has_python_file
 
 
 class TestBoundaryVisitor(ast.NodeVisitor):
@@ -439,6 +537,9 @@ class TestBoundaryVisitor(ast.NodeVisitor):
     :type source: str
     :param defined_names: Names defined by functions and classes in the module.
     :type defined_names: Set[str]
+    :param docstring_node_ids: String literal nodes that are docstrings,
+        defaults to ``None``.
+    :type docstring_node_ids: Set[int], optional
 
     Example::
 
@@ -450,10 +551,17 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         'tools-import'
     """
 
-    def __init__(self, path: Path, source: str, defined_names: Set[str]) -> None:
+    def __init__(
+        self,
+        path: Path,
+        source: str,
+        defined_names: Set[str],
+        docstring_node_ids: Optional[Set[int]] = None,
+    ) -> None:
         self.path = path
         self.source_lines = source.splitlines()
         self.defined_names = defined_names
+        self.docstring_node_ids = docstring_node_ids or set()
         self.findings = []  # type: List[BoundaryFinding]
         self.tools_aliases = set()  # type: Set[str]
         self.dynamic_tools_aliases = set()  # type: Set[str]
@@ -463,6 +571,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         self.os_aliases = {"os"}  # type: Set[str]
         self.os_function_aliases = set()  # type: Set[str]
         self.os_path_join_aliases = set()  # type: Set[str]
+        self.os_path_dirname_aliases = set()  # type: Set[str]
+        self.os_path_abspath_aliases = set()  # type: Set[str]
         self.repo_root_aliases = set()  # type: Set[str]
         self.tools_command_aliases = set()  # type: Set[str]
         self.package_templates_aliases = set()  # type: Set[str]
@@ -585,6 +695,10 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             for alias in node.names:
                 if alias.name == "join":
                     self.os_path_join_aliases.add(alias.asname or alias.name)
+                elif alias.name == "dirname":
+                    self.os_path_dirname_aliases.add(alias.asname or alias.name)
+                elif alias.name == "abspath":
+                    self.os_path_abspath_aliases.add(alias.asname or alias.name)
         self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802
@@ -779,7 +893,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         self._visit_string_marker(node)
         self.generic_visit(node)
 
-    def visit_Str(self, node: ast.Str) -> None:  # noqa: N802
+    def visit_Str(self, node: ast.AST) -> None:  # noqa: N802
         """
         Visit Python 3.7 string literals for source-install markers.
 
@@ -815,6 +929,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor.findings[0].rule
             'source-install-smoke'
         """
+        if id(node) in self.docstring_node_ids:
+            return
         value = literal_string(node)
         if value is None:
             return
@@ -978,18 +1094,69 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
             >>> visitor.is_command_call_running_tools(ast.parse('subprocess.run(["python", "-m", "tools.x"])').body[0].value)
             True
+            >>> visitor.is_command_call_running_tools(ast.parse('subprocess.run(args=["python", "tools/x.py"])').body[0].value)
+            True
+            >>> visitor.is_command_call_running_tools(ast.parse('os.spawnl(os.P_WAIT, "python", "python", "tools/x.py")').body[0].value)
+            True
         """
-        if not node.args:
-            return False
-        if self.is_subprocess_command_call(node) or self.is_os_command_call(node):
-            command = node.args[0]
-            if (
-                isinstance(command, ast.Name)
-                and command.id in self.tools_command_aliases
-            ):
-                return True
-            return expression_runs_tools_script(command)
+        if self.is_subprocess_command_call(node):
+            return any(
+                self.expression_or_alias_runs_tools_script(command)
+                for command in self.subprocess_command_arguments(node)
+            )
+        os_method = self.os_command_method_name(node)
+        if os_method is not None:
+            command_args = (
+                node.args[1:] if os_method.startswith("spawn") else node.args[:1]
+            )
+            return any(
+                self.expression_or_alias_runs_tools_script(command)
+                for command in command_args
+            )
         return False
+
+    def subprocess_command_arguments(self, node: ast.Call) -> List[ast.AST]:
+        """
+        Return command argument expressions for a subprocess call.
+
+        :param node: Subprocess call expression.
+        :type node: ast.Call
+        :return: Candidate command argument expressions.
+        :rtype: List[ast.AST]
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> call = ast.parse('subprocess.run(args=["python"])').body[0].value
+            >>> len(visitor.subprocess_command_arguments(call))
+            1
+        """
+        if node.args:
+            return [node.args[0]]
+        for keyword in node.keywords:
+            if keyword.arg == "args":
+                return [keyword.value]
+        return []
+
+    def expression_or_alias_runs_tools_script(self, node: ast.AST) -> bool:
+        """
+        Return whether ``node`` is a tools command literal or known alias.
+
+        :param node: Command expression node.
+        :type node: ast.AST
+        :return: ``True`` when the expression targets repository tools.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.tools_command_aliases.add('cmd')
+            >>> visitor.expression_or_alias_runs_tools_script(ast.Name(id='cmd'))
+            True
+        """
+        if isinstance(node, ast.Name) and node.id in self.tools_command_aliases:
+            return True
+        return expression_runs_tools_script(node)
 
     def is_subprocess_command_call(self, node: ast.Call) -> bool:
         """
@@ -1030,14 +1197,33 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor.is_os_command_call(ast.parse('os.system("true")').body[0].value)
             True
         """
+        return self.os_command_method_name(node) is not None
+
+    def os_command_method_name(self, node: ast.Call) -> Optional[str]:
+        """
+        Return the :mod:`os` command helper name called by ``node``.
+
+        :param node: Call expression node.
+        :type node: ast.Call
+        :return: OS command helper name, or ``None``.
+        :rtype: str, optional
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.os_command_method_name(ast.parse('os.system("true")').body[0].value)
+            'system'
+        """
         if isinstance(node.func, ast.Attribute):
             if node.func.attr in _OS_COMMAND_METHODS and isinstance(
                 node.func.value, ast.Name
             ):
-                return node.func.value.id in self.os_aliases
+                if node.func.value.id in self.os_aliases:
+                    return node.func.attr
         if isinstance(node.func, ast.Name):
-            return node.func.id in self.os_function_aliases
-        return False
+            if node.func.id in self.os_function_aliases:
+                return node.func.id
+        return None
 
     def is_repo_root_tainted(self, node: ast.AST) -> bool:
         """
@@ -1058,6 +1244,9 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             return node.id in self.repo_root_aliases or is_repo_root_name(node.id)
         if is_file_parents_expr(node):
             return True
+        if isinstance(node, ast.Call):
+            if self.os_path_dirname_depth(node) >= 2:
+                return True
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
             return self.is_repo_root_tainted(node.left) or self.is_repo_root_tainted(
                 node.right
@@ -1067,7 +1256,13 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 if node.func.attr in {"resolve", "absolute", "joinpath"}:
                     return self.is_repo_root_tainted(node.func.value)
             if dotted_name(node.func) in {"Path", "pathlib.Path"} and node.args:
-                return self.is_repo_root_tainted(node.args[0])
+                if self.is_repo_root_tainted(node.args[0]):
+                    return True
+                return any(is_exact_segment(arg, "templates") for arg in node.args[1:])
+            if self.is_os_path_abspath_call(node) and node.args:
+                return node_contains_name(
+                    node.args[0], "__file__"
+                ) or self.is_repo_root_tainted(node.args[0])
             if self.is_os_path_join_call(node) and node.args:
                 return self.is_repo_root_tainted(node.args[0])
         return False
@@ -1094,6 +1289,81 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             and node.func.id in self.os_path_join_aliases
         )
 
+    def is_os_path_dirname_call(self, node: ast.Call) -> bool:
+        """
+        Return whether a call targets ``os.path.dirname``.
+
+        :param node: Call expression node.
+        :type node: ast.Call
+        :return: ``True`` when the callee is ``os.path.dirname`` or an alias.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.is_os_path_dirname_call(ast.parse('os.path.dirname(__file__)').body[0].value)
+            True
+        """
+        if dotted_name(node.func) == "os.path.dirname":
+            return True
+        return (
+            isinstance(node.func, ast.Name)
+            and node.func.id in self.os_path_dirname_aliases
+        )
+
+    def is_os_path_abspath_call(self, node: ast.Call) -> bool:
+        """
+        Return whether a call targets ``os.path.abspath``.
+
+        :param node: Call expression node.
+        :type node: ast.Call
+        :return: ``True`` when the callee is ``os.path.abspath`` or an alias.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.is_os_path_abspath_call(ast.parse('os.path.abspath(__file__)').body[0].value)
+            True
+        """
+        if dotted_name(node.func) == "os.path.abspath":
+            return True
+        return (
+            isinstance(node.func, ast.Name)
+            and node.func.id in self.os_path_abspath_aliases
+        )
+
+    def os_path_dirname_depth(self, node: ast.AST) -> int:
+        """
+        Return nested ``os.path.dirname`` depth from a ``__file__`` path.
+
+        :param node: AST node to inspect.
+        :type node: ast.AST
+        :return: Number of nested dirname calls rooted at ``__file__``.
+        :rtype: int
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> expr = ast.parse('os.path.dirname(os.path.dirname(os.path.abspath(__file__)))').body[0].value
+            >>> visitor.os_path_dirname_depth(expr)
+            2
+        """
+        depth = 0
+        current = node
+        while isinstance(current, ast.Call):
+            if self.is_os_path_abspath_call(current) and current.args:
+                current = current.args[0]
+                continue
+            if self.is_os_path_dirname_call(current) and current.args:
+                depth += 1
+                current = current.args[0]
+                continue
+            break
+        if depth and node_contains_name(current, "__file__"):
+            return depth
+        return 0
+
     def is_repo_source_template_access(self, node: ast.AST) -> bool:
         """
         Return whether an expression accesses repo-root ``templates``.
@@ -1118,6 +1388,11 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 and self.expression_has_exact_segment(node.left, "templates")
             )
         if isinstance(node, ast.Call):
+            if dotted_name(node.func) in {"Path", "pathlib.Path"} and node.args:
+                if self.is_repo_root_tainted(node.args[0]):
+                    return any(
+                        is_exact_segment(arg, "templates") for arg in node.args[1:]
+                    )
             if isinstance(node.func, ast.Attribute) and node.func.attr == "joinpath":
                 if self.is_repo_root_tainted(node.func.value):
                     return any(is_exact_segment(arg, "templates") for arg in node.args)
@@ -1156,6 +1431,33 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         return False
 
 
+def collect_docstring_node_ids(tree: ast.AST) -> Set[int]:
+    """
+    Collect AST node identifiers for module, class, and function docstrings.
+
+    :param tree: Parsed Python AST.
+    :type tree: ast.AST
+    :return: ``id()`` values for string literal nodes used as docstrings.
+    :rtype: Set[int]
+
+    Example::
+
+        >>> source = "'''source install note'''" + chr(10) + "x = 'source install'"
+        >>> tree = ast.parse(source)
+        >>> len(collect_docstring_node_ids(tree))
+        1
+    """
+    docstring_node_ids = set()
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if not isinstance(body, list) or not body:
+            continue
+        first = body[0]
+        if isinstance(first, ast.Expr) and literal_string(first.value) is not None:
+            docstring_node_ids.add(id(first.value))
+    return docstring_node_ids
+
+
 def scan_source(path: Path, relative_path: Path, source: str) -> List[BoundaryFinding]:
     """
     Scan one Python test source file.
@@ -1174,9 +1476,16 @@ def scan_source(path: Path, relative_path: Path, source: str) -> List[BoundaryFi
 
         >>> scan_source(Path('x.py'), Path('x.py'), 'import os')
         []
+        >>> scan_source(Path('x.py'), Path('x.py'), "'''source install note'''")
+        []
     """
     tree = ast.parse(source, filename=str(path))
-    visitor = TestBoundaryVisitor(relative_path, source, collect_defined_names(tree))
+    visitor = TestBoundaryVisitor(
+        relative_path,
+        source,
+        collect_defined_names(tree),
+        collect_docstring_node_ids(tree),
+    )
     visitor.visit(tree)
     return visitor.findings
 

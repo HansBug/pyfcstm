@@ -154,13 +154,15 @@ Recognized suite tokens are `default`, `template_core`, `template_representative
 enter the detector's dynamic `matrix.include` output.
 
 Commit-message labels use exact bracketed forms such as `[tpl:c]`, `[tpl:c_poll]`, `[tpl:all]`, and `[skip-tpl:c]`.
-Multiple labels may be combined. The parser is context-free: a live label inside prose or a Markdown code block is still
-parsed as an instruction, so use neutral examples such as `tpl:c` when documenting labels without intending to select a
-suite.
+Multiple labels may be combined. Each bracketed label accepts one suite token only; use repeated labels such as
+`[tpl:c] [tpl:c_poll]` instead of comma-separated text inside one label. The parser is context-free: a live label inside
+prose or a Markdown code block is still parsed as an instruction, so use neutral examples such as `tpl:c` when
+documenting labels without intending to select a suite.
 
 Path-detected suites are protected. `PYFCSTM_SKIP_TEMPLATE_SUITES` and `[skip-tpl:*]` may remove only manually selected
 dynamic suites; they cannot remove path-detected suites and cannot disable fixed/default jobs. Unknown labels or suite
-tokens are hard failures, not warnings.
+tokens are hard failures, not warnings. The current JSON schema version is `template-suite-detector/v1`; renaming or
+removing fields requires a new schema version.
 
 ### CI Workflow Commit-Message Triggers
 

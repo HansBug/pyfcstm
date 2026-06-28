@@ -532,7 +532,8 @@ def _read_changed_files(path: str) -> List[str]:
     :type path: str
     :return: Changed paths without trailing newline characters.
     :rtype: list[str]
-    :raises OSError: If the file cannot be read.
+    :raises OSError: If the file cannot be opened or read.
+    :raises UnicodeError: If the file is not valid UTF-8 text.
 
     Example::
 
@@ -551,7 +552,8 @@ def _read_message(path: str) -> str:
     :type path: str
     :return: Message text.
     :rtype: str
-    :raises OSError: If the file cannot be read.
+    :raises OSError: If the file cannot be opened or read.
+    :raises UnicodeError: If the file is not valid UTF-8 text.
 
     Example::
 
@@ -627,6 +629,104 @@ def _check_selected(
         skip_suites=skip_suites,
     )
     _require_equal(result["selected_suites"], list(expected), label)
+
+
+def _check_detection_result(
+    label: str,
+    changed_files: Sequence[str],
+    message: str,
+    selected_suites: Optional[Sequence[str]] = None,
+    protected_suites: Optional[Sequence[str]] = None,
+    manual_suites: Optional[Sequence[str]] = None,
+    skipped_manual_suites: Optional[Sequence[str]] = None,
+    fixed_suites: Optional[Sequence[str]] = None,
+    matrix_suites: Optional[Sequence[str]] = None,
+    reasons: Optional[Dict[str, Sequence[str]]] = None,
+    include_suites: Optional[str] = None,
+    skip_suites: Optional[str] = None,
+) -> Dict[str, object]:
+    """
+    Run one detector self-check case for selected schema fields.
+
+    :param label: Human-readable check label.
+    :type label: str
+    :param changed_files: Repository-relative changed paths.
+    :type changed_files: collections.abc.Sequence[str]
+    :param message: Message text to scan for labels.
+    :type message: str
+    :param selected_suites: Expected ordered ``selected_suites`` value.
+    :type selected_suites: collections.abc.Sequence[str], optional
+    :param protected_suites: Expected ordered ``protected_suites`` value.
+    :type protected_suites: collections.abc.Sequence[str], optional
+    :param manual_suites: Expected ordered ``manual_suites`` value.
+    :type manual_suites: collections.abc.Sequence[str], optional
+    :param skipped_manual_suites: Expected ordered ``skipped_manual_suites``
+        value.
+    :type skipped_manual_suites: collections.abc.Sequence[str], optional
+    :param fixed_suites: Expected ordered ``fixed_suites`` value.
+    :type fixed_suites: collections.abc.Sequence[str], optional
+    :param matrix_suites: Expected ordered dynamic suite names from
+        ``matrix.include``.
+    :type matrix_suites: collections.abc.Sequence[str], optional
+    :param reasons: Expected reason lists for selected suites.
+    :type reasons: dict[str, collections.abc.Sequence[str]], optional
+    :param include_suites: Optional comma-separated include suites.
+    :type include_suites: str, optional
+    :param skip_suites: Optional comma-separated skip suites.
+    :type skip_suites: str, optional
+    :return: Detector result produced by the checked case.
+    :rtype: dict[str, object]
+    :raises TemplateSuiteDetectionError: If the check fails.
+
+    Example::
+
+        >>> _check_detection_result(
+        ...     "manual skip",
+        ...     [],
+        ...     "[tpl:c] [skip-tpl:c]",
+        ...     selected_suites=[],
+        ...     manual_suites=["c"],
+        ...     skipped_manual_suites=["c"],
+        ... )["matrix"]["include"]
+        []
+    """
+    result = detect_template_suites(
+        changed_files,
+        message,
+        "local",
+        include_suites=include_suites,
+        skip_suites=skip_suites,
+    )
+    expected_fields = (
+        ("selected_suites", selected_suites),
+        ("protected_suites", protected_suites),
+        ("manual_suites", manual_suites),
+        ("skipped_manual_suites", skipped_manual_suites),
+        ("fixed_suites", fixed_suites),
+    )
+    for field_name, expected in expected_fields:
+        if expected is not None:
+            _require_equal(
+                result[field_name],
+                list(expected),
+                "{0} {1}".format(label, field_name),
+            )
+    if matrix_suites is not None:
+        _require_equal(
+            [item["suite"] for item in result["matrix"]["include"]],
+            list(matrix_suites),
+            "{0} matrix.include suites".format(label),
+        )
+    if reasons is not None:
+        expected_reasons = {
+            suite: list(suite_reasons) for suite, suite_reasons in reasons.items()
+        }
+        _require_equal(
+            result["reasons"],
+            expected_reasons,
+            "{0} reasons".format(label),
+        )
+    return result
 
 
 def _expect_detection_error(label: str, func: Any) -> None:
@@ -781,19 +881,75 @@ def _run_self_check_cases() -> None:
     os.environ["PYFCSTM_TEMPLATE_SUITES"] = "c,c_poll"
     os.environ["PYFCSTM_SKIP_TEMPLATE_SUITES"] = "c"
     try:
-        _check_selected("environment values", [], "", ["c_poll"])
+        _check_detection_result(
+            "environment values",
+            [],
+            "",
+            selected_suites=["c_poll"],
+            protected_suites=[],
+            manual_suites=["c", "c_poll"],
+            skipped_manual_suites=["c"],
+            fixed_suites=[],
+            matrix_suites=["c_poll"],
+            reasons={
+                "c": ["include:c", "skip:c"],
+                "c_poll": ["include:c_poll"],
+            },
+        )
     finally:
         os.environ.pop("PYFCSTM_TEMPLATE_SUITES", None)
         os.environ.pop("PYFCSTM_SKIP_TEMPLATE_SUITES", None)
-    _check_selected("skip slow explicit", [], "[tpl:c] [skip-slow]", ["c"])
-    _check_selected(
+    _check_detection_result(
+        "skip slow explicit",
+        [],
+        "[tpl:c] [skip-slow]",
+        selected_suites=["c"],
+        protected_suites=[],
+        manual_suites=["c"],
+        skipped_manual_suites=[],
+        fixed_suites=[],
+        matrix_suites=["c"],
+        reasons={"c": ["label:[tpl:c]", "legacy:skip-slow"]},
+    )
+    _check_detection_result(
         "skip cannot remove protected",
         ["templates/c/machine.c.j2"],
         "[skip-slow] [skip-tpl:c]",
-        ["c", "cpp"],
+        selected_suites=["c", "cpp"],
+        protected_suites=["c", "cpp"],
+        manual_suites=[],
+        skipped_manual_suites=[],
+        fixed_suites=[],
+        matrix_suites=["c", "cpp"],
+        reasons={
+            "c": ["path:templates/c/machine.c.j2", "skip:c", "legacy:skip-slow"],
+            "cpp": ["path:templates/c/machine.c.j2", "legacy:skip-slow"],
+        },
     )
-    _check_selected("manual skip", [], "[tpl:c] [skip-tpl:c]", [])
-    _check_selected("all with skip slow", [], "[tpl:all] [skip-slow]", dynamic)
+    _check_detection_result(
+        "manual skip",
+        [],
+        "[tpl:c] [skip-tpl:c]",
+        selected_suites=[],
+        protected_suites=[],
+        manual_suites=["c"],
+        skipped_manual_suites=["c"],
+        fixed_suites=[],
+        matrix_suites=[],
+        reasons={"c": ["label:[tpl:c]", "skip:c"]},
+    )
+    _check_detection_result(
+        "all with skip slow",
+        [],
+        "[tpl:all] [skip-slow]",
+        selected_suites=dynamic,
+        protected_suites=[],
+        manual_suites=dynamic,
+        skipped_manual_suites=[],
+        fixed_suites=[],
+        matrix_suites=dynamic,
+        reasons={suite: ["label:[tpl:all]", "legacy:skip-slow"] for suite in dynamic},
+    )
     _check_selected(
         "environment skip cannot remove protected",
         ["templates/cpp/machine.cpp.j2"],
@@ -801,16 +957,47 @@ def _run_self_check_cases() -> None:
         ["cpp"],
         skip_suites="cpp",
     )
-    _check_selected(
-        "fixed skip remains fixed", [], "[tpl:default] [skip-tpl:default]", ["default"]
+    _check_detection_result(
+        "fixed skip remains fixed",
+        [],
+        "[tpl:default] [skip-tpl:default]",
+        selected_suites=["default"],
+        protected_suites=[],
+        manual_suites=["default"],
+        skipped_manual_suites=[],
+        fixed_suites=["default"],
+        matrix_suites=[],
+        reasons={"default": ["label:[tpl:default]", "skip:default"]},
     )
-    _check_selected(
+    _check_detection_result(
         "representative fixed skip remains fixed",
         [],
         "[tpl:template_representative] [skip-tpl:template_representative]",
-        ["template_representative"],
+        selected_suites=["template_representative"],
+        protected_suites=[],
+        manual_suites=["template_representative"],
+        skipped_manual_suites=[],
+        fixed_suites=["template_representative"],
+        matrix_suites=[],
+        reasons={
+            "template_representative": [
+                "label:[tpl:template_representative]",
+                "skip:template_representative",
+            ]
+        },
     )
-    _check_selected("all self cancel", [], "[tpl:all] [skip-tpl:all]", [])
+    _check_detection_result(
+        "all self cancel",
+        [],
+        "[tpl:all] [skip-tpl:all]",
+        selected_suites=[],
+        protected_suites=[],
+        manual_suites=dynamic,
+        skipped_manual_suites=dynamic,
+        fixed_suites=[],
+        matrix_suites=[],
+        reasons={suite: ["label:[tpl:all]", "skip:all"] for suite in dynamic},
+    )
 
     result = detect_template_suites(
         ["templates/c/machine.c.j2"], "[tpl:template_core]", "local"
@@ -910,8 +1097,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         reads arguments from :data:`sys.argv`.
     :type argv: collections.abc.Sequence[str], optional
     :return: Process-style exit code. ``0`` means success, ``2`` invalid
-        detector input, ``3`` unreadable input files, and ``4`` JSON output
-        failure.
+        detector input, ``3`` unreadable or non-UTF-8 input files, and ``4``
+        JSON output failure.
     :rtype: int
 
     Example::
@@ -938,8 +1125,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         changed_files = _read_changed_files(args.changed_files)
         message = _read_message(args.commit_message_file)
-    except OSError as err:
+    except (OSError, UnicodeError) as err:
         # OSError: the changed-files or message input path cannot be read.
+        # UnicodeError: those input files must be UTF-8 text.
         parser.exit(
             3, "detect_template_suites: cannot read input file: {0}\n".format(err)
         )

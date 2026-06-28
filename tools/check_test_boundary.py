@@ -3121,7 +3121,83 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 SOURCE_TEMPLATE_RULE,
                 "pytest files must not access the repository-source templates directory directly",
             )
+        self.update_mutated_static_collection_aliases(node)
         self.generic_visit(node)
+
+    def update_mutated_static_collection_aliases(self, node: ast.Call) -> None:
+        """
+        Propagate static taint through simple list mutation calls.
+
+        The boundary guard treats starred path arguments as a compact way to
+        hide repo-root and ``templates`` segments. Static list mutations such
+        as ``segments.append("templates")`` or ``segments.extend([...])`` need
+        the same conservative alias propagation as ``segments += [...]``.
+
+        :param node: Call expression node to inspect.
+        :type node: ast.Call
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> source = 'segments = []' + chr(10) + 'segments.append("templates")'
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), source, set())
+            >>> visitor.visit(ast.parse(source))
+            >>> 'segments' in visitor.template_segment_aliases
+            True
+        """
+        if not isinstance(node.func, ast.Attribute):
+            return
+        if not isinstance(node.func.value, ast.Name):
+            return
+        name = node.func.value.id
+        elements = self.static_collection_mutation_elements(node)
+        if not elements:
+            return
+        if any(self.is_repo_root_tainted(element) for element in elements):
+            self.current_scope.repo_root_aliases.add(name)
+        if any(
+            self.expression_has_exact_segment(element, "templates")
+            for element in elements
+        ):
+            self.current_scope.template_segment_aliases.add(name)
+        if any(
+            self.expression_or_alias_runs_tools_script(element) for element in elements
+        ):
+            self.current_scope.tools_command_aliases.add(name)
+        if any(
+            self.expression_or_alias_runs_source_install_command(element)
+            for element in elements
+        ):
+            self.current_scope.source_install_command_aliases.add(name)
+
+    def static_collection_mutation_elements(self, node: ast.Call) -> List[ast.AST]:
+        """
+        Return static elements added by a list-like mutation call.
+
+        :param node: Mutation call expression.
+        :type node: ast.Call
+        :return: Added element expressions, or an empty list for unsupported
+            calls.
+        :rtype: List[ast.AST]
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> call = ast.parse('segments.extend(["templates"])').body[0].value
+            >>> [literal_string(item) for item in visitor.static_collection_mutation_elements(call)]
+            ['templates']
+        """
+        if not isinstance(node.func, ast.Attribute):
+            return []
+        if node.func.attr == "append" and len(node.args) == 1:
+            return [node.args[0]]
+        if node.func.attr == "extend" and len(node.args) == 1:
+            elements = self.static_iterable_elements(node.args[0])
+            return elements or [node.args[0]]
+        if node.func.attr == "insert" and len(node.args) >= 2:
+            return [node.args[1]]
+        return []
 
     def visit_Subscript(self, node: ast.Subscript) -> None:  # noqa: N802
         """
@@ -4899,6 +4975,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     )
             if isinstance(node.func, ast.Attribute) and node.func.attr == "joinpath":
                 joinpath_parts = [node.func.value] + list(node.args)
+                if self.path_argument_sequence_reaches_repo_templates(joinpath_parts):
+                    return True
                 if self.expressions_combine_repo_root_and_template_segment(
                     joinpath_parts
                 ):
@@ -4927,6 +5005,35 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                         for arg in node.args
                     )
         return False
+
+    def path_argument_sequence_reaches_repo_templates(
+        self, arguments: Sequence[ast.AST]
+    ) -> bool:
+        """
+        Return whether path arguments climb to repo root then ``templates``.
+
+        :param arguments: Path-building expressions in call order.
+        :type arguments: Sequence[ast.AST]
+        :return: ``True`` when static parent hops reach the repository root and
+            the sequence contains an exact ``templates`` segment.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('test/x.py'), '', set())
+            >>> expr = ast.parse('Path(__file__).resolve().parents[0].joinpath("..", "templates")').body[0].value
+            >>> visitor.path_argument_sequence_reaches_repo_templates([expr.func.value] + list(expr.args))
+            True
+        """
+        hops = self.path_argument_sequence_parent_hops(arguments)
+        return (
+            hops is not None
+            and hops >= self.repo_root_dirname_depth
+            and any(
+                self.expression_has_exact_segment(argument, "templates")
+                for argument in arguments
+            )
+        )
 
     def expressions_combine_repo_root_and_template_segment(
         self, expressions: Sequence[ast.AST]

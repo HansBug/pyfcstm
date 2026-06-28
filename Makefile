@@ -1,4 +1,4 @@
-.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check
+.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check test_boundary_check
 
 PYTHON := $(shell which python)
 
@@ -114,6 +114,7 @@ help:
 	@echo "  make templates_package - Alias of 'make tpl'"
 	@echo "  make template_packaging_check - Validate repository template packaging contracts"
 	@echo "  make template_source_install_check - Validate source-install template extraction"
+	@echo "  make test_boundary_check - Validate pytest test-boundary rules"
 	@echo ""
 	@echo "Sample Tests:"
 	@echo "  make sample       - Generate test files from sample DSL files"
@@ -193,6 +194,9 @@ template_packaging_check:
 
 template_source_install_check:
 	$(PYTHON) tools/check_template_source_install.py
+
+test_boundary_check:
+	$(PYTHON) tools/check_test_boundary.py
 
 
 # LLM-based documentation generation targets

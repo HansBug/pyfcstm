@@ -75,6 +75,9 @@ class NameScope:
 
     :param defined_names: Names bound by ordinary statements in the scope.
     :type defined_names: Set[str]
+    :param shadowing_names: Non-import bindings that shadow same-scope import
+        aliases and outer-scope names.
+    :type shadowing_names: Set[str]
     :param tools_aliases: Names known to refer to repository ``tools`` modules.
     :type tools_aliases: Set[str]
     :param dynamic_tools_aliases: Names assigned from dynamic ``tools`` imports.
@@ -116,6 +119,7 @@ class NameScope:
     """
 
     defined_names: Set[str]
+    shadowing_names: Set[str]
     tools_aliases: Set[str]
     dynamic_tools_aliases: Set[str]
     importlib_aliases: Set[str]
@@ -137,6 +141,7 @@ class NameScope:
     def create(
         cls,
         defined_names: Optional[Set[str]] = None,
+        shadowing_names: Optional[Set[str]] = None,
         importlib_aliases: Optional[Set[str]] = None,
         builtins_aliases: Optional[Set[str]] = None,
         subprocess_aliases: Optional[Set[str]] = None,
@@ -148,6 +153,9 @@ class NameScope:
 
         :param defined_names: Ordinary names bound in this scope, defaults to ``None``.
         :type defined_names: Set[str], optional
+        :param shadowing_names: Non-import bindings that shadow aliases, defaults
+            to ``None``.
+        :type shadowing_names: Set[str], optional
         :param importlib_aliases: Predefined importlib aliases, defaults to ``None``.
         :type importlib_aliases: Set[str], optional
         :param builtins_aliases: Predefined builtins aliases, defaults to ``None``.
@@ -169,6 +177,7 @@ class NameScope:
         """
         return cls(
             defined_names=set(defined_names or set()),
+            shadowing_names=set(shadowing_names or set()),
             tools_aliases=set(),
             dynamic_tools_aliases=set(),
             importlib_aliases=set(importlib_aliases or set()),
@@ -362,7 +371,7 @@ def collect_string_literals(node: ast.AST) -> List[str]:
 
 def collect_defined_names(tree: ast.AST) -> Set[str]:
     """
-    Collect module-scope names defined by statements.
+    Collect module-scope names that make bare names look locally defined.
 
     :param tree: Parsed Python AST.
     :type tree: ast.AST
@@ -381,10 +390,12 @@ def collect_defined_names(tree: ast.AST) -> Set[str]:
         >>> 'tools' in collect_defined_names(tree)
         False
     """
-    return collect_scope_defined_names(getattr(tree, "body", []))
+    return collect_scope_defined_names(getattr(tree, "body", []), include_imports=True)
 
 
-def collect_scope_defined_names(statements: Sequence[ast.AST]) -> Set[str]:
+def collect_scope_defined_names(
+    statements: Sequence[ast.AST], include_imports: bool = True
+) -> Set[str]:
     """
     Collect names bound directly in a lexical statement scope.
 
@@ -394,6 +405,9 @@ def collect_scope_defined_names(statements: Sequence[ast.AST]) -> Set[str]:
 
     :param statements: Statements that make up one lexical scope body.
     :type statements: Sequence[ast.AST]
+    :param include_imports: Whether import statements count as ordinary
+        definitions, defaults to ``True``.
+    :type include_imports: bool, optional
     :return: Names bound in that scope.
     :rtype: Set[str]
 
@@ -408,16 +422,23 @@ def collect_scope_defined_names(statements: Sequence[ast.AST]) -> Set[str]:
     """
     names = set()
     for statement in statements:
-        names.update(statement_defined_names(statement))
+        names.update(
+            statement_defined_names(statement, include_imports=include_imports)
+        )
     return names
 
 
-def statement_defined_names(statement: ast.AST) -> Set[str]:
+def statement_defined_names(
+    statement: ast.AST, include_imports: bool = True
+) -> Set[str]:
     """
     Collect names bound by one statement in its current lexical scope.
 
     :param statement: Statement node to inspect.
     :type statement: ast.AST
+    :param include_imports: Whether import statements count as definitions,
+        defaults to ``True``.
+    :type include_imports: bool, optional
     :return: Names bound by the statement or nested same-scope branches.
     :rtype: Set[str]
 
@@ -429,10 +450,10 @@ def statement_defined_names(statement: ast.AST) -> Set[str]:
     names = set()
     if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
         return {statement.name}
-    if isinstance(statement, ast.Import):
+    if isinstance(statement, ast.Import) and include_imports:
         for alias in statement.names:
             names.add(alias.asname or alias.name.split(".")[0])
-    elif isinstance(statement, ast.ImportFrom):
+    elif isinstance(statement, ast.ImportFrom) and include_imports:
         for alias in statement.names:
             names.add(alias.asname or alias.name)
     elif isinstance(statement, ast.Assign):
@@ -444,28 +465,80 @@ def statement_defined_names(statement: ast.AST) -> Set[str]:
         names.update(assigned_target_names(statement.target))
     elif isinstance(statement, (ast.For, ast.AsyncFor)):
         names.update(assigned_target_names(statement.target))
-        names.update(collect_scope_defined_names(statement.body))
-        names.update(collect_scope_defined_names(statement.orelse))
+        names.update(
+            collect_scope_defined_names(statement.body, include_imports=include_imports)
+        )
+        names.update(
+            collect_scope_defined_names(
+                statement.orelse, include_imports=include_imports
+            )
+        )
     elif isinstance(statement, (ast.With, ast.AsyncWith)):
         for item in statement.items:
             if item.optional_vars is not None:
                 names.update(assigned_target_names(item.optional_vars))
-        names.update(collect_scope_defined_names(statement.body))
+        names.update(
+            collect_scope_defined_names(statement.body, include_imports=include_imports)
+        )
     elif isinstance(statement, ast.If):
-        names.update(collect_scope_defined_names(statement.body))
-        names.update(collect_scope_defined_names(statement.orelse))
+        names.update(
+            collect_scope_defined_names(statement.body, include_imports=include_imports)
+        )
+        names.update(
+            collect_scope_defined_names(
+                statement.orelse, include_imports=include_imports
+            )
+        )
     elif isinstance(statement, ast.While):
-        names.update(collect_scope_defined_names(statement.body))
-        names.update(collect_scope_defined_names(statement.orelse))
+        names.update(
+            collect_scope_defined_names(statement.body, include_imports=include_imports)
+        )
+        names.update(
+            collect_scope_defined_names(
+                statement.orelse, include_imports=include_imports
+            )
+        )
     elif isinstance(statement, ast.Try):
-        names.update(collect_scope_defined_names(statement.body))
-        names.update(collect_scope_defined_names(statement.orelse))
-        names.update(collect_scope_defined_names(statement.finalbody))
+        names.update(
+            collect_scope_defined_names(statement.body, include_imports=include_imports)
+        )
+        names.update(
+            collect_scope_defined_names(
+                statement.orelse, include_imports=include_imports
+            )
+        )
+        names.update(
+            collect_scope_defined_names(
+                statement.finalbody, include_imports=include_imports
+            )
+        )
         for handler in statement.handlers:
             if handler.name:
                 names.add(handler.name)
-            names.update(collect_scope_defined_names(handler.body))
+            names.update(
+                collect_scope_defined_names(
+                    handler.body, include_imports=include_imports
+                )
+            )
     return names
+
+
+def collect_shadowing_names(statements: Sequence[ast.AST]) -> Set[str]:
+    """
+    Collect non-import names that shadow aliases in one scope.
+
+    :param statements: Statements that make up one lexical scope body.
+    :type statements: Sequence[ast.AST]
+    :return: Names introduced by non-import bindings.
+    :rtype: Set[str]
+
+    Example::
+
+        >>> tree = ast.parse('import tools\\ndef tools(): pass')
+        >>> collect_shadowing_names(tree.body)
+        {'tools'}
+    """
+    return collect_scope_defined_names(statements, include_imports=False)
 
 
 def function_argument_names(arguments: ast.arguments) -> Set[str]:
@@ -666,22 +739,50 @@ def subscript_integer(node: ast.Subscript) -> Optional[int]:
 
 def is_exact_segment(node: ast.AST, segment: str) -> bool:
     """
-    Return whether ``node`` is exactly a string path segment.
+    Return whether ``node`` contains an exact path segment.
 
     :param node: AST node to inspect.
     :type node: ast.AST
     :param segment: Expected path segment.
     :type segment: str
-    :return: ``True`` when ``node`` is exactly that string literal.
+    :return: ``True`` when ``node`` contains that exact path segment.
     :rtype: bool
 
     Example::
 
         >>> is_exact_segment(ast.parse('"templates"').body[0].value, 'templates')
         True
+        >>> is_exact_segment(ast.parse('"/repo/templates"').body[0].value, 'templates')
+        True
+        >>> is_exact_segment(ast.parse('"harness_templates"').body[0].value, 'templates')
+        False
     """
     value = literal_string(node)
-    return value == segment
+    if value is None:
+        return False
+    return segment in path_segments(value)
+
+
+def path_segments(value: str) -> List[str]:
+    """
+    Split a path-like literal into non-empty slash-delimited segments.
+
+    Both POSIX and Windows separators are normalized so exact segment checks can
+    recognize ``templates`` without treating ``harness_templates`` as a match.
+
+    :param value: String literal value to split.
+    :type value: str
+    :return: Non-empty path segments.
+    :rtype: List[str]
+
+    Example::
+
+        >>> path_segments('/repo/templates')
+        ['repo', 'templates']
+        >>> path_segments('harness_templates')
+        ['harness_templates']
+    """
+    return [segment for segment in value.replace("\\", "/").split("/") if segment]
 
 
 def command_text_runs_tools_script(text: str) -> bool:
@@ -873,6 +974,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         source: str,
         defined_names: Set[str],
         docstring_node_ids: Optional[Set[int]] = None,
+        shadowing_names: Optional[Set[str]] = None,
     ) -> None:
         self.path = path
         self.source_lines = source.splitlines()
@@ -881,6 +983,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         self.scope_stack = [
             NameScope.create(
                 defined_names=defined_names,
+                shadowing_names=shadowing_names,
                 importlib_aliases={"importlib"},
                 builtins_aliases={"builtins"},
                 subprocess_aliases={"subprocess"},
@@ -941,6 +1044,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             names.update(
                 name for name in getattr(scope, attribute) if name not in shadowed
             )
+            shadowed.update(scope.shadowing_names)
             shadowed.update(scope.defined_names)
         return names
 
@@ -1247,6 +1351,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             []
         """
         self.visit_function_like(node, node.args, node.body)
+        self.clear_scope_aliases(node.name)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
         """
@@ -1266,6 +1371,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             []
         """
         self.visit_function_like(node, node.args, node.body)
+        self.clear_scope_aliases(node.name)
 
     def visit_Lambda(self, node: ast.Lambda) -> None:  # noqa: N802
         """
@@ -1316,10 +1422,10 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         if returns is not None:
             self.visit(returns)
         self.visit_argument_expressions(arguments)
-        bound_names = function_argument_names(arguments) | collect_scope_defined_names(
-            body
-        )
-        self.visit_callable_body(bound_names, body)
+        argument_names = function_argument_names(arguments)
+        bound_names = argument_names | collect_scope_defined_names(body)
+        shadowing_names = argument_names | collect_shadowing_names(body)
+        self.visit_callable_body(bound_names, body, shadowing_names=shadowing_names)
 
     def visit_argument_expressions(self, arguments: ast.arguments) -> None:
         """
@@ -1355,7 +1461,10 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 self.visit(default)
 
     def visit_callable_body(
-        self, defined_names: Set[str], body: Sequence[ast.AST]
+        self,
+        defined_names: Set[str],
+        body: Sequence[ast.AST],
+        shadowing_names: Optional[Set[str]] = None,
     ) -> None:
         """
         Visit a function-like body while excluding class namespaces.
@@ -1369,6 +1478,9 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         :type defined_names: Set[str]
         :param body: Function or lambda body nodes to visit.
         :type body: Sequence[ast.AST]
+        :param shadowing_names: Non-import names that shadow aliases, defaults
+            to ``None``.
+        :type shadowing_names: Set[str], optional
         :return: ``None``.
         :rtype: None
 
@@ -1379,9 +1491,17 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor.visit(ast.parse(source))
             >>> [finding.rule for finding in visitor.findings]
             ['tools-call']
+            >>> source = 'def f():' + chr(10) + '    import subprocess' + chr(10) + '    subprocess.run(["python", "tools/x.py"])'
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), source, set())
+            >>> visitor.visit(ast.parse(source))
+            >>> [finding.rule for finding in visitor.findings]
+            ['tools-exec']
         """
         parent_stack = self.scope_stack
-        callable_scope = NameScope.create(defined_names=defined_names)
+        callable_scope = NameScope.create(
+            defined_names=defined_names,
+            shadowing_names=shadowing_names,
+        )
         # Class namespaces are intentionally filtered here because Python
         # method bodies do not close over class-body assignments.
         self.scope_stack = [
@@ -1416,19 +1536,32 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             self.visit(base)
         for keyword in node.keywords:
             self.visit(keyword.value)
-        self.push_scope(collect_scope_defined_names(node.body), is_class_body=True)
+        self.push_scope(
+            collect_scope_defined_names(node.body),
+            shadowing_names=collect_shadowing_names(node.body),
+            is_class_body=True,
+        )
         try:
             for statement in node.body:
                 self.visit(statement)
         finally:
             self.scope_stack.pop()
+        self.clear_scope_aliases(node.name)
 
-    def push_scope(self, defined_names: Set[str], is_class_body: bool = False) -> None:
+    def push_scope(
+        self,
+        defined_names: Set[str],
+        shadowing_names: Optional[Set[str]] = None,
+        is_class_body: bool = False,
+    ) -> None:
         """
         Push a lexical scope with ordinary bindings but no inherited taint.
 
         :param defined_names: Names bound by the new scope.
         :type defined_names: Set[str]
+        :param shadowing_names: Non-import names that shadow aliases, defaults
+            to ``None``.
+        :type shadowing_names: Set[str], optional
         :param is_class_body: Whether the scope models a class namespace, defaults to ``False``.
         :type is_class_body: bool, optional
         :return: ``None``.
@@ -1442,7 +1575,11 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             True
         """
         self.scope_stack.append(
-            NameScope.create(defined_names=defined_names, is_class_body=is_class_body)
+            NameScope.create(
+                defined_names=defined_names,
+                shadowing_names=shadowing_names,
+                is_class_body=is_class_body,
+            )
         )
 
     def visit_Import(self, node: ast.Import) -> None:  # noqa: N802
@@ -1609,16 +1746,56 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> 'repo_root' in visitor.repo_root_aliases
             True
         """
+        repo_root_tainted = self.is_repo_root_tainted(value)
+        dynamic_tools_import = self.is_dynamic_tools_import_call(value)
+        tools_command = self.expression_or_alias_runs_tools_script(value)
+        source_install_command = self.expression_or_alias_runs_source_install_command(
+            value
+        )
         for target in targets:
             for name in self._target_names(target):
-                if self.is_repo_root_tainted(value) or is_repo_root_name(name):
+                self.clear_scope_aliases(name)
+                if repo_root_tainted or is_repo_root_name(name):
                     self.current_scope.repo_root_aliases.add(name)
-                if self.is_dynamic_tools_import_call(value):
+                if dynamic_tools_import:
                     self.current_scope.dynamic_tools_aliases.add(name)
-                if self.expression_or_alias_runs_tools_script(value):
+                if tools_command:
                     self.current_scope.tools_command_aliases.add(name)
-                if self.expression_or_alias_runs_source_install_command(value):
+                if source_install_command:
                     self.current_scope.source_install_command_aliases.add(name)
+
+    def clear_scope_aliases(self, name: str) -> None:
+        """
+        Clear tainted aliases overwritten by an ordinary binding.
+
+        :param name: Name rebound in the current scope.
+        :type name: str
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> source = 'def f():' + chr(10) + '    import subprocess' + chr(10) + '    subprocess.run(["python", "tools/x.py"])' + chr(10) + '    subprocess = object()' + chr(10) + '    subprocess.run(["python", "tools/y.py"])'
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), source, set())
+            >>> visitor.visit(ast.parse(source))
+            >>> [(finding.rule, finding.line) for finding in visitor.findings]
+            [('tools-exec', 3)]
+        """
+        self.current_scope.tools_aliases.discard(name)
+        self.current_scope.dynamic_tools_aliases.discard(name)
+        self.current_scope.importlib_aliases.discard(name)
+        self.current_scope.builtins_aliases.discard(name)
+        self.current_scope.subprocess_aliases.discard(name)
+        self.current_scope.subprocess_function_aliases.discard(name)
+        self.current_scope.os_aliases.discard(name)
+        self.current_scope.os_function_aliases.discard(name)
+        self.current_scope.os_path_join_aliases.discard(name)
+        self.current_scope.os_path_dirname_aliases.discard(name)
+        self.current_scope.os_path_abspath_aliases.discard(name)
+        self.current_scope.repo_root_aliases.discard(name)
+        self.current_scope.tools_command_aliases.discard(name)
+        self.current_scope.source_install_command_aliases.discard(name)
+        self.current_scope.package_templates_aliases.discard(name)
 
     def _target_names(self, node: ast.AST) -> List[str]:
         """
@@ -1724,6 +1901,31 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> tree = ast.parse('_REPO_ROOT / "templates"')
             >>> visitor = TestBoundaryVisitor(Path('x.py'), '_REPO_ROOT / "templates"', set())
             >>> visitor.visit(tree)
+            >>> visitor.findings[0].rule
+            'repo-source-templates'
+        """
+        if self.is_repo_source_template_access(node):
+            self.add_finding(
+                node,
+                SOURCE_TEMPLATE_RULE,
+                "pytest files must not access the repository-source templates directory directly",
+            )
+        self.generic_visit(node)
+
+    def visit_JoinedStr(self, node: ast.JoinedStr) -> None:  # noqa: N802
+        """
+        Visit f-strings and report repo-source template access.
+
+        :param node: Joined string node.
+        :type node: ast.JoinedStr
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> source = 'f"{_REPO_ROOT}/templates"'
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), source, set())
+            >>> visitor.visit(ast.parse(source))
             >>> visitor.findings[0].rule
             'repo-source-templates'
         """
@@ -2311,9 +2513,16 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
             >>> visitor.is_repo_root_tainted(ast.parse('Path(__file__).parents[2]').body[0].value)
             True
+            >>> visitor.current_scope.repo_root_aliases.add('repo_root')
+            >>> visitor.is_repo_root_tainted(ast.parse('str(repo_root)').body[0].value)
+            True
         """
         if isinstance(node, ast.Name):
             return node.id in self.repo_root_aliases or is_repo_root_name(node.id)
+        if isinstance(node, ast.JoinedStr):
+            return any(self.is_repo_root_tainted(value) for value in node.values)
+        if isinstance(node, ast.FormattedValue):
+            return self.is_repo_root_tainted(node.value)
         if self.file_parents_expr_reaches_repo_root(node):
             return True
         if isinstance(node, ast.Call):
@@ -2327,6 +2536,12 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             if isinstance(node.func, ast.Attribute):
                 if node.func.attr in {"resolve", "absolute", "joinpath"}:
                     return self.is_repo_root_tainted(node.func.value)
+                if node.func.attr == "format":
+                    return self.is_repo_root_tainted_format_call(node)
+            if dotted_name(node.func) in {"str", "repr", "bytes", "os.fspath"}:
+                return any(self.is_repo_root_tainted(arg) for arg in node.args)
+            if dotted_name(node.func) in {"format", "builtins.format"}:
+                return any(self.is_repo_root_tainted(arg) for arg in node.args)
             if dotted_name(node.func) in {"Path", "pathlib.Path"} and node.args:
                 if self.is_repo_root_tainted(node.args[0]):
                     return True
@@ -2338,6 +2553,28 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             if self.is_os_path_join_call(node) and node.args:
                 return self.is_repo_root_tainted(node.args[0])
         return False
+
+    def is_repo_root_tainted_format_call(self, node: ast.Call) -> bool:
+        """
+        Return whether ``str.format`` interpolates a repo-root value.
+
+        :param node: Call expression for a ``format`` method.
+        :type node: ast.Call
+        :return: ``True`` when any format argument is repo-root tainted.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.current_scope.repo_root_aliases.add('repo_root')
+            >>> visitor.is_repo_root_tainted_format_call(ast.parse('"{}".format(repo_root)').body[0].value)
+            True
+        """
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "format":
+            return False
+        return any(self.is_repo_root_tainted(arg) for arg in node.args) or any(
+            self.is_repo_root_tainted(keyword.value) for keyword in node.keywords
+        )
 
     def is_os_path_join_call(self, node: ast.Call) -> bool:
         """
@@ -2450,7 +2687,17 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
             >>> visitor.is_repo_source_template_access(ast.parse('_REPO_ROOT / "templates"').body[0].value)
             True
+            >>> source = 'os.path.join(str(_REPO_ROOT), "templates")'
+            >>> visitor.is_repo_source_template_access(ast.parse(source).body[0].value)
+            True
+            >>> source = 'f"{_REPO_ROOT}/templates"'
+            >>> visitor.is_repo_source_template_access(ast.parse(source).body[0].value)
+            True
         """
+        if isinstance(node, ast.JoinedStr):
+            return self.is_repo_root_tainted(
+                node
+            ) and self.expression_has_exact_segment(node, "templates")
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
             return (
                 self.is_repo_root_tainted(node.left)
@@ -2459,7 +2706,17 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 self.is_repo_root_tainted(node.right)
                 and self.expression_has_exact_segment(node.left, "templates")
             )
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            return (
+                self.is_repo_root_tainted(node.left)
+                and self.expression_has_exact_segment(node.right, "templates")
+            ) or (
+                self.is_repo_root_tainted(node.right)
+                and self.expression_has_exact_segment(node.left, "templates")
+            )
         if isinstance(node, ast.Call):
+            if self.is_repo_root_tainted_format_call(node):
+                return self.expression_has_exact_segment(node.func.value, "templates")
             if dotted_name(node.func) in {"Path", "pathlib.Path"} and node.args:
                 if self.is_repo_root_tainted(node.args[0]):
                     return any(
@@ -2473,6 +2730,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     return any(
                         is_exact_segment(arg, "templates") for arg in node.args[1:]
                     )
+                if any(self.is_repo_root_tainted(arg) for arg in node.args):
+                    return any(is_exact_segment(arg, "templates") for arg in node.args)
         return False
 
     def expression_has_exact_segment(self, node: ast.AST, segment: str) -> bool:
@@ -2494,7 +2753,16 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         """
         if is_exact_segment(node, segment):
             return True
+        if isinstance(node, ast.JoinedStr):
+            return any(
+                self.expression_has_exact_segment(value, segment)
+                for value in node.values
+            )
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            return self.expression_has_exact_segment(
+                node.left, segment
+            ) or self.expression_has_exact_segment(node.right, segment)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
             return self.expression_has_exact_segment(
                 node.left, segment
             ) or self.expression_has_exact_segment(node.right, segment)
@@ -2557,6 +2825,7 @@ def scan_source(path: Path, relative_path: Path, source: str) -> List[BoundaryFi
         source,
         collect_defined_names(tree),
         collect_docstring_node_ids(tree),
+        collect_shadowing_names(getattr(tree, "body", [])),
     )
     visitor.visit(tree)
     return visitor.findings

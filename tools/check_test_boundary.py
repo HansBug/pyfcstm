@@ -35,6 +35,17 @@ AST_NUM_TYPE = getattr(ast, "Num", None)
 AST_STR_TYPE = getattr(ast, "Str", None) if sys.version_info < (3, 8) else None
 
 
+_STATIC_STRING_METHODS = {
+    "casefold",
+    "lower",
+    "upper",
+}
+_OS_PATH_HELPERS = {
+    "abspath",
+    "dirname",
+    "join",
+    "split",
+}
 TOOLS_IMPORT_RULE = "tools-import"
 TOOLS_DYNAMIC_RULE = "tools-dynamic-import"
 TOOLS_CALL_RULE = "tools-call"
@@ -144,6 +155,8 @@ class NameScope:
     :type os_path_dirname_aliases: Set[str]
     :param os_path_abspath_aliases: Names imported from ``os.path.abspath``.
     :type os_path_abspath_aliases: Set[str]
+    :param os_path_split_aliases: Names imported from ``os.path.split``.
+    :type os_path_split_aliases: Set[str]
     :param os_getcwd_aliases: Names imported from ``os.getcwd``.
     :type os_getcwd_aliases: Set[str]
     :param repo_root_aliases: Names assigned from repository-root expressions.
@@ -203,6 +216,7 @@ class NameScope:
     os_path_join_aliases: Set[str]
     os_path_dirname_aliases: Set[str]
     os_path_abspath_aliases: Set[str]
+    os_path_split_aliases: Set[str]
     os_getcwd_aliases: Set[str]
     repo_root_aliases: Set[str]
     string_aliases: Dict[str, str]
@@ -297,6 +311,7 @@ class NameScope:
             os_path_join_aliases=set(),
             os_path_dirname_aliases=set(),
             os_path_abspath_aliases=set(),
+            os_path_split_aliases=set(),
             os_getcwd_aliases=set(),
             repo_root_aliases=set(),
             string_aliases={},
@@ -455,6 +470,12 @@ def literal_string(node: ast.AST) -> Optional[str]:
         'templates'
         >>> literal_string(ast.parse('f"tools.package_templates"').body[0].value)
         'tools.package_templates'
+        >>> literal_string(ast.parse('chr(116) + "ools"').body[0].value)
+        'tools'
+        >>> literal_string(ast.parse('"TEMPLATES".lower()').body[0].value)
+        'templates'
+        >>> literal_string(ast.parse('b"templates".decode()').body[0].value)
+        'templates'
     """
     if AST_STR_TYPE is not None and isinstance(node, AST_STR_TYPE):
         return getattr(node, "s")
@@ -479,6 +500,110 @@ def literal_string(node: ast.AST) -> Optional[str]:
         right = literal_string(node.right)
         if left is not None and right is not None:
             return left + right
+    if isinstance(node, ast.Call):
+        if (
+            dotted_name(node.func) == "chr"
+            and len(node.args) == 1
+            and not node.keywords
+        ):
+            codepoint = literal_integer(node.args[0])
+            if codepoint is not None and 0 <= codepoint <= 0x10FFFF:
+                return chr(codepoint)
+        if isinstance(node.func, ast.Attribute):
+            if node.func.attr in _STATIC_STRING_METHODS:
+                if node.args or node.keywords:
+                    return None
+                value = literal_string(node.func.value)
+                if value is None:
+                    return None
+                if node.func.attr == "lower":
+                    return value.lower()
+                if node.func.attr == "upper":
+                    return value.upper()
+                return value.casefold()
+            if node.func.attr == "decode":
+                return literal_decode_call_string(node)
+    return None
+
+
+def literal_decode_call_string(node: ast.Call) -> Optional[str]:
+    """
+    Return the static string produced by a bytes ``decode`` call.
+
+    :param node: Call expression to inspect.
+    :type node: ast.Call
+    :return: Decoded string, or ``None`` when the call is not static.
+    :rtype: str, optional
+
+    Example::
+
+        >>> literal_decode_call_string(ast.parse('b"tools".decode("ascii")').body[0].value)
+        'tools'
+    """
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "decode":
+        return None
+    if len(node.args) > 1 or node.keywords:
+        return None
+    value = literal_bytes(node.func.value)
+    if value is None:
+        return None
+    encoding = "utf-8"
+    if node.args:
+        static_encoding = literal_string(node.args[0])
+        if static_encoding is None:
+            return None
+        encoding = static_encoding
+    try:
+        return value.decode(encoding)
+    except (LookupError, UnicodeDecodeError):
+        # LookupError: static encoding literal is not a known codec.
+        # UnicodeDecodeError: static bytes cannot be decoded with that codec.
+        return None
+
+
+def literal_bytes(node: ast.AST) -> Optional[bytes]:
+    """
+    Return a static bytes literal value.
+
+    :param node: AST node to inspect.
+    :type node: ast.AST
+    :return: Bytes value, or ``None`` when the node is not a bytes literal.
+    :rtype: bytes, optional
+
+    Example::
+
+        >>> literal_bytes(ast.parse('b"x"').body[0].value)
+        b'x'
+    """
+    if AST_CONSTANT_TYPE is not None and isinstance(node, AST_CONSTANT_TYPE):
+        if isinstance(node.value, bytes):
+            return node.value
+    return None
+
+
+def literal_integer(node: ast.AST) -> Optional[int]:
+    """
+    Return a static integer literal value.
+
+    :param node: AST node to inspect.
+    :type node: ast.AST
+    :return: Integer value, or ``None`` when the node is not an integer literal.
+    :rtype: int, optional
+
+    Example::
+
+        >>> literal_integer(ast.parse('116').body[0].value)
+        116
+    """
+    if isinstance(node, int):
+        return node
+    if AST_CONSTANT_TYPE is not None and isinstance(node, AST_CONSTANT_TYPE):
+        if isinstance(node.value, int) and not isinstance(node.value, bool):
+            return node.value
+    if AST_NUM_TYPE is not None and isinstance(node, AST_NUM_TYPE):
+        number = getattr(node, "n", None)
+        if isinstance(number, int) and not isinstance(number, bool):
+            return number
     return None
 
 
@@ -1655,6 +1780,21 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         return self.visible_names("os_path_abspath_aliases")
 
     @property
+    def os_path_split_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for ``os.path.split``.
+
+        :return: Visible split aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> TestBoundaryVisitor(Path('x.py'), '', set()).os_path_split_aliases
+            set()
+        """
+        return self.visible_names("os_path_split_aliases")
+
+    @property
     def os_getcwd_aliases(self) -> Set[str]:
         """
         Return visible aliases for :func:`os.getcwd`.
@@ -2257,6 +2397,10 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     self.current_scope.os_path_abspath_aliases.add(
                         alias.asname or alias.name
                     )
+                elif alias.name == "split":
+                    self.current_scope.os_path_split_aliases.add(
+                        alias.asname or alias.name
+                    )
         self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802
@@ -2299,6 +2443,112 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         if node.value is not None:
             self._visit_assignment_targets([node.target], node.value)
         self.generic_visit(node)
+
+    def visit_For(self, node: ast.For) -> None:  # noqa: N802
+        """
+        Visit a ``for`` loop and conservatively propagate static iterable aliases.
+
+        :param node: For-loop node.
+        :type node: ast.For
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> source = 'import subprocess' + chr(10) + 'for cmd in [["python", "tools/x.py"]]:' + chr(10) + '    subprocess.run(cmd)'
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), source, set())
+            >>> visitor.visit(ast.parse(source))
+            >>> [finding.rule for finding in visitor.findings]
+            ['tools-exec']
+        """
+        if self.iterable_has_tools_command(node.iter):
+            self.mark_target_names(node.target, "tools_command_aliases")
+        if self.iterable_has_source_install_command(node.iter):
+            self.mark_target_names(node.target, "source_install_command_aliases")
+        self.generic_visit(node)
+
+    def mark_target_names(self, target: ast.AST, attribute: str) -> None:
+        """
+        Mark every simple name in an assignment target with an alias set.
+
+        :param target: Assignment target node.
+        :type target: ast.AST
+        :param attribute: Alias set attribute on the current scope.
+        :type attribute: str
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.mark_target_names(ast.Name(id='cmd'), 'tools_command_aliases')
+            >>> 'cmd' in visitor.tools_command_aliases
+            True
+        """
+        for name in self._target_names(target):
+            self.clear_scope_aliases(name)
+            getattr(self.current_scope, attribute).add(name)
+
+    def iterable_has_tools_command(self, node: ast.AST) -> bool:
+        """
+        Return whether a static iterable can yield a tools command.
+
+        :param node: Iterable expression node.
+        :type node: ast.AST
+        :return: ``True`` when any yielded element executes repository tools.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> expr = ast.parse('[["python", "tools/x.py"]]').body[0].value
+            >>> visitor.iterable_has_tools_command(expr)
+            True
+        """
+        return any(
+            self.expression_or_alias_runs_tools_script(element)
+            for element in self.static_iterable_elements(node)
+        )
+
+    def iterable_has_source_install_command(self, node: ast.AST) -> bool:
+        """
+        Return whether a static iterable can yield a source-install command.
+
+        :param node: Iterable expression node.
+        :type node: ast.AST
+        :return: ``True`` when any yielded element performs a source install.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> expr = ast.parse('[["python", "-m", "pip", "install", "."]]').body[0].value
+            >>> visitor.iterable_has_source_install_command(expr)
+            True
+        """
+        return any(
+            self.expression_or_alias_runs_source_install_command(element)
+            for element in self.static_iterable_elements(node)
+        )
+
+    def static_iterable_elements(self, node: ast.AST) -> List[ast.AST]:
+        """
+        Return statically visible elements yielded by a simple iterable.
+
+        :param node: Iterable expression node.
+        :type node: ast.AST
+        :return: Element expressions, or an empty list for dynamic iterables.
+        :rtype: List[ast.AST]
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> len(visitor.static_iterable_elements(ast.parse('(["x"],)').body[0].value))
+            1
+        """
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+            return list(node.elts)
+        return []
 
     def _visit_assignment_targets(
         self, targets: Sequence[ast.AST], value: ast.AST
@@ -2361,6 +2611,15 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 if os_helper is not None:
                     self.current_scope.os_function_aliases.add(name)
                     self.current_scope.os_function_alias_methods[name] = os_helper
+                os_path_helper = self.expression_denotes_os_path_helper(value)
+                if os_path_helper == "join":
+                    self.current_scope.os_path_join_aliases.add(name)
+                elif os_path_helper == "dirname":
+                    self.current_scope.os_path_dirname_aliases.add(name)
+                elif os_path_helper == "abspath":
+                    self.current_scope.os_path_abspath_aliases.add(name)
+                elif os_path_helper == "split":
+                    self.current_scope.os_path_split_aliases.add(name)
                 sys_modules_method = self.sys_modules_method_name(value)
                 if sys_modules_method == "__getitem__":
                     self.current_scope.sys_modules_getitem_aliases.add(name)
@@ -2414,6 +2673,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         self.current_scope.os_path_join_aliases.discard(name)
         self.current_scope.os_path_dirname_aliases.discard(name)
         self.current_scope.os_path_abspath_aliases.discard(name)
+        self.current_scope.os_path_split_aliases.discard(name)
         self.current_scope.os_getcwd_aliases.discard(name)
         self.current_scope.repo_root_aliases.discard(name)
         self.current_scope.string_aliases.pop(name, None)
@@ -2485,6 +2745,18 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             right = self.static_string(node.right)
             if left is not None and right is not None:
                 return left + right
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr in _STATIC_STRING_METHODS:
+                if node.args or node.keywords:
+                    return None
+                value = self.static_string(node.func.value)
+                if value is None:
+                    return None
+                if node.func.attr == "lower":
+                    return value.lower()
+                if node.func.attr == "upper":
+                    return value.upper()
+                return value.casefold()
         return None
 
     def expression_denotes_importlib_module(self, node: ast.AST) -> bool:
@@ -2654,6 +2926,63 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 ):
                     return method
         return None
+
+    def expression_denotes_os_path_helper(self, node: ast.AST) -> Optional[str]:
+        """
+        Return the :mod:`os.path` helper denoted by ``node``.
+
+        :param node: AST expression node.
+        :type node: ast.AST
+        :return: Helper name such as ``"join"``, or ``None``.
+        :rtype: str, optional
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.expression_denotes_os_path_helper(ast.parse('getattr(os.path, "join")').body[0].value)
+            'join'
+        """
+        if isinstance(node, ast.Name):
+            if node.id in self.os_path_join_aliases:
+                return "join"
+            if node.id in self.os_path_dirname_aliases:
+                return "dirname"
+            if node.id in self.os_path_abspath_aliases:
+                return "abspath"
+            if node.id in self.os_path_split_aliases:
+                return "split"
+        if isinstance(node, ast.Attribute) and node.attr in _OS_PATH_HELPERS:
+            if self.expression_denotes_os_path_module(node.value):
+                return node.attr
+        if isinstance(node, ast.Call) and dotted_name(node.func) == "getattr":
+            if len(node.args) < 2:
+                return None
+            helper = self.static_string(node.args[1])
+            if helper in _OS_PATH_HELPERS:
+                if self.expression_denotes_os_path_module(node.args[0]):
+                    return helper
+        return None
+
+    def expression_denotes_os_path_module(self, node: ast.AST) -> bool:
+        """
+        Return whether ``node`` denotes the :mod:`os.path` module.
+
+        :param node: AST expression node.
+        :type node: ast.AST
+        :return: ``True`` for visible ``os.path`` module aliases.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.expression_denotes_os_path_module(ast.parse('os.path').body[0].value)
+            True
+        """
+        if isinstance(node, ast.Name):
+            return node.id in self.os_path_aliases
+        if isinstance(node, ast.Attribute) and node.attr == "path":
+            return isinstance(node.value, ast.Name) and node.value.id in self.os_aliases
+        return False
 
     def sys_modules_method_name(self, node: ast.AST) -> Optional[str]:
         """
@@ -2928,11 +3257,13 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         if dotted_name(node.func) not in {"exec", "eval"} or not node.args:
             return None
         if isinstance(node.args[0], ast.Name):
-            return self.dynamic_code_alias_rules.get(node.args[0].id)
+            alias_rule = self.dynamic_code_alias_rules.get(node.args[0].id)
+            if alias_rule is not None:
+                return alias_rule
         compiled_rule = self.compiled_dynamic_code_boundary_rule(node.args[0])
         if compiled_rule is not None:
             return compiled_rule
-        source = literal_string(node.args[0])
+        source = self.static_string(node.args[0])
         if source is None:
             return None
         return self.boundary_rule_in_dynamic_source(source)
@@ -2957,7 +3288,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             return None
         if dotted_name(node.func) != "compile" or not node.args:
             return None
-        source = literal_string(node.args[0])
+        source = self.static_string(node.args[0])
         if source is None:
             return None
         return self.boundary_rule_in_dynamic_source(source)
@@ -3027,7 +3358,9 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         if not isinstance(node, ast.Call):
             return False
         func_name = dotted_name(node.func)
-        if func_name == "__import__":
+        if func_name == "__import__" or self.expression_denotes_builtin_import(
+            node.func
+        ):
             return self.dynamic_import_target_is_tools(node)
         if self.is_pytest_importorskip_call(node):
             return self.dynamic_import_target_is_tools(node)
@@ -3048,6 +3381,41 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     return self.dynamic_import_target_is_tools(node)
         if isinstance(node.func, ast.Name) and node.func.id in self.importlib_aliases:
             return self.dynamic_import_target_is_tools(node)
+        return False
+
+    def expression_denotes_builtin_import(self, node: ast.AST) -> bool:
+        """
+        Return whether ``node`` denotes the built-in ``__import__`` helper.
+
+        :param node: AST expression node.
+        :type node: ast.AST
+        :return: ``True`` when the expression resolves to ``__import__``.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> expr = ast.parse('getattr(builtins, "__import__")').body[0].value
+            >>> visitor.expression_denotes_builtin_import(expr)
+            True
+            >>> expr = ast.parse('getattr(__builtins__, "__import__")').body[0].value
+            >>> visitor.expression_denotes_builtin_import(expr)
+            True
+        """
+        if isinstance(node, ast.Attribute) and node.attr == "__import__":
+            if isinstance(node.value, ast.Name):
+                return node.value.id in self.builtins_aliases or node.value.id == (
+                    "__builtins__"
+                )
+        if isinstance(node, ast.Call) and dotted_name(node.func) == "getattr":
+            if len(node.args) < 2:
+                return False
+            if self.static_string(node.args[1]) != "__import__":
+                return False
+            target = node.args[0]
+            return isinstance(target, ast.Name) and (
+                target.id in self.builtins_aliases or target.id == "__builtins__"
+            )
         return False
 
     def is_importlib_util_spec_from_file_location_call(self, node: ast.Call) -> bool:
@@ -3217,7 +3585,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor.static_module_name(ast.Name(id='name'))
             'tools'
         """
-        value = literal_string(node)
+        value = self.static_string(node)
         if value is not None:
             return value
         if isinstance(node, ast.Name) and node.id in self.tools_module_name_aliases:
@@ -3589,11 +3957,14 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> call = ast.parse('subprocess.run(args=["python"])').body[0].value
             >>> len(visitor.subprocess_command_arguments(call))
             1
+            >>> call = ast.parse('subprocess.run(cmd=["python"])').body[0].value
+            >>> len(visitor.subprocess_command_arguments(call))
+            1
         """
         if node.args:
             return [node.args[0]]
         for keyword in node.keywords:
-            if keyword.arg in {"args", "argv"}:
+            if keyword.arg in {"args", "argv", "cmd"}:
                 return [keyword.value]
         return []
 
@@ -3768,6 +4139,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor = TestBoundaryVisitor(Path('test/x.py'), '', set())
             >>> visitor.file_parents_expr_reaches_repo_root(ast.parse('Path(__file__).parents[1]').body[0].value)
             True
+            >>> visitor.file_parents_expr_reaches_repo_root(ast.parse('Path(__file__).resolve().parent / ".."').body[0].value)
+            True
             >>> visitor = TestBoundaryVisitor(Path('test/sub/x.py'), '', set())
             >>> visitor.file_parents_expr_reaches_repo_root(ast.parse('Path(__file__).parents[0]').body[0].value)
             False
@@ -3786,7 +4159,69 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                             return True
             if parent_chain_depth(child) >= self.repo_root_dirname_depth:
                 return True
+        if self.file_path_hops_reach_repo_root(node):
+            return True
         return False
+
+    def file_path_hops_reach_repo_root(self, node: ast.AST) -> bool:
+        """
+        Return whether a simple ``__file__`` path expression climbs to repo root.
+
+        :param node: AST expression node.
+        :type node: ast.AST
+        :return: ``True`` when ``.parent`` and ``".."`` hops reach repo root.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('test/x.py'), '', set())
+            >>> visitor.file_path_hops_reach_repo_root(ast.parse('Path(__file__).resolve().parent / ".."').body[0].value)
+            True
+        """
+        hops = self.file_path_parent_hops(node)
+        return hops is not None and hops >= self.repo_root_dirname_depth
+
+    def file_path_parent_hops(self, node: ast.AST) -> Optional[int]:
+        """
+        Return parent-hop count for a simple ``__file__`` path expression.
+
+        :param node: AST expression node.
+        :type node: ast.AST
+        :return: Parent-hop count, or ``None`` when the expression is dynamic.
+        :rtype: int, optional
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('test/x.py'), '', set())
+            >>> visitor.file_path_parent_hops(ast.parse('Path(__file__).resolve().parent / ".."').body[0].value)
+            2
+        """
+        if node_contains_name(node, "__file__") and not isinstance(
+            node, (ast.BinOp, ast.Call, ast.Attribute, ast.Subscript)
+        ):
+            return 0
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            left = self.file_path_parent_hops(node.left)
+            if left is None:
+                return None
+            segment = self.static_string(node.right)
+            if segment == "..":
+                return left + 1
+            if segment is not None:
+                return left
+            return None
+        if isinstance(node, ast.Attribute) and node.attr == "parent":
+            base = self.file_path_parent_hops(node.value)
+            if base is not None:
+                return base + 1
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Attribute):
+                if node.func.attr in {"resolve", "absolute"}:
+                    return self.file_path_parent_hops(node.func.value)
+            if self.is_path_constructor_call(node) and node.args:
+                if node_contains_name(node.args[0], "__file__"):
+                    return 0
+        return None
 
     def is_repo_root_tainted(self, node: ast.AST) -> bool:
         """
@@ -3824,6 +4259,10 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         if self.is_workspace_environment_subscript(node):
             return True
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            return self.is_repo_root_tainted(node.left) or self.is_repo_root_tainted(
+                node.right
+            )
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
             return self.is_repo_root_tainted(node.left) or self.is_repo_root_tainted(
                 node.right
             )
@@ -4132,6 +4571,28 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             and node.func.id in self.os_path_abspath_aliases
         )
 
+    def is_os_path_split_call(self, node: ast.Call) -> bool:
+        """
+        Return whether a call targets ``os.path.split``.
+
+        :param node: Call expression node.
+        :type node: ast.Call
+        :return: ``True`` when the callee is ``os.path.split`` or an alias.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.is_os_path_split_call(ast.parse('os.path.split(__file__)').body[0].value)
+            True
+        """
+        if self.is_os_path_function_call(node, "split"):
+            return True
+        return (
+            isinstance(node.func, ast.Name)
+            and node.func.id in self.os_path_split_aliases
+        )
+
     def is_os_path_function_call(self, node: ast.Call, function_name: str) -> bool:
         """
         Return whether ``node`` calls an ``os.path`` module helper.
@@ -4175,10 +4636,20 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> expr = ast.parse('os.path.dirname(os.path.dirname(os.path.abspath(__file__)))').body[0].value
             >>> visitor.os_path_dirname_depth(expr)
             2
+            >>> expr = ast.parse('os.path.split(os.path.abspath(__file__))[0]').body[0].value
+            >>> visitor.os_path_dirname_depth(expr)
+            1
         """
         depth = 0
         current = node
-        while isinstance(current, ast.Call):
+        while isinstance(current, (ast.Call, ast.Subscript)):
+            split_arg = self.os_path_split_subscript_zero_arg(current)
+            if split_arg is not None:
+                depth += 1
+                current = split_arg
+                continue
+            if not isinstance(current, ast.Call):
+                break
             if self.is_os_path_abspath_call(current) and current.args:
                 current = current.args[0]
                 continue
@@ -4190,6 +4661,32 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         if depth and node_contains_name(current, "__file__"):
             return depth
         return 0
+
+    def os_path_split_subscript_zero_arg(self, node: ast.AST) -> Optional[ast.AST]:
+        """
+        Return the argument from ``os.path.split(path)[0]`` expressions.
+
+        :param node: AST expression node.
+        :type node: ast.AST
+        :return: Split path argument, or ``None`` for other expressions.
+        :rtype: ast.AST, optional
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> expr = ast.parse('os.path.split(__file__)[0]').body[0].value
+            >>> visitor.os_path_split_subscript_zero_arg(expr) is not None
+            True
+        """
+        if not isinstance(node, ast.Subscript):
+            return None
+        if subscript_integer(node) != 0:
+            return None
+        if not isinstance(node.value, ast.Call) or not node.value.args:
+            return None
+        if not self.is_os_path_split_call(node.value):
+            return None
+        return node.value.args[0]
 
     def is_repo_source_template_access(self, node: ast.AST) -> bool:
         """

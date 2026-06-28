@@ -3275,6 +3275,31 @@ def parse_dsl_node_to_state_machine(
 
         has_entry_trans = False
         for transnode in node.transitions:
+            if (
+                getattr(transnode, "combo_trigger", None) is not None
+                and transnode.combo_trigger.is_combo
+            ):
+                if transnode.from_state is dsl_nodes.INIT_STATE:
+                    has_entry_trans = True
+                sink.emit(
+                    ModelDiagnostic(
+                        code="E_COMBO_TRIGGER_NOT_EXPANDED",
+                        severity="error",
+                        message=(
+                            "Combo transition trigger syntax parsed successfully, "
+                            "but model expansion is not implemented yet."
+                        ),
+                        span=getattr(transnode, "_span", None),
+                        refs={
+                            "state_path": ".".join(
+                                str(item) for item in current_path
+                            ),
+                            "trigger": transnode.combo_trigger.canonical_text,
+                        },
+                    )
+                )
+                continue
+
             # I2 from PR-110: when both sides of a transition are unresolved,
             # codes.yaml's ``reason='both_not_found'`` should fire as a
             # single combined diagnostic rather than two unrelated ones

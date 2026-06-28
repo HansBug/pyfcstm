@@ -89,6 +89,106 @@ class GrammarParserListener(ParseTreeListener):
     ):
         pass
 
+    # Enter a parse tree produced by GrammarParser#combo_transition_trigger.
+    def enterCombo_transition_trigger(
+        self, ctx: GrammarParser.Combo_transition_triggerContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#combo_transition_trigger.
+    def exitCombo_transition_trigger(
+        self, ctx: GrammarParser.Combo_transition_triggerContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#local_combo_trigger.
+    def enterLocal_combo_trigger(self, ctx: GrammarParser.Local_combo_triggerContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#local_combo_trigger.
+    def exitLocal_combo_trigger(self, ctx: GrammarParser.Local_combo_triggerContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#local_combo_leading_guard.
+    def enterLocal_combo_leading_guard(
+        self, ctx: GrammarParser.Local_combo_leading_guardContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#local_combo_leading_guard.
+    def exitLocal_combo_leading_guard(
+        self, ctx: GrammarParser.Local_combo_leading_guardContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#local_combo_trigger_term.
+    def enterLocal_combo_trigger_term(
+        self, ctx: GrammarParser.Local_combo_trigger_termContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#local_combo_trigger_term.
+    def exitLocal_combo_trigger_term(
+        self, ctx: GrammarParser.Local_combo_trigger_termContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#local_combo_event_term.
+    def enterLocal_combo_event_term(
+        self, ctx: GrammarParser.Local_combo_event_termContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#local_combo_event_term.
+    def exitLocal_combo_event_term(
+        self, ctx: GrammarParser.Local_combo_event_termContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#chain_combo_trigger.
+    def enterChain_combo_trigger(self, ctx: GrammarParser.Chain_combo_triggerContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#chain_combo_trigger.
+    def exitChain_combo_trigger(self, ctx: GrammarParser.Chain_combo_triggerContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#chain_combo_guard_alias.
+    def enterChain_combo_guard_alias(
+        self, ctx: GrammarParser.Chain_combo_guard_aliasContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#chain_combo_guard_alias.
+    def exitChain_combo_guard_alias(
+        self, ctx: GrammarParser.Chain_combo_guard_aliasContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#combo_trigger_term.
+    def enterCombo_trigger_term(self, ctx: GrammarParser.Combo_trigger_termContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#combo_trigger_term.
+    def exitCombo_trigger_term(self, ctx: GrammarParser.Combo_trigger_termContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#combo_event_term.
+    def enterCombo_event_term(self, ctx: GrammarParser.Combo_event_termContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#combo_event_term.
+    def exitCombo_event_term(self, ctx: GrammarParser.Combo_event_termContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#combo_guard_term.
+    def enterCombo_guard_term(self, ctx: GrammarParser.Combo_guard_termContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#combo_guard_term.
+    def exitCombo_guard_term(self, ctx: GrammarParser.Combo_guard_termContext):
+        pass
+
     # Enter a parse tree produced by GrammarParser#normalForceTransitionDefinition.
     def enterNormalForceTransitionDefinition(
         self, ctx: GrammarParser.NormalForceTransitionDefinitionContext

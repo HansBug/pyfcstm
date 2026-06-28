@@ -52,18 +52,61 @@ state_definition
     ;
 
 transition_definition
-    : INIT_MARKER ARROW to_state=ID
-      ((COLON | COLONCOLON) chain_id | COLON IF LBRACK cond_expression RBRACK)?
+    : INIT_MARKER ARROW to_state=ID combo_transition_trigger?
       (SEMI | EFFECT LBRACE operational_statement_set RBRACE)
         # entryTransitionDefinition
-    | from_state=ID ARROW to_state=ID
-      (COLONCOLON from_id=ID | COLON chain_id | COLON IF LBRACK cond_expression RBRACK)?
+    | from_state=ID ARROW to_state=ID combo_transition_trigger?
       (SEMI | EFFECT LBRACE operational_statement_set RBRACE)
         # normalTransitionDefinition
-    | from_state=ID ARROW INIT_MARKER
-      (COLONCOLON from_id=ID | COLON chain_id | COLON IF LBRACK cond_expression RBRACK)?
+    | from_state=ID ARROW INIT_MARKER combo_transition_trigger?
       (SEMI | EFFECT LBRACE operational_statement_set RBRACE)
         # exitTransitionDefinition
+    ;
+
+combo_transition_trigger
+    : COLONCOLON local_combo_trigger
+    | COLON IF LBRACK cond_expression RBRACK
+    | COLON chain_combo_trigger
+    ;
+
+local_combo_trigger
+    : local_combo_leading_guard* local_combo_event_term (PLUS local_combo_trigger_term)*
+    ;
+
+local_combo_leading_guard
+    : combo_guard_term PLUS
+    ;
+
+local_combo_trigger_term
+    : local_combo_event_term
+    | combo_guard_term
+    ;
+
+local_combo_event_term
+    : ID
+    ;
+
+chain_combo_trigger
+    : chain_combo_guard_alias
+    | combo_trigger_term PLUS combo_trigger_term (PLUS combo_trigger_term)*
+    | combo_event_term
+    ;
+
+chain_combo_guard_alias
+    : combo_guard_term
+    ;
+
+combo_trigger_term
+    : combo_event_term
+    | combo_guard_term
+    ;
+
+combo_event_term
+    : chain_id
+    ;
+
+combo_guard_term
+    : LBRACK cond_expression RBRACK
     ;
 
 transition_force_definition

@@ -369,6 +369,44 @@ E_DANGLING_TRANSITION:
   example_dsl: |
     state Root { state A; NoSuch -> A; }
 
+E_COMBO_TRIGGER_NOT_EXPANDED:
+  severity: error
+  span_object: transition
+  description: >-
+    A transition uses parsed combo trigger syntax before the model-expansion
+    support has lowered it into pseudo states and ordinary transitions.
+  refs:
+    state_path:
+      type: str_or_null
+      required: false
+      description: Dotted path of the state that owns the combo transition.
+    trigger:
+      type: str
+      required: true
+      description: Canonical text of the combo trigger suffix.
+  for_llm:
+    summary: >-
+      The parser accepted a transition trigger such as ``:: E1 + E2`` or
+      ``: E1 + [x > 0]``, but this implementation intentionally stops
+      before pseudo-state expansion support. Downstream model construction refuses to
+      silently drop the extra trigger terms.
+    recommended_actions:
+      - kind: wait_for_expansion_support
+        target: transition
+        rationale: >-
+          Keep the DSL syntax if you are testing parser/provenance support;
+          wait for model-expansion support before running simulation,
+          verification, or code generation on combo triggers.
+      - kind: expand_manually
+        target: transition
+        rationale: >-
+          For immediate runtime use, rewrite the combo transition as explicit
+          pseudo states and ordinary transitions.
+    do_not:
+      - "Do not treat the first event term as the whole transition; that would silently change model semantics."
+  example_dsl: |
+    state Root { state A; state B; A -> B :: Go + Done; }
+
 E_TYPE_MISMATCH:
   severity: error
   span_object: expression

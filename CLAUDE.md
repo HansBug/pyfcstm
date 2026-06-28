@@ -126,6 +126,46 @@ The `SKIP_SLOW_TESTS=1` env var is read by [test/conftest.py](test/conftest.py).
 compile C/C++ via cmake. Use it for iteration cycles that don't touch generated C runtime. The Python template,
 simulator, model, DSL, render, and verify tests all still run.
 
+### Template Suite Detector
+
+The repository now includes a tools-only detector for the planned template-suite CI split. In its initial state it is a
+repo-local helper with an explicit `--check` self-check; it is **not** part of the public `pyfcstm` package and does
+**not** change the default `make unittest` or GitHub Actions route yet.
+
+```bash
+python tools/detect_template_suites.py --check
+
+python tools/detect_template_suites.py \
+  --changed-files /tmp/changed-files.txt \
+  --commit-message-file /tmp/commit-message.txt \
+  --event-name local \
+  --json
+
+python tools/detect_template_suites.py \
+  --changed-files /tmp/changed-files.txt \
+  --commit-message-file /tmp/commit-message.txt \
+  --event-name local \
+  --include-suites c,c_poll \
+  --json
+```
+
+Recognized suite tokens are `default`, `template_core`, `template_representative`, `python`, `c`, `c_poll`, `cpp`,
+`cpp_poll`, and `all`. The special `all` token expands to `python,c,c_poll,cpp,cpp_poll`; fixed/default suites do not
+enter the detector's dynamic `matrix.include` output.
+
+Commit-message labels use exact bracketed forms such as `[tpl:c]`, `[tpl:c_poll]`, `[tpl:all]`, and `[skip-tpl:c]`;
+whitespace or extra/nested brackets are invalid for both `[tpl:*]` and `[skip-tpl:*]` labels, so `[tpl: c]`,
+`[tpl:c ]`, `[tpl :c]`, `[skip-tpl : c]`, and `[tpl:c]]` fail instead of normalizing or being silently ignored.
+Multiple labels may be combined. Each bracketed label accepts one suite token only; use repeated labels such as
+`[tpl:c] [tpl:c_poll]` instead of comma-separated text inside one label. The parser is context-free: a live label inside
+prose or a Markdown code block is still parsed as an instruction, so use neutral examples such as `tpl:c` when
+documenting labels without intending to select a suite.
+
+Path-detected suites are protected. `PYFCSTM_SKIP_TEMPLATE_SUITES` and `[skip-tpl:*]` may remove only manually selected
+dynamic suites; they cannot remove path-detected suites and cannot disable fixed/default jobs. Unknown labels or suite
+tokens are hard failures, not warnings. The current JSON schema version is `template-suite-detector/v1`; renaming or
+removing fields requires a new schema version.
+
 ### CI Workflow Commit-Message Triggers
 
 [.github/workflows/test.yml](.github/workflows/test.yml) honors five magic substrings in the **head commit message**.

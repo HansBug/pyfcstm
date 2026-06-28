@@ -3002,6 +3002,9 @@ def _validate_native_cases(
         >>> java_cases[9]['inputs']['A'] = -2
         >>> '$.cases[9].inputs.A must match case plan value -2.5' in _validate_native_cases(java_cases, 'java', '$.cases')
         True
+        >>> java_cases[9]['inputs']['C'] = 99
+        >>> '$.cases[9].inputs has unexpected keys: C' in _validate_native_cases(java_cases, 'java', '$.cases')
+        True
     """
     errors: List[str] = []
     if not isinstance(cases, list) or not cases:
@@ -3021,6 +3024,7 @@ def _validate_native_cases(
         "native_only_reason",
         "native_api_family",
         "source_note_ids",
+        "commands",
     }
     shared_join_fields = [
         "case_id",
@@ -3124,6 +3128,13 @@ def _validate_native_cases(
                 if not isinstance(inputs, Mapping):
                     errors.append("%s.inputs must be a mapping" % case_path)
                 else:
+                    allowed_input_keys = {"A", "B"}
+                    extra_input_keys = sorted(set(inputs) - allowed_input_keys)
+                    if extra_input_keys:
+                        errors.append(
+                            "%s.inputs has unexpected keys: %s"
+                            % (case_path, ", ".join(extra_input_keys))
+                        )
                     for key, expected_value in [
                         ("A", plan.a_value),
                         ("B", plan.b_value),
@@ -3133,6 +3144,9 @@ def _validate_native_cases(
                                 "%s.inputs.%s must match case plan value %r"
                                 % (case_path, key, expected_value)
                             )
+                commands = case.get("commands")
+                if not isinstance(commands, Mapping):
+                    errors.append("%s.commands must be a mapping" % case_path)
             seen_semantic_ids.add(semantic_id)
             profile = str(case.get("profile"))
             profile_seen.setdefault(semantic_id, set()).add(profile)
@@ -5911,7 +5925,8 @@ def check_java_rust_smoke(
     :type work_dir: Optional[Union[str, pathlib.Path]], optional
     :param timeout: Per-command timeout in seconds, defaults to ``10``.
     :type timeout: int, optional
-    :return: Check result with ``ok`` and ``errors`` fields.
+    :return: Check result with ``ok``, ``errors`` and snapshot enforcement
+        fields.
     :rtype: Dict[str, Any]
     :raises ValueError: If ``mode`` is not a Java/Rust smoke mode.
 
@@ -5992,6 +6007,7 @@ def check_java_rust_smoke(
         "schema_version": live["schema_version"],
         "source_mapping_sha256": live["source_mapping_sha256"],
         "snapshot_present": snapshot_present,
+        "snapshot_enforced": mode == "java-rust-smoke",
         "snapshot_path": _JAVA_RUST_SMOKE_SNAPSHOT,
         "mode": mode,
     }

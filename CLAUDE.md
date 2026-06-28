@@ -193,8 +193,10 @@ In GitHub Actions, `workflow_dispatch` accepts `template_suites` and `skip_templ
 positive `template_suites` value fails closed to `all`; a skip-only dispatch cannot narrow coverage to an empty matrix.
 The stable aggregate check is named `template-suite-gate`; branch protection should depend on that gate rather than on
 per-suite dynamic job names such as `Template full (c)`. Code-test skip tokens skip the expensive unittest/
-representative/full jobs only after detector success; unknown template labels, malformed detector output, or detector
-failures must still fail the stable gate. The dynamic full-suite job runs on Ubuntu with Python 3.11 and clears inherited
+representative/full jobs only after detector success; unknown template labels, malformed detector output, missing detector
+outputs, or detector failures must still fail the stable gate. These global skip tokens bypass selected/path-protected full
+suites only as whole-workflow skip controls; per-suite `[skip-tpl:*]` / `PYFCSTM_SKIP_TEMPLATE_SUITES` requests still
+cannot remove path-protected suites. The dynamic full-suite job runs on Ubuntu with Python 3.11 and clears inherited
 `SKIP_SLOW_TESTS` before invoking `make template_unittest`, so protected or manually selected full suites cannot be
 converted into false-green skips.
 

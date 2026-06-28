@@ -233,11 +233,14 @@ jobs:
           unittest = os.environ.get('UNITTEST_RESULT') or ''
           representative = os.environ.get('REPRESENTATIVE_RESULT') or ''
           template_full = os.environ.get('TEMPLATE_FULL_RESULT') or ''
-          selected_count_text = os.environ.get('SELECTED_FULL_COUNT') or '0'
+          selected_count_text = os.environ.get('SELECTED_FULL_COUNT') or ''
           selected_suites = os.environ.get('SELECTED_SUITES') or ''
-          try:
-              selected_count = int(selected_count_text)
-          except ValueError:
+          if selected_count_text.strip():
+              try:
+                  selected_count = int(selected_count_text)
+              except ValueError:
+                  selected_count = -1
+          else:
               selected_count = -1
 
           print('detector={0}'.format(detector))

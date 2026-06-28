@@ -2626,6 +2626,27 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             for element in self.static_iterable_elements(node)
         )
 
+    def iterable_has_tools_module_name(self, node: ast.AST) -> bool:
+        """
+        Return whether a static iterable contains a ``tools`` module name.
+
+        :param node: Iterable expression node.
+        :type node: ast.AST
+        :return: ``True`` when any yielded element names a ``tools`` module.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> expr = ast.parse('("tools.package_templates",)').body[0].value
+            >>> visitor.iterable_has_tools_module_name(expr)
+            True
+        """
+        return any(
+            self.expression_denotes_tools_module(element)
+            for element in self.static_iterable_elements(node)
+        )
+
     def iterable_has_source_install_command(self, node: ast.AST) -> bool:
         """
         Return whether a static iterable can yield a source-install command.
@@ -2686,6 +2707,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> 'repo_root' in visitor.repo_root_aliases
             True
         """
+        if self._visit_path_split_unpack(targets, value):
+            return
         repo_root_tainted = self.is_repo_root_tainted(value)
         path_parent_hops = self.path_argument_parent_hops(value)
         file_parents_sequence = self.expression_denotes_file_parents_sequence(value)
@@ -2696,6 +2719,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         )
         template_segment = self.expression_has_exact_segment(value, "templates")
         tools_module_name = self.expression_denotes_tools_module(value)
+        tools_module_sequence = self.iterable_has_tools_module_name(value)
         static_string = self.static_string(value)
         dynamic_code_rule = self.compiled_dynamic_code_boundary_rule(value)
         for target in targets:
@@ -2717,7 +2741,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     )
                 if template_segment:
                     self.current_scope.template_segment_aliases.add(name)
-                if tools_module_name:
+                if tools_module_name or tools_module_sequence:
                     self.current_scope.tools_module_name_aliases.add(name)
                 if self.expression_denotes_importlib_module(value):
                     self.current_scope.importlib_aliases.add(name)
@@ -2751,6 +2775,44 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     self.current_scope.tools_command_aliases.add(name)
                 if source_install_command:
                     self.current_scope.source_install_command_aliases.add(name)
+
+    def _visit_path_split_unpack(
+        self, targets: Sequence[ast.AST], value: ast.AST
+    ) -> bool:
+        """
+        Track parent hops from ``os.path.split`` tuple unpacking.
+
+        :param targets: Assignment targets.
+        :type targets: Sequence[ast.AST]
+        :param value: Assigned value expression.
+        :type value: ast.AST
+        :return: ``True`` when the assignment was handled as path splitting.
+        :rtype: bool
+
+        Example::
+
+            >>> source = 'import os' + chr(10) + 'base, _ = os.path.split(__file__)' + chr(10) + 'os.path.join(base, "..", "templates")'
+            >>> visitor = TestBoundaryVisitor(Path('test/x.py'), source, set())
+            >>> visitor.visit(ast.parse(source))
+            >>> visitor.findings[0].rule
+            'repo-source-templates'
+        """
+        if len(targets) != 1 or not isinstance(targets[0], (ast.Tuple, ast.List)):
+            return False
+        if not isinstance(value, ast.Call) or not value.args:
+            return False
+        if not self.is_os_path_split_call(value):
+            return False
+        base_hops = self.path_argument_parent_hops(value.args[0])
+        if base_hops is None:
+            return False
+        unpack_target = targets[0]
+        for name in self._target_names(unpack_target):
+            self.clear_scope_aliases(name)
+        if unpack_target.elts:
+            for name in self._target_names(unpack_target.elts[0]):
+                self.current_scope.path_parent_hop_aliases[name] = base_hops + 1
+        return True
 
     def clear_scope_aliases(self, name: str) -> None:
         """
@@ -2851,6 +2913,13 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             return value
         if isinstance(node, ast.Name):
             return self.string_aliases.get(node.id)
+        if isinstance(node, ast.Attribute) and node.attr == "pardir":
+            if isinstance(node.value, ast.Name) and node.value.id in self.os_aliases:
+                return ".."
+            if self.expression_denotes_os_path_module(node.value):
+                return ".."
+            if dotted_name(node) in {"os.pardir", "os.path.pardir"}:
+                return ".."
         if isinstance(node, ast.JoinedStr):
             parts = []
             for value_node in node.values:
@@ -3571,6 +3640,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             return self.expression_or_alias_runs_tools_script(node.args[0])
         if self.is_importlib_util_spec_from_file_location_call(node):
             return self.importlib_util_spec_location_runs_tools_script(node)
+        if self.expression_denotes_importlib_import_module(node.func):
+            return self.dynamic_import_target_is_tools(node)
         if isinstance(node.func, ast.Attribute):
             if node.func.attr == "__import__" and isinstance(node.func.value, ast.Name):
                 if node.func.value.id in self.builtins_aliases:
@@ -3750,13 +3821,20 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> call = ast.parse('import_module(module_name)').body[0].value
             >>> visitor.dynamic_import_target_is_tools(call)
             True
+            >>> call = ast.parse('import_module(*("tools.x",))').body[0].value
+            >>> visitor.dynamic_import_target_is_tools(call)
+            True
+            >>> call = ast.parse('import_module(*(".x", "tools"))').body[0].value
+            >>> visitor.dynamic_import_target_is_tools(call)
+            True
         """
+        args = self.static_call_arguments(node)
         name = None
         package = None
-        if node.args:
-            name = self.static_module_name(node.args[0])
-        if len(node.args) > 1:
-            package = self.static_module_name(node.args[1])
+        if args:
+            name = self.static_module_name(args[0])
+        if len(args) > 1:
+            package = self.static_module_name(args[1])
         for keyword in node.keywords:
             if keyword.arg == "name":
                 name = self.static_module_name(keyword.value)
@@ -3786,6 +3864,11 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor.static_module_name(ast.Name(id='name'))
             'tools'
         """
+        if isinstance(node, ast.Starred):
+            elements = self.static_iterable_elements(node.value)
+            if elements:
+                return self.static_module_name(elements[0])
+            return self.static_module_name(node.value)
         value = self.static_string(node)
         if value is not None:
             return value
@@ -3797,6 +3880,33 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             if left is not None and right is not None:
                 return left + right
         return None
+
+    def static_call_arguments(self, node: ast.Call) -> List[ast.AST]:
+        """
+        Return positional call arguments with static star-unpacking expanded.
+
+        :param node: Call expression to inspect.
+        :type node: ast.Call
+        :return: Positional argument expressions.
+        :rtype: List[ast.AST]
+
+        Example::
+
+            >>> call = ast.parse('f(*("tools.x",))').body[0].value
+            >>> len(TestBoundaryVisitor(Path('x.py'), '', set()).static_call_arguments(call))
+            1
+        """
+        arguments = []
+        for argument in node.args:
+            if isinstance(argument, ast.Starred):
+                elements = self.static_iterable_elements(argument.value)
+                if elements:
+                    arguments.extend(elements)
+                else:
+                    arguments.append(argument)
+            else:
+                arguments.append(argument)
+        return arguments
 
     def expression_denotes_tools_module(self, node: ast.AST) -> bool:
         """
@@ -4589,7 +4699,11 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor = TestBoundaryVisitor(Path('test/x.py'), '', set())
             >>> visitor.path_argument_parent_hops(ast.parse('os.path.dirname(__file__)').body[0].value)
             1
+            >>> visitor.path_argument_parent_hops(ast.parse('__file__').body[0].value)
+            0
         """
+        if isinstance(node, ast.Name) and node.id == "__file__":
+            return 0
         if isinstance(node, ast.Name):
             parent_hops = self.path_parent_hop_aliases.get(node.id)
             if parent_hops is not None:

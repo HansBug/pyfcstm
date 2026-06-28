@@ -1115,10 +1115,18 @@ def command_text_runs_tools_script(text: str) -> bool:
 
         >>> command_text_runs_tools_script('python -m tools.package_templates')
         True
+        >>> command_text_runs_tools_script('python -m tools x.py')
+        True
     """
     normalized = text.replace("\\", "/")
     if "tools/" in normalized and ".py" in normalized:
         return True
+    tokens = normalized.strip().split()
+    for index, token in enumerate(tokens[:-1]):
+        if token == "-m" and (
+            tokens[index + 1] == "tools" or tokens[index + 1].startswith("tools.")
+        ):
+            return True
     return "-m tools." in normalized or normalized.strip().startswith("tools.")
 
 
@@ -4360,23 +4368,23 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
             >>> call = ast.parse('subprocess.run(args=["python"])').body[0].value
             >>> len(visitor.subprocess_command_arguments(call))
-            1
+            2
             >>> call = ast.parse('subprocess.run(["python", cmd + "/tools/x.py"])').body[0].value
             >>> len(visitor.subprocess_command_arguments(call))
-            2
+            3
             >>> call = ast.parse('subprocess.run(cmd=["python"])').body[0].value
             >>> len(visitor.subprocess_command_arguments(call))
-            1
+            2
         """
         if node.args:
             first_arg = node.args[0]
             if isinstance(first_arg, (ast.List, ast.Tuple)):
-                return list(first_arg.elts)
+                return [first_arg] + list(first_arg.elts)
             return [first_arg]
         for keyword in node.keywords:
             if keyword.arg in {"args", "argv", "cmd"}:
                 if isinstance(keyword.value, (ast.List, ast.Tuple)):
-                    return list(keyword.value.elts)
+                    return [keyword.value] + list(keyword.value.elts)
                 return [keyword.value]
         return []
 

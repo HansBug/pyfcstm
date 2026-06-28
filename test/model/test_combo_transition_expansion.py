@@ -504,6 +504,13 @@ class TestComboModelExpansion:
         exported = str(model.to_ast_node())
 
         assert "pseudo state __combo_" in exported
+        parsed = parse_with_grammar_entry(exported, entry_name="state_machine_dsl")
+        with pytest.raises(ModelValidationError) as exc_info:
+            parse_dsl_node_to_state_machine(parsed)
+        assert any(
+            diag.code == "E_COMBO_RESERVED_STATE_NAME"
+            for diag in exc_info.value.diagnostics
+        )
 
     def test_nested_same_name_sources_keep_distinct_pseudo_names(self):
         model = _build_model(

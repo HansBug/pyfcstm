@@ -27,6 +27,7 @@ The following public components are re-exported here:
 * :class:`IfBlockBranch` - Branch inside an ``if`` operation block
 * :class:`IfBlock` - Conditional operation block
 * :class:`Event` - State-machine event model
+* :class:`ComboOriginRef` - Provenance reference from generated combo edges
 * :class:`Transition` - State transition model
 * :class:`OnStage` - Enter/during/exit action model
 * :class:`OnAspect` - Aspect-oriented during action model
@@ -87,6 +88,7 @@ from .model import (
     IfBlockBranch,
     IfBlock,
     Event,
+    ComboOriginRef,
     Transition,
     OnStage,
     OnAspect,
@@ -129,6 +131,7 @@ __all__ = [
     "IfBlockBranch",
     "IfBlock",
     "Event",
+    "ComboOriginRef",
     "Transition",
     "OnStage",
     "OnAspect",

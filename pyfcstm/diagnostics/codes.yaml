@@ -371,10 +371,11 @@ E_DANGLING_TRANSITION:
 
 E_COMBO_TRIGGER_NOT_EXPANDED:
   severity: error
+  emit_tier: catalog_only
   span_object: transition
   description: >-
-    A transition uses parsed combo trigger syntax before the model-expansion
-    support has lowered it into pseudo states and ordinary transitions.
+    A legacy fail-closed compatibility code for implementations that parse
+    combo trigger syntax before model expansion support is available.
   refs:
     state_path:
       type: str_or_null
@@ -386,10 +387,11 @@ E_COMBO_TRIGGER_NOT_EXPANDED:
       description: Canonical text of the combo trigger suffix.
   for_llm:
     summary: >-
-      The parser accepted a transition trigger such as ``:: E1 + E2`` or
-      ``: E1 + [x > 0]``, but this implementation intentionally stops
-      before pseudo-state expansion support. Downstream model construction refuses to
-      silently drop the extra trigger terms.
+      Older pyfcstm/jsfcstm builds may accept a transition trigger such as
+      ``:: E1 + E2`` or ``: E1 + [x > 0]`` but stop before pseudo-state
+      expansion support. Current pyfcstm expands combo triggers instead of
+      emitting this code; the catalog entry remains for cross-version
+      consumers.
     recommended_actions:
       - kind: wait_for_expansion_support
         target: transition
@@ -406,6 +408,76 @@ E_COMBO_TRIGGER_NOT_EXPANDED:
       - "Do not treat the first event term as the whole transition; that would silently change model semantics."
   example_dsl: |
     state Root { state A; state B; A -> B :: Go + Done; }
+
+E_COMBO_RESERVED_STATE_NAME:
+  severity: error
+  span_object: state_identifier
+  description: >-
+    A user-authored state name starts with the reserved automatic combo
+    pseudo-state prefix.
+  refs:
+    state_name:
+      type: str
+      required: true
+      description: The reserved user-authored state name.
+    state_path:
+      type: str
+      required: true
+      description: Dotted path of the offending state.
+    reserved_prefix:
+      type: str
+      required: true
+      description: Reserved prefix used by generated combo pseudo states.
+  for_llm:
+    summary: >-
+      State names beginning with ``__combo_`` are reserved for generated
+      pseudo states created by combo transition trigger expansion.
+    recommended_actions:
+      - kind: rename_state
+        target: state_identifier
+        rationale: >-
+          Rename the user-authored state so it does not collide with the
+          generated combo pseudo-state namespace.
+    do_not:
+      - "Do not use ``__combo_`` for hand-written states; the expander owns this namespace."
+  example_dsl: |
+    state Root { state __combo_user; [*] -> __combo_user; }
+
+E_COMBO_PSEUDO_NAME_COLLISION:
+  severity: error
+  span_object: state_identifier
+  description: >-
+    Combo trigger expansion generated the same pseudo-state name for distinct
+    semantic payloads, or a generated combo pseudo name collided with an
+    existing non-pseudo state.
+  refs:
+    state_path:
+      type: str
+      required: true
+      description: Dotted path of the state where expansion attempted to add the pseudo state.
+    pseudo_name:
+      type: str
+      required: true
+      description: Generated pseudo-state name that collided.
+    payload_digest:
+      type: str
+      required: true
+      description: Full digest of the semantic payload that attempted to claim the name.
+  for_llm:
+    summary: >-
+      The combo expander uses fixed digest12 pseudo names. If two distinct
+      canonical payloads truncate to the same visible name, expansion fails
+      fast rather than silently renaming or reusing the wrong pseudo state.
+    recommended_actions:
+      - kind: report_internal_collision
+        target: transition
+        rationale: >-
+          This is an internal collision guard. Keep the model unchanged and
+          report the diagnostic, including ``refs.payload_digest``.
+    do_not:
+      - "Do not append an ad-hoc sequence number; user-visible combo names must remain deterministic."
+  example_dsl: |
+    state Root { state A; state B; [*] -> A; A -> B :: E1 + E2; }
 
 E_TYPE_MISMATCH:
   severity: error

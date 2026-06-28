@@ -10,6 +10,10 @@ import {createDocument, packageModule} from './support';
  */
 const META_FIELDS = new Set([
     'range',
+    'removalRange',
+    'removal_range',
+    'valueRange',
+    'value_range',
     'nameRange',
     'pathRange',
     'aliasRange',

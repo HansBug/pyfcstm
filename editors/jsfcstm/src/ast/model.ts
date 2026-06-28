@@ -171,6 +171,34 @@ export interface FcstmAstChainTrigger extends FcstmAstNodeBase {
 
 export type FcstmAstTrigger = FcstmAstLocalTrigger | FcstmAstChainTrigger;
 
+export interface FcstmAstComboTriggerTerm extends FcstmAstNodeBase {
+    kind: 'comboTriggerTerm';
+    termKind: 'event' | 'guard';
+    canonicalText: string;
+    canonical_text: string;
+    removalRange: TextRange;
+    removal_range: TextRange;
+    valueRange?: TextRange;
+    value_range?: TextRange;
+    eventScope?: 'local' | 'chain' | 'absolute';
+    event_scope?: 'local' | 'chain' | 'absolute';
+    eventPath?: FcstmAstChainPath;
+    event_id?: FcstmAstChainPath;
+    condition?: FcstmAstExpression;
+    condition_expr?: FcstmAstExpression;
+}
+
+export interface FcstmAstComboTrigger extends FcstmAstNodeBase {
+    kind: 'comboTrigger';
+    scopePrefix: ':' | '::';
+    scope_prefix: ':' | '::';
+    canonicalText: string;
+    canonical_text: string;
+    terms: FcstmAstComboTriggerTerm[];
+    isCombo: boolean;
+    is_combo: boolean;
+}
+
 /**
  * Common transition fields shared by normal and forced transitions.
  */
@@ -180,6 +208,8 @@ export interface FcstmAstTransitionBase extends FcstmAstNodeBase {
     sourceKind: 'init' | 'state' | 'all';
     targetKind: 'state' | 'exit';
     trigger?: FcstmAstTrigger;
+    comboTrigger?: FcstmAstComboTrigger;
+    combo_trigger?: FcstmAstComboTrigger;
     guard?: FcstmAstExpression;
     effect?: FcstmAstOperationBlock;
     fromState?: string | FcstmAstSpecialStateMark;

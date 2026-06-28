@@ -110,6 +110,27 @@ _JAVA_RUST_SMOKE_SNAPSHOT = "%s/results/snapshots/java_rust_smoke.json" % (
 _JAVA_RUST_SMOKE_SCHEMA = "%s/schemas/java_rust_smoke.schema.json" % (_RESEARCH_PATH)
 _NATIVE_ONLY_REASON = "no_java_or_rust_template_in_current_repository"
 _JAVA_RUST_MODES = {"java-smoke", "rust-smoke", "java-rust-smoke"}
+_NATIVE_SUMMARY_STATUSES = {
+    "passed",
+    "unavailable",
+    "completed_with_findings",
+    "completed",
+    "skipped",
+    "invalid",
+}
+_NATIVE_CASE_STATUS_OUTCOMES = {
+    "passed": "observed",
+    "compile_failed": "compile_failed",
+    "runtime_failed": "runtime_trap",
+    "skipped": "unavailable",
+    "unavailable": "unavailable",
+}
+_JAVA_NON_PASSING_CASE_IDS = {
+    "division_by_zero_exception",
+    "math_add_exact_overflow",
+    "math_multiply_exact_overflow",
+    "math_sign_missing",
+}
 _COMMANDS = [
     "python",
     "git",
@@ -3005,6 +3026,13 @@ def _validate_native_cases(
         >>> java_cases[9]['inputs']['C'] = 99
         >>> '$.cases[9].inputs has unexpected keys: C' in _validate_native_cases(java_cases, 'java', '$.cases')
         True
+        >>> java_cases = [
+        ...     _native_case_base(case, case.profile or 'java-int32', 'native_java')
+        ...     for case in _java_smoke_cases()
+        ... ]
+        >>> java_cases[0]['status'] = 'passed'
+        >>> '$.cases[0].passed status requires observed outcome' in _validate_native_cases(java_cases, 'java', '$.cases')
+        True
     """
     errors: List[str] = []
     if not isinstance(cases, list) or not cases:
@@ -3084,6 +3112,20 @@ def _validate_native_cases(
             errors.append(
                 "%s.outcome is invalid: %r" % (case_path, case.get("outcome"))
             )
+        expected_outcome = _NATIVE_CASE_STATUS_OUTCOMES.get(str(case.get("status")))
+        if expected_outcome is not None and case.get("outcome") != expected_outcome:
+            errors.append(
+                "%s.%s status requires %s outcome"
+                % (case_path, case.get("status"), expected_outcome)
+            )
+        if case.get("status") == "passed" and case.get("reason") is not None:
+            errors.append("%s.passed status requires null reason" % case_path)
+        if case.get("status") in {"compile_failed", "runtime_failed", "unavailable"}:
+            if not isinstance(case.get("reason"), str) or not case.get("reason"):
+                errors.append(
+                    "%s.%s status requires a non-empty reason"
+                    % (case_path, case.get("status"))
+                )
         if case.get("native_only") is not True:
             errors.append("%s.native_only must be true" % case_path)
         if case.get("native_only_reason") != _NATIVE_ONLY_REASON:
@@ -3147,6 +3189,36 @@ def _validate_native_cases(
                 commands = case.get("commands")
                 if not isinstance(commands, Mapping):
                     errors.append("%s.commands must be a mapping" % case_path)
+                else:
+                    for command_name, command_result in commands.items():
+                        if not isinstance(command_name, str) or not command_name:
+                            errors.append(
+                                "%s.commands has an invalid command key" % case_path
+                            )
+                            continue
+                        errors.extend(
+                            _validate_command_result(
+                                command_result,
+                                "%s.commands.%s" % (case_path, command_name),
+                            )
+                        )
+                    if case.get("status") == "passed" and "run" not in commands:
+                        errors.append(
+                            "%s.passed status requires commands.run" % case_path
+                        )
+                    if case.get("status") == "runtime_failed" and "run" not in commands:
+                        errors.append(
+                            "%s.runtime_failed status requires commands.run" % case_path
+                        )
+                    if case.get("status") == "compile_failed" and not commands:
+                        errors.append(
+                            "%s.compile_failed status requires command diagnostics"
+                            % case_path
+                        )
+                    if case.get("status") == "unavailable" and commands:
+                        errors.append(
+                            "%s.unavailable status requires empty commands" % case_path
+                        )
             seen_semantic_ids.add(semantic_id)
             profile = str(case.get("profile"))
             profile_seen.setdefault(semantic_id, set()).add(profile)
@@ -3172,6 +3244,243 @@ def _validate_native_cases(
     return errors
 
 
+def _validate_command_result(command: Any, path: str) -> List[str]:
+    """
+    Validate one captured native command result.
+
+    :param command: Command result payload.
+    :type command: Any
+    :param path: Human-readable path.
+    :type path: str
+    :return: Validation diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> _validate_command_result({'args': [], 'returncode': 0, 'stdout': '', 'stderr': '', 'timed_out': False, 'duration_seconds': '<duration>', 'start_error': None}, '$.commands.run')
+        []
+        >>> _validate_command_result({}, '$.commands.run')[:1]
+        ['$.commands.run missing required fields: args, duration_seconds, returncode, start_error, stderr, stdout, timed_out']
+    """
+    if not isinstance(command, Mapping):
+        return ["%s must be a mapping" % path]
+    errors = []
+    required_fields = {
+        "args",
+        "returncode",
+        "stdout",
+        "stderr",
+        "timed_out",
+        "duration_seconds",
+        "start_error",
+    }
+    missing = sorted(required_fields - set(command))
+    if missing:
+        errors.append("%s missing required fields: %s" % (path, ", ".join(missing)))
+    args = command.get("args")
+    if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
+        errors.append("%s.args must be a string array" % path)
+    returncode = command.get("returncode")
+    if returncode is not None and (
+        not isinstance(returncode, int) or isinstance(returncode, bool)
+    ):
+        errors.append("%s.returncode must be an integer or null" % path)
+    for key in ["stdout", "stderr"]:
+        if not isinstance(command.get(key), str):
+            errors.append("%s.%s must be a string" % (path, key))
+    if not isinstance(command.get("timed_out"), bool):
+        errors.append("%s.timed_out must be a boolean" % path)
+    duration = command.get("duration_seconds")
+    if not (
+        (isinstance(duration, (int, float)) and not isinstance(duration, bool))
+        or isinstance(duration, str)
+    ):
+        errors.append("%s.duration_seconds must be a number or snapshot string" % path)
+    start_error = command.get("start_error")
+    if start_error is not None and not isinstance(start_error, str):
+        errors.append("%s.start_error must be a string or null" % path)
+    return errors
+
+
+def _validate_native_status_expectation(
+    case: Mapping[str, Any], language: str, case_path: str
+) -> List[str]:
+    """
+    Validate known status expectations for environment-independent cases.
+
+    Java source-file launcher behavior is deterministic enough for the current
+    native-only snapshot: arithmetic traps and the intentionally unsupported
+    ``sign`` renderer fallback must not be rewritten as successful observations.
+    Rust status remains toolchain-dependent across developer environments, so
+    the validator only checks Java's committed semantic expectations here.
+
+    :param case: Native case result.
+    :type case: Mapping[str, Any]
+    :param language: Expected language.
+    :type language: str
+    :param case_path: Human-readable path.
+    :type case_path: str
+    :return: Validation diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> case = _native_case_base(_java_smoke_cases()[3], 'java-int32', 'native_java')
+        >>> case['status'] = 'passed'
+        >>> _validate_native_status_expectation(case, 'java', '$.cases[3]')[0]
+        '$.cases[3].status must be runtime_failed for Java case division_by_zero_exception'
+    """
+    if language != "java":
+        return []
+    semantic_id = case.get("semantic_case_id")
+    if semantic_id == "math_sign_missing":
+        expected_status = "compile_failed"
+    elif semantic_id in _JAVA_NON_PASSING_CASE_IDS:
+        expected_status = "runtime_failed"
+    else:
+        expected_status = "passed"
+    if case.get("status") != expected_status:
+        return [
+            "%s.status must be %s for Java case %s"
+            % (case_path, expected_status, semantic_id)
+        ]
+    return []
+
+
+def _native_tool_available(payload: Mapping[str, Any], language: str) -> Optional[bool]:
+    """
+    Return native tool availability recorded in a smoke payload.
+
+    :param payload: Java or Rust smoke payload.
+    :type payload: Mapping[str, Any]
+    :param language: Native language, either ``"java"`` or ``"rust"``.
+    :type language: str
+    :return: Recorded availability, or ``None`` when metadata is incomplete.
+    :rtype: Optional[bool]
+
+    Example::
+
+        >>> _native_tool_available({'toolchain': {'rust': {'rustc': {'available': False}}}}, 'rust')
+        False
+    """
+    executable_name = {"java": "java", "rust": "rustc"}.get(language)
+    if executable_name is None:
+        return None
+    toolchain = payload.get("toolchain")
+    if not isinstance(toolchain, Mapping):
+        return None
+    language_tools = toolchain.get(language)
+    if not isinstance(language_tools, Mapping):
+        return None
+    executable = language_tools.get(executable_name)
+    if not isinstance(executable, Mapping):
+        return None
+    available = executable.get("available")
+    if isinstance(available, bool):
+        return available
+    return None
+
+
+def _validate_unavailable_native_cases(
+    payload: Mapping[str, Any], cases: Any, language: str, path: str
+) -> List[str]:
+    """
+    Validate case statuses when the native executable is unavailable.
+
+    :param payload: Java or Rust smoke payload.
+    :type payload: Mapping[str, Any]
+    :param cases: Case list from the payload.
+    :type cases: Any
+    :param language: Native language, either ``"java"`` or ``"rust"``.
+    :type language: str
+    :param path: Human-readable path.
+    :type path: str
+    :return: Validation diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> payload = {'toolchain': {'rust': {'rustc': {'available': False}}}}
+        >>> cases = [_native_case_base(_rust_smoke_cases()[0], 'debug', 'native_rust')]
+        >>> cases[0]['status'] = 'passed'
+        >>> _validate_unavailable_native_cases(payload, cases, 'rust', '$.cases')[0]
+        '$.cases[0].status must be unavailable when rustc is unavailable'
+    """
+    if _native_tool_available(payload, language) is not False or not isinstance(
+        cases, list
+    ):
+        return []
+    executable_name = {"java": "java", "rust": "rustc"}[language]
+    expected_reason = "%s_unavailable" % executable_name
+    errors = []
+    for index, case in enumerate(cases):
+        if not isinstance(case, Mapping):
+            continue
+        case_path = "%s[%d]" % (path, index)
+        if case.get("status") != "unavailable":
+            errors.append(
+                "%s.status must be unavailable when %s is unavailable"
+                % (case_path, executable_name)
+            )
+        if case.get("outcome") != "unavailable":
+            errors.append(
+                "%s.outcome must be unavailable when %s is unavailable"
+                % (case_path, executable_name)
+            )
+        if case.get("reason") != expected_reason:
+            errors.append(
+                "%s.reason must be %s when %s is unavailable"
+                % (case_path, expected_reason, executable_name)
+            )
+        commands = case.get("commands")
+        if isinstance(commands, Mapping) and commands:
+            errors.append(
+                "%s.commands must be empty when %s is unavailable"
+                % (case_path, executable_name)
+            )
+    return errors
+
+
+def _validate_available_native_cases(
+    payload: Mapping[str, Any], cases: Any, language: str, path: str
+) -> List[str]:
+    """
+    Validate deterministic case statuses when a native executable is available.
+
+    :param payload: Java or Rust smoke payload.
+    :type payload: Mapping[str, Any]
+    :param cases: Case list from the payload.
+    :type cases: Any
+    :param language: Native language, either ``"java"`` or ``"rust"``.
+    :type language: str
+    :param path: Human-readable path.
+    :type path: str
+    :return: Validation diagnostics.
+    :rtype: List[str]
+
+    Example::
+
+        >>> payload = {'toolchain': {'java': {'java': {'available': True}}}}
+        >>> cases = [_native_case_base(_java_smoke_cases()[3], 'java-int32', 'native_java')]
+        >>> cases[0]['status'] = 'passed'
+        >>> _validate_available_native_cases(payload, cases, 'java', '$.cases')[0]
+        '$.cases[0].status must be runtime_failed for Java case division_by_zero_exception'
+    """
+    if _native_tool_available(payload, language) is not True or not isinstance(
+        cases, list
+    ):
+        return []
+    errors = []
+    for index, case in enumerate(cases):
+        if isinstance(case, Mapping):
+            errors.extend(
+                _validate_native_status_expectation(
+                    case, language, "%s[%d]" % (path, index)
+                )
+            )
+    return errors
+
+
 def validate_java_rust_smoke(
     payload: Mapping[str, Any], expected_mode: Optional[str] = None
 ) -> List[str]:
@@ -3191,9 +3500,18 @@ def validate_java_rust_smoke(
         ['mode must be java-smoke', "mode must be one of ['java-rust-smoke', 'java-smoke', 'rust-smoke']"]
         >>> 'summary_status must be a non-empty string' in validate_java_rust_smoke({'schema_version': 1}, expected_mode='java-smoke')
         True
+        >>> payload = _build_java_smoke_report(timeout=1)
+        >>> payload['summary_status'] = 'passed'
+        >>> any('summary_status must match cases' in error for error in validate_java_rust_smoke(payload, expected_mode='java-smoke'))
+        True
+        >>> payload = build_java_rust_smoke_report('java-rust-smoke', timeout=1)
+        >>> payload['cases'] = list(payload['languages']['java']['cases'])
+        >>> 'cases must equal languages.java.cases + languages.rust.cases' in validate_java_rust_smoke(payload, expected_mode='java-rust-smoke')
+        True
     """
     errors: List[str] = []
     mode = payload.get("mode")
+    summary_status = payload.get("summary_status")
     if expected_mode is not None and mode != expected_mode:
         errors.append("mode must be %s" % expected_mode)
     if mode not in _JAVA_RUST_MODES:
@@ -3207,10 +3525,10 @@ def validate_java_rust_smoke(
         errors.append("language must be %s" % expected_language)
     if payload.get("schema_version") != 1:
         errors.append("schema_version must be 1")
-    if not isinstance(payload.get("summary_status"), str) or not payload.get(
-        "summary_status"
-    ):
+    if not isinstance(summary_status, str) or not summary_status:
         errors.append("summary_status must be a non-empty string")
+    elif summary_status not in _NATIVE_SUMMARY_STATUSES:
+        errors.append("summary_status is invalid: %r" % summary_status)
     for key in ["source_mapping_sha256", "render_mapping_sha256"]:
         value = payload.get(key)
         if (
@@ -3225,15 +3543,42 @@ def validate_java_rust_smoke(
         if not isinstance(payload.get(key), Mapping):
             errors.append("%s must be a mapping" % key)
     if mode == "java-smoke":
-        errors.extend(_validate_native_cases(payload.get("cases"), "java", "$.cases"))
-    elif mode == "rust-smoke":
+        cases = payload.get("cases")
+        errors.extend(_validate_native_cases(cases, "java", "$.cases"))
         errors.extend(
-            _validate_native_cases(
-                payload.get("cases"), "rust", "$.cases", require_all_profiles=True
-            )
+            _validate_unavailable_native_cases(payload, cases, "java", "$.cases")
         )
+        errors.extend(
+            _validate_available_native_cases(payload, cases, "java", "$.cases")
+        )
+        if isinstance(cases, list) and isinstance(summary_status, str):
+            expected_summary = _summary_status(cases)
+            if summary_status != expected_summary:
+                errors.append(
+                    "summary_status must match cases: expected %s, got %s"
+                    % (expected_summary, summary_status)
+                )
+    elif mode == "rust-smoke":
+        cases = payload.get("cases")
+        errors.extend(
+            _validate_native_cases(cases, "rust", "$.cases", require_all_profiles=True)
+        )
+        errors.extend(
+            _validate_unavailable_native_cases(payload, cases, "rust", "$.cases")
+        )
+        errors.extend(
+            _validate_available_native_cases(payload, cases, "rust", "$.cases")
+        )
+        if isinstance(cases, list) and isinstance(summary_status, str):
+            expected_summary = _summary_status(cases)
+            if summary_status != expected_summary:
+                errors.append(
+                    "summary_status must match cases: expected %s, got %s"
+                    % (expected_summary, summary_status)
+                )
     elif mode == "java-rust-smoke":
         languages = payload.get("languages")
+        all_cases = payload.get("cases")
         if not isinstance(languages, Mapping):
             errors.append("languages must be a mapping")
         else:
@@ -3257,7 +3602,14 @@ def validate_java_rust_smoke(
                         rust_payload, expected_mode="rust-smoke"
                     )
                 )
-        all_cases = payload.get("cases")
+            if isinstance(java_payload, Mapping) and isinstance(rust_payload, Mapping):
+                expected_cases = list(java_payload.get("cases", [])) + list(
+                    rust_payload.get("cases", [])
+                )
+                if all_cases != expected_cases:
+                    errors.append(
+                        "cases must equal languages.java.cases + languages.rust.cases"
+                    )
         java_cases = (
             [
                 case
@@ -3282,6 +3634,13 @@ def validate_java_rust_smoke(
                 rust_cases, "rust", "$.cases.rust", require_all_profiles=True
             )
         )
+        if isinstance(all_cases, list) and isinstance(summary_status, str):
+            expected_summary = _summary_status(all_cases)
+            if summary_status != expected_summary:
+                errors.append(
+                    "summary_status must match cases: expected %s, got %s"
+                    % (expected_summary, summary_status)
+                )
     notes = payload.get("official_source_notes")
     if mode in {"java-smoke", "rust-smoke"} and (
         not isinstance(notes, list) or not notes
@@ -5117,7 +5476,8 @@ def _validate_json_schema_fragment(
     the research artifact schemas: ``$ref``, ``allOf``, ``if`` / ``then``,
     ``type``, ``required``, ``properties``, object
     ``additionalProperties``, ``const``, ``enum``, ``pattern``,
-    string ``minLength``, ``minItems`` and homogeneous ``items``.
+    string ``minLength``, object ``minProperties`` / ``maxProperties``,
+    ``minItems`` and homogeneous ``items``.
 
     :param value: JSON-compatible value to validate.
     :type value: Any
@@ -5142,6 +5502,8 @@ def _validate_json_schema_fragment(
         ['$.then missing required key value']
         >>> _validate_json_schema_fragment('', {'type': 'string', 'minLength': 1}, {}, '$')
         ['$ must contain at least 1 characters']
+        >>> _validate_json_schema_fragment({}, {'type': 'object', 'minProperties': 1}, {}, '$')
+        ['$ must contain at least 1 properties']
     """
     errors: List[str] = []
     ref = schema.get("$ref")
@@ -5225,6 +5587,16 @@ def _validate_json_schema_fragment(
             errors.append("%s must contain at least %d characters" % (path, min_length))
 
     if isinstance(value, Mapping):
+        min_properties = schema.get("minProperties")
+        if isinstance(min_properties, int) and len(value) < min_properties:
+            errors.append(
+                "%s must contain at least %d properties" % (path, min_properties)
+            )
+        max_properties = schema.get("maxProperties")
+        if isinstance(max_properties, int) and len(value) > max_properties:
+            errors.append(
+                "%s must contain at most %d properties" % (path, max_properties)
+            )
         required = schema.get("required")
         if isinstance(required, list):
             for key in required:

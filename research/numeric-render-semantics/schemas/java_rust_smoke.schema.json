@@ -43,8 +43,14 @@
       "pattern": "^[0-9a-f]{64}$"
     },
     "summary_status": {
-      "type": "string",
-      "minLength": 1
+      "enum": [
+        "passed",
+        "unavailable",
+        "completed_with_findings",
+        "completed",
+        "skipped",
+        "invalid"
+      ]
     },
     "generator": {
       "type": "object",
@@ -197,6 +203,53 @@
           }
         }
       }
+    },
+    {
+      "description": "Committed rust-unavailable snapshot shape",
+      "if": {
+        "required": [
+          "toolchain"
+        ],
+        "properties": {
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "rust"
+            ],
+            "properties": {
+              "rust": {
+                "type": "object",
+                "required": [
+                  "rustc"
+                ],
+                "properties": {
+                  "rustc": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "cases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/rust_unavailable_case_guard"
+            }
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -229,8 +282,14 @@
           "pattern": "^[0-9a-f]{64}$"
         },
         "summary_status": {
-          "type": "string",
-          "minLength": 1
+          "enum": [
+            "passed",
+            "unavailable",
+            "completed_with_findings",
+            "completed",
+            "skipped",
+            "invalid"
+          ]
         },
         "generator": {
           "type": "object",
@@ -375,6 +434,53 @@
               }
             }
           }
+        },
+        {
+          "description": "Rust unavailable payload case shape",
+          "if": {
+            "required": [
+              "toolchain"
+            ],
+            "properties": {
+              "toolchain": {
+                "type": "object",
+                "required": [
+                  "rust"
+                ],
+                "properties": {
+                  "rust": {
+                    "type": "object",
+                    "required": [
+                      "rustc"
+                    ],
+                    "properties": {
+                      "rustc": {
+                        "type": "object",
+                        "required": [
+                          "available"
+                        ],
+                        "properties": {
+                          "available": {
+                            "const": false
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "cases": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/rust_unavailable_case_guard"
+                }
+              }
+            }
+          }
         }
       ]
     },
@@ -465,6 +571,159 @@
             "properties": {
               "render_path": {
                 "const": "native_rust"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "const": "passed"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "outcome",
+              "reason",
+              "commands"
+            ],
+            "properties": {
+              "outcome": {
+                "const": "observed"
+              },
+              "reason": {
+                "type": "null"
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "const": "runtime_failed"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "outcome",
+              "reason",
+              "commands"
+            ],
+            "properties": {
+              "outcome": {
+                "const": "runtime_trap"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              },
+              "commands": {
+                "type": "object",
+                "required": [
+                  "run"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "const": "compile_failed"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "outcome",
+              "reason",
+              "commands"
+            ],
+            "properties": {
+              "outcome": {
+                "const": "compile_failed"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              },
+              "commands": {
+                "type": "object",
+                "minProperties": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "const": "unavailable"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "outcome",
+              "reason",
+              "commands"
+            ],
+            "properties": {
+              "outcome": {
+                "const": "unavailable"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              },
+              "commands": {
+                "type": "object",
+                "maxProperties": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "const": "skipped"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "outcome"
+            ],
+            "properties": {
+              "outcome": {
+                "const": "unavailable"
               }
             }
           }
@@ -598,10 +857,100 @@
           ]
         },
         "commands": {
-          "type": "object"
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/command_result"
+          }
         }
       },
       "additionalProperties": true
+    },
+    "command_result": {
+      "type": "object",
+      "required": [
+        "args",
+        "returncode",
+        "stdout",
+        "stderr",
+        "timed_out",
+        "duration_seconds",
+        "start_error"
+      ],
+      "properties": {
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "returncode": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "timed_out": {
+          "type": "boolean"
+        },
+        "duration_seconds": {
+          "type": [
+            "number",
+            "string"
+          ]
+        },
+        "start_error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "rust_unavailable_case_guard": {
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "language"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "status",
+              "outcome",
+              "reason",
+              "commands"
+            ],
+            "properties": {
+              "status": {
+                "const": "unavailable"
+              },
+              "outcome": {
+                "const": "unavailable"
+              },
+              "reason": {
+                "const": "rustc_unavailable"
+              },
+              "commands": {
+                "type": "object",
+                "maxProperties": 0
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

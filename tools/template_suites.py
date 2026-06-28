@@ -50,6 +50,8 @@ _LEGAL_INPUT_SUITE_SET = set(LEGAL_INPUT_SUITES)
 _EVENT_NAMES = ("push", "pull_request", "workflow_dispatch", "local")
 _EVENT_NAME_SET = set(_EVENT_NAMES)
 _LABEL_RE = re.compile(r"\[(tpl|skip-tpl):([^\]]*)\]")
+_BRACKET_RE = re.compile(r"\[([^\]]*)\]")
+_LABEL_LIKE_RE = re.compile(r"^\s*(tpl|skip-tpl)(?:\s*:|\s+\S|$)")
 
 PathRule = Tuple[Tuple[str, ...], Tuple[str, ...], str]
 
@@ -328,8 +330,8 @@ def _parse_message_labels(
     :type message: str
     :return: Include pairs and skip pairs as ``(suite, reason)`` tuples.
     :rtype: tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]]
-    :raises TemplateSuiteDetectionError: If any label uses an empty or unknown
-        suite token.
+    :raises TemplateSuiteDetectionError: If any label is malformed or uses
+        an empty or unknown suite token.
 
     Example::
 
@@ -338,6 +340,15 @@ def _parse_message_labels(
     """
     includes = []
     skips = []
+    for bracket_match in _BRACKET_RE.finditer(message or ""):
+        label_text = bracket_match.group(0)
+        label_body = bracket_match.group(1)
+        if _LABEL_RE.fullmatch(label_text):
+            continue
+        if _LABEL_LIKE_RE.match(label_body):
+            raise TemplateSuiteDetectionError(
+                "malformed template label: {0}".format(label_text)
+            )
     for match in _LABEL_RE.finditer(message or ""):
         kind = match.group(1)
         raw_token = match.group(2)
@@ -1062,6 +1073,26 @@ def _run_self_check_cases() -> None:
     _expect_detection_error(
         "skip label whitespace",
         lambda: detect_template_suites([], "[skip-tpl: c]", "local"),
+    )
+    _expect_detection_error(
+        "label name whitespace",
+        lambda: detect_template_suites([], "[tpl :c]", "local"),
+    )
+    _expect_detection_error(
+        "label name and token whitespace",
+        lambda: detect_template_suites([], "[tpl : c]", "local"),
+    )
+    _expect_detection_error(
+        "skip label name whitespace",
+        lambda: detect_template_suites([], "[skip-tpl :c]", "local"),
+    )
+    _expect_detection_error(
+        "leading bracket whitespace",
+        lambda: detect_template_suites([], "[ tpl:c]", "local"),
+    )
+    _expect_detection_error(
+        "missing label colon",
+        lambda: detect_template_suites([], "[tpl c]", "local"),
     )
     _expect_detection_error(
         "unknown include",

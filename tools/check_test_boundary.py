@@ -1133,6 +1133,12 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         Example::
 
             >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.is_tools_attribute_call(ast.parse('tools.x()').body[0].value)
+            True
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', {'tools'})
+            >>> visitor.is_tools_attribute_call(ast.parse('tools.x()').body[0].value)
+            False
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
             >>> visitor.tools_aliases.add('tools')
             >>> visitor.is_tools_attribute_call(ast.parse('tools.x()').body[0].value)
             True
@@ -1140,6 +1146,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         if not isinstance(node.func, ast.Attribute):
             return False
         root = self._attribute_root_name(node.func)
+        if root == "tools" and root not in self.defined_names:
+            return True
         return root in self.tools_aliases or root in self.dynamic_tools_aliases
 
     def is_getattr_tools_call(self, node: ast.Call) -> bool:

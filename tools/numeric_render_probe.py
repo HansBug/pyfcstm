@@ -5782,6 +5782,8 @@ def check_java_rust_smoke(
     mode: str,
     repo_root: Union[str, Path] = ".",
     mapping_path: Union[str, Path] = _DEFAULT_MAPPING_PATH,
+    work_dir: Optional[Union[str, Path]] = None,
+    timeout: int = 10,
 ) -> _JSON_OBJECT:
     """
     Build and validate the Java/Rust smoke contract.
@@ -5794,6 +5796,10 @@ def check_java_rust_smoke(
     :param mapping_path: Render-mapping snapshot path checked against live
         drift, defaults to the committed R0 snapshot.
     :type mapping_path: Union[str, pathlib.Path], optional
+    :param work_dir: Optional directory for temporary compile artifacts.
+    :type work_dir: Optional[Union[str, pathlib.Path]], optional
+    :param timeout: Per-command timeout in seconds, defaults to ``10``.
+    :type timeout: int, optional
     :return: Check result with ``ok`` and ``errors`` fields.
     :rtype: Dict[str, Any]
     :raises ValueError: If ``mode`` is not a Java/Rust smoke mode.
@@ -5807,7 +5813,9 @@ def check_java_rust_smoke(
     if mode not in _JAVA_RUST_MODES:
         raise ValueError("Unsupported Java/Rust smoke mode: %s" % mode)
     root = _as_repo_path(repo_root)
-    live = build_java_rust_smoke_report(mode, root, mapping_path=mapping_path)
+    live = build_java_rust_smoke_report(
+        mode, root, mapping_path=mapping_path, work_dir=work_dir, timeout=timeout
+    )
     errors = [
         "live smoke: %s" % error
         for error in validate_java_rust_smoke(live, expected_mode=mode)
@@ -7442,7 +7450,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.mode in _JAVA_RUST_MODES:
         if args.check:
             result = check_java_rust_smoke(
-                args.mode, args.repo_root, mapping_path=args.mapping
+                args.mode,
+                args.repo_root,
+                mapping_path=args.mapping,
+                work_dir=args.work_dir,
+                timeout=args.timeout,
             )
             _write_or_print(result, args.output)
             return 0 if result.get("ok") else 1
@@ -7450,6 +7462,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             args.mode,
             args.repo_root,
             mapping_path=args.mapping,
+            work_dir=args.work_dir,
             timeout=args.timeout,
         )
         _write_or_print(payload, args.output)

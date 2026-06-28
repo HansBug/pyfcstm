@@ -29,6 +29,10 @@ jobs:
         with:
           fetch-depth: 0
           submodules: 'recursive'
+      - name: Set up python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
       - name: Detect selected template suites
         id: detect
         env:
@@ -243,20 +247,21 @@ jobs:
           print('selected_full_count={0}'.format(selected_count_text))
           print('selected_suites={0}'.format(selected_suites or '(none)'))
 
-          if skipped_by_message:
-              print('Code Test skip token detected; template-suite-gate succeeds after confirming skip semantics.')
-              sys.exit(0)
-
           failures = []
           if detector != 'success':
               failures.append('detector job result is {0}'.format(detector))
+          if selected_count < 0:
+              failures.append('selected_full_count is not an integer: {0}'.format(selected_count_text))
+
+          if skipped_by_message and not failures:
+              print('Code Test skip token detected; expensive template jobs may be skipped after detector success.')
+              sys.exit(0)
+
           if unittest != 'success':
               failures.append('unittest job result is {0}'.format(unittest))
           if representative != 'success':
               failures.append('template representative job result is {0}'.format(representative))
-          if selected_count < 0:
-              failures.append('selected_full_count is not an integer: {0}'.format(selected_count_text))
-          elif selected_count == 0:
+          if selected_count == 0:
               if template_full not in ('success', 'skipped'):
                   failures.append('template full job should be skipped or success for empty matrix, got {0}'.format(template_full))
           elif template_full != 'success':

@@ -8,7 +8,6 @@ import pytest
 import pyfcstm.llm as llm
 from pyfcstm.dsl.error import GrammarParseError
 from pyfcstm.model import load_state_machine_from_text
-from tools.evaluate_llm_grammar_guide import _extract_fcstm_source
 
 
 _FCSTM_BLOCK_RE = re.compile(r"```fcstm\n(.*?)\n```", re.DOTALL)
@@ -267,22 +266,3 @@ def test_grammar_guide_invalid_examples_are_rejected():
     for example in examples:
         with pytest.raises((GrammarParseError, SyntaxError, ValueError)):
             load_state_machine_from_text(example, path=os.getcwd())
-
-
-@pytest.mark.unittest
-def test_eval_source_extraction_skips_prose_that_starts_with_state_word():
-    raw_output = """
-Here is the model.
-state transitions are important in this controller.
-
-def int x = 0;
-state Root {
-    [*] -> Idle;
-    state Idle;
-}
-"""
-
-    source = _extract_fcstm_source(raw_output)
-
-    assert source.startswith("def int x = 0;")
-    load_state_machine_from_text(source, path=os.getcwd())

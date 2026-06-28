@@ -152,12 +152,21 @@ jobs:
           else
             echo "SKIP_SLOW_TESTS=" >> "$GITHUB_ENV"
           fi
+      - name: Run test boundary check
+        shell: bash
+        run: |
+          make test_boundary_check
       - name: Run unittest
         env:
           CI: 'true'
         shell: bash
         run: |
           make unittest IS_WIN=${{ env.IS_WIN }} IS_MAC=${{ env.IS_MAC }}
+      - name: Run template maintenance checks
+        shell: bash
+        run: |
+          make template_packaging_check
+          make template_source_install_check
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v1
         with:

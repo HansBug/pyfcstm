@@ -154,6 +154,45 @@ _RUST_OVERFLOW_CHECKED_PROFILES = {"debug", "overflow-checks-on"}
 _RUST_OVERFLOW_UNCHECKED_PROFILES = {"release", "overflow-checks-off"}
 _RUST_ALWAYS_RUNTIME_FAILED_CASE_IDS = {"plain_i32_division_by_zero"}
 _RUST_ALWAYS_COMPILE_FAILED_CASE_IDS = {"float_sign_renderer_missing"}
+_JAVA_EXPECTED_STDOUT = {
+    "bitwise_and_mask": "VALUE=8",
+    "division_by_zero_exception": "EXCEPTION=java.lang.ArithmeticException:/ by zero",
+    "int_add_overflow_wrap": "VALUE=-2147483648",
+    "int_division_truncates": "VALUE=-3",
+    "int_remainder_dividend_sign": "VALUE=-1",
+    "math_add_exact_overflow": "EXCEPTION=java.lang.ArithmeticException:integer overflow",
+    "math_multiply_exact_overflow": (
+        "EXCEPTION=java.lang.ArithmeticException:integer overflow"
+    ),
+    "math_pow_promotes_double": "VALUE=9.0",
+    "math_round_half_up": "VALUE=-2",
+    "narrowing_int_to_byte": "VALUE=-128",
+    "shift_count_masking": "VALUE=1",
+    "unary_minus_min_wrap": "VALUE=-2147483648",
+}
+_RUST_EXPECTED_STDOUT = {
+    "cast_i32_to_i8": "VALUE=-128",
+    "checked_add_overflow": "VALUE=None",
+    "overflowing_add_overflow": "VALUE=(-2147483648, true)",
+    "plain_i32_bitwise_and": "VALUE=8",
+    "plain_i32_division": "VALUE=-3",
+    "plain_i32_remainder": "VALUE=-1",
+    "powf_promotes_f64": "VALUE=9.0",
+    "round_cast_i64": "VALUE=-2",
+    "saturating_add_overflow": "VALUE=2147483647",
+    "wrapping_add_overflow": "VALUE=-2147483648",
+}
+_RUST_PROFILE_EXPECTED_STDOUT = {
+    "plain_i32_add_overflow": "VALUE=-2147483648",
+    "plain_i32_shift_invalid": "VALUE=1",
+    "plain_i32_unary_minus_min": "VALUE=-2147483648",
+}
+_RUST_RUNTIME_FAILURE_MARKERS = {
+    "plain_i32_add_overflow": "overflow",
+    "plain_i32_division_by_zero": "divide by zero",
+    "plain_i32_shift_invalid": "shift",
+    "plain_i32_unary_minus_min": "overflow",
+}
 _COMMANDS = [
     "python",
     "git",
@@ -3439,6 +3478,176 @@ def _validate_command_result(command: Any, path: str) -> List[str]:
     return errors
 
 
+def _normalized_stdout(value: Any) -> str:
+    """
+    Normalize captured stdout for exact evidence comparisons.
+
+    :param value: Captured stdout value from a case or command payload.
+    :type value: Any
+    :return: Stripped stdout text, or an empty string for non-string values.
+    :rtype: str
+
+    Example::
+
+        >>> _normalized_stdout('VALUE=1\\n')
+        'VALUE=1'
+        >>> _normalized_stdout(None)
+        ''
+    """
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _command_arg_basename(arg: Any) -> str:
+    """
+    Return a snapshot-stable command argument basename.
+
+    Snapshot command arguments replace absolute local paths with ``"<path>"``.
+    This helper lets validators accept both live paths and committed snapshot
+    placeholders while still rejecting unrelated command vectors such as
+    ``["echo", "fake"]``.
+
+    :param arg: Command argument value.
+    :type arg: Any
+    :return: Basename-like argument text.
+    :rtype: str
+
+    Example::
+
+        >>> _command_arg_basename('/tmp/ProbeCase.java')
+        'ProbeCase.java'
+        >>> _command_arg_basename('<path>')
+        '<path>'
+    """
+    if not isinstance(arg, str):
+        return ""
+    if arg == "<path>":
+        return arg
+    return os.path.basename(arg)
+
+
+def _java_run_args_are_valid(args: Any) -> bool:
+    """
+    Return whether a Java run command matches the smoke runner shapes.
+
+    :param args: Command argument vector.
+    :type args: Any
+    :return: Whether the vector is a Java source-file launcher or classpath run.
+    :rtype: bool
+
+    Example::
+
+        >>> _java_run_args_are_valid(['<path>', 'ProbeCase.java'])
+        True
+        >>> _java_run_args_are_valid(['java', '-cp', '.', 'ProbeCase'])
+        True
+        >>> _java_run_args_are_valid([])
+        False
+        >>> _java_run_args_are_valid(['echo', 'fake'])
+        False
+    """
+    if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
+        return False
+    if len(args) not in {2, 4}:
+        return False
+    if _command_arg_basename(args[0]) not in {"java", "<path>"}:
+        return False
+    if len(args) == 2:
+        return _command_arg_basename(args[1]) == "ProbeCase.java"
+    return args[1] == "-cp" and bool(args[2]) and args[3] == "ProbeCase"
+
+
+def _java_compile_args_are_valid(args: Any) -> bool:
+    """
+    Return whether a Java compile command matches the smoke runner shape.
+
+    :param args: Command argument vector.
+    :type args: Any
+    :return: Whether the vector compiles ``ProbeCase.java``.
+    :rtype: bool
+
+    Example::
+
+        >>> _java_compile_args_are_valid(['javac', 'ProbeCase.java'])
+        True
+        >>> _java_compile_args_are_valid(['echo', 'fake'])
+        False
+    """
+    return (
+        isinstance(args, list)
+        and len(args) == 2
+        and _command_arg_basename(args[0]) in {"javac", "<path>"}
+        and _command_arg_basename(args[1]) == "ProbeCase.java"
+    )
+
+
+def _rust_compile_args_are_valid(args: Any, profile: str) -> bool:
+    """
+    Return whether a Rust compile command matches the smoke runner profile.
+
+    :param args: Command argument vector.
+    :type args: Any
+    :param profile: Rust profile name from the case payload.
+    :type profile: str
+    :return: Whether the vector compiles ``case.rs`` with the expected flags.
+    :rtype: bool
+
+    Example::
+
+        >>> _rust_compile_args_are_valid(['rustc', '<path>', '-o', '<path>', '-C', 'opt-level=0'], 'debug')
+        True
+        >>> _rust_compile_args_are_valid(['rustc', 'case.rs', '-o', 'not-case', '-C', 'opt-level=0'], 'debug')
+        False
+        >>> _rust_compile_args_are_valid(['echo', 'fake'], 'debug')
+        False
+    """
+    if not isinstance(args, list) or len(args) < 4:
+        return False
+    if not all(isinstance(item, str) for item in args):
+        return False
+    if _command_arg_basename(args[0]) not in {"rustc", "<path>"}:
+        return False
+    if _command_arg_basename(args[1]) not in {"case.rs", "<path>"}:
+        return False
+    if args[2] != "-o":
+        return False
+    if _command_arg_basename(args[3]) not in {"case", "<path>"}:
+        return False
+    expected_flags = None
+    for profile_def in _rust_profiles():
+        if profile_def["name"] == profile:
+            expected_flags = list(profile_def["flags"])
+            break
+    if expected_flags is None:
+        return False
+    return args[4:] == expected_flags
+
+
+def _rust_run_args_are_valid(args: Any) -> bool:
+    """
+    Return whether a Rust run command matches the smoke runner shape.
+
+    :param args: Command argument vector.
+    :type args: Any
+    :return: Whether the vector runs the compiled ``case`` binary.
+    :rtype: bool
+
+    Example::
+
+        >>> _rust_run_args_are_valid(['<path>'])
+        True
+        >>> _rust_run_args_are_valid([123])
+        False
+        >>> _rust_run_args_are_valid(['echo', 'fake'])
+        False
+    """
+    return (
+        isinstance(args, list)
+        and len(args) == 1
+        and isinstance(args[0], str)
+        and _command_arg_basename(args[0]) in {"case", "<path>"}
+    )
+
+
 def _validate_native_status_expectation(
     case: Mapping[str, Any], language: str, case_path: str
 ) -> List[str]:
@@ -3597,11 +3806,21 @@ def _validate_rust_available_commands(
         return []
     errors: List[str] = []
     status = case.get("status")
+    profile = str(case.get("profile"))
+    semantic_id = str(case.get("semantic_case_id"))
     compile_result = commands.get("compile")
     run_result = commands.get("run")
     if "compile" not in commands:
         errors.append(
             "%s.commands.compile is required when rustc is available" % case_path
+        )
+    elif not _rust_compile_args_are_valid(
+        compile_result.get("args") if isinstance(compile_result, Mapping) else None,
+        profile,
+    ):
+        errors.append(
+            "%s.commands.compile.args must invoke rustc case.rs with profile %s"
+            % (case_path, profile)
         )
     elif status in {"passed", "runtime_failed"} and not _command_result_succeeded(
         compile_result
@@ -3618,6 +3837,12 @@ def _validate_rust_available_commands(
             errors.append(
                 "%s.commands.run is required for Rust status %s" % (case_path, status)
             )
+        elif not _rust_run_args_are_valid(
+            run_result.get("args") if isinstance(run_result, Mapping) else None
+        ):
+            errors.append(
+                "%s.commands.run.args must execute the Rust case binary" % case_path
+            )
         elif status == "passed" and not _command_result_succeeded(run_result):
             errors.append(
                 "%s.commands.run must succeed for Rust passed status" % case_path
@@ -3626,10 +3851,51 @@ def _validate_rust_available_commands(
             errors.append(
                 "%s.commands.run must fail for Rust runtime_failed status" % case_path
             )
+        if status == "passed" and isinstance(run_result, Mapping):
+            expected_stdout = _RUST_EXPECTED_STDOUT.get(
+                semantic_id, _RUST_PROFILE_EXPECTED_STDOUT.get(semantic_id)
+            )
+            if expected_stdout is not None:
+                command_stdout = _normalized_stdout(run_result.get("stdout"))
+                case_stdout = _normalized_stdout(case.get("stdout"))
+                if command_stdout != expected_stdout:
+                    errors.append(
+                        "%s.commands.run.stdout must be %r"
+                        % (case_path, expected_stdout)
+                    )
+                if case_stdout != expected_stdout:
+                    errors.append("%s.stdout must be %r" % (case_path, expected_stdout))
+        if status == "runtime_failed" and isinstance(run_result, Mapping):
+            marker = _RUST_RUNTIME_FAILURE_MARKERS.get(semantic_id)
+            combined_output = (
+                _normalized_stdout(run_result.get("stdout"))
+                + "\n"
+                + _normalized_stdout(run_result.get("stderr"))
+                + "\n"
+                + _normalized_stdout(case.get("stdout"))
+                + "\n"
+                + _normalized_stdout(case.get("stderr"))
+            ).lower()
+            if marker is not None and marker not in combined_output:
+                errors.append(
+                    "%s runtime failure output must mention %r" % (case_path, marker)
+                )
     elif status == "compile_failed" and "run" in commands:
         errors.append(
             "%s.commands.run must be absent for Rust compile_failed status" % case_path
         )
+    if status == "compile_failed" and semantic_id == "float_sign_renderer_missing":
+        combined_output = ""
+        if isinstance(compile_result, Mapping):
+            combined_output += _normalized_stdout(compile_result.get("stdout"))
+            combined_output += "\n" + _normalized_stdout(compile_result.get("stderr"))
+        combined_output += "\n" + _normalized_stdout(case.get("stdout"))
+        combined_output += "\n" + _normalized_stdout(case.get("stderr"))
+        if "sign" not in combined_output.lower():
+            errors.append(
+                "%s compile failure output must mention missing sign support"
+                % case_path
+            )
     return errors
 
 
@@ -3654,17 +3920,32 @@ def _validate_java_available_commands(
 
         >>> case = _native_case_base(_java_smoke_cases()[0], 'java-int32', 'native_java')
         >>> case['status'] = 'passed'
-        >>> case['commands'] = {'run': {'returncode': 1, 'timed_out': False, 'start_error': None}}
+        >>> case['commands'] = {'run': {'args': ['<path>', 'ProbeCase.java'], 'returncode': 1, 'timed_out': False, 'start_error': None}}
         >>> _validate_java_available_commands(case, '$.cases[0]')[0]
         '$.cases[0].commands.run must succeed for Java passed status'
+        >>> case['commands']['run'].update({'returncode': 0, 'stdout': 'VALUE=0\\n'})
+        >>> any('stdout must be' in error for error in _validate_java_available_commands(case, '$.cases[0]'))
+        True
+        >>> case['commands']['run']['stdout'] = 'VALUE=-2147483648\\n'
+        >>> case['commands']['run']['args'] = ['echo', 'fake']
+        >>> any('commands.run.args' in error for error in _validate_java_available_commands(case, '$.cases[0]'))
+        True
     """
     commands = case.get("commands")
     if not isinstance(commands, Mapping):
         return []
     errors: List[str] = []
     status = case.get("status")
+    semantic_id = str(case.get("semantic_case_id"))
     compile_result = commands.get("compile")
     run_result = commands.get("run")
+    if "compile" in commands:
+        if not _java_compile_args_are_valid(
+            compile_result.get("args") if isinstance(compile_result, Mapping) else None
+        ):
+            errors.append(
+                "%s.commands.compile.args must invoke javac ProbeCase.java" % case_path
+            )
     if "compile" in commands and status in {"passed", "runtime_failed"}:
         if not _command_result_succeeded(compile_result):
             errors.append(
@@ -3676,19 +3957,47 @@ def _validate_java_available_commands(
             errors.append(
                 "%s.commands.run is required for Java passed status" % case_path
             )
+        elif not _java_run_args_are_valid(
+            run_result.get("args") if isinstance(run_result, Mapping) else None
+        ):
+            errors.append("%s.commands.run.args must execute ProbeCase" % case_path)
         elif not _command_result_succeeded(run_result):
             errors.append(
                 "%s.commands.run must succeed for Java passed status" % case_path
             )
+        if isinstance(run_result, Mapping):
+            expected_stdout = _JAVA_EXPECTED_STDOUT.get(semantic_id)
+            command_stdout = _normalized_stdout(run_result.get("stdout"))
+            case_stdout = _normalized_stdout(case.get("stdout"))
+            if expected_stdout is not None and command_stdout != expected_stdout:
+                errors.append(
+                    "%s.commands.run.stdout must be %r" % (case_path, expected_stdout)
+                )
+            if expected_stdout is not None and case_stdout != expected_stdout:
+                errors.append("%s.stdout must be %r" % (case_path, expected_stdout))
     elif status == "runtime_failed":
         if "run" not in commands:
             errors.append(
                 "%s.commands.run is required for Java runtime_failed status" % case_path
             )
+        elif not _java_run_args_are_valid(
+            run_result.get("args") if isinstance(run_result, Mapping) else None
+        ):
+            errors.append("%s.commands.run.args must execute ProbeCase" % case_path)
         elif not _command_result_failed(run_result):
             errors.append(
                 "%s.commands.run must fail for Java runtime_failed status" % case_path
             )
+        if isinstance(run_result, Mapping):
+            expected_stdout = _JAVA_EXPECTED_STDOUT.get(semantic_id)
+            command_stdout = _normalized_stdout(run_result.get("stdout"))
+            case_stdout = _normalized_stdout(case.get("stdout"))
+            if expected_stdout is not None and command_stdout != expected_stdout:
+                errors.append(
+                    "%s.commands.run.stdout must be %r" % (case_path, expected_stdout)
+                )
+            if expected_stdout is not None and case_stdout != expected_stdout:
+                errors.append("%s.stdout must be %r" % (case_path, expected_stdout))
     elif status == "compile_failed":
         compile_failed = "compile" in commands and _command_result_failed(
             compile_result
@@ -3696,11 +4005,32 @@ def _validate_java_available_commands(
         source_launcher_failed = "compile" not in commands and _command_result_failed(
             run_result
         )
+        if "run" in commands and not _java_run_args_are_valid(
+            run_result.get("args") if isinstance(run_result, Mapping) else None
+        ):
+            errors.append("%s.commands.run.args must execute ProbeCase" % case_path)
         if not (compile_failed or source_launcher_failed):
             errors.append(
                 "%s.compile_failed status requires a failed Java compile or source-launch command"
                 % case_path
             )
+        if semantic_id == "math_sign_missing":
+            combined_output = ""
+            if isinstance(compile_result, Mapping):
+                combined_output += _normalized_stdout(compile_result.get("stdout"))
+                combined_output += "\n" + _normalized_stdout(
+                    compile_result.get("stderr")
+                )
+            if isinstance(run_result, Mapping):
+                combined_output += "\n" + _normalized_stdout(run_result.get("stdout"))
+                combined_output += "\n" + _normalized_stdout(run_result.get("stderr"))
+            combined_output += "\n" + _normalized_stdout(case.get("stdout"))
+            combined_output += "\n" + _normalized_stdout(case.get("stderr"))
+            if "sign" not in combined_output:
+                errors.append(
+                    "%s compile failure output must mention missing Math.sign support"
+                    % case_path
+                )
     return errors
 
 
@@ -5941,11 +6271,12 @@ def _validate_json_schema_fragment(
     Validate one value against the repository's lightweight schema subset.
 
     The helper intentionally implements only the JSON Schema keywords used by
-    the research artifact schemas: ``$ref``, ``allOf``, ``if`` / ``then``, ``not``,
-    ``type``, ``required``, ``properties``, object
-    ``additionalProperties``, ``const``, ``enum``, ``pattern``,
+    the research artifact schemas: ``$ref``, ``allOf``, ``anyOf``,
+    ``if`` / ``then``, ``not``, ``type``, ``required``, ``properties``,
+    object ``additionalProperties``, ``const``, ``enum``, ``pattern``,
     string ``minLength``, object ``minProperties`` / ``maxProperties``,
-    ``minItems`` and homogeneous ``items``.
+    array ``minItems`` / ``maxItems`` / ``prefixItems`` and homogeneous
+    ``items``.
 
     :param value: JSON-compatible value to validate.
     :type value: Any
@@ -5974,6 +6305,10 @@ def _validate_json_schema_fragment(
         ['$ must contain at least 1 properties']
         >>> _validate_json_schema_fragment({'ok': True}, {'not': {'properties': {'ok': {'const': True}}}}, {}, '$')
         ['$ must not match disallowed schema']
+        >>> _validate_json_schema_fragment(['a', 'b'], {'prefixItems': [{'const': 'a'}, {'const': 'c'}]}, {}, '$')
+        ["$[1] must equal 'c'"]
+        >>> _validate_json_schema_fragment('x', {'anyOf': [{'const': 'a'}, {'const': 'b'}]}, {}, '$')
+        ['$ must match at least one anyOf schema']
     """
     errors: List[str] = []
     ref = schema.get("$ref")
@@ -6002,6 +6337,24 @@ def _validate_json_schema_fragment(
                     "%s.allOf[%d]" % (path, index),
                 )
             )
+
+    any_of = schema.get("anyOf")
+    if isinstance(any_of, list):
+        matched = False
+        for child_schema in any_of:
+            if not isinstance(child_schema, Mapping):
+                continue
+            child_errors = _validate_json_schema_fragment(
+                value,
+                child_schema,
+                root_schema,
+                "%s.anyOf" % path,
+            )
+            if not child_errors:
+                matched = True
+                break
+        if not matched:
+            errors.append("%s must match at least one anyOf schema" % path)
 
     if_schema = schema.get("if")
     then_schema = schema.get("then")
@@ -6119,6 +6472,24 @@ def _validate_json_schema_fragment(
         min_items = schema.get("minItems")
         if isinstance(min_items, int) and len(value) < min_items:
             errors.append("%s must contain at least %d items" % (path, min_items))
+        max_items = schema.get("maxItems")
+        if isinstance(max_items, int) and len(value) > max_items:
+            errors.append("%s must contain at most %d items" % (path, max_items))
+        prefix_items = schema.get("prefixItems")
+        if isinstance(prefix_items, list):
+            for index, child_schema in enumerate(prefix_items):
+                if index >= len(value):
+                    break
+                if not isinstance(child_schema, Mapping):
+                    continue
+                errors.extend(
+                    _validate_json_schema_fragment(
+                        value[index],
+                        child_schema,
+                        root_schema,
+                        "%s[%d]" % (path, index),
+                    )
+                )
         item_schema = schema.get("items")
         if isinstance(item_schema, Mapping):
             for index, item in enumerate(value):

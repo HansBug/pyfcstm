@@ -43,6 +43,7 @@ Example::
 
 import hashlib
 import io
+import itertools
 import json
 import weakref
 from dataclasses import dataclass, field
@@ -147,9 +148,389 @@ def _is_combo_pseudo_referenced_by_owner(
     return has_incoming and has_outgoing
 
 
+def _combo_export_endpoint_text(endpoint) -> str:
+    """Return the endpoint text used by combo pseudo semantic payloads."""
+    if endpoint is dsl_nodes.INIT_STATE:
+        return "__init__"
+    if endpoint is dsl_nodes.EXIT_STATE:
+        return "__exit__"
+    return str(endpoint)
+
+
+def _is_combo_export_basic_shape(node: dsl_nodes.StateDefinition) -> bool:
+    """Return whether a state has the minimal exported combo pseudo shape."""
+    return (
+        node.is_pseudo
+        and _is_combo_pseudo_export_name(node.name)
+        and node.extra_name is not None
+        and node.extra_name.startswith(_COMBO_DISPLAY_PREFIX)
+        and len(node.extra_name) > len(_COMBO_DISPLAY_PREFIX)
+        and not node.events
+        and not node.imports
+        and not node.substates
+        and not node.transitions
+        and not node.force_transitions
+        and not node.enters
+        and not node.durings
+        and not node.exits
+        and not node.during_aspects
+    )
+
+
+def _combo_export_find_substate(
+    owner_node: dsl_nodes.StateDefinition, name: str
+) -> Optional[dsl_nodes.StateDefinition]:
+    """Return an owner child state by name, preserving AST source order."""
+    for subnode in owner_node.substates:
+        if subnode.name == name:
+            return subnode
+    return None
+
+
+def _combo_export_event_declared(
+    owner_node: dsl_nodes.StateDefinition,
+    event_id: dsl_nodes.ChainID,
+    event_scope: str,
+    source_state,
+    local_scope: bool,
+) -> bool:
+    """Return whether an exported edge references an explicit event declaration."""
+    if event_id.is_absolute:
+        return True
+    local_candidate = event_scope == "local" or (
+        local_scope
+        and isinstance(source_state, str)
+        and (len(event_id.path) == 1 or event_id.path[0] == source_state)
+    )
+    if local_candidate and isinstance(source_state, str):
+        source_node = _combo_export_find_substate(owner_node, source_state)
+        return source_node is not None and any(
+            event.name == event_id.path[-1] for event in source_node.events
+        )
+
+    current = owner_node
+    for segment in event_id.path[:-1]:
+        current = _combo_export_find_substate(current, segment)
+        if current is None:
+            return False
+    return any(event.name == event_id.path[-1] for event in current.events)
+
+
+def _combo_export_transition_term(
+    owner_node: dsl_nodes.StateDefinition,
+    transition: dsl_nodes.TransitionDefinition,
+    source_state,
+    local_scope: bool,
+) -> Optional[Tuple[str, Tuple[object, ...]]]:
+    """Return the canonical combo term text and semantic key for an edge."""
+    if transition.condition_expr is not None:
+        expr_text = str(transition.condition_expr)
+        return f"[{expr_text}]", ("guard", expr_text)
+    if transition.event_id is None:
+        return None
+    if transition.event_scope == "local" and transition.from_state != source_state:
+        return None
+
+    event_id = transition.event_id
+    event_scope = _event_origin_from_id(
+        event_id,
+        transition.event_scope,
+        source_state=source_state if isinstance(source_state, str) else None,
+    )
+    absolute_export = False
+    if event_scope == "chain" and not event_id.is_absolute and len(event_id.path) > 1:
+        current = owner_node
+        for segment in event_id.path[:-1]:
+            current = _combo_export_find_substate(current, segment)
+            if current is None:
+                break
+        absolute_export = current is not None and any(
+            event.name == event_id.path[-1] for event in current.events
+        )
+    if not _combo_export_event_declared(
+        owner_node, event_id, event_scope, source_state, local_scope
+    ):
+        return None
+    if (
+        local_scope
+        and isinstance(source_state, str)
+        and not event_id.is_absolute
+        and len(event_id.path) >= 2
+        and event_id.path[0] == source_state
+    ):
+        event_name = event_id.path[-1]
+        return event_name, ("event", "local", False, (event_name,))
+    if event_scope == "local" and not event_id.is_absolute:
+        event_name = event_id.path[-1]
+        return event_name, ("event", "local", False, (event_name,))
+    if absolute_export:
+        return f"/{event_id}", ("event", "absolute", True, tuple(event_id.path))
+    return str(event_id), (
+        "event",
+        event_scope,
+        event_id.is_absolute,
+        tuple(event_id.path),
+    )
+
+
+def _combo_export_split_term_texts(text: str) -> Optional[Tuple[str, ...]]:
+    """Split exported combo display text into top-level term texts."""
+    terms = []
+    bracket_depth = 0
+    start = 0
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "[":
+            bracket_depth += 1
+            index += 1
+            continue
+        if char == "]":
+            bracket_depth -= 1
+            if bracket_depth < 0:
+                return None
+            index += 1
+            continue
+        if bracket_depth == 0 and text.startswith(" + ", index):
+            terms.append(text[start:index])
+            index += 3
+            start = index
+            continue
+        index += 1
+    if bracket_depth != 0:
+        return None
+    terms.append(text[start:])
+    if any(not term for term in terms):
+        return None
+    return tuple(terms)
+
+
+def _combo_export_display_term_key(
+    term_text: str, source_state, local_scope: bool
+) -> Optional[Tuple[object, ...]]:
+    """Return the semantic key represented by an exported display term."""
+    if term_text.startswith("[") and term_text.endswith("]"):
+        return ("guard", term_text[1:-1])
+    if term_text.startswith("/"):
+        return ("event", "absolute", True, tuple(term_text[1:].split(".")))
+    if local_scope and isinstance(source_state, str) and "." not in term_text:
+        return ("event", "local", False, (term_text,))
+    return ("event", "chain", False, tuple(term_text.split(".")))
+
+
+def _combo_export_event_term_options(
+    term_text: str, transition: dsl_nodes.TransitionDefinition, source_state
+) -> Tuple[str, ...]:
+    """Return plausible original texts for an exported event edge."""
+    options = [term_text]
+    event_id = transition.event_id
+    if (
+        event_id is not None
+        and not event_id.is_absolute
+        and isinstance(source_state, str)
+        and len(event_id.path) >= 2
+        and event_id.path[0] == source_state
+    ):
+        source_qualified = ".".join(event_id.path)
+        if source_qualified not in options:
+            options.append(source_qualified)
+    return tuple(options)
+
+
+def _combo_export_term_slug(term_text: str) -> str:
+    """Return the pseudo-name slug for an exported combo term."""
+    if term_text.startswith("[") and term_text.endswith("]"):
+        text = f"if {term_text[1:-1]}"
+        for source, replacement in [
+            ("=>", " implies "),
+            ("==", " eq "),
+            ("!=", " ne "),
+            (">=", " ge "),
+            ("<=", " le "),
+            ("&&", " and "),
+            ("||", " or "),
+            (">", " gt "),
+            ("<", " lt "),
+            ("!", " not "),
+        ]:
+            text = text.replace(source, replacement)
+    else:
+        text = term_text
+        if text.startswith("/"):
+            text = f"abs {text[1:]}"
+    return to_identifier(text, strict_mode=True).lower()
+
+
+def _combo_export_trace_prefix(
+    node: dsl_nodes.StateDefinition, owner_node: dsl_nodes.StateDefinition
+) -> Optional[Tuple[object, Tuple[dsl_nodes.TransitionDefinition, ...]]]:
+    """Trace the single generated incoming path ending at an exported pseudo."""
+    current_name = node.name
+    reverse_edges = []
+    seen = set()
+    while True:
+        if current_name in seen:
+            return None
+        seen.add(current_name)
+        incoming = [
+            transition
+            for transition in owner_node.transitions
+            if transition.to_state == current_name
+        ]
+        if len(incoming) != 1:
+            return None
+        edge = incoming[0]
+        reverse_edges.append(edge)
+        source = edge.from_state
+        if isinstance(source, str) and source.startswith(_COMBO_STATE_PREFIX):
+            source_node = _combo_export_find_substate(owner_node, source)
+            if source_node is None or not _is_combo_export_basic_shape(source_node):
+                return None
+            current_name = source
+            continue
+        return source, tuple(reversed(reverse_edges))
+
+
+def _combo_export_trace_first_terminal(
+    node: dsl_nodes.StateDefinition, owner_node: dsl_nodes.StateDefinition
+) -> Optional[Tuple[object, Tuple[dsl_nodes.TransitionDefinition, ...]]]:
+    """Trace the first generated continuation path leaving an exported pseudo."""
+    current_name = node.name
+    edges = []
+    seen = set()
+    while True:
+        if current_name in seen:
+            return None
+        seen.add(current_name)
+        outgoing = [
+            transition
+            for transition in owner_node.transitions
+            if transition.from_state == current_name
+        ]
+        if not outgoing:
+            return None
+        edge = outgoing[0]
+        if edge.event_scope == "local":
+            return None
+        edges.append(edge)
+        target = edge.to_state
+        if isinstance(target, str) and target.startswith(_COMBO_STATE_PREFIX):
+            target_node = _combo_export_find_substate(owner_node, target)
+            if target_node is None or not _is_combo_export_basic_shape(target_node):
+                return None
+            current_name = target
+            continue
+        return target, tuple(edges)
+
+
+def _is_combo_pseudo_export_semantically_valid(
+    node: dsl_nodes.StateDefinition,
+    owner_node: Optional[dsl_nodes.StateDefinition],
+    owner_path: Tuple[str, ...],
+) -> bool:
+    """Return whether an exported combo pseudo matches generated semantics."""
+    if owner_node is None or not _is_combo_export_basic_shape(node):
+        return False
+    prefix_trace = _combo_export_trace_prefix(node, owner_node)
+    terminal_trace = _combo_export_trace_first_terminal(node, owner_node)
+    if prefix_trace is None or terminal_trace is None:
+        return False
+
+    source_state, prefix_edges = prefix_trace
+    target_state, terminal_edges = terminal_trace
+    local_scope = False
+    if source_state is not dsl_nodes.INIT_STATE:
+        for edge in (*prefix_edges, *terminal_edges):
+            if edge.event_scope == "local" or (
+                edge.event_scope == "chain"
+                and edge.event_id is not None
+                and not edge.event_id.is_absolute
+                and len(edge.event_id.path) >= 2
+                and edge.event_id.path[0] == source_state
+            ):
+                local_scope = True
+                break
+
+    display_text = node.extra_name[len(_COMBO_DISPLAY_PREFIX) :]
+    consumed_term_texts = _combo_export_split_term_texts(display_text)
+    if consumed_term_texts is None or len(consumed_term_texts) != len(prefix_edges):
+        return False
+
+    consumed_term_keys = []
+    for edge, display_term_text in zip(prefix_edges, consumed_term_texts):
+        edge_term = _combo_export_transition_term(
+            owner_node, edge, source_state, local_scope
+        )
+        display_key = _combo_export_display_term_key(
+            display_term_text, source_state, local_scope
+        )
+        if edge_term is None or display_key is None:
+            return False
+        consumed_term_keys.append(display_key)
+
+    remaining_term_options = []
+    for edge in terminal_edges:
+        term = _combo_export_transition_term(
+            owner_node, edge, source_state, local_scope
+        )
+        if term is None:
+            return False
+        term_text, _ = term
+        if edge.event_id is None:
+            remaining_term_options.append((term_text,))
+        else:
+            remaining_term_options.append(
+                _combo_export_event_term_options(term_text, edge, source_state)
+            )
+
+    if local_scope or source_state is dsl_nodes.INIT_STATE:
+        prefix_options = ("::", ":")
+    else:
+        prefix_options = (":",)
+    effects = tuple(str(item) for item in terminal_edges[-1].post_operations)
+    chooser_key = (
+        (owner_path, "entry", "INIT_MARKER")
+        if source_state is dsl_nodes.INIT_STATE
+        else (owner_path, "state", (*owner_path, source_state))
+    )
+    source_label = "entry" if chooser_key[1] == "entry" else ".".join(chooser_key[2])
+    slug_parts = [to_identifier(source_label, strict_mode=True).lower()]
+    slug_parts.extend(_combo_export_term_slug(term) for term in consumed_term_texts)
+    expected_name_prefix = f"{_COMBO_STATE_PREFIX}{sequence_safe(slug_parts)}_h"
+    if not node.name.startswith(expected_name_prefix):
+        return False
+
+    for prefix, remaining_term_texts in itertools.product(
+        prefix_options, itertools.product(*remaining_term_options)
+    ):
+        origin_id = (
+            f"{'.'.join(owner_path)}:"
+            f"{_combo_export_endpoint_text(source_state)}->"
+            f"{_combo_export_endpoint_text(target_state)}:"
+            f"{prefix} {' + '.join([*consumed_term_texts, *remaining_term_texts])}"
+        )
+        if effects:
+            origin_id = f"{origin_id}:effect={json.dumps(effects, ensure_ascii=False)}"
+
+        payload_obj = {
+            "owner_path": owner_path,
+            "chooser_key": chooser_key,
+            "consumed_terms": tuple(consumed_term_keys),
+            "run_anchor_origin_id": origin_id,
+            "semantic_duplicate_discriminator": None,
+        }
+        payload = json.dumps(payload_obj, ensure_ascii=False, sort_keys=True)
+        short_digest = _combo_payload_digest(payload)[:_COMBO_DIGEST_SIZE]
+        expected_name = f"{expected_name_prefix}{short_digest}"
+        if node.name == expected_name:
+            return True
+    return False
+
+
 def _is_exported_combo_pseudo_node(
     node: dsl_nodes.StateDefinition,
     owner_node: Optional[dsl_nodes.StateDefinition] = None,
+    owner_path: Tuple[str, ...] = (),
 ) -> bool:
     """Return whether an AST node is an exported generated combo pseudo state."""
     if not node.is_pseudo or not node.name.startswith(_COMBO_STATE_PREFIX):
@@ -171,8 +552,10 @@ def _is_exported_combo_pseudo_node(
         and not node.exits
         and not node.during_aspects
     )
-    return has_export_shape and _is_combo_pseudo_referenced_by_owner(
-        node.name, owner_node
+    return (
+        has_export_shape
+        and _is_combo_pseudo_referenced_by_owner(node.name, owner_node)
+        and _is_combo_pseudo_export_semantically_valid(node, owner_node, owner_path)
     )
 
 
@@ -1654,7 +2037,11 @@ class State(AstExportable, PlantUMLExportable):
             during_aspects=[item.to_ast_node() for item in self.on_during_aspects],
             is_pseudo=bool(self.is_pseudo),
         )
-        if self.is_pseudo and self.name.startswith(_COMBO_STATE_PREFIX):
+        if (
+            self.is_pseudo
+            and self.name.startswith(_COMBO_STATE_PREFIX)
+            and getattr(self, "_generated_combo_pseudo", False)
+        ):
             node._generated_combo_pseudo = True
         return node
 
@@ -2766,7 +3153,7 @@ def parse_dsl_node_to_state_machine(
     ) -> State:
         current_path = tuple((*current_path, node.name))
         if node.name.startswith(_COMBO_STATE_PREFIX) and not (
-            _is_exported_combo_pseudo_node(node, owner_node)
+            _is_exported_combo_pseudo_node(node, owner_node, current_path[:-1])
         ):
             sink.emit(
                 ModelDiagnostic(
@@ -3830,7 +4217,10 @@ def parse_dsl_node_to_state_machine(
             name = f"{_COMBO_STATE_PREFIX}{slug}_h{short_digest}"
 
             existing_digest_payload = combo_digest_payloads.get(digest_key)
-            if existing_digest_payload is not None and existing_digest_payload != payload:
+            if (
+                existing_digest_payload is not None
+                and existing_digest_payload != payload
+            ):
                 sink.emit(
                     ModelDiagnostic(
                         code="E_COMBO_PSEUDO_NAME_COLLISION",
@@ -3901,6 +4291,7 @@ def parse_dsl_node_to_state_machine(
                 substates={},
                 is_pseudo=True,
             )
+            state._generated_combo_pseudo = True
             state.parent = current_state
             current_state.substates[name] = state
             current_state.substate_name_to_id[name] = len(

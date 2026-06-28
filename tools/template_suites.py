@@ -344,11 +344,15 @@ def _parse_message_labels(
     skips = []
     message_text = message or ""
     for match in _LABEL_RE.finditer(message_text):
-        if (match.start() > 0 and message_text[match.start() - 1] == "[") or (
-            match.end() < len(message_text) and message_text[match.end()] == "]"
-        ):
+        if match.start() > 0 and message_text[match.start() - 1] == "[":
+            label_text = message_text[match.start() - 1 : match.end()]
             raise TemplateSuiteDetectionError(
-                "malformed template label: {0}".format(match.group(0))
+                "malformed template label: {0}".format(label_text)
+            )
+        if match.end() < len(message_text) and message_text[match.end()] == "]":
+            label_text = message_text[match.start() : match.end() + 1]
+            raise TemplateSuiteDetectionError(
+                "malformed template label: {0}".format(label_text)
             )
     for bracket_match in _BRACKET_RE.finditer(message_text):
         label_text = bracket_match.group(0)

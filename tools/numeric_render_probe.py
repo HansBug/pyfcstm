@@ -52,8 +52,6 @@ import os
 import platform
 import re
 import shutil
-
-import jinja2
 import subprocess
 import sys
 import tempfile
@@ -73,6 +71,8 @@ from typing import (
     Tuple,
     Union,
 )
+
+import jinja2
 
 _REPO_ROOT_FOR_SCRIPT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT_FOR_SCRIPT) not in sys.path:
@@ -1095,6 +1095,8 @@ def _official_source_notes(language: str) -> List[_JSON_OBJECT]:
     :type language: str
     :return: Source-backed notes used by smoke cases.
     :rtype: List[Dict[str, Any]]
+    :raises ValueError: If ``language`` is not a supported native smoke
+        language.
 
     Example::
 
@@ -2586,6 +2588,7 @@ def _native_smoke_schema_path(mode: str) -> str:
     :type mode: str
     :return: Repository-relative schema path.
     :rtype: str
+    :raises ValueError: If ``mode`` is not a supported Java/Rust smoke mode.
 
     Example::
 
@@ -2921,6 +2924,8 @@ def _required_native_case_ids(language: str) -> List[str]:
     :type language: str
     :return: Expected semantic case ids.
     :rtype: List[str]
+    :raises ValueError: If ``language`` is not a supported native smoke
+        language.
 
     Example::
 
@@ -3060,6 +3065,8 @@ def validate_java_rust_smoke(
 
         >>> validate_java_rust_smoke({'schema_version': 1}, expected_mode='java-smoke')[:2]
         ['mode must be java-smoke', "mode must be one of ['java-rust-smoke', 'java-smoke', 'rust-smoke']"]
+        >>> 'summary_status must be a non-empty string' in validate_java_rust_smoke({'schema_version': 1}, expected_mode='java-smoke')
+        True
     """
     errors: List[str] = []
     mode = payload.get("mode")
@@ -3076,6 +3083,10 @@ def validate_java_rust_smoke(
         errors.append("language must be %s" % expected_language)
     if payload.get("schema_version") != 1:
         errors.append("schema_version must be 1")
+    if not isinstance(payload.get("summary_status"), str) or not payload.get(
+        "summary_status"
+    ):
+        errors.append("summary_status must be a non-empty string")
     for key in ["source_mapping_sha256", "render_mapping_sha256"]:
         value = payload.get(key)
         if (

@@ -4226,6 +4226,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor = TestBoundaryVisitor(Path('test/x.py'), '', set())
             >>> visitor.file_path_parent_hops(ast.parse('Path(__file__).resolve().parent / ".."').body[0].value)
             2
+            >>> visitor.file_path_parent_hops(ast.parse('Path(__file__).resolve().parents[0] / ".."').body[0].value)
+            2
         """
         if node_contains_name(node, "__file__") and not isinstance(
             node, (ast.BinOp, ast.Call, ast.Attribute, ast.Subscript)
@@ -4245,6 +4247,13 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             base = self.file_path_parent_hops(node.value)
             if base is not None:
                 return base + 1
+        if isinstance(node, ast.Subscript):
+            value = node.value
+            if isinstance(value, ast.Attribute) and value.attr == "parents":
+                if node_contains_name(value.value, "__file__"):
+                    index = subscript_integer(node)
+                    if index is not None:
+                        return index + 1
         if isinstance(node, ast.Call):
             if isinstance(node.func, ast.Attribute):
                 if node.func.attr in {"resolve", "absolute"}:
@@ -4271,9 +4280,20 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor.current_scope.repo_root_aliases.add('repo_root')
             >>> visitor.is_repo_root_tainted(ast.parse('str(repo_root)').body[0].value)
             True
+            >>> visitor.current_scope.template_segment_aliases.add('segments')
+            >>> visitor.current_scope.repo_root_aliases.add('segments')
+            >>> visitor.is_repo_root_tainted(ast.parse('*segments').body[0].value)
+            True
         """
         if isinstance(node, ast.Name):
             return node.id in self.repo_root_aliases or is_repo_root_name(node.id)
+        if isinstance(node, ast.Starred):
+            return self.is_repo_root_tainted(node.value)
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+            if any(self.is_repo_root_tainted(element) for element in node.elts):
+                return True
+            hops = self.path_argument_sequence_parent_hops(node.elts)
+            return hops is not None and hops >= self.repo_root_dirname_depth
         if isinstance(node, ast.JoinedStr):
             return any(self.is_repo_root_tainted(value) for value in node.values)
         if isinstance(node, ast.FormattedValue):
@@ -4316,8 +4336,103 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     node.args[0], "__file__"
                 ) or self.is_repo_root_tainted(node.args[0])
             if self.is_os_path_join_call(node) and node.args:
+                if self.os_path_join_reaches_repo_root(node):
+                    return True
                 return self.is_repo_root_tainted(node.args[0])
         return False
+
+    def path_argument_sequence_parent_hops(
+        self, arguments: Sequence[ast.AST]
+    ) -> Optional[int]:
+        """
+        Return parent-hop count for path helper argument sequences.
+
+        This helper models simple path-building calls such as
+        ``os.path.join(os.path.dirname(__file__), "..")`` where a base path and
+        static ``".."`` segments collectively climb to the repository root.
+
+        :param arguments: Path-building argument expressions.
+        :type arguments: Sequence[ast.AST]
+        :return: Parent-hop count, or ``None`` when the sequence is dynamic.
+        :rtype: int, optional
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('test/x.py'), '', set())
+            >>> expr = ast.parse('os.path.dirname(__file__)').body[0].value
+            >>> visitor.path_argument_sequence_parent_hops([expr, ast.Constant(value='..')])
+            2
+        """
+        if not arguments:
+            return None
+        hops = self.path_argument_parent_hops(arguments[0])
+        if hops is None:
+            return None
+        for argument in arguments[1:]:
+            segment = self.static_string(argument)
+            if segment == "..":
+                hops += 1
+            elif segment is not None:
+                continue
+            else:
+                return None
+        return hops
+
+    def path_argument_parent_hops(self, node: ast.AST) -> Optional[int]:
+        """
+        Return parent-hop count for one path-building argument.
+
+        :param node: Path argument expression.
+        :type node: ast.AST
+        :return: Parent-hop count, or ``None`` when unknown.
+        :rtype: int, optional
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('test/x.py'), '', set())
+            >>> visitor.path_argument_parent_hops(ast.parse('os.path.dirname(__file__)').body[0].value)
+            1
+        """
+        if isinstance(node, ast.Name):
+            if node.id in self.repo_root_aliases or is_repo_root_name(node.id):
+                return self.repo_root_dirname_depth
+        if isinstance(node, ast.Starred):
+            if self.is_repo_root_tainted(node.value):
+                return self.repo_root_dirname_depth
+            return None
+        file_hops = self.file_path_parent_hops(node)
+        if file_hops is not None:
+            return file_hops
+        if isinstance(node, ast.Call):
+            dirname_depth = self.os_path_dirname_depth(node)
+            if dirname_depth:
+                return dirname_depth
+            if self.is_os_path_abspath_call(node) and node.args:
+                return self.path_argument_parent_hops(node.args[0])
+            if self.is_os_path_join_call(node):
+                return self.path_argument_sequence_parent_hops(node.args)
+        return None
+
+    def os_path_join_reaches_repo_root(self, node: ast.Call) -> bool:
+        """
+        Return whether ``os.path.join`` arguments climb to repo root.
+
+        :param node: ``os.path.join`` call expression.
+        :type node: ast.Call
+        :return: ``True`` when the static path sequence reaches repo root.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('test/x.py'), '', set())
+            >>> call = ast.parse('os.path.join(os.path.dirname(__file__), "..", "templates")').body[0].value
+            >>> visitor.os_path_join_reaches_repo_root(call)
+            True
+        """
+        if not self.is_os_path_join_call(node):
+            return False
+        hops = self.path_argument_sequence_parent_hops(node.args)
+        return hops is not None and hops >= self.repo_root_dirname_depth
 
     def is_path_constructor_call(self, node: ast.Call) -> bool:
         """
@@ -4739,6 +4854,11 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> source = 'f"{_REPO_ROOT}/templates"'
             >>> visitor.is_repo_source_template_access(ast.parse(source).body[0].value)
             True
+            >>> source = 'Path(*segments)'
+            >>> visitor.current_scope.repo_root_aliases.add('segments')
+            >>> visitor.current_scope.template_segment_aliases.add('segments')
+            >>> visitor.is_repo_source_template_access(ast.parse(source).body[0].value)
+            True
         """
         if isinstance(node, ast.JoinedStr):
             return self.is_repo_root_tainted(
@@ -4770,18 +4890,32 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             if self.is_repo_root_tainted_format_call(node):
                 return self.format_call_has_exact_segment(node, "templates")
             if self.is_path_constructor_call(node) and node.args:
+                if self.expressions_combine_repo_root_and_template_segment(node.args):
+                    return True
                 if self.is_repo_root_tainted(node.args[0]):
                     return any(
                         self.expression_has_exact_segment(arg, "templates")
                         for arg in node.args[1:]
                     )
             if isinstance(node.func, ast.Attribute) and node.func.attr == "joinpath":
+                joinpath_parts = [node.func.value] + list(node.args)
+                if self.expressions_combine_repo_root_and_template_segment(
+                    joinpath_parts
+                ):
+                    return True
                 if self.is_repo_root_tainted(node.func.value):
                     return any(
                         self.expression_has_exact_segment(arg, "templates")
                         for arg in node.args
                     )
             if self.is_os_path_join_call(node) and node.args:
+                if self.os_path_join_reaches_repo_root(node) and any(
+                    self.expression_has_exact_segment(arg, "templates")
+                    for arg in node.args
+                ):
+                    return True
+                if self.expressions_combine_repo_root_and_template_segment(node.args):
+                    return True
                 if self.is_repo_root_tainted(node.args[0]):
                     return any(
                         self.expression_has_exact_segment(arg, "templates")
@@ -4793,6 +4927,30 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                         for arg in node.args
                     )
         return False
+
+    def expressions_combine_repo_root_and_template_segment(
+        self, expressions: Sequence[ast.AST]
+    ) -> bool:
+        """
+        Return whether expressions jointly contain repo-root and ``templates``.
+
+        :param expressions: Path-building expressions to inspect.
+        :type expressions: Sequence[ast.AST]
+        :return: ``True`` when the expressions combine repository root taint
+            with an exact ``templates`` segment.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.current_scope.repo_root_aliases.add('segments')
+            >>> visitor.current_scope.template_segment_aliases.add('segments')
+            >>> visitor.expressions_combine_repo_root_and_template_segment([ast.parse('*segments').body[0].value])
+            True
+        """
+        return any(self.is_repo_root_tainted(expr) for expr in expressions) and any(
+            self.expression_has_exact_segment(expr, "templates") for expr in expressions
+        )
 
     def expression_has_exact_segment(self, node: ast.AST, segment: str) -> bool:
         """
@@ -4910,6 +5068,12 @@ def scan_source(path: Path, relative_path: Path, source: str) -> List[BoundaryFi
         ['tools-exec']
         >>> source = 'repo_root = Path(__file__).resolve().parents[1]' + chr(10) + 'segments = ("templates", "python")' + chr(10) + 'repo_root.joinpath(*segments)'
         >>> [finding.rule for finding in scan_source(Path('x.py'), Path('x.py'), source)]
+        ['repo-source-templates']
+        >>> source = 'from pathlib import Path' + chr(10) + 'repo_root = Path(__file__).resolve().parents[1]' + chr(10) + 'segments = (repo_root, "templates", "python")' + chr(10) + 'Path(*segments)'
+        >>> [finding.rule for finding in scan_source(Path('x.py'), Path('test/x.py'), source)]
+        ['repo-source-templates']
+        >>> source = 'import os' + chr(10) + 'os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "templates"))'
+        >>> [finding.rule for finding in scan_source(Path('x.py'), Path('test/x.py'), source)]
         ['repo-source-templates']
     """
     tree = ast.parse(source, filename=str(path))

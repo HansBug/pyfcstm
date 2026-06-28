@@ -62,6 +62,7 @@ from pathlib import Path
 from typing import (
     Any,
     Callable,
+    cast,
     Dict,
     Iterable,
     List,
@@ -3113,6 +3114,9 @@ def _validate_native_cases(
         >>> java_cases[0]['status'] = 'passed'
         >>> '$.cases[0].passed status requires observed outcome' in _validate_native_cases(java_cases, 'java', '$.cases')
         True
+        >>> duplicated = java_cases + [dict(java_cases[0])]
+        >>> any('duplicate case_id' in error for error in _validate_native_cases(duplicated, 'java', '$.cases'))
+        True
     """
     errors: List[str] = []
     if not isinstance(cases, list) or not cases:
@@ -3146,7 +3150,20 @@ def _validate_native_cases(
         "rust": "native_rust",
     }[language]
     case_plan = _native_case_plan_by_id(language)
+    required_case_ids = _required_native_case_ids(language)
+    expected_count = len(required_case_ids)
+    if require_all_profiles:
+        expected_count *= len(_rust_profiles())
+    if len(cases) != expected_count:
+        errors.append(
+            "%s must contain exactly %d %s cases, got %d"
+            % (path, expected_count, language, len(cases))
+        )
+    seen_case_ids: Dict[str, str] = {}
+    seen_join_keys: Dict[Tuple[str, str, str, str, str], str] = {}
     seen_semantic_ids = set()
+    seen_semantic_paths: Dict[str, str] = {}
+    seen_profile_pairs: Dict[Tuple[str, str], str] = {}
     profile_seen: Dict[str, set] = {}
     allowed_statuses = {
         "passed",
@@ -3176,6 +3193,27 @@ def _validate_native_cases(
         for field in shared_join_fields:
             if not isinstance(case.get(field), str) or not case.get(field):
                 errors.append("%s.%s must be a non-empty string" % (case_path, field))
+        case_id = case.get("case_id")
+        if isinstance(case_id, str) and case_id:
+            previous_path = seen_case_ids.get(case_id)
+            if previous_path is not None:
+                errors.append(
+                    "%s duplicate case_id %r from %s"
+                    % (case_path, case_id, previous_path)
+                )
+            else:
+                seen_case_ids[case_id] = case_path
+        join_values = tuple(case.get(field) for field in shared_join_fields)
+        if all(isinstance(value, str) and value for value in join_values):
+            join_key = cast(Tuple[str, str, str, str, str], join_values)
+            previous_path = seen_join_keys.get(join_key)
+            if previous_path is not None:
+                errors.append(
+                    "%s duplicate shared join key %r from %s"
+                    % (case_path, join_key, previous_path)
+                )
+            else:
+                seen_join_keys[join_key] = case_path
         semantic_id = case.get("semantic_case_id")
         if not isinstance(semantic_id, str) or not semantic_id:
             errors.append("%s.semantic_case_id must be a non-empty string" % case_path)
@@ -3299,10 +3337,29 @@ def _validate_native_cases(
                         errors.append(
                             "%s.unavailable status requires empty commands" % case_path
                         )
-            seen_semantic_ids.add(semantic_id)
             profile = str(case.get("profile"))
+            if require_all_profiles:
+                profile_pair = (semantic_id, profile)
+                previous_path = seen_profile_pairs.get(profile_pair)
+                if previous_path is not None:
+                    errors.append(
+                        "%s duplicate semantic/profile pair %s:%s from %s"
+                        % (case_path, semantic_id, profile, previous_path)
+                    )
+                else:
+                    seen_profile_pairs[profile_pair] = case_path
+            else:
+                previous_path = seen_semantic_paths.get(semantic_id)
+                if previous_path is not None:
+                    errors.append(
+                        "%s duplicate semantic_case_id %r from %s"
+                        % (case_path, semantic_id, previous_path)
+                    )
+                else:
+                    seen_semantic_paths[semantic_id] = case_path
+            seen_semantic_ids.add(semantic_id)
             profile_seen.setdefault(semantic_id, set()).add(profile)
-    missing_cases = sorted(set(_required_native_case_ids(language)) - seen_semantic_ids)
+    missing_cases = sorted(set(required_case_ids) - seen_semantic_ids)
     for case_id in missing_cases:
         errors.append("%s missing semantic case: %s" % (path, case_id))
     if require_all_profiles:

@@ -18,3 +18,7 @@
 ## `~` 备注
 
 当前 parser 的数值一元规则只接收 `+` / `-`，因此 PR-1 不能假装已经有运行时 `~` 行为。R0 snapshot 仍显式记录 `~`，用于提醒后续 solver/template 工作不要直接按 Z3 或 C 的 bitwise not 语义猜测。
+
+## PR-3 Python/Z3 baseline 使用方式
+
+`tools/numeric_render_probe.py python-z3-baseline` 会读取 live R0 mapping，并在 snapshot 中记录 `source_mapping_sha256` / `render_mapping_sha256`。如果 R0 mapping digest 变化，`python-z3-baseline --check` 会要求重新生成 Python/Z3 baseline snapshot，避免 PR-6 / PR-7 读取过期的 render path 事实。

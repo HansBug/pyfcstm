@@ -101,7 +101,15 @@
       "required": [
         "java",
         "rust"
-      ]
+      ],
+      "properties": {
+        "java": {
+          "$ref": "#/$defs/java_payload"
+        },
+        "rust": {
+          "$ref": "#/$defs/rust_payload"
+        }
+      }
     },
     "cases": {
       "type": "array",
@@ -114,7 +122,157 @@
       "type": "array"
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "const": "java-smoke"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "language"
+        ],
+        "properties": {
+          "language": {
+            "const": "java"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "const": "rust-smoke"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "language"
+        ],
+        "properties": {
+          "language": {
+            "const": "rust"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "const": "java-rust-smoke"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "language",
+          "languages"
+        ],
+        "properties": {
+          "language": {
+            "const": "java-rust"
+          },
+          "languages": {
+            "type": "object",
+            "required": [
+              "java",
+              "rust"
+            ]
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
+    "java_payload": {
+      "type": "object",
+      "required": [
+        "mode",
+        "language",
+        "cases"
+      ],
+      "properties": {
+        "mode": {
+          "const": "java-smoke"
+        },
+        "language": {
+          "const": "java"
+        },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/java_case"
+          }
+        }
+      }
+    },
+    "rust_payload": {
+      "type": "object",
+      "required": [
+        "mode",
+        "language",
+        "cases"
+      ],
+      "properties": {
+        "mode": {
+          "const": "rust-smoke"
+        },
+        "language": {
+          "const": "rust"
+        },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/rust_case"
+          }
+        }
+      }
+    },
+    "java_case": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/native_case"
+        },
+        {
+          "properties": {
+            "language": {
+              "const": "java"
+            }
+          }
+        }
+      ]
+    },
+    "rust_case": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/native_case"
+        },
+        {
+          "properties": {
+            "language": {
+              "const": "rust"
+            }
+          }
+        }
+      ]
+    },
     "native_case": {
       "type": "object",
       "required": [

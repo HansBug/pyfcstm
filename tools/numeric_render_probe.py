@@ -4882,9 +4882,10 @@ def _validate_json_schema_fragment(
     Validate one value against the repository's lightweight schema subset.
 
     The helper intentionally implements only the JSON Schema keywords used by
-    the research artifact schemas: ``$ref``, ``type``, ``required``,
-    ``properties``, object ``additionalProperties``, ``const``, ``enum``,
-    ``pattern``, ``minItems`` and homogeneous ``items``.
+    the research artifact schemas: ``$ref``, ``allOf``, ``if`` / ``then``,
+    ``type``, ``required``, ``properties``, object
+    ``additionalProperties``, ``const``, ``enum``, ``pattern``,
+    ``minItems`` and homogeneous ``items``.
 
     :param value: JSON-compatible value to validate.
     :type value: Any
@@ -4901,6 +4902,12 @@ def _validate_json_schema_fragment(
 
         >>> _validate_json_schema_fragment({'a': 1}, {'type': 'object', 'required': ['a']}, {}, '$')
         []
+        >>> schema = {
+        ...     'if': {'properties': {'kind': {'const': 'x'}}},
+        ...     'then': {'required': ['value']},
+        ... }
+        >>> _validate_json_schema_fragment({'kind': 'x'}, schema, {}, '$')
+        ['$.then missing required key value']
     """
     errors: List[str] = []
     ref = schema.get("$ref")
@@ -4914,6 +4921,40 @@ def _validate_json_schema_fragment(
         if not isinstance(target, Mapping):
             return ["%s schema reference %r did not resolve to an object" % (path, ref)]
         return _validate_json_schema_fragment(value, target, root_schema, path)
+
+    all_of = schema.get("allOf")
+    if isinstance(all_of, list):
+        for index, child_schema in enumerate(all_of):
+            if not isinstance(child_schema, Mapping):
+                errors.append("%s.allOf[%d] must be a schema object" % (path, index))
+                continue
+            errors.extend(
+                _validate_json_schema_fragment(
+                    value,
+                    child_schema,
+                    root_schema,
+                    "%s.allOf[%d]" % (path, index),
+                )
+            )
+
+    if_schema = schema.get("if")
+    then_schema = schema.get("then")
+    if isinstance(if_schema, Mapping) and isinstance(then_schema, Mapping):
+        condition_errors = _validate_json_schema_fragment(
+            value,
+            if_schema,
+            root_schema,
+            "%s.if" % path,
+        )
+        if not condition_errors:
+            errors.extend(
+                _validate_json_schema_fragment(
+                    value,
+                    then_schema,
+                    root_schema,
+                    "%s.then" % path,
+                )
+            )
 
     expected_type = schema.get("type")
     if isinstance(expected_type, str):
@@ -5636,6 +5677,7 @@ def check_java_rust_smoke(
     :type mapping_path: Union[str, pathlib.Path], optional
     :return: Check result with ``ok`` and ``errors`` fields.
     :rtype: Dict[str, Any]
+    :raises ValueError: If ``mode`` is not a Java/Rust smoke mode.
 
     Example::
 

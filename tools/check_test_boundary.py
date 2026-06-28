@@ -2444,6 +2444,37 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             self._visit_assignment_targets([node.target], node.value)
         self.generic_visit(node)
 
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:  # noqa: N802
+        """
+        Visit an augmented assignment and refresh static alias taint.
+
+        String-building updates such as ``cmd += "tools/x.py"`` can turn a
+        previously harmless command alias into a boundary violation. The visitor
+        models ``+=`` as a static binary addition before rebinding the target so
+        command, module-name, and path-segment aliases stay conservative.
+
+        :param node: Augmented assignment node.
+        :type node: ast.AugAssign
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> source = 'import subprocess' + chr(10) + 'cmd = "python "' + chr(10) + 'cmd += "tools/x.py"' + chr(10) + 'subprocess.run(cmd, shell=True)'
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), source, set())
+            >>> visitor.visit(ast.parse(source))
+            >>> [finding.rule for finding in visitor.findings]
+            ['tools-exec']
+        """
+        if isinstance(node.op, ast.Add):
+            value = ast.BinOp(left=node.target, op=ast.Add(), right=node.value)
+            ast.copy_location(value, node)
+            self._visit_assignment_targets([node.target], value)
+        else:
+            for name in self._target_names(node.target):
+                self.clear_scope_aliases(name)
+        self.generic_visit(node)
+
     def visit_For(self, node: ast.For) -> None:  # noqa: N802
         """
         Visit a ``for`` loop and conservatively propagate static iterable aliases.
@@ -4779,18 +4810,34 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
             >>> visitor.expression_has_exact_segment(ast.parse('"templates"').body[0].value, 'templates')
             True
+            >>> visitor.current_scope.template_segment_aliases.add('segments')
+            >>> visitor.expression_has_exact_segment(ast.parse('*segments').body[0].value, 'templates')
+            True
+            >>> expr = ast.parse('("templates", "python")').body[0].value
+            >>> visitor.expression_has_exact_segment(expr, 'templates')
+            True
         """
+        value = self.static_string(node)
+        if value is not None and segment in path_segments(value):
+            return True
         if is_exact_segment(node, segment):
             return True
         if isinstance(node, ast.Name):
             if segment == "templates" and node.id in self.template_segment_aliases:
                 return True
+        if isinstance(node, ast.Starred):
+            return self.expression_has_exact_segment(node.value, segment)
         if isinstance(node, ast.FormattedValue):
             return self.expression_has_exact_segment(node.value, segment)
         if isinstance(node, ast.JoinedStr):
             return any(
-                self.expression_has_exact_segment(value, segment)
-                for value in node.values
+                self.expression_has_exact_segment(value_node, segment)
+                for value_node in node.values
+            )
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+            return any(
+                self.expression_has_exact_segment(element, segment)
+                for element in node.elts
             )
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
             return self.expression_has_exact_segment(
@@ -4858,6 +4905,12 @@ def scan_source(path: Path, relative_path: Path, source: str) -> List[BoundaryFi
         []
         >>> scan_source(Path('x.py'), Path('x.py'), "'''source install note'''")
         []
+        >>> source = 'import subprocess' + chr(10) + 'cmd = "python "' + chr(10) + 'cmd += "tools/check.py"' + chr(10) + 'subprocess.run(cmd, shell=True)'
+        >>> [finding.rule for finding in scan_source(Path('x.py'), Path('x.py'), source)]
+        ['tools-exec']
+        >>> source = 'repo_root = Path(__file__).resolve().parents[1]' + chr(10) + 'segments = ("templates", "python")' + chr(10) + 'repo_root.joinpath(*segments)'
+        >>> [finding.rule for finding in scan_source(Path('x.py'), Path('x.py'), source)]
+        ['repo-source-templates']
     """
     tree = ast.parse(source, filename=str(path))
     visitor = TestBoundaryVisitor(

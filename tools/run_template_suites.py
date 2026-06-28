@@ -409,6 +409,7 @@ def _runner_environment(run_native_toolchain: bool) -> MutableMapping[str, str]:
     env["SKIP_SLOW_TESTS"] = ""
     env.pop("PYFCSTM_TEMPLATE_SUITES", None)
     env.pop("PYFCSTM_SKIP_TEMPLATE_SUITES", None)
+    env.pop("PYFCSTM_RUN_NATIVE_TOOLCHAIN", None)
     if run_native_toolchain:
         env["PYFCSTM_RUN_NATIVE_TOOLCHAIN"] = "1"
     return env
@@ -547,9 +548,9 @@ def _run_self_check_cases() -> None:
                 )
             )
     default_targets = expand_template_suite_targets(("default",))
-    for target in _TEMPLATE_CORE_TARGETS + (
-        "test/template/python",
-    ) + _CPP_WRAPPER_SMOKE_TARGETS:
+    for target in (
+        _TEMPLATE_CORE_TARGETS + ("test/template/python",) + _CPP_WRAPPER_SMOKE_TARGETS
+    ):
         if target not in default_targets:
             raise TemplateSuiteRunnerError(
                 "default suite does not include expected target: {0}".format(target)
@@ -563,18 +564,14 @@ def _run_self_check_cases() -> None:
                 protected_result["selected_suites"]
             )
         )
-    manual_skip_result = _selected_suites_from_inputs(
-        [], "", "local", "c,cpp", "c"
-    )
+    manual_skip_result = _selected_suites_from_inputs([], "", "local", "c,cpp", "c")
     if manual_skip_result["selected_suites"] != ["cpp"]:
         raise TemplateSuiteRunnerError(
             "skip suite did not remove only the manual suite: {0!r}".format(
                 manual_skip_result["selected_suites"]
             )
         )
-    native_command = build_template_pytest_command(
-        ["c"], run_native_toolchain=True
-    )
+    native_command = build_template_pytest_command(["c"], run_native_toolchain=True)
     if "test/template/c/test_native_toolchain_alignment.py" not in native_command:
         raise TemplateSuiteRunnerError(
             "native toolchain opt-in did not include the C native alignment target"

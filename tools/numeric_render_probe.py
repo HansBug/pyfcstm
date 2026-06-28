@@ -4210,7 +4210,7 @@ def _render_contract_expression(
         rendered = render(node=expr.to_ast_node())
     except GrammarParseError as err:
         # GrammarParseError: current FCSTM grammar rejects this expression
-        # shape; PR-6A records that as an unsupported contract row.
+        # shape; the alignment snapshot records that as an unsupported contract row.
         return {
             "status": "parse_failed",
             "error_type": type(err).__name__,
@@ -4596,7 +4596,7 @@ def _alignment_semantics_for_case(
                     "source_expression_defined",
                     "all source expression obligations hold",
                     "writeback source evaluation",
-                    "PR-6A alignment contract composes source expression obligations before writeback.",
+                    "The alignment contract composes source expression obligations before writeback.",
                 ),
                 _obligation(
                     "representable_in_target_width",
@@ -5183,10 +5183,24 @@ def validate_c_cpp_z3_alignment(payload: Mapping[str, Any]) -> List[str]:
         "evidence",
         "counterexamples",
     }
+    expected_cases = {
+        str(case["semantic_case_id"]): {
+            "operator": str(case["operator"]),
+            "operator_family": str(case["operator_family"]),
+            "fcstm_expression": str(case["fcstm_expression"]),
+        }
+        for case in _c_cpp_alignment_cases()
+    }
+    expected_contract_ids = {
+        "%s:%s" % (render_path, semantic_case_id)
+        for render_path in _C_CPP_ALIGNMENT_RENDER_PATHS
+        for semantic_case_id in expected_cases
+    }
+    seen_contract_ids: Dict[str, str] = {}
+    seen_contract_pairs: Dict[Tuple[str, str], str] = {}
     operators = set()
     families = set()
     contract_render_paths = set()
-    shift_obligations = set()
     for index, contract in enumerate(contracts):
         path = "contracts[%d]" % index
         if not isinstance(contract, Mapping):
@@ -5196,9 +5210,49 @@ def validate_c_cpp_z3_alignment(payload: Mapping[str, Any]) -> List[str]:
         if missing:
             errors.append("%s missing required key %s" % (path, missing[0]))
             continue
-        operators.add(contract.get("operator"))
+        contract_id = contract.get("contract_id")
+        semantic_case_id = contract.get("semantic_case_id")
+        render_path = contract.get("render_path")
+        operator_name = contract.get("operator")
+        operators.add(operator_name)
         families.add(contract.get("operator_family"))
-        contract_render_paths.add(contract.get("render_path"))
+        contract_render_paths.add(render_path)
+        if isinstance(contract_id, str):
+            previous_path = seen_contract_ids.get(contract_id)
+            if previous_path is not None:
+                errors.append(
+                    "%s.contract_id duplicates %s from %s"
+                    % (path, contract_id, previous_path)
+                )
+            else:
+                seen_contract_ids[contract_id] = path
+        if isinstance(render_path, str) and isinstance(semantic_case_id, str):
+            pair_key = (render_path, semantic_case_id)
+            previous_path = seen_contract_pairs.get(pair_key)
+            if previous_path is not None:
+                errors.append(
+                    "%s duplicates render_path/semantic_case_id %s:%s from %s"
+                    % (path, render_path, semantic_case_id, previous_path)
+                )
+            else:
+                seen_contract_pairs[pair_key] = path
+            expected_contract_id = "%s:%s" % pair_key
+            if contract_id != expected_contract_id:
+                errors.append(
+                    "%s.contract_id must equal %s" % (path, expected_contract_id)
+                )
+        if render_path not in _C_CPP_ALIGNMENT_RENDER_PATHS:
+            errors.append("%s.render_path is not a required C-family path" % path)
+        expected_case = expected_cases.get(str(semantic_case_id))
+        if expected_case is None:
+            errors.append("%s.semantic_case_id is not a required alignment case" % path)
+        else:
+            for key, expected_value in expected_case.items():
+                if contract.get(key) != expected_value:
+                    errors.append(
+                        "%s.%s must be %r for semantic case %s"
+                        % (path, key, expected_value, semantic_case_id)
+                    )
         if contract.get("outcome") not in _C_CPP_ALIGNMENT_OUTCOMES:
             errors.append(
                 "%s.outcome has invalid value %r" % (path, contract.get("outcome"))
@@ -5219,6 +5273,7 @@ def validate_c_cpp_z3_alignment(payload: Mapping[str, Any]) -> List[str]:
             if not isinstance(contract.get(key), str) or not contract.get(key):
                 errors.append("%s.%s must be a non-empty string" % (path, key))
         obligations = contract.get("obligations")
+        obligation_kinds = set()
         if not isinstance(obligations, list):
             errors.append("%s.obligations must be an array" % path)
         else:
@@ -5229,12 +5284,30 @@ def validate_c_cpp_z3_alignment(payload: Mapping[str, Any]) -> List[str]:
                         % (path, obligation_index)
                     )
                     continue
-                shift_obligations.add(obligation.get("kind"))
+                obligation_kinds.add(obligation.get("kind"))
                 errors.extend(
                     _validate_alignment_obligation(
                         obligation, "%s.obligations[%d]" % (path, obligation_index)
                     )
                 )
+        required_shift_kinds = set()
+        if operator_name == "<<":
+            required_shift_kinds = {
+                "valid_shift_count",
+                "non_negative_shift_count",
+                "no_signed_left_shift_ub",
+            }
+        elif operator_name == ">>":
+            required_shift_kinds = {
+                "valid_shift_count",
+                "non_negative_shift_count",
+                "signed_right_shift_profile",
+            }
+        if required_shift_kinds and not required_shift_kinds <= obligation_kinds:
+            missing = sorted(required_shift_kinds - obligation_kinds)
+            errors.append(
+                "%s shift obligations missing: %s" % (path, ", ".join(missing))
+            )
         evidence = contract.get("evidence")
         if not isinstance(evidence, list) or not evidence:
             errors.append("%s.evidence must be a non-empty array" % path)
@@ -5302,11 +5375,12 @@ def validate_c_cpp_z3_alignment(payload: Mapping[str, Any]) -> List[str]:
     for path_id in _C_CPP_ALIGNMENT_RENDER_PATHS:
         if path_id not in contract_render_paths:
             errors.append("contracts missing render_path %s" % path_id)
-    if not _C_CPP_ALIGNMENT_REQUIRED_SHIFT_OBLIGATIONS <= shift_obligations:
-        missing = sorted(
-            _C_CPP_ALIGNMENT_REQUIRED_SHIFT_OBLIGATIONS - shift_obligations
-        )
-        errors.append("shift obligations missing: %s" % ", ".join(missing))
+    missing_contract_ids = sorted(expected_contract_ids - set(seen_contract_ids))
+    extra_contract_ids = sorted(set(seen_contract_ids) - expected_contract_ids)
+    for contract_id in missing_contract_ids:
+        errors.append("contracts missing required contract_id %s" % contract_id)
+    for contract_id in extra_contract_ids:
+        errors.append("contracts contain unexpected contract_id %s" % contract_id)
     return errors
 
 

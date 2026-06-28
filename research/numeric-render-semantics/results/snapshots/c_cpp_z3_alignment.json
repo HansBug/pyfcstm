@@ -1406,7 +1406,7 @@
       ],
       "obligations": [
         {
-          "evidence": "PR-6A alignment contract composes source expression obligations before writeback.",
+          "evidence": "The alignment contract composes source expression obligations before writeback.",
           "kind": "source_expression_defined",
           "predicate": "all source expression obligations hold",
           "trigger": "writeback source evaluation"
@@ -2955,7 +2955,7 @@
       ],
       "obligations": [
         {
-          "evidence": "PR-6A alignment contract composes source expression obligations before writeback.",
+          "evidence": "The alignment contract composes source expression obligations before writeback.",
           "kind": "source_expression_defined",
           "predicate": "all source expression obligations hold",
           "trigger": "writeback source evaluation"
@@ -4504,7 +4504,7 @@
       ],
       "obligations": [
         {
-          "evidence": "PR-6A alignment contract composes source expression obligations before writeback.",
+          "evidence": "The alignment contract composes source expression obligations before writeback.",
           "kind": "source_expression_defined",
           "predicate": "all source expression obligations hold",
           "trigger": "writeback source evaluation"
@@ -6053,7 +6053,7 @@
       ],
       "obligations": [
         {
-          "evidence": "PR-6A alignment contract composes source expression obligations before writeback.",
+          "evidence": "The alignment contract composes source expression obligations before writeback.",
           "kind": "source_expression_defined",
           "predicate": "all source expression obligations hold",
           "trigger": "writeback source evaluation"
@@ -7758,7 +7758,7 @@
       ],
       "obligations": [
         {
-          "evidence": "PR-6A alignment contract composes source expression obligations before writeback.",
+          "evidence": "The alignment contract composes source expression obligations before writeback.",
           "kind": "source_expression_defined",
           "predicate": "all source expression obligations hold",
           "trigger": "writeback source evaluation"
@@ -9463,7 +9463,7 @@
       ],
       "obligations": [
         {
-          "evidence": "PR-6A alignment contract composes source expression obligations before writeback.",
+          "evidence": "The alignment contract composes source expression obligations before writeback.",
           "kind": "source_expression_defined",
           "predicate": "all source expression obligations hold",
           "trigger": "writeback source evaluation"
@@ -9541,7 +9541,7 @@
   "generator": {
     "determinism": "No native compiler output, wall-clock timestamp or solver model value is stored in the committed alignment snapshot.",
     "research_path": "research/numeric-render-semantics",
-    "source_commit": "570228e90692aa1e5a9bff4e4ba125442bd07d83",
+    "source_commit": "5b0d79537660cc6b11abbb60e921e23373c09c6d",
     "source_commit_policy": "Best-effort commit at generation time; mapping, baseline and smoke fact digests are the stable comparison keys.",
     "tool": "tools/numeric_render_probe.py"
   },

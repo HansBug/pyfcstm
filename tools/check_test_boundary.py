@@ -125,6 +125,8 @@ class NameScope:
     :param os_function_alias_methods: Original OS command helper names by local
         alias.
     :type os_function_alias_methods: Dict[str, str]
+    :param os_path_aliases: Names that expose the :mod:`os.path` module.
+    :type os_path_aliases: Set[str]
     :param os_path_join_aliases: Names imported from ``os.path.join``.
     :type os_path_join_aliases: Set[str]
     :param os_path_dirname_aliases: Names imported from ``os.path.dirname``.
@@ -177,6 +179,7 @@ class NameScope:
     os_aliases: Set[str]
     os_function_aliases: Set[str]
     os_function_alias_methods: Dict[str, str]
+    os_path_aliases: Set[str]
     os_path_join_aliases: Set[str]
     os_path_dirname_aliases: Set[str]
     os_path_abspath_aliases: Set[str]
@@ -264,6 +267,7 @@ class NameScope:
             os_aliases=set(os_aliases or set()),
             os_function_aliases=set(),
             os_function_alias_methods={},
+            os_path_aliases=set(),
             os_path_join_aliases=set(),
             os_path_dirname_aliases=set(),
             os_path_abspath_aliases=set(),
@@ -1508,6 +1512,21 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         return self.visible_names("os_path_join_aliases")
 
     @property
+    def os_path_aliases(self) -> Set[str]:
+        """
+        Return visible aliases for the :mod:`os.path` module.
+
+        :return: Visible ``os.path`` aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> TestBoundaryVisitor(Path('x.py'), '', set()).os_path_aliases
+            set()
+        """
+        return self.visible_names("os_path_aliases")
+
+    @property
     def os_path_dirname_aliases(self) -> Set[str]:
         """
         Return visible aliases for ``os.path.dirname``.
@@ -1972,6 +1991,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 self.current_scope.subprocess_aliases.add(local_name)
             elif alias.name == "os":
                 self.current_scope.os_aliases.add(local_name)
+            elif alias.name == "os.path" and alias.asname is not None:
+                self.current_scope.os_path_aliases.add(local_name)
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # noqa: N802
@@ -2057,6 +2078,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     )
                 elif alias.name == "getcwd":
                     self.current_scope.os_getcwd_aliases.add(alias.asname or alias.name)
+                elif alias.name == "path":
+                    self.current_scope.os_path_aliases.add(alias.asname or alias.name)
         elif module == "os.path":
             for alias in node.names:
                 if alias.name == "join":
@@ -2193,6 +2216,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         self.current_scope.os_aliases.discard(name)
         self.current_scope.os_function_aliases.discard(name)
         self.current_scope.os_function_alias_methods.pop(name, None)
+        self.current_scope.os_path_aliases.discard(name)
         self.current_scope.os_path_join_aliases.discard(name)
         self.current_scope.os_path_dirname_aliases.discard(name)
         self.current_scope.os_path_abspath_aliases.discard(name)
@@ -2670,6 +2694,11 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             return value
         if isinstance(node, ast.Name) and node.id in self.tools_module_name_aliases:
             return "tools"
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            left = self.static_module_name(node.left)
+            right = self.static_module_name(node.right)
+            if left is not None and right is not None:
+                return left + right
         return None
 
     def expression_denotes_tools_module(self, node: ast.AST) -> bool:
@@ -3394,8 +3423,35 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         """
         if not isinstance(node.func, ast.Attribute) or node.func.attr != "format":
             return False
-        return any(self.is_repo_root_tainted(arg) for arg in node.args) or any(
-            self.is_repo_root_tainted(keyword.value) for keyword in node.keywords
+        values = list(node.args) + [keyword.value for keyword in node.keywords]
+        return any(self.is_repo_root_tainted(value) for value in values)
+
+    def format_call_has_exact_segment(self, node: ast.Call, segment: str) -> bool:
+        """
+        Return whether a ``str.format`` call can insert ``segment``.
+
+        :param node: Call expression for a ``format`` method.
+        :type node: ast.Call
+        :param segment: String segment to search for.
+        :type segment: str
+        :return: ``True`` when the format string or replacement values contain
+            the exact segment.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.current_scope.template_segment_aliases.add('seg')
+            >>> call = ast.parse('"{root}/{seg}".format(root=repo_root, seg=seg)').body[0].value
+            >>> visitor.format_call_has_exact_segment(call, 'templates')
+            True
+        """
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "format":
+            return False
+        values = [node.func.value] + list(node.args)
+        values.extend(keyword.value for keyword in node.keywords)
+        return any(
+            self.expression_has_exact_segment(value, segment) for value in values
         )
 
     def is_os_path_join_call(self, node: ast.Call) -> bool:
@@ -3413,7 +3469,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor.is_os_path_join_call(ast.parse('os.path.join("a", "b")').body[0].value)
             True
         """
-        if dotted_name(node.func) == "os.path.join":
+        if self.is_os_path_function_call(node, "join"):
             return True
         return (
             isinstance(node.func, ast.Name)
@@ -3435,7 +3491,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor.is_os_path_dirname_call(ast.parse('os.path.dirname(__file__)').body[0].value)
             True
         """
-        if dotted_name(node.func) == "os.path.dirname":
+        if self.is_os_path_function_call(node, "dirname"):
             return True
         return (
             isinstance(node.func, ast.Name)
@@ -3457,11 +3513,39 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor.is_os_path_abspath_call(ast.parse('os.path.abspath(__file__)').body[0].value)
             True
         """
-        if dotted_name(node.func) == "os.path.abspath":
+        if self.is_os_path_function_call(node, "abspath"):
             return True
         return (
             isinstance(node.func, ast.Name)
             and node.func.id in self.os_path_abspath_aliases
+        )
+
+    def is_os_path_function_call(self, node: ast.Call, function_name: str) -> bool:
+        """
+        Return whether ``node`` calls an ``os.path`` module helper.
+
+        :param node: Call expression node.
+        :type node: ast.Call
+        :param function_name: Helper name such as ``"join"``.
+        :type function_name: str
+        :return: ``True`` when the callee is ``os.path.<function_name>`` or an
+            ``os.path`` module alias.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.current_scope.os_path_aliases.add('osp')
+            >>> visitor.is_os_path_function_call(ast.parse('osp.join("a", "b")').body[0].value, 'join')
+            True
+        """
+        if dotted_name(node.func) == "os.path.{name}".format(name=function_name):
+            return True
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != function_name:
+            return False
+        return (
+            isinstance(node.func.value, ast.Name)
+            and node.func.value.id in self.os_path_aliases
         )
 
     def os_path_dirname_depth(self, node: ast.AST) -> int:
@@ -3520,6 +3604,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             return self.is_repo_root_tainted(
                 node
             ) and self.expression_has_exact_segment(node, "templates")
+        if isinstance(node, ast.FormattedValue):
+            return self.is_repo_source_template_access(node.value)
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
             return (
                 self.is_repo_root_tainted(node.left)
@@ -3538,7 +3624,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             )
         if isinstance(node, ast.Call):
             if self.is_repo_root_tainted_format_call(node):
-                return self.expression_has_exact_segment(node.func.value, "templates")
+                return self.format_call_has_exact_segment(node, "templates")
             if self.is_path_constructor_call(node) and node.args:
                 if self.is_repo_root_tainted(node.args[0]):
                     return any(
@@ -3586,6 +3672,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         if isinstance(node, ast.Name):
             if segment == "templates" and node.id in self.template_segment_aliases:
                 return True
+        if isinstance(node, ast.FormattedValue):
+            return self.expression_has_exact_segment(node.value, segment)
         if isinstance(node, ast.JoinedStr):
             return any(
                 self.expression_has_exact_segment(value, segment)

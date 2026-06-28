@@ -30,6 +30,8 @@ from typing import Iterable, List, Optional, Sequence, Set
 
 
 AST_CONSTANT_TYPE = getattr(ast, "Constant", None)
+AST_INDEX_TYPE = getattr(ast, "Index", None)
+AST_NUM_TYPE = getattr(ast, "Num", None)
 AST_STR_TYPE = getattr(ast, "Str", None) if sys.version_info < (3, 8) else None
 
 
@@ -414,6 +416,10 @@ def subscript_integer(node: ast.Subscript) -> Optional[int]:
     """
     Return an integer literal subscript index when available.
 
+    Python 3.7 parses ``x[2]`` as ``ast.Index(ast.Num(2))``, while newer
+    versions expose the literal directly as :class:`ast.Constant`. This helper
+    normalizes both layouts before reading the integer.
+
     :param node: Subscript node to inspect.
     :type node: ast.Subscript
     :return: Integer index, or ``None`` when not statically literal.
@@ -424,13 +430,18 @@ def subscript_integer(node: ast.Subscript) -> Optional[int]:
         >>> subscript_integer(ast.parse('x[2]').body[0].value)
         2
     """
-    slice_node = node.slice
-    value = getattr(slice_node, "value", slice_node)
+    value = node.slice
+    if AST_INDEX_TYPE is not None and isinstance(value, AST_INDEX_TYPE):
+        value = value.value
     if isinstance(value, int):
         return value
     if AST_CONSTANT_TYPE is not None and isinstance(value, AST_CONSTANT_TYPE):
         if isinstance(value.value, int):
             return value.value
+    if AST_NUM_TYPE is not None and isinstance(value, AST_NUM_TYPE):
+        number = getattr(value, "n", None)
+        if isinstance(number, int):
+            return number
     return None
 
 
@@ -1057,6 +1068,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor.importlib_aliases.add('import_module')
             >>> visitor.is_dynamic_tools_import_call(ast.parse('import_module(".x", package="tools")').body[0].value)
             True
+            >>> visitor.is_dynamic_tools_import_call(ast.parse('import_module(".x", "tools")').body[0].value)
+            True
         """
         if not isinstance(node, ast.Call):
             return False
@@ -1093,6 +1106,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         package = None
         if node.args:
             name = literal_string(node.args[0])
+        if len(node.args) > 1:
+            package = literal_string(node.args[1])
         for keyword in node.keywords:
             if keyword.arg == "name":
                 name = literal_string(keyword.value)

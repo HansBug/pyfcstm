@@ -92,7 +92,41 @@
       ]
     },
     "toolchain": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "java": {
+          "type": "object",
+          "properties": {
+            "java": {
+              "type": "object",
+              "required": [
+                "available"
+              ],
+              "properties": {
+                "available": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        },
+        "rust": {
+          "type": "object",
+          "properties": {
+            "rustc": {
+              "type": "object",
+              "required": [
+                "available"
+              ],
+              "properties": {
+                "available": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "render_paths": {
       "type": "array"
@@ -143,11 +177,39 @@
       },
       "then": {
         "required": [
-          "language"
+          "language",
+          "toolchain"
         ],
         "properties": {
           "language": {
             "const": "java"
+          },
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "java"
+            ],
+            "properties": {
+              "java": {
+                "type": "object",
+                "required": [
+                  "java"
+                ],
+                "properties": {
+                  "java": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -165,11 +227,39 @@
       },
       "then": {
         "required": [
-          "language"
+          "language",
+          "toolchain"
         ],
         "properties": {
           "language": {
             "const": "rust"
+          },
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "rust"
+            ],
+            "properties": {
+              "rust": {
+                "type": "object",
+                "required": [
+                  "rustc"
+                ],
+                "properties": {
+                  "rustc": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -188,7 +278,8 @@
       "then": {
         "required": [
           "language",
-          "languages"
+          "languages",
+          "toolchain"
         ],
         "properties": {
           "language": {
@@ -200,6 +291,53 @@
               "java",
               "rust"
             ]
+          },
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "java",
+              "rust"
+            ],
+            "properties": {
+              "java": {
+                "type": "object",
+                "required": [
+                  "java"
+                ],
+                "properties": {
+                  "java": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              },
+              "rust": {
+                "type": "object",
+                "required": [
+                  "rustc"
+                ],
+                "properties": {
+                  "rustc": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -249,6 +387,518 @@
             }
           }
         }
+      }
+    },
+    {
+      "description": "Aggregate Java available metadata consistency guard",
+      "if": {
+        "required": [
+          "toolchain",
+          "languages"
+        ],
+        "properties": {
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "java"
+            ],
+            "properties": {
+              "java": {
+                "type": "object",
+                "required": [
+                  "java"
+                ],
+                "properties": {
+                  "java": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "languages"
+        ],
+        "properties": {
+          "languages": {
+            "type": "object",
+            "required": [
+              "java"
+            ],
+            "properties": {
+              "java": {
+                "type": "object",
+                "required": [
+                  "toolchain"
+                ],
+                "properties": {
+                  "toolchain": {
+                    "type": "object",
+                    "required": [
+                      "java"
+                    ],
+                    "properties": {
+                      "java": {
+                        "type": "object",
+                        "required": [
+                          "java"
+                        ],
+                        "properties": {
+                          "java": {
+                            "type": "object",
+                            "required": [
+                              "available"
+                            ],
+                            "properties": {
+                              "available": {
+                                "const": true
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "Aggregate Java unavailable metadata consistency guard",
+      "if": {
+        "required": [
+          "toolchain",
+          "languages"
+        ],
+        "properties": {
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "java"
+            ],
+            "properties": {
+              "java": {
+                "type": "object",
+                "required": [
+                  "java"
+                ],
+                "properties": {
+                  "java": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "languages"
+        ],
+        "properties": {
+          "languages": {
+            "type": "object",
+            "required": [
+              "java"
+            ],
+            "properties": {
+              "java": {
+                "type": "object",
+                "required": [
+                  "toolchain"
+                ],
+                "properties": {
+                  "toolchain": {
+                    "type": "object",
+                    "required": [
+                      "java"
+                    ],
+                    "properties": {
+                      "java": {
+                        "type": "object",
+                        "required": [
+                          "java"
+                        ],
+                        "properties": {
+                          "java": {
+                            "type": "object",
+                            "required": [
+                              "available"
+                            ],
+                            "properties": {
+                              "available": {
+                                "const": false
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "Aggregate Rust available metadata consistency guard",
+      "if": {
+        "required": [
+          "toolchain",
+          "languages"
+        ],
+        "properties": {
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "rust"
+            ],
+            "properties": {
+              "rust": {
+                "type": "object",
+                "required": [
+                  "rustc"
+                ],
+                "properties": {
+                  "rustc": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "languages"
+        ],
+        "properties": {
+          "languages": {
+            "type": "object",
+            "required": [
+              "rust"
+            ],
+            "properties": {
+              "rust": {
+                "type": "object",
+                "required": [
+                  "toolchain"
+                ],
+                "properties": {
+                  "toolchain": {
+                    "type": "object",
+                    "required": [
+                      "rust"
+                    ],
+                    "properties": {
+                      "rust": {
+                        "type": "object",
+                        "required": [
+                          "rustc"
+                        ],
+                        "properties": {
+                          "rustc": {
+                            "type": "object",
+                            "required": [
+                              "available"
+                            ],
+                            "properties": {
+                              "available": {
+                                "const": true
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "Aggregate Rust unavailable metadata consistency guard",
+      "if": {
+        "required": [
+          "toolchain",
+          "languages"
+        ],
+        "properties": {
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "rust"
+            ],
+            "properties": {
+              "rust": {
+                "type": "object",
+                "required": [
+                  "rustc"
+                ],
+                "properties": {
+                  "rustc": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "languages"
+        ],
+        "properties": {
+          "languages": {
+            "type": "object",
+            "required": [
+              "rust"
+            ],
+            "properties": {
+              "rust": {
+                "type": "object",
+                "required": [
+                  "toolchain"
+                ],
+                "properties": {
+                  "toolchain": {
+                    "type": "object",
+                    "required": [
+                      "rust"
+                    ],
+                    "properties": {
+                      "rust": {
+                        "type": "object",
+                        "required": [
+                          "rustc"
+                        ],
+                        "properties": {
+                          "rustc": {
+                            "type": "object",
+                            "required": [
+                              "available"
+                            ],
+                            "properties": {
+                              "available": {
+                                "const": false
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "Java unavailable aggregate case outcome guard",
+      "if": {
+        "required": [
+          "toolchain"
+        ],
+        "properties": {
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "java"
+            ],
+            "properties": {
+              "java": {
+                "type": "object",
+                "required": [
+                  "java"
+                ],
+                "properties": {
+                  "java": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/java_unavailable_payload_guard"
+      }
+    },
+    {
+      "description": "Java available aggregate case outcome guard",
+      "if": {
+        "required": [
+          "toolchain"
+        ],
+        "properties": {
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "java"
+            ],
+            "properties": {
+              "java": {
+                "type": "object",
+                "required": [
+                  "java"
+                ],
+                "properties": {
+                  "java": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/java_available_payload_guard"
+      }
+    },
+    {
+      "description": "Aggregate Rust unavailable case outcome guard",
+      "if": {
+        "required": [
+          "toolchain"
+        ],
+        "properties": {
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "rust"
+            ],
+            "properties": {
+              "rust": {
+                "type": "object",
+                "required": [
+                  "rustc"
+                ],
+                "properties": {
+                  "rustc": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/rust_unavailable_payload_guard"
+      }
+    },
+    {
+      "description": "Rust available aggregate case outcome guard",
+      "if": {
+        "required": [
+          "toolchain"
+        ],
+        "properties": {
+          "toolchain": {
+            "type": "object",
+            "required": [
+              "rust"
+            ],
+            "properties": {
+              "rust": {
+                "type": "object",
+                "required": [
+                  "rustc"
+                ],
+                "properties": {
+                  "rustc": {
+                    "type": "object",
+                    "required": [
+                      "available"
+                    ],
+                    "properties": {
+                      "available": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/rust_available_payload_guard"
       }
     }
   ],
@@ -403,6 +1053,120 @@
                 "$ref": "#/$defs/java_case"
               }
             }
+          },
+          "then": {
+            "required": [
+              "toolchain"
+            ],
+            "properties": {
+              "toolchain": {
+                "type": "object",
+                "required": [
+                  "java"
+                ],
+                "properties": {
+                  "java": {
+                    "type": "object",
+                    "required": [
+                      "java"
+                    ],
+                    "properties": {
+                      "java": {
+                        "type": "object",
+                        "required": [
+                          "available"
+                        ],
+                        "properties": {
+                          "available": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "description": "Java unavailable payload case outcomes",
+          "if": {
+            "required": [
+              "toolchain"
+            ],
+            "properties": {
+              "toolchain": {
+                "type": "object",
+                "required": [
+                  "java"
+                ],
+                "properties": {
+                  "java": {
+                    "type": "object",
+                    "required": [
+                      "java"
+                    ],
+                    "properties": {
+                      "java": {
+                        "type": "object",
+                        "required": [
+                          "available"
+                        ],
+                        "properties": {
+                          "available": {
+                            "const": false
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/java_unavailable_payload_guard"
+          }
+        },
+        {
+          "description": "Java available payload case outcomes",
+          "if": {
+            "required": [
+              "toolchain"
+            ],
+            "properties": {
+              "toolchain": {
+                "type": "object",
+                "required": [
+                  "java"
+                ],
+                "properties": {
+                  "java": {
+                    "type": "object",
+                    "required": [
+                      "java"
+                    ],
+                    "properties": {
+                      "java": {
+                        "type": "object",
+                        "required": [
+                          "available"
+                        ],
+                        "properties": {
+                          "available": {
+                            "const": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/java_available_payload_guard"
           }
         }
       ]
@@ -431,6 +1195,40 @@
               "minItems": 1,
               "items": {
                 "$ref": "#/$defs/rust_case"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "toolchain"
+            ],
+            "properties": {
+              "toolchain": {
+                "type": "object",
+                "required": [
+                  "rust"
+                ],
+                "properties": {
+                  "rust": {
+                    "type": "object",
+                    "required": [
+                      "rustc"
+                    ],
+                    "properties": {
+                      "rustc": {
+                        "type": "object",
+                        "required": [
+                          "available"
+                        ],
+                        "properties": {
+                          "available": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
           }
@@ -480,6 +1278,46 @@
                 }
               }
             }
+          }
+        },
+        {
+          "description": "Rust available payload case outcomes",
+          "if": {
+            "required": [
+              "toolchain"
+            ],
+            "properties": {
+              "toolchain": {
+                "type": "object",
+                "required": [
+                  "rust"
+                ],
+                "properties": {
+                  "rust": {
+                    "type": "object",
+                    "required": [
+                      "rustc"
+                    ],
+                    "properties": {
+                      "rustc": {
+                        "type": "object",
+                        "required": [
+                          "available"
+                        ],
+                        "properties": {
+                          "available": {
+                            "const": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/rust_available_payload_guard"
           }
         }
       ]
@@ -942,6 +1780,553 @@
               },
               "reason": {
                 "const": "rustc_unavailable"
+              },
+              "commands": {
+                "type": "object",
+                "maxProperties": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "rust_available_payload_guard": {
+      "type": "object",
+      "required": [
+        "cases"
+      ],
+      "properties": {
+        "cases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rust_available_case_guard"
+          }
+        }
+      }
+    },
+    "rust_available_case_guard": {
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "enum": [
+                  "cast_i32_to_i8",
+                  "checked_add_overflow",
+                  "overflowing_add_overflow",
+                  "plain_i32_bitwise_and",
+                  "plain_i32_division",
+                  "plain_i32_remainder",
+                  "powf_promotes_f64",
+                  "round_cast_i64",
+                  "saturating_add_overflow",
+                  "wrapping_add_overflow"
+                ]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/passed_case_guard"
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "plain_i32_division_by_zero"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/runtime_failed_case_guard"
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "semantic_case_id": {
+                "const": "float_sign_renderer_missing"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/compile_failed_case_guard"
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "profile",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "profile": {
+                "enum": [
+                  "debug",
+                  "overflow-checks-on"
+                ]
+              },
+              "semantic_case_id": {
+                "enum": [
+                  "plain_i32_add_overflow",
+                  "plain_i32_shift_invalid",
+                  "plain_i32_unary_minus_min"
+                ]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/runtime_failed_case_guard"
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "profile",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              },
+              "profile": {
+                "enum": [
+                  "release",
+                  "overflow-checks-off"
+                ]
+              },
+              "semantic_case_id": {
+                "enum": [
+                  "plain_i32_add_overflow",
+                  "plain_i32_shift_invalid",
+                  "plain_i32_unary_minus_min"
+                ]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/passed_case_guard"
+          }
+        }
+      ]
+    },
+    "passed_case_guard": {
+      "required": [
+        "status",
+        "outcome",
+        "reason",
+        "commands"
+      ],
+      "properties": {
+        "status": {
+          "const": "passed"
+        },
+        "outcome": {
+          "const": "observed"
+        },
+        "reason": {
+          "type": "null"
+        },
+        "commands": {
+          "type": "object",
+          "required": [
+            "compile",
+            "run"
+          ],
+          "properties": {
+            "compile": {
+              "$ref": "#/$defs/succeeded_command_guard"
+            },
+            "run": {
+              "$ref": "#/$defs/succeeded_command_guard"
+            }
+          }
+        }
+      }
+    },
+    "runtime_failed_case_guard": {
+      "required": [
+        "status",
+        "outcome",
+        "reason",
+        "commands"
+      ],
+      "properties": {
+        "status": {
+          "const": "runtime_failed"
+        },
+        "outcome": {
+          "const": "runtime_trap"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commands": {
+          "type": "object",
+          "required": [
+            "compile",
+            "run"
+          ],
+          "properties": {
+            "compile": {
+              "$ref": "#/$defs/succeeded_command_guard"
+            },
+            "run": {
+              "$ref": "#/$defs/failed_command_guard"
+            }
+          }
+        }
+      }
+    },
+    "compile_failed_case_guard": {
+      "required": [
+        "status",
+        "outcome",
+        "reason",
+        "commands"
+      ],
+      "properties": {
+        "status": {
+          "const": "compile_failed"
+        },
+        "outcome": {
+          "const": "compile_failed"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commands": {
+          "type": "object",
+          "required": [
+            "compile"
+          ],
+          "properties": {
+            "compile": {
+              "$ref": "#/$defs/failed_command_guard"
+            }
+          }
+        }
+      },
+      "not": {
+        "required": [
+          "commands"
+        ],
+        "properties": {
+          "commands": {
+            "required": [
+              "run"
+            ]
+          }
+        }
+      }
+    },
+    "succeeded_command_guard": {
+      "required": [
+        "returncode",
+        "timed_out",
+        "start_error"
+      ],
+      "properties": {
+        "returncode": {
+          "const": 0
+        },
+        "timed_out": {
+          "const": false
+        },
+        "start_error": {
+          "type": "null"
+        }
+      }
+    },
+    "failed_command_guard": {
+      "required": [
+        "returncode"
+      ],
+      "properties": {
+        "returncode": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "not": {
+        "$ref": "#/$defs/succeeded_command_guard"
+      }
+    },
+    "rust_unavailable_payload_guard": {
+      "type": "object",
+      "required": [
+        "cases"
+      ],
+      "properties": {
+        "cases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rust_unavailable_case_guard"
+          }
+        }
+      }
+    },
+    "java_available_payload_guard": {
+      "type": "object",
+      "required": [
+        "cases"
+      ],
+      "properties": {
+        "cases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/java_available_case_guard"
+          }
+        }
+      }
+    },
+    "java_available_case_guard": {
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "enum": [
+                  "bitwise_and_mask",
+                  "int_add_overflow_wrap",
+                  "int_division_truncates",
+                  "int_remainder_dividend_sign",
+                  "math_pow_promotes_double",
+                  "math_round_half_up",
+                  "narrowing_int_to_byte",
+                  "shift_count_masking",
+                  "unary_minus_min_wrap"
+                ]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/java_passed_case_guard"
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "enum": [
+                  "division_by_zero_exception",
+                  "math_add_exact_overflow",
+                  "math_multiply_exact_overflow"
+                ]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/java_runtime_failed_case_guard"
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language",
+              "semantic_case_id"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              },
+              "semantic_case_id": {
+                "const": "math_sign_missing"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/java_compile_failed_case_guard"
+          }
+        }
+      ]
+    },
+    "java_passed_case_guard": {
+      "required": [
+        "status",
+        "outcome",
+        "reason",
+        "commands"
+      ],
+      "properties": {
+        "status": {
+          "const": "passed"
+        },
+        "outcome": {
+          "const": "observed"
+        },
+        "reason": {
+          "type": "null"
+        },
+        "commands": {
+          "type": "object",
+          "required": [
+            "run"
+          ],
+          "properties": {
+            "compile": {
+              "$ref": "#/$defs/succeeded_command_guard"
+            },
+            "run": {
+              "$ref": "#/$defs/succeeded_command_guard"
+            }
+          }
+        }
+      }
+    },
+    "java_runtime_failed_case_guard": {
+      "required": [
+        "status",
+        "outcome",
+        "reason",
+        "commands"
+      ],
+      "properties": {
+        "status": {
+          "const": "runtime_failed"
+        },
+        "outcome": {
+          "const": "runtime_trap"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commands": {
+          "type": "object",
+          "required": [
+            "run"
+          ],
+          "properties": {
+            "compile": {
+              "$ref": "#/$defs/succeeded_command_guard"
+            },
+            "run": {
+              "$ref": "#/$defs/failed_command_guard"
+            }
+          }
+        }
+      }
+    },
+    "java_compile_failed_case_guard": {
+      "required": [
+        "status",
+        "outcome",
+        "reason",
+        "commands"
+      ],
+      "properties": {
+        "status": {
+          "const": "compile_failed"
+        },
+        "outcome": {
+          "const": "compile_failed"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commands": {
+          "type": "object",
+          "minProperties": 1,
+          "properties": {
+            "compile": {
+              "$ref": "#/$defs/failed_command_guard"
+            },
+            "run": {
+              "$ref": "#/$defs/failed_command_guard"
+            }
+          }
+        }
+      }
+    },
+    "java_unavailable_payload_guard": {
+      "type": "object",
+      "required": [
+        "cases"
+      ],
+      "properties": {
+        "cases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/java_unavailable_case_guard"
+          }
+        }
+      }
+    },
+    "java_unavailable_case_guard": {
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "language"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "status",
+              "outcome",
+              "reason",
+              "commands"
+            ],
+            "properties": {
+              "status": {
+                "const": "unavailable"
+              },
+              "outcome": {
+                "const": "unavailable"
+              },
+              "reason": {
+                "const": "java_unavailable"
               },
               "commands": {
                 "type": "object",

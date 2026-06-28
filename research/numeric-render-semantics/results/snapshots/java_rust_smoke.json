@@ -2049,7 +2049,7 @@
   "generator": {
     "determinism": "Native tool availability and compiler/runtime results are environment-dependent; --check validates shape and invariants rather than exact stdout.",
     "research_path": "research/numeric-render-semantics",
-    "source_commit": "33bdf5337ef11b78b7987a48f9fd0b33f20cd1e1",
+    "source_commit": "f44838fcda9b6763b0fed62071767a903a1fe1ce",
     "source_commit_policy": "Best-effort commit at generation time; schema, mapping digest and case-plan invariants are stable comparison keys.",
     "tool": "tools/numeric_render_probe.py"
   },
@@ -2594,7 +2594,7 @@
       "generator": {
         "determinism": "Native tool availability and compiler/runtime results are environment-dependent; --check validates shape and invariants rather than exact stdout.",
         "research_path": "research/numeric-render-semantics",
-        "source_commit": "33bdf5337ef11b78b7987a48f9fd0b33f20cd1e1",
+        "source_commit": "f44838fcda9b6763b0fed62071767a903a1fe1ce",
         "source_commit_policy": "Best-effort commit at generation time; schema, mapping digest and case-plan invariants are stable comparison keys.",
         "tool": "tools/numeric_render_probe.py"
       },
@@ -4195,7 +4195,7 @@
       "generator": {
         "determinism": "Native tool availability and compiler/runtime results are environment-dependent; --check validates shape and invariants rather than exact stdout.",
         "research_path": "research/numeric-render-semantics",
-        "source_commit": "33bdf5337ef11b78b7987a48f9fd0b33f20cd1e1",
+        "source_commit": "f44838fcda9b6763b0fed62071767a903a1fe1ce",
         "source_commit_policy": "Best-effort commit at generation time; schema, mapping digest and case-plan invariants are stable comparison keys.",
         "tool": "tools/numeric_render_probe.py"
       },

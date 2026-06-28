@@ -424,6 +424,52 @@
     },
     "native_case": {
       "type": "object",
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "language"
+            ],
+            "properties": {
+              "language": {
+                "const": "java"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "render_path"
+            ],
+            "properties": {
+              "render_path": {
+                "const": "native_java"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "language"
+            ],
+            "properties": {
+              "language": {
+                "const": "rust"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "render_path"
+            ],
+            "properties": {
+              "render_path": {
+                "const": "native_rust"
+              }
+            }
+          }
+        }
+      ],
       "required": [
         "case_id",
         "semantic_case_id",

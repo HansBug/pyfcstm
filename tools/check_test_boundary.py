@@ -51,6 +51,14 @@ _SUBPROCESS_METHODS = {
     "Popen",
 }
 _OS_COMMAND_METHODS = {
+    "execl",
+    "execle",
+    "execlp",
+    "execlpe",
+    "execv",
+    "execve",
+    "execvp",
+    "execvpe",
     "system",
     "popen",
     "spawnl",
@@ -2247,6 +2255,10 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             True
             >>> visitor.is_command_call_running_tools(ast.parse('os.spawnl(os.P_WAIT, "python", "python", "tools/x.py")').body[0].value)
             True
+            >>> visitor.is_command_call_running_tools(ast.parse('os.execlp("python", "python", "tools/x.py")').body[0].value)
+            True
+            >>> visitor.is_command_call_running_tools(ast.parse('os.execvp("python", ["python", "tools/x.py"])').body[0].value)
+            True
         """
         if self.is_subprocess_command_call(node):
             return any(
@@ -2255,12 +2267,9 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             )
         os_method = self.os_command_method_name(node)
         if os_method is not None:
-            command_args = (
-                node.args[1:] if os_method.startswith("spawn") else node.args[:1]
-            )
             return any(
                 self.expression_or_alias_runs_tools_script(command)
-                for command in command_args
+                for command in self.os_command_arguments(node, os_method)
             )
         return False
 
@@ -2286,14 +2295,42 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             )
         os_method = self.os_command_method_name(node)
         if os_method is not None:
-            command_args = (
-                node.args[1:] if os_method.startswith("spawn") else node.args[:1]
-            )
             return any(
                 self.expression_or_alias_runs_source_install_command(command)
-                for command in command_args
+                for command in self.os_command_arguments(node, os_method)
             )
         return False
+
+    def os_command_arguments(self, node: ast.Call, method_name: str) -> List[ast.AST]:
+        """
+        Return command-bearing arguments for an :mod:`os` command helper call.
+
+        :param node: OS command call expression.
+        :type node: ast.Call
+        :param method_name: OS command helper name.
+        :type method_name: str
+        :return: Candidate command argument expressions.
+        :rtype: List[ast.AST]
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> call = ast.parse('os.system("python tools/x.py")').body[0].value
+            >>> len(visitor.os_command_arguments(call, 'system'))
+            1
+            >>> call = ast.parse('os.execv("python", ["python", "tools/x.py"])').body[0].value
+            >>> len(visitor.os_command_arguments(call, 'execv'))
+            2
+        """
+        if method_name.startswith("spawn"):
+            return node.args[1:]
+        if method_name.startswith("exec"):
+            if method_name in {"execle", "execlpe"} and len(node.args) > 2:
+                return node.args[:-1]
+            if method_name in {"execve", "execvpe"}:
+                return node.args[:2]
+            return node.args
+        return node.args[:1]
 
     def subprocess_command_arguments(self, node: ast.Call) -> List[ast.AST]:
         """

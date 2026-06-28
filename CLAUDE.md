@@ -154,8 +154,8 @@ Recognized suite tokens are `default`, `template_core`, `template_representative
 enter the detector's dynamic `matrix.include` output.
 
 Commit-message labels use exact bracketed forms such as `[tpl:c]`, `[tpl:c_poll]`, `[tpl:all]`, and `[skip-tpl:c]`;
-whitespace or extra/nested brackets are invalid, so `[tpl: c]`, `[tpl:c ]`, `[tpl :c]`, and `[tpl:c]]` fail
-instead of normalizing or being silently ignored.
+whitespace or extra/nested brackets are invalid for both `[tpl:*]` and `[skip-tpl:*]` labels, so `[tpl: c]`,
+`[tpl:c ]`, `[tpl :c]`, `[skip-tpl : c]`, and `[tpl:c]]` fail instead of normalizing or being silently ignored.
 Multiple labels may be combined. Each bracketed label accepts one suite token only; use repeated labels such as
 `[tpl:c] [tpl:c_poll]` instead of comma-separated text inside one label. The parser is context-free: a live label inside
 prose or a Markdown code block is still parsed as an instruction, so use neutral examples such as `tpl:c` when

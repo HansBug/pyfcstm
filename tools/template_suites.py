@@ -208,10 +208,12 @@ def _matches(pattern: str, path: str) -> bool:
 
         >>> _matches("templates/c/**", "templates/c/machine.c.j2")
         True
+        >>> _matches("templates/c/**", "templates/c")
+        False
     """
     if pattern.endswith("/**"):
         prefix = pattern[:-3]
-        return path == prefix or path.startswith(prefix + "/")
+        return path.startswith(prefix + "/")
     return fnmatch.fnmatchcase(path, pattern)
 
 
@@ -1093,6 +1095,18 @@ def _run_self_check_cases() -> None:
     _expect_detection_error(
         "skip label name whitespace",
         lambda: detect_template_suites([], "[skip-tpl :c]", "local"),
+    )
+    _expect_detection_error(
+        "skip label name and token whitespace",
+        lambda: detect_template_suites([], "[skip-tpl : c]", "local"),
+    )
+    _expect_detection_error(
+        "tab label token whitespace",
+        lambda: detect_template_suites([], "[tpl:c\t]", "local"),
+    )
+    _expect_detection_error(
+        "tab label name whitespace",
+        lambda: detect_template_suites([], "[tpl\t:c]", "local"),
     )
     _expect_detection_error(
         "leading bracket whitespace",

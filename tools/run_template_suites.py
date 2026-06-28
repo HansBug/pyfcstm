@@ -489,6 +489,41 @@ def run_self_check() -> None:
                     target
                 )
             )
+    default_targets = expand_template_suite_targets(("default",))
+    for target in ("test/template/python",) + _CPP_WRAPPER_SMOKE_TARGETS:
+        if target not in default_targets:
+            raise TemplateSuiteRunnerError(
+                "default suite does not include expected target: {0}".format(target)
+            )
+    protected_result = _selected_suites_from_inputs(
+        ["templates/c/machine.c.j2"], "", "local", None, "c"
+    )
+    if protected_result["selected_suites"] != ["c", "cpp"]:
+        raise TemplateSuiteRunnerError(
+            "skip suite removed a protected path-detected suite: {0!r}".format(
+                protected_result["selected_suites"]
+            )
+        )
+    manual_skip_result = _selected_suites_from_inputs(
+        [], "", "local", "c,cpp", "c"
+    )
+    if manual_skip_result["selected_suites"] != ["cpp"]:
+        raise TemplateSuiteRunnerError(
+            "skip suite did not remove only the manual suite: {0!r}".format(
+                manual_skip_result["selected_suites"]
+            )
+        )
+    native_command = build_template_pytest_command(
+        ["c"], run_native_toolchain=True
+    )
+    if "test/template/c/test_native_toolchain_alignment.py" not in native_command:
+        raise TemplateSuiteRunnerError(
+            "native toolchain opt-in did not include the C native alignment target"
+        )
+    if "--run-native-toolchain" not in native_command:
+        raise TemplateSuiteRunnerError(
+            "native toolchain opt-in did not pass pytest's explicit opt-in flag"
+        )
     try:
         _selected_suites_from_inputs([], "", "local", "java", None)
     except TemplateSuiteDetectionError:
@@ -496,11 +531,23 @@ def run_self_check() -> None:
     else:
         raise TemplateSuiteRunnerError("unknown include suite did not fail")
     try:
+        _selected_suites_from_inputs([], "", "local", None, "java")
+    except TemplateSuiteDetectionError:
+        pass
+    else:
+        raise TemplateSuiteRunnerError("unknown skip suite did not fail")
+    try:
         _selected_suites_from_inputs([], "", "local", "", None)
     except TemplateSuiteDetectionError:
         pass
     else:
         raise TemplateSuiteRunnerError("empty include suite did not fail")
+    try:
+        _selected_suites_from_inputs([], "", "local", None, "")
+    except TemplateSuiteDetectionError:
+        pass
+    else:
+        raise TemplateSuiteRunnerError("empty skip suite did not fail")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -682,6 +729,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "selected_suites": selected_suites,
         "command": command,
         "command_text": _format_command(command),
+        "target_count": len(command) - 6 - len(pytest_args) - (1 if run_native else 0),
         "run_native_toolchain": run_native,
     }
     if args.json:

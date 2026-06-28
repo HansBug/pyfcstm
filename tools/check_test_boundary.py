@@ -40,10 +40,25 @@ _STATIC_STRING_METHODS = {
     "lower",
     "upper",
 }
+_PATH_CONSTRUCTOR_NAMES = {
+    "Path",
+    "PurePath",
+    "PurePosixPath",
+    "PureWindowsPath",
+    "PosixPath",
+    "WindowsPath",
+}
+_OS_PATH_PASSTHROUGH_HELPERS = {
+    "abspath",
+    "normpath",
+    "realpath",
+}
 _OS_PATH_HELPERS = {
     "abspath",
     "dirname",
     "join",
+    "normpath",
+    "realpath",
     "split",
 }
 TOOLS_IMPORT_RULE = "tools-import"
@@ -113,7 +128,8 @@ class NameScope:
     :type builtins_aliases: Set[str]
     :param pathlib_aliases: Names that expose the :mod:`pathlib` module.
     :type pathlib_aliases: Set[str]
-    :param path_class_aliases: Names that expose :class:`pathlib.Path`.
+    :param path_class_aliases: Names that expose :class:`pathlib.Path` or
+        compatible :mod:`pathlib` path constructors.
     :type path_class_aliases: Set[str]
     :param pytest_aliases: Names that expose the :mod:`pytest` module.
     :type pytest_aliases: Set[str]
@@ -153,7 +169,9 @@ class NameScope:
     :type os_path_join_aliases: Set[str]
     :param os_path_dirname_aliases: Names imported from ``os.path.dirname``.
     :type os_path_dirname_aliases: Set[str]
-    :param os_path_abspath_aliases: Names imported from ``os.path.abspath``.
+    :param os_path_abspath_aliases: Names imported from path-preserving
+        :mod:`os.path` helpers such as ``abspath``, ``normpath``, or
+        ``realpath``.
     :type os_path_abspath_aliases: Set[str]
     :param os_path_split_aliases: Names imported from ``os.path.split``.
     :type os_path_split_aliases: Set[str]
@@ -161,6 +179,12 @@ class NameScope:
     :type os_getcwd_aliases: Set[str]
     :param repo_root_aliases: Names assigned from repository-root expressions.
     :type repo_root_aliases: Set[str]
+    :param path_parent_hop_aliases: Parent-hop counts for path expressions rooted at
+        ``__file__`` but not necessarily at repo root yet.
+    :type path_parent_hop_aliases: Dict[str, int]
+    :param file_parents_aliases: Names assigned from ``Path(__file__).parents``
+        sequence expressions.
+    :type file_parents_aliases: Set[str]
     :param string_aliases: Statically known string values by local name.
     :type string_aliases: Dict[str, str]
     :param dynamic_code_alias_rules: Boundary rules found in compiled dynamic
@@ -219,6 +243,8 @@ class NameScope:
     os_path_split_aliases: Set[str]
     os_getcwd_aliases: Set[str]
     repo_root_aliases: Set[str]
+    path_parent_hop_aliases: Dict[str, int]
+    file_parents_aliases: Set[str]
     string_aliases: Dict[str, str]
     dynamic_code_alias_rules: Dict[str, str]
     template_segment_aliases: Set[str]
@@ -314,6 +340,8 @@ class NameScope:
             os_path_split_aliases=set(),
             os_getcwd_aliases=set(),
             repo_root_aliases=set(),
+            path_parent_hop_aliases={},
+            file_parents_aliases=set(),
             string_aliases={},
             dynamic_code_alias_rules={},
             template_segment_aliases=set(),
@@ -1292,7 +1320,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 importlib_aliases={"importlib"},
                 builtins_aliases={"builtins"},
                 pathlib_aliases={"pathlib"},
-                path_class_aliases={"Path"},
+                path_class_aliases=set(_PATH_CONSTRUCTOR_NAMES),
                 pytest_aliases={"pytest"},
                 runpy_aliases={"runpy"},
                 sys_aliases={"sys"},
@@ -1485,9 +1513,9 @@ class TestBoundaryVisitor(ast.NodeVisitor):
     @property
     def path_class_aliases(self) -> Set[str]:
         """
-        Return visible aliases for :class:`pathlib.Path`.
+        Return visible aliases for :mod:`pathlib` path constructors.
 
-        :return: Visible ``Path`` class aliases.
+        :return: Visible path-constructor aliases.
         :rtype: Set[str]
 
         Example::
@@ -1767,9 +1795,9 @@ class TestBoundaryVisitor(ast.NodeVisitor):
     @property
     def os_path_abspath_aliases(self) -> Set[str]:
         """
-        Return visible aliases for ``os.path.abspath``.
+        Return visible aliases for path-preserving :mod:`os.path` wrappers.
 
-        :return: Visible abspath aliases.
+        :return: Visible path-preserving wrapper aliases.
         :rtype: Set[str]
 
         Example::
@@ -1825,6 +1853,48 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             True
         """
         return self.visible_names("repo_root_aliases")
+
+    @property
+    def path_parent_hop_aliases(self) -> Dict[str, int]:
+        """
+        Return visible parent-hop aliases rooted at ``__file__``.
+
+        :return: Mapping from visible local names to parent-hop counts.
+        :rtype: Dict[str, int]
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('test/x.py'), '', set())
+            >>> visitor.current_scope.path_parent_hop_aliases['base'] = 1
+            >>> visitor.path_parent_hop_aliases['base']
+            1
+        """
+        visible = {}
+        shadowed = set()
+        for scope in reversed(self.scope_stack):
+            for name, hops in scope.path_parent_hop_aliases.items():
+                if name not in shadowed:
+                    visible[name] = hops
+            shadowed.update(scope.shadowing_names)
+            shadowed.update(scope.defined_names)
+        return visible
+
+    @property
+    def file_parents_aliases(self) -> Set[str]:
+        """
+        Return aliases for ``Path(__file__).parents`` sequence expressions.
+
+        :return: Visible ``parents`` sequence aliases.
+        :rtype: Set[str]
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.current_scope.file_parents_aliases.add('parents')
+            >>> 'parents' in visitor.file_parents_aliases
+            True
+        """
+        return self.visible_names("file_parents_aliases")
 
     @property
     def string_aliases(self) -> Dict[str, str]:
@@ -2339,7 +2409,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     self.current_scope.importlib_aliases.add(alias.asname or alias.name)
         elif module == "pathlib":
             for alias in node.names:
-                if alias.name == "Path":
+                if alias.name in _PATH_CONSTRUCTOR_NAMES:
                     self.current_scope.path_class_aliases.add(
                         alias.asname or alias.name
                     )
@@ -2394,6 +2464,10 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                         alias.asname or alias.name
                     )
                 elif alias.name == "abspath":
+                    self.current_scope.os_path_abspath_aliases.add(
+                        alias.asname or alias.name
+                    )
+                elif alias.name in {"normpath", "realpath"}:
                     self.current_scope.os_path_abspath_aliases.add(
                         alias.asname or alias.name
                     )
@@ -2602,6 +2676,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             True
         """
         repo_root_tainted = self.is_repo_root_tainted(value)
+        path_parent_hops = self.path_argument_parent_hops(value)
+        file_parents_sequence = self.expression_denotes_file_parents_sequence(value)
         dynamic_tools_import = self.is_dynamic_tools_import_call(value)
         tools_command = self.expression_or_alias_runs_tools_script(value)
         source_install_command = self.expression_or_alias_runs_source_install_command(
@@ -2618,6 +2694,10 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                     self.current_scope.string_aliases[name] = static_string
                 if repo_root_tainted or is_repo_root_name(name):
                     self.current_scope.repo_root_aliases.add(name)
+                if path_parent_hops is not None:
+                    self.current_scope.path_parent_hop_aliases[name] = path_parent_hops
+                if file_parents_sequence:
+                    self.current_scope.file_parents_aliases.add(name)
                 if dynamic_tools_import:
                     self.current_scope.dynamic_tools_aliases.add(name)
                 if dynamic_code_rule is not None:
@@ -2707,6 +2787,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         self.current_scope.os_path_split_aliases.discard(name)
         self.current_scope.os_getcwd_aliases.discard(name)
         self.current_scope.repo_root_aliases.discard(name)
+        self.current_scope.path_parent_hop_aliases.pop(name, None)
+        self.current_scope.file_parents_aliases.discard(name)
         self.current_scope.string_aliases.pop(name, None)
         self.current_scope.dynamic_code_alias_rules.pop(name, None)
         self.current_scope.template_segment_aliases.discard(name)
@@ -4232,6 +4314,27 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         """
         return self.repo_root_parent_index + 1
 
+    def expression_denotes_file_parents_sequence(self, node: ast.AST) -> bool:
+        """
+        Return whether ``node`` denotes ``Path(__file__).parents``.
+
+        :param node: AST expression node.
+        :type node: ast.AST
+        :return: ``True`` for a visible ``parents`` sequence rooted at ``__file__``.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.expression_denotes_file_parents_sequence(ast.parse('Path(__file__).resolve().parents').body[0].value)
+            True
+        """
+        return (
+            isinstance(node, ast.Attribute)
+            and node.attr == "parents"
+            and node_contains_name(node.value, "__file__")
+        )
+
     def file_parents_expr_reaches_repo_root(self, node: ast.AST) -> bool:
         """
         Return whether a ``__file__`` parent expression reaches repo root.
@@ -4305,6 +4408,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             >>> visitor.file_path_parent_hops(ast.parse('Path(__file__).resolve().parents[0] / ".."').body[0].value)
             2
         """
+        if isinstance(node, ast.Name):
+            return self.path_parent_hop_aliases.get(node.id)
         if node_contains_name(node, "__file__") and not isinstance(
             node, (ast.BinOp, ast.Call, ast.Attribute, ast.Subscript)
         ):
@@ -4325,6 +4430,10 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 return base + 1
         if isinstance(node, ast.Subscript):
             value = node.value
+            if isinstance(value, ast.Name) and value.id in self.file_parents_aliases:
+                index = subscript_integer(node)
+                if index is not None:
+                    return index + 1
             if isinstance(value, ast.Attribute) and value.attr == "parents":
                 if node_contains_name(value.value, "__file__"):
                     index = subscript_integer(node)
@@ -4407,7 +4516,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 if self.is_repo_root_tainted(node.args[0]):
                     return True
                 return any(is_exact_segment(arg, "templates") for arg in node.args[1:])
-            if self.is_os_path_abspath_call(node) and node.args:
+            if self.is_os_path_passthrough_call(node) and node.args:
                 return node_contains_name(
                     node.args[0], "__file__"
                 ) or self.is_repo_root_tainted(node.args[0])
@@ -4470,20 +4579,23 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             1
         """
         if isinstance(node, ast.Name):
+            parent_hops = self.path_parent_hop_aliases.get(node.id)
+            if parent_hops is not None:
+                return parent_hops
             if node.id in self.repo_root_aliases or is_repo_root_name(node.id):
                 return self.repo_root_dirname_depth
         if isinstance(node, ast.Starred):
             if self.is_repo_root_tainted(node.value):
                 return self.repo_root_dirname_depth
             return None
+        dirname_depth = self.os_path_dirname_depth(node)
+        if dirname_depth:
+            return dirname_depth
         file_hops = self.file_path_parent_hops(node)
         if file_hops is not None:
             return file_hops
         if isinstance(node, ast.Call):
-            dirname_depth = self.os_path_dirname_depth(node)
-            if dirname_depth:
-                return dirname_depth
-            if self.is_os_path_abspath_call(node) and node.args:
+            if self.is_os_path_passthrough_call(node) and node.args:
                 return self.path_argument_parent_hops(node.args[0])
             if self.is_os_path_join_call(node):
                 return self.path_argument_sequence_parent_hops(node.args)
@@ -4527,7 +4639,10 @@ class TestBoundaryVisitor(ast.NodeVisitor):
         """
         if isinstance(node.func, ast.Name):
             return node.func.id in self.path_class_aliases
-        if isinstance(node.func, ast.Attribute) and node.func.attr == "Path":
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr in _PATH_CONSTRUCTOR_NAMES
+        ):
             return (
                 isinstance(node.func.value, ast.Name)
                 and node.func.value.id in self.pathlib_aliases
@@ -4771,6 +4886,29 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             and node.func.id in self.os_path_dirname_aliases
         )
 
+    def is_os_path_passthrough_call(self, node: ast.Call) -> bool:
+        """
+        Return whether a call preserves path parent-hop semantics.
+
+        :param node: Call expression node.
+        :type node: ast.Call
+        :return: ``True`` for wrappers such as ``abspath`` and ``normpath``.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.is_os_path_passthrough_call(ast.parse('os.path.normpath(__file__)').body[0].value)
+            True
+        """
+        if self.is_os_path_abspath_call(node):
+            return True
+        return any(
+            self.is_os_path_function_call(node, helper)
+            for helper in _OS_PATH_PASSTHROUGH_HELPERS
+            if helper != "abspath"
+        )
+
     def is_os_path_abspath_call(self, node: ast.Call) -> bool:
         """
         Return whether a call targets ``os.path.abspath``.
@@ -4872,7 +5010,7 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 continue
             if not isinstance(current, ast.Call):
                 break
-            if self.is_os_path_abspath_call(current) and current.args:
+            if self.is_os_path_passthrough_call(current) and current.args:
                 current = current.args[0]
                 continue
             if self.is_os_path_dirname_call(current) and current.args:
@@ -4963,6 +5101,8 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                 node.left, "templates"
             ) and self.mod_format_value_is_repo_root_tainted(node.right)
         if isinstance(node, ast.Call):
+            if self.path_separator_join_combines_repo_root_and_templates(node):
+                return True
             if self.is_repo_root_tainted_format_call(node):
                 return self.format_call_has_exact_segment(node, "templates")
             if self.is_path_constructor_call(node) and node.args:
@@ -5005,6 +5145,60 @@ class TestBoundaryVisitor(ast.NodeVisitor):
                         for arg in node.args
                     )
         return False
+
+    def path_separator_join_combines_repo_root_and_templates(
+        self, node: ast.Call
+    ) -> bool:
+        """
+        Return whether a string separator join builds repo-root ``templates``.
+
+        :param node: Call expression node.
+        :type node: ast.Call
+        :return: ``True`` when ``os.sep.join`` or literal-separator ``join``
+            combines repository-root taint with the ``templates`` segment.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('test/x.py'), '', set())
+            >>> source = 'import os' + chr(10) + 'repo = Path(__file__).resolve().parents[1]' + chr(10) + 'os.sep.join([str(repo), "templates"])'
+            >>> tree = ast.parse(source)
+            >>> visitor.visit(tree)
+            >>> visitor.findings[-1].rule
+            'repo-source-templates'
+        """
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "join":
+            return False
+        if len(node.args) != 1:
+            return False
+        if not self.expression_denotes_path_separator(node.func.value):
+            return False
+        elements = self.static_iterable_elements(node.args[0])
+        return bool(
+            elements
+        ) and self.expressions_combine_repo_root_and_template_segment(elements)
+
+    def expression_denotes_path_separator(self, node: ast.AST) -> bool:
+        """
+        Return whether ``node`` denotes a filesystem path separator string.
+
+        :param node: AST expression node.
+        :type node: ast.AST
+        :return: ``True`` for ``os.sep`` or literal slash separators.
+        :rtype: bool
+
+        Example::
+
+            >>> visitor = TestBoundaryVisitor(Path('x.py'), '', set())
+            >>> visitor.expression_denotes_path_separator(ast.parse('os.sep').body[0].value)
+            True
+            >>> visitor.expression_denotes_path_separator(ast.parse('":"').body[0].value)
+            False
+        """
+        value = self.static_string(node)
+        if value in {"/", "\\"}:
+            return True
+        return dotted_name(node) in {"os.sep", "os.path.sep"}
 
     def path_argument_sequence_reaches_repo_templates(
         self, arguments: Sequence[ast.AST]
@@ -5094,6 +5288,10 @@ class TestBoundaryVisitor(ast.NodeVisitor):
             return self.expression_has_exact_segment(node.value, segment)
         if isinstance(node, ast.FormattedValue):
             return self.expression_has_exact_segment(node.value, segment)
+        if isinstance(node, ast.IfExp):
+            return self.expression_has_exact_segment(
+                node.body, segment
+            ) or self.expression_has_exact_segment(node.orelse, segment)
         if isinstance(node, ast.JoinedStr):
             return any(
                 self.expression_has_exact_segment(value_node, segment)
@@ -5180,6 +5378,21 @@ def scan_source(path: Path, relative_path: Path, source: str) -> List[BoundaryFi
         >>> [finding.rule for finding in scan_source(Path('x.py'), Path('test/x.py'), source)]
         ['repo-source-templates']
         >>> source = 'import os' + chr(10) + 'os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "templates"))'
+        >>> [finding.rule for finding in scan_source(Path('x.py'), Path('test/x.py'), source)]
+        ['repo-source-templates']
+        >>> source = 'from pathlib import Path' + chr(10) + 'base = Path(__file__).resolve().parents[0]' + chr(10) + 'base.joinpath("..", "templates")'
+        >>> [finding.rule for finding in scan_source(Path('x.py'), Path('test/x.py'), source)]
+        ['repo-source-templates']
+        >>> source = 'import os' + chr(10) + 'base = os.path.dirname(__file__)' + chr(10) + 'os.path.join(base, "..", "templates")'
+        >>> [finding.rule for finding in scan_source(Path('x.py'), Path('test/x.py'), source)]
+        ['repo-source-templates']
+        >>> source = 'import pathlib' + chr(10) + 'from pathlib import Path' + chr(10) + 'repo = Path(__file__).resolve().parents[1]' + chr(10) + 'pathlib.PurePath(repo, "templates")'
+        >>> [finding.rule for finding in scan_source(Path('x.py'), Path('test/x.py'), source)]
+        ['repo-source-templates']
+        >>> source = 'from pathlib import Path' + chr(10) + 'parents = Path(__file__).resolve().parents' + chr(10) + 'parents[1] / "templates"'
+        >>> [finding.rule for finding in scan_source(Path('x.py'), Path('test/x.py'), source)]
+        ['repo-source-templates']
+        >>> source = 'from os.path import dirname, join, normpath' + chr(10) + 'join(normpath(join(dirname(__file__), "..")), "templates")'
         >>> [finding.rule for finding in scan_source(Path('x.py'), Path('test/x.py'), source)]
         ['repo-source-templates']
     """

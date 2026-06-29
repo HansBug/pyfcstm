@@ -45,6 +45,12 @@ interface SimpleConstraint {
     lower?: Bound;
     upper?: Bound;
     equal?: number;
+    notEqual?: number[];
+}
+
+interface ConstraintSet {
+    constraints: Map<string, SimpleConstraint>;
+    unsat: boolean;
 }
 
 export function collectComboWarnings(machine: StateMachine | null | undefined): ModelDiagnosticJson[] {
@@ -183,17 +189,32 @@ function guardPrefixWarnings(terms: ComboTerm[]): ModelDiagnosticJson[] {
 }
 
 function prefixGuardDiagnostic(current: ComboTerm, priorTerms: ComboTerm[]): ModelDiagnosticJson | null {
-    const currentConstraint = current.transition.guard ? simpleConstraint(current.transition.guard) : null;
-    if (!currentConstraint) return null;
+    const currentConstraints = current.transition.guard ? constraintSetFromExpression(current.transition.guard) : null;
+    if (!currentConstraints) return null;
+
+    const priorConstraintSets: Array<{term: ComboTerm; constraints: ConstraintSet}> = [];
     for (const prior of priorTerms) {
-        const priorConstraint = prior.transition.guard ? simpleConstraint(prior.transition.guard) : null;
-        if (!priorConstraint || priorConstraint.variable !== currentConstraint.variable) continue;
-        if (constraintsContradict(priorConstraint, currentConstraint)) {
-            return makePrefixGuardDiagnostic('W_COMBO_GUARD_PREFIX_CONTRADICTS', 'contradicts prior combo guard terms', current, prior);
-        }
-        if (constraintImplies(priorConstraint, currentConstraint)) {
-            return makePrefixGuardDiagnostic('W_COMBO_GUARD_PREFIX_IMPLIED', 'is implied by prior combo guard terms', current, prior);
-        }
+        const constraints = prior.transition.guard ? constraintSetFromExpression(prior.transition.guard) : null;
+        if (!constraints) return null;
+        priorConstraintSets.push({term: prior, constraints});
+    }
+
+    const fullPrefix = mergeConstraintSets(priorConstraintSets.map(item => item.constraints));
+    if (constraintSetsContradict(fullPrefix, currentConstraints)) {
+        return makePrefixGuardDiagnostic(
+            'W_COMBO_GUARD_PREFIX_CONTRADICTS',
+            'contradicts prior combo guard terms',
+            current,
+            firstDecisivePriorTerm(priorConstraintSets, currentConstraints, 'contradicts'),
+        );
+    }
+    if (constraintSetImplies(fullPrefix, currentConstraints)) {
+        return makePrefixGuardDiagnostic(
+            'W_COMBO_GUARD_PREFIX_IMPLIED',
+            'is implied by prior combo guard terms',
+            current,
+            firstDecisivePriorTerm(priorConstraintSets, currentConstraints, 'implies'),
+        );
     }
     return null;
 }
@@ -240,6 +261,103 @@ function simpleConstraint(expr: Expr): SimpleConstraint | null {
     return null;
 }
 
+function constraintSetFromExpression(expr: Expr): ConstraintSet | null {
+    if (expr instanceof BinaryOp && (expr.op === '&&' || expr.op === 'and')) {
+        const left = constraintSetFromExpression(expr.x);
+        const right = constraintSetFromExpression(expr.y);
+        if (!left || !right) return null;
+        return mergeConstraintSets([left, right]);
+    }
+    const constraint = simpleConstraint(expr);
+    if (!constraint) return null;
+    return constraintSetFromConstraints([constraint]);
+}
+
+function constraintSetFromConstraints(constraints: SimpleConstraint[]): ConstraintSet {
+    return mergeConstraintSets(constraints.map(constraint => ({
+        constraints: new Map([[constraint.variable, cloneConstraint(constraint)]]),
+        unsat: false,
+    })));
+}
+
+function mergeConstraintSets(sets: ConstraintSet[]): ConstraintSet {
+    const constraints = new Map<string, SimpleConstraint>();
+    let unsat = false;
+    for (const item of sets) {
+        if (item.unsat) unsat = true;
+        for (const constraint of item.constraints.values()) {
+            const current = constraints.get(constraint.variable);
+            if (!current) {
+                constraints.set(constraint.variable, cloneConstraint(constraint));
+                continue;
+            }
+            if (constraintsContradict(current, constraint)) {
+                unsat = true;
+            }
+            constraints.set(constraint.variable, mergeCompatibleConstraints(current, constraint));
+        }
+    }
+    return {constraints, unsat};
+}
+
+function mergeCompatibleConstraints(left: SimpleConstraint, right: SimpleConstraint): SimpleConstraint {
+    if (left.equal !== undefined) return cloneConstraint(left);
+    if (right.equal !== undefined) return cloneConstraint(right);
+    return {
+        variable: left.variable,
+        lower: strongestLower(left.lower, right.lower),
+        upper: strongestUpper(left.upper, right.upper),
+        notEqual: mergeNotEqual(left.notEqual, right.notEqual),
+    };
+}
+
+function cloneConstraint(constraint: SimpleConstraint): SimpleConstraint {
+    return {
+        variable: constraint.variable,
+        lower: constraint.lower ? {...constraint.lower} : undefined,
+        upper: constraint.upper ? {...constraint.upper} : undefined,
+        equal: constraint.equal,
+        notEqual: constraint.notEqual ? [...constraint.notEqual] : undefined,
+    };
+}
+
+function constraintSetImplies(prior: ConstraintSet, current: ConstraintSet): boolean {
+    if (prior.unsat) return true;
+    if (current.unsat) return false;
+    for (const constraint of current.constraints.values()) {
+        const priorConstraint = prior.constraints.get(constraint.variable);
+        if (!priorConstraint || !constraintImplies(priorConstraint, constraint)) return false;
+    }
+    return true;
+}
+
+function constraintSetsContradict(left: ConstraintSet, right: ConstraintSet): boolean {
+    if (left.unsat || right.unsat) return true;
+    for (const constraint of right.constraints.values()) {
+        const leftConstraint = left.constraints.get(constraint.variable);
+        if (leftConstraint && constraintsContradict(leftConstraint, constraint)) return true;
+    }
+    return false;
+}
+
+function firstDecisivePriorTerm(
+    priorConstraintSets: Array<{term: ComboTerm; constraints: ConstraintSet}>,
+    currentConstraints: ConstraintSet,
+    relation: 'implies' | 'contradicts',
+): ComboTerm {
+    let prefix: ConstraintSet = {constraints: new Map(), unsat: false};
+    for (const item of priorConstraintSets) {
+        prefix = mergeConstraintSets([prefix, item.constraints]);
+        if (relation === 'contradicts' && constraintSetsContradict(prefix, currentConstraints)) {
+            return item.term;
+        }
+        if (relation === 'implies' && constraintSetImplies(prefix, currentConstraints)) {
+            return item.term;
+        }
+    }
+    return priorConstraintSets[priorConstraintSets.length - 1].term;
+}
+
 function numericLiteralValue(expr: Expr): number | null {
     if (expr instanceof Integer || expr instanceof Float) return expr.value;
     if (expr instanceof UnaryOp) {
@@ -265,15 +383,19 @@ function constraintFromParts(variable: string, op: string, value: number): Simpl
     if (op === '<') return {variable, upper: {value, inclusive: false}};
     if (op === '<=') return {variable, upper: {value, inclusive: true}};
     if (op === '==') return {variable, equal: value};
+    if (op === '!=') return {variable, notEqual: [value]};
     return null;
 }
 
 function constraintImplies(prior: SimpleConstraint, current: SimpleConstraint): boolean {
     if (prior.equal !== undefined) return valueSatisfies(prior.equal, current);
     if (current.equal !== undefined) return prior.equal === current.equal;
-    if (current.lower && prior.lower && lowerAtLeastAsStrong(prior.lower, current.lower)) return true;
-    if (current.upper && prior.upper && upperAtLeastAsStrong(prior.upper, current.upper)) return true;
-    return false;
+    if (current.lower && (!prior.lower || !lowerAtLeastAsStrong(prior.lower, current.lower))) return false;
+    if (current.upper && (!prior.upper || !upperAtLeastAsStrong(prior.upper, current.upper))) return false;
+    if (current.notEqual) {
+        if (!current.notEqual.every(value => !valueSatisfies(value, prior))) return false;
+    }
+    return Boolean(current.lower || current.upper || current.notEqual);
 }
 
 function constraintsContradict(left: SimpleConstraint, right: SimpleConstraint): boolean {
@@ -288,6 +410,7 @@ function constraintsContradict(left: SimpleConstraint, right: SimpleConstraint):
 
 function valueSatisfies(value: number, constraint: SimpleConstraint): boolean {
     if (constraint.equal !== undefined && value !== constraint.equal) return false;
+    if (constraint.notEqual?.includes(value)) return false;
     if (constraint.lower) {
         if (value < constraint.lower.value) return false;
         if (value === constraint.lower.value && !constraint.lower.inclusive) return false;
@@ -319,6 +442,11 @@ function strongestUpper(left: Bound | undefined, right: Bound | undefined): Boun
     if (!left) return right;
     if (!right) return left;
     return upperAtLeastAsStrong(left, right) ? left : right;
+}
+
+function mergeNotEqual(left: number[] | undefined, right: number[] | undefined): number[] | undefined {
+    const values = Array.from(new Set([...(left ?? []), ...(right ?? [])])).sort((a, b) => a - b);
+    return values.length > 0 ? values : undefined;
 }
 
 function sideEffectsMayChangeGuardPrefix(

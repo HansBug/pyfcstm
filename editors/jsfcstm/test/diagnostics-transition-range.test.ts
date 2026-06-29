@@ -1027,6 +1027,42 @@ describe('diagnostics transition body ranges', () => {
         assert.equal(contradicts.data?.__rangeFallback, undefined);
     });
 
+    it('emits complex prior guard combo warnings through the real document diagnostics path', async () => {
+        const text = [
+            'def int x = 1;',
+            'def int y = 1;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B : [x > 0 && y > 0] + [x > 0];',
+            '    A -> B : [x > 0 && y > 0] + [x < 0];',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/combo-real-complex-guard-warning-ranges.fcstm');
+
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const implied = diagnostics.filter(item => item.code === 'W_COMBO_GUARD_PREFIX_IMPLIED');
+        const contradicts = diagnostics.filter(item => item.code === 'W_COMBO_GUARD_PREFIX_CONTRADICTS');
+
+        assert.equal(implied.length, 1, JSON.stringify(diagnostics.map(item => item.data)));
+        assert.equal(contradicts.length, 1, JSON.stringify(diagnostics.map(item => item.data)));
+        assert.equal(sliceByRange(text, implied[0].range), '[x > 0]');
+        assert.equal(sliceByRange(text, contradicts[0].range), '[x < 0]');
+        assert.equal(
+            sliceByRange(text, implied[0].relatedInformation![0].location.range),
+            '[x > 0 && y > 0]',
+        );
+        assert.equal(
+            sliceByRange(text, contradicts[0].relatedInformation![0].location.range),
+            '[x > 0 && y > 0]',
+        );
+        assert.equal(implied[0].data?.prior_term_text, '[x > 0 && y > 0]');
+        assert.equal(contradicts[0].data?.prior_term_text, '[x > 0 && y > 0]');
+        assert.equal(implied[0].data?.__rangeFallback, undefined);
+        assert.equal(contradicts[0].data?.__rangeFallback, undefined);
+    });
+
     it('emits duplicate combo event warnings through the real document diagnostics path', async () => {
         const text = [
             'state Root {',

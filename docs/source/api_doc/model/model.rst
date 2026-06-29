@@ -12,6 +12,13 @@ pyfcstm.model.model
 .. autodata:: __all__
 
 
+ComboOriginRef
+-----------------------------------------------------
+
+.. autoclass:: ComboOriginRef
+    :members: origin_id,term_index,role,consumes_term,term_text,transition_span,trigger_span,term_span,value_span,removal_span
+
+
 OperationStatement
 -----------------------------------------------------
 
@@ -50,7 +57,7 @@ Transition
 -----------------------------------------------------
 
 .. autoclass:: Transition
-    :members: parent,parent,to_ast_node,from_state,to_state,event,guard,effects,event_scope,is_forced,forced_origin,parent_ref
+    :members: parent,parent,to_ast_node,from_state,to_state,event,guard,effects,event_scope,is_forced,forced_origin,combo_origin_refs,combo_projection_key,combo_projection_order_key,combo_reuse_group_id,combo_priority_run_identity,combo_priority_run_index,parent_ref
 
 
 OnStage

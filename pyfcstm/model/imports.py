@@ -29,8 +29,9 @@ checks defined by PR79.
 
 import os
 import re
+import weakref
 from dataclasses import dataclass, fields, is_dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..diagnostics.sink import DiagnosticSink, _emit as _emit_or_raise
 from ..dsl import node as dsl_nodes
@@ -42,6 +43,160 @@ from ..utils.validate import ModelDiagnostic, ModelValidationError
 __all__ = [
     "assemble_state_machine_imports",
 ]
+
+
+_TRUSTED_GENERATED_COMBO_PSEUDO_NODE_IDS: Set[int] = set()
+_TRUSTED_GENERATED_COMBO_PSEUDO_NODE_REFS: Dict[int, Any] = {}
+_TRUSTED_GENERATED_COMBO_OWNER_NODE_REFS: Dict[int, Any] = {}
+_TRUSTED_GENERATED_COMBO_TRANSITION_NODE_REFS: Dict[int, Any] = {}
+
+
+def _ast_node_fingerprint(value: Any) -> Tuple[Any, ...]:
+    """Return a deep immutable fingerprint for exported AST trust checks."""
+    if value is dsl_nodes.INIT_STATE:
+        return "singleton", "INIT_STATE"
+    elif value is dsl_nodes.EXIT_STATE:
+        return "singleton", "EXIT_STATE"
+    elif value is dsl_nodes.ALL:
+        return "singleton", "ALL"
+    elif value is None or isinstance(value, (bool, int, float, str)):
+        return "scalar", value
+    elif isinstance(value, list):
+        return "list", tuple(_ast_node_fingerprint(item) for item in value)
+    elif isinstance(value, tuple):
+        return "tuple", tuple(_ast_node_fingerprint(item) for item in value)
+    elif isinstance(value, dict):
+        items = [
+            (_ast_node_fingerprint(key), _ast_node_fingerprint(item))
+            for key, item in value.items()
+        ]
+        return "dict", tuple(sorted(items, key=repr))
+    elif is_dataclass(value):
+        return (
+            "dataclass",
+            value.__class__.__module__,
+            value.__class__.__qualname__,
+            tuple(
+                (field.name, _ast_node_fingerprint(getattr(value, field.name)))
+                for field in fields(value)
+            ),
+        )
+    else:
+        return (
+            "object",
+            value.__class__.__module__,
+            value.__class__.__qualname__,
+            repr(value),
+        )
+
+
+def _forget_generated_combo_owner_node(node_id: int) -> None:
+    """Forget an exported combo owner AST node after it is garbage collected."""
+    _TRUSTED_GENERATED_COMBO_OWNER_NODE_REFS.pop(node_id, None)
+
+
+def _mark_generated_combo_owner_node(node: dsl_nodes.StateDefinition) -> None:
+    """Mark an exported combo owner AST node as trusted in this process."""
+    node_id = id(node)
+    _TRUSTED_GENERATED_COMBO_OWNER_NODE_REFS[node_id] = (
+        weakref.ref(
+            node,
+            lambda _ref, node_id=node_id: _forget_generated_combo_owner_node(node_id),
+        ),
+        _ast_node_fingerprint(node),
+    )
+
+
+def _is_trusted_generated_combo_owner_node(
+    node: dsl_nodes.StateDefinition,
+) -> bool:
+    """Return whether ``node`` is an unchanged process-local combo owner."""
+    node_id = id(node)
+    item = _TRUSTED_GENERATED_COMBO_OWNER_NODE_REFS.get(node_id)
+    if item is None:
+        return False
+    ref, fingerprint = item
+    return ref() is node and _ast_node_fingerprint(node) == fingerprint
+
+
+def _forget_generated_combo_pseudo_node(node_id: int) -> None:
+    """Forget an exported combo pseudo AST node after it is garbage collected."""
+    _TRUSTED_GENERATED_COMBO_PSEUDO_NODE_IDS.discard(node_id)
+    _TRUSTED_GENERATED_COMBO_PSEUDO_NODE_REFS.pop(node_id, None)
+
+
+def _mark_generated_combo_pseudo_node(
+    node: dsl_nodes.StateDefinition,
+    owner_node: dsl_nodes.StateDefinition,
+) -> None:
+    """Mark an exported combo pseudo AST node as trusted in this process."""
+    node_id = id(node)
+    _mark_generated_combo_owner_node(owner_node)
+    _TRUSTED_GENERATED_COMBO_PSEUDO_NODE_IDS.add(node_id)
+    _TRUSTED_GENERATED_COMBO_PSEUDO_NODE_REFS[node_id] = (
+        weakref.ref(
+            node,
+            lambda _ref, node_id=node_id: _forget_generated_combo_pseudo_node(node_id),
+        ),
+        _ast_node_fingerprint(node),
+        id(owner_node),
+    )
+
+
+def _is_trusted_generated_combo_pseudo_node(
+    node: dsl_nodes.StateDefinition,
+    owner_node: dsl_nodes.StateDefinition,
+) -> bool:
+    """Return whether ``node`` is a process-local trusted combo pseudo export."""
+    node_id = id(node)
+    item = _TRUSTED_GENERATED_COMBO_PSEUDO_NODE_REFS.get(node_id)
+    if item is None:
+        return False
+    ref, fingerprint, owner_id = item
+    return (
+        node_id in _TRUSTED_GENERATED_COMBO_PSEUDO_NODE_IDS
+        and ref() is node
+        and owner_id == id(owner_node)
+        and _ast_node_fingerprint(node) == fingerprint
+        and _is_trusted_generated_combo_owner_node(owner_node)
+    )
+
+
+def _forget_generated_combo_transition_node(node_id: int) -> None:
+    """Forget an exported combo transition AST node after it is collected."""
+    _TRUSTED_GENERATED_COMBO_TRANSITION_NODE_REFS.pop(node_id, None)
+
+
+def _mark_generated_combo_transition_node(
+    node: dsl_nodes.TransitionDefinition,
+    metadata: Any,
+) -> None:
+    """Mark an exported combo transition AST node with trusted metadata."""
+    node_id = id(node)
+    _TRUSTED_GENERATED_COMBO_TRANSITION_NODE_REFS[node_id] = (
+        weakref.ref(
+            node,
+            lambda _ref, node_id=node_id: _forget_generated_combo_transition_node(
+                node_id
+            ),
+        ),
+        _ast_node_fingerprint(node),
+        metadata,
+    )
+
+
+def _get_trusted_generated_combo_transition_metadata(
+    node: dsl_nodes.TransitionDefinition,
+) -> Any:
+    """Return trusted combo metadata for an unchanged exported transition."""
+    node_id = id(node)
+    item = _TRUSTED_GENERATED_COMBO_TRANSITION_NODE_REFS.get(node_id)
+    if item is None:
+        return None
+    ref, fingerprint, metadata = item
+    if ref() is node and _ast_node_fingerprint(node) == fingerprint:
+        return metadata
+    return None
 
 
 def _emit_import_diag(
@@ -175,7 +330,18 @@ def _clone_ast_node(node):
             field.name: _clone_ast_node(getattr(node, field.name))
             for field in fields(node)
         }
-        return node.__class__(**values)
+        cloned = node.__class__(**values)
+        if isinstance(node, dsl_nodes.TransitionDefinition):
+            metadata = _get_trusted_generated_combo_transition_metadata(node)
+            if metadata is not None:
+                _mark_generated_combo_transition_node(cloned, metadata)
+        if isinstance(node, dsl_nodes.StateDefinition):
+            for original_substate, cloned_substate in zip(
+                node.substates, cloned.substates
+            ):
+                if _is_trusted_generated_combo_pseudo_node(original_substate, node):
+                    _mark_generated_combo_pseudo_node(cloned_substate, cloned)
+        return cloned
     else:
         return node
 

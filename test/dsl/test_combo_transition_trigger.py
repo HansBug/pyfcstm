@@ -12,7 +12,6 @@ from pyfcstm.dsl.node import (
     Name,
 )
 from pyfcstm.model import parse_dsl_node_to_state_machine
-from pyfcstm.utils import ModelValidationError
 from pyfcstm.utils.validate import Span
 
 
@@ -222,24 +221,20 @@ class TestComboTransitionTriggerParsing:
         with pytest.raises(GrammarParseError):
             parse_with_grammar_entry(source, entry_name="transition_definition")
 
-    def test_combo_model_build_fails_until_expansion_support(self):
+    def test_combo_model_build_expands_multi_term_trigger(self):
         program = parse_with_grammar_entry(
             "state Root { state S1; state S2; [*] -> S1; S1 -> S2 :: E1 + E2; }",
             entry_name="state_machine_dsl",
         )
 
-        with pytest.raises(ModelValidationError) as exc_info:
-            parse_dsl_node_to_state_machine(program)
+        model = parse_dsl_node_to_state_machine(program)
 
-        diagnostic = next(
-            diag
-            for diag in exc_info.value.diagnostics
-            if diag.code == "E_COMBO_TRIGGER_NOT_EXPANDED"
+        assert any(state.is_pseudo for state in model.root_state.substates.values())
+        assert all(
+            transition.combo_origin_refs
+            for transition in model.root_state.transitions
+            if transition.from_state != INIT_STATE
         )
-        assert diagnostic.refs == {
-            "state_path": "Root",
-            "trigger": ":: E1 + E2",
-        }
 
     def test_pure_guard_alias_builds_existing_model_guard(self):
         program = parse_with_grammar_entry(

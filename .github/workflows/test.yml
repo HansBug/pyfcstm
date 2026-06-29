@@ -39,6 +39,8 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
           HEAD_COMMIT_MSG: ${{ github.event.head_commit.message }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           DISPATCH_TEMPLATE_SUITES: ${{ github.event.inputs.template_suites }}
           DISPATCH_SKIP_TEMPLATE_SUITES: ${{ github.event.inputs.skip_template_suites }}
         shell: bash
@@ -58,8 +60,28 @@ jobs:
 
           if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
             printf '%s' "${HEAD_COMMIT_MSG:-}" > "$message_file"
-            if [ -z "${BEFORE_SHA:-}" ] || [ "${BEFORE_SHA}" = "$zero_sha" ]; then
-              echo "Push base SHA is unavailable; failing closed to all template full suites."
+            ref_name="${REF_NAME:-}"
+            default_branch="${DEFAULT_BRANCH:-}"
+            if [ -z "${HEAD_SHA:-}" ] || ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+              echo "Push head SHA is unavailable; failing closed to all template full suites."
+              include_args=(--include-suites all)
+            elif [ -z "$default_branch" ]; then
+              echo "Default branch is unavailable; failing closed to all template full suites."
+              include_args=(--include-suites all)
+            elif [ -n "$ref_name" ] && [ "$ref_name" != "$default_branch" ]; then
+              echo "Push on non-default ref ${ref_name}; detecting suites from merge-base with ${default_branch}."
+              if git fetch --no-tags --prune origin "+refs/heads/${default_branch}:refs/remotes/origin/${default_branch}" \
+                && merge_base="$(git merge-base "origin/${default_branch}" "${HEAD_SHA}")" \
+                && [ -n "$merge_base" ] \
+                && git diff --name-only "$merge_base" "${HEAD_SHA}" > "$changed_file"; then
+                echo "Detected changed files between merge-base ${merge_base} and ${HEAD_SHA}."
+              else
+                echo "Could not diff ${default_branch} merge-base..${HEAD_SHA}; failing closed to all template full suites."
+                : > "$changed_file"
+                include_args=(--include-suites all)
+              fi
+            elif [ -z "${BEFORE_SHA:-}" ] || [ "${BEFORE_SHA}" = "$zero_sha" ]; then
+              echo "Default-branch push base SHA is unavailable; failing closed to all template full suites."
               include_args=(--include-suites all)
             elif git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null && git diff --name-only "${BEFORE_SHA}" "${HEAD_SHA}" > "$changed_file"; then
               echo "Detected changed files between ${BEFORE_SHA} and ${HEAD_SHA}."

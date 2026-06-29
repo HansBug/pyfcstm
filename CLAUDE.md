@@ -196,8 +196,11 @@ In GitHub Actions, `workflow_dispatch` accepts `template_suites` and `skip_templ
 positive `template_suites` value fails closed to `all`; a skip-only dispatch cannot narrow coverage to an empty matrix.
 The `Code Test` workflow intentionally avoids workflow-level `on.push.paths` / `paths-ignore` gating: every push enters
 the workflow, and suite selection happens inside detector, representative, full-suite, and aggregate-gate jobs so branch
-protection does not get stuck on path-filtered pending checks. Use the existing commit-message skip tokens for truly
-docs-only pushes that should bypass expensive jobs.
+protection does not get stuck on path-filtered pending checks. On non-default branch pushes, detector paths are computed
+from the merge-base with the repository default branch to the pushed head, not merely from the last pushed commit range;
+that keeps the latest required check covering the whole branch diff even after a later docs-only follow-up commit.
+Default-branch pushes still use the GitHub push event's `before..sha` range, and any diff lookup failure fails closed to
+`all`. Use the existing commit-message skip tokens for truly docs-only pushes that should bypass expensive jobs.
 The stable aggregate check is named `template-suite-gate`; branch protection should depend on that gate rather than on
 per-suite dynamic job names such as `Template full (c)`. Code-test skip tokens skip the expensive unittest/
 representative/full jobs only after detector success; unknown template labels, malformed detector output, missing detector

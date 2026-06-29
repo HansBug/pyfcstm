@@ -53,8 +53,10 @@ from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
 from .imports import (
     assemble_state_machine_imports,
+    _get_trusted_generated_combo_transition_metadata,
     _is_trusted_generated_combo_pseudo_node,
     _mark_generated_combo_pseudo_node,
+    _mark_generated_combo_transition_node,
 )
 from .plantuml import PlantUMLOptions, PlantUMLOptionsInput, format_state_name
 from ..diagnostics.sink import DiagnosticSink
@@ -128,7 +130,9 @@ def _is_exported_combo_pseudo_node(
     """Return whether an AST node is an exported generated combo pseudo state."""
     if not node.is_pseudo or not node.name.startswith(_COMBO_STATE_PREFIX):
         return False
-    return _is_trusted_generated_combo_pseudo_node(node)
+    if owner_node is None:
+        return False
+    return _is_trusted_generated_combo_pseudo_node(node, owner_node)
 
 
 def _combo_payload_digest(payload: str) -> str:
@@ -229,6 +233,18 @@ class _ComboAlternative:
     origin_id: str
     declaration_index: int
     semantic_duplicate_discriminator: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class _TrustedComboTransitionMetadata:
+    """Process-local metadata for generated combo transitions exported to AST."""
+
+    origin_refs: Tuple[ComboOriginRef, ...]
+    projection_key: Tuple[object, ...]
+    projection_order_key: Tuple[object, ...]
+    reuse_group_id: str
+    priority_run_identity: Tuple[str, Optional[int]]
+    priority_run_index: int
 
 
 @dataclass
@@ -1563,7 +1579,7 @@ class State(AstExportable, PlantUMLExportable):
         else:
             event_id = None
 
-        return dsl_nodes.TransitionDefinition(
+        node = dsl_nodes.TransitionDefinition(
             from_state=transition.from_state,
             to_state=transition.to_state,
             event_id=event_id,
@@ -1572,6 +1588,19 @@ class State(AstExportable, PlantUMLExportable):
             else None,
             post_operations=[item.to_ast_node() for item in transition.effects],
         )
+        if transition.combo_origin_refs:
+            _mark_generated_combo_transition_node(
+                node,
+                _TrustedComboTransitionMetadata(
+                    origin_refs=transition.combo_origin_refs,
+                    projection_key=transition.combo_projection_key,
+                    projection_order_key=transition.combo_projection_order_key,
+                    reuse_group_id=transition.combo_reuse_group_id,
+                    priority_run_identity=transition.combo_priority_run_identity,
+                    priority_run_index=transition.combo_priority_run_index,
+                ),
+            )
+        return node
 
     def to_transition_ast_node(
         self, transition: Transition
@@ -1593,13 +1622,14 @@ class State(AstExportable, PlantUMLExportable):
         :return: A state definition AST node
         :rtype: dsl_nodes.StateDefinition
         """
+        substate_nodes = [
+            substate.to_ast_node() for _, substate in self.substates.items()
+        ]
         node = dsl_nodes.StateDefinition(
             name=self.name,
             extra_name=self.extra_name,
             events=[event.to_ast_node() for _, event in self.events.items()],
-            substates=[
-                substate.to_ast_node() for _, substate in self.substates.items()
-            ],
+            substates=substate_nodes,
             transitions=[
                 self.to_transition_ast_node(trans) for trans in self.transitions
             ],
@@ -1609,12 +1639,13 @@ class State(AstExportable, PlantUMLExportable):
             during_aspects=[item.to_ast_node() for item in self.on_during_aspects],
             is_pseudo=bool(self.is_pseudo),
         )
-        if (
-            self.is_pseudo
-            and self.name.startswith(_COMBO_STATE_PREFIX)
-            and getattr(self, "_generated_combo_pseudo", False)
-        ):
-            _mark_generated_combo_pseudo_node(node)
+        for substate, substate_node in zip(self.substates.values(), substate_nodes):
+            if (
+                substate.is_pseudo
+                and substate.name.startswith(_COMBO_STATE_PREFIX)
+                and getattr(substate, "_generated_combo_pseudo", False)
+            ):
+                _mark_generated_combo_pseudo_node(substate_node, node)
         return node
 
     def to_plantuml(
@@ -4114,6 +4145,9 @@ def parse_dsl_node_to_state_machine(
 
             guard = _parse_transition_guard(transnode, transnode.condition_expr)
             post_operations = _parse_transition_effects(transnode)
+            trusted_combo_metadata = _get_trusted_generated_combo_transition_metadata(
+                transnode
+            )
             return Transition(
                 from_state=from_state,
                 to_state=to_state,
@@ -4121,6 +4155,36 @@ def parse_dsl_node_to_state_machine(
                 guard=guard,
                 effects=post_operations,
                 event_scope=event_scope,
+                combo_origin_refs=(
+                    trusted_combo_metadata.origin_refs
+                    if trusted_combo_metadata is not None
+                    else ()
+                ),
+                combo_projection_key=(
+                    trusted_combo_metadata.projection_key
+                    if trusted_combo_metadata is not None
+                    else None
+                ),
+                combo_projection_order_key=(
+                    trusted_combo_metadata.projection_order_key
+                    if trusted_combo_metadata is not None
+                    else None
+                ),
+                combo_reuse_group_id=(
+                    trusted_combo_metadata.reuse_group_id
+                    if trusted_combo_metadata is not None
+                    else None
+                ),
+                combo_priority_run_identity=(
+                    trusted_combo_metadata.priority_run_identity
+                    if trusted_combo_metadata is not None
+                    else None
+                ),
+                combo_priority_run_index=(
+                    trusted_combo_metadata.priority_run_index
+                    if trusted_combo_metadata is not None
+                    else None
+                ),
                 _span=_node_span(transnode),
             )
 

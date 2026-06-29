@@ -550,6 +550,56 @@ class TestComboModelExpansion:
         ] == [
             item.name for item in model.root_state.substates.values() if item.is_pseudo
         ]
+        assert [
+            (
+                item.from_state,
+                item.to_state,
+                len(item.combo_origin_refs),
+                item.combo_projection_key,
+                item.combo_projection_order_key,
+            )
+            for item in second_round_tripped.root_state.transitions
+            if item.from_state != "INIT_STATE"
+        ] == [
+            (
+                item.from_state,
+                item.to_state,
+                len(item.combo_origin_refs),
+                item.combo_projection_key,
+                item.combo_projection_order_key,
+            )
+            for item in model.root_state.transitions
+            if item.from_state != "INIT_STATE"
+        ]
+
+    def test_mutated_trusted_combo_ast_export_is_rejected(self):
+        model = _build_model(
+            """
+            state Root {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B :: E1 + E2;
+            }
+            """
+        )
+        program = model.to_ast_node()
+        pseudo = next(
+            state
+            for state in program.root_state.substates
+            if state.name.startswith("__combo_")
+        )
+        for transition in program.root_state.transitions:
+            if transition.from_state == pseudo.name:
+                transition.to_state = "A"
+                break
+
+        with pytest.raises(ModelValidationError) as exc_info:
+            parse_dsl_node_to_state_machine(program)
+        assert any(
+            diag.code == "E_COMBO_RESERVED_STATE_NAME"
+            for diag in exc_info.value.diagnostics
+        )
 
     def test_generated_combo_pseudo_text_export_uses_reserved_prefix(self):
         model = _build_model(

@@ -19,6 +19,9 @@ interface ComboTerm {
     transition: Transition;
 }
 
+// Solver-backed combo guard warnings are Python-only and consumed through
+// inspect JSON. Keep jsfcstm local analysis limited to structural combo
+// warnings that do not require Z3 or an approximate mini solver.
 export function collectComboWarnings(machine: StateMachine | null | undefined): ModelDiagnosticJson[] {
     if (!machine) return [];
     const termsByOrigin = comboTermsByOrigin(machine);

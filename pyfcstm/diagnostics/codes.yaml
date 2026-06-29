@@ -698,7 +698,7 @@ W_COMBO_GUARD_PREFIX_IMPLIED:
     prior_term_index:
       type: int
       required: true
-      description: Zero-based index of the nearest prior guard term used as related information.
+      description: Zero-based index of the earliest prior guard term that makes the prefix implication or contradiction decisive.
     term_text:
       type: str
       required: true
@@ -774,7 +774,7 @@ W_COMBO_GUARD_PREFIX_CONTRADICTS:
     prior_term_index:
       type: int
       required: true
-      description: Zero-based index of the nearest prior guard term used as related information.
+      description: Zero-based index of the earliest prior guard term that makes the prefix implication or contradiction decisive.
     term_text:
       type: str
       required: true

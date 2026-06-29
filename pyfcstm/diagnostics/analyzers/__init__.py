@@ -12,6 +12,8 @@ pipeline.
 
    * - Module
      - Responsibility
+   * - :mod:`pyfcstm.diagnostics.analyzers.combo`
+     - Combo-trigger provenance diagnostics.
    * - :mod:`pyfcstm.diagnostics.analyzers.const_fold`
      - Literal-only constant-folding diagnostics.
    * - :mod:`pyfcstm.diagnostics.analyzers.numeric`

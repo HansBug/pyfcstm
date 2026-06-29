@@ -2,10 +2,12 @@
 
 This module analyzes generated combo-trigger edges while reporting every
 diagnostic against the user-authored combo trigger term that produced the
-generated edge. It intentionally stays conservative around side effects:
-prefix-sensitive guard warnings are skipped whenever lifecycle actions,
-transition effects, or opaque actions may write a variable read by the
-guard prefix.
+generated edge. Solver-backed guard diagnostics are Python-only by design;
+jsfcstm consumes them from inspect JSON instead of re-implementing local
+solver approximations. The analyzer intentionally stays conservative around
+side effects: prefix-sensitive guard warnings are skipped whenever lifecycle
+actions, transition effects, or opaque actions may write a variable read by
+the guard prefix.
 
 The module contains:
 

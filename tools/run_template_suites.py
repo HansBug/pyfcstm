@@ -357,7 +357,7 @@ def _selected_suites_from_inputs(
     skip_suites: Optional[str],
 ) -> Mapping[str, object]:
     """
-    Resolve selected suites through the PR-1 detector semantics.
+    Resolve selected suites through the template suite detector semantics.
 
     :param changed_files: Changed repository paths.
     :type changed_files: collections.abc.Sequence[str]
@@ -926,7 +926,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             run_native_toolchain=run_native,
         )
     except (TemplateSuiteDetectionError, TemplateSuiteRunnerError, ValueError) as err:
-        # TemplateSuiteDetectionError: PR-1 detector rejected labels/suites/events.
+        # TemplateSuiteDetectionError: detector rejected labels, suites, or events.
         # TemplateSuiteRunnerError: selected suites cannot be mapped to pytest.
         # ValueError: shlex rejected malformed --pytest-args quoting.
         parser.exit(2, "run_template_suites: {0}\n".format(err))

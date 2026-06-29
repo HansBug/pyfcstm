@@ -186,9 +186,11 @@ prose or a Markdown code block is still parsed as an instruction, so use neutral
 documenting labels without intending to select a suite.
 
 Path-detected suites are protected. `PYFCSTM_SKIP_TEMPLATE_SUITES` and `[skip-tpl:*]` may remove only manually selected
-dynamic suites; they cannot remove path-detected suites and cannot disable fixed/default jobs. Unknown labels or suite
-tokens are hard failures, not warnings. The current JSON schema version is `template-suite-detector/v1`; renaming or
-removing fields requires a new schema version.
+dynamic suites; they cannot remove path-detected suites and cannot disable fixed/default jobs. The detector is
+intentionally conservative across C-family wrapper dependencies: changes under `templates/c/**` select both `c` and
+`cpp`, while changes under `templates/c_poll/**` select both `c_poll` and `cpp_poll`. Unknown labels or suite tokens
+are hard failures, not warnings. The current JSON schema version is `template-suite-detector/v1`; renaming or removing
+fields requires a new schema version.
 
 In GitHub Actions, `workflow_dispatch` accepts `template_suites` and `skip_template_suites` inputs. A dispatch without a
 positive `template_suites` value fails closed to `all`; a skip-only dispatch cannot narrow coverage to an empty matrix.

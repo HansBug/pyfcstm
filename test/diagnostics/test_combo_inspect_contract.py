@@ -124,12 +124,15 @@ def test_combo_duplicate_event_warning_points_to_second_term_and_first_related_t
 @pytest.mark.parametrize(
     ("guard", "code", "expected"),
     [
+        ("[x > 0 || x <= 0]", "W_COMBO_GUARD_CONST_TRUE", True),
+        ("[x > 0 && x <= 0]", "W_COMBO_GUARD_CONST_FALSE", False),
         ("[(1 + 2) == 3]", "W_COMBO_GUARD_CONST_TRUE", True),
         ("[(1 + 2) == 4]", "W_COMBO_GUARD_CONST_FALSE", False),
     ],
 )
 def test_combo_guard_const_warning_points_to_original_guard_term(guard, code, expected):
     source = f"""
+    def int x = 0;
     state Root {{
         state A;
         state B;

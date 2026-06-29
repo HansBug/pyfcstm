@@ -544,6 +544,7 @@ W_COMBO_DUPLICATE_EVENT:
       - "Do not silently delete the repeated event; the explicit pseudo-chain shape may be intentional."
   emit_tier: static_pipeline
   example_dsl: |
+    def int x = 0;
     state Root {
         state A;
         state B;
@@ -554,11 +555,11 @@ W_COMBO_DUPLICATE_EVENT:
 W_COMBO_GUARD_CONST_TRUE:
   severity: warning
   span_object: guard_expression
-  capability: const_fold
+  capability: requires_solver
   description: >-
-    A guard term inside a combo trigger folds to ``true``. The term is
-    redundant for the generated pseudo chain, and the primary span points at
-    the original bracketed guard term.
+    SMT proves that a guard term inside a combo trigger is always ``true``.
+    The term is redundant for the generated pseudo chain, and the primary
+    span points at the original bracketed guard term.
   refs:
     origin_id:
       type: str
@@ -575,7 +576,7 @@ W_COMBO_GUARD_CONST_TRUE:
     folded_value:
       type: bool
       required: true
-      description: Constant-folded guard value, always ``true`` for this code.
+      description: Solver-proven guard value, always ``true`` for this code.
     transition_span:
       type: Span
       required: false
@@ -594,8 +595,8 @@ W_COMBO_GUARD_CONST_TRUE:
       description: Source span of the guard expression inside the brackets.
   for_llm:
     summary: >-
-      A combo guard term is statically true and does not constrain the combo
-      chain.
+      SMT proves that a combo guard term is always true and does not constrain
+      the combo chain.
     recommended_actions:
       - kind: remove_guard_term
         target: transition
@@ -607,20 +608,21 @@ W_COMBO_GUARD_CONST_TRUE:
       - "Do not add a dummy variable dependency only to silence the diagnostic."
   emit_tier: static_pipeline
   example_dsl: |
+    def int x = 0;
     state Root {
         state A;
         state B;
         [*] -> A;
-        A -> B :: E1 + [(1 + 2) == 3] + E2;
+        A -> B :: E1 + [x > 0 || x <= 0] + E2;
     }
 
 W_COMBO_GUARD_CONST_FALSE:
   severity: warning
   span_object: guard_expression
-  capability: const_fold
+  capability: requires_solver
   description: >-
-    A guard term inside a combo trigger folds to ``false``. Any combo branch
-    that must pass through this term can never complete.
+    SMT proves that a guard term inside a combo trigger is always ``false``.
+    Any combo branch that must pass through this term can never complete.
   refs:
     origin_id:
       type: str
@@ -637,7 +639,7 @@ W_COMBO_GUARD_CONST_FALSE:
     folded_value:
       type: bool
       required: true
-      description: Constant-folded guard value, always ``false`` for this code.
+      description: Solver-proven guard value, always ``false`` for this code.
     transition_span:
       type: Span
       required: false
@@ -656,8 +658,8 @@ W_COMBO_GUARD_CONST_FALSE:
       description: Source span of the guard expression inside the brackets.
   for_llm:
     summary: >-
-      A combo guard term is statically false, so the generated combo branch
-      cannot complete past that term.
+      SMT proves that a combo guard term is always false, so the generated
+      combo branch cannot complete past that term.
     recommended_actions:
       - kind: fix_guard_term
         target: transition
@@ -669,11 +671,12 @@ W_COMBO_GUARD_CONST_FALSE:
       - "Do not silently remove the guard term — that would change the combo semantics."
   emit_tier: static_pipeline
   example_dsl: |
+    def int x = 0;
     state Root {
         state A;
         state B;
         [*] -> A;
-        A -> B :: E1 + [(1 + 2) == 4] + E2;
+        A -> B :: E1 + [x > 0 && x <= 0] + E2;
     }
 
 W_COMBO_GUARD_PREFIX_IMPLIED:

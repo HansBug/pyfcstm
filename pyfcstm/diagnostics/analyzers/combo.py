@@ -22,7 +22,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from ...utils.validate import ModelDiagnostic, Span
-from .const_fold import fold_condition_expression
 from .use_def import collect_expr_variables
 
 if TYPE_CHECKING:  # pragma: no cover - import-time type hints only.
@@ -108,7 +107,7 @@ def collect_combo_warnings(machine: Optional["StateMachine"]) -> List[ModelDiagn
     diagnostics: List[ModelDiagnostic] = []
     for terms in terms_by_origin.values():
         diagnostics.extend(_duplicate_event_warnings(terms))
-        diagnostics.extend(_guard_const_warnings(terms))
+        diagnostics.extend(_guard_const_warnings(machine, terms))
         diagnostics.extend(_guard_prefix_warnings(machine, terms))
     return diagnostics
 
@@ -164,33 +163,73 @@ def _duplicate_event_warnings(terms: Sequence[_ComboTerm]) -> List[ModelDiagnost
     return diagnostics
 
 
-def _guard_const_warnings(terms: Sequence[_ComboTerm]) -> List[ModelDiagnostic]:
+def _guard_const_warnings(
+    machine: "StateMachine",
+    terms: Sequence[_ComboTerm],
+) -> List[ModelDiagnostic]:
     diagnostics: List[ModelDiagnostic] = []
     for term in terms:
         if not term.is_guard or term.guard is None:
             continue
-        folded = fold_condition_expression(term.guard)
-        if folded not in {True, False}:
-            continue
-        code = "W_COMBO_GUARD_CONST_TRUE" if folded else "W_COMBO_GUARD_CONST_FALSE"
-        label = "true" if folded else "false"
-        diagnostics.append(ModelDiagnostic(
-            code=code,
-            severity="warning",
-            message=f"Combo guard term {term.term_text!r} is statically {label}.",
-            span=term.term_span,
-            refs={
-                "origin_id": term.origin_id,
-                "term_index": term.index,
-                "term_text": term.term_text,
-                "folded_value": folded,
-                "transition_span": term.transition_span,
-                "trigger_span": term.trigger_span,
-                "term_span": term.term_span,
-                "value_span": term.value_span,
-            },
-        ))
+        diagnostic = _guard_const_diagnostic(machine, term)
+        if diagnostic is not None:
+            diagnostics.append(diagnostic)
     return diagnostics
+
+
+def _guard_const_diagnostic(
+    machine: "StateMachine",
+    term: _ComboTerm,
+) -> Optional[ModelDiagnostic]:
+    import z3
+
+    from ...solver.expr import create_z3_vars_from_models, expr_to_z3
+
+    z3_vars = create_z3_vars_from_models(machine)
+    try:
+        guard_z3 = expr_to_z3(term.guard, z3_vars)
+    except (ValueError, NotImplementedError, z3.Z3Exception):
+        # ValueError: unsupported expression shape or missing variable in the
+        # solver conversion; NotImplementedError: unsupported math function;
+        # Z3Exception: backend rejects an otherwise parsed expression. Any of
+        # these means the conservative static warning should be skipped.
+        return None
+
+    if _z3_unsat(guard_z3):
+        return _make_guard_const_diagnostic(term, False)
+    try:
+        guard_negation = z3.Not(guard_z3)
+    except z3.Z3Exception:
+        # Z3Exception: the converted expression is not a boolean guard from
+        # Z3's point of view. Treat it as unsupported and skip the warning.
+        return None
+    if _z3_unsat(guard_negation):
+        return _make_guard_const_diagnostic(term, True)
+    return None
+
+
+def _make_guard_const_diagnostic(
+    term: _ComboTerm,
+    value: bool,
+) -> ModelDiagnostic:
+    label = "true" if value else "false"
+    code = "W_COMBO_GUARD_CONST_TRUE" if value else "W_COMBO_GUARD_CONST_FALSE"
+    return ModelDiagnostic(
+        code=code,
+        severity="warning",
+        message=f"Combo guard term {term.term_text!r} is proven {label}.",
+        span=term.term_span,
+        refs={
+            "origin_id": term.origin_id,
+            "term_index": term.index,
+            "term_text": term.term_text,
+            "folded_value": value,
+            "transition_span": term.transition_span,
+            "trigger_span": term.trigger_span,
+            "term_span": term.term_span,
+            "value_span": term.value_span,
+        },
+    )
 
 
 def _guard_prefix_warnings(

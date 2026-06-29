@@ -632,7 +632,7 @@ state Root {
                     .filter(item => String(item.code).startsWith('W_COMBO'))
                     .map(item => item.code)
                     .sort(),
-                ['W_COMBO_DUPLICATE_EVENT', 'W_COMBO_GUARD_PREFIX_IMPLIED'],
+                ['W_COMBO_DUPLICATE_EVENT'],
             );
         });
 

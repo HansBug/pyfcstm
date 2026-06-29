@@ -63,10 +63,6 @@ export const FCSTM_DIAGNOSTIC_CODES = {
     unreferencedVar: 'W_UNREFERENCED_VAR',
     effectSelfAssign: 'W_EFFECT_SELF_ASSIGN',
     comboDuplicateEvent: 'W_COMBO_DUPLICATE_EVENT',
-    comboGuardConstTrue: 'W_COMBO_GUARD_CONST_TRUE',
-    comboGuardConstFalse: 'W_COMBO_GUARD_CONST_FALSE',
-    comboGuardPrefixImplied: 'W_COMBO_GUARD_PREFIX_IMPLIED',
-    comboGuardPrefixContradicts: 'W_COMBO_GUARD_PREFIX_CONTRADICTS',
 } as const;
 
 

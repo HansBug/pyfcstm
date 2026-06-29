@@ -986,166 +986,29 @@ describe('diagnostics transition body ranges', () => {
         );
     });
 
-    it('emits combo guard warnings through the real document diagnostics path', async () => {
+    it('does not emit solver-dependent combo guard warnings on the jsfcstm document diagnostics path', async () => {
         const text = [
             'def int x = 1;',
             'state Root {',
             '    state A;',
             '    state B;',
             '    [*] -> A;',
-            '    A -> B : [(1 + 2) == 3] + [(1 + 2) == 4];',
+            '    A -> B : [x > 0 || x <= 0] + [x > 0 && x <= 0];',
             '    A -> B : [x > 0] + [x > -1];',
             '    A -> B : [x > 0] + [x < 0];',
             '}',
         ].join('\n');
-        const document = createDocument(text, '/tmp/combo-real-guard-warning-ranges.fcstm');
+        const document = createDocument(text, '/tmp/combo-js-solver-warning-boundary.fcstm');
 
         const diagnostics = await packageModule.collectDocumentDiagnostics(document);
-        const byCode = new Map(diagnostics.map(item => [item.code, item]));
-        const constTrue = byCode.get('W_COMBO_GUARD_CONST_TRUE');
-        const constFalse = byCode.get('W_COMBO_GUARD_CONST_FALSE');
-        const implied = byCode.get('W_COMBO_GUARD_PREFIX_IMPLIED');
-        const contradicts = byCode.get('W_COMBO_GUARD_PREFIX_CONTRADICTS');
+        const comboGuardDiagnostics = diagnostics.filter(item => [
+            'W_COMBO_GUARD_CONST_TRUE',
+            'W_COMBO_GUARD_CONST_FALSE',
+            'W_COMBO_GUARD_PREFIX_IMPLIED',
+            'W_COMBO_GUARD_PREFIX_CONTRADICTS',
+        ].includes(String(item.code)));
 
-        assert.ok(constTrue, JSON.stringify(diagnostics.map(item => item.code)));
-        assert.ok(constFalse, JSON.stringify(diagnostics.map(item => item.code)));
-        assert.ok(implied, JSON.stringify(diagnostics.map(item => item.code)));
-        assert.ok(contradicts, JSON.stringify(diagnostics.map(item => item.code)));
-        assert.equal(sliceByRange(text, constTrue.range), '[(1 + 2) == 3]');
-        assert.equal(sliceByRange(text, constFalse.range), '[(1 + 2) == 4]');
-        assert.equal(sliceByRange(text, implied.range), '[x > -1]');
-        assert.equal(sliceByRange(text, contradicts.range), '[x < 0]');
-        assert.equal(
-            sliceByRange(text, implied.relatedInformation![0].location.range),
-            '[x > 0]',
-        );
-        assert.equal(
-            sliceByRange(text, contradicts.relatedInformation![0].location.range),
-            '[x > 0]',
-        );
-        assert.equal(implied.data?.__rangeFallback, undefined);
-        assert.equal(contradicts.data?.__rangeFallback, undefined);
-    });
-
-    it('emits complex prior guard combo warnings through the real document diagnostics path', async () => {
-        const text = [
-            'def int x = 1;',
-            'def int y = 1;',
-            'state Root {',
-            '    state A;',
-            '    state B;',
-            '    [*] -> A;',
-            '    A -> B : [x > 0 && y > 0] + [x > 0];',
-            '    A -> B : [x > 0 && y > 0] + [x < 0];',
-            '    A -> B : [x >= 0 && x <= 0] + [x != 0];',
-            '    A -> B : [x == 0] + [x == 1];',
-            '    A -> B : [x > 0] + [x > 0 || y > 0];',
-            '    A -> B : [x > 0] + [not (x > 0)];',
-            '}',
-        ].join('\n');
-        const document = createDocument(text, '/tmp/combo-real-complex-guard-warning-ranges.fcstm');
-
-        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
-        const implied = diagnostics.filter(item => item.code === 'W_COMBO_GUARD_PREFIX_IMPLIED');
-        const contradicts = diagnostics.filter(item => item.code === 'W_COMBO_GUARD_PREFIX_CONTRADICTS');
-
-        assert.equal(implied.length, 2, JSON.stringify(diagnostics.map(item => item.data)));
-        assert.equal(contradicts.length, 4, JSON.stringify(diagnostics.map(item => item.data)));
-
-        const complexImplied = implied.find(item => item.data?.term_text === '[x > 0]');
-        const orImplied = implied.find(item => item.data?.term_text === '[x > 0 || y > 0]');
-        const complexContradiction = contradicts.find(item => item.data?.term_text === '[x < 0]');
-        const singletonContradiction = contradicts.find(item => item.data?.term_text === '[x != 0]');
-        const equalityContradiction = contradicts.find(item => item.data?.term_text === '[x == 1]');
-        const notContradiction = contradicts.find(item => item.data?.term_text === '[!(x > 0)]');
-
-        assert.ok(complexImplied, JSON.stringify(implied.map(item => item.data)));
-        assert.ok(orImplied, JSON.stringify(implied.map(item => item.data)));
-        assert.ok(complexContradiction, JSON.stringify(contradicts.map(item => item.data)));
-        assert.ok(singletonContradiction, JSON.stringify(contradicts.map(item => item.data)));
-        assert.ok(equalityContradiction, JSON.stringify(contradicts.map(item => item.data)));
-        assert.ok(notContradiction, JSON.stringify(contradicts.map(item => item.data)));
-
-        assert.equal(sliceByRange(text, complexImplied.range), '[x > 0]');
-        assert.equal(sliceByRange(text, orImplied.range), '[x > 0 || y > 0]');
-        assert.equal(sliceByRange(text, complexContradiction.range), '[x < 0]');
-        assert.equal(sliceByRange(text, singletonContradiction.range), '[x != 0]');
-        assert.equal(sliceByRange(text, equalityContradiction.range), '[x == 1]');
-        assert.equal(sliceByRange(text, notContradiction.range), '[not (x > 0)]');
-        assert.equal(notContradiction.data?.term_text, '[!(x > 0)]');
-
-        assert.equal(
-            sliceByRange(text, complexImplied.relatedInformation![0].location.range),
-            '[x > 0 && y > 0]',
-        );
-        assert.equal(
-            sliceByRange(text, orImplied.relatedInformation![0].location.range),
-            '[x > 0]',
-        );
-        assert.equal(
-            sliceByRange(text, complexContradiction.relatedInformation![0].location.range),
-            '[x > 0 && y > 0]',
-        );
-        assert.equal(
-            sliceByRange(text, singletonContradiction.relatedInformation![0].location.range),
-            '[x >= 0 && x <= 0]',
-        );
-        assert.equal(
-            sliceByRange(text, equalityContradiction.relatedInformation![0].location.range),
-            '[x == 0]',
-        );
-        assert.equal(
-            sliceByRange(text, notContradiction.relatedInformation![0].location.range),
-            '[x > 0]',
-        );
-        assert.equal(complexImplied.data?.prior_term_text, '[x > 0 && y > 0]');
-        assert.equal(orImplied.data?.prior_term_text, '[x > 0]');
-        assert.equal(complexContradiction.data?.prior_term_text, '[x > 0 && y > 0]');
-        assert.equal(singletonContradiction.data?.prior_term_text, '[x >= 0 && x <= 0]');
-        assert.equal(equalityContradiction.data?.prior_term_text, '[x == 0]');
-        assert.equal(notContradiction.data?.prior_term_text, '[x > 0]');
-        for (const diagnostic of [...implied, ...contradicts]) {
-            assert.equal(diagnostic.data?.__rangeFallback, undefined);
-        }
-    });
-
-    it('keeps integer and float combo guard prefix warnings aligned with variable domains', async () => {
-        const cases = [{
-            declaration: 'def int x = 0;',
-            filePath: '/tmp/combo-int-domain-guard-warning-ranges.fcstm',
-            expectedCode: 'W_COMBO_GUARD_PREFIX_CONTRADICTS',
-        }, {
-            declaration: 'def float x = 0.0;',
-            filePath: '/tmp/combo-float-domain-guard-warning-ranges.fcstm',
-            expectedCode: 'W_COMBO_GUARD_PREFIX_IMPLIED',
-        }];
-
-        for (const item of cases) {
-            const text = [
-                item.declaration,
-                'state Root {',
-                '    state A;',
-                '    state B;',
-                '    [*] -> A;',
-                '    A -> B : [x > 0 && x < 1] + [x > 0];',
-                '}',
-            ].join('\n');
-            const document = createDocument(text, item.filePath);
-            const diagnostics = await packageModule.collectDocumentDiagnostics(document);
-            const comboGuardDiagnostics = diagnostics.filter(diag => String(diag.code).startsWith('W_COMBO_GUARD_PREFIX'));
-
-            assert.equal(comboGuardDiagnostics.length, 1, JSON.stringify(diagnostics.map(diag => diag.data)));
-            const diagnostic = comboGuardDiagnostics[0];
-            assert.equal(diagnostic.code, item.expectedCode);
-            assert.equal(sliceByRange(text, diagnostic.range), '[x > 0]');
-            assert.equal(
-                sliceByRange(text, diagnostic.relatedInformation![0].location.range),
-                '[x > 0 && x < 1]',
-            );
-            assert.equal(diagnostic.data?.term_text, '[x > 0]');
-            assert.equal(diagnostic.data?.prior_term_text, '[x > 0 && x < 1]');
-            assert.equal(diagnostic.data?.__rangeFallback, undefined);
-        }
+        assert.deepEqual(comboGuardDiagnostics, []);
     });
 
     it('emits duplicate combo event warnings through the real document diagnostics path', async () => {

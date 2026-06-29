@@ -23,7 +23,6 @@ from pyfcstm.diagnostics import (
     EventInfo,
     ForcedTransitionInfo,
     ModelInspect,
-    ModelMetrics,
     StateInfo,
     TransitionInfo,
     VariableInfo,
@@ -475,6 +474,8 @@ class TestInspectModelToJson:
             'events',
             'actions',
             'forced_transitions',
+            'combo_transitions',
+            'combo_origins',
             'metrics',
             'reachability_graph',
             'event_emission_map',
@@ -933,7 +934,6 @@ state Root {
         assert transition.event_scope == 'chain'
 
     def test_function_call_in_expression(self, report):
-        running = next(s for s in report.states if s.path == 'Root.System.Running')
         # Inline during action records both reads and writes for ``angle``.
         angle = next(v for v in report.variables if v.name == 'angle')
         assert 'Root.System.Running' in angle.read_in_states

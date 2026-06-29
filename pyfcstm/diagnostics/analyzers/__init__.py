@@ -30,6 +30,7 @@ Example::
     []
 """
 
+from .combo import collect_combo_warnings
 from .const_fold import (
     collect_const_fold_warnings,
     fold_condition_expression,
@@ -44,6 +45,7 @@ from .type_shape import collect_type_warnings
 from .use_def import UseDefGraph, build_use_def_graph, collect_expr_variables
 
 __all__ = [
+    'collect_combo_warnings',
     'collect_const_fold_warnings',
     'collect_design_health_warnings',
     'fold_condition_expression',

@@ -47,7 +47,28 @@ TransitionInfo
 -----------------------------------------------------
 
 .. autoclass:: TransitionInfo
-    :members: from_path,to_path,event,event_scope,guard,effect,effect_self_assigns,is_forced,forced_origin,transition_index,span,effect_spans,effect_self_assign_spans
+    :members: from_path,to_path,event,event_scope,guard,effect,effect_self_assigns,is_forced,forced_origin,transition_index,span,effect_spans,effect_self_assign_spans,combo_origin_refs,combo_projection_key,combo_projection_order_key,combo_reuse_group_id,combo_priority_run_identity,combo_priority_run_index
+
+
+ComboOriginRefInfo
+-----------------------------------------------------
+
+.. autoclass:: ComboOriginRefInfo
+    :members: origin_id,term_index,role,consumes_term,term_text,transition_span,trigger_span,term_span,value_span,removal_span
+
+
+ComboOriginTermInfo
+-----------------------------------------------------
+
+.. autoclass:: ComboOriginTermInfo
+    :members: term_index,role,consumes_term,term_text,transition_span,trigger_span,term_span,value_span,removal_span
+
+
+ComboOriginInfo
+-----------------------------------------------------
+
+.. autoclass:: ComboOriginInfo
+    :members: origin_id,transition_span,trigger_span,terms
 
 
 VariableInfo
@@ -89,7 +110,7 @@ ModelInspect
 -----------------------------------------------------
 
 .. autoclass:: ModelInspect
-    :members: to_json,root_state_path,states,transitions,variables,events,actions,forced_transitions,metrics,reachability_graph,event_emission_map,var_dataflow,aspect_impact_map,action_ref_graph,diagnostics
+    :members: to_json,root_state_path,states,transitions,variables,events,actions,forced_transitions,combo_transitions,combo_origins,metrics,reachability_graph,event_emission_map,var_dataflow,aspect_impact_map,action_ref_graph,diagnostics
 
 
 inspect\_model

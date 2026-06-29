@@ -585,6 +585,8 @@ state Root {
                 'action_ref_graph',
                 'actions',
                 'aspect_impact_map',
+                'combo_origins',
+                'combo_transitions',
                 'diagnostics',
                 'event_emission_map',
                 'events',
@@ -597,6 +599,52 @@ state Root {
                 'var_dataflow',
                 'variables',
             ]);
+            assert.deepEqual(report.combo_transitions, []);
+            assert.deepEqual(report.combo_origins, []);
+        });
+
+        it('copies combo provenance from runtime transition metadata', async () => {
+            const machine = await buildMachine(SIMPLE_DSL);
+            const transition = machine.allTransitions[1] as typeof machine.allTransitions[number] & {
+                combo_origin_refs: unknown[];
+                combo_projection_key: unknown[];
+                combo_projection_order_key: unknown[];
+                combo_reuse_group_id: string;
+                combo_priority_run_identity: unknown[];
+                combo_priority_run_index: number;
+            };
+            transition.combo_origin_refs = [{
+                origin_id: 'Root:Idle->Active:: Pause + [counter > 0]',
+                term_index: 0,
+                role: 'prefix',
+                consumes_term: true,
+                term_text: 'Pause',
+                transition_span: {line: 8, column: 5, end_line: 8, end_column: 28},
+                trigger_span: {line: 8, column: 20, end_line: 8, end_column: 28},
+                term_span: {line: 8, column: 23, end_line: 8, end_column: 28},
+                value_span: null,
+                removal_span: {line: 8, column: 23, end_line: 8, end_column: 28},
+            }];
+            transition.combo_projection_key = [['Root'], 'state', ['Root', 'Idle']];
+            transition.combo_projection_order_key = [0, 0, 0, 0];
+            transition.combo_reuse_group_id = 'Root:Idle:Pause';
+            transition.combo_priority_run_identity = [
+                'Root:Idle->Active:: Pause + [counter > 0]',
+                null,
+            ];
+            transition.combo_priority_run_index = 0;
+
+            const report = inspectModel(machine);
+
+            assert.equal(report.combo_transitions.length, 1);
+            assert.equal(report.combo_transitions[0].combo_origin_refs[0].term_text, 'Pause');
+            assert.deepEqual(report.combo_transitions[0].combo_projection_order_key, [0, 0, 0, 0]);
+            assert.equal(report.combo_transitions[0].combo_reuse_group_id, 'Root:Idle:Pause');
+            assert.equal(report.combo_origins.length, 1);
+            assert.deepEqual(
+                report.combo_origins[0].terms.map(term => term.term_text),
+                ['Pause'],
+            );
         });
     });
 

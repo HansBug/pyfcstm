@@ -813,6 +813,12 @@ class StateMachineModelBuilder {
             trigger_scope: params.triggerScope,
             transitionIndex,
             transition_index: transitionIndex,
+            combo_origin_refs: [],
+            combo_projection_key: null,
+            combo_projection_order_key: null,
+            combo_reuse_group_id: null,
+            combo_priority_run_identity: null,
+            combo_priority_run_index: null,
         };
         this.nextTransitionIndex += 1;
         if (params.ast) {

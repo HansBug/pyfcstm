@@ -110,6 +110,41 @@ export interface InitialTargetInfo {
 }
 
 /**
+ * Reference from a generated combo edge to an original combo trigger term.
+ */
+export interface ComboOriginRefInfo {
+    origin_id: string;
+    term_index: number;
+    role: string;
+    consumes_term: boolean;
+    term_text: string;
+    transition_span: ModelSpanJson | null;
+    trigger_span: ModelSpanJson | null;
+    term_span: ModelSpanJson | null;
+    value_span: ModelSpanJson | null;
+    removal_span: ModelSpanJson | null;
+}
+
+export interface ComboOriginTermInfo {
+    term_index: number;
+    role: string;
+    consumes_term: boolean;
+    term_text: string;
+    transition_span: ModelSpanJson | null;
+    trigger_span: ModelSpanJson | null;
+    term_span: ModelSpanJson | null;
+    value_span: ModelSpanJson | null;
+    removal_span: ModelSpanJson | null;
+}
+
+export interface ComboOriginInfo {
+    origin_id: string;
+    transition_span: ModelSpanJson | null;
+    trigger_span: ModelSpanJson | null;
+    terms: ComboOriginTermInfo[];
+}
+
+/**
  * Per-transition structural summary.
  */
 export interface TransitionInfo {
@@ -125,6 +160,12 @@ export interface TransitionInfo {
     is_forced: boolean;
     forced_origin: string | null;
     transition_index: number | null;
+    combo_origin_refs: ComboOriginRefInfo[];
+    combo_projection_key: unknown[] | null;
+    combo_projection_order_key: unknown[] | null;
+    combo_reuse_group_id: string | null;
+    combo_priority_run_identity: unknown[] | null;
+    combo_priority_run_index: number | null;
     /**
      * Non-enumerable editor-only source range for analyzer-to-editor
      * handoff. It is intentionally omitted from ``toJson()`` output and from
@@ -224,6 +265,8 @@ export interface ModelInspect {
     events: EventInfo[];
     actions: ActionInfo[];
     forced_transitions: ForcedTransitionInfo[];
+    combo_transitions: TransitionInfo[];
+    combo_origins: ComboOriginInfo[];
     metrics: ModelMetrics;
     reachability_graph: Record<string, string[]>;
     event_emission_map: Record<string, string[]>;
@@ -283,6 +326,8 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
     const events = buildEventInfos(machine);
     const actions = buildActionInfos(machine);
     const forcedTransitions = buildForcedTransitionInfos(machine);
+    const comboTransitions = transitions.filter(item => item.combo_origin_refs.length > 0);
+    const comboOrigins = buildComboOriginInfos(comboTransitions);
     const metrics = buildMetrics(states, transitions, variables, events);
     const reachabilityGraph = buildReachabilityGraph(states, transitions);
     return {
@@ -293,6 +338,8 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
         events,
         actions,
         forced_transitions: forcedTransitions,
+        combo_transitions: comboTransitions,
+        combo_origins: comboOrigins,
         metrics,
         reachability_graph: reachabilityGraph,
         event_emission_map: buildEventEmissionMap(events),
@@ -459,10 +506,76 @@ function buildInitialTargets(state: {
     return out;
 }
 
+
+function buildComboOriginInfos(transitions: TransitionInfo[]): ComboOriginInfo[] {
+    const grouped = new Map<string, ComboOriginRefInfo[]>();
+    for (const transition of transitions) {
+        for (const ref of transition.combo_origin_refs) {
+            if (!ref.consumes_term) continue;
+            const refs = grouped.get(ref.origin_id) ?? [];
+            if (!refs.some(item => item.term_index === ref.term_index)) {
+                refs.push(ref);
+                grouped.set(ref.origin_id, refs);
+            }
+        }
+    }
+    return Array.from(grouped.keys()).sort().map(originId => {
+        const refs = (grouped.get(originId) ?? [])
+            .slice()
+            .sort((a, b) => a.term_index - b.term_index);
+        const first = refs[0];
+        return {
+            origin_id: originId,
+            transition_span: first?.transition_span ?? null,
+            trigger_span: first?.trigger_span ?? null,
+            terms: refs.map(ref => ({
+                term_index: ref.term_index,
+                role: ref.role,
+                consumes_term: ref.consumes_term,
+                term_text: ref.term_text,
+                transition_span: ref.transition_span,
+                trigger_span: ref.trigger_span,
+                term_span: ref.term_span,
+                value_span: ref.value_span,
+                removal_span: ref.removal_span,
+            })),
+        };
+    });
+}
+
+function comboOriginRefInfo(value: unknown): ComboOriginRefInfo | null {
+    if (typeof value !== 'object' || value === null) return null;
+    const item = value as Record<string, unknown>;
+    if (
+        typeof item.origin_id !== 'string' ||
+        typeof item.term_index !== 'number' ||
+        typeof item.role !== 'string' ||
+        typeof item.consumes_term !== 'boolean' ||
+        typeof item.term_text !== 'string'
+    ) {
+        return null;
+    }
+    return {
+        origin_id: item.origin_id,
+        term_index: item.term_index,
+        role: item.role,
+        consumes_term: item.consumes_term,
+        term_text: item.term_text,
+        transition_span: (item.transition_span as ModelSpanJson | null | undefined) ?? null,
+        trigger_span: (item.trigger_span as ModelSpanJson | null | undefined) ?? null,
+        term_span: (item.term_span as ModelSpanJson | null | undefined) ?? null,
+        value_span: (item.value_span as ModelSpanJson | null | undefined) ?? null,
+        removal_span: (item.removal_span as ModelSpanJson | null | undefined) ?? null,
+    };
+}
+
 function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
     const out: TransitionInfo[] = [];
     for (const state of machine.allStates) {
         for (const t of state.transitions) {
+            const comboOriginRefs = (t.combo_origin_refs ?? [])
+                .map(comboOriginRefInfo)
+                .filter((item): item is ComboOriginRefInfo => item !== null);
             const info: TransitionInfo = {
                 from_path: transitionEndpoint(state.path, t.fromState, true),
                 to_path: transitionEndpoint(state.path, t.toState, false),
@@ -474,6 +587,12 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
                 is_forced: !!t.forced,
                 forced_origin: t.forced ? t.text : null,
                 transition_index: typeof t.transitionIndex === 'number' ? t.transitionIndex : null,
+                combo_origin_refs: comboOriginRefs,
+                combo_projection_key: Array.isArray(t.combo_projection_key) ? [...t.combo_projection_key] : null,
+                combo_projection_order_key: Array.isArray(t.combo_projection_order_key) ? [...t.combo_projection_order_key] : null,
+                combo_reuse_group_id: t.combo_reuse_group_id,
+                combo_priority_run_identity: Array.isArray(t.combo_priority_run_identity) ? [...t.combo_priority_run_identity] : null,
+                combo_priority_run_index: typeof t.combo_priority_run_index === 'number' ? t.combo_priority_run_index : null,
             };
             Object.defineProperty(info, '__sourceRange', {
                 value: t.range,

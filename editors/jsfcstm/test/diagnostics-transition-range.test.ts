@@ -895,4 +895,123 @@ describe('diagnostics transition body ranges', () => {
         assert.equal(sliceByRange(text, diagnostics[0].range).trim(), 'effect {\n        x = x + 1;\n    }');
         assert.equal(diagnostics[0].data?.__rangeFallback, 'effect_fallback');
     });
+
+    it('keeps combo warning primary and related ranges on original combo terms', async () => {
+        const text = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B :: E1 + E1;',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/combo-warning-ranges.fcstm');
+        const semantic = await packageModule.getWorkspaceGraph().getSemanticDocument(document);
+        assert.ok(semantic, 'expected semantic document');
+
+        const diagnostics = packageModule.collectInspectDiagnosticsFromItems(document, semantic, [{
+            code: 'W_COMBO_DUPLICATE_EVENT',
+            severity: 'warning',
+            message: 'Synthetic duplicate combo event.',
+            span: {line: 5, column: 20, end_line: 5, end_column: 22},
+            refs: {
+                origin_id: 'Root:A->B::: E1 + E1',
+                event_name: 'Root.A.E1',
+                term_index: 1,
+                first_term_index: 0,
+                term_text: 'E1',
+                first_term_text: 'E1',
+                transition_span: {line: 5, column: 5, end_line: 5, end_column: 23},
+                trigger_span: {line: 5, column: 12, end_line: 5, end_column: 23},
+                term_span: {line: 5, column: 20, end_line: 5, end_column: 22},
+                first_term_span: {line: 5, column: 15, end_line: 5, end_column: 17},
+            },
+        }]);
+
+        assert.equal(diagnostics.length, 1, JSON.stringify(diagnostics));
+        assert.equal(sliceByRange(text, diagnostics[0].range), 'E1');
+        assert.equal(diagnostics[0].range.start.character, 19);
+        assert.equal(diagnostics[0].data?.__rangeFallback, undefined);
+        assert.equal(
+            sliceByRange(text, diagnostics[0].relatedInformation![0].location.range),
+            'E1',
+        );
+        assert.equal(diagnostics[0].relatedInformation![0].location.range.start.character, 14);
+        assert.equal(
+            sliceByRange(text, diagnostics[0].relatedInformation![1].location.range).trim(),
+            'A -> B :: E1 + E1;',
+        );
+    });
+
+    it('adds prior guard related information for combo prefix guard warnings', async () => {
+        const text = [
+            'def int x = 1;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B : [x > 0] + [x > -1];',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/combo-prefix-guard-related.fcstm');
+        const semantic = await packageModule.getWorkspaceGraph().getSemanticDocument(document);
+        assert.ok(semantic, 'expected semantic document');
+
+        const diagnostics = packageModule.collectInspectDiagnosticsFromItems(document, semantic, [{
+            code: 'W_COMBO_GUARD_PREFIX_IMPLIED',
+            severity: 'warning',
+            message: 'Synthetic implied combo guard.',
+            span: null,
+            refs: {
+                origin_id: 'Root:A->B:: [x > 0] + [x > -1]',
+                term_index: 1,
+                prior_term_index: 0,
+                term_text: '[x > -1]',
+                prior_term_text: '[x > 0]',
+                transition_span: {line: 6, column: 5, end_line: 6, end_column: 33},
+                trigger_span: {line: 6, column: 12, end_line: 6, end_column: 33},
+                term_span: {line: 6, column: 24, end_line: 6, end_column: 32},
+                value_span: {line: 6, column: 25, end_line: 6, end_column: 31},
+                prior_term_span: {line: 6, column: 14, end_line: 6, end_column: 21},
+                prior_value_span: {line: 6, column: 15, end_line: 6, end_column: 20},
+            },
+        }]);
+
+        assert.equal(diagnostics.length, 1, JSON.stringify(diagnostics));
+        assert.equal(sliceByRange(text, diagnostics[0].range), '[x > -1]');
+        assert.equal(diagnostics[0].data?.__rangeFallback, undefined);
+        assert.equal(
+            sliceByRange(text, diagnostics[0].relatedInformation![0].location.range),
+            '[x > 0]',
+        );
+    });
+
+    it('emits duplicate combo event warnings through the real document diagnostics path', async () => {
+        const text = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B :: E1 + E1;',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/combo-real-warning-ranges.fcstm');
+
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const diagnostic = diagnostics.find(item => item.code === 'W_COMBO_DUPLICATE_EVENT');
+
+        assert.ok(diagnostic, JSON.stringify(diagnostics.map(item => item.code)));
+        assert.equal(sliceByRange(text, diagnostic.range), 'E1');
+        assert.equal(diagnostic.range.start.character, 19);
+        assert.equal(
+            sliceByRange(text, diagnostic.relatedInformation![0].location.range),
+            'E1',
+        );
+        assert.equal(diagnostic.relatedInformation![0].location.range.start.character, 14);
+        assert.equal(
+            sliceByRange(text, diagnostic.relatedInformation![1].location.range).trim(),
+            'A -> B :: E1 + E1;',
+        );
+    });
+
 });

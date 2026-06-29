@@ -4,7 +4,6 @@ import type {
     FcstmAstAction,
     FcstmAstAssignmentStatement,
     FcstmAstBinaryExpression,
-    FcstmAstComboTriggerTerm,
     FcstmAstConditionalExpression,
     FcstmAstExpression,
     FcstmAstForcedTransition,
@@ -19,7 +18,6 @@ import type {
 } from '../ast';
 import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticTransition} from '../semantics';
 import {FcstmDiagnostic, rangeIsEmptyOrInvalid, TextDocumentLike} from '../utils/text';
-import type {TextRange} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {findIdentifierRange} from './ranges';
 
@@ -261,87 +259,6 @@ function isFalseLiteral(expression: FcstmAstExpression): boolean {
     return expression.expressionKind === 'literal'
         && expression.literalType === 'boolean'
         && /^(false|False)$/i.test(expression.valueText);
-}
-
-function spanJson(range: TextRange): Record<string, number> {
-    return {
-        line: range.start.line + 1,
-        column: range.start.character + 1,
-        end_line: range.end.line + 1,
-        end_column: range.end.character + 1,
-    };
-}
-
-function comboOriginId(transition: FcstmSemanticTransition): string {
-    const source = transition.sourceKind === 'init'
-        ? '[*]'
-        : transition.sourceStateName ?? '?';
-    const target = transition.targetKind === 'exit'
-        ? '[*]'
-        : transition.targetStateName ?? '?';
-    const combo = transition.ast.comboTrigger;
-    return `${transition.ownerStatePath.join('.')}:${source}->${target}:${combo?.canonicalText ?? transition.ast.text}`;
-}
-
-function comboEventKey(term: FcstmAstComboTriggerTerm): string {
-    return `${term.eventScope ?? 'chain'}:${term.canonicalText}`;
-}
-
-function addComboTriggerDiagnostics(
-    semantic: FcstmSemanticDocument,
-    document: TextDocumentLike,
-    diagnostics: FcstmDiagnostic[],
-): void {
-    for (const transition of semantic.transitions) {
-        const combo = transition.ast.comboTrigger;
-        if (!combo?.isCombo) continue;
-
-        const firstByEvent = new Map<string, {term: FcstmAstComboTriggerTerm; index: number}>();
-        combo.terms.forEach((term, index) => {
-            if (term.termKind !== 'event') return;
-            const key = comboEventKey(term);
-            const first = firstByEvent.get(key);
-            if (!first) {
-                firstByEvent.set(key, {term, index});
-                return;
-            }
-            diagnostics.push({
-                range: term.range,
-                message: `Combo trigger repeats event ${JSON.stringify(term.canonicalText)}; this is legal but usually redundant.`,
-                severity: 'warning',
-                source: 'fcstm',
-                code: FCSTM_DIAGNOSTIC_CODES.comboDuplicateEvent,
-                data: {
-                    origin_id: comboOriginId(transition),
-                    event_name: term.canonicalText,
-                    term_index: index,
-                    first_term_index: first.index,
-                    term_text: term.canonicalText,
-                    first_term_text: first.term.canonicalText,
-                    transition_span: spanJson(transition.range),
-                    trigger_span: spanJson(combo.range),
-                    term_span: spanJson(term.range),
-                    first_term_span: spanJson(first.term.range),
-                },
-                relatedInformation: [
-                    {
-                        location: {
-                            uri: toFileUri(document),
-                            range: first.term.range,
-                        },
-                        message: 'First occurrence of the repeated combo event term.',
-                    },
-                    {
-                        location: {
-                            uri: toFileUri(document),
-                            range: transition.range,
-                        },
-                        message: 'Original combo transition.',
-                    },
-                ],
-            });
-        });
-    }
 }
 
 function dottedPath(path: readonly string[] | undefined): string | null {
@@ -1328,7 +1245,6 @@ export function collectSemanticAnalysisDiagnosticsFromSemantic(
     addDuringAspectInvalidDiagnostics(semantic, document, diagnostics);
     addPseudoNotLeafDiagnostics(semantic, document, diagnostics);
     addInitialTransitionInvalidDiagnostics(semantic, document, diagnostics);
-    addComboTriggerDiagnostics(semantic, document, diagnostics);
     addTypeMismatchDiagnostics(semantic, document, diagnostics);
     return diagnostics;
 }

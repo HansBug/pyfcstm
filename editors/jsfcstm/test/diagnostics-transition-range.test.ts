@@ -1039,9 +1039,10 @@ describe('diagnostics transition body ranges', () => {
         const document = createDocument(text, '/tmp/combo-real-warning-ranges.fcstm');
 
         const diagnostics = await packageModule.collectDocumentDiagnostics(document);
-        const diagnostic = diagnostics.find(item => item.code === 'W_COMBO_DUPLICATE_EVENT');
+        const duplicateEvents = diagnostics.filter(item => item.code === 'W_COMBO_DUPLICATE_EVENT');
 
-        assert.ok(diagnostic, JSON.stringify(diagnostics.map(item => item.code)));
+        assert.equal(duplicateEvents.length, 1, JSON.stringify(duplicateEvents.map(item => item.data)));
+        const diagnostic = duplicateEvents[0];
         assert.equal(sliceByRange(text, diagnostic.range), 'E1');
         assert.equal(diagnostic.range.start.character, 19);
         assert.equal(
@@ -1053,6 +1054,52 @@ describe('diagnostics transition body ranges', () => {
             sliceByRange(text, diagnostic.relatedInformation![1].location.range).trim(),
             'A -> B :: E1 + E1;',
         );
+    });
+
+    it('deduplicates entry and exit combo event warnings on the inspect-backed document path', async () => {
+        const cases = [{
+            text: [
+                'state Root {',
+                '    state A;',
+                '    [*] -> A :: Boot + Boot;',
+                '}',
+            ].join('\n'),
+            filePath: '/tmp/combo-entry-duplicate-real-warning-ranges.fcstm',
+            transitionText: '[*] -> A :: Boot + Boot;',
+            repeatedTerm: 'Boot',
+            originId: 'Root:__init__->A::: Boot + Boot',
+        }, {
+            text: [
+                'state Root {',
+                '    state A;',
+                '    [*] -> A;',
+                '    A -> [*] :: Done + Done;',
+                '}',
+            ].join('\n'),
+            filePath: '/tmp/combo-exit-duplicate-real-warning-ranges.fcstm',
+            transitionText: 'A -> [*] :: Done + Done;',
+            repeatedTerm: 'Done',
+            originId: 'Root:A->__exit__::: Done + Done',
+        }];
+
+        for (const item of cases) {
+            const document = createDocument(item.text, item.filePath);
+            const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+            const duplicateEvents = diagnostics.filter(diag => diag.code === 'W_COMBO_DUPLICATE_EVENT');
+
+            assert.equal(duplicateEvents.length, 1, JSON.stringify(duplicateEvents.map(diag => diag.data)));
+            const diagnostic = duplicateEvents[0];
+            assert.equal(sliceByRange(item.text, diagnostic.range), item.repeatedTerm);
+            assert.equal(
+                sliceByRange(item.text, diagnostic.relatedInformation![0].location.range),
+                item.repeatedTerm,
+            );
+            assert.equal(
+                sliceByRange(item.text, diagnostic.relatedInformation![1].location.range).trim(),
+                item.transitionText,
+            );
+            assert.equal(diagnostic.data?.origin_id, item.originId);
+        }
     });
 
 });

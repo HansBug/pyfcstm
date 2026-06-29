@@ -191,8 +191,6 @@ jobs:
         env:
           CI: 'true'
           SKIP_SLOW_TESTS: ''
-          PYFCSTM_TEMPLATE_SUITES: ''
-          PYFCSTM_SKIP_TEMPLATE_SUITES: ''
           TEMPLATE_SUITE: ${{ matrix.suite }}
           TEMPLATE_SUITE_REASON: ${{ matrix.reason }}
         shell: bash
@@ -351,7 +349,7 @@ jobs:
         shell: bash
         run: |
           choco install tree cloc wget curl make zip
-          choco install 7zip winrar  # unrar should be added
+          choco install 7zip
           choco install mingw
           choco install llvm
           echo "C:\\ProgramData\\chocolatey\\lib\\mingw\\tools\\install\\bin" >> $GITHUB_PATH

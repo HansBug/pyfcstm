@@ -636,6 +636,47 @@ state Root {
             );
         });
 
+        it('shares combo prefix provenance for real DSL model construction', async () => {
+            const machine = await buildMachine(`
+state Root {
+    state A;
+    state B;
+    state C;
+    [*] -> A;
+    A -> B :: E1 + E2;
+    A -> C :: E1 + E3;
+}
+`);
+            const report = inspectModel(machine);
+
+            assert.equal(report.combo_transitions.length, 3);
+            assert.equal(report.combo_origins.length, 2);
+            const sharedPrefix = report.combo_transitions.find(
+                item => item.event?.endsWith('.E1') && item.combo_origin_refs.length === 2,
+            );
+            assert.ok(sharedPrefix);
+            assert.deepEqual(
+                sharedPrefix!.combo_origin_refs.map(ref => ref.term_text),
+                ['E1', 'E1'],
+            );
+            assert.deepEqual(
+                sharedPrefix!.combo_origin_refs.map(ref => ref.term_index),
+                [0, 0],
+            );
+            assert.deepEqual(
+                report.combo_transitions
+                    .filter(item => item !== sharedPrefix)
+                    .map(item => ({
+                        event: item.event,
+                        terms: item.combo_origin_refs.map(ref => ref.term_text),
+                    })),
+                [
+                    {event: 'Root.A.E2', terms: ['E2']},
+                    {event: 'Root.A.E3', terms: ['E3']},
+                ],
+            );
+        });
+
         it('copies combo provenance from runtime transition metadata', async () => {
             const machine = await buildMachine(SIMPLE_DSL);
             const transition = machine.allTransitions[1] as typeof machine.allTransitions[number] & {

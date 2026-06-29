@@ -10,3 +10,5 @@ collect\_numeric\_warnings
 -----------------------------------------------------
 
 .. autofunction:: collect_numeric_warnings
+
+

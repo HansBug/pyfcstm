@@ -90,13 +90,6 @@ def _ast_node_fingerprint(value: Any) -> Tuple[Any, ...]:
         )
 
 
-def _generated_combo_pseudo_node_fingerprint(
-    node: dsl_nodes.StateDefinition,
-) -> Tuple[Any, ...]:
-    """Return the deep fingerprint for a trusted combo pseudo AST."""
-    return _ast_node_fingerprint(node)
-
-
 def _forget_generated_combo_owner_node(node_id: int) -> None:
     """Forget an exported combo owner AST node after it is garbage collected."""
     _TRUSTED_GENERATED_COMBO_OWNER_NODE_REFS.pop(node_id, None)
@@ -145,7 +138,7 @@ def _mark_generated_combo_pseudo_node(
             node,
             lambda _ref, node_id=node_id: _forget_generated_combo_pseudo_node(node_id),
         ),
-        _generated_combo_pseudo_node_fingerprint(node),
+        _ast_node_fingerprint(node),
         id(owner_node),
     )
 
@@ -164,7 +157,7 @@ def _is_trusted_generated_combo_pseudo_node(
         node_id in _TRUSTED_GENERATED_COMBO_PSEUDO_NODE_IDS
         and ref() is node
         and owner_id == id(owner_node)
-        and _generated_combo_pseudo_node_fingerprint(node) == fingerprint
+        and _ast_node_fingerprint(node) == fingerprint
         and _is_trusted_generated_combo_owner_node(owner_node)
     )
 

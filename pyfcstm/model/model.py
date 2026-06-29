@@ -125,7 +125,6 @@ _COMBO_DISPLAY_PREFIX = "combo after "
 def _is_exported_combo_pseudo_node(
     node: dsl_nodes.StateDefinition,
     owner_node: Optional[dsl_nodes.StateDefinition] = None,
-    owner_path: Tuple[str, ...] = (),
 ) -> bool:
     """Return whether an AST node is an exported generated combo pseudo state."""
     if not node.is_pseudo or not node.name.startswith(_COMBO_STATE_PREFIX):
@@ -2756,7 +2755,7 @@ def parse_dsl_node_to_state_machine(
     ) -> State:
         current_path = tuple((*current_path, node.name))
         is_exported_combo_pseudo = _is_exported_combo_pseudo_node(
-            node, owner_node, current_path[:-1]
+            node, owner_node
         )
         if node.name.startswith(_COMBO_STATE_PREFIX) and not is_exported_combo_pseudo:
             sink.emit(
@@ -3640,18 +3639,12 @@ def parse_dsl_node_to_state_machine(
                 start_state.events[suffix_name].origins.append(event_scope)
             return event_scope, start_state.events[suffix_name]
 
-        def _combo_term_event_id(
-            transnode,
-            term: dsl_nodes.ComboEventTerm,
-        ) -> dsl_nodes.ChainID:
-            return term.event_id
-
         def _combo_term_semantic_key(
             transnode,
             term: dsl_nodes.ComboTriggerTerm,
         ) -> Tuple[object, ...]:
             if isinstance(term, dsl_nodes.ComboEventTerm):
-                event_id = _combo_term_event_id(transnode, term)
+                event_id = term.event_id
                 event_scope = _event_origin_from_id(
                     event_id,
                     term.event_scope,
@@ -3959,7 +3952,7 @@ def parse_dsl_node_to_state_machine(
             guard = None
             event_scope = None
             if isinstance(term, dsl_nodes.ComboEventTerm):
-                event_id = _combo_term_event_id(first_alt.transnode, term)
+                event_id = term.event_id
                 event_scope, event = _resolve_transition_event(
                     first_alt.transnode,
                     event_id,

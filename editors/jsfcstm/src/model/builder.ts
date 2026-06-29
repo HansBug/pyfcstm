@@ -1,6 +1,7 @@
 import type {
     FcstmAstAction,
     FcstmAstChainPath,
+    FcstmAstComboTriggerTerm,
     FcstmAstDocument,
     FcstmAstExpression,
     FcstmAstForcedTransition,
@@ -144,6 +145,79 @@ function isSemanticDocument(
     source: FcstmAstDocument | FcstmSemanticDocument | null
 ): source is FcstmSemanticDocument {
     return Boolean(source && source.kind === 'semanticDocument');
+}
+
+
+function spanJson(range: {start: {line: number; character: number}; end: {line: number; character: number}} | undefined): Record<string, number> | null {
+    if (!range) return null;
+    return {
+        line: range.start.line + 1,
+        column: range.start.character + 1,
+        end_line: range.end.line + 1,
+        end_column: range.end.character + 1,
+    };
+}
+
+function comboOriginId(
+    ownerPath: string[],
+    transition: FcstmAstTransition,
+): string {
+    const source = transition.sourceKind === 'init'
+        ? '[*]'
+        : transition.sourceStateName ?? '?';
+    const target = transition.targetKind === 'exit'
+        ? '[*]'
+        : transition.targetStateName ?? '?';
+    return `${statePathName(ownerPath)}:${source}->${target}:${transition.comboTrigger?.canonicalText ?? transition.text}`;
+}
+
+function comboProjectionKey(
+    ownerPath: string[],
+    transition: FcstmAstTransition,
+): unknown[] {
+    if (transition.sourceKind === 'init') {
+        return [[...ownerPath], 'entry', 'INIT_MARKER'];
+    }
+    return [[...ownerPath], 'state', [...ownerPath, transition.sourceStateName ?? '']];
+}
+
+function comboSlugPart(value: string): string {
+    const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    return slug.length > 0 ? slug.slice(0, 32) : 'term';
+}
+
+function stableDigest12(value: string): string {
+    let h1 = 0x811c9dc5;
+    let h2 = 0x01000193;
+    for (let index = 0; index < value.length; index += 1) {
+        const code = value.charCodeAt(index);
+        h1 ^= code;
+        h1 = Math.imul(h1, 0x01000193) >>> 0;
+        h2 ^= code + index;
+        h2 = Math.imul(h2, 0x85ebca6b) >>> 0;
+    }
+    return `${h1.toString(16).padStart(8, '0')}${h2.toString(16).padStart(8, '0')}`.slice(0, 12);
+}
+
+function comboTermRef(
+    originId: string,
+    transition: FcstmAstTransition,
+    term: FcstmAstComboTriggerTerm,
+    termIndex: number,
+    role: 'prefix' | 'terminal',
+): Record<string, unknown> {
+    return {
+        origin_id: originId,
+        term_index: termIndex,
+        role,
+        consumes_term: true,
+        term_text: term.canonicalText,
+        transition_span: spanJson(transition.range),
+        trigger_span: spanJson(transition.comboTrigger?.range),
+        term_span: spanJson(term.range),
+        value_span: spanJson(term.valueRange),
+        removal_span: spanJson(term.removalRange),
+    };
 }
 
 class StateMachineModelBuilder {
@@ -480,7 +554,11 @@ class StateMachineModelBuilder {
             }
         }
 
-        for (const transition of definition.transitions) {
+        definition.transitions.forEach((transition, declarationIndex) => {
+            if (transition.comboTrigger?.isCombo) {
+                this.pushComboTransitionChain(currentState, transition, declarationIndex);
+                return;
+            }
             const triggerScope = this.getTriggerScope(transition);
             const event = transition.eventId
                 ? this.resolveEventReference(currentState, transition.eventId, transition.trigger?.range || transition.range, triggerScope)
@@ -503,7 +581,7 @@ class StateMachineModelBuilder {
                 triggerScope,
                 ast: transition,
             });
-        }
+        });
 
         for (const substateDefinition of definition.substates) {
             const nextState = currentState.substates[substateDefinition.name];
@@ -759,6 +837,178 @@ class StateMachineModelBuilder {
         return event;
     }
 
+    private comboPseudoState(
+        currentState: FcstmModelState,
+        transition: FcstmAstTransition,
+        consumedTerms: FcstmAstComboTriggerTerm[],
+        originId: string,
+        projectionKey: unknown[],
+    ): FcstmModelState {
+        const consumedText = consumedTerms.map(term => term.canonicalText).join(' + ');
+        const source = transition.sourceKind === 'init'
+            ? 'entry'
+            : transition.sourceStateName ?? 'state';
+        const readable = [source, ...consumedTerms.map(term => comboSlugPart(term.canonicalText))]
+            .map(part => comboSlugPart(part))
+            .filter(part => part.length > 0)
+            .join('_');
+        const payload = JSON.stringify({
+            owner: currentState.path,
+            projectionKey,
+            originId,
+            consumed: consumedTerms.map(term => ({
+                kind: term.termKind,
+                text: term.canonicalText,
+                scope: term.eventScope ?? null,
+            })),
+            target: transition.targetKind === 'exit' ? '[*]' : transition.targetStateName ?? null,
+        });
+        const name = `__combo_${readable}_h${stableDigest12(payload)}`;
+        const existing = currentState.substates[name];
+        if (existing) return existing;
+
+        const path = [...currentState.path, name];
+        const state: FcstmModelState = {
+            kind: 'state',
+            pyModelType: 'State',
+            range: transition.range,
+            text: `pseudo state ${name};`,
+            name,
+            path,
+            pathName: statePathName(path),
+            path_name: statePathName(path),
+            substates: {},
+            events: {},
+            transitions: [],
+            namedFunctions: {},
+            named_functions: {},
+            onEnters: [],
+            on_enters: [],
+            onDurings: [],
+            on_durings: [],
+            onExits: [],
+            on_exits: [],
+            onDuringAspects: [],
+            on_during_aspects: [],
+            parentPath: currentState.path,
+            parent_path: currentState.path,
+            substateNameToId: {},
+            substate_name_to_id: {},
+            extraName: `combo ${source} after ${consumedText}`,
+            extra_name: `combo ${source} after ${consumedText}`,
+            isPseudo: true,
+            is_pseudo: true,
+            isLeafState: true,
+            is_leaf_state: true,
+            isRootState: false,
+            is_root_state: false,
+            isStoppable: false,
+            is_stoppable: false,
+        };
+        currentState.substates[name] = state;
+        currentState.substateNameToId[name] = Object.keys(currentState.substateNameToId).length;
+        currentState.substate_name_to_id = currentState.substateNameToId;
+        this.allStates.push(state);
+        this.statesByPath.set(state.pathName, state);
+        return state;
+    }
+
+    private comboTermEvent(
+        currentState: FcstmModelState,
+        transition: FcstmAstTransition,
+        term: FcstmAstComboTriggerTerm,
+    ): {event?: FcstmModelEvent; scope?: 'local' | 'chain' | 'absolute'} {
+        if (!term.eventPath) return {};
+        const scope = term.eventScope ?? (term.eventPath.isAbsolute ? 'absolute' : 'chain');
+        let eventPath = term.eventPath;
+        if (scope === 'local' && transition.sourceKind === 'state' && transition.sourceStateName) {
+            const eventName = term.eventPath.segments[term.eventPath.segments.length - 1] || term.canonicalText;
+            eventPath = {
+                ...term.eventPath,
+                text: `${transition.sourceStateName}.${eventName}`,
+                isAbsolute: false,
+                is_absolute: false,
+                segments: [transition.sourceStateName, eventName],
+                path: [transition.sourceStateName, eventName],
+            };
+        }
+        return {
+            event: this.resolveEventReference(currentState, eventPath, term.valueRange ?? term.range, scope),
+            scope,
+        };
+    }
+
+    private pushComboTransitionChain(
+        currentState: FcstmModelState,
+        transition: FcstmAstTransition,
+        declarationIndex: number,
+    ): void {
+        const combo = transition.comboTrigger;
+        if (!combo?.isCombo || combo.terms.length === 0) return;
+        const originId = comboOriginId(currentState.path, transition);
+        const projectionKey = comboProjectionKey(currentState.path, transition);
+        const priorityRunIdentity = [originId, null];
+        let fromState: FcstmModelTransition['fromState'] = transition.sourceKind === 'init'
+            ? 'INIT_STATE'
+            : transition.sourceStateName ?? 'INIT_STATE';
+        const targetState: FcstmModelTransition['toState'] = transition.targetKind === 'exit'
+            ? 'EXIT_STATE'
+            : transition.targetStateName ?? 'EXIT_STATE';
+        const consumedTerms: FcstmAstComboTriggerTerm[] = [];
+
+        combo.terms.forEach((term, termIndex) => {
+            consumedTerms.push(term);
+            const isTerminal = termIndex === combo.terms.length - 1;
+            const role: 'prefix' | 'terminal' = isTerminal ? 'terminal' : 'prefix';
+            let toState: FcstmModelTransition['toState'];
+            if (isTerminal) {
+                toState = targetState;
+            } else {
+                toState = this.comboPseudoState(
+                    currentState,
+                    transition,
+                    consumedTerms.slice(),
+                    originId,
+                    projectionKey,
+                ).name;
+            }
+
+            const eventResult = term.termKind === 'event'
+                ? this.comboTermEvent(currentState, transition, term)
+                : {};
+            this.pushTransition({
+                range: transition.range,
+                text: transition.text,
+                fromState,
+                toState,
+                event: eventResult.event,
+                guard: term.termKind === 'guard' && term.condition
+                    ? this.buildExpression(term.condition)
+                    : undefined,
+                effects: isTerminal ? this.buildOperationStatements(transition.postOperations) : [],
+                parentState: currentState,
+                sourceKind: fromState === 'INIT_STATE' ? 'init' : 'state',
+                targetKind: isTerminal ? transition.targetKind : 'state',
+                transitionKind: fromState === 'INIT_STATE'
+                    ? 'entry'
+                    : isTerminal && transition.targetKind === 'exit'
+                        ? 'exit'
+                        : 'normal',
+                forced: false,
+                declaredInStatePath: currentState.path,
+                triggerScope: eventResult.scope,
+                ast: transition,
+                comboOriginRefs: [comboTermRef(originId, transition, term, termIndex, role)],
+                comboProjectionKey: projectionKey,
+                comboProjectionOrderKey: [declarationIndex, termIndex, termIndex, role],
+                comboReuseGroupId: `${originId}:${role}:${termIndex}`,
+                comboPriorityRunIdentity: priorityRunIdentity,
+                comboPriorityRunIndex: termIndex,
+            });
+            fromState = toState === 'EXIT_STATE' ? fromState : toState;
+        });
+    }
+
     private pushTransition(params: {
         range: FcstmModelTransition['range'];
         text: string;
@@ -775,6 +1025,12 @@ class StateMachineModelBuilder {
         declaredInStatePath: string[];
         triggerScope?: FcstmModelTransition['triggerScope'];
         ast?: FcstmAstTransition | FcstmAstForcedTransition;
+        comboOriginRefs?: unknown[];
+        comboProjectionKey?: unknown[] | null;
+        comboProjectionOrderKey?: unknown[] | null;
+        comboReuseGroupId?: string | null;
+        comboPriorityRunIdentity?: unknown[] | null;
+        comboPriorityRunIndex?: number | null;
     }): void {
         const transitionIndex = this.nextTransitionIndex;
         const transition: FcstmModelTransition = {
@@ -813,12 +1069,12 @@ class StateMachineModelBuilder {
             trigger_scope: params.triggerScope,
             transitionIndex,
             transition_index: transitionIndex,
-            combo_origin_refs: [],
-            combo_projection_key: null,
-            combo_projection_order_key: null,
-            combo_reuse_group_id: null,
-            combo_priority_run_identity: null,
-            combo_priority_run_index: null,
+            combo_origin_refs: params.comboOriginRefs ?? [],
+            combo_projection_key: params.comboProjectionKey ?? null,
+            combo_projection_order_key: params.comboProjectionOrderKey ?? null,
+            combo_reuse_group_id: params.comboReuseGroupId ?? null,
+            combo_priority_run_identity: params.comboPriorityRunIdentity ?? null,
+            combo_priority_run_index: params.comboPriorityRunIndex ?? null,
         };
         this.nextTransitionIndex += 1;
         if (params.ast) {

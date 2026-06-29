@@ -986,6 +986,47 @@ describe('diagnostics transition body ranges', () => {
         );
     });
 
+    it('emits combo guard warnings through the real document diagnostics path', async () => {
+        const text = [
+            'def int x = 1;',
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B : [(1 + 2) == 3] + [(1 + 2) == 4];',
+            '    A -> B : [x > 0] + [x > -1];',
+            '    A -> B : [x > 0] + [x < 0];',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/combo-real-guard-warning-ranges.fcstm');
+
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const byCode = new Map(diagnostics.map(item => [item.code, item]));
+        const constTrue = byCode.get('W_COMBO_GUARD_CONST_TRUE');
+        const constFalse = byCode.get('W_COMBO_GUARD_CONST_FALSE');
+        const implied = byCode.get('W_COMBO_GUARD_PREFIX_IMPLIED');
+        const contradicts = byCode.get('W_COMBO_GUARD_PREFIX_CONTRADICTS');
+
+        assert.ok(constTrue, JSON.stringify(diagnostics.map(item => item.code)));
+        assert.ok(constFalse, JSON.stringify(diagnostics.map(item => item.code)));
+        assert.ok(implied, JSON.stringify(diagnostics.map(item => item.code)));
+        assert.ok(contradicts, JSON.stringify(diagnostics.map(item => item.code)));
+        assert.equal(sliceByRange(text, constTrue.range), '[(1 + 2) == 3]');
+        assert.equal(sliceByRange(text, constFalse.range), '[(1 + 2) == 4]');
+        assert.equal(sliceByRange(text, implied.range), '[x > -1]');
+        assert.equal(sliceByRange(text, contradicts.range), '[x < 0]');
+        assert.equal(
+            sliceByRange(text, implied.relatedInformation![0].location.range),
+            '[x > 0]',
+        );
+        assert.equal(
+            sliceByRange(text, contradicts.relatedInformation![0].location.range),
+            '[x > 0]',
+        );
+        assert.equal(implied.data?.__rangeFallback, undefined);
+        assert.equal(contradicts.data?.__rangeFallback, undefined);
+    });
+
     it('emits duplicate combo event warnings through the real document diagnostics path', async () => {
         const text = [
             'state Root {',

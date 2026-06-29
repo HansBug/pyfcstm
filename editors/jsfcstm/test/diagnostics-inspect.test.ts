@@ -603,6 +603,39 @@ state Root {
             assert.deepEqual(report.combo_origins, []);
         });
 
+        it('exposes combo provenance from real DSL model construction', async () => {
+            const machine = await buildMachine(`
+def int x = 1;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: E1 + E1;
+    A -> B : [x > 0] + [x > -1];
+}
+`);
+            const report = inspectModel(machine);
+
+            assert.equal(report.combo_transitions.length, 4);
+            assert.equal(report.combo_origins.length, 2);
+            assert.deepEqual(
+                report.combo_origins.map(origin => origin.terms.map(term => term.term_text)),
+                [['[x > 0]', '[x > -1]'], ['E1', 'E1']],
+            );
+            assert.ok(report.combo_transitions.every(item => item.combo_origin_refs.length === 1));
+            assert.ok(report.combo_transitions.every(item => item.combo_projection_key !== null));
+            assert.ok(report.combo_transitions.every(item => item.combo_projection_order_key !== null));
+            assert.ok(report.combo_transitions.every(item => item.combo_reuse_group_id !== null));
+            assert.ok(report.combo_transitions.every(item => item.combo_priority_run_identity !== null));
+            assert.deepEqual(
+                report.diagnostics
+                    .filter(item => String(item.code).startsWith('W_COMBO'))
+                    .map(item => item.code)
+                    .sort(),
+                ['W_COMBO_DUPLICATE_EVENT', 'W_COMBO_GUARD_PREFIX_IMPLIED'],
+            );
+        });
+
         it('copies combo provenance from runtime transition metadata', async () => {
             const machine = await buildMachine(SIMPLE_DSL);
             const transition = machine.allTransitions[1] as typeof machine.allTransitions[number] & {

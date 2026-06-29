@@ -41,8 +41,11 @@ interface Bound {
     inclusive: boolean;
 }
 
+type VariableDomain = 'int' | 'float';
+
 interface SimpleConstraint {
     variable: string;
+    domain: VariableDomain;
     lower?: Bound;
     upper?: Bound;
     equal?: number;
@@ -58,18 +61,32 @@ interface ConstraintFormula {
     alternatives: ConstraintSet[];
 }
 
+// Conservative DNF explosion guard: if a formula grows beyond this limit, the
+// analyzer skips that prefix-sensitive warning instead of risking a false
+// positive or slowing editor diagnostics.
 const MAX_CONSTRAINT_FORMULA_ALTERNATIVES = 64;
 
 export function collectComboWarnings(machine: StateMachine | null | undefined): ModelDiagnosticJson[] {
     if (!machine) return [];
     const termsByOrigin = comboTermsByOrigin(machine);
+    const domains = variableDomains(machine);
     const diagnostics: ModelDiagnosticJson[] = [];
     for (const terms of termsByOrigin.values()) {
         diagnostics.push(...duplicateEventWarnings(terms));
         diagnostics.push(...guardConstWarnings(terms));
-        diagnostics.push(...guardPrefixWarnings(terms));
+        diagnostics.push(...guardPrefixWarnings(terms, domains));
     }
     return diagnostics;
+}
+
+function variableDomains(machine: StateMachine): Map<string, VariableDomain> {
+    const domains = new Map<string, VariableDomain>();
+    for (const define of Object.values(machine.defines)) {
+        if (define.type === 'int' || define.type === 'float') {
+            domains.set(define.name, define.type);
+        }
+    }
+    return domains;
 }
 
 function comboTermsByOrigin(machine: StateMachine): Map<string, ComboTerm[]> {
@@ -181,13 +198,13 @@ function guardConstWarnings(terms: ComboTerm[]): ModelDiagnosticJson[] {
     return diagnostics;
 }
 
-function guardPrefixWarnings(terms: ComboTerm[]): ModelDiagnosticJson[] {
+function guardPrefixWarnings(terms: ComboTerm[], domains: Map<string, VariableDomain>): ModelDiagnosticJson[] {
     const diagnostics: ModelDiagnosticJson[] = [];
     const priorGuards: ComboTerm[] = [];
     for (const term of terms) {
         if (!term.transition.guard) continue;
         if (priorGuards.length > 0 && !sideEffectsMayChangeGuardPrefix(terms, term, priorGuards)) {
-            const diagnostic = prefixGuardDiagnostic(term, priorGuards);
+            const diagnostic = prefixGuardDiagnostic(term, priorGuards, domains);
             if (diagnostic) diagnostics.push(diagnostic);
         }
         priorGuards.push(term);
@@ -195,13 +212,17 @@ function guardPrefixWarnings(terms: ComboTerm[]): ModelDiagnosticJson[] {
     return diagnostics;
 }
 
-function prefixGuardDiagnostic(current: ComboTerm, priorTerms: ComboTerm[]): ModelDiagnosticJson | null {
-    const currentFormula = current.transition.guard ? constraintFormulaFromExpression(current.transition.guard) : null;
+function prefixGuardDiagnostic(
+    current: ComboTerm,
+    priorTerms: ComboTerm[],
+    domains: Map<string, VariableDomain>,
+): ModelDiagnosticJson | null {
+    const currentFormula = current.transition.guard ? constraintFormulaFromExpression(current.transition.guard, domains) : null;
     if (!currentFormula) return null;
 
     const priorFormulas: Array<{term: ComboTerm; formula: ConstraintFormula}> = [];
     for (const prior of priorTerms) {
-        const formula = prior.transition.guard ? constraintFormulaFromExpression(prior.transition.guard) : null;
+        const formula = prior.transition.guard ? constraintFormulaFromExpression(prior.transition.guard, domains) : null;
         if (!formula) return null;
         priorFormulas.push({term: prior, formula});
     }
@@ -254,42 +275,42 @@ function makePrefixGuardDiagnostic(
     };
 }
 
-function simpleConstraint(expr: Expr): SimpleConstraint | null {
+function simpleConstraint(expr: Expr, domains: Map<string, VariableDomain>): SimpleConstraint | null {
     if (!(expr instanceof BinaryOp)) return null;
     const leftVariable = expr.x instanceof Variable ? expr.x.name : null;
     const rightVariable = expr.y instanceof Variable ? expr.y.name : null;
     const leftNumber = numericLiteralValue(expr.x);
     const rightNumber = numericLiteralValue(expr.y);
     if (leftVariable && rightNumber !== null) {
-        return constraintFromParts(leftVariable, expr.op, rightNumber);
+        return constraintFromParts(leftVariable, domains.get(leftVariable), expr.op, rightNumber);
     }
     if (rightVariable && leftNumber !== null) {
-        return constraintFromParts(rightVariable, invertComparison(expr.op), leftNumber);
+        return constraintFromParts(rightVariable, domains.get(rightVariable), invertComparison(expr.op), leftNumber);
     }
     return null;
 }
 
-function constraintFormulaFromExpression(expr: Expr): ConstraintFormula | null {
+function constraintFormulaFromExpression(expr: Expr, domains: Map<string, VariableDomain>): ConstraintFormula | null {
     if (expr instanceof BooleanExpr) {
         return expr.value ? trueConstraintFormula() : falseConstraintFormula();
     }
     if (expr instanceof UnaryOp && (expr.op === '!' || expr.op === 'not')) {
-        const formula = constraintFormulaFromExpression(expr.x);
+        const formula = constraintFormulaFromExpression(expr.x, domains);
         return formula ? negateConstraintFormula(formula) : null;
     }
     if (expr instanceof BinaryOp && (expr.op === '&&' || expr.op === 'and')) {
-        const left = constraintFormulaFromExpression(expr.x);
-        const right = constraintFormulaFromExpression(expr.y);
+        const left = constraintFormulaFromExpression(expr.x, domains);
+        const right = constraintFormulaFromExpression(expr.y, domains);
         if (!left || !right) return null;
         return andConstraintFormulas([left, right]);
     }
     if (expr instanceof BinaryOp && (expr.op === '||' || expr.op === 'or')) {
-        const left = constraintFormulaFromExpression(expr.x);
-        const right = constraintFormulaFromExpression(expr.y);
+        const left = constraintFormulaFromExpression(expr.x, domains);
+        const right = constraintFormulaFromExpression(expr.y, domains);
         if (!left || !right) return null;
         return orConstraintFormulas([left, right]);
     }
-    const constraint = simpleConstraint(expr);
+    const constraint = simpleConstraint(expr, domains);
     if (!constraint) return null;
     return constraintFormulaFromConstraints([constraint]);
 }
@@ -363,22 +384,32 @@ function negateConstraintSet(set: ConstraintSet): ConstraintFormula | null {
 function negateSimpleConstraint(constraint: SimpleConstraint): ConstraintFormula | null {
     const alternatives: ConstraintSet[] = [];
     if (constraint.equal !== undefined) {
-        alternatives.push(simpleConstraintSet({variable: constraint.variable, notEqual: [constraint.equal]}));
+        alternatives.push(simpleConstraintSet({
+            variable: constraint.variable,
+            domain: constraint.domain,
+            notEqual: [constraint.equal],
+        }));
     } else {
         if (constraint.lower) {
             alternatives.push(simpleConstraintSet({
                 variable: constraint.variable,
+                domain: constraint.domain,
                 upper: {value: constraint.lower.value, inclusive: !constraint.lower.inclusive},
             }));
         }
         if (constraint.upper) {
             alternatives.push(simpleConstraintSet({
                 variable: constraint.variable,
+                domain: constraint.domain,
                 lower: {value: constraint.upper.value, inclusive: !constraint.upper.inclusive},
             }));
         }
         for (const value of constraint.notEqual ?? []) {
-            alternatives.push(simpleConstraintSet({variable: constraint.variable, equal: value}));
+            alternatives.push(simpleConstraintSet({
+                variable: constraint.variable,
+                domain: constraint.domain,
+                equal: value,
+            }));
         }
     }
     return {alternatives: alternatives.filter(isConstraintSetSatisfiable)};
@@ -411,16 +442,19 @@ function mergeConstraintSets(sets: ConstraintSet[]): ConstraintSet {
 }
 
 function mergeCompatibleConstraints(left: SimpleConstraint, right: SimpleConstraint): SimpleConstraint {
+    const domain = left.domain;
     const equal = left.equal !== undefined ? left.equal : right.equal;
     if (equal !== undefined) {
         return normalizeConstraint({
             variable: left.variable,
+            domain,
             equal,
             notEqual: mergeNotEqual(left.notEqual, right.notEqual),
         });
     }
     return normalizeConstraint({
         variable: left.variable,
+        domain,
         lower: strongestLower(left.lower, right.lower),
         upper: strongestUpper(left.upper, right.upper),
         notEqual: mergeNotEqual(left.notEqual, right.notEqual),
@@ -437,6 +471,7 @@ function cloneConstraintSet(set: ConstraintSet): ConstraintSet {
 function cloneConstraint(constraint: SimpleConstraint): SimpleConstraint {
     return {
         variable: constraint.variable,
+        domain: constraint.domain,
         lower: constraint.lower ? {...constraint.lower} : undefined,
         upper: constraint.upper ? {...constraint.upper} : undefined,
         equal: constraint.equal,
@@ -445,15 +480,42 @@ function cloneConstraint(constraint: SimpleConstraint): SimpleConstraint {
 }
 
 function normalizeConstraint(constraint: SimpleConstraint): SimpleConstraint {
-    const singleton = singletonValue(constraint);
+    const normalized = constraint.domain === 'int' ? normalizeIntegerConstraint(constraint) : constraint;
+    const singleton = singletonValue(normalized);
     if (singleton !== null) {
         return {
-            variable: constraint.variable,
+            variable: normalized.variable,
+            domain: normalized.domain,
             equal: singleton,
-            notEqual: constraint.notEqual ? [...constraint.notEqual] : undefined,
+            notEqual: normalized.notEqual ? [...normalized.notEqual] : undefined,
         };
     }
-    return constraint;
+    return normalized;
+}
+
+function normalizeIntegerConstraint(constraint: SimpleConstraint): SimpleConstraint {
+    return {
+        variable: constraint.variable,
+        domain: constraint.domain,
+        lower: constraint.lower ? integerLowerBound(constraint.lower) : undefined,
+        upper: constraint.upper ? integerUpperBound(constraint.upper) : undefined,
+        equal: constraint.equal,
+        notEqual: constraint.notEqual?.filter(Number.isInteger),
+    };
+}
+
+function integerLowerBound(bound: Bound): Bound {
+    return {
+        value: bound.inclusive ? Math.ceil(bound.value) : Math.floor(bound.value) + 1,
+        inclusive: true,
+    };
+}
+
+function integerUpperBound(bound: Bound): Bound {
+    return {
+        value: bound.inclusive ? Math.floor(bound.value) : Math.ceil(bound.value) - 1,
+        inclusive: true,
+    };
 }
 
 function singletonValue(constraint: SimpleConstraint): number | null {
@@ -479,6 +541,9 @@ function isConstraintSetSatisfiable(set: ConstraintSet): boolean {
 }
 
 function constraintImpossible(constraint: SimpleConstraint): boolean {
+    if (constraint.domain === 'int' && constraint.equal !== undefined && !Number.isInteger(constraint.equal)) {
+        return true;
+    }
     const singleton = singletonValue(constraint);
     if (singleton !== null) return constraint.notEqual?.includes(singleton) ?? false;
     if (constraint.lower && constraint.upper) {
@@ -516,6 +581,8 @@ function firstDecisivePriorTerm(
             return item.term;
         }
     }
+    // Unreachable once the caller has already established the prefix relation;
+    // keep the nearest prior guard as a defensive fallback.
     return priorFormulas[priorFormulas.length - 1].term;
 }
 
@@ -538,38 +605,31 @@ function invertComparison(op: string): string {
     return op;
 }
 
-function constraintFromParts(variable: string, op: string, value: number): SimpleConstraint | null {
-    if (op === '>') return {variable, lower: {value, inclusive: false}};
-    if (op === '>=') return {variable, lower: {value, inclusive: true}};
-    if (op === '<') return {variable, upper: {value, inclusive: false}};
-    if (op === '<=') return {variable, upper: {value, inclusive: true}};
-    if (op === '==') return {variable, equal: value};
-    if (op === '!=') return {variable, notEqual: [value]};
+function constraintFromParts(
+    variable: string,
+    domain: VariableDomain | undefined,
+    op: string,
+    value: number,
+): SimpleConstraint | null {
+    if (!domain) return null;
+    if (op === '>') return normalizeConstraint({variable, domain, lower: {value, inclusive: false}});
+    if (op === '>=') return normalizeConstraint({variable, domain, lower: {value, inclusive: true}});
+    if (op === '<') return normalizeConstraint({variable, domain, upper: {value, inclusive: false}});
+    if (op === '<=') return normalizeConstraint({variable, domain, upper: {value, inclusive: true}});
+    if (op === '==') return normalizeConstraint({variable, domain, equal: value});
+    if (op === '!=') return normalizeConstraint({variable, domain, notEqual: [value]});
     return null;
 }
 
-function constraintImplies(prior: SimpleConstraint, current: SimpleConstraint): boolean {
-    if (prior.equal !== undefined) return valueSatisfies(prior.equal, current);
-    if (current.equal !== undefined) return prior.equal === current.equal;
-    if (current.lower && (!prior.lower || !lowerAtLeastAsStrong(prior.lower, current.lower))) return false;
-    if (current.upper && (!prior.upper || !upperAtLeastAsStrong(prior.upper, current.upper))) return false;
-    if (current.notEqual) {
-        if (!current.notEqual.every(value => !valueSatisfies(value, prior))) return false;
-    }
-    return Boolean(current.lower || current.upper || current.notEqual);
-}
-
 function constraintsContradict(left: SimpleConstraint, right: SimpleConstraint): boolean {
+    if (left.domain !== right.domain) return false;
     if (left.equal !== undefined) return !valueSatisfies(left.equal, right);
     if (right.equal !== undefined) return !valueSatisfies(right.equal, left);
-    const lower = strongestLower(left.lower, right.lower);
-    const upper = strongestUpper(left.upper, right.upper);
-    if (!lower || !upper) return false;
-    if (lower.value > upper.value) return true;
-    return lower.value === upper.value && (!lower.inclusive || !upper.inclusive);
+    return constraintImpossible(mergeCompatibleConstraints(left, right));
 }
 
 function valueSatisfies(value: number, constraint: SimpleConstraint): boolean {
+    if (constraint.domain === 'int' && !Number.isInteger(value)) return false;
     if (constraint.equal !== undefined && value !== constraint.equal) return false;
     if (constraint.notEqual?.includes(value)) return false;
     if (constraint.lower) {

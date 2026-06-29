@@ -252,6 +252,26 @@ def test_combo_guard_prefix_contradiction_warning_handles_complex_prior_guard():
 
 
 @pytest.mark.unittest
+def test_combo_guard_prefix_contradiction_warning_handles_distinct_equalities():
+    source = """
+    def int x = 0;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : [x == 0] + [x == 1];
+    }
+    """
+    diagnostics = _diagnostics_for(source, "W_COMBO_GUARD_PREFIX_CONTRADICTS")
+
+    assert len(diagnostics) == 1
+    diagnostic = diagnostics[0]
+    assert _slice_by_span(source, diagnostic.span) == "[x == 1]"
+    assert _slice_by_span(source, diagnostic.refs["prior_term_span"]) == "[x == 0]"
+    assert diagnostic.refs["prior_term_text"] == "[x == 0]"
+
+
+@pytest.mark.unittest
 def test_combo_guard_prefix_contradiction_warning_handles_singleton_not_equal():
     source = """
     def int x = 0;
@@ -269,6 +289,32 @@ def test_combo_guard_prefix_contradiction_warning_handles_singleton_not_equal():
     assert _slice_by_span(source, diagnostic.span) == "[x != 0]"
     assert _slice_by_span(source, diagnostic.refs["prior_term_span"]) == "[x >= 0 && x <= 0]"
     assert diagnostic.refs["prior_term_text"] == "[x >= 0 && x <= 0]"
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ("decl", "code"),
+    [
+        ("def int x = 0;", "W_COMBO_GUARD_PREFIX_CONTRADICTS"),
+        ("def float x = 0.0;", "W_COMBO_GUARD_PREFIX_IMPLIED"),
+    ],
+)
+def test_combo_guard_prefix_warning_respects_variable_domain(decl, code):
+    source = f"""
+    {decl}
+    state Root {{
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : [x > 0 && x < 1] + [x > 0];
+    }}
+    """
+    diagnostics = _diagnostics_for(source, code)
+
+    assert len(diagnostics) == 1
+    diagnostic = diagnostics[0]
+    assert _slice_by_span(source, diagnostic.span) == "[x > 0]"
+    assert _slice_by_span(source, diagnostic.refs["prior_term_span"]) == "[x > 0 && x < 1]"
 
 
 @pytest.mark.unittest

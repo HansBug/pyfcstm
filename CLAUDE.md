@@ -194,6 +194,10 @@ fields requires a new schema version.
 
 In GitHub Actions, `workflow_dispatch` accepts `template_suites` and `skip_template_suites` inputs. A dispatch without a
 positive `template_suites` value fails closed to `all`; a skip-only dispatch cannot narrow coverage to an empty matrix.
+The `Code Test` workflow intentionally avoids workflow-level `on.push.paths` / `paths-ignore` gating: every push enters
+the workflow, and suite selection happens inside detector, representative, full-suite, and aggregate-gate jobs so branch
+protection does not get stuck on path-filtered pending checks. Use the existing commit-message skip tokens for truly
+docs-only pushes that should bypass expensive jobs.
 The stable aggregate check is named `template-suite-gate`; branch protection should depend on that gate rather than on
 per-suite dynamic job names such as `Template full (c)`. Code-test skip tokens skip the expensive unittest/
 representative/full jobs only after detector success; unknown template labels, malformed detector output, missing detector

@@ -554,6 +554,8 @@ class TestComboModelExpansion:
             (
                 item.from_state,
                 item.to_state,
+                item.event_scope,
+                item.event.path_name if item.event is not None else None,
                 len(item.combo_origin_refs),
                 item.combo_projection_key,
                 item.combo_projection_order_key,
@@ -564,6 +566,8 @@ class TestComboModelExpansion:
             (
                 item.from_state,
                 item.to_state,
+                item.event_scope,
+                item.event.path_name if item.event is not None else None,
                 len(item.combo_origin_refs),
                 item.combo_projection_key,
                 item.combo_projection_order_key,
@@ -571,6 +575,12 @@ class TestComboModelExpansion:
             for item in model.root_state.transitions
             if item.from_state != "INIT_STATE"
         ]
+        assert "local" in second_round_tripped.root_state.substates["A"].events[
+            "E2"
+        ].origins
+        assert "chain" not in second_round_tripped.root_state.substates["A"].events[
+            "E2"
+        ].origins
 
     def test_mutated_trusted_combo_ast_export_is_rejected(self):
         model = _build_model(

@@ -239,6 +239,7 @@ class _TrustedComboTransitionMetadata:
     """Process-local metadata for generated combo transitions exported to AST."""
 
     origin_refs: Tuple[ComboOriginRef, ...]
+    event_scope: Optional[str]
     projection_key: Tuple[object, ...]
     projection_order_key: Tuple[object, ...]
     reuse_group_id: str
@@ -1586,12 +1587,14 @@ class State(AstExportable, PlantUMLExportable):
             if transition.guard is not None
             else None,
             post_operations=[item.to_ast_node() for item in transition.effects],
+            event_scope=transition.event_scope,
         )
         if transition.combo_origin_refs:
             _mark_generated_combo_transition_node(
                 node,
                 _TrustedComboTransitionMetadata(
                     origin_refs=transition.combo_origin_refs,
+                    event_scope=transition.event_scope,
                     projection_key=transition.combo_projection_key,
                     projection_order_key=transition.combo_projection_order_key,
                     reuse_group_id=transition.combo_reuse_group_id,
@@ -4122,32 +4125,54 @@ def parse_dsl_node_to_state_machine(
             else:
                 to_state = transnode.to_state
 
+            trusted_combo_metadata = _get_trusted_generated_combo_transition_metadata(
+                transnode
+            )
+            event_scope_hint = (
+                trusted_combo_metadata.event_scope
+                if trusted_combo_metadata is not None
+                else transnode.event_scope
+            )
+            source_state_name = (
+                transnode.from_state if isinstance(transnode.from_state, str) else None
+            )
+            if (
+                trusted_combo_metadata is not None
+                and event_scope_hint == "local"
+                and trusted_combo_metadata.projection_key is not None
+            ):
+                projection_key = trusted_combo_metadata.projection_key
+                if (
+                    len(projection_key) >= 3
+                    and projection_key[1] == "state"
+                    and isinstance(projection_key[2], tuple)
+                    and projection_key[2]
+                ):
+                    source_state_name = projection_key[2][-1]
+
             trans_event = None
             event_scope = None
             if transnode.event_id is not None:
                 event_scope, trans_event = _resolve_transition_event(
                     transnode,
                     transnode.event_id,
-                    transnode.event_scope,
-                    source_state_name=(
-                        transnode.from_state
-                        if isinstance(transnode.from_state, str)
-                        else None
-                    ),
+                    event_scope_hint,
+                    source_state_name=source_state_name,
                 )
 
             guard = _parse_transition_guard(transnode, transnode.condition_expr)
             post_operations = _parse_transition_effects(transnode)
-            trusted_combo_metadata = _get_trusted_generated_combo_transition_metadata(
-                transnode
-            )
             return Transition(
                 from_state=from_state,
                 to_state=to_state,
                 event=trans_event,
                 guard=guard,
                 effects=post_operations,
-                event_scope=event_scope,
+                event_scope=(
+                    trusted_combo_metadata.event_scope
+                    if trusted_combo_metadata is not None
+                    else event_scope
+                ),
                 combo_origin_refs=(
                     trusted_combo_metadata.origin_refs
                     if trusted_combo_metadata is not None

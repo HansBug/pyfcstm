@@ -1037,6 +1037,9 @@ describe('diagnostics transition body ranges', () => {
             '    [*] -> A;',
             '    A -> B : [x > 0 && y > 0] + [x > 0];',
             '    A -> B : [x > 0 && y > 0] + [x < 0];',
+            '    A -> B : [x >= 0 && x <= 0] + [x != 0];',
+            '    A -> B : [x > 0] + [x > 0 || y > 0];',
+            '    A -> B : [x > 0] + [not (x > 0)];',
             '}',
         ].join('\n');
         const document = createDocument(text, '/tmp/combo-real-complex-guard-warning-ranges.fcstm');
@@ -1045,22 +1048,56 @@ describe('diagnostics transition body ranges', () => {
         const implied = diagnostics.filter(item => item.code === 'W_COMBO_GUARD_PREFIX_IMPLIED');
         const contradicts = diagnostics.filter(item => item.code === 'W_COMBO_GUARD_PREFIX_CONTRADICTS');
 
-        assert.equal(implied.length, 1, JSON.stringify(diagnostics.map(item => item.data)));
-        assert.equal(contradicts.length, 1, JSON.stringify(diagnostics.map(item => item.data)));
-        assert.equal(sliceByRange(text, implied[0].range), '[x > 0]');
-        assert.equal(sliceByRange(text, contradicts[0].range), '[x < 0]');
+        assert.equal(implied.length, 2, JSON.stringify(diagnostics.map(item => item.data)));
+        assert.equal(contradicts.length, 3, JSON.stringify(diagnostics.map(item => item.data)));
+
+        const complexImplied = implied.find(item => item.data?.term_text === '[x > 0]');
+        const orImplied = implied.find(item => item.data?.term_text === '[x > 0 || y > 0]');
+        const complexContradiction = contradicts.find(item => item.data?.term_text === '[x < 0]');
+        const singletonContradiction = contradicts.find(item => item.data?.term_text === '[x != 0]');
+        const notContradiction = contradicts.find(item => item.data?.term_text === '[!(x > 0)]');
+
+        assert.ok(complexImplied, JSON.stringify(implied.map(item => item.data)));
+        assert.ok(orImplied, JSON.stringify(implied.map(item => item.data)));
+        assert.ok(complexContradiction, JSON.stringify(contradicts.map(item => item.data)));
+        assert.ok(singletonContradiction, JSON.stringify(contradicts.map(item => item.data)));
+        assert.ok(notContradiction, JSON.stringify(contradicts.map(item => item.data)));
+
+        assert.equal(sliceByRange(text, complexImplied.range), '[x > 0]');
+        assert.equal(sliceByRange(text, orImplied.range), '[x > 0 || y > 0]');
+        assert.equal(sliceByRange(text, complexContradiction.range), '[x < 0]');
+        assert.equal(sliceByRange(text, singletonContradiction.range), '[x != 0]');
+        assert.equal(sliceByRange(text, notContradiction.range), '[not (x > 0)]');
+        assert.equal(notContradiction.data?.term_text, '[!(x > 0)]');
+
         assert.equal(
-            sliceByRange(text, implied[0].relatedInformation![0].location.range),
+            sliceByRange(text, complexImplied.relatedInformation![0].location.range),
             '[x > 0 && y > 0]',
         );
         assert.equal(
-            sliceByRange(text, contradicts[0].relatedInformation![0].location.range),
+            sliceByRange(text, orImplied.relatedInformation![0].location.range),
+            '[x > 0]',
+        );
+        assert.equal(
+            sliceByRange(text, complexContradiction.relatedInformation![0].location.range),
             '[x > 0 && y > 0]',
         );
-        assert.equal(implied[0].data?.prior_term_text, '[x > 0 && y > 0]');
-        assert.equal(contradicts[0].data?.prior_term_text, '[x > 0 && y > 0]');
-        assert.equal(implied[0].data?.__rangeFallback, undefined);
-        assert.equal(contradicts[0].data?.__rangeFallback, undefined);
+        assert.equal(
+            sliceByRange(text, singletonContradiction.relatedInformation![0].location.range),
+            '[x >= 0 && x <= 0]',
+        );
+        assert.equal(
+            sliceByRange(text, notContradiction.relatedInformation![0].location.range),
+            '[x > 0]',
+        );
+        assert.equal(complexImplied.data?.prior_term_text, '[x > 0 && y > 0]');
+        assert.equal(orImplied.data?.prior_term_text, '[x > 0]');
+        assert.equal(complexContradiction.data?.prior_term_text, '[x > 0 && y > 0]');
+        assert.equal(singletonContradiction.data?.prior_term_text, '[x >= 0 && x <= 0]');
+        assert.equal(notContradiction.data?.prior_term_text, '[x > 0]');
+        for (const diagnostic of [...implied, ...contradicts]) {
+            assert.equal(diagnostic.data?.__rangeFallback, undefined);
+        }
     });
 
     it('emits duplicate combo event warnings through the real document diagnostics path', async () => {

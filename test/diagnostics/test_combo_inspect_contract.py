@@ -252,6 +252,67 @@ def test_combo_guard_prefix_contradiction_warning_handles_complex_prior_guard():
 
 
 @pytest.mark.unittest
+def test_combo_guard_prefix_contradiction_warning_handles_singleton_not_equal():
+    source = """
+    def int x = 0;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : [x >= 0 && x <= 0] + [x != 0];
+    }
+    """
+    diagnostics = _diagnostics_for(source, "W_COMBO_GUARD_PREFIX_CONTRADICTS")
+
+    assert len(diagnostics) == 1
+    diagnostic = diagnostics[0]
+    assert _slice_by_span(source, diagnostic.span) == "[x != 0]"
+    assert _slice_by_span(source, diagnostic.refs["prior_term_span"]) == "[x >= 0 && x <= 0]"
+    assert diagnostic.refs["prior_term_text"] == "[x >= 0 && x <= 0]"
+
+
+@pytest.mark.unittest
+def test_combo_guard_prefix_implied_warning_handles_or_current_guard():
+    source = """
+    def int x = 1;
+    def int y = 1;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : [x > 0] + [x > 0 || y > 0];
+    }
+    """
+    diagnostics = _diagnostics_for(source, "W_COMBO_GUARD_PREFIX_IMPLIED")
+
+    assert len(diagnostics) == 1
+    diagnostic = diagnostics[0]
+    assert _slice_by_span(source, diagnostic.span) == "[x > 0 || y > 0]"
+    assert _slice_by_span(source, diagnostic.refs["prior_term_span"]) == "[x > 0]"
+    assert diagnostic.refs["prior_term_text"] == "[x > 0]"
+
+
+@pytest.mark.unittest
+def test_combo_guard_prefix_contradiction_warning_handles_not_current_guard():
+    source = """
+    def int x = 1;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : [x > 0] + [not (x > 0)];
+    }
+    """
+    diagnostics = _diagnostics_for(source, "W_COMBO_GUARD_PREFIX_CONTRADICTS")
+
+    assert len(diagnostics) == 1
+    diagnostic = diagnostics[0]
+    assert _slice_by_span(source, diagnostic.span) == "[not (x > 0)]"
+    assert _slice_by_span(source, diagnostic.refs["prior_term_span"]) == "[x > 0]"
+    assert diagnostic.refs["prior_term_text"] == "[x > 0]"
+
+
+@pytest.mark.unittest
 def test_combo_guard_prefix_warning_suppressed_by_relevant_source_exit_write():
     source = """
     def int x = 1;

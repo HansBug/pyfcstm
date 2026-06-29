@@ -116,21 +116,23 @@ make unittest WORKERS=4                              # With parallel workers
 pytest test/simulate/test_semantic_fixtures.py -v
 pytest test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture -v
 
-# Fast path: skip native-toolchain template tests (test/template/c, test/template/c_poll)
-# which invoke real cmake/cc per case and consume ~85% of unittest wall time.
-SKIP_SLOW_TESTS=1 make unittest          # ~24s vs ~174s full local (~7x faster)
+# Fast path: run the same lightweight template subset used by the default Code Test workflow.
+SKIP_SLOW_TESTS=1 make unittest          # skips C-family full semantic/native alignment, keeps Python full + wrapper smoke
 ```
 
-The `SKIP_SLOW_TESTS=1` env var is read by [test/conftest.py](test/conftest.py). It auto-skips every test under
-[test/template/c/](test/template/c/) and [test/template/c_poll/](test/template/c_poll/) — these are the tests that
-compile C/C++ via cmake. Use it for iteration cycles that don't touch generated C runtime. The Python template,
-simulator, model, DSL, render, and verify tests all still run.
+The `SKIP_SLOW_TESTS=1` env var is read by [test/conftest.py](test/conftest.py). It skips the broad
+[test/template/c/](test/template/c/) and [test/template/c_poll/](test/template/c_poll/) paths, plus the full semantic
+alignment and explicit native-toolchain alignment tests under [test/template/cpp/](test/template/cpp/) and
+[test/template/cpp_poll/](test/template/cpp_poll/). C++ wrapper smoke tests, the Python template, simulator, model, DSL,
+render, and verify tests still run. This is now the default `Code Test` workflow subset; selected non-Python template
+full suites run in dedicated `template_full` jobs instead of the main unittest matrix.
 
 ### Template Suite Detector
 
-The repository now includes a tools-only detector for the planned template-suite CI split. In its initial state it is a
-repo-local helper with an explicit `--check` self-check; it is **not** part of the public `pyfcstm` package and does
-**not** change the default `make unittest` or GitHub Actions route yet.
+The repository includes a tools-only detector and runner for template-suite selection. They are repo-local helpers with
+explicit `--check` self-checks; they are **not** part of the public `pyfcstm` package. The default GitHub `Code Test`
+workflow uses the lightweight template subset from `SKIP_SLOW_TESTS=1 make unittest`, then runs representative and
+selected full template suites through dedicated jobs.
 
 ```bash
 python tools/detect_template_suites.py --check
@@ -187,6 +189,17 @@ dynamic suites; they cannot remove path-detected suites and cannot disable fixed
 tokens are hard failures, not warnings. The current JSON schema version is `template-suite-detector/v1`; renaming or
 removing fields requires a new schema version.
 
+In GitHub Actions, `workflow_dispatch` accepts `template_suites` and `skip_template_suites` inputs. A dispatch without a
+positive `template_suites` value fails closed to `all`; a skip-only dispatch cannot narrow coverage to an empty matrix.
+The stable aggregate check is named `template-suite-gate`; branch protection should depend on that gate rather than on
+per-suite dynamic job names such as `Template full (c)`. Code-test skip tokens skip the expensive unittest/
+representative/full jobs only after detector success; unknown template labels, malformed detector output, missing detector
+outputs, or detector failures must still fail the stable gate. These global skip tokens bypass selected/path-protected full
+suites only as whole-workflow skip controls; per-suite `[skip-tpl:*]` / `PYFCSTM_SKIP_TEMPLATE_SUITES` requests still
+cannot remove path-protected suites. The dynamic full-suite job runs on Ubuntu with Python 3.11 and clears inherited
+`SKIP_SLOW_TESTS` before invoking `make template_unittest`, so protected or manually selected full suites cannot be
+converted into false-green skips.
+
 ### CI Workflow Commit-Message Triggers
 
 [.github/workflows/test.yml](.github/workflows/test.yml) honors five magic substrings in the **head commit message**.
@@ -196,10 +209,10 @@ gate. Always grep your commit message against the table below before pushing.
 
 | Substring | Trigger | Effect |
 |---|---|---|
-| `ci skip` | head commit message contains this substring anywhere | Skips both `Code test` (unittest matrix), `jsfcstm test`, and `CLI Build` workflows entirely. Use for docs-only / comment-only commits. |
-| `test skip` | head commit message contains this substring anywhere | Skips both the `Code test` (Python unittest matrix) AND the `jsfcstm test` workflows. `CLI Build` still runs. |
-| `[skip-slow]` | head commit message contains this substring anywhere | Runs the full unittest workflow normally, but injects `SKIP_SLOW_TESTS=1` into the unittest step, which skips [test/template/c](test/template/c) and [test/template/c_poll](test/template/c_poll) (cmake/cc compile tests, ~85% of wall time). Use when iterating on changes that demonstrably can't affect the C/C++ runtime templates. |
-| `[python skip]` | head commit message contains this substring anywhere | Skips the `Code test` (Python unittest matrix) AND `CLI Build` jobs. The `jsfcstm test` job still runs. Use for jsfcstm-only changes (TypeScript / mocha updates) where the Python matrix would only burn CI minutes. |
+| `ci skip` | head commit message contains this substring anywhere | Skips the expensive Code Test test jobs (`Code test`, representative, and selected full suites), `jsfcstm test`, and `CLI Build`; the lightweight detector / `template-suite-gate` may still report a successful skip summary for branch-protection stability. Use for docs-only / comment-only commits. |
+| `test skip` | head commit message contains this substring anywhere | Skips the expensive Code Test test jobs (`Code test`, representative, and selected full suites) and the `jsfcstm test` workflow. `CLI Build` still runs; the lightweight detector / `template-suite-gate` may still report a successful skip summary. |
+| `[skip-slow]` | head commit message contains this substring anywhere | Legacy compatibility token. The default `Code Test` unittest matrix already runs with `SKIP_SLOW_TESTS=1`; selected/path-protected full template suites still run in `template_full` jobs and explicitly clear `SKIP_SLOW_TESTS`. |
+| `[python skip]` | head commit message contains this substring anywhere | Skips the expensive Code Test test jobs (`Code test`, representative, and selected full suites) AND `CLI Build` jobs. The `jsfcstm test` job still runs; the lightweight detector / `template-suite-gate` may still report a successful skip summary. Use for jsfcstm-only changes (TypeScript / mocha updates) where the Python matrix would only burn CI minutes. |
 | `[js skip]` | head commit message contains this substring anywhere | Skips only the `jsfcstm test` workflow. The Python unittest matrix and `CLI Build` still run. Use for Python-only / Makefile changes that obviously can't affect the jsfcstm TypeScript build. |
 
 **Footgun:** because `contains()` is substring match, phrases like `"slow-test skip mechanism"` or `"document the ci skip flag"` will activate `test skip` / `ci skip` respectively. If you need to mention these tokens in a commit body, either rephrase (`"slow-test gating"`, `"document the ci-bypass flag"`) or quote them with characters that break the literal substring (e.g. `` `ci-skip` ``, `ci_skip`). When in doubt, run:

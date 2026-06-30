@@ -1,0 +1,14 @@
+def int value = 0;
+
+state Root {
+    [*] -> Active : EntryA + EntryB effect { value = value + 1; }
+    [*] -> Fallback effect { value = value + 10; }
+
+    state Active {
+        enter { value = value + 100; }
+    }
+
+    state Fallback {
+        enter { value = value + 1000; }
+    }
+}

@@ -1,0 +1,30 @@
+title: Combo transition trigger exit continuation rollback alignment
+origin:
+  files:
+  - test/simulate/test_combo_runtime_compat.py::test_exit_combo_parent_continuation_failure_rolls_back_to_source
+  - test/model/test_combo_transition_expansion.py::TestComboModelExpansion::test_entry_and_exit_combo_expand_under_owner_composite
+  notes:
+  - Covers an exit combo whose event chain reaches the parent boundary but the parent continuation guard is false, so child exit actions, combo terminal effects, and target enter actions must all roll back.
+  - The fixture is consumed by both the simulator and generated Python runtime alignment runners.
+categories:
+- runtime
+- template_alignment
+- pseudo_chain
+- lifecycle
+steps:
+- cycle: []
+  expect:
+    state: Root.Parent.S
+    vars:
+      gate: 0
+      value: 0
+    ended: false
+- cycle:
+  - Root.Parent.S.E1
+  - Root.Parent.S.E2
+  expect:
+    state: Root.Parent.S
+    vars:
+      gate: 0
+      value: 0
+    ended: false

@@ -2,7 +2,11 @@
 
 import pytest
 
-from pyfcstm.verify import dead_guard, guard_tautology
+from pyfcstm.verify import (
+    dead_guard,
+    guard_tautology,
+    transition_shadowed_by_predecessor,
+)
 from test.testings.combo_runtime import parse_machine
 
 
@@ -66,3 +70,32 @@ def test_guard_tautology_consumes_combo_generated_guard_transition():
     assert result.kind == "unsat"
     assert result.diagnostics[0]["code"] == "W_GUARD_TAUTOLOGY"
     assert result.diagnostics[0]["data"]["transition"]["guard"] == ("x >= 0 || x < 0")
+
+
+def test_transition_shadowing_skips_unstable_combo_predecessor():
+    """Unstable combo predecessors do not deterministically shadow fallbacks."""
+    machine = parse_machine(
+        """
+        def int gate = 0;
+        def int value = 0;
+        state Root {
+            state S;
+            state Target {
+                [*] -> Good : if [gate == 1];
+                state Good;
+            }
+            state Fallback { enter { value = value + 100; } }
+            [*] -> S;
+            S -> Target :: E1 + E2;
+            S -> Fallback :: E1 effect { value = value + 1; }
+        }
+        """
+    )
+
+    result = transition_shadowed_by_predecessor(
+        machine, _variables(machine), smt_timeout_ms=200
+    )
+
+    assert result.kind == "undecidable_skip"
+    assert result.diagnostics == ()
+    assert "stable continuation" in result.reason

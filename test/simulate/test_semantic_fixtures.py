@@ -98,10 +98,16 @@ def test_generated_alignment_regression_fixtures_remain_shared():
         "event_path_parent_relative",
         "event_path_mixed_formats_full",
         "combo_transition_trigger_duplicate_event_alignment",
+        "combo_transition_trigger_entry_fallback_alignment",
+        "combo_transition_trigger_exit_continuation_rollback_alignment",
+        "combo_transition_trigger_exit_fallback_alignment",
+        "combo_transition_trigger_fence_prefix_guard_alignment",
         "combo_transition_trigger_lifecycle_alignment",
+        "combo_transition_trigger_prefix_order_alignment",
         "combo_transition_trigger_priority_scope_alignment",
         "combo_transition_trigger_rollback_alignment",
         "combo_transition_trigger_template_alignment",
+        "combo_transition_trigger_unstable_predecessor_alignment",
     }
     cases = {case.id: case for case in iter_semantic_cases()}
 

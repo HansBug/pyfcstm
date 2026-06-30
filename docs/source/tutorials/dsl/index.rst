@@ -505,7 +505,7 @@ Entry transitions define the initial state when entering a composite state. They
 
    [*] -> Idle;                                    // Simple entry
    [*] -> Running : startup_event;                 // Entry with chain event
-   [*] -> Running :: startup_event;                // Entry with legacy chain event
+   [*] -> Running :: startup_event;                // Entry with chain-scoped event via ::
    [*] -> Active : if [initialized == 0x1];        // Entry with guard
    [*] -> Active : [initialized == 0x1];           // Guard alias
    [*] -> Running : startup_event + [mode == 1];   // Entry combo trigger
@@ -579,11 +579,13 @@ Combo Trigger Syntax
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 A combo trigger is an ordered sequence of two or more trigger terms. Event
-terms consume events from the current cycle; guard terms are written as
-``[condition]`` and must evaluate to true at that point in the pseudo-state
-chain. The original transition effect, if any, is attached only to the final
-generated transition, so failed combo chains roll back just like hand-written
-pseudo-state chains.
+terms match events present in the current cycle; repeated identical event terms
+are allowed and remain presence-based, so one matching input event can satisfy
+that repeated term chain, although inspect reports it as a likely typo. Guard
+terms are written as ``[condition]`` and must evaluate to true at that point in
+the pseudo-state chain. The original transition effect, if any, is attached
+only to the final generated transition, so failed combo chains roll back just
+like hand-written pseudo-state chains.
 
 .. code-block:: fcstm
 

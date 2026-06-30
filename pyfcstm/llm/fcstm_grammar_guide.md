@@ -140,9 +140,12 @@ state Elevator {
 Combo transition triggers are ordered `+` chains of event terms and bracketed
 guard terms. They are syntax sugar: model construction expands them into
 ordinary pseudo states and normal transitions. Runtime, verification, code
-generation, and visualization consume the expanded model. Generated combo
-pseudo states are visible in diagrams with stable names, and state names
-beginning with `__combo_` are reserved for generated pseudo states.
+generation, and visualization consume the expanded model. Event terms match
+events present in the current cycle; repeated identical event terms are allowed
+and remain presence-based, so one matching input event can satisfy that repeated
+term chain, although inspect reports it as a likely typo. Generated combo pseudo
+states are visible in diagrams with stable names, and state names beginning with
+`__combo_` are reserved for generated pseudo states.
 
 ```fcstm
 def int ready = 1;

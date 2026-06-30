@@ -1,10 +1,13 @@
 title: Combo transition trigger template alignment
 origin:
   files:
-  - test/simulate/test_combo_runtime_compat.py
-  - test/template/python/test_semantic_fixture_alignment.py
+  - test/simulate/test_combo_runtime_compat.py::test_event_guard_event_success_matches_hand_written_pseudo_chain
+  - test/simulate/test_combo_runtime_compat.py::test_entry_combo_initial_transition_matches_hand_written_pseudo_chain
+  - test/simulate/test_combo_runtime_compat.py::test_exit_combo_parent_continuation_matches_hand_written_pseudo_chain
+  - test/simulate/test_combo_runtime_compat.py::test_terminal_effect_commits_only_for_successful_combo_path
   notes:
   - Covers representative combo trigger forms for simulator and generated Python runtime alignment.
+  - The fixture is consumed by both the simulator and generated Python runtime alignment runners.
 categories:
 - runtime
 - template_alignment

@@ -1,10 +1,12 @@
 title: Combo transition trigger lifecycle alignment
 origin:
   files:
-  - test/simulate/test_combo_runtime_compat.py
-  - test/template/python/test_semantic_fixture_alignment.py
+  - test/simulate/test_combo_runtime_compat.py::test_entry_combo_initial_transition_matches_hand_written_pseudo_chain
+  - test/simulate/test_combo_runtime_compat.py::test_exit_combo_parent_continuation_matches_hand_written_pseudo_chain
+  - test/model/test_combo_transition_expansion.py::TestComboModelExpansion::test_entry_and_exit_combo_expand_under_owner_composite
   notes:
   - Covers entry combo triggers, exit combo triggers, guard terms inside both chains, terminal effects, state exit actions, and parent continuation ordering.
+  - The fixture is consumed by both the simulator and generated Python runtime alignment runners.
 categories:
 - runtime
 - template_alignment

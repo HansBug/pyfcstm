@@ -2,9 +2,9 @@ title: Combo transition trigger duplicate event alignment
 origin:
   files:
   - test/diagnostics/test_combo_inspect_contract.py::test_combo_duplicate_event_warning_points_to_second_term_and_first_related_term
-  - test/simulate/test_combo_runtime_compat.py
   notes:
-  - Exercises duplicate event terms as executable runtime semantics, not only as an inspect warning, so list-like event consumption cannot regress into set-like handling in generated runtime alignment.
+  - Exercises duplicate event terms as executable runtime semantics, not only as an inspect warning. Current cycle input matching is presence-based, so one input event can satisfy repeated identical terms; this fixture pins simulator/generated-runtime alignment for that existing behavior.
+  - The fixture is consumed by both the simulator and generated Python runtime alignment runners.
 categories:
 - runtime
 - template_alignment

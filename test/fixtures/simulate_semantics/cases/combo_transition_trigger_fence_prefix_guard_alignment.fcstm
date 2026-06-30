@@ -1,0 +1,54 @@
+def int x = 0;
+def int score = 0;
+
+state Root {
+    state GuardFailStart {
+        exit { score = score + 1; }
+    }
+
+    state GuardFailTarget {
+        enter { score = score + 100; }
+    }
+
+    state GuardFailFallback {
+        enter { score = score + 1000; }
+    }
+
+    state FenceStart;
+
+    state FenceCombo {
+        enter { score = score + 100; }
+    }
+
+    state FenceFallback {
+        enter { score = score + 10000; }
+    }
+
+    state SharedStart;
+
+    state SharedSecond {
+        enter { score = score + 100000; }
+    }
+
+    state SharedThird {
+        enter { score = score + 1000000; }
+    }
+
+    [*] -> GuardFailStart;
+
+    GuardFailStart -> GuardFailTarget :: First + [x > 0] + Second effect { score = score + 10; }
+    GuardFailStart -> GuardFailFallback :: First effect { score = score + 20; }
+
+    GuardFailFallback -> FenceStart :: Next;
+
+    FenceStart -> FenceCombo :: First + Second effect { score = score + 30; }
+    FenceStart -> FenceFallback :: First effect { score = score + 40; }
+
+    FenceCombo -> SharedStart :: Next;
+
+    SharedStart -> SharedSecond :: First + Second effect { score = score + 50; }
+    SharedStart -> SharedThird :: First + Third effect { score = score + 60; }
+
+    SharedSecond -> SharedStart :: Next;
+    SharedThird -> [*] :: Finish;
+}

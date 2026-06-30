@@ -1,10 +1,13 @@
 title: Combo transition trigger priority and scope alignment
 origin:
   files:
-  - test/model/test_combo_transition_expansion.py
-  - test/simulate/test_combo_runtime_compat.py
+  - test/model/test_combo_transition_expansion.py::TestComboModelExpansion::test_priority_fence_prevents_late_combo_from_outranking_plain_event
+  - test/model/test_combo_transition_expansion.py::TestComboModelExpansion::test_multi_guard_combo_uses_pseudo_validation_for_all_guard_terms
+  - test/model/test_combo_transition_expansion.py::TestComboModelExpansion::test_chain_and_absolute_combo_events_resolve_from_original_scope
+  - test/simulate/test_combo_runtime_compat.py::test_priority_fence_matches_split_hand_written_pseudo_chains
   notes:
   - Exercises priority fences, prefix sharing, all-guard chains, constant arithmetic guards, and mixed absolute/chain event scopes through the shared simulator/generated-runtime fixture corpus.
+  - The fixture is consumed by both the simulator and generated Python runtime alignment runners.
 categories:
 - runtime
 - template_alignment

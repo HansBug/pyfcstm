@@ -1967,6 +1967,103 @@ def _transition_matches_payload(info: TransitionInfo, payload: Mapping[str, Any]
     )
 
 
+def _combo_generated_transition_by_payload(
+        transitions: Sequence[TransitionInfo],
+        payload: Optional[Mapping[str, Any]],
+) -> Optional[TransitionInfo]:
+    """Return the combo-generated transition matched by a raw payload.
+
+    Combo-trigger expansion creates internal pseudo-state edges whose
+    diagnostics should be projected back to the author-written combo term by
+    the combo analyzer instead of exposing ``__combo_*`` edges through generic
+    verify diagnostics. This helper identifies those internal edges without
+    changing the lower-level verify algorithms.
+
+    :param transitions: Inspect transition payloads.
+    :type transitions: Sequence[TransitionInfo]
+    :param payload: Raw verify transition payload.
+    :type payload: Optional[Mapping[str, Any]]
+    :return: Matching combo-generated transition, or ``None``.
+    :rtype: Optional[TransitionInfo]
+
+    Examples::
+
+        >>> transition = TransitionInfo(
+        ...     from_path='Root.__combo_a',
+        ...     to_path='Root.__combo_b',
+        ...     event=None,
+        ...     event_scope=None,
+        ...     guard='x > 0',
+        ...     effect=None,
+        ...     effect_self_assigns=(),
+        ...     is_forced=False,
+        ...     forced_origin=None,
+        ...     transition_index=0,
+        ...     combo_origin_refs=(object(),),
+        ... )
+        >>> payload = {
+        ...     'parent': 'Root',
+        ...     'from_state': '__combo_a',
+        ...     'to_state': '__combo_b',
+        ...     'event': None,
+        ...     'guard': 'x > 0',
+        ...     'is_forced': False,
+        ... }
+        >>> _combo_generated_transition_by_payload((transition,), payload) is transition
+        True
+    """
+    if payload is None:
+        return None
+    for transition in transitions:
+        if transition.combo_origin_refs and _transition_matches_payload(
+            transition,
+            payload,
+        ):
+            return transition
+    return None
+
+
+def _is_combo_generated_guard_verify_diagnostic(
+        code: str,
+        raw: Mapping[str, Any],
+        transitions: Sequence[TransitionInfo],
+) -> bool:
+    """Return whether a raw generic guard diagnostic targets combo internals.
+
+    Generic SMT guard diagnostics report transition-level facts. For combo
+    generated guard edges, the public inspect surface uses combo-specific
+    diagnostics so spans and refs point at the original trigger term instead
+    of the pseudo-state expansion.
+
+    :param code: Raw verify diagnostic code.
+    :type code: str
+    :param raw: Raw verify diagnostic dictionary.
+    :type raw: Mapping[str, Any]
+    :param transitions: Inspect transition payloads.
+    :type transitions: Sequence[TransitionInfo]
+    :return: ``True`` when the generic diagnostic should be suppressed.
+    :rtype: bool
+
+    Examples::
+
+        >>> _is_combo_generated_guard_verify_diagnostic(
+        ...     'W_EFFECT_SMT_NO_OP',
+        ...     {'data': {}},
+        ...     (),
+        ... )
+        False
+    """
+    if code not in {'W_DEAD_GUARD', 'W_GUARD_TAUTOLOGY'}:
+        return False
+    data = raw.get('data')
+    if not isinstance(data, Mapping):
+        return False
+    return _combo_generated_transition_by_payload(
+        transitions,
+        data.get('transition'),
+    ) is not None
+
+
 def _transition_span_by_payload(
         transitions: Sequence[TransitionInfo],
         payload: Optional[Mapping[str, Any]],
@@ -2668,6 +2765,12 @@ def _verify_diagnostics_from_results(
                     continue
                 code = raw.get('code')
                 if not isinstance(code, str):
+                    continue
+                if _is_combo_generated_guard_verify_diagnostic(
+                    code,
+                    raw,
+                    transitions,
+                ):
                     continue
                 refs = _verify_smt_refs(raw)
                 if refs is None:

@@ -70,3 +70,61 @@ def test_inspect_guard_warning_on_combo_transition_points_to_original_term():
     assert diagnostic.refs["origin_id"] in {
         item.origin_id for item in report.combo_origins
     }
+
+
+def test_inspect_suppresses_generic_dead_guard_for_combo_const_false():
+    """Combo const-false guard reports only the source-level combo warning."""
+    source = """
+    def int x = 0;
+    state Root {
+        state S;
+        state T;
+        [*] -> S;
+        S -> T :: E1 + [x > 0 && x < 0] + E2;
+    }
+    """
+
+    report = inspect_model(
+        parse_machine(source),
+        enable_verify=True,
+        max_complexity_tier="smt_linear",
+        smt_timeout_ms=200,
+    )
+
+    codes = {item.code for item in report.diagnostics}
+    assert "W_COMBO_GUARD_CONST_FALSE" in codes
+    assert "W_DEAD_GUARD" not in codes
+    assert not any(
+        "__combo_" in str(item.refs)
+        for item in report.diagnostics
+        if item.code in {"W_DEAD_GUARD", "W_GUARD_TAUTOLOGY"}
+    )
+
+
+def test_inspect_suppresses_generic_guard_tautology_for_combo_const_true():
+    """Combo const-true guard reports only the source-level combo warning."""
+    source = """
+    def int x = 0;
+    state Root {
+        state S;
+        state T;
+        [*] -> S;
+        S -> T :: E1 + [x >= 0 || x < 0] + E2;
+    }
+    """
+
+    report = inspect_model(
+        parse_machine(source),
+        enable_verify=True,
+        max_complexity_tier="smt_linear",
+        smt_timeout_ms=200,
+    )
+
+    codes = {item.code for item in report.diagnostics}
+    assert "W_COMBO_GUARD_CONST_TRUE" in codes
+    assert "W_GUARD_TAUTOLOGY" not in codes
+    assert not any(
+        "__combo_" in str(item.refs)
+        for item in report.diagnostics
+        if item.code in {"W_DEAD_GUARD", "W_GUARD_TAUTOLOGY"}
+    )

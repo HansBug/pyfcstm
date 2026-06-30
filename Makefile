@@ -1,4 +1,4 @@
-.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check test_boundary_check
+.PHONY: docs test unittest template_unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check test_boundary_check
 
 PYTHON := $(shell which python)
 
@@ -85,6 +85,7 @@ help:
 	@echo "Testing:"
 	@echo "  make test         - Run all tests (alias for unittest)"
 	@echo "  make unittest     - Run unit tests with pytest"
+	@echo "  make template_unittest - Run selected built-in template pytest suites"
 	@echo "                      Options: RANGE_DIR=<dir> COV_TYPES='xml term-missing'"
 	@echo "                               MIN_COVERAGE=<percent> WORKERS=<n>"
 	@echo "  make test_cli     - Test CLI executable"
@@ -171,6 +172,9 @@ unittest: tpl
 		--cov="${RANGE_SRC_DIR}" \
 		$(if ${MIN_COVERAGE},--cov-fail-under=${MIN_COVERAGE},) \
 		$(if ${WORKERS},-n ${WORKERS},)
+
+template_unittest: tpl
+	UNITTEST=1 $(PYTHON) tools/run_template_suites.py --no-package $(TEMPLATE_UNITTEST_ARGS)
 
 docs:
 	$(MAKE) -C "${DOC_DIR}" build

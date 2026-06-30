@@ -131,6 +131,23 @@ def _assert_generated_c_banner(source, *, template_name, root_name, extra_terms=
 @pytest.mark.unittest
 class TestCPollBuiltinTemplate:
 
+    def test_generated_combo_dsl_source_preserves_apostrophe_literal(self):
+        dsl_code = """
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B :: E1 + E2;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            with open(artifacts["machine_c_file"], "r", encoding="utf-8") as f:
+                source = f.read()
+
+        assert "\\u0027" not in source
+        assert "named 'combo after E1'" in source
+
     def test_generated_context_metadata_uses_numeric_contract(self):
         dsl_code = """
         def int counter = 0;

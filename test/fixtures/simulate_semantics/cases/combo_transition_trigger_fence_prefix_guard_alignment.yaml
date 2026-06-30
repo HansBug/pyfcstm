@@ -1,0 +1,91 @@
+title: Combo transition trigger fence prefix guard alignment
+origin:
+  files:
+  - test/simulate/test_combo_runtime_compat.py::test_middle_guard_false_rolls_back_and_uses_later_fallback_transition
+  - test/simulate/test_combo_runtime_compat.py::test_priority_fence_matches_split_hand_written_pseudo_chains
+  - test/simulate/test_combo_runtime_compat.py::test_prefix_reuse_matches_shared_hand_written_pseudo_chain
+  notes:
+  - Covers a local event-guard-event combo whose middle guard fails after the first event is present, so validation must roll back and allow a later plain event fallback to commit source exit, fallback effect, and target enter actions.
+  - Covers a priority fence where the earlier combo must win over a later plain event fallback when the full combo succeeds.
+  - Covers both terminal branches that share the same combo prefix from one source state, so generated runtimes must preserve prefix sharing and terminal edge ordering for both branches.
+  - The fixture is consumed by both the simulator and generated Python runtime alignment runners.
+categories:
+- runtime
+- template_alignment
+- pseudo_chain
+- lifecycle
+steps:
+- cycle: []
+  expect:
+    state: Root.GuardFailStart
+    vars:
+      x: 0
+      score: 0
+    ended: false
+- cycle:
+  - Root.GuardFailStart.First
+  - Root.GuardFailStart.Second
+  expect:
+    state: Root.GuardFailFallback
+    vars:
+      x: 0
+      score: 1021
+    ended: false
+- cycle:
+  - Root.GuardFailFallback.Next
+  expect:
+    state: Root.FenceStart
+    vars:
+      x: 0
+      score: 1021
+    ended: false
+- cycle:
+  - Root.FenceStart.First
+  - Root.FenceStart.Second
+  expect:
+    state: Root.FenceCombo
+    vars:
+      x: 0
+      score: 1151
+    ended: false
+- cycle:
+  - Root.FenceCombo.Next
+  expect:
+    state: Root.SharedStart
+    vars:
+      x: 0
+      score: 1151
+    ended: false
+- cycle:
+  - Root.SharedStart.First
+  - Root.SharedStart.Second
+  expect:
+    state: Root.SharedSecond
+    vars:
+      x: 0
+      score: 101201
+    ended: false
+- cycle:
+  - Root.SharedSecond.Next
+  expect:
+    state: Root.SharedStart
+    vars:
+      x: 0
+      score: 101201
+    ended: false
+- cycle:
+  - Root.SharedStart.First
+  - Root.SharedStart.Third
+  expect:
+    state: Root.SharedThird
+    vars:
+      x: 0
+      score: 1101261
+    ended: false
+- cycle:
+  - Root.SharedThird.Finish
+  expect:
+    vars:
+      x: 0
+      score: 1101261
+    ended: true

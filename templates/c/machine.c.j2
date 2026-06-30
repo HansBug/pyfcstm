@@ -1,7 +1,7 @@
 {%- macro state_key(state) -%}{{ state | state_path }}{%- endmacro %}
 {%- macro state_slug(state) -%}{{ state | state_slug }}{%- endmacro %}
 {%- macro state_enum(state) -%}{{ machine_macro_name(model) }}_STATE_ID_{{ state_slug(state) }}{%- endmacro %}
-{%- macro cstr(value) -%}{{ value | tojson | replace('\\u003c', '<') | replace('\\u003e', '>') | replace('\\u0026', '&') }}{%- endmacro %}
+{%- macro cstr(value) -%}{{ value | tojson | replace('\\u003c', '<') | replace('\\u003e', '>') | replace('\\u0026', '&') | replace('\\u0027', "'") }}{%- endmacro %}
 {%- macro action_method_name(state, kind, idx) -%}_action_{{ state_slug(state) }}_{{ kind }}_{{ idx }}{%- endmacro %}
 {%- macro action_stage_runner_name(state, stage) -%}_run_{{ state_slug(state) }}_{{ stage }}_actions{%- endmacro %}
 {%- macro leaf_during_runner_name(state) -%}_run_leaf_during_{{ state_slug(state) }}{%- endmacro %}

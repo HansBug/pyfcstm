@@ -1,0 +1,21 @@
+title: Combo transition trigger entry fallback alignment
+origin:
+  files:
+  - test/simulate/test_combo_runtime_compat.py::test_entry_combo_initial_transition_matches_hand_written_pseudo_chain
+  - test/model/test_combo_transition_expansion.py::TestComboModelExpansion::test_entry_and_exit_combo_expand_under_owner_composite
+  notes:
+  - Covers an entry combo whose first event is present but a later term is missing, so generated pseudo validation must roll back and select the later plain initial fallback without committing combo effects or target enter actions.
+  - The fixture is consumed by both the simulator and generated Python runtime alignment runners.
+categories:
+- runtime
+- template_alignment
+- pseudo_chain
+- lifecycle
+steps:
+- cycle:
+  - Root.EntryA
+  expect:
+    state: Root.Fallback
+    vars:
+      value: 1010
+    ended: false

@@ -1,0 +1,40 @@
+title: Combo transition trigger cross-layer exit alignment
+origin:
+  files:
+  - test/simulate/test_combo_runtime_compat.py::test_exit_combo_parent_continuation_failure_rolls_back_to_source
+  - test/simulate/test_combo_runtime_compat.py::test_middle_guard_false_rolls_back_and_uses_later_fallback_transition
+  notes:
+  - Exercises the legal cross-layer path where a leaf first exits to its parent with [*], then the parent-level combo transition is considered in the same cycle.
+  - The parent combo sees its first event and fails a middle guard, so speculative validation must roll back the parent combo chain and then commit the later parent fallback without losing the leaf exit and parent exit ordering.
+  - The fixture is consumed by simulator, generated Python, and native template alignment runners because it stresses pseudo-chain rollback across a completed child-to-parent exit boundary.
+categories:
+- runtime
+- template_alignment
+- pseudo_chain
+- lifecycle
+steps:
+- cycle: []
+  expect:
+    state: Root.Parent.Leaf
+    vars:
+      gate: 0
+      value: 0
+    ended: false
+- cycle:
+  - Root.Parent.Leaf.Leave
+  - Root.ExitRoot
+  - Root.ExitAck
+  expect:
+    state: Root.Fallback
+    vars:
+      gate: 0
+      value: 11011
+    ended: false
+- cycle:
+  - Root.Fallback.Finish
+  expect:
+    state: Root.Done
+    vars:
+      gate: 0
+      value: 11011
+    ended: false

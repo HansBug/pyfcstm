@@ -1,0 +1,20 @@
+def int score = 0;
+
+state Root {
+    state Start;
+
+    state First {
+        enter { score = score + 100; }
+    }
+
+    state Second {
+        enter { score = score + 1000; }
+    }
+
+    state Done;
+
+    [*] -> Start;
+    Start -> First :: A + B effect { score = score + 1; }
+    Start -> Second :: A + B effect { score = score + 10; }
+    First -> Done :: Finish;
+}

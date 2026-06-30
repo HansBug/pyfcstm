@@ -158,7 +158,16 @@ inspect 命令
 
 检查状态机 DSL 文件，并以 JSON 输出结构化模型报告。JSON 结构与
 ``inspect_model(model).to_json()`` 一致，包含状态、转换、变量、指标、
-派生图和诊断信息。
+派生图和诊断信息。当模型使用组合 transition trigger 时，报告还会暴露
+``combo_transitions`` 和 ``combo_origins``\ ，方便工具把生成的伪状态链边映射回原始 trigger 项。
+
+对于组合 trigger 诊断，``inspect``\ 会把公开 warning code 对应回原始组合项，而不是生成的伪状态：
+
+- ``W_COMBO_DUPLICATE_EVENT``\ ：同一个事件在一个组合 trigger 中出现多次。诊断 ``span``\ 指向重复项，``refs.first_term_span``\ 指向第一次出现的位置。
+- ``W_COMBO_GUARD_CONST_TRUE``\ / ``W_COMBO_GUARD_CONST_FALSE``\ ：Python 侧基于 Z3 的分析证明某个组合守卫恒真或恒假。诊断 ``span``\ 指向带方括号的守卫项，``refs.value_span``\ 指向方括号内部表达式。
+- ``W_COMBO_GUARD_PREFIX_IMPLIED``\ / ``W_COMBO_GUARD_PREFIX_CONTRADICTS``\ ：前置守卫前缀已经蕴含当前守卫，或使当前守卫不可能成立。诊断 ``span``\ 指向当前守卫，``refs.prior_term_span``\ 指向起决定作用的更早守卫。
+
+所有组合 warning 的 ``refs``\ 都包含 ``origin_id``\ 、``term_index``\ 、``transition_span``\ 、``trigger_span``\ 和相关 term span，方便编辑器和 UI 集成把提示映射回用户手写 DSL 区间。求解器支撑的守卫 warning 是 Python ``inspect``\ 诊断；JavaScript 侧工具应消费这份 JSON 诊断，而不是重新实现本地求解器近似逻辑。
 
 **语法**：
 

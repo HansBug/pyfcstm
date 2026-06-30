@@ -1,0 +1,40 @@
+def int score = 0;
+
+state Root {
+    state FirstShort;
+
+    state ShortWins {
+        enter { score = score + 100; }
+    }
+
+    state FirstLong;
+
+    state LongWins {
+        enter { score = score + 1000; }
+    }
+
+    state LongFallbackStart;
+
+    state LongFallback {
+        enter { score = score + 10000; }
+    }
+
+    state Done;
+
+    [*] -> FirstShort;
+
+    FirstShort -> ShortWins :: A + B effect { score = score + 1; }
+    FirstShort -> Done :: A + B + C effect { score = score + 10; }
+
+    ShortWins -> FirstLong :: Next;
+
+    FirstLong -> LongWins :: A + B + C effect { score = score + 20; }
+    FirstLong -> Done :: A + B effect { score = score + 200; }
+
+    LongWins -> LongFallbackStart :: Next;
+
+    LongFallbackStart -> Done :: A + B + C effect { score = score + 300; }
+    LongFallbackStart -> LongFallback :: A + B effect { score = score + 30; }
+
+    LongFallback -> [*] :: Finish;
+}

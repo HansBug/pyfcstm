@@ -1,0 +1,40 @@
+def int gate = 0;
+def int score = 0;
+
+state Root {
+    state StartTrue {
+        exit {
+            gate = 1;
+            score = score + 1;
+        }
+    }
+
+    state TargetTrue {
+        enter { score = score + 100; }
+    }
+
+    state StartFalse {
+        enter { gate = 0; }
+        exit {
+            gate = 1;
+            score = score + 1000;
+        }
+    }
+
+    state TargetFalse {
+        enter { score = score + 10000; }
+    }
+
+    state FallbackFalse {
+        enter { score = score + 100000; }
+    }
+
+    state Done;
+
+    [*] -> StartTrue;
+    StartTrue -> TargetTrue :: Kick + [gate == 1] + Ack effect { score = score + 10; }
+    TargetTrue -> StartFalse :: Next;
+    StartFalse -> TargetFalse :: Kick + [gate == 0] + Ack effect { score = score + 100; }
+    StartFalse -> FallbackFalse :: Kick effect { score = score + 1000; }
+    FallbackFalse -> Done :: Finish;
+}

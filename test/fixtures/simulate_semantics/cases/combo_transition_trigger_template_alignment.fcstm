@@ -1,0 +1,66 @@
+def int gate = 1;
+def int value = 0;
+
+state Root {
+    state Start;
+
+    state EventOnly {
+        enter { value = value + 10; }
+    }
+
+    state Mixed {
+        enter { value = value + 100; }
+    }
+
+    state GuardFirst {
+        enter { value = value + 1000; }
+    }
+
+    state EntryOwner {
+        [*] -> EntryTarget : EnterOne + EnterTwo;
+        [*] -> EntryFallback;
+
+        state EntryTarget {
+            enter { value = value + 10000; }
+        }
+        state EntryFallback {
+            enter { value = value + 20000; }
+        }
+
+        EntryTarget -> [*] :: LeaveEntry;
+    }
+
+    state Parent {
+        [*] -> ExitSource;
+
+        state ExitSource;
+
+        ExitSource -> [*] :: ExitOne + ExitTwo;
+    }
+
+    state Done {
+        enter { value = value + 100000; }
+    }
+
+    state Success {
+        enter { value = value + 1000000; }
+    }
+
+    state RollbackStart;
+
+    state RollbackFallback {
+        enter { value = value + 10000000; }
+    }
+
+    [*] -> Start;
+    Start -> EventOnly :: E1 + E2;
+    EventOnly -> Mixed : M1 + [gate > 0] + M2;
+    Mixed -> GuardFirst : [gate > 0] + G1;
+    GuardFirst -> EntryOwner :: ToEntry;
+    EntryOwner -> Parent;
+    Parent -> Done;
+    Done -> Success :: R1 + R2 effect { value = value + 1; }
+    Success -> RollbackStart :: Next;
+    RollbackStart -> RollbackFallback :: R1 + R2 effect { value = value + 10; }
+    RollbackStart -> RollbackFallback :: R1 effect { value = value + 100; }
+}

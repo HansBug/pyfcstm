@@ -1,0 +1,28 @@
+title: Combo transition trigger root exit alignment
+origin:
+  files:
+  - test/fixtures/simulate_semantics/cases/combo_transition_trigger_root_exit_alignment.fcstm
+  notes:
+  - Covers a combo terminal edge whose target is the root-level exit marker.
+  - The successful combo path must run source exit, terminal effect, root during-after, and root exit before ending the runtime.
+categories:
+- runtime
+- template_alignment
+- pseudo_chain
+- lifecycle
+- validation
+steps:
+- cycle: []
+  expect:
+    state: Root.Start
+    vars:
+      trace: 0
+    ended: false
+- cycle:
+  - Root.Start.Stop
+  - Root.Start.Ack
+  expect:
+    state: null
+    vars:
+      trace: 1111
+    ended: true

@@ -1,0 +1,91 @@
+title: Combo transition trigger template alignment
+origin:
+  files:
+  - test/simulate/test_combo_runtime_compat.py::test_event_guard_event_success_matches_hand_written_pseudo_chain
+  - test/simulate/test_combo_runtime_compat.py::test_entry_combo_initial_transition_matches_hand_written_pseudo_chain
+  - test/simulate/test_combo_runtime_compat.py::test_exit_combo_parent_continuation_matches_hand_written_pseudo_chain
+  - test/simulate/test_combo_runtime_compat.py::test_terminal_effect_commits_only_for_successful_combo_path
+  notes:
+  - Covers representative combo trigger forms for simulator and generated Python runtime alignment.
+  - The fixture is consumed by both the simulator and generated Python runtime alignment runners.
+categories:
+- runtime
+- template_alignment
+- pseudo_chain
+- event_paths
+steps:
+- cycle: []
+  expect:
+    state: Root.Start
+    vars:
+      value: 0
+    ended: false
+- cycle:
+  - Root.Start.E1
+  - Root.Start.E2
+  expect:
+    state: Root.EventOnly
+    vars:
+      value: 10
+    ended: false
+- cycle:
+  - Root.M1
+  - Root.M2
+  expect:
+    state: Root.Mixed
+    vars:
+      value: 110
+    ended: false
+- cycle:
+  - Root.G1
+  expect:
+    state: Root.GuardFirst
+    vars:
+      value: 1110
+    ended: false
+- cycle:
+  - Root.GuardFirst.ToEntry
+  - Root.EntryOwner.EnterOne
+  - Root.EntryOwner.EnterTwo
+  expect:
+    state: Root.EntryOwner.EntryTarget
+    vars:
+      value: 11110
+    ended: false
+- cycle:
+  - Root.EntryOwner.EntryTarget.LeaveEntry
+  expect:
+    state: Root.Parent.ExitSource
+    vars:
+      value: 11110
+    ended: false
+- cycle:
+  - Root.Parent.ExitSource.ExitOne
+  - Root.Parent.ExitSource.ExitTwo
+  expect:
+    state: Root.Done
+    vars:
+      value: 111110
+    ended: false
+- cycle:
+  - Root.Done.R1
+  - Root.Done.R2
+  expect:
+    state: Root.Success
+    vars:
+      value: 1111111
+    ended: false
+- cycle:
+  - Root.Success.Next
+  expect:
+    state: Root.RollbackStart
+    vars:
+      value: 1111111
+    ended: false
+- cycle:
+  - Root.RollbackStart.R1
+  expect:
+    state: Root.RollbackFallback
+    vars:
+      value: 11111211
+    ended: false

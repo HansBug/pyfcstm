@@ -1,0 +1,35 @@
+title: Combo transition trigger identical priority alignment
+origin:
+  files:
+  - test/model/test_combo_transition_expansion.py::TestComboModelExpansion::test_identical_combos_reuse_pseudo_and_emit_terminal_edges
+  - test/fixtures/simulate_semantics/cases/combo_transition_trigger_identical_priority_alignment.fcstm
+  notes:
+  - Covers two same-source combo declarations with the same trigger prefix but different targets and effects.
+  - The expander may reuse the generated prefix pseudo state, but terminal edges must still preserve declaration order so the first authored combo wins when both match.
+categories:
+- runtime
+- template_alignment
+- pseudo_chain
+- event_paths
+steps:
+- cycle: []
+  expect:
+    state: Root.Start
+    vars:
+      score: 0
+    ended: false
+- cycle:
+  - Root.Start.A
+  - Root.Start.B
+  expect:
+    state: Root.First
+    vars:
+      score: 101
+    ended: false
+- cycle:
+  - Root.First.Finish
+  expect:
+    state: Root.Done
+    vars:
+      score: 101
+    ended: false

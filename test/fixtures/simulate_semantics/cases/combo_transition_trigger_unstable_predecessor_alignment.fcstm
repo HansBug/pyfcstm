@@ -1,0 +1,19 @@
+def int gate = 0;
+def int value = 0;
+
+state Root {
+    state S;
+
+    state Target {
+        [*] -> Good : if [gate == 1];
+        state Good;
+    }
+
+    state Fallback {
+        enter { value = value + 100; }
+    }
+
+    [*] -> S;
+    S -> Target :: E1 + E2;
+    S -> Fallback :: E1 effect { value = value + 1; }
+}

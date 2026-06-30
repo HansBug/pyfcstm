@@ -1,0 +1,20 @@
+def int score = 0;
+
+state Root {
+    state Start;
+
+    state DuplicateAccepted {
+        enter { score = score + 100; }
+    }
+
+    state PlainFallback {
+        enter { score = score + 1000; }
+    }
+
+    state Done;
+
+    [*] -> Start;
+    Start -> DuplicateAccepted :: Same + Same effect { score = score + 1; }
+    Start -> PlainFallback :: Same effect { score = score + 10; }
+    DuplicateAccepted -> Done :: Finish;
+}

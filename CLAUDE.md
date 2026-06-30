@@ -111,20 +111,104 @@ make unittest RANGE_DIR=./config                     # Specific directory
 make unittest COV_TYPES="xml term-missing"           # With coverage types
 make unittest MIN_COVERAGE=80                        # With minimum coverage
 make unittest WORKERS=4                              # With parallel workers
+make test_boundary_check                              # Validate pytest boundary rules
 
 # Run a single test file or function directly:
 pytest test/simulate/test_semantic_fixtures.py -v
 pytest test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture -v
 
-# Fast path: skip native-toolchain template tests (test/template/c, test/template/c_poll)
-# which invoke real cmake/cc per case and consume ~85% of unittest wall time.
-SKIP_SLOW_TESTS=1 make unittest          # ~24s vs ~174s full local (~7x faster)
+# Fast path: run the same lightweight template subset used by the default Code Test workflow.
+SKIP_SLOW_TESTS=1 make unittest          # skips C-family full semantic/native alignment, keeps Python full + wrapper smoke
 ```
 
-The `SKIP_SLOW_TESTS=1` env var is read by [test/conftest.py](test/conftest.py). It auto-skips every test under
-[test/template/c/](test/template/c/) and [test/template/c_poll/](test/template/c_poll/) — these are the tests that
-compile C/C++ via cmake. Use it for iteration cycles that don't touch generated C runtime. The Python template,
-simulator, model, DSL, render, and verify tests all still run.
+The `SKIP_SLOW_TESTS=1` env var is read by [test/conftest.py](test/conftest.py). It skips the broad
+[test/template/c/](test/template/c/) and [test/template/c_poll/](test/template/c_poll/) paths, plus the full semantic
+alignment and explicit native-toolchain alignment tests under [test/template/cpp/](test/template/cpp/) and
+[test/template/cpp_poll/](test/template/cpp_poll/). C++ wrapper smoke tests, the Python template, simulator, model, DSL,
+render, and verify tests still run. This is now the default `Code Test` workflow subset; selected non-Python template
+full suites run in dedicated `template_full` jobs instead of the main unittest matrix.
+
+### Template Suite Detector
+
+The repository includes a tools-only detector and runner for template-suite selection. They are repo-local helpers with
+explicit `--check` self-checks; they are **not** part of the public `pyfcstm` package. The default GitHub `Code Test`
+workflow uses the lightweight template subset from `SKIP_SLOW_TESTS=1 make unittest`, then runs representative and
+selected full template suites through dedicated jobs.
+
+```bash
+python tools/detect_template_suites.py --check
+
+python tools/detect_template_suites.py \
+  --changed-files /tmp/changed-files.txt \
+  --commit-message-file /tmp/commit-message.txt \
+  --event-name local \
+  --json
+
+python tools/detect_template_suites.py \
+  --changed-files /tmp/changed-files.txt \
+  --commit-message-file /tmp/commit-message.txt \
+  --event-name local \
+  --include-suites c,c_poll \
+  --json
+```
+
+Run selected template suites locally with the companion runner:
+
+```bash
+python tools/run_template_suites.py --check
+PYFCSTM_TEMPLATE_SUITES=python make template_unittest
+PYFCSTM_TEMPLATE_SUITES=c,c_poll make template_unittest
+PYFCSTM_TEMPLATE_SUITES=cpp,cpp_poll make template_unittest
+PYFCSTM_TEMPLATE_SUITES=template_representative make template_unittest
+PYFCSTM_TEMPLATE_SUITES=all make template_unittest TEMPLATE_UNITTEST_ARGS="--dry-run"
+PYFCSTM_RUN_NATIVE_TOOLCHAIN=1 make template_unittest TEMPLATE_UNITTEST_ARGS="--include-suites c --run-native-toolchain"
+```
+
+`make template_unittest` depends on `tpl`, so it refreshes packaged built-in template assets before running pytest;
+direct `python tools/run_template_suites.py ...` invocations package templates by default unless `--no-package` is passed. The
+runner clears any inherited `SKIP_SLOW_TESTS`, `PYFCSTM_TEMPLATE_SUITES`, and `PYFCSTM_SKIP_TEMPLATE_SUITES` values from
+the pytest subprocess for explicit template-suite runs; otherwise selecting `c`, `c_poll`, `cpp`, or `cpp_poll` could
+become a false-green skip or leak selector state into tests. Explicit suite selection does not automatically add the
+`default` lightweight set; use `PYFCSTM_TEMPLATE_SUITES=default,c` when you want contract checks plus one full suite.
+Native toolchain tests remain explicit opt-in through `--run-native-toolchain` or `PYFCSTM_RUN_NATIVE_TOOLCHAIN=1`, and
+the opt-in requires at least one selected C-family suite (`c`, `c_poll`, `cpp`, or `cpp_poll`).
+
+Recognized suite tokens are `default`, `template_core`, `template_representative`, `python`, `c`, `c_poll`, `cpp`,
+`cpp_poll`, and `all`. The special `all` token expands to `python,c,c_poll,cpp,cpp_poll`; fixed/default suites do not
+enter the detector's dynamic `matrix.include` output.
+
+Commit-message labels use exact bracketed forms such as `[tpl:c]`, `[tpl:c_poll]`, `[tpl:all]`, and `[skip-tpl:c]`;
+whitespace or extra/nested brackets are invalid for both `[tpl:*]` and `[skip-tpl:*]` labels, so `[tpl: c]`,
+`[tpl:c ]`, `[tpl :c]`, `[skip-tpl : c]`, and `[tpl:c]]` fail instead of normalizing or being silently ignored.
+Multiple labels may be combined. Each bracketed label accepts one suite token only; use repeated labels such as
+`[tpl:c] [tpl:c_poll]` instead of comma-separated text inside one label. The parser is context-free: a live label inside
+prose or a Markdown code block is still parsed as an instruction, so use neutral examples such as `tpl:c` when
+documenting labels without intending to select a suite.
+
+Path-detected suites are protected. `PYFCSTM_SKIP_TEMPLATE_SUITES` and `[skip-tpl:*]` may remove only manually selected
+dynamic suites; they cannot remove path-detected suites and cannot disable fixed/default jobs. The detector is
+intentionally conservative across C-family wrapper dependencies: changes under `templates/c/**` select both `c` and
+`cpp`, while changes under `templates/c_poll/**` select both `c_poll` and `cpp_poll`. Unknown labels or suite tokens
+are hard failures, not warnings. The current JSON schema version is `template-suite-detector/v1`; renaming or removing
+fields requires a new schema version.
+
+In GitHub Actions, `workflow_dispatch` accepts `template_suites` and `skip_template_suites` inputs. A dispatch without a
+positive `template_suites` value fails closed to `all`; a skip-only dispatch cannot narrow coverage to an empty matrix.
+The `Code Test` workflow intentionally avoids workflow-level `on.push.paths` / `paths-ignore` gating: every push enters
+the workflow, and suite selection happens inside detector, representative, full-suite, and aggregate-gate jobs so branch
+protection does not get stuck on path-filtered pending checks. On non-default branch pushes, detector paths are computed
+from the merge-base with the repository default branch to the pushed head, not merely from the last pushed commit range;
+that keeps the latest required check covering the whole branch diff even after a later docs-only follow-up commit.
+Default-branch pushes still use the GitHub push event's `before..sha` range, and any diff lookup failure fails closed to
+`all`. Use the existing commit-message skip tokens for truly docs-only pushes that should bypass expensive jobs.
+The stable aggregate check is named `template-suite-gate`; branch protection should depend on that gate rather than on
+per-suite dynamic job names such as `Template full (c)`. Code-test skip tokens skip the expensive unittest/
+representative/full jobs only after detector success; unknown template labels, malformed detector output, missing detector
+outputs, or detector failures must still fail the stable gate. These global skip tokens bypass selected/path-protected full
+suites only as whole-workflow skip controls; per-suite `[skip-tpl:*]` / `PYFCSTM_SKIP_TEMPLATE_SUITES` requests still
+cannot remove path-protected suites. The dynamic full-suite job runs on Ubuntu with Python 3.11 and clears inherited
+`SKIP_SLOW_TESTS` before invoking `make template_unittest`, so protected or manually selected full suites cannot be
+converted into false-green skips.
 
 ### CI Workflow Commit-Message Triggers
 
@@ -135,10 +219,10 @@ gate. Always grep your commit message against the table below before pushing.
 
 | Substring | Trigger | Effect |
 |---|---|---|
-| `ci skip` | head commit message contains this substring anywhere | Skips both `Code test` (unittest matrix), `jsfcstm test`, and `CLI Build` workflows entirely. Use for docs-only / comment-only commits. |
-| `test skip` | head commit message contains this substring anywhere | Skips both the `Code test` (Python unittest matrix) AND the `jsfcstm test` workflows. `CLI Build` still runs. |
-| `[skip-slow]` | head commit message contains this substring anywhere | Runs the full unittest workflow normally, but injects `SKIP_SLOW_TESTS=1` into the unittest step, which skips [test/template/c](test/template/c) and [test/template/c_poll](test/template/c_poll) (cmake/cc compile tests, ~85% of wall time). Use when iterating on changes that demonstrably can't affect the C/C++ runtime templates. |
-| `[python skip]` | head commit message contains this substring anywhere | Skips the `Code test` (Python unittest matrix) AND `CLI Build` jobs. The `jsfcstm test` job still runs. Use for jsfcstm-only changes (TypeScript / mocha updates) where the Python matrix would only burn CI minutes. |
+| `ci skip` | head commit message contains this substring anywhere | Skips the expensive Code Test test jobs (`Code test`, representative, and selected full suites), `jsfcstm test`, and `CLI Build`; the lightweight detector / `template-suite-gate` may still report a successful skip summary for branch-protection stability. Use for docs-only / comment-only commits. |
+| `test skip` | head commit message contains this substring anywhere | Skips the expensive Code Test test jobs (`Code test`, representative, and selected full suites) and the `jsfcstm test` workflow. `CLI Build` still runs; the lightweight detector / `template-suite-gate` may still report a successful skip summary. |
+| `[skip-slow]` | head commit message contains this substring anywhere | Legacy compatibility token. The default `Code Test` unittest matrix already runs with `SKIP_SLOW_TESTS=1`; selected/path-protected full template suites still run in `template_full` jobs and explicitly clear `SKIP_SLOW_TESTS`. |
+| `[python skip]` | head commit message contains this substring anywhere | Skips the expensive Code Test test jobs (`Code test`, representative, and selected full suites) AND `CLI Build` jobs. The `jsfcstm test` job still runs; the lightweight detector / `template-suite-gate` may still report a successful skip summary. Use for jsfcstm-only changes (TypeScript / mocha updates) where the Python matrix would only burn CI minutes. |
 | `[js skip]` | head commit message contains this substring anywhere | Skips only the `jsfcstm test` workflow. The Python unittest matrix and `CLI Build` still run. Use for Python-only / Makefile changes that obviously can't affect the jsfcstm TypeScript build. |
 
 **Footgun:** because `contains()` is substring match, phrases like `"slow-test skip mechanism"` or `"document the ci skip flag"` will activate `test skip` / `ci skip` respectively. If you need to mention these tokens in a commit body, either rephrase (`"slow-test gating"`, `"document the ci-bypass flag"`) or quote them with characters that break the literal substring (e.g. `` `ci-skip` ``, `ci_skip`). When in doubt, run:
@@ -1044,6 +1128,34 @@ For built-in template work, the current design bar is defined by the `python` te
   migration indexes. If fixture inventories, test documentation, or other test-tree maintenance data need executable
   validation, put that check in a maintenance command outside the unit-test suite (for example under [tools/](tools/)) and run
   it explicitly.
+- Python unit tests must enter built-in template behavior through production package/runtime surfaces. Tests may use
+  packaged template assets through `pyfcstm.template`, `pyfcstm.template.extract_template(...)`,
+  `pyfcstm.template.list_templates()`, `pyfcstm.template.get_template_info(...)`,
+  `StateMachineCodeRenderer` pointed at an extracted packaged template, or CLI paths such as
+  `pyfcstm generate --template ...`. Tests may also create throwaway templates under their own temporary directories or
+  under [test/](test/) when the test target is the renderer itself.
+- Python unit tests must not directly read, render, compare, or assert against repository root `templates/` source
+  directories. Avoid source-layout shortcuts such as `_REPO_ROOT / "templates"`,
+  `Path(__file__).parents[...] / "templates"`, or `os.path.join(..., "templates")` in [test/](test/) when the behavior
+  under test can be reached through packaged template assets or public CLI/runtime entry points.
+- Python unit tests must not import `tools.*`, execute `tools.*`, or assert private helper behavior from maintenance
+  scripts. Packaging, release, source-template packaging, source-install smoke, symlink/stub resolution, and similar
+  maintenance checks should live as explicit commands under [tools/](tools/) or Makefile targets, not as default
+  `pytest -m unittest` cases. Do not delete that coverage when migrating it out of pytest; keep a reproducible
+  maintenance command.
+- Keep generated README executable documentation tests in pytest when they validate runnable quick starts,
+  compile/run commands, formatter-friendly code blocks, public API examples, or integration commands emitted by
+  generated artifacts. Do not use pytest primarily to assert repo-source maintainer README wording, prose inventories,
+  comment-only text, or documentation synchronization that is not production behavior.
+- Native template tests are part of the unit-test contract when they verify generated runtime behavior. C / C++ /
+  C++ wrapper native compile, native run, CMake, ctypes, formatter, and native alignment checks must be preserved when
+  their inputs are generated through packaged template or public API paths.
+- `make unittest` intentionally depends on `make tpl` so packaged built-in template assets are refreshed before the
+  Python unit-test suite runs. Do not remove that dependency merely to avoid packaging work in tests; instead, keep
+  pytest on packaged/public inputs and move source-template maintenance coverage to explicit tooling commands.
+- Run `make test_boundary_check` when changing test infrastructure, template tests, maintenance tooling, or
+  repository guidance that affects the pytest boundary. This command is a pytest-external guard for direct `tools.*`
+  imports/execution, repo-root `templates/` access, and source-install smoke markers under [test/](test/).
 - Shared test utilities and fixtures in [test/testings/](test/testings/)
 - Sample DSL files in [test/testfile/sample_codes/](test/testfile/sample_codes/) (auto-generate tests via `make sample`)
 - Negative cases in [test/testfile/sample_neg_codes/](test/testfile/sample_neg_codes/)

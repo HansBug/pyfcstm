@@ -3,32 +3,300 @@ name: Code Test
 
 on:
   push:
-    paths:
-      # Source code
-      - 'pyfcstm/**'
-      - 'editors/jsfcstm/**'
-      - 'editors/fcstm.tmLanguage.json'
-      # Tests
-      - 'test/**'
-      # Templates (test/template/* compiles built-in templates)
-      - 'templates/**'
-      - 'tools/**'
-      # Build & dependency manifests
-      - 'setup.py'
-      - 'setup.cfg'
-      - 'pyproject.toml'
-      - 'MANIFEST.in'
-      - 'requirements*.txt'
-      # Test / coverage configuration
-      - 'pytest.ini'
-      - '.coveragerc'
-      - 'codecov.yml'
-      - 'Makefile'
-      # This workflow itself
-      - '.github/workflows/test.yml'
   workflow_dispatch:
+    inputs:
+      template_suites:
+        description: 'Comma-separated template suites to run fully, e.g. c,c_poll or all.'
+        required: false
+        default: ''
+      skip_template_suites:
+        description: 'Comma-separated manually selected template suites to skip.'
+        required: false
+        default: ''
 
 jobs:
+
+  detect_template_suites:
+    name: Detect template suites
+    runs-on: ubuntu-22.04
+    outputs:
+      template_matrix: ${{ steps.detect.outputs.template_matrix }}
+      selected_full_count: ${{ steps.detect.outputs.selected_full_count }}
+      selected_suites: ${{ steps.detect.outputs.selected_suites }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3.3.0
+        with:
+          fetch-depth: 0
+          submodules: 'recursive'
+      - name: Set up python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Detect selected template suites
+        id: detect
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          HEAD_COMMIT_MSG: ${{ github.event.head_commit.message }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          DISPATCH_TEMPLATE_SUITES: ${{ github.event.inputs.template_suites }}
+          DISPATCH_SKIP_TEMPLATE_SUITES: ${{ github.event.inputs.skip_template_suites }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci/template-suites
+          changed_file=.ci/template-suites/changed-files.txt
+          message_file=.ci/template-suites/message.txt
+          detector_output=.ci/template-suites/detector.json
+          : > "$changed_file"
+          : > "$message_file"
+
+          include_args=()
+          skip_args=()
+          detector_event="${GITHUB_EVENT_NAME}"
+          zero_sha="0000000000000000000000000000000000000000"
+
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            printf '%s' "${HEAD_COMMIT_MSG:-}" > "$message_file"
+            ref_name="${REF_NAME:-}"
+            default_branch="${DEFAULT_BRANCH:-}"
+            if [ -z "${HEAD_SHA:-}" ] || ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+              echo "Push head SHA is unavailable; failing closed to all template full suites."
+              include_args=(--include-suites all)
+            elif [ -z "$default_branch" ]; then
+              echo "Default branch is unavailable; failing closed to all template full suites."
+              include_args=(--include-suites all)
+            elif [ -n "$ref_name" ] && [ "$ref_name" != "$default_branch" ]; then
+              echo "Push on non-default ref ${ref_name}; detecting suites from merge-base with ${default_branch}."
+              if git fetch --no-tags --prune origin "+refs/heads/${default_branch}:refs/remotes/origin/${default_branch}" \
+                && merge_base="$(git merge-base "origin/${default_branch}" "${HEAD_SHA}")" \
+                && [ -n "$merge_base" ] \
+                && git diff --name-only "$merge_base" "${HEAD_SHA}" > "$changed_file"; then
+                echo "Detected changed files between merge-base ${merge_base} and ${HEAD_SHA}."
+              else
+                echo "Could not diff ${default_branch} merge-base..${HEAD_SHA}; failing closed to all template full suites."
+                : > "$changed_file"
+                include_args=(--include-suites all)
+              fi
+            elif [ -z "${BEFORE_SHA:-}" ] || [ "${BEFORE_SHA}" = "$zero_sha" ]; then
+              echo "Default-branch push base SHA is unavailable; failing closed to all template full suites."
+              include_args=(--include-suites all)
+            elif git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null && git diff --name-only "${BEFORE_SHA}" "${HEAD_SHA}" > "$changed_file"; then
+              echo "Detected changed files between ${BEFORE_SHA} and ${HEAD_SHA}."
+            else
+              echo "Could not diff ${BEFORE_SHA}..${HEAD_SHA}; failing closed to all template full suites."
+              : > "$changed_file"
+              include_args=(--include-suites all)
+            fi
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            detector_event="workflow_dispatch"
+            dispatch_include="${DISPATCH_TEMPLATE_SUITES:-}"
+            dispatch_skip="${DISPATCH_SKIP_TEMPLATE_SUITES:-}"
+            if [ -n "$(printf '%s' "$dispatch_include" | tr -d '[:space:]')" ]; then
+              include_args=(--include-suites "$dispatch_include")
+              if [ -n "$(printf '%s' "$dispatch_skip" | tr -d '[:space:]')" ]; then
+                skip_args=(--skip-suites "$dispatch_skip")
+              fi
+            else
+              echo "workflow_dispatch has no positive template_suites input; failing closed to all template full suites."
+              if [ -n "$(printf '%s' "$dispatch_skip" | tr -d '[:space:]')" ]; then
+                echo "Ignoring skip_template_suites without positive template_suites so skip-only dispatch cannot narrow coverage."
+              fi
+              include_args=(--include-suites all)
+            fi
+          else
+            echo "Unsupported event ${GITHUB_EVENT_NAME}; failing closed to all template full suites."
+            detector_event="local"
+            include_args=(--include-suites all)
+          fi
+
+          python tools/detect_template_suites.py \
+            --changed-files "$changed_file" \
+            --commit-message-file "$message_file" \
+            --event-name "$detector_event" \
+            "${include_args[@]}" \
+            "${skip_args[@]}" \
+            --json > "$detector_output"
+
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          output_path = Path('.ci/template-suites/detector.json')
+          result = json.loads(output_path.read_text(encoding='utf-8'))
+          matrix = result.get('matrix', {'include': []})
+          selected_suites = result.get('selected_suites', [])
+          full_count = len(matrix.get('include', []))
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+              print('template_matrix=' + json.dumps(matrix, separators=(',', ':')), file=out)
+              print('selected_full_count=' + str(full_count), file=out)
+              print('selected_suites=' + ','.join(selected_suites), file=out)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+              print('## Template suite detector', file=summary)
+              print('', file=summary)
+              print('* Selected suites: `{0}`'.format(','.join(selected_suites) or '(none)'), file=summary)
+              print('* Dynamic full suite count: `{0}`'.format(full_count), file=summary)
+              print('', file=summary)
+              print('```json', file=summary)
+              print(json.dumps(result, indent=2, sort_keys=True), file=summary)
+              print('```', file=summary)
+          PY
+
+  template_representative:
+    name: Template representative
+    runs-on: ubuntu-22.04
+    if: ${{ !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, 'test skip') && !contains(github.event.head_commit.message, '[python skip]') }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3.3.0
+        with:
+          fetch-depth: 20
+          submodules: 'recursive'
+      - name: Set up system dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tree cloc wget curl make zip cmake build-essential clang-format gcc g++ clang
+      - name: Set up python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade flake8 setuptools wheel twine
+          pip install -r requirements.txt
+          pip install -r requirements-test.txt
+      - name: Run representative template alignment
+        env:
+          CI: 'true'
+          SKIP_SLOW_TESTS: ''
+        shell: bash
+        run: |
+          make template_unittest TEMPLATE_UNITTEST_ARGS="--include-suites template_representative"
+
+  template_full:
+    name: Template full (${{ matrix.suite }})
+    runs-on: ubuntu-22.04
+    needs: detect_template_suites
+    if: ${{ needs.detect_template_suites.result == 'success' && needs.detect_template_suites.outputs.selected_full_count != '0' && !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, 'test skip') && !contains(github.event.head_commit.message, '[python skip]') }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect_template_suites.outputs.template_matrix) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3.3.0
+        with:
+          fetch-depth: 20
+          submodules: 'recursive'
+      - name: Set up system dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tree cloc wget curl make zip cmake build-essential clang-format gcc g++ clang
+      - name: Set up python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade flake8 setuptools wheel twine
+          pip install -r requirements.txt
+          pip install -r requirements-test.txt
+      - name: Run selected template full suite
+        env:
+          CI: 'true'
+          SKIP_SLOW_TESTS: ''
+          TEMPLATE_SUITE: ${{ matrix.suite }}
+          TEMPLATE_SUITE_REASON: ${{ matrix.reason }}
+        shell: bash
+        run: |
+          echo "Running template suite '${TEMPLATE_SUITE}' selected because '${TEMPLATE_SUITE_REASON}'."
+          make template_unittest TEMPLATE_UNITTEST_ARGS="--include-suites ${TEMPLATE_SUITE}"
+
+  template_suite_gate:
+    name: template-suite-gate
+    runs-on: ubuntu-22.04
+    needs:
+      - detect_template_suites
+      - unittest
+      - template_representative
+      - template_full
+    if: ${{ always() }}
+    steps:
+      - name: Check template suite results
+        env:
+          HEAD_COMMIT_MSG: ${{ github.event.head_commit.message }}
+          DETECTOR_RESULT: ${{ needs.detect_template_suites.result }}
+          UNITTEST_RESULT: ${{ needs.unittest.result }}
+          REPRESENTATIVE_RESULT: ${{ needs.template_representative.result }}
+          TEMPLATE_FULL_RESULT: ${{ needs.template_full.result }}
+          SELECTED_FULL_COUNT: ${{ needs.detect_template_suites.outputs.selected_full_count }}
+          SELECTED_SUITES: ${{ needs.detect_template_suites.outputs.selected_suites }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+
+          message = os.environ.get('HEAD_COMMIT_MSG') or ''
+          skipped_by_message = any(
+              token in message for token in ('ci skip', 'test skip', '[python skip]')
+          )
+          detector = os.environ.get('DETECTOR_RESULT') or ''
+          unittest = os.environ.get('UNITTEST_RESULT') or ''
+          representative = os.environ.get('REPRESENTATIVE_RESULT') or ''
+          template_full = os.environ.get('TEMPLATE_FULL_RESULT') or ''
+          selected_count_text = os.environ.get('SELECTED_FULL_COUNT') or ''
+          selected_suites = os.environ.get('SELECTED_SUITES') or ''
+          if selected_count_text.strip():
+              try:
+                  selected_count = int(selected_count_text)
+              except ValueError:
+                  selected_count = -1
+          else:
+              selected_count = -1
+
+          print('detector={0}'.format(detector))
+          print('unittest={0}'.format(unittest))
+          print('representative={0}'.format(representative))
+          print('template_full={0}'.format(template_full))
+          print('selected_full_count={0}'.format(selected_count_text))
+          print('selected_suites={0}'.format(selected_suites or '(none)'))
+
+          failures = []
+          if detector != 'success':
+              failures.append('detector job result is {0}'.format(detector))
+          if selected_count < 0:
+              failures.append('selected_full_count is not an integer: {0}'.format(selected_count_text))
+
+          if skipped_by_message and not failures:
+              print('Code Test skip token detected; expensive template jobs may be skipped after detector success.')
+              sys.exit(0)
+
+          if unittest != 'success':
+              failures.append('unittest job result is {0}'.format(unittest))
+          if representative != 'success':
+              failures.append('template representative job result is {0}'.format(representative))
+          if selected_count == 0:
+              if template_full not in ('success', 'skipped'):
+                  failures.append('template full job should be skipped or success for empty matrix, got {0}'.format(template_full))
+          elif template_full != 'success':
+              failures.append('template full job result is {0} for {1} selected suite(s)'.format(template_full, selected_count))
+
+          if failures:
+              for failure in failures:
+                  print('ERROR: {0}'.format(failure))
+              sys.exit(1)
+          print('template-suite-gate passed')
+          PY
+
   unittest:
     name: Code test
     runs-on: ${{ matrix.os }}
@@ -103,7 +371,7 @@ jobs:
         shell: bash
         run: |
           choco install tree cloc wget curl make zip
-          choco install 7zip winrar  # unrar should be added
+          choco install 7zip
           choco install mingw
           choco install llvm
           echo "C:\\ProgramData\\chocolatey\\lib\\mingw\\tools\\install\\bin" >> $GITHUB_PATH
@@ -135,34 +403,43 @@ jobs:
           if command -v tree >/dev/null 2>&1; then tree .; else echo "tree not available; skipping directory tree output"; fi
           if command -v cloc >/dev/null 2>&1; then cloc pyfcstm; else echo "cloc not available; skipping pyfcstm line count"; fi
           if command -v cloc >/dev/null 2>&1; then cloc test; else echo "cloc not available; skipping test line count"; fi
-      - name: Detect skip-slow flag in commit message
-        id: skipslow
+      - name: Enable lightweight template test subset
+        id: template_subset
         # Pass the commit message via env to avoid shell injection. Inline
         # `${{ github.event.head_commit.message }}` would be substituted as
         # raw shell tokens before bash sees the script, so any backtick,
         # bracket, or `key: value` pattern in the commit body could be
-        # mis-parsed as commands (broke PR-109 on first run).
+        # mis-parsed as commands.
         env:
           HEAD_COMMIT_MSG: ${{ github.event.head_commit.message }}
         shell: bash
         run: |
+          echo "SKIP_SLOW_TESTS=1" >> "$GITHUB_ENV"
           if printf '%s' "$HEAD_COMMIT_MSG" | grep -q '\[skip-slow\]'; then
-            echo "SKIP_SLOW_TESTS=1" >> "$GITHUB_ENV"
-            echo "Detected [skip-slow] — native-toolchain template tests will be skipped."
+            echo "Detected legacy [skip-slow] — default Code Test already uses the lightweight template subset."
           else
-            echo "SKIP_SLOW_TESTS=" >> "$GITHUB_ENV"
+            echo "Default Code Test uses the lightweight template subset; selected full suites run in template_full jobs."
           fi
+      - name: Run test boundary check
+        shell: bash
+        run: |
+          make test_boundary_check
       - name: Run unittest
         env:
           CI: 'true'
         shell: bash
         run: |
           make unittest IS_WIN=${{ env.IS_WIN }} IS_MAC=${{ env.IS_MAC }}
+      - name: Run template maintenance checks
+        shell: bash
+        run: |
+          make template_packaging_check
+          make template_source_install_check
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v1
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          file: ./coverage.xml
+          files: ./coverage.xml
           flags: python
           name: codecov-umbrella
           fail_ci_if_error: false
@@ -404,10 +681,10 @@ jobs:
       - name: Upload jsfcstm coverage to Codecov
         # Mirror the python matrix: every matrix cell uploads, codecov
         # merges by flag. Avoids dropping coverage if one Node leg fails.
-        uses: codecov/codecov-action@v1
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          file: ./editors/jsfcstm/coverage/lcov.info
+          files: ./editors/jsfcstm/coverage/lcov.info
           flags: jsfcstm
           name: codecov-jsfcstm
           fail_ci_if_error: false

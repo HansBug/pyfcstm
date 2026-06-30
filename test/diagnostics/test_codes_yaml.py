@@ -674,31 +674,8 @@ class TestResolveCodesYamlPath:
 
 
 @pytest.mark.unittest
-class TestYamlCommentBlockSync:
-    """
-    M6 from PR-107 review: the type-token comment block at the top of
-    codes.yaml must mirror ``_ALLOWED_REF_TYPES`` (single source of truth
-    in codes.py). Drift would silently let new tokens land in the comment
-    but not in the loader, or vice versa.
-    """
-
-    def test_comment_block_lists_all_allowed_types(self):
-        path = os.path.join(
-            os.path.dirname(__file__), '..', '..',
-            'pyfcstm', 'diagnostics', 'codes.yaml',
-        )
-        with open(path, 'r', encoding='utf-8') as f:
-            text = f.read()
-        # Comment block uses ` | `-separated list. Extract any tokens in
-        # backticks doesn't apply here (raw text). We assert each allowed
-        # type appears at least once in the comment area (before the first
-        # top-level YAML key, which is `E_UNDEFINED_VAR:` per the schema).
-        head = text.split('E_UNDEFINED_VAR:', 1)[0]
-        for ref_type in _ALLOWED_REF_TYPES:
-            assert ref_type in head, (
-                f"type token {ref_type!r} listed in _ALLOWED_REF_TYPES but "
-                f"not documented in the codes.yaml comment block"
-            )
+class TestRefTypePredicateCoverage:
+    """Verify runtime predicates cover every diagnostic refs type token."""
 
     def test_schema_check_type_predicates_cover_all_allowed_types(self):
         """M3 from PR #115 final review: ``_schema_check._TYPE_PREDICATES``

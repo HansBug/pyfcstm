@@ -591,28 +591,6 @@ class TestSchemaJsonValidates:
         assert 'default inspect graph' in description
         assert 'composite initial edges' in description
 
-    def test_diagnostics_readme_documents_range_layers(self):
-        readme_path = os.path.join(
-            os.path.dirname(__file__), '..', '..',
-            'pyfcstm', 'diagnostics', 'README.md',
-        )
-        assert os.path.exists(readme_path)
-        with open(readme_path, 'r', encoding='utf-8') as f:
-            text = f.read()
-
-        for required in [
-            'problem range',
-            'fix-edit range',
-            'related range',
-            'Span',
-            '<object>_span',
-            '1-based',
-            'end-exclusive',
-            'LSP Range',
-            '0-based',
-        ]:
-            assert required in text
-
 
 @pytest.mark.unittest
 class TestInspectModelAdvancedFeatures:

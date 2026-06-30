@@ -1,4 +1,4 @@
-.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package
+.PHONY: docs test unittest template_unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check test_boundary_check
 
 PYTHON := $(shell which python)
 
@@ -85,6 +85,7 @@ help:
 	@echo "Testing:"
 	@echo "  make test         - Run all tests (alias for unittest)"
 	@echo "  make unittest     - Run unit tests with pytest"
+	@echo "  make template_unittest - Run selected built-in template pytest suites"
 	@echo "                      Options: RANGE_DIR=<dir> COV_TYPES='xml term-missing'"
 	@echo "                               MIN_COVERAGE=<percent> WORKERS=<n>"
 	@echo "  make test_cli     - Test CLI executable"
@@ -112,6 +113,9 @@ help:
 	@echo "  make tpl          - Package repository templates into pyfcstm/template zip assets"
 	@echo "  make tpl_clean    - Remove packaged template zip assets and index"
 	@echo "  make templates_package - Alias of 'make tpl'"
+	@echo "  make template_packaging_check - Validate repository template packaging contracts"
+	@echo "  make template_source_install_check - Validate source-install template extraction"
+	@echo "  make test_boundary_check - Validate pytest test-boundary rules"
 	@echo ""
 	@echo "Sample Tests:"
 	@echo "  make sample       - Generate test files from sample DSL files"
@@ -169,6 +173,9 @@ unittest: tpl
 		$(if ${MIN_COVERAGE},--cov-fail-under=${MIN_COVERAGE},) \
 		$(if ${WORKERS},-n ${WORKERS},)
 
+template_unittest: tpl
+	UNITTEST=1 $(PYTHON) tools/run_template_suites.py --no-package $(TEMPLATE_UNITTEST_ARGS)
+
 docs:
 	$(MAKE) -C "${DOC_DIR}" build
 docs_en:
@@ -185,6 +192,16 @@ templates_package: tpl
 
 tpl_clean:
 	rm -f ${SRC_DIR}/template/*.zip ${SRC_DIR}/template/index.json
+
+template_packaging_check:
+	$(PYTHON) tools/check_template_packaging.py
+
+template_source_install_check:
+	$(PYTHON) tools/check_template_source_install.py
+
+test_boundary_check:
+	$(PYTHON) tools/check_test_boundary.py
+
 
 # LLM-based documentation generation targets
 docs_auto:

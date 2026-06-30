@@ -16,7 +16,7 @@ from test.testings.simulate_semantics import (
 def test_all_semantic_fixtures_load():
     cases = iter_semantic_cases()
 
-    assert len(cases) >= 139
+    assert len(cases) >= 140
     assert {case.id for case in cases}
 
 
@@ -37,7 +37,7 @@ def test_generated_alignment_fixture_baseline_counts():
         case for case in generated_cases if case.data.get("handlers")
     ]
 
-    assert len(cases) >= 139
+    assert len(cases) >= 140
     assert len(generated_cases) >= 90
     assert {case.id for case in generated_handler_cases} >= {
         "failed_initial_cycle_skips_abstract_handler_callbacks",
@@ -97,6 +97,7 @@ def test_generated_alignment_regression_fixtures_remain_shared():
         "event_path_absolute",
         "event_path_parent_relative",
         "event_path_mixed_formats_full",
+        "combo_transition_trigger_cross_layer_exit_alignment",
         "combo_transition_trigger_duplicate_event_alignment",
         "combo_transition_trigger_entry_fallback_alignment",
         "combo_transition_trigger_exit_continuation_rollback_alignment",

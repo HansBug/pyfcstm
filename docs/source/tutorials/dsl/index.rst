@@ -610,6 +610,10 @@ chain such as:
    __combo_waiting_request_h... -> __combo_waiting_request_if_ready_gt_0_h... : if [ready > 0];
    __combo_waiting_request_if_ready_gt_0_h... -> Accepted : /Waiting.Confirm;
 
+The ``h...`` fragments above are placeholders for the deterministic hash suffix.
+Actual generated names contain only legal identifier characters; do not write
+literal dots into a hand-authored pseudo-state name.
+
 The exact generated state name is deterministic and begins with
 ``__combo_``. User-authored state names must not use that reserved prefix. The
 state also receives a human-readable ``named`` display label, so visual output
@@ -628,6 +632,10 @@ shows the generated pseudo state instead of hiding it.
    S -> [*] :: Done + Ack;                // exit combo
 
 **Invalid forms:**
+
+Some invalid forms are grammar errors, while scope-path mistakes such as
+``/Root.Bus.E1`` parse but are rejected during model validation because absolute
+paths already start below the root state.
 
 .. code-block:: fcstm
 

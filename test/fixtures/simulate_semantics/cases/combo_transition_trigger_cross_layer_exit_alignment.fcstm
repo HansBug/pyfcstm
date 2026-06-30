@@ -1,0 +1,30 @@
+def int gate = 0;
+def int value = 0;
+
+state Root {
+    state Parent {
+        exit { value = value + 1; }
+
+        state Leaf {
+            exit { value = value + 10; }
+        }
+
+        [*] -> Leaf;
+        Leaf -> [*] :: Leave;
+    }
+
+    state Target {
+        enter { value = value + 1000; }
+    }
+
+    state Fallback {
+        enter { value = value + 10000; }
+    }
+
+    state Done;
+
+    [*] -> Parent;
+    Parent -> Target : ExitRoot + [gate == 1] + ExitAck effect { value = value + 100; }
+    Parent -> Fallback : ExitRoot effect { value = value + 1000; }
+    Fallback -> Done :: Finish;
+}

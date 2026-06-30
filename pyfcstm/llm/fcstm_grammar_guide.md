@@ -430,7 +430,9 @@ state PlatoonJoin {
 ## Invalid Forms To Avoid
 
 These examples are intentionally invalid and should not be copied into a final
-model.
+model. Some are grammar-level errors; scope-path mistakes such as
+`/Root.Bus.E1` can still parse but must be rejected by model validation because
+absolute paths already start below the root state.
 
 ```fcstm-invalid
 def int x = 0;

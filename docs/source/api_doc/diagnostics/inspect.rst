@@ -36,6 +36,12 @@ VERIFY\_SHARED\_STATIC\_CODES
 .. autodata:: VERIFY_SHARED_STATIC_CODES
 
 
+COMBO\_GUARD\_VERIFY\_REPLACEMENT\_CODES
+-----------------------------------------------------
+
+.. autodata:: COMBO_GUARD_VERIFY_REPLACEMENT_CODES
+
+
 StateInfo
 -----------------------------------------------------
 

@@ -137,3 +137,54 @@ def test_inspect_suppresses_generic_guard_tautology_for_combo_const_true():
     codes = {item.code for item in report.diagnostics}
     assert "W_COMBO_GUARD_CONST_TRUE" in codes
     assert "W_GUARD_TAUTOLOGY" not in codes
+
+def test_inspect_keeps_generic_guard_tautology_without_combo_replacement():
+    """Inspect keeps raw tautology when combo analyzer has no source-level replacement."""
+    source = """
+    def int x = 1;
+    state Root {
+        state S;
+        state T;
+        [*] -> S;
+        S -> T :: E1 + [x / x == 1] + E2;
+    }
+    """
+
+    assert "W_GUARD_TAUTOLOGY" in _raw_verify_codes(source)
+
+    report = inspect_model(
+        parse_machine(source),
+        enable_verify=True,
+        max_complexity_tier="smt_linear",
+        smt_timeout_ms=5000,
+    )
+
+    codes = {item.code for item in report.diagnostics}
+    assert "W_COMBO_GUARD_CONST_TRUE" not in codes
+    assert "W_GUARD_TAUTOLOGY" in codes
+
+
+def test_inspect_keeps_generic_dead_guard_without_combo_replacement():
+    """Inspect keeps raw dead guard when combo analyzer has no replacement."""
+    source = """
+    def int x = 1;
+    state Root {
+        state S;
+        state T;
+        [*] -> S;
+        S -> T :: E1 + [x / x != 1] + E2;
+    }
+    """
+
+    assert "W_DEAD_GUARD" in _raw_verify_codes(source)
+
+    report = inspect_model(
+        parse_machine(source),
+        enable_verify=True,
+        max_complexity_tier="smt_linear",
+        smt_timeout_ms=5000,
+    )
+
+    codes = {item.code for item in report.diagnostics}
+    assert "W_COMBO_GUARD_CONST_FALSE" not in codes
+    assert "W_DEAD_GUARD" in codes

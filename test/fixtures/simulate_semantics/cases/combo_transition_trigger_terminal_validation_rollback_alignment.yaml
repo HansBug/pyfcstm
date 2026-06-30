@@ -1,0 +1,38 @@
+title: Combo transition trigger terminal validation rollback alignment
+origin:
+  files:
+  - test/fixtures/simulate_semantics/cases/combo_transition_trigger_terminal_validation_rollback_alignment.fcstm
+  notes:
+  - Covers a combo chain whose final event and terminal effect are reached, but whose target composite cannot validate a stoppable initial path.
+  - The failed terminal continuation must roll back the source exit, terminal effect, variable writes, and target entry work before the later source fallback commits.
+  - This fixture is intentionally stronger than missing-event rollback because it exercises the last generated transition and target validation failure boundary.
+categories:
+- runtime
+- template_alignment
+- pseudo_chain
+- lifecycle
+steps:
+- cycle: []
+  expect:
+    state: Root.Start
+    vars:
+      gate: 0
+      score: 0
+    ended: false
+- cycle:
+  - Root.Start.A
+  - Root.Start.B
+  expect:
+    state: Root.Fallback
+    vars:
+      gate: 0
+      score: 121
+    ended: false
+- cycle:
+  - Root.Fallback.Finish
+  expect:
+    state: Root.Done
+    vars:
+      gate: 0
+      score: 121
+    ended: false

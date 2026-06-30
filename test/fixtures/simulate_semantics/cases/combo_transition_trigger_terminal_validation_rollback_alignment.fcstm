@@ -7,6 +7,8 @@ state Root {
     }
 
     state InvalidTarget {
+        enter { score = score + 10000; }
+
         [*] -> Good : if [gate == 2];
 
         state Good {

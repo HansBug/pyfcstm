@@ -48,7 +48,7 @@ Examples::
 
 import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from .analyzers import (
     build_use_def_graph,
@@ -87,6 +87,11 @@ KNOWN_SPANLESS_CODES = frozenset()
 VERIFY_SHARED_STATIC_CODES = frozenset({
     'W_UNREACHABLE_STATE',
 })
+
+COMBO_GUARD_VERIFY_REPLACEMENT_CODES = {
+    'W_DEAD_GUARD': 'W_COMBO_GUARD_CONST_FALSE',
+    'W_GUARD_TAUTOLOGY': 'W_COMBO_GUARD_CONST_TRUE',
+}
 
 
 _OP_PRECEDENCE = {
@@ -1967,6 +1972,261 @@ def _transition_matches_payload(info: TransitionInfo, payload: Mapping[str, Any]
     )
 
 
+def _combo_generated_transition_by_payload(
+        transitions: Sequence[TransitionInfo],
+        payload: Optional[Mapping[str, Any]],
+) -> Optional[TransitionInfo]:
+    """Return the combo-generated transition matched by a raw payload.
+
+    Combo-trigger expansion creates internal pseudo-state edges whose
+    diagnostics should be projected back to the author-written combo term by
+    the combo analyzer instead of exposing ``__combo_*`` edges through generic
+    verify diagnostics. This helper identifies those internal edges without
+    changing the lower-level verify algorithms.
+
+    :param transitions: Inspect transition payloads.
+    :type transitions: Sequence[TransitionInfo]
+    :param payload: Raw verify transition payload.
+    :type payload: Optional[Mapping[str, Any]]
+    :return: Matching combo-generated transition, or ``None``.
+    :rtype: Optional[TransitionInfo]
+
+    Examples::
+
+        >>> ref = ComboOriginRefInfo(
+        ...     'Root:S->T::: E1 + [x > 0] + E2',
+        ...     1,
+        ...     'prefix',
+        ...     True,
+        ...     '[x > 0]',
+        ... )
+        >>> transition = TransitionInfo(
+        ...     from_path='Root.__combo_a',
+        ...     to_path='Root.__combo_b',
+        ...     event=None,
+        ...     event_scope=None,
+        ...     guard='x > 0',
+        ...     effect=None,
+        ...     effect_self_assigns=(),
+        ...     is_forced=False,
+        ...     forced_origin=None,
+        ...     transition_index=0,
+        ...     combo_origin_refs=(ref,),
+        ... )
+        >>> payload = {
+        ...     'parent': 'Root',
+        ...     'from_state': '__combo_a',
+        ...     'to_state': '__combo_b',
+        ...     'event': None,
+        ...     'guard': 'x > 0',
+        ...     'is_forced': False,
+        ... }
+        >>> _combo_generated_transition_by_payload((transition,), payload) is transition
+        True
+    """
+    if payload is None:
+        return None
+    for transition in transitions:
+        if transition.combo_origin_refs and _transition_matches_payload(
+            transition,
+            payload,
+        ):
+            return transition
+    return None
+
+
+def _combo_guard_replacement_keys(
+        diagnostics: Sequence[ModelDiagnostic],
+) -> Dict[str, Set[Tuple[str, int]]]:
+    """Return combo guard replacement diagnostic keys by public code.
+
+    Generic verify guard diagnostics may be hidden only when a prior
+    combo-aware diagnostic already reports the same original trigger term.
+    Keys use ``(origin_id, term_index)`` because combo expansion may share one
+    generated edge across multiple author-written transitions.
+
+    :param diagnostics: Public diagnostics already collected before verify
+        adapter diagnostics are appended.
+    :type diagnostics: Sequence[pyfcstm.utils.validate.ModelDiagnostic]
+    :return: Mapping from combo-specific diagnostic code to covered terms.
+    :rtype: Dict[str, Set[Tuple[str, int]]]
+
+    Examples::
+
+        >>> diagnostic = ModelDiagnostic(
+        ...     code='W_COMBO_GUARD_CONST_TRUE',
+        ...     severity='warning',
+        ...     message='true',
+        ...     refs={'origin_id': 'origin', 'term_index': 2},
+        ... )
+        >>> _combo_guard_replacement_keys((diagnostic,))[
+        ...     'W_COMBO_GUARD_CONST_TRUE'
+        ... ]
+        {('origin', 2)}
+    """
+    keys: Dict[str, Set[Tuple[str, int]]] = {}
+    for diagnostic in diagnostics:
+        if diagnostic.code not in set(COMBO_GUARD_VERIFY_REPLACEMENT_CODES.values()):
+            continue
+        origin_id = diagnostic.refs.get('origin_id')
+        term_index = diagnostic.refs.get('term_index')
+        if (
+                isinstance(origin_id, str)
+                and isinstance(term_index, int)
+                and not isinstance(term_index, bool)
+        ):
+            keys.setdefault(diagnostic.code, set()).add((origin_id, term_index))
+    return keys
+
+
+def _combo_transition_has_guard_replacement(
+        transition: TransitionInfo,
+        replacement_keys: Set[Tuple[str, int]],
+) -> bool:
+    """Return whether all combo refs on a generated guard edge are covered.
+
+    :param transition: Matched generated combo transition.
+    :type transition: TransitionInfo
+    :param replacement_keys: Covered ``(origin_id, term_index)`` pairs for the
+        expected combo-specific diagnostic code.
+    :type replacement_keys: Set[Tuple[str, int]]
+    :return: ``True`` only when suppressing the generic diagnostic cannot hide
+        a source-level finding.
+    :rtype: bool
+
+    Examples::
+
+        >>> ref = ComboOriginRefInfo('origin', 0, 'prefix', True, '[x > 0]')
+        >>> transition = TransitionInfo(
+        ...     from_path='Root.__combo_a',
+        ...     to_path='Root.__combo_b',
+        ...     event=None,
+        ...     event_scope=None,
+        ...     guard='x > 0',
+        ...     effect=None,
+        ...     effect_self_assigns=(),
+        ...     is_forced=False,
+        ...     forced_origin=None,
+        ...     transition_index=0,
+        ...     combo_origin_refs=(ref,),
+        ... )
+        >>> _combo_transition_has_guard_replacement(transition, {('origin', 0)})
+        True
+        >>> _combo_transition_has_guard_replacement(transition, set())
+        False
+    """
+    refs = tuple(ref for ref in transition.combo_origin_refs if ref.consumes_term)
+    return bool(refs) and all(
+        (ref.origin_id, ref.term_index) in replacement_keys for ref in refs
+    )
+
+
+def _is_combo_generated_guard_verify_diagnostic(
+        code: str,
+        raw: Mapping[str, Any],
+        transitions: Sequence[TransitionInfo],
+        combo_guard_replacement_keys: Mapping[str, Set[Tuple[str, int]]],
+) -> bool:
+    """Return whether a raw generic guard diagnostic has a combo replacement.
+
+    Generic SMT guard diagnostics report transition-level facts. For combo
+    generated guard edges, the public inspect surface may suppress them only
+    when combo-specific diagnostics already cover every original trigger term
+    represented by the generated edge. If no replacement exists, the raw
+    verify diagnostic remains visible rather than being silently swallowed.
+
+    :param code: Raw verify diagnostic code.
+    :type code: str
+    :param raw: Raw verify diagnostic dictionary.
+    :type raw: Mapping[str, Any]
+    :param transitions: Inspect transition payloads.
+    :type transitions: Sequence[TransitionInfo]
+    :param combo_guard_replacement_keys: Combo-specific replacement coverage
+        keyed by public diagnostic code.
+    :type combo_guard_replacement_keys: Mapping[str, Set[Tuple[str, int]]]
+    :return: ``True`` when the generic diagnostic should be suppressed.
+    :rtype: bool
+
+    Examples::
+
+        >>> ref = ComboOriginRefInfo(
+        ...     'Root:S->T::: E1 + [x > 0] + E2',
+        ...     1,
+        ...     'prefix',
+        ...     True,
+        ...     '[x > 0]',
+        ... )
+        >>> transition = TransitionInfo(
+        ...     from_path='Root.__combo_a',
+        ...     to_path='Root.__combo_b',
+        ...     event=None,
+        ...     event_scope=None,
+        ...     guard='x > 0',
+        ...     effect=None,
+        ...     effect_self_assigns=(),
+        ...     is_forced=False,
+        ...     forced_origin=None,
+        ...     transition_index=0,
+        ...     combo_origin_refs=(ref,),
+        ... )
+        >>> raw = {'data': {'transition': {
+        ...     'parent': 'Root',
+        ...     'from_state': '__combo_a',
+        ...     'to_state': '__combo_b',
+        ...     'event': None,
+        ...     'guard': 'x > 0',
+        ...     'is_forced': False,
+        ... }}}
+        >>> replacements = {
+        ...     'W_COMBO_GUARD_CONST_FALSE': {
+        ...         ('Root:S->T::: E1 + [x > 0] + E2', 1),
+        ...     },
+        ... }
+        >>> _is_combo_generated_guard_verify_diagnostic(
+        ...     'W_DEAD_GUARD',
+        ...     raw,
+        ...     (transition,),
+        ...     replacements,
+        ... )
+        True
+        >>> _is_combo_generated_guard_verify_diagnostic(
+        ...     'W_DEAD_GUARD',
+        ...     raw,
+        ...     (transition,),
+        ...     {},
+        ... )
+        False
+        >>> _is_combo_generated_guard_verify_diagnostic(
+        ...     'W_FORCED_GUARD_UNSAT',
+        ...     raw,
+        ...     (transition,),
+        ...     replacements,
+        ... )
+        False
+    """
+    # Keep this list intentionally narrow.  These two generic guard-level SMT
+    # diagnostics are suppressible only when a combo-specific analyzer
+    # counterpart already projects the same source term.  Other transition-keyed
+    # verify diagnostics must stay visible until a combo-aware public diagnostic
+    # exists for them.
+    replacement_code = COMBO_GUARD_VERIFY_REPLACEMENT_CODES.get(code)
+    if replacement_code is None:
+        return False
+    data = raw.get('data')
+    if not isinstance(data, Mapping):
+        return False
+    transition = _combo_generated_transition_by_payload(
+        transitions,
+        data.get('transition'),
+    )
+    if transition is None:
+        return False
+    return _combo_transition_has_guard_replacement(
+        transition,
+        combo_guard_replacement_keys.get(replacement_code, set()),
+    )
+
+
 def _transition_span_by_payload(
         transitions: Sequence[TransitionInfo],
         payload: Optional[Mapping[str, Any]],
@@ -2619,6 +2879,9 @@ def _verify_diagnostics_from_results(
         transitions: Sequence[TransitionInfo],
         events: Sequence[EventInfo],
         actions: Sequence[ActionInfo],
+        combo_guard_replacement_keys: Optional[
+            Mapping[str, Set[Tuple[str, int]]]
+        ] = None,
 ) -> Tuple[ModelDiagnostic, ...]:
     """Convert inspect-adapter results into public model diagnostics.
 
@@ -2638,6 +2901,9 @@ def _verify_diagnostics_from_results(
     :type events: Sequence[EventInfo]
     :param actions: Inspect action payloads.
     :type actions: Sequence[ActionInfo]
+    :param combo_guard_replacement_keys: Combo-specific guard replacement
+        coverage collected before verify diagnostics are appended.
+    :type combo_guard_replacement_keys: Mapping[str, Set[Tuple[str, int]]], optional
     :return: Converted verify diagnostics.
     :rtype: Tuple[ModelDiagnostic, ...]
 
@@ -2659,6 +2925,7 @@ def _verify_diagnostics_from_results(
         ()
     """
     diagnostics: List[ModelDiagnostic] = []
+    combo_guard_replacement_keys = combo_guard_replacement_keys or {}
     for result in results:
         if result.result_kind in {'unknown', 'timeout', 'undecidable_skip'}:
             continue
@@ -2668,6 +2935,13 @@ def _verify_diagnostics_from_results(
                     continue
                 code = raw.get('code')
                 if not isinstance(code, str):
+                    continue
+                if _is_combo_generated_guard_verify_diagnostic(
+                    code,
+                    raw,
+                    transitions,
+                    combo_guard_replacement_keys,
+                ):
                     continue
                 refs = _verify_smt_refs(raw)
                 if refs is None:
@@ -2876,6 +3150,7 @@ def inspect_model(
             transitions,
             events,
             actions,
+            combo_guard_replacement_keys=_combo_guard_replacement_keys(diagnostics),
         ))
     diagnostics = list(_catalog_emittable_diagnostics(diagnostics))
     diagnostics = list(_deduplicate_model_diagnostics(diagnostics))

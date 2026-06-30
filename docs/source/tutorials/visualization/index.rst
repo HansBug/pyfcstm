@@ -13,6 +13,8 @@ pyfcstm provides two primary methods for visualizing state machines:
 
 Both methods support the same comprehensive configuration system, allowing you to control every aspect of the generated PlantUML diagrams.
 
+Combo transition triggers are visible after expansion: generated pseudo states use the reserved ``__combo_`` prefix internally and stable human-readable labels in diagrams, so diagrams accurately show the model consumed by downstream tools.
+
 Example State Machine
 ---------------------------------------
 
@@ -32,6 +34,7 @@ This state machine demonstrates key FCSTM features:
 - **Transitions with guards**: ``Active -> Error : if [counter > 100]``
 - **Transitions with effects**: ``Active -> Idle :: Stop effect { counter = 0; }``
 - **Forced transitions**: ``!* -> Error :: FatalError`` from all states
+- **Combo triggers**: automatically generated ``__combo_`` pseudo states are shown rather than hidden
 
 **Visualization**
 

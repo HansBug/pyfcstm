@@ -10,6 +10,7 @@ import type {
 } from '../inspect';
 import type {StateMachine} from '../../model/runtime';
 import {refsWithSuggestedFix} from '../suggested-fix';
+import {collectComboWarnings} from './combo';
 import {collectConstFoldWarnings} from './const-fold';
 import {collectDataFlowWarnings} from './data-flow';
 import {collectNamingWarnings} from './naming';
@@ -41,6 +42,7 @@ export function collectDesignHealthWarnings(
     const diagnostics = [
         ...collectUnreachableStateDiagnostics(states, reachabilityGraph, rootStatePath),
         ...(machine ? collectConstFoldWarnings(machine) : collectGuardConstFalseDiagnostics(transitions)),
+        ...(machine ? collectComboWarnings(machine) : []),
         ...collectUnusedEventDiagnostics(events),
         ...collectStructuralWarnings(
             states,

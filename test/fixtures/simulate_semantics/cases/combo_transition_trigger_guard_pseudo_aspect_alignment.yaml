@@ -1,0 +1,29 @@
+title: Combo transition trigger guard pseudo aspect alignment
+origin:
+  files:
+  - test/model/test_combo_transition_expansion.py::TestComboModelExpansion::test_multi_guard_combo_uses_pseudo_validation_for_all_guard_terms
+  - test/fixtures/simulate_semantics/cases/combo_transition_trigger_guard_pseudo_aspect_alignment.fcstm
+  notes:
+  - Covers an all-guard combo chain under ancestor during-before and during-after aspect actions.
+  - The generated guard-only pseudo states must not behave like stable leaf states for aspect execution; only stable source and target leaf cycles should run ancestor aspects.
+  - The repeated guard term is intentionally legal and executable here, complementing the separate duplicate-event warning fixture with a guard-only pseudo validation path.
+categories:
+- runtime
+- template_alignment
+- pseudo_chain
+- lifecycle
+steps:
+- cycle: []
+  expect:
+    state: Root.Start
+    vars:
+      x: 1
+      trace: 10100
+    ended: false
+- cycle: []
+  expect:
+    state: Root.Done
+    vars:
+      x: 1
+      trace: 20211
+    ended: false

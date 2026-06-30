@@ -93,6 +93,8 @@ def collect_const_fold_warnings(
     for state in machine.walk_states():
         state_path = _state_path(state)
         for transition in state.transitions:
+            if getattr(transition, 'combo_origin_refs', ()):  # combo analyzer maps guard terms to original spans
+                continue
             folded_guard = (
                 None if transition.guard is None
                 else fold_condition_expression(transition.guard)

@@ -15,6 +15,8 @@ import type {
     FcstmAstBinaryExpression,
     FcstmAstChainPath,
     FcstmAstChainTrigger,
+    FcstmAstComboTrigger,
+    FcstmAstComboTriggerTerm,
     FcstmAstConditionalExpression,
     FcstmAstDocument,
     FcstmAstEmptyStatement,
@@ -62,6 +64,39 @@ const COND_BINARY_OPERATOR_ALIASES: Record<string, string> = {
     implies: '=>',
 };
 
+const EXPR_PRECEDENCE: Record<string, number> = {
+    function_call: 90,
+    'unary+': 80,
+    'unary-': 80,
+    '!': 80,
+    not: 80,
+    '**': 70,
+    '*': 60,
+    '/': 60,
+    '%': 60,
+    '+': 50,
+    '-': 50,
+    '<<': 40,
+    '>>': 40,
+    '&': 35,
+    '^': 30,
+    '|': 25,
+    '<': 20,
+    '>': 20,
+    '<=': 20,
+    '>=': 20,
+    '==': 20,
+    '!=': 20,
+    iff: 20,
+    '&&': 15,
+    and: 15,
+    xor: 12,
+    '||': 10,
+    or: 10,
+    '=>': 7,
+    '?:': 5,
+};
+
 interface ParseTreeContext extends ParseTreeNode {
     from_state?: { text?: string };
     to_state?: { text?: string };
@@ -77,6 +112,22 @@ interface ParseTreeContext extends ParseTreeNode {
     op?: { text?: string };
     isabs?: { text?: string };
     num_expression?: () => ParseTreeContext;
+    combo_transition_trigger?: () => ParseTreeContext | undefined;
+    entry_combo_transition_trigger?: () => ParseTreeContext | undefined;
+    entry_chain_combo_trigger?: () => ParseTreeContext | undefined;
+    entry_chain_combo_leading_guard?: (index?: number | null) => ParseTreeContext[] | ParseTreeContext | undefined;
+    entry_chain_combo_trigger_term?: (index?: number | null) => ParseTreeContext[] | ParseTreeContext | undefined;
+    local_combo_trigger?: () => ParseTreeContext | undefined;
+    chain_combo_trigger?: () => ParseTreeContext | undefined;
+    local_combo_event_term?: () => ParseTreeContext | undefined;
+    local_combo_leading_guard?: (index?: number | null) => ParseTreeContext[] | ParseTreeContext | undefined;
+    local_combo_trigger_term?: (index?: number | null) => ParseTreeContext[] | ParseTreeContext | undefined;
+    combo_event_term?: () => ParseTreeContext | undefined;
+    combo_trigger_term?: (index?: number | null) => ParseTreeContext[] | ParseTreeContext | undefined;
+    chain_combo_guard_alias?: () => ParseTreeContext | undefined;
+    combo_guard_term?: () => ParseTreeContext | undefined;
+    chain_id?: () => ParseTreeContext | undefined;
+    cond_expression?: () => ParseTreeContext | undefined;
 }
 
 function nodeText(node: ParseTreeNode | undefined): string {
@@ -227,6 +278,41 @@ function firstContextChild(node: ParseTreeNode | undefined): ParseTreeContext | 
     return contextChildren(node)[0];
 }
 
+function arrayContextChildren(
+    value: ParseTreeContext[] | ParseTreeContext | undefined
+): ParseTreeContext[] {
+    if (!value) {
+        return [];
+    }
+    return Array.isArray(value) ? value : [value];
+}
+
+function getNodeByMethod(
+    node: ParseTreeContext | undefined,
+    methodName: keyof ParseTreeContext
+): ParseTreeContext | undefined {
+    const method = node?.[methodName] as unknown;
+    if (typeof method !== 'function') {
+        return undefined;
+    }
+
+    const getter = method as (this: ParseTreeContext) => ParseTreeContext[] | ParseTreeContext | undefined;
+    return arrayContextChildren(getter.call(node as ParseTreeContext))[0];
+}
+
+function getNodesByMethod(
+    node: ParseTreeContext | undefined,
+    methodName: keyof ParseTreeContext
+): ParseTreeContext[] {
+    const method = node?.[methodName] as unknown;
+    if (typeof method !== 'function') {
+        return [];
+    }
+
+    const getter = method as (this: ParseTreeContext, index?: number | null) => ParseTreeContext[] | ParseTreeContext | undefined;
+    return arrayContextChildren(getter.call(node as ParseTreeContext, null));
+}
+
 function getNodeRange(
     node: ParseTreeNode,
     document: TextDocumentLike,
@@ -318,6 +404,94 @@ function buildLocalEventPath(
         segments: path,
         path,
     };
+}
+
+function buildEntryEventPath(eventPath: FcstmAstChainPath): FcstmAstChainPath {
+    return {
+        ...eventPath,
+        range: makeCopiedRange(eventPath.range),
+        isAbsolute: eventPath.isAbsolute,
+        is_absolute: eventPath.is_absolute,
+        segments: [...eventPath.segments],
+        path: [...eventPath.path],
+    };
+}
+
+function expressionPrecedence(expression: FcstmAstExpression): number | null {
+    if (expression.expressionKind === 'binary') {
+        return EXPR_PRECEDENCE[canonicalizeBinaryOperator(expression.op, expression.expressionType)] ?? null;
+    }
+    if (expression.expressionKind === 'conditional') return EXPR_PRECEDENCE['?:'];
+    if (expression.expressionKind === 'unary') return EXPR_PRECEDENCE[unaryPrecedenceKey(expression.op)] ?? null;
+    return null;
+}
+
+function unaryPrecedenceKey(op: string): string {
+    const canonical = canonicalizeUnaryOperator(op);
+    return canonical === '+' || canonical === '-' ? `unary${canonical}` : canonical;
+}
+
+function canonicalExpressionText(expression: FcstmAstExpression | undefined): string | null {
+    if (!expression) return null;
+    switch (expression.expressionKind) {
+        case 'literal':
+            return expression.valueText.toLowerCase();
+        case 'identifier':
+            return expression.name;
+        case 'mathConst':
+            return expression.name;
+        case 'parenthesized': {
+            const inner = canonicalExpressionText(expression.expression);
+            return inner === null ? null : `(${inner})`;
+        }
+        case 'function': {
+            const argument = canonicalExpressionText(expression.argument);
+            return argument === null ? null : `${expression.functionName}(${argument})`;
+        }
+        case 'unary': {
+            const op = canonicalizeUnaryOperator(expression.op);
+            const myPrecedence = EXPR_PRECEDENCE[unaryPrecedenceKey(expression.op)];
+            let value = canonicalExpressionText(expression.operand);
+            if (value === null) return null;
+            const valuePrecedence = expressionPrecedence(expression.operand);
+            if (valuePrecedence !== null && valuePrecedence <= myPrecedence) {
+                value = `(${value})`;
+            }
+            return `${op}${value}`;
+        }
+        case 'binary': {
+            const op = canonicalizeBinaryOperator(expression.op, expression.expressionType);
+            const myPrecedence = EXPR_PRECEDENCE[op];
+            let left = canonicalExpressionText(expression.left);
+            let right = canonicalExpressionText(expression.right);
+            if (left === null || right === null) return null;
+            const leftPrecedence = expressionPrecedence(expression.left);
+            if (leftPrecedence !== null && leftPrecedence < myPrecedence) {
+                left = `(${left})`;
+            }
+            const rightPrecedence = expressionPrecedence(expression.right);
+            if (rightPrecedence !== null && rightPrecedence <= myPrecedence) {
+                right = `(${right})`;
+            }
+            return `${left} ${op} ${right}`;
+        }
+        case 'conditional': {
+            const myPrecedence = EXPR_PRECEDENCE['?:'];
+            const condition = canonicalExpressionText(expression.condition);
+            let whenTrue = canonicalExpressionText(expression.whenTrue);
+            let whenFalse = canonicalExpressionText(expression.whenFalse);
+            if (condition === null || whenTrue === null || whenFalse === null) return null;
+            const truePrecedence = expressionPrecedence(expression.whenTrue);
+            if (truePrecedence !== null && truePrecedence <= myPrecedence) {
+                whenTrue = `(${whenTrue})`;
+            }
+            const falsePrecedence = expressionPrecedence(expression.whenFalse);
+            if (falsePrecedence !== null && falsePrecedence <= myPrecedence) {
+                whenFalse = `(${whenFalse})`;
+            }
+            return `(${condition}) ? ${whenTrue} : ${whenFalse}`;
+        }
+    }
 }
 
 function buildActionPyNodeType(
@@ -653,6 +827,278 @@ function buildOperationalStatement(
     } as FcstmAstEmptyStatement;
 }
 
+function makeCopiedRange(range: TextRange): TextRange {
+    return {
+        start: {line: range.start.line, character: range.start.character},
+        end: {line: range.end.line, character: range.end.character},
+    };
+}
+
+function rangeBetween(
+    startRange: TextRange,
+    endRange: TextRange
+): TextRange {
+    return {
+        start: {line: startRange.start.line, character: startRange.start.character},
+        end: {line: endRange.end.line, character: endRange.end.character},
+    };
+}
+
+function buildGuardTermValueRange(
+    guardTermNode: ParseTreeContext,
+    conditionNode: ParseTreeContext | undefined,
+    document: TextDocumentLike
+): TextRange | undefined {
+    if (conditionNode) {
+        return getNodeRange(conditionNode, document, nodeText(conditionNode));
+    }
+
+    const range = getNodeRange(guardTermNode, document, nodeText(guardTermNode));
+    if (range.start.line === range.end.line && range.end.character - range.start.character >= 2) {
+        return {
+            start: {line: range.start.line, character: range.start.character + 1},
+            end: {line: range.end.line, character: range.end.character - 1},
+        };
+    }
+
+    return undefined;
+}
+
+function guardTermCanonicalText(condition: FcstmAstExpression | undefined, guardTermNode: ParseTreeContext): string {
+    const canonical = canonicalExpressionText(condition);
+    return canonical !== null ? `[${canonical}]` : nodeText(guardTermNode);
+}
+
+function buildEventComboTerm(
+    eventTermNode: ParseTreeContext,
+    eventScope: 'local' | 'chain' | 'absolute',
+    document: TextDocumentLike
+): FcstmAstComboTriggerTerm {
+    const localEventNode = getNodeByMethod(eventTermNode, 'local_combo_event_term') || eventTermNode;
+    const chainEventNode = getNodeByMethod(eventTermNode, 'combo_event_term') || eventTermNode;
+    const chainNode = getNodeByMethod(chainEventNode, 'chain_id') || chainEventNode;
+    const isLocal = eventScope === 'local';
+    const eventPath = isLocal
+        ? {
+            kind: 'chainPath',
+            pyNodeType: 'ChainID',
+            range: getNodeRange(localEventNode, document, nodeText(localEventNode)),
+            text: nodeText(localEventNode),
+            isAbsolute: false,
+            is_absolute: false,
+            segments: [nodeText(localEventNode)],
+            path: [nodeText(localEventNode)],
+        } as FcstmAstChainPath
+        : buildChainPath(chainNode, document);
+    const scope = eventPath.isAbsolute ? 'absolute' : eventScope;
+    const canonicalText = scope === 'local' ? eventPath.path[eventPath.path.length - 1] : eventPath.text;
+
+    const termRange = getNodeRange(eventTermNode, document, nodeText(eventTermNode));
+
+    return {
+        kind: 'comboTriggerTerm',
+        range: termRange,
+        text: nodeText(eventTermNode),
+        termKind: 'event',
+        canonicalText,
+        canonical_text: canonicalText,
+        removalRange: makeCopiedRange(termRange),
+        removal_range: makeCopiedRange(termRange),
+        eventScope: scope,
+        event_scope: scope,
+        eventPath,
+        event_id: eventPath,
+    };
+}
+
+function buildGuardComboTerm(
+    guardTermNode: ParseTreeContext,
+    document: TextDocumentLike
+): FcstmAstComboTriggerTerm {
+    const conditionNode = getNodeByMethod(guardTermNode, 'cond_expression');
+    const condition = conditionNode ? buildExpression(conditionNode, document) : undefined;
+    const canonicalText = guardTermCanonicalText(condition, guardTermNode);
+    const termRange = getNodeRange(guardTermNode, document, nodeText(guardTermNode));
+    const valueRange = buildGuardTermValueRange(guardTermNode, conditionNode, document);
+
+    return {
+        kind: 'comboTriggerTerm',
+        range: termRange,
+        text: nodeText(guardTermNode),
+        termKind: 'guard',
+        canonicalText,
+        canonical_text: canonicalText,
+        removalRange: makeCopiedRange(termRange),
+        removal_range: makeCopiedRange(termRange),
+        valueRange: valueRange,
+        value_range: valueRange,
+        condition,
+        condition_expr: condition,
+    };
+}
+
+function applyComboRemovalRanges(terms: FcstmAstComboTriggerTerm[]): void {
+    if (terms.length === 0) {
+        return;
+    }
+    if (terms.length === 1) {
+        terms[0].removalRange = makeCopiedRange(terms[0].range);
+        terms[0].removal_range = makeCopiedRange(terms[0].range);
+        return;
+    }
+
+    for (let index = 0; index < terms.length; index += 1) {
+        const current = terms[index];
+        const removalRange = index === 0
+            ? rangeBetween(current.range, {start: terms[index + 1].range.start, end: terms[index + 1].range.start})
+            : rangeBetween({start: terms[index - 1].range.end, end: terms[index - 1].range.end}, current.range);
+        current.removalRange = removalRange;
+        current.removal_range = removalRange;
+    }
+}
+
+function buildComboTriggerFromSyntax(
+    node: ParseTreeContext,
+    document: TextDocumentLike
+): FcstmAstComboTrigger | undefined {
+    const entryComboNode = getNodeByMethod(node, 'entry_combo_transition_trigger');
+    const comboNode = getNodeByMethod(node, 'combo_transition_trigger') || entryComboNode;
+    if (!comboNode) {
+        return undefined;
+    }
+
+    const terms: FcstmAstComboTriggerTerm[] = [];
+    let scopePrefix: ':' | '::' = ':';
+    const legacyCondNode = getNodeByMethod(comboNode, 'cond_expression');
+    if (legacyCondNode) {
+        const condition = buildExpression(legacyCondNode, document);
+        const range = getNodeRange(comboNode, document, nodeText(comboNode));
+        const leftBracket = nodeText(comboNode).indexOf('[');
+        const rightBracket = nodeText(comboNode).lastIndexOf(']');
+        const termRange = leftBracket >= 0 && rightBracket >= leftBracket
+            ? {
+                start: {line: range.start.line, character: range.start.character + leftBracket},
+                end: {line: range.start.line, character: range.start.character + rightBracket + 1},
+            }
+            : range;
+        const valueRange = {
+            start: {line: legacyCondNode.start?.line ? legacyCondNode.start.line - 1 : termRange.start.line, character: legacyCondNode.start?.column ?? termRange.start.character + 1},
+            end: {line: legacyCondNode.stop?.line ? legacyCondNode.stop.line - 1 : termRange.end.line, character: (legacyCondNode.stop?.column ?? termRange.end.character - 1) + nodeText(legacyCondNode).length},
+        };
+        terms.push({
+            kind: 'comboTriggerTerm',
+            range: termRange,
+            text: nodeText(comboNode).slice(Math.max(0, leftBracket), rightBracket >= leftBracket ? rightBracket + 1 : undefined),
+            termKind: 'guard',
+            canonicalText: guardTermCanonicalText(condition, comboNode),
+            canonical_text: guardTermCanonicalText(condition, comboNode),
+            removalRange: termRange,
+            removal_range: termRange,
+            valueRange,
+            value_range: valueRange,
+            condition,
+            condition_expr: condition,
+        });
+    } else {
+        const entryTriggerNode = getNodeByMethod(comboNode, 'entry_chain_combo_trigger');
+        const localTriggerNode = getNodeByMethod(comboNode, 'local_combo_trigger');
+        const chainTriggerNode = getNodeByMethod(comboNode, 'chain_combo_trigger');
+        if (entryTriggerNode) {
+            scopePrefix = '::';
+            for (const leading of getNodesByMethod(entryTriggerNode, 'entry_chain_combo_leading_guard')) {
+                const guardNode = getNodeByMethod(leading, 'combo_guard_term');
+                if (guardNode) terms.push(buildGuardComboTerm(guardNode, document));
+            }
+            const eventNode = getNodeByMethod(entryTriggerNode, 'combo_event_term');
+            if (eventNode) terms.push(buildEventComboTerm(eventNode, 'chain', document));
+            for (const termNode of getNodesByMethod(entryTriggerNode, 'entry_chain_combo_trigger_term')) {
+                const event = getNodeByMethod(termNode, 'combo_event_term');
+                const guard = getNodeByMethod(termNode, 'combo_guard_term');
+                if (event) terms.push(buildEventComboTerm(event, 'chain', document));
+                if (guard) terms.push(buildGuardComboTerm(guard, document));
+            }
+        } else if (localTriggerNode) {
+            scopePrefix = '::';
+            for (const leading of getNodesByMethod(localTriggerNode, 'local_combo_leading_guard')) {
+                const guardNode = getNodeByMethod(leading, 'combo_guard_term');
+                if (guardNode) terms.push(buildGuardComboTerm(guardNode, document));
+            }
+            const eventNode = getNodeByMethod(localTriggerNode, 'local_combo_event_term');
+            if (eventNode) terms.push(buildEventComboTerm(eventNode, 'local', document));
+            for (const termNode of getNodesByMethod(localTriggerNode, 'local_combo_trigger_term')) {
+                const event = getNodeByMethod(termNode, 'local_combo_event_term');
+                const guard = getNodeByMethod(termNode, 'combo_guard_term');
+                if (event) terms.push(buildEventComboTerm(event, 'local', document));
+                if (guard) terms.push(buildGuardComboTerm(guard, document));
+            }
+        } else if (chainTriggerNode) {
+            const aliasNode = getNodeByMethod(chainTriggerNode, 'chain_combo_guard_alias');
+            const singleEventNode = getNodeByMethod(chainTriggerNode, 'combo_event_term');
+            if (aliasNode) {
+                const guardNode = getNodeByMethod(aliasNode, 'combo_guard_term');
+                if (guardNode) terms.push(buildGuardComboTerm(guardNode, document));
+            } else if (singleEventNode) {
+                terms.push(buildEventComboTerm(singleEventNode, 'chain', document));
+            } else {
+                for (const termNode of getNodesByMethod(chainTriggerNode, 'combo_trigger_term')) {
+                    const event = getNodeByMethod(termNode, 'combo_event_term');
+                    const guard = getNodeByMethod(termNode, 'combo_guard_term');
+                    if (event) terms.push(buildEventComboTerm(event, 'chain', document));
+                    if (guard) terms.push(buildGuardComboTerm(guard, document));
+                }
+            }
+        }
+    }
+
+    applyComboRemovalRanges(terms);
+    const isCombo = terms.length > 1;
+    const isPureGuardAlias = Boolean(
+        getNodeByMethod(getNodeByMethod(comboNode, 'chain_combo_trigger'), 'chain_combo_guard_alias')
+    );
+    if (!isCombo && !isPureGuardAlias) {
+        return undefined;
+    }
+    const canonicalText = `${scopePrefix} ${terms.map(term => term.canonicalText).join(' + ')}`;
+    return {
+        kind: 'comboTrigger',
+        range: getNodeRange(comboNode, document, nodeText(comboNode)),
+        text: nodeText(comboNode),
+        scopePrefix,
+        scope_prefix: scopePrefix,
+        canonicalText,
+        canonical_text: canonicalText,
+        terms,
+        isCombo,
+        is_combo: isCombo,
+    };
+}
+
+function buildLocalTriggerFromNode(
+    node: ParseTreeContext,
+    document: TextDocumentLike
+): FcstmAstLocalTrigger {
+    const eventName = nodeText(node);
+    return {
+        kind: 'localTrigger',
+        range: getNodeRange(node, document, eventName),
+        text: eventName,
+        eventName,
+    } as FcstmAstLocalTrigger;
+}
+
+function buildChainTriggerFromNode(
+    node: ParseTreeContext,
+    document: TextDocumentLike
+): FcstmAstChainTrigger {
+    const chainNode = getNodeByMethod(node, 'chain_id') || node;
+    return {
+        kind: 'chainTrigger',
+        range: getNodeRange(chainNode, document, nodeText(chainNode)),
+        text: nodeText(chainNode),
+        eventPath: buildChainPath(chainNode, document),
+    } as FcstmAstChainTrigger;
+}
+
 function buildTrigger(
     node: ParseTreeContext,
     document: TextDocumentLike
@@ -668,17 +1114,70 @@ function buildTrigger(
         } as FcstmAstLocalTrigger;
     }
 
-    const chainNode = contextChildren(node).find(child => child.constructor?.name === 'Chain_idContext');
-    if (chainNode) {
-        return {
-            kind: 'chainTrigger',
-            range: getNodeRange(chainNode, document, nodeText(chainNode)),
-            text: nodeText(chainNode),
-            eventPath: buildChainPath(chainNode, document),
-        } as FcstmAstChainTrigger;
+    const directChainNode = contextChildren(node).find(child => child.constructor?.name === 'Chain_idContext');
+    if (directChainNode) {
+        return buildChainTriggerFromNode(directChainNode, document);
     }
 
-    return undefined;
+    const entryComboNode = getNodeByMethod(node, 'entry_combo_transition_trigger');
+    const comboNode = getNodeByMethod(node, 'combo_transition_trigger') || entryComboNode;
+    if (!comboNode) {
+        return undefined;
+    }
+
+    const entryTriggerNode = getNodeByMethod(comboNode, 'entry_chain_combo_trigger');
+    if (entryTriggerNode) {
+        const isSingleEntryEvent = getNodesByMethod(entryTriggerNode, 'entry_chain_combo_leading_guard').length === 0
+            && getNodesByMethod(entryTriggerNode, 'entry_chain_combo_trigger_term').length === 0;
+        const eventTermNode = isSingleEntryEvent
+            ? getNodeByMethod(entryTriggerNode, 'combo_event_term')
+            : undefined;
+        return eventTermNode ? buildChainTriggerFromNode(eventTermNode, document) : undefined;
+    }
+
+    const localTriggerNode = getNodeByMethod(comboNode, 'local_combo_trigger');
+    if (localTriggerNode) {
+        const isSingleLocalEvent = getNodesByMethod(localTriggerNode, 'local_combo_leading_guard').length === 0
+            && getNodesByMethod(localTriggerNode, 'local_combo_trigger_term').length === 0;
+        const eventTermNode = isSingleLocalEvent
+            ? getNodeByMethod(localTriggerNode, 'local_combo_event_term')
+            : undefined;
+        return eventTermNode ? buildLocalTriggerFromNode(eventTermNode, document) : undefined;
+    }
+
+    const chainTriggerNode = getNodeByMethod(comboNode, 'chain_combo_trigger');
+    const isSingleChainEvent = getNodesByMethod(chainTriggerNode, 'combo_trigger_term').length === 0;
+    const eventTermNode = isSingleChainEvent
+        ? getNodeByMethod(chainTriggerNode, 'combo_event_term')
+        : undefined;
+    return eventTermNode ? buildChainTriggerFromNode(eventTermNode, document) : undefined;
+}
+
+function buildTransitionGuard(
+    node: ParseTreeContext,
+    document: TextDocumentLike
+): FcstmAstExpression | undefined {
+    const directCondNode = contextChildren(node).find(child => /Cond/.test(child.constructor?.name || ''));
+    if (directCondNode) {
+        return buildExpression(directCondNode, document);
+    }
+
+    const comboNode = getNodeByMethod(node, 'combo_transition_trigger')
+        || getNodeByMethod(node, 'entry_combo_transition_trigger');
+    if (!comboNode) {
+        return undefined;
+    }
+
+    const legacyCondNode = getNodeByMethod(comboNode, 'cond_expression');
+    if (legacyCondNode) {
+        return buildExpression(legacyCondNode, document);
+    }
+
+    const chainTriggerNode = getNodeByMethod(comboNode, 'chain_combo_trigger');
+    const aliasNode = getNodeByMethod(chainTriggerNode, 'chain_combo_guard_alias');
+    const guardTermNode = getNodeByMethod(aliasNode, 'combo_guard_term');
+    const condNode = getNodeByMethod(guardTermNode, 'cond_expression');
+    return condNode ? buildExpression(condNode, document) : undefined;
 }
 
 function buildTransitionLikeBase(
@@ -692,15 +1191,17 @@ function buildTransitionLikeBase(
             ? 'init'
             : 'state';
     const targetKind = /Exit/.test(nodeName) ? 'exit' : 'state';
-    const condNode = contextChildren(node).find(child => /Cond/.test(child.constructor?.name || ''));
     const effectNode = contextChildren(node).find(child => child.constructor?.name === 'Operational_statement_setContext');
     const trigger = buildTrigger(node, document);
-    const guard = condNode ? buildExpression(condNode, document) : undefined;
+    const comboTrigger = buildComboTriggerFromSyntax(node, document);
+    const guard = buildTransitionGuard(node, document);
     const effect = effectNode ? buildOperationBlockFromStatementSet(effectNode, document) : undefined;
     const eventId = trigger
         ? trigger.kind === 'localTrigger'
             ? buildLocalEventPath(sourceKind, tokenText(node.from_state), trigger.eventName, trigger.range)
-            : trigger.eventPath
+            : sourceKind === 'init'
+                ? buildEntryEventPath(trigger.eventPath)
+                : trigger.eventPath
         : undefined;
     const fromState = sourceKind === 'init'
         ? 'INIT_STATE'
@@ -719,6 +1220,8 @@ function buildTransitionLikeBase(
         sourceKind,
         targetKind,
         trigger,
+        comboTrigger,
+        combo_trigger: comboTrigger,
         guard,
         effect,
         fromState,

@@ -158,7 +158,32 @@ inspect Command
 
 Inspect a state machine DSL file and emit the structured model report as JSON.
 The JSON shape matches ``inspect_model(model).to_json()`` and includes states,
-transitions, variables, metrics, derived graphs, and diagnostics.
+transitions, variables, metrics, derived graphs, and diagnostics. When a model
+uses combo transition triggers, the report also exposes ``combo_transitions``
+and ``combo_origins`` so tools can relate generated pseudo-chain edges back to
+the original trigger terms.
+
+For combo trigger diagnostics, ``inspect`` reports source-level warning codes
+against the original combo terms rather than the generated pseudo states:
+
+- ``W_COMBO_DUPLICATE_EVENT``: the same event appears more than once in one
+  combo trigger. The diagnostic ``span`` points at the repeated term, and
+  ``refs.first_term_span`` points at the first occurrence.
+- ``W_COMBO_GUARD_CONST_TRUE`` / ``W_COMBO_GUARD_CONST_FALSE``: a combo guard is
+  proven always true or always false by the Python Z3-backed analyzer. The
+  diagnostic ``span`` points at the bracketed guard term, and
+  ``refs.value_span`` points at the expression inside the brackets.
+- ``W_COMBO_GUARD_PREFIX_IMPLIED`` / ``W_COMBO_GUARD_PREFIX_CONTRADICTS``: the
+  preceding guard prefix already implies the current guard, or makes it
+  impossible. The diagnostic ``span`` points at the current guard, and
+  ``refs.prior_term_span`` points at the decisive earlier guard.
+
+All combo warning ``refs`` include ``origin_id``, ``term_index``,
+``transition_span``, ``trigger_span``, and the relevant term spans so editor and
+UI integrations can map warnings back to the author-written DSL range.
+Solver-backed guard warnings are intentionally Python-inspect diagnostics;
+JavaScript-side tools should consume these JSON diagnostics instead of
+re-implementing local solver approximations.
 
 **Syntax**:
 

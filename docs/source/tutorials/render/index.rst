@@ -1004,7 +1004,12 @@ Test And Consolidate
 Testing Templates
 ^^^^^^^^^^^^^^^^^
 
-Template work should be tested at multiple levels.
+Template work should be tested at multiple levels. Combo transition triggers do
+not require a template-specific primitive: by the time templates receive the
+``StateMachine`` model, combo triggers have already expanded into ordinary
+pseudo states and transitions. Template tests should therefore validate the
+generated pseudo-chain model instead of adding renderer or template special
+cases.
 
 Start with a template-author workflow, not with a giant machine:
 

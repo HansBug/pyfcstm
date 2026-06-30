@@ -1,0 +1,13 @@
+def int trace = 0;
+
+state Root {
+    during after { trace = trace + 100; }
+    exit { trace = trace + 1000; }
+
+    state Start {
+        exit { trace = trace + 1; }
+    }
+
+    [*] -> Start;
+    Start -> [*] :: Stop + Ack effect { trace = trace + 10; }
+}

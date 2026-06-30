@@ -26,6 +26,9 @@ def test_grammar_guide_prompt_api_returns_packaged_text():
     assert "\r" not in guide
     assert "`=>` and `implies`" in guide
     assert ": /GlobalEvent" in guide
+    assert "Combo transition triggers are ordered `+` chains" in guide
+    assert "S -> T :: E + [x > 0]" in guide
+    assert "Do not combine event syntax and guard syntax" not in guide
     assert "Do not use `^` for\nboolean xor" in guide
     assert "pseudo state Bypass;" in guide
     assert "enter ref /SharedInit;" in guide

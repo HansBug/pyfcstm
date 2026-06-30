@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Iterable, List, Optional
 
 from ..suggested_fix import refs_with_suggested_fix
 from ...utils.validate import ModelDiagnostic
+from .combo import collect_combo_warnings
 from .const_fold import collect_const_fold_warnings
 from .data_flow import collect_data_flow_warnings
 from .naming import collect_naming_warnings
@@ -63,6 +64,7 @@ def collect_design_health_warnings(
         if machine is not None
         else _guard_const_false_diagnostics(transitions)
     )
+    diagnostics.extend(collect_combo_warnings(machine))
     diagnostics.extend(_unused_event_diagnostics(events))
     diagnostics.extend(collect_structural_warnings(
         states,

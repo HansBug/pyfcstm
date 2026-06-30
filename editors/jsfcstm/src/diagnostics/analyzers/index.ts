@@ -1,3 +1,4 @@
+export {collectComboWarnings} from './combo';
 export {
     collectConstFoldWarnings,
     foldConditionExpression,

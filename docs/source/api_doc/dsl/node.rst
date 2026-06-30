@@ -267,11 +267,39 @@ ImportStatement
     :members: __post_init__,__str__,source_path,alias,extra_name,mappings
 
 
+ComboTriggerTerm
+-----------------------------------------------------
+
+.. autoclass:: ComboTriggerTerm
+    :members: canonical_text
+
+
+ComboEventTerm
+-----------------------------------------------------
+
+.. autoclass:: ComboEventTerm
+    :members: canonical_text,event_id,event_scope,term_span,removal_span
+
+
+ComboGuardTerm
+-----------------------------------------------------
+
+.. autoclass:: ComboGuardTerm
+    :members: canonical_text,condition_expr,value_span,term_span,removal_span
+
+
+ComboTransitionTrigger
+-----------------------------------------------------
+
+.. autoclass:: ComboTransitionTrigger
+    :members: canonical_text,is_combo,scope_prefix,terms,trigger_span,legacy_guard_syntax
+
+
 TransitionDefinition
 -----------------------------------------------------
 
 .. autoclass:: TransitionDefinition
-    :members: __str__,from_state,to_state,event_id,condition_expr,post_operations,event_scope
+    :members: __str__,from_state,to_state,event_id,condition_expr,post_operations,event_scope,combo_trigger
 
 
 ForceTransitionDefinition

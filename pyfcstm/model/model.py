@@ -14,6 +14,7 @@ The main public components are:
 
 * :class:`Operation` - Operation assignments used in actions and transitions.
 * :class:`Event` - Event definitions scoped to a state path.
+* :class:`ComboOriginRef` - Provenance reference from generated combo edges.
 * :class:`Transition` - Transition definitions with optional guards and effects.
 * :class:`OnStage` - Entry/during/exit actions for a state.
 * :class:`OnAspect` - Aspect-oriented during actions.
@@ -40,6 +41,7 @@ Example::
 
 """
 
+import hashlib
 import io
 import json
 import weakref
@@ -49,7 +51,13 @@ from typing import Optional, Union, List, Dict, Tuple, Iterator, Set
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
-from .imports import assemble_state_machine_imports
+from .imports import (
+    assemble_state_machine_imports,
+    _get_trusted_generated_combo_transition_metadata,
+    _is_trusted_generated_combo_pseudo_node,
+    _mark_generated_combo_pseudo_node,
+    _mark_generated_combo_transition_node,
+)
 from .plantuml import PlantUMLOptions, PlantUMLOptionsInput, format_state_name
 from ..diagnostics.sink import DiagnosticSink
 from ..diagnostics.sink import _emit as _emit_or_raise
@@ -67,6 +75,7 @@ __all__ = [
     "IfBlockBranch",
     "IfBlock",
     "Event",
+    "ComboOriginRef",
     "Transition",
     "OnStage",
     "OnAspect",
@@ -76,7 +85,7 @@ __all__ = [
     "parse_dsl_node_to_state_machine",
 ]
 
-from ..utils import sequence_safe
+from ..utils import sequence_safe, to_identifier
 
 
 def _node_span(node) -> Optional[Span]:
@@ -106,6 +115,136 @@ def _event_origin_from_id(
     ):
         return "local"
     return "chain"
+
+
+_COMBO_STATE_PREFIX = "__combo_"
+_COMBO_DIGEST_SIZE = 12
+_COMBO_DISPLAY_PREFIX = "combo after "
+
+
+def _is_exported_combo_pseudo_node(
+    node: dsl_nodes.StateDefinition,
+    owner_node: Optional[dsl_nodes.StateDefinition] = None,
+) -> bool:
+    """Return whether an AST node is an exported generated combo pseudo state."""
+    if not node.is_pseudo or not node.name.startswith(_COMBO_STATE_PREFIX):
+        return False
+    if owner_node is None:
+        return False
+    return _is_trusted_generated_combo_pseudo_node(node, owner_node)
+
+
+def _combo_payload_digest(payload: str) -> str:
+    """
+    Return the full digest for a combo pseudo-state payload.
+
+    The helper is intentionally small and module-level so tests can
+    monkey-patch it to exercise truncated digest collision handling without
+    searching for real SHA-256 collisions.
+
+    :param payload: Canonical semantic payload for a generated combo object.
+    :type payload: str
+    :return: Full hexadecimal SHA-256 digest.
+    :rtype: str
+
+    Example::
+
+        >>> len(_combo_payload_digest("Root|S1|E1"))
+        64
+    """
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class ComboOriginRef:
+    """
+    Reference from a generated combo edge back to an original combo term.
+
+    Generated prefix edges may represent more than one original combo
+    transition. This value object preserves the one-to-many relationship that
+    later inspect and visualization layers need in order to project generated
+    edges back to user-authored trigger terms.
+
+    :param origin_id: Stable identifier of the original combo transition.
+    :type origin_id: str
+    :param term_index: Zero-based trigger term index, or the last consumed term
+        for terminal no-trigger edges.
+    :type term_index: int
+    :param role: Generated edge role, such as ``'prefix'`` or ``'terminal'``.
+    :type role: str
+    :param consumes_term: Whether this generated edge consumes the referenced
+        term.
+    :type consumes_term: bool
+    :param term_text: Canonical text of the referenced term.
+    :type term_text: str
+    :param transition_span: Source span of the original combo transition.
+    :type transition_span: pyfcstm.utils.validate.Span, optional
+    :param trigger_span: Source span of the original trigger suffix.
+    :type trigger_span: pyfcstm.utils.validate.Span, optional
+    :param term_span: Source span of the referenced trigger term.
+    :type term_span: pyfcstm.utils.validate.Span, optional
+    :param value_span: Source span of the value inside the trigger term when
+        available.
+    :type value_span: pyfcstm.utils.validate.Span, optional
+    :param removal_span: Source span suitable for removing the trigger term.
+    :type removal_span: pyfcstm.utils.validate.Span, optional
+
+    Example::
+
+        >>> ref = ComboOriginRef("Root:S1:0", 0, "prefix", True, "E1")
+        >>> ref.origin_id
+        'Root:S1:0'
+    """
+
+    origin_id: str
+    term_index: int
+    role: str
+    consumes_term: bool
+    term_text: str
+    transition_span: Optional[Span] = field(default=None, compare=False)
+    trigger_span: Optional[Span] = field(default=None, compare=False)
+    term_span: Optional[Span] = field(default=None, compare=False)
+    value_span: Optional[Span] = field(default=None, compare=False)
+    removal_span: Optional[Span] = field(default=None, compare=False)
+
+
+@dataclass(frozen=True)
+class _ComboAlternative:
+    """
+    Internal high-level transition alternative used by the ordered-trie expander.
+
+    :param transnode: Original DSL transition node.
+    :type transnode: pyfcstm.dsl.node.TransitionDefinition
+    :param terms: Ordered combo trigger terms.
+    :type terms: tuple
+    :param origin_id: Stable source-origin identifier.
+    :type origin_id: str
+    :param declaration_index: Index in the original chooser's transition
+        priority list.
+    :type declaration_index: int
+    :param semantic_duplicate_discriminator: Stable discriminator used when
+        otherwise identical combo alternatives appear in the same chooser.
+    :type semantic_duplicate_discriminator: Optional[int]
+    """
+
+    transnode: dsl_nodes.TransitionDefinition
+    terms: Tuple[dsl_nodes.ComboTriggerTerm, ...]
+    origin_id: str
+    declaration_index: int
+    semantic_duplicate_discriminator: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class _TrustedComboTransitionMetadata:
+    """Process-local metadata for generated combo transitions exported to AST."""
+
+    origin_refs: Tuple[ComboOriginRef, ...]
+    event_scope: Optional[str]
+    projection_key: Tuple[object, ...]
+    projection_order_key: Tuple[object, ...]
+    reuse_group_id: str
+    priority_run_identity: Tuple[str, Optional[int]]
+    priority_run_index: int
 
 
 @dataclass
@@ -343,6 +482,23 @@ class Transition(AstExportable):
     :param forced_origin: Original forced transition text when
         ``is_forced`` is true.
     :type forced_origin: Optional[str]
+    :param combo_origin_refs: References from this generated transition back
+        to original combo trigger terms.
+    :type combo_origin_refs: Tuple[ComboOriginRef, ...]
+    :param combo_projection_key: Logical chooser key used by combo projection
+        snapshots.
+    :type combo_projection_key: Optional[Tuple[object, ...]]
+    :param combo_projection_order_key: Stable ordered-trie projection order key.
+    :type combo_projection_order_key: Optional[Tuple[object, ...]]
+    :param combo_reuse_group_id: Stable identifier explaining prefix sharing or
+        non-sharing groups.
+    :type combo_reuse_group_id: Optional[str]
+    :param combo_priority_run_identity: Stable ordered-trie run identity as
+        ``(run_anchor_origin_id, semantic_duplicate_discriminator)``.
+    :type combo_priority_run_identity: Optional[Tuple[str, Optional[int]]]
+    :param combo_priority_run_index: Preorder index of this generated edge
+        within combo projection.
+    :type combo_priority_run_index: Optional[int]
     :param parent_ref: Weak reference to the parent state
     :type parent_ref: Optional[weakref.ReferenceType]
 
@@ -365,6 +521,20 @@ class Transition(AstExportable):
     event_scope: Optional[str] = field(default=None, compare=False)
     is_forced: bool = field(default=False, compare=False)
     forced_origin: Optional[str] = field(default=None, compare=False)
+    combo_origin_refs: Tuple[ComboOriginRef, ...] = field(
+        default_factory=tuple, compare=False
+    )
+    combo_projection_key: Optional[Tuple[object, ...]] = field(
+        default=None, compare=False
+    )
+    combo_projection_order_key: Optional[Tuple[object, ...]] = field(
+        default=None, compare=False
+    )
+    combo_reuse_group_id: Optional[str] = field(default=None, compare=False)
+    combo_priority_run_identity: Optional[Tuple[str, Optional[int]]] = field(
+        default=None, compare=False
+    )
+    combo_priority_run_index: Optional[int] = field(default=None, compare=False)
     parent_ref: Optional[weakref.ReferenceType] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
@@ -1409,7 +1579,7 @@ class State(AstExportable, PlantUMLExportable):
         else:
             event_id = None
 
-        return dsl_nodes.TransitionDefinition(
+        node = dsl_nodes.TransitionDefinition(
             from_state=transition.from_state,
             to_state=transition.to_state,
             event_id=event_id,
@@ -1417,7 +1587,22 @@ class State(AstExportable, PlantUMLExportable):
             if transition.guard is not None
             else None,
             post_operations=[item.to_ast_node() for item in transition.effects],
+            event_scope=transition.event_scope,
         )
+        if transition.combo_origin_refs:
+            _mark_generated_combo_transition_node(
+                node,
+                _TrustedComboTransitionMetadata(
+                    origin_refs=transition.combo_origin_refs,
+                    event_scope=transition.event_scope,
+                    projection_key=transition.combo_projection_key,
+                    projection_order_key=transition.combo_projection_order_key,
+                    reuse_group_id=transition.combo_reuse_group_id,
+                    priority_run_identity=transition.combo_priority_run_identity,
+                    priority_run_index=transition.combo_priority_run_index,
+                ),
+            )
+        return node
 
     def to_transition_ast_node(
         self, transition: Transition
@@ -1439,13 +1624,14 @@ class State(AstExportable, PlantUMLExportable):
         :return: A state definition AST node
         :rtype: dsl_nodes.StateDefinition
         """
-        return dsl_nodes.StateDefinition(
+        substate_nodes = [
+            substate.to_ast_node() for _, substate in self.substates.items()
+        ]
+        node = dsl_nodes.StateDefinition(
             name=self.name,
             extra_name=self.extra_name,
             events=[event.to_ast_node() for _, event in self.events.items()],
-            substates=[
-                substate.to_ast_node() for _, substate in self.substates.items()
-            ],
+            substates=substate_nodes,
             transitions=[
                 self.to_transition_ast_node(trans) for trans in self.transitions
             ],
@@ -1455,6 +1641,14 @@ class State(AstExportable, PlantUMLExportable):
             during_aspects=[item.to_ast_node() for item in self.on_during_aspects],
             is_pseudo=bool(self.is_pseudo),
         )
+        for substate, substate_node in zip(self.substates.values(), substate_nodes):
+            if (
+                substate.is_pseudo
+                and substate.name.startswith(_COMBO_STATE_PREFIX)
+                and getattr(substate, "_generated_combo_pseudo", False)
+            ):
+                _mark_generated_combo_pseudo_node(substate_node, node)
+        return node
 
     def to_plantuml(
         self,
@@ -2558,16 +2752,38 @@ def parse_dsl_node_to_state_machine(
         return IfBlock(branches=branches, _span=_node_span(if_node))
 
     def _recursive_build_states(
-        node: dsl_nodes.StateDefinition, current_path: Tuple[str, ...]
+        node: dsl_nodes.StateDefinition,
+        current_path: Tuple[str, ...],
+        owner_node: Optional[dsl_nodes.StateDefinition] = None,
     ) -> State:
         current_path = tuple((*current_path, node.name))
+        is_exported_combo_pseudo = _is_exported_combo_pseudo_node(
+            node, owner_node
+        )
+        if node.name.startswith(_COMBO_STATE_PREFIX) and not is_exported_combo_pseudo:
+            sink.emit(
+                ModelDiagnostic(
+                    code="E_COMBO_RESERVED_STATE_NAME",
+                    severity="error",
+                    message=(
+                        f"State name {node.name!r} uses reserved combo "
+                        f"prefix {_COMBO_STATE_PREFIX!r}:\n{node}"
+                    ),
+                    span=getattr(node, "_span", None),
+                    refs={
+                        "state_name": node.name,
+                        "state_path": ".".join(current_path),
+                        "reserved_prefix": _COMBO_STATE_PREFIX,
+                    },
+                )
+            )
         d_substates = {}
 
         substate_first_spans: Dict[str, Optional[Span]] = {}
         for subnode in node.substates:
             if subnode.name not in d_substates:
                 d_substates[subnode.name] = _recursive_build_states(
-                    subnode, current_path=current_path
+                    subnode, current_path=current_path, owner_node=node
                 )
                 substate_first_spans[subnode.name] = getattr(subnode, "_span", None)
             else:
@@ -2997,6 +3213,8 @@ def parse_dsl_node_to_state_machine(
             named_functions=named_functions,
             _span=_node_span(node),
         )
+        if is_exported_combo_pseudo:
+            my_state._generated_combo_pseudo = True
         if my_state.is_pseudo and not my_state.is_leaf_state:
             sink.emit(
                 ModelDiagnostic(
@@ -3273,12 +3491,8 @@ def parse_dsl_node_to_state_machine(
                 force_transitions=_inner_force_transitions,
             )
 
-        has_entry_trans = False
-        for transnode in node.transitions:
-            # I2 from PR-110: when both sides of a transition are unresolved,
-            # codes.yaml's ``reason='both_not_found'`` should fire as a
-            # single combined diagnostic rather than two unrelated ones
-            # against the same source location.
+        def _emit_dangling_transition_diagnostics(transnode) -> bool:
+            """Validate transition endpoints and return whether they are usable."""
             src_unknown = (
                 transnode.from_state is not dsl_nodes.INIT_STATE
                 and transnode.from_state not in current_state.substates
@@ -3288,16 +3502,16 @@ def parse_dsl_node_to_state_machine(
                 and transnode.to_state not in current_state.substates
             )
 
-            if transnode.from_state is dsl_nodes.INIT_STATE:
-                from_state = dsl_nodes.INIT_STATE
-                has_entry_trans = True
-            else:
-                from_state = transnode.from_state
-
-            if transnode.to_state is dsl_nodes.EXIT_STATE:
-                to_state = dsl_nodes.EXIT_STATE
-            else:
-                to_state = transnode.to_state
+            from_state = (
+                dsl_nodes.INIT_STATE
+                if transnode.from_state is dsl_nodes.INIT_STATE
+                else transnode.from_state
+            )
+            to_state = (
+                dsl_nodes.EXIT_STATE
+                if transnode.to_state is dsl_nodes.EXIT_STATE
+                else transnode.to_state
+            )
 
             if src_unknown and tgt_unknown:
                 sink.emit(
@@ -3359,104 +3573,129 @@ def parse_dsl_node_to_state_machine(
                     )
                 )
 
-            trans_event, guard = None, None
-            event_scope = None
-            if transnode.event_id is not None:
+            return not (src_unknown or tgt_unknown)
+
+        def _resolve_transition_event(
+            transnode,
+            event_id: dsl_nodes.ChainID,
+            event_scope: Optional[str],
+            source_state_name: Optional[str],
+        ) -> Tuple[Optional[str], Optional[Event]]:
+            event_scope = _event_origin_from_id(
+                event_id,
+                event_scope,
+                source_state=source_state_name,
+            )
+            effective_event_id = event_id
+            if event_id.is_absolute:
+                start_state = root_state
+                base_path = (root_state.name,)
+            else:
+                start_state = current_state
+                base_path = current_state.path
+                if event_scope == "local" and source_state_name is not None:
+                    if not event_id.path or event_id.path[0] != source_state_name:
+                        effective_event_id = dsl_nodes.ChainID(
+                            path=[source_state_name, *event_id.path],
+                            is_absolute=False,
+                        )
+
+            path_resolved = True
+            for seg in effective_event_id.path[:-1]:
+                if seg in start_state.substates:
+                    start_state = start_state.substates[seg]
+                else:
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_MISSING_STATE",
+                            severity="error",
+                            message=(
+                                f"Cannot find state "
+                                f"{'.'.join((*base_path, *effective_event_id.path[:-1]))} "
+                                f"for transition:\n{transnode}"
+                            ),
+                            span=getattr(transnode, "_span", None),
+                            refs={
+                                "state_path": ".".join(
+                                    (*base_path, *effective_event_id.path[:-1])
+                                ),
+                                "referenced_from": ".".join(current_path),
+                                "reason": "event_path_not_found",
+                            },
+                        )
+                    )
+                    path_resolved = False
+                    break
+
+            if not path_resolved:
+                return event_scope, None
+
+            suffix_name = effective_event_id.path[-1]
+            if suffix_name not in start_state.events:
+                start_state.events[suffix_name] = Event(
+                    name=suffix_name,
+                    state_path=start_state.path,
+                    origins=[event_scope],
+                    _span=_node_span(transnode),
+                )
+            elif event_scope not in start_state.events[suffix_name].origins:
+                start_state.events[suffix_name].origins.append(event_scope)
+            return event_scope, start_state.events[suffix_name]
+
+        def _combo_term_semantic_key(
+            transnode,
+            term: dsl_nodes.ComboTriggerTerm,
+        ) -> Tuple[object, ...]:
+            if isinstance(term, dsl_nodes.ComboEventTerm):
+                event_id = term.event_id
                 event_scope = _event_origin_from_id(
-                    transnode.event_id,
-                    transnode.event_scope,
+                    event_id,
+                    term.event_scope,
                     source_state=(
                         transnode.from_state
                         if isinstance(transnode.from_state, str)
                         else None
                     ),
                 )
-                if transnode.event_id.is_absolute:
-                    start_state = root_state
-                    base_path = (root_state.name,)
-                else:
-                    start_state = current_state
-                    base_path = current_state.path
-                # See C1 in PR-110 review: collect mode must not let
-                # suffix resolution mutate ``start_state.events`` after a
-                # failed segment walk.
-                path_resolved = True
-                for seg in transnode.event_id.path[:-1]:
-                    if seg in start_state.substates:
-                        start_state = start_state.substates[seg]
-                    else:
-                        sink.emit(
-                            ModelDiagnostic(
-                                code="E_MISSING_STATE",
-                                severity="error",
-                                message=(
-                                    f"Cannot find state "
-                                    f"{'.'.join((*base_path, *transnode.event_id.path[:-1]))} "
-                                    f"for transition:\n{transnode}"
-                                ),
-                                span=getattr(transnode, "_span", None),
-                                refs={
-                                    "state_path": ".".join(
-                                        (*base_path, *transnode.event_id.path[:-1])
-                                    ),
-                                    "referenced_from": ".".join(current_path),
-                                    "reason": "event_path_not_found",
-                                },
-                            )
-                        )
-                        path_resolved = False
-                        break
+                return (
+                    "event",
+                    event_scope,
+                    event_id.is_absolute,
+                    tuple(event_id.path),
+                )
+            return ("guard", str(term.condition_expr))
 
-                if path_resolved:
-                    suffix_name = transnode.event_id.path[-1]
-                    origin = _event_origin_from_id(
-                        transnode.event_id,
-                        transnode.event_scope,
-                        source_state=(
-                            transnode.from_state
-                            if isinstance(transnode.from_state, str)
-                            else None
+        def _parse_transition_guard(transnode, condition_node) -> Optional[Expr]:
+            if condition_node is None:
+                return None
+            guard = parse_expr_node_to_expr(condition_node)
+            unknown_vars = []
+            for var in guard.list_variables():
+                if var.name not in d_defines:
+                    unknown_vars.append(var.name)
+            for unknown_var in unknown_vars:
+                sink.emit(
+                    ModelDiagnostic(
+                        code="E_UNDEFINED_VAR",
+                        severity="error",
+                        message=(
+                            f"Unknown guard variable "
+                            f"{unknown_var} in "
+                            f"transition:\n{transnode}"
                         ),
+                        span=getattr(transnode, "_span", None),
+                        refs={
+                            "var_name": unknown_var,
+                            "referenced_in": "guard",
+                            "state_path": ".".join(current_path),
+                            "expr_text": str(condition_node),
+                        },
                     )
-                    if suffix_name not in start_state.events:
-                        start_state.events[suffix_name] = Event(
-                            name=suffix_name,
-                            state_path=start_state.path,
-                            origins=[origin],
-                            _span=_node_span(transnode),
-                        )
-                    else:
-                        if origin not in start_state.events[suffix_name].origins:
-                            start_state.events[suffix_name].origins.append(origin)
-                    trans_event = start_state.events[suffix_name]
+                )
+            return guard
 
-            if transnode.condition_expr is not None:
-                guard = parse_expr_node_to_expr(transnode.condition_expr)
-                unknown_vars = []
-                for var in guard.list_variables():
-                    if var.name not in d_defines:
-                        unknown_vars.append(var.name)
-                for unknown_var in unknown_vars:
-                    sink.emit(
-                        ModelDiagnostic(
-                            code="E_UNDEFINED_VAR",
-                            severity="error",
-                            message=(
-                                f"Unknown guard variable "
-                                f"{unknown_var} in "
-                                f"transition:\n{transnode}"
-                            ),
-                            span=getattr(transnode, "_span", None),
-                            refs={
-                                "var_name": unknown_var,
-                                "referenced_in": "guard",
-                                "state_path": ".".join(current_path),
-                                "expr_text": str(transnode.condition_expr),
-                            },
-                        )
-                    )
-
-            post_operations = _parse_operation_block(
+        def _parse_transition_effects(transnode) -> List[OperationStatement]:
+            return _parse_operation_block(
                 transnode.post_operations,
                 "Unknown transition operation variable",
                 "effect",
@@ -3464,16 +3703,623 @@ def parse_dsl_node_to_state_machine(
                 state_path=".".join(current_path),
             )
 
-            transition = Transition(
+        def _make_origin_ref(
+            alternative: _ComboAlternative,
+            term_index: int,
+            role: str,
+            consumes_term: bool,
+        ) -> ComboOriginRef:
+            term = alternative.terms[term_index]
+            return ComboOriginRef(
+                origin_id=alternative.origin_id,
+                term_index=term_index,
+                role=role,
+                consumes_term=consumes_term,
+                term_text=term.canonical_text,
+                transition_span=_node_span(alternative.transnode),
+                trigger_span=alternative.transnode.combo_trigger.trigger_span,
+                term_span=getattr(term, "term_span", None),
+                value_span=getattr(term, "value_span", None),
+                removal_span=getattr(term, "removal_span", None),
+            )
+
+        combo_name_payloads: Dict[str, str] = {}
+        combo_digest_payloads: Dict[Tuple[Tuple[str, ...], str], str] = {}
+
+        def _term_name_slug(term: dsl_nodes.ComboTriggerTerm) -> str:
+            if isinstance(term, dsl_nodes.ComboGuardTerm):
+                text = f"if {term.condition_expr}"
+                for source, replacement in [
+                    ("=>", " implies "),
+                    ("==", " eq "),
+                    ("!=", " ne "),
+                    (">=", " ge "),
+                    ("<=", " le "),
+                    ("&&", " and "),
+                    ("||", " or "),
+                    (">", " gt "),
+                    ("<", " lt "),
+                    ("!", " not "),
+                ]:
+                    text = text.replace(source, replacement)
+                return to_identifier(
+                    text,
+                    strict_mode=True,
+                ).lower()
+            text = term.canonical_text
+            if text.startswith("/"):
+                text = f"abs {text[1:]}"
+            return to_identifier(text, strict_mode=True).lower()
+
+        def _transition_endpoint_text(endpoint) -> str:
+            if endpoint is dsl_nodes.INIT_STATE:
+                return "__init__"
+            if endpoint is dsl_nodes.EXIT_STATE:
+                return "__exit__"
+            return str(endpoint)
+
+        def _combo_effect_signature(transnode) -> Tuple[str, ...]:
+            return tuple(str(item) for item in transnode.post_operations)
+
+        def _combo_origin_id(
+            transnode,
+            semantic_duplicate_discriminator: Optional[int],
+        ) -> str:
+            base = (
+                f"{'.'.join(current_state.path)}:"
+                f"{_transition_endpoint_text(transnode.from_state)}->"
+                f"{_transition_endpoint_text(transnode.to_state)}:"
+                f"{transnode.combo_trigger.canonical_text}"
+            )
+            effects = _combo_effect_signature(transnode)
+            if effects:
+                base = f"{base}:effect={json.dumps(effects, ensure_ascii=False)}"
+            if semantic_duplicate_discriminator is not None:
+                base = f"{base}#dup{semantic_duplicate_discriminator}"
+            return base
+
+        def _combo_alternative_key(
+            transnode,
+        ) -> Tuple[object, ...]:
+            return (
+                _combo_projection_key(transnode),
+                _transition_endpoint_text(transnode.to_state),
+                tuple(
+                    _combo_term_semantic_key(transnode, term)
+                    for term in transnode.combo_trigger.terms
+                ),
+                _combo_effect_signature(transnode),
+            )
+
+        def _make_pseudo_state(
+            chooser_key: Tuple[object, ...],
+            consumed_terms: Tuple[dsl_nodes.ComboTriggerTerm, ...],
+            consumed_term_keys: Tuple[Tuple[object, ...], ...],
+            run_anchor_origin_id: str,
+            semantic_duplicate_discriminator: Optional[int],
+        ) -> State:
+            term_texts = tuple(term.canonical_text for term in consumed_terms)
+            payload_obj = {
+                "owner_path": current_state.path,
+                "chooser_key": chooser_key,
+                "consumed_terms": consumed_term_keys,
+                "run_anchor_origin_id": run_anchor_origin_id,
+                "semantic_duplicate_discriminator": semantic_duplicate_discriminator,
+            }
+            payload = json.dumps(payload_obj, ensure_ascii=False, sort_keys=True)
+            digest = _combo_payload_digest(payload)
+            short_digest = digest[:_COMBO_DIGEST_SIZE]
+            digest_key = (current_state.path, short_digest)
+            source_label = (
+                "entry" if chooser_key[1] == "entry" else ".".join(chooser_key[2])
+            )
+            slug_parts = [to_identifier(source_label, strict_mode=True).lower()]
+            slug_parts.extend(_term_name_slug(term) for term in consumed_terms)
+            slug = sequence_safe(slug_parts)
+            name = f"{_COMBO_STATE_PREFIX}{slug}_h{short_digest}"
+
+            existing_digest_payload = combo_digest_payloads.get(digest_key)
+            if (
+                existing_digest_payload is not None
+                and existing_digest_payload != payload
+            ):
+                sink.emit(
+                    ModelDiagnostic(
+                        code="E_COMBO_PSEUDO_NAME_COLLISION",
+                        severity="error",
+                        message=(
+                            f"Generated combo pseudo state digest {short_digest!r} "
+                            "collides for distinct semantic payloads."
+                        ),
+                        span=None,
+                        refs={
+                            "state_path": ".".join(current_state.path),
+                            "pseudo_name": name,
+                            "payload_digest": digest,
+                        },
+                    )
+                )
+            elif existing_digest_payload is None:
+                combo_digest_payloads[digest_key] = payload
+
+            existing_payload = combo_name_payloads.get(name)
+            if existing_payload is not None and existing_payload != payload:
+                sink.emit(
+                    ModelDiagnostic(
+                        code="E_COMBO_PSEUDO_NAME_COLLISION",
+                        severity="error",
+                        message=(
+                            f"Generated combo pseudo state name {name!r} collides "
+                            "for distinct semantic payloads."
+                        ),
+                        span=None,
+                        refs={
+                            "state_path": ".".join(current_state.path),
+                            "pseudo_name": name,
+                            "payload_digest": digest,
+                        },
+                    )
+                )
+            elif existing_payload is None:
+                combo_name_payloads[name] = payload
+
+            if name in current_state.substates:
+                state = current_state.substates[name]
+                if not state.is_pseudo:
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_COMBO_PSEUDO_NAME_COLLISION",
+                            severity="error",
+                            message=(
+                                f"Generated combo pseudo state name {name!r} "
+                                "collides with a non-pseudo state."
+                            ),
+                            span=state._span,
+                            refs={
+                                "state_path": ".".join(current_state.path),
+                                "pseudo_name": name,
+                                "payload_digest": digest,
+                            },
+                        )
+                    )
+                return state
+
+            display = _COMBO_DISPLAY_PREFIX + " + ".join(term_texts)
+            state = State(
+                name=name,
+                extra_name=display,
+                events={},
+                path=(*current_state.path, name),
+                substates={},
+                is_pseudo=True,
+            )
+            state._generated_combo_pseudo = True
+            state.parent = current_state
+            current_state.substates[name] = state
+            current_state.substate_name_to_id[name] = len(
+                current_state.substate_name_to_id
+            )
+            return state
+
+        def _append_generated_transition(
+            from_state,
+            to_state,
+            event: Optional[Event],
+            guard: Optional[Expr],
+            effects: List[OperationStatement],
+            event_scope: Optional[str],
+            origin_refs: Tuple[ComboOriginRef, ...],
+            projection_key: Tuple[object, ...],
+            projection_order_key: Tuple[object, ...],
+            reuse_group_id: str,
+            priority_run_identity: Tuple[str, Optional[int]],
+            priority_run_index: int,
+            source_span: Optional[Span],
+        ) -> None:
+            transitions.append(
+                Transition(
+                    from_state=from_state,
+                    to_state=to_state,
+                    event=event,
+                    guard=guard,
+                    effects=effects,
+                    event_scope=event_scope,
+                    combo_origin_refs=origin_refs,
+                    combo_projection_key=projection_key,
+                    combo_projection_order_key=projection_order_key,
+                    combo_reuse_group_id=reuse_group_id,
+                    combo_priority_run_identity=priority_run_identity,
+                    combo_priority_run_index=priority_run_index,
+                    _span=source_span,
+                )
+            )
+
+        combo_preorder_counter = 0
+
+        def _emit_combo_edge_for_term(
+            alternatives: Tuple[_ComboAlternative, ...],
+            term_index: int,
+            from_state,
+            to_state,
+            projection_key: Tuple[object, ...],
+            projection_order_key: Tuple[object, ...],
+            reuse_group_id: str,
+            priority_run_identity: Tuple[str, Optional[int]],
+            priority_run_index: int,
+            role: str,
+            effects: List[OperationStatement],
+        ) -> None:
+            first_alt = alternatives[0]
+            term = first_alt.terms[term_index]
+            event = None
+            guard = None
+            event_scope = None
+            if isinstance(term, dsl_nodes.ComboEventTerm):
+                event_id = term.event_id
+                event_scope, event = _resolve_transition_event(
+                    first_alt.transnode,
+                    event_id,
+                    term.event_scope,
+                    source_state_name=(
+                        first_alt.transnode.from_state
+                        if isinstance(first_alt.transnode.from_state, str)
+                        else None
+                    ),
+                )
+            else:
+                guard = _parse_transition_guard(
+                    first_alt.transnode, term.condition_expr
+                )
+
+            origin_refs = tuple(
+                _make_origin_ref(
+                    alternative,
+                    term_index=term_index,
+                    role=role,
+                    consumes_term=True,
+                )
+                for alternative in alternatives
+            )
+            _append_generated_transition(
+                from_state=from_state,
+                to_state=to_state,
+                event=event,
+                guard=guard,
+                effects=effects,
+                event_scope=event_scope,
+                origin_refs=origin_refs,
+                projection_key=projection_key,
+                projection_order_key=projection_order_key,
+                reuse_group_id=reuse_group_id,
+                priority_run_identity=priority_run_identity,
+                priority_run_index=priority_run_index,
+                source_span=_node_span(first_alt.transnode),
+            )
+
+        def _expand_combo_alternatives(
+            alternatives: Tuple[_ComboAlternative, ...],
+            term_index: int,
+            from_state,
+            consumed_terms: Tuple[dsl_nodes.ComboTriggerTerm, ...],
+            consumed_term_keys: Tuple[Tuple[object, ...], ...],
+            projection_key: Tuple[object, ...],
+        ) -> None:
+            nonlocal combo_preorder_counter
+            i = 0
+            while i < len(alternatives):
+                alternative = alternatives[i]
+                remaining = len(alternative.terms) - term_index
+                if remaining <= 0:
+                    i += 1
+                    continue
+
+                term = alternative.terms[term_index]
+                term_key = _combo_term_semantic_key(alternative.transnode, term)
+                if remaining == 1:
+                    order_index = combo_preorder_counter
+                    combo_preorder_counter += 1
+                    effects = _parse_transition_effects(alternative.transnode)
+                    _emit_combo_edge_for_term(
+                        (alternative,),
+                        term_index=term_index,
+                        from_state=from_state,
+                        to_state=(
+                            dsl_nodes.EXIT_STATE
+                            if alternative.transnode.to_state is dsl_nodes.EXIT_STATE
+                            else alternative.transnode.to_state
+                        ),
+                        projection_key=projection_key,
+                        projection_order_key=(
+                            alternative.declaration_index,
+                            order_index,
+                            term_index,
+                            "terminal",
+                        ),
+                        reuse_group_id=f"{alternative.origin_id}:terminal:{term_index}",
+                        priority_run_identity=(
+                            alternative.origin_id,
+                            alternative.semantic_duplicate_discriminator,
+                        ),
+                        priority_run_index=order_index,
+                        role="terminal",
+                        effects=effects,
+                    )
+                    i += 1
+                    continue
+
+                group = [alternative]
+                j = i + 1
+                while j < len(alternatives):
+                    candidate = alternatives[j]
+                    candidate_remaining = len(candidate.terms) - term_index
+                    if candidate_remaining <= 1:
+                        break
+                    candidate_term = candidate.terms[term_index]
+                    candidate_key = _combo_term_semantic_key(
+                        candidate.transnode, candidate_term
+                    )
+                    if candidate_key != term_key:
+                        break
+                    group.append(candidate)
+                    j += 1
+
+                group_tuple = tuple(group)
+                run_anchor_origin_id = group_tuple[0].origin_id
+                consumed_next = (*consumed_terms, term)
+                consumed_next_keys = (*consumed_term_keys, term_key)
+                pseudo_state = _make_pseudo_state(
+                    projection_key,
+                    consumed_next,
+                    consumed_next_keys,
+                    run_anchor_origin_id,
+                    semantic_duplicate_discriminator=(
+                        group_tuple[0].semantic_duplicate_discriminator
+                    ),
+                )
+                order_index = combo_preorder_counter
+                combo_preorder_counter += 1
+                reuse_group_id = (
+                    f"{run_anchor_origin_id}:prefix:{term_index}:{order_index}"
+                )
+                _emit_combo_edge_for_term(
+                    group_tuple,
+                    term_index=term_index,
+                    from_state=from_state,
+                    to_state=pseudo_state.name,
+                    projection_key=projection_key,
+                    projection_order_key=(
+                        group_tuple[0].declaration_index,
+                        order_index,
+                        term_index,
+                        "prefix",
+                    ),
+                    reuse_group_id=reuse_group_id,
+                    priority_run_identity=(
+                        run_anchor_origin_id,
+                        group_tuple[0].semantic_duplicate_discriminator,
+                    ),
+                    priority_run_index=order_index,
+                    role="prefix",
+                    effects=[],
+                )
+                _expand_combo_alternatives(
+                    group_tuple,
+                    term_index + 1,
+                    pseudo_state.name,
+                    consumed_next,
+                    consumed_next_keys,
+                    projection_key,
+                )
+                i = j
+
+        def _normal_transition(transnode) -> Transition:
+            _emit_dangling_transition_diagnostics(transnode)
+
+            if transnode.from_state is dsl_nodes.INIT_STATE:
+                from_state = dsl_nodes.INIT_STATE
+            else:
+                from_state = transnode.from_state
+
+            if transnode.to_state is dsl_nodes.EXIT_STATE:
+                to_state = dsl_nodes.EXIT_STATE
+            else:
+                to_state = transnode.to_state
+
+            trusted_combo_metadata = _get_trusted_generated_combo_transition_metadata(
+                transnode
+            )
+            event_scope_hint = (
+                trusted_combo_metadata.event_scope
+                if trusted_combo_metadata is not None
+                else transnode.event_scope
+            )
+            source_state_name = (
+                transnode.from_state if isinstance(transnode.from_state, str) else None
+            )
+            if (
+                trusted_combo_metadata is not None
+                and event_scope_hint == "local"
+                and trusted_combo_metadata.projection_key is not None
+            ):
+                projection_key = trusted_combo_metadata.projection_key
+                if (
+                    len(projection_key) >= 3
+                    and projection_key[1] == "state"
+                    and isinstance(projection_key[2], tuple)
+                    and projection_key[2]
+                ):
+                    source_state_name = projection_key[2][-1]
+
+            trans_event = None
+            event_scope = None
+            if transnode.event_id is not None:
+                event_scope, trans_event = _resolve_transition_event(
+                    transnode,
+                    transnode.event_id,
+                    event_scope_hint,
+                    source_state_name=source_state_name,
+                )
+
+            guard = _parse_transition_guard(transnode, transnode.condition_expr)
+            post_operations = _parse_transition_effects(transnode)
+            return Transition(
                 from_state=from_state,
                 to_state=to_state,
                 event=trans_event,
                 guard=guard,
                 effects=post_operations,
-                event_scope=event_scope,
+                event_scope=(
+                    trusted_combo_metadata.event_scope
+                    if trusted_combo_metadata is not None
+                    else event_scope
+                ),
+                combo_origin_refs=(
+                    trusted_combo_metadata.origin_refs
+                    if trusted_combo_metadata is not None
+                    else ()
+                ),
+                combo_projection_key=(
+                    trusted_combo_metadata.projection_key
+                    if trusted_combo_metadata is not None
+                    else None
+                ),
+                combo_projection_order_key=(
+                    trusted_combo_metadata.projection_order_key
+                    if trusted_combo_metadata is not None
+                    else None
+                ),
+                combo_reuse_group_id=(
+                    trusted_combo_metadata.reuse_group_id
+                    if trusted_combo_metadata is not None
+                    else None
+                ),
+                combo_priority_run_identity=(
+                    trusted_combo_metadata.priority_run_identity
+                    if trusted_combo_metadata is not None
+                    else None
+                ),
+                combo_priority_run_index=(
+                    trusted_combo_metadata.priority_run_index
+                    if trusted_combo_metadata is not None
+                    else None
+                ),
                 _span=_node_span(transnode),
             )
-            transitions.append(transition)
+
+        def _combo_projection_key(transnode) -> Tuple[object, ...]:
+            if transnode.from_state is dsl_nodes.INIT_STATE:
+                return (current_state.path, "entry", "INIT_MARKER")
+            source_state_name = (
+                transnode.from_state
+                if isinstance(transnode.from_state, str)
+                else str(transnode.from_state)
+            )
+            return (
+                current_state.path,
+                "state",
+                (*current_state.path, source_state_name),
+            )
+
+        def _is_combo_transition(transnode) -> bool:
+            return (
+                getattr(transnode, "combo_trigger", None) is not None
+                and transnode.combo_trigger.is_combo
+            )
+
+        transition_endpoint_cache: Dict[int, bool] = {}
+
+        def _transition_endpoints_usable(transnode) -> bool:
+            cache_key = id(transnode)
+            if cache_key not in transition_endpoint_cache:
+                transition_endpoint_cache[cache_key] = (
+                    _emit_dangling_transition_diagnostics(transnode)
+                )
+            return transition_endpoint_cache[cache_key]
+
+        has_entry_trans = False
+        processed_combo_transition_ids = set()
+        combo_alternative_counts: Dict[Tuple[object, ...], int] = {}
+        i = 0
+        while i < len(node.transitions):
+            transnode = node.transitions[i]
+            if transnode.from_state is dsl_nodes.INIT_STATE:
+                has_entry_trans = True
+
+            if id(transnode) in processed_combo_transition_ids:
+                i += 1
+                continue
+
+            if not _is_combo_transition(transnode):
+                transition = _normal_transition(transnode)
+                transitions.append(transition)
+                i += 1
+                continue
+
+            if not _transition_endpoints_usable(transnode):
+                i += 1
+                continue
+
+            projection_key = _combo_projection_key(transnode)
+            first_term = transnode.combo_trigger.terms[0]
+            first_key = _combo_term_semantic_key(transnode, first_term)
+            run = []
+            j = i
+            while j < len(node.transitions):
+                candidate = node.transitions[j]
+                if id(candidate) in processed_combo_transition_ids:
+                    j += 1
+                    continue
+
+                candidate_projection_key = _combo_projection_key(candidate)
+                if candidate_projection_key != projection_key:
+                    j += 1
+                    continue
+
+                if not _is_combo_transition(candidate):
+                    break
+                if not _transition_endpoints_usable(candidate):
+                    j += 1
+                    continue
+                if candidate.from_state is dsl_nodes.INIT_STATE:
+                    has_entry_trans = True
+                candidate_first = candidate.combo_trigger.terms[0]
+                candidate_key = _combo_term_semantic_key(candidate, candidate_first)
+                if candidate_key != first_key:
+                    break
+                processed_combo_transition_ids.add(id(candidate))
+                alternative_key = _combo_alternative_key(candidate)
+                duplicate_index = combo_alternative_counts.get(alternative_key, 0)
+                combo_alternative_counts[alternative_key] = duplicate_index + 1
+                run.append(
+                    _ComboAlternative(
+                        transnode=candidate,
+                        terms=tuple(candidate.combo_trigger.terms),
+                        origin_id=_combo_origin_id(
+                            candidate,
+                            duplicate_index if duplicate_index else None,
+                        ),
+                        declaration_index=j,
+                        semantic_duplicate_discriminator=(
+                            duplicate_index if duplicate_index else None
+                        ),
+                    )
+                )
+                j += 1
+
+            from_state = (
+                dsl_nodes.INIT_STATE
+                if transnode.from_state is dsl_nodes.INIT_STATE
+                else transnode.from_state
+            )
+            _expand_combo_alternatives(
+                tuple(run),
+                term_index=0,
+                from_state=from_state,
+                consumed_terms=(),
+                consumed_term_keys=(),
+                projection_key=projection_key,
+            )
+            i += 1
 
         if current_state.substates and not has_entry_trans:
             sink.emit(

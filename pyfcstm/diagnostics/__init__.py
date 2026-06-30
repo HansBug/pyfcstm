@@ -32,6 +32,9 @@ from .codes import (
 )
 from .inspect import (
     ActionInfo,
+    ComboOriginInfo,
+    ComboOriginRefInfo,
+    ComboOriginTermInfo,
     DEFAULT_DEEP_HIERARCHY_THRESHOLD,
     DEFAULT_LARGE_COMPOSITE_THRESHOLD,
     DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD,
@@ -50,6 +53,9 @@ from .suggested_fix import refs_with_suggested_fix, render_suggested_fix
 __all__ = [
     'CODE_REGISTRY',
     'ActionInfo',
+    'ComboOriginInfo',
+    'ComboOriginRefInfo',
+    'ComboOriginTermInfo',
     'CodeFieldSpec',
     'CodeSpec',
     'CodesSchemaError',

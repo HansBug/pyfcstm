@@ -1,0 +1,20 @@
+def int x = 0;
+def int trace = 0;
+
+state Root {
+    >> during before {
+        x = 1;
+        trace = trace + 100;
+    }
+
+    >> during after { trace = trace + 10000; }
+
+    state Start;
+
+    state Done {
+        enter { trace = trace + 1; }
+    }
+
+    [*] -> Start;
+    Start -> Done : [x == 1] + [x == 1] effect { trace = trace + 10; }
+}

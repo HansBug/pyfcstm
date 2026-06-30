@@ -485,12 +485,19 @@ The DSL supports three types of transitions with distinct syntax patterns:
 
    transition_definition ::= entryTransitionDefinition | normalTransitionDefinition | exitTransitionDefinition
 
+Each transition may be plain, event-triggered, guard-triggered, or use a
+combo trigger. Combo triggers are ordered ``+`` chains of event terms and
+bracketed guard terms. They are syntax sugar that expands during model
+construction into ordinary generated pseudo states and transitions. The
+execution runtime, verification tools, visualization, and code templates then
+consume that expanded model.
+
 Entry Transitions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Entry transitions define the initial state when entering a composite state. They use the pseudo-state ``[*]`` as the source.
 
-**Syntax:** ``[*] -> target_state [: chain_id|:: event_name] [if [condition]] [effect { operations }] ';'``
+**Syntax:** ``[*] -> target_state [trigger] [effect { operations }] ';'``
 
 **Correct Usage:**
 
@@ -498,8 +505,10 @@ Entry transitions define the initial state when entering a composite state. They
 
    [*] -> Idle;                                    // Simple entry
    [*] -> Running : startup_event;                 // Entry with chain event
-   [*] -> Running :: startup_event;                // Entry with local event
+   [*] -> Running :: startup_event;                // Entry event uses the owning composite scope
    [*] -> Active : if [initialized == 0x1];        // Entry with guard
+   [*] -> Active : [initialized == 0x1];           // Guard alias
+   [*] -> Running : startup_event + [mode == 1];   // Entry combo trigger
    [*] -> Ready effect { counter = 0; };           // Entry with effect
    [*] -> Running : if [mode == 1] effect {        // Entry with guard and effect
        counter = 0;
@@ -514,7 +523,7 @@ Normal Transitions
 
 Normal transitions connect two named states within the same scope.
 
-**Syntax:** ``from_state -> to_state [: chain_id|:: event_name] [if [condition]] [effect { operations }] ';'``
+**Syntax:** ``from_state -> to_state [trigger] [effect { operations }] ';'``
 
 **Correct Usage:**
 
@@ -524,6 +533,8 @@ Normal transitions connect two named states within the same scope.
    Slow -> Fast : speed_up;                        // Transition with chain event
    Slow -> Fast :: speed_up;                       // Transition with local event
    Active -> Inactive : if [timeout > 100];        // Transition with guard
+   Active -> Inactive : [timeout > 100];           // Guard alias
+   Slow -> Fast :: speed_up + [ready > 0] + ack;   // Combo trigger
    Processing -> Complete effect {                 // Transition with effect
        result = output;
        status = 1;
@@ -544,7 +555,7 @@ Exit Transitions
 
 Exit transitions define how to leave a composite state to its parent. They use the pseudo-state ``[*]`` as the target.
 
-**Syntax:** ``from_state -> [*] [: chain_id|:: event_name] [if [condition]] [effect { operations }] ';'``
+**Syntax:** ``from_state -> [*] [trigger] [effect { operations }] ';'``
 
 **Correct Usage:**
 
@@ -553,6 +564,7 @@ Exit transitions define how to leave a composite state to its parent. They use t
    Error -> [*];                                   // Simple exit
    Complete -> [*] : finish_event;                 // Exit with event
    Running -> [*] : if [shutdown_requested];       // Exit with guard
+   Complete -> [*] :: finish_event + ack;          // Exit combo trigger
    Active -> [*] effect {                          // Exit with effect
        cleanup_flag = 0x1;
    };
@@ -562,6 +574,102 @@ Exit transitions define how to leave a composite state to its parent. They use t
 
 .. note::
    Exit transitions allow a child state to signal completion and return control to the parent state. The parent state can then transition to another state or exit itself.
+
+Combo Trigger Syntax
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A combo trigger is an ordered sequence of two or more trigger terms. Event
+terms match events present in the current cycle; repeated identical event terms
+are allowed and remain presence-based, so one matching input event can satisfy
+that repeated term chain, although inspect reports it as a likely typo. Guard
+terms are written as ``[condition]`` and must evaluate to true at that point in
+the pseudo-state chain. The original transition effect, if any, is attached
+only to the final generated transition, so failed combo chains roll back just
+like hand-written pseudo-state chains.
+
+.. code-block:: fcstm
+
+   def int ready = 1;
+
+   state Root {
+       state Waiting;
+       state Accepted;
+       state Fallback;
+
+       [*] -> Waiting;
+       Waiting -> Accepted :: Request + [ready > 0] + Confirm;
+       Waiting -> Fallback :: Request;
+   }
+
+The first line above is equivalent in behavior to a generated pseudo-state
+chain such as:
+
+.. code-block:: fcstm
+
+   Waiting -> __combo_waiting_request_h... :: Request;
+   __combo_waiting_request_h... -> __combo_waiting_request_if_ready_gt_0_h... : if [ready > 0];
+   __combo_waiting_request_if_ready_gt_0_h... -> Accepted : /Waiting.Confirm;
+
+The ``h...`` fragments above are placeholders for the deterministic hash suffix.
+Actual generated names contain only legal identifier characters; do not write
+literal dots into a hand-authored pseudo-state name.
+
+The exact generated state name is deterministic and begins with
+``__combo_``. User-authored state names must not use that reserved prefix. The
+state also receives a human-readable ``named`` display label, so visual output
+shows the generated pseudo state instead of hiding it.
+
+**Supported forms:**
+
+.. code-block:: fcstm
+
+   S -> T :: E1 + E2;                     // source-local event sequence
+   S -> T :: E1 + [x > 0] + E2;           // event, guard, event
+   S -> T : E1 + /Bus.E2 + [x > 0];       // chain events plus absolute event
+   S -> T : [x > 0] + [y > 0];            // all-guard chain uses ':'
+   S -> T : [x > 0];                      // pure guard alias for ': if [...]'
+   [*] -> S : Boot + Ack;                 // entry combo
+   S -> [*] :: Done + Ack;                // exit combo
+
+**Invalid forms:**
+
+Some invalid forms are grammar errors, while scope-path mistakes such as
+``/Root.Bus.E1`` parse but are rejected during model validation because absolute
+paths already start below the root state.
+
+.. code-block:: fcstm
+
+   S -> T :: [x > 0] + [y > 0];           // all-guard combo cannot use '::'
+   S -> T :: E if [x > 0];                // use ':: E + [x > 0]' instead
+   S -> T :: E1 + : E2;                  // do not mix prefixes mid-chain
+   !* -> T :: E1 + E2;                   // forced transitions cannot be combo
+   S -> T : /Root.Bus.E1;                // absolute paths omit the root name
+
+Transition priority still follows written declaration order. It is not
+longest-match-wins. The expander shares generated pseudo prefixes only when
+sharing preserves the same first-accepted transition order that a user would
+expect from the source text. If a plain ``E1`` transition is written between
+``E1 + E2`` and ``E1 + E3``, then an ``E1``/``E3`` cycle still selects the
+plain fallback before the later combo branch.
+
+``pyfcstm inspect`` keeps combo diagnostics tied to the original source term.
+The public combo warning codes are:
+
+- ``W_COMBO_DUPLICATE_EVENT`` for a repeated event term. The main ``span`` is
+  the repeated term; ``refs.first_term_span`` links to the first occurrence.
+- ``W_COMBO_GUARD_CONST_TRUE`` and ``W_COMBO_GUARD_CONST_FALSE`` for guards
+  proven by Python/Z3 to be always true or always false. The main ``span`` is
+  the bracketed guard term; ``refs.value_span`` is the inner condition.
+- ``W_COMBO_GUARD_PREFIX_IMPLIED`` and
+  ``W_COMBO_GUARD_PREFIX_CONTRADICTS`` for a guard that is already implied by,
+  or impossible under, the earlier guard prefix. The main ``span`` is the
+  current guard; ``refs.prior_term_span`` points to the decisive earlier guard.
+
+The shared ``refs`` fields include ``origin_id``, ``term_index``,
+``transition_span``, ``trigger_span``, and term-level spans, so downstream tools
+can navigate from generated pseudo-chain diagnostics back to the authored combo
+trigger. Solver-backed guard warnings are Python-inspect diagnostics; JavaScript
+tools consume the JSON report instead of re-implementing those Z3 checks.
 
 Forced Transitions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -932,7 +1040,7 @@ Absolute events use the ``/`` prefix and are scoped to the **root state's namesp
 **Syntax:** ``StateA -> StateB : /EventName;`` or ``StateA -> StateB : /Path.To.EventName;``
 
 .. note::
-   The event path is resolved from the root state, allowing explicit control over event location.
+   The event path is resolved from the root state, allowing explicit control over event location. Do not repeat the root state's own name after ``/``; inside ``state Root``, write ``/Bus.E1`` rather than ``/Root.Bus.E1``.
 
 **Example:**
 
@@ -1336,6 +1444,7 @@ Transitions must satisfy these semantic constraints:
 3. **Expression Types**: Guard conditions must evaluate to boolean values
 4. **Entry Requirements**: Composite states require at least one entry transition
 5. **Effect Scope**: Effects and lifecycle action blocks may create temporary variables, but only declared global variables persist after the block ends
+6. **Combo Namespace**: User-authored states may not start with ``__combo_`` because that prefix is reserved for generated combo pseudo states
 
 **Why These Rules?**
 

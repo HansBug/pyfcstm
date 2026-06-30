@@ -89,6 +89,10 @@ __all__ = [
     "Preamble",
     "Operation",
     "Condition",
+    "ComboTransitionTrigger",
+    "ComboTriggerTerm",
+    "ComboEventTerm",
+    "ComboGuardTerm",
     "TransitionDefinition",
     "ForceTransitionDefinition",
     "StateDefinition",
@@ -1236,6 +1240,179 @@ class ImportStatement(ASTNode):
 
 
 @dataclass
+class ComboTriggerTerm(ASTNode):
+    """
+    Base class for one term in a combo transition trigger.
+
+    Combo trigger terms preserve source provenance for later expansion,
+    diagnostics, and quick fixes. A term span covers the whole written term,
+    while ``removal_span`` may include adjacent separators and whitespace so a
+    future quick fix can remove the term cleanly.
+
+    :param term_span: Source span for the complete trigger term.
+    :type term_span: pyfcstm.utils.validate.Span, optional
+    :param removal_span: Source span suitable for removing the term and its
+        adjacent ``+`` separator, defaults to ``None``.
+    :type removal_span: pyfcstm.utils.validate.Span, optional
+
+    Example::
+
+        >>> term = ComboEventTerm(ChainID(["Go"]), "chain")
+        >>> term.canonical_text
+        'Go'
+    """
+
+    @property
+    def canonical_text(self) -> str:
+        """
+        Return the canonical DSL text for this trigger term.
+
+        :return: Canonical term text.
+        :rtype: str
+        :raises NotImplementedError: If called on the abstract base class.
+        """
+        raise NotImplementedError  # pragma: no cover
+
+
+@dataclass
+class ComboEventTerm(ComboTriggerTerm):
+    """
+    Event term inside a combo transition trigger.
+
+    :param event_id: Event identifier as parsed from the term.
+    :type event_id: ChainID
+    :param event_scope: Scope inherited from the trigger prefix. One of
+        ``'local'``, ``'chain'``, or ``'absolute'``.
+    :type event_scope: str
+    :param term_span: Source span for the event term, defaults to ``None``.
+    :type term_span: pyfcstm.utils.validate.Span, optional
+    :param removal_span: Source span suitable for quick-fix removal, defaults
+        to ``None``.
+    :type removal_span: pyfcstm.utils.validate.Span, optional
+
+    Example::
+
+        >>> local = ComboEventTerm(ChainID(["Idle", "Start"]), "local")
+        >>> local.canonical_text
+        'Start'
+        >>> absolute = ComboEventTerm(ChainID(["Bus", "E1"], is_absolute=True), "absolute")
+        >>> absolute.canonical_text
+        '/Bus.E1'
+    """
+
+    event_id: ChainID
+    event_scope: str
+    term_span: Optional[Span] = field(default=None, repr=False, compare=False)
+    removal_span: Optional[Span] = field(default=None, repr=False, compare=False)
+
+    @property
+    def canonical_text(self) -> str:
+        """
+        Return the canonical event term text without the trigger prefix.
+
+        :return: Event term text.
+        :rtype: str
+        """
+        if self.event_scope == "local" and not self.event_id.is_absolute:
+            return self.event_id.path[-1]
+        return str(self.event_id)
+
+
+@dataclass
+class ComboGuardTerm(ComboTriggerTerm):
+    """
+    Guard term inside a combo transition trigger.
+
+    :param condition_expr: Guard condition expression.
+    :type condition_expr: Expr
+    :param value_span: Source span for the condition text inside brackets.
+    :type value_span: pyfcstm.utils.validate.Span, optional
+    :param term_span: Source span for the bracketed guard term, defaults to
+        ``None``.
+    :type term_span: pyfcstm.utils.validate.Span, optional
+    :param removal_span: Source span suitable for quick-fix removal, defaults
+        to ``None``.
+    :type removal_span: pyfcstm.utils.validate.Span, optional
+
+    Example::
+
+        >>> guard = ComboGuardTerm(BinaryOp(Name("x"), ">", Integer("0")))
+        >>> guard.canonical_text
+        '[x > 0]'
+    """
+
+    condition_expr: Expr
+    value_span: Optional[Span] = field(default=None, repr=False, compare=False)
+    term_span: Optional[Span] = field(default=None, repr=False, compare=False)
+    removal_span: Optional[Span] = field(default=None, repr=False, compare=False)
+
+    @property
+    def canonical_text(self) -> str:
+        """
+        Return the canonical bracketed guard term text.
+
+        :return: Guard term text.
+        :rtype: str
+        """
+        return f"[{self.condition_expr}]"
+
+
+@dataclass
+class ComboTransitionTrigger(ASTNode):
+    """
+    Structured representation of a combo transition trigger.
+
+    A combo trigger records the prefix used in the DSL and the ordered trigger
+    terms. It is intentionally an AST-level representation; later model construction logic
+    expands it into ordinary pseudo states and transitions.
+
+    :param scope_prefix: Written trigger prefix, either ``':'`` or ``'::'``.
+    :type scope_prefix: str
+    :param terms: Ordered combo trigger terms.
+    :type terms: List[ComboTriggerTerm]
+    :param trigger_span: Source span covering the trigger suffix.
+    :type trigger_span: pyfcstm.utils.validate.Span, optional
+    :param legacy_guard_syntax: Whether this object came from the legacy
+        ``: if [guard]`` spelling rather than the new pure guard alias.
+    :type legacy_guard_syntax: bool
+
+    Example::
+
+        >>> trigger = ComboTransitionTrigger(
+        ...     "::",
+        ...     [ComboEventTerm(ChainID(["S", "E1"]), "local")],
+        ... )
+        >>> trigger.canonical_text
+        ':: E1'
+    """
+
+    scope_prefix: str
+    terms: List[ComboTriggerTerm]
+    trigger_span: Optional[Span] = field(default=None, repr=False, compare=False)
+    legacy_guard_syntax: bool = field(default=False, repr=False, compare=False)
+
+    @property
+    def canonical_text(self) -> str:
+        """
+        Return the canonical trigger suffix text.
+
+        :return: Canonical trigger suffix including the ``:`` or ``::`` prefix.
+        :rtype: str
+        """
+        return f"{self.scope_prefix} {' + '.join(term.canonical_text for term in self.terms)}"
+
+    @property
+    def is_combo(self) -> bool:
+        """
+        Return whether this trigger contains more than one term.
+
+        :return: ``True`` for multi-term combo triggers, ``False`` otherwise.
+        :rtype: bool
+        """
+        return len(self.terms) > 1
+
+
+@dataclass
 class TransitionDefinition(ASTNode):
     """
     Represents a transition definition in the state machine DSL.
@@ -1256,6 +1433,9 @@ class TransitionDefinition(ASTNode):
     :type condition_expr: Optional[Expr]
     :param post_operations: List of operation statements to perform after the transition
     :type post_operations: List[OperationalStatement]
+    :param combo_trigger: Optional structured combo trigger metadata retained
+        for parser provenance and later pseudo-state expansion.
+    :type combo_trigger: Optional[ComboTransitionTrigger]
 
     :rtype: TransitionDefinition
 
@@ -1279,6 +1459,9 @@ class TransitionDefinition(ASTNode):
     condition_expr: Optional[Expr]
     post_operations: List["OperationalStatement"]
     event_scope: Optional[str] = field(default=None, repr=False, compare=False)
+    combo_trigger: Optional[ComboTransitionTrigger] = field(
+        default=None, repr=False, compare=False
+    )
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -1299,7 +1482,9 @@ class TransitionDefinition(ASTNode):
                 "[*]" if self.to_state is EXIT_STATE else self.to_state, file=sf, end=""
             )
 
-            if self.event_id is not None:
+            if self.combo_trigger is not None and self.combo_trigger.is_combo:
+                print(f" {self.combo_trigger.canonical_text}", file=sf, end="")
+            elif self.event_id is not None:
                 if not self.event_id.is_absolute and (
                     (self.from_state is INIT_STATE and len(self.event_id.path) == 1)
                     or (

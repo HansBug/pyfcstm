@@ -62,6 +62,7 @@ export const FCSTM_DIAGNOSTIC_CODES = {
     initialUnconditionalMissing: 'W_INITIAL_UNCONDITIONAL_MISSING',
     unreferencedVar: 'W_UNREFERENCED_VAR',
     effectSelfAssign: 'W_EFFECT_SELF_ASSIGN',
+    comboDuplicateEvent: 'W_COMBO_DUPLICATE_EVENT',
 } as const;
 
 

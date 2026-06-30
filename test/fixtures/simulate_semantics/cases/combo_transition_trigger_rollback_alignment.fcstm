@@ -1,0 +1,46 @@
+def int gate = 0;
+def int score = 0;
+
+state Root {
+    state FailStart {
+        exit { score = score + 1; }
+    }
+
+    state Fallback {
+        enter { score = score + 100; }
+    }
+
+    state SuccessStart {
+        exit { score = score + 1000; }
+    }
+
+    state Target {
+        [*] -> Good : if [gate == 1];
+        [*] -> Bad;
+
+        state Good {
+            enter { score = score + 10000; }
+        }
+
+        Good -> [*] :: Finish;
+
+        state Bad {
+            enter { score = score + 20000; }
+        }
+    }
+
+    state Done;
+
+    [*] -> FailStart;
+    FailStart -> Target :: A + B effect {
+        gate = 1;
+        score = score + 10;
+    }
+    FailStart -> Fallback :: A effect { score = score + 20; }
+    Fallback -> SuccessStart :: Next;
+    SuccessStart -> Target :: A + B effect {
+        gate = 1;
+        score = score + 30;
+    }
+    Target -> Done;
+}

@@ -1,0 +1,25 @@
+def int gate = 0;
+def int value = 0;
+
+state Root {
+    state Parent {
+        state S {
+            exit { value = value + 1; }
+        }
+
+        state Fallback {
+            enter { value = value + 100; }
+        }
+
+        [*] -> S;
+        S -> [*] :: E1 + E2 effect { value = value + 10; }
+        S -> Fallback :: E1 effect { value = value + 20; }
+    }
+
+    state Done {
+        enter { value = value + 1000; }
+    }
+
+    [*] -> Parent;
+    Parent -> Done : if [gate == 1];
+}

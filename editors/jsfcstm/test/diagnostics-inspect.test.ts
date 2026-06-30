@@ -585,6 +585,8 @@ state Root {
                 'action_ref_graph',
                 'actions',
                 'aspect_impact_map',
+                'combo_origins',
+                'combo_transitions',
                 'diagnostics',
                 'event_emission_map',
                 'events',
@@ -597,6 +599,126 @@ state Root {
                 'var_dataflow',
                 'variables',
             ]);
+            assert.deepEqual(report.combo_transitions, []);
+            assert.deepEqual(report.combo_origins, []);
+        });
+
+        it('exposes combo provenance from real DSL model construction', async () => {
+            const machine = await buildMachine(`
+def int x = 1;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: E1 + E1;
+    A -> B : [x > 0] + [x > -1];
+}
+`);
+            const report = inspectModel(machine);
+
+            assert.equal(report.combo_transitions.length, 4);
+            assert.equal(report.combo_origins.length, 2);
+            assert.deepEqual(
+                report.combo_origins.map(origin => origin.terms.map(term => term.term_text)),
+                [['[x > 0]', '[x > -1]'], ['E1', 'E1']],
+            );
+            assert.ok(report.combo_transitions.every(item => item.combo_origin_refs.length === 1));
+            assert.ok(report.combo_transitions.every(item => item.combo_projection_key !== null));
+            assert.ok(report.combo_transitions.every(item => item.combo_projection_order_key !== null));
+            assert.ok(report.combo_transitions.every(item => item.combo_reuse_group_id !== null));
+            assert.ok(report.combo_transitions.every(item => item.combo_priority_run_identity !== null));
+            assert.deepEqual(
+                report.diagnostics
+                    .filter(item => String(item.code).startsWith('W_COMBO'))
+                    .map(item => item.code)
+                    .sort(),
+                ['W_COMBO_DUPLICATE_EVENT'],
+            );
+        });
+
+        it('shares combo prefix provenance for real DSL model construction', async () => {
+            const machine = await buildMachine(`
+state Root {
+    state A;
+    state B;
+    state C;
+    [*] -> A;
+    A -> B :: E1 + E2;
+    A -> C :: E1 + E3;
+}
+`);
+            const report = inspectModel(machine);
+
+            assert.equal(report.combo_transitions.length, 3);
+            assert.equal(report.combo_origins.length, 2);
+            const sharedPrefix = report.combo_transitions.find(
+                item => item.event?.endsWith('.E1') && item.combo_origin_refs.length === 2,
+            );
+            assert.ok(sharedPrefix);
+            assert.deepEqual(
+                sharedPrefix!.combo_origin_refs.map(ref => ref.term_text),
+                ['E1', 'E1'],
+            );
+            assert.deepEqual(
+                sharedPrefix!.combo_origin_refs.map(ref => ref.term_index),
+                [0, 0],
+            );
+            assert.deepEqual(
+                report.combo_transitions
+                    .filter(item => item !== sharedPrefix)
+                    .map(item => ({
+                        event: item.event,
+                        terms: item.combo_origin_refs.map(ref => ref.term_text),
+                    })),
+                [
+                    {event: 'Root.A.E2', terms: ['E2']},
+                    {event: 'Root.A.E3', terms: ['E3']},
+                ],
+            );
+        });
+
+        it('copies combo provenance from runtime transition metadata', async () => {
+            const machine = await buildMachine(SIMPLE_DSL);
+            const transition = machine.allTransitions[1] as typeof machine.allTransitions[number] & {
+                combo_origin_refs: unknown[];
+                combo_projection_key: unknown[];
+                combo_projection_order_key: unknown[];
+                combo_reuse_group_id: string;
+                combo_priority_run_identity: unknown[];
+                combo_priority_run_index: number;
+            };
+            transition.combo_origin_refs = [{
+                origin_id: 'Root:Idle->Active:: Pause + [counter > 0]',
+                term_index: 0,
+                role: 'prefix',
+                consumes_term: true,
+                term_text: 'Pause',
+                transition_span: {line: 8, column: 5, end_line: 8, end_column: 28},
+                trigger_span: {line: 8, column: 20, end_line: 8, end_column: 28},
+                term_span: {line: 8, column: 23, end_line: 8, end_column: 28},
+                value_span: null,
+                removal_span: {line: 8, column: 23, end_line: 8, end_column: 28},
+            }];
+            transition.combo_projection_key = [['Root'], 'state', ['Root', 'Idle']];
+            transition.combo_projection_order_key = [0, 0, 0, 0];
+            transition.combo_reuse_group_id = 'Root:Idle:Pause';
+            transition.combo_priority_run_identity = [
+                'Root:Idle->Active:: Pause + [counter > 0]',
+                null,
+            ];
+            transition.combo_priority_run_index = 0;
+
+            const report = inspectModel(machine);
+
+            assert.equal(report.combo_transitions.length, 1);
+            assert.equal(report.combo_transitions[0].combo_origin_refs[0].term_text, 'Pause');
+            assert.deepEqual(report.combo_transitions[0].combo_projection_order_key, [0, 0, 0, 0]);
+            assert.equal(report.combo_transitions[0].combo_reuse_group_id, 'Root:Idle:Pause');
+            assert.equal(report.combo_origins.length, 1);
+            assert.deepEqual(
+                report.combo_origins[0].terms.map(term => term.term_text),
+                ['Pause'],
+            );
         });
     });
 

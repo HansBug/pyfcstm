@@ -1,0 +1,65 @@
+title: Combo transition trigger prefix order alignment
+origin:
+  files:
+  - test/model/test_combo_transition_expansion.py::TestComboModelExpansion::test_prefix_of_other_respects_declaration_order
+  notes:
+  - Covers prefix-of-other combo chains where one declaration is a prefix of another; declaration order must decide priority when both chains match, and a later shorter fallback must still win when an earlier longer chain cannot finish.
+  - This fixture is intentionally shared with generated Python and native template alignment runners because it exercises ordinary expanded pseudo chains after model construction.
+categories:
+- runtime
+- template_alignment
+- pseudo_chain
+- event_paths
+steps:
+- cycle: []
+  expect:
+    state: Root.FirstShort
+    vars:
+      score: 0
+    ended: false
+- cycle:
+  - Root.FirstShort.A
+  - Root.FirstShort.B
+  - Root.FirstShort.C
+  expect:
+    state: Root.ShortWins
+    vars:
+      score: 101
+    ended: false
+- cycle:
+  - Root.ShortWins.Next
+  expect:
+    state: Root.FirstLong
+    vars:
+      score: 101
+    ended: false
+- cycle:
+  - Root.FirstLong.A
+  - Root.FirstLong.B
+  - Root.FirstLong.C
+  expect:
+    state: Root.LongWins
+    vars:
+      score: 1121
+    ended: false
+- cycle:
+  - Root.LongWins.Next
+  expect:
+    state: Root.LongFallbackStart
+    vars:
+      score: 1121
+    ended: false
+- cycle:
+  - Root.LongFallbackStart.A
+  - Root.LongFallbackStart.B
+  expect:
+    state: Root.LongFallback
+    vars:
+      score: 11151
+    ended: false
+- cycle:
+  - Root.LongFallback.Finish
+  expect:
+    vars:
+      score: 11151
+    ended: true

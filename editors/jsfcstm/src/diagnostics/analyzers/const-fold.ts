@@ -100,6 +100,7 @@ export function collectConstFoldWarnings(machine: StateMachine | null | undefine
     const out: ModelDiagnosticJson[] = [];
     const definedVars = new Set(Object.keys(machine.defines));
     for (const transition of machine.allTransitions) {
+        if (transition.combo_origin_refs && transition.combo_origin_refs.length > 0) continue;
         const guard = transition.guard;
         const foldedGuard = guard ? foldConditionExpression(guard) : null;
         if (foldedGuard === true || foldedGuard === false) {

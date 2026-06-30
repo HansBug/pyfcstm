@@ -13,6 +13,8 @@
     "events",
     "actions",
     "forced_transitions",
+    "combo_transitions",
+    "combo_origins",
     "metrics",
     "reachability_graph",
     "event_emission_map",
@@ -49,6 +51,16 @@
     "forced_transitions": {
       "type": "array",
       "items": { "$ref": "#/definitions/ForcedTransitionInfo" }
+    },
+    "combo_transitions": {
+      "type": "array",
+      "description": "Generated combo transitions copied from transitions for direct machine consumption.",
+      "items": { "$ref": "#/definitions/TransitionInfo" }
+    },
+    "combo_origins": {
+      "type": "array",
+      "description": "Original combo transitions grouped by stable origin_id with ordered term provenance.",
+      "items": { "$ref": "#/definitions/ComboOriginInfo" }
     },
     "metrics": { "$ref": "#/definitions/ModelMetrics" },
     "reachability_graph": {
@@ -155,7 +167,10 @@
       "required": [
         "from_path", "to_path", "event", "event_scope",
         "guard", "effect", "effect_self_assigns", "is_forced",
-        "forced_origin", "transition_index"
+        "forced_origin", "transition_index", "combo_origin_refs",
+        "combo_projection_key", "combo_projection_order_key",
+        "combo_reuse_group_id", "combo_priority_run_identity",
+        "combo_priority_run_index"
       ],
       "properties": {
         "from_path": { "type": "string" },
@@ -180,6 +195,96 @@
           "type": ["integer", "null"],
           "minimum": 0,
           "description": "Zero-based parent-first model transition order, including forced expansions at their declaring state."
+        },
+        "combo_origin_refs": {
+          "type": "array",
+          "description": "References from this generated combo transition back to original combo trigger terms.",
+          "items": { "$ref": "#/definitions/ComboOriginRefInfo" }
+        },
+        "combo_projection_key": {
+          "description": "Logical combo chooser key used to project generated continuation edges back to the original chooser.",
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/definitions/JsonArray" }
+          ]
+        },
+        "combo_projection_order_key": {
+          "description": "Stable ordered-trie projection order key for generated combo edges.",
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/definitions/JsonArray" }
+          ]
+        },
+        "combo_reuse_group_id": {
+          "type": ["string", "null"],
+          "description": "Stable identifier for the local combo prefix-sharing group."
+        },
+        "combo_priority_run_identity": {
+          "description": "Stable ordered-trie run identity, commonly [run_anchor_origin_id, duplicate_discriminator].",
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/definitions/JsonArray" }
+          ]
+        },
+        "combo_priority_run_index": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Preorder index of this generated combo edge inside combo projection."
+        }
+      }
+    },
+    "ComboOriginRefInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "origin_id", "term_index", "role", "consumes_term", "term_text",
+        "transition_span", "trigger_span", "term_span", "value_span",
+        "removal_span"
+      ],
+      "properties": {
+        "origin_id": { "type": "string" },
+        "term_index": { "type": "integer", "minimum": 0 },
+        "role": { "type": "string" },
+        "consumes_term": { "type": "boolean" },
+        "term_text": { "type": "string" },
+        "transition_span": { "$ref": "#/definitions/NullableSpan" },
+        "trigger_span": { "$ref": "#/definitions/NullableSpan" },
+        "term_span": { "$ref": "#/definitions/NullableSpan" },
+        "value_span": { "$ref": "#/definitions/NullableSpan" },
+        "removal_span": { "$ref": "#/definitions/NullableSpan" }
+      }
+    },
+    "ComboOriginTermInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "term_index", "role", "consumes_term", "term_text",
+        "transition_span", "trigger_span", "term_span", "value_span",
+        "removal_span"
+      ],
+      "properties": {
+        "term_index": { "type": "integer", "minimum": 0 },
+        "role": { "type": "string" },
+        "consumes_term": { "type": "boolean" },
+        "term_text": { "type": "string" },
+        "transition_span": { "$ref": "#/definitions/NullableSpan" },
+        "trigger_span": { "$ref": "#/definitions/NullableSpan" },
+        "term_span": { "$ref": "#/definitions/NullableSpan" },
+        "value_span": { "$ref": "#/definitions/NullableSpan" },
+        "removal_span": { "$ref": "#/definitions/NullableSpan" }
+      }
+    },
+    "ComboOriginInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin_id", "transition_span", "trigger_span", "terms"],
+      "properties": {
+        "origin_id": { "type": "string" },
+        "transition_span": { "$ref": "#/definitions/NullableSpan" },
+        "trigger_span": { "$ref": "#/definitions/NullableSpan" },
+        "terms": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/ComboOriginTermInfo" }
         }
       }
     },
@@ -374,38 +479,47 @@
             "suggested_fix": { "$ref": "#/definitions/SuggestedFixPayload" },
             "transition_span": {
               "description": "Span for the transition related to the diagnostic.",
-              "oneOf": [
-                { "type": "null" },
-                { "$ref": "#/definitions/Span" }
-              ]
+              "$ref": "#/definitions/NullableSpan"
             },
             "guard_span": {
               "description": "Span for the guard expression related to the diagnostic.",
-              "oneOf": [
-                { "type": "null" },
-                { "$ref": "#/definitions/Span" }
-              ]
+              "$ref": "#/definitions/NullableSpan"
+            },
+            "trigger_span": {
+              "description": "Span for the combo trigger suffix related to the diagnostic.",
+              "$ref": "#/definitions/NullableSpan"
+            },
+            "term_span": {
+              "description": "Span for the current combo trigger term related to the diagnostic.",
+              "$ref": "#/definitions/NullableSpan"
+            },
+            "first_term_span": {
+              "description": "Span for the first duplicate combo trigger term.",
+              "$ref": "#/definitions/NullableSpan"
+            },
+            "value_span": {
+              "description": "Span for the value inside the current combo trigger term.",
+              "$ref": "#/definitions/NullableSpan"
+            },
+            "prior_term_span": {
+              "description": "Span for the prior combo guard term used as related information.",
+              "$ref": "#/definitions/NullableSpan"
+            },
+            "prior_value_span": {
+              "description": "Span for the expression value inside the prior combo guard term.",
+              "$ref": "#/definitions/NullableSpan"
             },
             "forced_declaration_span": {
               "description": "Span for the forced-transition declaration related to the diagnostic.",
-              "oneOf": [
-                { "type": "null" },
-                { "$ref": "#/definitions/Span" }
-              ]
+              "$ref": "#/definitions/NullableSpan"
             },
             "normal_transition_span": {
               "description": "Span for the normal transition related to a forced/normal pair diagnostic.",
-              "oneOf": [
-                { "type": "null" },
-                { "$ref": "#/definitions/Span" }
-              ]
+              "$ref": "#/definitions/NullableSpan"
             },
             "previous_span": {
               "description": "Span for a previous declaration related to a duplicate diagnostic.",
-              "oneOf": [
-                { "type": "null" },
-                { "$ref": "#/definitions/Span" }
-              ]
+              "$ref": "#/definitions/NullableSpan"
             },
             "duplicate_spans": {
               "description": "list[Span] for duplicate transitions related to a redundancy diagnostic.",
@@ -421,6 +535,26 @@
           "additionalProperties": true
         }
       }
+    },
+    "JsonArray": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          { "type": "string" },
+          { "type": "integer" },
+          { "type": "number" },
+          { "type": "boolean" },
+          { "type": "null" },
+          { "$ref": "#/definitions/JsonArray" },
+          { "type": "object", "additionalProperties": true }
+        ]
+      }
+    },
+    "NullableSpan": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/definitions/Span" }
+      ]
     },
     "Span": {
       "type": "object",

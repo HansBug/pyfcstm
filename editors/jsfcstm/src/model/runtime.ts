@@ -871,6 +871,12 @@ export class Transition extends ModelNode {
     trigger_scope?: 'local' | 'chain' | 'absolute';
     transitionIndex?: number;
     transition_index?: number;
+    combo_origin_refs: unknown[];
+    combo_projection_key: unknown[] | null;
+    combo_projection_order_key: unknown[] | null;
+    combo_reuse_group_id: string | null;
+    combo_priority_run_identity: unknown[] | null;
+    combo_priority_run_index: number | null;
     protected parentState?: State;
 
     constructor(raw: RawFcstmModelTransition, event: Event | undefined, guard: Expr | undefined, effects: OperationStatement[]) {
@@ -898,6 +904,12 @@ export class Transition extends ModelNode {
         this.trigger_scope = raw.trigger_scope;
         this.transitionIndex = raw.transitionIndex;
         this.transition_index = raw.transition_index ?? raw.transitionIndex;
+        this.combo_origin_refs = raw.combo_origin_refs ?? [];
+        this.combo_projection_key = raw.combo_projection_key ?? null;
+        this.combo_projection_order_key = raw.combo_projection_order_key ?? null;
+        this.combo_reuse_group_id = raw.combo_reuse_group_id ?? null;
+        this.combo_priority_run_identity = raw.combo_priority_run_identity ?? null;
+        this.combo_priority_run_index = raw.combo_priority_run_index ?? null;
     }
 
     /**

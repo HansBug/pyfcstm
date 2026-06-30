@@ -78,4 +78,27 @@ describe('inspect span/range contract', () => {
         assert.equal(sliceByRange(text, resolved.range!).trim(), '!A -> B :: Go;');
         assert.equal(sliceByRange(text, packageModule.spanToRange(normalSpan)!).trim(), 'A -> B :: Go;');
     });
+
+    it('uses combo term_span before transition_span for primary ranges', async () => {
+        const text = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B :: E1 + E1;',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/combo-term-span-range.fcstm');
+        const semantic = await packageModule.getWorkspaceGraph().getSemanticDocument(document);
+        assert.ok(semantic, 'expected semantic document');
+
+        const resolved = packageModule.resolveRangeFromRefsDetailed(document, semantic, {
+            term_span: {line: 5, column: 20, end_line: 5, end_column: 22},
+            transition_span: {line: 5, column: 5, end_line: 5, end_column: 23},
+        });
+
+        assert.equal(sliceByRange(text, resolved.range!), 'E1');
+        assert.equal(resolved.range!.start.character, 19);
+    });
+
 });

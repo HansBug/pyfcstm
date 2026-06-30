@@ -479,6 +479,357 @@ E_COMBO_PSEUDO_NAME_COLLISION:
   example_dsl: |
     state Root { state A; state B; [*] -> A; A -> B :: E1 + E2; }
 
+W_COMBO_DUPLICATE_EVENT:
+  severity: warning
+  span_object: transition
+  capability: pure_static
+  description: >-
+    A combo transition trigger repeats the same canonical event term. The
+    model still executes the two generated hops, but the second event term is
+    usually redundant or a typo.
+  refs:
+    origin_id:
+      type: str
+      required: true
+      description: Stable identifier of the original combo transition.
+    event_name:
+      type: str
+      required: true
+      description: Canonical qualified event name that appears more than once.
+    term_index:
+      type: int
+      required: true
+      description: Zero-based index of the repeated event term.
+    first_term_index:
+      type: int
+      required: true
+      description: Zero-based index of the first matching event term.
+    term_text:
+      type: str
+      required: true
+      description: Canonical source text of the repeated event term.
+    first_term_text:
+      type: str
+      required: true
+      description: Canonical source text of the first matching event term.
+    transition_span:
+      type: Span
+      required: false
+      description: Source span of the original combo transition.
+    trigger_span:
+      type: Span
+      required: false
+      description: Source span of the combo trigger suffix.
+    term_span:
+      type: Span
+      required: false
+      description: Source span of the repeated event term.
+    first_term_span:
+      type: Span
+      required: false
+      description: Source span of the first matching event term.
+  for_llm:
+    summary: >-
+      The combo trigger contains the same resolved event twice, for example
+      ``E1 + E1``. This is legal but normally redundant because one cycle's
+      input event set already contains ``E1``.
+    recommended_actions:
+      - kind: inspect_terms
+        target: transition
+        rationale: Check whether the second event was meant to be a different event.
+      - kind: keep_if_intentional
+        target: transition
+        rationale: Keep it only if the explicit two-hop pseudo chain is intentional.
+    do_not:
+      - "Do not silently delete the repeated event; the explicit pseudo-chain shape may be intentional."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int x = 0;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B :: E1 + E1;
+    }
+
+W_COMBO_GUARD_CONST_TRUE:
+  severity: warning
+  span_object: guard_expression
+  capability: requires_solver
+  description: >-
+    SMT proves that a guard term inside a combo trigger is always ``true``.
+    The term is redundant for the generated pseudo chain, and the primary
+    span points at the original bracketed guard term.
+  refs:
+    origin_id:
+      type: str
+      required: true
+      description: Stable identifier of the original combo transition.
+    term_index:
+      type: int
+      required: true
+      description: Zero-based index of the constant guard term.
+    term_text:
+      type: str
+      required: true
+      description: Canonical source text of the guard term.
+    folded_value:
+      type: bool
+      required: true
+      description: Solver-proven guard value, always ``true`` for this code.
+    transition_span:
+      type: Span
+      required: false
+      description: Source span of the original combo transition.
+    trigger_span:
+      type: Span
+      required: false
+      description: Source span of the combo trigger suffix.
+    term_span:
+      type: Span
+      required: false
+      description: Source span of the bracketed guard term.
+    value_span:
+      type: Span
+      required: false
+      description: Source span of the guard expression inside the brackets.
+  for_llm:
+    summary: >-
+      SMT proves that a combo guard term is always true and does not constrain
+      the combo chain.
+    recommended_actions:
+      - kind: remove_guard_term
+        target: transition
+        rationale: Remove the guard term if it was only a placeholder.
+      - kind: fix_guard_term
+        target: transition
+        rationale: Rewrite the guard if it was intended to depend on runtime state.
+    do_not:
+      - "Do not add a dummy variable dependency only to silence the diagnostic."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int x = 0;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B :: E1 + [x > 0 || x <= 0] + E2;
+    }
+
+W_COMBO_GUARD_CONST_FALSE:
+  severity: warning
+  span_object: guard_expression
+  capability: requires_solver
+  description: >-
+    SMT proves that a guard term inside a combo trigger is always ``false``.
+    Any combo branch that must pass through this term can never complete.
+  refs:
+    origin_id:
+      type: str
+      required: true
+      description: Stable identifier of the original combo transition.
+    term_index:
+      type: int
+      required: true
+      description: Zero-based index of the constant guard term.
+    term_text:
+      type: str
+      required: true
+      description: Canonical source text of the guard term.
+    folded_value:
+      type: bool
+      required: true
+      description: Solver-proven guard value, always ``false`` for this code.
+    transition_span:
+      type: Span
+      required: false
+      description: Source span of the original combo transition.
+    trigger_span:
+      type: Span
+      required: false
+      description: Source span of the combo trigger suffix.
+    term_span:
+      type: Span
+      required: false
+      description: Source span of the bracketed guard term.
+    value_span:
+      type: Span
+      required: false
+      description: Source span of the guard expression inside the brackets.
+  for_llm:
+    summary: >-
+      SMT proves that a combo guard term is always false, so the generated
+      combo branch cannot complete past that term.
+    recommended_actions:
+      - kind: fix_guard_term
+        target: transition
+        rationale: Rewrite the guard so it can become true under some valid state.
+      - kind: remove_transition
+        target: transition
+        rationale: Remove the combo transition if it was placeholder / debug.
+    do_not:
+      - "Do not silently remove the guard term — that would change the combo semantics."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int x = 0;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B :: E1 + [x > 0 && x <= 0] + E2;
+    }
+
+W_COMBO_GUARD_PREFIX_IMPLIED:
+  severity: warning
+  span_object: guard_expression
+  capability: requires_solver
+  description: >-
+    In a side-effect-free combo prefix, prior guard terms imply a later guard
+    term. The later guard is redundant under the current static approximation.
+  refs:
+    origin_id:
+      type: str
+      required: true
+      description: Stable identifier of the original combo transition.
+    term_index:
+      type: int
+      required: true
+      description: Zero-based index of the implied guard term.
+    prior_term_index:
+      type: int
+      required: true
+      description: Zero-based index of the earliest prior guard term that makes the prefix implication or contradiction decisive.
+    term_text:
+      type: str
+      required: true
+      description: Canonical source text of the implied guard term.
+    prior_term_text:
+      type: str
+      required: true
+      description: Canonical source text of the prior guard term.
+    transition_span:
+      type: Span
+      required: false
+      description: Source span of the original combo transition.
+    trigger_span:
+      type: Span
+      required: false
+      description: Source span of the combo trigger suffix.
+    term_span:
+      type: Span
+      required: false
+      description: Source span of the implied guard term.
+    value_span:
+      type: Span
+      required: false
+      description: Source span of the implied guard expression inside brackets.
+    prior_term_span:
+      type: Span
+      required: false
+      description: Source span of the prior guard term.
+    prior_value_span:
+      type: Span
+      required: false
+      description: Source span of the prior guard expression inside brackets.
+  for_llm:
+    summary: >-
+      Earlier guard terms in the combo prefix already guarantee this later
+      guard term when no relevant side effects can occur between them.
+    recommended_actions:
+      - kind: remove_guard_term
+        target: transition
+        rationale: Remove the later guard if it is intentionally redundant.
+      - kind: inspect_side_effects
+        target: transition
+        rationale: If the warning is surprising, check whether an intended write is missing from the model.
+    do_not:
+      - "Do not apply this reasoning across abstract/ref or unknown side-effect boundaries."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int x = 0;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : [x > 0] + [x > -1];
+    }
+
+W_COMBO_GUARD_PREFIX_CONTRADICTS:
+  severity: warning
+  span_object: guard_expression
+  capability: requires_solver
+  description: >-
+    In a side-effect-free combo prefix, prior guard terms contradict a later
+    guard term. The generated combo branch cannot complete through that term
+    under the current static approximation.
+  refs:
+    origin_id:
+      type: str
+      required: true
+      description: Stable identifier of the original combo transition.
+    term_index:
+      type: int
+      required: true
+      description: Zero-based index of the contradictory guard term.
+    prior_term_index:
+      type: int
+      required: true
+      description: Zero-based index of the earliest prior guard term that makes the prefix implication or contradiction decisive.
+    term_text:
+      type: str
+      required: true
+      description: Canonical source text of the contradictory guard term.
+    prior_term_text:
+      type: str
+      required: true
+      description: Canonical source text of the prior guard term.
+    transition_span:
+      type: Span
+      required: false
+      description: Source span of the original combo transition.
+    trigger_span:
+      type: Span
+      required: false
+      description: Source span of the combo trigger suffix.
+    term_span:
+      type: Span
+      required: false
+      description: Source span of the contradictory guard term.
+    value_span:
+      type: Span
+      required: false
+      description: Source span of the contradictory guard expression inside brackets.
+    prior_term_span:
+      type: Span
+      required: false
+      description: Source span of the prior guard term.
+    prior_value_span:
+      type: Span
+      required: false
+      description: Source span of the prior guard expression inside brackets.
+  for_llm:
+    summary: >-
+      Earlier guard terms in the combo prefix make this later guard impossible
+      when no relevant side effects can occur between them.
+    recommended_actions:
+      - kind: fix_guard_term
+        target: transition
+        rationale: Rewrite the later guard if it was meant to describe a reachable branch.
+      - kind: remove_transition
+        target: transition
+        rationale: Remove the combo branch if it was placeholder / debug.
+    do_not:
+      - "Do not apply this reasoning across abstract/ref or unknown side-effect boundaries."
+  emit_tier: static_pipeline
+  example_dsl: |
+    def int x = 0;
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : [x > 0] + [x < 0];
+    }
+
 E_TYPE_MISMATCH:
   severity: error
   span_object: expression

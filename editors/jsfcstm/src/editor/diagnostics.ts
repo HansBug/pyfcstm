@@ -118,11 +118,63 @@ function shadowedEventRelatedInformation(
     }];
 }
 
+
+function relatedInformationFromSpan(
+    document: TextDocumentLike,
+    span: unknown,
+    message: string,
+): NonNullable<FcstmDiagnostic['relatedInformation']>[number] | null {
+    const range = spanToRange(span);
+    if (!range) return null;
+    return {
+        location: {
+            uri: documentUri(document),
+            range,
+        },
+        message,
+    };
+}
+
+function comboRelatedInformation(
+    document: TextDocumentLike,
+    item: ModelDiagnosticJson,
+): FcstmDiagnostic['relatedInformation'] {
+    const related: NonNullable<FcstmDiagnostic['relatedInformation']> = [];
+    if (item.code === 'W_COMBO_DUPLICATE_EVENT') {
+        const first = relatedInformationFromSpan(
+            document,
+            item.refs.first_term_span,
+            'First occurrence of the repeated combo event term.',
+        );
+        if (first) related.push(first);
+    } else if (
+        item.code === 'W_COMBO_GUARD_PREFIX_IMPLIED' ||
+        item.code === 'W_COMBO_GUARD_PREFIX_CONTRADICTS'
+    ) {
+        const prior = relatedInformationFromSpan(
+            document,
+            item.refs.prior_term_span,
+            'Prior combo guard term used for this prefix relation.',
+        );
+        if (prior) related.push(prior);
+    }
+    const origin = relatedInformationFromSpan(
+        document,
+        item.refs.transition_span,
+        'Original combo transition.',
+    );
+    if (origin) related.push(origin);
+    return related.length > 0 ? related : undefined;
+}
+
 function relatedInformationFromRefs(
     document: TextDocumentLike,
     semantic: FcstmSemanticDocument,
     item: ModelDiagnosticJson,
 ): FcstmDiagnostic['relatedInformation'] {
+    if (item.code.startsWith('W_COMBO_')) {
+        return comboRelatedInformation(document, item);
+    }
     if (item.code === 'W_FORCED_OVERRIDES_NORMAL') {
         const normalRange = spanToRange(item.refs.normal_transition_span);
         if (!normalRange) return undefined;

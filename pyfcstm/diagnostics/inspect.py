@@ -18,6 +18,7 @@ The module exposes the following dataclasses:
 
 * :class:`StateInfo` — per-state structural summary
 * :class:`TransitionInfo` — per-transition structural summary
+* :class:`ComboOriginInfo` — original combo trigger provenance
 * :class:`VariableInfo` — per-variable structural summary plus
   guard-affect flags used by ``W_UNREFERENCED_VAR``
 * :class:`EventInfo` — per-event structural summary
@@ -229,6 +230,26 @@ class TransitionInfo:
         transitions. Downstream tooling may use this as a best-effort
         source-range disambiguation hint when spans are not available.
     :type transition_index: Optional[int]
+    :param combo_origin_refs: Provenance references from a generated combo
+        edge back to the original combo trigger terms. Empty for ordinary
+        transitions.
+    :type combo_origin_refs: Tuple[ComboOriginRefInfo, ...]
+    :param combo_projection_key: Logical combo chooser key used to project
+        generated continuation edges back to their original transition
+        chooser.
+    :type combo_projection_key: Optional[Tuple[object, ...]]
+    :param combo_projection_order_key: Stable ordering key inside the combo
+        ordered-trie projection.
+    :type combo_projection_order_key: Optional[Tuple[object, ...]]
+    :param combo_reuse_group_id: Stable identifier explaining the local
+        prefix-sharing group for generated combo edges.
+    :type combo_reuse_group_id: Optional[str]
+    :param combo_priority_run_identity: Stable ordered-trie run identity,
+        typically ``(run_anchor_origin_id, duplicate_discriminator)``.
+    :type combo_priority_run_identity: Optional[Tuple[str, Optional[int]]]
+    :param combo_priority_run_index: Preorder index of the generated combo
+        edge inside the projection.
+    :type combo_priority_run_index: Optional[int]
     """
 
     from_path: str
@@ -244,6 +265,125 @@ class TransitionInfo:
     span: Optional['Span'] = None
     effect_spans: Tuple['Span', ...] = field(default_factory=tuple)
     effect_self_assign_spans: Tuple[Optional['Span'], ...] = field(default_factory=tuple)
+    combo_origin_refs: Tuple['ComboOriginRefInfo', ...] = field(default_factory=tuple)
+    combo_projection_key: Optional[Tuple[object, ...]] = None
+    combo_projection_order_key: Optional[Tuple[object, ...]] = None
+    combo_reuse_group_id: Optional[str] = None
+    combo_priority_run_identity: Optional[Tuple[str, Optional[int]]] = None
+    combo_priority_run_index: Optional[int] = None
+
+@dataclass(frozen=True)
+class ComboOriginRefInfo:
+    """
+    Structured provenance reference for one generated combo edge.
+
+    :param origin_id: Stable identifier of the original combo transition.
+    :type origin_id: str
+    :param term_index: Zero-based trigger term index consumed by this edge.
+    :type term_index: int
+    :param role: Projection role, such as ``'prefix'`` or ``'terminal'``.
+    :type role: str
+    :param consumes_term: Whether this edge consumes the referenced term.
+    :type consumes_term: bool
+    :param term_text: Canonical text of the referenced combo term.
+    :type term_text: str
+    :param transition_span: Source span of the original combo transition.
+    :type transition_span: pyfcstm.utils.validate.Span, optional
+    :param trigger_span: Source span of the full combo trigger suffix.
+    :type trigger_span: pyfcstm.utils.validate.Span, optional
+    :param term_span: Source span of the referenced term.
+    :type term_span: pyfcstm.utils.validate.Span, optional
+    :param value_span: Source span inside the term when available.
+    :type value_span: pyfcstm.utils.validate.Span, optional
+    :param removal_span: Source span suitable for removing the term.
+    :type removal_span: pyfcstm.utils.validate.Span, optional
+
+    Example::
+
+        >>> ref = ComboOriginRefInfo('Root:A->B::: E1 + E2', 0, 'prefix', True, 'E1')
+        >>> ref.term_text
+        'E1'
+    """
+
+    origin_id: str
+    term_index: int
+    role: str
+    consumes_term: bool
+    term_text: str
+    transition_span: Optional['Span'] = None
+    trigger_span: Optional['Span'] = None
+    term_span: Optional['Span'] = None
+    value_span: Optional['Span'] = None
+    removal_span: Optional['Span'] = None
+
+
+@dataclass(frozen=True)
+class ComboOriginTermInfo:
+    """
+    Term-level inspect record for one original combo trigger term.
+
+    :param term_index: Zero-based trigger term index.
+    :type term_index: int
+    :param role: Role of the generated edge first exposing this term.
+    :type role: str
+    :param consumes_term: Whether the term is consumed by that edge.
+    :type consumes_term: bool
+    :param term_text: Canonical term text.
+    :type term_text: str
+    :param transition_span: Source span of the original combo transition.
+    :type transition_span: pyfcstm.utils.validate.Span, optional
+    :param trigger_span: Source span of the combo trigger suffix.
+    :type trigger_span: pyfcstm.utils.validate.Span, optional
+    :param term_span: Source span of the full term.
+    :type term_span: pyfcstm.utils.validate.Span, optional
+    :param value_span: Source span inside the term when available.
+    :type value_span: pyfcstm.utils.validate.Span, optional
+    :param removal_span: Source span suitable for removing the term.
+    :type removal_span: pyfcstm.utils.validate.Span, optional
+
+    Example::
+
+        >>> term = ComboOriginTermInfo(1, 'terminal', True, 'E2')
+        >>> term.term_index
+        1
+    """
+
+    term_index: int
+    role: str
+    consumes_term: bool
+    term_text: str
+    transition_span: Optional['Span'] = None
+    trigger_span: Optional['Span'] = None
+    term_span: Optional['Span'] = None
+    value_span: Optional['Span'] = None
+    removal_span: Optional['Span'] = None
+
+
+@dataclass(frozen=True)
+class ComboOriginInfo:
+    """
+    Inspect projection for one user-authored combo transition.
+
+    :param origin_id: Stable identifier of the original combo transition.
+    :type origin_id: str
+    :param transition_span: Source span of the original combo transition.
+    :type transition_span: pyfcstm.utils.validate.Span, optional
+    :param trigger_span: Source span of the combo trigger suffix.
+    :type trigger_span: pyfcstm.utils.validate.Span, optional
+    :param terms: Ordered term-level provenance records.
+    :type terms: Tuple[ComboOriginTermInfo, ...]
+
+    Example::
+
+        >>> origin = ComboOriginInfo('Root:A->B::: E1 + E2', None, None, ())
+        >>> origin.terms
+        ()
+    """
+
+    origin_id: str
+    transition_span: Optional['Span']
+    trigger_span: Optional['Span']
+    terms: Tuple[ComboOriginTermInfo, ...]
 
 
 @dataclass(frozen=True)
@@ -433,6 +573,18 @@ class ModelInspect:
         including explicitly declared events that no transition uses,
         sorted by qualified name.
     :type events: Tuple[EventInfo, ...]
+    :param actions: Lifecycle and aspect actions attached to states.
+    :type actions: Tuple[ActionInfo, ...]
+    :param forced_transitions: Source forced-transition declarations and their
+        expansion summary.
+    :type forced_transitions: Tuple[ForcedTransitionInfo, ...]
+    :param combo_transitions: Generated combo transitions copied out of
+        :attr:`transitions` for machine consumers that need direct access to
+        combo projection metadata.
+    :type combo_transitions: Tuple[TransitionInfo, ...]
+    :param combo_origins: Original combo transition provenance grouped by
+        ``origin_id`` and ordered by trigger term index.
+    :type combo_origins: Tuple[ComboOriginInfo, ...]
     :param metrics: Aggregate model metrics.
     :type metrics: ModelMetrics
     :param reachability_graph: Mapping from every state path to state paths
@@ -463,6 +615,8 @@ class ModelInspect:
     events: Tuple[EventInfo, ...]
     actions: Tuple[ActionInfo, ...]
     forced_transitions: Tuple[ForcedTransitionInfo, ...]
+    combo_transitions: Tuple[TransitionInfo, ...]
+    combo_origins: Tuple[ComboOriginInfo, ...]
     metrics: ModelMetrics
     reachability_graph: Dict[str, Tuple[str, ...]]
     event_emission_map: Dict[str, Tuple[str, ...]]
@@ -927,6 +1081,73 @@ def _build_state_infos(machine: 'StateMachine') -> Tuple[StateInfo, ...]:
     return tuple(out)
 
 
+def _combo_origin_ref_info(ref: Any) -> ComboOriginRefInfo:
+    """Convert model combo provenance into inspect provenance."""
+    return ComboOriginRefInfo(
+        origin_id=ref.origin_id,
+        term_index=ref.term_index,
+        role=ref.role,
+        consumes_term=ref.consumes_term,
+        term_text=ref.term_text,
+        transition_span=ref.transition_span,
+        trigger_span=ref.trigger_span,
+        term_span=ref.term_span,
+        value_span=ref.value_span,
+        removal_span=ref.removal_span,
+    )
+
+
+def _combo_tuple(value: Optional[Tuple[object, ...]]) -> Optional[Tuple[object, ...]]:
+    if value is None:
+        return None
+    return tuple(value)
+
+
+def _build_combo_transition_infos(
+        transitions: Tuple[TransitionInfo, ...],
+) -> Tuple[TransitionInfo, ...]:
+    """Return generated combo transitions from the inspect transition stream."""
+    return tuple(item for item in transitions if item.combo_origin_refs)
+
+
+def _build_combo_origin_infos(
+        transitions: Tuple[TransitionInfo, ...],
+) -> Tuple[ComboOriginInfo, ...]:
+    """Build one origin-level projection per user-authored combo transition."""
+    grouped: Dict[str, Dict[int, ComboOriginRefInfo]] = {}
+    for transition in transitions:
+        for ref in transition.combo_origin_refs:
+            if not ref.consumes_term:
+                continue
+            grouped.setdefault(ref.origin_id, {}).setdefault(ref.term_index, ref)
+
+    origins: List[ComboOriginInfo] = []
+    for origin_id in sorted(grouped):
+        refs_by_index = grouped[origin_id]
+        terms = tuple(
+            ComboOriginTermInfo(
+                term_index=ref.term_index,
+                role=ref.role,
+                consumes_term=ref.consumes_term,
+                term_text=ref.term_text,
+                transition_span=ref.transition_span,
+                trigger_span=ref.trigger_span,
+                term_span=ref.term_span,
+                value_span=ref.value_span,
+                removal_span=ref.removal_span,
+            )
+            for _, ref in sorted(refs_by_index.items())
+        )
+        first = terms[0] if terms else None
+        origins.append(ComboOriginInfo(
+            origin_id=origin_id,
+            transition_span=None if first is None else first.transition_span,
+            trigger_span=None if first is None else first.trigger_span,
+            terms=terms,
+        ))
+    return tuple(origins)
+
+
 def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ...]:
     out: List[TransitionInfo] = []
     transition_index = 0
@@ -961,6 +1182,25 @@ def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ..
                     if span is not None
                 ),
                 effect_self_assign_spans=_effect_self_assign_spans(transition.effects),
+                combo_origin_refs=tuple(
+                    _combo_origin_ref_info(ref)
+                    for ref in getattr(transition, 'combo_origin_refs', ())
+                ),
+                combo_projection_key=_combo_tuple(
+                    getattr(transition, 'combo_projection_key', None)
+                ),
+                combo_projection_order_key=_combo_tuple(
+                    getattr(transition, 'combo_projection_order_key', None)
+                ),
+                combo_reuse_group_id=getattr(
+                    transition, 'combo_reuse_group_id', None
+                ),
+                combo_priority_run_identity=_combo_tuple(
+                    getattr(transition, 'combo_priority_run_identity', None)
+                ),
+                combo_priority_run_index=getattr(
+                    transition, 'combo_priority_run_index', None
+                ),
             ))
             transition_index += 1
     return tuple(out)
@@ -2603,6 +2843,8 @@ def inspect_model(
     events = _build_event_infos(machine, transitions)
     actions = _build_action_infos(machine)
     forced_transitions = _build_forced_transition_infos(machine)
+    combo_transitions = _build_combo_transition_infos(transitions)
+    combo_origins = _build_combo_origin_infos(transitions)
     metrics = _build_metrics(states, transitions, variables, events)
     reachability_graph = _build_reachability_graph(states, transitions)
     root_state_path = _state_path(machine.root_state)
@@ -2645,6 +2887,8 @@ def inspect_model(
         events=events,
         actions=actions,
         forced_transitions=forced_transitions,
+        combo_transitions=combo_transitions,
+        combo_origins=combo_origins,
         metrics=metrics,
         reachability_graph=reachability_graph,
         event_emission_map=_build_event_emission_map(events),
@@ -2716,6 +2960,12 @@ def _to_json_inspect(report: ModelInspect) -> Dict[str, Any]:
         'actions': [_to_json_dataclass(a) for a in report.actions],
         'forced_transitions': [
             _to_json_dataclass(f) for f in report.forced_transitions
+        ],
+        'combo_transitions': [
+            _to_json_dataclass(t) for t in report.combo_transitions
+        ],
+        'combo_origins': [
+            _to_json_dataclass(o) for o in report.combo_origins
         ],
         'metrics': _to_json_dataclass(report.metrics),
         'reachability_graph': {k: list(v) for k, v in report.reachability_graph.items()},

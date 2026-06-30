@@ -25,9 +25,31 @@ state Root {
 }
 """
 
+ENTRY_COMBO_SOURCE = """
+state Root {
+    state S;
+    state F;
+    [*] -> S : E1 + E2;
+    [*] -> F;
+}
+"""
 
-def _write_combo_file(path):
-    path.write_text(textwrap.dedent(COMBO_SOURCE).strip(), encoding="utf-8")
+EXIT_COMBO_SOURCE = """
+state Root {
+    state Parent {
+        state S;
+        [*] -> S;
+        S -> [*] :: E1 + E2;
+    }
+    state Done;
+    [*] -> Parent;
+    Parent -> Done;
+}
+"""
+
+
+def _write_combo_file(path, source=COMBO_SOURCE):
+    path.write_text(textwrap.dedent(source).strip(), encoding="utf-8")
 
 
 def _assert_combo_plantuml_contract(plantuml_text):
@@ -41,6 +63,26 @@ def _assert_combo_plantuml_contract(plantuml_text):
     assert "S.E2" in plantuml_text
 
 
+def _assert_entry_combo_plantuml_contract(plantuml_text):
+    assert plantuml_text.startswith("@startuml")
+    assert re.search(r"root___combo_entry_.*_h[0-9a-f]{12}", plantuml_text)
+    assert 'state "combo after E1"' in plantuml_text
+    assert "<<pseudo>> #line.dotted" in plantuml_text
+    assert "[*] -->" in plantuml_text
+    assert "E1" in plantuml_text
+    assert "E2" in plantuml_text
+
+
+def _assert_exit_combo_plantuml_contract(plantuml_text):
+    assert plantuml_text.startswith("@startuml")
+    assert re.search(r"root__parent___combo_.*_h[0-9a-f]{12}", plantuml_text)
+    assert 'state "combo after E1"' in plantuml_text
+    assert "<<pseudo>> #line.dotted" in plantuml_text
+    assert "S.E1" in plantuml_text
+    assert "S.E2" in plantuml_text
+    assert "--> [*]" in plantuml_text
+
+
 def test_build_plantuml_output_shows_combo_pseudo_chain(tmp_path):
     source_file = tmp_path / "combo.fcstm"
     _write_combo_file(source_file)
@@ -48,6 +90,24 @@ def test_build_plantuml_output_shows_combo_pseudo_chain(tmp_path):
     plantuml_text = build_plantuml_output(str(source_file))
 
     _assert_combo_plantuml_contract(plantuml_text)
+
+
+def test_build_plantuml_output_shows_entry_combo_pseudo_chain(tmp_path):
+    source_file = tmp_path / "entry_combo.fcstm"
+    _write_combo_file(source_file, ENTRY_COMBO_SOURCE)
+
+    plantuml_text = build_plantuml_output(str(source_file))
+
+    _assert_entry_combo_plantuml_contract(plantuml_text)
+
+
+def test_build_plantuml_output_shows_exit_combo_pseudo_chain(tmp_path):
+    source_file = tmp_path / "exit_combo.fcstm"
+    _write_combo_file(source_file, EXIT_COMBO_SOURCE)
+
+    plantuml_text = build_plantuml_output(str(source_file))
+
+    _assert_exit_combo_plantuml_contract(plantuml_text)
 
 
 def test_plantuml_cli_writes_combo_pseudo_chain(tmp_path):

@@ -221,6 +221,48 @@ def test_exit_combo_parent_continuation_matches_hand_written_pseudo_chain():
     )
 
 
+def test_exit_combo_parent_continuation_failure_rolls_back_to_source():
+    combo = """
+    def int x = 0;
+    state Root {
+        state Parent {
+            state S;
+            [*] -> S;
+            S -> [*] :: E1 + E2;
+        }
+        state Done;
+        [*] -> Parent;
+        Parent -> Done : if [x > 0];
+    }
+    """
+    manual = """
+    def int x = 0;
+    state Root {
+        state Parent {
+            state S;
+            pseudo state P named "combo after E1";
+            [*] -> S;
+            S -> P :: E1;
+            P -> [*] : /Parent.S.E2;
+        }
+        state Done;
+        [*] -> Parent;
+        Parent -> Done : if [x > 0];
+    }
+    """
+
+    _, _, trace = assert_combo_matches_manual_pseudo(
+        combo, manual, [None, ["Root.Parent.S.E1", "Root.Parent.S.E2"]]
+    )
+
+    assert trace[-1]["state"] == "Root.Parent.S"
+    assert trace[-1]["consumed_events"] == ()
+    assert trace[-1]["unconsumed_events"] == (
+        "Root.Parent.S.E1",
+        "Root.Parent.S.E2",
+    )
+
+
 def test_hot_start_to_event_gated_combo_pseudo_is_rejected():
     model = parse_machine(
         """

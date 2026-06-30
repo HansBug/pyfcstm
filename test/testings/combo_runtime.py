@@ -253,6 +253,7 @@ def simulation_trace(
         trace.append(
             {
                 "state": _normalized_runtime_state(runtime),
+                "value": result.value,
                 "vars": tuple(sorted(runtime.vars.items())),
                 "input_events": result.input_events,
                 "consumed_events": result.consumed_events,

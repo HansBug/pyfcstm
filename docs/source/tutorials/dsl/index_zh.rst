@@ -500,7 +500,7 @@ DSL 支持三种具有不同语法模式的转换类型：
 
    [*] -> Idle;                                    // 简单入口
    [*] -> Running : startup_event;                 // 带链事件的入口
-   [*] -> Running :: startup_event;                // 带 ``::`` 链作用域事件的入口
+   [*] -> Running :: startup_event;                // 入口事件使用所属复合状态作用域
    [*] -> Active : if [initialized == 0x1];        // 带守卫条件的入口
    [*] -> Active : [initialized == 0x1];           // 守卫别名
    [*] -> Running : startup_event + [mode == 1];   // 入口组合 trigger
@@ -626,6 +626,14 @@ DSL 支持三种具有不同语法模式的转换类型：
    S -> T : /Root.Bus.E1;                // 绝对路径不重复根状态名
 
 转换优先级仍然遵循源码声明顺序，不是最长匹配优先。展开器只有在不改变源码的 first-accepted 转换顺序时才共享生成的伪状态前缀。如果 ``E1 + E2`` 和 ``E1 + E3`` 之间写了一个普通 ``E1`` 转换，那么包含 ``E1`` / ``E3`` 的周期仍会先选择这个普通 fallback，而不是越过它进入后面的组合分支。
+
+``pyfcstm inspect`` 会把组合诊断对应回原始源码项。公开的组合 warning code 包括：
+
+- ``W_COMBO_DUPLICATE_EVENT``\ ：事件项重复。主 ``span``\ 指向重复项；``refs.first_term_span``\ 指向第一次出现的位置。
+- ``W_COMBO_GUARD_CONST_TRUE``\ 和 ``W_COMBO_GUARD_CONST_FALSE``\ ：Python/Z3 证明守卫恒真或恒假。主 ``span``\ 指向带方括号的守卫项；``refs.value_span``\ 指向内部条件表达式。
+- ``W_COMBO_GUARD_PREFIX_IMPLIED``\ 和 ``W_COMBO_GUARD_PREFIX_CONTRADICTS``\ ：当前守卫已经被前置守卫前缀蕴含，或在前置守卫前缀下不可能成立。主 ``span``\ 指向当前守卫；``refs.prior_term_span``\ 指向起决定作用的更早守卫。
+
+共享的 ``refs``\ 字段包含 ``origin_id``\ 、``term_index``\ 、``transition_span``\ 、``trigger_span``\ 和 term 级别 span，因此下游工具可以从生成的伪状态链诊断跳回用户手写的组合 trigger。求解器支撑的守卫 warning 属于 Python ``inspect``\ 诊断；JavaScript 工具消费 JSON 报告，而不是重新实现这些 Z3 检查。
 
 强制转换
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -505,7 +505,7 @@ Entry transitions define the initial state when entering a composite state. They
 
    [*] -> Idle;                                    // Simple entry
    [*] -> Running : startup_event;                 // Entry with chain event
-   [*] -> Running :: startup_event;                // Entry with chain-scoped event via ::
+   [*] -> Running :: startup_event;                // Entry event uses the owning composite scope
    [*] -> Active : if [initialized == 0x1];        // Entry with guard
    [*] -> Active : [initialized == 0x1];           // Guard alias
    [*] -> Running : startup_event + [mode == 1];   // Entry combo trigger
@@ -651,6 +651,25 @@ sharing preserves the same first-accepted transition order that a user would
 expect from the source text. If a plain ``E1`` transition is written between
 ``E1 + E2`` and ``E1 + E3``, then an ``E1``/``E3`` cycle still selects the
 plain fallback before the later combo branch.
+
+``pyfcstm inspect`` keeps combo diagnostics tied to the original source term.
+The public combo warning codes are:
+
+- ``W_COMBO_DUPLICATE_EVENT`` for a repeated event term. The main ``span`` is
+  the repeated term; ``refs.first_term_span`` links to the first occurrence.
+- ``W_COMBO_GUARD_CONST_TRUE`` and ``W_COMBO_GUARD_CONST_FALSE`` for guards
+  proven by Python/Z3 to be always true or always false. The main ``span`` is
+  the bracketed guard term; ``refs.value_span`` is the inner condition.
+- ``W_COMBO_GUARD_PREFIX_IMPLIED`` and
+  ``W_COMBO_GUARD_PREFIX_CONTRADICTS`` for a guard that is already implied by,
+  or impossible under, the earlier guard prefix. The main ``span`` is the
+  current guard; ``refs.prior_term_span`` points to the decisive earlier guard.
+
+The shared ``refs`` fields include ``origin_id``, ``term_index``,
+``transition_span``, ``trigger_span``, and term-level spans, so downstream tools
+can navigate from generated pseudo-chain diagnostics back to the authored combo
+trigger. Solver-backed guard warnings are Python-inspect diagnostics; JavaScript
+tools consume the JSON report instead of re-implementing those Z3 checks.
 
 Forced Transitions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

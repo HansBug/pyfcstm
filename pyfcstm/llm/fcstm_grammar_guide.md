@@ -187,6 +187,29 @@ Combo rules to keep in mind:
   containing `E1` and `E3` selects the plain `E1` fallback because it is written
   before the later combo branch.
 
+Combo inspect diagnostics keep the public report tied to the author-written
+combo trigger, not to the generated pseudo states:
+
+- `inspect` JSON exposes generated edges in `combo_transitions` and grouped
+  source provenance in `combo_origins`.
+- `W_COMBO_DUPLICATE_EVENT` means the same event term appears more than once in
+  one combo trigger. The primary `span` points at the repeated term; `refs`
+  include `origin_id`, `term_index`, `first_term_index`, `term_span`, and
+  `first_term_span`.
+- `W_COMBO_GUARD_CONST_TRUE` and `W_COMBO_GUARD_CONST_FALSE` are Python inspect
+  warnings proven with Z3. The primary `span` points at the original bracketed
+  guard term; `refs.value_span` points at the condition inside the brackets.
+- `W_COMBO_GUARD_PREFIX_IMPLIED` means earlier guard terms in the same combo
+  prefix already imply the current guard. `W_COMBO_GUARD_PREFIX_CONTRADICTS`
+  means the earlier guard prefix makes the current guard impossible. Their
+  primary `span` points at the current guard term, and `refs.prior_term_span`
+  points at the decisive earlier guard.
+- Guard warnings are conservative: if conversion to Z3 is unsupported, or an
+  effect/lifecycle action may write variables read by the guard prefix, inspect
+  skips the prefix warning instead of reporting a speculative result.
+- `jsfcstm` does not reimplement these solver-backed guard warnings locally;
+  downstream JavaScript tools should consume the Python inspect JSON when they
+  need these codes.
 
 ## Nested State Targets
 

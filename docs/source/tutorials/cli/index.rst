@@ -158,7 +158,10 @@ inspect Command
 
 Inspect a state machine DSL file and emit the structured model report as JSON.
 The JSON shape matches ``inspect_model(model).to_json()`` and includes states,
-transitions, variables, metrics, derived graphs, and diagnostics.
+transitions, variables, metrics, derived graphs, and diagnostics. When a model
+uses combo transition triggers, the report also exposes ``combo_transitions``
+and ``combo_origins`` so tools can relate generated pseudo-chain edges back to
+the original trigger terms.
 
 **Syntax**:
 

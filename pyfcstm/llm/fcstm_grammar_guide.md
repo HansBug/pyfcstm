@@ -104,10 +104,13 @@ state PseudoExample {
 
 Use plain transitions for unconditional movement, `:: EventName` for source
 local events, `: EventName` for events scoped to the containing state, and
-`: /GlobalEvent` for events scoped from the root.
+`: /GlobalEvent` for events scoped from the root. Absolute event paths start
+below the root state; write `: /Bus.E1`, not `: /Root.Bus.E1` when the root
+state is named `Root`.
 
-Guards use `: if [condition]`. Effects use `effect { ... }`. Do not combine
-event syntax and guard syntax on the same transition.
+Guards use `: if [condition]`. The pure guard alias `: [condition]` is also
+valid and means the same thing as `: if [condition]`. Effects use
+`effect { ... }`.
 
 ```fcstm
 def int current_level = 0;
@@ -126,13 +129,61 @@ state Elevator {
         state Up;
         state Down;
 
-        Up -> Down : if [(request_above == 0) xor (target_level < current_level)];
+        Up -> Down : [(request_above == 0) xor (target_level < current_level)];
     }
 
     Stopped -> Moving : if [rank_ok > 0 && target_level != current_level];
     Moving -> Stopped : if [(target_level == current_level) iff (rank_ok > 0)];
 }
 ```
+
+Combo transition triggers are ordered `+` chains of event terms and bracketed
+guard terms. They are syntax sugar: model construction expands them into
+ordinary pseudo states and normal transitions. Runtime, verification, code
+generation, and visualization consume the expanded model. Generated combo
+pseudo states are visible in diagrams with stable names, and state names
+beginning with `__combo_` are reserved for generated pseudo states.
+
+```fcstm
+def int ready = 1;
+def int completed = 0;
+
+state ComboProtocol {
+    [*] -> Waiting;
+
+    state Waiting;
+    state Accepted {
+        enter { completed = 1; }
+    }
+    state Retrying;
+
+    Waiting -> Accepted :: Request + [ready > 0] + Confirm;
+    Waiting -> Retrying :: Request;
+    Retrying -> Waiting : [ready == 0];
+}
+```
+
+Combo rules to keep in mind:
+
+- `S -> T :: E1 + [x > 0] + E2;` uses source-local event terms.
+- `S -> T : E1 + /Bus.E2 + [x > 0];` uses containing-scope event terms
+  except for explicitly absolute event terms.
+- `[*] -> S :: E1 + E2;` is valid; entry-transition events follow the legacy
+  entry event rule and are scoped to the composite that owns the entry.
+- `S -> [*] :: E1 + E2;` is valid; if later validation cannot reach a
+  stoppable state, the transition chain rolls back like any pseudo-state chain.
+- `::` combo triggers must contain at least one event term. Use `:` for
+  all-guard chains such as `S -> T : [x > 0] + [y > 0];`.
+- Do not append `if [condition]` after an event trigger. Write the condition as
+  a bracketed combo term: `S -> T :: E + [x > 0];`.
+- Do not mix a new `:` or `::` prefix inside one combo chain, and do not use
+  combo triggers on forced transitions.
+- Transition priority remains declaration order and first-accepted-wins, not
+  longest-match-wins. Prefix sharing is allowed only when it preserves that
+  order. For example, in `E1 + E2`, then plain `E1`, then `E1 + E3`, a cycle
+  containing `E1` and `E3` selects the plain `E1` fallback because it is written
+  before the later combo branch.
+
 
 ## Nested State Targets
 
@@ -185,7 +236,9 @@ Event scopes are part of the model semantics:
 - `Source -> Target : EventName;` creates or uses an event in the containing state scope.
 - `Source -> Target : /EventName;` creates or uses a root-scoped event.
 
-Do not write `:/EventName`; that is a shorthand in prose, not valid DSL.
+Combo event terms inherit the same scope rules from their leading prefix. A
+continuation term may be absolute, for example `S -> T : E1 + /Bus.E2;`. Do not
+write `:/EventName`; that is a shorthand in prose, not valid DSL.
 
 ## Forced Transitions
 
@@ -328,11 +381,17 @@ Execution-order essentials:
   `during after`, then composite `exit`.
 - `>> during before` and `>> during after` are aspect actions for descendant
   leaf states; plain `during` is the ordinary active-state action.
+- Combo transition triggers behave like the pseudo-state chains produced during
+  model construction. All required events and guard terms in that chain must be
+  available or true in the same cycle for the final target to be reached.
 
 ## LLM Modeling Strategy
 
 - Prefer events for discrete external triggers.
 - Prefer guards for state-dependent or variable-dependent conditions.
+- Use combo triggers for ordered multi-event or event-plus-guard handshakes
+  that must complete in one cycle. Keep the source order intentional, because
+  transition priority follows the written order.
 - Declare every persistent value as `def int` or `def float`.
 - Use integer flags such as `flag > 0` instead of bare boolean variables.
 - Do not invent syntax for timers, arrays, quantifiers, or assumptions unless
@@ -401,6 +460,53 @@ state BadForcedEffect {
 }
 ```
 
+
+```fcstm-invalid
+state BadEventGuardSuffix {
+    [*] -> A;
+    state A;
+    state B;
+    A -> B :: E if [1 > 0];
+}
+```
+
+```fcstm-invalid
+def int x = 0;
+state BadLocalAllGuardCombo {
+    [*] -> A;
+    state A;
+    state B;
+    A -> B :: [x > 0] + [x < 10];
+}
+```
+
+```fcstm-invalid
+state BadForcedCombo {
+    [*] -> A;
+    state A;
+    state B;
+    !* -> B :: E1 + E2;
+}
+```
+
+```fcstm-invalid
+state BadMixedScopeCombo {
+    [*] -> A;
+    state A;
+    state B;
+    A -> B :: E1 + : E2;
+}
+```
+
+```fcstm-invalid
+state BadAbsoluteRootRepeat {
+    [*] -> A;
+    state A;
+    state B;
+    A -> B : /BadAbsoluteRootRepeat.Bus.E1 + /BadAbsoluteRootRepeat.Bus.E2;
+}
+```
+
 ## Pre-Output Checklist
 
 Before producing final FCSTM source, check:
@@ -408,8 +514,11 @@ Before producing final FCSTM source, check:
 - exactly one top-level root state
 - all variables are declared before the root state
 - every composite state has an initial transition
-- each transition uses event syntax or guard syntax, not both
-- `: /GlobalEvent` is used for root-scoped events
+- each transition uses plain, one-event, one-guard, or legal combo trigger syntax
+- event-plus-guard requirements use combo terms such as `:: E + [x > 0]`, not
+  `:: E if [x > 0]`
+- `: /GlobalEvent` is used for root-scoped events, without repeating the root
+  state name after `/`
 - `=>`, `implies`, `xor`, and `iff` are used only in conditions
 - `^` is not used as boolean xor
 - forced transitions have no effect block

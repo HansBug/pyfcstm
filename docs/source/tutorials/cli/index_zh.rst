@@ -158,7 +158,8 @@ inspect 命令
 
 检查状态机 DSL 文件，并以 JSON 输出结构化模型报告。JSON 结构与
 ``inspect_model(model).to_json()`` 一致，包含状态、转换、变量、指标、
-派生图和诊断信息。
+派生图和诊断信息。当模型使用组合 transition trigger 时，报告还会暴露
+``combo_transitions`` 和 ``combo_origins``\ ，方便工具把生成的伪状态链边映射回原始 trigger 项。
 
 **语法**：
 

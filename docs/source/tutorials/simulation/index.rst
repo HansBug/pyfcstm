@@ -391,6 +391,9 @@ A **cycle**  executes until reaching a stable boundary:
 - Follows transition chains until reaching a stoppable state (leaf state, non-pseudo)
 - Executes the ``during`` action at the final stoppable state
 - May execute multiple transitions in one cycle (e.g., through pseudo states)
+- Combo transition triggers such as ``E1 + [x > 0] + E2`` are expanded into
+  pseudo-state chains before runtime execution, so they follow the same
+  validation and rollback rules
 - If no transition fires, executes the current state's ``during`` action
 
 Example 1: Basic Transition
@@ -893,6 +896,8 @@ When multiple transitions from the same state have satisfied guards, the first t
 
 **Key Point**: Transitions are evaluated in definition order. The first transition with a satisfied guard is selected, even if multiple guards are satisfied.
 
+This order also applies when combo triggers expand to generated pseudo states. Prefix sharing is an implementation detail and must not make a later combo branch jump ahead of an earlier plain or combo transition.
+
 Example 7: Self-Transition
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1179,6 +1184,8 @@ Pseudo states require validation to ensure they lead to stoppable states:
 - **Result**: ``state = Root.B``, ``counter = 1112``
 
 **Key Point**: Pseudo states are non-stoppable and require validation. The validation uses DFS to check if the transition chain can reach a stoppable state with the available events. Pseudo states execute their ``during`` action during the real transition, but this happens in the same cycle as reaching the final stoppable state.
+
+Combo transition triggers use this same mechanism after model construction. For example, ``A -> B :: GoP + [ready > 0] + GoB`` behaves like an automatically generated pseudo chain from ``A`` through two non-stoppable combo pseudo states and finally to ``B``. If ``GoB`` is missing or the guard is false, validation rejects the chain and the source state remains active.
 
 Example 10: Validation Failure - Unreachable Stoppable
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

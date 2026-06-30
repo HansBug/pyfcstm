@@ -97,6 +97,11 @@ def test_generated_alignment_regression_fixtures_remain_shared():
         "event_path_absolute",
         "event_path_parent_relative",
         "event_path_mixed_formats_full",
+        "combo_transition_trigger_duplicate_event_alignment",
+        "combo_transition_trigger_lifecycle_alignment",
+        "combo_transition_trigger_priority_scope_alignment",
+        "combo_transition_trigger_rollback_alignment",
+        "combo_transition_trigger_template_alignment",
     }
     cases = {case.id: case for case in iter_semantic_cases()}
 

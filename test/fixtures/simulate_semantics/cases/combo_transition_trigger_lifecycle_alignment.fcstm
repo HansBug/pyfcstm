@@ -1,0 +1,36 @@
+def int value = 0;
+def int latch = 0;
+
+state Root {
+    state Launcher;
+
+    state EntryOwner {
+        [*] -> Active : EntryA + [latch == 0] + EntryB effect {
+            latch = 1;
+            value = value + 10;
+        }
+        [*] -> EntryFallback;
+
+        state Active {
+            enter { value = value + 100; }
+            exit { value = value + 1000; }
+        }
+
+        state EntryFallback {
+            enter { value = value + 200; }
+        }
+
+        Active -> [*] :: ExitA + [latch == 1] + ExitB effect { value = value + 20; }
+    }
+
+    state AfterEntry {
+        enter { value = value + 10000; }
+    }
+
+    state Done;
+
+    [*] -> Launcher;
+    Launcher -> EntryOwner :: Go;
+    EntryOwner -> AfterEntry effect { value = value + 30; }
+    AfterEntry -> Done :: Finish;
+}

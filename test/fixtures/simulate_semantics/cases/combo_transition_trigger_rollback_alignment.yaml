@@ -1,0 +1,53 @@
+title: Combo transition trigger rollback alignment
+origin:
+  files:
+  - test/simulate/test_combo_runtime_compat.py
+  - test/template/python/test_semantic_fixture_alignment.py
+  notes:
+  - Verifies that a failed combo chain does not commit terminal effects or target entry, while a later successful combo commits before composite initial guard selection.
+categories:
+- runtime
+- template_alignment
+- pseudo_chain
+- lifecycle
+steps:
+- cycle: []
+  expect:
+    state: Root.FailStart
+    vars:
+      gate: 0
+      score: 0
+    ended: false
+- cycle:
+  - Root.FailStart.A
+  expect:
+    state: Root.Fallback
+    vars:
+      gate: 0
+      score: 121
+    ended: false
+- cycle:
+  - Root.Fallback.Next
+  expect:
+    state: Root.SuccessStart
+    vars:
+      gate: 0
+      score: 121
+    ended: false
+- cycle:
+  - Root.SuccessStart.A
+  - Root.SuccessStart.B
+  expect:
+    state: Root.Target.Good
+    vars:
+      gate: 1
+      score: 11151
+    ended: false
+- cycle:
+  - Root.Target.Good.Finish
+  expect:
+    state: Root.Done
+    vars:
+      gate: 1
+      score: 11151
+    ended: false

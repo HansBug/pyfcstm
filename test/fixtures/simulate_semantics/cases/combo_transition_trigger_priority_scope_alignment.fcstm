@@ -1,0 +1,62 @@
+def int score = 0;
+def int flag = 1;
+
+state Root {
+    state Bus {
+        state Idle;
+        [*] -> Idle;
+    }
+
+    state Start {
+        exit { score = score + 1; }
+    }
+
+    state PlainFallback {
+        enter { score = score + 100; }
+    }
+
+    state SharedStart;
+
+    state SharedSecond {
+        enter { score = score + 200; }
+    }
+
+    state GuardStart {
+        enter { flag = 2; }
+    }
+
+    state GuardOk {
+        enter { score = score + 400; }
+    }
+
+    state ScopeStart;
+
+    state ScopeDone {
+        enter { score = score + 800; }
+    }
+
+    state End {
+        enter { score = score + 1600; }
+    }
+
+    [*] -> Start;
+
+    Start -> End :: E1 + E2 effect { score = score + 10; }
+    Start -> PlainFallback :: E1 effect { score = score + 20; }
+    Start -> End :: E1 + E3 effect { score = score + 30; }
+
+    PlainFallback -> SharedStart :: Next;
+
+    SharedStart -> End :: A + B effect { score = score + 40; }
+    SharedStart -> SharedSecond :: A + C effect { score = score + 50; }
+
+    SharedSecond -> GuardStart :: Next;
+
+    GuardStart -> GuardOk : [flag == 2] + [(1 + 2) == 3] effect { score = score + 60; }
+    GuardStart -> End : [flag == 2] effect { score = score + 70; }
+
+    GuardOk -> ScopeStart :: Next;
+
+    ScopeStart -> ScopeDone : /Bus.Ping + LocalAck effect { score = score + 80; }
+    ScopeDone -> [*] :: Finish;
+}

@@ -1988,6 +1988,13 @@ def _combo_generated_transition_by_payload(
 
     Examples::
 
+        >>> ref = ComboOriginRefInfo(
+        ...     'Root:S->T::: E1 + [x > 0] + E2',
+        ...     1,
+        ...     'prefix',
+        ...     True,
+        ...     '[x > 0]',
+        ... )
         >>> transition = TransitionInfo(
         ...     from_path='Root.__combo_a',
         ...     to_path='Root.__combo_b',
@@ -1999,7 +2006,7 @@ def _combo_generated_transition_by_payload(
         ...     is_forced=False,
         ...     forced_origin=None,
         ...     transition_index=0,
-        ...     combo_origin_refs=(object(),),
+        ...     combo_origin_refs=(ref,),
         ... )
         >>> payload = {
         ...     'parent': 'Root',
@@ -2046,13 +2053,51 @@ def _is_combo_generated_guard_verify_diagnostic(
 
     Examples::
 
+        >>> ref = ComboOriginRefInfo(
+        ...     'Root:S->T::: E1 + [x > 0] + E2',
+        ...     1,
+        ...     'prefix',
+        ...     True,
+        ...     '[x > 0]',
+        ... )
+        >>> transition = TransitionInfo(
+        ...     from_path='Root.__combo_a',
+        ...     to_path='Root.__combo_b',
+        ...     event=None,
+        ...     event_scope=None,
+        ...     guard='x > 0',
+        ...     effect=None,
+        ...     effect_self_assigns=(),
+        ...     is_forced=False,
+        ...     forced_origin=None,
+        ...     transition_index=0,
+        ...     combo_origin_refs=(ref,),
+        ... )
+        >>> raw = {'data': {'transition': {
+        ...     'parent': 'Root',
+        ...     'from_state': '__combo_a',
+        ...     'to_state': '__combo_b',
+        ...     'event': None,
+        ...     'guard': 'x > 0',
+        ...     'is_forced': False,
+        ... }}}
         >>> _is_combo_generated_guard_verify_diagnostic(
-        ...     'W_EFFECT_SMT_NO_OP',
-        ...     {'data': {}},
-        ...     (),
+        ...     'W_DEAD_GUARD',
+        ...     raw,
+        ...     (transition,),
+        ... )
+        True
+        >>> _is_combo_generated_guard_verify_diagnostic(
+        ...     'W_FORCED_GUARD_UNSAT',
+        ...     raw,
+        ...     (transition,),
         ... )
         False
     """
+    # Keep this list intentionally narrow.  These two generic guard-level SMT
+    # diagnostics have combo-specific analyzer counterparts that project to
+    # the original trigger term.  Other transition-keyed verify diagnostics
+    # must stay visible until a combo-aware public diagnostic exists for them.
     if code not in {'W_DEAD_GUARD', 'W_GUARD_TAUTOLOGY'}:
         return False
     data = raw.get('data')

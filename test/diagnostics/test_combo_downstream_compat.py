@@ -3,11 +3,26 @@
 import pytest
 
 from pyfcstm.diagnostics import inspect_model
+from pyfcstm.verify.inspect_adapter import run_inspect_algorithms
 from test.diagnostics._schema_check import assert_all_diags_match_schema
 from test.testings.combo_runtime import parse_machine
 
 
 pytestmark = pytest.mark.unittest
+
+
+def _raw_verify_codes(source):
+    machine = parse_machine(source)
+    results = run_inspect_algorithms(
+        machine,
+        max_complexity_tier="smt_linear",
+        smt_timeout_ms=5000,
+    )
+    return [
+        diagnostic["code"]
+        for result in results
+        for diagnostic in result.diagnostics
+    ]
 
 
 def test_inspect_verify_smoke_keeps_combo_pseudo_reachable_without_internal_refs():
@@ -84,21 +99,18 @@ def test_inspect_suppresses_generic_dead_guard_for_combo_const_false():
     }
     """
 
+    assert "W_DEAD_GUARD" in _raw_verify_codes(source)
+
     report = inspect_model(
         parse_machine(source),
         enable_verify=True,
         max_complexity_tier="smt_linear",
-        smt_timeout_ms=200,
+        smt_timeout_ms=5000,
     )
 
     codes = {item.code for item in report.diagnostics}
     assert "W_COMBO_GUARD_CONST_FALSE" in codes
     assert "W_DEAD_GUARD" not in codes
-    assert not any(
-        "__combo_" in str(item.refs)
-        for item in report.diagnostics
-        if item.code in {"W_DEAD_GUARD", "W_GUARD_TAUTOLOGY"}
-    )
 
 
 def test_inspect_suppresses_generic_guard_tautology_for_combo_const_true():
@@ -113,18 +125,15 @@ def test_inspect_suppresses_generic_guard_tautology_for_combo_const_true():
     }
     """
 
+    assert "W_GUARD_TAUTOLOGY" in _raw_verify_codes(source)
+
     report = inspect_model(
         parse_machine(source),
         enable_verify=True,
         max_complexity_tier="smt_linear",
-        smt_timeout_ms=200,
+        smt_timeout_ms=5000,
     )
 
     codes = {item.code for item in report.diagnostics}
     assert "W_COMBO_GUARD_CONST_TRUE" in codes
     assert "W_GUARD_TAUTOLOGY" not in codes
-    assert not any(
-        "__combo_" in str(item.refs)
-        for item in report.diagnostics
-        if item.code in {"W_DEAD_GUARD", "W_GUARD_TAUTOLOGY"}
-    )

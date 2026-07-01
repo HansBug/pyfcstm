@@ -165,6 +165,7 @@ def _effect_self_assign_warnings(transitions: Iterable['TransitionInfo']) -> Lis
 
 
 def _public_transition_subject_for_effect_diagnostic(t: 'TransitionInfo') -> Dict[str, object]:
+    """Return the user-facing subject and debug refs for effect diagnostics."""
     origin_ref = next(iter(getattr(t, 'combo_origin_refs', ())), None)
     transition_span = getattr(origin_ref, 'transition_span', None) or t.span
     projection_key = getattr(t, 'combo_projection_key', None)

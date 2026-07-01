@@ -159,6 +159,7 @@ interface PublicTransitionSubject {
     canAnchor: boolean;
 }
 
+/** Return the user-facing subject and debug refs for effect diagnostics. */
 function publicTransitionSubjectForEffectDiagnostic(
     transition: TransitionInfo,
 ): PublicTransitionSubject {
@@ -170,7 +171,7 @@ function publicTransitionSubjectForEffectDiagnostic(
     if (!originRef) {
         return {
             statePath: transition.from_path,
-            transitionSpan: null,
+            transitionSpan,
             extraRefs,
             canAnchor: true,
         };

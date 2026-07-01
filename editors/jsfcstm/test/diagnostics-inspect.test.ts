@@ -985,7 +985,7 @@ state Root {
                     severity: 'warning',
                     refs: {
                         state_path: 'Root.Active',
-                        transition_span: null,
+                        transition_span: {line: 16, column: 5, end_line: 16, end_column: 47},
                         var_name: 'stable',
                         effect_self_assign_anchor: 'stable',
                         transition_index: 5,
@@ -1332,7 +1332,7 @@ state Root {
                     .map(d => d.refs),
                 [expectedRefsWithSuggestedFix('W_EFFECT_SELF_ASSIGN', {
                     state_path: 'Root.A',
-                    transition_span: null,
+                    transition_span: {line: 7, column: 5, end_line: 11, end_column: 6},
                     var_name: 'x',
                     effect_self_assign_anchor: 'x',
                     transition_index: 1,

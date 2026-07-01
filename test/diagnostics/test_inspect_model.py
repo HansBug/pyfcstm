@@ -1872,6 +1872,176 @@ class TestInspectModelRedundancySemantics:
         assert all('effect_self_assign_anchor' not in ref for ref in refs)
         assert all('suggested_fix' not in ref for ref in refs)
 
+    def test_effect_self_assign_combo_terminal_uses_authored_source(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B :: E1 + E2 effect { x = x; };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        diagnostics = [
+            d for d in report.diagnostics
+            if d.code == 'W_EFFECT_SELF_ASSIGN'
+        ]
+        assert len(diagnostics) == 1
+        diag = diagnostics[0]
+        refs = diag.refs
+        assert refs['state_path'] == 'Root.A'
+        assert refs['from_path'] == 'Root.A'
+        assert refs['generated_state_path'].startswith('Root.__combo_')
+        assert refs['generated_from_path'] == refs['generated_state_path']
+        assert refs['generated_to_path'] == 'Root.B'
+        assert refs['combo_origin_id']
+        assert 'combo_owner_path' not in refs
+        assert refs['var_name'] == 'x'
+        assert refs['effect_self_assign_anchor'] == 'x'
+        assert refs['suggested_fix']['anchor'] == {
+            'type': 'ref',
+            'ref': 'refs.effect_self_assign_anchor',
+        }
+        assert _slice_by_span(dsl, refs['transition_span']).strip() == (
+            'A -> B :: E1 + E2 effect { x = x; }'
+        )
+        assert _slice_by_span(dsl, diag.span) == 'x = x;'
+        assert_all_diags_match_schema(diagnostics, context='combo-self-assign')
+
+    def test_effect_self_assign_entry_combo_uses_initial_subject(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            [*] -> A : Boot + Ready effect { x = x; };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        diagnostics = [
+            d for d in report.diagnostics
+            if d.code == 'W_EFFECT_SELF_ASSIGN'
+        ]
+        assert len(diagnostics) == 1
+        diag = diagnostics[0]
+        refs = diag.refs
+        assert refs['state_path'] == '[*]'
+        assert refs['from_path'] == '[*]'
+        assert refs['combo_owner_path'] == 'Root'
+        assert refs['generated_state_path'].startswith('Root.__combo_')
+        assert refs['generated_from_path'] == refs['generated_state_path']
+        assert refs['generated_to_path'] == 'Root.A'
+        assert refs['combo_origin_id']
+        assert refs['var_name'] == 'x'
+        assert 'effect_self_assign_anchor' not in refs
+        assert 'suggested_fix' not in refs
+        assert _slice_by_span(dsl, refs['transition_span']).strip() == (
+            '[*] -> A : Boot + Ready effect { x = x; }'
+        )
+        assert _slice_by_span(dsl, diag.span) == 'x = x;'
+        assert_all_diags_match_schema(diagnostics, context='entry-combo-self-assign')
+
+    def test_effect_self_assign_combo_shared_prefix_terminal_subjects(self):
+        dsl = """
+        def int x = 0;
+        def int y = 0;
+        state Root {
+            state A;
+            state B;
+            state C;
+            [*] -> A;
+            A -> B :: E1 + E2 effect { x = x; };
+            A -> C :: E1 + E3 effect { y = y; };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        diagnostics = [
+            d for d in report.diagnostics
+            if d.code == 'W_EFFECT_SELF_ASSIGN'
+        ]
+        assert len(diagnostics) == 2
+        by_var = {diag.refs['var_name']: diag for diag in diagnostics}
+        assert set(by_var) == {'x', 'y'}
+        for var_name, diag in by_var.items():
+            refs = diag.refs
+            assert refs['state_path'] == 'Root.A'
+            assert refs['from_path'] == 'Root.A'
+            assert refs['generated_state_path'].startswith('Root.__combo_')
+            assert refs['generated_from_path'] == refs['generated_state_path']
+            assert refs['generated_to_path'] in {'Root.B', 'Root.C'}
+            assert refs['combo_origin_id']
+            assert refs['effect_self_assign_anchor'] == var_name
+            assert refs['suggested_fix']['anchor'] == {
+                'type': 'ref',
+                'ref': 'refs.effect_self_assign_anchor',
+            }
+            assert _slice_by_span(dsl, diag.span) == f'{var_name} = {var_name};'
+        assert _slice_by_span(dsl, by_var['x'].refs['transition_span']).strip() == (
+            'A -> B :: E1 + E2 effect { x = x; }'
+        )
+        assert _slice_by_span(dsl, by_var['y'].refs['transition_span']).strip() == (
+            'A -> C :: E1 + E3 effect { y = y; }'
+        )
+        assert_all_diags_match_schema(diagnostics, context='shared-prefix-self-assign')
+
+    def test_effect_self_assign_combo_shared_source_disambiguated(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            state C;
+            [*] -> A;
+            A -> B :: E1 + E2 effect { x = x; };
+            A -> C :: E3 + E4 effect { x = x; };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        diagnostics = [
+            d for d in report.diagnostics
+            if d.code == 'W_EFFECT_SELF_ASSIGN'
+        ]
+        assert len(diagnostics) == 2
+        assert all(diag.refs['state_path'] == 'Root.A' for diag in diagnostics)
+        assert all(diag.refs['from_path'] == 'Root.A' for diag in diagnostics)
+        assert all(diag.refs['var_name'] == 'x' for diag in diagnostics)
+        assert all('effect_self_assign_anchor' not in diag.refs for diag in diagnostics)
+        assert all('suggested_fix' not in diag.refs for diag in diagnostics)
+        assert {diag.refs['generated_to_path'] for diag in diagnostics} == {
+            'Root.B',
+            'Root.C',
+        }
+        assert_all_diags_match_schema(diagnostics, context='shared-source-self-assign')
+
+    def test_effect_self_assign_combo_and_plain_same_source_suppress_anchor(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            state C;
+            [*] -> A;
+            A -> B effect { x = x; };
+            A -> C :: E1 + E2 effect { x = x; };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        diagnostics = [
+            d for d in report.diagnostics
+            if d.code == 'W_EFFECT_SELF_ASSIGN'
+        ]
+        assert len(diagnostics) == 2
+        assert all(diag.refs['state_path'] == 'Root.A' for diag in diagnostics)
+        assert all(diag.refs['var_name'] == 'x' for diag in diagnostics)
+        assert all('effect_self_assign_anchor' not in diag.refs for diag in diagnostics)
+        assert all('suggested_fix' not in diag.refs for diag in diagnostics)
+        plain = next(diag for diag in diagnostics if 'generated_from_path' not in diag.refs)
+        combo = next(diag for diag in diagnostics if 'generated_from_path' in diag.refs)
+        assert 'from_path' not in plain.refs
+        assert combo.refs['from_path'] == 'Root.A'
+        assert combo.refs['generated_to_path'] == 'Root.C'
+        assert_all_diags_match_schema(diagnostics, context='plain-combo-self-assign')
+
     def test_initial_transition_self_assignment_does_not_get_fix(self):
         dsl = """
         def int x = 0;

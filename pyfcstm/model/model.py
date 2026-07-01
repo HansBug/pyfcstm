@@ -119,6 +119,8 @@ def _event_origin_from_id(
 
 _COMBO_STATE_PREFIX = "__combo_"
 _COMBO_DIGEST_SIZE = 12
+_COMBO_DIGEST_STEP = 4
+_COMBO_DIGEST_MAX_SIZE = 64
 _COMBO_DISPLAY_PREFIX = "combo after "
 
 
@@ -153,6 +155,30 @@ def _combo_payload_digest(payload: str) -> str:
         64
     """
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _combo_digest_sizes(digest: str) -> Tuple[int, ...]:
+    """
+    Return visible digest lengths used while allocating combo pseudo names.
+
+    :param digest: Full hexadecimal payload digest.
+    :type digest: str
+    :return: Digest prefix lengths from default size through the available
+        full digest length.
+    :rtype: Tuple[int, ...]
+
+    Example::
+
+        >>> _combo_digest_sizes("0" * 64)[:2]
+        (12, 16)
+    """
+    max_size = min(len(digest), _COMBO_DIGEST_MAX_SIZE)
+    if max_size <= _COMBO_DIGEST_SIZE:
+        return (max_size,)
+    sizes = list(range(_COMBO_DIGEST_SIZE, max_size + 1, _COMBO_DIGEST_STEP))
+    if sizes[-1] != max_size:
+        sizes.append(max_size)
+    return tuple(sizes)
 
 
 @dataclass(frozen=True)
@@ -2757,23 +2783,23 @@ def parse_dsl_node_to_state_machine(
         owner_node: Optional[dsl_nodes.StateDefinition] = None,
     ) -> State:
         current_path = tuple((*current_path, node.name))
-        is_exported_combo_pseudo = _is_exported_combo_pseudo_node(
-            node, owner_node
-        )
-        if node.name.startswith(_COMBO_STATE_PREFIX) and not is_exported_combo_pseudo:
+        is_exported_combo_pseudo = _is_exported_combo_pseudo_node(node, owner_node)
+        if node.name.startswith(_COMBO_STATE_PREFIX) and not node.is_pseudo:
             sink.emit(
                 ModelDiagnostic(
-                    code="E_COMBO_RESERVED_STATE_NAME",
-                    severity="error",
+                    code="W_COMBO_RESERVED_PREFIX_STATE_KIND",
+                    severity="warning",
                     message=(
-                        f"State name {node.name!r} uses reserved combo "
-                        f"prefix {_COMBO_STATE_PREFIX!r}:\n{node}"
+                        f"State name {node.name!r} uses combo relay reserved "
+                        f"prefix {_COMBO_STATE_PREFIX!r} but is not a pseudo "
+                        f"state:\n{node}"
                     ),
                     span=getattr(node, "_span", None),
                     refs={
                         "state_name": node.name,
                         "state_path": ".".join(current_path),
                         "reserved_prefix": _COMBO_STATE_PREFIX,
+                        "state_kind": "composite" if node.substates else "state",
                     },
                 )
             )
@@ -2805,6 +2831,19 @@ def parse_dsl_node_to_state_machine(
                 )
 
         named_functions = {}
+
+        def _ast_action_kinds(node: dsl_nodes.StateDefinition) -> List[str]:
+            kinds = []
+            if node.enters:
+                kinds.append("enter")
+            if node.durings:
+                kinds.append("during")
+            if node.exits:
+                kinds.append("exit")
+            if node.during_aspects:
+                kinds.append("during_aspect")
+            return kinds
+
         on_enters = []
         for enter_item in node.enters:
             on_stage = None
@@ -3215,6 +3254,28 @@ def parse_dsl_node_to_state_machine(
         )
         if is_exported_combo_pseudo:
             my_state._generated_combo_pseudo = True
+        if node.name.startswith(_COMBO_STATE_PREFIX) and node.is_pseudo:
+            action_kinds = _ast_action_kinds(node)
+            if action_kinds:
+                sink.emit(
+                    ModelDiagnostic(
+                        code="W_COMBO_RELAY_PSEUDO_HAS_ACTIONS",
+                        severity="warning",
+                        message=(
+                            f"Pseudo state {node.name!r} uses combo relay "
+                            f"reserved prefix {_COMBO_STATE_PREFIX!r} but "
+                            "contains lifecycle or aspect actions:\n"
+                            f"{node}"
+                        ),
+                        span=getattr(node, "_span", None),
+                        refs={
+                            "state_name": node.name,
+                            "state_path": ".".join(current_path),
+                            "reserved_prefix": _COMBO_STATE_PREFIX,
+                            "action_kinds": action_kinds,
+                        },
+                    )
+                )
         if my_state.is_pseudo and not my_state.is_leaf_state:
             sink.emit(
                 ModelDiagnostic(
@@ -3724,7 +3785,6 @@ def parse_dsl_node_to_state_machine(
             )
 
         combo_name_payloads: Dict[str, str] = {}
-        combo_digest_payloads: Dict[Tuple[Tuple[str, ...], str], str] = {}
 
         def _term_name_slug(term: dsl_nodes.ComboTriggerTerm) -> str:
             if isinstance(term, dsl_nodes.ComboGuardTerm):
@@ -3808,49 +3868,42 @@ def parse_dsl_node_to_state_machine(
             }
             payload = json.dumps(payload_obj, ensure_ascii=False, sort_keys=True)
             digest = _combo_payload_digest(payload)
-            short_digest = digest[:_COMBO_DIGEST_SIZE]
-            digest_key = (current_state.path, short_digest)
             source_label = (
                 "entry" if chooser_key[1] == "entry" else ".".join(chooser_key[2])
             )
             slug_parts = [to_identifier(source_label, strict_mode=True).lower()]
             slug_parts.extend(_term_name_slug(term) for term in consumed_terms)
             slug = sequence_safe(slug_parts)
-            name = f"{_COMBO_STATE_PREFIX}{slug}_h{short_digest}"
 
-            existing_digest_payload = combo_digest_payloads.get(digest_key)
-            if (
-                existing_digest_payload is not None
-                and existing_digest_payload != payload
-            ):
-                sink.emit(
-                    ModelDiagnostic(
-                        code="E_COMBO_PSEUDO_NAME_COLLISION",
-                        severity="error",
-                        message=(
-                            f"Generated combo pseudo state digest {short_digest!r} "
-                            "collides for distinct semantic payloads."
-                        ),
-                        span=None,
-                        refs={
-                            "state_path": ".".join(current_state.path),
-                            "pseudo_name": name,
-                            "payload_digest": digest,
-                        },
-                    )
-                )
-            elif existing_digest_payload is None:
-                combo_digest_payloads[digest_key] = payload
+            chosen_name = None
+            chosen_size = None
+            for digest_size in _combo_digest_sizes(digest):
+                candidate_digest = digest[:digest_size]
+                candidate_name = f"{_COMBO_STATE_PREFIX}{slug}_h{candidate_digest}"
 
-            existing_payload = combo_name_payloads.get(name)
-            if existing_payload is not None and existing_payload != payload:
+                existing_payload = combo_name_payloads.get(candidate_name)
+                if existing_payload is not None and existing_payload != payload:
+                    continue
+
+                existing_state = current_state.substates.get(candidate_name)
+                if (
+                    existing_state is not None
+                    and candidate_name not in combo_name_payloads
+                ):
+                    continue
+
+                chosen_name = candidate_name
+                chosen_size = digest_size
+                break
+            if chosen_name is None or chosen_size is None:
+                name = f"{_COMBO_STATE_PREFIX}{slug}_h{digest[:_COMBO_DIGEST_MAX_SIZE]}"
                 sink.emit(
                     ModelDiagnostic(
                         code="E_COMBO_PSEUDO_NAME_COLLISION",
                         severity="error",
                         message=(
                             f"Generated combo pseudo state name {name!r} collides "
-                            "for distinct semantic payloads."
+                            "even after extending to the full payload digest."
                         ),
                         span=None,
                         refs={
@@ -3860,29 +3913,33 @@ def parse_dsl_node_to_state_machine(
                         },
                     )
                 )
-            elif existing_payload is None:
-                combo_name_payloads[name] = payload
-
-            if name in current_state.substates:
-                state = current_state.substates[name]
-                if not state.is_pseudo:
+            else:
+                name = chosen_name
+                is_new_combo_name = name not in combo_name_payloads
+                if is_new_combo_name and chosen_size > _COMBO_DIGEST_SIZE:
                     sink.emit(
                         ModelDiagnostic(
-                            code="E_COMBO_PSEUDO_NAME_COLLISION",
-                            severity="error",
+                            code="I_COMBO_PSEUDO_NAME_EXTENDED",
+                            severity="info",
                             message=(
-                                f"Generated combo pseudo state name {name!r} "
-                                "collides with a non-pseudo state."
+                                "Combo pseudo relay name digest was extended "
+                                f"from {_COMBO_DIGEST_SIZE} to {chosen_size} "
+                                "characters to avoid an existing name."
                             ),
-                            span=state._span,
+                            span=None,
                             refs={
                                 "state_path": ".".join(current_state.path),
                                 "pseudo_name": name,
                                 "payload_digest": digest,
+                                "default_digest_size": _COMBO_DIGEST_SIZE,
+                                "final_digest_size": chosen_size,
                             },
                         )
                     )
-                return state
+                combo_name_payloads[name] = payload
+
+            if name in current_state.substates:
+                return current_state.substates[name]
 
             display = _COMBO_DISPLAY_PREFIX + " + ".join(term_texts)
             state = State(

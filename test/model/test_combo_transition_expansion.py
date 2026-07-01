@@ -1,3 +1,4 @@
+import hashlib
 import re
 
 import pytest
@@ -575,14 +576,16 @@ class TestComboModelExpansion:
             for item in model.root_state.transitions
             if item.from_state != "INIT_STATE"
         ]
-        assert "local" in second_round_tripped.root_state.substates["A"].events[
-            "E2"
-        ].origins
-        assert "chain" not in second_round_tripped.root_state.substates["A"].events[
-            "E2"
-        ].origins
+        assert (
+            "local"
+            in second_round_tripped.root_state.substates["A"].events["E2"].origins
+        )
+        assert (
+            "chain"
+            not in second_round_tripped.root_state.substates["A"].events["E2"].origins
+        )
 
-    def test_mutated_trusted_combo_ast_export_is_rejected(self):
+    def test_mutated_trusted_combo_ast_export_uses_plain_validation(self):
         model = _build_model(
             """
             state Root {
@@ -604,14 +607,14 @@ class TestComboModelExpansion:
                 transition.to_state = "A"
                 break
 
+        _, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
+
+        assert "E_MISSING_STATE" in [item.code for item in diagnostics]
         with pytest.raises(ModelValidationError) as exc_info:
             parse_dsl_node_to_state_machine(program)
-        assert any(
-            diag.code == "E_COMBO_RESERVED_STATE_NAME"
-            for diag in exc_info.value.diagnostics
-        )
+        assert [item.code for item in exc_info.value.diagnostics] == ["E_MISSING_STATE"]
 
-    def test_generated_combo_pseudo_text_export_uses_reserved_prefix(self):
+    def test_generated_combo_pseudo_text_export_reimports_as_plain_relay(self):
         model = _build_model(
             """
             state Root {
@@ -624,17 +627,29 @@ class TestComboModelExpansion:
         )
 
         exported = str(model.to_ast_node())
-
-        assert "pseudo state __combo_" in exported
         parsed = parse_with_grammar_entry(exported, entry_name="state_machine_dsl")
-        with pytest.raises(ModelValidationError) as exc_info:
-            parse_dsl_node_to_state_machine(parsed)
-        assert any(
-            diag.code == "E_COMBO_RESERVED_STATE_NAME"
-            for diag in exc_info.value.diagnostics
+        round_tripped, diagnostics = parse_dsl_node_to_state_machine(
+            parsed, collect=True
         )
 
-    def test_forged_generated_combo_pseudo_marker_is_rejected(self):
+        assert "pseudo state __combo_" in exported
+        assert diagnostics == []
+        assert [
+            item.name
+            for item in round_tripped.root_state.substates.values()
+            if item.is_pseudo
+        ] == [
+            item.name for item in model.root_state.substates.values() if item.is_pseudo
+        ]
+        assert not any(
+            item.combo_origin_refs for item in round_tripped.root_state.transitions
+        )
+        runtime = SimulationRuntime(round_tripped)
+        runtime.cycle()
+        runtime.cycle(["Root.A.E1", "Root.A.E2"])
+        assert runtime.current_state.path == ("Root", "B")
+
+    def test_forged_generated_combo_pseudo_marker_does_not_block_pure_relay(self):
         program = parse_with_grammar_entry(
             """
             state Root {
@@ -646,12 +661,11 @@ class TestComboModelExpansion:
         )
         program.root_state.substates[0]._generated_combo_pseudo = True
 
-        with pytest.raises(ModelValidationError) as exc_info:
-            parse_dsl_node_to_state_machine(program)
-        assert any(
-            diag.code == "E_COMBO_RESERVED_STATE_NAME"
-            for diag in exc_info.value.diagnostics
-        )
+        model, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
+
+        assert diagnostics == []
+        assert model.root_state.substates["__combo_user"].is_pseudo
+        parse_dsl_node_to_state_machine(program)
 
     def test_nested_same_name_sources_keep_distinct_pseudo_names(self):
         model = _build_model(
@@ -748,44 +762,103 @@ class TestComboModelExpansion:
 
         assert _combo_names(base) == _combo_names(with_unrelated)
 
-    def test_reserved_combo_state_prefix_is_rejected(self):
+    @pytest.mark.parametrize(
+        ["source", "expected_kind"],
+        [
+            (
+                """
+                state Root {
+                    state __combo_user;
+                    [*] -> __combo_user;
+                }
+                """,
+                "state",
+            ),
+            (
+                """
+                state Root {
+                    state __combo_group {
+                        state Child;
+                        [*] -> Child;
+                    }
+                    [*] -> __combo_group;
+                }
+                """,
+                "composite",
+            ),
+        ],
+    )
+    def test_non_pseudo_reserved_prefix_warns_without_blocking(
+        self, source, expected_kind
+    ):
+        program = parse_with_grammar_entry(source, entry_name="state_machine_dsl")
+
+        model, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
+
+        assert model.root_state.substates
+        diagnostic = next(
+            item
+            for item in diagnostics
+            if item.code == "W_COMBO_RESERVED_PREFIX_STATE_KIND"
+        )
+        assert diagnostic.severity == "warning"
+        assert diagnostic.refs["reserved_prefix"] == "__combo_"
+        assert diagnostic.refs["state_kind"] == expected_kind
+        parse_dsl_node_to_state_machine(program)
+
+    def test_pure_reserved_prefix_pseudo_is_valid_relay_text(self):
         program = parse_with_grammar_entry(
             """
             state Root {
-                state __combo_user;
+                state Target;
+                pseudo state __combo_user named 'combo after UserEvent';
                 [*] -> __combo_user;
+                __combo_user -> Target :: Done;
             }
             """,
             entry_name="state_machine_dsl",
         )
 
-        with pytest.raises(ModelValidationError) as exc_info:
-            parse_dsl_node_to_state_machine(program)
-        assert any(
-            diag.code == "E_COMBO_RESERVED_STATE_NAME"
-            for diag in exc_info.value.diagnostics
-        )
+        model, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
 
-    def test_reserved_combo_pseudo_without_generated_shape_is_rejected(self):
+        assert diagnostics == []
+        assert model.root_state.substates["__combo_user"].is_pseudo
+        parse_dsl_node_to_state_machine(program)
+
+    def test_reserved_prefix_pseudo_with_actions_warns_without_blocking(self):
         program = parse_with_grammar_entry(
             """
+            def int x = 0;
             state Root {
-                pseudo state __combo_user;
+                pseudo state __combo_user {
+                    enter { x = x + 1; }
+                    during { x = x + 2; }
+                    exit { x = x + 3; }
+                }
+                state Target;
                 [*] -> __combo_user;
+                __combo_user -> Target :: Done;
             }
             """,
             entry_name="state_machine_dsl",
         )
 
-        with pytest.raises(ModelValidationError) as exc_info:
-            parse_dsl_node_to_state_machine(program)
-        assert any(
-            diag.code == "E_COMBO_RESERVED_STATE_NAME"
-            for diag in exc_info.value.diagnostics
-        )
+        model, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
 
-    def test_reserved_combo_export_shape_without_chain_is_rejected(self):
-        program = parse_with_grammar_entry(
+        assert model.root_state.substates["__combo_user"].is_pseudo
+        diagnostic = next(
+            item
+            for item in diagnostics
+            if item.code == "W_COMBO_RELAY_PSEUDO_HAS_ACTIONS"
+        )
+        assert diagnostic.severity == "warning"
+        assert diagnostic.refs["reserved_prefix"] == "__combo_"
+        assert diagnostic.refs["action_kinds"] == ["enter", "during", "exit"]
+        parse_dsl_node_to_state_machine(program)
+
+    @pytest.mark.parametrize(
+        "source",
+        [
             """
             state Root {
                 state A;
@@ -793,18 +866,6 @@ class TestComboModelExpansion:
                 [*] -> A;
             }
             """,
-            entry_name="state_machine_dsl",
-        )
-
-        with pytest.raises(ModelValidationError) as exc_info:
-            parse_dsl_node_to_state_machine(program)
-        assert any(
-            diag.code == "E_COMBO_RESERVED_STATE_NAME"
-            for diag in exc_info.value.diagnostics
-        )
-
-    def test_reserved_combo_export_shape_without_declared_events_is_rejected(self):
-        program = parse_with_grammar_entry(
             """
             state Root {
                 state A;
@@ -815,18 +876,6 @@ class TestComboModelExpansion:
                 __combo_root_a__e1_hbafca7f66598 -> B : A.E2;
             }
             """,
-            entry_name="state_machine_dsl",
-        )
-
-        with pytest.raises(ModelValidationError) as exc_info:
-            parse_dsl_node_to_state_machine(program)
-        assert any(
-            diag.code == "E_COMBO_RESERVED_STATE_NAME"
-            for diag in exc_info.value.diagnostics
-        )
-
-    def test_reserved_combo_export_shape_with_wrong_digest_is_rejected(self):
-        program = parse_with_grammar_entry(
             """
             state Root {
                 state A {
@@ -840,40 +889,15 @@ class TestComboModelExpansion:
                 __combo_root_a__e1_h000000000000 -> B : A.E2;
             }
             """,
-            entry_name="state_machine_dsl",
-        )
+        ],
+    )
+    def test_legacy_export_shape_checks_are_plain_relay_reimports(self, source):
+        program = parse_with_grammar_entry(source, entry_name="state_machine_dsl")
 
-        with pytest.raises(ModelValidationError) as exc_info:
-            parse_dsl_node_to_state_machine(program)
-        assert any(
-            diag.code == "E_COMBO_RESERVED_STATE_NAME"
-            for diag in exc_info.value.diagnostics
-        )
+        _, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
 
-    def test_reserved_combo_export_shape_even_when_semantically_valid_is_rejected(self):
-        program = parse_with_grammar_entry(
-            """
-            state Root {
-                state A {
-                    event E1;
-                    event E2;
-                }
-                state B;
-                pseudo state __combo_root_a__e1_hbafca7f66598 named 'combo after E1';
-                [*] -> A;
-                A -> __combo_root_a__e1_hbafca7f66598 :: E1;
-                __combo_root_a__e1_hbafca7f66598 -> B : A.E2;
-            }
-            """,
-            entry_name="state_machine_dsl",
-        )
-
-        with pytest.raises(ModelValidationError) as exc_info:
-            parse_dsl_node_to_state_machine(program)
-        assert any(
-            diag.code == "E_COMBO_RESERVED_STATE_NAME"
-            for diag in exc_info.value.diagnostics
-        )
+        assert diagnostics == []
+        parse_dsl_node_to_state_machine(program)
 
     def test_collect_mode_does_not_duplicate_combo_endpoint_diagnostics(self):
         program = parse_with_grammar_entry(
@@ -894,17 +918,137 @@ class TestComboModelExpansion:
         ]
         assert [diag.refs["src"] for diag in dangling] == ["Missing", "Missing"]
 
-    def test_digest12_collision_fails_fast(self, monkeypatch):
+    @pytest.mark.parametrize(
+        ["declaration", "expected_warning"],
+        [
+            ("state {name};", True),
+            ("pseudo state {name};", False),
+        ],
+    )
+    def test_hash_extension_resolves_collision_with_user_authored_state(
+        self, declaration, expected_warning
+    ):
+        base = _build_model(
+            """
+            state Root {
+                state S1;
+                state S2;
+                [*] -> S1;
+                S1 -> S2 :: E1 + E2;
+            }
+            """
+        )
+        default_name = next(
+            state.name
+            for state in base.root_state.substates.values()
+            if state.is_pseudo
+        )
+        occupied_declaration = declaration.format(name=default_name)
+        program = parse_with_grammar_entry(
+            f"""
+            state Root {{
+                state S1;
+                state S2;
+                {occupied_declaration}
+                [*] -> S1;
+                S1 -> S2 :: E1 + E2;
+            }}
+            """,
+            entry_name="state_machine_dsl",
+        )
+
+        model, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
+
+        combo_names = [
+            state.name
+            for state in model.root_state.substates.values()
+            if state.is_pseudo and state.name.startswith("__combo_")
+        ]
+        assert default_name in model.root_state.substates
+        if expected_warning:
+            assert default_name not in combo_names
+        else:
+            assert default_name in combo_names
+        generated_names = [
+            state.name
+            for state in model.root_state.substates.values()
+            if state.is_pseudo and state.extra_name == "combo after E1"
+        ]
+        assert len(generated_names) == 1
+        assert generated_names[0] != default_name
+        assert re.search(r"_h[0-9a-f]{16}$", generated_names[0])
+        info = next(
+            item for item in diagnostics if item.code == "I_COMBO_PSEUDO_NAME_EXTENDED"
+        )
+        assert info.severity == "info"
+        assert info.refs["default_digest_size"] == 12
+        assert info.refs["final_digest_size"] == 16
+        assert (
+            any(
+                item.code == "W_COMBO_RESERVED_PREFIX_STATE_KIND"
+                for item in diagnostics
+            )
+            is expected_warning
+        )
+        parse_dsl_node_to_state_machine(program)
+
+    def test_hash_extension_separates_distinct_payloads_sharing_prefix(
+        self, monkeypatch
+    ):
+        def shared_prefix_digest(payload):
+            digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+            return "a" * 12 + digest[12:]
+
+        monkeypatch.setattr(
+            model_module,
+            "_combo_payload_digest",
+            shared_prefix_digest,
+        )
         program = parse_with_grammar_entry(
             """
             state Root {
                 state S1;
                 state S2;
                 state S3;
+                state S4;
                 [*] -> S1;
                 S1 -> S2 :: E1 + E2;
-                S1 -> S3 :: E3 + E4;
+                S1 -> S4 :: E1;
+                S1 -> S3 :: E1 + E3;
             }
+            """,
+            entry_name="state_machine_dsl",
+        )
+
+        model, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
+
+        combo_names = [
+            state.name
+            for state in model.root_state.substates.values()
+            if state.is_pseudo
+        ]
+        assert len(combo_names) == 2
+        assert sorted(len(name.rsplit("_h", 1)[1]) for name in combo_names) == [12, 16]
+        assert [
+            item.refs["final_digest_size"]
+            for item in diagnostics
+            if item.code == "I_COMBO_PSEUDO_NAME_EXTENDED"
+        ] == [16]
+        parse_dsl_node_to_state_machine(program)
+
+    def test_full_digest_collision_fails_after_extension(self, monkeypatch):
+        occupied_names = "\n".join(
+            f"state __combo_root_s1__e1_h{'0' * size};" for size in range(12, 65, 4)
+        )
+        program = parse_with_grammar_entry(
+            f"""
+            state Root {{
+                state S1;
+                state S2;
+                {occupied_names}
+                [*] -> S1;
+                S1 -> S2 :: E1 + E2;
+            }}
             """,
             entry_name="state_machine_dsl",
         )
@@ -916,10 +1060,12 @@ class TestComboModelExpansion:
         )
         with pytest.raises(ModelValidationError) as exc_info:
             parse_dsl_node_to_state_machine(program)
-        assert any(
-            diag.code == "E_COMBO_PSEUDO_NAME_COLLISION"
+        collision = next(
+            diag
             for diag in exc_info.value.diagnostics
+            if diag.code == "E_COMBO_PSEUDO_NAME_COLLISION"
         )
+        assert collision.refs["pseudo_name"].endswith("0" * 64)
 
     def test_combo_pseudo_keeps_current_aspect_skip_behavior(self):
         model = _build_model(

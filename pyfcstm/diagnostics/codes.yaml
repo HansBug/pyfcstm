@@ -409,17 +409,17 @@ E_COMBO_TRIGGER_NOT_EXPANDED:
   example_dsl: |
     state Root { state A; state B; A -> B :: Go + Done; }
 
-E_COMBO_RESERVED_STATE_NAME:
-  severity: error
+W_COMBO_RESERVED_PREFIX_STATE_KIND:
+  severity: warning
+  emit_tier: partial_static_pipeline
   span_object: state_identifier
   description: >-
-    A user-authored state name starts with the reserved automatic combo
-    pseudo-state prefix.
+    A non-pseudo state name starts with the automatic combo relay prefix.
   refs:
     state_name:
       type: str
       required: true
-      description: The reserved user-authored state name.
+      description: State name using the combo relay reserved prefix.
     state_path:
       type: str
       required: true
@@ -428,28 +428,129 @@ E_COMBO_RESERVED_STATE_NAME:
       type: str
       required: true
       description: Reserved prefix used by generated combo pseudo states.
+    state_kind:
+      type: str
+      required: true
+      description: Kind of user-authored state that used the reserved prefix.
+      enum: ['state', 'composite']
   for_llm:
     summary: >-
-      State names beginning with ``__combo_`` are reserved for generated
-      pseudo states created by combo transition trigger expansion.
+      A normal leaf or composite state uses the ``__combo_`` prefix reserved
+      for combo relay pseudo states. The model can still build, but the name is
+      visually ambiguous with generated relay nodes.
     recommended_actions:
       - kind: rename_state
         target: state_identifier
         rationale: >-
-          Rename the user-authored state so it does not collide with the
-          generated combo pseudo-state namespace.
+          Rename the user-authored state so readers and generated artifacts do
+          not confuse it with an expanded combo relay.
     do_not:
-      - "Do not use ``__combo_`` for hand-written states; the expander owns this namespace."
+      - "Do not fix this by declaring a business state as pseudo unless it is truly only a relay."
   example_dsl: |
     state Root { state __combo_user; [*] -> __combo_user; }
+
+W_COMBO_RELAY_PSEUDO_HAS_ACTIONS:
+  severity: warning
+  emit_tier: partial_static_pipeline
+  span_object: state_identifier
+  description: >-
+    A pseudo state in the combo relay namespace contains lifecycle or aspect
+    actions, so it is not a pure relay.
+  refs:
+    state_name:
+      type: str
+      required: true
+      description: Pseudo-state name using the combo relay reserved prefix.
+    state_path:
+      type: str
+      required: true
+      description: Dotted path of the pseudo state.
+    reserved_prefix:
+      type: str
+      required: true
+      description: Reserved prefix used by combo relay pseudo states.
+    action_kinds:
+      type: list[str]
+      required: true
+      description: Lifecycle or aspect action kinds present on the pseudo state.
+      item_enum: ['enter', 'during', 'exit', 'during_aspect']
+  for_llm:
+    summary: >-
+      A ``pseudo state __combo_*`` node is allowed so expanded combo DSL can be
+      reimported, but relay pseudo states should stay pure. Lifecycle or aspect
+      actions make the relay observable and may surprise readers.
+    recommended_actions:
+      - kind: move_action
+        target: lifecycle_action
+        rationale: >-
+          Move the action to the authored source or target state if it is
+          business behavior rather than routing metadata.
+      - kind: rename_pseudo
+        target: state_identifier
+        rationale: >-
+          If the pseudo state is intentionally user-authored and observable,
+          rename it outside the ``__combo_`` namespace.
+    do_not:
+      - "Do not add business logic to generated combo relay pseudo states."
+  example_dsl: |
+    def int x = 0; state Root { pseudo state __combo_user { enter { x = x + 1; } } state A; [*] -> A; }
+
+I_COMBO_PSEUDO_NAME_EXTENDED:
+  severity: info
+  emit_tier: partial_static_pipeline
+  span_object: state_identifier
+  description: >-
+    Combo trigger expansion extended a generated relay name's digest prefix to
+    avoid a same-scope name collision.
+  refs:
+    state_path:
+      type: str
+      required: true
+      description: Dotted path of the state where expansion allocated the relay.
+    pseudo_name:
+      type: str
+      required: true
+      description: Final generated pseudo-state name after digest extension.
+    payload_digest:
+      type: str
+      required: true
+      description: Full digest of the semantic payload that owns the relay.
+    default_digest_size:
+      type: int
+      required: true
+      description: Default visible digest length before extension.
+    final_digest_size:
+      type: int
+      required: true
+      description: Visible digest length used by the final generated name.
+  for_llm:
+    summary: >-
+      The combo expander found a same-scope name collision at the default
+      digest length and deterministically used a longer digest prefix. This is
+      informational and does not mean the model is invalid.
+    recommended_actions:
+      - kind: keep_generated_name
+        target: pseudo_state
+        rationale: >-
+          Leave the extended generated name as-is unless you are manually
+          rewriting the expanded relay chain.
+    do_not:
+      - "Do not shorten the digest manually; that can reintroduce the collision."
+  example_dsl: |
+    state Root {
+        state A;
+        state B;
+        pseudo state __combo_root_a__e1_hbafca7f66598;
+        [*] -> A;
+        A -> B :: E1 + E2;
+    }
 
 E_COMBO_PSEUDO_NAME_COLLISION:
   severity: error
   span_object: state_identifier
   description: >-
-    Combo trigger expansion generated the same pseudo-state name for distinct
-    semantic payloads, or a generated combo pseudo name collided with an
-    existing non-pseudo state.
+    Combo trigger expansion could not allocate a safe pseudo-state name even
+    after extending to the full payload digest.
   refs:
     state_path:
       type: str
@@ -465,9 +566,10 @@ E_COMBO_PSEUDO_NAME_COLLISION:
       description: Full digest of the semantic payload that attempted to claim the name.
   for_llm:
     summary: >-
-      The combo expander uses fixed digest12 pseudo names. If two distinct
-      canonical payloads truncate to the same visible name, expansion fails
-      fast rather than silently renaming or reusing the wrong pseudo state.
+      The combo expander first uses a short digest prefix and then lengthens it
+      deterministically on collision. If the full digest still cannot identify a
+      safe relay name in the owning scope, expansion fails rather than silently
+      reusing the wrong pseudo state.
     recommended_actions:
       - kind: report_internal_collision
         target: transition

@@ -1,0 +1,24 @@
+title: Combo initial guard after prefix sees pre plain-before variables
+origin:
+  files:
+  - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
+  docs:
+  - https://github.com/HansBug/pyfcstm/issues/304#issuecomment-4850334414
+  notes:
+  - "Locks F-001 guard-pollution regression: parent plain during-before must not run between combo prefix and later guard term."
+categories:
+- runtime
+- template_alignment
+- pseudo_chain
+- lifecycle
+- validation
+steps:
+- cycle:
+  - Root.EntryA
+  - Root.EntryB
+  expect:
+    state: Root.Active
+    vars:
+      gate: 12
+      trace: 7213
+    ended: false

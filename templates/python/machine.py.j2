@@ -1026,13 +1026,10 @@ class {{ machine_class_name(model) }}:
         self._execute_transition_effect(
             transition, vars_, is_validation_mode=is_validation_mode
         )
-        if composite_frame.get("plain_before_pending", False):
-            self._execute_actions(
-                self._STATE_INFO[composite_frame["state"]]["during_before_actions"],
-                vars_,
-                is_validation_mode=is_validation_mode,
+        if not self._STATE_INFO[transition["target"]]["is_pseudo"]:
+            self._consume_plain_before_if_pending(
+                composite_frame, vars_, is_validation_mode=is_validation_mode
             )
-            composite_frame["plain_before_pending"] = False
         self._enter_state(
             stack,
             transition["target"],
@@ -1056,6 +1053,25 @@ class {{ machine_class_name(model) }}:
             attempt_initial_transition=False,
         )
         return self._validation_search_reaches_stable(sim_stack, sim_vars, event_names)
+
+    def _consume_plain_before_if_pending(self, frame, vars_, is_validation_mode=False):
+        if not frame.get("plain_before_pending", False):
+            return
+        self._execute_actions(
+            self._STATE_INFO[frame["state"]]["during_before_actions"],
+            vars_,
+            is_validation_mode=is_validation_mode,
+        )
+        frame["plain_before_pending"] = False
+
+    def _clear_parent_plain_before_pending_after_pseudo_exit(self, stack, current_path):
+        if not self._STATE_INFO[current_path]["is_pseudo"] or not stack:
+            return
+        parent_path = self._STATE_INFO[current_path]["parent"]
+        if stack[-1]["state"] == parent_path and stack[-1].get(
+            "plain_before_pending", False
+        ):
+            stack[-1]["plain_before_pending"] = False
 
     def _finalize_exit_to_parent(self, stack, vars_, is_validation_mode=False):
         if not stack:
@@ -1105,10 +1121,22 @@ class {{ machine_class_name(model) }}:
         stack.pop()
 
         if transition["to_exit"]:
+            self._clear_parent_plain_before_pending_after_pseudo_exit(
+                stack, current_path
+            )
             return self._finalize_exit_to_parent(
                 stack, vars_, is_validation_mode=is_validation_mode
             )
 
+        if (
+            self._STATE_INFO[current_path]["is_pseudo"]
+            and stack
+            and stack[-1]["state"] == self._STATE_INFO[current_path]["parent"]
+            and not self._STATE_INFO[transition["target"]]["is_pseudo"]
+        ):
+            self._consume_plain_before_if_pending(
+                stack[-1], vars_, is_validation_mode=is_validation_mode
+            )
         self._enter_state(
             stack,
             transition["target"],

@@ -2366,13 +2366,11 @@ class SimulationRuntime:
             vars_,
             is_validation_mode=is_validation_mode,
         )
-        if composite_frame.plain_before_pending:
-            for on_during_before in state.list_on_durings(aspect="before"):
-                self._execute_func(
-                    on_during_before, vars_, is_validation_mode=is_validation_mode
-                )
-            composite_frame.plain_before_pending = False
         target_state = state.substates[transition.to_state]
+        if not target_state.is_pseudo:
+            self._consume_plain_before_if_pending(
+                composite_frame, vars_, is_validation_mode=is_validation_mode
+            )
         self._enter_state(
             stack,
             target_state,
@@ -2384,6 +2382,65 @@ class SimulationRuntime:
         )
         if composite_frame in stack:
             composite_frame.mode = "active"
+
+    def _consume_plain_before_if_pending(
+        self,
+        frame: _Frame,
+        vars_: Dict[str, Union[int, float]],
+        is_validation_mode: bool = False,
+    ) -> None:
+        """
+        Run a composite frame's pending plain ``during before`` actions once.
+
+        Composite entry leaves ``plain_before_pending`` set until initial
+        routing selects a concrete non-pseudo child. Generated combo relays and
+        user-authored pseudo states are part of that routing chain, so they must
+        not consume the boundary action early.
+
+        :param frame: Composite frame that may hold a pending boundary action.
+        :type frame: _Frame
+        :param vars_: Variable mapping to mutate.
+        :type vars_: Dict[str, Union[int, float]]
+        :param is_validation_mode: Whether this is validation mode, defaults to
+            ``False``.
+        :type is_validation_mode: bool, optional
+        :return: ``None``.
+        :rtype: None
+        """
+        if not frame.plain_before_pending:
+            return
+        for on_during_before in frame.state.list_on_durings(aspect="before"):
+            self._execute_func(
+                on_during_before, vars_, is_validation_mode=is_validation_mode
+            )
+        frame.plain_before_pending = False
+
+    @staticmethod
+    def _clear_parent_plain_before_pending_after_pseudo_exit(
+        stack: List[_Frame], current_state: State
+    ) -> None:
+        """
+        Clear deferred plain-before state when initial pseudo routing exits.
+
+        A pseudo initial routing chain that reaches ``[*]`` has not selected a
+        child inside the owning composite, so the owner's pending plain
+        ``during before`` action must be discarded instead of executed or leaked
+        into later parent-continuation processing.
+
+        :param stack: Execution stack after the pseudo source frame was popped.
+        :type stack: List[_Frame]
+        :param current_state: Popped transition source state.
+        :type current_state: pyfcstm.model.State
+        :return: ``None``.
+        :rtype: None
+        """
+        if (
+            current_state.is_pseudo
+            and stack
+            and stack[-1].state is current_state.parent
+            and stack[-1].plain_before_pending
+        ):
+            stack[-1].plain_before_pending = False
 
     def _validate_initial_transition(
         self,
@@ -2543,6 +2600,9 @@ class SimulationRuntime:
         stack.pop()
 
         if transition.to_state == EXIT_STATE:
+            self._clear_parent_plain_before_pending_after_pseudo_exit(
+                stack, current_state
+            )
             ended = self._finalize_exit_to_parent(
                 stack, vars_, is_validation_mode=is_validation_mode
             )
@@ -2555,10 +2615,19 @@ class SimulationRuntime:
             else:
                 self.logger.debug(
                     f"Transition completed: {current_state_path} -> [*], ended={ended}"
-                )
+            )
             return ended
 
         target_state = current_state.parent.substates[transition.to_state]
+        if (
+            current_state.is_pseudo
+            and stack
+            and stack[-1].state is current_state.parent
+            and not target_state.is_pseudo
+        ):
+            self._consume_plain_before_if_pending(
+                stack[-1], vars_, is_validation_mode=is_validation_mode
+            )
         self._enter_state(
             stack,
             target_state,

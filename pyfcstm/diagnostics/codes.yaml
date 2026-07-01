@@ -540,7 +540,7 @@ I_COMBO_PSEUDO_NAME_EXTENDED:
     state Root {
         state A;
         state B;
-        state __combo_root_a__e1_hbafca7f66598;
+        pseudo state __combo_root_a__e1_hbafca7f66598;
         [*] -> A;
         A -> B :: E1 + E2;
     }

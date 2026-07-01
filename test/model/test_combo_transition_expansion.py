@@ -834,6 +834,7 @@ class TestComboModelExpansion:
                     enter { x = x + 1; }
                     during { x = x + 2; }
                     exit { x = x + 3; }
+                    >> during before { x = x + 4; }
                 }
                 state Target;
                 [*] -> __combo_user;
@@ -853,7 +854,15 @@ class TestComboModelExpansion:
         )
         assert diagnostic.severity == "warning"
         assert diagnostic.refs["reserved_prefix"] == "__combo_"
-        assert diagnostic.refs["action_kinds"] == ["enter", "during", "exit"]
+        assert diagnostic.refs["action_kinds"] == [
+            "enter",
+            "during",
+            "exit",
+            "during_aspect",
+        ]
+        assert {item.code for item in diagnostics} == {
+            "W_COMBO_RELAY_PSEUDO_HAS_ACTIONS"
+        }
         parse_dsl_node_to_state_machine(program)
 
     @pytest.mark.parametrize(
@@ -1066,6 +1075,19 @@ class TestComboModelExpansion:
             if diag.code == "E_COMBO_PSEUDO_NAME_COLLISION"
         )
         assert collision.refs["pseudo_name"].endswith("0" * 64)
+
+        model, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
+        collect_collisions = [
+            diag for diag in diagnostics if diag.code == "E_COMBO_PSEUDO_NAME_COLLISION"
+        ]
+        assert len(collect_collisions) == 1
+        occupied_full_name = f"__combo_root_s1__e1_h{'0' * 64}"
+        assert model.root_state.substates[occupied_full_name].is_pseudo is False
+        assert all(
+            transition.from_state != occupied_full_name
+            and transition.to_state != occupied_full_name
+            for transition in model.root_state.transitions
+        )
 
     def test_combo_pseudo_keeps_current_aspect_skip_behavior(self):
         model = _build_model(

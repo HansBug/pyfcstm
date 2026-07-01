@@ -128,7 +128,29 @@ def _is_exported_combo_pseudo_node(
     node: dsl_nodes.StateDefinition,
     owner_node: Optional[dsl_nodes.StateDefinition] = None,
 ) -> bool:
-    """Return whether an AST node is an exported generated combo pseudo state."""
+    """
+    Return whether an AST node is a same-process exported combo relay.
+
+    This helper recognizes only trusted AST object round trips. Text reimports
+    of ``pseudo state __combo_*`` remain plain pseudo states and do not regain
+    generated-relay metadata from the process-local trust registry.
+
+    :param node: State definition to inspect.
+    :type node: pyfcstm.dsl.node.StateDefinition
+    :param owner_node: Parent state definition used by the trust registry,
+        defaults to ``None``.
+    :type owner_node: pyfcstm.dsl.node.StateDefinition, optional
+    :return: ``True`` when ``node`` is a trusted generated combo pseudo state,
+        otherwise ``False``.
+    :rtype: bool
+
+    Example::
+
+        >>> from pyfcstm.dsl import node as dsl_nodes
+        >>> item = dsl_nodes.StateDefinition("__combo_user", is_pseudo=True)
+        >>> _is_exported_combo_pseudo_node(item)
+        False
+    """
     if not node.is_pseudo or not node.name.startswith(_COMBO_STATE_PREFIX):
         return False
     if owner_node is None:
@@ -2784,6 +2806,9 @@ def parse_dsl_node_to_state_machine(
     ) -> State:
         current_path = tuple((*current_path, node.name))
         is_exported_combo_pseudo = _is_exported_combo_pseudo_node(node, owner_node)
+        is_combo_relay_pseudo = (
+            node.name.startswith(_COMBO_STATE_PREFIX) and node.is_pseudo
+        )
         if node.name.startswith(_COMBO_STATE_PREFIX) and not node.is_pseudo:
             sink.emit(
                 ModelDiagnostic(
@@ -2930,7 +2955,11 @@ def parse_dsl_node_to_state_machine(
 
         on_durings = []
         for during_item in node.durings:
-            if not d_substates and during_item.aspect is not None:
+            if (
+                not d_substates
+                and during_item.aspect is not None
+                and not is_combo_relay_pseudo
+            ):
                 sink.emit(
                     ModelDiagnostic(
                         code="E_DURING_ASPECT_INVALID",
@@ -3130,7 +3159,7 @@ def parse_dsl_node_to_state_machine(
             # only meaningful on a composite state (it fans out to every
             # descendant leaf). On a leaf state there is nothing to fan
             # into, so the aspect is invalid.
-            if not d_substates:
+            if not d_substates and not is_combo_relay_pseudo:
                 sink.emit(
                     ModelDiagnostic(
                         code="E_DURING_ASPECT_INVALID",
@@ -3254,7 +3283,7 @@ def parse_dsl_node_to_state_machine(
         )
         if is_exported_combo_pseudo:
             my_state._generated_combo_pseudo = True
-        if node.name.startswith(_COMBO_STATE_PREFIX) and node.is_pseudo:
+        if is_combo_relay_pseudo:
             action_kinds = _ast_action_kinds(node)
             if action_kinds:
                 sink.emit(
@@ -3785,6 +3814,8 @@ def parse_dsl_node_to_state_machine(
             )
 
         combo_name_payloads: Dict[str, str] = {}
+        combo_exhausted_names: Set[str] = set()
+        combo_exhausted_payload_names: Dict[str, str] = {}
 
         def _term_name_slug(term: dsl_nodes.ComboTriggerTerm) -> str:
             if isinstance(term, dsl_nodes.ComboGuardTerm):
@@ -3820,6 +3851,17 @@ def parse_dsl_node_to_state_machine(
 
         def _combo_effect_signature(transnode) -> Tuple[str, ...]:
             return tuple(str(item) for item in transnode.post_operations)
+
+        def _combo_collision_recovery_name(name: str) -> str:
+            suffix = 1
+            while True:
+                candidate = f"{name}__collision_{suffix}"
+                if (
+                    candidate not in current_state.substates
+                    and candidate not in combo_name_payloads
+                ):
+                    return candidate
+                suffix += 1
 
         def _combo_origin_id(
             transnode,
@@ -3896,23 +3938,33 @@ def parse_dsl_node_to_state_machine(
                 chosen_size = digest_size
                 break
             if chosen_name is None or chosen_size is None:
-                name = f"{_COMBO_STATE_PREFIX}{slug}_h{digest[:_COMBO_DIGEST_MAX_SIZE]}"
-                sink.emit(
-                    ModelDiagnostic(
-                        code="E_COMBO_PSEUDO_NAME_COLLISION",
-                        severity="error",
-                        message=(
-                            f"Generated combo pseudo state name {name!r} collides "
-                            "even after extending to the full payload digest."
-                        ),
-                        span=None,
-                        refs={
-                            "state_path": ".".join(current_state.path),
-                            "pseudo_name": name,
-                            "payload_digest": digest,
-                        },
-                    )
+                collision_name = (
+                    f"{_COMBO_STATE_PREFIX}{slug}_h{digest[:_COMBO_DIGEST_MAX_SIZE]}"
                 )
+                name = combo_exhausted_payload_names.get(payload)
+                if name is None:
+                    if collision_name not in combo_exhausted_names:
+                        sink.emit(
+                            ModelDiagnostic(
+                                code="E_COMBO_PSEUDO_NAME_COLLISION",
+                                severity="error",
+                                message=(
+                                    "Generated combo pseudo state name "
+                                    f"{collision_name!r} collides even after "
+                                    "extending to the full payload digest."
+                                ),
+                                span=None,
+                                refs={
+                                    "state_path": ".".join(current_state.path),
+                                    "pseudo_name": collision_name,
+                                    "payload_digest": digest,
+                                },
+                            )
+                        )
+                        combo_exhausted_names.add(collision_name)
+                    name = _combo_collision_recovery_name(collision_name)
+                    combo_exhausted_payload_names[payload] = name
+                    combo_name_payloads[name] = payload
             else:
                 name = chosen_name
                 is_new_combo_name = name not in combo_name_payloads

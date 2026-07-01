@@ -2615,7 +2615,7 @@ class SimulationRuntime:
             else:
                 self.logger.debug(
                     f"Transition completed: {current_state_path} -> [*], ended={ended}"
-            )
+                )
             return ended
 
         target_state = current_state.parent.substates[transition.to_state]
@@ -4248,8 +4248,7 @@ class SimulationRuntime:
                     if action_paths:
                         raise ValueError(
                             "Abstract handler member %s.%s uses a reserved "
-                            "dunder protocol name"
-                            % (obj.__class__.__name__, name)
+                            "dunder protocol name" % (obj.__class__.__name__, name)
                         )
                     continue
                 if action_paths:

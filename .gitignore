@@ -1251,3 +1251,6 @@ junit.xml
 
 # Local demo fixtures (mirrored in jsfcstm test fixtures, see editors/jsfcstm/test/diagnostics-showcase-demos.test.ts)
 /demo/
+
+# Research numeric render semantics — local heavy probe outputs
+/research/numeric-render-semantics/results/local/

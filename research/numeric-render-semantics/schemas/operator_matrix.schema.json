@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HansBug/pyfcstm/research/numeric-render-semantics/schemas/operator_matrix.schema.json",
+  "title": "Numeric operator matrix summary",
+  "type": "object",
+  "required": ["schema_version", "source_mapping_sha256", "operators"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "source_mapping_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "operators": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["fcstm_operator", "render_paths", "risk_level"],
+        "properties": {
+          "fcstm_operator": {"type": "string"},
+          "render_paths": {"type": "array"},
+          "risk_level": {"enum": ["low", "medium", "high", "unknown"]}
+        }
+      }
+    }
+  }
+}

@@ -2299,6 +2299,37 @@ W_EFFECT_SELF_ASSIGN:
       type: str
       required: true
       description: Source state path when known.
+    from_path:
+      type: str
+      required: false
+      description: >-
+        Public source path for combo terminal effect diagnostics after
+        authored-subject remapping. Ordinary self-assignment diagnostics may
+        omit this field and use ``state_path`` only.
+    generated_state_path:
+      type: str
+      required: false
+      description: >-
+        Generated combo pseudo state path kept only as secondary debug
+        provenance after the public subject is remapped.
+    generated_from_path:
+      type: str
+      required: false
+      description: Generated transition source path kept as secondary debug provenance.
+    generated_to_path:
+      type: str
+      required: false
+      description: Generated transition target path kept as secondary debug provenance.
+    combo_origin_id:
+      type: str
+      required: false
+      description: Original combo transition identifier for a generated terminal effect.
+    combo_owner_path:
+      type: str
+      required: false
+      description: >-
+        Owner composite path for entry combo diagnostics whose public subject
+        is the initial marker ``[*]``.
     transition_span:
       type: Span
       required: false

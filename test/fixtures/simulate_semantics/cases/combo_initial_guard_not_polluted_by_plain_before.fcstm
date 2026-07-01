@@ -1,0 +1,21 @@
+def int trace = 0;
+def int gate = 0;
+
+state Root {
+    enter {
+        gate = 1;
+        trace = trace * 10 + 7;
+    }
+    during before {
+        gate = gate + 1;
+        trace = trace * 10 + 1;
+    }
+    [*] -> Active : EntryA + [gate == 1] + EntryB effect {
+        gate = gate + 10;
+        trace = trace * 10 + 2;
+    }
+
+    state Active {
+        enter { trace = trace * 10 + 3; }
+    }
+}

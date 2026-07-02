@@ -901,6 +901,14 @@ def test_expression_model_rejects_invalid_literal_and_frame_values():
         IntLiteral("0X2A")
     with pytest.raises(ValueError, match="decimal"):
         IntLiteral("-42")
+    with pytest.raises(ValueError, match="decimal"):
+        IntLiteral("42\n")
+    with pytest.raises(ValueError, match="hexadecimal"):
+        IntLiteral("0x2A\n")
+    with pytest.raises(ValueError, match="floating"):
+        FloatLiteral("1.\n")
+    with pytest.raises(ValueError, match="identifier"):
+        NameRef("cycle\n")
     with pytest.raises(ValueError, match="hexadecimal"):
         IntLiteral("0x")
     with pytest.raises(ValueError, match="kind"):

@@ -428,11 +428,11 @@ class IntLiteral(BmcNumExpr):
                 )
             kind = self.kind
         if kind == "hex":
-            if not _HEX_INT_RE.match(self.raw):
+            if not _HEX_INT_RE.fullmatch(self.raw):
                 raise ValueError(
                     f"Invalid FCSTM hexadecimal integer literal: {self.raw!r}."
                 )
-        elif not _DECIMAL_INT_RE.match(self.raw):
+        elif not _DECIMAL_INT_RE.fullmatch(self.raw):
             raise ValueError(f"Invalid FCSTM decimal integer literal: {self.raw!r}.")
         object.__setattr__(self, "kind", kind)
 
@@ -476,7 +476,7 @@ class FloatLiteral(BmcNumExpr):
 
     def __post_init__(self) -> None:
         _require_non_empty_string(self.raw, "raw")
-        if not _FLOAT_RE.match(self.raw):
+        if not _FLOAT_RE.fullmatch(self.raw):
             raise ValueError(f"Invalid FCSTM floating-point literal: {self.raw!r}.")
         if not math.isfinite(float(self.raw)):
             raise ValueError(
@@ -575,7 +575,7 @@ class NameRef(BmcNumExpr):
 
     def __post_init__(self) -> None:
         _require_non_empty_string(self.name, "name")
-        if not _ID_RE.match(self.name):
+        if not _ID_RE.fullmatch(self.name):
             raise ValueError(f"Invalid FCSTM identifier: {self.name!r}.")
         if self.name in _BARE_NAME_RESERVED or self.name in _UFUNC_NAMES:
             raise ValueError(f"Reserved bare expression name: {self.name!r}.")

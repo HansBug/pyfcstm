@@ -10,3 +10,9 @@ build\_inspect\_json
 -----------------------------------------------------
 
 .. autofunction:: build_inspect_json
+
+
+build\_inspect\_output
+-----------------------------------------------------
+
+.. autofunction:: build_inspect_output

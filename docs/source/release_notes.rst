@@ -30,9 +30,10 @@ Diagnostics and CLI
 
 - Expanded the structured diagnostics catalog to 59 codes: 20 errors,
   32 warnings, and 7 infos.
-- Added verify-backed diagnostic coverage while keeping the default inspect path
-  static unless verification is explicitly enabled.
-- Added ``pyfcstm inspect`` for stable JSON output matching
+- Added verify-backed diagnostic coverage while keeping the default inspect
+  analysis path static unless verification is explicitly enabled.
+- Added ``pyfcstm inspect`` as a default human-readable diagnostic report, with
+  ``--format json`` preserving stable JSON output matching
   ``inspect_model(model).to_json()``.
 - Preserved Python / jsfcstm diagnostic-surface parity for normalized code,
   severity, and reference payloads used by editor integrations.

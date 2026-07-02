@@ -2,8 +2,8 @@
 
 This module registers the ``inspect`` CLI command. The command reads an FCSTM
 DSL file, builds a :class:`pyfcstm.model.StateMachine`, runs
-:func:`pyfcstm.diagnostics.inspect_model`, and emits the inspection payload as
-stable JSON text.
+:func:`pyfcstm.diagnostics.inspect_model`, and emits the inspection payload in
+human-readable, full JSON, or draft LLM-oriented formats.
 
 Module map:
 
@@ -13,7 +13,9 @@ Module map:
    * - Entry
      - Purpose
    * - :func:`build_inspect_json`
-     - Build JSON text for one input file and inspect policy.
+     - Build full JSON text for one input file and inspect policy.
+   * - :func:`build_inspect_output`
+     - Build text in the requested inspect output format.
    * - :func:`_add_inspect_subcommand`
      - Register the ``inspect`` subcommand on a Click group.
 
@@ -40,9 +42,15 @@ import click
 
 from .base import CONTEXT_SETTINGS, ClickErrorException
 from ..diagnostics import inspect_model
+from ..diagnostics.inspect_render import (
+    inspect_output_suffix_warning,
+    render_inspect_human,
+    render_inspect_llm_json,
+    render_inspect_llm_markdown,
+)
 from ..dsl import GrammarParseError
 from ..model import load_state_machine_from_file
-from ..utils import ModelValidationError
+from ..utils import ModelValidationError, auto_decode
 from ..verify import InspectAccessForbiddenError
 from ..verify.taxonomy import (
     CALL_COUNT_SCALING_ORDER,
@@ -55,6 +63,35 @@ _INSPECT_CALL_COUNT_CHOICES = CALL_COUNT_SCALING_ORDER + (
     "k_unrollings",
     "k_unrollings_times_branching",
 )
+_INSPECT_OUTPUT_FORMAT_CHOICES = ("human", "json", "llm-json", "llm-md")
+
+
+def _read_inspect_source_text(input_code_file: str) -> str:
+    """Read and decode the primary FCSTM source file for renderers.
+
+    The model loader remains responsible for import-aware parsing. This helper
+    only provides the top-level source text used to render diagnostic source
+    excerpts in human and draft LLM formats.
+
+    :param input_code_file: Path to the primary input FCSTM file.
+    :type input_code_file: str
+    :return: Decoded source text.
+    :rtype: str
+    :raises OSError: If the file cannot be read.
+    :raises UnicodeDecodeError: If the file cannot be decoded.
+
+    Example::
+
+        >>> import os
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as td:
+        ...     path = os.path.join(td, "demo.fcstm")
+        ...     with open(path, "w", encoding="utf-8") as f:
+        ...         _ = f.write("state Root;")
+        ...     _read_inspect_source_text(path)
+        'state Root;'
+    """
+    return auto_decode(pathlib.Path(input_code_file).read_bytes())
 
 
 def _validate_inspect_policy(
@@ -224,12 +261,126 @@ def build_inspect_json(
     )
 
 
+def build_inspect_output(
+    input_code_file: str,
+    *,
+    output_format: str = "human",
+    enable_verify: bool = False,
+    max_complexity_tier: str = "structural",
+    max_call_count_scaling: str = "linear_in_transitions",
+    smt_timeout_ms: Optional[int] = None,
+) -> str:
+    """Build inspect output text in the requested presentation format.
+
+    ``output_format="json"`` delegates to :func:`build_inspect_json` so the
+    full JSON contract stays byte-for-byte aligned with the pre-existing
+    machine-readable path. Human and draft LLM formats additionally read the
+    top-level source file to render source excerpts.
+
+    :param input_code_file: Path to the input FCSTM DSL file.
+    :type input_code_file: str
+    :param output_format: One of ``"human"``, ``"json"``,
+        ``"llm-json"``, or ``"llm-md"``. Defaults to ``"human"``.
+    :type output_format: str, optional
+    :param enable_verify: Whether to run inspect-eligible verify algorithms.
+    :type enable_verify: bool, optional
+    :param max_complexity_tier: Maximum verify complexity tier accepted by
+        inspect.
+    :type max_complexity_tier: str, optional
+    :param max_call_count_scaling: Maximum verify call-count scaling accepted
+        by inspect.
+    :type max_call_count_scaling: str, optional
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+    :type smt_timeout_ms: Optional[int], optional
+    :return: Rendered inspect output ending with a newline.
+    :rtype: str
+    :raises pyfcstm.entry.base.ClickErrorException: If reading, parsing, model
+        validation, or inspect policy validation fails.
+    :raises ValueError: If ``output_format`` is not supported.
+
+    Example::
+
+        >>> import os
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as td:
+        ...     path = os.path.join(td, "demo.fcstm")
+        ...     with open(path, "w", encoding="utf-8") as f:
+        ...         _ = f.write("state Root;")
+        ...     text = build_inspect_output(path)
+        >>> "FCSTM Inspect Report" in text
+        True
+    """
+    if output_format == "json":
+        return build_inspect_json(
+            input_code_file,
+            enable_verify=enable_verify,
+            max_complexity_tier=max_complexity_tier,
+            max_call_count_scaling=max_call_count_scaling,
+            smt_timeout_ms=smt_timeout_ms,
+        )
+    if output_format not in _INSPECT_OUTPUT_FORMAT_CHOICES:
+        raise ValueError(f"unsupported inspect output format: {output_format!r}")
+    try:
+        _validate_inspect_policy(
+            max_complexity_tier,
+            max_call_count_scaling,
+        )
+        source_text = _read_inspect_source_text(input_code_file)
+        machine = load_state_machine_from_file(input_code_file)
+        report = inspect_model(
+            machine,
+            enable_verify=enable_verify,
+            max_complexity_tier=max_complexity_tier,
+            max_call_count_scaling=max_call_count_scaling,
+            smt_timeout_ms=smt_timeout_ms,
+        )
+    except FileNotFoundError:
+        # _read_inspect_source_text reads the user-provided path; a missing
+        # input file should be reported as a controlled CLI error.
+        raise ClickErrorException(f"Input DSL file not found: {input_code_file}")
+    except UnicodeDecodeError as err:
+        # auto_decode raises UnicodeDecodeError when none of the supported
+        # encodings can decode user-provided input bytes.
+        raise ClickErrorException(
+            f"Failed to decode input DSL file {input_code_file}: {err}"
+        )
+    except OSError as err:
+        # pathlib.Path.read_bytes and the model loader raise OSError
+        # subclasses for filesystem failures such as permission errors.
+        raise ClickErrorException(
+            f"Failed to read input DSL file {input_code_file}: {err}"
+        )
+    except GrammarParseError as err:
+        # parse_state_machine_dsl raises GrammarParseError for syntax and
+        # lexical failures in user-provided FCSTM text.
+        raise ClickErrorException(
+            f"Failed to parse input DSL file {input_code_file}: {err}"
+        )
+    except ModelValidationError as err:
+        # parse_dsl_node_to_state_machine raises ModelValidationError for
+        # model-level contract violations after a syntactically valid parse.
+        raise ClickErrorException(
+            f"Invalid state machine model in {input_code_file}: {err}"
+        )
+    except InspectAccessForbiddenError as err:
+        # _validate_inspect_policy and inspect_model reject forbidden
+        # automatic inspect verify policies such as BMC search.
+        raise ClickErrorException(str(err))
+
+    if output_format == "human":
+        return render_inspect_human(report, source_text, input_path=input_code_file)
+    if output_format == "llm-json":
+        return render_inspect_llm_json(report, source_text, input_path=input_code_file)
+    return render_inspect_llm_markdown(report, source_text, input_path=input_code_file)
+
+
 def _add_inspect_subcommand(cli: click.Group) -> click.Group:
     """Add the ``inspect`` subcommand to a Click CLI group.
 
-    The registered command emits :func:`pyfcstm.diagnostics.inspect_model`
-    output as JSON text. Verify integration remains disabled by default and is
-    enabled only by passing ``--enable-verify``.
+    The registered command emits a human-readable report by default and can
+    still emit the full :func:`pyfcstm.diagnostics.inspect_model` JSON payload
+    when ``--format json`` is selected. Verify integration remains disabled by
+    default and is enabled only by passing ``--enable-verify``.
 
     :param cli: The Click group to which the subcommand should be added.
     :type cli: click.Group
@@ -247,7 +398,7 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
 
     @cli.command(
         "inspect",
-        help="Inspect a state machine DSL file and emit structured JSON.",
+        help="Inspect a state machine DSL file and emit a human-readable report by default.",
         context_settings=CONTEXT_SETTINGS,
     )
     @click.option(
@@ -264,7 +415,15 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
         "output_file",
         type=str,
         default=None,
-        help="Output JSON file, output to stdout when not assigned.",
+        help="Output file, output to stdout when not assigned.",
+    )
+    @click.option(
+        "--format",
+        "output_format",
+        type=click.Choice(_INSPECT_OUTPUT_FORMAT_CHOICES, case_sensitive=True),
+        default="human",
+        show_default=True,
+        help="Inspect output format; use json for the full machine-readable report.",
     )
     @click.option(
         "--enable-verify",
@@ -303,19 +462,22 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
     def inspect_command(
         input_code_file: str,
         output_file: Optional[str],
+        output_format: str,
         enable_verify: bool,
         max_complexity_tier: str,
         max_call_count_scaling: str,
         smt_timeout_ms: Optional[int],
     ) -> None:
-        """Inspect a state machine DSL file and emit JSON.
+        """Inspect a state machine DSL file and emit the selected report format.
 
         :param input_code_file: Path to the file containing state machine DSL
             code.
         :type input_code_file: str
-        :param output_file: Path to the output JSON file. If ``None``, output
-            is written to stdout.
+        :param output_file: Path to the output file. If ``None``, output is
+            written to stdout.
         :type output_file: Optional[str]
+        :param output_format: Inspect output format.
+        :type output_format: str
         :param enable_verify: Whether to run inspect-eligible verify
             algorithms.
         :type enable_verify: bool
@@ -330,32 +492,37 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
             unchanged to the solver layer and keeps Z3 without a finite
             timeout.
         :type smt_timeout_ms: Optional[int]
-        :return: ``None``. JSON is written to a file or stdout.
+        :return: ``None``. Inspect output is written to a file or stdout.
         :rtype: None
 
         Examples::
 
             $ pyfcstm inspect -i machine.fcstm
+            $ pyfcstm inspect -i machine.fcstm --format json
             $ pyfcstm inspect -i machine.fcstm --enable-verify --max-complexity-tier smt_linear
         """
-        inspect_json = build_inspect_json(
+        inspect_output = build_inspect_output(
             input_code_file,
+            output_format=output_format,
             enable_verify=enable_verify,
             max_complexity_tier=max_complexity_tier,
             max_call_count_scaling=max_call_count_scaling,
             smt_timeout_ms=smt_timeout_ms,
         )
+        warning = inspect_output_suffix_warning(output_file, output_format)
+        if warning is not None:
+            click.echo(f"Warning: {warning}", err=True)
         if output_file is None:
-            click.echo(inspect_json, nl=False)
+            click.echo(inspect_output, nl=False)
         else:
             try:
-                pathlib.Path(output_file).write_text(inspect_json, encoding="utf-8")
+                pathlib.Path(output_file).write_text(inspect_output, encoding="utf-8")
             except OSError as err:
                 # pathlib.Path.write_text raises OSError subclasses for
                 # filesystem failures such as missing parent directories or
                 # permission errors.
                 raise ClickErrorException(
-                    f"Failed to write inspect JSON file {output_file}: {err}"
+                    f"Failed to write inspect output file {output_file}: {err}"
                 )
 
     return cli

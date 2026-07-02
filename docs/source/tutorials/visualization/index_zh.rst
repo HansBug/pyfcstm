@@ -500,7 +500,7 @@ PlantUML 源码产物：
    :align: center
    :width: 80%
 
-   通过 ``show_events=true`` 启用事件标签
+   通过 ``show_events=true`` 启用事件标签，并用 ``max_depth=3`` 限制展开深度
 
 生命周期动作配置会根据显示的动作生成另一份输出：
 

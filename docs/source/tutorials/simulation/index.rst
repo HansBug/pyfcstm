@@ -319,10 +319,10 @@ Configuration Settings
      - 100
      - Maximum history entries to keep
    * - ``color``
-     - on
-     - Enable/disable color output (on/off)
+     - True
+     - Enable/disable color output (input accepts on/off or true/false)
    * - ``log_level``
-     - info
+     - warning
      - Logging verbosity (debug/info/warning/error/off)
 
 Example:

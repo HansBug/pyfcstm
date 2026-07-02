@@ -318,10 +318,10 @@ CLI 用法
      - 100
      - 保留的最大历史条目数
    * - ``color``
-     - on
-     - 启用/禁用彩色输出（on/off）
+     - True
+     - 启用/禁用彩色输出（输入可用 on/off 或 true/false）
    * - ``log_level``
-     - info
+     - warning
      - 日志详细程度（debug/info/warning/error/off）
 
 示例：

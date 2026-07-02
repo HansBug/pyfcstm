@@ -528,7 +528,7 @@ this deterministic PlantUML source artifact:
    :align: center
    :width: 80%
 
-   Event labels enabled with ``show_events=true``
+   Event labels enabled with ``show_events=true`` and depth limited with ``max_depth=3``
 
 The lifecycle actions configuration produces a separate output based on which
 actions are shown:

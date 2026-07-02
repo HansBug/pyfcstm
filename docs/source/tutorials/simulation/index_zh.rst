@@ -59,7 +59,7 @@ Python 用法
 - ``runtime.cycle()``：执行一个完整的周期
 - ``runtime.current_state``：获取当前状态对象（使用 ``.path`` 获取元组或 ``'.'.join(.path)`` 获取字符串）
 - ``runtime.vars``：以字典形式访问/修改变量
-- ``runtime.is_terminated``：检查状态机是否已终止
+- ``runtime.is_ended``：检查状态机是否已结束
 
 触发事件
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -182,6 +182,8 @@ CLI 用法
      - 列出当前状态中的可用事件
    * - ``history [n|all]``
      - 显示执行历史（默认：最近 10 条）。使用 ``all`` 显示完整历史
+   * - ``clear``
+     - 使用当前设置重置到初始状态
    * - ``setting [key] [value]``
      - 查看或更改设置。不带参数时显示所有设置
    * - ``export <filename>``
@@ -256,7 +258,7 @@ CLI 用法
       6    Root.Active     6         25.6
 
    simulate> export history.csv
-   Exported 6 history entries to history.csv
+   History exported to history.csv (6 entries)
 
    simulate> quit
    Goodbye!
@@ -331,10 +333,10 @@ CLI 用法
      table_max_rows = 20
      history_size = 100
      color = on
-     log_level = info
+     log_level = warning
 
    simulate> setting log_level debug
-   Setting 'log_level' set to: debug
+   Setting updated: log_level = debug
 
 导出格式
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -346,9 +348,9 @@ CLI 用法
    * - 格式
      - 说明
    * - CSV
-     - 分号分隔值，带标题行（``cycle;state;var1;var2;...``）
+     - 逗号分隔值，带标题行（``cycle,state,events,var1,var2,...``）
    * - JSON
-     - JSON 数组，对象包含 ``cycle``、``state`` 和 ``vars``
+     - JSON 数组，对象包含 ``cycle``、``state``、``events`` 和 ``vars``
    * - YAML
      - YAML 数组，结构与 JSON 相同
    * - JSONL
@@ -359,7 +361,7 @@ CLI 用法
 .. code-block:: bash
 
    simulate> export history.csv
-   Exported 6 history entries to history.csv
+   History exported to history.csv (6 entries)
 
 命令行选项
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2162,7 +2164,7 @@ DFS 验证机制
 - 测试初始化、所有转换、守卫、效果和终止
 - 每个周期后打印状态和变量以进行调试
 - 使用抽象处理器跟踪执行
-- 使用 ``runtime.get_current_state_object()`` 检查状态对象
+- 使用 ``runtime.current_state`` 检查状态对象
 
 **使用热启动进行测试**
 
@@ -2226,7 +2228,7 @@ DFS 验证机制
    > cycle 3
    # 快速测试加热行为
 
-**重要提示** ：热启动会跳过进入动作。确保进入动作不包含关键的初始化逻辑，或手动验证行为。
+**重要提示** ：热启动会跳过 enter 动作，并且必须提供所有持久变量。请确认 enter 动作不包含关键初始化逻辑，同时让深层复合 / 伪状态链保持在当前运行时实现记录的安全上限内。
 
 处理器实现
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

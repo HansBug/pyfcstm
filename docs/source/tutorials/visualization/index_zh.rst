@@ -98,13 +98,17 @@ Python API 通过 ``PlantUMLOptions`` 类提供对可视化的编程控制。
 CLI 可视化
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-命令行界面提供快速访问可视化功能，配置灵活。
+命令行界面提供了灵活配置的 PlantUML 源码生成和图像导出入口。
 
 .. note::
 
-   本页主要介绍 ``pyfcstm plantuml`` 和 ``pyfcstm visualize`` 共享的
-   PlantUML 输出配置。如果你关注渲染后端选择、直接输出 ``png`` / ``svg`` /
-   ``pdf``、后端检查或自动打开行为，请参见 :doc:`/tutorials/cli/index_zh`。
+   本页主要介绍 PlantUML 源码生成，以及 ``pyfcstm plantuml`` 和
+   ``pyfcstm visualize`` 共享的输出配置。下面签入的命令 demo 使用
+   ``pyfcstm plantuml`` 命令，因为它能为文档构建生成稳定的
+   ``.puml`` 文件。 ``pyfcstm visualize`` 命令会在渲染 ``png`` / ``svg`` / ``pdf``
+   前接受同一套 ``-l`` / ``-c`` 配置，但 renderer 可用性和查看器启动
+   依赖本地 PlantUML backend、远端服务和桌面环境；这些运行参数请参见
+   :doc:`/tutorials/cli/index_zh`。
 
 **基本用法**
 
@@ -129,7 +133,7 @@ CLI 可视化
 配置系统
 ---------------------------------------
 
-可视化系统通过 ``PlantUMLOptions`` 提供全面的配置。所有选项在 Python API 和 CLI 中都可用。
+可视化系统通过 ``PlantUMLOptions`` 提供全面配置。CLI 支持表中的类型化标量和元组选项可以通过 Python API 以及 ``pyfcstm plantuml`` / ``pyfcstm visualize`` 的 ``-c key=value`` 参数使用；自定义颜色字典等 Python-only 对象会单独标明。
 
 配置选项参考
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -271,7 +275,7 @@ CLI 可视化
    * - ``max_depth``
      - int
      - ``None``
-     - 可视化的最大嵌套深度（None = 无限制）
+     - 可视化的最大嵌套深度（ ``None`` = 无限制， ``0`` = 仅根状态，正数限制展开深度）
    * - ``collapsed_state_marker``
      - str
      - ``'...'``
@@ -291,14 +295,14 @@ CLI 可视化
    * - ``custom_colors``
      - dict
      - ``None``
-     - 事件的自定义颜色映射（事件路径 -> 十六进制颜色）
+     - 仅 Python API：事件的自定义颜色映射（事件路径 -> 十六进制颜色）
 
 **注意：**
 
 - 默认值为 ``None`` 的选项从 ``detail_level`` 预设或父选项继承
 - ``show_lifecycle_actions`` 控制 enter/during/exit/aspect/abstract/concrete 动作的默认值
 - 元组选项接受多个格式元素，按显示顺序组合
-- CLI 使用 ``-c key=value`` 语法进行配置
+- CLI 对受支持的类型化选项使用 ``-c key=value`` 语法；``custom_colors`` 等字典值选项当前需要通过 Python API 配置
 
 详细级别预设
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -488,7 +492,17 @@ CLI 可视化
 
 **生成的可视化效果**
 
-生命周期动作配置根据显示的动作产生不同的输出：
+``cli_config.demo.sh`` 中的第一条命令会启用事件标签，并生成这个稳定的
+PlantUML 源码产物：
+
+.. figure:: output_with_events.puml.svg
+   :alt: 启用事件显示的配置可视化
+   :align: center
+   :width: 80%
+
+   通过 ``show_events=true`` 启用事件标签
+
+生命周期动作配置会根据显示的动作生成另一份输出：
 
 .. figure:: output_lifecycle.puml.svg
    :alt: 生命周期动作配置可视化
@@ -599,7 +613,7 @@ CLI 可视化
 
 **配置选项**
 
-- ``max_depth`` (int)：可视化的最大嵌套深度（0 = 无限制）
+- ``max_depth`` (int)：可视化的最大嵌套深度（Python 中 ``None`` = 无限制， ``0`` = 仅根状态，正数限制展开深度）
 - ``collapsed_state_marker`` (str)：折叠状态的标记（默认：``'...'``）
 
 **示例**

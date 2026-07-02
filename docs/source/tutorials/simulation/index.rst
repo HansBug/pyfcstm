@@ -59,7 +59,7 @@ Output:
 - ``runtime.cycle()``: Execute one complete cycle
 - ``runtime.current_state``: Get current state object (use ``.path`` for tuple or ``'.'.join(.path)`` for string)
 - ``runtime.vars``: Access/modify variables as a dictionary
-- ``runtime.is_terminated``: Check if state machine has terminated
+- ``runtime.is_ended``: Check if state machine has ended
 
 Triggering Events
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -183,6 +183,8 @@ Available Commands
      - List available events in current state
    * - ``history [n|all]``
      - Show execution history (default: 10 recent entries). Use ``all`` to show complete history
+   * - ``clear``
+     - Reset to the initial state with the current settings
    * - ``setting [key] [value]``
      - View or change settings. Without arguments, shows all settings
    * - ``export <filename>``
@@ -257,7 +259,7 @@ Example Session
       6    Root.Active     6         25.6
 
    simulate> export history.csv
-   Exported 6 history entries to history.csv
+   History exported to history.csv (6 entries)
 
    simulate> quit
    Goodbye!
@@ -332,10 +334,10 @@ Example:
      table_max_rows = 20
      history_size = 100
      color = on
-     log_level = info
+     log_level = warning
 
    simulate> setting log_level debug
-   Setting 'log_level' set to: debug
+   Setting updated: log_level = debug
 
 Export Formats
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -347,9 +349,9 @@ Export Formats
    * - Format
      - Description
    * - CSV
-     - Semicolon-separated values with headers (``cycle;state;var1;var2;...``)
+     - Comma-separated values with headers (``cycle,state,events,var1,var2,...``)
    * - JSON
-     - JSON array with objects containing ``cycle``, ``state``, and ``vars``
+     - JSON array with history objects containing ``cycle``, ``state``, ``events``, and ``vars``
    * - YAML
      - YAML array with the same structure as JSON
    * - JSONL
@@ -360,7 +362,7 @@ Example:
 .. code-block:: bash
 
    simulate> export history.csv
-   Exported 6 history entries to history.csv
+   History exported to history.csv (6 entries)
 
 Command Line Options
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2165,7 +2167,7 @@ Testing and Debugging
 - Test initialization, all transitions, guards, effects, and termination
 - Print state and variables after each cycle for debugging
 - Use abstract handlers to trace execution
-- Inspect state objects with ``runtime.get_current_state_object()``
+- Inspect state objects with ``runtime.current_state``
 
 **Using Hot Start for Testing**
 
@@ -2229,7 +2231,7 @@ Hot start allows jumping directly to specific states for targeted testing withou
    > cycle 3
    # Quickly test heating behavior
 
-**Important**: Hot start skips enter actions. Ensure enter actions don't contain critical initialization logic, or verify behavior manually.
+**Important**: Hot start skips enter actions and must provide all persistent variables. Ensure enter actions do not contain critical initialization logic, and keep deep composite / pseudo chains within the runtime safety limits documented by the current implementation.
 
 Handler Implementation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -98,14 +98,18 @@ Output:
 CLI Visualization
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The command-line interface provides quick access to visualization with flexible configuration.
+The command-line interface provides quick access to PlantUML source generation and rendered diagram export with flexible configuration.
 
 .. note::
 
-   This page focuses on the shared PlantUML output configuration used by both
-   ``pyfcstm plantuml`` and ``pyfcstm visualize``. If you need renderer
-   selection, direct ``png`` / ``svg`` / ``pdf`` rendering, backend checks, or
-   auto-open behavior, see :doc:`/tutorials/cli/index`.
+   This page focuses on PlantUML source generation and the shared output
+   configuration used by both ``pyfcstm plantuml`` and ``pyfcstm visualize``.
+   The checked-in command demos use ``pyfcstm plantuml`` because it produces
+   deterministic ``.puml`` files for documentation builds. The ``pyfcstm visualize``
+   command accepts the same ``-l`` / ``-c`` configuration before rendering
+   ``png`` / ``svg`` / ``pdf`` files, but renderer availability and viewer
+   launch depend on the local PlantUML backend, remote service, and desktop
+   environment; see :doc:`/tutorials/cli/index` for those operational flags.
 
 **Basic Usage**
 
@@ -130,7 +134,7 @@ Output:
 Configuration System
 ---------------------------------------
 
-The visualization system provides comprehensive configuration through ``PlantUMLOptions``. All options are available in both Python API and CLI.
+The visualization system provides comprehensive configuration through ``PlantUMLOptions``. Typed scalar and tuple options listed in the CLI support table are available through both the Python API and the ``-c key=value`` arguments accepted by ``pyfcstm plantuml`` / ``pyfcstm visualize``; Python-only objects such as custom color dictionaries are marked explicitly.
 
 Configuration Options Reference
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -272,7 +276,7 @@ The following table provides a complete reference of all available configuration
    * - ``max_depth``
      - int
      - ``None``
-     - Maximum nesting depth to visualize (None = unlimited)
+     - Maximum nesting depth to visualize (``None`` = unlimited, ``0`` = root state only, positive values limit expanded depth)
    * - ``collapsed_state_marker``
      - str
      - ``'...'``
@@ -292,14 +296,14 @@ The following table provides a complete reference of all available configuration
    * - ``custom_colors``
      - dict
      - ``None``
-     - Custom color mapping for events (event path -> hex color)
+     - Python API only: custom color mapping for events (event path -> hex color)
 
 **Notes:**
 
 - Options with ``None`` default inherit from ``detail_level`` preset or parent options
 - ``show_lifecycle_actions`` controls defaults for enter/during/exit/aspect/abstract/concrete actions
 - Tuple options accept multiple format elements combined in display order
-- CLI uses ``-c key=value`` syntax for configuration
+- CLI uses ``-c key=value`` syntax for supported typed options; dictionary-valued options such as ``custom_colors`` currently require the Python API
 
 Detail Level Presets
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -516,7 +520,18 @@ Output:
 
 **Generated Visualizations**
 
-The lifecycle actions configuration produces different outputs based on which actions are shown:
+The first command in ``cli_config.demo.sh`` enables event labels and produces
+this deterministic PlantUML source artifact:
+
+.. figure:: output_with_events.puml.svg
+   :alt: Events visible configuration visualization
+   :align: center
+   :width: 80%
+
+   Event labels enabled with ``show_events=true``
+
+The lifecycle actions configuration produces a separate output based on which
+actions are shown:
 
 .. figure:: output_lifecycle.puml.svg
    :alt: Lifecycle actions configuration visualization
@@ -630,7 +645,7 @@ Control how deep the visualization goes into nested states.
 
 **Configuration Options**
 
-- ``max_depth`` (int): Maximum nesting depth to visualize (0 = unlimited)
+- ``max_depth`` (int): Maximum nesting depth to visualize (``None`` = unlimited in Python, ``0`` = root state only, positive values limit expanded depth)
 - ``collapsed_state_marker`` (str): Marker for collapsed states (default: ``'...'``)
 
 **Example**

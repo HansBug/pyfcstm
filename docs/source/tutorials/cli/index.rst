@@ -5,6 +5,7 @@ pyfcstm is a powerful state machine DSL tool that provides a command-line interf
 
 The most common documentation-facing commands are:
 
+- ``pyfcstm simulate``: Run an interactive or batch simulator
 - ``pyfcstm plantuml``: Generate raw PlantUML text
 - ``pyfcstm visualize``: Render a final diagram file directly
 - ``pyfcstm inspect``: Emit structured model and diagnostic JSON
@@ -63,6 +64,38 @@ This will show:
 
 Command Reference
 -------------------------------------
+
+
+simulate Command
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Run a state machine directly from a DSL file. Use interactive mode for manual
+exploration, or pass a semicolon-separated command chain with ``-e`` for
+repeatable examples and scripts.
+
+**Syntax**:
+
+.. code-block:: bash
+
+   pyfcstm simulate -i <input_file> [-e "current; cycle Start; current"] [--no-color]
+
+**Parameters**:
+
+- ``-i, --input-code``: Path to input state machine DSL file (required)
+- ``-e, --execute``: Batch commands to execute and then exit
+- ``--no-color``: Disable ANSI color output
+
+**Examples**:
+
+.. code-block:: bash
+
+   # Start the interactive REPL
+   pyfcstm simulate -i simple_machine.fcstm
+
+   # Run a small batch command chain
+   pyfcstm simulate -i simple_machine.fcstm -e "current; cycle; current"
+
+The full runtime walkthrough lives in :doc:`/tutorials/simulation/index`.
 
 plantuml Command
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -68,5 +68,3 @@ execute\_operations
 -----------------------------------------------------
 
 .. autofunction:: execute_operations
-
-

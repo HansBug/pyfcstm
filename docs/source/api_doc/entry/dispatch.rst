@@ -16,5 +16,3 @@ pyfcstmcli
 -----------------------------------------------------
 
 .. autofunction:: pyfcstmcli
-
-

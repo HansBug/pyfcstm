@@ -16,5 +16,3 @@ refs\_with\_suggested\_fix
 -----------------------------------------------------
 
 .. autofunction:: refs_with_suggested_fix
-
-

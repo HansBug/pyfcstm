@@ -16,4 +16,3 @@ pyfcstm.entry.simulate
     events
     logging
     repl
-

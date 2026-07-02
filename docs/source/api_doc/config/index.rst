@@ -10,4 +10,3 @@ pyfcstm.config
     :maxdepth: 3
 
     meta
-

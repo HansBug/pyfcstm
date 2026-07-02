@@ -22,5 +22,3 @@ parse\_key\_value\_pairs
 -----------------------------------------------------
 
 .. autofunction:: parse_key_value_pairs
-
-

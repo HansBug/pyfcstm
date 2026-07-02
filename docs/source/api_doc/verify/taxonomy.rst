@@ -71,5 +71,3 @@ VerifyAlgorithmMeta
 
 .. autoclass:: VerifyAlgorithmMeta
     :members: name,description,closedness,complexity_tier,smt_logic,formula_size_scaling,call_count_scaling,incremental,fallback_unknown_risk,recommended_tactic,quantifier_alternation_depth,max_bitwidth,theory_combination,verification_scope,dominant_dim,diagnostic_codes,impl
-
-

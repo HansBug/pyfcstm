@@ -40,5 +40,3 @@ add\_settings\_for\_env
 -----------------------------------------------------
 
 .. autofunction:: add_settings_for_env
-
-

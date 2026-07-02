@@ -34,5 +34,3 @@ render\_stmt\_nodes
 -----------------------------------------------------
 
 .. autofunction:: render_stmt_nodes
-
-

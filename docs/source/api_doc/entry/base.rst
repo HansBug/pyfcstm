@@ -55,5 +55,3 @@ command\_wrap
 -----------------------------------------------------
 
 .. autofunction:: command_wrap
-
-

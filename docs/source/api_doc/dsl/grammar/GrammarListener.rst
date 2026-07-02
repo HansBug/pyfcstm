@@ -10,5 +10,3 @@ pyfcstm.dsl.grammar.GrammarListener
 -----------------------------------------------------
 
 .. autodata:: __all__
-
-

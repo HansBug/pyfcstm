@@ -10,5 +10,3 @@ collect\_naming\_warnings
 -----------------------------------------------------
 
 .. autofunction:: collect_naming_warnings
-
-

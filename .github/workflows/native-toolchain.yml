@@ -81,6 +81,10 @@ on:
           - linux-cppcheck
           - linux-clang-tidy
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   native-linux:
     name: native-toolchain / ${{ matrix.profile }}

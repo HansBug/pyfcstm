@@ -28,5 +28,3 @@ collect\_const\_fold\_warnings
 -----------------------------------------------------
 
 .. autofunction:: collect_const_fold_warnings
-
-

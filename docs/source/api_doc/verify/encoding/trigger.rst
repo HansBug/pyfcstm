@@ -10,5 +10,3 @@ pyfcstm.verify.encoding.trigger
 -----------------------------------------------------
 
 .. autodata:: __all__
-
-

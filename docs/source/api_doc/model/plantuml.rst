@@ -71,5 +71,3 @@ assign\_event\_colors
 -----------------------------------------------------
 
 .. autofunction:: assign_event_colors
-
-

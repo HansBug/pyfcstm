@@ -23,5 +23,3 @@ collect\_expr\_variables
 -----------------------------------------------------
 
 .. autofunction:: collect_expr_variables
-
-

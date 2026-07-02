@@ -22,5 +22,3 @@ load\_state\_machine\_from\_text
 -----------------------------------------------------
 
 .. autofunction:: load_state_machine_from_text
-
-

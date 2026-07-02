@@ -34,5 +34,3 @@ extract\_template
 -----------------------------------------------------
 
 .. autofunction:: extract_template
-
-

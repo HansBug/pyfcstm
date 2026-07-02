@@ -6,6 +6,17 @@ state/event resolution, solver lowering, or witness replay.  Parser and binder
 layers can construct these frozen dataclasses from ANTLR parse trees and then
 bind them against :class:`pyfcstm.model.StateMachine` objects.
 
+Design contracts:
+
+* Query objects are data-only and must not import ``pyfcstm.verify`` or solver
+  internals.
+* :func:`str` on every concrete query object returns canonical ``.fbmcq`` DSL
+  text that later parser work must accept for round-trip tests.
+* :func:`repr` remains the dataclass debugging representation and is not a DSL
+  surface.
+* :meth:`to_canonical` is the language-neutral golden shape for parser,
+  binder, and compiler parity tests.
+
 The module contains:
 
 * :class:`InitialSpec` - Cold, terminated, or state hot-start initial condition.
@@ -26,6 +37,7 @@ Example::
 
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Dict, Optional, Tuple, Union
@@ -51,14 +63,6 @@ _PROPERTY_KINDS = {
     "must_reach",
     "exists_always",
     "response",
-    "cover",
-}
-_PREDICATE_PROPERTY_KINDS = {
-    "reach",
-    "forbid",
-    "invariant",
-    "must_reach",
-    "exists_always",
     "cover",
 }
 
@@ -124,10 +128,28 @@ def _normalize_selector(selector: QuerySelector) -> QuerySelector:
         if len(parts) == 2 and all(_is_ascii_decimal(part) for part in parts):
             start, end = (int(parts[0]), int(parts[1]))
             if start <= end:
+                if start == end:
+                    return start
                 return "%d..%d" % (start, end)
     raise InvalidBmcQuery(
         "selector must be '*', a non-negative integer, or an inclusive range."
     )
+
+
+def _quote_string(value: str) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _selector_to_dsl(selector: QuerySelector) -> str:
+    return str(selector)
+
+
+def _bool_to_dsl(value: bool) -> str:
+    return "true" if value else "false"
+
+
+def _format_block(lines: Tuple[str, ...]) -> str:
+    return "\n".join("    %s" % line for line in lines)
 
 
 @dataclass(frozen=True)
@@ -190,6 +212,25 @@ class InitialSpec:
             "predicate": _canonical_condition(self.predicate),
         }
 
+    def __str__(self) -> str:
+        """Return the canonical ``.fbmcq`` DSL spelling for this initial clause.
+
+        :return: Initial clause text.
+        :rtype: str
+
+        Example::
+
+            >>> str(InitialSpec())
+            'init cold;'
+        """
+        if self.mode == "state":
+            target = "state(%s)" % _quote_string(self.state_path or "")
+        else:
+            target = self.mode
+        if self.predicate is None:
+            return "init %s;" % target
+        return "init %s where %s;" % (target, self.predicate)
+
 
 class BmcAssumption(ABC):
     """Base class for BMC environment assumptions.
@@ -223,8 +264,26 @@ class BmcAssumption(ABC):
         result.update(self._canonical_payload())
         return result
 
+    def __str__(self) -> str:
+        """Return the canonical ``.fbmcq`` DSL spelling for this assumption.
+
+        :return: Assumption clause text.
+        :rtype: str
+
+        Example::
+
+            >>> from pyfcstm.bmc.ast import BoolLiteral
+            >>> str(FrameAssumption("always", BoolLiteral("true")))
+            'assume always: true;'
+        """
+        return self._to_dsl()
+
     @abstractmethod
     def _canonical_payload(self) -> CanonicalDict:
+        raise NotImplementedError  # pragma: no cover
+
+    @abstractmethod
+    def _to_dsl(self) -> str:
         raise NotImplementedError  # pragma: no cover
 
 
@@ -270,6 +329,11 @@ class FrameAssumption(BmcAssumption):
             "predicate": self.predicate.to_canonical(),
         }
 
+    def _to_dsl(self) -> str:
+        if self.kind == "always":
+            return "assume always: %s;" % self.predicate
+        return "assume at %d: %s;" % (self.frame, self.predicate)
+
 
 @dataclass(frozen=True)
 class EventAssumption(BmcAssumption):
@@ -309,6 +373,13 @@ class EventAssumption(BmcAssumption):
             "selector": self.selector,
             "expected": self.expected,
         }
+
+    def _to_dsl(self) -> str:
+        return "assume event(%s, %s) == %s;" % (
+            _quote_string(self.event_path),
+            _selector_to_dsl(self.selector),
+            _bool_to_dsl(self.expected),
+        )
 
 
 @dataclass(frozen=True)
@@ -352,6 +423,16 @@ class EventCardinalityAssumption(BmcAssumption):
 
     def _canonical_payload(self) -> CanonicalDict:
         return {"kind": self.kind, "event_paths": self.event_paths}
+
+    def _to_dsl(self) -> str:
+        if self.kind == "any":
+            return "assume events cardinality any;"
+        lines = tuple(
+            "%s%s"
+            % (_quote_string(path), "," if index < len(self.event_paths) - 1 else "")
+            for index, path in enumerate(self.event_paths)
+        )
+        return "assume events cardinality at_most_one {\n%s\n};" % _format_block(lines)
 
 
 @dataclass(frozen=True)
@@ -399,15 +480,7 @@ class BmcProperty:
         object.__setattr__(
             self, "bound", _normalize_positive_integer(self.bound, "bound")
         )
-        if self.kind in _PREDICATE_PROPERTY_KINDS:
-            _require_condition(self.predicate, "property predicate")
-            if (
-                self.trigger is not None
-                or self.response is not None
-                or self.within is not None
-            ):
-                raise InvalidBmcQuery("single-body properties only accept predicate.")
-        elif self.kind == "response":
+        if self.kind == "response":
             _require_condition(self.trigger, "response trigger")
             _require_condition(self.response, "response predicate")
             if self.within is None:
@@ -421,6 +494,15 @@ class BmcProperty:
                 raise InvalidBmcQuery(
                     "response properties only accept trigger, response predicate, and window."
                 )
+            return
+
+        _require_condition(self.predicate, "property predicate")
+        if (
+            self.trigger is not None
+            or self.response is not None
+            or self.within is not None
+        ):
+            raise InvalidBmcQuery("single-body properties only accept predicate.")
 
     def to_canonical(self) -> CanonicalDict:
         """Return a stable canonical property dictionary.
@@ -443,6 +525,26 @@ class BmcProperty:
             "response": _canonical_condition(self.response),
             "within": self.within,
         }
+
+    def __str__(self) -> str:
+        """Return the canonical ``.fbmcq`` DSL spelling for this property.
+
+        :return: Check clause text.
+        :rtype: str
+
+        Example::
+
+            >>> from pyfcstm.bmc.ast import Active
+            >>> str(BmcProperty("reach", 2, predicate=Active("Root.Done")))
+            'check reach <= 2: active("Root.Done");'
+        """
+        if self.kind == "response":
+            lines = (
+                "trigger %s" % self.trigger,
+                "-> within %d %s" % (self.within, self.response),
+            )
+            return "check response <= %d:\n%s;" % (self.bound, _format_block(lines))
+        return "check %s <= %d: %s;" % (self.kind, self.bound, self.predicate)
 
 
 @dataclass(frozen=True)
@@ -506,6 +608,24 @@ class BmcQuery:
             ),
             "property": self.property.to_canonical(),
         }
+
+    def __str__(self) -> str:
+        """Return the canonical ``.fbmcq`` DSL spelling for this query.
+
+        :return: Complete query file text.
+        :rtype: str
+
+        Example::
+
+            >>> from pyfcstm.bmc.ast import Active
+            >>> query = BmcQuery(property=BmcProperty("reach", 1, predicate=Active("Root.Done")))
+            >>> str(query).splitlines()[0]
+            'init cold;'
+        """
+        clauses = [str(self.initial)]
+        clauses.extend(str(assumption) for assumption in self.assumptions)
+        clauses.append(str(self.property))
+        return "\n\n".join(clauses)
 
 
 __all__ = [

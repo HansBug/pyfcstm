@@ -28,7 +28,7 @@ BmcExpr
 -----------------------------------------------------
 
 .. autoclass:: BmcExpr
-    :members: to_canonical
+    :members: to_canonical,__str__
 
 
 BmcNumExpr

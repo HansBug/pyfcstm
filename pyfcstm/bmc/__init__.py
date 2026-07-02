@@ -6,6 +6,15 @@ dataclasses while deliberately leaving grammar parsing, semantic binding,
 solver lowering, witness replay, and verify-registry integration to separate
 layers.
 
+Package contracts:
+
+* BMC query objects are parser-independent and data-only in this package.
+* The root package must not depend on ``pyfcstm.verify`` or its registry.
+* :func:`str` on exported query and expression dataclasses is reserved for the
+  canonical ``.fbmcq`` query DSL spelling.
+* :func:`repr` remains the dataclass debugging representation; callers that need
+  stable machine comparison should use ``to_canonical()``.
+
 Public module structure:
 
 .. list-table::

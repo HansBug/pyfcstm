@@ -5,6 +5,14 @@ parser, solver, and verification-registry concerns.  These exceptions are plain
 Python errors with stable names so later parser, binder, engine, and adapter
 layers can raise structured failures without importing ``pyfcstm.verify``.
 
+Design contracts:
+
+* Error classes are intentionally thin and stable so parser, binder, engine, and
+  adapter layers can share them without coupling to each other.
+* Query data-model validation uses these BMC-specific exceptions for structural
+  failures, while expression category mix-ups still use normal Python type
+  errors where that is more precise.
+
 The module contains:
 
 * :class:`BmcError` - Base class for all BMC-specific errors.

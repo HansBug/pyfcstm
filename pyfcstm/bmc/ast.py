@@ -8,6 +8,17 @@ are frozen dataclasses and expose :meth:`BmcExpr.to_canonical` so later parser
 parity tests can compare FCSTM and FBMCQ expressions through a stable,
 language-neutral shape.
 
+Design contracts:
+
+* Expression nodes are data-only; they do not bind names, inspect models, or
+  lower anything to Z3.
+* :func:`str` on every concrete expression returns canonical ``.fbmcq`` DSL
+  text.  This is the object-to-text half of the query round-trip contract.
+* :func:`repr` stays the dataclass-generated debugging representation and must
+  not be rewritten into DSL text.
+* Numeric and condition expression categories stay separate at construction
+  time, matching FCSTM ``num_expression`` and ``cond_expression``.
+
 The module contains:
 
 * :class:`BmcNumExpr` and :class:`BmcCondExpr` - Typed numeric and condition
@@ -29,6 +40,7 @@ Example::
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from typing import Any, ClassVar, Dict, Union
@@ -195,7 +207,25 @@ class BmcExpr:
         result.update(self._canonical_payload())
         return result
 
+    def __str__(self) -> str:
+        """Return the canonical ``.fbmcq`` DSL spelling for this expression.
+
+        :return: Query DSL text that can be parsed back into this expression
+            shape.
+        :rtype: str
+
+        Example::
+
+            >>> from pyfcstm.bmc.ast import IntLiteral
+            >>> str(IntLiteral("7"))
+            '7'
+        """
+        return self._to_dsl()
+
     def _canonical_payload(self) -> CanonicalDict:
+        raise NotImplementedError  # pragma: no cover
+
+    def _to_dsl(self) -> str:
         raise NotImplementedError  # pragma: no cover
 
 
@@ -262,6 +292,67 @@ def _normalize_frame(frame: FrameSelector, field_name: str = "frame") -> FrameSe
     return frame
 
 
+def _quote_string(value: str) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _frame_to_dsl(frame: FrameSelector) -> str:
+    return "current" if frame == "current" else str(frame)
+
+
+def _call_args_to_dsl(*args: str) -> str:
+    return ", ".join(args)
+
+
+def _optional_frame_call_to_dsl(name: str, first_arg: str, frame: FrameSelector) -> str:
+    if frame == "current":
+        return "%s(%s)" % (name, first_arg)
+    return "%s(%s)" % (name, _call_args_to_dsl(first_arg, _frame_to_dsl(frame)))
+
+
+def _optional_unit_frame_call_to_dsl(name: str, frame: FrameSelector) -> str:
+    if frame == "current":
+        return "%s()" % name
+    return "%s(%s)" % (name, _frame_to_dsl(frame))
+
+
+def _grouped(text: str) -> str:
+    return "(%s)" % text
+
+
+def _num_operand_to_dsl(expr: BmcNumExpr) -> str:
+    if isinstance(
+        expr,
+        (IntLiteral, FloatLiteral, NameRef, MathConst, UFuncCall, FrameVar, Cycle),
+    ):
+        return str(expr)
+    return _grouped(str(expr))
+
+
+def _cond_operand_to_dsl(expr: BmcCondExpr) -> str:
+    if isinstance(
+        expr,
+        (
+            BoolLiteral,
+            NumericComparison,
+            CondUnaryOp,
+            Active,
+            Terminated,
+            Event,
+            Case,
+            Called,
+        ),
+    ):
+        return str(expr)
+    return _grouped(str(expr))
+
+
+def _cond_unary_operand_to_dsl(expr: BmcCondExpr) -> str:
+    if isinstance(expr, (BoolLiteral, Active, Terminated, Event, Case, Called)):
+        return str(expr)
+    return _grouped(str(expr))
+
+
 @dataclass(frozen=True)
 class IntLiteral(BmcNumExpr):
     """Integer literal preserving raw token, numeric value, and literal kind.
@@ -313,6 +404,9 @@ class IntLiteral(BmcNumExpr):
     def _canonical_payload(self) -> CanonicalDict:
         return {"kind": self.kind, "raw": self.raw, "value": self.value}
 
+    def _to_dsl(self) -> str:
+        return self.raw
+
 
 @dataclass(frozen=True)
 class FloatLiteral(BmcNumExpr):
@@ -352,6 +446,9 @@ class FloatLiteral(BmcNumExpr):
 
     def _canonical_payload(self) -> CanonicalDict:
         return {"kind": "float", "raw": self.raw, "value": self.value}
+
+    def _to_dsl(self) -> str:
+        return self.raw
 
 
 @dataclass(frozen=True)
@@ -393,6 +490,9 @@ class BoolLiteral(BmcCondExpr):
     def _canonical_payload(self) -> CanonicalDict:
         return {"kind": "bool", "raw": self.raw, "value": self.value}
 
+    def _to_dsl(self) -> str:
+        return self.raw
+
 
 @dataclass(frozen=True)
 class NameRef(BmcNumExpr):
@@ -421,6 +521,9 @@ class NameRef(BmcNumExpr):
     def _canonical_payload(self) -> CanonicalDict:
         return {"name": self.name}
 
+    def _to_dsl(self) -> str:
+        return self.name
+
 
 @dataclass(frozen=True)
 class MathConst(BmcNumExpr):
@@ -444,6 +547,9 @@ class MathConst(BmcNumExpr):
 
     def _canonical_payload(self) -> CanonicalDict:
         return {"name": self.name}
+
+    def _to_dsl(self) -> str:
+        return self.name
 
 
 @dataclass(frozen=True)
@@ -472,6 +578,9 @@ class NumUnaryOp(BmcNumExpr):
 
     def _canonical_payload(self) -> CanonicalDict:
         return {"op": self.op, "operand": _canonical_expr(self.operand)}
+
+    def _to_dsl(self) -> str:
+        return "%s%s" % (self.op, _num_operand_to_dsl(self.operand))
 
 
 @dataclass(frozen=True)
@@ -509,6 +618,13 @@ class NumBinaryOp(BmcNumExpr):
             "right": _canonical_expr(self.right),
         }
 
+    def _to_dsl(self) -> str:
+        return "%s %s %s" % (
+            _num_operand_to_dsl(self.left),
+            self.op,
+            _num_operand_to_dsl(self.right),
+        )
+
 
 @dataclass(frozen=True)
 class NumConditionalOp(BmcNumExpr):
@@ -545,6 +661,13 @@ class NumConditionalOp(BmcNumExpr):
             "if_false": _canonical_expr(self.if_false),
         }
 
+    def _to_dsl(self) -> str:
+        return "(%s) ? %s : %s" % (
+            self.condition,
+            _num_operand_to_dsl(self.if_true),
+            _num_operand_to_dsl(self.if_false),
+        )
+
 
 @dataclass(frozen=True)
 class UFuncCall(BmcNumExpr):
@@ -572,6 +695,9 @@ class UFuncCall(BmcNumExpr):
 
     def _canonical_payload(self) -> CanonicalDict:
         return {"func": self.func, "operand": _canonical_expr(self.operand)}
+
+    def _to_dsl(self) -> str:
+        return "%s(%s)" % (self.func, self.operand)
 
 
 @dataclass(frozen=True)
@@ -602,6 +728,9 @@ class CondUnaryOp(BmcCondExpr):
 
     def _canonical_payload(self) -> CanonicalDict:
         return {"op": self.op, "operand": _canonical_expr(self.operand)}
+
+    def _to_dsl(self) -> str:
+        return "%s%s" % (self.op, _cond_unary_operand_to_dsl(self.operand))
 
 
 @dataclass(frozen=True)
@@ -638,6 +767,13 @@ class NumericComparison(BmcCondExpr):
             "left": _canonical_expr(self.left),
             "right": _canonical_expr(self.right),
         }
+
+    def _to_dsl(self) -> str:
+        return "%s %s %s" % (
+            _num_operand_to_dsl(self.left),
+            self.op,
+            _num_operand_to_dsl(self.right),
+        )
 
 
 @dataclass(frozen=True)
@@ -677,6 +813,13 @@ class CondBinaryOp(BmcCondExpr):
             "right": _canonical_expr(self.right),
         }
 
+    def _to_dsl(self) -> str:
+        return "%s %s %s" % (
+            _cond_operand_to_dsl(self.left),
+            self.op,
+            _cond_operand_to_dsl(self.right),
+        )
+
 
 @dataclass(frozen=True)
 class CondConditionalOp(BmcCondExpr):
@@ -713,6 +856,13 @@ class CondConditionalOp(BmcCondExpr):
             "if_false": _canonical_expr(self.if_false),
         }
 
+    def _to_dsl(self) -> str:
+        return "(%s) ? %s : %s" % (
+            self.condition,
+            _cond_operand_to_dsl(self.if_true),
+            _cond_operand_to_dsl(self.if_false),
+        )
+
 
 @dataclass(frozen=True)
 class FrameVar(BmcNumExpr):
@@ -747,6 +897,9 @@ class FrameVar(BmcNumExpr):
     def _canonical_payload(self) -> CanonicalDict:
         return {"name": self.name, "spelling": self.spelling}
 
+    def _to_dsl(self) -> str:
+        return "var(%s)" % _quote_string(self.name)
+
 
 @dataclass(frozen=True)
 class Cycle(BmcNumExpr):
@@ -762,6 +915,9 @@ class Cycle(BmcNumExpr):
 
     def _canonical_payload(self) -> CanonicalDict:
         return {}
+
+    def _to_dsl(self) -> str:
+        return "cycle"
 
 
 @dataclass(frozen=True)
@@ -791,6 +947,11 @@ class Active(BmcCondExpr):
     def _canonical_payload(self) -> CanonicalDict:
         return {"state_path": self.state_path, "frame": self.frame}
 
+    def _to_dsl(self) -> str:
+        return _optional_frame_call_to_dsl(
+            "active", _quote_string(self.state_path), self.frame
+        )
+
 
 @dataclass(frozen=True)
 class Terminated(BmcCondExpr):
@@ -814,6 +975,9 @@ class Terminated(BmcCondExpr):
 
     def _canonical_payload(self) -> CanonicalDict:
         return {"frame": self.frame}
+
+    def _to_dsl(self) -> str:
+        return _optional_unit_frame_call_to_dsl("terminated", self.frame)
 
 
 @dataclass(frozen=True)
@@ -846,6 +1010,11 @@ class Event(BmcCondExpr):
     def _canonical_payload(self) -> CanonicalDict:
         return {"event_path": self.event_path, "selector": self.selector}
 
+    def _to_dsl(self) -> str:
+        return "event(%s)" % _call_args_to_dsl(
+            _quote_string(self.event_path), _frame_to_dsl(self.selector)
+        )
+
 
 @dataclass(frozen=True)
 class Case(BmcCondExpr):
@@ -874,6 +1043,11 @@ class Case(BmcCondExpr):
     def _canonical_payload(self) -> CanonicalDict:
         return {"label": self.label, "frame": self.frame}
 
+    def _to_dsl(self) -> str:
+        return _optional_frame_call_to_dsl(
+            "case", _quote_string(self.label), self.frame
+        )
+
 
 @dataclass(frozen=True)
 class Called(BmcCondExpr):
@@ -901,6 +1075,11 @@ class Called(BmcCondExpr):
 
     def _canonical_payload(self) -> CanonicalDict:
         return {"name": self.name, "frame": self.frame}
+
+    def _to_dsl(self) -> str:
+        return _optional_frame_call_to_dsl(
+            "called", _quote_string(self.name), self.frame
+        )
 
 
 __all__ = [

@@ -28,14 +28,14 @@ InitialSpec
 -----------------------------------------------------
 
 .. autoclass:: InitialSpec
-    :members: __post_init__,to_canonical,mode,state_path,predicate
+    :members: __post_init__,to_canonical,__str__,mode,state_path,predicate
 
 
 BmcAssumption
 -----------------------------------------------------
 
 .. autoclass:: BmcAssumption
-    :members: to_canonical
+    :members: to_canonical,__str__
 
 
 FrameAssumption
@@ -63,11 +63,11 @@ BmcProperty
 -----------------------------------------------------
 
 .. autoclass:: BmcProperty
-    :members: __post_init__,to_canonical,kind,bound,predicate,trigger,response,within
+    :members: __post_init__,to_canonical,__str__,kind,bound,predicate,trigger,response,within
 
 
 BmcQuery
 -----------------------------------------------------
 
 .. autoclass:: BmcQuery
-    :members: __post_init__,to_canonical,property,initial,assumptions
+    :members: __post_init__,to_canonical,__str__,property,initial,assumptions

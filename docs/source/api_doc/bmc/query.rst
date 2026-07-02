@@ -6,18 +6,6 @@ pyfcstm.bmc.query
 .. automodule:: pyfcstm.bmc.query
 
 
-CanonicalDict
------------------------------------------------------
-
-.. autodata:: CanonicalDict
-
-
-QuerySelector
------------------------------------------------------
-
-.. autodata:: QuerySelector
-
-
 \_\_all\_\_
 -----------------------------------------------------
 

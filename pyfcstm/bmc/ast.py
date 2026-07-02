@@ -52,8 +52,8 @@ try:
 except ImportError:  # pragma: no cover - Python < 3.8 compatibility
     from typing_extensions import Literal
 
-FrameSelector = Union[int, Literal["current"]]
-CanonicalDict = Dict[str, Any]
+_FrameSelector = Union[int, Literal["current"]]
+_CanonicalDict = Dict[str, Any]
 
 _DECIMAL_INT_RE = re.compile(r"^[0-9]+$")
 _HEX_INT_RE = re.compile(r"^0x[0-9a-fA-F]+$")
@@ -191,7 +191,7 @@ class BmcExpr:
 
     _node_name: ClassVar[str] = "expr"
 
-    def to_canonical(self) -> CanonicalDict:
+    def to_canonical(self) -> _CanonicalDict:
         """Return a language-neutral canonical expression shape.
 
         :return: Canonical dictionary for this node.
@@ -222,7 +222,7 @@ class BmcExpr:
         """
         return self._to_dsl()
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         raise NotImplementedError  # pragma: no cover
 
     def _to_dsl(self) -> str:
@@ -259,7 +259,7 @@ class BmcCondExpr(BmcExpr):
     """
 
 
-def _canonical_expr(expr: BmcExpr) -> CanonicalDict:
+def _canonical_expr(expr: BmcExpr) -> _CanonicalDict:
     return expr.to_canonical()
 
 
@@ -269,7 +269,7 @@ def _require_instance(value: object, expected_type: type, field_name: str) -> No
 
 
 def _validate_choice(value: str, choices: set, field_name: str) -> None:
-    if value not in choices:
+    if not isinstance(value, str) or value not in choices:
         raise ValueError(f"Unsupported {field_name}: {value!r}.")
 
 
@@ -278,7 +278,9 @@ def _require_non_empty_string(value: object, field_name: str) -> None:
         raise ValueError(f"{field_name} must be a non-empty string.")
 
 
-def _normalize_frame(frame: FrameSelector, field_name: str = "frame") -> FrameSelector:
+def _normalize_frame(
+    frame: _FrameSelector, field_name: str = "frame"
+) -> _FrameSelector:
     if frame == "current":
         return frame
     if isinstance(frame, bool) or not isinstance(frame, int):
@@ -296,7 +298,7 @@ def _quote_string(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
-def _frame_to_dsl(frame: FrameSelector) -> str:
+def _frame_to_dsl(frame: _FrameSelector) -> str:
     return "current" if frame == "current" else str(frame)
 
 
@@ -304,13 +306,15 @@ def _call_args_to_dsl(*args: str) -> str:
     return ", ".join(args)
 
 
-def _optional_frame_call_to_dsl(name: str, first_arg: str, frame: FrameSelector) -> str:
+def _optional_frame_call_to_dsl(
+    name: str, first_arg: str, frame: _FrameSelector
+) -> str:
     if frame == "current":
         return "%s(%s)" % (name, first_arg)
     return "%s(%s)" % (name, _call_args_to_dsl(first_arg, _frame_to_dsl(frame)))
 
 
-def _optional_unit_frame_call_to_dsl(name: str, frame: FrameSelector) -> str:
+def _optional_unit_frame_call_to_dsl(name: str, frame: _FrameSelector) -> str:
     if frame == "current":
         return "%s()" % name
     return "%s(%s)" % (name, _frame_to_dsl(frame))
@@ -401,7 +405,7 @@ class IntLiteral(BmcNumExpr):
         """
         return int(self.raw, 16 if self.kind == "hex" else 10)
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {"kind": self.kind, "raw": self.raw, "value": self.value}
 
     def _to_dsl(self) -> str:
@@ -444,7 +448,7 @@ class FloatLiteral(BmcNumExpr):
         """
         return float(self.raw)
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {"kind": "float", "raw": self.raw, "value": self.value}
 
     def _to_dsl(self) -> str:
@@ -487,7 +491,7 @@ class BoolLiteral(BmcCondExpr):
         """
         return self.raw.lower() == "true"
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {"kind": "bool", "raw": self.raw, "value": self.value}
 
     def _to_dsl(self) -> str:
@@ -518,7 +522,7 @@ class NameRef(BmcNumExpr):
         if self.name in _BARE_NAME_RESERVED or self.name in _UFUNC_NAMES:
             raise ValueError(f"Reserved bare expression name: {self.name!r}.")
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {"name": self.name}
 
     def _to_dsl(self) -> str:
@@ -545,7 +549,7 @@ class MathConst(BmcNumExpr):
     def __post_init__(self) -> None:
         _validate_choice(self.name, _MATH_CONSTANTS, "math constant")
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {"name": self.name}
 
     def _to_dsl(self) -> str:
@@ -576,7 +580,7 @@ class NumUnaryOp(BmcNumExpr):
         _validate_choice(self.op, _NUM_UNARY_OPS, "numeric unary operator")
         _require_instance(self.operand, BmcNumExpr, "operand")
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {"op": self.op, "operand": _canonical_expr(self.operand)}
 
     def _to_dsl(self) -> str:
@@ -611,7 +615,7 @@ class NumBinaryOp(BmcNumExpr):
         _require_instance(self.right, BmcNumExpr, "right")
         _validate_choice(self.op, _NUM_BINARY_OPS, "numeric binary operator")
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {
             "op": self.op,
             "left": _canonical_expr(self.left),
@@ -654,7 +658,7 @@ class NumConditionalOp(BmcNumExpr):
         _require_instance(self.if_true, BmcNumExpr, "if_true")
         _require_instance(self.if_false, BmcNumExpr, "if_false")
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {
             "condition": _canonical_expr(self.condition),
             "if_true": _canonical_expr(self.if_true),
@@ -693,7 +697,7 @@ class UFuncCall(BmcNumExpr):
         _validate_choice(self.func, _UFUNC_NAMES, "ufunc")
         _require_instance(self.operand, BmcNumExpr, "operand")
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {"func": self.func, "operand": _canonical_expr(self.operand)}
 
     def _to_dsl(self) -> str:
@@ -726,7 +730,7 @@ class CondUnaryOp(BmcCondExpr):
         _require_instance(self.operand, BmcCondExpr, "operand")
         object.__setattr__(self, "op", op)
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {"op": self.op, "operand": _canonical_expr(self.operand)}
 
     def _to_dsl(self) -> str:
@@ -761,7 +765,7 @@ class NumericComparison(BmcCondExpr):
         _require_instance(self.right, BmcNumExpr, "right")
         _validate_choice(self.op, _NUM_COMPARISON_OPS, "numeric comparison operator")
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {
             "op": self.op,
             "left": _canonical_expr(self.left),
@@ -806,7 +810,7 @@ class CondBinaryOp(BmcCondExpr):
         _validate_choice(op, _COND_BINARY_OPS, "condition binary operator")
         object.__setattr__(self, "op", op)
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {
             "op": self.op,
             "left": _canonical_expr(self.left),
@@ -849,7 +853,7 @@ class CondConditionalOp(BmcCondExpr):
         _require_instance(self.if_true, BmcCondExpr, "if_true")
         _require_instance(self.if_false, BmcCondExpr, "if_false")
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {
             "condition": _canonical_expr(self.condition),
             "if_true": _canonical_expr(self.if_true),
@@ -894,7 +898,7 @@ class FrameVar(BmcNumExpr):
         _require_non_empty_string(self.name, "name")
         _validate_choice(self.spelling, {"var_call"}, "frame variable spelling")
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {"name": self.name, "spelling": self.spelling}
 
     def _to_dsl(self) -> str:
@@ -913,7 +917,7 @@ class Cycle(BmcNumExpr):
 
     _node_name: ClassVar[str] = "cycle"
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {}
 
     def _to_dsl(self) -> str:
@@ -938,13 +942,13 @@ class Active(BmcCondExpr):
     _node_name: ClassVar[str] = "active"
 
     state_path: str
-    frame: FrameSelector = "current"
+    frame: _FrameSelector = "current"
 
     def __post_init__(self) -> None:
         _require_non_empty_string(self.state_path, "state_path")
         object.__setattr__(self, "frame", _normalize_frame(self.frame))
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {"state_path": self.state_path, "frame": self.frame}
 
     def _to_dsl(self) -> str:
@@ -968,12 +972,12 @@ class Terminated(BmcCondExpr):
 
     _node_name: ClassVar[str] = "terminated"
 
-    frame: FrameSelector = "current"
+    frame: _FrameSelector = "current"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "frame", _normalize_frame(self.frame))
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {"frame": self.frame}
 
     def _to_dsl(self) -> str:
@@ -999,7 +1003,7 @@ class Event(BmcCondExpr):
     _node_name: ClassVar[str] = "event"
 
     event_path: str
-    selector: FrameSelector = "current"
+    selector: _FrameSelector = "current"
 
     def __post_init__(self) -> None:
         _require_non_empty_string(self.event_path, "event_path")
@@ -1007,7 +1011,7 @@ class Event(BmcCondExpr):
             self, "selector", _normalize_frame(self.selector, "selector")
         )
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {"event_path": self.event_path, "selector": self.selector}
 
     def _to_dsl(self) -> str:
@@ -1034,13 +1038,13 @@ class Case(BmcCondExpr):
     _node_name: ClassVar[str] = "case"
 
     label: str
-    frame: FrameSelector = "current"
+    frame: _FrameSelector = "current"
 
     def __post_init__(self) -> None:
         _require_non_empty_string(self.label, "label")
         object.__setattr__(self, "frame", _normalize_frame(self.frame))
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {"label": self.label, "frame": self.frame}
 
     def _to_dsl(self) -> str:
@@ -1067,13 +1071,13 @@ class Called(BmcCondExpr):
     _node_name: ClassVar[str] = "called"
 
     name: str
-    frame: FrameSelector = "current"
+    frame: _FrameSelector = "current"
 
     def __post_init__(self) -> None:
         _require_non_empty_string(self.name, "name")
         object.__setattr__(self, "frame", _normalize_frame(self.frame))
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {"name": self.name, "frame": self.frame}
 
     def _to_dsl(self) -> str:

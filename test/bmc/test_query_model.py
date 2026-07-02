@@ -1,6 +1,7 @@
 """Data model tests for FCSTM BMC query objects."""
 
 import pytest
+from typing import Any, cast
 
 from pyfcstm.bmc import (
     Active,
@@ -657,11 +658,11 @@ def test_bmc_only_nodes_have_expected_types_and_canonical_forms():
 def test_shallow_expression_type_validation():
     """Expression constructors reject numeric/condition subtype mix-ups early."""
     with pytest.raises(TypeError, match="BmcNumExpr"):
-        NumBinaryOp(Active("Root.A"), "+", IntLiteral("1"))
+        NumBinaryOp(cast(Any, Active("Root.A")), "+", IntLiteral("1"))
     with pytest.raises(TypeError, match="BmcCondExpr"):
-        CondBinaryOp(Cycle(), "&&", BoolLiteral("true"))
+        CondBinaryOp(cast(Any, Cycle()), "&&", BoolLiteral("true"))
     with pytest.raises(TypeError, match="BmcCondExpr"):
-        NumConditionalOp(Cycle(), IntLiteral("1"), IntLiteral("0"))
+        NumConditionalOp(cast(Any, Cycle()), IntLiteral("1"), IntLiteral("0"))
     with pytest.raises(ValueError, match="Unsupported"):
         CondBinaryOp(BoolLiteral("true"), "&&&", BoolLiteral("false"))
 
@@ -759,6 +760,8 @@ def test_query_model_rejects_invalid_skeleton_values():
     """Model skeletons validate enums and simple structural constraints."""
     with pytest.raises(InvalidBmcQuery, match="mode"):
         InitialSpec(mode="warm")
+    with pytest.raises(InvalidBmcQuery, match="mode"):
+        InitialSpec(mode=cast(Any, []))
     with pytest.raises(InvalidBmcQuery, match="state_path"):
         InitialSpec(mode="state")
     with pytest.raises(InvalidBmcQuery, match="bound"):
@@ -767,6 +770,8 @@ def test_query_model_rejects_invalid_skeleton_values():
         BmcProperty("eventually", bound=3, predicate=Active("Root.Done"))
     with pytest.raises(InvalidBmcQuery, match="property"):
         BmcProperty("reach", bound=3)
+    with pytest.raises(InvalidBmcQuery, match="kind"):
+        FrameAssumption(cast(Any, []), BoolLiteral("true"))
     with pytest.raises(InvalidBmcQuery, match="frame"):
         FrameAssumption("at", BoolLiteral("true"))
     with pytest.raises(InvalidBmcQuery, match="event_path"):
@@ -774,9 +779,9 @@ def test_query_model_rejects_invalid_skeleton_values():
     with pytest.raises(InvalidBmcQuery, match="selector"):
         EventAssumption("Root.E", selector="bad")
     with pytest.raises(InvalidBmcQuery, match="selector"):
-        EventAssumption("Root.E", selector=[])
+        EventAssumption("Root.E", selector=cast(Any, []))
     with pytest.raises(InvalidBmcQuery, match="expected"):
-        EventAssumption("Root.E", expected="true")
+        EventAssumption("Root.E", expected=cast(Any, "true"))
     with pytest.raises(InvalidBmcQuery, match="only accept predicate"):
         BmcProperty(
             "reach",
@@ -866,33 +871,35 @@ def test_query_model_rejects_additional_invalid_structural_values():
     with pytest.raises(InvalidBmcQuery, match="state_path"):
         InitialSpec(mode="cold", state_path="Root.A")
     with pytest.raises(InvalidBmcQuery, match="predicate"):
-        InitialSpec(predicate=Cycle())
+        InitialSpec(predicate=cast(Any, Cycle()))
     with pytest.raises(InvalidBmcQuery, match="frame"):
         FrameAssumption("always", BoolLiteral("true"), frame=0)
+    with pytest.raises(InvalidBmcQuery, match="kind"):
+        EventCardinalityAssumption(cast(Any, []))
     with pytest.raises(InvalidBmcQuery, match="event_paths"):
         EventCardinalityAssumption("at_most_one", ())
     with pytest.raises(InvalidBmcQuery, match="event_paths"):
-        EventCardinalityAssumption("at_most_one", "Root.E")
+        EventCardinalityAssumption("at_most_one", cast(Any, "Root.E"))
     with pytest.raises(InvalidBmcQuery, match="only valid"):
         EventCardinalityAssumption("any", ("Root.E",))
     with pytest.raises(InvalidBmcQuery, match="event_paths"):
         EventCardinalityAssumption("at_most_one", ("Root.E", ""))
     with pytest.raises(InvalidBmcQuery, match="property"):
-        BmcQuery(property=Active("Root.Done"))
+        BmcQuery(property=cast(Any, Active("Root.Done")))
     with pytest.raises(InvalidBmcQuery, match="initial"):
         BmcQuery(
             property=BmcProperty("reach", bound=1, predicate=Active("Root.Done")),
-            initial=Active("Root.A"),
+            initial=cast(Any, Active("Root.A")),
         )
     with pytest.raises(InvalidBmcQuery, match="assumptions"):
         BmcQuery(
             property=BmcProperty("reach", bound=1, predicate=Active("Root.Done")),
-            assumptions=(Active("Root.A"),),
+            assumptions=cast(Any, (Active("Root.A"),)),
         )
     with pytest.raises(InvalidBmcQuery, match="assumptions"):
         BmcQuery(
             property=BmcProperty("reach", bound=1, predicate=Active("Root.Done")),
-            assumptions=Active("Root.A"),
+            assumptions=cast(Any, Active("Root.A")),
         )
 
 
@@ -904,4 +911,4 @@ def test_bmc_assumption_base_requires_canonical_payload():
         pass
 
     with pytest.raises(TypeError, match="abstract"):
-        FakeAssumption()
+        cast(Any, FakeAssumption)()

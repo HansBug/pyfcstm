@@ -6,18 +6,6 @@ pyfcstm.bmc.ast
 .. automodule:: pyfcstm.bmc.ast
 
 
-FrameSelector
------------------------------------------------------
-
-.. autodata:: FrameSelector
-
-
-CanonicalDict
------------------------------------------------------
-
-.. autodata:: CanonicalDict
-
-
 \_\_all\_\_
 -----------------------------------------------------
 

@@ -50,8 +50,8 @@ except ImportError:  # pragma: no cover - Python < 3.8 compatibility
 from pyfcstm.bmc.ast import BmcCondExpr
 from pyfcstm.bmc.errors import InvalidBmcQuery
 
-CanonicalDict = Dict[str, Any]
-QuerySelector = Union[int, Literal["*"], str]
+_CanonicalDict = Dict[str, Any]
+_QuerySelector = Union[int, Literal["*"], str]
 
 _INITIAL_MODES = {"cold", "terminated", "state"}
 _FRAME_ASSUMPTION_KINDS = {"always", "at"}
@@ -67,7 +67,7 @@ _PROPERTY_KINDS = {
 }
 
 
-def _canonical_condition(expr: Optional[BmcCondExpr]) -> Optional[CanonicalDict]:
+def _canonical_condition(expr: Optional[BmcCondExpr]) -> Optional[_CanonicalDict]:
     if expr is None:
         return None
     return expr.to_canonical()
@@ -79,7 +79,7 @@ def _require_condition(value: Optional[BmcCondExpr], field_name: str) -> None:
 
 
 def _validate_choice(value: str, choices: set, field_name: str) -> None:
-    if value not in choices:
+    if not isinstance(value, str) or value not in choices:
         raise InvalidBmcQuery(f"Unsupported {field_name}: {value!r}.")
 
 
@@ -110,7 +110,7 @@ def _is_ascii_decimal(value: str) -> bool:
     return bool(value) and all("0" <= char <= "9" for char in value)
 
 
-def _normalize_selector(selector: QuerySelector) -> QuerySelector:
+def _normalize_selector(selector: _QuerySelector) -> _QuerySelector:
     if isinstance(selector, bool):
         raise InvalidBmcQuery(
             "selector must be '*', a non-negative integer, or an inclusive range."
@@ -140,7 +140,7 @@ def _quote_string(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
-def _selector_to_dsl(selector: QuerySelector) -> str:
+def _selector_to_dsl(selector: _QuerySelector) -> str:
     return str(selector)
 
 
@@ -194,7 +194,7 @@ class InitialSpec:
         if self.predicate is not None:
             _require_condition(self.predicate, "predicate")
 
-    def to_canonical(self) -> CanonicalDict:
+    def to_canonical(self) -> _CanonicalDict:
         """Return a stable canonical initial-spec dictionary.
 
         :return: Canonical initial specification.
@@ -248,7 +248,7 @@ class BmcAssumption(ABC):
 
     _node_name: ClassVar[str] = "assumption"
 
-    def to_canonical(self) -> CanonicalDict:
+    def to_canonical(self) -> _CanonicalDict:
         """Return a stable canonical assumption dictionary.
 
         :return: Canonical assumption dictionary.
@@ -279,7 +279,7 @@ class BmcAssumption(ABC):
         return self._to_dsl()
 
     @abstractmethod
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         raise NotImplementedError  # pragma: no cover
 
     @abstractmethod
@@ -322,7 +322,7 @@ class FrameAssumption(BmcAssumption):
             raise InvalidBmcQuery("frame is only valid for 'at' frame assumptions.")
         object.__setattr__(self, "frame", frame)
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {
             "kind": self.kind,
             "frame": self.frame,
@@ -357,7 +357,7 @@ class EventAssumption(BmcAssumption):
     _node_name: ClassVar[str] = "event_assumption"
 
     event_path: str
-    selector: QuerySelector = "*"
+    selector: _QuerySelector = "*"
     expected: bool = True
 
     def __post_init__(self) -> None:
@@ -367,7 +367,7 @@ class EventAssumption(BmcAssumption):
             raise InvalidBmcQuery("expected must be a boolean value.")
         object.__setattr__(self, "selector", selector)
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {
             "event_path": self.event_path,
             "selector": self.selector,
@@ -421,7 +421,7 @@ class EventCardinalityAssumption(BmcAssumption):
             raise InvalidBmcQuery("event_paths must contain non-empty strings.")
         object.__setattr__(self, "event_paths", event_paths)
 
-    def _canonical_payload(self) -> CanonicalDict:
+    def _canonical_payload(self) -> _CanonicalDict:
         return {"kind": self.kind, "event_paths": self.event_paths}
 
     def _to_dsl(self) -> str:
@@ -504,7 +504,7 @@ class BmcProperty:
         ):
             raise InvalidBmcQuery("single-body properties only accept predicate.")
 
-    def to_canonical(self) -> CanonicalDict:
+    def to_canonical(self) -> _CanonicalDict:
         """Return a stable canonical property dictionary.
 
         :return: Canonical property dictionary.
@@ -587,7 +587,7 @@ class BmcQuery:
             raise InvalidBmcQuery("assumptions must contain BmcAssumption objects.")
         object.__setattr__(self, "assumptions", assumptions)
 
-    def to_canonical(self) -> CanonicalDict:
+    def to_canonical(self) -> _CanonicalDict:
         """Return a stable canonical query dictionary.
 
         :return: Canonical query dictionary.

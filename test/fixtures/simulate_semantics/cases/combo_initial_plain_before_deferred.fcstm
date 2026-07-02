@@ -1,0 +1,10 @@
+def int trace = 0;
+
+state Root {
+    during before { trace = trace * 10 + 1; }
+    [*] -> Active : EntryA + EntryB effect { trace = trace * 10 + 2; }
+
+    state Active {
+        enter { trace = trace * 10 + 3; }
+    }
+}

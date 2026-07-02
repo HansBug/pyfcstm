@@ -120,23 +120,34 @@ def _is_lifecycle_free_leaf(
 
 
 def _effect_self_assign_warnings(transitions: Iterable['TransitionInfo']) -> List[ModelDiagnostic]:
+    transitions = list(transitions)
+    subjects_by_id = {
+        id(t): _public_transition_subject_for_effect_diagnostic(t)
+        for t in transitions
+    }
     counts = Counter(
-        (t.from_path, var_name)
+        (subjects_by_id[id(t)]['state_path'], var_name)
         for t in transitions
         for var_name in getattr(t, 'effect_self_assigns', ())
     )
     diagnostics: List[ModelDiagnostic] = []
     for t in transitions:
+        subject = subjects_by_id[id(t)]
         effect_self_assigns = getattr(t, 'effect_self_assigns', ())
         effect_self_assign_spans = getattr(t, 'effect_self_assign_spans', ())
         for index, var_name in enumerate(effect_self_assigns):
             refs = {
-                'state_path': t.from_path,
-                'transition_span': t.span,
+                'state_path': subject['state_path'],
+                'transition_span': subject['transition_span'],
                 'var_name': var_name,
                 'transition_index': t.transition_index,
             }
-            if t.from_path != '[*]' and counts[(t.from_path, var_name)] == 1:
+            refs.update(subject['extra_refs'])
+            if (
+                subject['can_anchor']
+                and subject['state_path'] != '[*]'
+                and counts[(subject['state_path'], var_name)] == 1
+            ):
                 refs['effect_self_assign_anchor'] = var_name
             diagnostics.append(ModelDiagnostic(
                 code='W_EFFECT_SELF_ASSIGN',
@@ -151,6 +162,70 @@ def _effect_self_assign_warnings(transitions: Iterable['TransitionInfo']) -> Lis
                 refs=refs,
             ))
     return diagnostics
+
+
+def _public_transition_subject_for_effect_diagnostic(t: 'TransitionInfo') -> Dict[str, object]:
+    """Return the user-facing subject and debug refs for effect diagnostics."""
+    origin_ref = next(iter(getattr(t, 'combo_origin_refs', ())), None)
+    transition_span = getattr(origin_ref, 'transition_span', None) or t.span
+    projection_key = getattr(t, 'combo_projection_key', None)
+    extra_refs: Dict[str, object] = {}
+
+    if origin_ref is None:
+        return {
+            'state_path': t.from_path,
+            'transition_span': transition_span,
+            'extra_refs': extra_refs,
+            'can_anchor': True,
+        }
+
+    state_path = t.from_path
+    if projection_key is None or len(projection_key) < 2:
+        extra_refs.update({
+            'from_path': state_path,
+            'generated_state_path': t.from_path,
+            'generated_from_path': t.from_path,
+            'generated_to_path': t.to_path,
+            'combo_origin_id': origin_ref.origin_id,
+        })
+        return {
+            'state_path': state_path,
+            'transition_span': transition_span,
+            'extra_refs': extra_refs,
+            'can_anchor': False,
+        }
+
+    owner_path = projection_key[0]
+    projection_kind = projection_key[1]
+    can_anchor = False
+    if projection_kind == 'state' and len(projection_key) >= 3:
+        source_path = projection_key[2]
+        if isinstance(source_path, tuple):
+            state_path = '.'.join(source_path)
+            can_anchor = True
+        elif isinstance(source_path, str):
+            state_path = source_path
+            can_anchor = True
+    elif projection_kind == 'entry':
+        state_path = '[*]'
+        if isinstance(owner_path, tuple):
+            extra_refs['combo_owner_path'] = '.'.join(owner_path)
+        elif isinstance(owner_path, str):
+            extra_refs['combo_owner_path'] = owner_path
+
+    extra_refs.update({
+        'from_path': state_path,
+        'generated_state_path': t.from_path,
+        'generated_from_path': t.from_path,
+        'generated_to_path': t.to_path,
+        'combo_origin_id': origin_ref.origin_id,
+    })
+    return {
+        'state_path': state_path,
+        'transition_span': transition_span,
+        'extra_refs': extra_refs,
+        'can_anchor': can_anchor,
+    }
 
 
 def _forced_overrides_normal_warnings(transitions: Iterable['TransitionInfo']) -> List[ModelDiagnostic]:

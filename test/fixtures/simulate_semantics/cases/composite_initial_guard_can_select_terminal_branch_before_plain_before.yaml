@@ -1,13 +1,16 @@
-title: Composite initial guard can choose a terminal branch before plain during-before
-  mutation
+title: Composite initial guard can choose a terminal branch before any selected-child
+  plain during-before
 origin:
   files:
   - test/simulate/test_semantic_fixtures.py::test_simulation_semantic_fixture
   docs:
   - https://github.com/HansBug/pyfcstm/issues/197#issuecomment-4689585597
+  - https://github.com/HansBug/pyfcstm/issues/304#issuecomment-4850334414
   notes:
   - Covers the final and is_ended variant where wrong initial selection prevents machine
     termination.
+  - F-001 clarifies that initial pseudo routing ending in [*] has no selected
+    non-pseudo child, so pending plain during-before is cleared instead of run.
 categories:
 - runtime
 - lifecycle
@@ -18,6 +21,6 @@ steps:
   expect:
     state: null
     vars:
-      flag: 1
-      trace: 234789
+      flag: 0
+      trace: 24789
     ended: true

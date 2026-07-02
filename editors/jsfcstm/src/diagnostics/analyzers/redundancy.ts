@@ -109,25 +109,34 @@ function isLifecycleFreeLeaf(statePath: string, statesByPath: Map<string, StateI
 }
 
 function collectEffectSelfAssignWarnings(transitions: TransitionInfo[]): ModelDiagnosticJson[] {
+    const subjects = new Map<TransitionInfo, PublicTransitionSubject>();
+    for (const transition of transitions) {
+        subjects.set(transition, publicTransitionSubjectForEffectDiagnostic(transition));
+    }
+
     const counts = new Map<string, number>();
     for (const transition of transitions) {
+        const subject = subjects.get(transition)!;
         for (const varName of transition.effect_self_assigns) {
-            const key = JSON.stringify([transition.from_path, varName]);
+            const key = JSON.stringify([subject.statePath, varName]);
             counts.set(key, (counts.get(key) ?? 0) + 1);
         }
     }
     const out: ModelDiagnosticJson[] = [];
     for (const transition of transitions) {
+        const subject = subjects.get(transition)!;
         for (const varName of transition.effect_self_assigns) {
             const refs: Record<string, unknown> = {
-                state_path: transition.from_path,
-                transition_span: null,
+                state_path: subject.statePath,
+                transition_span: subject.transitionSpan,
                 var_name: varName,
                 transition_index: transition.transition_index,
+                ...subject.extraRefs,
             };
             if (
-                transition.from_path !== '[*]' &&
-                counts.get(JSON.stringify([transition.from_path, varName])) === 1
+                subject.canAnchor &&
+                subject.statePath !== '[*]' &&
+                counts.get(JSON.stringify([subject.statePath, varName])) === 1
             ) {
                 refs.effect_self_assign_anchor = varName;
             }
@@ -141,6 +150,81 @@ function collectEffectSelfAssignWarnings(transitions: TransitionInfo[]): ModelDi
         }
     }
     return out;
+}
+
+interface PublicTransitionSubject {
+    statePath: string;
+    transitionSpan: ModelSpanJson | null;
+    extraRefs: Record<string, unknown>;
+    canAnchor: boolean;
+}
+
+/** Return the user-facing subject and debug refs for effect diagnostics. */
+function publicTransitionSubjectForEffectDiagnostic(
+    transition: TransitionInfo,
+): PublicTransitionSubject {
+    const originRef = transition.combo_origin_refs?.[0];
+    const transitionSpan = originRef?.transition_span ?? sourceSpan(transition);
+    const projectionKey = transition.combo_projection_key;
+    const extraRefs: Record<string, unknown> = {};
+
+    if (!originRef) {
+        return {
+            statePath: transition.from_path,
+            transitionSpan,
+            extraRefs,
+            canAnchor: true,
+        };
+    }
+
+    if (!Array.isArray(projectionKey) || projectionKey.length < 2) {
+        return {
+            statePath: transition.from_path,
+            transitionSpan,
+            extraRefs: {
+                from_path: transition.from_path,
+                generated_state_path: transition.from_path,
+                generated_from_path: transition.from_path,
+                generated_to_path: transition.to_path,
+                combo_origin_id: originRef.origin_id,
+            },
+            canAnchor: false,
+        };
+    }
+
+    let statePath = transition.from_path;
+    let canAnchor = false;
+    const [ownerPath, projectionKind, sourcePath] = projectionKey;
+    if (projectionKind === 'state') {
+        if (Array.isArray(sourcePath)) {
+            statePath = sourcePath.join('.');
+            canAnchor = true;
+        } else if (typeof sourcePath === 'string') {
+            statePath = sourcePath;
+            canAnchor = true;
+        }
+    } else if (projectionKind === 'entry') {
+        statePath = '[*]';
+        if (Array.isArray(ownerPath)) {
+            extraRefs.combo_owner_path = ownerPath.join('.');
+        } else if (typeof ownerPath === 'string') {
+            extraRefs.combo_owner_path = ownerPath;
+        }
+    }
+
+    return {
+        statePath,
+        transitionSpan,
+        extraRefs: {
+            ...extraRefs,
+            from_path: statePath,
+            generated_state_path: transition.from_path,
+            generated_from_path: transition.from_path,
+            generated_to_path: transition.to_path,
+            combo_origin_id: originRef.origin_id,
+        },
+        canAnchor,
+    };
 }
 
 function collectForcedOverridesNormalWarnings(transitions: TransitionInfo[]): ModelDiagnosticJson[] {

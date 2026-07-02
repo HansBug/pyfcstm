@@ -1,0 +1,18 @@
+def int trace = 0;
+
+state Root {
+    during before { trace = trace * 10 + 1; }
+
+    pseudo state P {
+        enter { trace = trace * 10 + 2; }
+        during { trace = trace * 10 + 3; }
+        exit { trace = trace * 10 + 4; }
+    }
+
+    state Active {
+        enter { trace = trace * 10 + 6; }
+    }
+
+    [*] -> P;
+    P -> Active effect { trace = trace * 10 + 5; }
+}

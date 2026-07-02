@@ -228,7 +228,7 @@ def render_inspect_human(
         >>> from pyfcstm.diagnostics import inspect_model
         >>> model = load_state_machine_from_text('state Root { state Idle; [*] -> Idle; }')
         >>> text = render_inspect_human(inspect_model(model), 'state Root { state Idle; [*] -> Idle; }')
-        >>> '[OK] FCSTM Inspect Report' in text
+        >>> '[WARN] FCSTM Inspect Report' in text
         True
     """
     options = options or HumanRenderOptions()

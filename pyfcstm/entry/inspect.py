@@ -3,7 +3,7 @@
 This module registers the ``inspect`` CLI command. The command reads an FCSTM
 DSL file, builds a :class:`pyfcstm.model.StateMachine`, runs
 :func:`pyfcstm.diagnostics.inspect_model`, and emits the inspection payload in
-human-readable, full JSON, or draft LLM-oriented formats.
+human-readable, full JSON, or stable LLM-oriented formats.
 
 Module map:
 
@@ -77,7 +77,7 @@ def _read_inspect_source_text(input_code_file: str) -> str:
 
     The model loader remains responsible for import-aware parsing. This helper
     only provides the top-level source text used to render diagnostic source
-    excerpts in human and draft LLM formats.
+    excerpts in human and stable LLM formats.
 
     :param input_code_file: Path to the primary input FCSTM file.
     :type input_code_file: str
@@ -350,7 +350,7 @@ def build_inspect_output(
 
     ``output_format="json"`` delegates to :func:`build_inspect_json` so the
     full JSON contract stays byte-for-byte aligned with the pre-existing
-    machine-readable path. Human and draft LLM formats additionally read the
+    machine-readable path. Human and stable LLM formats additionally read the
     top-level source file to render source excerpts.
 
     :param input_code_file: Path to the input FCSTM DSL file.

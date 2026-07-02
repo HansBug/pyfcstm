@@ -201,7 +201,7 @@ re-implementing local solver approximations.
 
 - ``-i, --input-code``: Path to input state machine DSL file (required)
 - ``-o, --output``: Path to output file (optional, outputs to stdout when not specified)
-- ``--format``: Output format. ``human`` is the default; use ``json`` for the full machine-readable report. ``llm-json`` and ``llm-md`` are draft LLM-oriented formats.
+- ``--format``: Output format. ``human`` is the default; use ``json`` for the full machine-readable report. ``llm-json`` and ``llm-md`` are stable LLM-oriented repair formats using schema ``pyfcstm.inspect.llm.v1``.
 - ``--color``: ANSI color policy for human output only. ``auto`` enables color only for interactive stdout, ``always`` forces color on stdout, and ``never`` disables color. ``-o`` files and machine formats are always ANSI-free.
 - ``--enable-verify``: Run inspect-eligible ``pyfcstm.verify`` algorithms and append their diagnostics
 - ``--max-complexity-tier``: Highest verify tier allowed by the inspect adapter; default is ``structural``
@@ -217,7 +217,7 @@ re-implementing local solver approximations.
    pyfcstm inspect -i simple_machine.fcstm --format json -o simple_machine.inspect.json
 
 By default, ``inspect`` emits a checker-style human-readable report and does not run
-verify-backed checks. Human output and the draft ``llm-json`` / ``llm-md`` formats include a small source context window around each diagnostic so nearby state and transition structure remains visible. Use ``--format json`` for the full JSON contract aligned
+verify-backed checks. Human output and the stable ``llm-json`` / ``llm-md`` formats include a small source context window around each diagnostic so nearby state and transition structure remains visible; the LLM formats also include provenance, repair guidance, and do-not notes for repair loops. Use ``--format json`` for the full JSON contract aligned
 with ``inspect_model(model).to_json()`` and with the existing cross-end default
 diagnostics contract. If an output filename suffix looks mismatched, such as
 writing the default human report to ``.json``, the CLI emits a warning on

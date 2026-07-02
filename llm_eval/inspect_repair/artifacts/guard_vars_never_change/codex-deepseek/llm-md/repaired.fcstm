@@ -1,0 +1,12 @@
+def int request = 0;
+
+state Root {
+    [*] -> Idle;
+
+    state Idle;
+    state Running;
+
+    Idle -> Idle :: RequestReceived effect { request = 1; };
+    Idle -> Running : if [request > 0];
+    Running -> [*];
+}

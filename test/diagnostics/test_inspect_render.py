@@ -1,15 +1,17 @@
 """Unit tests for inspect presentation renderers."""
 
 import json
+import os
 import re
 import textwrap
+from typing import Any, List, Mapping
 
 import pytest
 
 from pyfcstm.diagnostics import inspect_model
 from pyfcstm.diagnostics.inspect_render import (
     HumanRenderOptions,
-    INSPECT_LLM_DRAFT_SCHEMA_VERSION,
+    INSPECT_LLM_SCHEMA_VERSION,
     inspect_output_suffix_warning,
     render_inspect_human,
     render_inspect_llm_json,
@@ -63,6 +65,105 @@ def _assert_markdown_excerpt_gutters_align(text):
             caret_count += 1
             assert line.index("|") == lines[index + 1].index("|")
     assert caret_count > 0
+
+
+def _schema_node_by_ref(schema, ref):
+    assert ref.startswith("#/")
+    node = schema
+    for part in ref[2:].split("/"):
+        node = node[part]
+    return node
+
+
+def _schema_type_matches(value, expected):
+    expected_types = expected if isinstance(expected, list) else [expected]
+    for expected_type in expected_types:
+        if expected_type == "null" and value is None:
+            return True
+        if expected_type == "string" and isinstance(value, str):
+            return True
+        if expected_type == "boolean" and isinstance(value, bool):
+            return True
+        if (
+            expected_type == "integer"
+            and isinstance(value, int)
+            and not isinstance(value, bool)
+        ):
+            return True
+        if expected_type == "array" and isinstance(value, list):
+            return True
+        if (
+            expected_type == "object"
+            and isinstance(value, dict)
+            and not isinstance(value, list)
+        ):
+            return True
+    return False
+
+
+def _schema_errors(
+    schema_root: Mapping[str, Any],
+    schema_node: Mapping[str, Any],
+    value: Any,
+    path: str = "$",
+) -> List[str]:
+    if "$ref" in schema_node:
+        return _schema_errors(
+            schema_root,
+            _schema_node_by_ref(schema_root, schema_node["$ref"]),
+            value,
+            path,
+        )
+
+    if "oneOf" in schema_node:
+        branch_errors = [
+            _schema_errors(schema_root, branch, value, path)
+            for branch in schema_node["oneOf"]
+        ]
+        matches = [errors for errors in branch_errors if not errors]
+        if len(matches) != 1:
+            return [f"{path}: expected exactly one oneOf branch to match"]
+        return []
+
+    errors = []
+    if "type" in schema_node and not _schema_type_matches(value, schema_node["type"]):
+        return [f"{path}: expected type {schema_node['type']!r}"]
+    if "const" in schema_node and value != schema_node["const"]:
+        errors.append(f"{path}: expected const {schema_node['const']!r}")
+    if "enum" in schema_node and value not in schema_node["enum"]:
+        errors.append(f"{path}: expected one of {schema_node['enum']!r}")
+    if "minimum" in schema_node and value < schema_node["minimum"]:
+        errors.append(f"{path}: expected minimum {schema_node['minimum']!r}")
+
+    if isinstance(value, dict):
+        required = set(schema_node.get("required", []))
+        missing = sorted(required - set(value))
+        for key in missing:
+            errors.append(f"{path}: missing required property {key!r}")
+        properties = schema_node.get("properties", {})
+        if schema_node.get("additionalProperties") is False:
+            extras = sorted(set(value) - set(properties))
+            for key in extras:
+                errors.append(f"{path}: unexpected property {key!r}")
+        for key, child_schema in properties.items():
+            if key in value:
+                errors.extend(
+                    _schema_errors(
+                        schema_root,
+                        child_schema,
+                        value[key],
+                        f"{path}.{key}",
+                    )
+                )
+
+    if isinstance(value, list) and "items" in schema_node:
+        for index, item in enumerate(value):
+            errors.extend(
+                _schema_errors(
+                    schema_root, schema_node["items"], item, f"{path}[{index}]"
+                )
+            )
+    return errors
 
 
 @pytest.mark.unittest
@@ -167,17 +268,21 @@ class TestInspectRender:
         assert "No diagnostics." in text
         assert ANSI_ESCAPE_RE.search(text) is None
 
-    def test_llm_json_renderer_is_draft_and_actionable(self):
+    def test_llm_json_renderer_is_stable_and_actionable(self):
         payload = json.loads(render_inspect_llm_json(_report(), SOURCE))
 
-        assert payload["schema_version"] == INSPECT_LLM_DRAFT_SCHEMA_VERSION
-        assert payload["schema_status"] == "draft"
+        assert payload["schema_version"] == INSPECT_LLM_SCHEMA_VERSION
+        assert payload["schema_status"] == "stable"
         assert payload["status"] == "warning"
         assert payload["diagnostics"]
         diagnostic = payload["diagnostics"][0]
         assert {"code", "severity", "message", "refs"} <= set(diagnostic)
+        assert payload["repair_protocol"]["rules"]
         assert "recommended_actions" in diagnostic
         assert "do_not" in diagnostic
+        assert "provenance" in diagnostic
+        assert diagnostic["provenance"]["kind"] == diagnostic["source"]
+        assert "repair_guidance" in diagnostic
         deadlock = next(
             item for item in payload["diagnostics"] if item["code"] == "W_DEADLOCK_LEAF"
         )
@@ -188,18 +293,72 @@ class TestInspectRender:
         assert context[1]["caret"].strip("^") == "    "
         assert context[2]["text"] == "    [*] -> Idle;"
 
-    def test_llm_markdown_renderer_contains_draft_schema_and_sections(self):
+    def test_llm_json_schema_contract_matches_payload_shape(self):
+        schema_path = os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "pyfcstm",
+            "diagnostics",
+            "inspect_llm_report_schema.json",
+        )
+        with open(schema_path, "r", encoding="utf-8") as f:
+            schema = json.load(f)
+        payload = json.loads(render_inspect_llm_json(_report(), SOURCE))
+
+        assert schema["title"] == "FCSTM Inspect LLM Report"
+        assert (
+            schema["properties"]["schema_version"]["const"]
+            == INSPECT_LLM_SCHEMA_VERSION
+        )
+        assert schema["properties"]["schema_status"]["const"] == "stable"
+        assert set(schema["required"]).issubset(set(payload.keys()))
+        diagnostic_required = set(schema["definitions"]["Diagnostic"]["required"])
+        for diagnostic in payload["diagnostics"]:
+            assert diagnostic_required.issubset(set(diagnostic.keys()))
+            assert diagnostic["provenance"]["kind"] == diagnostic["source"]
+
+        schema_errors = _schema_errors(schema, schema, payload)
+        assert schema_errors == []
+
+    def test_llm_markdown_renderer_contains_stable_schema_and_sections(self):
         text = render_inspect_llm_markdown(_report(), SOURCE)
 
         assert "# FCSTM Inspect Report" in text
-        assert INSPECT_LLM_DRAFT_SCHEMA_VERSION in text
+        assert INSPECT_LLM_SCHEMA_VERSION in text
+        assert "Schema status: `stable`" in text
+        assert "## Repair protocol" in text
         assert "## W_" in text
         assert "Recommended actions" in text
+        assert "Repair notes" in text
         assert "3 |     state Idle;" in text
         assert "4 |     state Running;" in text
         assert "|     ^^^^^^^^^^^^^^" in text
         assert "5 |     [*] -> Idle;" in text
         _assert_markdown_excerpt_gutters_align(text)
+
+    def test_source_excerpt_renderers_do_not_emit_trailing_whitespace(self):
+        source = textwrap.dedent(
+            """
+            state Root {
+                [*] -> Idle;
+
+                state Idle;
+            }
+            """
+        ).strip()
+        ast = parse_with_grammar_entry(source, "state_machine_dsl")
+        machine = parse_dsl_node_to_state_machine(ast)
+        report = inspect_model(machine)
+
+        human = render_inspect_human(report, source)
+        markdown = render_inspect_llm_markdown(report, source)
+
+        assert " 3 |" in human
+        assert "  3 |" in markdown
+        for text in (human, markdown):
+            for line in text.splitlines():
+                assert line == line.rstrip(" \t")
 
     @pytest.mark.parametrize(
         ("path", "output_format", "expected"),

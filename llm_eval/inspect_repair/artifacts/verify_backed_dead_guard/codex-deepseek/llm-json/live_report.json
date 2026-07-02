@@ -1,0 +1,102 @@
+{
+  "artifact_dir": "llm_eval/inspect_repair/artifacts/verify_backed_dead_guard/codex-deepseek/llm-json",
+  "bad_repair_flags": [],
+  "bad_repair_flags_under_watch": [
+    "guard-to-true"
+  ],
+  "blocking_diagnostics": [],
+  "diagnostics": "",
+  "expected_codes": [
+    "W_DEAD_GUARD"
+  ],
+  "failure_category": "passed",
+  "fixture_id": "verify_backed_dead_guard",
+  "fixture_path": "llm_eval/inspect_repair/fixtures/verify_backed_dead_guard.fcstm",
+  "format": "llm-json",
+  "guide_metadata": {
+    "byte_size": 16665,
+    "chapter_count": 15,
+    "checksum_resource_name": "fcstm_grammar_guide.md.sha256",
+    "expected_sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914",
+    "line_count": 553,
+    "pyfcstm_version": "0.5.0",
+    "resource_name": "fcstm_grammar_guide.md",
+    "sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914"
+  },
+  "inspect_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/fixtures/verify_backed_dead_guard.fcstm",
+    "--format",
+    "llm-json",
+    "--enable-verify",
+    "--max-complexity-tier",
+    "smt_linear",
+    "--smt-timeout-ms",
+    "1000"
+  ],
+  "isolated_workdir": "/tmp/pyfcstm_inspect_repair_wxiv7_sg",
+  "mode": "live",
+  "prepared_at": "20260702T183316Z",
+  "provider": "codex-deepseek",
+  "provider_command": [
+    "codex-deepseek",
+    "exec",
+    "--skip-git-repo-check",
+    "--ignore-user-config",
+    "--ephemeral",
+    "--color",
+    "never",
+    "-c",
+    "model_providers.deepseek={name=\"DeepSeek via Moon Bridge\", base_url=\"http://127.0.0.1:61040/v1\", wire_api=\"responses\"}",
+    "-c",
+    "model_provider=\"deepseek\"",
+    "-m",
+    "deepseek-v4-pro",
+    "-c",
+    "model_reasoning_effort=\"high\"",
+    "--output-last-message",
+    "/tmp/pyfcstm_inspect_repair_wxiv7_sg/provider_response.txt",
+    "-"
+  ],
+  "provider_returncode": 0,
+  "provider_stderr_size": 25034,
+  "provider_stderr_tail": "come true for any valid variable valuation. This differs from W_GUARD_CONST_FALSE, which only reports literal-only guards folded syntactically to false.\"\n    }\n  ],\n  \"input\": \"input.fcstm\",\n  \"repair_protocol\": {\n    \"goal\": \"repair the FCSTM model with the smallest semantic source change\",\n    \"rules\": [\n      \"Make the smallest source edit that preserves the modeler's apparent intent.\",\n      \"Use diagnostic source/provenance before choosing a fix; inspect-static warnings are not solver proofs.\",\n      \"Do not mechanically stack all suggested actions when multiple diagnostics refer to the same region.\",\n      \"Do not delete states or transitions unless the report explicitly says the element is unused and the design intent supports deletion.\",\n      \"A repair should clear all error and warning diagnostics; info diagnostics may remain when the model intent supports them.\"\n    ]\n  },\n  \"schema_status\": \"stable\",\n  \"schema_version\": \"pyfcstm.inspect.llm.v1\",\n  \"status\": \"warning\",\n  \"summary\": {\n    \"errors\": 0,\n    \"infos\": 1,\n    \"leaf_states\": 2,\n    \"root_state_path\": \"Root\",\n    \"states\": 3,\n    \"transitions\": 3,\n    \"variables\": 1,\n    \"warnings\": 1\n  }\n}\n\n\nReturn the repaired FCSTM source now.\n\nwarning: Model metadata for `deepseek-v4-pro` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.\ncodex\nThe guard `request > 0 && request < 0` is contradictory (SMT-proven unsatisfiable). The model increments `request` in `Idle`'s `during` block, so the apparent intent is to transition when `request` exceeds zero. Removing the impossible `&& request < 0` conjunct is the smallest fix.\n\nThe `Running -> [*]` info diagnostic is an intentional unconditional fall-through — the report confirms this can remain.\n\n```fcstm\ndef int request = 0;\n\nstate Root {\n    [*] -> Idle;\n\n    state Idle {\n        during { request = request + 1; }\n    }\n    state Running;\n\n    Idle -> Running : if [request > 0];\n    Running -> [*];\n}\n```\ntokens used\n6,721\n",
+  "provider_version": "codex-cli 0.141.0",
+  "remaining_diagnostic_codes": [
+    "I_TRANSITION_NEVER_EVENT_TRIGGERED"
+  ],
+  "remaining_diagnostics": [
+    {
+      "code": "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+      "severity": "info"
+    }
+  ],
+  "requires_max_tier": "smt_linear",
+  "success": true,
+  "verification_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/artifacts/verify_backed_dead_guard/codex-deepseek/llm-json/repaired.fcstm",
+    "--format",
+    "json",
+    "--enable-verify",
+    "--max-complexity-tier",
+    "smt_linear",
+    "--smt-timeout-ms",
+    "1000"
+  ],
+  "verification_result": {
+    "bad_repair_flags_cleared": true,
+    "blocking_diagnostics_cleared": true,
+    "expected_codes_cleared": true,
+    "passed": true
+  },
+  "visible_files": [
+    "input.fcstm",
+    "inspect_report.json",
+    "prompt_packet.md"
+  ]
+}

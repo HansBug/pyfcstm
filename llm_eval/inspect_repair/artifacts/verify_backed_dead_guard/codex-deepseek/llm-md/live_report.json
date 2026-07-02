@@ -1,0 +1,102 @@
+{
+  "artifact_dir": "llm_eval/inspect_repair/artifacts/verify_backed_dead_guard/codex-deepseek/llm-md",
+  "bad_repair_flags": [],
+  "bad_repair_flags_under_watch": [
+    "guard-to-true"
+  ],
+  "blocking_diagnostics": [],
+  "diagnostics": "",
+  "expected_codes": [
+    "W_DEAD_GUARD"
+  ],
+  "failure_category": "passed",
+  "fixture_id": "verify_backed_dead_guard",
+  "fixture_path": "llm_eval/inspect_repair/fixtures/verify_backed_dead_guard.fcstm",
+  "format": "llm-md",
+  "guide_metadata": {
+    "byte_size": 16665,
+    "chapter_count": 15,
+    "checksum_resource_name": "fcstm_grammar_guide.md.sha256",
+    "expected_sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914",
+    "line_count": 553,
+    "pyfcstm_version": "0.5.0",
+    "resource_name": "fcstm_grammar_guide.md",
+    "sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914"
+  },
+  "inspect_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/fixtures/verify_backed_dead_guard.fcstm",
+    "--format",
+    "llm-md",
+    "--enable-verify",
+    "--max-complexity-tier",
+    "smt_linear",
+    "--smt-timeout-ms",
+    "1000"
+  ],
+  "isolated_workdir": "/tmp/pyfcstm_inspect_repair_km1e6947",
+  "mode": "live",
+  "prepared_at": "20260702T183640Z",
+  "provider": "codex-deepseek",
+  "provider_command": [
+    "codex-deepseek",
+    "exec",
+    "--skip-git-repo-check",
+    "--ignore-user-config",
+    "--ephemeral",
+    "--color",
+    "never",
+    "-c",
+    "model_providers.deepseek={name=\"DeepSeek via Moon Bridge\", base_url=\"http://127.0.0.1:61040/v1\", wire_api=\"responses\"}",
+    "-c",
+    "model_provider=\"deepseek\"",
+    "-m",
+    "deepseek-v4-pro",
+    "-c",
+    "model_reasoning_effort=\"high\"",
+    "--output-last-message",
+    "/tmp/pyfcstm_inspect_repair_km1e6947/provider_response.txt",
+    "-"
+  ],
+  "provider_returncode": 0,
+  "provider_stderr_size": 21980,
+  "provider_stderr_tail": " just to silence this info.\n\n## W_DEAD_GUARD\n\n- Severity: `warning`\n- Location: `input.fcstm:11:5`\n- Message: A transition guard is unsatisfiable under model variable type and runtime-definedness constraints.\n- Source: verify-backed\n- Why it matters: SMT proves the guard cannot become true for any valid variable valuation. This differs from W_GUARD_CONST_FALSE, which only reports literal-only guards folded syntactically to false.\n- Source:\n  ```fcstm\n  10 | \n  11 |     Idle -> Running : if [request > 0 && request < 0];\n     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  12 |     Running -> [*];\n  ```\n- Recommended actions:\n  - `fix_guard` / target `transition`: Relax or correct the contradictory guard condition.\n  - `remove_transition` / target `transition`: Remove the transition if the guard intentionally makes it unreachable.\n- Do not:\n  - Do not replace the guard with true unless the transition really should become unconditional.\n  - Do not confuse this SMT finding with W_GUARD_CONST_FALSE; variables and runtime-definedness matter here.\n- Repair notes:\n  - This is verify-backed: SMT proved the guard unsatisfiable under model constraints.\n  - Prefer correcting the contradictory guard over making the transition unconditional.\n\n\nReturn the repaired FCSTM source now.\n\nwarning: Model metadata for `deepseek-v4-pro` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.\ncodex\nThe `request > 0 && request < 0` guard is SMT-proven unsatisfiable — no integer can be both above zero and below zero. The model increments `request` in `Idle`'s `during` block, so the clear intent is to transition to `Running` once `request` becomes positive. Stripping the contradictory second conjunct is the minimal fix.\n\n```fcstm\ndef int request = 0;\n\nstate Root {\n    [*] -> Idle;\n\n    state Idle {\n        during { request = request + 1; }\n    }\n    state Running;\n\n    Idle -> Running : if [request > 0];\n    Running -> [*];\n}\n```\ntokens used\n5,942\n",
+  "provider_version": "codex-cli 0.141.0",
+  "remaining_diagnostic_codes": [
+    "I_TRANSITION_NEVER_EVENT_TRIGGERED"
+  ],
+  "remaining_diagnostics": [
+    {
+      "code": "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+      "severity": "info"
+    }
+  ],
+  "requires_max_tier": "smt_linear",
+  "success": true,
+  "verification_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/artifacts/verify_backed_dead_guard/codex-deepseek/llm-md/repaired.fcstm",
+    "--format",
+    "json",
+    "--enable-verify",
+    "--max-complexity-tier",
+    "smt_linear",
+    "--smt-timeout-ms",
+    "1000"
+  ],
+  "verification_result": {
+    "bad_repair_flags_cleared": true,
+    "blocking_diagnostics_cleared": true,
+    "expected_codes_cleared": true,
+    "passed": true
+  },
+  "visible_files": [
+    "input.fcstm",
+    "inspect_report.md",
+    "prompt_packet.md"
+  ]
+}

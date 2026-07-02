@@ -1,0 +1,12 @@
+def int done = 0;
+
+state Root {
+    [*] -> Idle;
+
+    state Idle;
+    state Done;
+
+    Idle -> Done effect { done = done; };
+    Idle -> Done effect { done = done; };
+    Done -> [*];
+}

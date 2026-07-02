@@ -1,0 +1,11 @@
+state Root {
+    [*] -> Waiting;
+
+    state Waiting;
+    state Recovering;
+    state Done;
+
+    Waiting -> Recovering :: RetryNeeded;
+    Recovering -> Done :: RecoveryComplete;
+    Done -> [*];
+}

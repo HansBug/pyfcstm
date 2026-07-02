@@ -133,7 +133,7 @@ CLI 可视化
 配置系统
 ---------------------------------------
 
-可视化系统通过 ``PlantUMLOptions`` 提供全面配置。CLI 支持表中的类型化标量和元组选项可以通过 Python API 以及 ``pyfcstm plantuml`` / ``pyfcstm visualize`` 的 ``-c key=value`` 参数使用；自定义颜色字典等 Python-only 对象会单独标明。
+可视化系统通过 ``PlantUMLOptions`` 提供全面配置。大多数类型化标量和元组选项可以通过 Python API 以及 ``pyfcstm plantuml`` / ``pyfcstm visualize`` 的 ``-c key=value`` 参数使用。例外项会单独标明：\ ``detail_level``\ 使用专门的 ``-l/--level`` CLI 选项，自定义颜色字典等 Python-only 对象需要通过 Python API 配置。
 
 配置选项参考
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -155,7 +155,7 @@ CLI 可视化
    * - ``detail_level``
      - str
      - ``'normal'``
-     - 预设详细级别：``'minimal'``、``'normal'`` 或 ``'full'``
+     - 预设详细级别：``'minimal'``、``'normal'`` 或 ``'full'``。这是 Python API 字段；CLI 用户应使用 ``-l/--level``\ ，不要使用 ``-c detail_level=...``\ 。
    * - **变量显示**
      -
      -
@@ -275,7 +275,7 @@ CLI 可视化
    * - ``max_depth``
      - int
      - ``None``
-     - 可视化的最大嵌套深度（ ``None`` = 无限制， ``0`` = 仅根状态，正数限制展开深度）
+     - 可视化的最大嵌套深度（ ``None`` = 无限制， ``0`` = 仅根状态，正数表示从根状态开始计数的展开深度）
    * - ``collapsed_state_marker``
      - str
      - ``'...'``
@@ -302,12 +302,12 @@ CLI 可视化
 - 默认值为 ``None`` 的选项从 ``detail_level`` 预设或父选项继承
 - ``show_lifecycle_actions`` 控制 enter/during/exit/aspect/abstract/concrete 动作的默认值
 - 元组选项接受多个格式元素，按显示顺序组合
-- CLI 对受支持的类型化选项使用 ``-c key=value`` 语法；``custom_colors`` 等字典值选项当前需要通过 Python API 配置
+- CLI 对受支持的类型化选项使用 ``-c key=value`` 语法；\ ``detail_level``\ 预设使用 ``-l/--level``\ ，\ ``custom_colors``\ 等字典值选项需要通过 Python API 配置
 
 详细级别预设
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-详细级别预设为常见用例提供快速配置：
+详细级别预设为常见用例提供快速配置。Python 中向 ``PlantUMLOptions`` 传入 ``detail_level=...``\ ；CLI 中使用 ``-l/--level``\ ，不要使用 ``-c detail_level=...``\ 。
 
 - **minimal**：最小细节的基本结构
 - **normal**：包含基本信息的平衡视图（默认）
@@ -613,7 +613,7 @@ PlantUML 源码产物：
 
 **配置选项**
 
-- ``max_depth`` (int)：可视化的最大嵌套深度（Python 中 ``None`` = 无限制， ``0`` = 仅根状态，正数限制展开深度）
+- ``max_depth`` (int)：可视化的最大嵌套深度（Python 中 ``None`` = 无限制， ``0`` = 仅根状态，正数表示从根状态开始计数的展开深度）
 - ``collapsed_state_marker`` (str)：折叠状态的标记（默认：``'...'``）
 
 **示例**

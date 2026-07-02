@@ -134,7 +134,7 @@ Output:
 Configuration System
 ---------------------------------------
 
-The visualization system provides comprehensive configuration through ``PlantUMLOptions``. Typed scalar and tuple options listed in the CLI support table are available through both the Python API and the ``-c key=value`` arguments accepted by ``pyfcstm plantuml`` / ``pyfcstm visualize``; Python-only objects such as custom color dictionaries are marked explicitly.
+The visualization system provides comprehensive configuration through ``PlantUMLOptions``. Most typed scalar and tuple options are available through both the Python API and the ``-c key=value`` arguments accepted by ``pyfcstm plantuml`` / ``pyfcstm visualize``. Exceptions are marked explicitly: ``detail_level`` uses the dedicated ``-l/--level`` CLI option, and Python-only objects such as custom color dictionaries require the Python API.
 
 Configuration Options Reference
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -156,7 +156,7 @@ The following table provides a complete reference of all available configuration
    * - ``detail_level``
      - str
      - ``'normal'``
-     - Preset detail level: ``'minimal'``, ``'normal'``, or ``'full'``
+     - Preset detail level: ``'minimal'``, ``'normal'``, or ``'full'``. Python API field; CLI users should use ``-l/--level`` instead of ``-c detail_level=...``.
    * - **Variable Display**
      -
      -
@@ -276,7 +276,7 @@ The following table provides a complete reference of all available configuration
    * - ``max_depth``
      - int
      - ``None``
-     - Maximum nesting depth to visualize (``None`` = unlimited, ``0`` = root state only, positive values limit expanded depth)
+     - Maximum nesting depth to visualize (``None`` = unlimited, ``0`` = root state only, positive values count expanded depth from the root state)
    * - ``collapsed_state_marker``
      - str
      - ``'...'``
@@ -303,12 +303,12 @@ The following table provides a complete reference of all available configuration
 - Options with ``None`` default inherit from ``detail_level`` preset or parent options
 - ``show_lifecycle_actions`` controls defaults for enter/during/exit/aspect/abstract/concrete actions
 - Tuple options accept multiple format elements combined in display order
-- CLI uses ``-c key=value`` syntax for supported typed options; dictionary-valued options such as ``custom_colors`` currently require the Python API
+- CLI uses ``-c key=value`` syntax for supported typed options; use ``-l/--level`` for ``detail_level`` presets, and use the Python API for dictionary-valued options such as ``custom_colors``
 
 Detail Level Presets
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Detail level presets provide quick configuration for common use cases:
+Detail level presets provide quick configuration for common use cases. In Python, pass ``detail_level=...`` to ``PlantUMLOptions``; in the CLI, use ``-l/--level`` rather than ``-c detail_level=...``.
 
 - **minimal**: Bare structure with minimal details
 - **normal**: Balanced view with essential information (default)
@@ -645,7 +645,7 @@ Control how deep the visualization goes into nested states.
 
 **Configuration Options**
 
-- ``max_depth`` (int): Maximum nesting depth to visualize (``None`` = unlimited in Python, ``0`` = root state only, positive values limit expanded depth)
+- ``max_depth`` (int): Maximum nesting depth to visualize (``None`` = unlimited in Python, ``0`` = root state only, positive values count expanded depth from the root state)
 - ``collapsed_state_marker`` (str): Marker for collapsed states (default: ``'...'``)
 
 **Example**

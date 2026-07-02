@@ -1,7 +1,7 @@
 {
   "schema_version": "pyfcstm.inspect_repair.fixtures.v1",
   "description": "Fixture manifest for inspect LLM repair evaluation. These fixtures are standalone maintenance assets, not pytest unit tests and not package data.",
-  "failure_categories": ["passed", "model-error", "infra-blocked", "guide-gap", "contract-gap"],
+  "failure_categories": ["passed", "prepared", "model-error", "infra-blocked", "guide-gap", "contract-gap"],
   "fixtures": [
     {
       "id": "guard_vars_never_change",
@@ -29,8 +29,9 @@
       "category": "verify-backed dead guard 或 tautology",
       "smoke": true,
       "enable_verify": true,
+      "requires_max_tier": "smt_linear",
       "expected_codes": ["W_DEAD_GUARD"],
-      "bad_repair_flags": ["guard-to-true", "provenance-confusion"],
+      "bad_repair_flags": ["guard-to-true"],
       "purpose": "验证 verify-backed provenance 能指导 LLM 区分 SMT 证明与普通静态提示。"
     },
     {
@@ -39,6 +40,7 @@
       "category": "多 diagnostics 相互影响",
       "smoke": false,
       "enable_verify": true,
+      "requires_max_tier": "smt_linear",
       "expected_codes": ["W_DEADLOCK_LEAF", "W_TOPOLOGICAL_NOEXIT", "I_TOPOLOGICAL_NON_TERMINATING", "W_DEAD_GUARD"],
       "bad_repair_flags": ["delete-state", "guard-to-true", "unconditional-exit-stack"],
       "purpose": "验证 LLM 不会把多个 diagnostics 的建议机械叠加成破坏意图的修复。"
@@ -79,6 +81,7 @@
       "category": "suggested action 可能误导的对抗样例",
       "smoke": false,
       "enable_verify": true,
+      "requires_max_tier": "smt_linear",
       "expected_codes": ["W_DEAD_GUARD"],
       "bad_repair_flags": ["guard-to-true", "delete-state", "delete-transition"],
       "purpose": "最大化暴露删除状态、伪造赋值、重写模型等风险。"

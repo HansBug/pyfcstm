@@ -12,6 +12,11 @@ Do not include Markdown fences or prose.
 - Do not delete states or transitions unless the report and the model intent clearly justify deletion.
 - If a diagnostic is `inspect-static`, do not treat it as an SMT proof.
 - If a diagnostic is `verify-backed`, treat it as solver-backed evidence for the specific reported property.
+- A repair is acceptable only when parse/model loading succeeds and all `error` and `warning` diagnostics are gone.
+- `info` diagnostics may remain when the report says they can describe intentional modeling style, such as an unconditional fall-through.
+- When you need to explain your choice, put the explanation outside any FCSTM fenced block; the evaluator will extract the fenced FCSTM source.
+- If replacing a guarded transition with an event transition makes a variable unused, also remove that variable or keep a real guard-affecting data-flow path.
+- Do not invent event declarations or standalone state event handlers; FCSTM events are introduced by transition syntax.
 
 ## Official grammar guide
 

@@ -71,8 +71,18 @@ _GLOBAL_REPAIR_RULES = (
     "Use diagnostic source/provenance before choosing a fix; inspect-static warnings are not solver proofs.",
     "Do not mechanically stack all suggested actions when multiple diagnostics refer to the same region.",
     "Do not delete states or transitions unless the report explicitly says the element is unused and the design intent supports deletion.",
+    "A repair should clear all error and warning diagnostics; info diagnostics may remain when the model intent supports them.",
+    "If changing a guard into an event-only transition makes a variable declaration unused, remove that variable or keep a real guard-affecting data-flow path.",
 )
 _REPAIR_NOTES_BY_CODE = {
+    "W_COMBO_DUPLICATE_EVENT": (
+        "Repeated identical event terms are presence-based and are usually redundant.",
+        "If there is no evidence that the explicit two-hop pseudo chain is intentional, reducing the duplicated term to one event is the smallest semantic repair.",
+    ),
+    "W_UNREFERENCED_VAR": (
+        "A declaration-only variable may be speculative scaffolding.",
+        "Remove it only when no guard, assignment, abstract action, or external integration intent needs it.",
+    ),
     "W_GUARD_VARS_NEVER_CHANGE": (
         "This is a static dataflow warning, not a proof that the guard is satisfiable.",
         "Adding a write is useful only when the variable should genuinely evolve at runtime.",
@@ -84,6 +94,7 @@ _REPAIR_NOTES_BY_CODE = {
     "W_DEAD_GUARD": (
         "This is verify-backed: SMT proved the guard unsatisfiable under model constraints.",
         "Prefer correcting the contradictory guard over making the transition unconditional.",
+        "If the same variable also has static dataflow warnings, the repair must address both the contradiction and the missing guard-affecting data flow.",
     ),
     "W_GUARD_TAUTOLOGY": (
         "This is verify-backed: SMT proved the guard always true under model constraints.",
@@ -94,6 +105,14 @@ _REPAIR_NOTES_BY_CODE = {
     ),
     "I_TOPOLOGICAL_NON_TERMINATING": (
         "Long-running control loops can be intentional; decide intent before adding progress edges.",
+    ),
+    "W_EFFECT_SELF_ASSIGN": (
+        "A self-assignment is a no-op and does not model real progress.",
+        "If the variable exists only for that no-op effect, remove the variable and no-op effect instead of inventing a write that still does not affect a guard.",
+    ),
+    "W_REDUNDANT_TRANSITION": (
+        "Remove only the duplicate transition or merge duplicate no-op effects.",
+        "Keep the state structure and one intentional transition unless the report proves the element itself is unused.",
     ),
 }
 
@@ -410,10 +429,11 @@ def render_inspect_llm_markdown(
             lines.append("  ```fcstm")
             for source_line in context:
                 lines.append(
-                    "  {line:>{width}} | {text}".format(
-                        line=source_line["line"],
-                        width=gutter_width,
-                        text=source_line["text"],
+                    _format_source_line(
+                        source_line["line"],
+                        gutter_width,
+                        source_line["text"],
+                        prefix="  ",
                     )
                 )
                 if source_line.get("caret"):
@@ -497,10 +517,11 @@ def _render_human_diagnostic(
         lines.append(gutter)
         for source_line in excerpt.context_lines:
             lines.append(
-                " {line:>{width}} | {text}".format(
-                    line=source_line.line_number,
-                    width=gutter_width,
-                    text=source_line.text,
+                _format_source_line(
+                    source_line.line_number,
+                    gutter_width,
+                    source_line.text,
+                    prefix=" ",
                 )
             )
             if source_line.caret is not None:
@@ -644,6 +665,23 @@ def _markdown_gutter_width(
     if context:
         return max(len(str(item["line"])) for item in context)
     return len(str(excerpt["line"]))
+
+
+def _format_source_line(
+    line_number: int,
+    gutter_width: int,
+    text: str,
+    *,
+    prefix: str,
+) -> str:
+    base = "{prefix}{line:>{width}} |".format(
+        prefix=prefix,
+        line=line_number,
+        width=gutter_width,
+    )
+    if text:
+        return f"{base} {text}"
+    return base
 
 
 def _format_span(span: Span, *, input_path: Optional[str]) -> str:

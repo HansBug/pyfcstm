@@ -1,0 +1,305 @@
+{
+  "diagnostics": [
+    {
+      "code": "W_UNREACHABLE_STATE",
+      "do_not": [
+        "Do not add a self-loop to mask the unreachability."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 17,
+        "end_line": 6,
+        "line": 6,
+        "path": "input.fcstm"
+      },
+      "message": "State 'Root.Ghost' is unreachable from the root entry path.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "add_inbound_transition",
+          "rationale": "Add a transition that reaches the state if it was meant to be used.",
+          "target": "state"
+        },
+        {
+          "kind": "remove_state",
+          "rationale": "Remove the state if it was added speculatively.",
+          "target": "state"
+        }
+      ],
+      "refs": {
+        "state_path": "Root.Ghost"
+      },
+      "repair_guidance": [],
+      "severity": "warning",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 5,
+            "text": "    state Done;"
+          },
+          {
+            "caret": "    ^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 6,
+            "text": "    state Ghost;"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 7,
+            "text": ""
+          }
+        ],
+        "line": 6,
+        "text": "    state Ghost;"
+      },
+      "summary": "This state cannot be entered at runtime; the surrounding transitions never lead to it. It is dead from the machine's perspective."
+    },
+    {
+      "code": "W_DEADLOCK_LEAF",
+      "do_not": [
+        "Do not add a self-loop just to silence the warning."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 17,
+        "end_line": 6,
+        "line": 6,
+        "path": "input.fcstm"
+      },
+      "message": "Leaf state 'Root.Ghost' has no outgoing transition.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "add_transition",
+          "rationale": "Add a modeled transition to the next intended state.",
+          "target": "state"
+        },
+        {
+          "kind": "add_exit_transition",
+          "rationale": "Add ``State -> [*];`` if the leaf is meant to finish its parent.",
+          "target": "state"
+        }
+      ],
+      "refs": {
+        "parent_path": "Root",
+        "reason": "no_outgoing_transition",
+        "state_path": "Root.Ghost",
+        "suggested_fix": {
+          "anchor": {
+            "ref": "refs.parent_path",
+            "type": "ref"
+          },
+          "kind": "insert",
+          "rationale": "Add an exit transition so the leaf can finish its parent state.",
+          "target": "deadlock_leaf_exit_transition",
+          "text": "Ghost -> [*];\n"
+        }
+      },
+      "repair_guidance": [],
+      "severity": "warning",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 5,
+            "text": "    state Done;"
+          },
+          {
+            "caret": "    ^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 6,
+            "text": "    state Ghost;"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 7,
+            "text": ""
+          }
+        ],
+        "line": 6,
+        "text": "    state Ghost;"
+      },
+      "summary": "This leaf state has no outgoing transition, so once the machine enters it there is no modeled way to leave."
+    },
+    {
+      "code": "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+      "do_not": [
+        "Do not add a meaningless event just to silence this info."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 18,
+        "end_line": 8,
+        "line": 8,
+        "path": "input.fcstm"
+      },
+      "message": "Transition 'Root.Idle' -> 'Root.Done' has no event or guard.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "keep_if_fallthrough",
+          "rationale": "Keep it when the state should immediately advance.",
+          "target": "transition"
+        },
+        {
+          "kind": "add_trigger_or_guard",
+          "rationale": "Add the missing event or guard if the transition should wait.",
+          "target": "transition"
+        }
+      ],
+      "refs": {
+        "from_path": "Root.Idle",
+        "to_path": "Root.Done",
+        "transition_index": 1,
+        "transition_span": {
+          "column": 5,
+          "end_column": 18,
+          "end_line": 8,
+          "line": 8
+        }
+      },
+      "repair_guidance": [],
+      "severity": "info",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 7,
+            "text": ""
+          },
+          {
+            "caret": "    ^^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 8,
+            "text": "    Idle -> Done;"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 9,
+            "text": "    Done -> [*];"
+          }
+        ],
+        "line": 8,
+        "text": "    Idle -> Done;"
+      },
+      "summary": "The transition is not event-triggered and has no guard. This may be a deliberate unconditional fall-through, so treat it as context rather than a fix target."
+    },
+    {
+      "code": "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+      "do_not": [
+        "Do not add a meaningless event just to silence this info."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 17,
+        "end_line": 9,
+        "line": 9,
+        "path": "input.fcstm"
+      },
+      "message": "Transition 'Root.Done' -> '[*]' has no event or guard.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "keep_if_fallthrough",
+          "rationale": "Keep it when the state should immediately advance.",
+          "target": "transition"
+        },
+        {
+          "kind": "add_trigger_or_guard",
+          "rationale": "Add the missing event or guard if the transition should wait.",
+          "target": "transition"
+        }
+      ],
+      "refs": {
+        "from_path": "Root.Done",
+        "to_path": "[*]",
+        "transition_index": 2,
+        "transition_span": {
+          "column": 5,
+          "end_column": 17,
+          "end_line": 9,
+          "line": 9
+        }
+      },
+      "repair_guidance": [],
+      "severity": "info",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 8,
+            "text": "    Idle -> Done;"
+          },
+          {
+            "caret": "    ^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 9,
+            "text": "    Done -> [*];"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 10,
+            "text": "}"
+          }
+        ],
+        "line": 9,
+        "text": "    Done -> [*];"
+      },
+      "summary": "The transition is not event-triggered and has no guard. This may be a deliberate unconditional fall-through, so treat it as context rather than a fix target."
+    }
+  ],
+  "input": "input.fcstm",
+  "repair_protocol": {
+    "goal": "repair the FCSTM model with the smallest semantic source change",
+    "rules": [
+      "Make the smallest source edit that preserves the modeler's apparent intent.",
+      "Use diagnostic source/provenance before choosing a fix; inspect-static warnings are not solver proofs.",
+      "Do not mechanically stack all suggested actions when multiple diagnostics refer to the same region.",
+      "Do not delete states or transitions unless the report explicitly says the element is unused and the design intent supports deletion.",
+      "A repair should clear all error and warning diagnostics; info diagnostics may remain when the model intent supports them.",
+      "If changing a guard into an event-only transition makes a variable declaration unused, remove that variable or keep a real guard-affecting data-flow path."
+    ]
+  },
+  "schema_status": "stable",
+  "schema_version": "pyfcstm.inspect.llm.v1",
+  "status": "warning",
+  "summary": {
+    "errors": 0,
+    "infos": 2,
+    "leaf_states": 3,
+    "root_state_path": "Root",
+    "states": 4,
+    "transitions": 3,
+    "variables": 0,
+    "warnings": 2
+  }
+}

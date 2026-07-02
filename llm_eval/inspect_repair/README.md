@@ -66,6 +66,7 @@ current pyfcstm implementation. Isolation applies to the generation stage.
 | Category | Meaning |
 |---|---|
 | `passed` | Repaired source parsed, loaded, and passed the selected inspect gate. |
+| `prepared` | Prompt packet and inspect report were generated without contacting a provider. |
 | `model-error` | Provider returned source, but parse/model/inspect verification failed. |
 | `infra-blocked` | Provider CLI, authentication, timeout, or network failed before a usable repair. |
 | `guide-gap` | The official grammar guide was insufficient or misleading for the repair. |

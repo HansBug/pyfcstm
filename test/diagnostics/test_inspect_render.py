@@ -4,6 +4,7 @@ import json
 import os
 import re
 import textwrap
+from typing import Any, List, Mapping
 
 import pytest
 
@@ -64,6 +65,105 @@ def _assert_markdown_excerpt_gutters_align(text):
             caret_count += 1
             assert line.index("|") == lines[index + 1].index("|")
     assert caret_count > 0
+
+
+def _schema_node_by_ref(schema, ref):
+    assert ref.startswith("#/")
+    node = schema
+    for part in ref[2:].split("/"):
+        node = node[part]
+    return node
+
+
+def _schema_type_matches(value, expected):
+    expected_types = expected if isinstance(expected, list) else [expected]
+    for expected_type in expected_types:
+        if expected_type == "null" and value is None:
+            return True
+        if expected_type == "string" and isinstance(value, str):
+            return True
+        if expected_type == "boolean" and isinstance(value, bool):
+            return True
+        if (
+            expected_type == "integer"
+            and isinstance(value, int)
+            and not isinstance(value, bool)
+        ):
+            return True
+        if expected_type == "array" and isinstance(value, list):
+            return True
+        if (
+            expected_type == "object"
+            and isinstance(value, dict)
+            and not isinstance(value, list)
+        ):
+            return True
+    return False
+
+
+def _schema_errors(
+    schema_root: Mapping[str, Any],
+    schema_node: Mapping[str, Any],
+    value: Any,
+    path: str = "$",
+) -> List[str]:
+    if "$ref" in schema_node:
+        return _schema_errors(
+            schema_root,
+            _schema_node_by_ref(schema_root, schema_node["$ref"]),
+            value,
+            path,
+        )
+
+    if "oneOf" in schema_node:
+        branch_errors = [
+            _schema_errors(schema_root, branch, value, path)
+            for branch in schema_node["oneOf"]
+        ]
+        matches = [errors for errors in branch_errors if not errors]
+        if len(matches) != 1:
+            return [f"{path}: expected exactly one oneOf branch to match"]
+        return []
+
+    errors = []
+    if "type" in schema_node and not _schema_type_matches(value, schema_node["type"]):
+        return [f"{path}: expected type {schema_node['type']!r}"]
+    if "const" in schema_node and value != schema_node["const"]:
+        errors.append(f"{path}: expected const {schema_node['const']!r}")
+    if "enum" in schema_node and value not in schema_node["enum"]:
+        errors.append(f"{path}: expected one of {schema_node['enum']!r}")
+    if "minimum" in schema_node and value < schema_node["minimum"]:
+        errors.append(f"{path}: expected minimum {schema_node['minimum']!r}")
+
+    if isinstance(value, dict):
+        required = set(schema_node.get("required", []))
+        missing = sorted(required - set(value))
+        for key in missing:
+            errors.append(f"{path}: missing required property {key!r}")
+        properties = schema_node.get("properties", {})
+        if schema_node.get("additionalProperties") is False:
+            extras = sorted(set(value) - set(properties))
+            for key in extras:
+                errors.append(f"{path}: unexpected property {key!r}")
+        for key, child_schema in properties.items():
+            if key in value:
+                errors.extend(
+                    _schema_errors(
+                        schema_root,
+                        child_schema,
+                        value[key],
+                        f"{path}.{key}",
+                    )
+                )
+
+    if isinstance(value, list) and "items" in schema_node:
+        for index, item in enumerate(value):
+            errors.extend(
+                _schema_errors(
+                    schema_root, schema_node["items"], item, f"{path}[{index}]"
+                )
+            )
+    return errors
 
 
 @pytest.mark.unittest
@@ -218,6 +318,9 @@ class TestInspectRender:
             assert diagnostic_required.issubset(set(diagnostic.keys()))
             assert diagnostic["provenance"]["kind"] == diagnostic["source"]
 
+        schema_errors = _schema_errors(schema, schema, payload)
+        assert schema_errors == []
+
     def test_llm_markdown_renderer_contains_stable_schema_and_sections(self):
         text = render_inspect_llm_markdown(_report(), SOURCE)
 
@@ -233,6 +336,29 @@ class TestInspectRender:
         assert "|     ^^^^^^^^^^^^^^" in text
         assert "5 |     [*] -> Idle;" in text
         _assert_markdown_excerpt_gutters_align(text)
+
+    def test_source_excerpt_renderers_do_not_emit_trailing_whitespace(self):
+        source = textwrap.dedent(
+            """
+            state Root {
+                [*] -> Idle;
+
+                state Idle;
+            }
+            """
+        ).strip()
+        ast = parse_with_grammar_entry(source, "state_machine_dsl")
+        machine = parse_dsl_node_to_state_machine(ast)
+        report = inspect_model(machine)
+
+        human = render_inspect_human(report, source)
+        markdown = render_inspect_llm_markdown(report, source)
+
+        assert " 3 |" in human
+        assert "  3 |" in markdown
+        for text in (human, markdown):
+            for line in text.splitlines():
+                assert line == line.rstrip(" \t")
 
     @pytest.mark.parametrize(
         ("path", "output_format", "expected"),

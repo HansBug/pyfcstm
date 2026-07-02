@@ -37,6 +37,7 @@ _PROVIDERS = ("codex", "claude", "codex-deepseek")
 _FORMATS = ("llm-json", "llm-md")
 _FAILURE_CATEGORIES = (
     "passed",
+    "prepared",
     "model-error",
     "infra-blocked",
     "guide-gap",
@@ -59,6 +60,9 @@ _TRANSITION_RE = re.compile(
     r"(?:\[\*\]|[A-Za-z_][A-Za-z0-9_.]*)"
 )
 _END_TRANSITION_RE = re.compile(r"->\s*\[\*\]")
+_CONST_TRUE_GUARD_RE = re.compile(
+    r":\s*(?:if\s*)?\[\s*(?:true|1\s*==\s*1|1\s*>\s*0|0\s*<\s*1)\s*\]"
+)
 _STDERR_TAIL_LIMIT = 2000
 
 
@@ -257,6 +261,48 @@ def _inspect_args_for_fixture(
     return args
 
 
+def _verify_options_for_fixture(fixture: Mapping[str, object]) -> Dict[str, object]:
+    """
+    Return inspect verification options for one fixture.
+
+    :param fixture: Fixture manifest entry.
+    :type fixture: Mapping[str, object]
+    :return: Keyword-style inspect options.
+    :rtype: Dict[str, object]
+    """
+    enable_verify = bool(fixture.get("enable_verify"))
+    return {
+        "enable_verify": enable_verify,
+        "max_complexity_tier": "smt_linear" if enable_verify else "structural",
+        "smt_timeout_ms": 1000 if enable_verify else None,
+    }
+
+
+def _verification_command(path: Path, fixture: Mapping[str, object]) -> List[str]:
+    """
+    Return a reproducible command for validating one repaired source.
+
+    :param path: Repaired source path.
+    :type path: pathlib.Path
+    :param fixture: Fixture manifest entry.
+    :type fixture: Mapping[str, object]
+    :return: Command arguments.
+    :rtype: List[str]
+    """
+    args = ["pyfcstm", "inspect", "-i", _repo_display_path(path), "--format", "json"]
+    if fixture.get("enable_verify"):
+        args.extend(
+            [
+                "--enable-verify",
+                "--max-complexity-tier",
+                "smt_linear",
+                "--smt-timeout-ms",
+                "1000",
+            ]
+        )
+    return args
+
+
 def _build_inspect_report(
     fixture_path: Path, fixture: Mapping[str, object], output_format: str
 ) -> Tuple[str, List[str]]:
@@ -276,14 +322,13 @@ def _build_inspect_report(
     inspect_args = _inspect_args_for_fixture(fixture, output_format)
     source_path = str(fixture_path)
     display_path = _repo_display_path(fixture_path)
+    options = _verify_options_for_fixture(fixture)
     report = build_inspect_output(
         source_path,
         output_format=output_format,
-        enable_verify=bool(fixture.get("enable_verify")),
-        max_complexity_tier=(
-            "smt_linear" if fixture.get("enable_verify") else "structural"
-        ),
-        smt_timeout_ms=1000 if fixture.get("enable_verify") else None,
+        enable_verify=bool(options["enable_verify"]),
+        max_complexity_tier=str(options["max_complexity_tier"]),
+        smt_timeout_ms=options["smt_timeout_ms"],
     )
     report = report.replace(source_path, "input.fcstm")
     return report, ["pyfcstm", "inspect", "-i", display_path, *inspect_args]
@@ -313,22 +358,46 @@ def _fill_prompt_template(
     )
 
 
-def _provider_command(provider: str) -> List[str]:
+def _provider_command(provider: str, output_file: Optional[Path] = None) -> List[str]:
     """
     Build a local provider command.
 
     :param provider: Provider name.
     :type provider: str
+    :param output_file: Optional file that receives the provider's final
+        response when the client supports it.
+    :type output_file: Optional[pathlib.Path], optional
     :return: Command argv.
     :rtype: List[str]
     :raises ValueError: If provider is unsupported.
     """
+    codex_output_args = (
+        ["--output-last-message", str(output_file)] if output_file is not None else []
+    )
     if provider == "codex":
-        return ["codex", "exec", "--skip-git-repo-check", "-"]
+        return [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--ephemeral",
+            "--color",
+            "never",
+            *codex_output_args,
+            "-",
+        ]
     if provider == "claude":
         return ["claude", "-p"]
     if provider == "codex-deepseek":
-        return ["codex-deepseek", "exec", "--skip-git-repo-check", "-"]
+        return [
+            "codex-deepseek",
+            "exec",
+            "--skip-git-repo-check",
+            "--ephemeral",
+            "--color",
+            "never",
+            *codex_output_args,
+            "-",
+        ]
     raise ValueError(f"unsupported provider: {provider!r}")
 
 
@@ -378,7 +447,8 @@ def _run_provider(
     :return: Process report.
     :rtype: Dict[str, object]
     """
-    command = _provider_command(provider)
+    response_file = cwd / "provider_response.txt"
+    command = _provider_command(provider, response_file)
     try:
         completed = subprocess.run(
             command,
@@ -421,6 +491,7 @@ def _run_provider(
         "returncode": completed.returncode,
         "stdout": completed.stdout,
         "stderr": completed.stderr,
+        "response_text": _read_text(response_file) if response_file.is_file() else "",
     }
 
 
@@ -513,17 +584,11 @@ def _bad_repair_flags(
     flags: List[str] = []
     requested = set(fixture.get("bad_repair_flags", []))
     if "dummy-assignment" in requested and re.search(
-        r"\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\1\b", source
+        r"\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\1\s*;", source
     ):
         flags.append("dummy-assignment")
-    if "guard-to-true" in requested and re.search(
-        r":\s*(?:if\s*)?\[\s*(?:true|1\s*==\s*1)\s*\]", source
-    ):
+    if "guard-to-true" in requested and _CONST_TRUE_GUARD_RE.search(source):
         flags.append("guard-to-true")
-    if "provenance-confusion" in requested and re.search(
-        r":\s*(?:if\s*)?\[\s*(?:true|1\s*==\s*1)\s*\]", source
-    ):
-        flags.append("provenance-confusion")
     if "self-loop-mask" in requested and re.search(
         r"\b([A-Za-z_][A-Za-z0-9_]*)\s*->\s*\1\b", source
     ):
@@ -537,9 +602,15 @@ def _bad_repair_flags(
         source
     ) < _transition_count(original_source):
         flags.append("delete-transition")
-    if "unconditional-exit-stack" in requested and _end_transition_count(
-        source
-    ) > _end_transition_count(original_source):
+    end_transition_delta = _end_transition_count(source) - _end_transition_count(
+        original_source
+    )
+    transition_delta = _transition_count(source) - _transition_count(original_source)
+    if (
+        "unconditional-exit-stack" in requested
+        and end_transition_delta > 0
+        and transition_delta <= end_transition_delta
+    ):
         flags.append("unconditional-exit-stack")
     return flags
 
@@ -559,15 +630,15 @@ def _verify_repair(
     :return: Verification result.
     :rtype: Dict[str, object]
     """
+    verification_command = _verification_command(repaired_path, fixture)
     try:
         model = load_state_machine_from_file(str(repaired_path))
+        options = _verify_options_for_fixture(fixture)
         report = inspect_model(
             model,
-            enable_verify=bool(fixture.get("enable_verify")),
-            max_complexity_tier=(
-                "smt_linear" if fixture.get("enable_verify") else "structural"
-            ),
-            smt_timeout_ms=1000 if fixture.get("enable_verify") else None,
+            enable_verify=bool(options["enable_verify"]),
+            max_complexity_tier=str(options["max_complexity_tier"]),
+            smt_timeout_ms=options["smt_timeout_ms"],
         )
     except (
         OSError,
@@ -584,22 +655,48 @@ def _verify_repair(
             "success": False,
             "failure_category": "model-error",
             "diagnostics": str(err),
+            "verification_command": verification_command,
+            "verification_result": {
+                "passed": False,
+                "error": str(err),
+            },
         }
 
-    remaining_codes = [diagnostic.code for diagnostic in report.diagnostics]
+    remaining_diagnostics = [
+        {"code": diagnostic.code, "severity": diagnostic.severity}
+        for diagnostic in report.diagnostics
+    ]
+    remaining_codes = [item["code"] for item in remaining_diagnostics]
     expected_codes = set(fixture.get("expected_codes", []))
     still_present = [code for code in remaining_codes if code in expected_codes]
+    blocking_diagnostics = [
+        item
+        for item in remaining_diagnostics
+        if item["severity"] in {"error", "warning"}
+    ]
     original_path = repaired_path.parent / "input.fcstm"
     original_source = _read_text(original_path) if original_path.is_file() else ""
     flags = _bad_repair_flags(source, fixture, original_source)
-    success = not still_present and not flags
+    success = not still_present and not blocking_diagnostics and not flags
+    diagnostics_message = ""
+    if not success:
+        diagnostics_message = (
+            "remaining expected diagnostics, blocking diagnostics, or bad repair flags"
+        )
     return {
         "success": success,
         "failure_category": "passed" if success else "model-error",
-        "diagnostics": ""
-        if success
-        else "remaining expected diagnostics or bad repair flags",
+        "diagnostics": diagnostics_message,
+        "verification_command": verification_command,
+        "verification_result": {
+            "passed": success,
+            "expected_codes_cleared": not still_present,
+            "blocking_diagnostics_cleared": not blocking_diagnostics,
+            "bad_repair_flags_cleared": not flags,
+        },
         "remaining_diagnostic_codes": remaining_codes,
+        "remaining_diagnostics": remaining_diagnostics,
+        "blocking_diagnostics": blocking_diagnostics,
         "bad_repair_flags": flags,
     }
 
@@ -653,6 +750,7 @@ def _prepare_cell(
         "artifact_dir": _repo_display_path(cell_dir),
         "expected_codes": list(fixture.get("expected_codes", [])),
         "bad_repair_flags_under_watch": list(fixture.get("bad_repair_flags", [])),
+        "requires_max_tier": fixture.get("requires_max_tier"),
         "prepared_at": _utc_timestamp(),
     }
     _write_json(cell_dir / "metadata.json", metadata)
@@ -711,7 +809,9 @@ def _run_live_cell(
         process_result = _run_provider(
             provider, prompt, args.timeout_seconds, isolated_dir
         )
-        raw_output = str(process_result.get("stdout") or "")
+        raw_output = str(process_result.get("response_text") or "")
+        if not raw_output:
+            raw_output = str(process_result.get("stdout") or "")
         if not raw_output:
             raw_output = str(process_result.get("stderr") or "")
         repaired_source = _extract_fcstm_source(raw_output)
@@ -810,8 +910,9 @@ def _run_prepare_cell(
     report = {
         **metadata,
         "mode": "prepare",
-        "success": True,
-        "failure_category": "passed",
+        "success": None,
+        "prepared": True,
+        "failure_category": "prepared",
         "diagnostics": "prepared prompt packet only; provider not run",
     }
     cell_dir = _artifact_dir(
@@ -839,11 +940,15 @@ def _write_summary(
         / f"{args.mode}-{args.provider or 'all-providers'}-{args.format or 'all-formats'}-{args.fixture or 'all-fixtures'}-{_utc_timestamp()}.md"
     )
     lines = ["# Inspect Repair Evaluation Summary", ""]
+    passed = sum(1 for report in reports if report.get("success") is True)
+    prepared = sum(
+        1 for report in reports if report.get("failure_category") == "prepared"
+    )
     lines.append(f"- Mode: `{args.mode}`")
     lines.append(f"- Case count: {len(reports)}")
-    lines.append(
-        f"- Passed: {sum(1 for report in reports if report.get('success'))}/{len(reports)}"
-    )
+    lines.append(f"- Passed: {passed}/{len(reports)}")
+    if prepared:
+        lines.append(f"- Prepared only: {prepared}/{len(reports)}")
     lines.append("")
     lines.append(
         "| Fixture | Provider | Format | Success | Failure category | Artifact |"
@@ -855,7 +960,15 @@ def _write_summary(
                 fixture=report.get("fixture_id"),
                 provider=report.get("provider"),
                 fmt=report.get("format"),
-                success="yes" if report.get("success") else "no",
+                success=(
+                    "yes"
+                    if report.get("success") is True
+                    else (
+                        "prepared"
+                        if report.get("failure_category") == "prepared"
+                        else "no"
+                    )
+                ),
                 failure=report.get("failure_category"),
                 artifact=report.get("artifact_dir"),
             )
@@ -933,9 +1046,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
     reports = run(args)
     summary = _write_summary(args, reports)
-    passed = sum(1 for report in reports if report.get("success"))
+    passed = sum(1 for report in reports if report.get("success") is True)
+    prepared = sum(
+        1 for report in reports if report.get("failure_category") == "prepared"
+    )
     print(f"Summary: {summary}")
     print(f"Passed: {passed}/{len(reports)}")
+    if prepared:
+        print(f"Prepared only: {prepared}/{len(reports)}")
+    if args.mode == "prepare":
+        return 0 if prepared == len(reports) else 1
     return 0 if passed == len(reports) else 1
 
 

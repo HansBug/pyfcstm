@@ -1,0 +1,98 @@
+{
+  "artifact_dir": "llm_eval/inspect_repair/artifacts/multi_diag_stacking/codex/llm-md",
+  "bad_repair_flags": [],
+  "bad_repair_flags_under_watch": [
+    "delete-state",
+    "guard-to-true",
+    "unconditional-exit-stack"
+  ],
+  "blocking_diagnostics": [],
+  "diagnostics": "",
+  "expected_codes": [
+    "W_DEADLOCK_LEAF",
+    "W_TOPOLOGICAL_NOEXIT",
+    "I_TOPOLOGICAL_NON_TERMINATING",
+    "W_DEAD_GUARD"
+  ],
+  "failure_category": "passed",
+  "fixture_id": "multi_diag_stacking",
+  "fixture_path": "llm_eval/inspect_repair/fixtures/multi_diag_stacking.fcstm",
+  "format": "llm-md",
+  "guide_metadata": {
+    "byte_size": 16665,
+    "chapter_count": 15,
+    "checksum_resource_name": "fcstm_grammar_guide.md.sha256",
+    "expected_sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914",
+    "line_count": 553,
+    "pyfcstm_version": "0.5.0",
+    "resource_name": "fcstm_grammar_guide.md",
+    "sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914"
+  },
+  "inspect_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/fixtures/multi_diag_stacking.fcstm",
+    "--format",
+    "llm-md",
+    "--enable-verify",
+    "--max-complexity-tier",
+    "smt_linear",
+    "--smt-timeout-ms",
+    "1000"
+  ],
+  "isolated_workdir": "/tmp/pyfcstm_inspect_repair_wx7odqpb",
+  "mode": "live",
+  "prepared_at": "20260702T185049Z",
+  "provider": "codex",
+  "provider_command": [
+    "codex",
+    "exec",
+    "--skip-git-repo-check",
+    "--ephemeral",
+    "--color",
+    "never",
+    "--output-last-message",
+    "/tmp/pyfcstm_inspect_repair_wx7odqpb/provider_response.txt",
+    "-"
+  ],
+  "provider_returncode": 0,
+  "provider_stderr_size": 365788,
+  "provider_stderr_tail": "c0\n--- /dev/null\n+++ b/pyfcstm_inspect_repair_wx7odqpb/.omx/context/fcstm-inspect-repair-20260702T185239Z.md\n@@ -0,0 +1,17 @@\n+Task statement:\n+Repair one FCSTM model and return only the repaired `.fcstm` source.\n+\n+Desired outcome:\n+The repaired source must parse, load as a pyfcstm model, and have zero error and warning diagnostics. Info diagnostics may remain when they describe intentional style.\n+\n+Known facts/evidence:\n+The input model has one root state with Waiting, Recovering, and Done. The only authored transition has an unsatisfiable guard `retry > 0 && retry < 0`. The inspect report marks the dead guard as verify-backed, and static warnings point to the same transition, the unwritten `retry` variable, unreachable `Done`, and deadlock leaves.\n+\n+Constraints:\n+Make the smallest source edit that preserves apparent intent. Do not add dummy assignments, self-loops, guard constants, or meaningless transitions. FCSTM events are introduced by transition syntax. If replacing a guarded transition with an event transition makes a variable unused, remove that variable.\n+\n+Unknowns/open questions:\n+The model does not name concrete recovery events. Conservative event names `Retry` and `Recovered` preserve the apparent Waiting -> Recovering -> Done intent without keeping the contradictory dataflow.\n+\n+Likely codebase touchpoints:\n+`repaired.fcstm` for verification only, pyfcstm parser/model loader, and `python -m pyfcstm inspect`.\ndiff --git a/pyfcstm_inspect_repair_wx7odqpb/repaired.fcstm b/pyfcstm_inspect_repair_wx7odqpb/repaired.fcstm\nnew file mode 100644\nindex 0000000000000000000000000000000000000000..4ca429d18312126eacb83390c131ed4ef3ad44b7\n--- /dev/null\n+++ b/pyfcstm_inspect_repair_wx7odqpb/repaired.fcstm\n@@ -0,0 +1,11 @@\n+state Root {\n+    [*] -> Waiting;\n+\n+    state Waiting;\n+    state Recovering;\n+    state Done;\n+\n+    Waiting -> Recovering :: Retry;\n+    Recovering -> Done :: Recovered;\n+    Done -> [*];\n+}\n\nhook: Stop\nhook: Stop Completed\ntokens used\n52,101\n",
+  "provider_version": "codex-cli 0.141.0",
+  "remaining_diagnostic_codes": [
+    "I_TRANSITION_NEVER_EVENT_TRIGGERED"
+  ],
+  "remaining_diagnostics": [
+    {
+      "code": "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+      "severity": "info"
+    }
+  ],
+  "requires_max_tier": "smt_linear",
+  "success": true,
+  "verification_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/artifacts/multi_diag_stacking/codex/llm-md/repaired.fcstm",
+    "--format",
+    "json",
+    "--enable-verify",
+    "--max-complexity-tier",
+    "smt_linear",
+    "--smt-timeout-ms",
+    "1000"
+  ],
+  "verification_result": {
+    "bad_repair_flags_cleared": true,
+    "blocking_diagnostics_cleared": true,
+    "expected_codes_cleared": true,
+    "passed": true
+  },
+  "visible_files": [
+    "input.fcstm",
+    "inspect_report.md",
+    "prompt_packet.md"
+  ]
+}

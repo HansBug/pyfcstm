@@ -1,0 +1,13 @@
+def int enabled = 1;
+
+state Root {
+    [*] -> Service;
+
+    state Service;
+    state Fault;
+    state Shutdown;
+
+    Service -> Fault :: FaultDetected effect { enabled = 0; }
+    Fault -> Shutdown : if [enabled == 0];
+    Shutdown -> [*];
+}

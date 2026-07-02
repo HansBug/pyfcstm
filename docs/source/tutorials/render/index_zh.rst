@@ -828,7 +828,7 @@ style 继承要点：
 内置模板（built-in template）
 --------------------------------
 
-渲染系统本身是通用的，但仓库里也已经提供了一组内置模板，它们本身就是现实可用的参考实现。
+渲染系统本身是通用的，但仓库里也已经提供了一组内置模板，它们本身就是现实可用的参考实现。如果你的目标是使用这些模板，而不是维护模板本身，请先阅读 :doc:`/tutorials/generation/index_zh`\ 。
 
 当前内置模板列表：
 
@@ -847,8 +847,18 @@ style 继承要点：
   - 状态：当前内置模板
   - 设计定位：面向扫描周期 / 控制循环集成、采用 hook 轮询事件获取方式的自包含 C 运行时模板
 
+- ``cpp``
+
+  - 状态：当前内置模板
+  - 设计定位：基于生成 C runtime core 的 C++98-compatible wrapper 模板
+
+- ``cpp_poll``
+
+  - 状态：当前内置模板
+  - 设计定位：基于生成 C poll runtime core 和 event-check 契约的 C++98-compatible wrapper 模板
+
 对于内置模板，pyfcstm 还会在生成目录里一并产出配套使用说明。实际使用时，用户会在输出目录中看到
-``README.md`` 和 ``README_zh.md``，这两份生成文档就是目标模板具体用法的主要入口。
+``README.md`` 和 ``README_zh.md``\ ，这两份生成文档就是目标模板具体用法的主要入口。
 
 python - 模板系统与运行时语义对齐的参考模板
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -880,13 +890,13 @@ c - 面向原生集成的自包含运行时模板
 - 通过运行时测试和行为对齐测试来约束生成结果
 
 如果你关注的是原生 API、运行时集成方式，以及生成代码如何通过 README 对最终用户进行引导，就应该看
-``templates/c/``，并把输出目录中的 ``README.md`` / ``README_zh.md`` 视为最终使用说明入口。
+``templates/c/``\ ，并把输出目录中的 ``README.md`` / ``README_zh.md`` 视为最终使用说明入口。
 
 c_poll - 更贴近扫描式控制循环的 hook 轮询运行时模板
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 ``c_poll`` 模板与 ``c`` 模板在整体方向上非常接近：它同样生成
-``machine.h`` 和 ``machine.c``，同样暴露清晰的公开 API，也同样通过生成的
+``machine.h`` 和 ``machine.c``\ ，同样暴露清晰的公开 API，也同样通过生成的
 ``README.md`` / ``README_zh.md`` 给最终用户提供集成说明。
 
 它和 ``c`` 真正拉开差异的地方，在于事件输入模型：
@@ -915,6 +925,17 @@ c_poll - 更贴近扫描式控制循环的 hook 轮询运行时模板
   喂给状态机，那么选 ``c``
 - 如果你的系统天然是 cycle-driven 的，事件真值本来就来自当前输入快照，那么选
   ``c_poll`` 往往会更顺手
+
+cpp 和 cpp_poll - C++ wrapper 模板
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``cpp`` 和 ``cpp_poll`` 是面向 C++ 消费者的一等内置模板。它们有意把执行 core 保留在生成的 C 文件里，再用 ``machine.hpp`` / ``machine.cpp`` 增加一层很薄的 C++98-compatible wrapper。
+
+对模板维护者来说，关键设计点是 C++ wrapper 应该通过公开 C API 转发，而不是重新实现状态机语义。对用户来说，关键集成点更简单：应用侧 C++ 代码应该 include ``machine.hpp`` 并使用 ``MachineWrapper``\ 。底层 ``machine.h`` 仍然是生成 core 的一部分，但不是 C++ 教程里的主入口。
+
+poll 变体遵循和 ``c_poll`` 相同的事件检查契约。C++ wrapper 暴露生成的 ``EventChecks`` 类型和 ``set_event_checks(...)``\ ，因此 C++ 应用可以通过 wrapper 安装 event checks。
+
+用户侧可运行 C++ 示例见 :doc:`/tutorials/generation/index_zh`\ 。
 
 测试与收束
 ----------

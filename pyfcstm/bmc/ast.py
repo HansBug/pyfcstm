@@ -164,8 +164,9 @@ class BmcExpr:
     ``None`` so it can be serialized or compared without importing grammar
     classes.
 
-    :return: ``None``.
-    :rtype: None
+    :cvar _node_name: Canonical node tag emitted by
+        :meth:`BmcExpr.to_canonical`.
+    :type _node_name: str
 
     Example::
 
@@ -203,9 +204,6 @@ class BmcNumExpr(BmcExpr):
     integer, float, variable, frame-variable, cycle, and arithmetic operator
     values.
 
-    :return: ``None``.
-    :rtype: None
-
     Example::
 
         >>> from pyfcstm.bmc.ast import BmcNumExpr, Cycle
@@ -220,9 +218,6 @@ class BmcCondExpr(BmcExpr):
     Condition expressions follow FCSTM ``cond_expression`` shape and represent
     boolean literals, comparisons, logical operators, active-state atoms, event
     atoms, selected-case atoms, and abstract-call atoms.
-
-    :return: ``None``.
-    :rtype: None
 
     Example::
 
@@ -750,9 +745,6 @@ class FrameVar(BmcNumExpr):
 @dataclass(frozen=True)
 class Cycle(BmcNumExpr):
     """Built-in numeric cycle expression for query predicates.
-
-    :return: ``None``.
-    :rtype: None
 
     Example::
 

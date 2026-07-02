@@ -1,12 +1,12 @@
 """Public API for FCSTM bounded model checking query models.
 
 The BMC package is an independent root package for the FCSTM bounded model
-checking workstream.  This first slice exposes only parser-independent query
-and expression dataclasses.  It deliberately does not implement grammar
-parsing, semantic binding, solver lowering, witness replay, or verify-registry
-integration.
+checking workstream.  It exposes parser-independent query and expression
+dataclasses while deliberately leaving grammar parsing, semantic binding,
+solver lowering, witness replay, and verify-registry integration to separate
+layers.
 
-Module roadmap:
+Public module structure:
 
 .. list-table::
    :header-rows: 1

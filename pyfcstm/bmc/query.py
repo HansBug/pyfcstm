@@ -2,9 +2,9 @@
 
 The query model is intentionally parser-independent.  It captures the shape of
 ``*.fbmcq`` files after syntax parsing but before model-aware semantic binding,
-state/event resolution, solver lowering, or witness replay.  Later BMC subPRs
-can construct these frozen dataclasses from ANTLR parse trees and then bind them
-against :class:`pyfcstm.model.StateMachine` objects.
+state/event resolution, solver lowering, or witness replay.  Parser and binder
+layers can construct these frozen dataclasses from ANTLR parse trees and then
+bind them against :class:`pyfcstm.model.StateMachine` objects.
 
 The module contains:
 
@@ -115,7 +115,7 @@ def _normalize_selector(selector: QuerySelector) -> QuerySelector:
         if selector == "*":
             return selector
         if selector.isdigit():
-            return selector
+            return int(selector)
         parts = selector.split("..")
         if len(parts) == 2 and all(part.isdigit() for part in parts):
             start, end = (int(parts[0]), int(parts[1]))
@@ -190,8 +190,9 @@ class InitialSpec:
 class BmcAssumption:
     """Base class for BMC environment assumptions.
 
-    :return: ``None``.
-    :rtype: None
+    :cvar _node_name: Canonical node tag emitted by
+        :meth:`BmcAssumption.to_canonical`.
+    :type _node_name: str
 
     Example::
 

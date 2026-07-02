@@ -9,7 +9,7 @@ import pytest
 
 @pytest.mark.unittest
 def test_bmc_public_api_exports_exact_names():
-    """Top-level BMC imports expose the stable PR-1 public surface."""
+    """Top-level BMC imports expose the stable public surface."""
     bmc = importlib.import_module("pyfcstm.bmc")
 
     expected = {
@@ -57,7 +57,7 @@ def test_bmc_public_api_exports_exact_names():
 
 @pytest.mark.unittest
 def test_submodule_all_exports_are_exact():
-    """Submodules keep precise export sets for later parser and binder PRs."""
+    """Submodules keep precise export sets for parser and binder layers."""
     errors = importlib.import_module("pyfcstm.bmc.errors")
     ast = importlib.import_module("pyfcstm.bmc.ast")
     query = importlib.import_module("pyfcstm.bmc.query")

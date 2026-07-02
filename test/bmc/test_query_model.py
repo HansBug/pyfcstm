@@ -128,7 +128,7 @@ def test_fcstm_compatible_expression_canonical_shapes():
 
 @pytest.mark.unittest
 def test_all_fcstm_operator_aliases_and_ufuncs_are_representable():
-    """Expression model keeps the PR-1 anchor for FCSTM expression parity."""
+    """Expression model keeps the anchor for FCSTM expression parity."""
     x = NameRef("x")
     y = NameRef("y")
 
@@ -303,8 +303,7 @@ def test_initial_spec_and_property_skeletons():
         "expected": True,
     }
     assert (
-        EventAssumption("Root.Idle.Start", selector="3").to_canonical()["selector"]
-        == "3"
+        EventAssumption("Root.Idle.Start", selector="3").to_canonical()["selector"] == 3
     )
     assert cardinality.to_canonical()["event_paths"] == (
         "Root.Idle.Start",
@@ -439,7 +438,10 @@ def test_query_model_rejects_additional_invalid_structural_values():
         EventAssumption("Root.E", selector=True)
     with pytest.raises(InvalidBmcQuery, match="selector"):
         EventAssumption("Root.E", selector=-1)
+    with pytest.raises(InvalidBmcQuery, match="selector"):
+        EventAssumption("Root.E", selector="current")
     assert EventAssumption("Root.E", selector=0).to_canonical()["selector"] == 0
+    assert EventAssumption("Root.E", selector="0").to_canonical()["selector"] == 0
     with pytest.raises(InvalidBmcQuery, match="state_path"):
         InitialSpec(mode="cold", state_path="Root.A")
     with pytest.raises(InvalidBmcQuery, match="predicate"):

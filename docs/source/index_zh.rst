@@ -40,57 +40,27 @@ pyfcstm 适用于：
 -------------
 
 安装
-~~~~~~~~~~~~~
+~~~~
 
 .. code-block:: bash
 
    pip install pyfcstm
 
-基本用法
-~~~~~~~~~~~~~
+完整安装检查请见 :doc:`tutorials/installation/index_zh`。
 
-**1. 使用 DSL 定义状态机**
+最快路径
+~~~~~~~~
 
-创建文件 ``traffic_light.fcstm``：
-
-.. code-block:: fcstm
-
-   def int timer = 0;
-
-   state TrafficLight {
-       [*] -> Red;
-
-       state Red {
-           enter { timer = 0; }
-           during { timer = timer + 1; }
-       }
-
-       state Yellow {
-           enter { timer = 0; }
-           during { timer = timer + 1; }
-       }
-
-       state Green {
-           enter { timer = 0; }
-           during { timer = timer + 1; }
-       }
-
-       Red -> Green : if [timer >= 30];
-       Green -> Yellow : if [timer >= 25];
-       Yellow -> Red : if [timer >= 5];
-   }
-
-**2. 生成代码**
+创建 ``traffic_light.fcstm``，并按照 :doc:`tutorials/quick_start/index_zh` 中的完整流程操作。最短命令链如下：
 
 .. code-block:: bash
 
-   pyfcstm generate -i traffic_light.fcstm -t templates/c/ -o output/
-
-**3. 使用 PlantUML 可视化**
-
-.. code-block:: bash
-
+   pyfcstm simulate -i traffic_light.fcstm -e "cycle; cycle; current"
+   pyfcstm inspect -i traffic_light.fcstm -o traffic_light.inspect.json
+   pyfcstm generate -i traffic_light.fcstm --template python -o generated --clear
    pyfcstm plantuml -i traffic_light.fcstm -o traffic_light.puml
+
+对打包内置模板使用 ``--template``。只有在渲染自定义模板目录时，才使用 ``-t/--template-dir``。
 
 架构
 -------------
@@ -117,22 +87,28 @@ pyfcstm 遵循三阶段流水线：
     :hidden:
 
     tutorials/installation/index_zh
-    tutorials/structure/index_zh
+    tutorials/quick_start/index_zh
     tutorials/dsl/index_zh
-    tutorials/render/index_zh
     tutorials/simulation/index_zh
+    tutorials/inspect/index_zh
+    tutorials/generation/index_zh
     tutorials/visualization/index_zh
     tutorials/cli/index_zh
+    tutorials/render/index_zh
     tutorials/grammar/index_zh
+    tutorials/structure/index_zh
 
 * :doc:`tutorials/installation/index_zh`
-* :doc:`tutorials/structure/index_zh`
+* :doc:`tutorials/quick_start/index_zh`
 * :doc:`tutorials/dsl/index_zh`
-* :doc:`tutorials/render/index_zh`
 * :doc:`tutorials/simulation/index_zh`
+* :doc:`tutorials/inspect/index_zh`
+* :doc:`tutorials/generation/index_zh`
 * :doc:`tutorials/visualization/index_zh`
 * :doc:`tutorials/cli/index_zh`
+* :doc:`tutorials/render/index_zh`
 * :doc:`tutorials/grammar/index_zh`
+* :doc:`tutorials/structure/index_zh`
 
 版本说明
 -------------------------

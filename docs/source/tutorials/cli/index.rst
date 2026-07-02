@@ -283,90 +283,47 @@ If the process runs in a headless environment such as CI, rendering still works 
 generate Command
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Generate executable code from state machine DSL using customizable templates.
-
-**Syntax**:
+Generate executable code from state machine DSL. For packaged built-in
+templates, prefer ``--template``:
 
 .. code-block:: bash
 
-   pyfcstm generate -i <input_file> -t <template_dir> -o <output_dir> [--clear]
+   pyfcstm generate -i <input_file> --template <python|c|c_poll|cpp|cpp_poll> \
+     -o <output_dir> [--clear]
+
+Use ``-t/--template-dir`` only when you intentionally provide a custom template
+directory:
+
+.. code-block:: bash
+
+   pyfcstm generate -i <input_file> -t <custom_template_dir> -o <output_dir>
 
 **Parameters**:
 
 - ``-i, --input-code``: Path to input state machine DSL file (required)
-- ``-t, --template-dir``: Path to template directory (required)
+- ``--template``: Packaged built-in template name
+- ``-t, --template-dir``: Custom template directory path
 - ``-o, --output-dir``: Output directory for generated code (required)
 - ``--clear``: Clear output directory before generation (optional)
 
-**How It Works**
-
-The ``generate`` command uses a template-based code generation system:
-
-1. **Parse DSL**: Reads and parses the ``.fcstm`` file into an internal model
-2. **Load Templates**: Reads Jinja2 templates from the template directory
-3. **Render Code**: Processes templates with the state machine model as context
-4. **Output Files**: Writes generated code to the output directory
-
-**Template Structure**
-
-A template directory must contain:
-
-- ``config.yaml``: Configuration file defining expression styles, filters, and globals
-- ``*.j2``: Jinja2 template files for code generation
-- Static files: Copied directly to output (preserve directory structure)
-
-**Example: Generating C Code**
+**Built-in template example**:
 
 .. code-block:: bash
 
-   # Generate C code from traffic light state machine
-   pyfcstm generate -i traffic_light.fcstm -t ./templates/c -o ./output
+   pyfcstm generate -i simple_machine.fcstm --template python -o ./output --clear
 
-   # Clear output directory before generating
-   pyfcstm generate -i traffic_light.fcstm -t ./templates/c -o ./output --clear
-
-**Example: Generating Python Code**
+**Custom template directory example**:
 
 .. code-block:: bash
 
-   # Generate Python code
-   pyfcstm generate -i simple_machine.fcstm -t ./templates/python -o ./output
+   pyfcstm generate -i simple_machine.fcstm -t ./my_template -o ./output
 
-**Example: Generating from a Multi-file Import Project**
-
-The public command line interface does not change when your DSL project starts
-using imports. You still pass one entry file, and pyfcstm assembles the imported
-modules automatically.
-
-.. code-block:: bash
-
-   # Entry file imports other FCSTM files or an import directory with main.fcstm
-   pyfcstm generate -i ./docs/source/tutorials/dsl/import_host_directory.fcstm \
-     -t ./templates/python -o ./output --clear
-
-**Template Context**
-
-Templates have access to the complete state machine model:
-
-- ``model``: Root state machine object
-- ``model.variables``: Variable definitions
-- ``model.walk_states()``: Iterator over all states
-- ``state.name``, ``state.is_leaf_state``, ``state.transitions``
-- ``transition.from_state``, ``transition.to_state``, ``transition.guard``
-
-**Expression Rendering**
-
-Use the ``expr_render`` filter to convert DSL expressions to target language syntax:
-
-.. code-block:: jinja
-
-   // C-style expression
-   {{ expr | expr_render(style='c') }}
-
-   # Python-style expression
-   {{ expr | expr_render(style='python') }}
+The complete built-in template walkthrough lives in
+:doc:`/tutorials/generation/index`. Template-author details remain in
+:doc:`/tutorials/render/index`.
 
 Common Use Cases
+-------------------------------------Common Use Cases
 -------------------------------------
 
 Workflow 1: DSL to Diagram
@@ -402,8 +359,8 @@ Generate executable code for embedded systems:
    # 1. Design state machine
    vim controller.fcstm
 
-   # 2. Generate C code
-   pyfcstm generate -i controller.fcstm -t ./templates/c -o ./src/generated --clear
+   # 2. Generate packaged C code
+   pyfcstm generate -i controller.fcstm --template c -o ./src/generated --clear
 
    # 3. Integrate with your project
    make build
@@ -423,8 +380,8 @@ Validate DSL syntax before committing:
      --max-complexity-tier smt_linear --smt-timeout-ms 1000 \
      -o machine.verify.inspect.json
 
-   # Generate test code
-   pyfcstm generate -i machine.fcstm -t ./templates/test -o ./tests/generated
+   # Generate code from a custom test template directory when your project owns one
+   pyfcstm generate -i machine.fcstm -t ./my_test_template -o ./tests/generated
 
 For import-based projects, validate the entry file only:
 
@@ -449,8 +406,8 @@ Automate code generation in your build pipeline:
        pyfcstm plantuml -i "$file" > /dev/null || exit 1
    done
 
-   # Generate code
-   pyfcstm generate -i src/machines/main.fcstm -t templates/ -o generated/ --clear
+   # Generate code from a packaged template
+   pyfcstm generate -i src/machines/main.fcstm --template python -o generated/ --clear
 
    # Build project
    make all

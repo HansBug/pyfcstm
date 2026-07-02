@@ -294,7 +294,7 @@ The human report is plain ASCII when color is disabled or unavailable:
   --> buggy.fcstm:1:1
    |
  1 | def int x = 0;
-    | ^^^^^^^^^^^^^^
+   | ^^^^^^^^^^^^^^
    |
    = source: inspect-static
    = why: The variable is used as input but never updated after its initial definition, so model behavior may be accidentally constant.

@@ -32,12 +32,28 @@ SOURCE = textwrap.dedent(
 ).strip()
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
 BOX_DRAWING_RE = re.compile(r"[\u2500-\u257f]")
+SOURCE_EXCERPT_RE = re.compile(r"\s+\d+ \|")
 
 
 def _report():
     ast = parse_with_grammar_entry(SOURCE, "state_machine_dsl")
     machine = parse_dsl_node_to_state_machine(ast)
     return inspect_model(machine)
+
+
+def _assert_excerpt_gutters_align(text):
+    lines = text.splitlines()
+    excerpt_count = 0
+    for index, line in enumerate(lines):
+        if SOURCE_EXCERPT_RE.match(line):
+            excerpt_count += 1
+            pipe_column = line.index("|")
+            assert index > 0
+            assert index + 2 < len(lines)
+            assert lines[index - 1].index("|") == pipe_column
+            assert lines[index + 1].index("|") == pipe_column
+            assert lines[index + 2].index("|") == pipe_column
+    assert excerpt_count > 0
 
 
 @pytest.mark.unittest
@@ -58,6 +74,7 @@ class TestInspectRender:
         assert "= do-not:" in text
         assert ANSI_ESCAPE_RE.search(text) is None
         assert BOX_DRAWING_RE.search(text) is None
+        _assert_excerpt_gutters_align(text)
 
     def test_human_renderer_color_enabled_adds_ansi_without_losing_text(self):
         text = render_inspect_human(

@@ -411,16 +411,16 @@ def _render_human_diagnostic(
     excerpt = _source_excerpt(source_text, diagnostic.span)
     if excerpt is not None:
         line_prefix = f" {excerpt.line_number} |"
-        gutter_width = len(line_prefix)
+        gutter = " " * (len(line_prefix) - 1) + "|"
         caret = _style_text(
             excerpt.caret,
             _severity_style(diagnostic.severity),
             options=options,
         )
-        lines.append("   |")
+        lines.append(gutter)
         lines.append(f"{line_prefix} {excerpt.text}")
-        lines.append(f" {' ' * (gutter_width - 1)}| {caret}")
-        lines.append("   |")
+        lines.append(f"{gutter} {caret}")
+        lines.append(gutter)
     spec = CODE_REGISTRY.get(diagnostic.code)
     lines.append(f"   = source: {_diagnostic_source(spec)}")
     if spec is not None and spec.for_llm is not None:

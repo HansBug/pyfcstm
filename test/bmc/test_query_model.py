@@ -8,6 +8,7 @@ from pyfcstm.bmc import (
     BmcAssumption,
     BmcBuildError,
     BmcCondExpr,
+    BmcExpr,
     BmcError,
     BmcNumExpr,
     BmcProperty,
@@ -901,6 +902,15 @@ def test_query_model_rejects_additional_invalid_structural_values():
             property=BmcProperty("reach", bound=1, predicate=Active("Root.Done")),
             assumptions=cast(Any, Active("Root.A")),
         )
+
+
+@pytest.mark.unittest
+def test_bmc_expression_bases_are_abstract():
+    """Expression category bases must not be instantiated directly."""
+
+    for base_cls in (BmcExpr, BmcNumExpr, BmcCondExpr):
+        with pytest.raises(TypeError, match="abstract"):
+            cast(Any, base_cls)()
 
 
 @pytest.mark.unittest

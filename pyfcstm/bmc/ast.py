@@ -18,6 +18,15 @@ Design contracts:
   not be rewritten into DSL text.
 * Numeric and condition expression categories stay separate at construction
   time, matching FCSTM ``num_expression`` and ``cond_expression``.
+* Expression-level structural checks intentionally use normal Python
+  ``ValueError`` / ``TypeError`` failures for malformed literals, operators,
+  and operand categories.  Query-level wrappers in :mod:`pyfcstm.bmc.query`
+  raise :class:`pyfcstm.bmc.errors.InvalidBmcQuery` for whole-query shape
+  validation, so parser and binder code should not assume one exception family
+  covers both layers.
+* The event atom always prints its cycle selector explicitly, including
+  ``current``.  This keeps event queries visually distinct from frame-based
+  atoms such as ``active("Root.A")`` whose default frame may be omitted.
 
 The module contains:
 
@@ -42,6 +51,7 @@ from __future__ import annotations
 
 import json
 import re
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, ClassVar, Dict, Union
 
@@ -169,7 +179,7 @@ _UFUNC_NAMES = {
 }
 
 
-class BmcExpr:
+class BmcExpr(ABC):
     """Base class for every BMC query expression node.
 
     Concrete subclasses provide a stable canonical form for tests, parser
@@ -222,9 +232,11 @@ class BmcExpr:
         """
         return self._to_dsl()
 
+    @abstractmethod
     def _canonical_payload(self) -> _CanonicalDict:
         raise NotImplementedError  # pragma: no cover
 
+    @abstractmethod
     def _to_dsl(self) -> str:
         raise NotImplementedError  # pragma: no cover
 
@@ -988,6 +1000,11 @@ class Terminated(BmcCondExpr):
 class Event(BmcCondExpr):
     """Boolean atom stating that an event is selected for a query cycle.
 
+    Event atoms always render their selector argument explicitly, even for the
+    default ``"current"`` selector.  The explicit spelling keeps event-cycle
+    selection separate from the optional frame shorthand used by state and case
+    atoms.
+
     :param event_path: Fully qualified or query-local event path string.
     :type event_path: str
     :param selector: Concrete cycle index or ``"current"``, defaults to
@@ -996,6 +1013,8 @@ class Event(BmcCondExpr):
 
     Example::
 
+        >>> str(Event("Root.Idle.Start"))
+        'event("Root.Idle.Start", current)'
         >>> Event("Root.Idle.Start", selector=0).to_canonical()["event_path"]
         'Root.Idle.Start'
     """

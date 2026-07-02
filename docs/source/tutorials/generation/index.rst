@@ -125,7 +125,7 @@ and calls ``cycle(...)``:
 
 .. literalinclude:: python_runtime.demo.py
    :language: python
-   :lines: 47-58
+   :lines: 47-60
 
 The demo output is intentionally small:
 
@@ -147,7 +147,7 @@ event-id arrays into ``cycle``:
 
 .. literalinclude:: c_driver.c
    :language: c
-   :lines: 28-53
+   :lines: 26-53
 
 The direct command used by the native demo is:
 
@@ -179,11 +179,14 @@ The callback return value is the event truth for the current cycle:
 - return ``0`` when the event is inactive now
 
 A machine with declared events must mount a complete table before
-``cycle(&machine)`` can run. The checked-in C poll driver shows the pattern:
+``cycle(&machine)`` can run. The checked-in C poll driver has small
+``print_state`` / ``run_cycle`` helpers; this excerpt keeps the event-check
+callbacks and the install/trigger path, while the full file remains available
+in this directory:
 
 .. literalinclude:: c_poll_driver.c
    :language: c
-   :lines: 64-83
+   :lines: 5-39,59-91
 
 The callback bodies can read sampled inputs, fieldbus mirrors, process-image
 bits, or another user-owned snapshot. They should behave like read-only probes
@@ -205,7 +208,7 @@ Do not make the tutorial or application driver bypass the wrapper by using
 
 .. literalinclude:: cpp_driver.cpp
    :language: cpp
-   :lines: 1-5,18-38
+   :lines: 1-5,17-38
 
 The demo compiles ``machine.c`` as C, then compiles ``machine.cpp`` and
 ``app.cpp`` as C++98-compatible C++ before linking them together.
@@ -223,11 +226,13 @@ Generate the poll-style C++ wrapper with:
 C++ discipline is that application code still enters through ``machine.hpp``
 and wrapper methods. The wrapper exposes ``EventChecks`` and
 ``set_event_checks(...)`` so the driver does not need to treat the C header as
-its main integration surface.
+its main integration surface. The excerpt below keeps the wrapper entry,
+callback bodies, and install/trigger path; the checked-in file also contains a
+small ``print_state`` helper around the same public wrapper API.
 
 .. literalinclude:: cpp_poll_driver.cpp
    :language: cpp
-   :lines: 1-5,57-85
+   :lines: 1-41,53-85
 
 Native smoke output
 -------------------

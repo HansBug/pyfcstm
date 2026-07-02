@@ -108,7 +108,7 @@ Python 模板
 
 .. literalinclude:: python_runtime.demo.py
    :language: python
-   :lines: 47-58
+   :lines: 47-60
 
 demo 输出刻意保持短小：
 
@@ -128,7 +128,7 @@ C 模板
 
 .. literalinclude:: c_driver.c
    :language: c
-   :lines: 28-53
+   :lines: 26-53
 
 native demo 使用的直接编译命令是：
 
@@ -154,11 +154,11 @@ C poll 模板
 - 返回非零：该事件此刻 active
 - 返回 ``0``\ ：该事件此刻 inactive
 
-如果模型声明了事件，就必须在 ``cycle(&machine)`` 前安装完整表。checked-in 的 C poll driver 展示了这个模式：
+如果模型声明了事件，就必须在 ``cycle(&machine)`` 前安装完整表。checked-in 的 C poll driver 还包含很小的 ``print_state`` / ``run_cycle`` helpers；下面摘录保留 event-check callbacks 以及安装/触发路径，完整文件仍在本目录中可直接阅读：
 
 .. literalinclude:: c_poll_driver.c
    :language: c
-   :lines: 64-83
+   :lines: 5-39,59-91
 
 回调函数可以读取采样输入、现场总线镜像、process image bits 或其他用户维护的快照。它们应该像“读取当前扫描拍的只读探针”，而不是 destructive consume/ack 操作。
 
@@ -175,7 +175,7 @@ C++ wrapper 模板
 
 .. literalinclude:: cpp_driver.cpp
    :language: cpp
-   :lines: 1-5,18-38
+   :lines: 1-5,17-38
 
 该 demo 把 ``machine.c`` 按 C 编译，再把 ``machine.cpp`` 和 ``app.cpp`` 按 C++98-compatible C++ 编译，最后统一链接。
 
@@ -188,11 +188,11 @@ C++ poll wrapper 模板
 
    pyfcstm generate -i simple_machine.fcstm --template cpp_poll -o generated/cpp_poll --clear
 
-``cpp_poll`` 遵循和 ``c_poll`` 相同的事件检查契约。C++ 侧的重要纪律是应用代码仍然从 ``machine.hpp`` 和 wrapper methods 进入。wrapper 暴露 ``EventChecks`` 和 ``set_event_checks(...)``\ ，因此 driver 不需要把 C header 当作主集成面。
+``cpp_poll`` 遵循和 ``c_poll`` 相同的事件检查契约。C++ 侧的重要纪律是应用代码仍然从 ``machine.hpp`` 和 wrapper methods 进入。wrapper 暴露 ``EventChecks`` 和 ``set_event_checks(...)``\ ，因此 driver 不需要把 C header 当作主集成面。下面摘录保留 wrapper 入口、callback bodies 和安装/触发路径；checked-in 文件里还包含围绕同一套 wrapper API 的小型 ``print_state`` helper。
 
 .. literalinclude:: cpp_poll_driver.cpp
    :language: cpp
-   :lines: 1-5,57-85
+   :lines: 1-41,53-85
 
 Native 冒烟输出
 ---------------

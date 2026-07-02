@@ -384,7 +384,7 @@ def render_inspect_llm_markdown(
                 if source_line.get("caret"):
                     lines.append(
                         "  {space}| {caret}".format(
-                            space=" " * (gutter_width + 2),
+                            space=" " * (gutter_width + 1),
                             caret=source_line["caret"],
                         )
                     )

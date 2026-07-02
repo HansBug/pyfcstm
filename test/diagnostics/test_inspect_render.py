@@ -55,6 +55,16 @@ def _assert_excerpt_gutters_align(text):
     assert excerpt_count > 0
 
 
+def _assert_markdown_excerpt_gutters_align(text):
+    lines = text.splitlines()
+    caret_count = 0
+    for index, line in enumerate(lines[:-1]):
+        if SOURCE_EXCERPT_RE.match(line) and "^" in lines[index + 1]:
+            caret_count += 1
+            assert line.index("|") == lines[index + 1].index("|")
+    assert caret_count > 0
+
+
 @pytest.mark.unittest
 class TestInspectRender:
     def test_human_renderer_contains_checker_style_location_and_guidance(self):
@@ -189,6 +199,7 @@ class TestInspectRender:
         assert "4 |     state Running;" in text
         assert "|     ^^^^^^^^^^^^^^" in text
         assert "5 |     [*] -> Idle;" in text
+        _assert_markdown_excerpt_gutters_align(text)
 
     @pytest.mark.parametrize(
         ("path", "output_format", "expected"),

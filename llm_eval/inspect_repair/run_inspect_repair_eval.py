@@ -757,6 +757,76 @@ def _prepare_cell(
     return metadata
 
 
+def _replay_metadata_cell(
+    cell_dir: Path,
+    fixture: Mapping[str, object],
+    provider: str,
+    output_format: str,
+    args: argparse.Namespace,
+) -> Dict[str, object]:
+    """
+    Load replay metadata without mutating prompt-generation evidence.
+
+    Replay mode validates already captured provider output. It must not
+    regenerate ``input.fcstm``, ``inspect_report.*``, ``prompt_packet.md``, or
+    ``metadata.json`` because those files are the historical prompt snapshot
+    that produced ``raw_output.md`` and ``repaired.fcstm``.
+
+    :param cell_dir: Existing artifact cell directory.
+    :type cell_dir: pathlib.Path
+    :param fixture: Fixture manifest entry.
+    :type fixture: Mapping[str, object]
+    :param provider: Provider name.
+    :type provider: str
+    :param output_format: Inspect report format.
+    :type output_format: str
+    :param args: Parsed command-line arguments.
+    :type args: argparse.Namespace
+    :return: Metadata for the replay report.
+    :rtype: Dict[str, object]
+    :raises OSError: If reading an existing metadata file fails.
+    :raises ValueError: If an existing metadata file is not a JSON object.
+
+    Example::
+
+        >>> from argparse import Namespace
+        >>> from pathlib import Path
+        >>> args = Namespace(fixtures_dir=Path("fixtures"), artifacts=Path("artifacts"))
+        >>> meta = _replay_metadata_cell(Path("artifacts/demo/codex/llm-json"), {"id": "demo", "path": "demo.fcstm"}, "codex", "llm-json", args)
+        >>> meta["fixture_id"]
+        'demo'
+    """
+    metadata_path = cell_dir / "metadata.json"
+    if metadata_path.is_file():
+        metadata = json.loads(_read_text(metadata_path))
+        if not isinstance(metadata, dict):
+            raise ValueError(f"metadata file is not a JSON object: {metadata_path}")
+        return metadata
+
+    fixture_id = str(fixture["id"])
+    fixture_path = args.fixtures_dir / str(fixture["path"])
+    inspect_command = [
+        "pyfcstm",
+        "inspect",
+        "-i",
+        _repo_display_path(fixture_path),
+        *_inspect_args_for_fixture(fixture, output_format),
+    ]
+    return {
+        "fixture_id": fixture_id,
+        "provider": provider,
+        "format": output_format,
+        "fixture_path": _repo_display_path(fixture_path),
+        "guide_metadata": get_grammar_guide_prompt_metadata_for_llm(),
+        "inspect_command": inspect_command,
+        "artifact_dir": _repo_display_path(cell_dir),
+        "expected_codes": list(fixture.get("expected_codes", [])),
+        "bad_repair_flags_under_watch": list(fixture.get("bad_repair_flags", [])),
+        "requires_max_tier": fixture.get("requires_max_tier"),
+        "prepared_at": None,
+    }
+
+
 def _copy_isolated_inputs(cell_dir: Path, isolated_dir: Path) -> List[str]:
     """
     Copy prompt inputs into an isolated generation directory.
@@ -865,10 +935,10 @@ def _run_replay_cell(
     :return: Replay report.
     :rtype: Dict[str, object]
     """
-    metadata = _prepare_cell(fixture, provider, output_format, args)
     cell_dir = _artifact_dir(
         args.artifacts, str(fixture["id"]), provider, output_format
     )
+    metadata = _replay_metadata_cell(cell_dir, fixture, provider, output_format, args)
     repaired_path = cell_dir / "repaired.fcstm"
     if not repaired_path.is_file():
         report = {

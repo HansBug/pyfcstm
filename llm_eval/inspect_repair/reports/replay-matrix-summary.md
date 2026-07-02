@@ -22,12 +22,12 @@
 | guard_vars_never_change | codex | llm-md | yes | passed | I_TRANSITION_NEVER_EVENT_TRIGGERED | `llm_eval/inspect_repair/artifacts/guard_vars_never_change/codex/llm-md` |
 | guard_vars_never_change | codex-deepseek | llm-json | yes | passed | I_TRANSITION_NEVER_EVENT_TRIGGERED | `llm_eval/inspect_repair/artifacts/guard_vars_never_change/codex-deepseek/llm-json` |
 | guard_vars_never_change | codex-deepseek | llm-md | yes | passed | I_TRANSITION_NEVER_EVENT_TRIGGERED | `llm_eval/inspect_repair/artifacts/guard_vars_never_change/codex-deepseek/llm-md` |
-| multi_diag_stacking | claude | llm-json | yes | passed | I_TRANSITION_NEVER_EVENT_TRIGGERED, I_TRANSITION_NEVER_EVENT_TRIGGERED | `llm_eval/inspect_repair/artifacts/multi_diag_stacking/claude/llm-json` |
+| multi_diag_stacking | claude | llm-json | yes | passed | I_TRANSITION_NEVER_EVENT_TRIGGERED | `llm_eval/inspect_repair/artifacts/multi_diag_stacking/claude/llm-json` |
 | multi_diag_stacking | claude | llm-md | yes | passed | I_TRANSITION_NEVER_EVENT_TRIGGERED, I_TRANSITION_NEVER_EVENT_TRIGGERED | `llm_eval/inspect_repair/artifacts/multi_diag_stacking/claude/llm-md` |
 | multi_diag_stacking | codex | llm-json | yes | passed | I_TRANSITION_NEVER_EVENT_TRIGGERED, I_TRANSITION_NEVER_EVENT_TRIGGERED | `llm_eval/inspect_repair/artifacts/multi_diag_stacking/codex/llm-json` |
-| multi_diag_stacking | codex | llm-md | yes | passed | I_TRANSITION_NEVER_EVENT_TRIGGERED, I_TRANSITION_NEVER_EVENT_TRIGGERED | `llm_eval/inspect_repair/artifacts/multi_diag_stacking/codex/llm-md` |
+| multi_diag_stacking | codex | llm-md | yes | passed | I_TRANSITION_NEVER_EVENT_TRIGGERED | `llm_eval/inspect_repair/artifacts/multi_diag_stacking/codex/llm-md` |
 | multi_diag_stacking | codex-deepseek | llm-json | yes | passed | I_TRANSITION_NEVER_EVENT_TRIGGERED, I_TRANSITION_NEVER_EVENT_TRIGGERED | `llm_eval/inspect_repair/artifacts/multi_diag_stacking/codex-deepseek/llm-json` |
-| multi_diag_stacking | codex-deepseek | llm-md | yes | passed | I_TRANSITION_NEVER_EVENT_TRIGGERED | `llm_eval/inspect_repair/artifacts/multi_diag_stacking/codex-deepseek/llm-md` |
+| multi_diag_stacking | codex-deepseek | llm-md | yes | passed | I_TRANSITION_NEVER_EVENT_TRIGGERED, I_TRANSITION_NEVER_EVENT_TRIGGERED | `llm_eval/inspect_repair/artifacts/multi_diag_stacking/codex-deepseek/llm-md` |
 | redundant_transition_self_assign | claude | llm-json | yes | passed | I_TRANSITION_NEVER_EVENT_TRIGGERED, I_TRANSITION_NEVER_EVENT_TRIGGERED | `llm_eval/inspect_repair/artifacts/redundant_transition_self_assign/claude/llm-json` |
 | redundant_transition_self_assign | claude | llm-md | yes | passed | I_TRANSITION_NEVER_EVENT_TRIGGERED, I_TRANSITION_NEVER_EVENT_TRIGGERED | `llm_eval/inspect_repair/artifacts/redundant_transition_self_assign/claude/llm-md` |
 | redundant_transition_self_assign | codex | llm-json | yes | passed | I_TRANSITION_NEVER_EVENT_TRIGGERED, I_TRANSITION_NEVER_EVENT_TRIGGERED | `llm_eval/inspect_repair/artifacts/redundant_transition_self_assign/codex/llm-json` |

@@ -61,6 +61,11 @@ The artifact for each provider × format × fixture cell records:
 Verification may run back in the repository because it intentionally uses the
 current pyfcstm implementation. Isolation applies to the generation stage.
 
+Replay mode validates existing `repaired.fcstm` snapshots and must preserve the
+original prompt evidence. It does not regenerate `input.fcstm`,
+`inspect_report.*`, `prompt_packet.md`, or `metadata.json`; only the replay
+report and aggregate summary are refreshed.
+
 ## Failure Categories
 
 | Category | Meaning |
@@ -73,7 +78,9 @@ current pyfcstm implementation. Isolation applies to the generation stage.
 | `contract-gap` | The `llm-json` / `llm-md` report lacked information needed for a safe repair. |
 
 Infrastructure failures must be recorded and retried. They must not be counted
-as a successful repair cell.
+as a successful repair cell. Informational diagnostics such as
+`I_TRANSITION_NEVER_EVENT_TRIGGERED` may remain when they describe intentional
+fall-through behavior rather than a repair target.
 
 ## Fixture Coverage
 

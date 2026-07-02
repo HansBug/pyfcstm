@@ -36,8 +36,10 @@ def normalize_rst_document(text: str) -> str:
 
     Example::
 
-        >>> normalize_rst_document("Title\n=====\n\n\n")
-        'Title\n=====\n'
+        >>> normalize_rst_document("Title\\n=====\\n\\n\\n")
+        'Title\\n=====\\n'
+        >>> normalize_rst_document("")
+        ''
     """
     stripped = text.rstrip()
     if stripped:
@@ -124,8 +126,8 @@ def main():
         -o, --output_dir: Output directory for RST documentation index files
 
     Example::
-        >>> # Command line usage
-        >>> python script.py -i ./my_project -o ./docs/source
+
+        $ python script.py -i ./my_project -o ./docs/source
         # Generates api_doc_en.rst and api_doc_zh.rst files
     """
     parser = argparse.ArgumentParser(

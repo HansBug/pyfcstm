@@ -33,8 +33,10 @@ def normalize_rst_document(text: str) -> str:
 
     Example::
 
-        >>> normalize_rst_document("Title\n=====\n\n\n")
-        'Title\n=====\n'
+        >>> normalize_rst_document("Title\\n=====\\n\\n\\n")
+        'Title\\n=====\\n'
+        >>> normalize_rst_document("")
+        ''
     """
     stripped = text.rstrip()
     if stripped:
@@ -494,7 +496,8 @@ def convert_code_to_rst(code_file: str, rst_file: str, lib_dir: str = "."):
     :type lib_dir: str
 
     Example::
-        >>> convert_code_to_rst('mymodule.py', 'docs/mymodule.rst', lib_dir='src')
+
+        >>> convert_code_to_rst('mymodule.py', 'docs/mymodule.rst', lib_dir='src')  # doctest: +SKIP
         # Generates RST documentation for mymodule.py
     """
     if os.path.dirname(rst_file):

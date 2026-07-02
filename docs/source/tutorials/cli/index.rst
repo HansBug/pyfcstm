@@ -41,26 +41,29 @@ Verifying Installation
 
 Check the installed version:
 
-.. literalinclude:: version_check.demo.sh
-   :language: bash
+.. code-block:: bash
 
-Output:
+   pyfcstm --version
 
-.. literalinclude:: version_check.demo.sh.txt
-   :language: text
+A successful installation prints the package version and maintainer metadata.
 
 Getting Help
 ---------------------
 
-The CLI provides comprehensive help for all commands:
+The CLI provides concise help for the top-level command and every subcommand:
 
-.. literalinclude:: help_example.demo.sh
-   :language: bash
+.. code-block:: bash
 
-This will show:
+   pyfcstm --help
+   pyfcstm simulate --help
+   pyfcstm plantuml --help
+   pyfcstm generate --help
+   pyfcstm visualize --help
 
-.. literalinclude:: help_example.demo.sh.txt
-   :language: text
+Use the subcommand help when you need exact option names for scripts. The
+examples below keep only the stable, short command shapes; generated demo output
+is refreshed by the docs resource build when full command transcripts are
+needed.
 
 Command Reference
 -------------------------------------

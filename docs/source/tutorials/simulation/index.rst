@@ -330,10 +330,10 @@ Example:
 .. code-block:: text
 
    simulate> setting
-   Current Settings:
+   Current settings:
      table_max_rows = 20
      history_size = 100
-     color = on
+     color = True
      log_level = warning
 
    simulate> setting log_level debug
@@ -349,7 +349,7 @@ Export Formats
    * - Format
      - Description
    * - CSV
-     - Comma-separated values with headers (``cycle,state,events,var1,var2,...``)
+     - Comma-separated values with headers (``cycle,state,events,var1,var2,...``); multiple event names inside the ``events`` cell are joined with ``;``
    * - JSON
      - JSON array with history objects containing ``cycle``, ``state``, ``events``, and ``vars``
    * - YAML
@@ -473,7 +473,7 @@ Example 1: Basic Transition
 - **Result**: ``state = Root.B``, ``counter = 12``
 
 Example 2: Composite State with Initial Transition
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. literalinclude:: example2_composite.full.fcstm
    :language: fcstm
@@ -616,7 +616,7 @@ Example 3: Aspect Actions
 **Key Point**: Aspect actions (``>> during before/after``) execute in hierarchical order around the leaf state's ``during`` action, creating a sandwich pattern: before → during → after.
 
 Example 4: Pseudo State (Skipping Aspect Actions)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. literalinclude:: example4_pseudo.full.fcstm
    :language: fcstm
@@ -669,7 +669,7 @@ Example 4: Pseudo State (Skipping Aspect Actions)
 **Key Point**: Pseudo states skip all ancestor aspect actions, executing only their own ``during`` action. This is useful for intermediate states that shouldn't trigger cross-cutting concerns.
 
 Example 5: Multi-Level Composite State
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. literalinclude:: example5_multilevel.full.fcstm
    :language: fcstm
@@ -988,7 +988,7 @@ Self-transitions execute exit and enter actions, providing a way to reset state-
 - **Self-transition**  (cycle 4): Full sequence executes: ``exit`` (+100) → ``enter`` (+1) → ``during`` (+10)
 
 Example 8: Guard Conditions with Effects
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Guards and effects work together to enable complex conditional transitions with state modifications:
 
@@ -1093,7 +1093,7 @@ When transitioning to a non-stoppable state (composite or pseudo), the runtime p
 4. If no stoppable state is reachable: validation fails, stay in current state
 
 Example 9: Pseudo State Chain Validation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Pseudo states require validation to ensure they lead to stoppable states:
 
@@ -1190,7 +1190,7 @@ Pseudo states require validation to ensure they lead to stoppable states:
 Combo transition triggers use this same mechanism after model construction. For example, ``A -> B :: GoP + [ready > 0] + GoB`` behaves like an automatically generated pseudo chain from ``A`` through two non-stoppable combo pseudo states and finally to ``B``. If ``GoB`` is missing or the guard is false, validation rejects the chain and the source state remains active.
 
 Example 10: Validation Failure - Unreachable Stoppable
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 When a composite state's initial transitions cannot reach a stoppable state, the transition is rejected:
 
@@ -1268,7 +1268,7 @@ Hot Start Feature
 The hot start feature allows starting execution from an arbitrary state without executing enter actions. This section demonstrates the mechanism through concrete examples showing how hot start constructs the execution stack and affects lifecycle action execution.
 
 Example 14: Hot Start from Leaf State
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This example demonstrates hot starting from a leaf state, showing how the runtime skips enter actions but executes during actions normally.
 
@@ -1354,7 +1354,7 @@ Hot start configuration: ``initial_state="System.Active"``, ``initial_vars={"cou
 - Behaves as if already entered and stabilized at Active state
 
 Example 15: Hot Start with Aspect Actions
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This example shows how aspect actions (``>> during before/after``) execute normally during hot start, while enter actions are skipped.
 
@@ -1424,7 +1424,7 @@ Hot start configuration: ``initial_state="Root.B"``, ``initial_vars={"counter": 
 - Aspect actions apply to all descendant leaf states, including hot-started states
 
 Example 16: Hot Start from Composite State
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This example demonstrates hot starting from a composite state, showing how the runtime automatically performs initial transitions to find a stoppable leaf state.
 
@@ -1739,7 +1739,7 @@ This state machine models a typical elevator safety system where:
 - ``reopen_count`` tracks safety events for maintenance monitoring
 
 Example 12: Water Heater Temperature Control
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This example simulates a common residential storage water heater: water temperature gradually decreases during standby, heating activates when temperature drops below the lower threshold, and deactivates when reaching the upper threshold. Heavy water usage causes rapid temperature drop, triggering earlier heating.
 
@@ -1948,7 +1948,7 @@ This state machine models a typical hysteresis temperature control system where:
 - ``draw_count`` enables usage pattern analysis for energy management
 
 Example 13: Traffic Light with Pedestrian Crossing
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This example simulates a common urban intersection signal controller: the main road maintains green light by default; when a pedestrian button is pressed, the request is latched; only after the minimum green time is satisfied does the controller enter yellow light and pedestrian crossing phases, then returns to main road green.
 

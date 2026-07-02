@@ -41,26 +41,26 @@ https://github.com/HansBug/pyfcstm/releases
 
 检查已安装的版本：
 
-.. literalinclude:: version_check.demo.sh
-   :language: bash
+.. code-block:: bash
 
-输出：
+   pyfcstm --version
 
-.. literalinclude:: version_check.demo.sh.txt
-   :language: text
+安装成功时会打印包版本和维护者信息。
 
 获取帮助
 ---------------------
 
-CLI 为所有命令提供全面的帮助信息：
+CLI 会为顶层命令和每个子命令提供简洁帮助：
 
-.. literalinclude:: help_example.demo.sh
-   :language: bash
+.. code-block:: bash
 
-这将显示：
+   pyfcstm --help
+   pyfcstm simulate --help
+   pyfcstm plantuml --help
+   pyfcstm generate --help
+   pyfcstm visualize --help
 
-.. literalinclude:: help_example.demo.sh.txt
-   :language: text
+在编写脚本时，请以子命令帮助中的选项名为准。下面的示例只保留稳定、短小的命令形态；如果需要完整命令转录，docs 资源构建会刷新对应 demo 输出。
 
 命令参考
 -------------------------------------

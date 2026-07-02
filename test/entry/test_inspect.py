@@ -106,7 +106,7 @@ class TestEntryInspect:
         result = _run_inspect("-i", inspect_code_file)
 
         assert result.exitcode == 0
-        assert "[WARN ] FCSTM Inspect Report" in result.stdout
+        assert "[WARN] FCSTM Inspect Report" in result.stdout
         assert "status: warning" in result.stdout
         assert "W_DEADLOCK_LEAF" in result.stdout
         assert "-->" in result.stdout
@@ -123,14 +123,14 @@ class TestEntryInspect:
 
         assert result.exitcode == 0
         assert _has_ansi(result.stdout)
-        assert "[WARN ]" in ANSI_ESCAPE_RE.sub("", result.stdout)
+        assert "[WARN]" in ANSI_ESCAPE_RE.sub("", result.stdout)
 
     def test_inspect_human_color_never_outputs_plain_text(self, inspect_code_file):
         result = _run_inspect("-i", inspect_code_file, "--color", "never")
 
         assert result.exitcode == 0
         assert not _has_ansi(result.stdout)
-        assert "[WARN ] FCSTM Inspect Report" in result.stdout
+        assert "[WARN] FCSTM Inspect Report" in result.stdout
 
     def test_inspect_human_output_file_stays_plain_even_when_color_always(
         self, inspect_code_file
@@ -151,7 +151,7 @@ class TestEntryInspect:
                 text = f.read()
             assert not _has_ansi(text)
             assert BOX_DRAWING_RE.search(text) is None
-            assert "[WARN ] FCSTM Inspect Report" in text
+            assert "[WARN] FCSTM Inspect Report" in text
 
     def test_inspect_format_json_outputs_full_json_to_stdout(self, inspect_code_file):
         result = _run_inspect("-i", inspect_code_file, "--format", "json")
@@ -276,7 +276,7 @@ class TestEntryInspect:
         )
 
         assert result.exitcode == 0
-        assert "[WARN ] W_DEAD_GUARD" in result.stdout
+        assert "[WARN] W_DEAD_GUARD" in result.stdout
         assert "= source: verify-backed" in result.stdout
         assert "= fix:" in result.stdout
 

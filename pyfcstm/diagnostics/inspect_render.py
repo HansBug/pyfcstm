@@ -48,9 +48,9 @@ _INSPECT_OUTPUT_FORMATS = ("human", "json", "llm-json", "llm-md")
 _SEVERITY_ORDER = ("error", "warning", "info")
 _SEVERITY_HUMAN_LABELS = {
     "error": "ERROR",
-    "warning": "WARN ",
-    "info": "INFO ",
-    "ok": "OK   ",
+    "warning": "WARN",
+    "info": "INFO",
+    "ok": "OK",
 }
 _STATUS_BY_SEVERITY = {
     "error": "error",
@@ -228,7 +228,7 @@ def render_inspect_human(
         >>> from pyfcstm.diagnostics import inspect_model
         >>> model = load_state_machine_from_text('state Root { state Idle; [*] -> Idle; }')
         >>> text = render_inspect_human(inspect_model(model), 'state Root { state Idle; [*] -> Idle; }')
-        >>> '[OK   ] FCSTM Inspect Report' in text
+        >>> '[OK] FCSTM Inspect Report' in text
         True
     """
     options = options or HumanRenderOptions()

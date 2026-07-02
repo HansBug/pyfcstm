@@ -60,7 +60,7 @@ class TestInspectRender:
     def test_human_renderer_contains_checker_style_location_and_guidance(self):
         text = render_inspect_human(_report(), SOURCE, input_path="case.fcstm")
 
-        assert "[WARN ] FCSTM Inspect Report: case.fcstm" in text
+        assert "[WARN] FCSTM Inspect Report: case.fcstm" in text
         assert "status: warning" in text
         assert "diagnostics: 0 errors" in text
         assert "W_UNWRITTEN_READ_VAR" in text
@@ -88,7 +88,7 @@ class TestInspectRender:
 
         assert ANSI_ESCAPE_RE.search(text) is not None
         plain = ANSI_ESCAPE_RE.sub("", text)
-        assert "[WARN ] FCSTM Inspect Report: case.fcstm" in plain
+        assert "[WARN] FCSTM Inspect Report: case.fcstm" in plain
         assert "W_UNWRITTEN_READ_VAR" in plain
         assert "= source: inspect-static" in plain
 
@@ -124,7 +124,7 @@ class TestInspectRender:
 
         text = render_inspect_human(report, SOURCE, input_path="case.fcstm")
 
-        assert "[WARN ] W_DEADLOCK_LEAF" in text
+        assert "[WARN] W_DEADLOCK_LEAF" in text
         assert "-->" not in text
         assert "= source: inspect-static" in text
         assert "= why:" in text
@@ -152,7 +152,7 @@ class TestInspectRender:
 
         text = render_inspect_human(report, SOURCE, input_path="case.fcstm")
 
-        assert "[OK   ] FCSTM Inspect Report: case.fcstm" in text
+        assert "[OK] FCSTM Inspect Report: case.fcstm" in text
         assert "status: ok" in text
         assert "No diagnostics." in text
         assert ANSI_ESCAPE_RE.search(text) is None

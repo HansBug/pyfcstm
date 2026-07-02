@@ -289,7 +289,7 @@ unchanged to the SMT solver layer and follows Z3 semantics, where `0` means no f
 The human report is plain ASCII when color is disabled or unavailable:
 
 ```text
-[WARN ] W_UNWRITTEN_READ_VAR
+[WARN] W_UNWRITTEN_READ_VAR
   Variable 'x' is read but never written by any action or transition effect.
   --> buggy.fcstm:1:1
    |

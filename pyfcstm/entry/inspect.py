@@ -28,7 +28,7 @@ Examples::
     >>> with TemporaryDirectory() as td:
     ...     path = os.path.join(td, "demo.fcstm")
     ...     with open(path, "w", encoding="utf-8") as f:
-    ...         _ = f.write("state Root;")
+    ...         _ = f.write("state Root { state Idle; [*] -> Idle; }")
     ...     text = build_inspect_json(path)
     >>> '"root_state_path": "Root"' in text
     True
@@ -93,9 +93,9 @@ def _read_inspect_source_text(input_code_file: str) -> str:
         >>> with TemporaryDirectory() as td:
         ...     path = os.path.join(td, "demo.fcstm")
         ...     with open(path, "w", encoding="utf-8") as f:
-        ...         _ = f.write("state Root;")
+        ...         _ = f.write("state Root { state Idle; [*] -> Idle; }")
         ...     _read_inspect_source_text(path)
-        'state Root;'
+        'state Root { state Idle; [*] -> Idle; }'
     """
     return auto_decode(pathlib.Path(input_code_file).read_bytes())
 
@@ -272,7 +272,7 @@ def build_inspect_json(
         >>> with TemporaryDirectory() as td:
         ...     path = os.path.join(td, "demo.fcstm")
         ...     with open(path, "w", encoding="utf-8") as f:
-        ...         _ = f.write("state Root;")
+        ...         _ = f.write("state Root { state Idle; [*] -> Idle; }")
         ...     payload = json.loads(build_inspect_json(path))
         >>> payload["root_state_path"]
         'Root'
@@ -384,7 +384,7 @@ def build_inspect_output(
         >>> with TemporaryDirectory() as td:
         ...     path = os.path.join(td, "demo.fcstm")
         ...     with open(path, "w", encoding="utf-8") as f:
-        ...         _ = f.write("state Root;")
+        ...         _ = f.write("state Root { state Idle; [*] -> Idle; }")
         ...     text = build_inspect_output(path)
         >>> "[OK   ] FCSTM Inspect Report" in text
         True

@@ -198,8 +198,8 @@ def render_inspect_human(
 
         >>> from pyfcstm.model import load_state_machine_from_text
         >>> from pyfcstm.diagnostics import inspect_model
-        >>> model = load_state_machine_from_text('state Root;')
-        >>> text = render_inspect_human(inspect_model(model), 'state Root;')
+        >>> model = load_state_machine_from_text('state Root { state Idle; [*] -> Idle; }')
+        >>> text = render_inspect_human(inspect_model(model), 'state Root { state Idle; [*] -> Idle; }')
         >>> '[OK   ] FCSTM Inspect Report' in text
         True
     """
@@ -273,8 +273,8 @@ def render_inspect_llm_json(
 
         >>> from pyfcstm.model import load_state_machine_from_text
         >>> from pyfcstm.diagnostics import inspect_model
-        >>> model = load_state_machine_from_text('state Root;')
-        >>> text = render_inspect_llm_json(inspect_model(model), 'state Root;')
+        >>> model = load_state_machine_from_text('state Root { state Idle; [*] -> Idle; }')
+        >>> text = render_inspect_llm_json(inspect_model(model), 'state Root { state Idle; [*] -> Idle; }')
         >>> INSPECT_LLM_DRAFT_SCHEMA_VERSION in text
         True
     """
@@ -301,8 +301,8 @@ def render_inspect_llm_markdown(
 
         >>> from pyfcstm.model import load_state_machine_from_text
         >>> from pyfcstm.diagnostics import inspect_model
-        >>> model = load_state_machine_from_text('state Root;')
-        >>> text = render_inspect_llm_markdown(inspect_model(model), 'state Root;')
+        >>> model = load_state_machine_from_text('state Root { state Idle; [*] -> Idle; }')
+        >>> text = render_inspect_llm_markdown(inspect_model(model), 'state Root { state Idle; [*] -> Idle; }')
         >>> '# FCSTM Inspect Report' in text
         True
     """

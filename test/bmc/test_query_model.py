@@ -1,5 +1,7 @@
 """Data model tests for FCSTM BMC query objects."""
 
+import json
+
 import pytest
 from typing import Any, cast
 
@@ -55,7 +57,7 @@ def test_error_hierarchy():
 def test_literal_canonical_forms_preserve_raw_kind_and_value():
     """Literal canonical forms keep enough information for grammar parity."""
     decimal = IntLiteral("42")
-    hexed = IntLiteral("0x2A", kind="hex")
+    hexed = IntLiteral("0x2A")
     floating = FloatLiteral("3.5e1")
     fractional = FloatLiteral(".5")
     exponent = FloatLiteral("1e-3")
@@ -73,6 +75,7 @@ def test_literal_canonical_forms_preserve_raw_kind_and_value():
         "raw": "0x2A",
         "value": 42,
     }
+    assert IntLiteral("0x2A", kind="hex") == hexed
     assert decimal != hexed
     assert floating.to_canonical() == {
         "node": "float_literal",
@@ -82,6 +85,7 @@ def test_literal_canonical_forms_preserve_raw_kind_and_value():
     }
     assert fractional.to_canonical()["value"] == 0.5
     assert exponent.to_canonical()["value"] == 0.001
+    json.dumps(floating.to_canonical(), allow_nan=False)
     assert truth.to_canonical() == {
         "node": "bool_literal",
         "kind": "bool",
@@ -835,10 +839,16 @@ def test_expression_model_rejects_invalid_literal_and_frame_values():
         NameRef("cycle")
     with pytest.raises(ValueError, match="floating"):
         FloatLiteral("1")
+    with pytest.raises(ValueError, match="finite"):
+        FloatLiteral("1e999")
     with pytest.raises(ValueError, match="decimal"):
         IntLiteral("0X2A")
     with pytest.raises(ValueError, match="hexadecimal"):
         IntLiteral("0x")
+    with pytest.raises(ValueError, match="kind"):
+        IntLiteral("0x2A", kind="decimal")
+    with pytest.raises(ValueError, match="kind"):
+        IntLiteral("42", kind="hex")
     with pytest.raises(ValueError, match="spelling"):
         FrameVar("x", spelling="bare")
 

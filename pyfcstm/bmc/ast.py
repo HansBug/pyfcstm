@@ -24,6 +24,12 @@ Design contracts:
   raise :class:`pyfcstm.bmc.errors.InvalidBmcQuery` for whole-query shape
   validation, so parser and binder code should not assume one exception family
   covers both layers.
+* Literal canonical values are kept JSON-portable.  Float literals that would
+  overflow Python's finite ``float`` range are rejected at construction time,
+  while raw text still preserves exact spelling for parity checks.
+* Identifier and path shape validation is shallow here: quoted query atoms only
+  require non-empty strings, and later binder layers resolve model paths and
+  reject impossible state, event, variable, case, or call names.
 * The event atom always prints its cycle selector explicitly, including
   ``current``.  This keeps event queries visually distinct from frame-based
   atoms such as ``active("Root.A")`` whose default frame may be omitted.
@@ -50,10 +56,11 @@ Example::
 from __future__ import annotations
 
 import json
+import math
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, ClassVar, Dict, Union
+from typing import Any, ClassVar, Dict, Optional, Union
 
 from pyfcstm.bmc.errors import InvalidBmcQuery
 
@@ -375,8 +382,9 @@ class IntLiteral(BmcNumExpr):
 
     :param raw: Raw integer token text such as ``"42"`` or ``"0x2A"``.
     :type raw: str
-    :param kind: Literal kind, either ``"decimal"`` or ``"hex"``. If the raw
-        value starts with ``0x``, the kind is normalized to ``"hex"``.
+    :param kind: Literal kind, either ``"decimal"`` or ``"hex"``. When omitted,
+        the kind is inferred from ``raw``.  Explicit kind values must match the
+        raw spelling.
     :type kind: str, optional
 
     Example::
@@ -388,12 +396,21 @@ class IntLiteral(BmcNumExpr):
     _node_name: ClassVar[str] = "int_literal"
 
     raw: str
-    kind: str = "decimal"
+    kind: Optional[str] = None
 
     def __post_init__(self) -> None:
         _require_non_empty_string(self.raw, "raw")
-        kind = "hex" if self.raw.startswith("0x") else self.kind
-        _validate_choice(kind, {"decimal", "hex"}, "integer literal kind")
+        inferred_kind = "hex" if self.raw.startswith("0x") else "decimal"
+        if self.kind is None:
+            kind = inferred_kind
+        else:
+            _validate_choice(self.kind, {"decimal", "hex"}, "integer literal kind")
+            if self.kind != inferred_kind:
+                raise ValueError(
+                    "Integer literal kind does not match raw spelling: "
+                    f"{self.raw!r} is {inferred_kind}, got {self.kind!r}."
+                )
+            kind = self.kind
         if kind == "hex":
             if not _HEX_INT_RE.match(self.raw):
                 raise ValueError(
@@ -445,6 +462,10 @@ class FloatLiteral(BmcNumExpr):
         _require_non_empty_string(self.raw, "raw")
         if not _FLOAT_RE.match(self.raw):
             raise ValueError(f"Invalid FCSTM floating-point literal: {self.raw!r}.")
+        if not math.isfinite(float(self.raw)):
+            raise ValueError(
+                f"FCSTM floating-point literal must be finite: {self.raw!r}."
+            )
 
     @property
     def value(self) -> float:

@@ -285,13 +285,137 @@ jobs:
           plantumlcli -c
           make -C docs contents
       - name: Verify generated docs resources are committed
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
         run: |
           set -euo pipefail
-          git diff --exit-code -- docs/source
-          untracked_docs="$(git ls-files --others --exclude-standard -- docs/source)"
-          if [ -n "$untracked_docs" ]; then
-            echo "Untracked docs resources were generated:" >&2
-            echo "$untracked_docs" >&2
-            exit 1
+
+          if [ "${GITHUB_EVENT_NAME}" != "pull_request" ]; then
+            git diff --exit-code -- docs/source
+            untracked_docs="$(git ls-files --others --exclude-standard -- docs/source)"
+            if [ -n "$untracked_docs" ]; then
+              echo "Untracked docs resources were generated:" >&2
+              echo "$untracked_docs" >&2
+              exit 1
+            fi
+            exit 0
+          fi
+
+          mkdir -p .ci/docs-resources
+          changed_file=.ci/docs-resources/changed-files.txt
+          verify_file=.ci/docs-resources/verify-paths.txt
+
+          if ! git cat-file -e "${PR_BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --prune origin \
+              "+refs/heads/${PR_BASE_REF}:refs/remotes/origin/${PR_BASE_REF}"
+          fi
+          if ! git cat-file -e "${PR_HEAD_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --prune origin \
+              "+refs/pull/${PR_NUMBER}/head:refs/remotes/origin/pr/${PR_NUMBER}/head"
+          fi
+
+          git diff --name-only "${PR_BASE_SHA}" "${PR_HEAD_SHA}" > "$changed_file"
+
+          python - <<'PY'
+          from pathlib import Path
+
+          changed_paths = [
+              line.strip()
+              for line in Path('.ci/docs-resources/changed-files.txt').read_text(
+                  encoding='utf-8'
+              ).splitlines()
+              if line.strip()
+          ]
+          verify_paths = set()
+
+          generated_suffixes = (
+              '.fcstm.puml',
+              '.fcstm.puml.png',
+              '.fcstm.puml.svg',
+              '.puml.png',
+              '.puml.svg',
+              '.gv.png',
+              '.gv.svg',
+              '.demo.py.txt',
+              '.demox.py.txt',
+              '.demox.py.err',
+              '.demox.py.exitcode',
+              '.plot.py.svg',
+              '.demo.sh.txt',
+              '.demox.sh.txt',
+              '.demox.sh.err',
+              '.demox.sh.exitcode',
+              '.result.ipynb',
+          )
+
+          def add(path):
+              if path.startswith('docs/source/'):
+                  verify_paths.add(path)
+
+          for changed_path in changed_paths:
+              if changed_path.startswith('logos/'):
+                  verify_paths.add('docs/source/_static/logos')
+                  continue
+              if not changed_path.startswith('docs/source/'):
+                  continue
+              if changed_path.endswith('.full.fcstm'):
+                  stem = changed_path[:-len('.full.fcstm')]
+                  add(stem + '.full.fcstm.puml')
+                  add(stem + '.full.fcstm.puml.png')
+                  add(stem + '.full.fcstm.puml.svg')
+              elif changed_path.endswith('.minimal.fcstm'):
+                  stem = changed_path[:-len('.minimal.fcstm')]
+                  add(stem + '.minimal.fcstm.puml')
+                  add(stem + '.minimal.fcstm.puml.png')
+                  add(stem + '.minimal.fcstm.puml.svg')
+              elif changed_path.endswith('.fcstm'):
+                  stem = changed_path[:-len('.fcstm')]
+                  add(stem + '.fcstm.puml')
+                  add(stem + '.fcstm.puml.png')
+                  add(stem + '.fcstm.puml.svg')
+              elif changed_path.endswith('.puml'):
+                  add(changed_path + '.png')
+                  add(changed_path + '.svg')
+              elif changed_path.endswith('.gv'):
+                  add(changed_path + '.png')
+                  add(changed_path + '.svg')
+              elif changed_path.endswith('.demo.py'):
+                  add(changed_path + '.txt')
+              elif changed_path.endswith('.demox.py'):
+                  add(changed_path + '.txt')
+                  add(changed_path + '.err')
+                  add(changed_path + '.exitcode')
+              elif changed_path.endswith('.plot.py'):
+                  add(changed_path + '.svg')
+              elif changed_path.endswith('.demo.sh'):
+                  add(changed_path + '.txt')
+              elif changed_path.endswith('.demox.sh'):
+                  add(changed_path + '.txt')
+                  add(changed_path + '.err')
+                  add(changed_path + '.exitcode')
+              elif changed_path.endswith('.ipynb'):
+                  add(changed_path[:-len('.ipynb')] + '.result.ipynb')
+              elif changed_path.endswith(generated_suffixes):
+                  add(changed_path)
+
+          with Path('.ci/docs-resources/verify-paths.txt').open('w', encoding='utf-8') as output:
+              for path in sorted(verify_paths):
+                  print(path, file=output)
+          PY
+
+          echo "Docs generated resource paths checked for this PR:"
+          cat "$verify_file"
+
+          if [ -s "$verify_file" ]; then
+            xargs -a "$verify_file" -r git diff --exit-code --
+            untracked_docs="$(xargs -a "$verify_file" -r git ls-files --others --exclude-standard --)"
+            if [ -n "$untracked_docs" ]; then
+              echo "Untracked docs resources were generated:" >&2
+              echo "$untracked_docs" >&2
+              exit 1
+            fi
           fi

@@ -65,15 +65,12 @@
 
 完整可视化选项矩阵留在 :doc:`/tutorials/visualization/index_zh`。
 
-可复现命令记录
+可复现命令脚本
 --------------
 
-以下记录由文档构建过程生成：
+文档构建会运行下面这个脚本来覆盖不依赖渲染器的核心命令：
 
 .. literalinclude:: quick_start.demo.sh
    :language: bash
 
-输出：
-
-.. literalinclude:: quick_start.demo.sh.txt
-   :language: text
+安装 pyfcstm 后，可以在本目录运行它来本地复现同一组命令。

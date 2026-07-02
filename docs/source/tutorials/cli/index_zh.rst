@@ -301,7 +301,6 @@ generate 命令
 完整内置模板教程见 :doc:`/tutorials/generation/index_zh`。模板作者细节仍然放在 :doc:`/tutorials/render/index_zh`。
 
 常见用例
--------------------------------------常见用例
 -------------------------------------
 
 工作流 1：DSL 到图表

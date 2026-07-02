@@ -323,7 +323,6 @@ The complete built-in template walkthrough lives in
 :doc:`/tutorials/render/index`.
 
 Common Use Cases
--------------------------------------Common Use Cases
 -------------------------------------
 
 Workflow 1: DSL to Diagram

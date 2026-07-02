@@ -16,6 +16,8 @@ Module map:
      - Build full JSON text for one input file and inspect policy.
    * - :func:`build_inspect_output`
      - Build text in the requested inspect output format.
+   * - :func:`resolve_inspect_color_enabled`
+     - Resolve whether the human inspect renderer should emit ANSI color.
    * - :func:`_add_inspect_subcommand`
      - Register the ``inspect`` subcommand on a Click group.
 
@@ -35,7 +37,9 @@ Examples::
 from __future__ import annotations
 
 import json
+import os
 import pathlib
+import sys
 from typing import Optional
 
 import click
@@ -43,6 +47,7 @@ import click
 from .base import CONTEXT_SETTINGS, ClickErrorException
 from ..diagnostics import inspect_model
 from ..diagnostics.inspect_render import (
+    HumanRenderOptions,
     inspect_output_suffix_warning,
     render_inspect_human,
     render_inspect_llm_json,
@@ -64,6 +69,7 @@ _INSPECT_CALL_COUNT_CHOICES = CALL_COUNT_SCALING_ORDER + (
     "k_unrollings_times_branching",
 )
 _INSPECT_OUTPUT_FORMAT_CHOICES = ("human", "json", "llm-json", "llm-md")
+_INSPECT_COLOR_CHOICES = ("auto", "always", "never")
 
 
 def _read_inspect_source_text(input_code_file: str) -> str:
@@ -150,6 +156,75 @@ def _validate_inspect_policy(
                 maximum=max_call_count_scaling
             )
         )
+
+
+def resolve_inspect_color_enabled(
+    color_mode: str,
+    *,
+    output_format: str = "human",
+    output_file: Optional[str] = None,
+    stdout_isatty: Optional[bool] = None,
+    no_color: Optional[str] = None,
+    term: Optional[str] = None,
+) -> bool:
+    """Return whether inspect output should include ANSI color.
+
+    Color is a presentation feature for the human format only. Machine formats
+    always stay ANSI-free so their JSON or Markdown can be consumed by scripts,
+    editors, and LLM pipelines without escape-code cleanup.
+
+    :param color_mode: Requested color mode: ``"auto"``, ``"always"``, or
+        ``"never"``.
+    :type color_mode: str
+    :param output_format: Inspect output format, defaults to ``"human"``.
+    :type output_format: str, optional
+    :param output_file: Output path supplied to ``-o``. A non-``None`` value
+        disables ANSI color even when ``color_mode`` is ``"always"``.
+    :type output_file: Optional[str], optional
+    :param stdout_isatty: Optional TTY probe result. ``None`` probes
+        :data:`sys.stdout`.
+    :type stdout_isatty: Optional[bool], optional
+    :param no_color: Optional ``NO_COLOR`` value. ``None`` reads from the
+        environment; any non-empty value disables auto color.
+    :type no_color: Optional[str], optional
+    :param term: Optional ``TERM`` value. ``None`` reads from the environment;
+        ``"dumb"`` disables auto color.
+    :type term: Optional[str], optional
+    :return: ``True`` if the human renderer should emit ANSI color.
+    :rtype: bool
+    :raises ValueError: If ``color_mode`` is unsupported.
+
+    Examples::
+
+        >>> resolve_inspect_color_enabled("never", stdout_isatty=True)
+        False
+        >>> resolve_inspect_color_enabled("always", stdout_isatty=False)
+        True
+        >>> resolve_inspect_color_enabled("always", output_format="json", stdout_isatty=True)
+        False
+        >>> resolve_inspect_color_enabled("auto", stdout_isatty=True, no_color="0")
+        False
+    """
+    if color_mode not in _INSPECT_COLOR_CHOICES:
+        raise ValueError(f"unsupported inspect color mode: {color_mode!r}")
+    if output_format != "human":
+        return False
+    if output_file is not None:
+        return False
+    if color_mode == "never":
+        return False
+    if color_mode == "always":
+        return True
+
+    no_color_value = os.environ.get("NO_COLOR") if no_color is None else no_color
+    if no_color_value:
+        return False
+    term_value = os.environ.get("TERM") if term is None else term
+    if term_value == "dumb":
+        return False
+    if stdout_isatty is None:
+        stdout_isatty = sys.stdout.isatty()
+    return bool(stdout_isatty)
 
 
 def build_inspect_json(
@@ -265,6 +340,7 @@ def build_inspect_output(
     input_code_file: str,
     *,
     output_format: str = "human",
+    color_enabled: bool = False,
     enable_verify: bool = False,
     max_complexity_tier: str = "structural",
     max_call_count_scaling: str = "linear_in_transitions",
@@ -282,6 +358,9 @@ def build_inspect_output(
     :param output_format: One of ``"human"``, ``"json"``,
         ``"llm-json"``, or ``"llm-md"``. Defaults to ``"human"``.
     :type output_format: str, optional
+    :param color_enabled: Whether the human renderer should emit ANSI color.
+        Ignored by machine-readable formats.
+    :type color_enabled: bool, optional
     :param enable_verify: Whether to run inspect-eligible verify algorithms.
     :type enable_verify: bool, optional
     :param max_complexity_tier: Maximum verify complexity tier accepted by
@@ -307,7 +386,7 @@ def build_inspect_output(
         ...     with open(path, "w", encoding="utf-8") as f:
         ...         _ = f.write("state Root;")
         ...     text = build_inspect_output(path)
-        >>> "FCSTM Inspect Report" in text
+        >>> "[OK   ] FCSTM Inspect Report" in text
         True
     """
     if output_format == "json":
@@ -368,7 +447,12 @@ def build_inspect_output(
         raise ClickErrorException(str(err))
 
     if output_format == "human":
-        return render_inspect_human(report, source_text, input_path=input_code_file)
+        return render_inspect_human(
+            report,
+            source_text,
+            input_path=input_code_file,
+            options=HumanRenderOptions(color_enabled=color_enabled),
+        )
     if output_format == "llm-json":
         return render_inspect_llm_json(report, source_text, input_path=input_code_file)
     return render_inspect_llm_markdown(report, source_text, input_path=input_code_file)
@@ -426,6 +510,14 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
         help="Inspect output format; use json for the full machine-readable report.",
     )
     @click.option(
+        "--color",
+        "color_mode",
+        type=click.Choice(_INSPECT_COLOR_CHOICES, case_sensitive=True),
+        default="auto",
+        show_default=True,
+        help="Control ANSI color for human inspect output only.",
+    )
+    @click.option(
         "--enable-verify",
         is_flag=True,
         help="Run inspect-eligible pyfcstm.verify algorithms.",
@@ -463,6 +555,7 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
         input_code_file: str,
         output_file: Optional[str],
         output_format: str,
+        color_mode: str,
         enable_verify: bool,
         max_complexity_tier: str,
         max_call_count_scaling: str,
@@ -478,6 +571,8 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
         :type output_file: Optional[str]
         :param output_format: Inspect output format.
         :type output_format: str
+        :param color_mode: ANSI color mode for human output.
+        :type color_mode: str
         :param enable_verify: Whether to run inspect-eligible verify
             algorithms.
         :type enable_verify: bool
@@ -499,11 +594,18 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
 
             $ pyfcstm inspect -i machine.fcstm
             $ pyfcstm inspect -i machine.fcstm --format json
+            $ pyfcstm inspect -i machine.fcstm --color always
             $ pyfcstm inspect -i machine.fcstm --enable-verify --max-complexity-tier smt_linear
         """
+        color_enabled = resolve_inspect_color_enabled(
+            color_mode,
+            output_format=output_format,
+            output_file=output_file,
+        )
         inspect_output = build_inspect_output(
             input_code_file,
             output_format=output_format,
+            color_enabled=color_enabled,
             enable_verify=enable_verify,
             max_complexity_tier=max_complexity_tier,
             max_call_count_scaling=max_call_count_scaling,
@@ -513,7 +615,7 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
         if warning is not None:
             click.echo(f"Warning: {warning}", err=True)
         if output_file is None:
-            click.echo(inspect_output, nl=False)
+            click.echo(inspect_output, nl=False, color=color_enabled)
         else:
             try:
                 pathlib.Path(output_file).write_text(inspect_output, encoding="utf-8")

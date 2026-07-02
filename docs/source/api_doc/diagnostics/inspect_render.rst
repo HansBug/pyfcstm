@@ -19,6 +19,13 @@ SourceExcerpt
     :members: line_number,text,caret
 
 
+HumanRenderOptions
+-----------------------------------------------------
+
+.. autoclass:: HumanRenderOptions
+    :members: color_enabled
+
+
 inspect\_output\_suffix\_warning
 -----------------------------------------------------
 

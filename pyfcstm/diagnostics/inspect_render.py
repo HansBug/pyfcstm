@@ -16,7 +16,9 @@ The module contains:
    * - Helper
      - Purpose
    * - :func:`render_inspect_human`
-     - Render a concise terminal report for humans.
+     - Render a checker-style terminal report for humans.
+   * - :class:`HumanRenderOptions`
+     - Carry human-renderer presentation toggles such as ANSI color.
    * - :func:`render_inspect_llm_json`
      - Render a draft compact JSON packet for LLM repair loops.
    * - :func:`render_inspect_llm_markdown`
@@ -36,7 +38,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from .codes import CODE_REGISTRY
 from ..utils.validate import ModelDiagnostic, Span
@@ -44,22 +46,25 @@ from ..utils.validate import ModelDiagnostic, Span
 INSPECT_LLM_DRAFT_SCHEMA_VERSION = "pyfcstm.inspect.llm.draft"
 _INSPECT_OUTPUT_FORMATS = ("human", "json", "llm-json", "llm-md")
 _SEVERITY_ORDER = ("error", "warning", "info")
-_SEVERITY_LABELS = {
-    "error": "Errors",
-    "warning": "Warnings",
-    "info": "Infos",
+_SEVERITY_HUMAN_LABELS = {
+    "error": "ERROR",
+    "warning": "WARN ",
+    "info": "INFO ",
+    "ok": "OK   ",
 }
 _STATUS_BY_SEVERITY = {
     "error": "error",
     "warning": "warning",
     "info": "info",
 }
-_STATUS_ICON = {
-    "ok": "OK",
-    "info": "INFO",
-    "warning": "WARNING",
-    "error": "ERROR",
+_ANSI_STYLE_BY_SEVERITY = {
+    "error": "1;31",
+    "warning": "33",
+    "info": "36",
+    "ok": "32",
 }
+_ANSI_BOLD = "1"
+_ANSI_RESET = "\033[0m"
 
 
 @dataclass(frozen=True)
@@ -82,6 +87,29 @@ class SourceExcerpt:
     line_number: int
     text: str
     caret: str
+
+
+@dataclass(frozen=True)
+class HumanRenderOptions:
+    """Options controlling human inspect presentation details.
+
+    The options intentionally describe terminal presentation only. They do not
+    change :meth:`pyfcstm.diagnostics.inspect.ModelInspect.to_json` or any LLM
+    draft renderer, which keeps machine-readable inspect output independent of
+    ANSI styling decisions.
+
+    :param color_enabled: Whether ANSI color should be emitted for the human
+        renderer. Defaults to ``False`` so programmatic calls are plain ASCII
+        unless the CLI explicitly enables color for an interactive terminal.
+    :type color_enabled: bool, optional
+
+    Example::
+
+        >>> HumanRenderOptions(color_enabled=True).color_enabled
+        True
+    """
+
+    color_enabled: bool = False
 
 
 def inspect_output_suffix_warning(
@@ -145,9 +173,13 @@ def inspect_output_suffix_warning(
 
 
 def render_inspect_human(
-    report: Any, source_text: Optional[str] = None, *, input_path: Optional[str] = None
+    report: Any,
+    source_text: Optional[str] = None,
+    *,
+    input_path: Optional[str] = None,
+    options: Optional[HumanRenderOptions] = None,
 ) -> str:
-    """Render an inspect report as concise human-readable text.
+    """Render an inspect report as checker-style human-readable text.
 
     :param report: Inspect report returned by
         :func:`pyfcstm.diagnostics.inspect_model`.
@@ -157,6 +189,8 @@ def render_inspect_human(
     :type source_text: Optional[str], optional
     :param input_path: Optional path shown in the report heading and locations.
     :type input_path: Optional[str], optional
+    :param options: Optional presentation controls such as ANSI color.
+    :type options: pyfcstm.diagnostics.inspect_render.HumanRenderOptions, optional
     :return: Human-readable report ending with a newline.
     :rtype: str
 
@@ -166,16 +200,18 @@ def render_inspect_human(
         >>> from pyfcstm.diagnostics import inspect_model
         >>> model = load_state_machine_from_text('state Root;')
         >>> text = render_inspect_human(inspect_model(model), 'state Root;')
-        >>> 'FCSTM Inspect Report' in text
+        >>> '[OK   ] FCSTM Inspect Report' in text
         True
     """
+    options = options or HumanRenderOptions()
     counts = _severity_counts(report.diagnostics)
     status = _status_from_counts(counts)
     lines: List[str] = []
+    label = _format_human_severity_label(status, options=options)
     heading = "FCSTM Inspect Report"
     if input_path:
         heading = f"{heading}: {input_path}"
-    lines.append(f"{_STATUS_ICON[status]} {heading}")
+    lines.append(f"{label} {heading}")
     lines.append("")
     lines.append("Summary")
     lines.append(f"  status: {status}")
@@ -200,21 +236,15 @@ def render_inspect_human(
         lines.append("No diagnostics.")
         return "\n".join(lines) + "\n"
 
-    grouped = _group_diagnostics(report.diagnostics)
-    for severity in _SEVERITY_ORDER:
-        diagnostics = grouped.get(severity, ())
-        if not diagnostics:
-            continue
-        lines.append(_SEVERITY_LABELS[severity])
-        for index, diagnostic in enumerate(diagnostics, start=1):
-            lines.extend(
-                _render_human_diagnostic(
-                    diagnostic,
-                    index=index,
-                    source_text=source_text,
-                    input_path=input_path,
-                )
+    for diagnostic in report.diagnostics:
+        lines.extend(
+            _render_human_diagnostic(
+                diagnostic,
+                source_text=source_text,
+                input_path=input_path,
+                options=options,
             )
+        )
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
@@ -347,44 +377,60 @@ def _status_from_counts(counts: Mapping[str, int]) -> str:
     return "ok"
 
 
-def _group_diagnostics(
-    diagnostics: Iterable[ModelDiagnostic],
-) -> Dict[str, Tuple[ModelDiagnostic, ...]]:
-    grouped: Dict[str, List[ModelDiagnostic]] = {
-        severity: [] for severity in _SEVERITY_ORDER
-    }
-    for diagnostic in diagnostics:
-        grouped[diagnostic.severity].append(diagnostic)
-    return {severity: tuple(items) for severity, items in grouped.items()}
+def _format_human_severity_label(severity: str, *, options: HumanRenderOptions) -> str:
+    text = "[{label}]".format(label=_SEVERITY_HUMAN_LABELS[severity])
+    return _style_text(text, _severity_style(severity), options=options)
+
+
+def _severity_style(severity: str) -> str:
+    return _ANSI_STYLE_BY_SEVERITY[severity]
+
+
+def _style_text(text: str, style: str, *, options: HumanRenderOptions) -> str:
+    if not options.color_enabled:
+        return text
+    return "\033[{style}m{text}{reset}".format(
+        style=style,
+        text=text,
+        reset=_ANSI_RESET,
+    )
 
 
 def _render_human_diagnostic(
     diagnostic: ModelDiagnostic,
     *,
-    index: int,
     source_text: Optional[str],
     input_path: Optional[str],
+    options: HumanRenderOptions,
 ) -> List[str]:
-    lines = [f"  {index}. {diagnostic.code}: {diagnostic.message}"]
+    label = _format_human_severity_label(diagnostic.severity, options=options)
+    code = _style_text(diagnostic.code, _ANSI_BOLD, options=options)
+    lines = [f"{label} {code}", f"  {diagnostic.message}"]
     if diagnostic.span is not None:
-        lines.append(f"     at {_format_span(diagnostic.span, input_path=input_path)}")
+        lines.append(f"  --> {_format_span(diagnostic.span, input_path=input_path)}")
     excerpt = _source_excerpt(source_text, diagnostic.span)
     if excerpt is not None:
-        lines.append(f"     {excerpt.line_number:>4} | {excerpt.text}")
-        lines.append(f"          | {excerpt.caret}")
+        line_prefix = f" {excerpt.line_number} |"
+        gutter_width = len(line_prefix)
+        caret = _style_text(
+            excerpt.caret,
+            _severity_style(diagnostic.severity),
+            options=options,
+        )
+        lines.append("   |")
+        lines.append(f"{line_prefix} {excerpt.text}")
+        lines.append(f" {' ' * (gutter_width - 1)}| {caret}")
+        lines.append("   |")
     spec = CODE_REGISTRY.get(diagnostic.code)
-    if spec is not None:
-        lines.append(f"     source: {_diagnostic_source(spec)}")
+    lines.append(f"   = source: {_diagnostic_source(spec)}")
     if spec is not None and spec.for_llm is not None:
-        lines.append(f"     why: {spec.for_llm.summary}")
+        lines.append(f"   = why: {spec.for_llm.summary}")
         if spec.for_llm.recommended_actions:
-            lines.append("     suggested actions:")
             for action in spec.for_llm.recommended_actions:
-                lines.append(f"       - {_format_action_for_human(action)}")
+                lines.append(f"   = fix: {_format_action_for_human(action)}")
         if spec.for_llm.do_not:
-            lines.append("     do not:")
             for item in spec.for_llm.do_not:
-                lines.append(f"       - {item}")
+                lines.append(f"   = do-not: {item}")
     return lines
 
 

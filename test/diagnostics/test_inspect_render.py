@@ -1,12 +1,14 @@
 """Unit tests for inspect presentation renderers."""
 
 import json
+import re
 import textwrap
 
 import pytest
 
 from pyfcstm.diagnostics import inspect_model
 from pyfcstm.diagnostics.inspect_render import (
+    HumanRenderOptions,
     INSPECT_LLM_DRAFT_SCHEMA_VERSION,
     inspect_output_suffix_warning,
     render_inspect_human,
@@ -28,6 +30,8 @@ SOURCE = textwrap.dedent(
     }
     """
 ).strip()
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+BOX_DRAWING_RE = re.compile(r"[\u2500-\u257f]")
 
 
 def _report():
@@ -38,17 +42,101 @@ def _report():
 
 @pytest.mark.unittest
 class TestInspectRender:
-    def test_human_renderer_contains_summary_location_and_guidance(self):
+    def test_human_renderer_contains_checker_style_location_and_guidance(self):
         text = render_inspect_human(_report(), SOURCE, input_path="case.fcstm")
 
-        assert "FCSTM Inspect Report: case.fcstm" in text
+        assert "[WARN ] FCSTM Inspect Report: case.fcstm" in text
         assert "status: warning" in text
         assert "diagnostics: 0 errors" in text
         assert "W_UNWRITTEN_READ_VAR" in text
-        assert "case.fcstm:" in text
+        assert "--> case.fcstm:" in text
+        assert "|" in text
         assert "^" in text
-        assert "suggested actions:" in text
-        assert "do not:" in text
+        assert "= source: inspect-static" in text
+        assert "= why:" in text
+        assert "= fix:" in text
+        assert "= do-not:" in text
+        assert ANSI_ESCAPE_RE.search(text) is None
+        assert BOX_DRAWING_RE.search(text) is None
+
+    def test_human_renderer_color_enabled_adds_ansi_without_losing_text(self):
+        text = render_inspect_human(
+            _report(),
+            SOURCE,
+            input_path="case.fcstm",
+            options=HumanRenderOptions(color_enabled=True),
+        )
+
+        assert ANSI_ESCAPE_RE.search(text) is not None
+        plain = ANSI_ESCAPE_RE.sub("", text)
+        assert "[WARN ] FCSTM Inspect Report: case.fcstm" in plain
+        assert "W_UNWRITTEN_READ_VAR" in plain
+        assert "= source: inspect-static" in plain
+
+    def test_human_renderer_without_span_still_renders_guidance(self):
+        from pyfcstm.utils.validate import ModelDiagnostic
+
+        report = _report()
+        diagnostic = ModelDiagnostic(
+            code="W_DEADLOCK_LEAF",
+            severity="warning",
+            message="Synthetic diagnostic without span.",
+            span=None,
+            refs={},
+        )
+        report = type(report)(
+            root_state_path=report.root_state_path,
+            variables=report.variables,
+            states=report.states,
+            transitions=report.transitions,
+            events=report.events,
+            actions=report.actions,
+            metrics=report.metrics,
+            reachability_graph=report.reachability_graph,
+            event_emission_map=report.event_emission_map,
+            var_dataflow=report.var_dataflow,
+            aspect_impact_map=report.aspect_impact_map,
+            action_ref_graph=report.action_ref_graph,
+            combo_transitions=report.combo_transitions,
+            combo_origins=report.combo_origins,
+            forced_transitions=report.forced_transitions,
+            diagnostics=(diagnostic,),
+        )
+
+        text = render_inspect_human(report, SOURCE, input_path="case.fcstm")
+
+        assert "[WARN ] W_DEADLOCK_LEAF" in text
+        assert "-->" not in text
+        assert "= source: inspect-static" in text
+        assert "= why:" in text
+
+    def test_human_renderer_empty_diagnostics_reports_ok_state(self):
+        report = _report()
+        report = type(report)(
+            root_state_path=report.root_state_path,
+            variables=report.variables,
+            states=report.states,
+            transitions=report.transitions,
+            events=report.events,
+            actions=report.actions,
+            metrics=report.metrics,
+            reachability_graph=report.reachability_graph,
+            event_emission_map=report.event_emission_map,
+            var_dataflow=report.var_dataflow,
+            aspect_impact_map=report.aspect_impact_map,
+            action_ref_graph=report.action_ref_graph,
+            combo_transitions=report.combo_transitions,
+            combo_origins=report.combo_origins,
+            forced_transitions=report.forced_transitions,
+            diagnostics=(),
+        )
+
+        text = render_inspect_human(report, SOURCE, input_path="case.fcstm")
+
+        assert "[OK   ] FCSTM Inspect Report: case.fcstm" in text
+        assert "status: ok" in text
+        assert "No diagnostics." in text
+        assert ANSI_ESCAPE_RE.search(text) is None
 
     def test_llm_json_renderer_is_draft_and_actionable(self):
         payload = json.loads(render_inspect_llm_json(_report(), SOURCE))

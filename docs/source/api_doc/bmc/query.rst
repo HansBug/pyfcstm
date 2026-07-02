@@ -12,12 +12,6 @@ CanonicalDict
 .. autodata:: CanonicalDict
 
 
-FrameSelector
------------------------------------------------------
-
-.. autodata:: FrameSelector
-
-
 QuerySelector
 -----------------------------------------------------
 

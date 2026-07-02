@@ -26,6 +26,7 @@ Example::
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Dict, Optional, Tuple, Union
 
@@ -38,7 +39,6 @@ from pyfcstm.bmc.ast import BmcCondExpr
 from pyfcstm.bmc.errors import InvalidBmcQuery
 
 CanonicalDict = Dict[str, Any]
-FrameSelector = Union[int, Literal["current"]]
 QuerySelector = Union[int, Literal["*"], str]
 
 _INITIAL_MODES = {"cold", "terminated", "state"}
@@ -102,6 +102,10 @@ def _normalize_frame(frame: Optional[int]) -> Optional[int]:
     return frame
 
 
+def _is_ascii_decimal(value: str) -> bool:
+    return bool(value) and all("0" <= char <= "9" for char in value)
+
+
 def _normalize_selector(selector: QuerySelector) -> QuerySelector:
     if isinstance(selector, bool):
         raise InvalidBmcQuery(
@@ -114,13 +118,13 @@ def _normalize_selector(selector: QuerySelector) -> QuerySelector:
     if isinstance(selector, str):
         if selector == "*":
             return selector
-        if selector.isdigit():
+        if _is_ascii_decimal(selector):
             return int(selector)
         parts = selector.split("..")
-        if len(parts) == 2 and all(part.isdigit() for part in parts):
+        if len(parts) == 2 and all(_is_ascii_decimal(part) for part in parts):
             start, end = (int(parts[0]), int(parts[1]))
             if start <= end:
-                return selector
+                return "%d..%d" % (start, end)
     raise InvalidBmcQuery(
         "selector must be '*', a non-negative integer, or an inclusive range."
     )
@@ -187,7 +191,7 @@ class InitialSpec:
         }
 
 
-class BmcAssumption:
+class BmcAssumption(ABC):
     """Base class for BMC environment assumptions.
 
     :cvar _node_name: Canonical node tag emitted by
@@ -219,6 +223,7 @@ class BmcAssumption:
         result.update(self._canonical_payload())
         return result
 
+    @abstractmethod
     def _canonical_payload(self) -> CanonicalDict:
         raise NotImplementedError  # pragma: no cover
 

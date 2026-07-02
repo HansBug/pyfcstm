@@ -4,6 +4,7 @@ import pytest
 
 from pyfcstm.bmc import (
     Active,
+    BmcAssumption,
     BmcBuildError,
     BmcCondExpr,
     BmcError,
@@ -440,8 +441,15 @@ def test_query_model_rejects_additional_invalid_structural_values():
         EventAssumption("Root.E", selector=-1)
     with pytest.raises(InvalidBmcQuery, match="selector"):
         EventAssumption("Root.E", selector="current")
+    for selector in ["²", "²..3", "３", "１..２"]:
+        with pytest.raises(InvalidBmcQuery, match="selector"):
+            EventAssumption("Root.E", selector=selector)
     assert EventAssumption("Root.E", selector=0).to_canonical()["selector"] == 0
     assert EventAssumption("Root.E", selector="0").to_canonical()["selector"] == 0
+    assert (
+        EventAssumption("Root.E", selector="01..02").to_canonical()["selector"]
+        == "1..2"
+    )
     with pytest.raises(InvalidBmcQuery, match="state_path"):
         InitialSpec(mode="cold", state_path="Root.A")
     with pytest.raises(InvalidBmcQuery, match="predicate"):
@@ -473,3 +481,14 @@ def test_query_model_rejects_additional_invalid_structural_values():
             property=BmcProperty("reach", bound=1, predicate=Active("Root.Done")),
             assumptions=Active("Root.A"),
         )
+
+
+@pytest.mark.unittest
+def test_bmc_assumption_base_requires_canonical_payload():
+    """Public assumption subclasses must implement canonical payloads."""
+
+    class FakeAssumption(BmcAssumption):
+        pass
+
+    with pytest.raises(TypeError, match="abstract"):
+        FakeAssumption()

@@ -11,7 +11,7 @@ pyfcstm 提供两种主要的状态机可视化方法：
 1. **Python API**：通过 ``PlantUMLOptions`` 类进行编程控制
 2. **命令行界面**：使用灵活的配置选项快速可视化
 
-两种方法都支持相同的综合配置系统，允许你控制生成的 PlantUML 图表的各个方面。
+两种方法共享 CLI 暴露的类型化 PlantUML 输出选项；Python API 还额外暴露自定义颜色字典等对象值选项。
 
 组合 transition trigger 会在展开后如实可见：生成的伪状态内部使用保留的 ``__combo_`` 前缀，并在图中使用稳定的人类可读标签，因此图表展示的就是下游工具实际消费的模型。
 
@@ -423,7 +423,7 @@ CLI 可视化
 
 **配置选项**
 
-- ``state_name_format`` (tuple[str, ...])：格式组件 - ``'name'``、``'path'``、``'relpath'``
+- ``state_name_format`` (tuple[str, ...])：格式组件 - ``'name'``、``'extra_name'``、``'path'``
 - ``show_pseudo_state_style`` (bool)：对伪状态应用特殊样式
 - ``collapse_empty_states`` (bool)：折叠没有动作或子状态的状态
 
@@ -462,7 +462,7 @@ CLI 可视化
 - ``show_aspect_actions`` (bool)：显示切面动作（``>> during before/after``）
 - ``show_abstract_actions`` (bool)：显示抽象动作声明
 - ``show_concrete_actions`` (bool)：显示具体动作实现
-- ``abstract_action_marker`` (str)：抽象动作的标记（默认：``'«abstract»'``）
+- ``abstract_action_marker`` (str)：抽象动作的标记模式：``'text'``、``'symbol'`` 或 ``'none'``\ （默认：``'text'``）
 - ``max_action_lines`` (int)：每个动作块显示的最大行数
 
 **示例**
@@ -520,7 +520,7 @@ PlantUML 源码产物：
 
 - ``show_transition_guards`` (bool)：在转换上显示守卫条件
 - ``show_transition_effects`` (bool)：在转换上显示效果块
-- ``transition_effect_mode`` (str)：如何显示效果 - ``'note'`` 或 ``'inline'``
+- ``transition_effect_mode`` (str)：如何显示效果 - ``'note'``、``'inline'`` 或 ``'hide'``
 
 **示例**
 
@@ -551,7 +551,7 @@ PlantUML 源码产物：
 **配置选项**
 
 - ``show_events`` (bool)：在转换上显示事件名称
-- ``event_name_format`` (tuple[str, ...])：格式组件 - ``'name'``、``'path'``、``'relpath'``
+- ``event_name_format`` (tuple[str, ...])：格式组件 - ``'name'``、``'extra_name'``、``'path'``、``'relpath'``
 - ``event_visualization_mode`` (str)：可视化模式 - ``'none'``、``'color'``、``'legend'`` 或 ``'both'``
 - ``event_legend_position`` (str)：使用 ``'legend'`` 或 ``'both'`` 模式时的事件图例位置（默认：``'right'``）
 

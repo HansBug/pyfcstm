@@ -131,15 +131,14 @@ Output:
        # Get current state path
        state_path = ctx.get_full_state_path()
 
-       # Access/modify variables
+       # Read variables from the immutable snapshot
        counter = ctx.get_var('counter')
-       ctx.set_var('counter', counter + 1)
+       has_temperature = ctx.has_var('temperature')
 
-       # Get state object
-       state = ctx.get_state()
-
-       # Access runtime
-       runtime = ctx.get_runtime()
+       # Inspect abstract callsite metadata
+       active_leaf = ctx.active_leaf
+       action_name = ctx.action_name
+       action_stage = ctx.action_stage
 
 CLI Usage
 ---------------------------------------
@@ -153,7 +152,7 @@ Launch the simulator with a DSL file:
 
 .. code-block:: bash
 
-   pyfcstm simulate -i example.fcstm
+   pyfcstm simulate -i ../cli/simple_machine.fcstm
 
 The same command shape works for multi-file import projects. The input is still
 just the entry file:
@@ -210,97 +209,36 @@ Interactive Features
 - **Auto-suggestions**: Previous commands appear as gray suggestions
 - **Color output**: Syntax highlighting for states, variables, and events
 
-Example Session
+Reproducible CLI Transcript
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. code-block:: text
+Interactive mode and batch mode share the same command processor. The docs
+capture a short batch transcript instead of hand-writing a long REPL session,
+so the output stays aligned with the current CLI:
 
-   $ pyfcstm simulate -i example.fcstm
+.. literalinclude:: cli_batch.demo.sh
+   :language: bash
+   :caption: Reproducible simulation command transcript
 
-   ╔══════════════════════════════════════════════════════════╗
-   ║  State Machine Interactive Simulator                     ║
-   ╟──────────────────────────────────────────────────────────╢
-   ║  Type 'help' to see available commands                   ║
-   ╚══════════════════════════════════════════════════════════╝
+Output:
 
-   simulate> current
-   Cycle: 0
-   Current State: System.Idle
-   Variables:
-     counter = 0
-     temperature = 25.0
-
-   simulate> events
-   Available Events:
-     • Start (System.Events.Start)
-     • Reset (System.Events.Reset)
-
-   simulate> cycle Start
-   Cycle: 1
-   Current State: System.Running.Active
-   Variables:
-     counter = 1
-     temperature = 25.1
-
-   simulate> cycle 5
-    Cycle     State      counter  temperature
-   --------------------------------------------
-      2    Root.Active     2         25.2
-      3    Root.Active     3         25.3
-      4    Root.Active     4         25.4
-      5    Root.Active     5         25.5
-      6    Root.Active     6         25.6
-
-   simulate> history 3
-    Cycle     State      counter  temperature
-   --------------------------------------------
-      4    Root.Active     4         25.4
-      5    Root.Active     5         25.5
-      6    Root.Active     6         25.6
-
-   simulate> export history.csv
-   History exported to history.csv (6 entries)
-
-   simulate> quit
-   Goodbye!
+.. literalinclude:: cli_batch.demo.sh.txt
+   :language: text
 
 Batch Mode
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Execute commands non-interactively using the ``-e`` flag:
+Execute commands non-interactively using the ``-e`` flag. Commands are separated
+by semicolons and use the same names as the interactive REPL:
 
 .. code-block:: bash
 
-   pyfcstm simulate -i example.fcstm -e "current; cycle Start; current; events"
+   pyfcstm simulate -i ../cli/simple_machine.fcstm \
+     -e "cycle; events; cycle Start; current; cycle Stop; history 3" \
+     --no-color
 
-Output:
-
-.. code-block:: text
-
-   ────────────────────────────────────────────────────────────
-   >>> current
-   ────────────────────────────────────────────────────────────
-   Current State: System.Idle
-   Variables:
-     counter = 0
-     temperature = 25.0
-
-   ────────────────────────────────────────────────────────────
-   >>> cycle Start
-   ────────────────────────────────────────────────────────────
-   Current State: System.Running.Active
-   Variables:
-     counter = 1
-     temperature = 25.1
-
-   ────────────────────────────────────────────────────────────
-   >>> events
-   ────────────────────────────────────────────────────────────
-   Available Events:
-     • Stop (System.Events.Stop)
-     • Pause (System.Events.Pause)
-
-Batch mode is useful for automated testing, CI/CD pipelines, and scripting.
+The transcript above is generated from this exact command chain. Batch mode
+is useful for automated tests, CI checks, and short reproducible examples.
 
 Configuration Settings
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -331,10 +269,10 @@ Example:
 
    simulate> setting
    Current settings:
-     table_max_rows = 20
-     history_size = 100
      color = True
+     history_size = 100
      log_level = warning
+     table_max_rows = 20
 
    simulate> setting log_level debug
    Setting updated: log_level = debug

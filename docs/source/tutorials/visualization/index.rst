@@ -11,7 +11,7 @@ pyfcstm provides two primary methods for visualizing state machines:
 1. **Python API**: Programmatic control with the ``PlantUMLOptions`` class
 2. **Command-Line Interface**: Quick visualization with flexible configuration options
 
-Both methods support the same comprehensive configuration system, allowing you to control every aspect of the generated PlantUML diagrams.
+Both methods share the typed PlantUML output options exposed by the CLI; the Python API also exposes object-valued options such as custom color dictionaries.
 
 Combo transition triggers are visible after expansion: generated pseudo states use the reserved ``__combo_`` prefix internally and stable human-readable labels in diagrams, so diagrams accurately show the model consumed by downstream tools.
 
@@ -451,7 +451,7 @@ Customize how state names are displayed in the diagram.
 
 **Configuration Options**
 
-- ``state_name_format`` (tuple[str, ...]): Format components - ``'name'``, ``'path'``, ``'relpath'``
+- ``state_name_format`` (tuple[str, ...]): Format components - ``'name'``, ``'extra_name'``, ``'path'``
 - ``show_pseudo_state_style`` (bool): Apply special styling to pseudo states
 - ``collapse_empty_states`` (bool): Collapse states with no actions or substates
 
@@ -490,7 +490,7 @@ Control which lifecycle actions (enter, during, exit) are shown in the diagram.
 - ``show_aspect_actions`` (bool): Show aspect actions (``>> during before/after``)
 - ``show_abstract_actions`` (bool): Show abstract action declarations
 - ``show_concrete_actions`` (bool): Show concrete action implementations
-- ``abstract_action_marker`` (str): Marker for abstract actions (default: ``'«abstract»'``)
+- ``abstract_action_marker`` (str): Marker mode for abstract actions: ``'text'``, ``'symbol'``, or ``'none'`` (default: ``'text'``)
 - ``max_action_lines`` (int): Maximum lines to show per action block
 
 **Example**
@@ -549,7 +549,7 @@ Control how transitions are displayed in the diagram.
 
 - ``show_transition_guards`` (bool): Show guard conditions on transitions
 - ``show_transition_effects`` (bool): Show effect blocks on transitions
-- ``transition_effect_mode`` (str): How to display effects - ``'note'`` or ``'inline'``
+- ``transition_effect_mode`` (str): How to display effects - ``'note'``, ``'inline'``, or ``'hide'``
 
 **Example**
 
@@ -580,7 +580,7 @@ Control how events are displayed in the diagram.
 **Configuration Options**
 
 - ``show_events`` (bool): Show event names on transitions
-- ``event_name_format`` (tuple[str, ...]): Format components - ``'name'``, ``'path'``, ``'relpath'``
+- ``event_name_format`` (tuple[str, ...]): Format components - ``'name'``, ``'extra_name'``, ``'path'``, ``'relpath'``
 - ``event_visualization_mode`` (str): Visualization mode - ``'none'``, ``'color'``, ``'legend'``, or ``'both'``
 - ``event_legend_position`` (str): Event legend position when using ``'legend'`` or ``'both'`` mode (default: ``'right'``)
 

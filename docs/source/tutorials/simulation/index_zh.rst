@@ -131,15 +131,14 @@ Python 用法
        # 获取当前状态路径
        state_path = ctx.get_full_state_path()
 
-       # 访问/修改变量
+       # 从不可变快照中读取变量
        counter = ctx.get_var('counter')
-       ctx.set_var('counter', counter + 1)
+       has_temperature = ctx.has_var('temperature')
 
-       # 获取状态对象
-       state = ctx.get_state()
-
-       # 访问运行时
-       runtime = ctx.get_runtime()
+       # 查看抽象调用点元数据
+       active_leaf = ctx.active_leaf
+       action_name = ctx.action_name
+       action_stage = ctx.action_stage
 
 CLI 用法
 ---------------------------------------
@@ -153,7 +152,7 @@ CLI 用法
 
 .. code-block:: bash
 
-   pyfcstm simulate -i example.fcstm
+   pyfcstm simulate -i ../cli/simple_machine.fcstm
 
 对于多文件 import 工程，命令形态同样不变，输入仍然只是入口文件：
 
@@ -209,97 +208,34 @@ CLI 用法
 - **自动建议**：先前的命令显示为灰色建议
 - **彩色输出**：状态、变量和事件的语法高亮
 
-示例会话
+可复现的 CLI 转录
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. code-block:: text
+交互模式和批处理模式共享同一个命令处理器。教程使用一段短小的批处理转录捕获真实输出，
+而不是手写一大段容易漂移的 REPL 会话，因此输出会随当前 CLI 行为保持一致：
 
-   $ pyfcstm simulate -i example.fcstm
+.. literalinclude:: cli_batch.demo.sh
+   :language: bash
+   :caption: 可复现的仿真命令转录
 
-   ╔══════════════════════════════════════════════════════════╗
-   ║  State Machine Interactive Simulator                     ║
-   ╟──────────────────────────────────────────────────────────╢
-   ║  Type 'help' to see available commands                   ║
-   ╚══════════════════════════════════════════════════════════╝
+输出：
 
-   simulate> current
-   Cycle: 0
-   Current State: System.Idle
-   Variables:
-     counter = 0
-     temperature = 25.0
-
-   simulate> events
-   Available Events:
-     • Start (System.Events.Start)
-     • Reset (System.Events.Reset)
-
-   simulate> cycle Start
-   Cycle: 1
-   Current State: System.Running.Active
-   Variables:
-     counter = 1
-     temperature = 25.1
-
-   simulate> cycle 5
-    Cycle     State      counter  temperature
-   --------------------------------------------
-      2    Root.Active     2         25.2
-      3    Root.Active     3         25.3
-      4    Root.Active     4         25.4
-      5    Root.Active     5         25.5
-      6    Root.Active     6         25.6
-
-   simulate> history 3
-    Cycle     State      counter  temperature
-   --------------------------------------------
-      4    Root.Active     4         25.4
-      5    Root.Active     5         25.5
-      6    Root.Active     6         25.6
-
-   simulate> export history.csv
-   History exported to history.csv (6 entries)
-
-   simulate> quit
-   Goodbye!
+.. literalinclude:: cli_batch.demo.sh.txt
+   :language: text
 
 批处理模式
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-使用 ``-e`` 标志非交互式执行命令：
+使用 ``-e`` 标志非交互式执行命令。多条命令用分号分隔，命令名称与交互式
+REPL 相同：
 
 .. code-block:: bash
 
-   pyfcstm simulate -i example.fcstm -e "current; cycle Start; current; events"
+   pyfcstm simulate -i ../cli/simple_machine.fcstm \
+     -e "cycle; events; cycle Start; current; cycle Stop; history 3" \
+     --no-color
 
-输出：
-
-.. code-block:: text
-
-   ────────────────────────────────────────────────────────────
-   >>> current
-   ────────────────────────────────────────────────────────────
-   Current State: System.Idle
-   Variables:
-     counter = 0
-     temperature = 25.0
-
-   ────────────────────────────────────────────────────────────
-   >>> cycle Start
-   ────────────────────────────────────────────────────────────
-   Current State: System.Running.Active
-   Variables:
-     counter = 1
-     temperature = 25.1
-
-   ────────────────────────────────────────────────────────────
-   >>> events
-   ────────────────────────────────────────────────────────────
-   Available Events:
-     • Stop (System.Events.Stop)
-     • Pause (System.Events.Pause)
-
-批处理模式适用于自动化测试、CI/CD 流水线和脚本编写。
+上面的转录就是由这条命令链生成的。批处理模式适用于自动化测试、CI 检查和短小可复现示例。
 
 配置设置
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -330,10 +266,10 @@ CLI 用法
 
    simulate> setting
    Current settings:
-     table_max_rows = 20
-     history_size = 100
      color = True
+     history_size = 100
      log_level = warning
+     table_max_rows = 20
 
    simulate> setting log_level debug
    Setting updated: log_level = debug
@@ -1133,7 +1069,7 @@ DFS 验证机制
      - ``GoP``，``GoB``
      - Root.B
      - 1112
-     - 提供两个事件，验证成功：``A -> P``\ （+10，+100）``-> B``，执行 ``B.during``\ （+1000）
+     - 提供两个事件，验证成功：``A -> P``\ （+10，+100），再到 ``B``\ ，执行 ``B.during``\ （+1000）
 
 **详细执行跟踪** ：
 

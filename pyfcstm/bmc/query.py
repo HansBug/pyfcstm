@@ -15,7 +15,9 @@ Design contracts:
 * :func:`repr` remains the dataclass debugging representation and is not a DSL
   surface.
 * :meth:`to_canonical` is the language-neutral golden shape for parser,
-  binder, and compiler parity tests.
+  binder, and compiler parity tests.  Collection fields in canonical output use
+  JSON-stable ``list`` values even when the frozen dataclass stores them as
+  tuples internally.
 
 The module contains:
 
@@ -389,8 +391,9 @@ class EventCardinalityAssumption(BmcAssumption):
     :param kind: Cardinality kind, either ``"any"`` or ``"at_most_one"``.
     :type kind: str
     :param event_paths: Event paths for ``"at_most_one"``. ``"any"`` uses an
-        empty tuple because it is equivalent to omitting the cardinality
-        assumption, defaults to ``()``.  ``"at_most_one"`` paths must be unique.
+        empty tuple internally because it is equivalent to omitting the
+        cardinality assumption, defaults to ``()``.  ``"at_most_one"`` paths
+        must be unique.
     :type event_paths: Tuple[str, ...], optional
 
     Example::
@@ -398,7 +401,7 @@ class EventCardinalityAssumption(BmcAssumption):
         >>> EventCardinalityAssumption("at_most_one", ("A.Go", "A.Stop")).to_canonical()["kind"]
         'at_most_one'
         >>> EventCardinalityAssumption("any").to_canonical()["event_paths"]
-        ()
+        []
     """
 
     _node_name: ClassVar[str] = "event_cardinality_assumption"
@@ -424,7 +427,7 @@ class EventCardinalityAssumption(BmcAssumption):
         object.__setattr__(self, "event_paths", event_paths)
 
     def _canonical_payload(self) -> _CanonicalDict:
-        return {"kind": self.kind, "event_paths": self.event_paths}
+        return {"kind": self.kind, "event_paths": list(self.event_paths)}
 
     def _to_dsl(self) -> str:
         if self.kind == "any":
@@ -559,6 +562,7 @@ class BmcQuery:
         :class:`InitialSpec` with ``mode="cold"``.
     :type initial: InitialSpec, optional
     :param assumptions: Tuple of environment assumptions, defaults to empty.
+        Canonical output renders assumptions as a JSON-stable list.
     :type assumptions: Tuple[BmcAssumption, ...], optional
 
     Example::
@@ -605,9 +609,9 @@ class BmcQuery:
         return {
             "node": self._node_name,
             "initial": self.initial.to_canonical(),
-            "assumptions": tuple(
+            "assumptions": [
                 assumption.to_canonical() for assumption in self.assumptions
-            ),
+            ],
             "property": self.property.to_canonical(),
         }
 

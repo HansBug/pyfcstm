@@ -726,10 +726,10 @@ def test_initial_spec_and_property_skeletons():
     assert (
         EventAssumption("Root.Idle.Start", selector="3").to_canonical()["selector"] == 3
     )
-    assert cardinality.to_canonical()["event_paths"] == (
+    assert cardinality.to_canonical()["event_paths"] == [
         "Root.Idle.Start",
         "Root.Idle.Stop",
-    )
+    ]
     assert reach.to_canonical()["kind"] == "reach"
     assert response.to_canonical()["trigger"] == Event("Root.Idle.Start").to_canonical()
     assert response.to_canonical()["within"] == 3
@@ -760,13 +760,46 @@ def test_bmc_query_canonical_form_is_stable():
     assert query.to_canonical() == {
         "node": "bmc_query",
         "initial": InitialSpec().to_canonical(),
-        "assumptions": (
+        "assumptions": [
             FrameAssumption("at", BoolLiteral("true"), frame=0).to_canonical(),
-        ),
+        ],
         "property": BmcProperty(
             "forbid", bound=4, predicate=Active("Root.Bad")
         ).to_canonical(),
     }
+
+
+@pytest.mark.unittest
+def test_query_canonical_collections_survive_json_round_trip():
+    """Canonical query collections use JSON-stable list shapes."""
+    cardinality = EventCardinalityAssumption("at_most_one", ("Root.A", "Root.B"))
+    empty_cardinality = EventCardinalityAssumption("any")
+    query = BmcQuery(property=BmcProperty("reach", 1, predicate=Active("Root.Done")))
+    assumed_query = BmcQuery(
+        property=BmcProperty("forbid", 2, predicate=Active("Root.Bad")),
+        assumptions=(FrameAssumption("always", BoolLiteral("true")),),
+    )
+
+    for canonical in [
+        cardinality.to_canonical(),
+        empty_cardinality.to_canonical(),
+        query.to_canonical(),
+        assumed_query.to_canonical(),
+    ]:
+        assert json.loads(json.dumps(canonical, allow_nan=False)) == canonical
+
+    assert empty_cardinality.to_canonical()["event_paths"] == []
+    assert query.to_canonical()["assumptions"] == []
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("node", [case.values[0] for case in ROUND_TRIP_CASES])
+def test_round_trip_fixture_canonical_forms_are_json_stable(node):
+    """Every round-trip fixture emits JSON-stable canonical data."""
+    assert (
+        json.loads(json.dumps(node.to_canonical(), allow_nan=False))
+        == node.to_canonical()
+    )
 
 
 @pytest.mark.unittest

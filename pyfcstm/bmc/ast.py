@@ -193,7 +193,7 @@ class BmcExpr(ABC):
 
     Concrete subclasses provide a stable canonical form for tests, parser
     handoff, and later binder diagnostics.  The canonical form contains only
-    plain dictionaries, tuples, strings, booleans, integers, floats, and
+    plain dictionaries, lists, strings, booleans, integers, floats, and
     ``None`` so it can be serialized or compared without importing grammar
     classes.
 

@@ -16,5 +16,3 @@ build\_plantuml\_output
 -----------------------------------------------------
 
 .. autofunction:: build_plantuml_output
-
-

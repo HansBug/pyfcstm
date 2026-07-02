@@ -10,5 +10,3 @@ pyfcstm.verify.encoding.expr
 -----------------------------------------------------
 
 .. autodata:: __all__
-
-

@@ -17,5 +17,3 @@ FcstmLexer
 
 .. autoclass:: FcstmLexer
     :members: analyse_text,name,aliases,filenames,mimetypes,tokens
-
-

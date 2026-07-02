@@ -34,5 +34,3 @@ pyfcstm.config.meta
 -----------------------------------------------------
 
 .. autodata:: __AUTHOR_EMAIL__
-
-

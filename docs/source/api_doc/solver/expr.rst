@@ -22,5 +22,3 @@ create\_z3\_vars\_from\_models
 -----------------------------------------------------
 
 .. autofunction:: create_z3_vars_from_models
-
-

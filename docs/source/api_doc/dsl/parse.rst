@@ -34,5 +34,3 @@ parse\_operation
 -----------------------------------------------------
 
 .. autofunction:: parse_operation
-
-

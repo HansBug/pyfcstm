@@ -28,5 +28,3 @@ forced\_guard\_unsat\_under\_init
 -----------------------------------------------------
 
 .. autofunction:: forced_guard_unsat_under_init
-
-

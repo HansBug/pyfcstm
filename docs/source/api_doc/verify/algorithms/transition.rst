@@ -22,5 +22,3 @@ composite\_init\_guards\_incomplete
 -----------------------------------------------------
 
 .. autofunction:: composite_init_guards_incomplete
-
-

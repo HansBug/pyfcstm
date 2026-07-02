@@ -10,5 +10,3 @@ format\_multiline\_comment
 -----------------------------------------------------
 
 .. autofunction:: format_multiline_comment
-
-

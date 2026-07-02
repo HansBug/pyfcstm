@@ -44,5 +44,3 @@ configure\_simulate\_cli\_logger
 -----------------------------------------------------
 
 .. autofunction:: configure_simulate_cli_logger
-
-

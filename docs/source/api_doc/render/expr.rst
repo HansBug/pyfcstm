@@ -22,5 +22,3 @@ render\_expr\_node
 -----------------------------------------------------
 
 .. autofunction:: render_expr_node
-
-

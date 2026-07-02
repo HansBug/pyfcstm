@@ -10,5 +10,3 @@ build\_inspect\_json
 -----------------------------------------------------
 
 .. autofunction:: build_inspect_json
-
-

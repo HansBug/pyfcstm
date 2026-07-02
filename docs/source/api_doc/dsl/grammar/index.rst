@@ -13,4 +13,3 @@ pyfcstm.dsl.grammar
     GrammarListener
     GrammarParser
     GrammarParserListener
-

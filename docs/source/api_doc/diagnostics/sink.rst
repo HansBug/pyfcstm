@@ -11,5 +11,3 @@ DiagnosticSink
 
 .. autoclass:: DiagnosticSink
     :members: __init__,collect,diagnostics,has_errors,emit,finalize_or_raise
-
-

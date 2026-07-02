@@ -18,5 +18,3 @@ SimulationREPL
 
 .. autoclass:: SimulationREPL
     :members: __init__,run
-
-

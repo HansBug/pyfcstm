@@ -22,5 +22,3 @@ is\_abstract\_handler
 -----------------------------------------------------
 
 .. autofunction:: is_abstract_handler
-
-

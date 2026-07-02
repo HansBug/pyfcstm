@@ -386,7 +386,7 @@ def build_inspect_output(
         ...     with open(path, "w", encoding="utf-8") as f:
         ...         _ = f.write("state Root { state Idle; [*] -> Idle; }")
         ...     text = build_inspect_output(path)
-        >>> "[OK   ] FCSTM Inspect Report" in text
+        >>> "[OK] FCSTM Inspect Report" in text
         True
     """
     if output_format == "json":

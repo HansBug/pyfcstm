@@ -9,6 +9,7 @@ pyfcstm
 .. toctree::
     :maxdepth: 3
 
+    bmc/index
     config/index
     diagnostics/index
     dsl/index

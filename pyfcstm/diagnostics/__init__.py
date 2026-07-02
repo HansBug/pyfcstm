@@ -14,6 +14,8 @@ This package currently exposes:
 * :class:`CodesSchemaError` — raised on import-time failure of the loader.
 * :func:`inspect_model` and the related inspect dataclasses used by
   pyfcstm / jsfcstm parity checks and design-health diagnostics.
+* :mod:`pyfcstm.diagnostics.inspect_render` — presentation helpers for
+  human-readable and LLM-oriented inspect CLI reports.
 * :class:`DiagnosticSink` for strict-mode and collect-mode diagnostic
   emission.
 

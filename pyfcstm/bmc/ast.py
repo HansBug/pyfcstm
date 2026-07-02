@@ -33,6 +33,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, ClassVar, Dict, Union
 
+from pyfcstm.bmc.errors import InvalidBmcQuery
+
 try:
     from typing import Literal
 except ImportError:  # pragma: no cover - Python < 3.8 compatibility
@@ -246,13 +248,17 @@ def _require_non_empty_string(value: object, field_name: str) -> None:
         raise ValueError(f"{field_name} must be a non-empty string.")
 
 
-def _normalize_frame(frame: FrameSelector) -> FrameSelector:
+def _normalize_frame(frame: FrameSelector, field_name: str = "frame") -> FrameSelector:
     if frame == "current":
         return frame
     if isinstance(frame, bool) or not isinstance(frame, int):
-        raise ValueError("frame must be a non-negative integer or 'current'.")
+        raise InvalidBmcQuery(
+            f"{field_name} must be a non-negative integer or 'current'."
+        )
     if frame < 0:
-        raise ValueError("frame must be a non-negative integer or 'current'.")
+        raise InvalidBmcQuery(
+            f"{field_name} must be a non-negative integer or 'current'."
+        )
     return frame
 
 
@@ -833,7 +839,9 @@ class Event(BmcCondExpr):
 
     def __post_init__(self) -> None:
         _require_non_empty_string(self.event_path, "event_path")
-        object.__setattr__(self, "selector", _normalize_frame(self.selector))
+        object.__setattr__(
+            self, "selector", _normalize_frame(self.selector, "selector")
+        )
 
     def _canonical_payload(self) -> CanonicalDict:
         return {"event_path": self.event_path, "selector": self.selector}

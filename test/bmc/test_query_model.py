@@ -406,10 +406,18 @@ def test_expression_model_rejects_invalid_literal_and_frame_values():
         IntLiteral("")
     with pytest.raises(ValueError, match="boolean"):
         BoolLiteral("maybe")
-    with pytest.raises(ValueError, match="frame"):
-        Active("Root.A", frame="next")
-    with pytest.raises(ValueError, match="frame"):
-        Event("Root.E", selector=-1)
+    for invalid_frame in ["next", True, -1, []]:
+        with pytest.raises(InvalidBmcQuery, match="frame"):
+            Active("Root.A", frame=invalid_frame)
+        with pytest.raises(InvalidBmcQuery, match="frame"):
+            Terminated(frame=invalid_frame)
+        with pytest.raises(InvalidBmcQuery, match="frame"):
+            Case("Root.A::fallback::Root.A::0", frame=invalid_frame)
+        with pytest.raises(InvalidBmcQuery, match="frame"):
+            Called("Check", frame=invalid_frame)
+    for invalid_selector in ["next", True, -1, []]:
+        with pytest.raises(InvalidBmcQuery, match="selector"):
+            Event("Root.E", selector=invalid_selector)
     with pytest.raises(ValueError, match="identifier"):
         NameRef("not-a-fcstm-id")
     with pytest.raises(ValueError, match="Reserved"):

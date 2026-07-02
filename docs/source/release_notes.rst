@@ -35,9 +35,8 @@ Diagnostics and CLI
 - Added ``pyfcstm inspect`` as a default human-readable diagnostic report, with
   ``--format json`` preserving stable JSON output matching
   ``inspect_model(model).to_json()``.
-- Improved the default human inspect report into a checker-style diagnostic
-  layout with nearby source context, and added ``--color auto|always|never`` for ANSI color control while
-  keeping files, pipes, and machine formats ANSI-free.
+- Improved the default human inspect report into a checker-style diagnostic layout with nearby source context, and added ``--color auto|always|never`` for ANSI color control while keeping files, pipes, and machine formats ANSI-free.
+- Added stable LLM inspect report formats, ``--format llm-json`` and ``--format llm-md``, using schema ``pyfcstm.inspect.llm.v1`` with source context, provenance, repair guidance, and do-not notes for repair loops.
 - Preserved Python / jsfcstm diagnostic-surface parity for normalized code,
   severity, and reference payloads used by editor integrations.
 

@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/HansBug/pyfcstm/blob/main/pyfcstm/diagnostics/inspect_llm_report_schema.json",
+  "title": "FCSTM Inspect LLM Report",
+  "description": "Stable compact inspect report for LLM repair loops. This is a presentation contract and does not replace ModelInspect.to_json().",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "diagnostics",
+    "input",
+    "repair_protocol",
+    "schema_status",
+    "schema_version",
+    "status",
+    "summary"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "pyfcstm.inspect.llm.v1"
+    },
+    "schema_status": {
+      "type": "string",
+      "const": "stable"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["ok", "info", "warning", "error"]
+    },
+    "input": {
+      "type": ["string", "null"]
+    },
+    "repair_protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["goal", "rules"],
+      "properties": {
+        "goal": { "type": "string" },
+        "rules": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "errors",
+        "infos",
+        "leaf_states",
+        "root_state_path",
+        "states",
+        "transitions",
+        "variables",
+        "warnings"
+      ],
+      "properties": {
+        "errors": { "type": "integer", "minimum": 0 },
+        "warnings": { "type": "integer", "minimum": 0 },
+        "infos": { "type": "integer", "minimum": 0 },
+        "root_state_path": { "type": "string" },
+        "states": { "type": "integer", "minimum": 0 },
+        "leaf_states": { "type": "integer", "minimum": 0 },
+        "transitions": { "type": "integer", "minimum": 0 },
+        "variables": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/Diagnostic" }
+    }
+  },
+  "definitions": {
+    "Diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "do_not",
+        "location",
+        "message",
+        "provenance",
+        "recommended_actions",
+        "refs",
+        "repair_guidance",
+        "severity",
+        "source",
+        "source_excerpt",
+        "summary"
+      ],
+      "properties": {
+        "code": { "type": "string" },
+        "severity": { "type": "string", "enum": ["error", "warning", "info"] },
+        "message": { "type": "string" },
+        "location": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/definitions/Location" }
+          ]
+        },
+        "source_excerpt": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/definitions/SourceExcerpt" }
+          ]
+        },
+        "refs": { "type": "object" },
+        "source": { "type": "string", "enum": ["inspect-static", "verify-backed", "unknown"] },
+        "provenance": { "$ref": "#/definitions/Provenance" },
+        "summary": { "type": ["string", "null"] },
+        "recommended_actions": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "do_not": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "repair_guidance": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "Location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column", "line"],
+      "properties": {
+        "path": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "column": { "type": "integer", "minimum": 1 },
+        "end_line": { "type": "integer", "minimum": 1 },
+        "end_column": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "SourceExcerpt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caret", "context", "line", "text"],
+      "properties": {
+        "line": { "type": "integer", "minimum": 1 },
+        "text": { "type": "string" },
+        "caret": { "type": "string" },
+        "context": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/SourceExcerptLine" }
+        }
+      }
+    },
+    "SourceExcerptLine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caret", "is_anchor", "line", "text"],
+      "properties": {
+        "line": { "type": "integer", "minimum": 1 },
+        "text": { "type": "string" },
+        "caret": { "type": ["string", "null"] },
+        "is_anchor": { "type": "boolean" }
+      }
+    },
+    "Provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "verify_required"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["inspect-static", "verify-backed", "unknown"] },
+        "verify_required": { "type": "boolean" }
+      }
+    }
+  }
+}

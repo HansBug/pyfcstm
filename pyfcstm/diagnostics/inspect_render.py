@@ -20,9 +20,9 @@ The module contains:
    * - :class:`HumanRenderOptions`
      - Carry human-renderer presentation toggles such as ANSI color.
    * - :func:`render_inspect_llm_json`
-     - Render a draft compact JSON packet for LLM repair loops.
+     - Render the stable compact JSON packet for LLM repair loops.
    * - :func:`render_inspect_llm_markdown`
-     - Render a draft Markdown packet for prompt composition.
+     - Render the stable Markdown packet for prompt composition.
    * - :func:`inspect_output_suffix_warning`
      - Detect suspicious ``--output`` suffix and format combinations.
 
@@ -43,7 +43,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 from .codes import CODE_REGISTRY
 from ..utils.validate import ModelDiagnostic, Span
 
-INSPECT_LLM_DRAFT_SCHEMA_VERSION = "pyfcstm.inspect.llm.draft"
+INSPECT_LLM_SCHEMA_VERSION = "pyfcstm.inspect.llm.v1"
 _INSPECT_OUTPUT_FORMATS = ("human", "json", "llm-json", "llm-md")
 _SEVERITY_ORDER = ("error", "warning", "info")
 _SEVERITY_HUMAN_LABELS = {
@@ -66,6 +66,36 @@ _ANSI_STYLE_BY_SEVERITY = {
 _ANSI_BOLD = "1"
 _ANSI_RESET = "\033[0m"
 _SOURCE_CONTEXT_RADIUS = 1
+_GLOBAL_REPAIR_RULES = (
+    "Make the smallest source edit that preserves the modeler's apparent intent.",
+    "Use diagnostic source/provenance before choosing a fix; inspect-static warnings are not solver proofs.",
+    "Do not mechanically stack all suggested actions when multiple diagnostics refer to the same region.",
+    "Do not delete states or transitions unless the report explicitly says the element is unused and the design intent supports deletion.",
+)
+_REPAIR_NOTES_BY_CODE = {
+    "W_GUARD_VARS_NEVER_CHANGE": (
+        "This is a static dataflow warning, not a proof that the guard is satisfiable.",
+        "Adding a write is useful only when the variable should genuinely evolve at runtime.",
+    ),
+    "W_UNWRITTEN_READ_VAR": (
+        "This is a static dataflow warning about missing writes after initialization.",
+        "Do not add a self-assignment or dummy update only to silence the warning.",
+    ),
+    "W_DEAD_GUARD": (
+        "This is verify-backed: SMT proved the guard unsatisfiable under model constraints.",
+        "Prefer correcting the contradictory guard over making the transition unconditional.",
+    ),
+    "W_GUARD_TAUTOLOGY": (
+        "This is verify-backed: SMT proved the guard always true under model constraints.",
+        "A tautological guard may document intent, so preserve that intent when simplifying.",
+    ),
+    "W_TOPOLOGICAL_NOEXIT": (
+        "This is verify-backed topology feedback, not an instruction to add an unconditional exit blindly.",
+    ),
+    "I_TOPOLOGICAL_NON_TERMINATING": (
+        "Long-running control loops can be intentional; decide intent before adding progress edges.",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -123,7 +153,7 @@ class HumanRenderOptions:
 
     The options intentionally describe terminal presentation only. They do not
     change :meth:`pyfcstm.diagnostics.inspect.ModelInspect.to_json` or any LLM
-    draft renderer, which keeps machine-readable inspect output independent of
+    renderer, which keeps machine-readable inspect output independent of
     ANSI styling decisions.
 
     :param color_enabled: Whether ANSI color should be emitted for the human
@@ -280,12 +310,11 @@ def render_inspect_human(
 def render_inspect_llm_json(
     report: Any, source_text: Optional[str] = None, *, input_path: Optional[str] = None
 ) -> str:
-    """Render an inspect report as a draft compact JSON packet for LLMs.
+    """Render an inspect report as a stable compact JSON packet for LLMs.
 
-    The packet is intentionally marked with
-    :data:`INSPECT_LLM_DRAFT_SCHEMA_VERSION`; the stable LLM schema is planned
-    for the follow-up inspect UX work and must not be inferred from this draft
-    shape.
+    The packet is marked with :data:`INSPECT_LLM_SCHEMA_VERSION`. This
+    versioned contract is intended for downstream repair loops that need a
+    compact, source-located, and provenance-aware diagnostic report.
 
     :param report: Inspect report returned by
         :func:`pyfcstm.diagnostics.inspect_model`.
@@ -303,7 +332,7 @@ def render_inspect_llm_json(
         >>> from pyfcstm.diagnostics import inspect_model
         >>> model = load_state_machine_from_text('state Root { state Idle; [*] -> Idle; }')
         >>> text = render_inspect_llm_json(inspect_model(model), 'state Root { state Idle; [*] -> Idle; }')
-        >>> INSPECT_LLM_DRAFT_SCHEMA_VERSION in text
+        >>> INSPECT_LLM_SCHEMA_VERSION in text
         True
     """
     packet = _llm_packet(report, source_text, input_path=input_path)
@@ -313,7 +342,7 @@ def render_inspect_llm_json(
 def render_inspect_llm_markdown(
     report: Any, source_text: Optional[str] = None, *, input_path: Optional[str] = None
 ) -> str:
-    """Render an inspect report as draft Markdown for LLM prompts.
+    """Render an inspect report as stable Markdown for LLM prompts.
 
     :param report: Inspect report returned by
         :func:`pyfcstm.diagnostics.inspect_model`.
@@ -336,7 +365,8 @@ def render_inspect_llm_markdown(
     """
     counts = _severity_counts(report.diagnostics)
     lines = ["# FCSTM Inspect Report", ""]
-    lines.append(f"- Schema: `{INSPECT_LLM_DRAFT_SCHEMA_VERSION}`")
+    lines.append(f"- Schema: `{INSPECT_LLM_SCHEMA_VERSION}`")
+    lines.append("- Schema status: `stable`")
     lines.append(f"- Status: `{_status_from_counts(counts)}`")
     if input_path:
         lines.append(f"- Input: `{input_path}`")
@@ -347,6 +377,11 @@ def render_inspect_llm_markdown(
             info=counts["info"],
         )
     )
+    lines.append("")
+    lines.append("## Repair protocol")
+    lines.append("")
+    for rule in _GLOBAL_REPAIR_RULES:
+        lines.append(f"- {rule}")
     lines.append("")
     if not report.diagnostics:
         lines.append("No diagnostics.")
@@ -396,6 +431,10 @@ def render_inspect_llm_markdown(
         if detail["do_not"]:
             lines.append("- Do not:")
             for item in detail["do_not"]:
+                lines.append(f"  - {item}")
+        if detail["repair_guidance"]:
+            lines.append("- Repair notes:")
+            for item in detail["repair_guidance"]:
                 lines.append(f"  - {item}")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
@@ -490,10 +529,14 @@ def _llm_packet(
 ) -> Dict[str, Any]:
     counts = _severity_counts(report.diagnostics)
     return {
-        "schema_version": INSPECT_LLM_DRAFT_SCHEMA_VERSION,
-        "schema_status": "draft",
+        "schema_version": INSPECT_LLM_SCHEMA_VERSION,
+        "schema_status": "stable",
         "status": _status_from_counts(counts),
         "input": input_path,
+        "repair_protocol": {
+            "goal": "repair the FCSTM model with the smallest semantic source change",
+            "rules": list(_GLOBAL_REPAIR_RULES),
+        },
         "summary": {
             "errors": counts["error"],
             "warnings": counts["warning"],
@@ -527,6 +570,10 @@ def _diagnostic_llm_dict(
         "source_excerpt": _excerpt_dict(excerpt),
         "refs": _jsonable(diagnostic.refs),
         "source": _diagnostic_source(spec),
+        "provenance": {
+            "kind": _diagnostic_source(spec),
+            "verify_required": _diagnostic_source(spec) == "verify-backed",
+        },
         "summary": spec.for_llm.summary
         if spec is not None and spec.for_llm is not None
         else None,
@@ -540,6 +587,7 @@ def _diagnostic_llm_dict(
             if spec is not None and spec.for_llm is not None
             else []
         ),
+        "repair_guidance": _repair_guidance_for_code(diagnostic.code),
     }
 
 
@@ -549,6 +597,10 @@ def _diagnostic_source(spec: Optional[Any]) -> str:
     if getattr(spec, "emit_tier", None) == "verify_pipeline":
         return "verify-backed"
     return "inspect-static"
+
+
+def _repair_guidance_for_code(code: str) -> List[str]:
+    return list(_REPAIR_NOTES_BY_CODE.get(code, ()))
 
 
 def _source_excerpt(

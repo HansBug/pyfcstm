@@ -9,7 +9,7 @@ from hbutils.testing import isolated_directory, simulate_entry
 
 from pyfcstm.entry import pyfcstmcli
 from pyfcstm.entry.base import ClickErrorException
-from pyfcstm.diagnostics.inspect_render import INSPECT_LLM_DRAFT_SCHEMA_VERSION
+from pyfcstm.diagnostics.inspect_render import INSPECT_LLM_SCHEMA_VERSION
 from pyfcstm.entry.inspect import (
     build_inspect_json,
     build_inspect_output,
@@ -168,14 +168,14 @@ class TestEntryInspect:
             diagnostic["code"] for diagnostic in payload["diagnostics"]
         }
 
-    def test_inspect_format_llm_json_outputs_draft_packet(self, inspect_code_file):
+    def test_inspect_format_llm_json_outputs_stable_packet(self, inspect_code_file):
         result = _run_inspect("-i", inspect_code_file, "--format", "llm-json")
 
         assert result.exitcode == 0
         assert not _has_ansi(result.stdout)
         payload = _json_from_stdout(result)
-        assert payload["schema_version"] == INSPECT_LLM_DRAFT_SCHEMA_VERSION
-        assert payload["schema_status"] == "draft"
+        assert payload["schema_version"] == INSPECT_LLM_SCHEMA_VERSION
+        assert payload["schema_status"] == "stable"
         assert payload["status"] == "warning"
         assert payload["diagnostics"]
         diagnostic = payload["diagnostics"][0]
@@ -187,14 +187,16 @@ class TestEntryInspect:
         )
         assert "for_llm" not in payload
 
-    def test_inspect_format_llm_md_outputs_draft_markdown(self, inspect_code_file):
+    def test_inspect_format_llm_md_outputs_stable_markdown(self, inspect_code_file):
         result = _run_inspect("-i", inspect_code_file, "--format", "llm-md")
 
         assert result.exitcode == 0
         assert not _has_ansi(result.stdout)
         assert "# FCSTM Inspect Report" in result.stdout
-        assert INSPECT_LLM_DRAFT_SCHEMA_VERSION in result.stdout
+        assert INSPECT_LLM_SCHEMA_VERSION in result.stdout
         assert "Recommended actions" in result.stdout
+        assert "Repair notes" in result.stdout
+        assert "Schema status: `stable`" in result.stdout
         assert "|     ^" in result.stdout
 
     def test_inspect_llm_json_can_include_verify_backed_diagnostics(
@@ -221,6 +223,11 @@ class TestEntryInspect:
         ]
         assert verify_diagnostics
         assert verify_diagnostics[0]["source"] == "verify-backed"
+        assert verify_diagnostics[0]["provenance"] == {
+            "kind": "verify-backed",
+            "verify_required": True,
+        }
+        assert verify_diagnostics[0]["repair_guidance"]
 
     @pytest.mark.parametrize("output_format", ["json", "llm-json", "llm-md"])
     def test_inspect_machine_formats_ignore_color_always(

@@ -1,6 +1,7 @@
 """Unit tests for inspect presentation renderers."""
 
 import json
+import os
 import re
 import textwrap
 
@@ -9,7 +10,7 @@ import pytest
 from pyfcstm.diagnostics import inspect_model
 from pyfcstm.diagnostics.inspect_render import (
     HumanRenderOptions,
-    INSPECT_LLM_DRAFT_SCHEMA_VERSION,
+    INSPECT_LLM_SCHEMA_VERSION,
     inspect_output_suffix_warning,
     render_inspect_human,
     render_inspect_llm_json,
@@ -167,17 +168,21 @@ class TestInspectRender:
         assert "No diagnostics." in text
         assert ANSI_ESCAPE_RE.search(text) is None
 
-    def test_llm_json_renderer_is_draft_and_actionable(self):
+    def test_llm_json_renderer_is_stable_and_actionable(self):
         payload = json.loads(render_inspect_llm_json(_report(), SOURCE))
 
-        assert payload["schema_version"] == INSPECT_LLM_DRAFT_SCHEMA_VERSION
-        assert payload["schema_status"] == "draft"
+        assert payload["schema_version"] == INSPECT_LLM_SCHEMA_VERSION
+        assert payload["schema_status"] == "stable"
         assert payload["status"] == "warning"
         assert payload["diagnostics"]
         diagnostic = payload["diagnostics"][0]
         assert {"code", "severity", "message", "refs"} <= set(diagnostic)
+        assert payload["repair_protocol"]["rules"]
         assert "recommended_actions" in diagnostic
         assert "do_not" in diagnostic
+        assert "provenance" in diagnostic
+        assert diagnostic["provenance"]["kind"] == diagnostic["source"]
+        assert "repair_guidance" in diagnostic
         deadlock = next(
             item for item in payload["diagnostics"] if item["code"] == "W_DEADLOCK_LEAF"
         )
@@ -188,13 +193,41 @@ class TestInspectRender:
         assert context[1]["caret"].strip("^") == "    "
         assert context[2]["text"] == "    [*] -> Idle;"
 
-    def test_llm_markdown_renderer_contains_draft_schema_and_sections(self):
+    def test_llm_json_schema_contract_matches_payload_shape(self):
+        schema_path = os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "pyfcstm",
+            "diagnostics",
+            "inspect_llm_report_schema.json",
+        )
+        with open(schema_path, "r", encoding="utf-8") as f:
+            schema = json.load(f)
+        payload = json.loads(render_inspect_llm_json(_report(), SOURCE))
+
+        assert schema["title"] == "FCSTM Inspect LLM Report"
+        assert (
+            schema["properties"]["schema_version"]["const"]
+            == INSPECT_LLM_SCHEMA_VERSION
+        )
+        assert schema["properties"]["schema_status"]["const"] == "stable"
+        assert set(schema["required"]).issubset(set(payload.keys()))
+        diagnostic_required = set(schema["definitions"]["Diagnostic"]["required"])
+        for diagnostic in payload["diagnostics"]:
+            assert diagnostic_required.issubset(set(diagnostic.keys()))
+            assert diagnostic["provenance"]["kind"] == diagnostic["source"]
+
+    def test_llm_markdown_renderer_contains_stable_schema_and_sections(self):
         text = render_inspect_llm_markdown(_report(), SOURCE)
 
         assert "# FCSTM Inspect Report" in text
-        assert INSPECT_LLM_DRAFT_SCHEMA_VERSION in text
+        assert INSPECT_LLM_SCHEMA_VERSION in text
+        assert "Schema status: `stable`" in text
+        assert "## Repair protocol" in text
         assert "## W_" in text
         assert "Recommended actions" in text
+        assert "Repair notes" in text
         assert "3 |     state Idle;" in text
         assert "4 |     state Running;" in text
         assert "|     ^^^^^^^^^^^^^^" in text

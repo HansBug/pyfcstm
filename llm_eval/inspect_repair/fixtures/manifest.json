@@ -1,0 +1,87 @@
+{
+  "schema_version": "pyfcstm.inspect_repair.fixtures.v1",
+  "description": "Fixture manifest for inspect LLM repair evaluation. These fixtures are standalone maintenance assets, not pytest unit tests and not package data.",
+  "failure_categories": ["passed", "model-error", "infra-blocked", "guide-gap", "contract-gap"],
+  "fixtures": [
+    {
+      "id": "guard_vars_never_change",
+      "path": "guard_vars_never_change.fcstm",
+      "category": "未写读变量 / guard vars never change",
+      "smoke": true,
+      "enable_verify": false,
+      "expected_codes": ["W_UNWRITTEN_READ_VAR", "W_GUARD_VARS_NEVER_CHANGE"],
+      "bad_repair_flags": ["dummy-assignment"],
+      "purpose": "验证 LLM 不会通过自赋值或无意义写入来消除静态数据流 warning。"
+    },
+    {
+      "id": "static_contradictory_guard",
+      "path": "static_contradictory_guard.fcstm",
+      "category": "static-only 矛盾 guard",
+      "smoke": true,
+      "enable_verify": false,
+      "expected_codes": ["W_UNWRITTEN_READ_VAR", "W_GUARD_VARS_NEVER_CHANGE"],
+      "bad_repair_flags": ["dummy-assignment", "guard-to-true"],
+      "purpose": "验证 static-only 报告不会诱导 LLM 把 add_write 当成矛盾 guard 的万能修复。"
+    },
+    {
+      "id": "verify_backed_dead_guard",
+      "path": "verify_backed_dead_guard.fcstm",
+      "category": "verify-backed dead guard 或 tautology",
+      "smoke": true,
+      "enable_verify": true,
+      "expected_codes": ["W_DEAD_GUARD"],
+      "bad_repair_flags": ["guard-to-true", "provenance-confusion"],
+      "purpose": "验证 verify-backed provenance 能指导 LLM 区分 SMT 证明与普通静态提示。"
+    },
+    {
+      "id": "multi_diag_stacking",
+      "path": "multi_diag_stacking.fcstm",
+      "category": "多 diagnostics 相互影响",
+      "smoke": false,
+      "enable_verify": true,
+      "expected_codes": ["W_DEADLOCK_LEAF", "W_TOPOLOGICAL_NOEXIT", "I_TOPOLOGICAL_NON_TERMINATING", "W_DEAD_GUARD"],
+      "bad_repair_flags": ["delete-state", "guard-to-true", "unconditional-exit-stack"],
+      "purpose": "验证 LLM 不会把多个 diagnostics 的建议机械叠加成破坏意图的修复。"
+    },
+    {
+      "id": "redundant_transition_self_assign",
+      "path": "redundant_transition_self_assign.fcstm",
+      "category": "redundant transition / self assign",
+      "smoke": false,
+      "enable_verify": false,
+      "expected_codes": ["W_REDUNDANT_TRANSITION", "W_EFFECT_SELF_ASSIGN"],
+      "bad_repair_flags": ["delete-state"],
+      "purpose": "验证 LLM 能处理重复转换和自赋值，同时不误删业务状态。"
+    },
+    {
+      "id": "unreachable_state",
+      "path": "unreachable_state.fcstm",
+      "category": "unreachable state",
+      "smoke": false,
+      "enable_verify": false,
+      "expected_codes": ["W_UNREACHABLE_STATE"],
+      "bad_repair_flags": ["self-loop-mask"],
+      "purpose": "验证 source span / state path 定位足够指导补入入边或删除明确无用状态。"
+    },
+    {
+      "id": "combo_trigger_single",
+      "path": "combo_trigger_single.fcstm",
+      "category": "combo trigger warning",
+      "smoke": true,
+      "enable_verify": false,
+      "expected_codes": ["W_COMBO_DUPLICATE_EVENT"],
+      "bad_repair_flags": ["delete-transition"],
+      "purpose": "验证单个 diagnostic 由组合 trigger 条件触发时，LLM 能理解触发条件，而不是把它和多诊断叠加混为一谈。"
+    },
+    {
+      "id": "suggested_action_adversarial",
+      "path": "suggested_action_adversarial.fcstm",
+      "category": "suggested action 可能误导的对抗样例",
+      "smoke": false,
+      "enable_verify": true,
+      "expected_codes": ["W_DEAD_GUARD"],
+      "bad_repair_flags": ["guard-to-true", "delete-state", "delete-transition"],
+      "purpose": "最大化暴露删除状态、伪造赋值、重写模型等风险。"
+    }
+  ]
+}

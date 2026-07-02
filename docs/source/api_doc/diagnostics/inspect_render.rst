@@ -6,10 +6,10 @@ pyfcstm.diagnostics.inspect\_render
 .. automodule:: pyfcstm.diagnostics.inspect_render
 
 
-INSPECT\_LLM\_DRAFT\_SCHEMA\_VERSION
+INSPECT\_LLM\_SCHEMA\_VERSION
 -----------------------------------------------------
 
-.. autodata:: INSPECT_LLM_DRAFT_SCHEMA_VERSION
+.. autodata:: INSPECT_LLM_SCHEMA_VERSION
 
 
 SourceExcerptLine

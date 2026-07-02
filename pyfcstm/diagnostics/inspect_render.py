@@ -38,7 +38,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Mapping, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from .codes import CODE_REGISTRY
 from ..utils.validate import ModelDiagnostic, Span
@@ -65,18 +65,45 @@ _ANSI_STYLE_BY_SEVERITY = {
 }
 _ANSI_BOLD = "1"
 _ANSI_RESET = "\033[0m"
+_SOURCE_CONTEXT_RADIUS = 1
+
+
+@dataclass(frozen=True)
+class SourceExcerptLine:
+    """One source line included in a diagnostic source window.
+
+    :param line_number: One-based source line number.
+    :type line_number: int
+    :param text: Source line text without its trailing newline.
+    :type text: str
+    :param caret: Optional caret marker for the diagnostic anchor line.
+    :type caret: Optional[str], optional
+
+    Example::
+
+        >>> SourceExcerptLine(3, "state Idle;", None).text
+        'state Idle;'
+    """
+
+    line_number: int
+    text: str
+    caret: Optional[str] = None
 
 
 @dataclass(frozen=True)
 class SourceExcerpt:
-    """Single-line source excerpt anchored by a diagnostic span.
+    """Source excerpt window anchored by a diagnostic span.
 
-    :param line_number: One-based line number for the excerpt.
+    :param line_number: One-based line number for the diagnostic anchor.
     :type line_number: int
-    :param text: Source line text without its trailing newline.
+    :param text: Anchor source line text without its trailing newline.
     :type text: str
-    :param caret: Caret marker aligned to the diagnostic span.
+    :param caret: Caret marker aligned to the diagnostic span on the anchor
+        line.
     :type caret: str
+    :param context_lines: Source window around the anchor line. The window
+        usually contains one line before and after the anchor when available.
+    :type context_lines: Tuple[SourceExcerptLine, ...], optional
 
     Example::
 
@@ -87,6 +114,7 @@ class SourceExcerpt:
     line_number: int
     text: str
     caret: str
+    context_lines: Tuple[SourceExcerptLine, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -341,10 +369,25 @@ def render_inspect_llm_markdown(
             lines.append(f"- Why it matters: {detail['summary']}")
         if detail.get("source_excerpt"):
             excerpt = detail["source_excerpt"]
+            context = excerpt.get("context", [])
+            gutter_width = _markdown_gutter_width(context, excerpt)
             lines.append("- Source:")
             lines.append("  ```fcstm")
-            lines.append(f"  {excerpt['text']}")
-            lines.append(f"  {excerpt['caret']}")
+            for source_line in context:
+                lines.append(
+                    "  {line:>{width}} | {text}".format(
+                        line=source_line["line"],
+                        width=gutter_width,
+                        text=source_line["text"],
+                    )
+                )
+                if source_line.get("caret"):
+                    lines.append(
+                        "  {space}| {caret}".format(
+                            space=" " * (gutter_width + 2),
+                            caret=source_line["caret"],
+                        )
+                    )
             lines.append("  ```")
         if detail["recommended_actions"]:
             lines.append("- Recommended actions:")
@@ -410,16 +453,24 @@ def _render_human_diagnostic(
         lines.append(f"  --> {_format_span(diagnostic.span, input_path=input_path)}")
     excerpt = _source_excerpt(source_text, diagnostic.span)
     if excerpt is not None:
-        line_prefix = f" {excerpt.line_number} |"
-        gutter = " " * (len(line_prefix) - 1) + "|"
-        caret = _style_text(
-            excerpt.caret,
-            _severity_style(diagnostic.severity),
-            options=options,
-        )
+        gutter_width = _source_gutter_width(excerpt)
+        gutter = " " * (gutter_width + 2) + "|"
         lines.append(gutter)
-        lines.append(f"{line_prefix} {excerpt.text}")
-        lines.append(f"{gutter} {caret}")
+        for source_line in excerpt.context_lines:
+            lines.append(
+                " {line:>{width}} | {text}".format(
+                    line=source_line.line_number,
+                    width=gutter_width,
+                    text=source_line.text,
+                )
+            )
+            if source_line.caret is not None:
+                caret = _style_text(
+                    source_line.caret,
+                    _severity_style(diagnostic.severity),
+                    options=options,
+                )
+                lines.append(f"{gutter} {caret}")
         lines.append(gutter)
     spec = CODE_REGISTRY.get(diagnostic.code)
     lines.append(f"   = source: {_diagnostic_source(spec)}")
@@ -509,13 +560,38 @@ def _source_excerpt(
     if span.line < 1 or span.line > len(lines):
         return None
     text = lines[span.line - 1]
+    context_start = max(1, span.line - _SOURCE_CONTEXT_RADIUS)
+    context_end = min(len(lines), span.line + _SOURCE_CONTEXT_RADIUS)
     start_column = max(span.column, 1)
     end_column = span.end_column if span.end_line in (None, span.line) else None
     if end_column is None or end_column <= start_column:
         end_column = start_column + 1
     caret_len = max(1, end_column - start_column)
     caret = " " * (start_column - 1) + "^" * caret_len
-    return SourceExcerpt(span.line, text, caret)
+    context_lines = []
+    for line_number in range(context_start, context_end + 1):
+        context_lines.append(
+            SourceExcerptLine(
+                line_number,
+                lines[line_number - 1],
+                caret if line_number == span.line else None,
+            )
+        )
+    return SourceExcerpt(span.line, text, caret, tuple(context_lines))
+
+
+def _source_gutter_width(excerpt: SourceExcerpt) -> int:
+    if not excerpt.context_lines:
+        return len(str(excerpt.line_number))
+    return max(len(str(item.line_number)) for item in excerpt.context_lines)
+
+
+def _markdown_gutter_width(
+    context: List[Dict[str, Any]], excerpt: Dict[str, Any]
+) -> int:
+    if context:
+        return max(len(str(item["line"])) for item in context)
+    return len(str(excerpt["line"]))
 
 
 def _format_span(span: Span, *, input_path: Optional[str]) -> str:
@@ -544,10 +620,20 @@ def _span_dict(
 def _excerpt_dict(excerpt: Optional[SourceExcerpt]) -> Optional[Dict[str, Any]]:
     if excerpt is None:
         return None
+    context = [
+        {
+            "line": item.line_number,
+            "text": item.text,
+            "caret": item.caret,
+            "is_anchor": item.line_number == excerpt.line_number,
+        }
+        for item in excerpt.context_lines
+    ]
     return {
         "line": excerpt.line_number,
         "text": excerpt.text,
         "caret": excerpt.caret,
+        "context": context,
     }
 
 

@@ -198,7 +198,7 @@ inspect 命令
    pyfcstm inspect -i simple_machine.fcstm --color always
    pyfcstm inspect -i simple_machine.fcstm --format json -o simple_machine.inspect.json
 
-默认情况下，``inspect`` 输出 checker-style 人类可读报告，并且不运行 verify 支撑的检查。需要与
+默认情况下，``inspect`` 输出 checker-style 人类可读报告，并且不运行 verify 支撑的检查。human 输出和草案阶段的 ``llm-json`` / ``llm-md`` 会在每条诊断附近附带一个小型源码上下文窗口，让相邻状态和转换结构保持可见。需要与
 ``inspect_model(model).to_json()`` 和跨端默认诊断契约一致的完整 JSON 时，应显式传入
 ``--format json``。如果输出文件后缀看起来和格式不匹配，例如把默认 human 报告写到 ``.json``，CLI 会在 stderr 给出 warning，但不会静默改变用户请求的格式。颜色只作为视觉增强：任意非空 ``NO_COLOR``\ 、``TERM=dumb``\ 、pipe 输出和 ``-o`` 输出都会保持 human 文本无色；``json``\ 、``llm-json`` 和 ``llm-md`` 即使传入 ``--color always`` 也不会包含 ANSI escape 序列。
 

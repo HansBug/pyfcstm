@@ -49,10 +49,9 @@ def _assert_excerpt_gutters_align(text):
             excerpt_count += 1
             pipe_column = line.index("|")
             assert index > 0
-            assert index + 2 < len(lines)
+            assert index + 1 < len(lines)
             assert lines[index - 1].index("|") == pipe_column
             assert lines[index + 1].index("|") == pipe_column
-            assert lines[index + 2].index("|") == pipe_column
     assert excerpt_count > 0
 
 
@@ -75,6 +74,9 @@ class TestInspectRender:
         assert ANSI_ESCAPE_RE.search(text) is None
         assert BOX_DRAWING_RE.search(text) is None
         _assert_excerpt_gutters_align(text)
+        assert " 3 |     state Idle;" in text
+        assert " 4 |     state Running;" in text
+        assert " 5 |     [*] -> Idle;" in text
 
     def test_human_renderer_color_enabled_adds_ansi_without_losing_text(self):
         text = render_inspect_human(
@@ -166,6 +168,15 @@ class TestInspectRender:
         assert {"code", "severity", "message", "refs"} <= set(diagnostic)
         assert "recommended_actions" in diagnostic
         assert "do_not" in diagnostic
+        deadlock = next(
+            item for item in payload["diagnostics"] if item["code"] == "W_DEADLOCK_LEAF"
+        )
+        context = deadlock["source_excerpt"]["context"]
+        assert [line["line"] for line in context] == [3, 4, 5]
+        assert context[0]["caret"] is None
+        assert context[1]["is_anchor"] is True
+        assert context[1]["caret"].strip("^") == "    "
+        assert context[2]["text"] == "    [*] -> Idle;"
 
     def test_llm_markdown_renderer_contains_draft_schema_and_sections(self):
         text = render_inspect_llm_markdown(_report(), SOURCE)
@@ -174,6 +185,10 @@ class TestInspectRender:
         assert INSPECT_LLM_DRAFT_SCHEMA_VERSION in text
         assert "## W_" in text
         assert "Recommended actions" in text
+        assert "3 |     state Idle;" in text
+        assert "4 |     state Running;" in text
+        assert "|     ^^^^^^^^^^^^^^" in text
+        assert "5 |     [*] -> Idle;" in text
 
     @pytest.mark.parametrize(
         ("path", "output_format", "expected"),

@@ -178,7 +178,13 @@ class TestEntryInspect:
         assert payload["schema_status"] == "draft"
         assert payload["status"] == "warning"
         assert payload["diagnostics"]
-        assert "source_excerpt" in payload["diagnostics"][0]
+        diagnostic = payload["diagnostics"][0]
+        assert "source_excerpt" in diagnostic
+        assert "context" in diagnostic["source_excerpt"]
+        assert any(
+            line["is_anchor"] and line["caret"]
+            for line in diagnostic["source_excerpt"]["context"]
+        )
         assert "for_llm" not in payload
 
     def test_inspect_format_llm_md_outputs_draft_markdown(self, inspect_code_file):
@@ -189,6 +195,7 @@ class TestEntryInspect:
         assert "# FCSTM Inspect Report" in result.stdout
         assert INSPECT_LLM_DRAFT_SCHEMA_VERSION in result.stdout
         assert "Recommended actions" in result.stdout
+        assert "|     ^" in result.stdout
 
     def test_inspect_llm_json_can_include_verify_backed_diagnostics(
         self, inspect_code_file

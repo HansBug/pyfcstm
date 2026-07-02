@@ -217,7 +217,7 @@ re-implementing local solver approximations.
    pyfcstm inspect -i simple_machine.fcstm --format json -o simple_machine.inspect.json
 
 By default, ``inspect`` emits a checker-style human-readable report and does not run
-verify-backed checks. Use ``--format json`` for the full JSON contract aligned
+verify-backed checks. Human output and the draft ``llm-json`` / ``llm-md`` formats include a small source context window around each diagnostic so nearby state and transition structure remains visible. Use ``--format json`` for the full JSON contract aligned
 with ``inspect_model(model).to_json()`` and with the existing cross-end default
 diagnostics contract. If an output filename suffix looks mismatched, such as
 writing the default human report to ``.json``, the CLI emits a warning on

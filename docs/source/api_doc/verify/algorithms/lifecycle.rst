@@ -16,5 +16,3 @@ enter\_postcondition\_implies\_during\_precondition
 -----------------------------------------------------
 
 .. autofunction:: enter_postcondition_implies_during_precondition
-
-

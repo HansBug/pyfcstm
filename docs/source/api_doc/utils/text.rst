@@ -76,5 +76,3 @@ to\_go\_identifier
 -----------------------------------------------------
 
 .. autofunction:: to_go_identifier
-
-

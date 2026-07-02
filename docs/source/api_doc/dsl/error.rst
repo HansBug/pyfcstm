@@ -59,5 +59,3 @@ CollectingErrorListener
 
 .. autoclass:: CollectingErrorListener
     :members: __init__,syntaxError,reportAmbiguity,reportAttemptingFullContext,reportContextSensitivity,check_unfinished_parsing_error,check_errors
-
-

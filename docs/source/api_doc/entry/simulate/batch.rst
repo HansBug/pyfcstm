@@ -17,5 +17,3 @@ create\_cross\_platform\_output\_func
 -----------------------------------------------------
 
 .. autofunction:: create_cross_platform_output_func
-
-

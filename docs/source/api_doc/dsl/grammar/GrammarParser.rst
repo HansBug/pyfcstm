@@ -17,5 +17,3 @@ serializedATN
 -----------------------------------------------------
 
 .. autofunction:: serializedATN
-
-

@@ -457,5 +457,3 @@ DuringAspectRefFunction
 
 .. autoclass:: DuringAspectRefFunction
     :members: __str__,name,aspect,ref
-
-

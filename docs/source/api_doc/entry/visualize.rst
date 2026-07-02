@@ -64,5 +64,3 @@ open\_diagram\_with\_default\_app
 -----------------------------------------------------
 
 .. autofunction:: open_diagram_with_default_app
-
-

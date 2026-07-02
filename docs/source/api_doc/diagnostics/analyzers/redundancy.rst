@@ -10,5 +10,3 @@ collect\_redundancy\_warnings
 -----------------------------------------------------
 
 .. autofunction:: collect_redundancy_warnings
-
-

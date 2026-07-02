@@ -50,5 +50,3 @@ IValidatable
 
 .. autoclass:: IValidatable
     :members: validate,__validators__
-
-

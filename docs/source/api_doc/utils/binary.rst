@@ -10,5 +10,3 @@ is\_binary\_file
 -----------------------------------------------------
 
 .. autofunction:: is_binary_file
-
-

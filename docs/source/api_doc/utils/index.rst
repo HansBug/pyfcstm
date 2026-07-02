@@ -20,4 +20,3 @@ pyfcstm.utils
     safe
     text
     validate
-

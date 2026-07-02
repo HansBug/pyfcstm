@@ -18,5 +18,3 @@ PlantUMLExportable
 
 .. autoclass:: PlantUMLExportable
     :members: to_plantuml
-
-

@@ -1,56 +1,9 @@
 name: Native toolchain matrix
 
+# This matrix is intentionally workflow_dispatch-only. It is expensive and is
+# meant as a pre-release native compiler/runtime sweep, not as a routine
+# push/PR check.
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - .github/workflows/native-toolchain.yml
-      - pyfcstm/dsl/**
-      - pyfcstm/model/**
-      - pyfcstm/render/**
-      - pyfcstm/template/**
-      - pyfcstm/utils/**
-      - templates/c/**
-      - templates/c_poll/**
-      - templates/cpp/**
-      - templates/cpp_poll/**
-      - tools/package_templates.py
-      - test/conftest.py
-      - pytest.ini
-      - test/testings/simulate_semantics.py
-      - test/testings/native_semantic_alignment.py
-      - test/testings/native_toolchain_alignment/**
-      - test/template/c/test_native_toolchain_alignment.py
-      - test/template/c_poll/test_native_toolchain_alignment.py
-      - test/template/cpp/test_native_toolchain_alignment.py
-      - test/template/cpp_poll/test_native_toolchain_alignment.py
-      - test/fixtures/simulate_semantics/**
-      - requirements*.txt
-  pull_request:
-    paths:
-      - .github/workflows/native-toolchain.yml
-      - pyfcstm/dsl/**
-      - pyfcstm/model/**
-      - pyfcstm/render/**
-      - pyfcstm/template/**
-      - pyfcstm/utils/**
-      - templates/c/**
-      - templates/c_poll/**
-      - templates/cpp/**
-      - templates/cpp_poll/**
-      - tools/package_templates.py
-      - test/conftest.py
-      - pytest.ini
-      - test/testings/simulate_semantics.py
-      - test/testings/native_semantic_alignment.py
-      - test/testings/native_toolchain_alignment/**
-      - test/template/c/test_native_toolchain_alignment.py
-      - test/template/c_poll/test_native_toolchain_alignment.py
-      - test/template/cpp/test_native_toolchain_alignment.py
-      - test/template/cpp_poll/test_native_toolchain_alignment.py
-      - test/fixtures/simulate_semantics/**
-      - requirements*.txt
   workflow_dispatch:
     inputs:
       profile:

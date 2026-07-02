@@ -10,5 +10,3 @@ sequence\_safe
 -----------------------------------------------------
 
 .. autofunction:: sequence_safe
-
-

@@ -16,5 +16,3 @@ assemble\_state\_machine\_imports
 -----------------------------------------------------
 
 .. autofunction:: assemble_state_machine_imports
-
-

@@ -22,5 +22,3 @@ get\_current\_event\_completion\_items
 -----------------------------------------------------
 
 .. autofunction:: get_current_event_completion_items
-
-

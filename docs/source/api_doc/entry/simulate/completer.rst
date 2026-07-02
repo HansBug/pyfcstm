@@ -11,5 +11,3 @@ SimulationCompleter
 
 .. autoclass:: SimulationCompleter
     :members: __init__,get_completions,COMMANDS,LOG_LEVELS
-
-

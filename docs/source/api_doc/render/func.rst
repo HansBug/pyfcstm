@@ -10,5 +10,3 @@ process\_item\_to\_object
 -----------------------------------------------------
 
 .. autofunction:: process_item_to_object
-
-

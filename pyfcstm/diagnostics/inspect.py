@@ -88,6 +88,8 @@ VERIFY_SHARED_STATIC_CODES = frozenset({
     'W_UNREACHABLE_STATE',
 })
 
+#: Mapping from generic guard diagnostics to combo-specific diagnostics when
+#: optional verify analysis runs against an expanded combo pseudo transition.
 COMBO_GUARD_VERIFY_REPLACEMENT_CODES = {
     'W_DEAD_GUARD': 'W_COMBO_GUARD_CONST_FALSE',
     'W_GUARD_TAUTOLOGY': 'W_COMBO_GUARD_CONST_TRUE',

@@ -15,4 +15,3 @@ pyfcstm.render
     func
     render
     statement
-

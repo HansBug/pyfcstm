@@ -11,5 +11,3 @@ StateMachineCodeRenderer
 
 .. autoclass:: StateMachineCodeRenderer
     :members: __init__,render_one_file,copy_one_file,render
-
-

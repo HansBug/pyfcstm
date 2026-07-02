@@ -10,5 +10,3 @@ collect\_structural\_warnings
 -----------------------------------------------------
 
 .. autofunction:: collect_structural_warnings
-
-

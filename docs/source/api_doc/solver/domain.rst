@@ -57,5 +57,3 @@ merge\_definedness\_constraints
 -----------------------------------------------------
 
 .. autofunction:: merge_definedness_constraints
-
-

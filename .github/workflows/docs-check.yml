@@ -1,0 +1,297 @@
+name: Docs Check
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - 'logos/**'
+      - 'requirements.txt'
+      - 'requirements-doc.txt'
+      - 'auto_rst.py'
+      - 'auto_rst_top_index.py'
+      - '.github/scripts/detect_ci_routes.py'
+      - '.readthedocs.yaml'
+      - '.github/workflows/docs-check.yml'
+      - '.github/workflows/doc.yml.deprecated'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'logos/**'
+      - 'requirements.txt'
+      - 'requirements-doc.txt'
+      - 'auto_rst.py'
+      - 'auto_rst_top_index.py'
+      - '.github/scripts/detect_ci_routes.py'
+      - '.readthedocs.yaml'
+      - '.github/workflows/docs-check.yml'
+      - '.github/workflows/doc.yml.deprecated'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect_docs_routes:
+    name: Detect docs routes
+    runs-on: ubuntu-22.04
+    outputs:
+      docs_changed: ${{ steps.detect.outputs.docs_changed }}
+      docs_resource_changed: ${{ steps.detect.outputs.docs_resource_changed }}
+      fail_closed: ${{ steps.detect.outputs.fail_closed }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3.3.0
+        with:
+          fetch-depth: 0
+          submodules: 'recursive'
+      - name: Set up python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Detect docs routes
+        id: detect
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci/docs-routes
+          changed_file=.ci/docs-routes/changed-files.txt
+          detector_output=.ci/docs-routes/detector.json
+          : > "$changed_file"
+
+          detector_event="${GITHUB_EVENT_NAME}"
+          fail_closed_args=()
+          zero_sha="0000000000000000000000000000000000000000"
+
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            ref_name="${REF_NAME:-}"
+            default_branch="${DEFAULT_BRANCH:-}"
+            if [ -z "${HEAD_SHA:-}" ] || ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+              echo "Push head SHA is unavailable; failing closed for docs routes."
+              fail_closed_args=(--fail-closed)
+            elif [ -z "$default_branch" ]; then
+              echo "Default branch is unavailable; failing closed for docs routes."
+              fail_closed_args=(--fail-closed)
+            elif [ -n "$ref_name" ] && [ "$ref_name" != "$default_branch" ]; then
+              echo "Push on non-default ref ${ref_name}; detecting docs routes from merge-base with ${default_branch}."
+              if git fetch --no-tags --prune origin "+refs/heads/${default_branch}:refs/remotes/origin/${default_branch}" \
+                && merge_base="$(git merge-base "origin/${default_branch}" "${HEAD_SHA}")" \
+                && [ -n "$merge_base" ] \
+                && git diff --name-only "$merge_base" "${HEAD_SHA}" > "$changed_file"; then
+                echo "Detected changed files between merge-base ${merge_base} and ${HEAD_SHA}."
+              else
+                echo "Could not diff ${default_branch} merge-base..${HEAD_SHA}; failing closed for docs routes."
+                : > "$changed_file"
+                fail_closed_args=(--fail-closed)
+              fi
+            elif [ -z "${BEFORE_SHA:-}" ] || [ "${BEFORE_SHA}" = "$zero_sha" ]; then
+              echo "Default-branch push base SHA is unavailable; failing closed for docs routes."
+              fail_closed_args=(--fail-closed)
+            elif git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null && git diff --name-only "${BEFORE_SHA}" "${HEAD_SHA}" > "$changed_file"; then
+              echo "Detected changed files between ${BEFORE_SHA} and ${HEAD_SHA}."
+            else
+              echo "Could not diff ${BEFORE_SHA}..${HEAD_SHA}; failing closed for docs routes."
+              : > "$changed_file"
+              fail_closed_args=(--fail-closed)
+            fi
+          elif [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            if [ -n "${PR_BASE_SHA:-}" ] \
+              && [ -n "${PR_HEAD_SHA:-}" ] \
+              && git cat-file -e "${PR_BASE_SHA}^{commit}" 2>/dev/null \
+              && git cat-file -e "${PR_HEAD_SHA}^{commit}" 2>/dev/null \
+              && git diff --name-only "${PR_BASE_SHA}" "${PR_HEAD_SHA}" > "$changed_file"; then
+              echo "Detected changed files between PR base ${PR_BASE_SHA} and head ${PR_HEAD_SHA}."
+            else
+              echo "Could not diff PR base..head; failing closed for docs routes."
+              : > "$changed_file"
+              fail_closed_args=(--fail-closed)
+            fi
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            detector_event="workflow_dispatch"
+            echo "workflow_dispatch uses fail-closed docs route defaults."
+          else
+            echo "Unsupported event ${GITHUB_EVENT_NAME}; failing closed for docs routes."
+            detector_event="local"
+            fail_closed_args=(--fail-closed)
+          fi
+
+          python .github/scripts/detect_ci_routes.py \
+            --changed-files "$changed_file" \
+            --event-name "$detector_event" \
+            "${fail_closed_args[@]}" \
+            --json > "$detector_output"
+
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          result = json.loads(Path('.ci/docs-routes/detector.json').read_text(encoding='utf-8'))
+          output_keys = ('docs_changed', 'docs_resource_changed', 'fail_closed')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+              for key in output_keys:
+                  print('{0}={1}'.format(key, str(bool(result.get(key, False))).lower()), file=out)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+              print('## Docs route detector', file=summary)
+              print('', file=summary)
+              print('* Docs changed: `{0}`'.format(result.get('docs_changed')), file=summary)
+              print('* Docs resource changed: `{0}`'.format(result.get('docs_resource_changed')), file=summary)
+              print('* Fail closed: `{0}`'.format(result.get('fail_closed')), file=summary)
+              print('', file=summary)
+              print('```json', file=summary)
+              print(json.dumps(result, indent=2, sort_keys=True), file=summary)
+              print('```', file=summary)
+          PY
+
+  docs_html:
+    name: Docs HTML
+    runs-on: ubuntu-22.04
+    needs: detect_docs_routes
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3.3.0
+        with:
+          fetch-depth: 20
+          submodules: 'recursive'
+      - name: Set up python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install docs dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends make ripgrep
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-doc.txt
+          python -m pip install -e . --no-deps
+      - name: Build English docs without generated contents
+        shell: bash
+        run: |
+          NO_CONTENTS_BUILD=1 READTHEDOCS_LANGUAGE=en sphinx-build -b html docs/source /tmp/pyfcstm-docs-check-en
+      - name: Build Chinese docs without generated contents
+        shell: bash
+        run: |
+          NO_CONTENTS_BUILD=1 READTHEDOCS_LANGUAGE=zh sphinx-build -b html docs/source /tmp/pyfcstm-docs-check-zh
+      - name: Scan rendered HTML for reST markup problems
+        shell: bash
+        run: |
+          set -euo pipefail
+          if rg -n 'class="problematic"' /tmp/pyfcstm-docs-check-en /tmp/pyfcstm-docs-check-zh -g '*.html'; then
+            echo "Found rendered docutils problematic spans." >&2
+            exit 1
+          fi
+          if rg -n '<span class="problematic"[^\n]*>``</span>|<span class="problematic"[^\n]*>`</span>' /tmp/pyfcstm-docs-check-en /tmp/pyfcstm-docs-check-zh -g '*.html'; then
+            echo "Found rendered inline-literal markup problems." >&2
+            exit 1
+          fi
+          python - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          import re
+          import sys
+
+          RAW_STRONG_RE = re.compile(r"\*\*[^\n]*?\*\*")
+          IGNORED_PARTS = {"_modules", "api_doc"}
+          IGNORED_TAGS = {"code", "pre", "script", "style"}
+
+
+          class RawStrongScanner(HTMLParser):
+              def __init__(self, source_path):
+                  super().__init__(convert_charrefs=True)
+                  self.source_path = source_path
+                  self.ignored_stack = []
+                  self.matches = []
+
+              def handle_starttag(self, tag, attrs):
+                  if tag in IGNORED_TAGS:
+                      self.ignored_stack.append(tag)
+
+              def handle_endtag(self, tag):
+                  if tag in IGNORED_TAGS and tag in self.ignored_stack:
+                      for index in range(len(self.ignored_stack) - 1, -1, -1):
+                          if self.ignored_stack[index] == tag:
+                              del self.ignored_stack[index]
+                              break
+
+              def handle_data(self, data):
+                  if self.ignored_stack:
+                      return
+                  for match in RAW_STRONG_RE.finditer(data):
+                      line, column = self.getpos()
+                      self.matches.append((line, column + match.start(), match.group(0)))
+
+
+          failures = []
+          for root in (Path("/tmp/pyfcstm-docs-check-en"), Path("/tmp/pyfcstm-docs-check-zh")):
+              for html_file in root.rglob("*.html"):
+                  if IGNORED_PARTS.intersection(html_file.relative_to(root).parts):
+                      continue
+                  scanner = RawStrongScanner(html_file)
+                  scanner.feed(html_file.read_text(encoding="utf-8", errors="replace"))
+                  for line, column, marker in scanner.matches:
+                      failures.append(f"{html_file}:{line}:{column}: {marker}")
+
+          if failures:
+              print("Found raw strong-emphasis markers in rendered narrative HTML.", file=sys.stderr)
+              for failure in failures:
+                  print(failure, file=sys.stderr)
+              sys.exit(1)
+          PY
+
+  docs_resources:
+    name: Docs generated resources
+    runs-on: ubuntu-22.04
+    needs: detect_docs_routes
+    if: ${{ needs.detect_docs_routes.outputs.docs_resource_changed == 'true' }}
+    services:
+      plantuml:
+        image: plantuml/plantuml-server:jetty-v1.2023.6
+        ports:
+          - 18080:8080
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3.3.0
+        with:
+          fetch-depth: 20
+          submodules: 'recursive'
+      - name: Set up python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install docs resource dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends make graphviz pandoc
+          dot -V
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-doc.txt
+          python -m pip install -e . --no-deps
+      - name: Build docs generated resources
+        env:
+          PLANTUML_HOST: http://localhost:18080
+        shell: bash
+        run: |
+          plantumlcli -c
+          make -f docs/source/all.mk SOURCE=docs/source build
+      - name: Verify generated docs resources are committed
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- docs/source
+          untracked_docs="$(git ls-files --others --exclude-standard -- docs/source)"
+          if [ -n "$untracked_docs" ]; then
+            echo "Untracked docs resources were generated:" >&2
+            echo "$untracked_docs" >&2
+            exit 1
+          fi

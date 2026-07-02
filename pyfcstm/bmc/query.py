@@ -390,7 +390,7 @@ class EventCardinalityAssumption(BmcAssumption):
     :type kind: str
     :param event_paths: Event paths for ``"at_most_one"``. ``"any"`` uses an
         empty tuple because it is equivalent to omitting the cardinality
-        assumption, defaults to ``()``.
+        assumption, defaults to ``()``.  ``"at_most_one"`` paths must be unique.
     :type event_paths: Tuple[str, ...], optional
 
     Example::
@@ -419,6 +419,8 @@ class EventCardinalityAssumption(BmcAssumption):
             raise InvalidBmcQuery("event_paths is only valid for at_most_one.")
         if not all(isinstance(path, str) and path for path in event_paths):
             raise InvalidBmcQuery("event_paths must contain non-empty strings.")
+        if len(set(event_paths)) != len(event_paths):
+            raise InvalidBmcQuery("event_paths must not contain duplicate paths.")
         object.__setattr__(self, "event_paths", event_paths)
 
     def _canonical_payload(self) -> _CanonicalDict:

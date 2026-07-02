@@ -61,6 +61,7 @@ def test_literal_canonical_forms_preserve_raw_kind_and_value():
     floating = FloatLiteral("3.5e1")
     fractional = FloatLiteral(".5")
     exponent = FloatLiteral("1e-3")
+    large_finite = FloatLiteral("1e308")
     truth = BoolLiteral("TRUE")
 
     assert decimal.to_canonical() == {
@@ -85,6 +86,8 @@ def test_literal_canonical_forms_preserve_raw_kind_and_value():
     }
     assert fractional.to_canonical()["value"] == 0.5
     assert exponent.to_canonical()["value"] == 0.001
+    assert large_finite.to_canonical()["raw"] == "1e308"
+    json.dumps(large_finite.to_canonical(), allow_nan=False)
     json.dumps(floating.to_canonical(), allow_nan=False)
     assert truth.to_canonical() == {
         "node": "bool_literal",
@@ -129,11 +132,11 @@ def _round_trip_cases():
         pytest.param(FloatLiteral("3.5e1"), "3.5e1", id="expr-float-exp"),
         pytest.param(FloatLiteral("1e-3"), "1e-3", id="expr-float-negative-exp"),
         pytest.param(BoolLiteral("true"), "true", id="expr-bool-lower-true"),
-        pytest.param(BoolLiteral("True"), "True", id="expr-bool-title-true"),
-        pytest.param(BoolLiteral("TRUE"), "TRUE", id="expr-bool-upper-true"),
+        pytest.param(BoolLiteral("True"), "true", id="expr-bool-title-true"),
+        pytest.param(BoolLiteral("TRUE"), "true", id="expr-bool-upper-true"),
         pytest.param(BoolLiteral("false"), "false", id="expr-bool-lower-false"),
-        pytest.param(BoolLiteral("False"), "False", id="expr-bool-title-false"),
-        pytest.param(BoolLiteral("FALSE"), "FALSE", id="expr-bool-upper-false"),
+        pytest.param(BoolLiteral("False"), "false", id="expr-bool-title-false"),
+        pytest.param(BoolLiteral("FALSE"), "false", id="expr-bool-upper-false"),
         pytest.param(x, "x", id="expr-name-x"),
         pytest.param(NameRef("counter_1"), "counter_1", id="expr-name-counter"),
         pytest.param(MathConst("pi"), "pi", id="expr-const-pi"),
@@ -497,6 +500,10 @@ def test_bmc_nodes_keep_dataclass_repr_for_debugging():
         representation = repr(node)
         assert representation.startswith("%s(" % node.__class__.__name__)
         assert representation.endswith(")")
+        fields = getattr(node, "__dataclass_fields__", {})
+        for field_name in fields:
+            if not field_name.startswith("_"):
+                assert "%s=" % field_name in representation
 
 
 @pytest.mark.unittest
@@ -610,6 +617,8 @@ def test_bool_literal_raw_families_share_values_but_keep_raw_spelling():
         False,
     ]
     assert BoolLiteral("True").to_canonical()["raw"] == "True"
+    assert str(BoolLiteral("True")) == "true"
+    assert str(BoolLiteral("FALSE")) == "false"
 
 
 @pytest.mark.unittest
@@ -837,20 +846,34 @@ def test_expression_model_rejects_invalid_literal_and_frame_values():
         NameRef("not-a-fcstm-id")
     with pytest.raises(ValueError, match="Reserved"):
         NameRef("cycle")
+    with pytest.raises(ValueError, match="Reserved"):
+        NameRef("where")
     with pytest.raises(ValueError, match="floating"):
         FloatLiteral("1")
     with pytest.raises(ValueError, match="finite"):
         FloatLiteral("1e999")
-    with pytest.raises(ValueError, match="decimal"):
+    with pytest.raises(ValueError, match="hexadecimal"):
         IntLiteral("0X2A")
+    with pytest.raises(ValueError, match="decimal"):
+        IntLiteral("-42")
     with pytest.raises(ValueError, match="hexadecimal"):
         IntLiteral("0x")
     with pytest.raises(ValueError, match="kind"):
         IntLiteral("0x2A", kind="decimal")
     with pytest.raises(ValueError, match="kind"):
         IntLiteral("42", kind="hex")
-    with pytest.raises(ValueError, match="spelling"):
+    with pytest.raises(InvalidBmcQuery, match="spelling"):
         FrameVar("x", spelling="bare")
+    with pytest.raises(InvalidBmcQuery, match="name"):
+        FrameVar("")
+    with pytest.raises(InvalidBmcQuery, match="state_path"):
+        Active("")
+    with pytest.raises(InvalidBmcQuery, match="event_path"):
+        Event("")
+    with pytest.raises(InvalidBmcQuery, match="label"):
+        Case("")
+    with pytest.raises(InvalidBmcQuery, match="name"):
+        Called("")
 
 
 @pytest.mark.unittest
@@ -895,6 +918,8 @@ def test_query_model_rejects_additional_invalid_structural_values():
         EventCardinalityAssumption("any", ("Root.E",))
     with pytest.raises(InvalidBmcQuery, match="event_paths"):
         EventCardinalityAssumption("at_most_one", ("Root.E", ""))
+    with pytest.raises(InvalidBmcQuery, match="duplicate"):
+        EventCardinalityAssumption("at_most_one", ("Root.E", "Root.E"))
     with pytest.raises(InvalidBmcQuery, match="property"):
         BmcQuery(property=cast(Any, Active("Root.Done")))
     with pytest.raises(InvalidBmcQuery, match="initial"):

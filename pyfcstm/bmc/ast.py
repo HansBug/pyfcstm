@@ -18,12 +18,13 @@ Design contracts:
   not be rewritten into DSL text.
 * Numeric and condition expression categories stay separate at construction
   time, matching FCSTM ``num_expression`` and ``cond_expression``.
-* Expression-level structural checks intentionally use normal Python
+* FCSTM-compatible expression checks intentionally use normal Python
   ``ValueError`` / ``TypeError`` failures for malformed literals, operators,
-  and operand categories.  Query-level wrappers in :mod:`pyfcstm.bmc.query`
-  raise :class:`pyfcstm.bmc.errors.InvalidBmcQuery` for whole-query shape
-  validation, so parser and binder code should not assume one exception family
-  covers both layers.
+  and operand categories.  Query-facing BMC atom fields such as quoted paths,
+  frames, selectors, and atom spellings raise
+  :class:`pyfcstm.bmc.errors.InvalidBmcQuery`, matching the top-level query
+  wrappers in :mod:`pyfcstm.bmc.query`.  Parser and binder code should not
+  assume one exception family covers both layers.
 * Literal canonical values are kept JSON-portable.  Float literals that would
   overflow Python's finite ``float`` range are rejected at construction time,
   while raw text still preserves exact spelling for parity checks.
@@ -136,6 +137,7 @@ _FBMCQ_RESERVED_NAMES = {
     "cover",
     "trigger",
     "within",
+    "where",
     "current",
     "var",
     "cycle",
@@ -297,6 +299,11 @@ def _require_non_empty_string(value: object, field_name: str) -> None:
         raise ValueError(f"{field_name} must be a non-empty string.")
 
 
+def _require_non_empty_query_string(value: object, field_name: str) -> None:
+    if not isinstance(value, str) or not value:
+        raise InvalidBmcQuery(f"{field_name} must be a non-empty string.")
+
+
 def _normalize_frame(
     frame: _FrameSelector, field_name: str = "frame"
 ) -> _FrameSelector:
@@ -400,6 +407,11 @@ class IntLiteral(BmcNumExpr):
 
     def __post_init__(self) -> None:
         _require_non_empty_string(self.raw, "raw")
+        if self.raw.startswith("0X"):
+            raise ValueError(
+                "Invalid FCSTM hexadecimal integer literal: uppercase '0X' "
+                f"prefix is not supported; use lowercase '0x': {self.raw!r}."
+            )
         inferred_kind = "hex" if self.raw.startswith("0x") else "decimal"
         if self.kind is None:
             kind = inferred_kind
@@ -528,7 +540,7 @@ class BoolLiteral(BmcCondExpr):
         return {"kind": "bool", "raw": self.raw, "value": self.value}
 
     def _to_dsl(self) -> str:
-        return self.raw
+        return "true" if self.value else "false"
 
 
 @dataclass(frozen=True)
@@ -928,8 +940,11 @@ class FrameVar(BmcNumExpr):
     spelling: str = "var_call"
 
     def __post_init__(self) -> None:
-        _require_non_empty_string(self.name, "name")
-        _validate_choice(self.spelling, {"var_call"}, "frame variable spelling")
+        _require_non_empty_query_string(self.name, "name")
+        if not isinstance(self.spelling, str) or self.spelling != "var_call":
+            raise InvalidBmcQuery(
+                f"Unsupported frame variable spelling: {self.spelling!r}."
+            )
 
     def _canonical_payload(self) -> _CanonicalDict:
         return {"name": self.name, "spelling": self.spelling}
@@ -978,7 +993,7 @@ class Active(BmcCondExpr):
     frame: _FrameSelector = "current"
 
     def __post_init__(self) -> None:
-        _require_non_empty_string(self.state_path, "state_path")
+        _require_non_empty_query_string(self.state_path, "state_path")
         object.__setattr__(self, "frame", _normalize_frame(self.frame))
 
     def _canonical_payload(self) -> _CanonicalDict:
@@ -1046,7 +1061,7 @@ class Event(BmcCondExpr):
     selector: _FrameSelector = "current"
 
     def __post_init__(self) -> None:
-        _require_non_empty_string(self.event_path, "event_path")
+        _require_non_empty_query_string(self.event_path, "event_path")
         object.__setattr__(
             self, "selector", _normalize_frame(self.selector, "selector")
         )
@@ -1081,7 +1096,7 @@ class Case(BmcCondExpr):
     frame: _FrameSelector = "current"
 
     def __post_init__(self) -> None:
-        _require_non_empty_string(self.label, "label")
+        _require_non_empty_query_string(self.label, "label")
         object.__setattr__(self, "frame", _normalize_frame(self.frame))
 
     def _canonical_payload(self) -> _CanonicalDict:
@@ -1114,7 +1129,7 @@ class Called(BmcCondExpr):
     frame: _FrameSelector = "current"
 
     def __post_init__(self) -> None:
-        _require_non_empty_string(self.name, "name")
+        _require_non_empty_query_string(self.name, "name")
         object.__setattr__(self, "frame", _normalize_frame(self.frame))
 
     def _canonical_payload(self) -> _CanonicalDict:

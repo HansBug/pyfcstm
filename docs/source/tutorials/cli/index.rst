@@ -192,6 +192,7 @@ re-implementing local solver approximations.
 .. code-block:: bash
 
    pyfcstm inspect -i <input_file> [-o <output_file>] [--format human|json|llm-json|llm-md] \
+     [--color auto|always|never] \
      [--enable-verify] \
      [--max-complexity-tier structural|smt_linear|smt_nonlinear_decidable|smt_undecidable_heuristic] \
      [--max-call-count-scaling linear_in_transitions] [--smt-timeout-ms <ms>]
@@ -201,6 +202,7 @@ re-implementing local solver approximations.
 - ``-i, --input-code``: Path to input state machine DSL file (required)
 - ``-o, --output``: Path to output file (optional, outputs to stdout when not specified)
 - ``--format``: Output format. ``human`` is the default; use ``json`` for the full machine-readable report. ``llm-json`` and ``llm-md`` are draft LLM-oriented formats.
+- ``--color``: ANSI color policy for human output only. ``auto`` enables color only for interactive stdout, ``always`` forces color on stdout, and ``never`` disables color. ``-o`` files and machine formats are always ANSI-free.
 - ``--enable-verify``: Run inspect-eligible ``pyfcstm.verify`` algorithms and append their diagnostics
 - ``--max-complexity-tier``: Highest verify tier allowed by the inspect adapter; default is ``structural``
 - ``--max-call-count-scaling``: Highest call-count scaling allowed by the inspect adapter; default is ``linear_in_transitions``
@@ -211,14 +213,18 @@ re-implementing local solver approximations.
 .. code-block:: bash
 
    pyfcstm inspect -i simple_machine.fcstm
+   pyfcstm inspect -i simple_machine.fcstm --color always
    pyfcstm inspect -i simple_machine.fcstm --format json -o simple_machine.inspect.json
 
-By default, ``inspect`` emits a human-readable report and does not run
-verify-backed checks. Use ``--format json`` for the full JSON contract aligned
+By default, ``inspect`` emits a checker-style human-readable report and does not run
+verify-backed checks. Human output and the draft ``llm-json`` / ``llm-md`` formats include a small source context window around each diagnostic so nearby state and transition structure remains visible. Use ``--format json`` for the full JSON contract aligned
 with ``inspect_model(model).to_json()`` and with the existing cross-end default
 diagnostics contract. If an output filename suffix looks mismatched, such as
 writing the default human report to ``.json``, the CLI emits a warning on
-stderr without changing the requested format.
+stderr without changing the requested format. Color is purely visual: ``NO_COLOR``
+with any non-empty value, ``TERM=dumb``, pipe output, and ``-o`` output all keep
+human text plain, while ``json``, ``llm-json``, and ``llm-md`` never receive ANSI
+escape sequences even if ``--color always`` is passed.
 
 **Opt in to verify-backed diagnostics**
 

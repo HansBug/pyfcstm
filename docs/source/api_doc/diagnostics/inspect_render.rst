@@ -12,11 +12,25 @@ INSPECT\_LLM\_DRAFT\_SCHEMA\_VERSION
 .. autodata:: INSPECT_LLM_DRAFT_SCHEMA_VERSION
 
 
+SourceExcerptLine
+-----------------------------------------------------
+
+.. autoclass:: SourceExcerptLine
+    :members: line_number,text,caret
+
+
 SourceExcerpt
 -----------------------------------------------------
 
 .. autoclass:: SourceExcerpt
-    :members: line_number,text,caret
+    :members: line_number,text,caret,context_lines
+
+
+HumanRenderOptions
+-----------------------------------------------------
+
+.. autoclass:: HumanRenderOptions
+    :members: color_enabled
 
 
 inspect\_output\_suffix\_warning

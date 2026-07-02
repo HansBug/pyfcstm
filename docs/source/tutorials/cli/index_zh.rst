@@ -174,6 +174,7 @@ inspect 命令
 .. code-block:: bash
 
    pyfcstm inspect -i <输入文件> [-o <输出文件>] [--format human|json|llm-json|llm-md] \
+     [--color auto|always|never] \
      [--enable-verify] \
      [--max-complexity-tier structural|smt_linear|smt_nonlinear_decidable|smt_undecidable_heuristic] \
      [--max-call-count-scaling linear_in_transitions] [--smt-timeout-ms <毫秒>]
@@ -183,6 +184,7 @@ inspect 命令
 - ``-i, --input-code``：输入状态机 DSL 文件路径（必需）
 - ``-o, --output``：输出文件路径（可选，未指定时输出到标准输出）
 - ``--format``：输出格式。默认是 ``human``；需要完整机器可读报告时使用 ``json``。``llm-json`` 和 ``llm-md`` 是草案阶段的 LLM 友好格式。
+- ``--color``：仅控制 human 输出的 ANSI 颜色。``auto`` 只在交互式 stdout 启用颜色，``always`` 强制 stdout 彩色，``never`` 禁用颜色。``-o`` 文件和机器格式始终不含 ANSI。
 - ``--enable-verify``：运行可由 ``inspect`` 自动接入的 ``pyfcstm.verify`` 算法，并追加其诊断
 - ``--max-complexity-tier``：``inspect`` 允许的最高验证复杂度层级，默认是 ``structural``
 - ``--max-call-count-scaling``：``inspect`` 允许的最高调用次数增长等级，默认是 ``linear_in_transitions``
@@ -193,11 +195,12 @@ inspect 命令
 .. code-block:: bash
 
    pyfcstm inspect -i simple_machine.fcstm
+   pyfcstm inspect -i simple_machine.fcstm --color always
    pyfcstm inspect -i simple_machine.fcstm --format json -o simple_machine.inspect.json
 
-默认情况下，``inspect`` 输出人类可读报告，并且不运行 verify 支撑的检查。需要与
+默认情况下，``inspect`` 输出 checker-style 人类可读报告，并且不运行 verify 支撑的检查。human 输出和草案阶段的 ``llm-json`` / ``llm-md`` 会在每条诊断附近附带一个小型源码上下文窗口，让相邻状态和转换结构保持可见。需要与
 ``inspect_model(model).to_json()`` 和跨端默认诊断契约一致的完整 JSON 时，应显式传入
-``--format json``。如果输出文件后缀看起来和格式不匹配，例如把默认 human 报告写到 ``.json``，CLI 会在 stderr 给出 warning，但不会静默改变用户请求的格式。
+``--format json``。如果输出文件后缀看起来和格式不匹配，例如把默认 human 报告写到 ``.json``，CLI 会在 stderr 给出 warning，但不会静默改变用户请求的格式。颜色只作为视觉增强：任意非空 ``NO_COLOR``\ 、``TERM=dumb``\ 、pipe 输出和 ``-o`` 输出都会保持 human 文本无色；``json``\ 、``llm-json`` 和 ``llm-md`` 即使传入 ``--color always`` 也不会包含 ANSI escape 序列。
 
 **显式启用 verify 支撑的诊断**
 

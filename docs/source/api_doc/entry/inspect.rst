@@ -6,6 +6,12 @@ pyfcstm.entry.inspect
 .. automodule:: pyfcstm.entry.inspect
 
 
+resolve\_inspect\_color\_enabled
+-----------------------------------------------------
+
+.. autofunction:: resolve_inspect_color_enabled
+
+
 build\_inspect\_json
 -----------------------------------------------------
 

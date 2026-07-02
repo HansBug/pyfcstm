@@ -277,14 +277,31 @@ From the command line, inspect a model with the default human-readable report, o
 
 ```shell
 pyfcstm inspect -i buggy.fcstm
+pyfcstm inspect -i buggy.fcstm --color always
 pyfcstm inspect -i buggy.fcstm --format json -o inspect_report.json
 pyfcstm inspect -i buggy.fcstm --format json --enable-verify --max-complexity-tier smt_linear --smt-timeout-ms 1000
 ```
 
-The default CLI path is human-oriented and does not run verify-backed checks. Pass `--format json` when scripts, CI jobs, or editor tooling need the full `inspect_model(model).to_json()` contract. Draft LLM-oriented formats are also available as `--format llm-json` and `--format llm-md`. Pass `--enable-verify`
-explicitly to append inspect-eligible `pyfcstm.verify` diagnostics. `bmc_search`, `k_unrollings`, and
+The default CLI path is a checker-style human report and does not run verify-backed checks. Human and draft LLM-oriented formats include a small source context window around each diagnostic so nearby state and transition structure remain visible. Use `--color auto|always|never` to control ANSI color for that human report only; `--format json`, `--format llm-json`, and `--format llm-md` never include ANSI escapes. Pass `--format json` when scripts, CI jobs, or editor tooling need the full `inspect_model(model).to_json()` contract. Draft LLM-oriented formats are also available as `--format llm-json` and `--format llm-md`. Pass `--enable-verify` explicitly to append inspect-eligible `pyfcstm.verify` diagnostics. `bmc_search`, `k_unrollings`, and
 `k_unrollings_times_branching` remain forbidden in the automatic inspect path. `--smt-timeout-ms 0` is forwarded
 unchanged to the SMT solver layer and follows Z3 semantics, where `0` means no finite timeout is configured.
+
+The human report is plain ASCII when color is disabled or unavailable:
+
+```text
+[WARN] W_UNWRITTEN_READ_VAR
+  Variable 'x' is read but never written by any action or transition effect.
+  --> buggy.fcstm:1:1
+   |
+ 1 | def int x = 0;
+   | ^^^^^^^^^^^^^^
+ 2 | state Root {
+   |
+   = source: inspect-static
+   = why: The variable is used as input but never updated after its initial definition, so model behavior may be accidentally constant.
+   = fix: kind: add_write; target: action_or_effect; rationale: Add the intended update if the variable should change.
+   = do-not: Do not add a meaningless self-assignment.
+```
 
 ```python
 from pyfcstm.diagnostics import inspect_model

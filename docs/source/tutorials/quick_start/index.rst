@@ -80,12 +80,24 @@ render a final ``png`` / ``svg`` / ``pdf`` file directly:
 The full visualization option matrix remains in
 :doc:`/tutorials/visualization/index`.
 
-Reproducible command script
----------------------------
+What to expect
+--------------
 
-The documentation build runs the following script to exercise the renderer-independent core commands:
+The commands above are intentionally independent from any external PlantUML
+renderer. A successful quick-start run should look like this in outline:
 
-.. literalinclude:: quick_start.demo.sh
-   :language: bash
+.. code-block:: text
 
-Run it from this directory after installing pyfcstm to reproduce the same commands locally.
+   Current State: TrafficLight.Red
+   timer = 2
+   states: 4
+   transitions: 4
+   diagnostics: 0
+   _quick_start_python/machine.py
+   _quick_start_python/README.md
+   @startuml
+
+The documentation build also runs ``quick_start.demo.sh`` from this directory to
+keep these examples reproducible. The script is a build-time smoke test rather
+than the recommended way to read the tutorial; for humans, copy the short
+commands in the sections above one at a time.

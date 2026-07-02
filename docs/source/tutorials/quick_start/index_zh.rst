@@ -65,12 +65,20 @@
 
 完整可视化选项矩阵留在 :doc:`/tutorials/visualization/index_zh`。
 
-可复现命令脚本
---------------
+你应该看到什么
+----------------
 
-文档构建会运行下面这个脚本来覆盖不依赖渲染器的核心命令：
+上面的命令刻意不依赖外部 PlantUML 渲染器。一次成功的快速开始运行大致会看到下面这些关键信息：
 
-.. literalinclude:: quick_start.demo.sh
-   :language: bash
+.. code-block:: text
 
-安装 pyfcstm 后，可以在本目录运行它来本地复现同一组命令。
+   Current State: TrafficLight.Red
+   timer = 2
+   states: 4
+   transitions: 4
+   diagnostics: 0
+   _quick_start_python/machine.py
+   _quick_start_python/README.md
+   @startuml
+
+文档构建仍会在本目录运行脚本 ``quick_start.demo.sh`` 来保证这些例子可复现。这个脚本是构建时的冒烟测试，不是教程正文推荐的阅读方式；人类读者按上面各小节的短命令逐条复制运行即可。

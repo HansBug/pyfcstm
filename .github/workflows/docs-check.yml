@@ -283,7 +283,7 @@ jobs:
         shell: bash
         run: |
           plantumlcli -c
-          make -f docs/source/all.mk SOURCE=docs/source build
+          make -C docs contents
       - name: Verify generated docs resources are committed
         shell: bash
         run: |

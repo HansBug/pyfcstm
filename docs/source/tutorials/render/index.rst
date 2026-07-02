@@ -893,7 +893,9 @@ Built-In Templates
 ------------------
 
 The render system is general, but the repository also ships built-in templates
-that serve as real reference implementations.
+that serve as real reference implementations. If your goal is to consume those
+templates rather than maintain them, start with
+:doc:`/tutorials/generation/index`.
 
 Current built-in templates:
 
@@ -914,6 +916,17 @@ Current built-in templates:
   - status: current built-in template
   - design position: self-contained generated C runtime with hook-polled event
     acquisition, intended for scan-cycle and control-loop style integrations
+
+- ``cpp``
+
+  - status: current built-in template
+  - design position: C++98-compatible wrapper over the generated C runtime core
+
+- ``cpp_poll``
+
+  - status: current built-in template
+  - design position: C++98-compatible wrapper over the generated C poll runtime
+    core and event-check contract
 
 For built-in templates, pyfcstm also emits generated usage guides into the
 output directory. In practice, users will find ``README.md`` and
@@ -997,6 +1010,28 @@ clear event aggregation or dispatch step and you want to feed explicit event
 sets into the runtime. Choose ``c_poll`` when your system is naturally
 cycle-driven and event truth is better expressed as polled checks over the
 current input snapshot.
+
+cpp And cpp_poll - C++ Wrapper Templates
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The ``cpp`` and ``cpp_poll`` templates are first-class built-in templates for
+C++ consumers. They intentionally keep the execution core in generated C files
+and add ``machine.hpp`` / ``machine.cpp`` as a thin C++98-compatible wrapper
+layer.
+
+For template maintainers, the important design point is that the C++ wrapper
+should forward through the public C API instead of duplicating state-machine
+semantics. For users, the important integration point is simpler: application
+C++ code should include ``machine.hpp`` and use ``MachineWrapper``. The lower
+level ``machine.h`` remains part of the generated core, but it is not the main
+C++ tutorial entry point.
+
+The poll variant follows the same event-check contract as ``c_poll``. The C++
+wrapper exposes the generated ``EventChecks`` type and ``set_event_checks(...)``
+so C++ applications can mount event checks through the wrapper.
+
+For runnable user-facing C++ examples, see
+:doc:`/tutorials/generation/index`.
 
 Test And Consolidate
 --------------------

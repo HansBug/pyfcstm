@@ -44,51 +44,23 @@ Installation
 
    pip install pyfcstm
 
-Basic Usage
-~~~~~~~~~~~~~
+The full installation checklist is in :doc:`tutorials/installation/index`.
 
-**1. Define a State Machine in DSL**
+Fast Path
+~~~~~~~~~
 
-Create a file ``traffic_light.fcstm``:
-
-.. code-block:: fcstm
-
-   def int timer = 0;
-
-   state TrafficLight {
-       [*] -> Red;
-
-       state Red {
-           enter { timer = 0; }
-           during { timer = timer + 1; }
-       }
-
-       state Yellow {
-           enter { timer = 0; }
-           during { timer = timer + 1; }
-       }
-
-       state Green {
-           enter { timer = 0; }
-           during { timer = timer + 1; }
-       }
-
-       Red -> Green : if [timer >= 30];
-       Green -> Yellow : if [timer >= 25];
-       Yellow -> Red : if [timer >= 5];
-   }
-
-**2. Generate Code**
+Create ``traffic_light.fcstm`` and follow the complete walkthrough in
+:doc:`tutorials/quick_start/index`. The shortest command sequence is:
 
 .. code-block:: bash
 
-   pyfcstm generate -i traffic_light.fcstm -t templates/c/ -o output/
-
-**3. Visualize with PlantUML**
-
-.. code-block:: bash
-
+   pyfcstm simulate -i traffic_light.fcstm -e "cycle; cycle; current"
+   pyfcstm inspect -i traffic_light.fcstm -o traffic_light.inspect.json
+   pyfcstm generate -i traffic_light.fcstm --template python -o generated --clear
    pyfcstm plantuml -i traffic_light.fcstm -o traffic_light.puml
+
+Use ``--template`` for packaged built-in templates. Use ``-t/--template-dir``
+only when rendering with a custom template directory.
 
 Architecture
 -------------
@@ -115,22 +87,28 @@ Tutorials
     :hidden:
 
     tutorials/installation/index
-    tutorials/structure/index
+    tutorials/quick_start/index
     tutorials/dsl/index
-    tutorials/render/index
     tutorials/simulation/index
+    tutorials/inspect/index
+    tutorials/generation/index
     tutorials/visualization/index
     tutorials/cli/index
+    tutorials/render/index
     tutorials/grammar/index
+    tutorials/structure/index
 
 * :doc:`tutorials/installation/index`
-* :doc:`tutorials/structure/index`
+* :doc:`tutorials/quick_start/index`
 * :doc:`tutorials/dsl/index`
-* :doc:`tutorials/render/index`
 * :doc:`tutorials/simulation/index`
+* :doc:`tutorials/inspect/index`
+* :doc:`tutorials/generation/index`
 * :doc:`tutorials/visualization/index`
 * :doc:`tutorials/cli/index`
+* :doc:`tutorials/render/index`
 * :doc:`tutorials/grammar/index`
+* :doc:`tutorials/structure/index`
 
 Release Notes
 -------------------------

@@ -265,87 +265,40 @@ visualize 命令
 generate 命令
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-使用可自定义的模板从状态机 DSL 生成可执行代码。
-
-**语法**：
+从状态机 DSL 生成可执行代码。对打包内置模板，优先使用 ``--template``：
 
 .. code-block:: bash
 
-   pyfcstm generate -i <输入文件> -t <模板目录> -o <输出目录> [--clear]
+   pyfcstm generate -i <输入文件> --template <python|c|c_poll|cpp|cpp_poll> \
+     -o <输出目录> [--clear]
+
+只有在你明确提供自定义模板目录时，才使用 ``-t/--template-dir``：
+
+.. code-block:: bash
+
+   pyfcstm generate -i <输入文件> -t <自定义模板目录> -o <输出目录>
 
 **参数**：
 
-- ``-i, --input-code``：输入状态机 DSL 文件的路径（必需）
-- ``-t, --template-dir``：模板目录的路径（必需）
-- ``-o, --output-dir``：生成代码的输出目录（必需）
+- ``-i, --input-code``：输入状态机 DSL 文件路径（必需）
+- ``--template``：打包内置模板名称
+- ``-t, --template-dir``：自定义模板目录路径
+- ``-o, --output-dir``：生成代码输出目录（必需）
 - ``--clear``：生成前清空输出目录（可选）
 
-**工作原理**
-
-``generate`` 命令使用基于模板的代码生成系统：
-
-1. **解析 DSL**：读取并解析 ``.fcstm`` 文件到内部模型
-2. **加载模板**：从模板目录读取 Jinja2 模板
-3. **渲染代码**：使用状态机模型作为上下文处理模板
-4. **输出文件**：将生成的代码写入输出目录
-
-**模板结构**
-
-模板目录必须包含：
-
-- ``config.yaml``：配置文件，定义表达式样式、过滤器和全局变量
-- ``*.j2``：用于代码生成的 Jinja2 模板文件
-- 静态文件：直接复制到输出（保留目录结构）
-
-**示例：生成 C 代码**
+**内置模板示例**：
 
 .. code-block:: bash
 
-   # 从交通灯状态机生成 C 代码
-   pyfcstm generate -i traffic_light.fcstm -t ./templates/c -o ./output
+   pyfcstm generate -i simple_machine.fcstm --template python -o ./output --clear
 
-   # 生成前清空输出目录
-   pyfcstm generate -i traffic_light.fcstm -t ./templates/c -o ./output --clear
-
-**示例：生成 Python 代码**
+**自定义模板目录示例**：
 
 .. code-block:: bash
 
-   # 生成 Python 代码
-   pyfcstm generate -i simple_machine.fcstm -t ./templates/python -o ./output
+   pyfcstm generate -i simple_machine.fcstm -t ./my_template -o ./output
 
-**示例：从多文件 import 工程生成代码**
-
-当 DSL 工程开始使用 import 后，对外 CLI 用法并不会变化。您仍然只需要
-给出一个入口文件，pyfcstm 会自动装配它导入的其他模块。
-
-.. code-block:: bash
-
-   # 入口文件可以 import 其他 FCSTM 文件，或 import 一个带 main.fcstm 的目录
-   pyfcstm generate -i ./docs/source/tutorials/dsl/import_host_directory.fcstm \
-     -t ./templates/python -o ./output --clear
-
-**模板上下文**
-
-模板可以访问完整的状态机模型：
-
-- ``model``：根状态机对象
-- ``model.variables``：变量定义
-- ``model.walk_states()``：遍历所有状态的迭代器
-- ``state.name``、``state.is_leaf_state``、``state.transitions``
-- ``transition.from_state``、``transition.to_state``、``transition.guard``
-
-**表达式渲染**
-
-使用 ``expr_render`` 过滤器将 DSL 表达式转换为目标语言语法：
-
-.. code-block:: jinja
-
-   // C 风格表达式
-   {{ expr | expr_render(style='c') }}
-
-   # Python 风格表达式
-   {{ expr | expr_render(style='python') }}
+完整内置模板教程见 :doc:`/tutorials/generation/index_zh`。模板作者细节仍然放在 :doc:`/tutorials/render/index_zh`。
 
 常见用例
 -------------------------------------
@@ -383,8 +336,8 @@ generate 命令
    # 1. 设计状态机
    vim controller.fcstm
 
-   # 2. 生成 C 代码
-   pyfcstm generate -i controller.fcstm -t ./templates/c -o ./src/generated --clear
+   # 2. 从打包内置模板生成 C 代码
+   pyfcstm generate -i controller.fcstm --template c -o ./src/generated --clear
 
    # 3. 与项目集成
    make build
@@ -404,8 +357,8 @@ generate 命令
      --max-complexity-tier smt_linear --smt-timeout-ms 1000 \
      -o machine.verify.inspect.json
 
-   # 生成测试代码
-   pyfcstm generate -i machine.fcstm -t ./templates/test -o ./tests/generated
+   # 当项目维护自己的测试模板目录时，从自定义模板生成测试代码
+   pyfcstm generate -i machine.fcstm -t ./my_test_template -o ./tests/generated
 
 对于 import 工程，只需要检查入口文件：
 
@@ -430,8 +383,8 @@ generate 命令
        pyfcstm plantuml -i "$file" > /dev/null || exit 1
    done
 
-   # 生成代码
-   pyfcstm generate -i src/machines/main.fcstm -t templates/ -o generated/ --clear
+   # 从打包内置模板生成代码
+   pyfcstm generate -i src/machines/main.fcstm --template python -o generated/ --clear
 
    # 构建项目
    make all

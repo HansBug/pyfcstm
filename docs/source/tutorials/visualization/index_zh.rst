@@ -263,7 +263,7 @@ CLI 可视化
    * - ``event_visualization_mode``
      - str
      - ``'none'``
-     - 事件可视化：``'none'``、``'color'``、``'legend'``、``'both'``
+     - 事件可视化：``'none'``、``'color'``、``'legend'``、``'both'`` 或 ``'dependency_view'``\ （为 dependency-view 输出保留）
    * - ``event_legend_position``
      - str
      - ``'right'``
@@ -552,7 +552,7 @@ PlantUML 源码产物：
 
 - ``show_events`` (bool)：在转换上显示事件名称
 - ``event_name_format`` (tuple[str, ...])：格式组件 - ``'name'``、``'extra_name'``、``'path'``、``'relpath'``
-- ``event_visualization_mode`` (str)：可视化模式 - ``'none'``、``'color'``、``'legend'`` 或 ``'both'``
+- ``event_visualization_mode`` (str)：可视化模式 - ``'none'``、``'color'``、``'legend'``、``'both'`` 或 ``'dependency_view'``\ （为 dependency-view 输出保留）
 - ``event_legend_position`` (str)：使用 ``'legend'`` 或 ``'both'`` 模式时的事件图例位置（默认：``'right'``）
 
   - 可用位置：``'top left'``、``'top center'``、``'top right'``、``'bottom left'``、``'bottom center'``、``'bottom right'``、``'left'``、``'right'``、``'center'``

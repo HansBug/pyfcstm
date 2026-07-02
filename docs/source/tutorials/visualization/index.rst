@@ -264,7 +264,7 @@ The following table provides a complete reference of all available configuration
    * - ``event_visualization_mode``
      - str
      - ``'none'``
-     - Event visualization: ``'none'``, ``'color'``, ``'legend'``, ``'both'``
+     - Event visualization: ``'none'``, ``'color'``, ``'legend'``, ``'both'``, or ``'dependency_view'`` (reserved for dependency-view output)
    * - ``event_legend_position``
      - str
      - ``'right'``
@@ -581,7 +581,7 @@ Control how events are displayed in the diagram.
 
 - ``show_events`` (bool): Show event names on transitions
 - ``event_name_format`` (tuple[str, ...]): Format components - ``'name'``, ``'extra_name'``, ``'path'``, ``'relpath'``
-- ``event_visualization_mode`` (str): Visualization mode - ``'none'``, ``'color'``, ``'legend'``, or ``'both'``
+- ``event_visualization_mode`` (str): Visualization mode - ``'none'``, ``'color'``, ``'legend'``, ``'both'``, or ``'dependency_view'`` (reserved for dependency-view output)
 - ``event_legend_position`` (str): Event legend position when using ``'legend'`` or ``'both'`` mode (default: ``'right'``)
 
   - Available positions: ``'top left'``, ``'top center'``, ``'top right'``, ``'bottom left'``, ``'bottom center'``, ``'bottom right'``, ``'left'``, ``'right'``, ``'center'``

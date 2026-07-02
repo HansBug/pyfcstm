@@ -24,15 +24,20 @@ def normalize_rst_document(text: str) -> str:
     """
     Normalize generated reStructuredText document endings.
 
+    The generator intentionally keeps exactly one final newline for non-empty
+    documents while removing blank lines at the end. This keeps regenerated
+    API documentation stable and prevents ``make rst_auto`` from creating
+    trailing-empty-line churn.
+
     :param text: Raw generated RST text.
     :type text: str
-    :return: RST text without trailing blank lines and with one final newline.
+    :return: Normalized RST text.
     :rtype: str
 
     Example::
 
-        >>> normalize_rst_document("Title\n-----\n\n")
-        'Title\n-----\n'
+        >>> normalize_rst_document("Title\n=====\n\n\n")
+        'Title\n=====\n'
     """
     stripped = text.rstrip()
     if stripped:
@@ -50,6 +55,8 @@ def generate_rst_index(input_dir, output_file, title):
     :type output_file: str
     :param title: Section title shown before the toctree
     :type title: str
+    :return: ``None``.
+    :rtype: None
     """
     rel_names = []
     for name in os.listdir(input_dir):

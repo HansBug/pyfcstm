@@ -22,7 +22,7 @@ def normalize_rst_document(text: str) -> str:
     Normalize generated reStructuredText document endings.
 
     The generator intentionally keeps exactly one final newline for non-empty
-    documents while removing blank lines at the end.  This keeps regenerated
+    documents while removing blank lines at the end. This keeps regenerated
     API documentation stable and prevents ``make rst_auto`` from creating
     trailing-empty-line churn.
 

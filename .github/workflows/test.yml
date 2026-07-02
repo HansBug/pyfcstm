@@ -248,7 +248,7 @@ jobs:
             fail_closed_args=(--fail-closed)
           fi
 
-          python tools/detect_ci_routes.py \
+          python .github/scripts/detect_ci_routes.py \
             --changed-files "$changed_file" \
             --event-name "$detector_event" \
             "${fail_closed_args[@]}" \
@@ -334,7 +334,7 @@ jobs:
     needs:
       - detect_template_suites
       - detect_ci_routes
-    if: ${{ needs.detect_template_suites.result == 'success' && needs.detect_ci_routes.result == 'success' && needs.detect_ci_routes.outputs.run_expensive_code_test == 'true' && needs.detect_template_suites.outputs.selected_full_count != '0' && !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, 'test skip') && !contains(github.event.head_commit.message, '[python skip]') }}
+    if: ${{ needs.detect_template_suites.result == 'success' && needs.detect_ci_routes.result == 'success' && needs.detect_template_suites.outputs.selected_full_count != '0' && !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, 'test skip') && !contains(github.event.head_commit.message, '[python skip]') }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.detect_template_suites.outputs.template_matrix) }}
@@ -468,18 +468,20 @@ jobs:
 
           if skip_python_side:
               print('Code Test skip token detected for Python/template side; expensive Python/template jobs may be skipped after detector success.')
-          elif run_expensive_code_test:
-              if unittest != 'success':
-                  failures.append('unittest job result is {0}'.format(unittest))
-              if representative != 'success':
-                  failures.append('template representative job result is {0}'.format(representative))
+          else:
+              if run_expensive_code_test:
+                  if unittest != 'success':
+                      failures.append('unittest job result is {0}'.format(unittest))
+                  if representative != 'success':
+                      failures.append('template representative job result is {0}'.format(representative))
+              else:
+                  print('CI route detector marked Python/template side as Code Test unrelated; skipped unittest and representative template jobs are accepted.')
+
               if selected_count == 0:
                   if template_full not in ('success', 'skipped'):
                       failures.append('template full job should be skipped or success for empty matrix, got {0}'.format(template_full))
               elif template_full != 'success':
                   failures.append('template full job result is {0} for {1} selected suite(s)'.format(template_full, selected_count))
-          else:
-              print('CI route detector marked Python/template side as Code Test unrelated; skipped expensive Python/template jobs are accepted.')
 
           if skip_all or '[python skip]' in message:
               print('Code Test skip token detected for CLI build; skipped CLI build is accepted.')

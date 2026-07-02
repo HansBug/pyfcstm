@@ -16,7 +16,7 @@ The module contains:
 
 * :class:`CiRouteDetectionError` - Invalid detector input or failed self-checks.
 * :func:`detect_ci_routes` - Return JSON-compatible routing decisions.
-* :func:`main` - CLI entry point for ``tools/detect_ci_routes.py``.
+* :func:`main` - CLI entry point for ``.github/scripts/detect_ci_routes.py``.
 
 Example::
 
@@ -59,6 +59,7 @@ _CODE_PATTERNS = (
     "sample_test_neg_generator.py",
     "codecov.yml",
     ".github/workflows/test.yml",
+    ".github/scripts/detect_ci_routes.py",
     ".github/workflows/release.yml",
     ".github/workflows/release_test.yml",
 )
@@ -88,11 +89,13 @@ _CLI_PATTERNS = (
 )
 _DOCS_META_PATTERNS = (
     "docs/**",
+    "requirements.txt",
     "requirements-doc.txt",
     "auto_rst.py",
     "auto_rst_top_index.py",
     ".readthedocs.yaml",
     ".github/workflows/docs-check.yml",
+    ".github/scripts/detect_ci_routes.py",
     ".github/workflows/doc.yml.deprecated",
     "logos/**",
 )
@@ -108,6 +111,8 @@ _SAFE_MAINTENANCE_PATTERNS = (
     "README_*.md",
     "llm_eval/**",
     "mds/**",
+    ".github/workflows/badge.yml",
+    ".github/workflows/native-toolchain.yml",
 )
 _DOC_RESOURCE_SUFFIXES = (
     ".fcstm",
@@ -402,8 +407,12 @@ def _read_changed_files(path: str) -> List[str]:
 
     Example::
 
-        >>> _read_changed_files.__name__
-        '_read_changed_files'
+        >>> from tempfile import NamedTemporaryFile
+        >>> with NamedTemporaryFile('w+', encoding='utf-8') as f:
+        ...     _ = f.write('a.py\n\n b.py \n')
+        ...     _ = f.flush()
+        ...     _read_changed_files(f.name)
+        ['a.py', 'b.py']
     """
     with open(path, "r", encoding="utf-8") as f:
         return [line.strip() for line in f if line.strip()]
@@ -541,6 +550,24 @@ def run_self_check() -> None:
     _check_case("rst generator", ["auto_rst.py"], False, False, False, False, True)
     _check_case("claude maintenance", ["CLAUDE.md"], False, False, False, False, False)
     _check_case(
+        "badge workflow",
+        [".github/workflows/badge.yml"],
+        False,
+        False,
+        False,
+        False,
+        False,
+    )
+    _check_case(
+        "manual native workflow",
+        [".github/workflows/native-toolchain.yml"],
+        False,
+        False,
+        False,
+        False,
+        False,
+    )
+    _check_case(
         "mds asset", ["mds/research-note.md"], False, False, False, False, False
     )
     _check_case(
@@ -553,7 +580,13 @@ def run_self_check() -> None:
         "template source", ["templates/c/machine.c.j2"], True, True, True, False, False
     )
     _check_case(
-        "tools helper", ["tools/detect_ci_routes.py"], True, True, True, False, False
+        "CI route helper",
+        [".github/scripts/detect_ci_routes.py"],
+        True,
+        True,
+        False,
+        False,
+        True,
     )
     _check_case("cli metadata", ["setup.py"], True, True, True, False, False)
     _check_case(
@@ -687,7 +720,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     Example::
 
-        $ python tools/detect_ci_routes.py --check
+        $ python .github/scripts/detect_ci_routes.py --check
     """
     parser = _build_parser()
     args = parser.parse_args(argv)

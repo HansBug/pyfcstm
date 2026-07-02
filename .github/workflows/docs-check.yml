@@ -2,6 +2,8 @@ name: Docs Check
 
 on:
   push:
+    branches:
+      - main
     paths:
       - 'docs/**'
       - 'logos/**'
@@ -9,9 +11,10 @@ on:
       - 'requirements-doc.txt'
       - 'auto_rst.py'
       - 'auto_rst_top_index.py'
-      - 'tools/detect_ci_routes.py'
+      - '.github/scripts/detect_ci_routes.py'
       - '.readthedocs.yaml'
       - '.github/workflows/docs-check.yml'
+      - '.github/workflows/doc.yml.deprecated'
   pull_request:
     paths:
       - 'docs/**'
@@ -20,9 +23,10 @@ on:
       - 'requirements-doc.txt'
       - 'auto_rst.py'
       - 'auto_rst_top_index.py'
-      - 'tools/detect_ci_routes.py'
+      - '.github/scripts/detect_ci_routes.py'
       - '.readthedocs.yaml'
       - '.github/workflows/docs-check.yml'
+      - '.github/workflows/doc.yml.deprecated'
   workflow_dispatch:
 
 concurrency:
@@ -120,7 +124,7 @@ jobs:
             fail_closed_args=(--fail-closed)
           fi
 
-          python tools/detect_ci_routes.py \
+          python .github/scripts/detect_ci_routes.py \
             --changed-files "$changed_file" \
             --event-name "$detector_event" \
             "${fail_closed_args[@]}" \
@@ -190,10 +194,59 @@ jobs:
             echo "Found rendered inline-literal markup problems." >&2
             exit 1
           fi
-          if rg -n '\*\*[^<]*\*\*' /tmp/pyfcstm-docs-check-en /tmp/pyfcstm-docs-check-zh -g '*.html' -g '!**/_modules/**' -g '!**/api_doc/**'; then
-            echo "Found raw strong-emphasis markers in rendered narrative HTML." >&2
-            exit 1
-          fi
+          python - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          import re
+          import sys
+
+          RAW_STRONG_RE = re.compile(r"\*\*[^\n]*?\*\*")
+          IGNORED_PARTS = {"_modules", "api_doc"}
+          IGNORED_TAGS = {"code", "pre", "script", "style"}
+
+
+          class RawStrongScanner(HTMLParser):
+              def __init__(self, source_path):
+                  super().__init__(convert_charrefs=True)
+                  self.source_path = source_path
+                  self.ignored_stack = []
+                  self.matches = []
+
+              def handle_starttag(self, tag, attrs):
+                  if tag in IGNORED_TAGS:
+                      self.ignored_stack.append(tag)
+
+              def handle_endtag(self, tag):
+                  if tag in IGNORED_TAGS and tag in self.ignored_stack:
+                      for index in range(len(self.ignored_stack) - 1, -1, -1):
+                          if self.ignored_stack[index] == tag:
+                              del self.ignored_stack[index]
+                              break
+
+              def handle_data(self, data):
+                  if self.ignored_stack:
+                      return
+                  for match in RAW_STRONG_RE.finditer(data):
+                      line, column = self.getpos()
+                      self.matches.append((line, column + match.start(), match.group(0)))
+
+
+          failures = []
+          for root in (Path("/tmp/pyfcstm-docs-check-en"), Path("/tmp/pyfcstm-docs-check-zh")):
+              for html_file in root.rglob("*.html"):
+                  if IGNORED_PARTS.intersection(html_file.relative_to(root).parts):
+                      continue
+                  scanner = RawStrongScanner(html_file)
+                  scanner.feed(html_file.read_text(encoding="utf-8", errors="replace"))
+                  for line, column, marker in scanner.matches:
+                      failures.append(f"{html_file}:{line}:{column}: {marker}")
+
+          if failures:
+              print("Found raw strong-emphasis markers in rendered narrative HTML.", file=sys.stderr)
+              for failure in failures:
+                  print(failure, file=sys.stderr)
+              sys.exit(1)
+          PY
 
   docs_resources:
     name: Docs generated resources
@@ -234,4 +287,11 @@ jobs:
       - name: Verify generated docs resources are committed
         shell: bash
         run: |
+          set -euo pipefail
           git diff --exit-code -- docs/source
+          untracked_docs="$(git ls-files --others --exclude-standard -- docs/source)"
+          if [ -n "$untracked_docs" ]; then
+            echo "Untracked docs resources were generated:" >&2
+            echo "$untracked_docs" >&2
+            exit 1
+          fi

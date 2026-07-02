@@ -113,6 +113,15 @@ def _is_ascii_decimal(value: str) -> bool:
 
 
 def _normalize_selector(selector: _QuerySelector) -> _QuerySelector:
+    """Normalize event-assumption cycle selectors.
+
+    Decimal strings are accepted as user-facing convenience and normalized to
+    integers.  Inclusive ranges with leading zeros are normalized to canonical
+    decimal range text, and a degenerate range such as ``"03..03"`` collapses
+    to integer ``3``.  The event atom's ``"current"`` selector is intentionally
+    not accepted here because event assumptions quantify over concrete cycles
+    or ranges.
+    """
     if isinstance(selector, bool):
         raise InvalidBmcQuery(
             "selector must be '*', a non-negative integer, or an inclusive range."
@@ -164,7 +173,9 @@ class InitialSpec:
     :param state_path: State path for ``mode="state"``, defaults to ``None``.
     :type state_path: Optional[str], optional
     :param predicate: Optional initial-state predicate that contributes only to
-        the initial condition, defaults to ``None``.
+        the initial condition, defaults to ``None``.  The predicate is valid
+        for all modes and renders as a ``where`` clause, for example
+        ``init cold where active("Root.A");``.
     :type predicate: Optional[BmcCondExpr], optional
 
     Example::
@@ -183,12 +194,8 @@ class InitialSpec:
 
     def __post_init__(self) -> None:
         _validate_choice(self.mode, _INITIAL_MODES, "initial mode")
-        if self.mode == "state" and (
-            not isinstance(self.state_path, str) or not self.state_path
-        ):
-            raise InvalidBmcQuery(
-                "state_path is required when initial mode is 'state'."
-            )
+        if self.mode == "state":
+            _require_non_empty_string(self.state_path, "state_path")
         if self.mode != "state" and self.state_path is not None:
             raise InvalidBmcQuery(
                 "state_path is only valid when initial mode is 'state'."

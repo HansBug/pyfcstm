@@ -26,8 +26,11 @@ Design contracts:
   wrappers in :mod:`pyfcstm.bmc.query`.  Parser and binder code should not
   assume one exception family covers both layers.
 * Literal canonical values are kept JSON-portable.  Float literals that would
-  overflow Python's finite ``float`` range are rejected at construction time,
-  while raw text still preserves exact spelling for parity checks.
+  overflow Python's finite ``float`` range are rejected at construction time.
+  Finite Python floats, including subnormal values and underflow-to-zero raw
+  spellings, are accepted because they match the current FCSTM literal
+  conversion boundary; raw text still preserves exact spelling for parity
+  checks and later encoding layers may impose stricter numeric policies.
 * Identifier and path shape validation is shallow here: quoted query atoms only
   require non-empty strings, and later binder layers resolve model paths and
   reject impossible state, event, variable, case, or call names.
@@ -229,8 +232,9 @@ class BmcExpr(ABC):
     def __str__(self) -> str:
         """Return the canonical ``.fbmcq`` DSL spelling for this expression.
 
-        :return: Query DSL text that can be parsed back into this expression
-            shape.
+        :return: Query DSL text that can be parsed back into the same canonical
+            semantic expression shape.  Operator aliases and literal spelling
+            such as boolean casing may be normalized by this canonical text.
         :rtype: str
 
         Example::
@@ -504,6 +508,10 @@ class FloatLiteral(BmcNumExpr):
 class BoolLiteral(BmcCondExpr):
     """Boolean literal preserving raw spelling and normalized value.
 
+    Canonical DSL output uses lowercase ``true`` / ``false`` even when ``raw``
+    records title-case or uppercase parser input.  The exact input spelling
+    remains available through :meth:`to_canonical`.
+
     :param raw: Raw boolean token text such as ``"true"`` or ``"FALSE"``.
     :type raw: str
 
@@ -546,6 +554,11 @@ class BoolLiteral(BmcCondExpr):
 @dataclass(frozen=True)
 class NameRef(BmcNumExpr):
     """Bare FCSTM variable reference used as a numeric expression.
+
+    Names that are reserved by FCSTM or FBMCQ syntax are rejected in bare form.
+    A model variable whose name collides with a FBMCQ query atom, such as
+    ``"cycle"`` or ``"event"``, should be represented through
+    :class:`FrameVar` and rendered as ``var("...")`` instead.
 
     :param name: Variable name from the query expression.
     :type name: str
@@ -921,7 +934,10 @@ class FrameVar(BmcNumExpr):
     binder and lowering phases decide which concrete frame a ``var("x")``
     expression reads from.  The spelling field distinguishes this explicit
     query atom from a bare :class:`NameRef` that still follows FCSTM ``ID``
-    lexical rules.
+    lexical rules.  The current data model accepts only the explicit
+    ``var("...")`` spelling family; the field is preserved in the canonical
+    form so parser tests can assert that bare names and frame-variable calls do
+    not collapse together.
 
     :param name: Persistent variable name carried by ``var("...")``.
     :type name: str
@@ -956,6 +972,11 @@ class FrameVar(BmcNumExpr):
 @dataclass(frozen=True)
 class Cycle(BmcNumExpr):
     """Built-in numeric cycle expression for query predicates.
+
+    ``cycle`` is a reserved bare numeric atom, not a function call.  This keeps
+    it close to FCSTM mathematical constants such as ``pi`` while BMC predicates
+    that require quoted model paths keep function-call spellings such as
+    ``active("Root.A")`` and ``event("Root.E", current)``.
 
     Example::
 

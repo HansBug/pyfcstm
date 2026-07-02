@@ -347,6 +347,16 @@ def _round_trip_cases():
             id="query-init-terminated",
         ),
         pytest.param(
+            InitialSpec(mode="cold", predicate=Active("Root.Ready")),
+            'init cold where active("Root.Ready");',
+            id="query-init-cold-where",
+        ),
+        pytest.param(
+            InitialSpec(mode="terminated", predicate=Terminated()),
+            "init terminated where terminated();",
+            id="query-init-terminated-where",
+        ),
+        pytest.param(
             InitialSpec(mode="state", state_path="Root.Active"),
             'init state("Root.Active");',
             id="query-init-state",
@@ -811,6 +821,8 @@ def test_query_model_rejects_invalid_skeleton_values():
         InitialSpec(mode=cast(Any, []))
     with pytest.raises(InvalidBmcQuery, match="state_path"):
         InitialSpec(mode="state")
+    with pytest.raises(InvalidBmcQuery, match="state_path"):
+        InitialSpec(mode="state", state_path=cast(Any, 42))
     with pytest.raises(InvalidBmcQuery, match="bound"):
         BmcProperty("reach", bound=0, predicate=Active("Root.Done"))
     with pytest.raises(InvalidBmcQuery, match="kind"):
@@ -935,6 +947,8 @@ def test_query_model_rejects_additional_invalid_structural_values():
         EventAssumption("Root.E", selector="01..02").to_canonical()["selector"]
         == "1..2"
     )
+    assert EventAssumption("Root.E", selector="007").to_canonical()["selector"] == 7
+    assert EventAssumption("Root.E", selector="03..03").to_canonical()["selector"] == 3
     with pytest.raises(InvalidBmcQuery, match="state_path"):
         InitialSpec(mode="cold", state_path="Root.A")
     with pytest.raises(InvalidBmcQuery, match="predicate"):

@@ -1240,6 +1240,46 @@ static const _{{ machine_class_name(model) }}TransitionInfo _{{ machine_class_na
 {% endfor %}
 };
 
+static int _{{ machine_class_name(model) }}_consume_plain_before_if_pending(
+    {{ machine_class_name(model) }} *machine,
+    _{{ machine_class_name(model) }}RuntimeContext *context,
+    size_t frame_index,
+    int is_validation_mode)
+{
+    int pending_state_id;
+
+    if (frame_index >= context->stack_size || !context->stack[frame_index].plain_before_pending) {
+        return {{ machine_macro_name(model) }}_SUCCESS;
+    }
+
+    pending_state_id = context->stack[frame_index].state_id;
+    if (_{{ machine_class_name(model) }}_run_during_before_actions_for_state(
+            machine,
+            pending_state_id,
+            context,
+            is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
+    context->stack[frame_index].plain_before_pending = 0;
+    return {{ machine_macro_name(model) }}_SUCCESS;
+}
+
+static void _{{ machine_class_name(model) }}_clear_parent_plain_before_pending_after_pseudo_exit(
+    _{{ machine_class_name(model) }}RuntimeContext *context,
+    int current_state_id)
+{
+    const _{{ machine_class_name(model) }}StateInfo *state_info;
+
+    state_info = &_{{ machine_class_name(model) }}_state_info[current_state_id];
+    if (!state_info->is_pseudo || context->stack_size == 0u) {
+        return;
+    }
+    if (context->stack[context->stack_size - 1u].state_id == state_info->parent_state_id &&
+        context->stack[context->stack_size - 1u].plain_before_pending) {
+        context->stack[context->stack_size - 1u].plain_before_pending = 0;
+    }
+}
+
 static int _{{ machine_class_name(model) }}_execute_initial_transition_on_context(
     {{ machine_class_name(model) }} *machine,
     _{{ machine_class_name(model) }}RuntimeContext *context,
@@ -1260,16 +1300,14 @@ static int _{{ machine_class_name(model) }}_execute_initial_transition_on_contex
     if (_{{ machine_class_name(model) }}_execute_transition_effect(machine, transition, context) != {{ machine_macro_name(model) }}_SUCCESS) {
         return {{ machine_macro_name(model) }}_FAILURE;
     }
-    if (context->stack_size > 0u && context->stack[context->stack_size - 1u].plain_before_pending) {
-        int pending_state_id = context->stack[context->stack_size - 1u].state_id;
-        if (_{{ machine_class_name(model) }}_run_during_before_actions_for_state(
+    if (!_{{ machine_class_name(model) }}_state_info[transition->target_state_id].is_pseudo) {
+        if (_{{ machine_class_name(model) }}_consume_plain_before_if_pending(
                 machine,
-                pending_state_id,
                 context,
+                context->stack_size - 1u,
                 is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
             return {{ machine_macro_name(model) }}_FAILURE;
         }
-        context->stack[context->stack_size - 1u].plain_before_pending = 0;
     }
     if (_{{ machine_class_name(model) }}_enter_state(
             machine,
@@ -1800,7 +1838,21 @@ static int _{{ machine_class_name(model) }}_execute_transition_on_context(
     --context->stack_size;
 
     if (transition->to_exit) {
+        _{{ machine_class_name(model) }}_clear_parent_plain_before_pending_after_pseudo_exit(context, current_state_id);
         return _{{ machine_class_name(model) }}_finalize_exit_to_parent(machine, context, is_validation_mode);
+    }
+
+    if (_{{ machine_class_name(model) }}_state_info[current_state_id].is_pseudo &&
+        context->stack_size > 0u &&
+        context->stack[context->stack_size - 1u].state_id == _{{ machine_class_name(model) }}_state_info[current_state_id].parent_state_id &&
+        !_{{ machine_class_name(model) }}_state_info[transition->target_state_id].is_pseudo) {
+        if (_{{ machine_class_name(model) }}_consume_plain_before_if_pending(
+                machine,
+                context,
+                context->stack_size - 1u,
+                is_validation_mode) != {{ machine_macro_name(model) }}_SUCCESS) {
+            return {{ machine_macro_name(model) }}_FAILURE;
+        }
     }
 
     if (_{{ machine_class_name(model) }}_enter_state(

@@ -73,6 +73,18 @@ function expectedRefsWithSuggestedFix(code: string, refs: Record<string, unknown
     return packageModule.refsWithSuggestedFix(code, refs);
 }
 
+function sliceBySpan(source: string, span: {line: number; column: number; end_line: number; end_column: number}): string {
+    const lines = source.split('\n');
+    if (span.line === span.end_line) {
+        return (lines[span.line - 1] ?? '').slice(span.column - 1, span.end_column - 1);
+    }
+    return [
+        (lines[span.line - 1] ?? '').slice(span.column - 1),
+        ...lines.slice(span.line, span.end_line - 1),
+        (lines[span.end_line - 1] ?? '').slice(0, span.end_column - 1),
+    ].join('\n');
+}
+
 describe('diagnostics/inspect', () => {
     describe('basic structure', () => {
         it('returns top-level shape', async () => {
@@ -973,7 +985,7 @@ state Root {
                     severity: 'warning',
                     refs: {
                         state_path: 'Root.Active',
-                        transition_span: null,
+                        transition_span: {line: 16, column: 5, end_line: 16, end_column: 47},
                         var_name: 'stable',
                         effect_self_assign_anchor: 'stable',
                         transition_index: 5,
@@ -1320,12 +1332,172 @@ state Root {
                     .map(d => d.refs),
                 [expectedRefsWithSuggestedFix('W_EFFECT_SELF_ASSIGN', {
                     state_path: 'Root.A',
-                    transition_span: null,
+                    transition_span: {line: 7, column: 5, end_line: 11, end_column: 6},
                     var_name: 'x',
                     effect_self_assign_anchor: 'x',
                     transition_index: 1,
                 })],
             );
+        });
+
+        it('remaps combo terminal self-assignment diagnostics to authored source', async () => {
+            const source = `
+def int x = 0;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: E1 + E2 effect { x = x; };
+}
+`;
+            const report = inspectModel(await buildMachine(source));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_EFFECT_SELF_ASSIGN');
+
+            assert.equal(diagnostics.length, 1);
+            const refs = diagnostics[0].refs as Record<string, unknown>;
+            assert.equal(refs.state_path, 'Root.A');
+            assert.equal(refs.from_path, 'Root.A');
+            assert.match(refs.generated_state_path as string, /^Root\.__combo_/);
+            assert.equal(refs.generated_from_path, refs.generated_state_path);
+            assert.equal(refs.generated_to_path, 'Root.B');
+            assert.equal(typeof refs.combo_origin_id, 'string');
+            assert.equal(refs.combo_owner_path, undefined);
+            assert.equal(refs.var_name, 'x');
+            assert.equal(refs.effect_self_assign_anchor, 'x');
+            assert.deepEqual((refs.suggested_fix as {anchor: unknown}).anchor, {
+                type: 'ref',
+                ref: 'refs.effect_self_assign_anchor',
+            });
+            assert.equal(
+                sliceBySpan(source, refs.transition_span as {line: number; column: number; end_line: number; end_column: number}).trim(),
+                'A -> B :: E1 + E2 effect { x = x; }',
+            );
+        });
+
+        it('remaps entry combo self-assignment diagnostics to initial subject', async () => {
+            const source = `
+def int x = 0;
+state Root {
+    state A;
+    [*] -> A : Boot + Ready effect { x = x; };
+}
+`;
+            const report = inspectModel(await buildMachine(source));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_EFFECT_SELF_ASSIGN');
+
+            assert.equal(diagnostics.length, 1);
+            const refs = diagnostics[0].refs as Record<string, unknown>;
+            assert.equal(refs.state_path, '[*]');
+            assert.equal(refs.from_path, '[*]');
+            assert.equal(refs.combo_owner_path, 'Root');
+            assert.match(refs.generated_state_path as string, /^Root\.__combo_/);
+            assert.equal(refs.generated_from_path, refs.generated_state_path);
+            assert.equal(refs.generated_to_path, 'Root.A');
+            assert.equal(typeof refs.combo_origin_id, 'string');
+            assert.equal(refs.var_name, 'x');
+            assert.equal(refs.effect_self_assign_anchor, undefined);
+            assert.equal(refs.suggested_fix, undefined);
+            assert.equal(
+                sliceBySpan(source, refs.transition_span as {line: number; column: number; end_line: number; end_column: number}).trim(),
+                '[*] -> A : Boot + Ready effect { x = x; }',
+            );
+        });
+
+        it('keeps shared-prefix combo terminal self-assignment subjects authored', async () => {
+            const source = `
+def int x = 0;
+def int y = 0;
+state Root {
+    state A;
+    state B;
+    state C;
+    [*] -> A;
+    A -> B :: E1 + E2 effect { x = x; };
+    A -> C :: E1 + E3 effect { y = y; };
+}
+`;
+            const report = inspectModel(await buildMachine(source));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_EFFECT_SELF_ASSIGN');
+
+            assert.equal(diagnostics.length, 2);
+            const byVar = new Map(diagnostics.map(diag => [diag.refs.var_name, diag]));
+            assert.deepEqual([...byVar.keys()].sort(), ['x', 'y']);
+            for (const [varName, diag] of byVar) {
+                const refs = diag.refs as Record<string, unknown>;
+                assert.equal(refs.state_path, 'Root.A');
+                assert.equal(refs.from_path, 'Root.A');
+                assert.match(refs.generated_state_path as string, /^Root\.__combo_/);
+                assert.equal(refs.generated_from_path, refs.generated_state_path);
+                assert.ok(['Root.B', 'Root.C'].includes(refs.generated_to_path as string));
+                assert.equal(typeof refs.combo_origin_id, 'string');
+                assert.equal(refs.effect_self_assign_anchor, varName);
+                assert.deepEqual((refs.suggested_fix as {anchor: unknown}).anchor, {
+                    type: 'ref',
+                    ref: 'refs.effect_self_assign_anchor',
+                });
+            }
+            assert.equal(
+                sliceBySpan(source, byVar.get('x')!.refs.transition_span as {line: number; column: number; end_line: number; end_column: number}).trim(),
+                'A -> B :: E1 + E2 effect { x = x; }',
+            );
+            assert.equal(
+                sliceBySpan(source, byVar.get('y')!.refs.transition_span as {line: number; column: number; end_line: number; end_column: number}).trim(),
+                'A -> C :: E1 + E3 effect { y = y; }',
+            );
+        });
+
+        it('suppresses anchors for same-source combo terminal self-assignments', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0;
+state Root {
+    state A;
+    state B;
+    state C;
+    [*] -> A;
+    A -> B :: E1 + E2 effect { x = x; };
+    A -> C :: E3 + E4 effect { x = x; };
+}
+`));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_EFFECT_SELF_ASSIGN');
+
+            assert.equal(diagnostics.length, 2);
+            assert.equal(diagnostics.every(diag => diag.refs.state_path === 'Root.A'), true);
+            assert.equal(diagnostics.every(diag => diag.refs.from_path === 'Root.A'), true);
+            assert.equal(diagnostics.every(diag => diag.refs.var_name === 'x'), true);
+            assert.equal(diagnostics.every(diag => diag.refs.effect_self_assign_anchor === undefined), true);
+            assert.equal(diagnostics.every(diag => diag.refs.suggested_fix === undefined), true);
+            assert.deepEqual(
+                diagnostics.map(diag => diag.refs.generated_to_path).sort(),
+                ['Root.B', 'Root.C'],
+            );
+        });
+
+        it('suppresses anchors for plain and combo self-assignments on the same source', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0;
+state Root {
+    state A;
+    state B;
+    state C;
+    [*] -> A;
+    A -> B effect { x = x; };
+    A -> C :: E1 + E2 effect { x = x; };
+}
+`));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_EFFECT_SELF_ASSIGN');
+
+            assert.equal(diagnostics.length, 2);
+            assert.equal(diagnostics.every(diag => diag.refs.state_path === 'Root.A'), true);
+            assert.equal(diagnostics.every(diag => diag.refs.var_name === 'x'), true);
+            assert.equal(diagnostics.every(diag => diag.refs.effect_self_assign_anchor === undefined), true);
+            assert.equal(diagnostics.every(diag => diag.refs.suggested_fix === undefined), true);
+            const plain = diagnostics.find(diag => diag.refs.generated_from_path === undefined);
+            const combo = diagnostics.find(diag => diag.refs.generated_from_path !== undefined);
+            assert.ok(plain);
+            assert.ok(combo);
+            assert.equal(plain!.refs.from_path, undefined);
+            assert.equal(combo!.refs.from_path, 'Root.A');
+            assert.equal(combo!.refs.generated_to_path, 'Root.C');
         });
     });
 

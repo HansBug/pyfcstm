@@ -18,6 +18,12 @@ BmcError
 .. autoclass:: BmcError
 
 
+BmcQueryParseError
+-----------------------------------------------------
+
+.. autoclass:: BmcQueryParseError
+
+
 InvalidBmcQuery
 -----------------------------------------------------
 

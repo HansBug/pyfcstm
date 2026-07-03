@@ -64,6 +64,7 @@ _CASE_KINDS = {"transition", "fallback", "initial", "absorb", "diagnostic", "del
 _EVENT_POLARITIES = {"positive", "negative"}
 _EVENT_REASONS = {"trigger", "priority", "fallback", "descent", "assumption"}
 _RESERVED_CASE_PATHS = {TERMINATE_CASE_PATH, DIAGNOSTIC_CASE_PATH}
+_SOURCE_STATE_ATOM_PREFIX = "__source_state__:"
 
 
 def _require_non_empty_string(value: object, field_name: str) -> str:
@@ -623,6 +624,18 @@ def _derive_is_diagnostic(kind: str, target_state_id: int) -> bool:
     )
 
 
+def _validate_non_reserved_condition_atoms(
+    condition: BoolTemplate,
+    field_name: str,
+) -> None:
+    for variable in condition.variables:
+        if variable.startswith(_SOURCE_STATE_ATOM_PREFIX):
+            raise InvalidBmcEncoding(
+                "%s uses reserved source-state atom namespace: %r."
+                % (field_name, variable)
+            )
+
+
 @dataclass(frozen=True)
 class CycleCase:
     """One macro-step relation case before solver lowering.
@@ -693,6 +706,7 @@ class CycleCase:
         label = _require_non_empty_string(self.label, "label")
         if not isinstance(self.condition, BoolTemplate):
             raise InvalidBmcEncoding("condition must be BoolTemplate.")
+        _validate_non_reserved_condition_atoms(self.condition, "condition")
         used_events = tuple(self.used_events)
         if not all(isinstance(item, EventUse) for item in used_events):
             raise InvalidBmcEncoding("used_events must contain EventUse objects.")
@@ -1042,7 +1056,9 @@ def case_antecedent_condition(case: CycleCase) -> BoolTemplate:
 
     The returned recipe mirrors the later relation-builder boundary but
     is still solver-independent.  It proves that the source guard is composed
-    outside :attr:`CycleCase.condition`.
+    outside :attr:`CycleCase.condition`.  Source guards use the reserved
+    ``"__source_state__:"`` atom namespace so synthetic case conditions cannot
+    collide with the helper's guard atom.
 
     :param case: Case whose antecedent should be represented.
     :type case: CycleCase
@@ -1057,12 +1073,12 @@ def case_antecedent_condition(case: CycleCase) -> BoolTemplate:
         ...     'Root::transition::Root::0', BoolTemplate.atom('g'), ()
         ... )
         >>> case_antecedent_condition(case).variables
-        ('g', 'source_state:0')
+        ('__source_state__:0', 'g')
     """
     if not isinstance(case, CycleCase):
         raise InvalidBmcEncoding("case must be CycleCase.")
     return BoolTemplate.and_(
-        BoolTemplate.atom("source_state:%d" % case.source_state_id),
+        BoolTemplate.atom("%s%d" % (_SOURCE_STATE_ATOM_PREFIX, case.source_state_id)),
         case.condition,
     )
 
@@ -1191,9 +1207,12 @@ def build_fallback_case(
     failed = tuple(failed_conditions)
     if not all(isinstance(item, BoolTemplate) for item in failed):
         raise InvalidBmcEncoding("failed_conditions must contain BoolTemplate objects.")
-    condition = BoolTemplate.not_(
-        BoolTemplate.or_(*[case.condition for case in accepted])
-    )
+    if accepted:
+        condition = BoolTemplate.not_(
+            BoolTemplate.or_(*[case.condition for case in accepted])
+        )
+    else:
+        condition = BoolTemplate.true()
     return CycleCase(
         "fallback",
         source.source_state_id,
@@ -1285,7 +1304,10 @@ def build_semantic_delta_case(
         raise InvalidBmcEncoding("failed_conditions must contain BoolTemplate objects.")
     excluded = [case.condition for case in accepted]
     excluded.extend(diagnostics)
-    condition = BoolTemplate.not_(BoolTemplate.or_(*excluded))
+    if excluded:
+        condition = BoolTemplate.not_(BoolTemplate.or_(*excluded))
+    else:
+        condition = BoolTemplate.true()
     return CycleCase(
         "delta",
         source.source_state_id,
@@ -1363,6 +1385,8 @@ def verify_boolean_partition(
     if assignment_count > max_assignments:
         raise BmcBuildError("partition check exceeded assignment budget.")
 
+    gaps = []
+    overlaps = []
     for values in itertools.product((False, True), repeat=len(names)):
         assignment = dict(zip(names, values))
         true_indexes = [
@@ -1370,11 +1394,17 @@ def verify_boolean_partition(
         ]
         if len(true_indexes) != 1:
             if true_indexes:
-                raise BmcBuildError(
-                    "partition buckets overlap at assignment %r: %r."
-                    % (assignment, true_indexes)
-                )
-            raise BmcBuildError("partition leaves a gap at assignment %r." % assignment)
+                overlaps.append((assignment, true_indexes))
+            else:
+                gaps.append(assignment)
+    if overlaps or gaps:
+        parts = []
+        if overlaps:
+            assignment, true_indexes = overlaps[0]
+            parts.append("overlap at assignment %r: %r" % (assignment, true_indexes))
+        if gaps:
+            parts.append("gap at assignment %r" % gaps[0])
+        raise BmcBuildError("partition violation: %s." % "; ".join(parts))
     return PartitionCheckResult(tuple(names), assignment_count, len(items))
 
 
@@ -1386,6 +1416,10 @@ def verify_source_partition(
     max_assignments: int = 4096,
 ) -> PartitionCheckResult:
     """Verify one source's local case partition.
+
+    Build-diagnostic conditions form one extra local bucket.  That bucket must
+    be disjoint from every success and delta case, and the combined buckets must
+    still cover the whole synthetic boolean universe.
 
     :param source: Macro-step source profile.
     :type source: MacroStepSource

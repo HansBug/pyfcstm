@@ -8,6 +8,7 @@ from pyfcstm.bmc import (
     STATE_DIAGNOSTIC_ID,
     STATE_TERMINATE_ID,
     BoolLiteral,
+    BmcDomain,
     InitialSpec,
     InvalidBmcEncoding,
     InvalidBmcQuery,
@@ -24,6 +25,50 @@ from pyfcstm.bmc.source import (
     terminated_source,
 )
 from pyfcstm.model import load_state_machine_from_text
+
+
+def _unsafe_clone_state(entry, **updates):
+    """Clone a state-domain entry while bypassing constructor validation."""
+    cloned = object.__new__(type(entry))
+    for field_name in (
+        "id",
+        "path",
+        "name",
+        "kind",
+        "parent_path",
+        "is_root",
+        "is_stoppable",
+        "is_sentinel",
+        "is_generated_combo_pseudo",
+    ):
+        object.__setattr__(
+            cloned,
+            field_name,
+            updates.get(field_name, getattr(entry, field_name)),
+        )
+    return cloned
+
+
+def _unsafe_clone_domain(domain, **updates):
+    """Clone a BMC domain while bypassing snapshot validation."""
+    cloned = object.__new__(BmcDomain)
+    for field_name in (
+        "bound",
+        "states",
+        "events",
+        "variables",
+        "frames",
+        "steps",
+        "event_inputs",
+        "initial_state_ids",
+        "stable_state_ids",
+    ):
+        object.__setattr__(
+            cloned,
+            field_name,
+            updates.get(field_name, getattr(domain, field_name)),
+        )
+    return cloned
 
 
 @pytest.fixture()
@@ -275,4 +320,115 @@ def test_source_validation_rejects_reserved_model_paths(
             0,
             DIAGNOSTIC_CASE_PATH,
             domain=source_domain,
+        )
+
+
+@pytest.mark.unittest
+def test_source_validation_rejects_forged_domain_root_and_state_metadata(
+    source_domain,
+):
+    """Source constructors fail closed when a domain snapshot is corrupted."""
+    root = source_domain.state_by_path("Root")
+    composite = source_domain.state_by_path("Root.Composite")
+    terminate = source_domain.state_by_id(STATE_TERMINATE_ID)
+
+    no_root_domain = _unsafe_clone_domain(
+        source_domain,
+        states=tuple(
+            _unsafe_clone_state(entry, is_root=False) if entry.is_root else entry
+            for entry in source_domain.states
+        ),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="exactly one model root"):
+        entry_source(no_root_domain)
+
+    sentinel_entry_domain = _unsafe_clone_domain(
+        source_domain,
+        states=tuple(
+            _unsafe_clone_state(root, is_sentinel=True)
+            if entry.path == root.path
+            else entry
+            for entry in source_domain.states
+        ),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="sentinel states"):
+        MacroStepSource(
+            "entry", "initial", root.id, root.path, domain=sentinel_entry_domain
+        )
+
+    recurrence_entry = object.__new__(MacroStepSource)
+    object.__setattr__(recurrence_entry, "kind", "entry")
+    object.__setattr__(recurrence_entry, "origin", "recurrence")
+    object.__setattr__(recurrence_entry, "source_state_id", root.id)
+    object.__setattr__(recurrence_entry, "source_state_path", root.path)
+    with pytest.raises(InvalidBmcEncoding, match="initial-only"):
+        recurrence_entry._validate_against_domain(source_domain)
+
+    unstable_stable_domain = _unsafe_clone_domain(
+        source_domain,
+        stable_state_ids=source_domain.stable_state_ids + (composite.id,),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="non-sentinel stoppable leaf"):
+        MacroStepSource(
+            "stable_leaf",
+            "recurrence",
+            composite.id,
+            composite.path,
+            domain=unstable_stable_domain,
+        )
+
+    reserved_path_domain = _unsafe_clone_domain(
+        source_domain,
+        states=tuple(
+            _unsafe_clone_state(
+                root,
+                path=TERMINATE_CASE_PATH,
+                name=TERMINATE_CASE_PATH,
+            )
+            if entry.path == root.path
+            else entry
+            for entry in source_domain.states
+        ),
+    )
+    forged_reserved_source = object.__new__(MacroStepSource)
+    object.__setattr__(forged_reserved_source, "kind", "entry")
+    object.__setattr__(forged_reserved_source, "origin", "initial")
+    object.__setattr__(forged_reserved_source, "source_state_id", root.id)
+    object.__setattr__(
+        forged_reserved_source,
+        "source_state_path",
+        TERMINATE_CASE_PATH,
+    )
+    with pytest.raises(InvalidBmcEncoding, match="reserved macro-step paths"):
+        forged_reserved_source._validate_against_domain(reserved_path_domain)
+
+    missing_terminate_domain = _unsafe_clone_domain(
+        source_domain,
+        states=tuple(
+            entry for entry in source_domain.states if entry.id != STATE_TERMINATE_ID
+        ),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="Unknown state id"):
+        terminated_source(missing_terminate_domain)
+
+    forged_terminated = object.__new__(MacroStepSource)
+    object.__setattr__(forged_terminated, "source_state_id", root.id)
+    object.__setattr__(forged_terminated, "source_state_path", TERMINATE_CASE_PATH)
+    with pytest.raises(InvalidBmcEncoding, match="fixed sentinel id"):
+        forged_terminated._validate_sentinel_source(
+            source_domain,
+            STATE_TERMINATE_ID,
+            TERMINATE_CASE_PATH,
+            "terminated",
+        )
+
+    forged_bad_path = object.__new__(MacroStepSource)
+    object.__setattr__(forged_bad_path, "source_state_id", terminate.id)
+    object.__setattr__(forged_bad_path, "source_state_path", "$STATE_TERMINATE")
+    with pytest.raises(InvalidBmcEncoding, match="reserved macro-step path"):
+        forged_bad_path._validate_sentinel_source(
+            source_domain,
+            STATE_TERMINATE_ID,
+            TERMINATE_CASE_PATH,
+            "terminated",
         )

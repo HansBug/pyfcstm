@@ -106,10 +106,35 @@ def test_cycle_case_condition_is_bare_gamma_and_source_guard_is_composed_later(
     assert (
         case_antecedent_condition(case).to_canonical()
         == BoolTemplate.and_(
-            BoolTemplate.atom("source_state:%d" % source.source_state_id),
+            BoolTemplate.atom("__source_state__:%d" % source.source_state_id),
             gamma,
         ).to_canonical()
     )
+
+
+@pytest.mark.unittest
+def test_reserved_source_guard_atom_namespace_is_rejected(macro_domain):
+    """Synthetic gamma atoms cannot collide with composed source-state guards."""
+    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
+    with pytest.raises(InvalidBmcEncoding, match="reserved source-state atom"):
+        make_case(
+            macro_domain,
+            source,
+            condition=BoolTemplate.atom("__source_state__:%d" % source.source_state_id),
+        )
+
+
+@pytest.mark.unittest
+def test_empty_fallback_and_delta_conditions_canonicalize_to_true(macro_domain):
+    """Uncovered-region helpers use the canonical true template when nothing is excluded."""
+    stable = stable_leaf_source(macro_domain, "Root.Plant.Idle")
+    entry = entry_source(macro_domain, "Root.Plant")
+
+    fallback = build_fallback_case(macro_domain, stable, ())
+    delta = build_semantic_delta_case(macro_domain, entry, ())
+
+    assert fallback.condition.to_canonical() == BoolTemplate.true().to_canonical()
+    assert delta.condition.to_canonical() == BoolTemplate.true().to_canonical()
 
 
 @pytest.mark.unittest
@@ -391,6 +416,8 @@ def test_partition_verifier_fails_closed_on_gap_overlap_and_unknown_budget():
         verify_boolean_partition((a, a, BoolTemplate.not_(a)))
     with pytest.raises(BmcBuildError, match="gap"):
         verify_boolean_partition((a,))
+    with pytest.raises(BmcBuildError, match="overlap.*gap"):
+        verify_boolean_partition((a, a))
     with pytest.raises(BmcBuildError, match="assignment budget"):
         verify_boolean_partition(
             (a, BoolTemplate.not_(a)), variables=("a", "b"), max_assignments=2

@@ -54,6 +54,7 @@ from pyfcstm.bmc.ast import (
 )
 from pyfcstm.bmc.grammar.BmcQueryParser import BmcQueryParser
 from pyfcstm.bmc.grammar.BmcQueryParserListener import BmcQueryParserListener
+from pyfcstm.bmc.errors import InvalidBmcQuery
 from pyfcstm.bmc.query import (
     BmcProperty,
     BmcQuery,
@@ -281,11 +282,17 @@ class BmcQueryParseListener(BmcQueryParserListener):
         bound = self.nodes[ctx.integer_literal()]
         body = self.nodes[ctx.property_body()]
         if kind == "response":
+            if not isinstance(body, tuple):
+                raise InvalidBmcQuery(
+                    "response properties require a trigger/within/response body."
+                )
             trigger, within, response = body
             self.nodes[ctx] = BmcProperty(
                 kind, bound, trigger=trigger, response=response, within=within
             )
         else:
+            if isinstance(body, tuple):
+                raise InvalidBmcQuery("single-body properties only accept predicate.")
             self.nodes[ctx] = BmcProperty(kind, bound, predicate=body)
 
     def exitProperty_kind(self, ctx: BmcQueryParser.Property_kindContext) -> None:

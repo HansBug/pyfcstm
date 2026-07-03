@@ -564,6 +564,10 @@ def test_query_model_validation_errors_surface_after_successful_syntax_parse():
     with pytest.raises(InvalidBmcQuery, match="bound"):
         parse_bmc_query("check reach <= 00: true;")
     assert parse_bmc_query("check reach <= 01: true;").property.bound == 1
+    with pytest.raises(InvalidBmcQuery, match="response properties"):
+        parse_bmc_query("check response <= 1: true;")
+    with pytest.raises(InvalidBmcQuery, match="single-body properties"):
+        parse_bmc_query("check reach <= 1: trigger true -> within 1 true;")
     with pytest.raises(InvalidBmcQuery, match="response window"):
         parse_bmc_query("check response <= 1: trigger true -> within 0 true;")
     assert (

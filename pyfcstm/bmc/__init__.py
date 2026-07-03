@@ -12,6 +12,8 @@ Package contracts:
 * The root package must not depend on ``pyfcstm.verify`` or its registry.
 * Parser entry points build parser-independent query objects and remain
   separate from model-aware binding or solver lowering.
+* Domain-numbering exports are resolved lazily so parser-only imports do not
+  load ``pyfcstm.model``.
 * :func:`str` on exported query and expression dataclasses is reserved for the
   canonical ``.fbmcq`` query DSL spelling.
 * :func:`repr` remains the dataclass debugging representation; callers that need
@@ -29,7 +31,7 @@ Public module structure:
      - :class:`BmcError`, :class:`BmcQueryParseError`,
        :class:`InvalidBmcQuery`,
        :class:`UnsupportedBmcQuery`, :class:`InvalidBmcEncoding`,
-       :class:`BmcBuildError`
+       :class:`InvalidBmcDomain`, :class:`BmcBuildError`
      - Provide stable BMC-specific exception types without importing
        ``pyfcstm.verify``.
    * - Query parser
@@ -57,6 +59,13 @@ Public module structure:
        :class:`Terminated`, :class:`Event`, :class:`Case`, :class:`Called`
      - Represent frame variables, cycle counters, active state, selected event,
        selected macro-step case, termination, and future abstract-call atoms.
+   * - BMC domain model
+     - :class:`StateDomainEntry`, :class:`EventDomainEntry`,
+       :class:`VarDomainEntry`, :class:`FrameRef`, :class:`StepRef`,
+       :class:`EventInputRef`, :class:`BmcDomain`,
+       :func:`build_bmc_domain`
+     - Number model states, events, persistent variables, frames, steps,
+       sentinel states, and event-input slots before solver lowering.
    * - Query root model
      - :class:`InitialSpec`, :class:`FrameAssumption`,
        :class:`EventAssumption`, :class:`EventCardinalityAssumption`,
@@ -101,6 +110,7 @@ from pyfcstm.bmc.errors import (
     BmcBuildError,
     BmcError,
     BmcQueryParseError,
+    InvalidBmcDomain,
     InvalidBmcEncoding,
     InvalidBmcQuery,
     UnsupportedBmcQuery,
@@ -122,12 +132,70 @@ from pyfcstm.bmc.query import (
     InitialSpec,
 )
 
+_DOMAIN_EXPORTS = {
+    "STATE_TERMINATE_ID",
+    "STATE_DIAGNOSTIC_ID",
+    "StateDomainEntry",
+    "EventDomainEntry",
+    "VarDomainEntry",
+    "FrameRef",
+    "StepRef",
+    "EventInputRef",
+    "BmcDomain",
+    "build_bmc_domain",
+}
+
+
+def __getattr__(name: str):
+    """Lazily resolve model-aware domain exports.
+
+    Domain numbering imports :mod:`pyfcstm.model`, while the query parser must
+    remain importable without loading model, verify, or solver layers.  Keeping
+    these top-level exports lazy preserves the public convenience API without
+    coupling parser-only callers to model-aware BMC preparation.
+
+    :param name: Attribute name requested from :mod:`pyfcstm.bmc`.
+    :type name: str
+    :return: The requested domain export.
+    :rtype: object
+    :raises AttributeError: If ``name`` is not a public lazy domain export.
+
+    Example::
+
+        >>> import pyfcstm.bmc as bmc
+        >>> bmc.STATE_TERMINATE_ID
+        -1
+    """
+    if name not in _DOMAIN_EXPORTS:
+        raise AttributeError("module 'pyfcstm.bmc' has no attribute %r" % name)
+
+    from pyfcstm.bmc import domain
+
+    return getattr(domain, name)
+
+
+def __dir__():
+    """Return the public module attributes including lazy domain exports.
+
+    :return: Sorted attribute names for interactive discovery.
+    :rtype: list
+
+    Example::
+
+        >>> import pyfcstm.bmc as bmc
+        >>> 'BmcDomain' in dir(bmc)
+        True
+    """
+    return sorted(set(globals()) | _DOMAIN_EXPORTS)
+
+
 __all__ = [
     "BmcError",
     "BmcQueryParseError",
     "InvalidBmcQuery",
     "UnsupportedBmcQuery",
     "InvalidBmcEncoding",
+    "InvalidBmcDomain",
     "BmcBuildError",
     "parse_bmc_query",
     "parse_bmc_num_expression",
@@ -164,4 +232,14 @@ __all__ = [
     "EventCardinalityAssumption",
     "BmcProperty",
     "BmcQuery",
+    "STATE_TERMINATE_ID",
+    "STATE_DIAGNOSTIC_ID",
+    "StateDomainEntry",
+    "EventDomainEntry",
+    "VarDomainEntry",
+    "FrameRef",
+    "StepRef",
+    "EventInputRef",
+    "BmcDomain",
+    "build_bmc_domain",
 ]

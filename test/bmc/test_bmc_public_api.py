@@ -18,6 +18,7 @@ def test_bmc_public_api_exports_exact_names():
         "InvalidBmcQuery",
         "UnsupportedBmcQuery",
         "InvalidBmcEncoding",
+        "InvalidBmcDomain",
         "BmcBuildError",
         "parse_bmc_query",
         "parse_bmc_num_expression",
@@ -54,11 +55,27 @@ def test_bmc_public_api_exports_exact_names():
         "EventCardinalityAssumption",
         "BmcProperty",
         "BmcQuery",
+        "STATE_TERMINATE_ID",
+        "STATE_DIAGNOSTIC_ID",
+        "StateDomainEntry",
+        "EventDomainEntry",
+        "VarDomainEntry",
+        "FrameRef",
+        "StepRef",
+        "EventInputRef",
+        "BmcDomain",
+        "build_bmc_domain",
     }
 
     assert set(bmc.__all__) == expected
-    for name in expected:
+    for name in expected - {"STATE_TERMINATE_ID", "STATE_DIAGNOSTIC_ID"}:
         assert getattr(bmc, name).__name__ == name
+    assert bmc.STATE_TERMINATE_ID == -1
+    assert bmc.STATE_DIAGNOSTIC_ID == -2
+    assert "BmcDomain" in dir(bmc)
+
+    with pytest.raises(AttributeError, match="NoSuchBmcExport"):
+        getattr(bmc, "NoSuchBmcExport")
 
 
 @pytest.mark.unittest
@@ -68,6 +85,7 @@ def test_submodule_all_exports_are_exact():
     ast = importlib.import_module("pyfcstm.bmc.ast")
     query = importlib.import_module("pyfcstm.bmc.query")
     parse = importlib.import_module("pyfcstm.bmc.parse")
+    domain = importlib.import_module("pyfcstm.bmc.domain")
 
     assert set(errors.__all__) == {
         "BmcError",
@@ -75,6 +93,7 @@ def test_submodule_all_exports_are_exact():
         "InvalidBmcQuery",
         "UnsupportedBmcQuery",
         "InvalidBmcEncoding",
+        "InvalidBmcDomain",
         "BmcBuildError",
     }
     assert set(ast.__all__) == {
@@ -118,6 +137,18 @@ def test_submodule_all_exports_are_exact():
         "parse_with_bmc_grammar_entry",
         "build_bmc_ast_from_parse_tree",
     }
+    assert set(domain.__all__) == {
+        "STATE_TERMINATE_ID",
+        "STATE_DIAGNOSTIC_ID",
+        "StateDomainEntry",
+        "EventDomainEntry",
+        "VarDomainEntry",
+        "FrameRef",
+        "StepRef",
+        "EventInputRef",
+        "BmcDomain",
+        "build_bmc_domain",
+    }
 
 
 @pytest.mark.unittest
@@ -139,7 +170,9 @@ def test_bmc_import_does_not_load_verify_modules():
         "import pyfcstm.bmc; "
         "bad = ["
         "name for name in sys.modules "
-        "if name == 'z3' or name.startswith('pyfcstm.verify')"
+        "if name == 'z3' "
+        "or name.startswith('pyfcstm.model') "
+        "or name.startswith('pyfcstm.verify')"
         "]; "
         "print(bad)"
     )

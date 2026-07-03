@@ -10,6 +10,7 @@ pyfcstm.bmc
     :maxdepth: 3
 
     ast
+    domain
     errors
     grammar/index
     listener
@@ -20,3 +21,15 @@ pyfcstm.bmc
 -----------------------------------------------------
 
 .. autodata:: __all__
+
+
+\_\_getattr\_\_
+-----------------------------------------------------
+
+.. autofunction:: __getattr__
+
+
+\_\_dir\_\_
+-----------------------------------------------------
+
+.. autofunction:: __dir__

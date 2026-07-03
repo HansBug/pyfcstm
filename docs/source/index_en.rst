@@ -115,7 +115,7 @@ Tutorials provide learning paths and first-success walkthroughs. They should hel
 How-to Guides
 -------------
 
-How-to guides are task-oriented pages. PR-E creates the stable skeleton first; current authoritative content still lives in the existing tutorial pages until later PRs migrate it.
+How-to guides are task-oriented pages. This structure creates the stable skeleton first; current authoritative content still lives in the existing tutorial pages until later migration work moves it.
 
 .. toctree::
     :maxdepth: 2

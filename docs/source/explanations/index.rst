@@ -11,10 +11,10 @@ Non-goals
 
 It is not a step-by-step task guide and should not become the only source for exact CLI or DSL facts.
 
-PR-E status
+Status
 -----------
 
-This index is a skeleton created by PR-E. The pages below are stable stubs. Current authoritative content remains in the old ``tutorials/`` pages until PR-F through PR-I migrate it.
+This index is a migration skeleton. The pages below are stable stubs. Current authoritative content remains in the old ``tutorials/`` pages until the relevant migration work moves it.
 
 .. toctree::
     :maxdepth: 2

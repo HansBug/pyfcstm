@@ -277,6 +277,18 @@ def test_domain_entry_validation_rejects_malformed_values():
         lambda: StateDomainEntry(0, "", "Root", "leaf"),
         lambda: StateDomainEntry(-3, "Root", "Root", "leaf"),
         lambda: StateDomainEntry(0, "S", "S", "sentinel", is_sentinel=True),
+        lambda: StateDomainEntry(
+            STATE_TERMINATE_ID,
+            "$STATE_TERMINATE",
+            "STATE_TERMINATE",
+            "sentinel",
+            is_sentinel=True,
+            is_stoppable=True,
+        ),
+        lambda: StateDomainEntry(0, "Root", "Root", "composite", is_stoppable=True),
+        lambda: StateDomainEntry(
+            0, "Root.Leaf", "Leaf", "leaf", is_generated_combo_pseudo=True
+        ),
         lambda: EventDomainEntry(-1, "Root.Go", "Go", "Root", 0),
         lambda: EventDomainEntry(0, "Root.Go", "Go", "Root", -1),
         lambda: EventDomainEntry(0, "", "Go", "Root", 0),
@@ -392,7 +404,7 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
     """BmcDomain validates complete frame, step, sentinel, and input metadata."""
     from pyfcstm.bmc import EventDomainEntry, StateDomainEntry
 
-    leaf = StateDomainEntry(0, "Root", "Root", "leaf")
+    leaf = StateDomainEntry(0, "Root", "Root", "leaf", is_stoppable=True)
     terminate = StateDomainEntry(
         STATE_TERMINATE_ID,
         "$STATE_TERMINATE",
@@ -485,6 +497,8 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
         dict(stable_state_ids=(0, 0)),
         dict(initial_state_ids=(999,)),
         dict(stable_state_ids=(999,)),
+        dict(initial_state_ids=(STATE_DIAGNOSTIC_ID, STATE_TERMINATE_ID, 0)),
+        dict(stable_state_ids=(STATE_TERMINATE_ID, 0)),
     ]
 
     for overrides in bad_cases:
@@ -492,6 +506,78 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
         kwargs.update(overrides)
         with pytest.raises(InvalidBmcDomain):
             BmcDomain(**kwargs)
+
+
+@pytest.mark.unittest
+def test_domain_snapshot_validation_rejects_wrong_allowed_state_sets():
+    """BmcDomain enforces frame-state set semantics for public construction."""
+    model = load_state_machine_from_text(
+        """
+        state Root {
+          pseudo state Choice;
+          state Composite {
+            state A;
+            [*] -> A;
+          }
+          [*] -> Composite;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+
+    root_id = domain.state_path_to_id("Root")
+    composite_id = domain.state_path_to_id("Root.Composite")
+    pseudo_id = domain.state_path_to_id("Root.Choice")
+    leaf_id = domain.state_path_to_id("Root.Composite.A")
+    assert domain.stable_state_ids == (
+        STATE_DIAGNOSTIC_ID,
+        STATE_TERMINATE_ID,
+        leaf_id,
+    )
+
+    for forbidden_id in (root_id, composite_id, pseudo_id):
+        with pytest.raises(InvalidBmcDomain):
+            BmcDomain(
+                bound=domain.bound,
+                states=domain.states,
+                events=domain.events,
+                variables=domain.variables,
+                frames=domain.frames,
+                steps=domain.steps,
+                event_inputs=domain.event_inputs,
+                initial_state_ids=domain.initial_state_ids,
+                stable_state_ids=tuple(
+                    sorted(domain.stable_state_ids + (forbidden_id,))
+                ),
+            )
+
+    with pytest.raises(InvalidBmcDomain):
+        BmcDomain(
+            bound=domain.bound,
+            states=domain.states,
+            events=domain.events,
+            variables=domain.variables,
+            frames=domain.frames,
+            steps=domain.steps,
+            event_inputs=domain.event_inputs,
+            initial_state_ids=tuple(
+                item for item in domain.initial_state_ids if item != root_id
+            ),
+            stable_state_ids=domain.stable_state_ids,
+        )
+
+    with pytest.raises(InvalidBmcDomain):
+        BmcDomain(
+            bound=domain.bound,
+            states=domain.states,
+            events=domain.events,
+            variables=domain.variables,
+            frames=domain.frames,
+            steps=domain.steps,
+            event_inputs=domain.event_inputs,
+            initial_state_ids=domain.initial_state_ids + (STATE_DIAGNOSTIC_ID,),
+            stable_state_ids=domain.stable_state_ids,
+        )
 
 
 @pytest.mark.unittest

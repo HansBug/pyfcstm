@@ -148,6 +148,10 @@ class StateDomainEntry:
             raise InvalidBmcDomain("Sentinel state ids must be negative.")
         if not self.is_sentinel and self.id < 0:
             raise InvalidBmcDomain("Model state ids must be non-negative.")
+        if self.is_stoppable and (self.is_sentinel or self.kind != "leaf"):
+            raise InvalidBmcDomain("Only non-sentinel leaf states can be stoppable.")
+        if self.is_generated_combo_pseudo and self.kind != "pseudo":
+            raise InvalidBmcDomain("Generated combo states must be pseudo states.")
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable state entry dictionary.
@@ -750,6 +754,34 @@ class BmcDomain:
         if missing_stable:
             raise InvalidBmcDomain(
                 "stable_state_ids contains unknown state id: %r." % (missing_stable[0],)
+            )
+
+        expected_initial = tuple(
+            sorted(
+                [entry.id for entry in self.states if not entry.is_sentinel]
+                + [STATE_TERMINATE_ID]
+            )
+        )
+        if self.initial_state_ids != expected_initial:
+            raise InvalidBmcDomain(
+                "initial_state_ids must contain every model state id and the "
+                "terminate sentinel only."
+            )
+
+        expected_stable = tuple(
+            sorted(
+                [
+                    entry.id
+                    for entry in self.states
+                    if entry.kind == "leaf" and entry.is_stoppable
+                ]
+                + [STATE_DIAGNOSTIC_ID, STATE_TERMINATE_ID]
+            )
+        )
+        if self.stable_state_ids != expected_stable:
+            raise InvalidBmcDomain(
+                "stable_state_ids must contain stoppable model state ids plus "
+                "terminate and diagnostic sentinels only."
             )
 
     @staticmethod

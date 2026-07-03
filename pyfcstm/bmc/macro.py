@@ -274,11 +274,17 @@ class BoolTemplate:
             ('a', 'b')
         """
         if self.kind == "atom":
-            return (self.name or "",)
+            return (self._atom_name(),)
         values = set()
         for operand in self.operands:
             values.update(operand.variables)
         return tuple(sorted(values))
+
+    def _atom_name(self) -> str:
+        name = self.name
+        if name is None:
+            raise BmcBuildError("atom template is missing a name.")
+        return name
 
     def evaluate(self, values: Mapping[str, bool]) -> bool:
         """Evaluate this template on a boolean assignment.
@@ -300,11 +306,12 @@ class BoolTemplate:
         if self.kind == "false":
             return False
         if self.kind == "atom":
-            if self.name not in values:
-                raise BmcBuildError("missing boolean assignment for %r." % self.name)
-            value = values[self.name]
+            name = self._atom_name()
+            if name not in values:
+                raise BmcBuildError("missing boolean assignment for %r." % name)
+            value = values[name]
             if not isinstance(value, bool):
-                raise BmcBuildError("boolean assignment %r must be bool." % self.name)
+                raise BmcBuildError("boolean assignment %r must be bool." % name)
             return value
         if self.kind == "not":
             return not self.operands[0].evaluate(values)
@@ -325,9 +332,9 @@ class BoolTemplate:
             >>> BoolTemplate.atom('gamma').to_canonical()['name']
             'gamma'
         """
-        result = {"node": "bool_template", "kind": self.kind}
+        result: _CanonicalDict = {"node": "bool_template", "kind": self.kind}
         if self.kind == "atom":
-            result["name"] = self.name
+            result["name"] = self._atom_name()
         if self.operands:
             result["operands"] = [item.to_canonical() for item in self.operands]
         return result
@@ -657,8 +664,8 @@ def _normalize_accepted_cases(
     for case in accepted:
         if case.kind not in allowed:
             raise InvalidBmcEncoding(
-                "accepted_cases for %s may only contain ordinary accepted cases."
-                % helper_name
+                "accepted_cases for %s may only contain ordinary accepted "
+                "cases with kinds %r." % (helper_name, allowed)
             )
         if case.is_diagnostic:
             raise InvalidBmcEncoding(

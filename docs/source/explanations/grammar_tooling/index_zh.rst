@@ -18,6 +18,23 @@ FCSTM syntax support 分为多个层次。ANTLR grammar 定义可解析语法，
 * Editor validation 检查 editor-facing assets 是否对齐。
 * DSL docs 和 tests 定义用户可以依赖什么。
 
+
+Pygments 与 TextMate 角色
+-------------------------
+
+Pygments 服务 Python 和 documentation contexts。它让 Sphinx、terminal formatters、notebooks 和其他 Python tools 能展示 FCSTM snippets，而不需要运行 model importer。
+
+TextMate grammar 服务 editor highlighting contexts。它刻意比 parser 更轻：它应该清晰分类文本，但不应该变成第二套 semantic validator。
+
+因此，只需要 highlighting 的例子可以留在 documentation 或 editor tooling 中；semantic examples 应放到 parser、model、simulator 或 verification tests。
+
+VSCode 角色
+-----------
+
+VSCode extension 把 TextMate highlighting 和 parser-backed authoring features 组合起来，包括 diagnostics、document symbols、completion、hover help、snippets 和 preview support。它是 authoring aid，而不是 canonical execution engine。
+
+syntax change 同时影响 parseability 和 editor feedback 时，应先更新 Python grammar/model path，再同步 editor diagnostics 和 completion，让用户看到的 language 与 parser 接受的 language 一致。
+
 Parser 与 listener 边界
 -----------------------
 

@@ -1123,12 +1123,12 @@ Chapter migration records
      - ``Overview`` / ``Using Pygments in Python`` / ``Using in Sphinx Documentation`` / ``Using TextMate Grammar`` / ``VS Code Extension``
      - ``reference/grammar_tooling/index*.rst`` and ``explanations/grammar_tooling/index*.rst``
      - split
-     - File locations and commands are reference facts; synchronization rationale moved to explanation.
+     - Pygments aliases, Sphinx registration, TextMate/Sublime facts, VSCode feature facts, and VSIX install command are reference facts; layer responsibilities and synchronization rationale moved to explanation.
    * - ``tutorials/grammar/index*.rst``
      - ``Development Workflow`` / ``Testing and Verification`` / ``Validation and Testing`` / ``Development and Customization``
-     - ``how_to/grammar_editor/index*.rst``
-     - merge
-     - Maintainer task flow is now a how-to guide.
+     - ``how_to/grammar_editor/index*.rst`` and ``reference/grammar_tooling/index*.rst``
+     - merge / split
+     - Maintainer task flow, VSCode local installation checks, focused ``verify-p0.*`` suites, and troubleshooting steps moved to the how-to; stable command names and feature maps moved to reference.
    * - ``tutorials/grammar/index*.rst``
      - ``Supported Syntax Elements`` and subsections such as keywords, operators, literals, built-ins, and import highlighting
      - ``reference/dsl/index*.rst`` / ``reference/grammar_tooling/index*.rst``
@@ -1137,8 +1137,9 @@ Chapter migration records
    * - ``tutorials/grammar/index*.rst``
      - ``Complete Example`` / troubleshooting sections / ``Related Resources`` / ``File Locations``
      - ``how_to/grammar_editor/index*.rst`` and ``reference/grammar_tooling/index*.rst``
-     - merge
-     - Troubleshooting became workflow guidance; paths became reference facts.
+     - merge / keep by reference
+     - Troubleshooting became workflow guidance; file paths, related external documentation pointers, feature provider files, and validation command names became reference facts.
+       The large all-syntax FCSTM example is intentionally not duplicated because user-facing syntax examples are already owned by PR-G's DSL reference split.
    * - ``tutorials/structure/index*.rst``
      - ``Project Structure Guide``
      - ``tutorials/structure/index*.rst``

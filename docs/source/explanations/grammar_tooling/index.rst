@@ -24,6 +24,29 @@ The maintenance rule is therefore:
 * Editor validation checks that the editor-facing assets remain aligned.
 * DSL docs and tests define what users can rely on.
 
+Pygments and TextMate roles
+---------------------------
+
+Pygments serves Python and documentation contexts. It lets Sphinx, terminal
+formatters, notebooks, and other Python tools display FCSTM snippets without
+running the model importer. TextMate grammar serves editor highlighting contexts.
+It is intentionally lighter than the parser: it should classify text clearly,
+but it should not become a second semantic validator.
+
+This is why examples that only need highlighting can stay in documentation or
+editor tooling, while semantic examples belong in parser, model, simulator, or
+verification tests.
+
+VSCode role
+-----------
+
+The VSCode extension combines TextMate highlighting with parser-backed authoring
+features such as diagnostics, document symbols, completion, hover help, snippets,
+and preview support. It is an authoring aid, not the canonical execution engine.
+When a syntax change affects both parseability and editor feedback, update the
+Python grammar/model path first, then synchronize editor diagnostics and
+completion so users see the same language that the parser accepts.
+
 Parser and listener boundary
 ----------------------------
 

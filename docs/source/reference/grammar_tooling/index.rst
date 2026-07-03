@@ -67,6 +67,101 @@ Core commands
    * - ``make vscode_clean``
      - Remove VSCode extension build artifacts.
 
+Pygments and Sphinx facts
+-------------------------
+
+The package registers :class:`pyfcstm.highlight.pygments_lexer.FcstmLexer`
+through the ``pygments.lexers`` entry point in ``setup.py``. The canonical alias
+is ``fcstm``; ``fcsm`` is also accepted by the lexer. Programmatic users can load
+it with:
+
+.. code-block:: python
+
+   from pygments.lexers import get_lexer_by_name
+
+   lexer = get_lexer_by_name("fcstm")
+
+The documentation build also registers the lexer in ``docs/source/conf.py`` and
+uses ``fcstm`` code blocks for examples. If Sphinx highlighting fails, check the
+installed package entry point and the docs configuration before editing example
+source.
+
+TextMate and editor facts
+-------------------------
+
+The repository TextMate grammar is ``editors/fcstm.tmLanguage.json``. It is the
+source for TextMate-compatible editor highlighting and is copied into the VSCode
+extension's ``syntaxes/`` area during extension packaging.
+
+For Sublime Text Integration, place the same file under a package directory such
+as ``FCSTM`` in ``Preferences -> Browse Packages``.
+
+VSCode extension facts
+----------------------
+
+The VSCode extension lives under ``editors/vscode/``. Its package manifest is
+``package.json``; language configuration is ``language-configuration.json``;
+TypeScript providers live under ``src/``; bundled output lives under ``dist/``;
+and local packages are written under ``build/`` as ``.vsix`` files.
+
+The extension provides these editor-facing capabilities:
+
+.. list-table:: VSCode feature map
+   :header-rows: 1
+
+   * - Capability
+     - Representative files
+     - User-visible behavior
+   * - Syntax diagnostics
+     - ``src/diagnostics.ts``
+     - Problems-panel diagnostics and inline squiggles.
+   * - Document symbols
+     - ``src/symbols.ts``
+     - Outline and breadcrumb navigation for variables, states, and events.
+   * - Completion
+     - ``src/completion.ts``
+     - IntelliSense for keywords, constants, built-ins, and document-local
+       symbols.
+   * - Hover Documentation
+     - ``src/hover.ts``
+     - Contextual help for event scopes, pseudo states, lifecycle keywords, and
+       aspect syntax.
+   * - Code Snippets
+     - ``snippets/fcstm.code-snippets``
+     - Short prefixes for common variable, state, transition, and lifecycle
+       patterns.
+
+Local VSIX installation uses the standard VSCode command-line interface:
+
+.. code-block:: bash
+
+   code --install-extension editors/vscode/build/fcstm-language-support-0.1.0.vsix
+
+Verification command families
+-----------------------------
+
+The VSCode Makefile exposes focused suites as well as the aggregate
+``make verify`` target. Current focused suites include:
+
+.. list-table:: VSCode verification suites
+   :header-rows: 1
+
+   * - Command
+     - Focus
+   * - ``make verify-p0.2``
+     - Parser integration.
+   * - ``make verify-p0.3``
+     - Syntax diagnostics.
+   * - ``make verify-p0.4``
+     - Document symbols.
+   * - ``make verify-p0.5``
+     - Completion support.
+   * - ``make verify-p0.6``
+     - Hover documentation.
+   * - ``make verify``
+     - Aggregate extension verification, including newer semantic, import,
+       preview, and end-to-end checks.
+
 Operator ordering facts
 -----------------------
 

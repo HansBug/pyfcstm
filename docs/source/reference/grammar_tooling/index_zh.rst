@@ -64,6 +64,87 @@
    * - ``make vscode_clean``
      - 清理 VSCode extension build artifacts。
 
+
+Pygments 与 Sphinx 事实
+-----------------------
+
+package 通过 ``setup.py`` 中的 ``pygments.lexers`` entry point 注册 ``pyfcstm.highlight.pygments_lexer.FcstmLexer``。canonical alias 是 ``fcstm``；lexer 也接受 ``fcsm``。程序化调用可使用：
+
+.. code-block:: python
+
+   from pygments.lexers import get_lexer_by_name
+
+   lexer = get_lexer_by_name("fcstm")
+
+documentation build 也会在 ``docs/source/conf.py`` 中注册 lexer，并用 ``fcstm`` code blocks 展示示例。如果 Sphinx highlighting 失败，先检查 installed package entry point 和 docs configuration，再修改示例源码。
+
+TextMate 与 editor 事实
+-----------------------
+
+仓库 TextMate grammar 是 ``editors/fcstm.tmLanguage.json``。它是 TextMate-compatible editor highlighting 的来源，并会在 VSCode extension packaging 时复制到 extension 的 ``syntaxes/`` 区域。
+
+Sublime Text 可以使用同一个文件：在 ``Preferences -> Browse Packages`` 下放入类似 ``FCSTM`` 的 package 目录即可。
+
+VSCode extension 事实
+---------------------
+
+VSCode extension 位于 ``editors/vscode/``。package manifest 是 ``package.json``；language configuration 是 ``language-configuration.json``；TypeScript providers 位于 ``src/``。
+
+bundled output 位于 ``dist/``；local packages 以 ``.vsix`` 文件写入 ``build/``。
+
+extension 提供这些 editor-facing capabilities：
+
+.. list-table:: VSCode feature map
+   :header-rows: 1
+
+   * - Capability
+     - Representative files
+     - User-visible behavior
+   * - Syntax diagnostics
+     - ``src/diagnostics.ts``
+     - Problems panel diagnostics 和 inline squiggles。
+   * - Document symbols
+     - ``src/symbols.ts``
+     - variables、states 和 events 的 Outline 与 breadcrumb navigation。
+   * - Completion
+     - ``src/completion.ts``
+     - keywords、constants、built-ins 和 document-local symbols 的 IntelliSense。
+   * - Hover documentation
+     - ``src/hover.ts``
+     - event scopes、pseudo states、lifecycle keywords 和 aspect syntax 的 contextual help。
+   * - Snippets
+     - ``snippets/fcstm.code-snippets``
+     - common variable、state、transition 和 lifecycle patterns 的短 prefixes。
+
+本地 VSIX 安装使用标准 VSCode command-line interface：
+
+.. code-block:: bash
+
+   code --install-extension editors/vscode/build/fcstm-language-support-0.1.0.vsix
+
+校验命令族
+----------
+
+VSCode Makefile 暴露 focused suites 和 aggregate ``make verify`` target。当前 focused suites 包括：
+
+.. list-table:: VSCode verification suites
+   :header-rows: 1
+
+   * - Command
+     - Focus
+   * - ``make verify-p0.2``
+     - Parser integration。
+   * - ``make verify-p0.3``
+     - Syntax diagnostics。
+   * - ``make verify-p0.4``
+     - Document symbols。
+   * - ``make verify-p0.5``
+     - Completion support。
+   * - ``make verify-p0.6``
+     - Hover documentation。
+   * - ``make verify``
+     - Aggregate extension verification，包含更新的 semantic、import、preview 和 end-to-end checks。
+
 操作符顺序事实
 --------------
 

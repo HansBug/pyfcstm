@@ -33,12 +33,13 @@ for interactive sessions, hot start, batch mode, and execution semantics.
 3. Inspect the model
 --------------------
 
-``inspect`` emits a structured JSON report with states, transitions, metrics,
-derived graphs, and diagnostics:
+``inspect`` is human-readable by default. Use ``--format json`` when you
+want a structured report with states, transitions, metrics, derived graphs, and
+diagnostics:
 
 .. code-block:: bash
 
-   pyfcstm inspect -i traffic_light.fcstm -o traffic_light.inspect.json
+   pyfcstm inspect -i traffic_light.fcstm --format json -o traffic_light.inspect.json
 
 The traffic light model is intentionally simple, so diagnostics may be empty.
 The dedicated :doc:`/tutorials/inspect/index` tutorial shows richer diagnostics,

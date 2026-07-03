@@ -27,11 +27,11 @@
 3. 检查模型
 -----------
 
-``inspect`` 输出结构化 JSON 报告，包含状态、转换、指标、派生图和诊断信息：
+``inspect`` 默认输出适合人类阅读的报告。如果需要包含状态、转换、指标、派生图和诊断信息的结构化 JSON，请显式使用 ``--format json``：
 
 .. code-block:: bash
 
-   pyfcstm inspect -i traffic_light.fcstm -o traffic_light.inspect.json
+   pyfcstm inspect -i traffic_light.fcstm --format json -o traffic_light.inspect.json
 
 交通灯模型刻意保持简单，因此 diagnostics 可能为空。完整的 :doc:`/tutorials/inspect/index_zh` 教程会展示更丰富的诊断、源码区间、修复建议，以及这些信息如何指导 LLM 辅助修复。
 

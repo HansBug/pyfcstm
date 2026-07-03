@@ -55,7 +55,7 @@ Create ``traffic_light.fcstm`` and follow the complete walkthrough in
 .. code-block:: bash
 
    pyfcstm simulate -i traffic_light.fcstm -e "cycle; cycle; current"
-   pyfcstm inspect -i traffic_light.fcstm -o traffic_light.inspect.json
+   pyfcstm inspect -i traffic_light.fcstm --format json -o traffic_light.inspect.json
    pyfcstm generate -i traffic_light.fcstm --template python -o generated --clear
    pyfcstm plantuml -i traffic_light.fcstm -o traffic_light.puml
 

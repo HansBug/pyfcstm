@@ -187,63 +187,29 @@ plantuml 命令
 inspect 命令
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-检查状态机 DSL 文件，并默认输出人类可读报告。脚本、CI 或编辑器集成需要完整结构化模型报告时，应显式使用
-``--format json``。JSON 结构与 ``inspect_model(model).to_json()`` 一致，
-包含状态、转换、变量、指标、派生图和诊断信息。当模型使用组合 transition trigger 时，报告还会暴露
-``combo_transitions`` 和 ``combo_origins``\ ，方便工具把生成的伪状态链边映射回原始 trigger 项。
-
-对于组合 trigger 诊断，``inspect``\ 会把公开 warning code 对应回原始组合项，而不是生成的伪状态：
-
-- ``W_COMBO_DUPLICATE_EVENT``\ ：同一个事件在一个组合 trigger 中出现多次。诊断 ``span``\ 指向重复项，``refs.first_term_span``\ 指向第一次出现的位置。
-- ``W_COMBO_GUARD_CONST_TRUE``\ / ``W_COMBO_GUARD_CONST_FALSE``\ ：Python 侧基于 Z3 的分析证明某个组合守卫恒真或恒假。诊断 ``span``\ 指向带方括号的守卫项，``refs.value_span``\ 指向方括号内部表达式。
-- ``W_COMBO_GUARD_PREFIX_IMPLIED``\ / ``W_COMBO_GUARD_PREFIX_CONTRADICTS``\ ：前置守卫前缀已经蕴含当前守卫，或使当前守卫不可能成立。诊断 ``span``\ 指向当前守卫，``refs.prior_term_span``\ 指向起决定作用的更早守卫。
-
-所有组合 warning 的 ``refs``\ 都包含 ``origin_id``\ 、``term_index``\ 、``transition_span``\ 、``trigger_span``\ 和相关 term span，方便编辑器和 UI 集成把提示映射回用户手写 DSL 区间。求解器支撑的守卫 warning 是 Python ``inspect``\ 诊断；JavaScript 侧工具应消费这份 JSON 诊断，而不是重新实现本地求解器近似逻辑。
+检查状态机 DSL 文件。该命令默认输出人类可读报告；需要机器可读报告时，应显式使用 ``--format``。本页只保留短命令参考；完整诊断教程请见 :doc:`/tutorials/inspect/index_zh`。
 
 **语法**：
 
 .. code-block:: bash
 
    pyfcstm inspect -i <输入文件> [-o <输出文件>] [--format human|json|llm-json|llm-md] \
-     [--color auto|always|never] \
-     [--enable-verify] \
-     [--max-complexity-tier structural|smt_linear|smt_nonlinear_decidable|smt_undecidable_heuristic] \
-     [--max-call-count-scaling linear_in_transitions] [--smt-timeout-ms <毫秒>]
+     [--color auto|always|never] [--enable-verify]
 
-**参数**：
-
-- ``-i, --input-code``：输入状态机 DSL 文件路径（必需）
-- ``-o, --output``：输出文件路径（可选，未指定时输出到标准输出）
-- ``--format``：输出格式。默认是 ``human``；需要完整机器可读报告时使用 ``json``。``llm-json`` 和 ``llm-md`` 是稳定的 LLM 修复格式，使用 ``pyfcstm.inspect.llm.v1`` schema。
-- ``--color``：仅控制 human 输出的 ANSI 颜色。``auto`` 只在交互式 stdout 启用颜色，``always`` 强制 stdout 彩色，``never`` 禁用颜色。``-o`` 文件和机器格式始终不含 ANSI。
-- ``--enable-verify``：运行可由 ``inspect`` 自动接入的 ``pyfcstm.verify`` 算法，并追加其诊断
-- ``--max-complexity-tier``：``inspect`` 允许的最高验证复杂度层级，默认是 ``structural``
-- ``--max-call-count-scaling``：``inspect`` 允许的最高调用次数增长等级，默认是 ``linear_in_transitions``
-- ``--smt-timeout-ms``：透传给 SMT 本地验证算法的可选超时时间；``0`` 会原样透传，并遵循 Z3 语义，表示不设置有限超时
-
-**默认 human 输出与显式 JSON**
+**常用示例**：
 
 .. code-block:: bash
 
+   # 人类可读诊断
    pyfcstm inspect -i simple_machine.fcstm
-   pyfcstm inspect -i simple_machine.fcstm --color always
+
+   # 面向 CI 或编辑器工具的完整结构化报告
    pyfcstm inspect -i simple_machine.fcstm --format json -o simple_machine.inspect.json
 
-默认情况下，``inspect`` 输出 checker-style 人类可读报告，并且不运行 verify 支撑的检查。human 输出和稳定的 ``llm-json`` / ``llm-md`` 会在每条诊断附近附带一个小型源码上下文窗口，让相邻状态和转换结构保持可见；LLM 格式还会包含 provenance、repair guidance 和 do-not notes，供修复循环使用。需要与
-``inspect_model(model).to_json()`` 和跨端默认诊断契约一致的完整 JSON 时，应显式传入
-``--format json``。如果输出文件后缀看起来和格式不匹配，例如把默认 human 报告写到 ``.json``，CLI 会在 stderr 给出 warning，但不会静默改变用户请求的格式。颜色只作为视觉增强：任意非空 ``NO_COLOR``\ 、``TERM=dumb``\ 、pipe 输出和 ``-o`` 输出都会保持 human 文本无色；``json``\ 、``llm-json`` 和 ``llm-md`` 即使传入 ``--color always`` 也不会包含 ANSI escape 序列。
+   # 面向 LLM 修复上下文的报告
+   pyfcstm inspect -i simple_machine.fcstm --format llm-md -o simple_machine.inspect.md
 
-**显式启用 verify 支撑的诊断**
-
-.. code-block:: bash
-
-   pyfcstm inspect -i simple_machine.fcstm \
-     --enable-verify --max-complexity-tier smt_linear --smt-timeout-ms 1000
-
-自动 ``inspect`` 路径仍会拒绝 ``bmc_search``，因为 BMC 需要显式查询深度，
-不是有界的本地诊断遍历。它也会拒绝 ``k_unrollings`` 和
-``k_unrollings_times_branching`` 调用次数策略。CLI 会解析这些值并返回受控的
-策略错误，而不是让它们静默进入自动检查流程。
+``-o`` 只改变输出位置；脚本需要 JSON 时请传入 ``--format json``。``--color`` 只影响 human 输出。需要 verify 支撑诊断时显式开启 ``--enable-verify``，并遵守 inspect policy 的成本边界。
 
 visualize 命令
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

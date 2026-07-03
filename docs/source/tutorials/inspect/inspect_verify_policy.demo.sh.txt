@@ -1,0 +1,9 @@
+=== bmc_search ===
+exit_code: 1
+bmc_search algorithms are not allowed in automatic inspect runs
+=== k_unrollings ===
+exit_code: 1
+call-count scaling 'k_unrollings' is not allowed in automatic inspect runs
+=== k_unrollings_times_branching ===
+exit_code: 1
+call-count scaling 'k_unrollings_times_branching' is not allowed in automatic inspect runs

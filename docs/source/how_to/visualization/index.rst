@@ -30,6 +30,49 @@ Override typed options with repeated ``-c key=value`` arguments:
      -c max_depth=3 \
      -o machine.events.puml
 
+
+Compare detail preset outputs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The same machine can produce different diagrams for different audiences:
+
+.. list-table:: Detail preset comparison
+   :header-rows: 1
+
+   * - Preset
+     - Intended view
+     - Existing rendered example
+   * - ``minimal``
+     - Basic state structure only.
+     - :download:`output_minimal.puml <../../tutorials/visualization/output_minimal.puml>`
+   * - ``normal``
+     - Balanced view with essential lifecycle and transition information.
+     - :download:`output_normal.puml <../../tutorials/visualization/output_normal.puml>`
+   * - ``full``
+     - Complete details, including actions, events, guards, and effects.
+     - :download:`output_full.puml <../../tutorials/visualization/output_full.puml>`
+
+.. figure:: ../../tutorials/visualization/output_minimal.puml.svg
+   :alt: Minimal detail preset output
+   :align: center
+   :width: 70%
+
+   ``minimal``: basic state structure.
+
+.. figure:: ../../tutorials/visualization/output_normal.puml.svg
+   :alt: Normal detail preset output
+   :align: center
+   :width: 70%
+
+   ``normal``: balanced default view.
+
+.. figure:: ../../tutorials/visualization/output_full.puml.svg
+   :alt: Full detail preset output
+   :align: center
+   :width: 70%
+
+   ``full``: implementation-oriented detail.
+
 Render a final file directly
 ----------------------------
 
@@ -59,7 +102,9 @@ Use Python API when needed
 --------------------------
 
 CLI ``-c`` supports typed scalar and tuple options. Use the Python API for
-object-valued configuration such as custom color dictionaries:
+object-valued configuration such as custom color dictionaries. The snippet below
+assumes you already have a parsed ``model`` object; use the downloadable demo for
+a complete runnable script:
 
 .. code-block:: python
 

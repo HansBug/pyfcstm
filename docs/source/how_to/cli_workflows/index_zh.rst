@@ -80,6 +80,21 @@ CLI 工作流
 
    pyfcstm visualize -i machine.fcstm -t svg -o machine.svg --no-open
 
+保持 CLI 项目可复现
+-------------------
+
+需要在本地或 CI 中重复运行时，应让命令输入和生成输出保持可追踪：
+
+* 使用描述性 ``.fcstm`` 文件名，并把相关机器放在专用目录中，例如 ``src/machines/``。
+* 将 ``.fcstm`` 源文件与消费其生成输出的代码一起纳入版本控制。
+* 仅对可以安全替换的输出目录使用 ``--clear``\ ，并在提交前 review generated
+  code。如果输出按需重新生成，则改为把它们加入 ``.gitignore``\ 。
+* 保留一份简短项目说明或 build rule，记录每个 DSL 文件生成到哪个输出目录。
+* 对打包内置模板优先使用 ``--template``\ 。如果你明确维护 custom template
+  directories，则每个 target profile 保持一个目录，在 ``config.yaml``
+  中定义语言相关 render helpers，并在生产使用前用小型 sample machines
+  做 smoke test。
+
 下一步
 ------
 

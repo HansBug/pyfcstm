@@ -63,6 +63,41 @@ Polling 模板把事件检测移动到集成层安装的 callbacks：
 
 当 C 集成代码需要安装 ``EventChecks`` 表，并让 runtime 在 ``cycle`` 中调用事件探针时，使用 ``c_poll``。当 C++ 应用代码应从 ``machine.hpp`` 和 wrapper methods 进入，同时在 wrapper 层安装 ``EventChecks`` 时，使用 ``cpp_poll``。
 
+验证摘要
+--------
+
+本页示例由 ``docs/source/tutorials/generation/`` 下 checked-in demo scripts 和 driver source files 支撑。资源构建可以通过 ``make -C docs contents`` 重新生成它们的输出。
+
+.. list-table:: 生成验证矩阵
+   :header-rows: 1
+
+   * - 模板
+     - demo 是否生成
+     - demo 是否冒烟运行
+     - 入口纪律
+   * - ``python``
+     - 是，通过 ``python_runtime.demo.py``
+     - 是，import 后运行四个 cycles
+     - 从 ``machine.py`` 进入生成 class
+   * - ``c``
+     - 是，通过 ``native_runtime.demo.sh``
+     - 是，当 ``cc`` 可用时
+     - C driver include ``machine.h``
+   * - ``c_poll``
+     - 是，通过 ``native_runtime.demo.sh``
+     - 是，当 ``cc`` 可用时
+     - C driver 安装完整 ``EventChecks`` 表
+   * - ``cpp``
+     - 是，通过 ``native_runtime.demo.sh``
+     - 是，当 ``cc`` 和 ``c++`` 可用时
+     - C++ driver include ``machine.hpp`` 并使用 ``MachineWrapper``
+   * - ``cpp_poll``
+     - 是，通过 ``native_runtime.demo.sh``
+     - 是，当 ``cc`` 和 ``c++`` 可用时
+     - C++ driver include ``machine.hpp`` 并安装 wrapper ``EventChecks``
+
+Native 输出会记录本地 OS、C compiler、C++ compiler 和 CMake 版本。这是文档冒烟运行的证据，不是所有工业或嵌入式 compiler 都接受同一组 flags 的承诺。
+
 找到生成 README 和扩展点
 ------------------------
 

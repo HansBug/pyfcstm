@@ -85,6 +85,26 @@ PlantUML backend:
 
    pyfcstm visualize -i machine.fcstm -t svg -o machine.svg --no-open
 
+Keep CLI projects reproducible
+------------------------------
+
+For repeated local or CI use, keep the command inputs and generated outputs
+traceable:
+
+* Use descriptive ``.fcstm`` filenames and keep related machines in a dedicated
+  directory such as ``src/machines/``.
+* Version control the ``.fcstm`` sources with the code that consumes their
+  generated outputs.
+* Use ``--clear`` only for output directories that are safe to replace, and
+  review generated code before committing it. If outputs are regenerated on
+  demand, add them to ``.gitignore`` instead.
+* Keep a small project note or build rule that records which DSL file generates
+  each output directory.
+* Prefer ``--template`` for packaged built-in templates. If you intentionally
+  maintain custom template directories, keep one directory per target profile,
+  define language-specific render helpers in ``config.yaml``, and smoke-test the
+  templates with small sample machines before production use.
+
 Next steps
 ----------
 

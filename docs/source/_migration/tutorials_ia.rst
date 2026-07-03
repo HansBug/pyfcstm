@@ -104,6 +104,11 @@ Chapter migration records
      - move
      - CLI facts are now independently searchable in reference.
    * - ``tutorials/cli/index*.rst``
+     - ``Best Practices`` / ``最佳实践``
+     - ``how_to/cli_workflows/index*.rst``
+     - merge
+     - DSL file organization, version-control hygiene, clean generation, output mapping, and custom-template smoke-test advice were compressed into the reproducibility checklist.
+   * - ``tutorials/cli/index*.rst``
      - whole old page path
      - ``tutorials/cli/index*.rst``
      - keep landing
@@ -117,7 +122,7 @@ Chapter migration records
      - native generation, polling generation, README, and integration tasks
      - ``how_to/generation/index*.rst``
      - move
-     - How-to covers Python, C/C++, polling templates, README entry points, and ``--template`` discipline.
+     - How-to covers Python, C/C++, polling templates, README entry points, validation summary, and ``--template`` discipline.
    * - ``tutorials/generation/index*.rst``
      - built-in template table and selection hints
      - ``reference/builtin_templates/index*.rst``
@@ -157,7 +162,7 @@ Chapter migration records
      - diagram export and renderer tasks
      - ``how_to/visualization/index*.rst``
      - move
-     - Task guide covers PlantUML source export, rendered-file export, renderer mode, and headless ``--no-open`` usage.
+     - Task guide covers PlantUML source export, detail-level comparison, rendered-file export, renderer mode, and headless ``--no-open`` usage.
    * - ``tutorials/visualization/index*.rst``
      - ``PlantUMLOptions`` and ``-c`` option facts
      - ``reference/visualization_options/index*.rst``
@@ -209,7 +214,7 @@ Resource migration records
    * - ``tutorials/generation/*_driver.c`` and ``*_driver.cpp``
      - same path
      - keep
-     - Detailed driver excerpts no longer dominate the tutorial; sources remain for native smoke generation and future cleanup.
+     - Detailed driver excerpts no longer dominate the tutorial; sources remain for native smoke generation, the how-to validation matrix, and future cleanup.
    * - ``tutorials/inspect/inspect_diagnostics.fcstm`` and generated PlantUML outputs
      - same path
      - keep
@@ -229,7 +234,7 @@ Resource migration records
    * - ``tutorials/visualization/output_*.puml`` and rendered image outputs
      - same path
      - keep
-     - Existing rendered artifacts remain valid for the shortened tutorial and PR-J cleanup review.
+     - Existing rendered artifacts remain valid; detail-level comparison SVGs are referenced from ``how_to/visualization`` and the rest remain for PR-J cleanup review.
    * - ``tutorials/visualization/python_*.demo.py`` and ``*.txt``
      - same path
      - keep

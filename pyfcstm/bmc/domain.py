@@ -140,6 +140,23 @@ def _validate_state_entry(entry: object) -> None:
     elif values["id"] < 0:
         raise InvalidBmcDomain("Model state ids must be non-negative.")
 
+    if not values["is_sentinel"]:
+        if values["is_root"] and values["kind"] == "pseudo":
+            raise InvalidBmcDomain("Root state cannot be a pseudo state.")
+        if values["is_root"] and values["parent_path"] is not None:
+            raise InvalidBmcDomain("Root state cannot have a parent path.")
+        if values["parent_path"] is None:
+            if values["path"] != values["name"]:
+                raise InvalidBmcDomain(
+                    "State path without parent must match state name."
+                )
+        else:
+            expected_path = "%s.%s" % (values["parent_path"], values["name"])
+            if values["path"] != expected_path:
+                raise InvalidBmcDomain(
+                    "State path does not match parent path and name."
+                )
+
     if values["is_stoppable"] and values["kind"] != "leaf":
         raise InvalidBmcDomain("Only non-sentinel leaf states can be stoppable.")
     if values["is_generated_combo_pseudo"] and values["kind"] != "pseudo":
@@ -542,7 +559,7 @@ class EventInputRef:
     def name(self) -> str:
         """Return the canonical event input display name.
 
-        :return: Input slot name such as ``"E_0[Root.Go]``.
+        :return: Input slot name such as ``"E_0[Root.Go]"``.
         :rtype: str
 
         Example::
@@ -743,12 +760,6 @@ class BmcDomain:
         if len(root_entries) != 1:
             raise InvalidBmcDomain("Domain must contain exactly one model root state.")
 
-        root = root_entries[0]
-        if root.parent_path is not None:
-            raise InvalidBmcDomain("Root state cannot have a parent path.")
-        if root.path != root.name:
-            raise InvalidBmcDomain("Root state path must match the root name.")
-
         for entry in model_entries:
             if entry.is_root:
                 continue
@@ -760,11 +771,6 @@ class BmcDomain:
             if parent is None or parent.is_sentinel:
                 raise InvalidBmcDomain(
                     "State %r parent path is unknown." % (entry.path,)
-                )
-            expected_path = "%s.%s" % (entry.parent_path, entry.name)
-            if entry.path != expected_path:
-                raise InvalidBmcDomain(
-                    "State %r path does not match parent path and name." % (entry.path,)
                 )
 
     def _validate_trace_references(self) -> None:

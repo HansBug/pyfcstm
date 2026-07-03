@@ -277,6 +277,12 @@ def test_domain_entry_validation_rejects_malformed_values():
         lambda: StateDomainEntry(0, "", "Root", "leaf"),
         lambda: StateDomainEntry(-3, "Root", "Root", "leaf"),
         lambda: StateDomainEntry(0, "S", "S", "sentinel", is_sentinel=True),
+        lambda: StateDomainEntry(0, "Root", "Root", "pseudo", is_root=True),
+        lambda: StateDomainEntry(
+            0, "Parent.Root", "Root", "leaf", parent_path="Parent", is_root=True
+        ),
+        lambda: StateDomainEntry(0, "Root.Child", "Child", "leaf", is_root=True),
+        lambda: StateDomainEntry(0, "Root.Child", "Other", "leaf", "Root"),
         lambda: StateDomainEntry(
             STATE_TERMINATE_ID,
             "$STATE_TERMINATE",
@@ -441,6 +447,11 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
     frames = (FrameRef(0, 1), FrameRef(1, 1))
     steps = (StepRef(0, 1),)
     inputs = (EventInputRef(0, 0, "Root.Go"),)
+    other_root = StateDomainEntry(1, "Other", "Other", "composite", is_root=True)
+    orphan = StateDomainEntry(1, "Orphan", "Orphan", "composite")
+    unknown_parent = StateDomainEntry(
+        1, "Missing.Child", "Child", "composite", parent_path="Missing"
+    )
 
     valid_kwargs = dict(
         bound=1,
@@ -485,6 +496,18 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
                 terminate,
                 leaf,
             )
+        ),
+        dict(
+            states=(diagnostic, terminate, leaf, other_root),
+            initial_state_ids=(STATE_TERMINATE_ID, 0, 1),
+        ),
+        dict(
+            states=(diagnostic, terminate, leaf, orphan),
+            initial_state_ids=(STATE_TERMINATE_ID, 0, 1),
+        ),
+        dict(
+            states=(diagnostic, terminate, leaf, unknown_parent),
+            initial_state_ids=(STATE_TERMINATE_ID, 0, 1),
         ),
         dict(frames=(FrameRef(0, 1),)),
         dict(steps=()),

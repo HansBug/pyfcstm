@@ -6,6 +6,7 @@ import subprocess
 import sys
 import pytest
 
+import pyfcstm.bmc.binding as binding_module
 from pyfcstm.bmc.binding import (
     BmcBindingDiagnostic,
     BoundAssumption,
@@ -19,6 +20,7 @@ from pyfcstm.bmc.binding import (
 from pyfcstm.bmc.domain import build_bmc_domain
 from pyfcstm.bmc.errors import BmcQueryParseError, InvalidBmcQuery
 from pyfcstm.bmc.ast import (
+    Active,
     BmcCondExpr,
     BmcNumExpr,
     BoolLiteral,
@@ -32,6 +34,7 @@ from pyfcstm.bmc.query import (
     BmcProperty,
     BmcQuery,
     EventAssumption,
+    EventCardinalityAssumption,
     FrameAssumption,
     InitialSpec,
 )
@@ -50,6 +53,12 @@ def _diagnostic(excinfo) -> BmcBindingDiagnostic:
     diag = getattr(excinfo.value, "diagnostic", None)
     assert isinstance(diag, BmcBindingDiagnostic)
     return diag
+
+
+def _forged_bound_property_with_kind(kind: str) -> BoundProperty:
+    prop = BmcProperty("reach", 1, predicate=BoolLiteral("true"))
+    object.__setattr__(prop, "kind", kind)
+    return BoundProperty(prop)
 
 
 @pytest.fixture()
@@ -459,8 +468,36 @@ def test_binding_imports_remain_layered():
             lambda: BmcBindingDiagnostic("code", "path", 1), id="diag-message-type"
         ),
         pytest.param(
+            lambda: BmcBindingDiagnostic("   ", "path", "message"),
+            id="diag-code-whitespace",
+        ),
+        pytest.param(
+            lambda: BmcBindingDiagnostic("code", "\t", "message"),
+            id="diag-path-whitespace",
+        ),
+        pytest.param(
+            lambda: BmcBindingDiagnostic("code", "path", "\n"),
+            id="diag-message-whitespace",
+        ),
+        pytest.param(
             lambda: BoundReference("state", "", "path", "active"),
             id="reference-empty-name",
+        ),
+        pytest.param(
+            lambda: BoundReference(" ", "A", "path", "active"),
+            id="reference-whitespace-kind",
+        ),
+        pytest.param(
+            lambda: BoundReference("state", " ", "path", "active"),
+            id="reference-whitespace-name",
+        ),
+        pytest.param(
+            lambda: BoundReference("state", "A", " ", "active"),
+            id="reference-whitespace-path",
+        ),
+        pytest.param(
+            lambda: BoundReference("state", "A", "path", " "),
+            id="reference-whitespace-spelling",
         ),
         pytest.param(
             lambda: BoundReference("hook", "A", "path", "active"), id="reference-kind"
@@ -472,6 +509,14 @@ def test_binding_imports_remain_layered():
         pytest.param(
             lambda: BoundReference("variable", "x", "path", "bare", declared_type=1),
             id="reference-declared-type",
+        ),
+        pytest.param(
+            lambda: BoundReference("variable", "x", "path", "bare", declared_type=""),
+            id="reference-declared-type-empty",
+        ),
+        pytest.param(
+            lambda: BoundReference("variable", "x", "path", "bare", declared_type=" "),
+            id="reference-declared-type-whitespace",
         ),
         pytest.param(lambda: BoundInitialSpec(object()), id="initial-source"),
         pytest.param(
@@ -513,10 +558,27 @@ def test_binding_imports_remain_layered():
         ),
         pytest.param(lambda: BoundProperty(object()), id="property-source"),
         pytest.param(
+            lambda: _forged_bound_property_with_kind("future"),
+            id="property-source-unknown-kind",
+        ),
+        pytest.param(
             lambda: BoundProperty(
                 BmcProperty("cover", 1, predicate=Case("case")), case_label=""
             ),
             id="property-label-empty",
+        ),
+        pytest.param(
+            lambda: BoundProperty(
+                BmcProperty("cover", 1, predicate=Case("case")), case_label=" "
+            ),
+            id="property-label-whitespace",
+        ),
+        pytest.param(
+            lambda: BoundProperty(
+                BmcProperty("reach", 1, predicate=BoolLiteral("true")),
+                case_label="case",
+            ),
+            id="property-label-non-cover",
         ),
         pytest.param(
             lambda: BoundBmcQuery(
@@ -676,6 +738,32 @@ def test_internal_event_cycle_guard_rejects_unexpected_selector_shape(selector):
 
 
 @pytest.mark.unittest
+@pytest.mark.parametrize(
+    "selector",
+    [
+        pytest.param(object(), id="opaque-object"),
+        pytest.param("0..x", id="bad-range-endpoint"),
+    ],
+)
+def test_internal_event_cycle_guard_remains_defensive_when_shape_check_is_bypassed(
+    monkeypatch, selector
+):
+    """The event cycle helper independently rejects malformed selector values."""
+    monkeypatch.setattr(binding_module, "_validate_query_shape", lambda query: None)
+    malformed = EventAssumption("Root.Tick", 0)
+    object.__setattr__(malformed, "selector", selector)
+    query = BmcQuery(
+        property=BmcProperty("reach", 2, predicate=BoolLiteral("true")),
+        assumptions=(malformed,),
+    )
+
+    with pytest.raises(InvalidBmcQuery) as excinfo:
+        bind_bmc_query_structure(query)
+
+    assert _diagnostic(excinfo).code == "event_selector_invalid"
+
+
+@pytest.mark.unittest
 def test_internal_assumption_guard_rejects_unknown_assumption_subclass():
     """The binder fails closed if future assumption subclasses reach it."""
 
@@ -686,6 +774,31 @@ def test_internal_assumption_guard_rejects_unknown_assumption_subclass():
         def _to_dsl(self):
             return "assume future;"
 
+    query = BmcQuery(
+        property=BmcProperty("reach", 1, predicate=BoolLiteral("true")),
+        assumptions=(FutureAssumption(),),
+    )
+
+    with pytest.raises(InvalidBmcQuery) as excinfo:
+        bind_bmc_query_structure(query)
+
+    assert _diagnostic(excinfo).code == "assumption_type"
+
+
+@pytest.mark.unittest
+def test_internal_assumption_dispatch_remains_defensive_when_shape_check_is_bypassed(
+    monkeypatch,
+):
+    """The binding dispatcher still rejects unknown assumptions after prechecks."""
+
+    class FutureAssumption(BmcAssumption):
+        def _canonical_payload(self):
+            return {}
+
+        def _to_dsl(self):
+            return "assume future;"
+
+    monkeypatch.setattr(binding_module, "_validate_query_shape", lambda query: None)
     query = BmcQuery(
         property=BmcProperty("reach", 1, predicate=BoolLiteral("true")),
         assumptions=(FutureAssumption(),),
@@ -728,7 +841,280 @@ def test_internal_frame_assumption_guard_rejects_forged_frame_values(forged_fram
     with pytest.raises(InvalidBmcQuery) as excinfo:
         bind_bmc_query_structure(query)
 
-    assert _diagnostic(excinfo).code == "frame_selector_out_of_range"
+    assert _diagnostic(excinfo).code == "query_shape"
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "mutator, expected_path, expected_code",
+    [
+        pytest.param(
+            lambda query: object.__setattr__(query.property, "bound", 0),
+            "property.bound",
+            "query_shape",
+            id="property-bound-zero",
+        ),
+        pytest.param(
+            lambda query: object.__setattr__(query.property, "bound", True),
+            "property.bound",
+            "query_shape",
+            id="property-bound-bool",
+        ),
+        pytest.param(
+            lambda query: object.__setattr__(query.property, "kind", "future"),
+            "property.kind",
+            "query_shape",
+            id="property-unknown-kind",
+        ),
+        pytest.param(
+            lambda query: object.__setattr__(query.property, "predicate", None),
+            "property.predicate",
+            "query_shape",
+            id="single-property-missing-predicate",
+        ),
+        pytest.param(
+            lambda query: object.__setattr__(
+                query.property, "trigger", BoolLiteral("true")
+            ),
+            "property",
+            "query_shape",
+            id="single-property-extra-trigger",
+        ),
+        pytest.param(
+            lambda query: object.__setattr__(query, "initial", object()),
+            "initial",
+            "query_shape",
+            id="initial-wrong-type",
+        ),
+        pytest.param(
+            lambda query: object.__setattr__(query.initial, "mode", "warm"),
+            "initial.mode",
+            "query_shape",
+            id="initial-unknown-mode",
+        ),
+        pytest.param(
+            lambda query: object.__setattr__(query.initial, "state_path", "Root.Idle"),
+            "initial.state_path",
+            "query_shape",
+            id="initial-cold-extra-state-path",
+        ),
+        pytest.param(
+            lambda query: (
+                object.__setattr__(query.initial, "mode", "state"),
+                object.__setattr__(query.initial, "state_path", " "),
+            ),
+            "initial.state_path",
+            "query_shape",
+            id="initial-state-whitespace-path",
+        ),
+        pytest.param(
+            lambda query: object.__setattr__(query.initial, "predicate", object()),
+            "initial.predicate",
+            "query_shape",
+            id="initial-predicate-wrong-type",
+        ),
+        pytest.param(
+            lambda query: object.__setattr__(query, "assumptions", "bad"),
+            "assumptions",
+            "query_shape",
+            id="assumptions-string",
+        ),
+        pytest.param(
+            lambda query: object.__setattr__(query, "property", object()),
+            "property",
+            "query_shape",
+            id="property-wrong-type",
+        ),
+    ],
+)
+def test_binding_revalidates_forged_query_root_and_property_shapes(
+    mutator, expected_path, expected_code
+):
+    """The binder fails closed if frozen query-root invariants are bypassed."""
+    query = BmcQuery(property=BmcProperty("reach", 1, predicate=BoolLiteral("true")))
+    mutator(query)
+
+    with pytest.raises(InvalidBmcQuery) as excinfo:
+        bind_bmc_query_structure(query)
+
+    diagnostic = _diagnostic(excinfo)
+    assert diagnostic.code == expected_code
+    assert expected_path in diagnostic.path
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "mutator, expected_path",
+    [
+        pytest.param(
+            lambda prop: object.__setattr__(prop, "within", 0),
+            "property.within",
+            id="response-window-zero",
+        ),
+        pytest.param(
+            lambda prop: object.__setattr__(prop, "within", True),
+            "property.within",
+            id="response-window-bool",
+        ),
+        pytest.param(
+            lambda prop: object.__setattr__(prop, "trigger", object()),
+            "property.trigger",
+            id="response-trigger-wrong-type",
+        ),
+        pytest.param(
+            lambda prop: object.__setattr__(prop, "response", object()),
+            "property.response",
+            id="response-target-wrong-type",
+        ),
+        pytest.param(
+            lambda prop: object.__setattr__(prop, "predicate", BoolLiteral("true")),
+            "property.predicate",
+            id="response-extra-predicate",
+        ),
+    ],
+)
+def test_binding_revalidates_forged_response_property_shape(mutator, expected_path):
+    """The binder rechecks response-specific fields before semantic traversal."""
+    prop = BmcProperty(
+        "response",
+        2,
+        trigger=Active("Root.Idle"),
+        response=Active("Root.Done"),
+        within=1,
+    )
+    query = BmcQuery(property=prop)
+    mutator(prop)
+
+    with pytest.raises(InvalidBmcQuery) as excinfo:
+        bind_bmc_query_structure(query)
+
+    diagnostic = _diagnostic(excinfo)
+    assert diagnostic.code == "query_shape"
+    assert expected_path in diagnostic.path
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "assumption, mutator, expected_code, expected_path",
+    [
+        pytest.param(
+            FrameAssumption("always", BoolLiteral("true")),
+            lambda item: object.__setattr__(item, "kind", "future"),
+            "query_shape",
+            "assumptions[0].kind",
+            id="frame-unknown-kind",
+        ),
+        pytest.param(
+            FrameAssumption("always", BoolLiteral("true")),
+            lambda item: object.__setattr__(item, "predicate", object()),
+            "query_shape",
+            "assumptions[0].predicate",
+            id="frame-predicate-wrong-type",
+        ),
+        pytest.param(
+            FrameAssumption("always", BoolLiteral("true")),
+            lambda item: object.__setattr__(item, "frame", 0),
+            "query_shape",
+            "assumptions[0].frame",
+            id="always-extra-frame",
+        ),
+        pytest.param(
+            FrameAssumption("at", BoolLiteral("true"), frame=0),
+            lambda item: object.__setattr__(item, "frame", True),
+            "query_shape",
+            "assumptions[0].frame",
+            id="at-bool-frame",
+        ),
+        pytest.param(
+            EventAssumption("Root.Tick", 0),
+            lambda item: object.__setattr__(item, "event_path", " "),
+            "query_shape",
+            "assumptions[0].event_path",
+            id="event-whitespace-path",
+        ),
+        pytest.param(
+            EventAssumption("Root.Tick", 0),
+            lambda item: object.__setattr__(item, "selector", True),
+            "event_selector_invalid",
+            "assumptions[0].selector",
+            id="event-bool-selector",
+        ),
+        pytest.param(
+            EventAssumption("Root.Tick", 0),
+            lambda item: object.__setattr__(item, "selector", -1),
+            "event_selector_invalid",
+            "assumptions[0].selector",
+            id="event-negative-selector",
+        ),
+        pytest.param(
+            EventAssumption("Root.Tick", 0),
+            lambda item: object.__setattr__(item, "expected", 1),
+            "query_shape",
+            "assumptions[0].expected",
+            id="event-expected-non-bool",
+        ),
+        pytest.param(
+            EventCardinalityAssumption("any"),
+            lambda item: object.__setattr__(item, "kind", "future"),
+            "query_shape",
+            "assumptions[0].kind",
+            id="cardinality-unknown-kind",
+        ),
+        pytest.param(
+            EventCardinalityAssumption("any"),
+            lambda item: object.__setattr__(item, "event_paths", "Root.Tick"),
+            "query_shape",
+            "assumptions[0].event_paths",
+            id="cardinality-string-paths",
+        ),
+        pytest.param(
+            EventCardinalityAssumption("any"),
+            lambda item: object.__setattr__(item, "event_paths", ("Root.Tick",)),
+            "query_shape",
+            "assumptions[0].event_paths",
+            id="cardinality-any-extra-path",
+        ),
+        pytest.param(
+            EventCardinalityAssumption("at_most_one", ("Root.Tick",)),
+            lambda item: object.__setattr__(item, "event_paths", ()),
+            "query_shape",
+            "assumptions[0].event_paths",
+            id="cardinality-at-most-one-empty",
+        ),
+        pytest.param(
+            EventCardinalityAssumption("at_most_one", ("Root.Tick",)),
+            lambda item: object.__setattr__(item, "event_paths", ("Root.Tick", " ")),
+            "query_shape",
+            "assumptions[0].event_paths[1]",
+            id="cardinality-whitespace-event",
+        ),
+        pytest.param(
+            EventCardinalityAssumption("at_most_one", ("Root.Tick",)),
+            lambda item: object.__setattr__(
+                item, "event_paths", ("Root.Tick", "Root.Tick")
+            ),
+            "query_shape",
+            "assumptions[0].event_paths",
+            id="cardinality-duplicate-event",
+        ),
+    ],
+)
+def test_binding_revalidates_forged_assumption_shapes(
+    assumption, mutator, expected_code, expected_path
+):
+    """The binder rechecks assumption invariants bypassed by direct mutation."""
+    mutator(assumption)
+    query = BmcQuery(
+        property=BmcProperty("reach", 2, predicate=BoolLiteral("true")),
+        assumptions=(assumption,),
+    )
+
+    with pytest.raises(InvalidBmcQuery) as excinfo:
+        bind_bmc_query_structure(query)
+
+    diagnostic = _diagnostic(excinfo)
+    assert diagnostic.code == expected_code
+    assert expected_path in diagnostic.path
 
 
 @pytest.mark.unittest

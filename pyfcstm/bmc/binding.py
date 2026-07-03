@@ -79,7 +79,23 @@ from pyfcstm.bmc.query import (
 )
 
 _CanonicalDict = Dict[str, Any]
+_INITIAL_MODES = {"cold", "terminated", "state"}
+_FRAME_ASSUMPTION_KINDS = {"always", "at"}
+_EVENT_CARDINALITY_KINDS = {"any", "at_most_one"}
+_PROPERTY_KINDS = {
+    "reach",
+    "forbid",
+    "invariant",
+    "must_reach",
+    "exists_always",
+    "response",
+    "cover",
+}
 _RESERVED_STATE_PATHS = {"$STATE_TERMINATE", "$STATE_DIAGNOSTIC"}
+
+
+def _is_non_empty_text(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _require_query(query: object) -> BmcQuery:
@@ -89,6 +105,7 @@ def _require_query(query: object) -> BmcQuery:
             "query",
             "query must be a BmcQuery object.",
         )
+    _validate_query_shape(query)
     return query
 
 
@@ -115,11 +132,11 @@ class BmcBindingDiagnostic:
     message: str
 
     def __post_init__(self) -> None:
-        if not isinstance(self.code, str) or not self.code:
+        if not _is_non_empty_text(self.code):
             raise InvalidBmcQuery("diagnostic code must be a non-empty string.")
-        if not isinstance(self.path, str) or not self.path:
+        if not _is_non_empty_text(self.path):
             raise InvalidBmcQuery("diagnostic path must be a non-empty string.")
-        if not isinstance(self.message, str) or not self.message:
+        if not _is_non_empty_text(self.message):
             raise InvalidBmcQuery("diagnostic message must be a non-empty string.")
 
     def to_canonical(self) -> _CanonicalDict:
@@ -186,7 +203,7 @@ class BoundReference:
     def __post_init__(self) -> None:
         for field_name in ("kind", "name", "path", "spelling"):
             value = getattr(self, field_name)
-            if not isinstance(value, str) or not value:
+            if not _is_non_empty_text(value):
                 raise InvalidBmcQuery(
                     f"BoundReference {field_name} must be a non-empty string."
                 )
@@ -196,7 +213,9 @@ class BoundReference:
             isinstance(self.resolved_id, bool) or not isinstance(self.resolved_id, int)
         ):
             raise InvalidBmcQuery("resolved_id must be an integer or None.")
-        if self.declared_type is not None and not isinstance(self.declared_type, str):
+        if self.declared_type is not None and not _is_non_empty_text(
+            self.declared_type
+        ):
             raise InvalidBmcQuery("declared_type must be a string or None.")
 
     def to_canonical(self) -> _CanonicalDict:
@@ -388,10 +407,14 @@ class BoundProperty:
     def __post_init__(self) -> None:
         if not isinstance(self.source, BmcProperty):
             raise InvalidBmcQuery("source must be BmcProperty.")
-        if self.case_label is not None and (
-            not isinstance(self.case_label, str) or not self.case_label
-        ):
+        if self.source.kind not in _PROPERTY_KINDS:
+            raise InvalidBmcQuery(
+                f"Unsupported bound property kind: {self.source.kind!r}."
+            )
+        if self.case_label is not None and not _is_non_empty_text(self.case_label):
             raise InvalidBmcQuery("case_label must be a non-empty string or None.")
+        if self.case_label is not None and self.source.kind != "cover":
+            raise InvalidBmcQuery("case_label is only valid for cover properties.")
 
     @property
     def kind(self) -> str:
@@ -510,6 +533,236 @@ def _raise_binding_error(code: str, path: str, message: str) -> None:
     error = InvalidBmcQuery(str(diagnostic))
     error.diagnostic = diagnostic
     raise error
+
+
+def _require_non_empty_field(value: object, path: str, field_name: str) -> None:
+    if not _is_non_empty_text(value):
+        _raise_binding_error(
+            "query_shape",
+            path,
+            f"{field_name} must be a non-empty string.",
+        )
+
+
+def _require_condition_field(value: object, path: str, field_name: str) -> None:
+    if not isinstance(value, BmcCondExpr):
+        _raise_binding_error(
+            "query_shape",
+            path,
+            f"{field_name} must be a BmcCondExpr object.",
+        )
+
+
+def _require_positive_integer_field(value: object, path: str, field_name: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        _raise_binding_error(
+            "query_shape",
+            path,
+            f"{field_name} must be a positive integer.",
+        )
+
+
+def _require_non_negative_integer_field(
+    value: object, path: str, field_name: str
+) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        _raise_binding_error(
+            "query_shape",
+            path,
+            f"{field_name} must be a non-negative integer.",
+        )
+
+
+def _validate_initial_shape(initial: object) -> None:
+    if not isinstance(initial, InitialSpec):
+        _raise_binding_error(
+            "query_shape",
+            "initial",
+            "initial must be an InitialSpec object.",
+        )
+    if initial.mode not in _INITIAL_MODES:
+        _raise_binding_error(
+            "query_shape",
+            "initial.mode",
+            f"Unsupported initial mode: {initial.mode!r}.",
+        )
+    if initial.mode == "state":
+        _require_non_empty_field(initial.state_path, "initial.state_path", "state_path")
+    elif initial.state_path is not None:
+        _raise_binding_error(
+            "query_shape",
+            "initial.state_path",
+            "state_path is only valid when initial mode is 'state'.",
+        )
+    if initial.predicate is not None:
+        _require_condition_field(
+            initial.predicate, "initial.predicate", "initial predicate"
+        )
+
+
+def _validate_frame_assumption_shape(assumption: FrameAssumption, path: str) -> None:
+    if assumption.kind not in _FRAME_ASSUMPTION_KINDS:
+        _raise_binding_error(
+            "query_shape",
+            path + ".kind",
+            f"Unsupported frame assumption kind: {assumption.kind!r}.",
+        )
+    _require_condition_field(assumption.predicate, path + ".predicate", "predicate")
+    if assumption.kind == "at":
+        _require_non_negative_integer_field(assumption.frame, path + ".frame", "frame")
+    elif assumption.frame is not None:
+        _raise_binding_error(
+            "query_shape",
+            path + ".frame",
+            "frame is only valid for 'at' frame assumptions.",
+        )
+
+
+def _validate_event_assumption_shape(assumption: EventAssumption, path: str) -> None:
+    _require_non_empty_field(assumption.event_path, path + ".event_path", "event_path")
+    selector = assumption.selector
+    if selector != "*" and not (
+        isinstance(selector, int) and not isinstance(selector, bool) and selector >= 0
+    ):
+        if not (
+            isinstance(selector, str)
+            and ".." in selector
+            and len(selector.split("..")) == 2
+            and all(_is_ascii_decimal(part) for part in selector.split(".."))
+        ):
+            _raise_binding_error(
+                "event_selector_invalid",
+                path + ".selector",
+                "event assumption selector must be '*', an integer, or an inclusive range.",
+            )
+    if not isinstance(assumption.expected, bool):
+        _raise_binding_error(
+            "query_shape",
+            path + ".expected",
+            "expected must be a boolean value.",
+        )
+
+
+def _validate_cardinality_assumption_shape(
+    assumption: EventCardinalityAssumption, path: str
+) -> None:
+    if assumption.kind not in _EVENT_CARDINALITY_KINDS:
+        _raise_binding_error(
+            "query_shape",
+            path + ".kind",
+            f"Unsupported event cardinality kind: {assumption.kind!r}.",
+        )
+    if isinstance(assumption.event_paths, str) or not isinstance(
+        assumption.event_paths, (list, tuple)
+    ):
+        _raise_binding_error(
+            "query_shape",
+            path + ".event_paths",
+            "event_paths must be a sequence of strings.",
+        )
+    event_paths = tuple(assumption.event_paths)
+    if assumption.kind == "at_most_one" and not event_paths:
+        _raise_binding_error(
+            "query_shape",
+            path + ".event_paths",
+            "event_paths must not be empty for at_most_one.",
+        )
+    if assumption.kind == "any" and event_paths:
+        _raise_binding_error(
+            "query_shape",
+            path + ".event_paths",
+            "event_paths is only valid for at_most_one.",
+        )
+    for event_index, event_path in enumerate(event_paths):
+        _require_non_empty_field(
+            event_path,
+            f"{path}.event_paths[{event_index}]",
+            "event path",
+        )
+    if len(set(event_paths)) != len(event_paths):
+        _raise_binding_error(
+            "query_shape",
+            path + ".event_paths",
+            "event_paths must not contain duplicate paths.",
+        )
+
+
+def _validate_assumption_shape(assumption: object, path: str) -> None:
+    if isinstance(assumption, FrameAssumption):
+        _validate_frame_assumption_shape(assumption, path)
+        return
+    if isinstance(assumption, EventAssumption):
+        _validate_event_assumption_shape(assumption, path)
+        return
+    if isinstance(assumption, EventCardinalityAssumption):
+        _validate_cardinality_assumption_shape(assumption, path)
+        return
+    _raise_binding_error(
+        "assumption_type",
+        path,
+        f"Unsupported assumption object: {type(assumption).__name__}.",
+    )
+
+
+def _validate_property_shape(property_node: object) -> None:
+    if not isinstance(property_node, BmcProperty):
+        _raise_binding_error(
+            "query_shape",
+            "property",
+            "property must be a BmcProperty object.",
+        )
+    if property_node.kind not in _PROPERTY_KINDS:
+        _raise_binding_error(
+            "query_shape",
+            "property.kind",
+            f"Unsupported property kind: {property_node.kind!r}.",
+        )
+    _require_positive_integer_field(property_node.bound, "property.bound", "bound")
+    if property_node.kind == "response":
+        _require_condition_field(
+            property_node.trigger, "property.trigger", "response trigger"
+        )
+        _require_condition_field(
+            property_node.response, "property.response", "response predicate"
+        )
+        _require_positive_integer_field(
+            property_node.within, "property.within", "response window"
+        )
+        if property_node.predicate is not None:
+            _raise_binding_error(
+                "query_shape",
+                "property.predicate",
+                "response properties only accept trigger, response predicate, and window.",
+            )
+        return
+    _require_condition_field(
+        property_node.predicate, "property.predicate", "property predicate"
+    )
+    if (
+        property_node.trigger is not None
+        or property_node.response is not None
+        or property_node.within is not None
+    ):
+        _raise_binding_error(
+            "query_shape",
+            "property",
+            "single-body properties only accept predicate.",
+        )
+
+
+def _validate_query_shape(query: BmcQuery) -> None:
+    _validate_initial_shape(query.initial)
+    if isinstance(query.assumptions, str) or not isinstance(
+        query.assumptions, (list, tuple)
+    ):
+        _raise_binding_error(
+            "query_shape",
+            "assumptions",
+            "assumptions must be a sequence of BmcAssumption objects.",
+        )
+    for index, assumption in enumerate(query.assumptions):
+        _validate_assumption_shape(assumption, f"assumptions[{index}]")
+    _validate_property_shape(query.property)
 
 
 class _BindingContext:

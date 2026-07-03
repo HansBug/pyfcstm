@@ -43,6 +43,11 @@ Public module structure:
        :func:`build_bmc_ast_from_parse_tree`
      - Convert ``.fbmcq`` text or existing ANTLR parse trees into
        parser-independent AST/query nodes.
+   * - Query binding
+     - :class:`BmcBindingDiagnostic`, :class:`BoundBmcQuery`,
+       :func:`bind_bmc_query_structure`, :func:`bind_bmc_query`
+     - Validate query semantic contexts and optionally resolve model/domain
+       references without coupling parser-only imports to solver layers.
    * - Typed expression bases
      - :class:`BmcExpr`, :class:`BmcNumExpr`, :class:`BmcCondExpr`
      - Keep FCSTM numeric and condition expression categories explicit.
@@ -155,6 +160,17 @@ from pyfcstm.bmc.query import (
     InitialSpec,
 )
 
+_BINDING_EXPORTS = {
+    "BmcBindingDiagnostic",
+    "BoundReference",
+    "BoundInitialSpec",
+    "BoundAssumption",
+    "BoundProperty",
+    "BoundBmcQuery",
+    "bind_bmc_query_structure",
+    "bind_bmc_query",
+}
+
 _DOMAIN_EXPORTS = {
     "STATE_TERMINATE_ID",
     "STATE_DIAGNOSTIC_ID",
@@ -199,6 +215,7 @@ _MACRO_EXPORTS = {
 }
 
 _LAZY_EXPORT_MODULES = {
+    "pyfcstm.bmc.binding": _BINDING_EXPORTS,
     "pyfcstm.bmc.domain": _DOMAIN_EXPORTS,
     "pyfcstm.bmc.source": _SOURCE_EXPORTS,
     "pyfcstm.bmc.macro": _MACRO_EXPORTS,
@@ -206,24 +223,27 @@ _LAZY_EXPORT_MODULES = {
 
 
 def __getattr__(name: str):
-    """Lazily resolve model-aware and macro-step exports.
+    """Lazily resolve model-aware binding, domain, and macro-step exports.
 
-    Domain numbering and macro-step helpers import :mod:`pyfcstm.model`, while
-    the query parser must remain importable without loading model, verify, or
-    solver layers. Keeping these top-level exports lazy preserves the public
-    convenience API without coupling parser-only callers to later BMC layers.
+    Binding, domain numbering, and macro-step helpers are kept behind lazy
+    exports so parser-only callers can import :mod:`pyfcstm.bmc` without
+    loading model-aware or later BMC layers. This preserves the convenience API
+    while keeping parse/query data structures independent from solver and
+    verify-registry wiring.
 
     :param name: Attribute name requested from :mod:`pyfcstm.bmc`.
     :type name: str
-    :return: The requested domain export.
+    :return: The requested lazy export.
     :rtype: object
-    :raises AttributeError: If ``name`` is not a public lazy domain export.
+    :raises AttributeError: If ``name`` is not a public lazy export.
 
     Example::
 
         >>> import pyfcstm.bmc as bmc
         >>> bmc.STATE_TERMINATE_ID
         -1
+        >>> callable(bmc.bind_bmc_query_structure)
+        True
     """
     import importlib
 
@@ -247,7 +267,13 @@ def __dir__():
         >>> 'BmcDomain' in dir(bmc)
         True
     """
-    return sorted(set(globals()) | _DOMAIN_EXPORTS | _SOURCE_EXPORTS | _MACRO_EXPORTS)
+    return sorted(
+        set(globals())
+        | _BINDING_EXPORTS
+        | _DOMAIN_EXPORTS
+        | _SOURCE_EXPORTS
+        | _MACRO_EXPORTS
+    )
 
 
 __all__ = [
@@ -293,6 +319,14 @@ __all__ = [
     "EventCardinalityAssumption",
     "BmcProperty",
     "BmcQuery",
+    "BmcBindingDiagnostic",
+    "BoundReference",
+    "BoundInitialSpec",
+    "BoundAssumption",
+    "BoundProperty",
+    "BoundBmcQuery",
+    "bind_bmc_query_structure",
+    "bind_bmc_query",
     "STATE_TERMINATE_ID",
     "STATE_DIAGNOSTIC_ID",
     "StateDomainEntry",

@@ -55,6 +55,14 @@ def test_bmc_public_api_exports_exact_names():
         "EventCardinalityAssumption",
         "BmcProperty",
         "BmcQuery",
+        "BmcBindingDiagnostic",
+        "BoundReference",
+        "BoundInitialSpec",
+        "BoundAssumption",
+        "BoundProperty",
+        "BoundBmcQuery",
+        "bind_bmc_query_structure",
+        "bind_bmc_query",
         "STATE_TERMINATE_ID",
         "STATE_DIAGNOSTIC_ID",
         "StateDomainEntry",
@@ -173,6 +181,7 @@ def test_submodule_all_exports_are_exact():
     query = importlib.import_module("pyfcstm.bmc.query")
     parse = importlib.import_module("pyfcstm.bmc.parse")
     domain = importlib.import_module("pyfcstm.bmc.domain")
+    binding = importlib.import_module("pyfcstm.bmc.binding")
     source = importlib.import_module("pyfcstm.bmc.source")
     macro = importlib.import_module("pyfcstm.bmc.macro")
 
@@ -237,6 +246,16 @@ def test_submodule_all_exports_are_exact():
         "EventInputRef",
         "BmcDomain",
         "build_bmc_domain",
+    }
+    assert set(binding.__all__) == {
+        "BmcBindingDiagnostic",
+        "BoundReference",
+        "BoundInitialSpec",
+        "BoundAssumption",
+        "BoundProperty",
+        "BoundBmcQuery",
+        "bind_bmc_query_structure",
+        "bind_bmc_query",
     }
     assert set(source.__all__) == {
         "TERMINATE_CASE_PATH",

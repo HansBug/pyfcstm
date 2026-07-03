@@ -81,6 +81,8 @@ pyfcstm 遵循三阶段流水线：
 教程
 -------------------------
 
+教程提供学习路径和首次成功流程。它们应当帮助读者先建立可运行的心智模型，再进入任务指南或参考页。
+
 .. toctree::
     :maxdepth: 2
     :caption: 教程
@@ -110,6 +112,48 @@ pyfcstm 遵循三阶段流水线：
 * :doc:`tutorials/grammar/index_zh`
 * :doc:`tutorials/structure/index_zh`
 
+任务指南
+--------
+
+任务指南面向具体操作。本结构先创建稳定骨架；在后续迁移工作完成之前，当前权威内容仍在现有教程页中。
+
+.. toctree::
+    :maxdepth: 2
+    :caption: 任务指南
+    :hidden:
+
+    how_to/index_zh
+
+* :doc:`how_to/index_zh`
+
+解释
+----
+
+解释页说明语义、架构、边界和取舍，用于理解 pyfcstm 为什么这样工作。
+
+.. toctree::
+    :maxdepth: 2
+    :caption: 解释
+    :hidden:
+
+    explanations/index_zh
+
+* :doc:`explanations/index_zh`
+
+参考
+----
+
+参考页用于查准事实。自动生成 API 文档保持原状，并作为参考区最后一项可达。
+
+.. toctree::
+    :maxdepth: 2
+    :caption: 参考
+    :hidden:
+
+    reference/index_zh
+
+* :doc:`reference/index_zh`
+
 版本说明
 -------------------------
 
@@ -121,15 +165,6 @@ pyfcstm 遵循三阶段流水线：
     release_notes_zh
 
 * :doc:`release_notes_zh`
-
-最佳实践
--------------------------
-
-.. toctree::
-    :maxdepth: 2
-    :caption: 最佳实践
-
-.. include:: api_doc_zh.rst
 
 社区和支持
 -----------------------

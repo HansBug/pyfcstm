@@ -34,7 +34,7 @@ pyfcstm 目前托管在 PyPI 上，需要 Python >= 3.7，并且已在 CPython 3
     :linenos:
 
 .. literalinclude:: cli_check.demo.sh.txt
-    :language: txt
+    :language: text
     :linenos:
 
 pyfcstm 仍在开发中，你也可以通过 `https://hansbug.github.io/pyfcstm/main/index.html <https://hansbug.github.io/pyfcstm/main/index.html>`_ 查看稳定版本的文档。

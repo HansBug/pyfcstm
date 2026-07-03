@@ -81,6 +81,8 @@ The framework provides:
 Tutorials
 -------------------------
 
+Tutorials provide learning paths and first-success walkthroughs. They should help readers build a working mental model before they jump into task guides or reference pages.
+
 .. toctree::
     :maxdepth: 2
     :caption: Tutorials
@@ -110,6 +112,48 @@ Tutorials
 * :doc:`tutorials/grammar/index`
 * :doc:`tutorials/structure/index`
 
+How-to Guides
+-------------
+
+How-to guides are task-oriented pages. This structure creates the stable skeleton first; current authoritative content still lives in the existing tutorial pages until later migration work moves it.
+
+.. toctree::
+    :maxdepth: 2
+    :caption: How-to Guides
+    :hidden:
+
+    how_to/index
+
+* :doc:`how_to/index`
+
+Explanations
+------------
+
+Explanations describe semantics, architecture, boundaries, and trade-offs. They are for understanding why pyfcstm behaves the way it does.
+
+.. toctree::
+    :maxdepth: 2
+    :caption: Explanations
+    :hidden:
+
+    explanations/index
+
+* :doc:`explanations/index`
+
+Reference
+---------
+
+Reference pages are for exact facts. The generated API documentation remains intact and is reachable as the last item of the reference area.
+
+.. toctree::
+    :maxdepth: 2
+    :caption: Reference
+    :hidden:
+
+    reference/index
+
+* :doc:`reference/index`
+
 Release Notes
 -------------------------
 
@@ -121,15 +165,6 @@ Release Notes
     release_notes
 
 * :doc:`release_notes`
-
-Best Practice
--------------------------
-
-.. toctree::
-    :maxdepth: 2
-    :caption: Best Practice
-
-.. include:: api_doc_en.rst
 
 Community and Support
 -----------------------

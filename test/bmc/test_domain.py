@@ -761,6 +761,14 @@ def test_domain_snapshot_validation_rejects_hacked_state_entries():
         ),
         (
             "Root.Composite.A",
+            clone_state(
+                by_path["Root.Composite.A"],
+                path="Root.Choice.A",
+                parent_path="Root.Choice",
+            ),
+        ),
+        (
+            "Root.Composite.A",
             clone_state(by_path["Root.Composite.A"], name="B"),
         ),
         (

@@ -85,7 +85,7 @@ _EVENT_ENTRY_FIELDS = (
 )
 
 
-def _validate_positive_bound(bound: int, field_name: str = "bound") -> int:
+def _validate_positive_bound(bound: object, field_name: str = "bound") -> int:
     if isinstance(bound, bool) or not isinstance(bound, int):
         raise InvalidBmcDomain(f"{field_name} must be a positive integer.")
     if bound <= 0:
@@ -93,7 +93,7 @@ def _validate_positive_bound(bound: int, field_name: str = "bound") -> int:
     return bound
 
 
-def _validate_index(index: int, field_name: str) -> int:
+def _validate_index(index: object, field_name: str) -> int:
     if isinstance(index, bool) or not isinstance(index, int):
         raise InvalidBmcDomain(f"{field_name} must be an integer.")
     return index
@@ -119,55 +119,69 @@ def _state_entry_value(entry: object, field_name: str) -> object:
 
 def _validate_state_entry(entry: object) -> None:
     values = {field: _state_entry_value(entry, field) for field in _STATE_ENTRY_FIELDS}
-    _validate_index(values["id"], "state id")
-    _require_non_empty_string(values["path"], "state path")
-    _require_non_empty_string(values["name"], "state name")
-    if values["kind"] not in {"leaf", "composite", "pseudo", "sentinel"}:
-        raise InvalidBmcDomain(f"Unsupported state kind: {values['kind']!r}.")
-    if values["parent_path"] is not None:
-        _require_non_empty_string(values["parent_path"], "parent_path")
-    for field_name in _STATE_ENTRY_BOOL_FIELDS:
-        _require_bool(values[field_name], field_name)
+    state_id = _validate_index(values["id"], "state id")
+    state_path = _require_non_empty_string(values["path"], "state path")
+    state_name = _require_non_empty_string(values["name"], "state name")
+    kind_value = values["kind"]
+    if not isinstance(kind_value, str) or kind_value not in {
+        "leaf",
+        "composite",
+        "pseudo",
+        "sentinel",
+    }:
+        raise InvalidBmcDomain(f"Unsupported state kind: {kind_value!r}.")
+    kind = kind_value
+    if values["parent_path"] is None:
+        parent_path = None
+    else:
+        parent_path = _require_non_empty_string(values["parent_path"], "parent_path")
+    is_root = _require_bool(values["is_root"], "is_root")
+    is_stoppable = _require_bool(values["is_stoppable"], "is_stoppable")
+    is_sentinel = _require_bool(values["is_sentinel"], "is_sentinel")
+    is_generated_combo_pseudo = _require_bool(
+        values["is_generated_combo_pseudo"],
+        "is_generated_combo_pseudo",
+    )
 
-    is_sentinel_kind = values["kind"] == "sentinel"
-    if values["is_sentinel"] != is_sentinel_kind:
+    is_sentinel_kind = kind == "sentinel"
+    if is_sentinel != is_sentinel_kind:
         raise InvalidBmcDomain("State sentinel flag must match sentinel kind.")
-    if values["is_sentinel"]:
-        if values["id"] not in _STATE_SENTINEL_IDS:
+    if is_sentinel:
+        if state_id not in _STATE_SENTINEL_IDS:
             raise InvalidBmcDomain("Sentinel state ids must use fixed BMC ids.")
-        if values["parent_path"] is not None:
+        if parent_path is not None:
             raise InvalidBmcDomain("Sentinel states cannot have parent paths.")
-        if values["is_root"]:
+        if is_root:
             raise InvalidBmcDomain("Sentinel states cannot be root states.")
-        if values["is_stoppable"]:
+        if is_stoppable:
             raise InvalidBmcDomain("Sentinel states cannot be stoppable.")
-        if values["is_generated_combo_pseudo"]:
+        if is_generated_combo_pseudo:
             raise InvalidBmcDomain(
                 "Sentinel states cannot be generated combo pseudo states."
             )
-    elif values["id"] < 0:
+    elif state_id < 0:
         raise InvalidBmcDomain("Model state ids must be non-negative.")
 
-    if not values["is_sentinel"]:
-        if values["is_root"] and values["kind"] == "pseudo":
+    if not is_sentinel:
+        if is_root and kind == "pseudo":
             raise InvalidBmcDomain("Root state cannot be a pseudo state.")
-        if values["is_root"] and values["parent_path"] is not None:
+        if is_root and parent_path is not None:
             raise InvalidBmcDomain("Root state cannot have a parent path.")
-        if values["parent_path"] is None:
-            if values["path"] != values["name"]:
+        if parent_path is None:
+            if state_path != state_name:
                 raise InvalidBmcDomain(
                     "State path without parent must match state name."
                 )
         else:
-            expected_path = "%s.%s" % (values["parent_path"], values["name"])
-            if values["path"] != expected_path:
+            expected_path = "%s.%s" % (parent_path, state_name)
+            if state_path != expected_path:
                 raise InvalidBmcDomain(
                     "State path does not match parent path and name."
                 )
 
-    if values["is_stoppable"] and values["kind"] != "leaf":
+    if is_stoppable and kind != "leaf":
         raise InvalidBmcDomain("Only non-sentinel leaf states can be stoppable.")
-    if values["is_generated_combo_pseudo"] and values["kind"] != "pseudo":
+    if is_generated_combo_pseudo and kind != "pseudo":
         raise InvalidBmcDomain("Generated combo states must be pseudo states.")
 
 
@@ -179,22 +193,25 @@ def _event_entry_value(entry: object, field_name: str) -> object:
 
 def _validate_event_entry(entry: object) -> None:
     values = {field: _event_entry_value(entry, field) for field in _EVENT_ENTRY_FIELDS}
-    _validate_index(values["id"], "event id")
-    if values["id"] < 0:
+    event_id = _validate_index(values["id"], "event id")
+    if event_id < 0:
         raise InvalidBmcDomain("Event ids must be non-negative.")
-    _require_non_empty_string(values["path"], "event path")
-    _require_non_empty_string(values["name"], "event name")
-    _require_non_empty_string(values["owner_state_path"], "owner_state_path")
-    _validate_index(values["owner_state_id"], "owner_state_id")
-    if values["owner_state_id"] < 0:
+    event_path = _require_non_empty_string(values["path"], "event path")
+    event_name = _require_non_empty_string(values["name"], "event name")
+    owner_state_path = _require_non_empty_string(
+        values["owner_state_path"],
+        "owner_state_path",
+    )
+    owner_state_id = _validate_index(values["owner_state_id"], "owner_state_id")
+    if owner_state_id < 0:
         raise InvalidBmcDomain("Event owner state id must be a model state id.")
     _require_bool(
         values["owner_is_generated_combo_pseudo"],
         "owner_is_generated_combo_pseudo",
     )
 
-    expected_path = "%s.%s" % (values["owner_state_path"], values["name"])
-    if values["path"] != expected_path:
+    expected_path = "%s.%s" % (owner_state_path, event_name)
+    if event_path != expected_path:
         raise InvalidBmcDomain("Event path does not match owner state path and name.")
 
 
@@ -629,7 +646,9 @@ class BmcDomain:
     :type frames: Tuple[FrameRef, ...]
     :param steps: Step references ``E_0..E_{N-1}``.
     :type steps: Tuple[StepRef, ...]
-    :param event_inputs: Step/event input slots.
+    :param event_inputs: Step/event input slots.  Domain snapshots require the
+        full step-by-event Cartesian product; query and relation layers perform
+        later pruning or cardinality constraints.
     :type event_inputs: Tuple[EventInputRef, ...]
     :param initial_state_ids: State ids allowed at ``F_0``.
     :type initial_state_ids: Tuple[int, ...]
@@ -810,6 +829,10 @@ class BmcDomain:
             if parent is None or parent.is_sentinel:
                 raise InvalidBmcDomain(
                     "State %r parent path is unknown." % (entry.path,)
+                )
+            if parent.kind != "composite":
+                raise InvalidBmcDomain(
+                    "State %r parent must be a composite state." % (entry.path,)
                 )
 
     def _validate_trace_references(self) -> None:

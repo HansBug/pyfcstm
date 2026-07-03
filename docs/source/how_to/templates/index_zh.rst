@@ -18,7 +18,7 @@
 当前权威内容
 ------------
 
-当前权威内容仍在 :doc:`../../tutorials/render/index_zh`。
+当前权威内容仍在 :doc:`../../tutorials/render/index_zh` 和 :doc:`../../tutorials/generation/index_zh`。
 
 自定义模板编写任务将迁移到这里；内置模板用法仍以 generation 内容为准。
 

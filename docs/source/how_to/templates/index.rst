@@ -18,9 +18,9 @@ Document mode
 Current authority
 -----------------
 
-The current authoritative content remains in :doc:`../../tutorials/render/index`.
+The current authoritative content remains in :doc:`../../tutorials/render/index` and :doc:`../../tutorials/generation/index`.
 
-Custom template authoring tasks will move here; built-in-template usage remains in generation material.
+Custom template authoring tasks will move here; built-in-template usage remains in the generation material.
 
 Non-goals for this stub
 -----------------------

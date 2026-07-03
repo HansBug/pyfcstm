@@ -1280,7 +1280,12 @@ Navigation audit
 Compatibility landing audit
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. list-table:: Old tutorial URL status after PR-J
+This table only covers old tutorial URLs that are now compatibility landing
+pages. The guided tutorial pages that still own tutorial bodies remain in the
+visible ``tutorials/index*.rst`` path: ``quick_start``, ``dsl``,
+``simulation``, ``inspect``, ``generation`` and ``visualization``.
+
+.. list-table:: Compatibility landing URL status after PR-J
    :header-rows: 1
 
    * - Old URL

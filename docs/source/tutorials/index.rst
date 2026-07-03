@@ -6,16 +6,21 @@ ordered walkthroughs: they introduce one concept at a time, run real commands,
 and point to task guides or reference pages when the details become too broad
 for a learning path.
 
+Before you start
+----------------
+
+Install pyfcstm with :doc:`/how_to/installation/index`, then follow the tutorial
+sequence below.
+
 Recommended path
 ----------------
 
-1. Install pyfcstm with :doc:`/how_to/installation/index`.
-2. Run the end-to-end :doc:`quick_start/index`.
-3. Learn the first DSL model in :doc:`dsl/index`.
-4. Execute the model with :doc:`simulation/index`.
-5. Inspect the model with :doc:`inspect/index`.
-6. Generate a runtime with :doc:`generation/index`.
-7. Export a diagram with :doc:`visualization/index`.
+1. Run the end-to-end :doc:`quick_start/index`.
+2. Learn the first DSL model in :doc:`dsl/index`.
+3. Execute the model with :doc:`simulation/index`.
+4. Inspect the model with :doc:`inspect/index`.
+5. Generate a runtime with :doc:`generation/index`.
+6. Export a diagram with :doc:`visualization/index`.
 
 .. toctree::
    :maxdepth: 2

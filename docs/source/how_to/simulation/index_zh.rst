@@ -34,7 +34,7 @@ CLI 选项和命令事实
    * - 命令
      - 用途
    * - ``cycle [count] [events...]``
-     - 执行一个或多个周期。计数后面的事件名会传入该周期。
+     - 执行一个或多个周期。省略 ``count`` 时执行一个周期；``cycle Start`` 这类事件名会传入该周期。
    * - ``current``
      - 显示当前周期、当前状态和持久变量。
    * - ``events``
@@ -61,7 +61,7 @@ CLI 选项和命令事实
 
 .. code-block:: bash
 
-   pyfcstm simulate -i ../cli/simple_machine.fcstm \
+   pyfcstm simulate -i docs/source/tutorials/cli/simple_machine.fcstm \
      -e "cycle; events; cycle Start; current; cycle Stop; history 3" \
      --no-color
 
@@ -77,7 +77,7 @@ CLI 选项和命令事实
 
 .. code-block:: bash
 
-   pyfcstm simulate -i ../cli/simple_machine.fcstm --no-color
+   pyfcstm simulate -i docs/source/tutorials/cli/simple_machine.fcstm --no-color
 
 然后逐条输入命令：
 
@@ -166,7 +166,7 @@ handler context 是只读的。常用 helper 包括 ``ctx.get_full_state_path()`
    history 2
    export run.json
 
-机器处理优先用 JSON 或 JSONL；表格处理用 CSV；若安装环境支持 YAML，YAML 适合人工阅读快照。除非文件是由 docs build 重新生成并纳入版本控制的 demo 输出，否则导出文件应放在源码树外。
+机器处理优先用 JSON 或 JSONL；表格处理用 CSV；YAML 适合人工阅读快照。除非文件是由 docs build 重新生成并纳入版本控制的 demo 输出，否则导出文件应放在源码树外。
 
 调整显示设置
 ------------
@@ -188,7 +188,7 @@ handler context 是只读的。常用 helper 包括 ``ctx.get_full_state_path()`
 一个紧凑调试循环是：
 
 1. 如果怀疑解析或诊断问题，先运行 ``pyfcstm inspect``。
-2. 用 ``pyfcstm simulate -i ../cli/simple_machine.fcstm -e "cycle; events; current" --no-color``
+2. 用 ``pyfcstm simulate -i docs/source/tutorials/cli/simple_machine.fcstm -e "cycle; events; current" --no-color``
    获得稳定转录。
 3. 每次只增加一个事件。
 4. 失败后使用 ``history`` 或 ``export``。

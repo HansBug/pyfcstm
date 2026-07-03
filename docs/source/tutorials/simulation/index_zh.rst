@@ -31,7 +31,6 @@ FCSTM 仿真首次运行
 
 .. literalinclude:: cli_batch.demo.sh.txt
    :language: text
-   :lines: 1-31
 
 第一次 ``cycle`` 会把机器初始化到 ``SimpleMachine.Idle``。``events`` 随后显示当前状态可用的
 ``Start`` 事件。执行 ``cycle Start`` 后，当前状态变为 ``SimpleMachine.Running``；``cycle Stop`` 到达
@@ -70,6 +69,12 @@ FCSTM 仿真首次运行
      - :doc:`../../how_to/simulation/index_zh`
    * - 抽象处理器
      - :doc:`../../how_to/simulation/index_zh`
+   * - 配置设置和命令行事实
+     - :doc:`../../how_to/simulation/index_zh`
+   * - 测试、调试和最佳实践说明
+     - :doc:`../../how_to/simulation/index_zh`
+   * - 业务示例和长语义演练
+     - :doc:`../../explanations/execution_semantics/index_zh`
    * - 执行顺序、复合状态进入、切面动作和伪状态
      - :doc:`../../explanations/execution_semantics/index_zh`
    * - 示例使用的 DSL 语法

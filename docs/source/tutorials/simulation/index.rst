@@ -39,7 +39,6 @@ The documentation keeps this transcript generated from a real demo script:
 
 .. literalinclude:: cli_batch.demo.sh.txt
    :language: text
-   :lines: 1-31
 
 The first ``cycle`` initializes the machine at ``SimpleMachine.Idle``.  The
 ``events`` command then shows that ``Start`` is available from the current
@@ -82,6 +81,12 @@ material.  The main topics now live here:
      - :doc:`../../how_to/simulation/index`
    * - Abstract handlers
      - :doc:`../../how_to/simulation/index`
+   * - Configuration settings and command-line facts
+     - :doc:`../../how_to/simulation/index`
+   * - Testing, debugging and best-practice notes
+     - :doc:`../../how_to/simulation/index`
+   * - Business examples and long semantic walkthroughs
+     - :doc:`../../explanations/execution_semantics/index`
    * - Execution order, composite entry, aspect actions and pseudo states
      - :doc:`../../explanations/execution_semantics/index`
    * - DSL syntax used by examples

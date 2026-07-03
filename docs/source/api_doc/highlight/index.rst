@@ -9,6 +9,7 @@ pyfcstm.highlight
 .. toctree::
     :maxdepth: 3
 
+    bmc_query_lexer
     pygments_lexer
 
 \_\_all\_\_

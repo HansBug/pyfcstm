@@ -10,6 +10,7 @@ pyfcstm.bmc
     :maxdepth: 3
 
     ast
+    binding
     domain
     errors
     expand

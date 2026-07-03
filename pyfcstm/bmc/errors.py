@@ -20,6 +20,7 @@ The module contains:
 * :class:`UnsupportedBmcQuery` - Well-formed query that this implementation
   deliberately does not support yet.
 * :class:`InvalidBmcEncoding` - Invalid symbolic encoding construction error.
+* :class:`InvalidBmcDomain` - Invalid BMC model-domain construction error.
 * :class:`BmcBuildError` - General BMC build or preparation error.
 
 Example::
@@ -89,6 +90,20 @@ class InvalidBmcEncoding(BmcError):
     """
 
 
+class InvalidBmcDomain(BmcError):
+    """Raised when BMC domain construction receives invalid data.
+
+    :param message: Human-readable domain message.
+    :type message: str
+
+    Example::
+
+        >>> err = InvalidBmcDomain("unknown state")
+        >>> isinstance(err, BmcError)
+        True
+    """
+
+
 class BmcBuildError(BmcError):
     """Raised when BMC preparation cannot build a usable context.
 
@@ -108,5 +123,6 @@ __all__ = [
     "InvalidBmcQuery",
     "UnsupportedBmcQuery",
     "InvalidBmcEncoding",
+    "InvalidBmcDomain",
     "BmcBuildError",
 ]

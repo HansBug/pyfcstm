@@ -26,7 +26,7 @@ Public module structure:
    * - Error hierarchy
      - :class:`BmcError`, :class:`InvalidBmcQuery`,
        :class:`UnsupportedBmcQuery`, :class:`InvalidBmcEncoding`,
-       :class:`BmcBuildError`
+       :class:`InvalidBmcDomain`, :class:`BmcBuildError`
      - Provide stable BMC-specific exception types without importing
        ``pyfcstm.verify``.
    * - Typed expression bases
@@ -47,6 +47,13 @@ Public module structure:
        :class:`Terminated`, :class:`Event`, :class:`Case`, :class:`Called`
      - Represent frame variables, cycle counters, active state, selected event,
        selected macro-step case, termination, and future abstract-call atoms.
+   * - BMC domain model
+     - :class:`StateDomainEntry`, :class:`EventDomainEntry`,
+       :class:`VarDomainEntry`, :class:`FrameRef`, :class:`StepRef`,
+       :class:`EventInputRef`, :class:`BmcDomain`,
+       :func:`build_bmc_domain`
+     - Number model states, events, persistent variables, frames, steps,
+       sentinel states, and event-input slots before solver lowering.
    * - Query root model
      - :class:`InitialSpec`, :class:`FrameAssumption`,
        :class:`EventAssumption`, :class:`EventCardinalityAssumption`,
@@ -87,9 +94,22 @@ from pyfcstm.bmc.ast import (
     Terminated,
     UFuncCall,
 )
+from pyfcstm.bmc.domain import (
+    STATE_DIAGNOSTIC_ID,
+    STATE_TERMINATE_ID,
+    BmcDomain,
+    EventDomainEntry,
+    EventInputRef,
+    FrameRef,
+    StateDomainEntry,
+    StepRef,
+    VarDomainEntry,
+    build_bmc_domain,
+)
 from pyfcstm.bmc.errors import (
     BmcBuildError,
     BmcError,
+    InvalidBmcDomain,
     InvalidBmcEncoding,
     InvalidBmcQuery,
     UnsupportedBmcQuery,
@@ -109,6 +129,7 @@ __all__ = [
     "InvalidBmcQuery",
     "UnsupportedBmcQuery",
     "InvalidBmcEncoding",
+    "InvalidBmcDomain",
     "BmcBuildError",
     "BmcExpr",
     "BmcNumExpr",
@@ -140,4 +161,14 @@ __all__ = [
     "EventCardinalityAssumption",
     "BmcProperty",
     "BmcQuery",
+    "STATE_TERMINATE_ID",
+    "STATE_DIAGNOSTIC_ID",
+    "StateDomainEntry",
+    "EventDomainEntry",
+    "VarDomainEntry",
+    "FrameRef",
+    "StepRef",
+    "EventInputRef",
+    "BmcDomain",
+    "build_bmc_domain",
 ]

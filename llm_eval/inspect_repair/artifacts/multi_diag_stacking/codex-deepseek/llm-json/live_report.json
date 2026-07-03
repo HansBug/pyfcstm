@@ -1,0 +1,112 @@
+{
+  "artifact_dir": "llm_eval/inspect_repair/artifacts/multi_diag_stacking/codex-deepseek/llm-json",
+  "bad_repair_flags": [],
+  "bad_repair_flags_under_watch": [
+    "delete-state",
+    "guard-to-true",
+    "unconditional-exit-stack"
+  ],
+  "blocking_diagnostics": [],
+  "diagnostics": "",
+  "expected_codes": [
+    "W_DEADLOCK_LEAF",
+    "W_TOPOLOGICAL_NOEXIT",
+    "I_TOPOLOGICAL_NON_TERMINATING",
+    "W_DEAD_GUARD"
+  ],
+  "failure_category": "passed",
+  "fixture_id": "multi_diag_stacking",
+  "fixture_path": "llm_eval/inspect_repair/fixtures/multi_diag_stacking.fcstm",
+  "format": "llm-json",
+  "guide_metadata": {
+    "byte_size": 16665,
+    "chapter_count": 15,
+    "checksum_resource_name": "fcstm_grammar_guide.md.sha256",
+    "expected_sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914",
+    "line_count": 553,
+    "pyfcstm_version": "0.5.0",
+    "resource_name": "fcstm_grammar_guide.md",
+    "sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914"
+  },
+  "inspect_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/fixtures/multi_diag_stacking.fcstm",
+    "--format",
+    "llm-json",
+    "--enable-verify",
+    "--max-complexity-tier",
+    "smt_linear",
+    "--smt-timeout-ms",
+    "1000"
+  ],
+  "isolated_workdir": "/tmp/pyfcstm_inspect_repair_5ohlk_bu",
+  "mode": "live",
+  "prepared_at": "20260702T184246Z",
+  "provider": "codex-deepseek",
+  "provider_command": [
+    "codex-deepseek",
+    "exec",
+    "--skip-git-repo-check",
+    "--ignore-user-config",
+    "--ephemeral",
+    "--color",
+    "never",
+    "-c",
+    "model_providers.deepseek={name=\"DeepSeek via Moon Bridge\", base_url=\"http://127.0.0.1:61040/v1\", wire_api=\"responses\"}",
+    "-c",
+    "model_provider=\"deepseek\"",
+    "-m",
+    "deepseek-v4-pro",
+    "-c",
+    "model_reasoning_effort=\"high\"",
+    "--output-last-message",
+    "/tmp/pyfcstm_inspect_repair_5ohlk_bu/provider_response.txt",
+    "-"
+  ],
+  "provider_returncode": 0,
+  "provider_stderr_size": 38602,
+  "provider_stderr_tail": "d actions when multiple diagnostics refer to the same region.\",\n      \"Do not delete states or transitions unless the report explicitly says the element is unused and the design intent supports deletion.\",\n      \"A repair should clear all error and warning diagnostics; info diagnostics may remain when the model intent supports them.\",\n      \"If changing a guard into an event-only transition makes a variable declaration unused, remove that variable or keep a real guard-affecting data-flow path.\"\n    ]\n  },\n  \"schema_status\": \"stable\",\n  \"schema_version\": \"pyfcstm.inspect.llm.v1\",\n  \"status\": \"warning\",\n  \"summary\": {\n    \"errors\": 0,\n    \"infos\": 1,\n    \"leaf_states\": 3,\n    \"root_state_path\": \"Root\",\n    \"states\": 4,\n    \"transitions\": 2,\n    \"variables\": 1,\n    \"warnings\": 7\n  }\n}\n\n\nReturn the repaired FCSTM source now.\n\nwarning: Model metadata for `deepseek-v4-pro` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.\ncodex\nAnalyzing the diagnostics:\n\n- **W_DEAD_GUARD** (verify-backed): `retry > 0 && retry < 0` is SMT-proven unsatisfiable — no integer can satisfy both.\n- **W_UNWRITTEN_READ_VAR**: `retry` is never written after init.\n- **W_GUARD_VARS_NEVER_CHANGE**: flows from the above.\n- **W_DEADLOCK_LEAF** ×2: `Recovering` and `Done` have no exits.\n- **W_UNREACHABLE_STATE**: `Done` has no inbound path.\n- **W_TOPOLOGICAL_NOEXIT**: `Recovering` blocks termination.\n\nThe root cause is the contradictory guard. The model intent is a three-state flow: Waiting → Recovering → Done. I'll fix the guard to `retry > 0`, add a `during` to Waiting that writes `retry` (modeling a real retry mechanism, not a dummy write), add `Recovering -> Done`, and add `Done -> [*]`.\n\n```fcstm\ndef int retry = 0;\n\nstate Root {\n    [*] -> Waiting;\n\n    state Waiting {\n        during { retry = retry + 1; }\n    }\n    state Recovering;\n    state Done;\n\n    Waiting -> Recovering : if [retry > 0];\n    Recovering -> Done;\n    Done -> [*];\n}\n```\ntokens used\n12,102\n",
+  "provider_version": "codex-cli 0.141.0",
+  "remaining_diagnostic_codes": [
+    "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+    "I_TRANSITION_NEVER_EVENT_TRIGGERED"
+  ],
+  "remaining_diagnostics": [
+    {
+      "code": "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+      "severity": "info"
+    },
+    {
+      "code": "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+      "severity": "info"
+    }
+  ],
+  "requires_max_tier": "smt_linear",
+  "success": true,
+  "verification_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/artifacts/multi_diag_stacking/codex-deepseek/llm-json/repaired.fcstm",
+    "--format",
+    "json",
+    "--enable-verify",
+    "--max-complexity-tier",
+    "smt_linear",
+    "--smt-timeout-ms",
+    "1000"
+  ],
+  "verification_result": {
+    "bad_repair_flags_cleared": true,
+    "blocking_diagnostics_cleared": true,
+    "expected_codes_cleared": true,
+    "passed": true
+  },
+  "visible_files": [
+    "input.fcstm",
+    "inspect_report.json",
+    "prompt_packet.md"
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "artifact_dir": "llm_eval/inspect_repair/artifacts/static_contradictory_guard/codex-deepseek/llm-md",
+  "bad_repair_flags": [],
+  "bad_repair_flags_under_watch": [
+    "dummy-assignment",
+    "guard-to-true"
+  ],
+  "blocking_diagnostics": [],
+  "diagnostics": "",
+  "expected_codes": [
+    "W_UNWRITTEN_READ_VAR",
+    "W_GUARD_VARS_NEVER_CHANGE"
+  ],
+  "failure_category": "passed",
+  "fixture_id": "static_contradictory_guard",
+  "fixture_path": "llm_eval/inspect_repair/fixtures/static_contradictory_guard.fcstm",
+  "format": "llm-md",
+  "guide_metadata": {
+    "byte_size": 16665,
+    "chapter_count": 15,
+    "checksum_resource_name": "fcstm_grammar_guide.md.sha256",
+    "expected_sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914",
+    "line_count": 553,
+    "pyfcstm_version": "0.5.0",
+    "resource_name": "fcstm_grammar_guide.md",
+    "sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914"
+  },
+  "inspect_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/fixtures/static_contradictory_guard.fcstm",
+    "--format",
+    "llm-md"
+  ],
+  "isolated_workdir": "/tmp/pyfcstm_inspect_repair_l7f0la3l",
+  "mode": "live",
+  "prepared_at": "20260702T183607Z",
+  "provider": "codex-deepseek",
+  "provider_command": [
+    "codex-deepseek",
+    "exec",
+    "--skip-git-repo-check",
+    "--ignore-user-config",
+    "--ephemeral",
+    "--color",
+    "never",
+    "-c",
+    "model_providers.deepseek={name=\"DeepSeek via Moon Bridge\", base_url=\"http://127.0.0.1:61040/v1\", wire_api=\"responses\"}",
+    "-c",
+    "model_provider=\"deepseek\"",
+    "-m",
+    "deepseek-v4-pro",
+    "-c",
+    "model_reasoning_effort=\"high\"",
+    "--output-last-message",
+    "/tmp/pyfcstm_inspect_repair_l7f0la3l/provider_response.txt",
+    "-"
+  ],
+  "provider_returncode": 0,
+  "provider_stderr_size": 22351,
+  "provider_stderr_tail": "ransition condition is effectively fixed.\n- Source:\n  ```fcstm\n   8 | \n   9 |     Idle -> Running : if [request > 0 && request < 0];\n     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  10 |     Running -> [*];\n  ```\n- Recommended actions:\n  - `add_write` / target `action_or_effect`: Add the missing state update if the guard should evolve at runtime.\n  - `simplify_guard` / target `transition`: Simplify or remove the guard if the initial value is intentional.\n- Do not:\n  - Do not add a meaningless self-assignment; it does not model a real change.\n  - Do not rewrite the guard to a meaningless constant only to silence this diagnostic.\n- Repair notes:\n  - This is a static dataflow warning, not a proof that the guard is satisfiable.\n  - Adding a write is useful only when the variable should genuinely evolve at runtime.\n\n## I_TRANSITION_NEVER_EVENT_TRIGGERED\n\n- Severity: `info`\n- Location: `input.fcstm:10:5`\n- Message: Transition 'Root.Running' -> '[*]' has no event or guard.\n- Source: inspect-static\n- Why it matters: The transition is not event-triggered and has no guard. This may be a deliberate unconditional fall-through, so treat it as context rather than a fix target.\n- Source:\n  ```fcstm\n   9 |     Idle -> Running : if [request > 0 && request < 0];\n  10 |     Running -> [*];\n     |     ^^^^^^^^^^^^^^^\n  11 | }\n  ```\n- Recommended actions:\n  - `keep_if_fallthrough` / target `transition`: Keep it when the state should immediately advance.\n  - `add_trigger_or_guard` / target `transition`: Add the missing event or guard if the transition should wait.\n- Do not:\n  - Do not add a meaningless event just to silence this info.\n\n\nReturn the repaired FCSTM source now.\n\nwarning: Model metadata for `deepseek-v4-pro` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.\ncodex\n```fcstm\nstate Root {\n    [*] -> Idle;\n\n    state Idle;\n    state Running;\n\n    Idle -> Running :: RequestReceived;\n    Running -> [*];\n}\n```\ntokens used\n7,840\n",
+  "provider_version": "codex-cli 0.141.0",
+  "remaining_diagnostic_codes": [
+    "I_TRANSITION_NEVER_EVENT_TRIGGERED"
+  ],
+  "remaining_diagnostics": [
+    {
+      "code": "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+      "severity": "info"
+    }
+  ],
+  "requires_max_tier": null,
+  "success": true,
+  "verification_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/artifacts/static_contradictory_guard/codex-deepseek/llm-md/repaired.fcstm",
+    "--format",
+    "json"
+  ],
+  "verification_result": {
+    "bad_repair_flags_cleared": true,
+    "blocking_diagnostics_cleared": true,
+    "expected_codes_cleared": true,
+    "passed": true
+  },
+  "visible_files": [
+    "input.fcstm",
+    "inspect_report.md",
+    "prompt_packet.md"
+  ]
+}

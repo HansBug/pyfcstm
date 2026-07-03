@@ -65,6 +65,7 @@ papers or long external documents.
 ```text
 llm_eval/
   fixtures/              # Natural-language prompt inputs.
+  inspect_repair/        # FCSTM+inspect -> repaired FCSTM evaluation.
   outputs/<provider>/    # Raw provider output, extracted FCSTM, per-case reports.
   reports/               # Aggregated replay/live JSON summaries.
 ```
@@ -79,6 +80,26 @@ Each live output directory contains:
 Aggregated reports under `reports/` are useful for PR evidence and review
 comments. Per-case reports are useful when debugging one fixture or one
 provider.
+
+## Inspect Repair Evaluation
+
+The `inspect_repair/` subtree is a separate evaluation track. It does not ask a
+provider to generate a model from natural language. Instead, it gives the
+provider an existing FCSTM source file, the official grammar guide, and an
+`llm-json` or `llm-md` inspect report, then checks whether the provider can make
+a minimal safe repair.
+
+Keep these two evaluation tracks distinct:
+
+- The root fixtures evaluate the prompt guide's ability to produce legal FCSTM
+  from natural-language controller descriptions.
+- `inspect_repair/` evaluates whether the `pyfcstm inspect` LLM report contract
+  provides enough localized, provenance-aware feedback for repair loops.
+
+The repair track has its own fixture manifest, prompt template, isolation
+rules, failure categories, and artifacts. Its runner must execute the repair
+generation stage in an isolated temporary working directory so the provider can
+see only the prompt packet and fixture source, not the repository tree.
 
 ## Fixture Coverage Matrix
 

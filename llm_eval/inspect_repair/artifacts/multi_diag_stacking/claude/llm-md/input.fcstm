@@ -1,0 +1,11 @@
+def int retry = 0;
+
+state Root {
+    [*] -> Waiting;
+
+    state Waiting;
+    state Recovering;
+    state Done;
+
+    Waiting -> Recovering : if [retry > 0 && retry < 0];
+}

@@ -292,6 +292,7 @@ def test_domain_entry_validation_rejects_malformed_values():
         lambda: EventDomainEntry(-1, "Root.Go", "Go", "Root", 0),
         lambda: EventDomainEntry(0, "Root.Go", "Go", "Root", -1),
         lambda: EventDomainEntry(0, "", "Go", "Root", 0),
+        lambda: EventDomainEntry(0, "Root.Go", "Go", "Root", 0, 0),
         lambda: VarDomainEntry(-1, "x", "int"),
         lambda: VarDomainEntry(0, "", "int"),
         lambda: EventInputRef(-1, 0, "Root.Go"),
@@ -404,7 +405,7 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
     """BmcDomain validates complete frame, step, sentinel, and input metadata."""
     from pyfcstm.bmc import EventDomainEntry, StateDomainEntry
 
-    leaf = StateDomainEntry(0, "Root", "Root", "leaf", is_stoppable=True)
+    leaf = StateDomainEntry(0, "Root", "Root", "leaf", is_root=True, is_stoppable=True)
     terminate = StateDomainEntry(
         STATE_TERMINATE_ID,
         "$STATE_TERMINATE",
@@ -421,14 +422,20 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
     )
     event = EventDomainEntry(0, "Root.Go", "Go", "Root", 0)
 
-    def unsafe_event_entry(owner_state_path, owner_state_id):
+    def unsafe_event_entry(
+        owner_state_path, owner_state_id, owner_is_generated_combo_pseudo=False
+    ):
         entry = object.__new__(EventDomainEntry)
         object.__setattr__(entry, "id", 0)
         object.__setattr__(entry, "path", "Root.Go")
         object.__setattr__(entry, "name", "Go")
         object.__setattr__(entry, "owner_state_path", owner_state_path)
         object.__setattr__(entry, "owner_state_id", owner_state_id)
-        object.__setattr__(entry, "owner_is_generated_combo_pseudo", False)
+        object.__setattr__(
+            entry,
+            "owner_is_generated_combo_pseudo",
+            owner_is_generated_combo_pseudo,
+        )
         return entry
 
     frames = (FrameRef(0, 1), FrameRef(1, 1))
@@ -490,6 +497,7 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
         dict(events=(unsafe_event_entry("$STATE_TERMINATE", STATE_TERMINATE_ID),)),
         dict(events=(EventDomainEntry(0, "Root.Go", "Go", "Missing", 0),)),
         dict(events=(EventDomainEntry(0, "Root.Go", "Go", "Root", 0, True),)),
+        dict(events=(unsafe_event_entry("Root", 0, 0),)),
         dict(event_inputs=(EventInputRef(1, 0, "Root.Go"),)),
         dict(event_inputs=(EventInputRef(0, 1, "Root.Go"),)),
         dict(event_inputs=(EventInputRef(0, 0, "Root.Bad"),)),
@@ -598,6 +606,30 @@ def test_domain_snapshot_validation_rejects_hacked_state_entries():
         (
             "Root.Composite.A",
             clone_state(by_path["Root.Composite.A"], is_stoppable="yes"),
+        ),
+        (
+            "Root.Composite",
+            clone_state(by_path["Root.Composite"], is_root=True),
+        ),
+        (
+            "Root.Composite.A",
+            clone_state(by_path["Root.Composite.A"], parent_path=None),
+        ),
+        (
+            "Root.Composite.A",
+            clone_state(by_path["Root.Composite.A"], parent_path="Root.Missing"),
+        ),
+        (
+            "Root.Composite.A",
+            clone_state(by_path["Root.Composite.A"], name="B"),
+        ),
+        (
+            "Root",
+            clone_state(by_path["Root"], parent_path="Root.Composite"),
+        ),
+        (
+            "Root",
+            clone_state(by_path["Root"], name="NotRoot"),
         ),
     ]
 

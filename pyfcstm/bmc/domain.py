@@ -272,6 +272,10 @@ class EventDomainEntry:
         _validate_index(self.owner_state_id, "owner_state_id")
         if self.owner_state_id < 0:
             raise InvalidBmcDomain("Event owner state id must be a model state id.")
+        _require_bool(
+            self.owner_is_generated_combo_pseudo,
+            "owner_is_generated_combo_pseudo",
+        )
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable event entry dictionary.
@@ -622,6 +626,7 @@ class BmcDomain:
         self._validate_state_entries()
         self._validate_unique_entries()
         self._validate_sentinel_entries()
+        self._validate_state_topology()
         self._validate_trace_references()
         self._validate_event_owners()
         self._validate_event_inputs()
@@ -724,6 +729,44 @@ class BmcDomain:
         ):
             raise InvalidBmcDomain("Diagnostic sentinel entry is malformed.")
 
+    def _validate_state_topology(self) -> None:
+        """Validate model-state parent and root topology.
+
+        :return: ``None``.
+        :rtype: None
+        :raises InvalidBmcDomain: If model state paths, names, root flags, or
+            parent links are inconsistent.
+        """
+        entries_by_path = {entry.path: entry for entry in self.states}
+        model_entries = [entry for entry in self.states if not entry.is_sentinel]
+        root_entries = [entry for entry in model_entries if entry.is_root]
+        if len(root_entries) != 1:
+            raise InvalidBmcDomain("Domain must contain exactly one model root state.")
+
+        root = root_entries[0]
+        if root.parent_path is not None:
+            raise InvalidBmcDomain("Root state cannot have a parent path.")
+        if root.path != root.name:
+            raise InvalidBmcDomain("Root state path must match the root name.")
+
+        for entry in model_entries:
+            if entry.is_root:
+                continue
+            if entry.parent_path is None:
+                raise InvalidBmcDomain(
+                    "Non-root state %r must have a parent path." % (entry.path,)
+                )
+            parent = entries_by_path.get(entry.parent_path)
+            if parent is None or parent.is_sentinel:
+                raise InvalidBmcDomain(
+                    "State %r parent path is unknown." % (entry.path,)
+                )
+            expected_path = "%s.%s" % (entry.parent_path, entry.name)
+            if entry.path != expected_path:
+                raise InvalidBmcDomain(
+                    "State %r path does not match parent path and name." % (entry.path,)
+                )
+
     def _validate_trace_references(self) -> None:
         if len(self.frames) != self.bound + 1:
             raise InvalidBmcDomain("Domain must contain bound + 1 frames.")
@@ -759,6 +802,10 @@ class BmcDomain:
                 raise InvalidBmcDomain(
                     "Event %r owner path does not match owner state id." % (event.path,)
                 )
+            _require_bool(
+                event.owner_is_generated_combo_pseudo,
+                "owner_is_generated_combo_pseudo",
+            )
             if owner.is_generated_combo_pseudo != event.owner_is_generated_combo_pseudo:
                 raise InvalidBmcDomain(
                     "Event %r owner generated-combo flag is inconsistent."

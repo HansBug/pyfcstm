@@ -257,6 +257,44 @@ def test_bind_bmc_query_structure_rejects_context_errors(
 
 @pytest.mark.unittest
 @pytest.mark.parametrize(
+    "source, expected_path",
+    [
+        pytest.param(
+            'check reach <= 1: active(" ");',
+            "property.predicate",
+            id="active-whitespace-path",
+        ),
+        pytest.param(
+            'check reach <= 1: var(" ") == 0;',
+            "property.predicate.left",
+            id="frame-var-whitespace-name",
+        ),
+        pytest.param(
+            'check response <= 1: trigger event(" ", current) -> within 1 true;',
+            "property.trigger",
+            id="response-event-whitespace-path",
+        ),
+        pytest.param(
+            'check cover <= 1: case(" ");',
+            "property.predicate.label",
+            id="cover-case-whitespace-label",
+        ),
+    ],
+)
+def test_bind_bmc_query_structure_reports_diagnostics_for_whitespace_query_atoms(
+    source, expected_path
+):
+    """Binder reports structured diagnostics for whitespace-only quoted atoms."""
+    with pytest.raises(InvalidBmcQuery) as excinfo:
+        _bind(source)
+
+    diagnostic = _diagnostic(excinfo)
+    assert diagnostic.code == "query_shape"
+    assert expected_path in diagnostic.path
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
     "source, code",
     [
         pytest.param(

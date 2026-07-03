@@ -792,6 +792,7 @@ class _BindingContext:
 def _resolve_state(
     ctx: _BindingContext, state_path: str, path: str, spelling: str
 ) -> Optional[int]:
+    _require_non_empty_field(state_path, path, "state path")
     if state_path in _RESERVED_STATE_PATHS:
         _raise_binding_error(
             "reserved_state_path",
@@ -814,6 +815,7 @@ def _resolve_state(
 def _resolve_event(
     ctx: _BindingContext, event_path: str, path: str, spelling: str
 ) -> Optional[int]:
+    _require_non_empty_field(event_path, path, "event path")
     if not ctx.has_domain:
         ctx.add_reference("event", event_path, path, spelling)
         return None
@@ -830,6 +832,7 @@ def _resolve_event(
 def _resolve_variable(
     ctx: _BindingContext, name: str, path: str, spelling: str
 ) -> Optional[int]:
+    _require_non_empty_field(name, path, "variable name")
     if not ctx.has_domain:
         ctx.add_reference("variable", name, path, spelling)
         return None
@@ -1130,6 +1133,9 @@ def _bind_property(ctx: _BindingContext, property_node: BmcProperty) -> BoundPro
                 "property.predicate",
                 'cover properties require a naked case("label") predicate.',
             )
+        _require_non_empty_field(
+            predicate.label, "property.predicate.label", "case label"
+        )
         return BoundProperty(property_node, case_label=predicate.label)
     _bind_condition_expr(
         ctx,

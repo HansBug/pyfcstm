@@ -5,6 +5,7 @@ pyfcstm is a powerful state machine DSL tool that provides a command-line interf
 
 The most common documentation-facing commands are:
 
+- ``pyfcstm simulate``: Run an interactive or batch simulator
 - ``pyfcstm plantuml``: Generate raw PlantUML text
 - ``pyfcstm visualize``: Render a final diagram file directly
 - ``pyfcstm inspect``: Emit human-readable diagnostics by default, with explicit structured JSON available through ``--format json``
@@ -40,29 +41,64 @@ Verifying Installation
 
 Check the installed version:
 
-.. literalinclude:: version_check.demo.sh
-   :language: bash
+.. code-block:: bash
 
-Output:
+   pyfcstm --version
 
-.. literalinclude:: version_check.demo.sh.txt
-   :language: text
+A successful installation prints the package version and maintainer metadata.
 
 Getting Help
 ---------------------
 
-The CLI provides comprehensive help for all commands:
+The CLI provides concise help for the top-level command and every subcommand:
 
-.. literalinclude:: help_example.demo.sh
-   :language: bash
+.. code-block:: bash
 
-This will show:
+   pyfcstm --help
+   pyfcstm simulate --help
+   pyfcstm plantuml --help
+   pyfcstm generate --help
+   pyfcstm visualize --help
 
-.. literalinclude:: help_example.demo.sh.txt
-   :language: text
+Use the subcommand help when you need exact option names for scripts. The
+examples below keep only the stable, short command shapes; generated demo output
+is refreshed by the docs resource build when full command transcripts are
+needed.
 
 Command Reference
 -------------------------------------
+
+
+simulate Command
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Run a state machine directly from a DSL file. Use interactive mode for manual
+exploration, or pass a semicolon-separated command chain with ``-e`` for
+repeatable examples and scripts.
+
+**Syntax**:
+
+.. code-block:: bash
+
+   pyfcstm simulate -i <input_file> [-e "current; cycle Start; current"] [--no-color]
+
+**Parameters**:
+
+- ``-i, --input-code``: Path to input state machine DSL file (required)
+- ``-e, --execute``: Batch commands to execute and then exit
+- ``--no-color``: Disable ANSI color output
+
+**Examples**:
+
+.. code-block:: bash
+
+   # Start the interactive REPL
+   pyfcstm simulate -i simple_machine.fcstm
+
+   # Run a small batch command chain
+   pyfcstm simulate -i simple_machine.fcstm -e "current; cycle; current"
+
+The full runtime walkthrough lives in :doc:`/tutorials/simulation/index`.
 
 plantuml Command
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

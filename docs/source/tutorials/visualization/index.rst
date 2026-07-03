@@ -11,7 +11,7 @@ pyfcstm provides two primary methods for visualizing state machines:
 1. **Python API**: Programmatic control with the ``PlantUMLOptions`` class
 2. **Command-Line Interface**: Quick visualization with flexible configuration options
 
-Both methods support the same comprehensive configuration system, allowing you to control every aspect of the generated PlantUML diagrams.
+Both methods share the typed PlantUML output options exposed by the CLI; the Python API also exposes object-valued options such as custom color dictionaries.
 
 Combo transition triggers are visible after expansion: generated pseudo states use the reserved ``__combo_`` prefix internally and stable human-readable labels in diagrams, so diagrams accurately show the model consumed by downstream tools.
 
@@ -98,14 +98,18 @@ Output:
 CLI Visualization
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The command-line interface provides quick access to visualization with flexible configuration.
+The command-line interface provides quick access to PlantUML source generation and rendered diagram export with flexible configuration.
 
 .. note::
 
-   This page focuses on the shared PlantUML output configuration used by both
-   ``pyfcstm plantuml`` and ``pyfcstm visualize``. If you need renderer
-   selection, direct ``png`` / ``svg`` / ``pdf`` rendering, backend checks, or
-   auto-open behavior, see :doc:`/tutorials/cli/index`.
+   This page focuses on PlantUML source generation and the shared output
+   configuration used by both ``pyfcstm plantuml`` and ``pyfcstm visualize``.
+   The checked-in command demos use ``pyfcstm plantuml`` because it produces
+   deterministic ``.puml`` files for documentation builds. The ``pyfcstm visualize``
+   command accepts the same ``-l`` / ``-c`` configuration before rendering
+   ``png`` / ``svg`` / ``pdf`` files, but renderer availability and viewer
+   launch depend on the local PlantUML backend, remote service, and desktop
+   environment; see :doc:`/tutorials/cli/index` for those operational flags.
 
 **Basic Usage**
 
@@ -130,7 +134,7 @@ Output:
 Configuration System
 ---------------------------------------
 
-The visualization system provides comprehensive configuration through ``PlantUMLOptions``. All options are available in both Python API and CLI.
+The visualization system provides comprehensive configuration through ``PlantUMLOptions``. Most typed scalar and tuple options are available through both the Python API and the ``-c key=value`` arguments accepted by ``pyfcstm plantuml`` / ``pyfcstm visualize``. Exceptions are marked explicitly: ``detail_level`` uses the dedicated ``-l/--level`` CLI option, and Python-only objects such as custom color dictionaries require the Python API.
 
 Configuration Options Reference
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -152,7 +156,7 @@ The following table provides a complete reference of all available configuration
    * - ``detail_level``
      - str
      - ``'normal'``
-     - Preset detail level: ``'minimal'``, ``'normal'``, or ``'full'``
+     - Preset detail level: ``'minimal'``, ``'normal'``, or ``'full'``. Python API field; CLI users should use ``-l/--level`` instead of ``-c detail_level=...``.
    * - **Variable Display**
      -
      -
@@ -260,7 +264,7 @@ The following table provides a complete reference of all available configuration
    * - ``event_visualization_mode``
      - str
      - ``'none'``
-     - Event visualization: ``'none'``, ``'color'``, ``'legend'``, ``'both'``
+     - Event visualization: ``'none'``, ``'color'``, ``'legend'``, ``'both'``, or ``'dependency_view'`` (reserved for dependency-view output)
    * - ``event_legend_position``
      - str
      - ``'right'``
@@ -272,7 +276,7 @@ The following table provides a complete reference of all available configuration
    * - ``max_depth``
      - int
      - ``None``
-     - Maximum nesting depth to visualize (None = unlimited)
+     - Maximum nesting depth to visualize (``None`` = unlimited, ``0`` = root state only, positive values count expanded depth from the root state)
    * - ``collapsed_state_marker``
      - str
      - ``'...'``
@@ -292,19 +296,19 @@ The following table provides a complete reference of all available configuration
    * - ``custom_colors``
      - dict
      - ``None``
-     - Custom color mapping for events (event path -> hex color)
+     - Python API only: custom color mapping for events (event path -> hex color)
 
 **Notes:**
 
 - Options with ``None`` default inherit from ``detail_level`` preset or parent options
 - ``show_lifecycle_actions`` controls defaults for enter/during/exit/aspect/abstract/concrete actions
 - Tuple options accept multiple format elements combined in display order
-- CLI uses ``-c key=value`` syntax for configuration
+- CLI uses ``-c key=value`` syntax for supported typed options; use ``-l/--level`` for ``detail_level`` presets, and use the Python API for dictionary-valued options such as ``custom_colors``
 
 Detail Level Presets
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Detail level presets provide quick configuration for common use cases:
+Detail level presets provide quick configuration for common use cases. In Python, pass ``detail_level=...`` to ``PlantUMLOptions``; in the CLI, use ``-l/--level`` rather than ``-c detail_level=...``.
 
 - **minimal**: Bare structure with minimal details
 - **normal**: Balanced view with essential information (default)
@@ -447,7 +451,7 @@ Customize how state names are displayed in the diagram.
 
 **Configuration Options**
 
-- ``state_name_format`` (tuple[str, ...]): Format components - ``'name'``, ``'path'``, ``'relpath'``
+- ``state_name_format`` (tuple[str, ...]): Format components - ``'name'``, ``'extra_name'``, ``'path'``
 - ``show_pseudo_state_style`` (bool): Apply special styling to pseudo states
 - ``collapse_empty_states`` (bool): Collapse states with no actions or substates
 
@@ -486,7 +490,7 @@ Control which lifecycle actions (enter, during, exit) are shown in the diagram.
 - ``show_aspect_actions`` (bool): Show aspect actions (``>> during before/after``)
 - ``show_abstract_actions`` (bool): Show abstract action declarations
 - ``show_concrete_actions`` (bool): Show concrete action implementations
-- ``abstract_action_marker`` (str): Marker for abstract actions (default: ``'«abstract»'``)
+- ``abstract_action_marker`` (str): Marker mode for abstract actions: ``'text'``, ``'symbol'``, or ``'none'`` (default: ``'text'``)
 - ``max_action_lines`` (int): Maximum lines to show per action block
 
 **Example**
@@ -516,7 +520,18 @@ Output:
 
 **Generated Visualizations**
 
-The lifecycle actions configuration produces different outputs based on which actions are shown:
+The first command in ``cli_config.demo.sh`` enables event labels and produces
+this deterministic PlantUML source artifact:
+
+.. figure:: output_with_events.puml.svg
+   :alt: Events visible configuration visualization
+   :align: center
+   :width: 80%
+
+   Event labels enabled with ``show_events=true`` and depth limited with ``max_depth=3``
+
+The lifecycle actions configuration produces a separate output based on which
+actions are shown:
 
 .. figure:: output_lifecycle.puml.svg
    :alt: Lifecycle actions configuration visualization
@@ -534,7 +549,7 @@ Control how transitions are displayed in the diagram.
 
 - ``show_transition_guards`` (bool): Show guard conditions on transitions
 - ``show_transition_effects`` (bool): Show effect blocks on transitions
-- ``transition_effect_mode`` (str): How to display effects - ``'note'`` or ``'inline'``
+- ``transition_effect_mode`` (str): How to display effects - ``'note'``, ``'inline'``, or ``'hide'``
 
 **Example**
 
@@ -565,8 +580,8 @@ Control how events are displayed in the diagram.
 **Configuration Options**
 
 - ``show_events`` (bool): Show event names on transitions
-- ``event_name_format`` (tuple[str, ...]): Format components - ``'name'``, ``'path'``, ``'relpath'``
-- ``event_visualization_mode`` (str): Visualization mode - ``'none'``, ``'color'``, ``'legend'``, or ``'both'``
+- ``event_name_format`` (tuple[str, ...]): Format components - ``'name'``, ``'extra_name'``, ``'path'``, ``'relpath'``
+- ``event_visualization_mode`` (str): Visualization mode - ``'none'``, ``'color'``, ``'legend'``, ``'both'``, or ``'dependency_view'`` (reserved for dependency-view output)
 - ``event_legend_position`` (str): Event legend position when using ``'legend'`` or ``'both'`` mode (default: ``'right'``)
 
   - Available positions: ``'top left'``, ``'top center'``, ``'top right'``, ``'bottom left'``, ``'bottom center'``, ``'bottom right'``, ``'left'``, ``'right'``, ``'center'``
@@ -630,7 +645,7 @@ Control how deep the visualization goes into nested states.
 
 **Configuration Options**
 
-- ``max_depth`` (int): Maximum nesting depth to visualize (0 = unlimited)
+- ``max_depth`` (int): Maximum nesting depth to visualize (``None`` = unlimited in Python, ``0`` = root state only, positive values count expanded depth from the root state)
 - ``collapsed_state_marker`` (str): Marker for collapsed states (default: ``'...'``)
 
 **Example**

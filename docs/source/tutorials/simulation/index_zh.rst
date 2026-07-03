@@ -59,7 +59,7 @@ Python 用法
 - ``runtime.cycle()``：执行一个完整的周期
 - ``runtime.current_state``：获取当前状态对象（使用 ``.path`` 获取元组或 ``'.'.join(.path)`` 获取字符串）
 - ``runtime.vars``：以字典形式访问/修改变量
-- ``runtime.is_terminated``：检查状态机是否已终止
+- ``runtime.is_ended``：检查状态机是否已结束
 
 触发事件
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -131,15 +131,14 @@ Python 用法
        # 获取当前状态路径
        state_path = ctx.get_full_state_path()
 
-       # 访问/修改变量
+       # 从不可变快照中读取变量
        counter = ctx.get_var('counter')
-       ctx.set_var('counter', counter + 1)
+       has_temperature = ctx.has_var('temperature')
 
-       # 获取状态对象
-       state = ctx.get_state()
-
-       # 访问运行时
-       runtime = ctx.get_runtime()
+       # 查看抽象调用点元数据
+       active_leaf = ctx.active_leaf
+       action_name = ctx.action_name
+       action_stage = ctx.action_stage
 
 CLI 用法
 ---------------------------------------
@@ -153,7 +152,7 @@ CLI 用法
 
 .. code-block:: bash
 
-   pyfcstm simulate -i example.fcstm
+   pyfcstm simulate -i ../cli/simple_machine.fcstm
 
 对于多文件 import 工程，命令形态同样不变，输入仍然只是入口文件：
 
@@ -182,6 +181,8 @@ CLI 用法
      - 列出当前状态中的可用事件
    * - ``history [n|all]``
      - 显示执行历史（默认：最近 10 条）。使用 ``all`` 显示完整历史
+   * - ``clear``
+     - 使用当前设置重置到初始状态
    * - ``setting [key] [value]``
      - 查看或更改设置。不带参数时显示所有设置
    * - ``export <filename>``
@@ -207,97 +208,34 @@ CLI 用法
 - **自动建议**：先前的命令显示为灰色建议
 - **彩色输出**：状态、变量和事件的语法高亮
 
-示例会话
+可复现的 CLI 转录
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. code-block:: text
+交互模式和批处理模式共享同一个命令处理器。教程使用一段短小的批处理转录捕获真实输出，
+而不是手写一大段容易漂移的 REPL 会话，因此输出会随当前 CLI 行为保持一致：
 
-   $ pyfcstm simulate -i example.fcstm
+.. literalinclude:: cli_batch.demo.sh
+   :language: bash
+   :caption: 可复现的仿真命令转录
 
-   ╔══════════════════════════════════════════════════════════╗
-   ║  State Machine Interactive Simulator                     ║
-   ╟──────────────────────────────────────────────────────────╢
-   ║  Type 'help' to see available commands                   ║
-   ╚══════════════════════════════════════════════════════════╝
+输出：
 
-   simulate> current
-   Cycle: 0
-   Current State: System.Idle
-   Variables:
-     counter = 0
-     temperature = 25.0
-
-   simulate> events
-   Available Events:
-     • Start (System.Events.Start)
-     • Reset (System.Events.Reset)
-
-   simulate> cycle Start
-   Cycle: 1
-   Current State: System.Running.Active
-   Variables:
-     counter = 1
-     temperature = 25.1
-
-   simulate> cycle 5
-    Cycle     State      counter  temperature
-   --------------------------------------------
-      2    Root.Active     2         25.2
-      3    Root.Active     3         25.3
-      4    Root.Active     4         25.4
-      5    Root.Active     5         25.5
-      6    Root.Active     6         25.6
-
-   simulate> history 3
-    Cycle     State      counter  temperature
-   --------------------------------------------
-      4    Root.Active     4         25.4
-      5    Root.Active     5         25.5
-      6    Root.Active     6         25.6
-
-   simulate> export history.csv
-   Exported 6 history entries to history.csv
-
-   simulate> quit
-   Goodbye!
+.. literalinclude:: cli_batch.demo.sh.txt
+   :language: text
 
 批处理模式
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-使用 ``-e`` 标志非交互式执行命令：
+使用 ``-e`` 标志非交互式执行命令。多条命令用分号分隔，命令名称与交互式
+REPL 相同：
 
 .. code-block:: bash
 
-   pyfcstm simulate -i example.fcstm -e "current; cycle Start; current; events"
+   pyfcstm simulate -i ../cli/simple_machine.fcstm \
+     -e "cycle; events; cycle Start; current; cycle Stop; history 3" \
+     --no-color
 
-输出：
-
-.. code-block:: text
-
-   ────────────────────────────────────────────────────────────
-   >>> current
-   ────────────────────────────────────────────────────────────
-   Current State: System.Idle
-   Variables:
-     counter = 0
-     temperature = 25.0
-
-   ────────────────────────────────────────────────────────────
-   >>> cycle Start
-   ────────────────────────────────────────────────────────────
-   Current State: System.Running.Active
-   Variables:
-     counter = 1
-     temperature = 25.1
-
-   ────────────────────────────────────────────────────────────
-   >>> events
-   ────────────────────────────────────────────────────────────
-   Available Events:
-     • Stop (System.Events.Stop)
-     • Pause (System.Events.Pause)
-
-批处理模式适用于自动化测试、CI/CD 流水线和脚本编写。
+上面的转录就是由这条命令链生成的。批处理模式适用于自动化测试、CI 检查和短小可复现示例。
 
 配置设置
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -316,10 +254,10 @@ CLI 用法
      - 100
      - 保留的最大历史条目数
    * - ``color``
-     - on
-     - 启用/禁用彩色输出（on/off）
+     - True
+     - 启用/禁用彩色输出（输入可用 on/off 或 true/false）
    * - ``log_level``
-     - info
+     - warning
      - 日志详细程度（debug/info/warning/error/off）
 
 示例：
@@ -327,14 +265,14 @@ CLI 用法
 .. code-block:: text
 
    simulate> setting
-   Current Settings:
-     table_max_rows = 20
+   Current settings:
+     color = True
      history_size = 100
-     color = on
-     log_level = info
+     log_level = warning
+     table_max_rows = 20
 
    simulate> setting log_level debug
-   Setting 'log_level' set to: debug
+   Setting updated: log_level = debug
 
 导出格式
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -346,9 +284,9 @@ CLI 用法
    * - 格式
      - 说明
    * - CSV
-     - 分号分隔值，带标题行（``cycle;state;var1;var2;...``）
+     - 逗号分隔值，带标题行（``cycle,state,events,var1,var2,...``）；``events`` 单元格内部的多个事件名使用 ``;`` 连接
    * - JSON
-     - JSON 数组，对象包含 ``cycle``、``state`` 和 ``vars``
+     - JSON 数组，对象包含 ``cycle``、``state``、``events`` 和 ``vars``
    * - YAML
      - YAML 数组，结构与 JSON 相同
    * - JSONL
@@ -359,7 +297,7 @@ CLI 用法
 .. code-block:: bash
 
    simulate> export history.csv
-   Exported 6 history entries to history.csv
+   History exported to history.csv (6 entries)
 
 命令行选项
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1131,7 +1069,7 @@ DFS 验证机制
      - ``GoP``，``GoB``
      - Root.B
      - 1112
-     - 提供两个事件，验证成功：``A -> P``\ （+10，+100）``-> B``，执行 ``B.during``\ （+1000）
+     - 提供两个事件，验证成功：``A -> P``\ （+10，+100），再到 ``B``\ ，执行 ``B.during``\ （+1000）
 
 **详细执行跟踪** ：
 
@@ -1185,7 +1123,7 @@ DFS 验证机制
 组合 transition trigger 在模型构建后也使用同一机制。例如 ``A -> B :: GoP + [ready > 0] + GoB`` 的行为类似于自动生成的伪状态链：从 ``A`` 经过两个不可停止的组合伪状态，最终到达 ``B``\ 。如果缺少 ``GoB`` 或守卫为假，验证会拒绝这条链，源状态保持活动。
 
 示例 10：验证失败 - 不可达的可停止状态
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 当复合状态的初始转换无法到达可停止状态时，转换被拒绝：
 
@@ -1943,7 +1881,7 @@ DFS 验证机制
 - ``draw_count`` 支持用水模式分析用于能源管理
 
 示例 13：主干道信号灯带行人过街请求
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 此例子模拟城市路口中常见的信号控制器：主干道默认保持绿灯；行人按钮被按下后，请求会先被锁存；只有主干道最小绿灯时间达到后，控制器才进入黄灯和行人放行阶段，结束后再回到主干道绿灯。
 
@@ -2162,7 +2100,7 @@ DFS 验证机制
 - 测试初始化、所有转换、守卫、效果和终止
 - 每个周期后打印状态和变量以进行调试
 - 使用抽象处理器跟踪执行
-- 使用 ``runtime.get_current_state_object()`` 检查状态对象
+- 使用 ``runtime.current_state`` 检查状态对象
 
 **使用热启动进行测试**
 
@@ -2226,7 +2164,7 @@ DFS 验证机制
    > cycle 3
    # 快速测试加热行为
 
-**重要提示** ：热启动会跳过进入动作。确保进入动作不包含关键的初始化逻辑，或手动验证行为。
+**重要提示**\ ：热启动会跳过 enter 动作，并且必须提供所有持久变量。请确认 enter 动作不包含关键初始化逻辑，同时让深层复合 / 伪状态链保持在当前运行时实现记录的安全上限内。
 
 处理器实现
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

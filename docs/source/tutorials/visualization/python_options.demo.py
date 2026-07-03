@@ -6,7 +6,7 @@ from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.model.plantuml import PlantUMLOptions
 
 # Read the example state machine
-with open('example.fcstm', 'r') as f:
+with open('example.fcstm', 'r', encoding='utf-8') as f:
     code = f.read()
 
 # Parse DSL code
@@ -25,7 +25,7 @@ options = PlantUMLOptions(
 plantuml_output = model.to_plantuml(options)
 
 # Save to file
-with open('output_custom.puml', 'w') as f:
+with open('output_custom.puml', 'w', encoding='utf-8') as f:
     f.write(plantuml_output)
 
 print("PlantUML diagram with custom options generated: output_custom.puml")

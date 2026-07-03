@@ -59,7 +59,7 @@ Output:
 - ``runtime.cycle()``: Execute one complete cycle
 - ``runtime.current_state``: Get current state object (use ``.path`` for tuple or ``'.'.join(.path)`` for string)
 - ``runtime.vars``: Access/modify variables as a dictionary
-- ``runtime.is_terminated``: Check if state machine has terminated
+- ``runtime.is_ended``: Check if state machine has ended
 
 Triggering Events
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -131,15 +131,14 @@ Output:
        # Get current state path
        state_path = ctx.get_full_state_path()
 
-       # Access/modify variables
+       # Read variables from the immutable snapshot
        counter = ctx.get_var('counter')
-       ctx.set_var('counter', counter + 1)
+       has_temperature = ctx.has_var('temperature')
 
-       # Get state object
-       state = ctx.get_state()
-
-       # Access runtime
-       runtime = ctx.get_runtime()
+       # Inspect abstract callsite metadata
+       active_leaf = ctx.active_leaf
+       action_name = ctx.action_name
+       action_stage = ctx.action_stage
 
 CLI Usage
 ---------------------------------------
@@ -153,7 +152,7 @@ Launch the simulator with a DSL file:
 
 .. code-block:: bash
 
-   pyfcstm simulate -i example.fcstm
+   pyfcstm simulate -i ../cli/simple_machine.fcstm
 
 The same command shape works for multi-file import projects. The input is still
 just the entry file:
@@ -183,6 +182,8 @@ Available Commands
      - List available events in current state
    * - ``history [n|all]``
      - Show execution history (default: 10 recent entries). Use ``all`` to show complete history
+   * - ``clear``
+     - Reset to the initial state with the current settings
    * - ``setting [key] [value]``
      - View or change settings. Without arguments, shows all settings
    * - ``export <filename>``
@@ -208,97 +209,36 @@ Interactive Features
 - **Auto-suggestions**: Previous commands appear as gray suggestions
 - **Color output**: Syntax highlighting for states, variables, and events
 
-Example Session
+Reproducible CLI Transcript
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. code-block:: text
+Interactive mode and batch mode share the same command processor. The docs
+capture a short batch transcript instead of hand-writing a long REPL session,
+so the output stays aligned with the current CLI:
 
-   $ pyfcstm simulate -i example.fcstm
+.. literalinclude:: cli_batch.demo.sh
+   :language: bash
+   :caption: Reproducible simulation command transcript
 
-   ╔══════════════════════════════════════════════════════════╗
-   ║  State Machine Interactive Simulator                     ║
-   ╟──────────────────────────────────────────────────────────╢
-   ║  Type 'help' to see available commands                   ║
-   ╚══════════════════════════════════════════════════════════╝
+Output:
 
-   simulate> current
-   Cycle: 0
-   Current State: System.Idle
-   Variables:
-     counter = 0
-     temperature = 25.0
-
-   simulate> events
-   Available Events:
-     • Start (System.Events.Start)
-     • Reset (System.Events.Reset)
-
-   simulate> cycle Start
-   Cycle: 1
-   Current State: System.Running.Active
-   Variables:
-     counter = 1
-     temperature = 25.1
-
-   simulate> cycle 5
-    Cycle     State      counter  temperature
-   --------------------------------------------
-      2    Root.Active     2         25.2
-      3    Root.Active     3         25.3
-      4    Root.Active     4         25.4
-      5    Root.Active     5         25.5
-      6    Root.Active     6         25.6
-
-   simulate> history 3
-    Cycle     State      counter  temperature
-   --------------------------------------------
-      4    Root.Active     4         25.4
-      5    Root.Active     5         25.5
-      6    Root.Active     6         25.6
-
-   simulate> export history.csv
-   Exported 6 history entries to history.csv
-
-   simulate> quit
-   Goodbye!
+.. literalinclude:: cli_batch.demo.sh.txt
+   :language: text
 
 Batch Mode
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Execute commands non-interactively using the ``-e`` flag:
+Execute commands non-interactively using the ``-e`` flag. Commands are separated
+by semicolons and use the same names as the interactive REPL:
 
 .. code-block:: bash
 
-   pyfcstm simulate -i example.fcstm -e "current; cycle Start; current; events"
+   pyfcstm simulate -i ../cli/simple_machine.fcstm \
+     -e "cycle; events; cycle Start; current; cycle Stop; history 3" \
+     --no-color
 
-Output:
-
-.. code-block:: text
-
-   ────────────────────────────────────────────────────────────
-   >>> current
-   ────────────────────────────────────────────────────────────
-   Current State: System.Idle
-   Variables:
-     counter = 0
-     temperature = 25.0
-
-   ────────────────────────────────────────────────────────────
-   >>> cycle Start
-   ────────────────────────────────────────────────────────────
-   Current State: System.Running.Active
-   Variables:
-     counter = 1
-     temperature = 25.1
-
-   ────────────────────────────────────────────────────────────
-   >>> events
-   ────────────────────────────────────────────────────────────
-   Available Events:
-     • Stop (System.Events.Stop)
-     • Pause (System.Events.Pause)
-
-Batch mode is useful for automated testing, CI/CD pipelines, and scripting.
+The transcript above is generated from this exact command chain. Batch mode
+is useful for automated tests, CI checks, and short reproducible examples.
 
 Configuration Settings
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -317,10 +257,10 @@ Configuration Settings
      - 100
      - Maximum history entries to keep
    * - ``color``
-     - on
-     - Enable/disable color output (on/off)
+     - True
+     - Enable/disable color output (input accepts on/off or true/false)
    * - ``log_level``
-     - info
+     - warning
      - Logging verbosity (debug/info/warning/error/off)
 
 Example:
@@ -328,14 +268,14 @@ Example:
 .. code-block:: text
 
    simulate> setting
-   Current Settings:
-     table_max_rows = 20
+   Current settings:
+     color = True
      history_size = 100
-     color = on
-     log_level = info
+     log_level = warning
+     table_max_rows = 20
 
    simulate> setting log_level debug
-   Setting 'log_level' set to: debug
+   Setting updated: log_level = debug
 
 Export Formats
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -347,9 +287,9 @@ Export Formats
    * - Format
      - Description
    * - CSV
-     - Semicolon-separated values with headers (``cycle;state;var1;var2;...``)
+     - Comma-separated values with headers (``cycle,state,events,var1,var2,...``); multiple event names inside the ``events`` cell are joined with ``;``
    * - JSON
-     - JSON array with objects containing ``cycle``, ``state``, and ``vars``
+     - JSON array with history objects containing ``cycle``, ``state``, ``events``, and ``vars``
    * - YAML
      - YAML array with the same structure as JSON
    * - JSONL
@@ -360,7 +300,7 @@ Example:
 .. code-block:: bash
 
    simulate> export history.csv
-   Exported 6 history entries to history.csv
+   History exported to history.csv (6 entries)
 
 Command Line Options
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -471,7 +411,7 @@ Example 1: Basic Transition
 - **Result**: ``state = Root.B``, ``counter = 12``
 
 Example 2: Composite State with Initial Transition
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. literalinclude:: example2_composite.full.fcstm
    :language: fcstm
@@ -614,7 +554,7 @@ Example 3: Aspect Actions
 **Key Point**: Aspect actions (``>> during before/after``) execute in hierarchical order around the leaf state's ``during`` action, creating a sandwich pattern: before → during → after.
 
 Example 4: Pseudo State (Skipping Aspect Actions)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. literalinclude:: example4_pseudo.full.fcstm
    :language: fcstm
@@ -667,7 +607,7 @@ Example 4: Pseudo State (Skipping Aspect Actions)
 **Key Point**: Pseudo states skip all ancestor aspect actions, executing only their own ``during`` action. This is useful for intermediate states that shouldn't trigger cross-cutting concerns.
 
 Example 5: Multi-Level Composite State
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. literalinclude:: example5_multilevel.full.fcstm
    :language: fcstm
@@ -986,7 +926,7 @@ Self-transitions execute exit and enter actions, providing a way to reset state-
 - **Self-transition**  (cycle 4): Full sequence executes: ``exit`` (+100) → ``enter`` (+1) → ``during`` (+10)
 
 Example 8: Guard Conditions with Effects
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Guards and effects work together to enable complex conditional transitions with state modifications:
 
@@ -1091,7 +1031,7 @@ When transitioning to a non-stoppable state (composite or pseudo), the runtime p
 4. If no stoppable state is reachable: validation fails, stay in current state
 
 Example 9: Pseudo State Chain Validation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Pseudo states require validation to ensure they lead to stoppable states:
 
@@ -1188,7 +1128,7 @@ Pseudo states require validation to ensure they lead to stoppable states:
 Combo transition triggers use this same mechanism after model construction. For example, ``A -> B :: GoP + [ready > 0] + GoB`` behaves like an automatically generated pseudo chain from ``A`` through two non-stoppable combo pseudo states and finally to ``B``. If ``GoB`` is missing or the guard is false, validation rejects the chain and the source state remains active.
 
 Example 10: Validation Failure - Unreachable Stoppable
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 When a composite state's initial transitions cannot reach a stoppable state, the transition is rejected:
 
@@ -1266,7 +1206,7 @@ Hot Start Feature
 The hot start feature allows starting execution from an arbitrary state without executing enter actions. This section demonstrates the mechanism through concrete examples showing how hot start constructs the execution stack and affects lifecycle action execution.
 
 Example 14: Hot Start from Leaf State
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This example demonstrates hot starting from a leaf state, showing how the runtime skips enter actions but executes during actions normally.
 
@@ -1352,7 +1292,7 @@ Hot start configuration: ``initial_state="System.Active"``, ``initial_vars={"cou
 - Behaves as if already entered and stabilized at Active state
 
 Example 15: Hot Start with Aspect Actions
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This example shows how aspect actions (``>> during before/after``) execute normally during hot start, while enter actions are skipped.
 
@@ -1422,7 +1362,7 @@ Hot start configuration: ``initial_state="Root.B"``, ``initial_vars={"counter": 
 - Aspect actions apply to all descendant leaf states, including hot-started states
 
 Example 16: Hot Start from Composite State
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This example demonstrates hot starting from a composite state, showing how the runtime automatically performs initial transitions to find a stoppable leaf state.
 
@@ -1737,7 +1677,7 @@ This state machine models a typical elevator safety system where:
 - ``reopen_count`` tracks safety events for maintenance monitoring
 
 Example 12: Water Heater Temperature Control
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This example simulates a common residential storage water heater: water temperature gradually decreases during standby, heating activates when temperature drops below the lower threshold, and deactivates when reaching the upper threshold. Heavy water usage causes rapid temperature drop, triggering earlier heating.
 
@@ -1946,7 +1886,7 @@ This state machine models a typical hysteresis temperature control system where:
 - ``draw_count`` enables usage pattern analysis for energy management
 
 Example 13: Traffic Light with Pedestrian Crossing
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This example simulates a common urban intersection signal controller: the main road maintains green light by default; when a pedestrian button is pressed, the request is latched; only after the minimum green time is satisfied does the controller enter yellow light and pedestrian crossing phases, then returns to main road green.
 
@@ -2165,7 +2105,7 @@ Testing and Debugging
 - Test initialization, all transitions, guards, effects, and termination
 - Print state and variables after each cycle for debugging
 - Use abstract handlers to trace execution
-- Inspect state objects with ``runtime.get_current_state_object()``
+- Inspect state objects with ``runtime.current_state``
 
 **Using Hot Start for Testing**
 
@@ -2229,7 +2169,7 @@ Hot start allows jumping directly to specific states for targeted testing withou
    > cycle 3
    # Quickly test heating behavior
 
-**Important**: Hot start skips enter actions. Ensure enter actions don't contain critical initialization logic, or verify behavior manually.
+**Important**: Hot start skips enter actions and must provide all persistent variables. Ensure enter actions do not contain critical initialization logic, and keep deep composite / pseudo chains within the runtime safety limits documented by the current implementation.
 
 Handler Implementation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

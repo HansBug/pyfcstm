@@ -11,6 +11,7 @@ echo "Generated with events visible: output_with_events.puml"
 
 # Customize lifecycle actions display
 pyfcstm plantuml -i example.fcstm \
+  -c show_lifecycle_actions=true \
   -c show_enter_actions=true \
   -c show_during_actions=true \
   -c show_exit_actions=false \

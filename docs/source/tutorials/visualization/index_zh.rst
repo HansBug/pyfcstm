@@ -11,7 +11,7 @@ pyfcstm 提供两种主要的状态机可视化方法：
 1. **Python API**：通过 ``PlantUMLOptions`` 类进行编程控制
 2. **命令行界面**：使用灵活的配置选项快速可视化
 
-两种方法都支持相同的综合配置系统，允许你控制生成的 PlantUML 图表的各个方面。
+两种方法共享 CLI 暴露的类型化 PlantUML 输出选项；Python API 还额外暴露自定义颜色字典等对象值选项。
 
 组合 transition trigger 会在展开后如实可见：生成的伪状态内部使用保留的 ``__combo_`` 前缀，并在图中使用稳定的人类可读标签，因此图表展示的就是下游工具实际消费的模型。
 
@@ -98,13 +98,17 @@ Python API 通过 ``PlantUMLOptions`` 类提供对可视化的编程控制。
 CLI 可视化
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-命令行界面提供快速访问可视化功能，配置灵活。
+命令行界面提供了灵活配置的 PlantUML 源码生成和图像导出入口。
 
 .. note::
 
-   本页主要介绍 ``pyfcstm plantuml`` 和 ``pyfcstm visualize`` 共享的
-   PlantUML 输出配置。如果你关注渲染后端选择、直接输出 ``png`` / ``svg`` /
-   ``pdf``、后端检查或自动打开行为，请参见 :doc:`/tutorials/cli/index_zh`。
+   本页主要介绍 PlantUML 源码生成，以及 ``pyfcstm plantuml`` 和
+   ``pyfcstm visualize`` 共享的输出配置。下面签入的命令 demo 使用
+   ``pyfcstm plantuml`` 命令，因为它能为文档构建生成稳定的
+   ``.puml`` 文件。 ``pyfcstm visualize`` 命令会在渲染 ``png`` / ``svg`` / ``pdf``
+   前接受同一套 ``-l`` / ``-c`` 配置，但 renderer 可用性和查看器启动
+   依赖本地 PlantUML backend、远端服务和桌面环境；这些运行参数请参见
+   :doc:`/tutorials/cli/index_zh`。
 
 **基本用法**
 
@@ -129,7 +133,7 @@ CLI 可视化
 配置系统
 ---------------------------------------
 
-可视化系统通过 ``PlantUMLOptions`` 提供全面的配置。所有选项在 Python API 和 CLI 中都可用。
+可视化系统通过 ``PlantUMLOptions`` 提供全面配置。大多数类型化标量和元组选项可以通过 Python API 以及 ``pyfcstm plantuml`` / ``pyfcstm visualize`` 的 ``-c key=value`` 参数使用。例外项会单独标明：\ ``detail_level``\ 使用专门的 ``-l/--level`` CLI 选项，自定义颜色字典等 Python-only 对象需要通过 Python API 配置。
 
 配置选项参考
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -151,7 +155,7 @@ CLI 可视化
    * - ``detail_level``
      - str
      - ``'normal'``
-     - 预设详细级别：``'minimal'``、``'normal'`` 或 ``'full'``
+     - 预设详细级别：``'minimal'``、``'normal'`` 或 ``'full'``。这是 Python API 字段；CLI 用户应使用 ``-l/--level``\ ，不要使用 ``-c detail_level=...``\ 。
    * - **变量显示**
      -
      -
@@ -259,7 +263,7 @@ CLI 可视化
    * - ``event_visualization_mode``
      - str
      - ``'none'``
-     - 事件可视化：``'none'``、``'color'``、``'legend'``、``'both'``
+     - 事件可视化：``'none'``、``'color'``、``'legend'``、``'both'`` 或 ``'dependency_view'``\ （为 dependency-view 输出保留）
    * - ``event_legend_position``
      - str
      - ``'right'``
@@ -271,7 +275,7 @@ CLI 可视化
    * - ``max_depth``
      - int
      - ``None``
-     - 可视化的最大嵌套深度（None = 无限制）
+     - 可视化的最大嵌套深度（ ``None`` = 无限制， ``0`` = 仅根状态，正数表示从根状态开始计数的展开深度）
    * - ``collapsed_state_marker``
      - str
      - ``'...'``
@@ -291,19 +295,19 @@ CLI 可视化
    * - ``custom_colors``
      - dict
      - ``None``
-     - 事件的自定义颜色映射（事件路径 -> 十六进制颜色）
+     - 仅 Python API：事件的自定义颜色映射（事件路径 -> 十六进制颜色）
 
 **注意：**
 
 - 默认值为 ``None`` 的选项从 ``detail_level`` 预设或父选项继承
 - ``show_lifecycle_actions`` 控制 enter/during/exit/aspect/abstract/concrete 动作的默认值
 - 元组选项接受多个格式元素，按显示顺序组合
-- CLI 使用 ``-c key=value`` 语法进行配置
+- CLI 对受支持的类型化选项使用 ``-c key=value`` 语法；\ ``detail_level``\ 预设使用 ``-l/--level``\ ，\ ``custom_colors``\ 等字典值选项需要通过 Python API 配置
 
 详细级别预设
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-详细级别预设为常见用例提供快速配置：
+详细级别预设为常见用例提供快速配置。Python 中向 ``PlantUMLOptions`` 传入 ``detail_level=...``\ ；CLI 中使用 ``-l/--level``\ ，不要使用 ``-c detail_level=...``\ 。
 
 - **minimal**：最小细节的基本结构
 - **normal**：包含基本信息的平衡视图（默认）
@@ -419,7 +423,7 @@ CLI 可视化
 
 **配置选项**
 
-- ``state_name_format`` (tuple[str, ...])：格式组件 - ``'name'``、``'path'``、``'relpath'``
+- ``state_name_format`` (tuple[str, ...])：格式组件 - ``'name'``、``'extra_name'``、``'path'``
 - ``show_pseudo_state_style`` (bool)：对伪状态应用特殊样式
 - ``collapse_empty_states`` (bool)：折叠没有动作或子状态的状态
 
@@ -458,7 +462,7 @@ CLI 可视化
 - ``show_aspect_actions`` (bool)：显示切面动作（``>> during before/after``）
 - ``show_abstract_actions`` (bool)：显示抽象动作声明
 - ``show_concrete_actions`` (bool)：显示具体动作实现
-- ``abstract_action_marker`` (str)：抽象动作的标记（默认：``'«abstract»'``）
+- ``abstract_action_marker`` (str)：抽象动作的标记模式：``'text'``、``'symbol'`` 或 ``'none'``\ （默认：``'text'``）
 - ``max_action_lines`` (int)：每个动作块显示的最大行数
 
 **示例**
@@ -488,7 +492,17 @@ CLI 可视化
 
 **生成的可视化效果**
 
-生命周期动作配置根据显示的动作产生不同的输出：
+``cli_config.demo.sh`` 中的第一条命令会启用事件标签，并生成这个稳定的
+PlantUML 源码产物：
+
+.. figure:: output_with_events.puml.svg
+   :alt: 启用事件显示的配置可视化
+   :align: center
+   :width: 80%
+
+   通过 ``show_events=true`` 启用事件标签，并用 ``max_depth=3`` 限制展开深度
+
+生命周期动作配置会根据显示的动作生成另一份输出：
 
 .. figure:: output_lifecycle.puml.svg
    :alt: 生命周期动作配置可视化
@@ -506,7 +520,7 @@ CLI 可视化
 
 - ``show_transition_guards`` (bool)：在转换上显示守卫条件
 - ``show_transition_effects`` (bool)：在转换上显示效果块
-- ``transition_effect_mode`` (str)：如何显示效果 - ``'note'`` 或 ``'inline'``
+- ``transition_effect_mode`` (str)：如何显示效果 - ``'note'``、``'inline'`` 或 ``'hide'``
 
 **示例**
 
@@ -537,8 +551,8 @@ CLI 可视化
 **配置选项**
 
 - ``show_events`` (bool)：在转换上显示事件名称
-- ``event_name_format`` (tuple[str, ...])：格式组件 - ``'name'``、``'path'``、``'relpath'``
-- ``event_visualization_mode`` (str)：可视化模式 - ``'none'``、``'color'``、``'legend'`` 或 ``'both'``
+- ``event_name_format`` (tuple[str, ...])：格式组件 - ``'name'``、``'extra_name'``、``'path'``、``'relpath'``
+- ``event_visualization_mode`` (str)：可视化模式 - ``'none'``、``'color'``、``'legend'``、``'both'`` 或 ``'dependency_view'``\ （为 dependency-view 输出保留）
 - ``event_legend_position`` (str)：使用 ``'legend'`` 或 ``'both'`` 模式时的事件图例位置（默认：``'right'``）
 
   - 可用位置：``'top left'``、``'top center'``、``'top right'``、``'bottom left'``、``'bottom center'``、``'bottom right'``、``'left'``、``'right'``、``'center'``
@@ -599,7 +613,7 @@ CLI 可视化
 
 **配置选项**
 
-- ``max_depth`` (int)：可视化的最大嵌套深度（0 = 无限制）
+- ``max_depth`` (int)：可视化的最大嵌套深度（Python 中 ``None`` = 无限制， ``0`` = 仅根状态，正数表示从根状态开始计数的展开深度）
 - ``collapsed_state_marker`` (str)：折叠状态的标记（默认：``'...'``）
 
 **示例**

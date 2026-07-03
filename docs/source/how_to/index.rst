@@ -11,10 +11,12 @@ Non-goals
 
 It is not a parameter encyclopedia, a language reference, or a long design explanation.
 
-Status
------------
+Guides
+------
 
-This index is a migration skeleton. The pages below are stable stubs. Current authoritative content remains in the old ``tutorials/`` pages until the relevant migration work moves it.
+Use the pages below for concrete tasks. If you need a first learning path, start
+with :doc:`../tutorials/index`; if you need exact facts, use
+:doc:`../reference/index`.
 
 .. toctree::
     :maxdepth: 2

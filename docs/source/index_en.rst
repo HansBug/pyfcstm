@@ -44,7 +44,7 @@ Installation
 
    pip install pyfcstm
 
-The full installation checklist is in :doc:`tutorials/installation/index`.
+The full installation checklist is in :doc:`how_to/installation/index`.
 
 Fast Path
 ~~~~~~~~~
@@ -81,41 +81,21 @@ The framework provides:
 Tutorials
 -------------------------
 
-Tutorials provide learning paths and first-success walkthroughs. They should help readers build a working mental model before they jump into task guides or reference pages.
+Tutorials provide learning paths and first-success walkthroughs. They help readers build a working mental model before they jump into task guides or reference pages.
 
 .. toctree::
     :maxdepth: 2
     :caption: Tutorials
     :hidden:
 
-    tutorials/installation/index
-    tutorials/quick_start/index
-    tutorials/dsl/index
-    tutorials/simulation/index
-    tutorials/inspect/index
-    tutorials/generation/index
-    tutorials/visualization/index
-    tutorials/cli/index
-    tutorials/render/index
-    tutorials/grammar/index
-    tutorials/structure/index
+    tutorials/index
 
-* :doc:`tutorials/installation/index`
-* :doc:`tutorials/quick_start/index`
-* :doc:`tutorials/dsl/index`
-* :doc:`tutorials/simulation/index`
-* :doc:`tutorials/inspect/index`
-* :doc:`tutorials/generation/index`
-* :doc:`tutorials/visualization/index`
-* :doc:`tutorials/cli/index`
-* :doc:`tutorials/render/index`
-* :doc:`tutorials/grammar/index`
-* :doc:`tutorials/structure/index`
+* :doc:`tutorials/index`
 
 How-to Guides
 -------------
 
-How-to guides are task-oriented pages. This structure creates the stable skeleton first; current authoritative content still lives in the existing tutorial pages until later migration work moves it.
+How-to guides are task-oriented pages. Use them when you know what you want to do and need a concrete command sequence or checklist.
 
 .. toctree::
     :maxdepth: 2

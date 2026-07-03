@@ -1234,3 +1234,83 @@ PR-I copies diagram source-output pairs into the explanation pages that now own
 the diagrams. The old resources remain in ``tutorials/render`` and
 ``tutorials/structure`` so old links and historical generated files do not break.
 PR-J may decide whether legacy copies should remain permanently.
+
+PR-J final audit
+----------------
+
+Scope
+~~~~~
+
+PR-J performs the final information-architecture cleanup after PR-E through
+PR-I. It does not re-own the migrated leaf-page bodies. Its job is to stabilize
+the public navigation, keep old tutorial URLs useful, and verify that the
+four-way Tutorials / How-to / Explanations / Reference split is discoverable in
+both English and Chinese.
+
+Navigation audit
+~~~~~~~~~~~~~~~~
+
+.. list-table:: PR-J navigation audit
+   :header-rows: 1
+
+   * - Area
+     - Result
+     - Notes
+   * - Top-level index
+     - cleaned
+     - The Tutorials entry now points to the category index instead of listing
+       every old tutorial and compatibility landing page.
+   * - Tutorials category
+     - added
+     - ``tutorials/index*.rst`` now owns the guided learning path and keeps old
+       landing pages in a hidden compatibility toctree.
+   * - How-to category
+     - cleaned
+     - The migration-skeleton wording was replaced by stable task-guide
+       wording.
+   * - Explanations category
+     - cleaned
+     - The migration-skeleton wording was replaced by stable explanation
+       wording.
+   * - Reference category
+     - cleaned
+     - The migration-skeleton wording was replaced by a reference map, with
+       generated API documentation retained as the last toctree item.
+
+Compatibility landing audit
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Old tutorial URL status after PR-J
+   :header-rows: 1
+
+   * - Old URL
+     - Status
+     - Current role
+   * - ``tutorials/installation/``
+     - keep landing
+     - Points to the installation how-to and quick start.
+   * - ``tutorials/cli/``
+     - keep landing
+     - Points to CLI workflows, CLI reference, installation, and quick start.
+   * - ``tutorials/render/``
+     - keep landing
+     - Points to template-author tasks, renderer explanation, template config
+       reference, and built-in template usage.
+   * - ``tutorials/grammar/``
+     - keep landing
+     - Points to grammar/editor tasks, grammar tooling explanation, grammar
+       tooling reference, and DSL reference.
+   * - ``tutorials/structure/``
+     - keep landing
+     - Points to architecture, execution semantics, template rendering, and API
+       documentation.
+
+Resource cleanup decision
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+PR-J keeps legacy resources under their original ``tutorials/*`` directories.
+Some resources are still literal-included by new pages, and the rest remain as
+stable old-link/source-output pairs after the information-architecture split.
+Deleting or moving them would create churn without improving the public
+documentation structure, so any deeper resource pruning should be handled by a
+future focused cleanup PR with generated-resource regeneration evidence.

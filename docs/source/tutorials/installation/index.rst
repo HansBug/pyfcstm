@@ -12,4 +12,5 @@ Compatibility note
 ------------------
 
 This page remains in place so old links to ``tutorials/installation/`` keep
-working during the documentation reorganization.
+working. New installation content should go to the maintained how-to guide
+linked above.

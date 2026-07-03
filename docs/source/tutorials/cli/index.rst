@@ -16,4 +16,5 @@ Compatibility note
 ------------------
 
 This page remains in place so old links to ``tutorials/cli/`` keep working
-during the documentation reorganization.
+while new command-line content goes to the maintained task and reference pages
+linked above.

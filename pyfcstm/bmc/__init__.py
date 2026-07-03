@@ -1,14 +1,16 @@
-"""Public API for FCSTM bounded model checking query models.
+"""Public API for FCSTM bounded model checking data contracts.
 
 The BMC package is an independent root package for the FCSTM bounded model
 checking workstream.  It exposes parser-independent query and expression
-dataclasses while deliberately leaving grammar parsing, semantic binding,
-solver lowering, witness replay, and verify-registry integration to separate
-layers.
+dataclasses, domain numbering snapshots, and macro-step source/case contracts
+while deliberately leaving grammar parsing, semantic binding, solver lowering,
+witness replay, and verify-registry integration to separate layers.
 
 Package contracts:
 
 * BMC query objects are parser-independent and data-only in this package.
+* Macro-step contracts are solver-independent and do not import ``z3`` from the
+  root package.
 * The root package must not depend on ``pyfcstm.verify`` or its registry.
 * :func:`str` on exported query and expression dataclasses is reserved for the
   canonical ``.fbmcq`` query DSL spelling.
@@ -54,6 +56,19 @@ Public module structure:
        :func:`build_bmc_domain`
      - Number model states, events, persistent variables, frames, steps,
        sentinel states, and event-input slots before solver lowering.
+   * - Macro-step sources
+     - :class:`MacroStepSource`, :func:`source_from_initial_spec`,
+       :func:`entry_source`, :func:`stable_leaf_source`,
+       :func:`terminated_source`, :func:`diagnostic_source`
+     - Describe initial and recurrence source profiles without reading
+       initial ``where`` predicates or building solver relations.
+   * - Macro-step cases
+     - :class:`BoolTemplate`, :class:`EventUse`, :class:`VarUpdate`,
+       :class:`CycleCase`, :class:`MacroStepFormal`,
+       :func:`build_fallback_case`, :func:`build_semantic_delta_case`,
+       :func:`verify_source_partition`
+     - Freeze case labels, bare conditions, explicit variable writeback,
+       absorb/fallback/delta helpers, and build-time partition self-checks.
    * - Query root model
      - :class:`InitialSpec`, :class:`FrameAssumption`,
        :class:`EventAssumption`, :class:`EventCardinalityAssumption`,
@@ -114,6 +129,24 @@ from pyfcstm.bmc.errors import (
     InvalidBmcQuery,
     UnsupportedBmcQuery,
 )
+from pyfcstm.bmc.macro import (
+    BoolTemplate,
+    CycleCase,
+    EventUse,
+    MacroStepFormal,
+    PartitionCheckResult,
+    VarUpdate,
+    build_fallback_case,
+    build_semantic_delta_case,
+    build_var_updates,
+    carry_var_updates,
+    case_antecedent_condition,
+    diagnostic_absorb_case,
+    terminated_absorb_case,
+    var_update_for,
+    verify_boolean_partition,
+    verify_source_partition,
+)
 from pyfcstm.bmc.query import (
     BmcAssumption,
     BmcProperty,
@@ -122,6 +155,16 @@ from pyfcstm.bmc.query import (
     EventCardinalityAssumption,
     FrameAssumption,
     InitialSpec,
+)
+from pyfcstm.bmc.source import (
+    DIAGNOSTIC_CASE_PATH,
+    TERMINATE_CASE_PATH,
+    MacroStepSource,
+    diagnostic_source,
+    entry_source,
+    source_from_initial_spec,
+    stable_leaf_source,
+    terminated_source,
 )
 
 __all__ = [
@@ -171,4 +214,28 @@ __all__ = [
     "EventInputRef",
     "BmcDomain",
     "build_bmc_domain",
+    "TERMINATE_CASE_PATH",
+    "DIAGNOSTIC_CASE_PATH",
+    "MacroStepSource",
+    "entry_source",
+    "stable_leaf_source",
+    "terminated_source",
+    "diagnostic_source",
+    "source_from_initial_spec",
+    "BoolTemplate",
+    "EventUse",
+    "VarUpdate",
+    "CycleCase",
+    "PartitionCheckResult",
+    "MacroStepFormal",
+    "carry_var_updates",
+    "var_update_for",
+    "build_var_updates",
+    "case_antecedent_condition",
+    "terminated_absorb_case",
+    "diagnostic_absorb_case",
+    "build_fallback_case",
+    "build_semantic_delta_case",
+    "verify_boolean_partition",
+    "verify_source_partition",
 ]

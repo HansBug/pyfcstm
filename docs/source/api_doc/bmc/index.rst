@@ -13,7 +13,9 @@ pyfcstm.bmc
     domain
     errors
     grammar/index
+    macro
     query
+    source
 
 \_\_all\_\_
 -----------------------------------------------------

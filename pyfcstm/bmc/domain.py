@@ -217,9 +217,10 @@ class StateDomainEntry:
     :param id: Stable state identifier. Normal model states use non-negative
         values; sentinel states use fixed negative values.
     :type id: int
-    :param path: Dot-separated full state path, or sentinel name.
+    :param path: Dot-separated full state path.  Sentinel states use reserved
+        ``$``-prefixed paths such as ``"$STATE_TERMINATE"``.
     :type path: str
-    :param name: State name or sentinel name.
+    :param name: State name.  Sentinel states use their reserved sentinel names.
     :type name: str
     :param kind: ``"leaf"``, ``"composite"``, ``"pseudo"``, or
         ``"sentinel"``.
@@ -715,6 +716,15 @@ class BmcDomain:
             raise InvalidBmcDomain(
                 f"{field_name} must contain {item_type.__name__} objects."
             )
+        sort_key = {
+            "states": lambda item: (item.id, item.path),
+            "events": lambda item: (item.id, item.path),
+            "variables": lambda item: (item.id, item.name),
+            "frames": lambda item: item.index,
+            "steps": lambda item: item.index,
+            "event_inputs": lambda item: (item.step_index, item.event_id),
+        }[field_name]
+        items = tuple(sorted(items, key=sort_key))
         object.__setattr__(self, field_name, items)
 
     def _normalize_int_sequence(self, field_name: str, value: Sequence[int]) -> None:
@@ -953,7 +963,8 @@ class BmcDomain:
     def state_by_path(self, path: str) -> StateDomainEntry:
         """Return the state entry with ``path``.
 
-        :param path: Dot-separated state path or sentinel name.
+        :param path: Dot-separated state path.  Sentinel states use reserved
+            ``$``-prefixed paths such as ``"$STATE_TERMINATE"``.
         :type path: str
         :return: Matching state-domain entry.
         :rtype: StateDomainEntry
@@ -963,7 +974,7 @@ class BmcDomain:
 
             >>> from pyfcstm.model import load_state_machine_from_text
             >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
-            >>> domain.state_by_id(STATE_TERMINATE_ID).name
+            >>> domain.state_by_path('$STATE_TERMINATE').name
             'STATE_TERMINATE'
         """
         _require_non_empty_string(path, "state path")
@@ -975,7 +986,8 @@ class BmcDomain:
     def state_path_to_id(self, path: str) -> int:
         """Return the id for a state path.
 
-        :param path: Dot-separated state path or sentinel name.
+        :param path: Dot-separated state path.  Sentinel states use reserved
+            ``$``-prefixed paths such as ``"$STATE_DIAGNOSTIC"``.
         :type path: str
         :return: State id.
         :rtype: int
@@ -985,8 +997,8 @@ class BmcDomain:
 
             >>> from pyfcstm.model import load_state_machine_from_text
             >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
-            >>> domain.state_by_id(STATE_DIAGNOSTIC_ID).name
-            'STATE_DIAGNOSTIC'
+            >>> domain.state_path_to_id('$STATE_DIAGNOSTIC')
+            -2
         """
         return self.state_by_path(path).id
 
@@ -995,7 +1007,8 @@ class BmcDomain:
 
         :param state_id: State id.
         :type state_id: int
-        :return: Dot-separated state path or sentinel name.
+        :return: Dot-separated state path, or a reserved ``$``-prefixed
+            sentinel path.
         :rtype: str
         :raises InvalidBmcDomain: If ``state_id`` is unknown.
 
@@ -1003,8 +1016,8 @@ class BmcDomain:
 
             >>> from pyfcstm.model import load_state_machine_from_text
             >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
-            >>> domain.state_by_id(-1).name
-            'STATE_TERMINATE'
+            >>> domain.state_id_to_path(STATE_TERMINATE_ID)
+            '$STATE_TERMINATE'
         """
         return self.state_by_id(state_id).path
 

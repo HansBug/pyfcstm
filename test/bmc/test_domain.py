@@ -243,6 +243,91 @@ def test_domain_canonical_dump_is_json_stable(adversarial_model):
 
 
 @pytest.mark.unittest
+def test_domain_public_constructor_normalizes_canonical_sequence_order():
+    """Public snapshots emit canonical dumps independent of caller order."""
+    from pyfcstm.bmc import EventDomainEntry, StateDomainEntry, VarDomainEntry
+
+    root = StateDomainEntry(0, "Root", "Root", "composite", is_root=True)
+    leaf = StateDomainEntry(
+        1,
+        "Root.Leaf",
+        "Leaf",
+        "leaf",
+        parent_path="Root",
+        is_stoppable=True,
+    )
+    terminate = StateDomainEntry(
+        STATE_TERMINATE_ID,
+        "$STATE_TERMINATE",
+        "STATE_TERMINATE",
+        "sentinel",
+        is_sentinel=True,
+    )
+    diagnostic = StateDomainEntry(
+        STATE_DIAGNOSTIC_ID,
+        "$STATE_DIAGNOSTIC",
+        "STATE_DIAGNOSTIC",
+        "sentinel",
+        is_sentinel=True,
+    )
+    go = EventDomainEntry(0, "Root.Go", "Go", "Root", 0)
+    stop = EventDomainEntry(1, "Root.Leaf.Stop", "Stop", "Root.Leaf", 1)
+    counter = VarDomainEntry(0, "counter", "int")
+    pressure = VarDomainEntry(1, "pressure", "float")
+
+    canonical = BmcDomain(
+        bound=2,
+        states=(diagnostic, terminate, root, leaf),
+        events=(go, stop),
+        variables=(counter, pressure),
+        frames=(FrameRef(0, 2), FrameRef(1, 2), FrameRef(2, 2)),
+        steps=(StepRef(0, 2), StepRef(1, 2)),
+        event_inputs=(
+            EventInputRef(0, 0, "Root.Go"),
+            EventInputRef(0, 1, "Root.Leaf.Stop"),
+            EventInputRef(1, 0, "Root.Go"),
+            EventInputRef(1, 1, "Root.Leaf.Stop"),
+        ),
+        initial_state_ids=(STATE_TERMINATE_ID, 0, 1),
+        stable_state_ids=(STATE_DIAGNOSTIC_ID, STATE_TERMINATE_ID, 1),
+    )
+    shuffled = BmcDomain(
+        bound=2,
+        states=(leaf, root, terminate, diagnostic),
+        events=(stop, go),
+        variables=(pressure, counter),
+        frames=(FrameRef(2, 2), FrameRef(0, 2), FrameRef(1, 2)),
+        steps=(StepRef(1, 2), StepRef(0, 2)),
+        event_inputs=(
+            EventInputRef(1, 1, "Root.Leaf.Stop"),
+            EventInputRef(0, 1, "Root.Leaf.Stop"),
+            EventInputRef(1, 0, "Root.Go"),
+            EventInputRef(0, 0, "Root.Go"),
+        ),
+        initial_state_ids=(1, 0, STATE_TERMINATE_ID),
+        stable_state_ids=(1, STATE_TERMINATE_ID, STATE_DIAGNOSTIC_ID),
+    )
+
+    assert [entry.id for entry in shuffled.states] == [
+        STATE_DIAGNOSTIC_ID,
+        STATE_TERMINATE_ID,
+        0,
+        1,
+    ]
+    assert [entry.id for entry in shuffled.events] == [0, 1]
+    assert [entry.id for entry in shuffled.variables] == [0, 1]
+    assert [entry.index for entry in shuffled.frames] == [0, 1, 2]
+    assert [entry.index for entry in shuffled.steps] == [0, 1]
+    assert [(entry.step_index, entry.event_id) for entry in shuffled.event_inputs] == [
+        (0, 0),
+        (0, 1),
+        (1, 0),
+        (1, 1),
+    ]
+    assert shuffled.to_canonical() == canonical.to_canonical()
+
+
+@pytest.mark.unittest
 def test_root_state_can_use_sentinel_like_name_without_collision():
     """A user root named like a sentinel still receives a normal state id."""
     model = load_state_machine_from_text("state STATE_TERMINATE;")

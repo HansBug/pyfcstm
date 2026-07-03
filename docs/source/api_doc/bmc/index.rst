@@ -11,6 +11,7 @@ pyfcstm.bmc
 
     ast
     errors
+    grammar/index
     query
 
 \_\_all\_\_

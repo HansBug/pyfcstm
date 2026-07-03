@@ -1,23 +1,35 @@
-"""
-Syntax highlighting package for the FCSTM DSL.
+"""Syntax highlighting lexers for FCSTM languages.
 
-This package exposes Pygments lexer support for the FCSTM (Finite State
-Machine) domain-specific language. It provides a public entry point to the
-lexer implementation used by syntax highlighting tools and editors.
+The :mod:`pyfcstm.highlight` package exposes Pygments lexers used by Sphinx,
+editor integrations, and command-line highlighting tools.  The lexers are
+syntax highlighters only: they do not parse FCSTM models, bind BMC query paths,
+or run semantic validation.
 
-The package contains the following main components:
+Public lexer roadmap:
 
-* :class:`pyfcstm.highlight.pygments_lexer.FcstmLexer` - Pygments lexer for FCSTM
+.. list-table::
+   :header-rows: 1
+
+   * - Language surface
+     - Public lexer
+     - Purpose
+   * - FCSTM model DSL
+     - :class:`pyfcstm.highlight.pygments_lexer.FcstmLexer`
+     - Highlight ``*.fcstm`` state-machine model files.
+   * - FCSTM BMC Query
+     - :class:`pyfcstm.highlight.bmc_query_lexer.FcstmBmcQueryLexer`
+     - Highlight ``*.fbmcq`` bounded-model-checking query files.
 
 Example::
 
-    >>> from pyfcstm.highlight import FcstmLexer
-    >>> lexer = FcstmLexer()
-    >>> lexer.name
+    >>> from pyfcstm.highlight import FcstmBmcQueryLexer, FcstmLexer
+    >>> FcstmLexer().name
     'FCSTM'
-
+    >>> FcstmBmcQueryLexer().name
+    'FCSTM BMC Query'
 """
 
+from .bmc_query_lexer import FcstmBmcQueryLexer
 from .pygments_lexer import FcstmLexer
 
-__all__ = ['FcstmLexer']
+__all__ = ["FcstmLexer", "FcstmBmcQueryLexer"]

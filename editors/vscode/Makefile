@@ -14,6 +14,8 @@ PARSER_OUTPUT_DIR := ./parser
 SYNTAXES_DIR := ./syntaxes
 TEXTMATE_SRC := ../fcstm.tmLanguage.json
 TEXTMATE_DST := $(SYNTAXES_DIR)/fcstm.tmLanguage.json
+BMC_QUERY_TEXTMATE_SRC := ../fcstm-bmc-query.tmLanguage.json
+BMC_QUERY_TEXTMATE_DST := $(SYNTAXES_DIR)/fcstm-bmc-query.tmLanguage.json
 
 # Node/npm configuration
 NPM := npm
@@ -85,13 +87,19 @@ install: jsfcstm-install jsfcstm-build jsfcstm-pack
 	$(NPM) install --force --package-lock=false
 	$(NPM) install --force --package-lock=false ../jsfcstm/jsfcstm.tgz
 
-syntaxes: $(TEXTMATE_DST)
+syntaxes: $(TEXTMATE_DST) $(BMC_QUERY_TEXTMATE_DST)
 
 $(TEXTMATE_DST): $(TEXTMATE_SRC)
-	@echo "Copying TextMate grammar..."
+	@echo "Copying FCSTM TextMate grammar..."
 	@mkdir -p $(SYNTAXES_DIR)
 	cp $(TEXTMATE_SRC) $(TEXTMATE_DST)
-	@echo "TextMate grammar copied to $(TEXTMATE_DST)"
+	@echo "FCSTM TextMate grammar copied to $(TEXTMATE_DST)"
+
+$(BMC_QUERY_TEXTMATE_DST): $(BMC_QUERY_TEXTMATE_SRC)
+	@echo "Copying FCSTM BMC Query TextMate grammar..."
+	@mkdir -p $(SYNTAXES_DIR)
+	cp $(BMC_QUERY_TEXTMATE_SRC) $(BMC_QUERY_TEXTMATE_DST)
+	@echo "FCSTM BMC Query TextMate grammar copied to $(BMC_QUERY_TEXTMATE_DST)"
 
 parser: $(ANTLR_JAR) $(GRAMMAR_LEXER_FILE) $(GRAMMAR_PARSER_FILE)
 	@echo "Generating JavaScript parser from ANTLR grammar..."
@@ -226,6 +234,8 @@ package: all
 	@unzip -l ./build/*.vsix | grep -q "dist/extension.js" && echo "✓ Bundled extension.js included" || echo "✗ WARNING: extension.js not found in package!"
 	@unzip -l ./build/*.vsix | grep -q "dist/server.js" && echo "✓ Bundled server.js included" || (echo "✗ Bundled server.js missing from package!" && exit 1)
 	@unzip -l ./build/*.vsix | grep -q "resources/icon.png" && echo "✓ Extension icon included in package" || (echo "✗ Extension icon missing from package!" && exit 1)
+	@unzip -l ./build/*.vsix | grep -q "syntaxes/fcstm.tmLanguage.json" && echo "✓ FCSTM TextMate grammar included" || (echo "✗ FCSTM TextMate grammar missing from package!" && exit 1)
+	@unzip -l ./build/*.vsix | grep -q "syntaxes/fcstm-bmc-query.tmLanguage.json" && echo "✓ FCSTM BMC Query TextMate grammar included" || (echo "✗ FCSTM BMC Query TextMate grammar missing from package!" && exit 1)
 	@echo "Package size:"
 	@ls -lh ./build/*.vsix | awk '{print "  " $$9 ": " $$5}'
 

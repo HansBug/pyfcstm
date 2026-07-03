@@ -67,6 +67,7 @@ _JS_PATTERNS = (
     "editors/jsfcstm/**",
     "editors/vscode/**",
     "editors/fcstm.tmLanguage.json",
+    "editors/fcstm-bmc-query.tmLanguage.json",
     ".github/linguist/**",
 )
 _CLI_PATTERNS = (
@@ -604,6 +605,15 @@ def run_self_check() -> None:
     _check_case(
         "vscode source",
         ["editors/vscode/src/extension.ts"],
+        True,
+        False,
+        False,
+        True,
+        False,
+    )
+    _check_case(
+        "BMC query TextMate grammar",
+        ["editors/fcstm-bmc-query.tmLanguage.json"],
         True,
         False,
         False,

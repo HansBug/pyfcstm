@@ -104,7 +104,7 @@ The LLM formats expose repair-oriented fields such as ``summary``,
 .. literalinclude:: inspect_formats.demo.sh.txt
    :language: text
    :caption: LLM report shape generated from real inspect output
-   :lines: 23-33
+   :lines: 14-19
 
 If a file suffix looks suspicious, the CLI warns but still honors the requested
 format:
@@ -172,7 +172,7 @@ The JSON ``refs`` make the scope explicit:
 .. literalinclude:: inspect_formats.demo.sh.txt
    :language: text
    :caption: Numeric warning target scope
-   :lines: 9-11
+   :lines: 11-12
 
 Treat these warnings as deployment review items for C/C++ / ``c`` / ``c_poll`` /
 ``cpp`` / ``cpp_poll`` targets. If the target is Python, the same fixed-width
@@ -190,6 +190,37 @@ automatic-inspection budget:
 
    pyfcstm inspect -i inspect_diagnostics.fcstm --format json \
      --enable-verify --max-complexity-tier smt_linear --smt-timeout-ms 1000
+
+The inspect-facing verify knobs are intentionally bounded:
+
+.. list-table:: Verify options accepted by inspect
+   :header-rows: 1
+
+   * - Option
+     - Default
+     - Inspect use
+     - Boundary
+   * - ``--enable-verify``
+     - Off
+     - Adds inspect-eligible ``pyfcstm.verify`` diagnostics to the static report.
+     - Keep it off for the fastest structural pass; enable it when local or CI
+       triage can spend a little more time.
+   * - ``--max-complexity-tier``
+     - ``structural``
+     - Caps the highest verify algorithm tier the inspect adapter may run.
+     - ``bmc_search`` is parsed only to return a policy error; use a dedicated
+       verify workflow for bounded-model checking or a separately reviewed proof
+       budget.
+   * - ``--max-call-count-scaling``
+     - ``linear_in_transitions``
+     - Caps algorithm call-count growth for automatic inspection.
+     - ``k_unrollings`` and ``k_unrollings_times_branching`` are rejected because
+       they require an explicit depth policy.
+   * - ``--smt-timeout-ms``
+     - Not set
+     - Forwards a finite millisecond timeout to SMT-local algorithms.
+     - ``0`` is forwarded unchanged and follows Z3 semantics, where no finite
+       timeout is configured.
 
 The adapter deliberately rejects knobs that require a more explicit verification
 plan, such as ``bmc_search`` and the ``k_unrollings`` call-count policies:

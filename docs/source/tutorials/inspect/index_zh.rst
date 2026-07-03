@@ -85,7 +85,7 @@ LLM 格式会暴露 ``summary``、``recommended_actions``、``do_not`` 和 ``rep
 .. literalinclude:: inspect_formats.demo.sh.txt
    :language: text
    :caption: 由真实 inspect 输出生成的 LLM report 结构
-   :lines: 23-33
+   :lines: 14-19
 
 如果文件后缀看起来可疑，CLI 会给出 warning，但仍然尊重用户请求的格式：
 
@@ -136,7 +136,7 @@ JSON ``refs`` 会明确说明适用范围：
 .. literalinclude:: inspect_formats.demo.sh.txt
    :language: text
    :caption: 数值 warning 的目标范围
-   :lines: 9-11
+   :lines: 11-12
 
 请把这类 warning 当成 C/C++ / ``c`` / ``c_poll`` / ``cpp`` / ``cpp_poll`` 目标的部署审查项。如果目标是 Python，通常不存在同一个固定宽度整数承载风险；但模型可能仍然有其他值得审查的设计问题。
 
@@ -149,6 +149,33 @@ JSON ``refs`` 会明确说明适用范围：
 
    pyfcstm inspect -i inspect_diagnostics.fcstm --format json \
      --enable-verify --max-complexity-tier smt_linear --smt-timeout-ms 1000
+
+inspect 面向 verify 的旋钮刻意保持有界：
+
+.. list-table:: inspect 可接受的 verify 选项
+   :header-rows: 1
+
+   * - 选项
+     - 默认值
+     - inspect 用途
+     - 边界
+   * - ``--enable-verify``
+     - 关闭
+     - 把适合 inspect 自动运行的 ``pyfcstm.verify`` 诊断追加到静态报告。
+     - 最快结构化检查应保持关闭；本地或 CI 分流可以接受更高成本时再开启。
+   * - ``--max-complexity-tier``
+     - ``structural``
+     - 限制 inspect adapter 允许运行的最高 verify 算法层级。
+     - ``bmc_search`` 只会被解析成 policy error；需要 bounded-model checking
+       或独立审查 proof budget 时，请使用专门的 verify workflow。
+   * - ``--max-call-count-scaling``
+     - ``linear_in_transitions``
+     - 限制自动 inspect 中算法调用次数的增长等级。
+     - ``k_unrollings`` 和 ``k_unrollings_times_branching`` 会被拒绝，因为它们需要显式 depth policy。
+   * - ``--smt-timeout-ms``
+     - 未设置
+     - 给 SMT-local 算法透传有限的毫秒级超时。
+     - ``0`` 会原样透传，并遵循 Z3 语义，表示不配置有限超时。
 
 adapter 会明确拒绝需要更显式验证计划的旋钮，例如 ``bmc_search`` 和 ``k_unrollings`` 调用次数策略：
 

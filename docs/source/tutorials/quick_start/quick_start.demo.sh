@@ -10,7 +10,7 @@ pyfcstm simulate -i traffic_light.fcstm -e "cycle; cycle; current"
 
 echo ""
 echo "=== Inspect model summary ==="
-pyfcstm inspect -i traffic_light.fcstm -o "$workdir/traffic_light.inspect.json"
+pyfcstm inspect -i traffic_light.fcstm --format json -o "$workdir/traffic_light.inspect.json"
 INSPECT_JSON="$workdir/traffic_light.inspect.json" python - <<'PY'
 import json
 import os

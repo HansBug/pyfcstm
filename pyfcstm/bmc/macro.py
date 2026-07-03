@@ -1004,9 +1004,11 @@ class MacroStepFormal:
                 raise InvalidBmcEncoding("case source id must match formal source.")
             if case.source_state_path != self.source.source_state_path:
                 raise InvalidBmcEncoding("case source path must match formal source.")
+            self._validate_case_domain_contract(case)
         for case in self.success_cases:
             if case.kind == "delta":
                 raise InvalidBmcEncoding("success_cases must not contain delta cases.")
+            self._validate_success_case_shape(case)
         if self.delta_cases and not self.source.allows_semantic_delta:
             raise InvalidBmcEncoding("delta_cases require an entry source.")
         if self.source.kind != "entry" and self.build_diagnostic_conditions:
@@ -1023,6 +1025,41 @@ class MacroStepFormal:
         for case in self.delta_cases:
             if case.kind != "delta":
                 raise InvalidBmcEncoding("delta_cases may only contain delta cases.")
+
+    def _validate_case_domain_contract(self, case: CycleCase) -> None:
+        if self.source.domain is not None:
+            case._validate_against_domain(self.source.domain)
+
+    def _validate_success_case_shape(self, case: CycleCase) -> None:
+        if self.source.kind == "stable_leaf":
+            if case.kind not in {"transition", "fallback"}:
+                raise InvalidBmcEncoding(
+                    "stable leaf success cases may only be transition or fallback."
+                )
+            if (
+                case.target_state_id < 0
+                or case.target_state_path in _RESERVED_CASE_PATHS
+            ):
+                raise InvalidBmcEncoding(
+                    "stable leaf success cases must target model states."
+                )
+            if case.kind == "fallback" and (
+                case.target_state_id != self.source.source_state_id
+                or case.target_state_path != self.source.source_state_path
+            ):
+                raise InvalidBmcEncoding("fallback cases must self-loop source.")
+        elif self.source.kind == "entry":
+            if case.kind not in {"transition", "initial", "diagnostic"}:
+                raise InvalidBmcEncoding(
+                    "entry success cases may only be transition, initial, or diagnostic."
+                )
+            if case.kind in {"transition", "initial"} and (
+                case.target_state_id < 0
+                or case.target_state_path in _RESERVED_CASE_PATHS
+            ):
+                raise InvalidBmcEncoding(
+                    "entry transition and initial cases must target model states."
+                )
 
     def _validate_sentinel_absorb(self, sentinel_id: int) -> None:
         if self.delta_cases:

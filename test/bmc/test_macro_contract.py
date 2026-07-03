@@ -393,6 +393,89 @@ def test_fallback_and_delta_helpers_accept_only_ordinary_success_cases(macro_dom
 
 
 @pytest.mark.unittest
+def test_macro_step_formal_revalidates_domainless_cases_against_source_domain(
+    macro_domain,
+):
+    """Domain-backed formals reject case target, event, and writeback bypasses."""
+    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
+    fallback = build_fallback_case(macro_domain, source, ())
+    carry = carry_var_updates(macro_domain)
+
+    bad_target = CycleCase(
+        "transition",
+        source.source_state_id,
+        source.source_state_path,
+        999,
+        "Missing.Target",
+        "%s::transition::Missing.Target::0" % source.source_state_path,
+        BoolTemplate.atom("bad_target"),
+        carry,
+    )
+    with pytest.raises(InvalidBmcEncoding, match="Unknown state id"):
+        MacroStepFormal(source, (bad_target, fallback))
+
+    bad_event = CycleCase(
+        "transition",
+        source.source_state_id,
+        source.source_state_path,
+        source.source_state_id,
+        source.source_state_path,
+        "%s::transition::%s::1" % (source.source_state_path, source.source_state_path),
+        BoolTemplate.atom("bad_event"),
+        carry,
+        used_events=(EventUse(999, "Missing.Event", "positive", "trigger"),),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="Unknown event id"):
+        MacroStepFormal(source, (bad_event, fallback))
+
+    missing_writeback = CycleCase(
+        "transition",
+        source.source_state_id,
+        source.source_state_path,
+        source.source_state_id,
+        source.source_state_path,
+        "%s::transition::%s::2" % (source.source_state_path, source.source_state_path),
+        BoolTemplate.atom("missing_writeback"),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="cover every persistent variable"):
+        MacroStepFormal(source, (missing_writeback, fallback))
+
+
+@pytest.mark.unittest
+def test_macro_step_formal_rejects_stable_leaf_diagnostic_success_case(
+    macro_domain,
+):
+    """Stable leaf formals cannot bypass entry-only delta/diagnostic buckets."""
+    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
+    diagnostic = CycleCase(
+        "diagnostic",
+        source.source_state_id,
+        source.source_state_path,
+        STATE_DIAGNOSTIC_ID,
+        DIAGNOSTIC_CASE_PATH,
+        "%s::diagnostic::%s::0" % (source.source_state_path, DIAGNOSTIC_CASE_PATH),
+        BoolTemplate.atom("diagnostic_success"),
+        carry_var_updates(macro_domain),
+        domain=macro_domain,
+    )
+    fallback = CycleCase(
+        "fallback",
+        source.source_state_id,
+        source.source_state_path,
+        source.source_state_id,
+        source.source_state_path,
+        "%s::fallback::%s::0" % (source.source_state_path, source.source_state_path),
+        BoolTemplate.not_(BoolTemplate.atom("diagnostic_success")),
+        carry_var_updates(macro_domain),
+        domain=macro_domain,
+    )
+
+    with pytest.raises(InvalidBmcEncoding, match="stable leaf success cases"):
+        MacroStepFormal(source, (diagnostic, fallback))
+
+
+@pytest.mark.unittest
 def test_macro_step_formal_rejects_illegal_delta_buckets_and_label_collisions(
     macro_domain,
 ):

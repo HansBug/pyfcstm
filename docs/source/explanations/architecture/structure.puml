@@ -1,0 +1,101 @@
+@startuml
+!define FOUNDATION_COLOR #E8F5E9
+!define CORE_COLOR #E3F2FD
+!define APPLICATION_COLOR #FFF3E0
+!define EXTENSION_COLOR #F3E5F5
+
+skinparam componentStyle rectangle
+skinparam nodesep 15
+skinparam ranksep 30
+skinparam backgroundColor white
+skinparam shadowing false
+
+' Foundation Layer
+package "Foundation Layer" <<Rectangle>> {
+    component [pyfcstm.config\n----\nmeta.py] as config FOUNDATION_COLOR
+    component [pyfcstm.utils\n----\nvalidate.py\ntext.py\nsafe.py\ndoc.py\nbinary.py\ndecode.py\njinja2.py\njson.py] as utils FOUNDATION_COLOR
+}
+
+' Core Layer
+package "Core Layer" <<Rectangle>> {
+    component [pyfcstm.dsl\n----\nparse.py\nlistener.py\nnode.py\nerror.py\ngrammar/Grammar.g4] as dsl CORE_COLOR
+    component [pyfcstm.model\n----\nmodel.py\nexpr.py\nbase.py] as model CORE_COLOR
+}
+
+' Application Layer
+package "Application Layer" <<Rectangle>> {
+    component [pyfcstm.render\n----\nrender.py\nenv.py\nexpr.py\nfunc.py] as render APPLICATION_COLOR
+    component [pyfcstm.entry\n----\ncli.py\ndispatch.py\nplantuml.py\ngenerate.py\nbase.py] as entry APPLICATION_COLOR
+}
+
+' Extension Layer
+package "Extension Layer" <<Rectangle>> {
+    component [pyfcstm.template] as template EXTENSION_COLOR
+}
+
+' External entities
+actor User
+file "DSL Code\n(.fcstm)" as dsl_file
+file "Templates\n(config.yaml, .j2)" as template_files
+file "Generated Code" as output_code
+file "PlantUML\n(.puml)" as plantuml_file
+
+' User interactions
+User --> entry : CLI commands
+dsl_file --> entry : Input
+template_files --> render : Load
+entry --> output_code : Generate
+entry --> plantuml_file : Export
+
+' Layer dependencies
+utils -down-> dsl : text, validate, doc
+utils -down-> model : validate, json
+utils -down-> render : jinja2, binary, decode
+config -down-> entry : meta
+
+dsl -down-> model : AST → Model
+model -down-> render : Model → Code
+model -down-> entry : Model access
+
+render -down-> entry : Code generation
+template -down-> render : Extensions
+
+' Data flow annotations
+note top of dsl
+    **Stage 1: Parsing**
+    ANTLR4 grammar
+    Parse tree → AST nodes
+end note
+
+note top of model
+    **Stage 2: Modeling**
+    AST → State Machine
+    Hierarchical states
+    Transitions & Events
+end note
+
+note top of render
+    **Stage 3: Generation**
+    Jinja2 templates
+    Expression rendering
+    Multi-language output
+end note
+
+note bottom of entry
+    **User Interface**
+    pyfcstm plantuml
+    pyfcstm generate
+end note
+
+note right of utils
+    **Cross-cutting Utilities**
+    • Validation framework
+    • Text normalization
+    • Identifier generation
+    • Comment formatting
+    • Binary detection
+    • Auto-decoding
+    • Jinja2 helpers
+end note
+
+@enduml

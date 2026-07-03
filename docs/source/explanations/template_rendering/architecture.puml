@@ -1,0 +1,30 @@
+@startuml
+package "Input Layer" {
+  [State Machine DSL Definition] as dsl
+  [Template Files] as templates
+  [Configuration File] as config
+}
+
+package "Processing Layer" {
+  [Parser] as parser
+  [Template Engine] as engine
+  [Expression Renderer] as expr
+}
+
+package "Output Layer" {
+  [Generated C Code] as output_c
+  [Generated Header Files] as output_h
+  [Other Resource Files] as output_other
+}
+
+dsl --> parser : Parse State Machine
+templates --> engine : Load Templates
+config --> engine : Configure Rendering
+parser --> engine : State Machine Model
+engine --> expr : Expression Processing
+expr --> engine : Rendered Expressions
+engine --> output_c : Generate Code
+engine --> output_h : Generate Headers
+engine --> output_other : Copy Resource Files
+
+@enduml

@@ -25,5 +25,6 @@
     diagnostics_codes/index_zh
     visualization_options/index_zh
     template_config/index_zh
+    grammar_tooling/index_zh
     builtin_templates/index_zh
     API 文档 <../api_doc_zh>

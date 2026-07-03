@@ -25,5 +25,6 @@ This index is a migration skeleton. The pages below are stable stubs. Current au
     diagnostics_codes/index
     visualization_options/index
     template_config/index
+    grammar_tooling/index
     builtin_templates/index
     API Documentation <../api_doc_en>

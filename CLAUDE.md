@@ -70,7 +70,8 @@ Broad `except Exception:` (Python) / `} catch {` / `} catch (e) {` (TypeScript /
 
 Applies to all code in [pyfcstm/](pyfcstm/), [editors/jsfcstm/src/](editors/jsfcstm/src/),
 [editors/vscode/src/](editors/vscode/src/), and any new code under those trees. Auto-generated grammar files
-([pyfcstm/dsl/grammar/](pyfcstm/dsl/grammar/), [editors/jsfcstm/src/dsl/grammar/](editors/jsfcstm/src/dsl/grammar/))
+([pyfcstm/dsl/grammar/](pyfcstm/dsl/grammar/), [pyfcstm/bmc/grammar/](pyfcstm/bmc/grammar/),
+[editors/jsfcstm/src/dsl/grammar/](editors/jsfcstm/src/dsl/grammar/))
 are exempt — they are produced by ANTLR.
 
 ## Conversation Language
@@ -263,8 +264,10 @@ make docs_auto AUTO_OPTIONS="--model-name deepseek-V3 --param max_tokens=200000"
 ### ANTLR Grammar Development
 
 ```bash
-make antlr        # Download ANTLR jar and setup (requires Java)
-make antlr_build  # Regenerate parser from grammar files after modifying GrammarParser.g4 or GrammarLexer.g4
+make antlr              # Download ANTLR jar and setup (requires Java)
+make antlr_build        # Regenerate both FCSTM and FBMCQ parser files
+make fcstm_antlr_build  # Regenerate FCSTM parser from GrammarParser.g4 or GrammarLexer.g4
+make fbmcq_antlr_build  # Regenerate FBMCQ parser from BmcQueryParser.g4 or BmcQueryLexer.g4
 ```
 
 ### Sample Test Generation
@@ -1043,7 +1046,7 @@ When modifying [pyfcstm/dsl/grammar/GrammarParser.g4](pyfcstm/dsl/grammar/Gramma
 
 1. Ensure Java is installed
 2. `make antlr` - download ANTLR jar (only needed once)
-3. `make antlr_build` - regenerate parser code
+3. `make antlr_build` - regenerate both FCSTM and FBMCQ parser code, or `make fcstm_antlr_build` when intentionally refreshing only the FCSTM generated files
 4. Update [pyfcstm/dsl/listener.py](pyfcstm/dsl/listener.py) and [pyfcstm/dsl/node.py](pyfcstm/dsl/node.py) if grammar structure changes
 5. Update syntax highlighting:
    - [pyfcstm/highlight/pygments_lexer.py](pyfcstm/highlight/pygments_lexer.py) (Pygments lexer, reference implementation)
@@ -1058,6 +1061,19 @@ When modifying [pyfcstm/dsl/grammar/GrammarParser.g4](pyfcstm/dsl/grammar/Gramma
 update [pyfcstm/highlight/pygments_lexer.py](pyfcstm/highlight/pygments_lexer.py) (appropriate `words()` group) →
 update [editors/fcstm.tmLanguage.json](editors/fcstm.tmLanguage.json) (keywords repository section) →
 `python editors/validate.py`.
+
+When modifying [pyfcstm/bmc/grammar/BmcQueryParser.g4](pyfcstm/bmc/grammar/BmcQueryParser.g4) or
+[pyfcstm/bmc/grammar/BmcQueryLexer.g4](pyfcstm/bmc/grammar/BmcQueryLexer.g4):
+
+1. Ensure Java is installed.
+2. `make antlr` - download the shared ANTLR jar and install the matching Python runtime.
+3. `make antlr_build` - regenerate both FCSTM and FBMCQ parser code so routine grammar refreshes keep both generated sets current; use `make fbmcq_antlr_build` only when intentionally refreshing just the FBMCQ generated files.
+4. Keep `pyfcstm/bmc/grammar/` generated files in the commit together with the grammar source changes.
+5. Run the BMC query grammar tests, for example `pytest test/bmc/test_query_grammar.py -v`.
+
+The BMC query grammar is intentionally independent from the main FCSTM DSL grammar. Do not modify
+[pyfcstm/dsl/grammar/](pyfcstm/dsl/grammar/) when the task only changes `.fbmcq` parsing, and keep editor
+highlighting or jsfcstm grammar support with the editor-facing implementation work instead of the core query grammar.
 
 ### Template Development
 

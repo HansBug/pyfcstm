@@ -12,6 +12,7 @@ pyfcstm.bmc
     ast
     domain
     errors
+    grammar/index
     query
 
 \_\_all\_\_

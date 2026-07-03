@@ -1,4 +1,4 @@
-.PHONY: docs test unittest template_unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check test_boundary_check
+.PHONY: docs test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check test_boundary_check
 
 PYTHON := $(shell which python)
 
@@ -38,6 +38,9 @@ ANTLR_VERSION ?= 4.9.3
 ANTLR_GRAMMAR_DIR  := ${SRC_DIR}/dsl/grammar
 ANTLR_LEXER_GRAMMAR_FILE := ${ANTLR_GRAMMAR_DIR}/GrammarLexer.g4
 ANTLR_PARSER_GRAMMAR_FILE := ${ANTLR_GRAMMAR_DIR}/GrammarParser.g4
+BMC_ANTLR_GRAMMAR_DIR  := ${SRC_DIR}/bmc/grammar
+BMC_ANTLR_LEXER_GRAMMAR_FILE := ${BMC_ANTLR_GRAMMAR_DIR}/BmcQueryLexer.g4
+BMC_ANTLR_PARSER_GRAMMAR_FILE := ${BMC_ANTLR_GRAMMAR_DIR}/BmcQueryParser.g4
 
 # VSCode extension variables
 VSCODE_EXT_DIR := ${PROJ_DIR}/editors/vscode
@@ -107,7 +110,9 @@ help:
 	@echo ""
 	@echo "ANTLR Grammar:"
 	@echo "  make antlr        - Download ANTLR jar and setup (requires Java)"
-	@echo "  make antlr_build  - Regenerate lexer/parser from GrammarLexer.g4 and GrammarParser.g4"
+	@echo "  make antlr_build - Regenerate both FCSTM and FBMCQ lexer/parser files"
+	@echo "  make fcstm_antlr_build - Regenerate FCSTM lexer/parser from Grammar*.g4"
+	@echo "  make fbmcq_antlr_build - Regenerate FBMCQ lexer/parser from BmcQuery*.g4"
 	@echo ""
 	@echo "Built-in Templates:"
 	@echo "  make tpl          - Package repository templates into pyfcstm/template zip assets"
@@ -239,10 +244,17 @@ antlr: antlr-${ANTLR_VERSION}.jar
 	$(PYTHON) antlr_req.py -v ${ANTLR_VERSION}
 	pip install -r requirements.txt
 
-antlr_build:
+antlr_build: fcstm_antlr_build fbmcq_antlr_build
+
+fcstm_antlr_build: antlr
 	java -jar antlr-${ANTLR_VERSION}.jar -Dlanguage=Python3 -Xexact-output-dir -o ${ANTLR_GRAMMAR_DIR} \
 		${ANTLR_LEXER_GRAMMAR_FILE} ${ANTLR_PARSER_GRAMMAR_FILE}
 	ruff format ${ANTLR_GRAMMAR_DIR}
+
+fbmcq_antlr_build: antlr
+	java -jar antlr-${ANTLR_VERSION}.jar -Dlanguage=Python3 -Xexact-output-dir -o ${BMC_ANTLR_GRAMMAR_DIR} \
+		${BMC_ANTLR_LEXER_GRAMMAR_FILE} ${BMC_ANTLR_PARSER_GRAMMAR_FILE}
+	ruff format ${BMC_ANTLR_GRAMMAR_DIR}
 
 # Generate sample test files
 sample: ${SAMPLE_TEST_FILES} ${SAMPLE_NEG_TEST_FILES}

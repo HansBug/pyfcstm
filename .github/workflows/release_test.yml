@@ -8,6 +8,7 @@ on:
       - 'editors/jsfcstm/**'
       - 'editors/vscode/**'
       - 'editors/fcstm.tmLanguage.json'
+      - 'editors/fcstm-bmc-query.tmLanguage.json'
       - 'templates/**'
       - 'tools/**'
       # Build & packaging manifests

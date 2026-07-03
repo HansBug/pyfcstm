@@ -13,9 +13,23 @@ pyfcstm.bmc
     domain
     errors
     grammar/index
+    listener
+    parse
     query
 
 \_\_all\_\_
 -----------------------------------------------------
 
 .. autodata:: __all__
+
+
+\_\_getattr\_\_
+-----------------------------------------------------
+
+.. autofunction:: __getattr__
+
+
+\_\_dir\_\_
+-----------------------------------------------------
+
+.. autofunction:: __dir__

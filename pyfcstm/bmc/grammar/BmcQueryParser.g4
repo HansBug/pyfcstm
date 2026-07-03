@@ -103,11 +103,12 @@ frame_selector
     ;
 
 positive_integer
-    : INT
+    : POSITIVE_INT
     ;
 
 integer_literal
-    : INT
+    : POSITIVE_INT
+    | INT
     ;
 
 bmc_num_expression
@@ -181,7 +182,8 @@ bmc_boolean_atom
     ;
 
 num_literal
-    : INT
+    : POSITIVE_INT
+    | INT
     | FLOAT
     | HEX_INT
     ;

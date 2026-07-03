@@ -383,6 +383,11 @@ def test_binder_invalid_but_grammar_valid_queries_parse(query_text):
         ),
         pytest.param("init cold;", id="missing-check-clause"),
         pytest.param("check <= 5: true;", id="missing-property-kind"),
+        pytest.param("check reach <= 0: true;", id="zero-check-bound"),
+        pytest.param(
+            "check response <= 1: trigger true -> within 0 true;",
+            id="zero-response-window",
+        ),
         pytest.param(
             'check reach <= 1: active("Root.A);',
             id="malformed-string",

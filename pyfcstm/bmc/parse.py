@@ -1,0 +1,332 @@
+"""Parse ``.fbmcq`` query text into parser-independent BMC AST objects.
+
+This module is the public parsing entry point for FCSTM BMC Query files. It is
+structured after :mod:`pyfcstm.dsl.parse`: ANTLR lexer/parser classes perform
+syntax recognition, :class:`pyfcstm.bmc.listener.BmcQueryParseListener` builds
+query objects, and syntax-facing errors are reported through
+:class:`pyfcstm.bmc.errors.BmcQueryParseError`.
+
+The parser layer is intentionally narrow. It does not import model classes,
+Z3, or verify-registry code; model-aware binding and solver lowering belong to
+later BMC modules.
+
+The module contains:
+
+* :func:`parse_with_bmc_grammar_entry` - Parse text through one supported entry
+  rule.
+* :func:`build_bmc_ast_from_parse_tree` - Walk an already-created parse tree and
+  return the mapped AST object.
+* :func:`parse_bmc_query`, :func:`parse_bmc_num_expression`, and
+  :func:`parse_bmc_cond_expression` - Convenience entry points.
+
+Example::
+
+    >>> from pyfcstm.bmc.parse import parse_bmc_query
+    >>> query = parse_bmc_query('check reach <= 1: true;')
+    >>> query.property.kind
+    'reach'
+"""
+
+from __future__ import annotations
+
+from typing import Any, Callable, Dict, List, cast
+
+from antlr4 import CommonTokenStream, InputStream, ParserRuleContext, Token
+from antlr4.error.ErrorListener import ErrorListener
+from antlr4.tree.Tree import ParseTreeWalker
+
+from pyfcstm.bmc.ast import BmcCondExpr, BmcNumExpr
+from pyfcstm.bmc.errors import BmcQueryParseError
+from pyfcstm.bmc.grammar.BmcQueryLexer import BmcQueryLexer
+from pyfcstm.bmc.grammar.BmcQueryParser import BmcQueryParser
+from pyfcstm.bmc.listener import BmcQueryParseListener
+from pyfcstm.bmc.query import BmcQuery
+
+_ParserEntry = Callable[[BmcQueryParser], ParserRuleContext]
+_SUPPORTED_ENTRIES = {
+    "query",
+    "bmc_num_expression_entry",
+    "bmc_cond_expression_entry",
+}
+
+
+class _CollectingBmcErrorListener(ErrorListener):
+    """Collect ANTLR syntax diagnostics for BMC query parsing.
+
+    :ivar messages: Human-readable diagnostics reported by lexer and parser.
+    :vartype messages: List[str]
+
+    Example::
+
+        >>> listener = _CollectingBmcErrorListener()
+        >>> listener.messages
+        []
+    """
+
+    def __init__(self) -> None:
+        """Initialize an empty diagnostic buffer.
+
+        :return: ``None``.
+        :rtype: None
+        """
+        super().__init__()
+        self.messages: List[str] = []
+
+    def syntaxError(self, recognizer, offendingSymbol, line, column, msg, e) -> None:
+        """Record an ANTLR syntax error callback.
+
+        :param recognizer: Lexer or parser instance that reported the error.
+        :type recognizer: object
+        :param offendingSymbol: Token or text near the failure.
+        :type offendingSymbol: object
+        :param line: One-based input line number.
+        :type line: int
+        :param column: Zero-based input column number.
+        :type column: int
+        :param msg: ANTLR diagnostic message.
+        :type msg: str
+        :param e: Optional ANTLR recognition exception.
+        :type e: object
+        :return: ``None``.
+        :rtype: None
+        """
+        symbol_text = getattr(offendingSymbol, "text", None)
+        if symbol_text is None and offendingSymbol is not None:
+            symbol_text = str(offendingSymbol)
+        near = " near %r" % symbol_text if symbol_text is not None else ""
+        self.messages.append("line %d:%d%s: %s" % (line, column, near, msg))
+
+    def check_errors(self) -> None:
+        """Raise :class:`BmcQueryParseError` if diagnostics were collected.
+
+        :return: ``None``.
+        :rtype: None
+        :raises pyfcstm.bmc.errors.BmcQueryParseError: If syntax diagnostics
+            were recorded.
+
+        Example::
+
+            >>> listener = _CollectingBmcErrorListener()
+            >>> listener.check_errors()
+        """
+        if self.messages:
+            raise BmcQueryParseError("; ".join(self.messages))
+
+    def check_unfinished_parsing_error(self, stream: CommonTokenStream) -> None:
+        """Record an error when a parse entry leaves tokens unconsumed.
+
+        :param stream: Token stream used by the parser.
+        :type stream: antlr4.CommonTokenStream
+        :return: ``None``.
+        :rtype: None
+        """
+        if stream.LA(1) != Token.EOF:
+            token = cast(Any, stream.LT(1))
+            self.messages.append(
+                "line %d:%d near %r: parser did not consume the full input"
+                % (token.line, token.column, token.text)
+            )
+
+
+def _build_lexer(
+    input_text: str, error_listener: _CollectingBmcErrorListener
+) -> BmcQueryLexer:
+    """Build a BMC query lexer with the shared collecting error listener.
+
+    :param input_text: Query or expression text.
+    :type input_text: str
+    :param error_listener: Error listener that receives lexer diagnostics.
+    :type error_listener: _CollectingBmcErrorListener
+    :return: Configured BMC query lexer.
+    :rtype: pyfcstm.bmc.grammar.BmcQueryLexer.BmcQueryLexer
+
+    Example::
+
+        >>> listener = _CollectingBmcErrorListener()
+        >>> _build_lexer('true', listener).grammarFileName
+        'BmcQueryLexer.g4'
+    """
+    lexer = BmcQueryLexer(InputStream(input_text))
+    lexer.removeErrorListeners()
+    lexer.addErrorListener(error_listener)
+    return lexer
+
+
+def _build_parser(
+    stream: CommonTokenStream, error_listener: _CollectingBmcErrorListener
+) -> BmcQueryParser:
+    """Build a BMC query parser with collecting syntax diagnostics.
+
+    :param stream: Token stream produced by :func:`_build_lexer`.
+    :type stream: antlr4.CommonTokenStream
+    :param error_listener: Error listener that receives parser diagnostics.
+    :type error_listener: _CollectingBmcErrorListener
+    :return: Configured BMC query parser.
+    :rtype: pyfcstm.bmc.grammar.BmcQueryParser.BmcQueryParser
+
+    Example::
+
+        >>> listener = _CollectingBmcErrorListener()
+        >>> lexer = _build_lexer('true', listener)
+        >>> _build_parser(CommonTokenStream(lexer), listener).grammarFileName
+        'BmcQueryParser.g4'
+    """
+    parser = BmcQueryParser(stream)
+    parser.removeErrorListeners()
+    parser.addErrorListener(error_listener)
+    return parser
+
+
+def build_bmc_ast_from_parse_tree(parse_tree: ParserRuleContext) -> Any:
+    """Build a BMC AST object from an already-created ANTLR parse tree.
+
+    :param parse_tree: Root parse-tree context to walk.
+    :type parse_tree: antlr4.ParserRuleContext
+    :return: AST or query object mapped for ``parse_tree``.
+    :rtype: object
+    :raises TypeError: If ``parse_tree`` is not an ANTLR parser context.
+    :raises pyfcstm.bmc.errors.BmcQueryParseError: If the listener does not
+        map the provided root context.
+
+    Example::
+
+        >>> from antlr4 import CommonTokenStream, InputStream
+        >>> lexer = BmcQueryLexer(InputStream('1'))
+        >>> parser = BmcQueryParser(CommonTokenStream(lexer))
+        >>> tree = parser.bmc_num_expression_entry()
+        >>> build_bmc_ast_from_parse_tree(tree).value
+        1
+    """
+    if not isinstance(parse_tree, ParserRuleContext):
+        raise TypeError("parse_tree must be ParserRuleContext.")
+    listener = BmcQueryParseListener()
+    walker = ParseTreeWalker()
+    walker.walk(listener, parse_tree)
+    try:
+        return listener.nodes[parse_tree]
+    except KeyError as err:
+        # KeyError: listener.nodes has no root mapping when the supplied
+        # parse-tree context is outside the supported BMC builder surface.
+        raise BmcQueryParseError(
+            "No BMC AST node was built for parse tree root %s."
+            % type(parse_tree).__name__
+        ) from err
+
+
+def parse_with_bmc_grammar_entry(
+    input_text: str, entry_name: str, force_finished: bool = True
+) -> Any:
+    """Parse text with a supported BMC grammar entry rule.
+
+    :param input_text: Query or expression text.
+    :type input_text: str
+    :param entry_name: One of ``"query"``, ``"bmc_num_expression_entry"``, or
+        ``"bmc_cond_expression_entry"``.
+    :type entry_name: str
+    :param force_finished: Whether the token stream must be exhausted after the
+        entry rule, defaults to ``True``.
+    :type force_finished: bool, optional
+    :return: AST object produced by the entry rule.
+    :rtype: object
+    :raises pyfcstm.bmc.errors.BmcQueryParseError: If ``entry_name`` is
+        unsupported or parsing fails.
+
+    Example::
+
+        >>> node = parse_with_bmc_grammar_entry('cycle + 1', 'bmc_num_expression_entry')
+        >>> node.to_canonical()['node']
+        'num_binary'
+    """
+    if entry_name not in _SUPPORTED_ENTRIES:
+        raise BmcQueryParseError("Unsupported BMC grammar entry: %r." % entry_name)
+
+    error_listener = _CollectingBmcErrorListener()
+    lexer = _build_lexer(input_text, error_listener)
+    stream = CommonTokenStream(lexer)
+    parser = _build_parser(stream, error_listener)
+
+    entry: Dict[str, _ParserEntry] = {
+        "query": BmcQueryParser.query,
+        "bmc_num_expression_entry": BmcQueryParser.bmc_num_expression_entry,
+        "bmc_cond_expression_entry": BmcQueryParser.bmc_cond_expression_entry,
+    }
+    parse_tree = entry[entry_name](parser)
+    if force_finished:
+        error_listener.check_unfinished_parsing_error(stream)
+    error_listener.check_errors()
+    return build_bmc_ast_from_parse_tree(parse_tree)
+
+
+def parse_bmc_query(input_text: str) -> BmcQuery:
+    """Parse a complete ``.fbmcq`` query.
+
+    :param input_text: Complete query text.
+    :type input_text: str
+    :return: Parsed query object.
+    :rtype: pyfcstm.bmc.query.BmcQuery
+    :raises pyfcstm.bmc.errors.BmcQueryParseError: If syntax parsing fails.
+    :raises pyfcstm.bmc.errors.InvalidBmcQuery: If the parsed query is
+        structurally invalid, for example ``check ... <= 0``.
+
+    Example::
+
+        >>> parse_bmc_query('check reach <= 1: true;').property.bound
+        1
+    """
+    result = parse_with_bmc_grammar_entry(input_text, "query")
+    if not isinstance(result, BmcQuery):
+        raise BmcQueryParseError("BMC query entry did not produce BmcQuery.")
+    return result
+
+
+def parse_bmc_num_expression(input_text: str) -> BmcNumExpr:
+    """Parse a standalone BMC numeric expression.
+
+    :param input_text: Numeric expression text.
+    :type input_text: str
+    :return: Parsed numeric expression object.
+    :rtype: pyfcstm.bmc.ast.BmcNumExpr
+    :raises pyfcstm.bmc.errors.BmcQueryParseError: If syntax parsing fails.
+
+    Example::
+
+        >>> parse_bmc_num_expression('cycle + 1').to_canonical()['op']
+        '+'
+    """
+    result = parse_with_bmc_grammar_entry(input_text, "bmc_num_expression_entry")
+    if not isinstance(result, BmcNumExpr):
+        raise BmcQueryParseError(
+            "BMC numeric-expression entry did not produce BmcNumExpr."
+        )
+    return result
+
+
+def parse_bmc_cond_expression(input_text: str) -> BmcCondExpr:
+    """Parse a standalone BMC condition expression.
+
+    :param input_text: Condition expression text.
+    :type input_text: str
+    :return: Parsed condition expression object.
+    :rtype: pyfcstm.bmc.ast.BmcCondExpr
+    :raises pyfcstm.bmc.errors.BmcQueryParseError: If syntax parsing fails.
+
+    Example::
+
+        >>> parse_bmc_cond_expression('active("Root.A")').to_canonical()['node']
+        'active'
+    """
+    result = parse_with_bmc_grammar_entry(input_text, "bmc_cond_expression_entry")
+    if not isinstance(result, BmcCondExpr):
+        raise BmcQueryParseError(
+            "BMC condition-expression entry did not produce BmcCondExpr."
+        )
+    return result
+
+
+__all__ = [
+    "parse_bmc_query",
+    "parse_bmc_num_expression",
+    "parse_bmc_cond_expression",
+    "parse_with_bmc_grammar_entry",
+    "build_bmc_ast_from_parse_tree",
+]

@@ -10,6 +10,8 @@ Package contracts:
 
 * BMC query objects are parser-independent and data-only in this package.
 * The root package must not depend on ``pyfcstm.verify`` or its registry.
+* Parser entry points build parser-independent query objects and remain
+  separate from model-aware binding or solver lowering.
 * :func:`str` on exported query and expression dataclasses is reserved for the
   canonical ``.fbmcq`` query DSL spelling.
 * :func:`repr` remains the dataclass debugging representation; callers that need
@@ -24,11 +26,19 @@ Public module structure:
      - Public entry
      - Purpose
    * - Error hierarchy
-     - :class:`BmcError`, :class:`InvalidBmcQuery`,
+     - :class:`BmcError`, :class:`BmcQueryParseError`,
+       :class:`InvalidBmcQuery`,
        :class:`UnsupportedBmcQuery`, :class:`InvalidBmcEncoding`,
        :class:`BmcBuildError`
      - Provide stable BMC-specific exception types without importing
        ``pyfcstm.verify``.
+   * - Query parser
+     - :func:`parse_bmc_query`, :func:`parse_bmc_num_expression`,
+       :func:`parse_bmc_cond_expression`,
+       :func:`parse_with_bmc_grammar_entry`,
+       :func:`build_bmc_ast_from_parse_tree`
+     - Convert ``.fbmcq`` text or existing ANTLR parse trees into
+       parser-independent AST/query nodes.
    * - Typed expression bases
      - :class:`BmcExpr`, :class:`BmcNumExpr`, :class:`BmcCondExpr`
      - Keep FCSTM numeric and condition expression categories explicit.
@@ -90,9 +100,17 @@ from pyfcstm.bmc.ast import (
 from pyfcstm.bmc.errors import (
     BmcBuildError,
     BmcError,
+    BmcQueryParseError,
     InvalidBmcEncoding,
     InvalidBmcQuery,
     UnsupportedBmcQuery,
+)
+from pyfcstm.bmc.parse import (
+    build_bmc_ast_from_parse_tree,
+    parse_bmc_cond_expression,
+    parse_bmc_num_expression,
+    parse_bmc_query,
+    parse_with_bmc_grammar_entry,
 )
 from pyfcstm.bmc.query import (
     BmcAssumption,
@@ -106,10 +124,16 @@ from pyfcstm.bmc.query import (
 
 __all__ = [
     "BmcError",
+    "BmcQueryParseError",
     "InvalidBmcQuery",
     "UnsupportedBmcQuery",
     "InvalidBmcEncoding",
     "BmcBuildError",
+    "parse_bmc_query",
+    "parse_bmc_num_expression",
+    "parse_bmc_cond_expression",
+    "parse_with_bmc_grammar_entry",
+    "build_bmc_ast_from_parse_tree",
     "BmcExpr",
     "BmcNumExpr",
     "BmcCondExpr",

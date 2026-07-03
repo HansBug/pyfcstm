@@ -9,6 +9,9 @@ Design contracts:
 
 * Error classes are intentionally thin and stable so parser, binder, engine, and
   adapter layers can share them without coupling to each other.
+* :class:`BmcQueryParseError` is reserved for syntax-facing failures before a
+  well-formed query object exists. :class:`InvalidBmcQuery` remains the
+  structural query-model validation error after AST objects are being built.
 * Query data-model validation uses these BMC-specific exceptions for structural
   failures, while expression category mix-ups still use normal Python type
   errors where that is more precise.
@@ -16,6 +19,8 @@ Design contracts:
 The module contains:
 
 * :class:`BmcError` - Base class for all BMC-specific errors.
+* :class:`BmcQueryParseError` - Syntax, lexical, entry-point, or parse-tree
+  construction error.
 * :class:`InvalidBmcQuery` - Query model or semantic-query validation error.
 * :class:`UnsupportedBmcQuery` - Well-formed query that this implementation
   deliberately does not support yet.
@@ -44,6 +49,26 @@ class BmcError(Exception):
         >>> err = BmcError("query failed")
         >>> str(err)
         'query failed'
+    """
+
+
+class BmcQueryParseError(BmcError):
+    """Raised when ``.fbmcq`` text or parse trees cannot build BMC AST nodes.
+
+    This exception covers lexical syntax diagnostics, parser syntax
+    diagnostics, unfinished parsing, unknown text entry points, and parse-tree
+    roots that the listener did not map to a BMC AST object. It deliberately
+    does not cover model-aware validation or query structural validation, which
+    use :class:`InvalidBmcQuery`.
+
+    :param message: Human-readable parse failure message.
+    :type message: str
+
+    Example::
+
+        >>> err = BmcQueryParseError("syntax error")
+        >>> isinstance(err, BmcError)
+        True
     """
 
 
@@ -105,6 +130,7 @@ class BmcBuildError(BmcError):
 
 __all__ = [
     "BmcError",
+    "BmcQueryParseError",
     "InvalidBmcQuery",
     "UnsupportedBmcQuery",
     "InvalidBmcEncoding",

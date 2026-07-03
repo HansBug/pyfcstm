@@ -15,6 +15,7 @@ from pyfcstm.bmc import (
     BmcNumExpr,
     BmcProperty,
     BmcQuery,
+    BmcQueryParseError,
     BoolLiteral,
     Called,
     Case,
@@ -47,6 +48,7 @@ from pyfcstm.bmc import (
 @pytest.mark.unittest
 def test_error_hierarchy():
     """BMC errors expose phase-specific subclasses under one base."""
+    assert issubclass(BmcQueryParseError, BmcError)
     assert issubclass(InvalidBmcQuery, BmcError)
     assert issubclass(UnsupportedBmcQuery, BmcError)
     assert issubclass(InvalidBmcEncoding, BmcError)

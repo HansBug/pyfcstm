@@ -12,6 +12,8 @@ pyfcstm.bmc
     ast
     errors
     grammar/index
+    listener
+    parse
     query
 
 \_\_all\_\_

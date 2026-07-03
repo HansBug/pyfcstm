@@ -98,6 +98,31 @@ Choose a renderer mode
 In CI or other headless environments, prefer ``--no-open`` so viewer launch is
 not part of the job result.
 
+Keep diagrams readable
+----------------------
+
+Treat visualization as audience-specific output instead of a single canonical
+diagram:
+
+* Use ``minimal`` for high-level architecture overviews or non-technical
+  stakeholders.
+* Use ``normal`` for general documentation and code review.
+* Use ``full`` for detailed implementation documentation and debugging.
+* Start with defaults, then add options only when the diagram answers a clearer
+  question.
+* For large state machines, use ``max_depth`` to focus on the levels currently
+  under review.
+* Hide lifecycle actions, transition effects, or events that are not relevant to
+  the current audience.
+* Enable ``event_visualization_mode=color`` when event tracking is more useful
+  than plain transition labels.
+* Use ``collapse_empty_states`` to reduce visual clutter in sparse or structural
+  diagrams.
+
+Large models can produce large PlantUML files. For initial exploration, prefer a
+limited-depth diagram and generate separate diagrams at different detail levels
+for different audiences.
+
 Use Python API when needed
 --------------------------
 

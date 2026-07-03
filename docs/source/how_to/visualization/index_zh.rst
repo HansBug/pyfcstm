@@ -96,6 +96,22 @@ PlantUML 源码确定且易于 review：
 
 在 CI 或其他 headless 环境中，优先使用 ``--no-open``，避免 viewer 启动影响 job 结果。
 
+保持图表可读
+--------------
+
+把 visualization 当作面向特定读者的输出，而不是唯一标准图：
+
+* ``minimal`` 适合高层架构概览或非技术读者。
+* ``normal`` 适合一般文档和 code review。
+* ``full`` 适合详细实现文档和调试。
+* 先从默认设置开始，只在图能回答更清楚问题时再增加选项。
+* 对大型状态机，使用 ``max_depth`` 聚焦当前 review 的层级。
+* 隐藏当前读者不关心的 lifecycle actions、transition effects 或 events。
+* 事件跟踪比普通 transition label 更重要时，启用 ``event_visualization_mode=color``。
+* 对稀疏或偏结构性的图，使用 ``collapse_empty_states`` 减少视觉噪声。
+
+大型模型可能生成很大的 PlantUML 文件。初步探索时优先使用 limited-depth 图，并为不同读者生成不同详细级别的多张图。
+
 需要时使用 Python API
 ---------------------
 

@@ -164,6 +164,11 @@ Chapter migration records
      - move
      - Task guide covers PlantUML source export, detail-level comparison, rendered-file export, renderer mode, and headless ``--no-open`` usage.
    * - ``tutorials/visualization/index*.rst``
+     - best practices, readability, and performance guidance
+     - ``how_to/visualization/index*.rst``
+     - merge
+     - Audience-specific detail levels, ``max_depth``, hiding irrelevant details, event coloring, ``collapse_empty_states``, and large-model guidance were compressed into ``Keep diagrams readable``.
+   * - ``tutorials/visualization/index*.rst``
      - ``PlantUMLOptions`` and ``-c`` option facts
      - ``reference/visualization_options/index*.rst``
      - move

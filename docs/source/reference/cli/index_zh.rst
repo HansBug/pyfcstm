@@ -94,10 +94,10 @@ CLI 参考
      - 添加 inspect-eligible verify 诊断。
    * - ``--max-complexity-tier``
      - ``structural``
-     - inspect 接受的最高 verify complexity tier。
+     - inspect-eligible verify complexity tier 的上限；不支持的更高 tier 只会被解析并报告 policy error。
    * - ``--max-call-count-scaling``
      - ``linear_in_transitions``
-     - inspect 接受的最高 verify call-count scaling。
+     - inspect-eligible verify call-count scaling 的上限；不支持的 unrolling-style 值只会被解析并报告 policy error。
    * - ``--smt-timeout-ms``
      - 未设置
      - 可选 SMT solver 毫秒级超时；``0`` 表示不为 Z3 配置有限超时。

@@ -78,3 +78,6 @@ Invalid input boundary
 
 A parse or model-load failure is a CLI error. Inspect does not emit a successful
 JSON payload for invalid input.
+
+Output suffix warnings are only warnings. If ``--format`` is explicit, inspect
+honors that format even when the output file suffix looks suspicious.

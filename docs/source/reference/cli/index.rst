@@ -96,10 +96,10 @@ Commands
      - Add inspect-eligible verify diagnostics.
    * - ``--max-complexity-tier``
      - ``structural``
-     - Highest verify complexity tier accepted by inspect.
+     - Highest inspect-eligible verify complexity tier; unsupported higher tiers are parsed only to report a policy error.
    * - ``--max-call-count-scaling``
      - ``linear_in_transitions``
-     - Highest verify call-count scaling accepted by inspect.
+     - Highest inspect-eligible verify call-count scaling; unsupported unrolling-style values are parsed only to report a policy error.
    * - ``--smt-timeout-ms``
      - not set
      - Optional SMT solver timeout in milliseconds; ``0`` keeps Z3 without a finite timeout.

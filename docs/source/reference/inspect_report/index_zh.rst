@@ -72,3 +72,5 @@ LLM 格式暴露 ``summary``、``recommended_actions``、``do_not`` 和 ``repair
 ------------
 
 parse 或 model-load failure 是 CLI error。Inspect 不会为无效输入输出成功 JSON payload。
+
+输出后缀 warning 只是 warning。如果显式传入 ``--format``，即使输出文件后缀看起来可疑，inspect 仍会尊重该格式。

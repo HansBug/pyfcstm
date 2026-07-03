@@ -509,6 +509,157 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
 
 
 @pytest.mark.unittest
+def test_domain_snapshot_validation_rejects_hacked_state_entries():
+    """BmcDomain revalidates state entries at the snapshot boundary."""
+    from pyfcstm.bmc import StateDomainEntry
+
+    def clone_state(entry, **updates):
+        hacked = object.__new__(StateDomainEntry)
+        for field_name in (
+            "id",
+            "path",
+            "name",
+            "kind",
+            "parent_path",
+            "is_root",
+            "is_stoppable",
+            "is_sentinel",
+            "is_generated_combo_pseudo",
+        ):
+            object.__setattr__(
+                hacked, field_name, updates.get(field_name, getattr(entry, field_name))
+            )
+        return hacked
+
+    def rebuild(domain, bad_path, bad_entry):
+        return BmcDomain(
+            bound=domain.bound,
+            states=tuple(
+                bad_entry if entry.path == bad_path else entry
+                for entry in domain.states
+            ),
+            events=domain.events,
+            variables=domain.variables,
+            frames=domain.frames,
+            steps=domain.steps,
+            event_inputs=domain.event_inputs,
+            initial_state_ids=domain.initial_state_ids,
+            stable_state_ids=domain.stable_state_ids,
+        )
+
+    model = load_state_machine_from_text(
+        """
+        state Root {
+          pseudo state Choice;
+          state Composite {
+            state A;
+            [*] -> A;
+          }
+          [*] -> Composite;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    by_path = {entry.path: entry for entry in domain.states}
+
+    hacked_cases = [
+        (
+            "$STATE_TERMINATE",
+            clone_state(by_path["$STATE_TERMINATE"], is_stoppable=True),
+        ),
+        (
+            "$STATE_TERMINATE",
+            clone_state(by_path["$STATE_TERMINATE"], parent_path="Root"),
+        ),
+        (
+            "$STATE_TERMINATE",
+            clone_state(by_path["$STATE_TERMINATE"], is_root=True),
+        ),
+        (
+            "$STATE_TERMINATE",
+            clone_state(by_path["$STATE_TERMINATE"], is_generated_combo_pseudo=True),
+        ),
+        (
+            "Root.Composite",
+            clone_state(by_path["Root.Composite"], is_stoppable=True),
+        ),
+        (
+            "Root.Composite.A",
+            clone_state(by_path["Root.Composite.A"], is_generated_combo_pseudo=True),
+        ),
+        (
+            "Root.Choice",
+            clone_state(by_path["Root.Choice"], is_sentinel=True),
+        ),
+        (
+            "Root.Composite.A",
+            clone_state(by_path["Root.Composite.A"], kind="sentinel"),
+        ),
+        (
+            "Root.Composite.A",
+            clone_state(by_path["Root.Composite.A"], is_stoppable="yes"),
+        ),
+    ]
+
+    for bad_path, bad_entry in hacked_cases:
+        with pytest.raises(InvalidBmcDomain):
+            rebuild(domain, bad_path, bad_entry)
+
+    extra_sentinel = object.__new__(StateDomainEntry)
+    for field_name, value in {
+        "id": -3,
+        "path": "$EXTRA",
+        "name": "EXTRA",
+        "kind": "sentinel",
+        "parent_path": None,
+        "is_root": False,
+        "is_stoppable": False,
+        "is_sentinel": True,
+        "is_generated_combo_pseudo": False,
+    }.items():
+        object.__setattr__(extra_sentinel, field_name, value)
+
+    with pytest.raises(InvalidBmcDomain):
+        BmcDomain(
+            bound=domain.bound,
+            states=domain.states + (extra_sentinel,),
+            events=domain.events,
+            variables=domain.variables,
+            frames=domain.frames,
+            steps=domain.steps,
+            event_inputs=domain.event_inputs,
+            initial_state_ids=domain.initial_state_ids,
+            stable_state_ids=domain.stable_state_ids,
+        )
+
+    missing_field = object.__new__(StateDomainEntry)
+    for field_name, value in {
+        "id": 0,
+        "path": "Root",
+        "kind": "leaf",
+        "parent_path": None,
+        "is_root": True,
+        "is_stoppable": True,
+        "is_sentinel": False,
+        "is_generated_combo_pseudo": False,
+    }.items():
+        object.__setattr__(missing_field, field_name, value)
+
+    with pytest.raises(InvalidBmcDomain):
+        BmcDomain(
+            bound=domain.bound,
+            states=(missing_field,) + domain.states[1:],
+            events=domain.events,
+            variables=domain.variables,
+            frames=domain.frames,
+            steps=domain.steps,
+            event_inputs=domain.event_inputs,
+            initial_state_ids=domain.initial_state_ids,
+            stable_state_ids=domain.stable_state_ids,
+        )
+
+
+@pytest.mark.unittest
 def test_domain_snapshot_validation_rejects_wrong_allowed_state_sets():
     """BmcDomain enforces frame-state set semantics for public construction."""
     model = load_state_machine_from_text(

@@ -57,6 +57,24 @@ _STATE_TERMINATE_PATH = "$STATE_TERMINATE"
 _STATE_DIAGNOSTIC_PATH = "$STATE_DIAGNOSTIC"
 
 _CanonicalDict = Dict[str, Any]
+_STATE_ENTRY_FIELDS = (
+    "id",
+    "path",
+    "name",
+    "kind",
+    "parent_path",
+    "is_root",
+    "is_stoppable",
+    "is_sentinel",
+    "is_generated_combo_pseudo",
+)
+_STATE_ENTRY_BOOL_FIELDS = (
+    "is_root",
+    "is_stoppable",
+    "is_sentinel",
+    "is_generated_combo_pseudo",
+)
+_STATE_SENTINEL_IDS = {STATE_TERMINATE_ID, STATE_DIAGNOSTIC_ID}
 
 
 def _validate_positive_bound(bound: int, field_name: str = "bound") -> int:
@@ -77,6 +95,55 @@ def _require_non_empty_string(value: object, field_name: str) -> str:
     if not isinstance(value, str) or not value:
         raise InvalidBmcDomain(f"{field_name} must be a non-empty string.")
     return value
+
+
+def _require_bool(value: object, field_name: str) -> bool:
+    if not isinstance(value, bool):
+        raise InvalidBmcDomain(f"{field_name} must be a boolean.")
+    return value
+
+
+def _state_entry_value(entry: object, field_name: str) -> object:
+    if not hasattr(entry, field_name):
+        raise InvalidBmcDomain("State entry is missing %s." % field_name)
+    return getattr(entry, field_name)
+
+
+def _validate_state_entry(entry: object) -> None:
+    values = {field: _state_entry_value(entry, field) for field in _STATE_ENTRY_FIELDS}
+    _validate_index(values["id"], "state id")
+    _require_non_empty_string(values["path"], "state path")
+    _require_non_empty_string(values["name"], "state name")
+    if values["kind"] not in {"leaf", "composite", "pseudo", "sentinel"}:
+        raise InvalidBmcDomain(f"Unsupported state kind: {values['kind']!r}.")
+    if values["parent_path"] is not None:
+        _require_non_empty_string(values["parent_path"], "parent_path")
+    for field_name in _STATE_ENTRY_BOOL_FIELDS:
+        _require_bool(values[field_name], field_name)
+
+    is_sentinel_kind = values["kind"] == "sentinel"
+    if values["is_sentinel"] != is_sentinel_kind:
+        raise InvalidBmcDomain("State sentinel flag must match sentinel kind.")
+    if values["is_sentinel"]:
+        if values["id"] not in _STATE_SENTINEL_IDS:
+            raise InvalidBmcDomain("Sentinel state ids must use fixed BMC ids.")
+        if values["parent_path"] is not None:
+            raise InvalidBmcDomain("Sentinel states cannot have parent paths.")
+        if values["is_root"]:
+            raise InvalidBmcDomain("Sentinel states cannot be root states.")
+        if values["is_stoppable"]:
+            raise InvalidBmcDomain("Sentinel states cannot be stoppable.")
+        if values["is_generated_combo_pseudo"]:
+            raise InvalidBmcDomain(
+                "Sentinel states cannot be generated combo pseudo states."
+            )
+    elif values["id"] < 0:
+        raise InvalidBmcDomain("Model state ids must be non-negative.")
+
+    if values["is_stoppable"] and values["kind"] != "leaf":
+        raise InvalidBmcDomain("Only non-sentinel leaf states can be stoppable.")
+    if values["is_generated_combo_pseudo"] and values["kind"] != "pseudo":
+        raise InvalidBmcDomain("Generated combo states must be pseudo states.")
 
 
 def _path_name(path: Sequence[str]) -> str:
@@ -137,21 +204,7 @@ class StateDomainEntry:
     is_generated_combo_pseudo: bool = False
 
     def __post_init__(self) -> None:
-        _validate_index(self.id, "state id")
-        _require_non_empty_string(self.path, "state path")
-        _require_non_empty_string(self.name, "state name")
-        if self.kind not in {"leaf", "composite", "pseudo", "sentinel"}:
-            raise InvalidBmcDomain(f"Unsupported state kind: {self.kind!r}.")
-        if self.parent_path is not None:
-            _require_non_empty_string(self.parent_path, "parent_path")
-        if self.is_sentinel and self.id >= 0:
-            raise InvalidBmcDomain("Sentinel state ids must be negative.")
-        if not self.is_sentinel and self.id < 0:
-            raise InvalidBmcDomain("Model state ids must be non-negative.")
-        if self.is_stoppable and (self.is_sentinel or self.kind != "leaf"):
-            raise InvalidBmcDomain("Only non-sentinel leaf states can be stoppable.")
-        if self.is_generated_combo_pseudo and self.kind != "pseudo":
-            raise InvalidBmcDomain("Generated combo states must be pseudo states.")
+        _validate_state_entry(self)
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable state entry dictionary.
@@ -566,6 +619,7 @@ class BmcDomain:
         self._normalize_sequence("event_inputs", self.event_inputs, EventInputRef)
         self._normalize_int_sequence("initial_state_ids", self.initial_state_ids)
         self._normalize_int_sequence("stable_state_ids", self.stable_state_ids)
+        self._validate_state_entries()
         self._validate_unique_entries()
         self._validate_sentinel_entries()
         self._validate_trace_references()
@@ -626,6 +680,10 @@ class BmcDomain:
         ):
             raise InvalidBmcDomain(f"{field_name} must contain integer ids.")
         object.__setattr__(self, field_name, items)
+
+    def _validate_state_entries(self) -> None:
+        for entry in self.states:
+            _validate_state_entry(entry)
 
     def _validate_unique_entries(self) -> None:
         self._validate_unique("state id", (entry.id for entry in self.states))

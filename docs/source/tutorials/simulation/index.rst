@@ -94,6 +94,6 @@ material.  The main topics now live here:
    * - DSL semantic background
      - :doc:`../../explanations/dsl_semantics/index`
 
-The legacy example resources remain in this directory during the information
-architecture migration so old links and source-output pairs stay stable.  The
-migration log records each resource and PR-J will do the final cleanup audit.
+The legacy example resources remain in this directory so old links and
+source-output pairs stay stable. The migration log records each resource and
+the final cleanup audit explains why these compatibility resources remain.

@@ -11,10 +11,11 @@ Non-goals
 
 It is not a step-by-step task guide and should not become the only source for exact CLI or DSL facts.
 
-Status
------------
+Topics
+------
 
-This index is a migration skeleton. The pages below are stable stubs. Current authoritative content remains in the old ``tutorials/`` pages until the relevant migration work moves it.
+Use the pages below when you need semantic background, architecture rationale,
+or design boundaries. For step-by-step tasks, use :doc:`../how_to/index`.
 
 .. toctree::
     :maxdepth: 2

@@ -11,10 +11,11 @@ Non-goals
 
 It is not a guided tutorial. Use tutorials and how-to guides when you need a learning path or a task walkthrough.
 
-Status
------------
+Reference map
+-------------
 
-This index is a migration skeleton. The pages below are stable stubs. Current authoritative content remains in the old ``tutorials/`` pages until the relevant migration work moves it.
+Use the pages below to look up stable facts. The generated API documentation is
+kept as the last entry because it is the complete module-level map.
 
 .. toctree::
     :maxdepth: 2

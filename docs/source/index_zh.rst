@@ -46,7 +46,7 @@ pyfcstm 适用于：
 
    pip install pyfcstm
 
-完整安装检查请见 :doc:`tutorials/installation/index_zh`。
+完整安装检查请见 :doc:`how_to/installation/index_zh`。
 
 最快路径
 ~~~~~~~~
@@ -88,34 +88,14 @@ pyfcstm 遵循三阶段流水线：
     :caption: 教程
     :hidden:
 
-    tutorials/installation/index_zh
-    tutorials/quick_start/index_zh
-    tutorials/dsl/index_zh
-    tutorials/simulation/index_zh
-    tutorials/inspect/index_zh
-    tutorials/generation/index_zh
-    tutorials/visualization/index_zh
-    tutorials/cli/index_zh
-    tutorials/render/index_zh
-    tutorials/grammar/index_zh
-    tutorials/structure/index_zh
+    tutorials/index_zh
 
-* :doc:`tutorials/installation/index_zh`
-* :doc:`tutorials/quick_start/index_zh`
-* :doc:`tutorials/dsl/index_zh`
-* :doc:`tutorials/simulation/index_zh`
-* :doc:`tutorials/inspect/index_zh`
-* :doc:`tutorials/generation/index_zh`
-* :doc:`tutorials/visualization/index_zh`
-* :doc:`tutorials/cli/index_zh`
-* :doc:`tutorials/render/index_zh`
-* :doc:`tutorials/grammar/index_zh`
-* :doc:`tutorials/structure/index_zh`
+* :doc:`tutorials/index_zh`
 
 任务指南
 --------
 
-任务指南面向具体操作。本结构先创建稳定骨架；在后续迁移工作完成之前，当前权威内容仍在现有教程页中。
+任务指南面向具体操作。当你已经知道要完成什么任务，并需要具体命令或检查清单时，请阅读这一部分。
 
 .. toctree::
     :maxdepth: 2

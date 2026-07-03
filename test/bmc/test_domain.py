@@ -298,6 +298,8 @@ def test_domain_entry_validation_rejects_malformed_values():
         lambda: EventDomainEntry(-1, "Root.Go", "Go", "Root", 0),
         lambda: EventDomainEntry(0, "Root.Go", "Go", "Root", -1),
         lambda: EventDomainEntry(0, "", "Go", "Root", 0),
+        lambda: EventDomainEntry(0, "Other.Go", "Go", "Root", 0),
+        lambda: EventDomainEntry(0, "Root.Other", "Go", "Root", 0),
         lambda: EventDomainEntry(0, "Root.Go", "Go", "Root", 0, 0),
         lambda: VarDomainEntry(-1, "x", "int"),
         lambda: VarDomainEntry(0, "", "int"),
@@ -429,12 +431,16 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
     event = EventDomainEntry(0, "Root.Go", "Go", "Root", 0)
 
     def unsafe_event_entry(
-        owner_state_path, owner_state_id, owner_is_generated_combo_pseudo=False
+        owner_state_path,
+        owner_state_id,
+        owner_is_generated_combo_pseudo=False,
+        path="Root.Go",
+        name="Go",
     ):
         entry = object.__new__(EventDomainEntry)
         object.__setattr__(entry, "id", 0)
-        object.__setattr__(entry, "path", "Root.Go")
-        object.__setattr__(entry, "name", "Go")
+        object.__setattr__(entry, "path", path)
+        object.__setattr__(entry, "name", name)
         object.__setattr__(entry, "owner_state_path", owner_state_path)
         object.__setattr__(entry, "owner_state_id", owner_state_id)
         object.__setattr__(
@@ -452,6 +458,15 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
     unknown_parent = StateDomainEntry(
         1, "Missing.Child", "Child", "composite", parent_path="Missing"
     )
+    missing_event_field = object.__new__(EventDomainEntry)
+    for field_name, value in {
+        "id": 0,
+        "path": "Root.Go",
+        "owner_state_path": "Root",
+        "owner_state_id": 0,
+        "owner_is_generated_combo_pseudo": False,
+    }.items():
+        object.__setattr__(missing_event_field, field_name, value)
 
     valid_kwargs = dict(
         bound=1,
@@ -466,6 +481,19 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
     )
     assert (
         BmcDomain(**valid_kwargs).event_input(StepRef(0, 1), 0).event_path == "Root.Go"
+    )
+    unsorted_domain = BmcDomain(
+        **dict(
+            valid_kwargs,
+            initial_state_ids=(0, STATE_TERMINATE_ID),
+            stable_state_ids=(0, STATE_TERMINATE_ID, STATE_DIAGNOSTIC_ID),
+        )
+    )
+    assert unsorted_domain.initial_state_ids == (STATE_TERMINATE_ID, 0)
+    assert unsorted_domain.stable_state_ids == (
+        STATE_DIAGNOSTIC_ID,
+        STATE_TERMINATE_ID,
+        0,
     )
 
     bad_cases = [
@@ -516,11 +544,15 @@ def test_domain_snapshot_validation_rejects_bad_trace_and_input_metadata():
         dict(frames=(FrameRef(0, 2), FrameRef(1, 2))),
         dict(steps=(StepRef(1, 2),)),
         dict(steps=(StepRef(0, 2),)),
-        dict(events=(EventDomainEntry(0, "Root.Go", "Go", "Missing", 999),)),
+        dict(events=(unsafe_event_entry("Missing", 999, path="Missing.Go"),)),
         dict(events=(unsafe_event_entry("$STATE_TERMINATE", STATE_TERMINATE_ID),)),
-        dict(events=(EventDomainEntry(0, "Root.Go", "Go", "Missing", 0),)),
+        dict(events=(unsafe_event_entry("Missing", 0, path="Missing.Go"),)),
+        dict(events=(missing_event_field,)),
         dict(events=(EventDomainEntry(0, "Root.Go", "Go", "Root", 0, True),)),
         dict(events=(unsafe_event_entry("Root", 0, 0),)),
+        dict(events=(unsafe_event_entry("Root", 0, path="Other.Go"),)),
+        dict(events=(unsafe_event_entry("Root", 0, path="Root.Other"),)),
+        dict(events=(unsafe_event_entry("Root", 0, name="Other"),)),
         dict(event_inputs=(EventInputRef(1, 0, "Root.Go"),)),
         dict(event_inputs=(EventInputRef(0, 1, "Root.Go"),)),
         dict(event_inputs=(EventInputRef(0, 0, "Root.Bad"),)),

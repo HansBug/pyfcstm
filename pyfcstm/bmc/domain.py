@@ -75,6 +75,14 @@ _STATE_ENTRY_BOOL_FIELDS = (
     "is_generated_combo_pseudo",
 )
 _STATE_SENTINEL_IDS = {STATE_TERMINATE_ID, STATE_DIAGNOSTIC_ID}
+_EVENT_ENTRY_FIELDS = (
+    "id",
+    "path",
+    "name",
+    "owner_state_path",
+    "owner_state_id",
+    "owner_is_generated_combo_pseudo",
+)
 
 
 def _validate_positive_bound(bound: int, field_name: str = "bound") -> int:
@@ -161,6 +169,33 @@ def _validate_state_entry(entry: object) -> None:
         raise InvalidBmcDomain("Only non-sentinel leaf states can be stoppable.")
     if values["is_generated_combo_pseudo"] and values["kind"] != "pseudo":
         raise InvalidBmcDomain("Generated combo states must be pseudo states.")
+
+
+def _event_entry_value(entry: object, field_name: str) -> object:
+    if not hasattr(entry, field_name):
+        raise InvalidBmcDomain("Event entry is missing %s." % field_name)
+    return getattr(entry, field_name)
+
+
+def _validate_event_entry(entry: object) -> None:
+    values = {field: _event_entry_value(entry, field) for field in _EVENT_ENTRY_FIELDS}
+    _validate_index(values["id"], "event id")
+    if values["id"] < 0:
+        raise InvalidBmcDomain("Event ids must be non-negative.")
+    _require_non_empty_string(values["path"], "event path")
+    _require_non_empty_string(values["name"], "event name")
+    _require_non_empty_string(values["owner_state_path"], "owner_state_path")
+    _validate_index(values["owner_state_id"], "owner_state_id")
+    if values["owner_state_id"] < 0:
+        raise InvalidBmcDomain("Event owner state id must be a model state id.")
+    _require_bool(
+        values["owner_is_generated_combo_pseudo"],
+        "owner_is_generated_combo_pseudo",
+    )
+
+    expected_path = "%s.%s" % (values["owner_state_path"], values["name"])
+    if values["path"] != expected_path:
+        raise InvalidBmcDomain("Event path does not match owner state path and name.")
 
 
 def _path_name(path: Sequence[str]) -> str:
@@ -280,19 +315,7 @@ class EventDomainEntry:
     owner_is_generated_combo_pseudo: bool = False
 
     def __post_init__(self) -> None:
-        _validate_index(self.id, "event id")
-        if self.id < 0:
-            raise InvalidBmcDomain("Event ids must be non-negative.")
-        _require_non_empty_string(self.path, "event path")
-        _require_non_empty_string(self.name, "event name")
-        _require_non_empty_string(self.owner_state_path, "owner_state_path")
-        _validate_index(self.owner_state_id, "owner_state_id")
-        if self.owner_state_id < 0:
-            raise InvalidBmcDomain("Event owner state id must be a model state id.")
-        _require_bool(
-            self.owner_is_generated_combo_pseudo,
-            "owner_is_generated_combo_pseudo",
-        )
+        _validate_event_entry(self)
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable event entry dictionary.
@@ -641,6 +664,7 @@ class BmcDomain:
         self._normalize_int_sequence("initial_state_ids", self.initial_state_ids)
         self._normalize_int_sequence("stable_state_ids", self.stable_state_ids)
         self._validate_state_entries()
+        self._validate_event_entries()
         self._validate_unique_entries()
         self._validate_sentinel_entries()
         self._validate_state_topology()
@@ -696,16 +720,21 @@ class BmcDomain:
     def _normalize_int_sequence(self, field_name: str, value: Sequence[int]) -> None:
         if not isinstance(value, (list, tuple)):
             raise InvalidBmcDomain(f"{field_name} must be a sequence.")
-        items = tuple(value)
+        raw_items = tuple(value)
         if not all(
-            not isinstance(item, bool) and isinstance(item, int) for item in items
+            not isinstance(item, bool) and isinstance(item, int) for item in raw_items
         ):
             raise InvalidBmcDomain(f"{field_name} must contain integer ids.")
+        items = tuple(sorted(raw_items))
         object.__setattr__(self, field_name, items)
 
     def _validate_state_entries(self) -> None:
         for entry in self.states:
             _validate_state_entry(entry)
+
+    def _validate_event_entries(self) -> None:
+        for entry in self.events:
+            _validate_event_entry(entry)
 
     def _validate_unique_entries(self) -> None:
         self._validate_unique("state id", (entry.id for entry in self.states))
@@ -799,10 +828,6 @@ class BmcDomain:
                 raise InvalidBmcDomain(
                     "Event %r has unknown owner state id: %r."
                     % (event.path, event.owner_state_id)
-                )
-            if owner.is_sentinel:
-                raise InvalidBmcDomain(
-                    "Event %r cannot be owned by a sentinel state." % (event.path,)
                 )
             if owner.path != event.owner_state_path:
                 raise InvalidBmcDomain(

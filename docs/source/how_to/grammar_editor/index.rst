@@ -3,28 +3,61 @@
 Grammar and editor tasks
 ========================
 
-Status
-------
+Use this guide when changing FCSTM syntax, syntax highlighting, or editor
+support. For exact file paths, see :doc:`../../reference/grammar_tooling/index`.
 
-This page is an information-architecture stub. It establishes a stable target page and cross-reference label before the full content migration happens.
+Change grammar syntax
+---------------------
 
-Document mode
--------------
+1. Edit ``pyfcstm/dsl/grammar/GrammarParser.g4`` or
+   ``pyfcstm/dsl/grammar/GrammarLexer.g4``.
+2. Run the ANTLR generator:
 
-* Mode: How-to guide
-* Planned content scope: maintainer documentation
-* Stable label: ``sec-how-to-grammar-editor``
+   .. code-block:: bash
 
-Current authority
------------------
+      make antlr_build
 
-The current authoritative content remains in :doc:`../../tutorials/grammar/index`.
+3. Update ``pyfcstm/dsl/listener.py`` and ``pyfcstm/dsl/node.py`` if the parse
+   tree shape changed.
+4. Add or update parser/model tests for the syntax change.
+5. Update the LLM grammar guide when prompt-facing syntax changes.
 
-ANTLR, syntax highlighting, and editor update tasks will move here.
+Change highlighting
+-------------------
 
-Non-goals for this stub
------------------------
+After grammar changes, keep highlighters in sync:
 
-* Do not copy the old long-form content into this skeleton.
-* Do not rename this page's stable label during the migration.
-* Do not move or delete the old tutorial path while this stub exists.
+1. Update ``pyfcstm/highlight/pygments_lexer.py`` for Python/Sphinx highlighting.
+2. Update ``editors/fcstm.tmLanguage.json`` for TextMate-compatible editors.
+3. Put multi-character operators before shorter prefixes.
+4. Run:
+
+   .. code-block:: bash
+
+      python editors/validate.py
+
+The validation command is the repository-level check for editor/highlight asset
+consistency. If you only document a workflow and do not run a tool in a docs-only
+PR, say so in the PR comment.
+
+Update the VSCode extension
+---------------------------
+
+When editor behavior changes, inspect ``editors/vscode/`` and the JavaScript
+frontend under ``editors/jsfcstm/``. Build the extension package with:
+
+.. code-block:: bash
+
+   make vscode
+
+Use ``make vscode_clean`` when cleaning local extension build outputs.
+
+Document the change
+-------------------
+
+Syntax changes should update the user-facing DSL reference or how-to pages,
+not just the grammar files. Maintenance-only changes should update the tooling
+reference and explain whether generated assets were regenerated.
+
+Before opening review, include the commands you ran and the syntax examples that
+prove the grammar, highlighting, and editor assets agree.

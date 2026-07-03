@@ -1,0 +1,35 @@
+@startuml
+start
+
+:Load template directory;
+:Read config.yaml;
+:Parse configuration items;
+
+partition "Initialization Phase" {
+  :Create Jinja2 environment;
+  :Register global functions;
+  :Register filters;
+  :Set expression styles;
+}
+
+partition "File Processing Phase" {
+  :Traverse all files in template directory;
+
+  if (File in ignore list?) then (yes)
+    :Skip file;
+  else (no)
+    if (Is .j2 template file?) then (yes)
+      :Load template content;
+      :Bind state machine model;
+      :Execute template rendering;
+      :Write output file\n(remove .j2 extension);
+    else (Non-template file)
+      :Copy directly to output directory;
+    endif
+  endif
+}
+
+:Complete all file processing;
+stop
+
+@enduml

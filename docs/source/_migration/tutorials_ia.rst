@@ -1050,7 +1050,186 @@ were not regenerated in this PR. PR-J should reassess whether legacy-only
 business examples or generated diagrams can be removed after the new pages and
 old landing page are stable.
 
-PR-I placeholder
-----------------
+PR-I maintainer pages
+---------------------
 
-No records yet.
+PR-I splits maintainer-facing content from the old ``tutorials/render``,
+``tutorials/grammar``, and ``tutorials/structure`` pages into task guides,
+explanations, and references. Old tutorial paths are retained as compatibility
+landing pages.
+
+Chapter migration records
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: PR-I chapter migration
+   :header-rows: 1
+
+   * - Old location
+     - Old section
+     - New location
+     - Action
+     - Notes
+   * - ``tutorials/render/index*.rst``
+     - ``Template System Tutorial``
+     - ``tutorials/render/index*.rst``
+     - keep landing
+     - Old URL now points to the new task, explanation, and reference pages.
+   * - ``tutorials/render/index*.rst``
+     - ``Understand The Template System`` / ``What The Template System Does`` / ``Current Rendering Boundaries`` / ``Template Directory Anatomy``
+     - ``explanations/template_rendering/index*.rst``
+     - merge
+     - Conceptual renderer boundaries and directory anatomy became renderer explanation material.
+   * - ``tutorials/render/index*.rst``
+     - ``Build The Template Foundation`` / ``Jinja2 Essentials For Template Authors``
+     - ``how_to/templates/index*.rst``
+     - merge
+     - Minimal Jinja2 and custom-template authoring guidance is now a task-oriented guide.
+   * - ``tutorials/render/index*.rst``
+     - ``The Role Of config.yaml``
+     - ``reference/template_config/index*.rst``
+     - move / merge
+     - Config keys and accepted sections are reference facts.
+   * - ``tutorials/render/index*.rst``
+     - ``Use The Rendering Interfaces`` / ``Understanding expr_render`` / ``How expr_render Resolves Template Keys`` / ``How To Override Those Keys`` / ``Understanding stmt_render And stmts_render`` / ``Template Context: What You Can Access``
+     - ``reference/template_config/index*.rst`` and ``explanations/template_rendering/index*.rst``
+     - split
+     - Exact filter/style facts moved to reference; rationale and boundaries moved to explanation.
+   * - ``tutorials/render/index*.rst``
+     - ``Design Real Templates`` / ``Generation Scale And Template Shape`` / ``Minimal Template From Scratch``
+     - ``how_to/templates/index*.rst``
+     - merge
+     - The actionable part is now a custom-template authoring workflow.
+   * - ``tutorials/render/index*.rst``
+     - ``Built-In Templates`` and per-template subsections
+     - ``tutorials/generation/index*.rst`` / ``reference/builtin_templates/index*.rst``
+     - keep by reference
+     - User-side built-in-template usage was already handled by PR-F; PR-I does not modify ``reference/builtin_templates``.
+   * - ``tutorials/render/index*.rst``
+     - ``Test And Consolidate`` / ``Testing Templates`` / renderer, generated-artifact, behavior-alignment, and CLI tests
+     - ``how_to/templates/index*.rst`` and ``explanations/template_rendering/index*.rst``
+     - merge
+     - Testing workflow guidance moved to how-to; logic-placement rationale moved to explanation.
+   * - ``tutorials/render/index*.rst``
+     - ``When To Put Logic Where`` / ``Summary``
+     - ``explanations/template_rendering/index*.rst`` and ``how_to/templates/index*.rst``
+     - merge
+     - Logic-placement decision rules are now explicit in the explanation and task pages.
+   * - ``tutorials/grammar/index*.rst``
+     - ``FCSTM Syntax Highlighting Guide``
+     - ``tutorials/grammar/index*.rst``
+     - keep landing
+     - Old URL now points to grammar task, explanation, and reference pages.
+   * - ``tutorials/grammar/index*.rst``
+     - ``Overview`` / ``Using Pygments in Python`` / ``Using in Sphinx Documentation`` / ``Using TextMate Grammar`` / ``VS Code Extension``
+     - ``reference/grammar_tooling/index*.rst`` and ``explanations/grammar_tooling/index*.rst``
+     - split
+     - File locations and commands are reference facts; synchronization rationale moved to explanation.
+   * - ``tutorials/grammar/index*.rst``
+     - ``Development Workflow`` / ``Testing and Verification`` / ``Validation and Testing`` / ``Development and Customization``
+     - ``how_to/grammar_editor/index*.rst``
+     - merge
+     - Maintainer task flow is now a how-to guide.
+   * - ``tutorials/grammar/index*.rst``
+     - ``Supported Syntax Elements`` and subsections such as keywords, operators, literals, built-ins, and import highlighting
+     - ``reference/dsl/index*.rst`` / ``reference/grammar_tooling/index*.rst``
+     - keep by reference
+     - User-facing DSL facts are covered by PR-G; highlighter-specific path facts are in grammar tooling reference.
+   * - ``tutorials/grammar/index*.rst``
+     - ``Complete Example`` / troubleshooting sections / ``Related Resources`` / ``File Locations``
+     - ``how_to/grammar_editor/index*.rst`` and ``reference/grammar_tooling/index*.rst``
+     - merge
+     - Troubleshooting became workflow guidance; paths became reference facts.
+   * - ``tutorials/structure/index*.rst``
+     - ``Project Structure Guide``
+     - ``tutorials/structure/index*.rst``
+     - keep landing
+     - Old URL now points to architecture explanation and related pages.
+   * - ``tutorials/structure/index*.rst``
+     - ``Overview`` / ``Architecture Layers`` / ``Module Reference`` / layer subsections
+     - ``explanations/architecture/index*.rst``
+     - merge
+     - Layer responsibilities are architecture explanation, not a tutorial.
+   * - ``tutorials/structure/index*.rst``
+     - ``Architecture Diagram`` / ``Processing Pipeline`` / ``User Interaction Flow`` / ``Dependency Relationships`` / ``Key Design Patterns``
+     - ``explanations/architecture/index*.rst``
+     - merge
+     - Pipeline and dependency rationale moved to architecture explanation.
+
+Resource migration records
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: PR-I resource migration
+   :header-rows: 1
+
+   * - Old resource
+     - New resource
+     - Action
+     - Notes
+   * - ``tutorials/render/architecture.puml``
+     - ``explanations/template_rendering/architecture.puml``
+     - copy
+     - Source copied so the template-rendering explanation owns its diagram source; old file kept for legacy compatibility.
+   * - ``tutorials/render/architecture.puml.png``
+     - ``explanations/template_rendering/architecture.puml.png``
+     - copy
+     - Generated PNG copied with its source-output pair.
+   * - ``tutorials/render/architecture.puml.svg``
+     - ``explanations/template_rendering/architecture.puml.svg``
+     - copy
+     - Generated SVG copied and referenced by the new explanation page.
+   * - ``tutorials/render/core_component.puml``
+     - ``explanations/template_rendering/core_component.puml``
+     - copy
+     - Source copied for renderer component diagram ownership.
+   * - ``tutorials/render/core_component.puml.png``
+     - ``explanations/template_rendering/core_component.puml.png``
+     - copy
+     - Generated PNG copied with its source-output pair.
+   * - ``tutorials/render/core_component.puml.svg``
+     - ``explanations/template_rendering/core_component.puml.svg``
+     - copy
+     - Generated SVG copied and referenced by the new explanation page.
+   * - ``tutorials/render/model.puml``
+     - ``explanations/template_rendering/model.puml``
+     - copy
+     - Source copied for model/rendering boundary diagram ownership.
+   * - ``tutorials/render/model.puml.png``
+     - ``explanations/template_rendering/model.puml.png``
+     - copy
+     - Generated PNG copied with its source-output pair.
+   * - ``tutorials/render/model.puml.svg``
+     - ``explanations/template_rendering/model.puml.svg``
+     - copy
+     - Generated SVG copied and referenced by the new explanation page.
+   * - ``tutorials/render/render_flow.puml``
+     - ``explanations/template_rendering/render_flow.puml``
+     - copy
+     - Source copied for renderer flow diagram ownership.
+   * - ``tutorials/render/render_flow.puml.png``
+     - ``explanations/template_rendering/render_flow.puml.png``
+     - copy
+     - Generated PNG copied with its source-output pair.
+   * - ``tutorials/render/render_flow.puml.svg``
+     - ``explanations/template_rendering/render_flow.puml.svg``
+     - copy
+     - Generated SVG copied and referenced by the new explanation page.
+   * - ``tutorials/structure/structure.puml``
+     - ``explanations/architecture/structure.puml``
+     - copy
+     - Source copied so architecture explanation owns the diagram source; old file kept for legacy compatibility.
+   * - ``tutorials/structure/structure.puml.png``
+     - ``explanations/architecture/structure.puml.png``
+     - copy
+     - Generated PNG copied with its source-output pair.
+   * - ``tutorials/structure/structure.puml.svg``
+     - ``explanations/architecture/structure.puml.svg``
+     - copy
+     - Generated SVG copied and referenced by the new explanation page.
+
+Resource cleanup note
+~~~~~~~~~~~~~~~~~~~~~
+
+PR-I copies diagram source-output pairs into the explanation pages that now own
+the diagrams. The old resources remain in ``tutorials/render`` and
+``tutorials/structure`` so old links and historical generated files do not break.
+PR-J may decide whether legacy copies should remain permanently.

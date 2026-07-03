@@ -13,8 +13,8 @@ Package contracts:
   separate from model-aware binding or solver lowering.
 * Domain-numbering and macro-step exports are resolved lazily so parser-only
   imports do not load ``pyfcstm.model``.
-* Macro-step contracts are solver-independent and do not import ``z3`` from the
-  root package.
+* Macro-step contracts and expansion are solver-independent and do not import
+  ``z3`` from the root package.
 * The root package must not depend on ``pyfcstm.verify`` or its registry.
 * :func:`str` on exported query and expression dataclasses is reserved for the
   canonical ``.fbmcq`` query DSL spelling.
@@ -88,6 +88,10 @@ Public module structure:
        :func:`verify_boolean_partition`, :func:`verify_source_partition`
      - Construct carry, absorb, fallback, and semantic-delta cases while keeping
        partition self-checks outside formal trace formulas.
+   * - Macro-step expansion
+     - :class:`MacroExpansionOptions`, :func:`expand_macro_step_cases`
+     - Expand source profiles into runtime-aligned, solver-independent macro-step
+       cases consumed by later relation builders.
    * - Query root model
      - :class:`InitialSpec`, :class:`BmcAssumption`,
        :class:`FrameAssumption`, :class:`EventAssumption`,
@@ -179,6 +183,11 @@ _SOURCE_EXPORTS = {
     "source_from_initial_spec",
 }
 
+_EXPAND_EXPORTS = {
+    "MacroExpansionOptions",
+    "expand_macro_step_cases",
+}
+
 _MACRO_EXPORTS = {
     "BoolTemplate",
     "EventUse",
@@ -202,6 +211,7 @@ _LAZY_EXPORT_MODULES = {
     "pyfcstm.bmc.domain": _DOMAIN_EXPORTS,
     "pyfcstm.bmc.source": _SOURCE_EXPORTS,
     "pyfcstm.bmc.macro": _MACRO_EXPORTS,
+    "pyfcstm.bmc.expand": _EXPAND_EXPORTS,
 }
 
 
@@ -247,7 +257,13 @@ def __dir__():
         >>> 'BmcDomain' in dir(bmc)
         True
     """
-    return sorted(set(globals()) | _DOMAIN_EXPORTS | _SOURCE_EXPORTS | _MACRO_EXPORTS)
+    return sorted(
+        set(globals())
+        | _DOMAIN_EXPORTS
+        | _SOURCE_EXPORTS
+        | _MACRO_EXPORTS
+        | _EXPAND_EXPORTS
+    )
 
 
 __all__ = [
@@ -311,6 +327,8 @@ __all__ = [
     "terminated_source",
     "diagnostic_source",
     "source_from_initial_spec",
+    "MacroExpansionOptions",
+    "expand_macro_step_cases",
     "BoolTemplate",
     "EventUse",
     "VarUpdate",

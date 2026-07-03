@@ -89,6 +89,8 @@ def test_bmc_public_api_exports_exact_names():
         "build_semantic_delta_case",
         "verify_boolean_partition",
         "verify_source_partition",
+        "MacroExpansionOptions",
+        "expand_macro_step_cases",
     }
 
     assert set(bmc.__all__) == expected
@@ -127,6 +129,8 @@ def test_bmc_public_api_exports_exact_names():
         "build_semantic_delta_case",
         "verify_boolean_partition",
         "verify_source_partition",
+        "MacroExpansionOptions",
+        "expand_macro_step_cases",
     }
     function_names = {
         "parse_bmc_query",
@@ -150,6 +154,7 @@ def test_bmc_public_api_exports_exact_names():
         "verify_boolean_partition",
         "verify_source_partition",
         "build_bmc_domain",
+        "expand_macro_step_cases",
     }
     for name in expected - lazy_names - function_names:
         assert getattr(bmc, name).__name__ == name
@@ -175,6 +180,7 @@ def test_submodule_all_exports_are_exact():
     domain = importlib.import_module("pyfcstm.bmc.domain")
     source = importlib.import_module("pyfcstm.bmc.source")
     macro = importlib.import_module("pyfcstm.bmc.macro")
+    expand = importlib.import_module("pyfcstm.bmc.expand")
 
     assert set(errors.__all__) == {
         "BmcError",
@@ -265,6 +271,10 @@ def test_submodule_all_exports_are_exact():
         "build_semantic_delta_case",
         "verify_boolean_partition",
         "verify_source_partition",
+    }
+    assert set(expand.__all__) == {
+        "MacroExpansionOptions",
+        "expand_macro_step_cases",
     }
 
 

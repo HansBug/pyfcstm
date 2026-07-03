@@ -45,7 +45,7 @@ Example::
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
 from pyfcstm.bmc.errors import InvalidBmcDomain
@@ -654,6 +654,10 @@ class BmcDomain:
     :type initial_state_ids: Tuple[int, ...]
     :param stable_state_ids: State ids allowed at recurrence frame boundaries.
     :type stable_state_ids: Tuple[int, ...]
+    :param model: Optional source model back-reference used by model-aware BMC
+        layers, defaults to ``None``.  It is intentionally excluded from
+        equality and canonical snapshots.
+    :type model: StateMachine, optional
 
     Example::
 
@@ -672,6 +676,7 @@ class BmcDomain:
     event_inputs: Tuple[EventInputRef, ...]
     initial_state_ids: Tuple[int, ...]
     stable_state_ids: Tuple[int, ...]
+    model: Optional[StateMachine] = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         _validate_positive_bound(self.bound)
@@ -692,6 +697,8 @@ class BmcDomain:
         self._validate_event_owners()
         self._validate_event_inputs()
         self._validate_allowed_state_ids()
+        if self.model is not None and not isinstance(self.model, StateMachine):
+            raise InvalidBmcDomain("model must be StateMachine when provided.")
 
     @property
     def frame0_state_ids(self) -> Tuple[int, ...]:
@@ -1417,6 +1424,7 @@ def build_bmc_domain(model: StateMachine, bound: int) -> BmcDomain:
         event_inputs=event_inputs,
         initial_state_ids=initial_state_ids,
         stable_state_ids=stable_state_ids,
+        model=model,
     )
 
 

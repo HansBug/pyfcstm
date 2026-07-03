@@ -671,9 +671,10 @@ def _normalize_accepted_cases(
             raise InvalidBmcEncoding(
                 "accepted_cases for %s must not contain diagnostic cases." % helper_name
             )
-        if case.target_state_id < 0 or case.target_state_path in _RESERVED_CASE_PATHS:
+        if not _is_model_or_terminate_target(case):
             raise InvalidBmcEncoding(
-                "accepted_cases for %s must target model states." % helper_name
+                "accepted_cases for %s must target model states or terminate."
+                % helper_name
             )
         if case.source_state_id != source.source_state_id:
             raise InvalidBmcEncoding(
@@ -926,6 +927,14 @@ class PartitionCheckResult:
         }
 
 
+def _is_model_or_terminate_target(case: CycleCase) -> bool:
+    if case.target_state_id == STATE_TERMINATE_ID:
+        return case.target_state_path == TERMINATE_CASE_PATH
+    return (
+        case.target_state_id >= 0 and case.target_state_path not in _RESERVED_CASE_PATHS
+    )
+
+
 @dataclass(frozen=True)
 class MacroStepFormal:
     """Source-local macro-step case buckets.
@@ -1049,29 +1058,26 @@ class MacroStepFormal:
                 raise InvalidBmcEncoding(
                     "stable leaf success cases may only be transition or fallback."
                 )
-            if (
-                case.target_state_id < 0
-                or case.target_state_path in _RESERVED_CASE_PATHS
-            ):
-                raise InvalidBmcEncoding(
-                    "stable leaf success cases must target model states."
-                )
             if case.kind == "fallback" and (
                 case.target_state_id != self.source.source_state_id
                 or case.target_state_path != self.source.source_state_path
             ):
                 raise InvalidBmcEncoding("fallback cases must self-loop source.")
+            if case.kind == "transition" and not _is_model_or_terminate_target(case):
+                raise InvalidBmcEncoding(
+                    "stable leaf transitions must target model states or terminate."
+                )
         elif self.source.kind == "entry":
             if case.kind not in {"transition", "initial", "diagnostic"}:
                 raise InvalidBmcEncoding(
                     "entry success cases may only be transition, initial, or diagnostic."
                 )
-            if case.kind in {"transition", "initial"} and (
-                case.target_state_id < 0
-                or case.target_state_path in _RESERVED_CASE_PATHS
-            ):
+            if case.kind in {
+                "transition",
+                "initial",
+            } and not _is_model_or_terminate_target(case):
                 raise InvalidBmcEncoding(
-                    "entry transition and initial cases must target model states."
+                    "entry transition and initial cases must target model states or terminate."
                 )
 
     def _validate_sentinel_absorb(self, sentinel_id: int) -> None:

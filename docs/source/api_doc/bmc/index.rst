@@ -12,6 +12,7 @@ pyfcstm.bmc
     ast
     domain
     errors
+    expand
     grammar/index
     listener
     macro

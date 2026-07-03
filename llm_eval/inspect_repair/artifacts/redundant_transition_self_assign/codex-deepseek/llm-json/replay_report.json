@@ -1,0 +1,68 @@
+{
+  "artifact_dir": "llm_eval/inspect_repair/artifacts/redundant_transition_self_assign/codex-deepseek/llm-json",
+  "bad_repair_flags": [],
+  "bad_repair_flags_under_watch": [
+    "delete-state"
+  ],
+  "blocking_diagnostics": [],
+  "diagnostics": "",
+  "expected_codes": [
+    "W_REDUNDANT_TRANSITION",
+    "W_EFFECT_SELF_ASSIGN"
+  ],
+  "failure_category": "passed",
+  "fixture_id": "redundant_transition_self_assign",
+  "fixture_path": "llm_eval/inspect_repair/fixtures/redundant_transition_self_assign.fcstm",
+  "format": "llm-json",
+  "guide_metadata": {
+    "byte_size": 16665,
+    "chapter_count": 15,
+    "checksum_resource_name": "fcstm_grammar_guide.md.sha256",
+    "expected_sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914",
+    "line_count": 553,
+    "pyfcstm_version": "0.5.0",
+    "resource_name": "fcstm_grammar_guide.md",
+    "sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914"
+  },
+  "inspect_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/fixtures/redundant_transition_self_assign.fcstm",
+    "--format",
+    "llm-json"
+  ],
+  "mode": "replay",
+  "prepared_at": "20260702T184412Z",
+  "provider": "codex-deepseek",
+  "remaining_diagnostic_codes": [
+    "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+    "I_TRANSITION_NEVER_EVENT_TRIGGERED"
+  ],
+  "remaining_diagnostics": [
+    {
+      "code": "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+      "severity": "info"
+    },
+    {
+      "code": "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+      "severity": "info"
+    }
+  ],
+  "requires_max_tier": null,
+  "success": true,
+  "verification_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/artifacts/redundant_transition_self_assign/codex-deepseek/llm-json/repaired.fcstm",
+    "--format",
+    "json"
+  ],
+  "verification_result": {
+    "bad_repair_flags_cleared": true,
+    "blocking_diagnostics_cleared": true,
+    "expected_codes_cleared": true,
+    "passed": true
+  }
+}

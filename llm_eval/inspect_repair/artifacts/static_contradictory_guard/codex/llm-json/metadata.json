@@ -1,0 +1,35 @@
+{
+  "artifact_dir": "llm_eval/inspect_repair/artifacts/static_contradictory_guard/codex/llm-json",
+  "bad_repair_flags_under_watch": [
+    "dummy-assignment",
+    "guard-to-true"
+  ],
+  "expected_codes": [
+    "W_UNWRITTEN_READ_VAR",
+    "W_GUARD_VARS_NEVER_CHANGE"
+  ],
+  "fixture_id": "static_contradictory_guard",
+  "fixture_path": "llm_eval/inspect_repair/fixtures/static_contradictory_guard.fcstm",
+  "format": "llm-json",
+  "guide_metadata": {
+    "byte_size": 16665,
+    "chapter_count": 15,
+    "checksum_resource_name": "fcstm_grammar_guide.md.sha256",
+    "expected_sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914",
+    "line_count": 553,
+    "pyfcstm_version": "0.5.0",
+    "resource_name": "fcstm_grammar_guide.md",
+    "sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914"
+  },
+  "inspect_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/fixtures/static_contradictory_guard.fcstm",
+    "--format",
+    "llm-json"
+  ],
+  "prepared_at": "20260702T184407Z",
+  "provider": "codex",
+  "requires_max_tier": null
+}

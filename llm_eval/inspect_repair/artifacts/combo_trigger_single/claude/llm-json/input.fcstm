@@ -1,0 +1,11 @@
+def int ready = 1;
+
+state Root {
+    [*] -> Waiting;
+
+    state Waiting;
+    state Accepted;
+
+    Waiting -> Accepted :: Request + Request;
+    Accepted -> [*];
+}

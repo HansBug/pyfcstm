@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import textwrap
 from tempfile import TemporaryDirectory
 
@@ -8,7 +9,16 @@ from hbutils.testing import isolated_directory, simulate_entry
 
 from pyfcstm.entry import pyfcstmcli
 from pyfcstm.entry.base import ClickErrorException
-from pyfcstm.entry.inspect import build_inspect_json
+from pyfcstm.diagnostics.inspect_render import INSPECT_LLM_SCHEMA_VERSION
+from pyfcstm.entry.inspect import (
+    build_inspect_json,
+    build_inspect_output,
+    resolve_inspect_color_enabled,
+)
+
+
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+BOX_DRAWING_RE = re.compile(r"[\u2500-\u257f]")
 
 
 @pytest.fixture()
@@ -39,12 +49,115 @@ def _json_from_stdout(result):
     return json.loads(result.stdout)
 
 
+def _has_ansi(text):
+    return ANSI_ESCAPE_RE.search(text) is not None
+
+
 @pytest.mark.unittest
 class TestEntryInspect:
-    def test_inspect_outputs_default_json_to_stdout(self, inspect_code_file):
+    @pytest.mark.parametrize(
+        (
+            "color_mode",
+            "output_format",
+            "output_file",
+            "stdout_isatty",
+            "no_color",
+            "term",
+            "expected",
+        ),
+        [
+            ("auto", "human", None, True, "", "xterm-256color", True),
+            ("auto", "human", None, False, "", "xterm-256color", False),
+            ("auto", "human", None, True, "1", "xterm-256color", False),
+            ("auto", "human", None, True, "0", "xterm-256color", False),
+            ("auto", "human", None, True, "false", "xterm-256color", False),
+            ("auto", "human", None, True, "", "dumb", False),
+            ("always", "human", None, False, "1", "dumb", True),
+            ("never", "human", None, True, "", "xterm-256color", False),
+            ("always", "human", "report.txt", True, "", "xterm-256color", False),
+            ("always", "json", None, True, "", "xterm-256color", False),
+            ("always", "llm-json", None, True, "", "xterm-256color", False),
+            ("always", "llm-md", None, True, "", "xterm-256color", False),
+        ],
+    )
+    def test_resolve_inspect_color_enabled_policy(
+        self,
+        color_mode,
+        output_format,
+        output_file,
+        stdout_isatty,
+        no_color,
+        term,
+        expected,
+    ):
+        assert (
+            resolve_inspect_color_enabled(
+                color_mode,
+                output_format=output_format,
+                output_file=output_file,
+                stdout_isatty=stdout_isatty,
+                no_color=no_color,
+                term=term,
+            )
+            is expected
+        )
+
+    def test_inspect_outputs_default_human_to_stdout(self, inspect_code_file):
         result = _run_inspect("-i", inspect_code_file)
 
         assert result.exitcode == 0
+        assert "[WARN] FCSTM Inspect Report" in result.stdout
+        assert "status: warning" in result.stdout
+        assert "W_DEADLOCK_LEAF" in result.stdout
+        assert "-->" in result.stdout
+        assert "= source: inspect-static" in result.stdout
+        assert "= why:" in result.stdout
+        assert "= fix:" in result.stdout
+        assert "= do-not:" in result.stdout
+        assert not _has_ansi(result.stdout)
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(result.stdout)
+
+    def test_inspect_human_color_always_outputs_ansi_to_stdout(self, inspect_code_file):
+        result = _run_inspect("-i", inspect_code_file, "--color", "always")
+
+        assert result.exitcode == 0
+        assert _has_ansi(result.stdout)
+        assert "[WARN]" in ANSI_ESCAPE_RE.sub("", result.stdout)
+
+    def test_inspect_human_color_never_outputs_plain_text(self, inspect_code_file):
+        result = _run_inspect("-i", inspect_code_file, "--color", "never")
+
+        assert result.exitcode == 0
+        assert not _has_ansi(result.stdout)
+        assert "[WARN] FCSTM Inspect Report" in result.stdout
+
+    def test_inspect_human_output_file_stays_plain_even_when_color_always(
+        self, inspect_code_file
+    ):
+        with isolated_directory():
+            result = _run_inspect(
+                "-i",
+                inspect_code_file,
+                "--color",
+                "always",
+                "-o",
+                "inspect_report.txt",
+            )
+
+            assert result.exitcode == 0
+            assert result.stdout == ""
+            with open("inspect_report.txt", "r", encoding="utf-8") as f:
+                text = f.read()
+            assert not _has_ansi(text)
+            assert BOX_DRAWING_RE.search(text) is None
+            assert "[WARN] FCSTM Inspect Report" in text
+
+    def test_inspect_format_json_outputs_full_json_to_stdout(self, inspect_code_file):
+        result = _run_inspect("-i", inspect_code_file, "--format", "json")
+
+        assert result.exitcode == 0
+        assert not _has_ansi(result.stdout)
         payload = _json_from_stdout(result)
         assert payload["root_state_path"] == "Root"
         assert payload["states"]
@@ -55,10 +168,139 @@ class TestEntryInspect:
             diagnostic["code"] for diagnostic in payload["diagnostics"]
         }
 
+    def test_inspect_format_llm_json_outputs_stable_packet(self, inspect_code_file):
+        result = _run_inspect("-i", inspect_code_file, "--format", "llm-json")
+
+        assert result.exitcode == 0
+        assert not _has_ansi(result.stdout)
+        payload = _json_from_stdout(result)
+        assert payload["schema_version"] == INSPECT_LLM_SCHEMA_VERSION
+        assert payload["schema_status"] == "stable"
+        assert payload["status"] == "warning"
+        assert payload["diagnostics"]
+        diagnostic = payload["diagnostics"][0]
+        assert "source_excerpt" in diagnostic
+        assert "context" in diagnostic["source_excerpt"]
+        assert any(
+            line["is_anchor"] and line["caret"]
+            for line in diagnostic["source_excerpt"]["context"]
+        )
+        assert "for_llm" not in payload
+
+    def test_inspect_format_llm_md_outputs_stable_markdown(self, inspect_code_file):
+        result = _run_inspect("-i", inspect_code_file, "--format", "llm-md")
+
+        assert result.exitcode == 0
+        assert not _has_ansi(result.stdout)
+        assert "# FCSTM Inspect Report" in result.stdout
+        assert INSPECT_LLM_SCHEMA_VERSION in result.stdout
+        assert "Recommended actions" in result.stdout
+        assert "Repair notes" in result.stdout
+        assert "Schema status: `stable`" in result.stdout
+        assert "|     ^" in result.stdout
+
+    def test_inspect_llm_json_can_include_verify_backed_diagnostics(
+        self, inspect_code_file
+    ):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            "llm-json",
+            "--enable-verify",
+            "--max-complexity-tier",
+            "smt_linear",
+            "--smt-timeout-ms",
+            "1000",
+        )
+
+        assert result.exitcode == 0
+        payload = _json_from_stdout(result)
+        verify_diagnostics = [
+            diagnostic
+            for diagnostic in payload["diagnostics"]
+            if diagnostic["code"] == "W_DEAD_GUARD"
+        ]
+        assert verify_diagnostics
+        assert verify_diagnostics[0]["source"] == "verify-backed"
+        assert verify_diagnostics[0]["provenance"] == {
+            "kind": "verify-backed",
+            "verify_required": True,
+        }
+        assert verify_diagnostics[0]["repair_guidance"]
+
+    @pytest.mark.parametrize("output_format", ["json", "llm-json", "llm-md"])
+    def test_inspect_machine_formats_ignore_color_always(
+        self, inspect_code_file, output_format
+    ):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            output_format,
+            "--color",
+            "always",
+        )
+
+        assert result.exitcode == 0
+        assert not _has_ansi(result.stdout)
+        if output_format != "llm-md":
+            json.loads(result.stdout)
+
+    @pytest.mark.parametrize("output_format", ["human", "llm-md"])
+    def test_inspect_verify_combines_with_text_formats(
+        self, inspect_code_file, output_format
+    ):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            output_format,
+            "--enable-verify",
+            "--max-complexity-tier",
+            "smt_linear",
+            "--smt-timeout-ms",
+            "1000",
+        )
+
+        assert result.exitcode == 0
+        assert "W_DEAD_GUARD" in result.stdout
+        assert "verify-backed" in result.stdout
+
+    def test_inspect_verify_human_checker_style_marks_verify_source(
+        self, inspect_code_file
+    ):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            "human",
+            "--enable-verify",
+            "--max-complexity-tier",
+            "smt_linear",
+            "--smt-timeout-ms",
+            "1000",
+        )
+
+        assert result.exitcode == 0
+        assert "[WARN] W_DEAD_GUARD" in result.stdout
+        assert "= source: verify-backed" in result.stdout
+        assert "= fix:" in result.stdout
+
+    def test_build_inspect_output_json_matches_build_inspect_json(
+        self, inspect_code_file
+    ):
+        assert build_inspect_output(
+            inspect_code_file,
+            output_format="json",
+        ) == build_inspect_json(inspect_code_file)
+
     def test_inspect_enable_verify_exposes_verify_diagnostics(self, inspect_code_file):
         result = _run_inspect(
             "-i",
             inspect_code_file,
+            "--format",
+            "json",
             "--enable-verify",
             "--max-complexity-tier",
             "smt_linear",
@@ -72,10 +314,14 @@ class TestEntryInspect:
             diagnostic["code"] for diagnostic in payload["diagnostics"]
         }
 
-    def test_inspect_help_documents_zero_smt_timeout_as_unbounded(self):
+    def test_inspect_help_documents_formats_and_zero_smt_timeout(self):
         result = _run_inspect("--help")
 
         assert result.exitcode == 0
+        assert "--format [human|json|llm-json|llm-md]" in result.stdout
+        assert "--color [auto|always|never]" in result.stdout
+        assert "default: human" in result.stdout
+        assert "default: auto" in result.stdout
         assert "0 keeps Z3 without a finite timeout" in result.stdout
         assert "return before a non-trivial proof search" not in result.stdout
 
@@ -86,6 +332,8 @@ class TestEntryInspect:
         result = _run_inspect(
             "-i",
             inspect_code_file,
+            "--format",
+            "json",
             "--enable-verify",
             "--max-complexity-tier",
             "bmc_search",
@@ -185,6 +433,8 @@ class TestEntryInspect:
         result = _run_inspect(
             "-i",
             inspect_code_file,
+            "--format",
+            "json",
             "--enable-verify",
             "--max-complexity-tier",
             "smt_linear",
@@ -201,12 +451,15 @@ class TestEntryInspect:
             result = _run_inspect(
                 "-i",
                 inspect_code_file,
+                "--format",
+                "json",
                 "-o",
                 "inspect_report.json",
             )
 
             assert result.exitcode == 0
             assert result.stdout == ""
+            assert result.stderr == ""
             with open("inspect_report.json", "r", encoding="utf-8") as f:
                 payload = json.load(f)
             assert payload["root_state_path"] == "Root"
@@ -219,12 +472,53 @@ class TestEntryInspect:
             result = _run_inspect(
                 "-i",
                 inspect_code_file,
+                "--format",
+                "json",
                 "-o",
                 "inspect_report.json",
             )
 
             assert result.exitcode == 0
             with open("inspect_report.json", "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            assert payload["root_state_path"] == "Root"
+
+    def test_inspect_default_human_to_json_file_warns(self, inspect_code_file):
+        with isolated_directory():
+            result = _run_inspect(
+                "-i",
+                inspect_code_file,
+                "-o",
+                "inspect_report.json",
+            )
+
+            assert result.exitcode == 0
+            assert result.stdout == ""
+            assert "Warning:" in result.stderr
+            assert "--format json" in result.stderr
+            with open("inspect_report.json", "r", encoding="utf-8") as f:
+                text = f.read()
+            assert "FCSTM Inspect Report" in text
+            with pytest.raises(json.JSONDecodeError):
+                json.loads(text)
+
+    def test_inspect_json_to_markdown_file_warns_without_stdout_pollution(
+        self, inspect_code_file
+    ):
+        with isolated_directory():
+            result = _run_inspect(
+                "-i",
+                inspect_code_file,
+                "--format",
+                "json",
+                "-o",
+                "inspect_report.md",
+            )
+
+            assert result.exitcode == 0
+            assert result.stdout == ""
+            assert "Warning:" in result.stderr
+            with open("inspect_report.md", "r", encoding="utf-8") as f:
                 payload = json.load(f)
             assert payload["root_state_path"] == "Root"
 
@@ -317,4 +611,4 @@ class TestEntryInspect:
             )
 
         assert result.exitcode != 0
-        assert "Failed to write inspect JSON file" in (result.stderr or result.stdout)
+        assert "Failed to write inspect output file" in (result.stderr or result.stdout)

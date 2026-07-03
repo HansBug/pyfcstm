@@ -1,0 +1,13 @@
+def int request = 0;
+
+state Root {
+    [*] -> Idle;
+
+    state Idle {
+        during { request = request + 1; }
+    }
+    state Running;
+
+    Idle -> Running : if [request > 0 && request < 0];
+    Running -> [*];
+}

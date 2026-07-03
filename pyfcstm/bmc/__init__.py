@@ -41,6 +41,11 @@ Public module structure:
        :func:`build_bmc_ast_from_parse_tree`
      - Convert ``.fbmcq`` text or existing ANTLR parse trees into
        parser-independent AST/query nodes.
+   * - Query binding
+     - :class:`BmcBindingDiagnostic`, :class:`BoundBmcQuery`,
+       :func:`bind_bmc_query_structure`, :func:`bind_bmc_query`
+     - Validate query semantic contexts and optionally resolve model/domain
+       references without coupling parser-only imports to solver layers.
    * - Typed expression bases
      - :class:`BmcExpr`, :class:`BmcNumExpr`, :class:`BmcCondExpr`
      - Keep FCSTM numeric and condition expression categories explicit.
@@ -132,6 +137,17 @@ from pyfcstm.bmc.query import (
     InitialSpec,
 )
 
+_BINDING_EXPORTS = {
+    "BmcBindingDiagnostic",
+    "BoundReference",
+    "BoundInitialSpec",
+    "BoundAssumption",
+    "BoundProperty",
+    "BoundBmcQuery",
+    "bind_bmc_query_structure",
+    "bind_bmc_query",
+}
+
 _DOMAIN_EXPORTS = {
     "STATE_TERMINATE_ID",
     "STATE_DIAGNOSTIC_ID",
@@ -147,31 +163,36 @@ _DOMAIN_EXPORTS = {
 
 
 def __getattr__(name: str):
-    """Lazily resolve model-aware domain exports.
+    """Lazily resolve model-aware domain and binding exports.
 
     Domain numbering imports :mod:`pyfcstm.model`, while the query parser must
-    remain importable without loading model, verify, or solver layers.  Keeping
-    these top-level exports lazy preserves the public convenience API without
-    coupling parser-only callers to model-aware BMC preparation.
+    remain importable without loading model, verify, or solver layers.  Binding
+    exports are also lazy so the top-level package can list the public API
+    without importing the model-aware binding module on parser-only imports.
 
     :param name: Attribute name requested from :mod:`pyfcstm.bmc`.
     :type name: str
-    :return: The requested domain export.
+    :return: The requested lazy export.
     :rtype: object
-    :raises AttributeError: If ``name`` is not a public lazy domain export.
+    :raises AttributeError: If ``name`` is not a public lazy export.
 
     Example::
 
         >>> import pyfcstm.bmc as bmc
         >>> bmc.STATE_TERMINATE_ID
         -1
+        >>> callable(bmc.bind_bmc_query_structure)
+        True
     """
-    if name not in _DOMAIN_EXPORTS:
-        raise AttributeError("module 'pyfcstm.bmc' has no attribute %r" % name)
+    if name in _DOMAIN_EXPORTS:
+        from pyfcstm.bmc import domain
 
-    from pyfcstm.bmc import domain
+        return getattr(domain, name)
+    if name in _BINDING_EXPORTS:
+        from pyfcstm.bmc import binding
 
-    return getattr(domain, name)
+        return getattr(binding, name)
+    raise AttributeError("module 'pyfcstm.bmc' has no attribute %r" % name)
 
 
 def __dir__():
@@ -186,7 +207,7 @@ def __dir__():
         >>> 'BmcDomain' in dir(bmc)
         True
     """
-    return sorted(set(globals()) | _DOMAIN_EXPORTS)
+    return sorted(set(globals()) | _DOMAIN_EXPORTS | _BINDING_EXPORTS)
 
 
 __all__ = [
@@ -232,6 +253,14 @@ __all__ = [
     "EventCardinalityAssumption",
     "BmcProperty",
     "BmcQuery",
+    "BmcBindingDiagnostic",
+    "BoundReference",
+    "BoundInitialSpec",
+    "BoundAssumption",
+    "BoundProperty",
+    "BoundBmcQuery",
+    "bind_bmc_query_structure",
+    "bind_bmc_query",
     "STATE_TERMINATE_ID",
     "STATE_DIAGNOSTIC_ID",
     "StateDomainEntry",

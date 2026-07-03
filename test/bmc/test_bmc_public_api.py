@@ -17,6 +17,7 @@ def test_bmc_public_api_exports_exact_names():
         "InvalidBmcQuery",
         "UnsupportedBmcQuery",
         "InvalidBmcEncoding",
+        "InvalidBmcDomain",
         "BmcBuildError",
         "BmcExpr",
         "BmcNumExpr",
@@ -48,11 +49,23 @@ def test_bmc_public_api_exports_exact_names():
         "EventCardinalityAssumption",
         "BmcProperty",
         "BmcQuery",
+        "STATE_TERMINATE_ID",
+        "STATE_DIAGNOSTIC_ID",
+        "StateDomainEntry",
+        "EventDomainEntry",
+        "VarDomainEntry",
+        "FrameRef",
+        "StepRef",
+        "EventInputRef",
+        "BmcDomain",
+        "build_bmc_domain",
     }
 
     assert set(bmc.__all__) == expected
-    for name in expected:
+    for name in expected - {"STATE_TERMINATE_ID", "STATE_DIAGNOSTIC_ID"}:
         assert getattr(bmc, name).__name__ == name
+    assert bmc.STATE_TERMINATE_ID == -1
+    assert bmc.STATE_DIAGNOSTIC_ID == -2
 
 
 @pytest.mark.unittest
@@ -61,12 +74,14 @@ def test_submodule_all_exports_are_exact():
     errors = importlib.import_module("pyfcstm.bmc.errors")
     ast = importlib.import_module("pyfcstm.bmc.ast")
     query = importlib.import_module("pyfcstm.bmc.query")
+    domain = importlib.import_module("pyfcstm.bmc.domain")
 
     assert set(errors.__all__) == {
         "BmcError",
         "InvalidBmcQuery",
         "UnsupportedBmcQuery",
         "InvalidBmcEncoding",
+        "InvalidBmcDomain",
         "BmcBuildError",
     }
     assert set(ast.__all__) == {
@@ -102,6 +117,18 @@ def test_submodule_all_exports_are_exact():
         "EventCardinalityAssumption",
         "BmcProperty",
         "BmcQuery",
+    }
+    assert set(domain.__all__) == {
+        "STATE_TERMINATE_ID",
+        "STATE_DIAGNOSTIC_ID",
+        "StateDomainEntry",
+        "EventDomainEntry",
+        "VarDomainEntry",
+        "FrameRef",
+        "StepRef",
+        "EventInputRef",
+        "BmcDomain",
+        "build_bmc_domain",
     }
 
 

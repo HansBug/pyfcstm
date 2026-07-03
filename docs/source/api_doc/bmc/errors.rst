@@ -36,6 +36,12 @@ InvalidBmcEncoding
 .. autoclass:: InvalidBmcEncoding
 
 
+InvalidBmcDomain
+-----------------------------------------------------
+
+.. autoclass:: InvalidBmcDomain
+
+
 BmcBuildError
 -----------------------------------------------------
 

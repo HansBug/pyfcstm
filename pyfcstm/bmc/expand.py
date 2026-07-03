@@ -549,8 +549,18 @@ class _Expander:
                 )
             failed.extend(candidate_failed)
             previous_accepted.append(accepted)
-            previous_event_uses.extend(
-                _event_uses_from_condition(accepted, self.domain)
+            accepted_event_uses = tuple(
+                item
+                for outcome in candidate_outcomes
+                for item in outcome.used_events
+                if item.polarity == "positive"
+            )
+            previous_event_uses = list(
+                _merge_event_uses(
+                    previous_event_uses,
+                    accepted_event_uses,
+                    _event_uses_from_condition(accepted, self.domain),
+                )
             )
         return _Expansion(tuple(outcomes), tuple(failed), tuple(diagnostics))
 
@@ -752,6 +762,9 @@ class _Expander:
         if not frame.plain_before_pending:
             return (frontier,)
         branches = (frontier,)
+        # Plain boundary ``during before`` actions live in ``on_durings``.
+        # Descendant aspect actions (``>> during before``) are intentionally
+        # executed later by ``_run_leaf_during``, matching SimulationRuntime.
         for on_during_before in frame.state.list_on_durings(aspect="before"):
             branches = self._flat_map(
                 branches,
@@ -1232,7 +1245,17 @@ def expand_macro_step_cases(
         options = MacroExpansionOptions()
     if not isinstance(options, MacroExpansionOptions):
         raise InvalidBmcEncoding("options must be MacroExpansionOptions.")
-    return _Expander(source, options).expand()
+    try:
+        return _Expander(source, options).expand()
+    except RecursionError as err:
+        # RecursionError: hostile macro graphs may create structurally new
+        # recursive frontiers faster than Python's call stack can represent.
+        # Surface that as a build failure rather than leaking an interpreter
+        # implementation limit to BMC callers.
+        raise BmcBuildError(
+            "macro expansion exceeded the Python recursion limit before "
+            "reaching a runtime-aligned safety cap."
+        ) from err
 
 
 __all__ = ["MacroExpansionOptions", "expand_macro_step_cases"]

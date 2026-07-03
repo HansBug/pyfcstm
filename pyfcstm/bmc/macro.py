@@ -207,14 +207,25 @@ class BoolTemplate:
 
         :param operand: Operand condition.
         :type operand: BoolTemplate
-        :return: Negated condition.
+        :return: Negated condition with constant and double-negation identities
+            reduced.
         :rtype: BoolTemplate
 
         Example::
 
             >>> BoolTemplate.not_(BoolTemplate.false()).evaluate({})
             True
+            >>> BoolTemplate.not_(BoolTemplate.not_(BoolTemplate.atom('go'))).to_canonical()['name']
+            'go'
         """
+        if not isinstance(operand, BoolTemplate):
+            raise InvalidBmcEncoding("operand must be BoolTemplate.")
+        if operand.kind == "true":
+            return cls.false()
+        if operand.kind == "false":
+            return cls.true()
+        if operand.kind == "not":
+            return operand.operands[0]
         return cls("not", operands=(operand,))
 
     @classmethod
@@ -223,21 +234,40 @@ class BoolTemplate:
 
         :param operands: Operand conditions.
         :type operands: BoolTemplate
-        :return: Conjunction, or constant true for an empty input.
+        :return: Conjunction with identity, absorbing, and idempotent operands
+            reduced, or constant true for an empty input.
         :rtype: BoolTemplate
 
         Example::
 
             >>> BoolTemplate.and_().evaluate({})
             True
+            >>> BoolTemplate.and_(BoolTemplate.true(), BoolTemplate.atom('go')).to_canonical()['name']
+            'go'
         """
         if not operands:
             return cls.true()
         if not all(isinstance(item, BoolTemplate) for item in operands):
             raise InvalidBmcEncoding("operands must contain BoolTemplate objects.")
-        if len(operands) == 1:
-            return operands[0]
-        return cls("and", operands=tuple(operands))
+        flattened = []
+        pending = list(operands)
+        while pending:
+            operand = pending.pop(0)
+            if operand.kind == "false":
+                return cls.false()
+            if operand.kind == "true":
+                continue
+            if operand.kind == "and":
+                pending[:0] = operand.operands
+            else:
+                flattened.append(operand)
+        by_key = {_canonical_key(item): item for item in flattened}
+        reduced = tuple(by_key[key] for key in sorted(by_key))
+        if not reduced:
+            return cls.true()
+        if len(reduced) == 1:
+            return reduced[0]
+        return cls("and", operands=reduced)
 
     @classmethod
     def or_(cls, *operands: "BoolTemplate") -> "BoolTemplate":
@@ -245,21 +275,40 @@ class BoolTemplate:
 
         :param operands: Operand conditions.
         :type operands: BoolTemplate
-        :return: Disjunction, or constant false for an empty input.
+        :return: Disjunction with identity, absorbing, and idempotent operands
+            reduced, or constant false for an empty input.
         :rtype: BoolTemplate
 
         Example::
 
             >>> BoolTemplate.or_().evaluate({})
             False
+            >>> BoolTemplate.or_(BoolTemplate.false(), BoolTemplate.atom('go')).to_canonical()['name']
+            'go'
         """
         if not operands:
             return cls.false()
         if not all(isinstance(item, BoolTemplate) for item in operands):
             raise InvalidBmcEncoding("operands must contain BoolTemplate objects.")
-        if len(operands) == 1:
-            return operands[0]
-        return cls("or", operands=tuple(operands))
+        flattened = []
+        pending = list(operands)
+        while pending:
+            operand = pending.pop(0)
+            if operand.kind == "true":
+                return cls.true()
+            if operand.kind == "false":
+                continue
+            if operand.kind == "or":
+                pending[:0] = operand.operands
+            else:
+                flattened.append(operand)
+        by_key = {_canonical_key(item): item for item in flattened}
+        reduced = tuple(by_key[key] for key in sorted(by_key))
+        if not reduced:
+            return cls.false()
+        if len(reduced) == 1:
+            return reduced[0]
+        return cls("or", operands=reduced)
 
     @property
     def variables(self) -> Tuple[str, ...]:

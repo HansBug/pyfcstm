@@ -659,6 +659,39 @@ def test_macro_imports_do_not_load_z3_or_verify_modules():
 
 
 @pytest.mark.unittest
+def test_bool_template_reduces_identity_absorbing_and_duplicate_operands():
+    """Boolean recipes normalize local identities before canonical comparison."""
+    atom = BoolTemplate.atom("a")
+    other = BoolTemplate.atom("b")
+
+    assert (
+        BoolTemplate.and_(BoolTemplate.true(), atom).to_canonical()
+        == atom.to_canonical()
+    )
+    assert BoolTemplate.and_(atom, atom).to_canonical() == atom.to_canonical()
+    assert BoolTemplate.and_(atom, BoolTemplate.false()).to_canonical() == (
+        BoolTemplate.false().to_canonical()
+    )
+    assert (
+        BoolTemplate.or_(BoolTemplate.false(), atom).to_canonical()
+        == atom.to_canonical()
+    )
+    assert BoolTemplate.or_(atom, atom).to_canonical() == atom.to_canonical()
+    assert BoolTemplate.or_(atom, BoolTemplate.true()).to_canonical() == (
+        BoolTemplate.true().to_canonical()
+    )
+    assert (
+        BoolTemplate.not_(BoolTemplate.not_(atom)).to_canonical() == atom.to_canonical()
+    )
+
+    nested = BoolTemplate.and_(
+        atom, BoolTemplate.and_(BoolTemplate.true(), other, atom)
+    )
+    assert nested.kind == "and"
+    assert nested.variables == ("a", "b")
+
+
+@pytest.mark.unittest
 def test_bool_template_validation_and_evaluation_fail_closed():
     """BoolTemplate rejects malformed recipes and evaluation unknowns."""
     atom = BoolTemplate.atom("a")

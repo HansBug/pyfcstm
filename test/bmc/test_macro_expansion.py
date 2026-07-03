@@ -129,20 +129,14 @@ def test_hot_stable_leaf_initial_and_recurrence_have_same_cases(simple_domain):
     initial_formal = expand_macro_step_cases(initial)
     recurrence_formal = expand_macro_step_cases(recurrence)
 
-    def normalized(formal):
-        return [
-            (
-                case.kind,
-                case.target_state_path,
-                case.condition.to_canonical(),
-                [item.expression for item in case.var_update],
-            )
-            for case in formal.cases
-        ]
-
     assert initial.origin == "initial"
     assert recurrence.origin == "recurrence"
-    assert normalized(initial_formal) == normalized(recurrence_formal)
+    assert initial.to_semantic_canonical(
+        include_origin=False
+    ) == recurrence.to_semantic_canonical(include_origin=False)
+    assert [case.to_canonical() for case in initial_formal.cases] == [
+        case.to_canonical() for case in recurrence_formal.cases
+    ]
 
 
 @pytest.mark.unittest
@@ -225,6 +219,20 @@ def test_source_domain_must_preserve_model_back_reference(simple_domain):
 
     with pytest.raises(InvalidBmcEncoding, match="state machine model"):
         expand_macro_step_cases(source)
+
+
+@pytest.mark.unittest
+def test_runtime_aligned_safety_caps_fail_closed(simple_domain):
+    """Expansion caps raise build errors instead of leaking partial cases."""
+    source = stable_leaf_source(simple_domain, "Root.A")
+
+    cap_options = [
+        MacroExpansionOptions(max_micro_steps=1),
+        MacroExpansionOptions(max_stack_depth=1),
+    ]
+    for options in cap_options:
+        with pytest.raises(BmcBuildError):
+            expand_macro_step_cases(source, options)
 
 
 @pytest.mark.unittest

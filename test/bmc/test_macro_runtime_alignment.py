@@ -240,6 +240,117 @@ def test_pseudo_hot_start_and_parent_continuation_cases(alignment_domain):
 
 
 @pytest.mark.unittest
+def test_plain_before_boundary_and_aspect_before_each_run_once():
+    """Plain boundary and aspect-before actions stay runtime-aligned."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 1;
+        state Root {
+            state Parent {
+                during before { x = x + 10; }
+                >> during before { x = x * 2; }
+                state A {
+                    enter { x = x + 1; }
+                    during { x = x + 3; }
+                }
+                [*] -> A;
+            }
+            [*] -> Parent;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(source_from_initial_spec(domain, InitialSpec()))
+    case = _selected_case(formal, 1, 0, ())
+
+    assert case.kind == "initial"
+    assert case.target_state_path == "Root.Parent.A"
+    assert _updates(case) == {"x": "2 * pre:x + 25"}
+
+    runtime = SimulationRuntime(model)
+    runtime.cycle([])
+    assert ".".join(runtime.current_state.path) == case.target_state_path
+    assert runtime.vars == {"x": 27}
+
+
+@pytest.mark.unittest
+def test_rejected_guarded_pseudo_pair_loop_falls_back_like_runtime():
+    """Repeated pseudo frontiers are failed candidates, not recursion leaks."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            state A { during { x = x + 1; } }
+            pseudo state P;
+            pseudo state Q;
+            [*] -> A;
+            A -> P : if [x < 10];
+            P -> Q;
+            Q -> P;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(stable_leaf_source(domain, "Root.A"))
+
+    case = _selected_case(formal, 0, 0, ())
+
+    assert case.kind == "fallback"
+    assert case.target_state_path == "Root.A"
+    assert case.failed_conditions
+    assert _updates(case) == {"x": "pre:x + 1"}
+
+    runtime = SimulationRuntime(
+        model,
+        initial_state="Root.A",
+        initial_vars={"x": 0},
+    )
+    runtime.cycle([])
+    assert ".".join(runtime.current_state.path) == case.target_state_path
+    assert runtime.vars == {"x": 1}
+
+
+@pytest.mark.unittest
+def test_rejected_pseudo_loop_allows_later_transition_and_matches_runtime():
+    """Validation-skipped pseudo loops do not mask later accepted transitions."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            state A { during { x = x + 1; } }
+            pseudo state Loop;
+            state Done;
+            [*] -> A;
+            A -> Loop :: Go;
+            A -> Done :: Go;
+            Loop -> Loop;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(stable_leaf_source(domain, "Root.A"))
+    go = "Root.A.Go"
+
+    selected = _selected_case(formal, 0, 0, (go,))
+    fallback = _selected_case(formal, 0, 0, ())
+
+    assert selected.kind == "transition"
+    assert selected.target_state_path == "Root.Done"
+    assert fallback.kind == "fallback"
+    assert fallback.target_state_path == "Root.A"
+    assert fallback.failed_conditions
+
+    runtime = SimulationRuntime(
+        model,
+        initial_state="Root.A",
+        initial_vars={"x": 0},
+    )
+    runtime.cycle([go])
+    assert ".".join(runtime.current_state.path) == selected.target_state_path
+    assert runtime.vars == {"x": 0}
+
+
+@pytest.mark.unittest
 def test_cold_leaf_root_enters_and_stabilizes_instead_of_terminating():
     """Cold root leaf expansion follows initialization, not root synthetic exit."""
     model = load_state_machine_from_text(

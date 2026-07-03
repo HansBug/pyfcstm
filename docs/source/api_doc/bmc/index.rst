@@ -15,8 +15,10 @@ pyfcstm.bmc
     errors
     grammar/index
     listener
+    macro
     parse
     query
+    source
 
 \_\_all\_\_
 -----------------------------------------------------

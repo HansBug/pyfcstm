@@ -1,19 +1,21 @@
-"""Public API for FCSTM bounded model checking query models.
+"""Public API for FCSTM bounded model checking data contracts.
 
 The BMC package is an independent root package for the FCSTM bounded model
-checking workstream.  It exposes parser-independent query and expression
-dataclasses while deliberately leaving grammar parsing, semantic binding,
-solver lowering, witness replay, and verify-registry integration to separate
-layers.
+checking workstream. It exposes parser-independent query and expression
+dataclasses, parser entry points, domain numbering snapshots, and macro-step
+source/case contracts while deliberately leaving semantic binding, solver
+lowering, witness replay, and verify-registry integration to separate layers.
 
 Package contracts:
 
 * BMC query objects are parser-independent and data-only in this package.
-* The root package must not depend on ``pyfcstm.verify`` or its registry.
 * Parser entry points build parser-independent query objects and remain
   separate from model-aware binding or solver lowering.
-* Domain-numbering exports are resolved lazily so parser-only imports do not
-  load ``pyfcstm.model``.
+* Domain-numbering and macro-step exports are resolved lazily so parser-only
+  imports do not load ``pyfcstm.model``.
+* Macro-step contracts are solver-independent and do not import ``z3`` from the
+  root package.
+* The root package must not depend on ``pyfcstm.verify`` or its registry.
 * :func:`str` on exported query and expression dataclasses is reserved for the
   canonical ``.fbmcq`` query DSL spelling.
 * :func:`repr` remains the dataclass debugging representation; callers that need
@@ -69,12 +71,33 @@ Public module structure:
        :class:`VarDomainEntry`, :class:`FrameRef`, :class:`StepRef`,
        :class:`EventInputRef`, :class:`BmcDomain`,
        :func:`build_bmc_domain`
-     - Number model states, events, persistent variables, frames, steps,
+     - Lazily number model states, events, persistent variables, frames, steps,
        sentinel states, and event-input slots before solver lowering.
+   * - Macro-step sources
+     - :class:`MacroStepSource`, :func:`source_from_initial_spec`,
+       :func:`entry_source`, :func:`stable_leaf_source`,
+       :func:`terminated_source`, :func:`diagnostic_source`
+     - Describe initial and recurrence source profiles without reading
+       initial ``where`` predicates or building solver relations.
+   * - Macro-step case data
+     - :class:`BoolTemplate`, :class:`EventUse`, :class:`VarUpdate`,
+       :class:`CycleCase`, :class:`MacroStepFormal`,
+       :class:`PartitionCheckResult`
+     - Freeze case labels, bare conditions, explicit variable writeback,
+       source-local buckets, and build-time partition summaries.
+   * - Macro-step case helpers
+     - :func:`carry_var_updates`, :func:`var_update_for`,
+       :func:`build_var_updates`, :func:`case_antecedent_condition`,
+       :func:`terminated_absorb_case`, :func:`diagnostic_absorb_case`,
+       :func:`build_fallback_case`, :func:`build_semantic_delta_case`,
+       :func:`verify_boolean_partition`, :func:`verify_source_partition`
+     - Construct carry, absorb, fallback, and semantic-delta cases while keeping
+       partition self-checks outside formal trace formulas.
    * - Query root model
-     - :class:`InitialSpec`, :class:`FrameAssumption`,
-       :class:`EventAssumption`, :class:`EventCardinalityAssumption`,
-       :class:`BmcProperty`, :class:`BmcQuery`
+     - :class:`InitialSpec`, :class:`BmcAssumption`,
+       :class:`FrameAssumption`, :class:`EventAssumption`,
+       :class:`EventCardinalityAssumption`, :class:`BmcProperty`,
+       :class:`BmcQuery`
      - Capture top-level ``*.fbmcq`` query structure before parser, binder, or
        solver-specific phases.
 
@@ -161,14 +184,52 @@ _DOMAIN_EXPORTS = {
     "build_bmc_domain",
 }
 
+_SOURCE_EXPORTS = {
+    "TERMINATE_CASE_PATH",
+    "DIAGNOSTIC_CASE_PATH",
+    "MacroStepSource",
+    "entry_source",
+    "stable_leaf_source",
+    "terminated_source",
+    "diagnostic_source",
+    "source_from_initial_spec",
+}
+
+_MACRO_EXPORTS = {
+    "BoolTemplate",
+    "EventUse",
+    "VarUpdate",
+    "CycleCase",
+    "PartitionCheckResult",
+    "MacroStepFormal",
+    "carry_var_updates",
+    "var_update_for",
+    "build_var_updates",
+    "case_antecedent_condition",
+    "terminated_absorb_case",
+    "diagnostic_absorb_case",
+    "build_fallback_case",
+    "build_semantic_delta_case",
+    "verify_boolean_partition",
+    "verify_source_partition",
+}
+
+_LAZY_EXPORT_MODULES = {
+    "pyfcstm.bmc.binding": _BINDING_EXPORTS,
+    "pyfcstm.bmc.domain": _DOMAIN_EXPORTS,
+    "pyfcstm.bmc.source": _SOURCE_EXPORTS,
+    "pyfcstm.bmc.macro": _MACRO_EXPORTS,
+}
+
 
 def __getattr__(name: str):
-    """Lazily resolve model-aware domain and binding exports.
+    """Lazily resolve model-aware binding, domain, and macro-step exports.
 
-    Domain numbering imports :mod:`pyfcstm.model`, while the query parser must
-    remain importable without loading model, verify, or solver layers.  Binding
-    exports are also lazy so the top-level package can list the public API
-    without importing the model-aware binding module on parser-only imports.
+    Binding, domain numbering, and macro-step helpers are kept behind lazy
+    exports so parser-only callers can import :mod:`pyfcstm.bmc` without
+    loading model-aware or later BMC layers. This preserves the convenience API
+    while keeping parse/query data structures independent from solver and
+    verify-registry wiring.
 
     :param name: Attribute name requested from :mod:`pyfcstm.bmc`.
     :type name: str
@@ -184,14 +245,13 @@ def __getattr__(name: str):
         >>> callable(bmc.bind_bmc_query_structure)
         True
     """
-    if name in _DOMAIN_EXPORTS:
-        from pyfcstm.bmc import domain
+    import importlib
 
-        return getattr(domain, name)
-    if name in _BINDING_EXPORTS:
-        from pyfcstm.bmc import binding
-
-        return getattr(binding, name)
+    for module_name, exports in _LAZY_EXPORT_MODULES.items():
+        if name in exports:
+            value = getattr(importlib.import_module(module_name), name)
+            globals()[name] = value
+            return value
     raise AttributeError("module 'pyfcstm.bmc' has no attribute %r" % name)
 
 
@@ -207,7 +267,13 @@ def __dir__():
         >>> 'BmcDomain' in dir(bmc)
         True
     """
-    return sorted(set(globals()) | _DOMAIN_EXPORTS | _BINDING_EXPORTS)
+    return sorted(
+        set(globals())
+        | _BINDING_EXPORTS
+        | _DOMAIN_EXPORTS
+        | _SOURCE_EXPORTS
+        | _MACRO_EXPORTS
+    )
 
 
 __all__ = [
@@ -271,4 +337,28 @@ __all__ = [
     "EventInputRef",
     "BmcDomain",
     "build_bmc_domain",
+    "TERMINATE_CASE_PATH",
+    "DIAGNOSTIC_CASE_PATH",
+    "MacroStepSource",
+    "entry_source",
+    "stable_leaf_source",
+    "terminated_source",
+    "diagnostic_source",
+    "source_from_initial_spec",
+    "BoolTemplate",
+    "EventUse",
+    "VarUpdate",
+    "CycleCase",
+    "PartitionCheckResult",
+    "MacroStepFormal",
+    "carry_var_updates",
+    "var_update_for",
+    "build_var_updates",
+    "case_antecedent_condition",
+    "terminated_absorb_case",
+    "diagnostic_absorb_case",
+    "build_fallback_case",
+    "build_semantic_delta_case",
+    "verify_boolean_partition",
+    "verify_source_partition",
 ]

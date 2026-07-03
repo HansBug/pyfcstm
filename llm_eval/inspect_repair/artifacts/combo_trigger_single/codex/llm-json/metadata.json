@@ -1,0 +1,33 @@
+{
+  "artifact_dir": "llm_eval/inspect_repair/artifacts/combo_trigger_single/codex/llm-json",
+  "bad_repair_flags_under_watch": [
+    "delete-transition"
+  ],
+  "expected_codes": [
+    "W_COMBO_DUPLICATE_EVENT"
+  ],
+  "fixture_id": "combo_trigger_single",
+  "fixture_path": "llm_eval/inspect_repair/fixtures/combo_trigger_single.fcstm",
+  "format": "llm-json",
+  "guide_metadata": {
+    "byte_size": 16665,
+    "chapter_count": 15,
+    "checksum_resource_name": "fcstm_grammar_guide.md.sha256",
+    "expected_sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914",
+    "line_count": 553,
+    "pyfcstm_version": "0.5.0",
+    "resource_name": "fcstm_grammar_guide.md",
+    "sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914"
+  },
+  "inspect_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/fixtures/combo_trigger_single.fcstm",
+    "--format",
+    "llm-json"
+  ],
+  "prepared_at": "20260702T184407Z",
+  "provider": "codex",
+  "requires_max_tier": null
+}

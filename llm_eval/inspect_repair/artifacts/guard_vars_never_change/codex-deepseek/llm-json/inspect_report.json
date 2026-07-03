@@ -1,0 +1,232 @@
+{
+  "diagnostics": [
+    {
+      "code": "W_UNWRITTEN_READ_VAR",
+      "do_not": [
+        "Do not add a meaningless self-assignment."
+      ],
+      "location": {
+        "column": 1,
+        "end_column": 21,
+        "end_line": 1,
+        "line": 1,
+        "path": "input.fcstm"
+      },
+      "message": "Variable 'request' is read but never written by any action or transition effect.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "add_write",
+          "rationale": "Add the intended update if the variable should change.",
+          "target": "action_or_effect"
+        },
+        {
+          "kind": "simplify_guard",
+          "rationale": "Replace the read with a literal if the value is intentionally constant.",
+          "target": "expression"
+        }
+      ],
+      "refs": {
+        "init_value": "0",
+        "read_states": [
+          "Root.Idle"
+        ],
+        "var_name": "request"
+      },
+      "repair_guidance": [
+        "This is a static dataflow warning about missing writes after initialization.",
+        "Do not add a self-assignment or dummy update only to silence the warning."
+      ],
+      "severity": "warning",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "^^^^^^^^^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": "^^^^^^^^^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 1,
+            "text": "def int request = 0;"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 2,
+            "text": ""
+          }
+        ],
+        "line": 1,
+        "text": "def int request = 0;"
+      },
+      "summary": "The variable is used as input but never updated after its initial definition, so model behavior may be accidentally constant."
+    },
+    {
+      "code": "W_GUARD_VARS_NEVER_CHANGE",
+      "do_not": [
+        "Do not add a meaningless self-assignment; it does not model a real change.",
+        "Do not rewrite the guard to a meaningless constant only to silence this diagnostic."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 40,
+        "end_line": 9,
+        "line": 9,
+        "path": "input.fcstm"
+      },
+      "message": "Transition guard reads only variables that are never changed by actions or effects.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "add_write",
+          "rationale": "Add the missing state update if the guard should evolve at runtime.",
+          "target": "action_or_effect"
+        },
+        {
+          "kind": "simplify_guard",
+          "rationale": "Simplify or remove the guard if the initial value is intentional.",
+          "target": "transition"
+        }
+      ],
+      "refs": {
+        "from_path": "Root.Idle",
+        "guard_vars": [
+          "request"
+        ],
+        "to_path": "Root.Running"
+      },
+      "repair_guidance": [
+        "This is a static dataflow warning, not a proof that the guard is satisfiable.",
+        "Adding a write is useful only when the variable should genuinely evolve at runtime."
+      ],
+      "severity": "warning",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 8,
+            "text": ""
+          },
+          {
+            "caret": "    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 9,
+            "text": "    Idle -> Running : if [request > 0];"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 10,
+            "text": "    Running -> [*];"
+          }
+        ],
+        "line": 9,
+        "text": "    Idle -> Running : if [request > 0];"
+      },
+      "summary": "This guard is controlled only by initial variable values. If those values never change, the transition condition is effectively fixed."
+    },
+    {
+      "code": "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+      "do_not": [
+        "Do not add a meaningless event just to silence this info."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 20,
+        "end_line": 10,
+        "line": 10,
+        "path": "input.fcstm"
+      },
+      "message": "Transition 'Root.Running' -> '[*]' has no event or guard.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "keep_if_fallthrough",
+          "rationale": "Keep it when the state should immediately advance.",
+          "target": "transition"
+        },
+        {
+          "kind": "add_trigger_or_guard",
+          "rationale": "Add the missing event or guard if the transition should wait.",
+          "target": "transition"
+        }
+      ],
+      "refs": {
+        "from_path": "Root.Running",
+        "to_path": "[*]",
+        "transition_index": 2,
+        "transition_span": {
+          "column": 5,
+          "end_column": 20,
+          "end_line": 10,
+          "line": 10
+        }
+      },
+      "repair_guidance": [],
+      "severity": "info",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 9,
+            "text": "    Idle -> Running : if [request > 0];"
+          },
+          {
+            "caret": "    ^^^^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 10,
+            "text": "    Running -> [*];"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 11,
+            "text": "}"
+          }
+        ],
+        "line": 10,
+        "text": "    Running -> [*];"
+      },
+      "summary": "The transition is not event-triggered and has no guard. This may be a deliberate unconditional fall-through, so treat it as context rather than a fix target."
+    }
+  ],
+  "input": "input.fcstm",
+  "repair_protocol": {
+    "goal": "repair the FCSTM model with the smallest semantic source change",
+    "rules": [
+      "Make the smallest source edit that preserves the modeler's apparent intent.",
+      "Use diagnostic source/provenance before choosing a fix; inspect-static warnings are not solver proofs.",
+      "Do not mechanically stack all suggested actions when multiple diagnostics refer to the same region.",
+      "Do not delete states or transitions unless the report explicitly says the element is unused and the design intent supports deletion.",
+      "A repair should clear all error and warning diagnostics; info diagnostics may remain when the model intent supports them.",
+      "If changing a guard into an event-only transition makes a variable declaration unused, remove that variable or keep a real guard-affecting data-flow path."
+    ]
+  },
+  "schema_status": "stable",
+  "schema_version": "pyfcstm.inspect.llm.v1",
+  "status": "warning",
+  "summary": {
+    "errors": 0,
+    "infos": 1,
+    "leaf_states": 2,
+    "root_state_path": "Root",
+    "states": 3,
+    "transitions": 3,
+    "variables": 1,
+    "warnings": 2
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "artifact_dir": "llm_eval/inspect_repair/artifacts/combo_trigger_single/codex-deepseek/llm-json",
+  "bad_repair_flags": [],
+  "bad_repair_flags_under_watch": [
+    "delete-transition"
+  ],
+  "blocking_diagnostics": [],
+  "diagnostics": "",
+  "expected_codes": [
+    "W_COMBO_DUPLICATE_EVENT"
+  ],
+  "failure_category": "passed",
+  "fixture_id": "combo_trigger_single",
+  "fixture_path": "llm_eval/inspect_repair/fixtures/combo_trigger_single.fcstm",
+  "format": "llm-json",
+  "guide_metadata": {
+    "byte_size": 16665,
+    "chapter_count": 15,
+    "checksum_resource_name": "fcstm_grammar_guide.md.sha256",
+    "expected_sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914",
+    "line_count": 553,
+    "pyfcstm_version": "0.5.0",
+    "resource_name": "fcstm_grammar_guide.md",
+    "sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914"
+  },
+  "inspect_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/fixtures/combo_trigger_single.fcstm",
+    "--format",
+    "llm-json"
+  ],
+  "isolated_workdir": "/tmp/pyfcstm_inspect_repair_35po6nvp",
+  "mode": "live",
+  "prepared_at": "20260702T183428Z",
+  "provider": "codex-deepseek",
+  "provider_command": [
+    "codex-deepseek",
+    "exec",
+    "--skip-git-repo-check",
+    "--ignore-user-config",
+    "--ephemeral",
+    "--color",
+    "never",
+    "-c",
+    "model_providers.deepseek={name=\"DeepSeek via Moon Bridge\", base_url=\"http://127.0.0.1:61040/v1\", wire_api=\"responses\"}",
+    "-c",
+    "model_provider=\"deepseek\"",
+    "-m",
+    "deepseek-v4-pro",
+    "-c",
+    "model_reasoning_effort=\"high\"",
+    "--output-last-message",
+    "/tmp/pyfcstm_inspect_repair_35po6nvp/provider_response.txt",
+    "-"
+  ],
+  "provider_returncode": 0,
+  "provider_stderr_size": 30569,
+  "provider_stderr_tail": "ate machine DSL file and emit a human-readable...\n  plantuml   Create Plantuml code of a given state machine DSL code.\n  simulate   Interactive state machine simulator\n  visualize  Render a state machine DSL file into a diagram and...\n\nexec\n/usr/bin/bash -lc 'python3 -m pyfcstm inspect /tmp/pyfcstm_inspect_repair_35po6nvp/repaired.fcstm 2>&1' in /tmp/pyfcstm_inspect_repair_35po6nvp\n exited 2 in 850ms:\nUsage: python -m pyfcstm inspect [OPTIONS]\nTry 'python -m pyfcstm inspect -h' for help.\n\nError: Missing option '-i' / '--input-code'.\n\nexec\n/usr/bin/bash -lc 'python3 -m pyfcstm inspect -i /tmp/pyfcstm_inspect_repair_35po6nvp/repaired.fcstm 2>&1' in /tmp/pyfcstm_inspect_repair_35po6nvp\n succeeded in 856ms:\n[INFO] FCSTM Inspect Report: /tmp/pyfcstm_inspect_repair_35po6nvp/repaired.fcstm\n\nSummary\n  status: info\n  root: Root\n  states: 3 total / 2 leaf\n  transitions: 3\n  variables: 0\n  diagnostics: 0 errors / 0 warnings / 1 infos\n\n[INFO] I_TRANSITION_NEVER_EVENT_TRIGGERED\n  Transition 'Root.Accepted' -> '[*]' has no event or guard.\n  --> /tmp/pyfcstm_inspect_repair_35po6nvp/repaired.fcstm:8:5\n   |\n 7 |     Waiting -> Accepted :: Request;\n 8 |     Accepted -> [*];\n   |     ^^^^^^^^^^^^^^^^\n 9 | }\n   |\n   = source: inspect-static\n   = why: The transition is not event-triggered and has no guard. This may be a deliberate unconditional fall-through, so treat it as context rather than a fix target.\n   = fix: kind: keep_if_fallthrough; target: transition; rationale: Keep it when the state should immediately advance.\n   = fix: kind: add_trigger_or_guard; target: transition; rationale: Add the missing event or guard if the transition should wait.\n   = do-not: Do not add a meaningless event just to silence this info.\n\ncodex\nParse and inspect pass cleanly — 0 errors, 0 warnings, 1 retained info (the intentional fall-through).\n\n```\nstate Root {\n    [*] -> Waiting;\n\n    state Waiting;\n    state Accepted;\n\n    Waiting -> Accepted :: Request;\n    Accepted -> [*];\n}\n```\ntokens used\n8,860\n",
+  "provider_version": "codex-cli 0.141.0",
+  "remaining_diagnostic_codes": [
+    "I_TRANSITION_NEVER_EVENT_TRIGGERED"
+  ],
+  "remaining_diagnostics": [
+    {
+      "code": "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+      "severity": "info"
+    }
+  ],
+  "requires_max_tier": null,
+  "success": true,
+  "verification_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/artifacts/combo_trigger_single/codex-deepseek/llm-json/repaired.fcstm",
+    "--format",
+    "json"
+  ],
+  "verification_result": {
+    "bad_repair_flags_cleared": true,
+    "blocking_diagnostics_cleared": true,
+    "expected_codes_cleared": true,
+    "passed": true
+  },
+  "visible_files": [
+    "input.fcstm",
+    "inspect_report.json",
+    "prompt_packet.md"
+  ]
+}

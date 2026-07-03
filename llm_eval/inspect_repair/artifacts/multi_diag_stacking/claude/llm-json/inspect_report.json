@@ -1,0 +1,588 @@
+{
+  "diagnostics": [
+    {
+      "code": "W_UNREACHABLE_STATE",
+      "do_not": [
+        "Do not add a self-loop to mask the unreachability."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 16,
+        "end_line": 8,
+        "line": 8,
+        "path": "input.fcstm"
+      },
+      "message": "State 'Root.Done' is unreachable from the root entry path.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "add_inbound_transition",
+          "rationale": "Add a transition that reaches the state if it was meant to be used.",
+          "target": "state"
+        },
+        {
+          "kind": "remove_state",
+          "rationale": "Remove the state if it was added speculatively.",
+          "target": "state"
+        }
+      ],
+      "refs": {
+        "state_path": "Root.Done"
+      },
+      "repair_guidance": [],
+      "severity": "warning",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 7,
+            "text": "    state Recovering;"
+          },
+          {
+            "caret": "    ^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 8,
+            "text": "    state Done;"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 9,
+            "text": ""
+          }
+        ],
+        "line": 8,
+        "text": "    state Done;"
+      },
+      "summary": "This state cannot be entered at runtime; the surrounding transitions never lead to it. It is dead from the machine's perspective."
+    },
+    {
+      "code": "W_DEADLOCK_LEAF",
+      "do_not": [
+        "Do not add a self-loop just to silence the warning."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 22,
+        "end_line": 7,
+        "line": 7,
+        "path": "input.fcstm"
+      },
+      "message": "Leaf state 'Root.Recovering' has no outgoing transition.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "add_transition",
+          "rationale": "Add a modeled transition to the next intended state.",
+          "target": "state"
+        },
+        {
+          "kind": "add_exit_transition",
+          "rationale": "Add ``State -> [*];`` if the leaf is meant to finish its parent.",
+          "target": "state"
+        }
+      ],
+      "refs": {
+        "parent_path": "Root",
+        "reason": "no_outgoing_transition",
+        "state_path": "Root.Recovering",
+        "suggested_fix": {
+          "anchor": {
+            "ref": "refs.parent_path",
+            "type": "ref"
+          },
+          "kind": "insert",
+          "rationale": "Add an exit transition so the leaf can finish its parent state.",
+          "target": "deadlock_leaf_exit_transition",
+          "text": "Recovering -> [*];\n"
+        }
+      },
+      "repair_guidance": [],
+      "severity": "warning",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 6,
+            "text": "    state Waiting;"
+          },
+          {
+            "caret": "    ^^^^^^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 7,
+            "text": "    state Recovering;"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 8,
+            "text": "    state Done;"
+          }
+        ],
+        "line": 7,
+        "text": "    state Recovering;"
+      },
+      "summary": "This leaf state has no outgoing transition, so once the machine enters it there is no modeled way to leave."
+    },
+    {
+      "code": "W_DEADLOCK_LEAF",
+      "do_not": [
+        "Do not add a self-loop just to silence the warning."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 16,
+        "end_line": 8,
+        "line": 8,
+        "path": "input.fcstm"
+      },
+      "message": "Leaf state 'Root.Done' has no outgoing transition.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "add_transition",
+          "rationale": "Add a modeled transition to the next intended state.",
+          "target": "state"
+        },
+        {
+          "kind": "add_exit_transition",
+          "rationale": "Add ``State -> [*];`` if the leaf is meant to finish its parent.",
+          "target": "state"
+        }
+      ],
+      "refs": {
+        "parent_path": "Root",
+        "reason": "no_outgoing_transition",
+        "state_path": "Root.Done",
+        "suggested_fix": {
+          "anchor": {
+            "ref": "refs.parent_path",
+            "type": "ref"
+          },
+          "kind": "insert",
+          "rationale": "Add an exit transition so the leaf can finish its parent state.",
+          "target": "deadlock_leaf_exit_transition",
+          "text": "Done -> [*];\n"
+        }
+      },
+      "repair_guidance": [],
+      "severity": "warning",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 7,
+            "text": "    state Recovering;"
+          },
+          {
+            "caret": "    ^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 8,
+            "text": "    state Done;"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 9,
+            "text": ""
+          }
+        ],
+        "line": 8,
+        "text": "    state Done;"
+      },
+      "summary": "This leaf state has no outgoing transition, so once the machine enters it there is no modeled way to leave."
+    },
+    {
+      "code": "W_UNWRITTEN_READ_VAR",
+      "do_not": [
+        "Do not add a meaningless self-assignment."
+      ],
+      "location": {
+        "column": 1,
+        "end_column": 19,
+        "end_line": 1,
+        "line": 1,
+        "path": "input.fcstm"
+      },
+      "message": "Variable 'retry' is read but never written by any action or transition effect.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "add_write",
+          "rationale": "Add the intended update if the variable should change.",
+          "target": "action_or_effect"
+        },
+        {
+          "kind": "simplify_guard",
+          "rationale": "Replace the read with a literal if the value is intentionally constant.",
+          "target": "expression"
+        }
+      ],
+      "refs": {
+        "init_value": "0",
+        "read_states": [
+          "Root.Waiting"
+        ],
+        "var_name": "retry"
+      },
+      "repair_guidance": [
+        "This is a static dataflow warning about missing writes after initialization.",
+        "Do not add a self-assignment or dummy update only to silence the warning."
+      ],
+      "severity": "warning",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "^^^^^^^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": "^^^^^^^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 1,
+            "text": "def int retry = 0;"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 2,
+            "text": ""
+          }
+        ],
+        "line": 1,
+        "text": "def int retry = 0;"
+      },
+      "summary": "The variable is used as input but never updated after its initial definition, so model behavior may be accidentally constant."
+    },
+    {
+      "code": "W_GUARD_VARS_NEVER_CHANGE",
+      "do_not": [
+        "Do not add a meaningless self-assignment; it does not model a real change.",
+        "Do not rewrite the guard to a meaningless constant only to silence this diagnostic."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 57,
+        "end_line": 10,
+        "line": 10,
+        "path": "input.fcstm"
+      },
+      "message": "Transition guard reads only variables that are never changed by actions or effects.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "add_write",
+          "rationale": "Add the missing state update if the guard should evolve at runtime.",
+          "target": "action_or_effect"
+        },
+        {
+          "kind": "simplify_guard",
+          "rationale": "Simplify or remove the guard if the initial value is intentional.",
+          "target": "transition"
+        }
+      ],
+      "refs": {
+        "from_path": "Root.Waiting",
+        "guard_vars": [
+          "retry"
+        ],
+        "to_path": "Root.Recovering"
+      },
+      "repair_guidance": [
+        "This is a static dataflow warning, not a proof that the guard is satisfiable.",
+        "Adding a write is useful only when the variable should genuinely evolve at runtime."
+      ],
+      "severity": "warning",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 9,
+            "text": ""
+          },
+          {
+            "caret": "    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 10,
+            "text": "    Waiting -> Recovering : if [retry > 0 && retry < 0];"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 11,
+            "text": "}"
+          }
+        ],
+        "line": 10,
+        "text": "    Waiting -> Recovering : if [retry > 0 && retry < 0];"
+      },
+      "summary": "This guard is controlled only by initial variable values. If those values never change, the transition condition is effectively fixed."
+    },
+    {
+      "code": "W_TOPOLOGICAL_NOEXIT",
+      "do_not": [
+        "Do not add an unconditional exit without checking lifecycle and event semantics."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 22,
+        "end_line": 7,
+        "line": 7,
+        "path": "input.fcstm"
+      },
+      "message": "A root-reachable leaf or cycle has no guard-agnostic route to the root exit sink.",
+      "provenance": {
+        "kind": "verify-backed",
+        "verify_required": true
+      },
+      "recommended_actions": [
+        {
+          "kind": "add_exit_transition",
+          "rationale": "Add a route from the stuck state or cycle to an exit-capable path.",
+          "target": "topology"
+        },
+        {
+          "kind": "mark_intentional",
+          "rationale": "If the model intentionally never exits, keep the behavior and document it.",
+          "target": "review_note"
+        }
+      ],
+      "refs": {
+        "algorithm_name": "topological_finite",
+        "counterexample_kind": "deadlock",
+        "representative_state_path": "Root.Recovering",
+        "scc": [
+          "Root.Recovering"
+        ],
+        "verification_scope": "topological_only"
+      },
+      "repair_guidance": [
+        "This is verify-backed topology feedback, not an instruction to add an unconditional exit blindly."
+      ],
+      "severity": "warning",
+      "source": "verify-backed",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 6,
+            "text": "    state Waiting;"
+          },
+          {
+            "caret": "    ^^^^^^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 7,
+            "text": "    state Recovering;"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 8,
+            "text": "    state Done;"
+          }
+        ],
+        "line": 7,
+        "text": "    state Recovering;"
+      },
+      "summary": "From the current topology, execution can enter a region that has no structural path to terminate at the root exit."
+    },
+    {
+      "code": "I_TOPOLOGICAL_NON_TERMINATING",
+      "do_not": [
+        "Do not treat every loop as a bug; long-running control loops are common state-machine behavior."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 22,
+        "end_line": 7,
+        "line": 7,
+        "path": "input.fcstm"
+      },
+      "message": "The topology does not force all root-reachable executions to eventually reach the root terminator.",
+      "provenance": {
+        "kind": "verify-backed",
+        "verify_required": true
+      },
+      "recommended_actions": [
+        {
+          "kind": "review_nontermination",
+          "rationale": "Decide whether the non-terminating path is intended.",
+          "target": "topology"
+        },
+        {
+          "kind": "add_progress_transition",
+          "rationale": "Add an exit or progress edge if all executions should eventually finish.",
+          "target": "transition"
+        }
+      ],
+      "refs": {
+        "algorithm_name": "topological_inevitable_terminator",
+        "counterexample_path": [
+          "Root.Recovering"
+        ],
+        "representative_state_path": "Root.Recovering",
+        "verification_scope": "topological_only"
+      },
+      "repair_guidance": [
+        "Long-running control loops can be intentional; decide intent before adding progress edges."
+      ],
+      "severity": "info",
+      "source": "verify-backed",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 6,
+            "text": "    state Waiting;"
+          },
+          {
+            "caret": "    ^^^^^^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 7,
+            "text": "    state Recovering;"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 8,
+            "text": "    state Done;"
+          }
+        ],
+        "line": 7,
+        "text": "    state Recovering;"
+      },
+      "summary": "The structural graph allows a path that can avoid termination forever. This may be a valid service loop, but it should be reviewed explicitly."
+    },
+    {
+      "code": "W_DEAD_GUARD",
+      "do_not": [
+        "Do not replace the guard with true unless the transition really should become unconditional.",
+        "Do not confuse this SMT finding with W_GUARD_CONST_FALSE; variables and runtime-definedness matter here."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 57,
+        "end_line": 10,
+        "line": 10,
+        "path": "input.fcstm"
+      },
+      "message": "A transition guard is unsatisfiable under model variable type and runtime-definedness constraints.",
+      "provenance": {
+        "kind": "verify-backed",
+        "verify_required": true
+      },
+      "recommended_actions": [
+        {
+          "kind": "fix_guard",
+          "rationale": "Relax or correct the contradictory guard condition.",
+          "target": "transition"
+        },
+        {
+          "kind": "remove_transition",
+          "rationale": "Remove the transition if the guard intentionally makes it unreachable.",
+          "target": "transition"
+        }
+      ],
+      "refs": {
+        "algorithm_name": "dead_guard",
+        "transition": {
+          "event": null,
+          "from_state": "Waiting",
+          "guard": "retry > 0 && retry < 0",
+          "is_forced": false,
+          "parent": "Root",
+          "to_state": "Recovering"
+        },
+        "transition_summary": "Root:Waiting->Recovering",
+        "verification_scope": "smt_local"
+      },
+      "repair_guidance": [
+        "This is verify-backed: SMT proved the guard unsatisfiable under model constraints.",
+        "Prefer correcting the contradictory guard over making the transition unconditional.",
+        "If the same variable also has static dataflow warnings, the repair must address both the contradiction and the missing guard-affecting data flow."
+      ],
+      "severity": "warning",
+      "source": "verify-backed",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 9,
+            "text": ""
+          },
+          {
+            "caret": "    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 10,
+            "text": "    Waiting -> Recovering : if [retry > 0 && retry < 0];"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 11,
+            "text": "}"
+          }
+        ],
+        "line": 10,
+        "text": "    Waiting -> Recovering : if [retry > 0 && retry < 0];"
+      },
+      "summary": "SMT proves the guard cannot become true for any valid variable valuation. This differs from W_GUARD_CONST_FALSE, which only reports literal-only guards folded syntactically to false."
+    }
+  ],
+  "input": "input.fcstm",
+  "repair_protocol": {
+    "goal": "repair the FCSTM model with the smallest semantic source change",
+    "rules": [
+      "Make the smallest source edit that preserves the modeler's apparent intent.",
+      "Use diagnostic source/provenance before choosing a fix; inspect-static warnings are not solver proofs.",
+      "Do not mechanically stack all suggested actions when multiple diagnostics refer to the same region.",
+      "Do not delete states or transitions unless the report explicitly says the element is unused and the design intent supports deletion.",
+      "A repair should clear all error and warning diagnostics; info diagnostics may remain when the model intent supports them.",
+      "If changing a guard into an event-only transition makes a variable declaration unused, remove that variable or keep a real guard-affecting data-flow path."
+    ]
+  },
+  "schema_status": "stable",
+  "schema_version": "pyfcstm.inspect.llm.v1",
+  "status": "warning",
+  "summary": {
+    "errors": 0,
+    "infos": 1,
+    "leaf_states": 3,
+    "root_state_path": "Root",
+    "states": 4,
+    "transitions": 2,
+    "variables": 1,
+    "warnings": 7
+  }
+}

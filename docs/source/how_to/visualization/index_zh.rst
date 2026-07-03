@@ -1,30 +1,133 @@
 .. _sec-how-to-visualization-zh:
 
 可视化任务指南
-========================================
+==============
 
-状态
-----
+当你需要导出图表 artifact 时，使用本指南。选项事实请见 :doc:`/reference/visualization_options/index_zh`。
 
-本页是信息架构占位页。它先建立稳定目标页和交叉引用 label，完整内容迁移留给后续迁移工作。
+导出 PlantUML 源码
+------------------
 
-文档模式
---------
+PlantUML 源码确定且易于 review：
 
-* 模式：任务指南
-* 计划内容范围：用户侧文档
-* 稳定 label：``sec-how-to-visualization-zh``
+.. code-block:: bash
 
-当前权威内容
-------------
+   pyfcstm plantuml -i machine.fcstm -o machine.puml
 
-当前权威内容仍在 :doc:`../../tutorials/visualization/index_zh`。
+用 ``-l`` 选择详细级别预设：
 
-图表导出和渲染后端任务将迁移到这里。
+.. code-block:: bash
 
-本占位页非目标
+   pyfcstm plantuml -i machine.fcstm -l full -o machine.full.puml
+
+用重复的 ``-c key=value`` 参数覆盖类型化选项：
+
+.. code-block:: bash
+
+   pyfcstm plantuml -i machine.fcstm \
+     -c show_events=true \
+     -c max_depth=3 \
+     -o machine.events.puml
+
+
+对比详细级别输出
+~~~~~~~~~~~~~~~~
+
+同一个机器可以为不同读者生成不同细节的图：
+
+.. list-table:: 详细级别对比
+   :header-rows: 1
+
+   * - 预设
+     - 适合视图
+     - 已生成示例
+   * - ``minimal``
+     - 仅基本状态结构。
+     - :download:`output_minimal.puml <../../tutorials/visualization/output_minimal.puml>`
+   * - ``normal``
+     - 包含关键 lifecycle 和 transition 信息的平衡视图。
+     - :download:`output_normal.puml <../../tutorials/visualization/output_normal.puml>`
+   * - ``full``
+     - 包含 actions、events、guards 和 effects 的完整细节。
+     - :download:`output_full.puml <../../tutorials/visualization/output_full.puml>`
+
+.. figure:: ../../tutorials/visualization/output_minimal.puml.svg
+   :alt: 最小详细级别输出
+   :align: center
+   :width: 70%
+
+   ``minimal``：基本状态结构。
+
+.. figure:: ../../tutorials/visualization/output_normal.puml.svg
+   :alt: 普通详细级别输出
+   :align: center
+   :width: 70%
+
+   ``normal``：平衡默认视图。
+
+.. figure:: ../../tutorials/visualization/output_full.puml.svg
+   :alt: 完整详细级别输出
+   :align: center
+   :width: 70%
+
+   ``full``：面向实现细节的视图。
+
+直接渲染最终文件
+----------------
+
+环境中有本地或远端 PlantUML renderer 时，使用 ``visualize``：
+
+.. code-block:: bash
+
+   pyfcstm visualize -i machine.fcstm -t svg -o machine.svg --no-open
+
+只检查 renderer 可用性，不执行渲染：
+
+.. code-block:: bash
+
+   pyfcstm visualize --check --renderer auto
+
+选择 renderer mode
+------------------
+
+* ``--renderer auto`` 先尝试本地渲染，失败后回退到远端渲染。
+* ``--renderer local`` 使用 Java 和 PlantUML jar。
+* ``--renderer remote`` 使用 PlantUML 服务。
+
+在 CI 或其他 headless 环境中，优先使用 ``--no-open``，避免 viewer 启动影响 job 结果。
+
+保持图表可读
 --------------
 
-* 不在本骨架页复制旧长文内容。
-* 迁移期间不要重命名本页稳定 label。
-* 本占位页存在期间，不移动或删除旧教程路径。
+把 visualization 当作面向特定读者的输出，而不是唯一标准图：
+
+* ``minimal`` 适合高层架构概览或非技术读者。
+* ``normal`` 适合一般文档和 code review。
+* ``full`` 适合详细实现文档和调试。
+* 先从默认设置开始，只在图能回答更清楚问题时再增加选项。
+* 对大型状态机，使用 ``max_depth`` 聚焦当前 review 的层级。
+* 隐藏当前读者不关心的 lifecycle actions、transition effects 或 events。
+* 事件跟踪比普通 transition label 更重要时，启用 ``event_visualization_mode=color``。
+* 对稀疏或偏结构性的图，使用 ``collapse_empty_states`` 减少视觉噪声。
+
+大型模型可能生成很大的 PlantUML 文件。初步探索时优先使用 limited-depth 图，并为不同读者生成不同详细级别的多张图。
+
+需要时使用 Python API
+---------------------
+
+CLI ``-c`` 支持类型化标量和元组选项。自定义颜色字典等对象值配置需要使用 Python API。下面的片段假设你已经有解析好的 ``model`` 对象；完整可运行脚本请使用下方 downloadable demo：
+
+.. code-block:: python
+
+   from pyfcstm.model.plantuml import PlantUMLOptions
+
+   options = PlantUMLOptions(
+       event_visualization_mode='color',
+       custom_colors={'System.Start': '#00AA00'},
+   )
+   plantuml_text = model.to_plantuml(options)
+
+完整可运行示例可下载
+:download:`python_basic.demo.py <../../tutorials/visualization/python_basic.demo.py>`
+和
+:download:`python_options.demo.py <../../tutorials/visualization/python_options.demo.py>`。

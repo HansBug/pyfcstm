@@ -3,28 +3,48 @@
 Diagnostics explanation
 =======================
 
-Status
-------
+Inspect diagnostics are model-review evidence. They are designed to tell a
+human, CI job, editor, or LLM what the current FCSTM model looks like and which
+places deserve attention.
 
-This page is an information-architecture stub. It establishes a stable target page and cross-reference label before the full content migration happens.
+What inspect can do
+-------------------
 
-Document mode
--------------
+Inspect can report:
 
-* Mode: Explanation
-* Planned content scope: user-facing documentation
-* Stable label: ``sec-explanations-diagnostics``
+* structural metrics and derived graph facts;
+* source-level diagnostics with spans and structured refs;
+* combo-trigger provenance that links generated pseudo-state chains back to the
+  authored trigger terms;
+* LLM-oriented repair guidance that keeps source context near suggested actions;
+* optional verify-backed diagnostics when explicitly enabled.
 
-Current authority
------------------
+What inspect cannot prove
+-------------------------
 
-The current authoritative content remains in :doc:`../../tutorials/inspect/index`.
+Inspect is not a replacement for simulation, target hardware tests, or a full
+formal-verification workflow. Static warnings can be conservative. LLM-oriented
+reports are good prompts and evidence, but edits still need to be checked by
+rerunning tools.
 
-Diagnostics boundaries and design rationale will move here.
+Invalid DSL remains a CLI failure
+---------------------------------
 
-Non-goals for this stub
------------------------
+If parsing or model construction fails, inspect exits with a non-zero status.
+That is different from a successful report containing warning diagnostics for a
+valid model.
 
-* Do not copy the old long-form content into this skeleton.
-* Do not rename this page's stable label during the migration.
-* Do not move or delete the old tutorial path while this stub exists.
+Target-specific warnings need target-specific wording
+----------------------------------------------------------
+
+Numeric deployment-profile warnings that mention the C-family fixed-width
+integer profile should be explained as C/C++ deployment risks. If the generated
+target is Python, the same fixed-width integer carrying risk usually does not
+apply, even though other model design warnings may still matter.
+
+Why diagnostics help LLMs
+-------------------------
+
+Good LLM repair prompts need exact source spans, provenance, and do-not notes.
+Inspect's LLM formats package those details so the assistant can propose a
+small edit instead of guessing from a vague error message.

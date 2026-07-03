@@ -144,6 +144,117 @@ def test_bind_bmc_query_structure_accepts_positive_queries(source, expected):
 
 @pytest.mark.unittest
 @pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param("check reach <= 1: true;", id="default-cold-reach"),
+        pytest.param(
+            'init cold where active("Root.Idle"); check forbid <= 2: false;',
+            id="cold-active-where",
+        ),
+        pytest.param(
+            'init state("Root.Idle") where x >= 0; check invariant <= 3: x >= 0;',
+            id="hot-state-bare-variable",
+        ),
+        pytest.param(
+            'init terminated where var("cycle") == 1; '
+            "check must_reach <= 4: terminated();",
+            id="terminated-explicit-cycle-var",
+        ),
+        pytest.param(
+            'assume always: cycle <= 5; assume at 2: active("Root.Idle"); '
+            'check exists_always <= 5: !active("Root.Bad");',
+            id="frame-assumptions",
+        ),
+        pytest.param(
+            'assume event("Root.Tick", *) == true; '
+            'assume event("Root.Reset", 1..2) == false; '
+            "assume events cardinality any; "
+            'assume events cardinality at_most_one {"Root.Tick"}; '
+            'check response <= 3: trigger event("Root.Tick", current) '
+            '-> within 1 active("Root.Done");',
+            id="event-assumptions-response",
+        ),
+        pytest.param(
+            'check cover <= 2: case("Root.Idle::transition::Root.Done::1", current);',
+            id="cover-current-canonicalizes-to-omitted-frame",
+        ),
+        pytest.param(
+            "check reach <= 2: -(x + 1) <= sqrt(y);",
+            id="numeric-unary-binary-ufunc",
+        ),
+        pytest.param(
+            'check reach <= 2: ((active("Root.Idle")) ? (x + 1) : sqrt(y)) >= 0;',
+            id="numeric-conditional",
+        ),
+        pytest.param(
+            'check reach <= 2: (active("Root.Idle")) ? active("Root.Done") : terminated();',
+            id="condition-conditional",
+        ),
+        pytest.param(
+            "check reach <= 2: x <= 1.5 && y >= pi;",
+            id="float-and-math-constant",
+        ),
+        pytest.param(
+            "check reach <= 3: (x << 1) >= (y >> 2);",
+            id="bit-shift-comparison",
+        ),
+        pytest.param(
+            "check reach <= 3: (x & 3) == 1 || (y | 4) != 0;",
+            id="bitwise-and-condition-or",
+        ),
+        pytest.param(
+            "check reach <= 3: !((x == 1) iff (y == 2));",
+            id="iff-under-negation",
+        ),
+        pytest.param(
+            "check reach <= 3: (x == 1) => (y == 2);",
+            id="implication",
+        ),
+        pytest.param(
+            "check reach <= 3: (x == 1) xor (y == 2);",
+            id="condition-xor",
+        ),
+    ],
+)
+def test_bound_bmc_query_to_ast_node_round_trips_structure_binding(source):
+    """Bound query snapshots round-trip through their BMC query AST object."""
+    bound = _bind(source)
+    ast_node = bound.to_ast_node()
+    reparsed_ast_node = parse_bmc_query(str(ast_node))
+    rebound = bind_bmc_query_structure(reparsed_ast_node)
+
+    assert isinstance(ast_node, BmcQuery)
+    assert ast_node is bound.query
+    assert reparsed_ast_node.to_canonical() == ast_node.to_canonical()
+    assert rebound.to_ast_node().to_canonical() == ast_node.to_canonical()
+    assert rebound.to_canonical() == bound.to_canonical()
+
+
+@pytest.mark.unittest
+def test_bound_bmc_query_to_ast_node_round_trips_domain_binding(binding_model):
+    """A bound AST node can be parsed again and re-bound with the same domain."""
+    source = (
+        'init state("Root.Idle") where x == var("x"); '
+        'assume event("Root.Tick", 0) == true; '
+        'assume events cardinality at_most_one {"Root.Tick", "Root.Reset"}; '
+        'check reach <= 2: active("Root.Done") && var("cycle") >= cycle;'
+    )
+    query = parse_bmc_query(source)
+    domain = build_bmc_domain(binding_model, 2)
+    bound = bind_bmc_query(query, domain=domain)
+
+    ast_node = bound.to_ast_node()
+    reparsed_ast_node = parse_bmc_query(str(ast_node))
+    rebound = bind_bmc_query(reparsed_ast_node, domain=domain)
+
+    assert ast_node is query
+    assert reparsed_ast_node.to_canonical() == ast_node.to_canonical()
+    assert rebound.to_ast_node().to_canonical() == ast_node.to_canonical()
+    assert rebound.to_canonical() == bound.to_canonical()
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
     "source, code_fragment, path_fragment",
     [
         pytest.param(

@@ -504,6 +504,29 @@ class BoundBmcQuery:
             )
         object.__setattr__(self, field_name, items)
 
+    def to_ast_node(self) -> BmcQuery:
+        """Return the parser-independent query AST bound by this snapshot.
+
+        Binding metadata such as resolved ids and declared variable types is
+        intentionally not represented in the returned query object.  Callers can
+        render the returned :class:`pyfcstm.bmc.query.BmcQuery` back to
+        canonical ``.fbmcq`` text, parse it again, and re-bind it with the same
+        model or domain when binding metadata must be reproduced.
+
+        :return: Original parser-independent BMC query object.
+        :rtype: pyfcstm.bmc.query.BmcQuery
+
+        Example::
+
+            >>> from pyfcstm.bmc.ast import BoolLiteral
+            >>> prop = BmcProperty('reach', 1, predicate=BoolLiteral('true'))
+            >>> query = BmcQuery(property=prop)
+            >>> bound = BoundBmcQuery(query, BoundInitialSpec(InitialSpec()), (), BoundProperty(prop))
+            >>> bound.to_ast_node() is query
+            True
+        """
+        return self.query
+
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable bound query dictionary.
 

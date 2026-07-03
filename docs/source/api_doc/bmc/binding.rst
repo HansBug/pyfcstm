@@ -51,7 +51,7 @@ BoundBmcQuery
 -----------------------------------------------------
 
 .. autoclass:: BoundBmcQuery
-    :members: __post_init__,to_canonical,query,initial,assumptions,property,references
+    :members: __post_init__,to_ast_node,to_canonical,query,initial,assumptions,property,references
 
 
 bind\_bmc\_query\_structure

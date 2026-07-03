@@ -694,10 +694,361 @@ All PR-G resources are recorded as ``keep``. PR-J should reassess whether any
 legacy-only diagram or generated image can be removed after all split pages and
 old landing pages are stable.
 
-PR-H placeholder
-----------------
+PR-H simulation page migration
+------------------------------
 
-No records yet.
+Scope
+~~~~~
+
+PR-H covers the simulation tutorial, simulation task guide, and execution
+semantics explanation. It keeps the old ``tutorials/simulation/`` URL reachable
+as a short first-run tutorial while moving task recipes and runtime semantics to
+``how_to/simulation/`` and ``explanations/execution_semantics/``.
+
+Chapter migration records
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: PR-H chapter migration
+   :header-rows: 1
+
+   * - Old location
+     - Old section
+     - New location
+     - Action
+     - Notes
+   * - ``tutorials/simulation/index*.rst``
+     - ``Core Concepts``
+     - ``tutorials/simulation/index*.rst`` and ``explanations/execution_semantics/index*.rst``
+     - split / keep tutorial summary
+     - Short state/lifecycle vocabulary remains in the first-run tutorial; execution details moved to explanation.
+   * - ``tutorials/simulation/index*.rst``
+     - ``Python Usage`` / ``Creating and Running Simulations``
+     - ``tutorials/simulation/index*.rst`` and ``how_to/simulation/index*.rst``
+     - split
+     - Minimal runtime loop remains in tutorial; embedding and API-oriented tasks moved to how-to.
+   * - ``tutorials/simulation/index*.rst``
+     - ``Triggering Events``
+     - ``how_to/simulation/index*.rst``
+     - move
+     - Event injection is now a task recipe; DSL event syntax is linked to DSL reference instead of repeated.
+   * - ``tutorials/simulation/index*.rst``
+     - ``Hot Start from Specific State`` and ``Hot Start Feature`` examples
+     - ``how_to/simulation/index*.rst`` and ``explanations/execution_semantics/index*.rst``
+     - split
+     - Command/API usage moved to how-to; hot-start boundary semantics moved to explanation.
+   * - ``tutorials/simulation/index*.rst``
+     - ``Implementing Abstract Handlers``
+     - ``how_to/simulation/index*.rst``
+     - move
+     - Handler registration and context usage are task-oriented runtime embedding material.
+   * - ``tutorials/simulation/index*.rst``
+     - ``CLI Usage`` / ``Starting the Simulator`` / ``Available Commands`` / ``Interactive Features`` / ``Reproducible CLI Transcript`` / ``Batch Mode``
+     - ``how_to/simulation/index*.rst``
+     - move
+     - CLI and REPL tasks now live in the simulation how-to.
+   * - ``tutorials/simulation/index*.rst``
+     - ``Configuration Settings``
+     - ``how_to/simulation/index*.rst``
+     - move
+     - ``setting`` command facts moved to display-setting task guidance.
+   * - ``tutorials/simulation/index*.rst``
+     - ``Export Formats``
+     - ``how_to/simulation/index*.rst``
+     - move
+     - ``export <path>`` and output-format guidance are simulation task facts.
+   * - ``tutorials/simulation/index*.rst``
+     - ``Command Line Options``
+     - ``how_to/simulation/index*.rst``
+     - move
+     - ``pyfcstm simulate --help`` facts are summarized in the task guide rather than a separate reference page.
+   * - ``tutorials/simulation/index*.rst``
+     - ``Execution Semantics`` / ``Cycle Execution`` / examples 1-10
+     - ``explanations/execution_semantics/index*.rst``
+     - move / summarize
+     - Runtime ordering, validation, pseudo state, aspect, priority and transition-effect semantics moved to explanation; detailed legacy examples retained as resources for PR-J audit.
+   * - ``tutorials/simulation/index*.rst``
+     - ``Real-World Business Examples`` / examples 11-13
+     - ``explanations/execution_semantics/index*.rst`` and PR-J audit
+     - summarize / keep resource
+     - Business models remain as old resources; current PR-H does not keep long business walkthroughs in tutorial.
+   * - ``tutorials/simulation/index*.rst``
+     - ``Best Practices`` / ``Testing and Debugging`` / ``Handler Implementation`` / ``Performance`` / ``Common Pitfalls``
+     - ``how_to/simulation/index*.rst`` and ``explanations/execution_semantics/index*.rst``
+     - merge
+     - Task debugging advice moved to how-to; runtime boundary notes moved to explanation.
+   * - ``tutorials/simulation/index*.rst``
+     - whole old page path
+     - ``tutorials/simulation/index*.rst``
+     - keep tutorial / landing
+     - Old URL now hosts a short first-run tutorial plus a topic destination table.
+
+Resource migration records
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: PR-H resource migration
+   :header-rows: 1
+
+   * - Old resource
+     - New resource
+     - Action
+     - Notes
+   * - ``tutorials/simulation/abstract_handlers.demo.py``
+     - same path
+     - keep
+     - how_to/simulation; Kept in old directory and literal-included by abstract-handler task; source-output pair remains stable.
+   * - ``tutorials/simulation/abstract_handlers.demo.py.txt``
+     - same path
+     - keep
+     - how_to/simulation; Kept in old directory and literal-included by abstract-handler task; source-output pair remains stable.
+   * - ``tutorials/simulation/basic_usage.demo.py``
+     - same path
+     - keep
+     - tutorials/simulation + how_to/simulation; Kept for first Python runtime loop and how-to reference; source-output pair remains stable.
+   * - ``tutorials/simulation/basic_usage.demo.py.txt``
+     - same path
+     - keep
+     - tutorials/simulation + how_to/simulation; Kept for first Python runtime loop and how-to reference; source-output pair remains stable.
+   * - ``tutorials/simulation/cli_batch.demo.sh``
+     - same path
+     - keep
+     - tutorials/simulation + how_to/simulation; Kept for first CLI transcript and batch-mode task guide; output was not regenerated because source is unchanged.
+   * - ``tutorials/simulation/cli_batch.demo.sh.txt``
+     - same path
+     - keep
+     - tutorials/simulation + how_to/simulation; Kept for first CLI transcript and batch-mode task guide; output was not regenerated because source is unchanged.
+   * - ``tutorials/simulation/event_triggering.demo.py``
+     - same path
+     - keep
+     - how_to/simulation; Kept in old directory and literal-included by event injection task; source-output pair remains stable.
+   * - ``tutorials/simulation/event_triggering.demo.py.txt``
+     - same path
+     - keep
+     - how_to/simulation; Kept in old directory and literal-included by event injection task; source-output pair remains stable.
+   * - ``tutorials/simulation/example10_validation_failure.full.fcstm``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example10_validation_failure.full.fcstm.puml``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example10_validation_failure.full.fcstm.puml.png``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example10_validation_failure.full.fcstm.puml.svg``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example11_elevator_door.full.fcstm``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example11_elevator_door.full.fcstm.puml``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example11_elevator_door.full.fcstm.puml.png``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example11_elevator_door.full.fcstm.puml.svg``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example12_water_heater.full.fcstm``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example12_water_heater.full.fcstm.puml``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example12_water_heater.full.fcstm.puml.png``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example12_water_heater.full.fcstm.puml.svg``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example13_traffic_light.full.fcstm``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example13_traffic_light.full.fcstm.puml``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example13_traffic_light.full.fcstm.puml.png``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example13_traffic_light.full.fcstm.puml.svg``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example1_basic.full.fcstm``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example1_basic.full.fcstm.puml``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example1_basic.full.fcstm.puml.png``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example1_basic.full.fcstm.puml.svg``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example2_composite.full.fcstm``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example2_composite.full.fcstm.puml``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example2_composite.full.fcstm.puml.png``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example2_composite.full.fcstm.puml.svg``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example3_aspect.full.fcstm``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example3_aspect.full.fcstm.puml``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example3_aspect.full.fcstm.puml.png``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example3_aspect.full.fcstm.puml.svg``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example4_pseudo.full.fcstm``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example4_pseudo.full.fcstm.puml``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example4_pseudo.full.fcstm.puml.png``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example4_pseudo.full.fcstm.puml.svg``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example5_multilevel.full.fcstm``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example5_multilevel.full.fcstm.puml``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example5_multilevel.full.fcstm.puml.png``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example5_multilevel.full.fcstm.puml.svg``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example6_transition_priority.full.fcstm``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example6_transition_priority.full.fcstm.puml``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example6_transition_priority.full.fcstm.puml.png``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example6_transition_priority.full.fcstm.puml.svg``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example7_self_transition.full.fcstm``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example7_self_transition.full.fcstm.puml``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example7_self_transition.full.fcstm.puml.png``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example7_self_transition.full.fcstm.puml.svg``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example8_guard_effect.full.fcstm``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example8_guard_effect.full.fcstm.puml``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example8_guard_effect.full.fcstm.puml.png``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example8_guard_effect.full.fcstm.puml.svg``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example9_pseudo_chain.full.fcstm``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example9_pseudo_chain.full.fcstm.puml``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example9_pseudo_chain.full.fcstm.puml.png``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/example9_pseudo_chain.full.fcstm.puml.svg``
+     - same path
+     - keep
+     - explanations/execution_semantics / PR-J audit; Legacy simulation model or generated diagram kept at original path for compatibility; no page-specific copy created in PR-H.
+   * - ``tutorials/simulation/hierarchy_execution.demo.py``
+     - same path
+     - keep
+     - explanations/execution_semantics; Kept in old directory and literal-included by execution-order explanation; source-output pair remains stable.
+   * - ``tutorials/simulation/hierarchy_execution.demo.py.txt``
+     - same path
+     - keep
+     - explanations/execution_semantics; Kept in old directory and literal-included by execution-order explanation; source-output pair remains stable.
+
+Resource cleanup note
+~~~~~~~~~~~~~~~~~~~~~
+
+All PR-H simulation resources are recorded as ``keep``. No resource source file
+was moved, so generated ``*.txt``, ``*.puml``, ``*.png`` and ``*.svg`` outputs
+were not regenerated in this PR. PR-J should reassess whether legacy-only
+business examples or generated diagrams can be removed after the new pages and
+old landing page are stable.
 
 PR-I placeholder
 ----------------

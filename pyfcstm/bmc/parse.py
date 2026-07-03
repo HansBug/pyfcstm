@@ -179,18 +179,19 @@ def _build_parser(
 
 
 def _find_error_node_text(parse_tree: ParserRuleContext) -> str:
-    """Return the first ANTLR recovery-node text within ``parse_tree``.
+    """Return the first ANTLR recovery marker within ``parse_tree``.
 
     Callers that provide their own parse trees may bypass the collecting error
     listener used by :func:`parse_with_bmc_grammar_entry`.  ANTLR can still
     recover from malformed input by inserting :class:`antlr4.tree.Tree.ErrorNode`
-    objects into the tree.  Detecting those nodes before listener walking keeps
-    the public parse-tree builder from leaking low-level literal-conversion
-    failures.
+    objects, attaching a recognition exception to a parser context, or creating
+    an empty generated child context for a missing nonterminal.  Detecting those
+    recovery markers before listener walking keeps the public parse-tree builder
+    from leaking low-level literal-conversion failures.
 
     :param parse_tree: Root parse-tree context to inspect.
     :type parse_tree: antlr4.ParserRuleContext
-    :return: Text for the first recovery node, or ``""`` when none exists.
+    :return: Text for the first recovery marker, or ``""`` when none exists.
     :rtype: str
 
     Example::
@@ -202,7 +203,20 @@ def _find_error_node_text(parse_tree: ParserRuleContext) -> str:
     while pending:
         node = pending.pop()
         if isinstance(node, ErrorNode):
-            return node.getText()
+            return "recovery node %r" % node.getText()
+        if isinstance(node, ParserRuleContext):
+            exception = getattr(node, "exception", None)
+            if exception is not None:
+                return "recovered %s after %s" % (
+                    type(node).__name__,
+                    type(exception).__name__,
+                )
+            if (
+                type(node) is not ParserRuleContext
+                and node.getChildCount() == 0
+                and node.getText() == ""
+            ):
+                return "empty recovered %s" % type(node).__name__
         for index in range(node.getChildCount() - 1, -1, -1):
             pending.append(node.getChild(index))
     return ""
@@ -217,8 +231,10 @@ def build_bmc_ast_from_parse_tree(parse_tree: ParserRuleContext) -> Any:
     :rtype: object
     :raises TypeError: If ``parse_tree`` is not an ANTLR parser context.
     :raises pyfcstm.bmc.errors.BmcQueryParseError: If the parse tree contains
-        ANTLR recovery nodes, the listener cannot map a recovered child context,
-        or the listener does not map the provided root context.
+        ANTLR recovery markers, the listener cannot map a recovered child
+        context, or the listener does not map the provided root context.
+    :raises pyfcstm.bmc.errors.InvalidBmcQuery: If a syntactically valid query
+        parse tree fails structural query-model validation.
 
     Example::
 
@@ -234,7 +250,7 @@ def build_bmc_ast_from_parse_tree(parse_tree: ParserRuleContext) -> Any:
     error_node_text = _find_error_node_text(parse_tree)
     if error_node_text:
         raise BmcQueryParseError(
-            "BMC parse tree contains ANTLR recovery node %r." % error_node_text
+            "BMC parse tree contains ANTLR recovery marker: %s." % error_node_text
         )
     listener = BmcQueryParseListener()
     walker = ParseTreeWalker()

@@ -537,6 +537,15 @@ def test_parse_helpers_report_invalid_inputs_and_unmapped_trees(monkeypatch):
 
     parse_module = importlib.import_module("pyfcstm.bmc.parse")
 
+    def _raise_key_error_on_walk(self, listener, parse_tree):
+        raise KeyError("missing recovered child")
+
+    monkeypatch.setattr(parse_module.ParseTreeWalker, "walk", _raise_key_error_on_walk)
+    with pytest.raises(BmcQueryParseError, match="child context"):
+        build_bmc_ast_from_parse_tree(ParserRuleContext())
+    monkeypatch.undo()
+    parse_module = importlib.import_module("pyfcstm.bmc.parse")
+
     def _query_wrong_type(*args, **kwargs):
         return BoolLiteral("true")
 
@@ -570,20 +579,62 @@ def test_parse_helpers_report_invalid_inputs_and_unmapped_trees(monkeypatch):
         pytest.param(
             'active("Root.A")',
             "bmc_num_expression_entry",
-            "recovery node",
+            "recovered Bmc_num_expressionContext",
             id="condition-atom-in-numeric-entry",
         ),
         pytest.param(
             'event("Root.E")',
             "bmc_cond_expression_entry",
-            "recovery node",
+            "recovered Bmc_boolean_atomContext",
             id="missing-event-selector",
         ),
         pytest.param(
             'check reach <= 1: active("Root.A", );',
             "query",
-            "child context",
+            "recovered Frame_selectorContext",
             id="empty-frame-selector",
+        ),
+        pytest.param(
+            "check reach <=",
+            "query",
+            "recovered Check_clauseContext",
+            id="missing-bound-without-error-node",
+        ),
+        pytest.param(
+            "check <= 1: true;",
+            "query",
+            "empty recovered Property_kindContext",
+            id="missing-property-kind-without-error-node",
+        ),
+        pytest.param(
+            'event("Root.E", )',
+            "bmc_cond_expression_entry",
+            "recovered Event_cycle_selectorContext",
+            id="missing-event-cycle-without-error-node",
+        ),
+        pytest.param(
+            "",
+            "bool_literal",
+            "empty recovered Bool_literalContext",
+            id="empty-bool-literal-subrule",
+        ),
+        pytest.param(
+            "",
+            "num_literal",
+            "empty recovered Num_literalContext",
+            id="empty-num-literal-subrule",
+        ),
+        pytest.param(
+            "",
+            "event_range_selector",
+            "recovered Event_range_selectorContext",
+            id="empty-event-range-selector-subrule",
+        ),
+        pytest.param(
+            "",
+            "bmc_boolean_atom",
+            "recovered Bmc_boolean_atomContext",
+            id="empty-boolean-atom-subrule",
         ),
     ],
 )

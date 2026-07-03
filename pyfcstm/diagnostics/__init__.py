@@ -14,6 +14,8 @@ This package currently exposes:
 * :class:`CodesSchemaError` — raised on import-time failure of the loader.
 * :func:`inspect_model` and the related inspect dataclasses used by
   pyfcstm / jsfcstm parity checks and design-health diagnostics.
+* :mod:`pyfcstm.diagnostics.inspect_render` — presentation helpers for
+  human-readable and LLM-oriented inspect CLI reports.
 * :class:`DiagnosticSink` for strict-mode and collect-mode diagnostic
   emission.
 
@@ -51,29 +53,29 @@ from .sink import DiagnosticSink
 from .suggested_fix import refs_with_suggested_fix, render_suggested_fix
 
 __all__ = [
-    'CODE_REGISTRY',
-    'ActionInfo',
-    'ComboOriginInfo',
-    'ComboOriginRefInfo',
-    'ComboOriginTermInfo',
-    'CodeFieldSpec',
-    'CodeSpec',
-    'CodesSchemaError',
-    'DEFAULT_DEEP_HIERARCHY_THRESHOLD',
-    'DEFAULT_LARGE_COMPOSITE_THRESHOLD',
-    'DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD',
-    'DiagnosticSink',
-    'EventInfo',
-    'ForcedTransitionInfo',
-    'ForLlmSpec',
-    'ModelInspect',
-    'ModelMetrics',
-    'StateInfo',
-    'SuggestedFixSpec',
-    'TransitionInfo',
-    'VariableInfo',
-    'inspect_model',
-    'load_codes',
-    'refs_with_suggested_fix',
-    'render_suggested_fix',
+    "CODE_REGISTRY",
+    "ActionInfo",
+    "ComboOriginInfo",
+    "ComboOriginRefInfo",
+    "ComboOriginTermInfo",
+    "CodeFieldSpec",
+    "CodeSpec",
+    "CodesSchemaError",
+    "DEFAULT_DEEP_HIERARCHY_THRESHOLD",
+    "DEFAULT_LARGE_COMPOSITE_THRESHOLD",
+    "DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD",
+    "DiagnosticSink",
+    "EventInfo",
+    "ForcedTransitionInfo",
+    "ForLlmSpec",
+    "ModelInspect",
+    "ModelMetrics",
+    "StateInfo",
+    "SuggestedFixSpec",
+    "TransitionInfo",
+    "VariableInfo",
+    "inspect_model",
+    "load_codes",
+    "refs_with_suggested_fix",
+    "render_suggested_fix",
 ]

@@ -1,0 +1,10 @@
+state Root {
+    [*] -> Idle;
+
+    state Idle;
+    state Done;
+    state Ghost;
+
+    Idle -> Done;
+    Done -> [*];
+}

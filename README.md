@@ -76,7 +76,7 @@ pyfcstm aims to provide a complete solution from conceptual design to code imple
 | **Syntax Highlighting**         | Includes FCSTM syntax highlighting for Pygments and editor integrations, including a VS Code extension in this repository.            | Improves authoring, documentation, and review workflows around `.fcstm` files.                                 | [Syntax Highlighting Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/grammar/index.html)            |
 | **Structured Diagnostics**      | `pyfcstm.diagnostics` ships **59 diagnostic codes** (20 errors / 32 warnings / 7 infos) covering parse errors, design-health issues (deadlock, unreachable, redundant transitions, const-folded guards, etc.), Layer 0 use-def dataflow analysis, and optional verify-backed checks. | Replace ad-hoc regex / message scraping with a stable structured API; codes carry `for_llm` payloads to drive LLM-assisted repair. | [Diagnostics Code List](#static-diagnostics-codes) |
 | **`inspect_model()` API**       | One-call structured view of a state machine: states / transitions / variables / events / metrics + reachability graph + var dataflow + aspect impact map + diagnostics. Round-trippable via `to_json()` against a published JSON schema. | Drop-in replacement for hand-written model walkers; single source of truth for downstream tooling.             | [inspect_model API](https://pyfcstm.readthedocs.io/en/latest/api_doc/diagnostics/inspect.html)                |
-| **`pyfcstm inspect` CLI**       | Emits the same structured inspect report as stable JSON; verify-backed diagnostics stay disabled unless `--enable-verify` is passed. | Makes diagnostics usable in CI, scripts, and editor tooling without writing Python glue.                       | [CLI Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/cli/index.html)                                |
+| **`pyfcstm inspect` CLI**       | Emits a human-readable diagnostic report by default, while `--format json` preserves the full stable inspect JSON; verify-backed diagnostics stay disabled unless `--enable-verify` is passed. | Makes diagnostics usable for humans first and still scriptable for CI, editor tooling, and LLM repair loops.  | [CLI Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/cli/index.html)                                |
 | **Suggested-Fix + VS Code Quick-Fix** | Selected diagnostics carry a `suggested_fix` payload (kind / anchor / text template) that the VS Code extension consumes as auto-apply quick-fixes; each fix is parse-back-verified. | Auto-fix loop for both humans and LLM agents; no regex patching. | [VS Code Extension](https://pyfcstm.readthedocs.io/en/latest/tutorials/grammar/index.html) |
 | **Cross-End Parity (py / js)**  | Python `inspect_model().diagnostics` and `@pyfcstm/jsfcstm` `inspectModel().diagnostics` emit byte-equivalent sets (normalized `code + severity + refs`), locked by cross-end parity tests. | Same diagnostics surface in CLI tooling, server-side processors, and browser-based editors / language servers. | [Diagnostics Code List](#static-diagnostics-codes) |
 
@@ -147,7 +147,7 @@ pyfcstm provides several command-line subcommands, including:
 - `plantuml` for visualization
 - `generate` for template-based code generation
 - `simulate` for interactive or batch execution
-- `inspect` for structured model and diagnostic JSON
+- `inspect` for human-readable diagnostics by default, or structured model and diagnostic JSON with `--format json`
 
 Before using them, create a small FCSTM file such as `traffic_light.fcstm`:
 
@@ -273,17 +273,35 @@ print(str(model.to_ast_node()))
 
 #### Inspect a Model and Read Structured Diagnostics
 
-From the command line, emit the same inspect report as stable JSON:
+From the command line, inspect a model with the default human-readable report, or request the full stable JSON explicitly:
 
 ```shell
-pyfcstm inspect -i buggy.fcstm -o inspect_report.json
-pyfcstm inspect -i buggy.fcstm --enable-verify --max-complexity-tier smt_linear --smt-timeout-ms 1000
+pyfcstm inspect -i buggy.fcstm
+pyfcstm inspect -i buggy.fcstm --color always
+pyfcstm inspect -i buggy.fcstm --format json -o inspect_report.json
+pyfcstm inspect -i buggy.fcstm --format json --enable-verify --max-complexity-tier smt_linear --smt-timeout-ms 1000
 ```
 
-The default CLI path matches `inspect_model(model)` and does not run verify-backed checks. Pass `--enable-verify`
-explicitly to append inspect-eligible `pyfcstm.verify` diagnostics. `bmc_search`, `k_unrollings`, and
+The default CLI path is a checker-style human report and does not run verify-backed checks. Human and stable LLM-oriented formats include a small source context window around each diagnostic so nearby state and transition structure remain visible. Use `--color auto|always|never` to control ANSI color for that human report only; `--format json`, `--format llm-json`, and `--format llm-md` never include ANSI escapes. Pass `--format json` when scripts, CI jobs, or editor tooling need the full `inspect_model(model).to_json()` contract. Stable LLM repair-loop formats are also available as `--format llm-json` and `--format llm-md`; they expose schema `pyfcstm.inspect.llm.v1`, source/provenance, repair guidance, and do-not notes without changing the full JSON contract. Pass `--enable-verify` explicitly to append inspect-eligible `pyfcstm.verify` diagnostics. `bmc_search`, `k_unrollings`, and
 `k_unrollings_times_branching` remain forbidden in the automatic inspect path. `--smt-timeout-ms 0` is forwarded
 unchanged to the SMT solver layer and follows Z3 semantics, where `0` means no finite timeout is configured.
+
+The human report is plain ASCII when color is disabled or unavailable:
+
+```text
+[WARN] W_UNWRITTEN_READ_VAR
+  Variable 'x' is read but never written by any action or transition effect.
+  --> buggy.fcstm:1:1
+   |
+ 1 | def int x = 0;
+   | ^^^^^^^^^^^^^^
+ 2 | state Root {
+   |
+   = source: inspect-static
+   = why: The variable is used as input but never updated after its initial definition, so model behavior may be accidentally constant.
+   = fix: kind: add_write; target: action_or_effect; rationale: Add the intended update if the variable should change.
+   = do-not: Do not add a meaningless self-assignment.
+```
 
 ```python
 from pyfcstm.diagnostics import inspect_model
@@ -347,7 +365,7 @@ for d in report.diagnostics:
 The equivalent CLI path is:
 
 ```shell
-pyfcstm inspect -i buggy.fcstm --enable-verify --max-complexity-tier smt_linear
+pyfcstm inspect -i buggy.fcstm --format json --enable-verify --max-complexity-tier smt_linear
 ```
 
 The full catalog of codes (with minimal triggering DSL for each) is documented under
@@ -720,8 +738,8 @@ comprehensive guide on template development.
 ## Static Diagnostics — Code List <a name="static-diagnostics-codes"></a>
 
 Calling `inspect_model(machine).diagnostics` on a parsed model returns a list of `ModelDiagnostic` objects. The
-catalog covers **59 codes — 20 errors / 32 warnings / 7 infos**. The default inspect path remains static and does not
-run an SMT backend; verify-backed diagnostics require `enable_verify=True` or `pyfcstm inspect --enable-verify`.
+catalog covers **59 codes — 20 errors / 32 warnings / 7 infos**. The default inspect analysis path remains static and does not
+run an SMT backend; verify-backed diagnostics require `enable_verify=True` or `pyfcstm inspect --enable-verify`. The CLI defaults to a human-readable report; use `pyfcstm inspect --format json` for the full stable JSON payload.
 Every code is reachable from the minimal DSL snippet in the right-hand column; see
 [`pyfcstm/diagnostics/codes.yaml`](pyfcstm/diagnostics/codes.yaml) for full per-code metadata (refs schema,
 `for_llm` payload, suggested-fix template, parity flags).

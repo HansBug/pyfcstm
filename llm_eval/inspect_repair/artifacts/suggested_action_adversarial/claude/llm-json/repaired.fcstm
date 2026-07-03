@@ -1,0 +1,11 @@
+state Root {
+    [*] -> Service;
+
+    state Service;
+    state Fault;
+    state Shutdown;
+
+    Service -> Fault :: FaultDetected;
+    Fault -> Shutdown;
+    Shutdown -> [*];
+}

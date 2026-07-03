@@ -330,6 +330,8 @@ BenchmarkDotNet.Artifacts/
 project.lock.json
 project.fragment.lock.json
 artifacts/
+!llm_eval/inspect_repair/artifacts/
+!llm_eval/inspect_repair/artifacts/**
 
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt

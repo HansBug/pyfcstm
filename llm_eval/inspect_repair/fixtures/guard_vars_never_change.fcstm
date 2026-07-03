@@ -1,0 +1,11 @@
+def int request = 0;
+
+state Root {
+    [*] -> Idle;
+
+    state Idle;
+    state Running;
+
+    Idle -> Running : if [request > 0];
+    Running -> [*];
+}

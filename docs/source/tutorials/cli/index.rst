@@ -7,7 +7,7 @@ The most common documentation-facing commands are:
 
 - ``pyfcstm plantuml``: Generate raw PlantUML text
 - ``pyfcstm visualize``: Render a final diagram file directly
-- ``pyfcstm inspect``: Emit structured model and diagnostic JSON
+- ``pyfcstm inspect``: Emit human-readable diagnostics by default, with explicit structured JSON available through ``--format json``
 - ``pyfcstm generate``: Generate source code from templates
 
 Installation
@@ -156,12 +156,14 @@ This is useful for:
 inspect Command
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Inspect a state machine DSL file and emit the structured model report as JSON.
-The JSON shape matches ``inspect_model(model).to_json()`` and includes states,
-transitions, variables, metrics, derived graphs, and diagnostics. When a model
-uses combo transition triggers, the report also exposes ``combo_transitions``
-and ``combo_origins`` so tools can relate generated pseudo-chain edges back to
-the original trigger terms.
+Inspect a state machine DSL file and emit a human-readable report by default.
+Use ``--format json`` when scripts, CI jobs, or editor integrations need the
+full structured model report. The JSON shape matches
+``inspect_model(model).to_json()`` and includes states, transitions, variables,
+metrics, derived graphs, and diagnostics. When a model uses combo transition
+triggers, the report also exposes ``combo_transitions`` and ``combo_origins``
+so tools can relate generated pseudo-chain edges back to the original trigger
+terms.
 
 For combo trigger diagnostics, ``inspect`` reports source-level warning codes
 against the original combo terms rather than the generated pseudo states:
@@ -189,28 +191,40 @@ re-implementing local solver approximations.
 
 .. code-block:: bash
 
-   pyfcstm inspect -i <input_file> [-o <output_file>] [--enable-verify] \
+   pyfcstm inspect -i <input_file> [-o <output_file>] [--format human|json|llm-json|llm-md] \
+     [--color auto|always|never] \
+     [--enable-verify] \
      [--max-complexity-tier structural|smt_linear|smt_nonlinear_decidable|smt_undecidable_heuristic] \
      [--max-call-count-scaling linear_in_transitions] [--smt-timeout-ms <ms>]
 
 **Parameters**:
 
 - ``-i, --input-code``: Path to input state machine DSL file (required)
-- ``-o, --output``: Path to output JSON file (optional, outputs to stdout when not specified)
+- ``-o, --output``: Path to output file (optional, outputs to stdout when not specified)
+- ``--format``: Output format. ``human`` is the default; use ``json`` for the full machine-readable report. ``llm-json`` and ``llm-md`` are stable LLM-oriented repair formats using schema ``pyfcstm.inspect.llm.v1``.
+- ``--color``: ANSI color policy for human output only. ``auto`` enables color only for interactive stdout, ``always`` forces color on stdout, and ``never`` disables color. ``-o`` files and machine formats are always ANSI-free.
 - ``--enable-verify``: Run inspect-eligible ``pyfcstm.verify`` algorithms and append their diagnostics
 - ``--max-complexity-tier``: Highest verify tier allowed by the inspect adapter; default is ``structural``
 - ``--max-call-count-scaling``: Highest call-count scaling allowed by the inspect adapter; default is ``linear_in_transitions``
 - ``--smt-timeout-ms``: Optional SMT timeout forwarded to SMT-local verify algorithms; ``0`` is forwarded unchanged and follows Z3 semantics, where no finite timeout is configured
 
-**Default JSON output**
+**Default human output and explicit JSON**
 
 .. code-block:: bash
 
-   pyfcstm inspect -i simple_machine.fcstm -o simple_machine.inspect.json
+   pyfcstm inspect -i simple_machine.fcstm
+   pyfcstm inspect -i simple_machine.fcstm --color always
+   pyfcstm inspect -i simple_machine.fcstm --format json -o simple_machine.inspect.json
 
-By default, ``inspect`` does not run verify-backed checks. This keeps the CLI
-aligned with ``inspect_model(model)`` and with the existing cross-end default
-diagnostics contract.
+By default, ``inspect`` emits a checker-style human-readable report and does not run
+verify-backed checks. Human output and the stable ``llm-json`` / ``llm-md`` formats include a small source context window around each diagnostic so nearby state and transition structure remains visible; the LLM formats also include provenance, repair guidance, and do-not notes for repair loops. Use ``--format json`` for the full JSON contract aligned
+with ``inspect_model(model).to_json()`` and with the existing cross-end default
+diagnostics contract. If an output filename suffix looks mismatched, such as
+writing the default human report to ``.json``, the CLI emits a warning on
+stderr without changing the requested format. Color is purely visual: ``NO_COLOR``
+with any non-empty value, ``TERM=dumb``, pipe output, and ``-o`` output all keep
+human text plain, while ``json``, ``llm-json``, and ``llm-md`` never receive ANSI
+escape sequences even if ``--color always`` is passed.
 
 **Opt in to verify-backed diagnostics**
 
@@ -371,11 +385,14 @@ Validate DSL syntax before committing:
 
 .. code-block:: bash
 
-   # Quick syntax check plus structured diagnostics
-   pyfcstm inspect -i machine.fcstm -o machine.inspect.json
+   # Quick syntax check plus human-readable diagnostics
+   pyfcstm inspect -i machine.fcstm
+
+   # Full structured JSON for CI artifacts or editor tooling
+   pyfcstm inspect -i machine.fcstm --format json -o machine.inspect.json
 
    # Optional verify-backed diagnostics for CI runs that can afford SMT checks
-   pyfcstm inspect -i machine.fcstm --enable-verify \
+   pyfcstm inspect -i machine.fcstm --format json --enable-verify \
      --max-complexity-tier smt_linear --smt-timeout-ms 1000 \
      -o machine.verify.inspect.json
 
@@ -387,7 +404,7 @@ For import-based projects, validate the entry file only:
 .. code-block:: bash
 
    pyfcstm inspect -i ./docs/source/tutorials/dsl/import_host_directory.fcstm \
-     -o import_project.inspect.json
+     --format json -o import_project.inspect.json
 
 Workflow 4: CI/CD Integration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

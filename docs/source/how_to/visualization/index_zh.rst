@@ -56,4 +56,19 @@ PlantUML 源码确定且易于 review：
 需要时使用 Python API
 ---------------------
 
-CLI ``-c`` 支持类型化标量和元组选项。自定义颜色字典等对象值配置需要使用 Python API。
+CLI ``-c`` 支持类型化标量和元组选项。自定义颜色字典等对象值配置需要使用 Python API：
+
+.. code-block:: python
+
+   from pyfcstm.model.plantuml import PlantUMLOptions
+
+   options = PlantUMLOptions(
+       event_visualization_mode='color',
+       custom_colors={'System.Start': '#00AA00'},
+   )
+   plantuml_text = model.to_plantuml(options)
+
+完整可运行示例可下载
+:download:`python_basic.demo.py <../../tutorials/visualization/python_basic.demo.py>`
+和
+:download:`python_options.demo.py <../../tutorials/visualization/python_options.demo.py>`。

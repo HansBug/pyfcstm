@@ -20,6 +20,8 @@ checked-in 示例使用这个模型：
 
    pyfcstm generate -i simple_machine.fcstm --template python -o generated/python --clear
 
+``--clear`` 适合可重复示例，因为它会在渲染前删除输出目录中的旧内容。如果输出目录里有 pyfcstm 应保留的文件，请省略该选项。
+
 最小 Python 消费者从 ``machine.py`` import 生成 class：
 
 .. literalinclude:: ../../tutorials/generation/python_runtime.demo.py

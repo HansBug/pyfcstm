@@ -112,6 +112,9 @@ Commands
    pyfcstm generate -i <input-code> --template <name> -o <output-dir> [--clear]
    pyfcstm generate -i <input-code> -t <template-dir> -o <output-dir> [--clear]
 
+Use ``--template`` for packaged built-in templates. Use ``-t`` /
+``--template-dir`` only for custom template directories that you maintain.
+
 .. list-table:: ``generate`` options
    :header-rows: 1
 

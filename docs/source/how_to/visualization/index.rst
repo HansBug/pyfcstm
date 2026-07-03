@@ -59,4 +59,19 @@ Use Python API when needed
 --------------------------
 
 CLI ``-c`` supports typed scalar and tuple options. Use the Python API for
-object-valued configuration such as custom color dictionaries.
+object-valued configuration such as custom color dictionaries:
+
+.. code-block:: python
+
+   from pyfcstm.model.plantuml import PlantUMLOptions
+
+   options = PlantUMLOptions(
+       event_visualization_mode='color',
+       custom_colors={'System.Start': '#00AA00'},
+   )
+   plantuml_text = model.to_plantuml(options)
+
+For full runnable examples, download
+:download:`python_basic.demo.py <../../tutorials/visualization/python_basic.demo.py>`
+and
+:download:`python_options.demo.py <../../tutorials/visualization/python_options.demo.py>`.

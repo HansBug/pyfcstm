@@ -21,6 +21,10 @@ Generate Python output and run it
 
    pyfcstm generate -i simple_machine.fcstm --template python -o generated/python --clear
 
+The ``--clear`` option is useful for repeatable examples because it removes any
+previous contents in the output directory before rendering. Omit it when the
+output directory contains files that pyfcstm should preserve.
+
 A minimal Python consumer imports the generated class from ``machine.py``:
 
 .. literalinclude:: ../../tutorials/generation/python_runtime.demo.py

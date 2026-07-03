@@ -29,6 +29,11 @@
 
    python -m pip install -U git+https://github.com/hansbug/pyfcstm@main
 
+使用预构建可执行文件
+--------------------
+
+如果部署环境无法直接安装 Python package，可以到 `GitHub Releases 页面 <https://github.com/HansBug/pyfcstm/releases>`_ 查找预构建可执行文件 artifact。普通开发和 CI 仍优先使用 PyPI；只有当这种打包形态适合你的环境时，才使用 release artifact。
+
 验证 Python 包
 --------------
 
@@ -77,3 +82,4 @@
 * :doc:`/tutorials/quick_start/index_zh` 给出最短端到端路径。
 * :doc:`/how_to/cli_workflows/index_zh` 展示常见命令行任务。
 * :doc:`/reference/cli/index_zh` 列出命令和选项事实。
+* 已发布文档位于 `hansbug.github.io/pyfcstm <https://hansbug.github.io/pyfcstm/main/index.html>`_。

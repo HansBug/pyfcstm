@@ -33,6 +33,14 @@ repository state instead of the latest PyPI release:
 
    python -m pip install -U git+https://github.com/hansbug/pyfcstm@main
 
+Use a pre-built executable
+--------------------------
+
+If your deployment environment cannot install Python packages directly, check
+the `GitHub Releases page <https://github.com/HansBug/pyfcstm/releases>`_ for
+pre-built executable artifacts. Prefer PyPI for normal development and CI, and
+use release artifacts only when that packaging model fits your environment.
+
 Verify the Python package
 -------------------------
 
@@ -86,3 +94,5 @@ Next steps
 * :doc:`/tutorials/quick_start/index` gives the shortest end-to-end path.
 * :doc:`/how_to/cli_workflows/index` shows common command-line tasks.
 * :doc:`/reference/cli/index` lists the command and option facts.
+* Published documentation is available at
+  `hansbug.github.io/pyfcstm <https://hansbug.github.io/pyfcstm/main/index.html>`_.

@@ -47,4 +47,4 @@ Inspect 会拒绝需要单独 proof budget 审查的选项，例如 bounded-mode
 保持目标风险措辞精确
 --------------------
 
-提到固定宽度生成整数存储的数值部署 warning 是 C/C++ target-profile warning。它们适用于 ``c``、``c_poll``、``cpp`` 和 ``cpp_poll`` 部署审查。它们不是 Python generated runtime 具有同一固定宽度整数承载风险的证据。
+提到固定宽度生成整数存储的数值部署 warning 是 C/C++ target-profile warning。它们适用于 ``c``\ 、``c_poll``\ 、``cpp`` 和 ``cpp_poll`` 部署审查。它们不是 Python generated runtime 具有同一固定宽度整数承载风险的证据。

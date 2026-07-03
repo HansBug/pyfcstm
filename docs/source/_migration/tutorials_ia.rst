@@ -92,7 +92,7 @@ Chapter migration records
      - ``Installation`` and verification sections
      - ``how_to/installation/index*.rst``
      - merge
-     - Installation tasks no longer live in the CLI page.
+     - Installation tasks no longer live in the CLI page; PyPI, module execution, source install, pre-built executable release, and published-doc links are preserved.
    * - ``tutorials/cli/index*.rst``
      - ``Getting Help`` and common command workflows
      - ``how_to/cli_workflows/index*.rst``
@@ -162,7 +162,7 @@ Chapter migration records
      - ``PlantUMLOptions`` and ``-c`` option facts
      - ``reference/visualization_options/index*.rst``
      - move
-     - Option facts are now in reference.
+     - Full option facts, defaults, CLI typing rules, and Python-only ``custom_colors`` scope are now in reference.
 
 Resource migration records
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -233,7 +233,14 @@ Resource migration records
    * - ``tutorials/visualization/python_*.demo.py`` and ``*.txt``
      - same path
      - keep
-     - Python API examples were moved out of the tutorial mainline but retained for future reference/cleanup decisions.
+     - Python API examples are linked from ``how_to/visualization`` and retained for future reference/cleanup decisions.
+
+Resource cleanup note
+~~~~~~~~~~~~~~~~~~~~~
+
+All PR-F resources remain in their original tutorial directories to keep legacy
+landing pages and existing generated artifacts stable. PR-J should reassess each
+``keep`` row before removing old landing pages or relocating resources.
 
 PR-G placeholder
 ----------------

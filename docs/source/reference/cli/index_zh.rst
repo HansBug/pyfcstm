@@ -110,6 +110,9 @@ CLI 参考
    pyfcstm generate -i <input-code> --template <name> -o <output-dir> [--clear]
    pyfcstm generate -i <input-code> -t <template-dir> -o <output-dir> [--clear]
 
+打包内置模板使用 ``--template``\ 。只有你维护自定义模板目录时，才使用
+``-t`` / ``--template-dir``\ 。
+
 .. list-table:: ``generate`` 选项
    :header-rows: 1
 

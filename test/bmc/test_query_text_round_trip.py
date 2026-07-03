@@ -3,7 +3,9 @@
 These tests make the parser object's string contract directly auditable:
 every case parses source text into an AST/query object, checks the exact
 canonical ``.fbmcq`` text returned by :func:`str`, reparses that text, and
-requires the second stringification to stay byte-for-byte stable.
+requires the canonical stringification to stay byte-for-byte stable while
+the structural comparison only normalizes parser-preserved boolean token
+spelling.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ from typing import Any, Callable, Dict, List, NamedTuple
 
 import pytest
 
+from pyfcstm.bmc.errors import BmcQueryParseError
 from pyfcstm.bmc.parse import (
     parse_bmc_cond_expression,
     parse_bmc_num_expression,
@@ -64,6 +67,13 @@ def _parse_case(case: TextRoundTripCase) -> Any:
 def _round_trip_canonical(value: Any) -> Any:
     """Return canonical data normalized for canonical-text round trips.
 
+    The text-level round-trip assertion remains byte-for-byte exact. This
+    helper only normalizes the ``bool_literal.raw`` spelling that ANTLR keeps
+    from the first parse so structural equality can compare source text such
+    as ``TRUE`` with canonical text such as ``true``. No other node spelling is
+    relaxed here; future parser nodes must add explicit tests before gaining
+    normalization.
+
     :param value: Object with ``to_canonical`` or JSON-like canonical data.
     :type value: object
     :return: Canonical data with spelling-only boolean raw casing normalized.
@@ -78,6 +88,10 @@ def _round_trip_canonical(value: Any) -> Any:
         value = value.to_canonical()
     if isinstance(value, dict):
         normalized = {key: _round_trip_canonical(child) for key, child in value.items()}
+        # BmcBoolLiteral preserves original token spelling in ``raw`` while
+        # ``str()`` canonicalizes boolean text to lowercase. Keep this as the
+        # only structural normalization so new node spellings cannot drift
+        # silently.
         if normalized.get("node") == "bool_literal" and "raw" in normalized:
             normalized["raw"] = str(normalized["raw"]).lower()
         return normalized
@@ -149,6 +163,7 @@ CONDITION_TEXT_ROUND_TRIP_CASES: List[TextRoundTripCase] = [
     TextRoundTripCase("cond", 'var("x") <= cycle', 'var("x") <= cycle'),
     TextRoundTripCase("cond", 'active("Root.A")', 'active("Root.A")'),
     TextRoundTripCase("cond", 'active("Root.A", current)', 'active("Root.A")'),
+    TextRoundTripCase("cond", 'active("Root.A", 0)', 'active("Root.A", 0)'),
     TextRoundTripCase("cond", 'active("Root.A", 2)', 'active("Root.A", 2)'),
     TextRoundTripCase("cond", 'active("Root.\\"A\\"")', 'active("Root.\\"A\\"")'),
     TextRoundTripCase("cond", "terminated()", "terminated()"),
@@ -157,6 +172,7 @@ CONDITION_TEXT_ROUND_TRIP_CASES: List[TextRoundTripCase] = [
     TextRoundTripCase(
         "cond", 'event("Root.Start", current)', 'event("Root.Start", current)'
     ),
+    TextRoundTripCase("cond", 'event("Root.Start", 0)', 'event("Root.Start", 0)'),
     TextRoundTripCase("cond", 'event("Root.Start", 3)', 'event("Root.Start", 3)'),
     TextRoundTripCase("cond", 'case("safe")', 'case("safe")'),
     TextRoundTripCase("cond", 'case("safe", current)', 'case("safe")'),
@@ -242,6 +258,11 @@ QUERY_TEXT_ROUND_TRIP_CASES: List[TextRoundTripCase] = [
     ),
     TextRoundTripCase(
         "query",
+        'init state("Root.Idle"); check reach <= 1: true;',
+        'init state("Root.Idle");\n\ncheck reach <= 1: true;',
+    ),
+    TextRoundTripCase(
+        "query",
         'init state("Root.A") where var("x") == 0; check reach <= 5: active("Root.B");',
         'init state("Root.A") where var("x") == 0;\n\ncheck reach <= 5: active("Root.B");',
     ),
@@ -262,8 +283,23 @@ QUERY_TEXT_ROUND_TRIP_CASES: List[TextRoundTripCase] = [
     ),
     TextRoundTripCase(
         "query",
+        'assume event("Zero", 0) == true; check reach <= 1: event("Zero", 0);',
+        'init cold;\n\nassume event("Zero", 0) == true;\n\ncheck reach <= 1: event("Zero", 0);',
+    ),
+    TextRoundTripCase(
+        "query",
         'assume event("Reset", 01 .. 03) != false; check reach <= 1: true;',
         'init cold;\n\nassume event("Reset", 1..3) == true;\n\ncheck reach <= 1: true;',
+    ),
+    TextRoundTripCase(
+        "query",
+        'assume event("Reset", 01 .. 03) != true; check reach <= 1: true;',
+        'init cold;\n\nassume event("Reset", 1..3) == false;\n\ncheck reach <= 1: true;',
+    ),
+    TextRoundTripCase(
+        "query",
+        'assume event("Reset", 01 .. 03) == FALSE; check reach <= 1: true;',
+        'init cold;\n\nassume event("Reset", 1..3) == false;\n\ncheck reach <= 1: true;',
     ),
     TextRoundTripCase(
         "query",
@@ -324,6 +360,13 @@ TEXT_ROUND_TRIP_CASES = (
 )
 
 
+NEGATIVE_TEXT_ROUND_TRIP_SOURCES: List[TextRoundTripCase] = [
+    TextRoundTripCase("cond", 'event("Root.Start")', ""),
+    TextRoundTripCase("cond", 'event("Tick", *)', ""),
+    TextRoundTripCase("query", 'init cold; check reach <= 1: event("Tick", *);', ""),
+]
+
+
 @pytest.mark.unittest
 def test_text_round_trip_case_count_is_intentionally_large():
     """The direct text round-trip suite stays broad enough to catch drift."""
@@ -353,3 +396,21 @@ def test_parsed_fbmcq_nodes_stringify_to_reparseable_canonical_text(
     )
     assert str(reparsed) == canonical_text
     assert _round_trip_canonical(reparsed) == _round_trip_canonical(parsed)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "case",
+    NEGATIVE_TEXT_ROUND_TRIP_SOURCES,
+    ids=lambda case: "%s:%s" % (case.entry, case.source.replace("\n", "\\n")[:72]),
+)
+def test_round_trip_boundary_sources_are_rejected(case: TextRoundTripCase):
+    """Document parser boundaries that must fail before text round-tripping.
+
+    ``event`` predicates intentionally require an explicit frame selector, and
+    the wildcard ``*`` selector belongs only to query-level event assumptions.
+    These rejected sources protect round-trip tests from accidentally blessing
+    malformed or context-only syntax.
+    """
+    with pytest.raises(BmcQueryParseError):
+        _parse_case(case)

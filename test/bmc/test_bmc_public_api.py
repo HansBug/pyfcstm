@@ -65,13 +65,100 @@ def test_bmc_public_api_exports_exact_names():
         "EventInputRef",
         "BmcDomain",
         "build_bmc_domain",
+        "TERMINATE_CASE_PATH",
+        "DIAGNOSTIC_CASE_PATH",
+        "MacroStepSource",
+        "entry_source",
+        "stable_leaf_source",
+        "terminated_source",
+        "diagnostic_source",
+        "source_from_initial_spec",
+        "BoolTemplate",
+        "EventUse",
+        "VarUpdate",
+        "CycleCase",
+        "PartitionCheckResult",
+        "MacroStepFormal",
+        "carry_var_updates",
+        "var_update_for",
+        "build_var_updates",
+        "case_antecedent_condition",
+        "terminated_absorb_case",
+        "diagnostic_absorb_case",
+        "build_fallback_case",
+        "build_semantic_delta_case",
+        "verify_boolean_partition",
+        "verify_source_partition",
     }
 
     assert set(bmc.__all__) == expected
-    for name in expected - {"STATE_TERMINATE_ID", "STATE_DIAGNOSTIC_ID"}:
+    lazy_names = {
+        "STATE_TERMINATE_ID",
+        "STATE_DIAGNOSTIC_ID",
+        "StateDomainEntry",
+        "EventDomainEntry",
+        "VarDomainEntry",
+        "FrameRef",
+        "StepRef",
+        "EventInputRef",
+        "BmcDomain",
+        "build_bmc_domain",
+        "TERMINATE_CASE_PATH",
+        "DIAGNOSTIC_CASE_PATH",
+        "MacroStepSource",
+        "entry_source",
+        "stable_leaf_source",
+        "terminated_source",
+        "diagnostic_source",
+        "source_from_initial_spec",
+        "BoolTemplate",
+        "EventUse",
+        "VarUpdate",
+        "CycleCase",
+        "PartitionCheckResult",
+        "MacroStepFormal",
+        "carry_var_updates",
+        "var_update_for",
+        "build_var_updates",
+        "case_antecedent_condition",
+        "terminated_absorb_case",
+        "diagnostic_absorb_case",
+        "build_fallback_case",
+        "build_semantic_delta_case",
+        "verify_boolean_partition",
+        "verify_source_partition",
+    }
+    function_names = {
+        "parse_bmc_query",
+        "parse_bmc_num_expression",
+        "parse_bmc_cond_expression",
+        "parse_with_bmc_grammar_entry",
+        "build_bmc_ast_from_parse_tree",
+        "entry_source",
+        "stable_leaf_source",
+        "terminated_source",
+        "diagnostic_source",
+        "source_from_initial_spec",
+        "carry_var_updates",
+        "var_update_for",
+        "build_var_updates",
+        "case_antecedent_condition",
+        "terminated_absorb_case",
+        "diagnostic_absorb_case",
+        "build_fallback_case",
+        "build_semantic_delta_case",
+        "verify_boolean_partition",
+        "verify_source_partition",
+        "build_bmc_domain",
+    }
+    for name in expected - lazy_names - function_names:
         assert getattr(bmc, name).__name__ == name
+    for name in function_names:
+        assert callable(getattr(bmc, name))
     assert bmc.STATE_TERMINATE_ID == -1
     assert bmc.STATE_DIAGNOSTIC_ID == -2
+    assert bmc.TERMINATE_CASE_PATH == "__terminate__"
+    assert bmc.DIAGNOSTIC_CASE_PATH == "__diagnostic__"
     assert "BmcDomain" in dir(bmc)
 
     with pytest.raises(AttributeError, match="NoSuchBmcExport"):
@@ -86,6 +173,8 @@ def test_submodule_all_exports_are_exact():
     query = importlib.import_module("pyfcstm.bmc.query")
     parse = importlib.import_module("pyfcstm.bmc.parse")
     domain = importlib.import_module("pyfcstm.bmc.domain")
+    source = importlib.import_module("pyfcstm.bmc.source")
+    macro = importlib.import_module("pyfcstm.bmc.macro")
 
     assert set(errors.__all__) == {
         "BmcError",
@@ -148,6 +237,34 @@ def test_submodule_all_exports_are_exact():
         "EventInputRef",
         "BmcDomain",
         "build_bmc_domain",
+    }
+    assert set(source.__all__) == {
+        "TERMINATE_CASE_PATH",
+        "DIAGNOSTIC_CASE_PATH",
+        "MacroStepSource",
+        "entry_source",
+        "stable_leaf_source",
+        "terminated_source",
+        "diagnostic_source",
+        "source_from_initial_spec",
+    }
+    assert set(macro.__all__) == {
+        "BoolTemplate",
+        "EventUse",
+        "VarUpdate",
+        "CycleCase",
+        "PartitionCheckResult",
+        "MacroStepFormal",
+        "carry_var_updates",
+        "var_update_for",
+        "build_var_updates",
+        "case_antecedent_condition",
+        "terminated_absorb_case",
+        "diagnostic_absorb_case",
+        "build_fallback_case",
+        "build_semantic_delta_case",
+        "verify_boolean_partition",
+        "verify_source_partition",
     }
 
 

@@ -33,7 +33,7 @@ from typing import Any, Callable, Dict, List, cast
 
 from antlr4 import CommonTokenStream, InputStream, ParserRuleContext, Token
 from antlr4.error.ErrorListener import ErrorListener
-from antlr4.tree.Tree import ParseTreeWalker
+from antlr4.tree.Tree import ErrorNode, ParseTreeWalker
 
 from pyfcstm.bmc.ast import BmcCondExpr, BmcNumExpr
 from pyfcstm.bmc.errors import BmcQueryParseError
@@ -48,6 +48,7 @@ _SUPPORTED_ENTRIES = {
     "bmc_num_expression_entry",
     "bmc_cond_expression_entry",
 }
+_SUPPORTED_ENTRY_TEXT = ", ".join(sorted(_SUPPORTED_ENTRIES))
 
 
 class _CollectingBmcErrorListener(ErrorListener):
@@ -177,6 +178,36 @@ def _build_parser(
     return parser
 
 
+def _find_error_node_text(parse_tree: ParserRuleContext) -> str:
+    """Return the first ANTLR recovery-node text within ``parse_tree``.
+
+    Callers that provide their own parse trees may bypass the collecting error
+    listener used by :func:`parse_with_bmc_grammar_entry`.  ANTLR can still
+    recover from malformed input by inserting :class:`antlr4.tree.Tree.ErrorNode`
+    objects into the tree.  Detecting those nodes before listener walking keeps
+    the public parse-tree builder from leaking low-level literal-conversion
+    failures.
+
+    :param parse_tree: Root parse-tree context to inspect.
+    :type parse_tree: antlr4.ParserRuleContext
+    :return: Text for the first recovery node, or ``""`` when none exists.
+    :rtype: str
+
+    Example::
+
+        >>> _find_error_node_text(ParserRuleContext())
+        ''
+    """
+    pending = [parse_tree]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ErrorNode):
+            return node.getText()
+        for index in range(node.getChildCount() - 1, -1, -1):
+            pending.append(node.getChild(index))
+    return ""
+
+
 def build_bmc_ast_from_parse_tree(parse_tree: ParserRuleContext) -> Any:
     """Build a BMC AST object from an already-created ANTLR parse tree.
 
@@ -185,8 +216,9 @@ def build_bmc_ast_from_parse_tree(parse_tree: ParserRuleContext) -> Any:
     :return: AST or query object mapped for ``parse_tree``.
     :rtype: object
     :raises TypeError: If ``parse_tree`` is not an ANTLR parser context.
-    :raises pyfcstm.bmc.errors.BmcQueryParseError: If the listener does not
-        map the provided root context.
+    :raises pyfcstm.bmc.errors.BmcQueryParseError: If the parse tree contains
+        ANTLR recovery nodes, the listener cannot map a recovered child context,
+        or the listener does not map the provided root context.
 
     Example::
 
@@ -199,9 +231,22 @@ def build_bmc_ast_from_parse_tree(parse_tree: ParserRuleContext) -> Any:
     """
     if not isinstance(parse_tree, ParserRuleContext):
         raise TypeError("parse_tree must be ParserRuleContext.")
+    error_node_text = _find_error_node_text(parse_tree)
+    if error_node_text:
+        raise BmcQueryParseError(
+            "BMC parse tree contains ANTLR recovery node %r." % error_node_text
+        )
     listener = BmcQueryParseListener()
     walker = ParseTreeWalker()
-    walker.walk(listener, parse_tree)
+    try:
+        walker.walk(listener, parse_tree)
+    except KeyError as err:
+        # KeyError: ANTLR error recovery can leave required child contexts
+        # present-but-unmapped, for example ``active("S", )`` creates an empty
+        # frame_selector context. Surface this as a stable parse-tree error.
+        raise BmcQueryParseError(
+            "BMC parse tree construction failed because a child context was not mapped."
+        ) from err
     try:
         return listener.nodes[parse_tree]
     except KeyError as err:
@@ -236,9 +281,17 @@ def parse_with_bmc_grammar_entry(
         >>> node = parse_with_bmc_grammar_entry('cycle + 1', 'bmc_num_expression_entry')
         >>> node.to_canonical()['node']
         'num_binary'
+
+    .. note::
+        The currently supported text entries already end in ``EOF`` in the
+        grammar.  ``force_finished`` is kept for API parity with
+        :mod:`pyfcstm.dsl.parse` and as an extra guard for future entries.
     """
     if entry_name not in _SUPPORTED_ENTRIES:
-        raise BmcQueryParseError("Unsupported BMC grammar entry: %r." % entry_name)
+        raise BmcQueryParseError(
+            "Unsupported BMC grammar entry: %r. Supported entries: %s."
+            % (entry_name, _SUPPORTED_ENTRY_TEXT)
+        )
 
     error_listener = _CollectingBmcErrorListener()
     lexer = _build_lexer(input_text, error_listener)

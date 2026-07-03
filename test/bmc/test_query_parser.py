@@ -22,6 +22,7 @@ from pyfcstm.bmc.parse import (
     _CollectingBmcErrorListener,
     _build_lexer,
     _build_parser,
+    _find_error_node_text,
     build_bmc_ast_from_parse_tree,
     parse_bmc_cond_expression,
     parse_bmc_num_expression,
@@ -521,7 +522,7 @@ def test_build_bmc_ast_from_existing_parse_tree():
 @pytest.mark.unittest
 def test_parse_helpers_report_invalid_inputs_and_unmapped_trees(monkeypatch):
     """Parser helpers expose typed parse errors instead of raw ANTLR details."""
-    with pytest.raises(BmcQueryParseError, match="Unsupported BMC grammar entry"):
+    with pytest.raises(BmcQueryParseError, match="Supported entries"):
         parse_with_bmc_grammar_entry("true", "missing_entry")
     with pytest.raises(BmcQueryParseError):
         parse_bmc_query("check reach <= : true;")
@@ -554,6 +555,48 @@ def test_parse_helpers_report_invalid_inputs_and_unmapped_trees(monkeypatch):
     monkeypatch.setattr(parse_module, "parse_with_bmc_grammar_entry", _cond_wrong_type)
     with pytest.raises(BmcQueryParseError, match="BmcCondExpr"):
         parse_module.parse_bmc_cond_expression("true")
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "text, entry_name, expected",
+    [
+        pytest.param(
+            "check reach <= : true;",
+            "query",
+            "recovery node",
+            id="missing-query-bound",
+        ),
+        pytest.param(
+            'active("Root.A")',
+            "bmc_num_expression_entry",
+            "recovery node",
+            id="condition-atom-in-numeric-entry",
+        ),
+        pytest.param(
+            'event("Root.E")',
+            "bmc_cond_expression_entry",
+            "recovery node",
+            id="missing-event-selector",
+        ),
+        pytest.param(
+            'check reach <= 1: active("Root.A", );',
+            "query",
+            "child context",
+            id="empty-frame-selector",
+        ),
+    ],
+)
+def test_build_bmc_ast_from_recovered_parse_trees_reports_bmc_parse_error(
+    text, entry_name, expected
+):
+    """Recovered ANTLR parse trees do not leak listener ``KeyError`` failures."""
+    lexer = BmcQueryLexer(InputStream(text))
+    parser = BmcQueryParser(CommonTokenStream(lexer))
+    tree = getattr(parser, entry_name)()
+
+    with pytest.raises(BmcQueryParseError, match=expected):
+        build_bmc_ast_from_parse_tree(tree)
 
 
 @pytest.mark.unittest
@@ -612,6 +655,8 @@ def test_internal_error_listener_branches_and_parser_builders():
     unfinished_stream.fill()
     unfinished_listener.check_unfinished_parsing_error(unfinished_stream)
     assert "parser did not consume the full input" in unfinished_listener.messages[0]
+
+    assert _find_error_node_text(ParserRuleContext()) == ""
 
 
 @pytest.mark.unittest

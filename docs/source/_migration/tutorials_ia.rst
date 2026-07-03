@@ -252,10 +252,437 @@ All PR-F resources remain in their original tutorial directories to keep legacy
 landing pages and existing generated artifacts stable. PR-J should reassess each
 ``keep`` row before removing old landing pages or relocating resources.
 
-PR-G placeholder
-----------------
+PR-G DSL migration
+--------------------
 
-No records yet.
+Scope
+~~~~~
+
+PR-G covers DSL pages only: ``tutorials/dsl/``, ``how_to/dsl/``,
+``reference/dsl/``, ``explanations/dsl_semantics/``, and this PR-G section of
+this migration log. It does not change shared category toctrees or non-DSL owner
+pages.
+
+Inbound reference check
+~~~~~~~~~~~~~~~~~~~~~~~
+
+The implementation scanned inbound DSL references with::
+
+    rg -n ':doc:.*dsl|:ref:.*dsl|tutorials/dsl' docs/source -g '*.rst'
+
+Findings:
+
+* Category stubs under ``how_to/dsl``, ``reference/dsl``, and
+  ``explanations/dsl_semantics`` were replaced by real content, so their old
+  "current authority" links were removed.
+* Existing top-level and tutorial links continue to point at
+  ``tutorials/dsl/index*.rst``, which remains a short learning path.
+* Simulation and grammar pages still link to the DSL tutorial or DSL example
+  resources; those cross-owner pages are left unchanged for PR-H / PR-I / PR-J.
+
+Chapter migration records
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: PR-G chapter migration
+   :header-rows: 1
+
+   * - Old location
+     - Old section
+     - New location
+     - Action
+     - Notes
+   * - ``tutorials/dsl/index*.rst``
+     - ``Overview`` / ``概述``
+     - ``tutorials/dsl/index*.rst``
+     - keep tutorial
+     - Compressed to a short orientation and explicit links to how-to, reference, and explanation pages.
+   * - ``tutorials/dsl/index*.rst``
+     - ``Language Structure`` / ``语言结构``
+     - ``tutorials/dsl/index*.rst`` and ``reference/dsl/index*.rst``
+     - merge
+     - First-model structure remains in tutorial; exact top-level facts moved to reference.
+   * - ``tutorials/dsl/index*.rst``
+     - ``Variable Definitions`` / ``变量定义``
+     - ``tutorials/dsl/index*.rst`` and ``reference/dsl/index*.rst``
+     - merge
+     - Introductory declaration examples remain in tutorial; literal and expression facts moved to reference.
+   * - ``tutorials/dsl/index*.rst``
+     - ``State Definitions`` / ``状态定义``
+     - ``tutorials/dsl/index*.rst``, ``reference/dsl/index*.rst``, ``explanations/dsl_semantics/index*.rst``
+     - merge
+     - Leaf/composite first path remains in tutorial; exact state forms and pseudo semantics moved out.
+   * - ``tutorials/dsl/index*.rst``
+     - ``Transition Definitions`` / ``转换定义``
+     - ``tutorials/dsl/index*.rst``, ``how_to/dsl/index*.rst``, ``reference/dsl/index*.rst``, ``explanations/dsl_semantics/index*.rst``
+     - merge
+     - First ordinary transition path remains in tutorial; combo/forced forms and semantics moved out.
+   * - ``tutorials/dsl/index*.rst``
+     - ``Event Definitions`` / ``事件定义``
+     - ``tutorials/dsl/index*.rst``, ``how_to/dsl/index*.rst``, ``reference/dsl/index*.rst``, ``explanations/dsl_semantics/index*.rst``
+     - merge
+     - Local event introduction remains in tutorial; scope recipes, scope facts, and ownership semantics moved out.
+   * - ``tutorials/dsl/index*.rst``
+     - ``Guard Conditions and Effects`` / ``守卫条件和效果``
+     - ``tutorials/dsl/index*.rst``, ``how_to/dsl/index*.rst``, ``reference/dsl/index*.rst``, ``explanations/dsl_semantics/index*.rst``
+     - merge
+     - Basic guard/effect path remains in tutorial; operation facts and expression-separation rationale moved out.
+   * - ``tutorials/dsl/index*.rst``
+     - ``Expression System`` / ``表达式系统``
+     - ``reference/dsl/index*.rst``
+     - move
+     - Operator, literal, boolean, comparison, and function facts are now reference material.
+   * - ``tutorials/dsl/index*.rst``
+     - ``Lifecycle Actions`` / ``生命周期动作``
+     - ``tutorials/dsl/index*.rst``, ``how_to/dsl/index*.rst``, ``reference/dsl/index*.rst``, ``explanations/dsl_semantics/index*.rst``
+     - merge
+     - Minimal enter/during/exit remains in tutorial; action forms, recipes, and aspect boundaries moved out.
+   * - ``tutorials/dsl/index*.rst``
+     - ``Real-World Example: Smart Thermostat`` / ``实际示例：智能恒温器``
+     - ``tutorials/dsl/index*.rst``
+     - keep tutorial
+     - Retained as the first complete example through ``thermostat_example.fcstm``.
+   * - ``tutorials/dsl/index*.rst``
+     - ``Comment Styles`` / ``注释样式``
+     - ``reference/dsl/index*.rst``
+     - move
+     - Comment forms are now top-level facts in the reference page.
+   * - ``tutorials/dsl/index*.rst``
+     - ``Documentation Best Practices`` / ``文档最佳实践``
+     - ``how_to/dsl/index*.rst`` and ``PR-J``
+     - merge / defer
+     - Practical writing advice was compressed into task guidance; any duplicated prose should be audited in PR-J.
+   * - ``tutorials/dsl/index*.rst``
+     - ``Semantic Validation Rules`` / ``语义验证规则``
+     - ``tutorials/dsl/index*.rst`` and ``reference/dsl/index*.rst``
+     - merge
+     - First-model validity checklist remains in tutorial; detailed boundary facts moved to reference.
+   * - ``tutorials/dsl/index*.rst``
+     - ``Import Assembly`` / ``Import 装配``
+     - ``how_to/dsl/index*.rst``, ``reference/dsl/index*.rst``, ``explanations/dsl_semantics/index*.rst``
+     - move
+     - Import tasks, syntax facts, and assembly boundaries are now split by document mode.
+   * - ``tutorials/dsl/index*.rst``
+     - repeated ``Common Errors`` / ``常见错误`` subsections
+     - ``how_to/dsl/index*.rst`` and ``reference/dsl/index*.rst``
+     - merge / delete duplicate detail
+     - Repeated old error lists were compressed into task warnings and boundary facts instead of being copied verbatim.
+   * - ``tutorials/dsl/index*.rst``
+     - stale grammar-file reference
+     - ``reference/dsl/index*.rst``
+     - corrected
+     - Old text referred to a single ``Grammar.g4``; reference now names ``GrammarParser.g4`` and ``GrammarLexer.g4``.
+   * - ``tutorials/dsl/index*.rst``
+     - runtime cycle ordering details
+     - ``explanations/execution_semantics/index*.rst``
+     - defer
+     - PR-G keeps only DSL-level summaries; complete simulator ordering belongs to PR-H.
+   * - ``tutorials/dsl/index*.rst``
+     - ``Summary`` / ``总结``
+     - ``tutorials/dsl/index*.rst``
+     - keep tutorial
+     - Rewritten as navigation to the three split DSL pages.
+
+Resource migration records
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+PR-G keeps DSL resources in ``docs/source/tutorials/dsl/`` to preserve old URL
+compatibility and existing source-output pairs. New split pages reference those
+stable paths when needed. No generated resource was regenerated by this PR.
+
+.. list-table:: PR-G resource migration
+   :header-rows: 1
+
+   * - Old resource
+     - New resource
+     - Action
+     - Notes
+   * - ``tutorials/dsl/abstract_reference_demo.fcstm``
+     - same path
+     - keep
+     - FCSTM source; explanations/dsl_semantics + how_to/dsl; reused by semantic explanations or lifecycle recipes; path kept stable.
+   * - ``tutorials/dsl/abstract_reference_demo.fcstm.puml``
+     - same path
+     - keep
+     - PlantUML source output; explanations/dsl_semantics + how_to/dsl; reused by semantic explanations or lifecycle recipes; path kept stable.
+   * - ``tutorials/dsl/abstract_reference_demo.fcstm.puml.png``
+     - same path
+     - keep
+     - generated image output; explanations/dsl_semantics + how_to/dsl; reused by semantic explanations or lifecycle recipes; path kept stable.
+   * - ``tutorials/dsl/abstract_reference_demo.fcstm.puml.svg``
+     - same path
+     - keep
+     - generated image output; explanations/dsl_semantics + how_to/dsl; reused by semantic explanations or lifecycle recipes; path kept stable.
+   * - ``tutorials/dsl/composite_state_lifecycle.puml``
+     - same path
+     - keep
+     - hand-authored PlantUML source; explanations/dsl_semantics + how_to/dsl; reused by semantic explanations or lifecycle recipes; path kept stable.
+   * - ``tutorials/dsl/composite_state_lifecycle.puml.png``
+     - same path
+     - keep
+     - generated image output; explanations/dsl_semantics + how_to/dsl; reused by semantic explanations or lifecycle recipes; path kept stable.
+   * - ``tutorials/dsl/composite_state_lifecycle.puml.svg``
+     - same path
+     - keep
+     - generated image output; explanations/dsl_semantics + how_to/dsl; reused by semantic explanations or lifecycle recipes; path kept stable.
+   * - ``tutorials/dsl/event_scoping_comparison.fcstm``
+     - same path
+     - keep
+     - FCSTM source; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/event_scoping_comparison.fcstm.puml``
+     - same path
+     - keep
+     - PlantUML source output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/event_scoping_comparison.fcstm.puml.png``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/event_scoping_comparison.fcstm.puml.svg``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/event_scoping_complete.fcstm``
+     - same path
+     - keep
+     - FCSTM source; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/event_scoping_complete.fcstm.puml``
+     - same path
+     - keep
+     - PlantUML source output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/event_scoping_complete.fcstm.puml.png``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/event_scoping_complete.fcstm.puml.svg``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/example.fcstm``
+     - same path
+     - keep
+     - FCSTM source; tutorials/dsl; kept for the short learning path and legacy tutorial URL.
+   * - ``tutorials/dsl/example.fcstm.puml``
+     - same path
+     - keep
+     - PlantUML source output; tutorials/dsl; kept for the short learning path and legacy tutorial URL.
+   * - ``tutorials/dsl/example.fcstm.puml.png``
+     - same path
+     - keep
+     - generated image output; tutorials/dsl; kept for the short learning path and legacy tutorial URL.
+   * - ``tutorials/dsl/example.fcstm.puml.svg``
+     - same path
+     - keep
+     - generated image output; tutorials/dsl; kept for the short learning path and legacy tutorial URL.
+   * - ``tutorials/dsl/expression_demo.fcstm``
+     - same path
+     - keep
+     - FCSTM source; reference/dsl; reused by expression and operator facts; path kept stable.
+   * - ``tutorials/dsl/expression_demo.fcstm.puml``
+     - same path
+     - keep
+     - PlantUML source output; reference/dsl; reused by expression and operator facts; path kept stable.
+   * - ``tutorials/dsl/expression_demo.fcstm.puml.png``
+     - same path
+     - keep
+     - generated image output; reference/dsl; reused by expression and operator facts; path kept stable.
+   * - ``tutorials/dsl/expression_demo.fcstm.puml.svg``
+     - same path
+     - keep
+     - generated image output; reference/dsl; reused by expression and operator facts; path kept stable.
+   * - ``tutorials/dsl/forced_transitions.fcstm``
+     - same path
+     - keep
+     - FCSTM source; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/forced_transitions.fcstm.puml``
+     - same path
+     - keep
+     - PlantUML source output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/forced_transitions.fcstm.puml.png``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/forced_transitions.fcstm.puml.svg``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/guards_and_effects.fcstm``
+     - same path
+     - keep
+     - FCSTM source; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/guards_and_effects.fcstm.puml``
+     - same path
+     - keep
+     - PlantUML source output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/guards_and_effects.fcstm.puml.png``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/guards_and_effects.fcstm.puml.svg``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/hierarchy_execution.fcstm``
+     - same path
+     - keep
+     - FCSTM source; explanations/dsl_semantics + how_to/dsl; reused by semantic explanations or lifecycle recipes; path kept stable.
+   * - ``tutorials/dsl/hierarchy_execution.fcstm.puml``
+     - same path
+     - keep
+     - PlantUML source output; explanations/dsl_semantics + how_to/dsl; reused by semantic explanations or lifecycle recipes; path kept stable.
+   * - ``tutorials/dsl/hierarchy_execution.fcstm.puml.png``
+     - same path
+     - keep
+     - generated image output; explanations/dsl_semantics + how_to/dsl; reused by semantic explanations or lifecycle recipes; path kept stable.
+   * - ``tutorials/dsl/hierarchy_execution.fcstm.puml.svg``
+     - same path
+     - keep
+     - generated image output; explanations/dsl_semantics + how_to/dsl; reused by semantic explanations or lifecycle recipes; path kept stable.
+   * - ``tutorials/dsl/import_host_basic.fcstm``
+     - same path
+     - keep
+     - FCSTM source; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_host_basic.fcstm.puml``
+     - same path
+     - keep
+     - PlantUML source output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_host_basic.fcstm.puml.png``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_host_basic.fcstm.puml.svg``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_host_directory.fcstm``
+     - same path
+     - keep
+     - FCSTM source; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_host_directory.fcstm.puml``
+     - same path
+     - keep
+     - PlantUML source output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_host_directory.fcstm.puml.png``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_host_directory.fcstm.puml.svg``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_host_mapped.fcstm``
+     - same path
+     - keep
+     - FCSTM source; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_host_mapped.fcstm.puml``
+     - same path
+     - keep
+     - PlantUML source output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_host_mapped.fcstm.puml.png``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_host_mapped.fcstm.puml.svg``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_line/main.fcstm``
+     - same path
+     - keep
+     - FCSTM source; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_line/main.fcstm.puml``
+     - same path
+     - keep
+     - PlantUML source output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_line/main.fcstm.puml.png``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_line/main.fcstm.puml.svg``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_line/subsystems/robot.fcstm``
+     - same path
+     - keep
+     - FCSTM source; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_line/subsystems/robot.fcstm.puml``
+     - same path
+     - keep
+     - PlantUML source output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_line/subsystems/robot.fcstm.puml.png``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_line/subsystems/robot.fcstm.puml.svg``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_worker.fcstm``
+     - same path
+     - keep
+     - FCSTM source; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_worker.fcstm.puml``
+     - same path
+     - keep
+     - PlantUML source output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_worker.fcstm.puml.png``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/import_worker.fcstm.puml.svg``
+     - same path
+     - keep
+     - generated image output; how_to/dsl + reference/dsl; reused by DSL task recipes and syntax facts; path kept stable.
+   * - ``tutorials/dsl/leaf_state_lifecycle.puml``
+     - same path
+     - keep
+     - hand-authored PlantUML source; explanations/dsl_semantics + how_to/dsl; reused by semantic explanations or lifecycle recipes; path kept stable.
+   * - ``tutorials/dsl/leaf_state_lifecycle.puml.png``
+     - same path
+     - keep
+     - generated image output; explanations/dsl_semantics + how_to/dsl; reused by semantic explanations or lifecycle recipes; path kept stable.
+   * - ``tutorials/dsl/leaf_state_lifecycle.puml.svg``
+     - same path
+     - keep
+     - generated image output; explanations/dsl_semantics + how_to/dsl; reused by semantic explanations or lifecycle recipes; path kept stable.
+   * - ``tutorials/dsl/pseudo_state_demo.fcstm``
+     - same path
+     - keep
+     - FCSTM source; explanations/dsl_semantics + how_to/dsl; reused by semantic explanations or lifecycle recipes; path kept stable.
+   * - ``tutorials/dsl/pseudo_state_demo.fcstm.puml``
+     - same path
+     - keep
+     - PlantUML source output; explanations/dsl_semantics + how_to/dsl; reused by semantic explanations or lifecycle recipes; path kept stable.
+   * - ``tutorials/dsl/pseudo_state_demo.fcstm.puml.png``
+     - same path
+     - keep
+     - generated image output; explanations/dsl_semantics + how_to/dsl; reused by semantic explanations or lifecycle recipes; path kept stable.
+   * - ``tutorials/dsl/pseudo_state_demo.fcstm.puml.svg``
+     - same path
+     - keep
+     - generated image output; explanations/dsl_semantics + how_to/dsl; reused by semantic explanations or lifecycle recipes; path kept stable.
+   * - ``tutorials/dsl/thermostat_example.fcstm``
+     - same path
+     - keep
+     - FCSTM source; tutorials/dsl; kept for the short learning path and legacy tutorial URL.
+   * - ``tutorials/dsl/thermostat_example.fcstm.puml``
+     - same path
+     - keep
+     - PlantUML source output; tutorials/dsl; kept for the short learning path and legacy tutorial URL.
+   * - ``tutorials/dsl/thermostat_example.fcstm.puml.png``
+     - same path
+     - keep
+     - generated image output; tutorials/dsl; kept for the short learning path and legacy tutorial URL.
+   * - ``tutorials/dsl/thermostat_example.fcstm.puml.svg``
+     - same path
+     - keep
+     - generated image output; tutorials/dsl; kept for the short learning path and legacy tutorial URL.
+
+Resource cleanup note
+~~~~~~~~~~~~~~~~~~~~~
+
+All PR-G resources are recorded as ``keep``. PR-J should reassess whether any
+legacy-only diagram or generated image can be removed after all split pages and
+old landing pages are stable.
 
 PR-H placeholder
 ----------------

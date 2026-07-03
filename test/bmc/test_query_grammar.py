@@ -135,6 +135,8 @@ def test_fbmcq_decimal_integer_tokens_match_fcstm_lexer(text):
     fcstm_token = GrammarLexer(InputStream(text)).nextToken()
     fbmcq_token = BmcQueryLexer(InputStream(text)).nextToken()
 
+    assert fcstm_token is not None
+    assert fbmcq_token is not None
     assert GrammarLexer.symbolicNames[fcstm_token.type] == "INT"
     assert BmcQueryLexer.symbolicNames[fbmcq_token.type] == "INT"
     assert fbmcq_token.text == text

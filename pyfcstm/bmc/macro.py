@@ -15,9 +15,10 @@ Design contracts:
   gamma`` before emitting ``A => R``.
 * :class:`VarUpdate` entries are explicit and complete.  Carry-over variables
   are represented as writeback entries rather than left unconstrained.
-* Fallback and semantic-delta helpers subtract only accepted/build-diagnostic
-  conditions required by the issue design.  Failed candidate metadata is kept
-  for diagnostics and never removes uncovered regions.
+* Fallback and semantic-delta helpers subtract only ordinary accepted
+  success-case conditions and the build-diagnostic conditions required by the
+  issue design.  Failed candidate metadata is kept for diagnostics and never
+  removes uncovered regions.
 * Partition verification is a build-time/test-time self-check.  It returns a
   diagnostic summary or raises :class:`pyfcstm.bmc.errors.BmcBuildError`; it
   never produces clauses for ``Core_N`` or ``Phi_N``.
@@ -61,6 +62,7 @@ from pyfcstm.bmc.source import (
 _CanonicalDict = Dict[str, Any]
 _BOOL_KINDS = {"true", "false", "atom", "not", "and", "or"}
 _CASE_KINDS = {"transition", "fallback", "initial", "absorb", "diagnostic", "delta"}
+_ACCEPTED_CASE_KINDS = {"transition", "initial"}
 _EVENT_POLARITIES = {"positive", "negative"}
 _EVENT_REASONS = {"trigger", "priority", "fallback", "descent", "assumption"}
 _RESERVED_CASE_PATHS = {TERMINATE_CASE_PATH, DIAGNOSTIC_CASE_PATH}
@@ -636,6 +638,41 @@ def _validate_non_reserved_condition_atoms(
             )
 
 
+def _normalize_accepted_cases(
+    accepted_cases: Sequence["CycleCase"],
+    source: MacroStepSource,
+    helper_name: str,
+) -> Tuple["CycleCase", ...]:
+    if not isinstance(accepted_cases, (list, tuple)):
+        raise InvalidBmcEncoding("accepted_cases must be a sequence.")
+    accepted = tuple(accepted_cases)
+    if not all(isinstance(item, CycleCase) for item in accepted):
+        raise InvalidBmcEncoding("accepted_cases must contain CycleCase objects.")
+    for case in accepted:
+        if case.kind not in _ACCEPTED_CASE_KINDS:
+            raise InvalidBmcEncoding(
+                "accepted_cases for %s may only contain ordinary accepted cases."
+                % helper_name
+            )
+        if case.is_diagnostic:
+            raise InvalidBmcEncoding(
+                "accepted_cases for %s must not contain diagnostic cases." % helper_name
+            )
+        if case.target_state_id < 0 or case.target_state_path in _RESERVED_CASE_PATHS:
+            raise InvalidBmcEncoding(
+                "accepted_cases for %s must target model states." % helper_name
+            )
+        if case.source_state_id != source.source_state_id:
+            raise InvalidBmcEncoding(
+                "accepted case source id must match %s source." % helper_name
+            )
+        if case.source_state_path != source.source_state_path:
+            raise InvalidBmcEncoding(
+                "accepted case source path must match %s source." % helper_name
+            )
+    return accepted
+
+
 @dataclass(frozen=True)
 class CycleCase:
     """One macro-step relation case before solver lowering.
@@ -1188,20 +1225,7 @@ def build_fallback_case(
     ordinal = _validate_index(ordinal, "ordinal")
     if ordinal < 0:
         raise InvalidBmcEncoding("ordinal must be non-negative.")
-    if not isinstance(accepted_cases, (list, tuple)):
-        raise InvalidBmcEncoding("accepted_cases must be a sequence.")
-    accepted = tuple(accepted_cases)
-    if not all(isinstance(item, CycleCase) for item in accepted):
-        raise InvalidBmcEncoding("accepted_cases must contain CycleCase objects.")
-    for case in accepted:
-        if case.source_state_id != source.source_state_id:
-            raise InvalidBmcEncoding(
-                "accepted case source id must match fallback source."
-            )
-        if case.source_state_path != source.source_state_path:
-            raise InvalidBmcEncoding(
-                "accepted case source path must match fallback source."
-            )
+    accepted = _normalize_accepted_cases(accepted_cases, source, "fallback")
     if not isinstance(failed_conditions, (list, tuple)):
         raise InvalidBmcEncoding("failed_conditions must be a sequence.")
     failed = tuple(failed_conditions)
@@ -1278,18 +1302,7 @@ def build_semantic_delta_case(
     ordinal = _validate_index(ordinal, "ordinal")
     if ordinal < 0:
         raise InvalidBmcEncoding("ordinal must be non-negative.")
-    if not isinstance(accepted_cases, (list, tuple)):
-        raise InvalidBmcEncoding("accepted_cases must be a sequence.")
-    accepted = tuple(accepted_cases)
-    if not all(isinstance(item, CycleCase) for item in accepted):
-        raise InvalidBmcEncoding("accepted_cases must contain CycleCase objects.")
-    for case in accepted:
-        if case.source_state_id != source.source_state_id:
-            raise InvalidBmcEncoding("accepted case source id must match delta source.")
-        if case.source_state_path != source.source_state_path:
-            raise InvalidBmcEncoding(
-                "accepted case source path must match delta source."
-            )
+    accepted = _normalize_accepted_cases(accepted_cases, source, "delta")
     if not isinstance(build_diagnostic_conditions, (list, tuple)):
         raise InvalidBmcEncoding("build_diagnostic_conditions must be a sequence.")
     diagnostics = tuple(build_diagnostic_conditions)

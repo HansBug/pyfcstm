@@ -301,6 +301,98 @@ def test_semantic_delta_condition_excludes_success_and_build_diag_not_failed(
 
 
 @pytest.mark.unittest
+def test_fallback_and_delta_helpers_accept_only_ordinary_success_cases(macro_domain):
+    """Fallback and delta uncovered regions ignore non-accepted bucket kinds."""
+    stable = stable_leaf_source(macro_domain, "Root.Plant.Idle")
+    entry = entry_source(macro_domain, "Root.Plant")
+
+    stable_transition = make_case(
+        macro_domain,
+        stable,
+        condition=BoolTemplate.atom("stable_transition"),
+        target_path="Root.Plant.Busy",
+    )
+    stable_initial = make_case(
+        macro_domain,
+        stable,
+        label_kind="initial",
+        condition=BoolTemplate.atom("stable_initial"),
+    )
+    fallback = build_fallback_case(macro_domain, stable, (stable_transition,))
+    stable_diagnostic = CycleCase(
+        "diagnostic",
+        stable.source_state_id,
+        stable.source_state_path,
+        STATE_DIAGNOSTIC_ID,
+        DIAGNOSTIC_CASE_PATH,
+        "%s::diagnostic::%s::0" % (stable.source_state_path, DIAGNOSTIC_CASE_PATH),
+        BoolTemplate.atom("stable_diagnostic"),
+        carry_var_updates(macro_domain),
+        domain=macro_domain,
+    )
+
+    fallback_with_initial = build_fallback_case(
+        macro_domain, stable, (stable_transition, stable_initial)
+    )
+    assert (
+        fallback_with_initial.condition.to_canonical()
+        == BoolTemplate.not_(
+            BoolTemplate.or_(
+                BoolTemplate.atom("stable_transition"),
+                BoolTemplate.atom("stable_initial"),
+            )
+        ).to_canonical()
+    )
+
+    for rejected in (fallback, stable_diagnostic, diagnostic_absorb_case(macro_domain)):
+        with pytest.raises(InvalidBmcEncoding, match="ordinary accepted cases"):
+            build_fallback_case(macro_domain, stable, (rejected,))
+
+    entry_transition = make_case(
+        macro_domain,
+        entry,
+        condition=BoolTemplate.atom("entry_transition"),
+        target_path="Root.Plant.Idle",
+    )
+    entry_initial = make_case(
+        macro_domain,
+        entry,
+        label_kind="initial",
+        condition=BoolTemplate.atom("entry_initial"),
+        target_path="Root.Plant.Idle",
+    )
+    delta = build_semantic_delta_case(macro_domain, entry, (entry_transition,))
+    entry_diagnostic = CycleCase(
+        "diagnostic",
+        entry.source_state_id,
+        entry.source_state_path,
+        STATE_DIAGNOSTIC_ID,
+        DIAGNOSTIC_CASE_PATH,
+        "%s::diagnostic::%s::0" % (entry.source_state_path, DIAGNOSTIC_CASE_PATH),
+        BoolTemplate.atom("entry_diagnostic"),
+        carry_var_updates(macro_domain),
+        domain=macro_domain,
+    )
+
+    delta_with_initial = build_semantic_delta_case(
+        macro_domain, entry, (entry_transition, entry_initial)
+    )
+    assert (
+        delta_with_initial.condition.to_canonical()
+        == BoolTemplate.not_(
+            BoolTemplate.or_(
+                BoolTemplate.atom("entry_transition"),
+                BoolTemplate.atom("entry_initial"),
+            )
+        ).to_canonical()
+    )
+
+    for rejected in (delta, entry_diagnostic, diagnostic_absorb_case(macro_domain)):
+        with pytest.raises(InvalidBmcEncoding, match="ordinary accepted cases"):
+            build_semantic_delta_case(macro_domain, entry, (rejected,))
+
+
+@pytest.mark.unittest
 def test_macro_step_formal_rejects_illegal_delta_buckets_and_label_collisions(
     macro_domain,
 ):

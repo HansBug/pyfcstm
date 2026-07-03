@@ -302,7 +302,7 @@ def test_semantic_delta_condition_excludes_success_and_build_diag_not_failed(
 
 @pytest.mark.unittest
 def test_fallback_and_delta_helpers_accept_only_ordinary_success_cases(macro_domain):
-    """Fallback and delta uncovered regions ignore non-accepted bucket kinds."""
+    """Fallback and delta helpers apply their source-specific case policies."""
     stable = stable_leaf_source(macro_domain, "Root.Plant.Idle")
     entry = entry_source(macro_domain, "Root.Plant")
 
@@ -331,17 +331,12 @@ def test_fallback_and_delta_helpers_accept_only_ordinary_success_cases(macro_dom
         domain=macro_domain,
     )
 
-    fallback_with_initial = build_fallback_case(
-        macro_domain, stable, (stable_transition, stable_initial)
-    )
+    with pytest.raises(InvalidBmcEncoding, match="ordinary accepted cases"):
+        build_fallback_case(macro_domain, stable, (stable_transition, stable_initial))
+
     assert (
-        fallback_with_initial.condition.to_canonical()
-        == BoolTemplate.not_(
-            BoolTemplate.or_(
-                BoolTemplate.atom("stable_transition"),
-                BoolTemplate.atom("stable_initial"),
-            )
-        ).to_canonical()
+        fallback.condition.to_canonical()
+        == BoolTemplate.not_(BoolTemplate.atom("stable_transition")).to_canonical()
     )
 
     for rejected in (fallback, stable_diagnostic, diagnostic_absorb_case(macro_domain)):
@@ -953,6 +948,9 @@ def test_fallback_and_delta_helpers_reject_bad_inputs(macro_domain):
         build_fallback_case(macro_domain, stable, (object(),))
     with pytest.raises(InvalidBmcEncoding, match="fallback source"):
         build_fallback_case(macro_domain, stable, (other_stable_case,))
+    stable_initial_case = make_case(macro_domain, stable, label_kind="initial")
+    with pytest.raises(InvalidBmcEncoding, match="ordinary accepted"):
+        build_fallback_case(macro_domain, stable, (stable_initial_case,))
     with pytest.raises(InvalidBmcEncoding, match="failed_conditions"):
         build_fallback_case(macro_domain, stable, (stable_case,), (object(),))
 
@@ -964,6 +962,21 @@ def test_fallback_and_delta_helpers_reject_bad_inputs(macro_domain):
         build_semantic_delta_case(macro_domain, entry, (object(),))
     with pytest.raises(InvalidBmcEncoding, match="delta source"):
         build_semantic_delta_case(macro_domain, entry, (other_entry_case,))
+    entry_initial_case = make_case(
+        macro_domain,
+        entry,
+        label_kind="initial",
+        target_path="Root.Plant.Idle",
+    )
+    delta_with_initial = build_semantic_delta_case(
+        macro_domain,
+        entry,
+        (entry_initial_case,),
+    )
+    assert (
+        delta_with_initial.condition.to_canonical()
+        == BoolTemplate.not_(entry_initial_case.condition).to_canonical()
+    )
     with pytest.raises(InvalidBmcEncoding, match="build_diagnostic"):
         build_semantic_delta_case(macro_domain, entry, (entry_case,), (object(),))
     with pytest.raises(InvalidBmcEncoding, match="failed_conditions"):

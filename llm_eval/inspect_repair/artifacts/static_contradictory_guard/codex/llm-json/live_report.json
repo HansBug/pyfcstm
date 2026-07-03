@@ -1,0 +1,98 @@
+{
+  "artifact_dir": "llm_eval/inspect_repair/artifacts/static_contradictory_guard/codex/llm-json",
+  "bad_repair_flags": [],
+  "bad_repair_flags_under_watch": [
+    "dummy-assignment",
+    "guard-to-true"
+  ],
+  "blocking_diagnostics": [],
+  "diagnostics": "",
+  "expected_codes": [
+    "W_UNWRITTEN_READ_VAR",
+    "W_GUARD_VARS_NEVER_CHANGE"
+  ],
+  "failure_category": "passed",
+  "fixture_id": "static_contradictory_guard",
+  "fixture_path": "llm_eval/inspect_repair/fixtures/static_contradictory_guard.fcstm",
+  "format": "llm-json",
+  "guide_metadata": {
+    "byte_size": 16665,
+    "chapter_count": 15,
+    "checksum_resource_name": "fcstm_grammar_guide.md.sha256",
+    "expected_sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914",
+    "line_count": 553,
+    "pyfcstm_version": "0.5.0",
+    "resource_name": "fcstm_grammar_guide.md",
+    "sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914"
+  },
+  "inspect_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/fixtures/static_contradictory_guard.fcstm",
+    "--format",
+    "llm-json"
+  ],
+  "isolated_workdir": "/tmp/pyfcstm_inspect_repair_a6xxwkr6",
+  "mode": "live",
+  "prepared_at": "20260702T182550Z",
+  "provider": "codex",
+  "provider_command": [
+    "codex",
+    "exec",
+    "--skip-git-repo-check",
+    "--ignore-user-config",
+    "--ephemeral",
+    "--color",
+    "never",
+    "-m",
+    "gpt-5.5",
+    "-c",
+    "model_provider=\"pro\"",
+    "-c",
+    "model_providers.pro={name=\"pro\", base_url=\"https://sub2api-new-api.deepghs.org/v1\", env_key=\"PRO_API_KEY\", wire_api=\"responses\"}",
+    "-c",
+    "model_reasoning_effort=\"high\"",
+    "-c",
+    "sandbox_mode=\"danger-full-access\"",
+    "-c",
+    "approval_policy=\"never\"",
+    "--output-last-message",
+    "/tmp/pyfcstm_inspect_repair_a6xxwkr6/provider_response.txt",
+    "-"
+  ],
+  "provider_returncode": 0,
+  "provider_stderr_size": 25906,
+  "provider_stderr_tail": "\"caret\": \"    ^^^^^^^^^^^^^^^\",\n        \"context\": [\n          {\n            \"caret\": null,\n            \"is_anchor\": false,\n            \"line\": 9,\n            \"text\": \"    Idle -> Running : if [request > 0 && request < 0];\"\n          },\n          {\n            \"caret\": \"    ^^^^^^^^^^^^^^^\",\n            \"is_anchor\": true,\n            \"line\": 10,\n            \"text\": \"    Running -> [*];\"\n          },\n          {\n            \"caret\": null,\n            \"is_anchor\": false,\n            \"line\": 11,\n            \"text\": \"}\"\n          }\n        ],\n        \"line\": 10,\n        \"text\": \"    Running -> [*];\"\n      },\n      \"summary\": \"The transition is not event-triggered and has no guard. This may be a deliberate unconditional fall-through, so treat it as context rather than a fix target.\"\n    }\n  ],\n  \"input\": \"input.fcstm\",\n  \"repair_protocol\": {\n    \"goal\": \"repair the FCSTM model with the smallest semantic source change\",\n    \"rules\": [\n      \"Make the smallest source edit that preserves the modeler's apparent intent.\",\n      \"Use diagnostic source/provenance before choosing a fix; inspect-static warnings are not solver proofs.\",\n      \"Do not mechanically stack all suggested actions when multiple diagnostics refer to the same region.\",\n      \"Do not delete states or transitions unless the report explicitly says the element is unused and the design intent supports deletion.\",\n      \"A repair should clear all error and warning diagnostics; info diagnostics may remain when the model intent supports them.\"\n    ]\n  },\n  \"schema_status\": \"stable\",\n  \"schema_version\": \"pyfcstm.inspect.llm.v1\",\n  \"status\": \"warning\",\n  \"summary\": {\n    \"errors\": 0,\n    \"infos\": 1,\n    \"leaf_states\": 2,\n    \"root_state_path\": \"Root\",\n    \"states\": 3,\n    \"transitions\": 3,\n    \"variables\": 1,\n    \"warnings\": 2\n  }\n}\n\n\nReturn the repaired FCSTM source now.\n\ncodex\nstate Root {\n    [*] -> Idle;\n\n    state Idle;\n    state Running;\n\n    Idle -> Running :: Request;\n    Running -> [*];\n}\ntokens used\n6,964\n",
+  "provider_version": "codex-cli 0.141.0",
+  "remaining_diagnostic_codes": [
+    "I_TRANSITION_NEVER_EVENT_TRIGGERED"
+  ],
+  "remaining_diagnostics": [
+    {
+      "code": "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+      "severity": "info"
+    }
+  ],
+  "requires_max_tier": null,
+  "success": true,
+  "verification_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/artifacts/static_contradictory_guard/codex/llm-json/repaired.fcstm",
+    "--format",
+    "json"
+  ],
+  "verification_result": {
+    "bad_repair_flags_cleared": true,
+    "blocking_diagnostics_cleared": true,
+    "expected_codes_cleared": true,
+    "passed": true
+  },
+  "visible_files": [
+    "input.fcstm",
+    "inspect_report.json",
+    "prompt_packet.md"
+  ]
+}

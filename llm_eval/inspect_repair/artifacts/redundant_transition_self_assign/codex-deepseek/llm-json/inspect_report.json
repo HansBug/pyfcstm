@@ -1,0 +1,526 @@
+{
+  "diagnostics": [
+    {
+      "code": "W_UNREFERENCED_VAR",
+      "do_not": [
+        "Do not add a dummy guard reference only to silence the diagnostic."
+      ],
+      "location": {
+        "column": 1,
+        "end_column": 18,
+        "end_line": 1,
+        "line": 1,
+        "path": "input.fcstm"
+      },
+      "message": "Variable 'done' does not affect any transition guard.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "remove_variable",
+          "rationale": "Remove the variable and related writes if it was speculative scaffolding.",
+          "target": "variable_definition"
+        },
+        {
+          "kind": "connect_to_guard",
+          "rationale": "Add the missing data-flow path if the variable should affect a transition decision.",
+          "target": "guard_or_assignment"
+        }
+      ],
+      "refs": {
+        "init_value": "0",
+        "var_name": "done"
+      },
+      "repair_guidance": [
+        "A declaration-only variable may be speculative scaffolding.",
+        "Remove it only when no guard, assignment, abstract action, or external integration intent needs it."
+      ],
+      "severity": "warning",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "^^^^^^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": "^^^^^^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 1,
+            "text": "def int done = 0;"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 2,
+            "text": ""
+          }
+        ],
+        "line": 1,
+        "text": "def int done = 0;"
+      },
+      "summary": "This variable does not participate in model decisions. It is dead from the DSL's guard-affect data-flow perspective."
+    },
+    {
+      "code": "W_REDUNDANT_TRANSITION",
+      "do_not": [
+        "Do not keep duplicate transitions as comments."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 41,
+        "end_line": 9,
+        "line": 9,
+        "path": "input.fcstm"
+      },
+      "message": "Transition 'Root.Idle' -> 'Root.Done' is duplicated with the same event, guard, and effect.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "remove_duplicate",
+          "rationale": "Keep one transition and remove redundant copies.",
+          "target": "transition"
+        },
+        {
+          "kind": "differentiate_transition",
+          "rationale": "Change event, guard, target, or effect if the copy was meant to do something else.",
+          "target": "transition"
+        }
+      ],
+      "refs": {
+        "duplicate_spans": [
+          {
+            "column": 5,
+            "end_column": 41,
+            "end_line": 9,
+            "line": 9
+          },
+          {
+            "column": 5,
+            "end_column": 41,
+            "end_line": 10,
+            "line": 10
+          }
+        ],
+        "from_path": "Root.Idle",
+        "to_path": "Root.Done",
+        "transition_index": 1
+      },
+      "repair_guidance": [
+        "Remove only the duplicate transition or merge duplicate no-op effects.",
+        "Keep the state structure and one intentional transition unless the report proves the element itself is unused."
+      ],
+      "severity": "warning",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 8,
+            "text": ""
+          },
+          {
+            "caret": "    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 9,
+            "text": "    Idle -> Done effect { done = done; };"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 10,
+            "text": "    Idle -> Done effect { done = done; };"
+          }
+        ],
+        "line": 9,
+        "text": "    Idle -> Done effect { done = done; };"
+      },
+      "summary": "These transitions are indistinguishable by source, target, event, guard, and effect, so later copies do not add behavior."
+    },
+    {
+      "code": "W_EFFECT_SELF_ASSIGN",
+      "do_not": [
+        "Do not replace it with another no-op expression."
+      ],
+      "location": {
+        "column": 27,
+        "end_column": 39,
+        "end_line": 9,
+        "line": 9,
+        "path": "input.fcstm"
+      },
+      "message": "Transition effect assigns 'done' to itself.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "remove_statement",
+          "rationale": "Delete the self-assignment.",
+          "target": "effect_statement"
+        },
+        {
+          "kind": "fix_rhs",
+          "rationale": "Replace the right-hand side with the intended expression.",
+          "target": "expression"
+        }
+      ],
+      "refs": {
+        "state_path": "Root.Idle",
+        "transition_index": 1,
+        "transition_span": {
+          "column": 5,
+          "end_column": 41,
+          "end_line": 9,
+          "line": 9
+        },
+        "var_name": "done"
+      },
+      "repair_guidance": [
+        "A self-assignment is a no-op and does not model real progress.",
+        "If the variable exists only for that no-op effect, remove the variable and no-op effect instead of inventing a write that still does not affect a guard."
+      ],
+      "severity": "warning",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "                          ^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 8,
+            "text": ""
+          },
+          {
+            "caret": "                          ^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 9,
+            "text": "    Idle -> Done effect { done = done; };"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 10,
+            "text": "    Idle -> Done effect { done = done; };"
+          }
+        ],
+        "line": 9,
+        "text": "    Idle -> Done effect { done = done; };"
+      },
+      "summary": "The assignment does not change model state and is likely dead code."
+    },
+    {
+      "code": "W_EFFECT_SELF_ASSIGN",
+      "do_not": [
+        "Do not replace it with another no-op expression."
+      ],
+      "location": {
+        "column": 27,
+        "end_column": 39,
+        "end_line": 10,
+        "line": 10,
+        "path": "input.fcstm"
+      },
+      "message": "Transition effect assigns 'done' to itself.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "remove_statement",
+          "rationale": "Delete the self-assignment.",
+          "target": "effect_statement"
+        },
+        {
+          "kind": "fix_rhs",
+          "rationale": "Replace the right-hand side with the intended expression.",
+          "target": "expression"
+        }
+      ],
+      "refs": {
+        "state_path": "Root.Idle",
+        "transition_index": 2,
+        "transition_span": {
+          "column": 5,
+          "end_column": 41,
+          "end_line": 10,
+          "line": 10
+        },
+        "var_name": "done"
+      },
+      "repair_guidance": [
+        "A self-assignment is a no-op and does not model real progress.",
+        "If the variable exists only for that no-op effect, remove the variable and no-op effect instead of inventing a write that still does not affect a guard."
+      ],
+      "severity": "warning",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "                          ^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 9,
+            "text": "    Idle -> Done effect { done = done; };"
+          },
+          {
+            "caret": "                          ^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 10,
+            "text": "    Idle -> Done effect { done = done; };"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 11,
+            "text": "    Done -> [*];"
+          }
+        ],
+        "line": 10,
+        "text": "    Idle -> Done effect { done = done; };"
+      },
+      "summary": "The assignment does not change model state and is likely dead code."
+    },
+    {
+      "code": "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+      "do_not": [
+        "Do not add a meaningless event just to silence this info."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 41,
+        "end_line": 9,
+        "line": 9,
+        "path": "input.fcstm"
+      },
+      "message": "Transition 'Root.Idle' -> 'Root.Done' has no event or guard.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "keep_if_fallthrough",
+          "rationale": "Keep it when the state should immediately advance.",
+          "target": "transition"
+        },
+        {
+          "kind": "add_trigger_or_guard",
+          "rationale": "Add the missing event or guard if the transition should wait.",
+          "target": "transition"
+        }
+      ],
+      "refs": {
+        "from_path": "Root.Idle",
+        "to_path": "Root.Done",
+        "transition_index": 1,
+        "transition_span": {
+          "column": 5,
+          "end_column": 41,
+          "end_line": 9,
+          "line": 9
+        }
+      },
+      "repair_guidance": [],
+      "severity": "info",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 8,
+            "text": ""
+          },
+          {
+            "caret": "    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 9,
+            "text": "    Idle -> Done effect { done = done; };"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 10,
+            "text": "    Idle -> Done effect { done = done; };"
+          }
+        ],
+        "line": 9,
+        "text": "    Idle -> Done effect { done = done; };"
+      },
+      "summary": "The transition is not event-triggered and has no guard. This may be a deliberate unconditional fall-through, so treat it as context rather than a fix target."
+    },
+    {
+      "code": "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+      "do_not": [
+        "Do not add a meaningless event just to silence this info."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 41,
+        "end_line": 10,
+        "line": 10,
+        "path": "input.fcstm"
+      },
+      "message": "Transition 'Root.Idle' -> 'Root.Done' has no event or guard.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "keep_if_fallthrough",
+          "rationale": "Keep it when the state should immediately advance.",
+          "target": "transition"
+        },
+        {
+          "kind": "add_trigger_or_guard",
+          "rationale": "Add the missing event or guard if the transition should wait.",
+          "target": "transition"
+        }
+      ],
+      "refs": {
+        "from_path": "Root.Idle",
+        "to_path": "Root.Done",
+        "transition_index": 2,
+        "transition_span": {
+          "column": 5,
+          "end_column": 41,
+          "end_line": 10,
+          "line": 10
+        }
+      },
+      "repair_guidance": [],
+      "severity": "info",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 9,
+            "text": "    Idle -> Done effect { done = done; };"
+          },
+          {
+            "caret": "    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 10,
+            "text": "    Idle -> Done effect { done = done; };"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 11,
+            "text": "    Done -> [*];"
+          }
+        ],
+        "line": 10,
+        "text": "    Idle -> Done effect { done = done; };"
+      },
+      "summary": "The transition is not event-triggered and has no guard. This may be a deliberate unconditional fall-through, so treat it as context rather than a fix target."
+    },
+    {
+      "code": "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+      "do_not": [
+        "Do not add a meaningless event just to silence this info."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 17,
+        "end_line": 11,
+        "line": 11,
+        "path": "input.fcstm"
+      },
+      "message": "Transition 'Root.Done' -> '[*]' has no event or guard.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "keep_if_fallthrough",
+          "rationale": "Keep it when the state should immediately advance.",
+          "target": "transition"
+        },
+        {
+          "kind": "add_trigger_or_guard",
+          "rationale": "Add the missing event or guard if the transition should wait.",
+          "target": "transition"
+        }
+      ],
+      "refs": {
+        "from_path": "Root.Done",
+        "to_path": "[*]",
+        "transition_index": 3,
+        "transition_span": {
+          "column": 5,
+          "end_column": 17,
+          "end_line": 11,
+          "line": 11
+        }
+      },
+      "repair_guidance": [],
+      "severity": "info",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 10,
+            "text": "    Idle -> Done effect { done = done; };"
+          },
+          {
+            "caret": "    ^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 11,
+            "text": "    Done -> [*];"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 12,
+            "text": "}"
+          }
+        ],
+        "line": 11,
+        "text": "    Done -> [*];"
+      },
+      "summary": "The transition is not event-triggered and has no guard. This may be a deliberate unconditional fall-through, so treat it as context rather than a fix target."
+    }
+  ],
+  "input": "input.fcstm",
+  "repair_protocol": {
+    "goal": "repair the FCSTM model with the smallest semantic source change",
+    "rules": [
+      "Make the smallest source edit that preserves the modeler's apparent intent.",
+      "Use diagnostic source/provenance before choosing a fix; inspect-static warnings are not solver proofs.",
+      "Do not mechanically stack all suggested actions when multiple diagnostics refer to the same region.",
+      "Do not delete states or transitions unless the report explicitly says the element is unused and the design intent supports deletion.",
+      "A repair should clear all error and warning diagnostics; info diagnostics may remain when the model intent supports them.",
+      "If changing a guard into an event-only transition makes a variable declaration unused, remove that variable or keep a real guard-affecting data-flow path."
+    ]
+  },
+  "schema_status": "stable",
+  "schema_version": "pyfcstm.inspect.llm.v1",
+  "status": "warning",
+  "summary": {
+    "errors": 0,
+    "infos": 3,
+    "leaf_states": 2,
+    "root_state_path": "Root",
+    "states": 3,
+    "transitions": 4,
+    "variables": 1,
+    "warnings": 4
+  }
+}

@@ -1,0 +1,176 @@
+{
+  "diagnostics": [
+    {
+      "code": "I_TRANSITION_NEVER_EVENT_TRIGGERED",
+      "do_not": [
+        "Do not add a meaningless event just to silence this info."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 20,
+        "end_line": 12,
+        "line": 12,
+        "path": "input.fcstm"
+      },
+      "message": "Transition 'Root.Running' -> '[*]' has no event or guard.",
+      "provenance": {
+        "kind": "inspect-static",
+        "verify_required": false
+      },
+      "recommended_actions": [
+        {
+          "kind": "keep_if_fallthrough",
+          "rationale": "Keep it when the state should immediately advance.",
+          "target": "transition"
+        },
+        {
+          "kind": "add_trigger_or_guard",
+          "rationale": "Add the missing event or guard if the transition should wait.",
+          "target": "transition"
+        }
+      ],
+      "refs": {
+        "from_path": "Root.Running",
+        "to_path": "[*]",
+        "transition_index": 2,
+        "transition_span": {
+          "column": 5,
+          "end_column": 20,
+          "end_line": 12,
+          "line": 12
+        }
+      },
+      "repair_guidance": [],
+      "severity": "info",
+      "source": "inspect-static",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 11,
+            "text": "    Idle -> Running : if [request > 0 && request < 0];"
+          },
+          {
+            "caret": "    ^^^^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 12,
+            "text": "    Running -> [*];"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 13,
+            "text": "}"
+          }
+        ],
+        "line": 12,
+        "text": "    Running -> [*];"
+      },
+      "summary": "The transition is not event-triggered and has no guard. This may be a deliberate unconditional fall-through, so treat it as context rather than a fix target."
+    },
+    {
+      "code": "W_DEAD_GUARD",
+      "do_not": [
+        "Do not replace the guard with true unless the transition really should become unconditional.",
+        "Do not confuse this SMT finding with W_GUARD_CONST_FALSE; variables and runtime-definedness matter here."
+      ],
+      "location": {
+        "column": 5,
+        "end_column": 55,
+        "end_line": 11,
+        "line": 11,
+        "path": "input.fcstm"
+      },
+      "message": "A transition guard is unsatisfiable under model variable type and runtime-definedness constraints.",
+      "provenance": {
+        "kind": "verify-backed",
+        "verify_required": true
+      },
+      "recommended_actions": [
+        {
+          "kind": "fix_guard",
+          "rationale": "Relax or correct the contradictory guard condition.",
+          "target": "transition"
+        },
+        {
+          "kind": "remove_transition",
+          "rationale": "Remove the transition if the guard intentionally makes it unreachable.",
+          "target": "transition"
+        }
+      ],
+      "refs": {
+        "algorithm_name": "dead_guard",
+        "transition": {
+          "event": null,
+          "from_state": "Idle",
+          "guard": "request > 0 && request < 0",
+          "is_forced": false,
+          "parent": "Root",
+          "to_state": "Running"
+        },
+        "transition_summary": "Root:Idle->Running",
+        "verification_scope": "smt_local"
+      },
+      "repair_guidance": [
+        "This is verify-backed: SMT proved the guard unsatisfiable under model constraints.",
+        "Prefer correcting the contradictory guard over making the transition unconditional.",
+        "If the same variable also has static dataflow warnings, the repair must address both the contradiction and the missing guard-affecting data flow."
+      ],
+      "severity": "warning",
+      "source": "verify-backed",
+      "source_excerpt": {
+        "caret": "    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+        "context": [
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 10,
+            "text": ""
+          },
+          {
+            "caret": "    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+            "is_anchor": true,
+            "line": 11,
+            "text": "    Idle -> Running : if [request > 0 && request < 0];"
+          },
+          {
+            "caret": null,
+            "is_anchor": false,
+            "line": 12,
+            "text": "    Running -> [*];"
+          }
+        ],
+        "line": 11,
+        "text": "    Idle -> Running : if [request > 0 && request < 0];"
+      },
+      "summary": "SMT proves the guard cannot become true for any valid variable valuation. This differs from W_GUARD_CONST_FALSE, which only reports literal-only guards folded syntactically to false."
+    }
+  ],
+  "input": "input.fcstm",
+  "repair_protocol": {
+    "goal": "repair the FCSTM model with the smallest semantic source change",
+    "rules": [
+      "Make the smallest source edit that preserves the modeler's apparent intent.",
+      "Use diagnostic source/provenance before choosing a fix; inspect-static warnings are not solver proofs.",
+      "Do not mechanically stack all suggested actions when multiple diagnostics refer to the same region.",
+      "Do not delete states or transitions unless the report explicitly says the element is unused and the design intent supports deletion.",
+      "A repair should clear all error and warning diagnostics; info diagnostics may remain when the model intent supports them.",
+      "If changing a guard into an event-only transition makes a variable declaration unused, remove that variable or keep a real guard-affecting data-flow path."
+    ]
+  },
+  "schema_status": "stable",
+  "schema_version": "pyfcstm.inspect.llm.v1",
+  "status": "warning",
+  "summary": {
+    "errors": 0,
+    "infos": 1,
+    "leaf_states": 2,
+    "root_state_path": "Root",
+    "states": 3,
+    "transitions": 3,
+    "variables": 1,
+    "warnings": 1
+  }
+}

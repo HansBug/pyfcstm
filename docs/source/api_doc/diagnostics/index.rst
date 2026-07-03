@@ -12,6 +12,7 @@ pyfcstm.diagnostics
     analyzers/index
     codes
     inspect
+    inspect_render
     sink
     suggested_fix
 

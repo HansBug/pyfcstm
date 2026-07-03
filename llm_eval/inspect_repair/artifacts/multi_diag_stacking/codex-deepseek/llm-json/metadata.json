@@ -1,0 +1,43 @@
+{
+  "artifact_dir": "llm_eval/inspect_repair/artifacts/multi_diag_stacking/codex-deepseek/llm-json",
+  "bad_repair_flags_under_watch": [
+    "delete-state",
+    "guard-to-true",
+    "unconditional-exit-stack"
+  ],
+  "expected_codes": [
+    "W_DEADLOCK_LEAF",
+    "W_TOPOLOGICAL_NOEXIT",
+    "I_TOPOLOGICAL_NON_TERMINATING",
+    "W_DEAD_GUARD"
+  ],
+  "fixture_id": "multi_diag_stacking",
+  "fixture_path": "llm_eval/inspect_repair/fixtures/multi_diag_stacking.fcstm",
+  "format": "llm-json",
+  "guide_metadata": {
+    "byte_size": 16665,
+    "chapter_count": 15,
+    "checksum_resource_name": "fcstm_grammar_guide.md.sha256",
+    "expected_sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914",
+    "line_count": 553,
+    "pyfcstm_version": "0.5.0",
+    "resource_name": "fcstm_grammar_guide.md",
+    "sha256": "76afc74733c50dc1f552883b4a7829369ece17bc59e8bb33d5ab623ecf44d914"
+  },
+  "inspect_command": [
+    "pyfcstm",
+    "inspect",
+    "-i",
+    "llm_eval/inspect_repair/fixtures/multi_diag_stacking.fcstm",
+    "--format",
+    "llm-json",
+    "--enable-verify",
+    "--max-complexity-tier",
+    "smt_linear",
+    "--smt-timeout-ms",
+    "1000"
+  ],
+  "prepared_at": "20260702T184534Z",
+  "provider": "codex-deepseek",
+  "requires_max_tier": "smt_linear"
+}

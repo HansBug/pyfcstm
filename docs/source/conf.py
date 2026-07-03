@@ -149,6 +149,45 @@ if not os.path.exists(_source_index):
     raise FileNotFoundError(f'Source index file not found: {_source_index!r}.')
 shutil.copyfile(_source_index, _target_index)
 
+
+def _cleanup_generated_index(app, exception):
+    """
+    Remove the copied language index after a Sphinx build finishes.
+
+    The Sphinx configuration copies either ``index_en.rst`` or
+    ``index_zh.rst`` to the ignored build-time ``index.rst`` entry point.
+    Cleaning the copied file after each build prevents a later local build in a
+    different language from reading a stale index.
+
+    :param app: Sphinx application object passed by the ``build-finished``
+        event.
+    :type app: sphinx.application.Sphinx
+    :param exception: Build exception passed by Sphinx, or ``None`` when the
+        build completed successfully.
+    :type exception: BaseException or None
+    :return: ``None``.
+    :rtype: None
+    """
+    if os.path.exists(_target_index):
+        os.remove(_target_index)
+
+
+def setup(app):
+    """
+    Register Sphinx documentation build hooks.
+
+    The hook only manages the generated language-specific ``index.rst`` copy.
+    It does not change Sphinx source discovery or generated documentation
+    content.
+
+    :param app: Sphinx application object used to register event callbacks.
+    :type app: sphinx.application.Sphinx
+    :return: ``None``.
+    :rtype: None
+    """
+    app.connect('build-finished', _cleanup_generated_index)
+
+
 # The master document is now index.rst, which is copied from index_<language>.rst
 master_doc = 'index'
 

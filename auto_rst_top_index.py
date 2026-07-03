@@ -92,6 +92,7 @@ def generate_rst_index(input_dir, output_file, title):
         print(f"    :caption: {title}", file=buffer)
         print("    :hidden:", file=buffer)
         print("", file=buffer)
+        print("    api_doc/index", file=buffer)
         for name in rel_names:
             # Packages get /index suffix, modules don't
             if os.path.exists(os.path.join(input_dir, name, "__init__.py")):
@@ -99,6 +100,7 @@ def generate_rst_index(input_dir, output_file, title):
             else:
                 print(f"    api_doc/{name}", file=buffer)
         print("", file=buffer)
+        print("* :doc:`api_doc/index`", file=buffer)
         for name in rel_names:
             if os.path.exists(os.path.join(input_dir, name, "__init__.py")):
                 print(f"* :doc:`api_doc/{name}/index`", file=buffer)

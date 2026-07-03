@@ -203,6 +203,7 @@ def test_valid_complete_fbmcq_queries_parse(query_text):
         pytest.param("2", "==", "TRUE", id="point-upper-true"),
         pytest.param("1..3", "!=", "false", id="compact-range"),
         pytest.param("1 .. 3", "==", "False", id="spaced-range"),
+        pytest.param("1.. 3", "!=", "False", id="range-space-after-dots"),
     ],
 )
 def test_event_assumption_selectors_and_polarity_parse(selector, expected, bool_case):
@@ -360,6 +361,10 @@ def test_fcstm_compatible_condition_expressions_and_bmc_atoms_parse(expression):
         pytest.param(
             'init cold; check reach <= 5: called("hook");',
             id="called-in-property",
+        ),
+        pytest.param(
+            'assume event("Root.E", 5..3) == false; check reach <= 1: true;',
+            id="descending-event-range",
         ),
     ],
 )

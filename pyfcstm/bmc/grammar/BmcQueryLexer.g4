@@ -60,7 +60,7 @@ LOGICAL_AND: '&&';
 LOGICAL_OR: '||';
 IMPLIES: '=>';
 ARROW: '->';
-RANGE_INT: [0-9]+ '..' [0-9]+;
+RANGE_INT: [0-9]+ '..' [ \t]* [0-9]+;
 DOTDOT: '..';
 
 SEMI: ';';
@@ -83,7 +83,6 @@ CARET: '^';
 PIPE: '|';
 LT: '<';
 GT: '>';
-ASSIGN: '=';
 
 FLOAT
     : [0-9]+ '.' [0-9]* ([eE][+-]?[0-9]+)?

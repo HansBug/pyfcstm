@@ -4,6 +4,7 @@ import pytest
 from antlr4 import CommonTokenStream, InputStream, Token
 from antlr4.error.ErrorListener import ErrorListener
 
+from pyfcstm.dsl.grammar.GrammarLexer import GrammarLexer
 from pyfcstm.bmc.grammar.BmcQueryLexer import BmcQueryLexer
 from pyfcstm.bmc.grammar.BmcQueryParser import BmcQueryParser
 from pyfcstm.bmc.grammar.BmcQueryParserListener import BmcQueryParserListener
@@ -120,6 +121,27 @@ def test_generated_bmc_query_parser_imports_are_available():
 
 @pytest.mark.unittest
 @pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("0", id="zero"),
+        pytest.param("00", id="double-zero"),
+        pytest.param("01", id="leading-zero-one"),
+        pytest.param("001", id="leading-zero-many"),
+        pytest.param("42", id="ordinary-decimal"),
+    ],
+)
+def test_fbmcq_decimal_integer_tokens_match_fcstm_lexer(text):
+    """FBMCQ decimal integers keep the FCSTM ``INT`` token surface."""
+    fcstm_token = GrammarLexer(InputStream(text)).nextToken()
+    fbmcq_token = BmcQueryLexer(InputStream(text)).nextToken()
+
+    assert GrammarLexer.symbolicNames[fcstm_token.type] == "INT"
+    assert BmcQueryLexer.symbolicNames[fbmcq_token.type] == "INT"
+    assert fbmcq_token.text == text
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
     "query_text",
     [
         pytest.param(
@@ -219,6 +241,9 @@ def test_event_assumption_selectors_and_polarity_parse(selector, expected, bool_
     "expression",
     [
         pytest.param("0", id="decimal-zero"),
+        pytest.param("00", id="decimal-double-zero"),
+        pytest.param("01", id="decimal-leading-zero-one"),
+        pytest.param("001", id="decimal-leading-zero-many"),
         pytest.param("42", id="decimal"),
         pytest.param("0x2A", id="hex"),
         pytest.param(".5", id="float-leading-dot"),
@@ -366,10 +391,30 @@ def test_fcstm_compatible_condition_expressions_and_bmc_atoms_parse(expression):
             'assume event("Root.E", 5..3) == false; check reach <= 1: true;',
             id="descending-event-range",
         ),
+        pytest.param(
+            "check reach <= 0: true;",
+            id="zero-check-bound-deferred-to-query-model",
+        ),
+        pytest.param(
+            "check reach <= 00: true;",
+            id="double-zero-check-bound-deferred-to-query-model",
+        ),
+        pytest.param(
+            "check reach <= 01: true;",
+            id="leading-zero-check-bound",
+        ),
+        pytest.param(
+            "check response <= 1: trigger true -> within 0 true;",
+            id="zero-response-window-deferred-to-query-model",
+        ),
+        pytest.param(
+            "check response <= 001: trigger true -> within 01 true;",
+            id="leading-zero-response-bound-and-window",
+        ),
     ],
 )
-def test_binder_invalid_but_grammar_valid_queries_parse(query_text):
-    """Grammar does not swallow later binder diagnostics prematurely."""
+def test_later_binding_or_normalization_queries_parse(query_text):
+    """Grammar does not swallow later binder diagnostics or normalization."""
     _assert_parses(query_text)
 
 
@@ -383,10 +428,17 @@ def test_binder_invalid_but_grammar_valid_queries_parse(query_text):
         ),
         pytest.param("init cold;", id="missing-check-clause"),
         pytest.param("check <= 5: true;", id="missing-property-kind"),
-        pytest.param("check reach <= 0: true;", id="zero-check-bound"),
         pytest.param(
-            "check response <= 1: trigger true -> within 0 true;",
-            id="zero-response-window",
+            "check reach <= -1: true;",
+            id="negative-check-bound",
+        ),
+        pytest.param(
+            "check reach <= 0x1: true;",
+            id="hex-check-bound",
+        ),
+        pytest.param(
+            "check response <= 1: trigger true -> within 1.5 true;",
+            id="float-response-window",
         ),
         pytest.param(
             'check reach <= 1: active("Root.A);',

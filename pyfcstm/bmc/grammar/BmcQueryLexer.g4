@@ -91,7 +91,6 @@ FLOAT
     ;
 
 HEX_INT: '0x' HexDigit+;
-POSITIVE_INT: [0-9]* [1-9] [0-9]*;
 INT: [0-9]+;
 
 TRUE: 'True' | 'true' | 'TRUE';

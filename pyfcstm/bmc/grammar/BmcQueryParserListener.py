@@ -169,14 +169,6 @@ class BmcQueryParserListener(ParseTreeListener):
     def exitFrame_selector(self, ctx: BmcQueryParser.Frame_selectorContext):
         pass
 
-    # Enter a parse tree produced by BmcQueryParser#positive_integer.
-    def enterPositive_integer(self, ctx: BmcQueryParser.Positive_integerContext):
-        pass
-
-    # Exit a parse tree produced by BmcQueryParser#positive_integer.
-    def exitPositive_integer(self, ctx: BmcQueryParser.Positive_integerContext):
-        pass
-
     # Enter a parse tree produced by BmcQueryParser#integer_literal.
     def enterInteger_literal(self, ctx: BmcQueryParser.Integer_literalContext):
         pass

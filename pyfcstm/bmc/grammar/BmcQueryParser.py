@@ -12,158 +12,157 @@ else:
 
 def serializedATN():
     with StringIO() as buf:
-        buf.write("\3\u608b\ua72a\u8133\ub9ed\u417c\u3be7\u7786\u5964\3V")
-        buf.write("\u0151\4\2\t\2\4\3\t\3\4\4\t\4\4\5\t\5\4\6\t\6\4\7\t\7")
+        buf.write("\3\u608b\ua72a\u8133\ub9ed\u417c\u3be7\u7786\u5964\3U")
+        buf.write("\u014d\4\2\t\2\4\3\t\3\4\4\t\4\4\5\t\5\4\6\t\6\4\7\t\7")
         buf.write("\4\b\t\b\4\t\t\t\4\n\t\n\4\13\t\13\4\f\t\f\4\r\t\r\4\16")
         buf.write("\t\16\4\17\t\17\4\20\t\20\4\21\t\21\4\22\t\22\4\23\t\23")
         buf.write("\4\24\t\24\4\25\t\25\4\26\t\26\4\27\t\27\4\30\t\30\4\31")
-        buf.write("\t\31\4\32\t\32\4\33\t\33\4\34\t\34\3\2\5\2:\n\2\3\2\7")
-        buf.write("\2=\n\2\f\2\16\2@\13\2\3\2\3\2\3\2\3\3\3\3\3\3\3\4\3\4")
-        buf.write("\3\4\3\5\3\5\3\5\3\5\5\5O\n\5\3\5\3\5\3\6\3\6\3\6\3\6")
-        buf.write("\3\6\3\6\3\6\5\6Z\n\6\3\7\3\7\3\7\5\7_\n\7\3\b\3\b\3\b")
-        buf.write("\3\b\5\be\n\b\3\b\3\b\3\b\3\b\3\t\3\t\3\t\3\t\3\t\3\t")
-        buf.write("\3\t\3\t\3\t\3\t\3\t\3\n\3\n\3\n\3\n\3\n\3\n\3\n\3\n\3")
-        buf.write("\n\5\n\177\n\n\3\n\3\n\3\13\3\13\3\13\3\13\3\13\3\13\3")
-        buf.write("\13\3\13\3\f\3\f\3\r\3\r\5\r\u008f\n\r\3\16\3\16\3\16")
-        buf.write("\3\16\3\16\3\16\3\16\3\17\3\17\3\17\7\17\u009b\n\17\f")
-        buf.write("\17\16\17\u009e\13\17\3\20\3\20\3\21\3\21\3\21\3\21\3")
-        buf.write("\21\3\21\3\21\5\21\u00a9\n\21\3\22\3\22\5\22\u00ad\n\22")
-        buf.write("\3\23\3\23\5\23\u00b1\n\23\3\24\3\24\3\25\3\25\3\26\3")
+        buf.write("\t\31\4\32\t\32\4\33\t\33\3\2\5\28\n\2\3\2\7\2;\n\2\f")
+        buf.write("\2\16\2>\13\2\3\2\3\2\3\2\3\3\3\3\3\3\3\4\3\4\3\4\3\5")
+        buf.write("\3\5\3\5\3\5\5\5M\n\5\3\5\3\5\3\6\3\6\3\6\3\6\3\6\3\6")
+        buf.write("\3\6\5\6X\n\6\3\7\3\7\3\7\5\7]\n\7\3\b\3\b\3\b\3\b\5\b")
+        buf.write("c\n\b\3\b\3\b\3\b\3\b\3\t\3\t\3\t\3\t\3\t\3\t\3\t\3\t")
+        buf.write("\3\t\3\t\3\t\3\n\3\n\3\n\3\n\3\n\3\n\3\n\3\n\3\n\5\n}")
+        buf.write("\n\n\3\n\3\n\3\13\3\13\3\13\3\13\3\13\3\13\3\13\3\13\3")
+        buf.write("\f\3\f\3\r\3\r\5\r\u008d\n\r\3\16\3\16\3\16\3\16\3\16")
+        buf.write("\3\16\3\16\3\17\3\17\3\17\7\17\u0099\n\17\f\17\16\17\u009c")
+        buf.write("\13\17\3\20\3\20\3\21\3\21\3\21\3\21\3\21\3\21\3\21\5")
+        buf.write("\21\u00a7\n\21\3\22\3\22\5\22\u00ab\n\22\3\23\3\23\5\23")
+        buf.write("\u00af\n\23\3\24\3\24\3\25\3\25\3\25\3\25\3\25\3\25\3")
+        buf.write("\25\3\25\3\25\3\25\3\25\3\25\3\25\3\25\3\25\3\25\3\25")
+        buf.write("\3\25\3\25\3\25\3\25\3\25\3\25\3\25\3\25\3\25\3\25\3\25")
+        buf.write("\3\25\5\25\u00d0\n\25\3\25\3\25\3\25\3\25\3\25\3\25\3")
+        buf.write("\25\3\25\3\25\3\25\3\25\3\25\3\25\3\25\3\25\3\25\3\25")
+        buf.write("\3\25\3\25\3\25\3\25\7\25\u00e7\n\25\f\25\16\25\u00ea")
+        buf.write("\13\25\3\26\3\26\3\26\3\26\3\26\3\26\3\26\3\26\3\26\3")
         buf.write("\26\3\26\3\26\3\26\3\26\3\26\3\26\3\26\3\26\3\26\3\26")
-        buf.write("\3\26\3\26\3\26\3\26\3\26\3\26\3\26\3\26\3\26\3\26\3\26")
-        buf.write("\3\26\3\26\3\26\3\26\3\26\3\26\5\26\u00d4\n\26\3\26\3")
+        buf.write("\3\26\3\26\3\26\3\26\3\26\5\26\u0105\n\26\3\26\3\26\3")
         buf.write("\26\3\26\3\26\3\26\3\26\3\26\3\26\3\26\3\26\3\26\3\26")
-        buf.write("\3\26\3\26\3\26\3\26\3\26\3\26\3\26\3\26\3\26\7\26\u00eb")
-        buf.write("\n\26\f\26\16\26\u00ee\13\26\3\27\3\27\3\27\3\27\3\27")
-        buf.write("\3\27\3\27\3\27\3\27\3\27\3\27\3\27\3\27\3\27\3\27\3\27")
-        buf.write("\3\27\3\27\3\27\3\27\3\27\3\27\3\27\3\27\3\27\5\27\u0109")
-        buf.write("\n\27\3\27\3\27\3\27\3\27\3\27\3\27\3\27\3\27\3\27\3\27")
-        buf.write("\3\27\3\27\3\27\3\27\3\27\7\27\u011a\n\27\f\27\16\27\u011d")
-        buf.write("\13\27\3\30\3\30\3\30\3\30\3\30\5\30\u0124\n\30\3\30\3")
-        buf.write("\30\3\30\3\30\3\30\5\30\u012b\n\30\3\30\3\30\3\30\3\30")
-        buf.write("\3\30\3\30\3\30\3\30\3\30\3\30\3\30\3\30\3\30\5\30\u013a")
-        buf.write("\n\30\3\30\3\30\3\30\3\30\3\30\3\30\3\30\5\30\u0143\n")
-        buf.write("\30\3\30\3\30\5\30\u0147\n\30\3\31\3\31\3\32\3\32\3\33")
-        buf.write("\3\33\3\34\3\34\3\34\2\4*,\35\2\4\6\b\n\f\16\20\22\24")
-        buf.write('\26\30\32\34\36 "$&(*,.\60\62\64\66\2\21\3\2\21\27\3')
-        buf.write("\2./\3\2LM\3\2BC\4\2?@DD\3\2*+\4\2%%AA\4\2,-HI\4\2''")
-        buf.write("./\4\2##\60\60\4\2$$\61\61\4\2&&\62\62\3\2JM\3\2NO\3\2")
-        buf.write(' "\2\u0167\29\3\2\2\2\4D\3\2\2\2\6G\3\2\2\2\bJ\3\2\2')
-        buf.write("\2\nY\3\2\2\2\f^\3\2\2\2\16`\3\2\2\2\20j\3\2\2\2\22u\3")
-        buf.write("\2\2\2\24\u0082\3\2\2\2\26\u008a\3\2\2\2\30\u008e\3\2")
-        buf.write("\2\2\32\u0090\3\2\2\2\34\u0097\3\2\2\2\36\u009f\3\2\2")
-        buf.write('\2 \u00a8\3\2\2\2"\u00ac\3\2\2\2$\u00b0\3\2\2\2&\u00b2')
-        buf.write("\3\2\2\2(\u00b4\3\2\2\2*\u00d3\3\2\2\2,\u0108\3\2\2\2")
-        buf.write(".\u0146\3\2\2\2\60\u0148\3\2\2\2\62\u014a\3\2\2\2\64\u014c")
-        buf.write("\3\2\2\2\66\u014e\3\2\2\28:\5\b\5\298\3\2\2\29:\3\2\2")
-        buf.write("\2:>\3\2\2\2;=\5\f\7\2<;\3\2\2\2=@\3\2\2\2><\3\2\2\2>")
-        buf.write("?\3\2\2\2?A\3\2\2\2@>\3\2\2\2AB\5\24\13\2BC\7\2\2\3C\3")
-        buf.write("\3\2\2\2DE\5*\26\2EF\7\2\2\3F\5\3\2\2\2GH\5,\27\2HI\7")
-        buf.write("\2\2\3I\7\3\2\2\2JK\7\3\2\2KN\5\n\6\2LM\7\7\2\2MO\5,\27")
-        buf.write("\2NL\3\2\2\2NO\3\2\2\2OP\3\2\2\2PQ\7\66\2\2Q\t\3\2\2\2")
-        buf.write("RZ\7\4\2\2SZ\7\5\2\2TU\7\6\2\2UV\7:\2\2VW\5\66\34\2WX")
-        buf.write("\7;\2\2XZ\3\2\2\2YR\3\2\2\2YS\3\2\2\2YT\3\2\2\2Z\13\3")
-        buf.write("\2\2\2[_\5\16\b\2\\_\5\20\t\2]_\5\22\n\2^[\3\2\2\2^\\")
-        buf.write("\3\2\2\2^]\3\2\2\2_\r\3\2\2\2`d\7\b\2\2ae\7\t\2\2bc\7")
-        buf.write("\n\2\2ce\5(\25\2da\3\2\2\2db\3\2\2\2ef\3\2\2\2fg\7=\2")
-        buf.write("\2gh\5,\27\2hi\7\66\2\2i\17\3\2\2\2jk\7\b\2\2kl\7\13\2")
-        buf.write("\2lm\7:\2\2mn\5\66\34\2no\7\67\2\2op\5 \21\2pq\7;\2\2")
-        buf.write("qr\5\36\20\2rs\5\62\32\2st\7\66\2\2t\21\3\2\2\2uv\7\b")
-        buf.write("\2\2vw\7\f\2\2w~\7\r\2\2x\177\7\16\2\2yz\7\17\2\2z{\7")
-        buf.write("8\2\2{|\5\34\17\2|}\79\2\2}\177\3\2\2\2~x\3\2\2\2~y\3")
-        buf.write("\2\2\2\177\u0080\3\2\2\2\u0080\u0081\7\66\2\2\u0081\23")
-        buf.write("\3\2\2\2\u0082\u0083\7\20\2\2\u0083\u0084\5\26\f\2\u0084")
-        buf.write("\u0085\7,\2\2\u0085\u0086\5&\24\2\u0086\u0087\7=\2\2\u0087")
-        buf.write("\u0088\5\30\r\2\u0088\u0089\7\66\2\2\u0089\25\3\2\2\2")
-        buf.write("\u008a\u008b\t\2\2\2\u008b\27\3\2\2\2\u008c\u008f\5\32")
-        buf.write("\16\2\u008d\u008f\5,\27\2\u008e\u008c\3\2\2\2\u008e\u008d")
-        buf.write("\3\2\2\2\u008f\31\3\2\2\2\u0090\u0091\7\30\2\2\u0091\u0092")
-        buf.write("\5,\27\2\u0092\u0093\7\63\2\2\u0093\u0094\7\31\2\2\u0094")
-        buf.write("\u0095\5&\24\2\u0095\u0096\5,\27\2\u0096\33\3\2\2\2\u0097")
-        buf.write("\u009c\5\66\34\2\u0098\u0099\7\67\2\2\u0099\u009b\5\66")
-        buf.write("\34\2\u009a\u0098\3\2\2\2\u009b\u009e\3\2\2\2\u009c\u009a")
-        buf.write("\3\2\2\2\u009c\u009d\3\2\2\2\u009d\35\3\2\2\2\u009e\u009c")
-        buf.write("\3\2\2\2\u009f\u00a0\t\3\2\2\u00a0\37\3\2\2\2\u00a1\u00a9")
-        buf.write("\7@\2\2\u00a2\u00a9\5(\25\2\u00a3\u00a4\5(\25\2\u00a4")
-        buf.write("\u00a5\7\65\2\2\u00a5\u00a6\5(\25\2\u00a6\u00a9\3\2\2")
-        buf.write("\2\u00a7\u00a9\7\64\2\2\u00a8\u00a1\3\2\2\2\u00a8\u00a2")
-        buf.write("\3\2\2\2\u00a8\u00a3\3\2\2\2\u00a8\u00a7\3\2\2\2\u00a9")
-        buf.write("!\3\2\2\2\u00aa\u00ad\7\37\2\2\u00ab\u00ad\5(\25\2\u00ac")
-        buf.write("\u00aa\3\2\2\2\u00ac\u00ab\3\2\2\2\u00ad#\3\2\2\2\u00ae")
-        buf.write("\u00b1\7\37\2\2\u00af\u00b1\5(\25\2\u00b0\u00ae\3\2\2")
-        buf.write("\2\u00b0\u00af\3\2\2\2\u00b1%\3\2\2\2\u00b2\u00b3\7L\2")
-        buf.write("\2\u00b3'\3\2\2\2\u00b4\u00b5\t\4\2\2\u00b5)\3\2\2\2")
-        buf.write("\u00b6\u00b7\b\26\1\2\u00b7\u00b8\7:\2\2\u00b8\u00b9\5")
-        buf.write("*\26\2\u00b9\u00ba\7;\2\2\u00ba\u00d4\3\2\2\2\u00bb\u00d4")
-        buf.write("\5\60\31\2\u00bc\u00d4\7Q\2\2\u00bd\u00d4\5\64\33\2\u00be")
-        buf.write("\u00bf\7\32\2\2\u00bf\u00c0\7:\2\2\u00c0\u00c1\5\66\34")
-        buf.write("\2\u00c1\u00c2\7;\2\2\u00c2\u00d4\3\2\2\2\u00c3\u00d4")
-        buf.write("\7\33\2\2\u00c4\u00c5\t\5\2\2\u00c5\u00d4\5*\26\f\u00c6")
-        buf.write("\u00c7\7P\2\2\u00c7\u00c8\7:\2\2\u00c8\u00c9\5*\26\2\u00c9")
-        buf.write("\u00ca\7;\2\2\u00ca\u00d4\3\2\2\2\u00cb\u00cc\7:\2\2\u00cc")
-        buf.write("\u00cd\5,\27\2\u00cd\u00ce\7;\2\2\u00ce\u00cf\7<\2\2\u00cf")
-        buf.write("\u00d0\5*\26\2\u00d0\u00d1\7=\2\2\u00d1\u00d2\5*\26\3")
-        buf.write("\u00d2\u00d4\3\2\2\2\u00d3\u00b6\3\2\2\2\u00d3\u00bb\3")
-        buf.write("\2\2\2\u00d3\u00bc\3\2\2\2\u00d3\u00bd\3\2\2\2\u00d3\u00be")
-        buf.write("\3\2\2\2\u00d3\u00c3\3\2\2\2\u00d3\u00c4\3\2\2\2\u00d3")
-        buf.write("\u00c6\3\2\2\2\u00d3\u00cb\3\2\2\2\u00d4\u00ec\3\2\2\2")
-        buf.write("\u00d5\u00d6\f\13\2\2\u00d6\u00d7\7)\2\2\u00d7\u00eb\5")
-        buf.write("*\26\13\u00d8\u00d9\f\n\2\2\u00d9\u00da\t\6\2\2\u00da")
-        buf.write("\u00eb\5*\26\13\u00db\u00dc\f\t\2\2\u00dc\u00dd\t\5\2")
-        buf.write("\2\u00dd\u00eb\5*\26\n\u00de\u00df\f\b\2\2\u00df\u00e0")
-        buf.write("\t\7\2\2\u00e0\u00eb\5*\26\t\u00e1\u00e2\f\7\2\2\u00e2")
-        buf.write("\u00e3\7E\2\2\u00e3\u00eb\5*\26\b\u00e4\u00e5\f\6\2\2")
-        buf.write("\u00e5\u00e6\7F\2\2\u00e6\u00eb\5*\26\7\u00e7\u00e8\f")
-        buf.write("\5\2\2\u00e8\u00e9\7G\2\2\u00e9\u00eb\5*\26\6\u00ea\u00d5")
-        buf.write("\3\2\2\2\u00ea\u00d8\3\2\2\2\u00ea\u00db\3\2\2\2\u00ea")
-        buf.write("\u00de\3\2\2\2\u00ea\u00e1\3\2\2\2\u00ea\u00e4\3\2\2\2")
-        buf.write("\u00ea\u00e7\3\2\2\2\u00eb\u00ee\3\2\2\2\u00ec\u00ea\3")
-        buf.write("\2\2\2\u00ec\u00ed\3\2\2\2\u00ed+\3\2\2\2\u00ee\u00ec")
-        buf.write("\3\2\2\2\u00ef\u00f0\b\27\1\2\u00f0\u00f1\7:\2\2\u00f1")
-        buf.write("\u00f2\5,\27\2\u00f2\u00f3\7;\2\2\u00f3\u0109\3\2\2\2")
-        buf.write("\u00f4\u0109\5\62\32\2\u00f5\u0109\5.\30\2\u00f6\u00f7")
-        buf.write("\t\b\2\2\u00f7\u0109\5,\27\13\u00f8\u00f9\5*\26\2\u00f9")
-        buf.write("\u00fa\t\t\2\2\u00fa\u00fb\5*\26\2\u00fb\u0109\3\2\2\2")
-        buf.write("\u00fc\u00fd\5*\26\2\u00fd\u00fe\t\3\2\2\u00fe\u00ff\5")
-        buf.write("*\26\2\u00ff\u0109\3\2\2\2\u0100\u0101\7:\2\2\u0101\u0102")
-        buf.write("\5,\27\2\u0102\u0103\7;\2\2\u0103\u0104\7<\2\2\u0104\u0105")
-        buf.write("\5,\27\2\u0105\u0106\7=\2\2\u0106\u0107\5,\27\3\u0107")
-        buf.write("\u0109\3\2\2\2\u0108\u00ef\3\2\2\2\u0108\u00f4\3\2\2\2")
-        buf.write("\u0108\u00f5\3\2\2\2\u0108\u00f6\3\2\2\2\u0108\u00f8\3")
-        buf.write("\2\2\2\u0108\u00fc\3\2\2\2\u0108\u0100\3\2\2\2\u0109\u011b")
-        buf.write("\3\2\2\2\u010a\u010b\f\b\2\2\u010b\u010c\t\n\2\2\u010c")
-        buf.write("\u011a\5,\27\t\u010d\u010e\f\7\2\2\u010e\u010f\t\13\2")
-        buf.write("\2\u010f\u011a\5,\27\b\u0110\u0111\f\6\2\2\u0111\u0112")
-        buf.write("\7(\2\2\u0112\u011a\5,\27\7\u0113\u0114\f\5\2\2\u0114")
-        buf.write("\u0115\t\f\2\2\u0115\u011a\5,\27\6\u0116\u0117\f\4\2\2")
-        buf.write("\u0117\u0118\t\r\2\2\u0118\u011a\5,\27\4\u0119\u010a\3")
-        buf.write("\2\2\2\u0119\u010d\3\2\2\2\u0119\u0110\3\2\2\2\u0119\u0113")
-        buf.write("\3\2\2\2\u0119\u0116\3\2\2\2\u011a\u011d\3\2\2\2\u011b")
-        buf.write("\u0119\3\2\2\2\u011b\u011c\3\2\2\2\u011c-\3\2\2\2\u011d")
-        buf.write("\u011b\3\2\2\2\u011e\u011f\7\34\2\2\u011f\u0120\7:\2\2")
-        buf.write("\u0120\u0123\5\66\34\2\u0121\u0122\7\67\2\2\u0122\u0124")
-        buf.write("\5$\23\2\u0123\u0121\3\2\2\2\u0123\u0124\3\2\2\2\u0124")
-        buf.write("\u0125\3\2\2\2\u0125\u0126\7;\2\2\u0126\u0147\3\2\2\2")
-        buf.write("\u0127\u0128\7\5\2\2\u0128\u012a\7:\2\2\u0129\u012b\5")
-        buf.write("$\23\2\u012a\u0129\3\2\2\2\u012a\u012b\3\2\2\2\u012b\u012c")
-        buf.write("\3\2\2\2\u012c\u0147\7;\2\2\u012d\u012e\7\13\2\2\u012e")
-        buf.write("\u012f\7:\2\2\u012f\u0130\5\66\34\2\u0130\u0131\7\67\2")
-        buf.write('\2\u0131\u0132\5"\22\2\u0132\u0133\7;\2\2\u0133\u0147')
-        buf.write("\3\2\2\2\u0134\u0135\7\35\2\2\u0135\u0136\7:\2\2\u0136")
-        buf.write("\u0139\5\66\34\2\u0137\u0138\7\67\2\2\u0138\u013a\5$\23")
-        buf.write("\2\u0139\u0137\3\2\2\2\u0139\u013a\3\2\2\2\u013a\u013b")
-        buf.write("\3\2\2\2\u013b\u013c\7;\2\2\u013c\u0147\3\2\2\2\u013d")
-        buf.write("\u013e\7\36\2\2\u013e\u013f\7:\2\2\u013f\u0142\5\66\34")
-        buf.write("\2\u0140\u0141\7\67\2\2\u0141\u0143\5$\23\2\u0142\u0140")
-        buf.write("\3\2\2\2\u0142\u0143\3\2\2\2\u0143\u0144\3\2\2\2\u0144")
-        buf.write("\u0145\7;\2\2\u0145\u0147\3\2\2\2\u0146\u011e\3\2\2\2")
-        buf.write("\u0146\u0127\3\2\2\2\u0146\u012d\3\2\2\2\u0146\u0134\3")
-        buf.write("\2\2\2\u0146\u013d\3\2\2\2\u0147/\3\2\2\2\u0148\u0149")
-        buf.write("\t\16\2\2\u0149\61\3\2\2\2\u014a\u014b\t\17\2\2\u014b")
-        buf.write("\63\3\2\2\2\u014c\u014d\t\20\2\2\u014d\65\3\2\2\2\u014e")
-        buf.write("\u014f\7R\2\2\u014f\67\3\2\2\2\319>NY^d~\u008e\u009c\u00a8")
-        buf.write("\u00ac\u00b0\u00d3\u00ea\u00ec\u0108\u0119\u011b\u0123")
-        buf.write("\u012a\u0139\u0142\u0146")
+        buf.write("\3\26\3\26\7\26\u0116\n\26\f\26\16\26\u0119\13\26\3\27")
+        buf.write("\3\27\3\27\3\27\3\27\5\27\u0120\n\27\3\27\3\27\3\27\3")
+        buf.write("\27\3\27\5\27\u0127\n\27\3\27\3\27\3\27\3\27\3\27\3\27")
+        buf.write("\3\27\3\27\3\27\3\27\3\27\3\27\3\27\5\27\u0136\n\27\3")
+        buf.write("\27\3\27\3\27\3\27\3\27\3\27\3\27\5\27\u013f\n\27\3\27")
+        buf.write("\3\27\5\27\u0143\n\27\3\30\3\30\3\31\3\31\3\32\3\32\3")
+        buf.write("\33\3\33\3\33\2\4(*\34\2\4\6\b\n\f\16\20\22\24\26\30\32")
+        buf.write('\34\36 "$&(*,.\60\62\64\2\20\3\2\21\27\3\2./\3\2BC\4')
+        buf.write("\2?@DD\3\2*+\4\2%%AA\4\2,-HI\4\2''./\4\2##\60\60\4\2")
+        buf.write('$$\61\61\4\2&&\62\62\3\2JL\3\2MN\3\2 "\2\u0164\2\67\3')
+        buf.write("\2\2\2\4B\3\2\2\2\6E\3\2\2\2\bH\3\2\2\2\nW\3\2\2\2\f\\")
+        buf.write("\3\2\2\2\16^\3\2\2\2\20h\3\2\2\2\22s\3\2\2\2\24\u0080")
+        buf.write("\3\2\2\2\26\u0088\3\2\2\2\30\u008c\3\2\2\2\32\u008e\3")
+        buf.write("\2\2\2\34\u0095\3\2\2\2\36\u009d\3\2\2\2 \u00a6\3\2\2")
+        buf.write('\2"\u00aa\3\2\2\2$\u00ae\3\2\2\2&\u00b0\3\2\2\2(\u00cf')
+        buf.write("\3\2\2\2*\u0104\3\2\2\2,\u0142\3\2\2\2.\u0144\3\2\2\2")
+        buf.write("\60\u0146\3\2\2\2\62\u0148\3\2\2\2\64\u014a\3\2\2\2\66")
+        buf.write("8\5\b\5\2\67\66\3\2\2\2\678\3\2\2\28<\3\2\2\29;\5\f\7")
+        buf.write("\2:9\3\2\2\2;>\3\2\2\2<:\3\2\2\2<=\3\2\2\2=?\3\2\2\2>")
+        buf.write("<\3\2\2\2?@\5\24\13\2@A\7\2\2\3A\3\3\2\2\2BC\5(\25\2C")
+        buf.write("D\7\2\2\3D\5\3\2\2\2EF\5*\26\2FG\7\2\2\3G\7\3\2\2\2HI")
+        buf.write("\7\3\2\2IL\5\n\6\2JK\7\7\2\2KM\5*\26\2LJ\3\2\2\2LM\3\2")
+        buf.write("\2\2MN\3\2\2\2NO\7\66\2\2O\t\3\2\2\2PX\7\4\2\2QX\7\5\2")
+        buf.write("\2RS\7\6\2\2ST\7:\2\2TU\5\64\33\2UV\7;\2\2VX\3\2\2\2W")
+        buf.write("P\3\2\2\2WQ\3\2\2\2WR\3\2\2\2X\13\3\2\2\2Y]\5\16\b\2Z")
+        buf.write("]\5\20\t\2[]\5\22\n\2\\Y\3\2\2\2\\Z\3\2\2\2\\[\3\2\2\2")
+        buf.write("]\r\3\2\2\2^b\7\b\2\2_c\7\t\2\2`a\7\n\2\2ac\5&\24\2b_")
+        buf.write("\3\2\2\2b`\3\2\2\2cd\3\2\2\2de\7=\2\2ef\5*\26\2fg\7\66")
+        buf.write("\2\2g\17\3\2\2\2hi\7\b\2\2ij\7\13\2\2jk\7:\2\2kl\5\64")
+        buf.write("\33\2lm\7\67\2\2mn\5 \21\2no\7;\2\2op\5\36\20\2pq\5\60")
+        buf.write("\31\2qr\7\66\2\2r\21\3\2\2\2st\7\b\2\2tu\7\f\2\2u|\7\r")
+        buf.write("\2\2v}\7\16\2\2wx\7\17\2\2xy\78\2\2yz\5\34\17\2z{\79\2")
+        buf.write("\2{}\3\2\2\2|v\3\2\2\2|w\3\2\2\2}~\3\2\2\2~\177\7\66\2")
+        buf.write("\2\177\23\3\2\2\2\u0080\u0081\7\20\2\2\u0081\u0082\5\26")
+        buf.write("\f\2\u0082\u0083\7,\2\2\u0083\u0084\5&\24\2\u0084\u0085")
+        buf.write("\7=\2\2\u0085\u0086\5\30\r\2\u0086\u0087\7\66\2\2\u0087")
+        buf.write("\25\3\2\2\2\u0088\u0089\t\2\2\2\u0089\27\3\2\2\2\u008a")
+        buf.write("\u008d\5\32\16\2\u008b\u008d\5*\26\2\u008c\u008a\3\2\2")
+        buf.write("\2\u008c\u008b\3\2\2\2\u008d\31\3\2\2\2\u008e\u008f\7")
+        buf.write("\30\2\2\u008f\u0090\5*\26\2\u0090\u0091\7\63\2\2\u0091")
+        buf.write("\u0092\7\31\2\2\u0092\u0093\5&\24\2\u0093\u0094\5*\26")
+        buf.write("\2\u0094\33\3\2\2\2\u0095\u009a\5\64\33\2\u0096\u0097")
+        buf.write("\7\67\2\2\u0097\u0099\5\64\33\2\u0098\u0096\3\2\2\2\u0099")
+        buf.write("\u009c\3\2\2\2\u009a\u0098\3\2\2\2\u009a\u009b\3\2\2\2")
+        buf.write("\u009b\35\3\2\2\2\u009c\u009a\3\2\2\2\u009d\u009e\t\3")
+        buf.write("\2\2\u009e\37\3\2\2\2\u009f\u00a7\7@\2\2\u00a0\u00a7\5")
+        buf.write("&\24\2\u00a1\u00a2\5&\24\2\u00a2\u00a3\7\65\2\2\u00a3")
+        buf.write("\u00a4\5&\24\2\u00a4\u00a7\3\2\2\2\u00a5\u00a7\7\64\2")
+        buf.write("\2\u00a6\u009f\3\2\2\2\u00a6\u00a0\3\2\2\2\u00a6\u00a1")
+        buf.write("\3\2\2\2\u00a6\u00a5\3\2\2\2\u00a7!\3\2\2\2\u00a8\u00ab")
+        buf.write("\7\37\2\2\u00a9\u00ab\5&\24\2\u00aa\u00a8\3\2\2\2\u00aa")
+        buf.write("\u00a9\3\2\2\2\u00ab#\3\2\2\2\u00ac\u00af\7\37\2\2\u00ad")
+        buf.write("\u00af\5&\24\2\u00ae\u00ac\3\2\2\2\u00ae\u00ad\3\2\2\2")
+        buf.write("\u00af%\3\2\2\2\u00b0\u00b1\7L\2\2\u00b1'\3\2\2\2\u00b2")
+        buf.write("\u00b3\b\25\1\2\u00b3\u00b4\7:\2\2\u00b4\u00b5\5(\25\2")
+        buf.write("\u00b5\u00b6\7;\2\2\u00b6\u00d0\3\2\2\2\u00b7\u00d0\5")
+        buf.write(".\30\2\u00b8\u00d0\7P\2\2\u00b9\u00d0\5\62\32\2\u00ba")
+        buf.write("\u00bb\7\32\2\2\u00bb\u00bc\7:\2\2\u00bc\u00bd\5\64\33")
+        buf.write("\2\u00bd\u00be\7;\2\2\u00be\u00d0\3\2\2\2\u00bf\u00d0")
+        buf.write("\7\33\2\2\u00c0\u00c1\t\4\2\2\u00c1\u00d0\5(\25\f\u00c2")
+        buf.write("\u00c3\7O\2\2\u00c3\u00c4\7:\2\2\u00c4\u00c5\5(\25\2\u00c5")
+        buf.write("\u00c6\7;\2\2\u00c6\u00d0\3\2\2\2\u00c7\u00c8\7:\2\2\u00c8")
+        buf.write("\u00c9\5*\26\2\u00c9\u00ca\7;\2\2\u00ca\u00cb\7<\2\2\u00cb")
+        buf.write("\u00cc\5(\25\2\u00cc\u00cd\7=\2\2\u00cd\u00ce\5(\25\3")
+        buf.write("\u00ce\u00d0\3\2\2\2\u00cf\u00b2\3\2\2\2\u00cf\u00b7\3")
+        buf.write("\2\2\2\u00cf\u00b8\3\2\2\2\u00cf\u00b9\3\2\2\2\u00cf\u00ba")
+        buf.write("\3\2\2\2\u00cf\u00bf\3\2\2\2\u00cf\u00c0\3\2\2\2\u00cf")
+        buf.write("\u00c2\3\2\2\2\u00cf\u00c7\3\2\2\2\u00d0\u00e8\3\2\2\2")
+        buf.write("\u00d1\u00d2\f\13\2\2\u00d2\u00d3\7)\2\2\u00d3\u00e7\5")
+        buf.write("(\25\13\u00d4\u00d5\f\n\2\2\u00d5\u00d6\t\5\2\2\u00d6")
+        buf.write("\u00e7\5(\25\13\u00d7\u00d8\f\t\2\2\u00d8\u00d9\t\4\2")
+        buf.write("\2\u00d9\u00e7\5(\25\n\u00da\u00db\f\b\2\2\u00db\u00dc")
+        buf.write("\t\6\2\2\u00dc\u00e7\5(\25\t\u00dd\u00de\f\7\2\2\u00de")
+        buf.write("\u00df\7E\2\2\u00df\u00e7\5(\25\b\u00e0\u00e1\f\6\2\2")
+        buf.write("\u00e1\u00e2\7F\2\2\u00e2\u00e7\5(\25\7\u00e3\u00e4\f")
+        buf.write("\5\2\2\u00e4\u00e5\7G\2\2\u00e5\u00e7\5(\25\6\u00e6\u00d1")
+        buf.write("\3\2\2\2\u00e6\u00d4\3\2\2\2\u00e6\u00d7\3\2\2\2\u00e6")
+        buf.write("\u00da\3\2\2\2\u00e6\u00dd\3\2\2\2\u00e6\u00e0\3\2\2\2")
+        buf.write("\u00e6\u00e3\3\2\2\2\u00e7\u00ea\3\2\2\2\u00e8\u00e6\3")
+        buf.write("\2\2\2\u00e8\u00e9\3\2\2\2\u00e9)\3\2\2\2\u00ea\u00e8")
+        buf.write("\3\2\2\2\u00eb\u00ec\b\26\1\2\u00ec\u00ed\7:\2\2\u00ed")
+        buf.write("\u00ee\5*\26\2\u00ee\u00ef\7;\2\2\u00ef\u0105\3\2\2\2")
+        buf.write("\u00f0\u0105\5\60\31\2\u00f1\u0105\5,\27\2\u00f2\u00f3")
+        buf.write("\t\7\2\2\u00f3\u0105\5*\26\13\u00f4\u00f5\5(\25\2\u00f5")
+        buf.write("\u00f6\t\b\2\2\u00f6\u00f7\5(\25\2\u00f7\u0105\3\2\2\2")
+        buf.write("\u00f8\u00f9\5(\25\2\u00f9\u00fa\t\3\2\2\u00fa\u00fb\5")
+        buf.write("(\25\2\u00fb\u0105\3\2\2\2\u00fc\u00fd\7:\2\2\u00fd\u00fe")
+        buf.write("\5*\26\2\u00fe\u00ff\7;\2\2\u00ff\u0100\7<\2\2\u0100\u0101")
+        buf.write("\5*\26\2\u0101\u0102\7=\2\2\u0102\u0103\5*\26\3\u0103")
+        buf.write("\u0105\3\2\2\2\u0104\u00eb\3\2\2\2\u0104\u00f0\3\2\2\2")
+        buf.write("\u0104\u00f1\3\2\2\2\u0104\u00f2\3\2\2\2\u0104\u00f4\3")
+        buf.write("\2\2\2\u0104\u00f8\3\2\2\2\u0104\u00fc\3\2\2\2\u0105\u0117")
+        buf.write("\3\2\2\2\u0106\u0107\f\b\2\2\u0107\u0108\t\t\2\2\u0108")
+        buf.write("\u0116\5*\26\t\u0109\u010a\f\7\2\2\u010a\u010b\t\n\2\2")
+        buf.write("\u010b\u0116\5*\26\b\u010c\u010d\f\6\2\2\u010d\u010e\7")
+        buf.write("(\2\2\u010e\u0116\5*\26\7\u010f\u0110\f\5\2\2\u0110\u0111")
+        buf.write("\t\13\2\2\u0111\u0116\5*\26\6\u0112\u0113\f\4\2\2\u0113")
+        buf.write("\u0114\t\f\2\2\u0114\u0116\5*\26\4\u0115\u0106\3\2\2\2")
+        buf.write("\u0115\u0109\3\2\2\2\u0115\u010c\3\2\2\2\u0115\u010f\3")
+        buf.write("\2\2\2\u0115\u0112\3\2\2\2\u0116\u0119\3\2\2\2\u0117\u0115")
+        buf.write("\3\2\2\2\u0117\u0118\3\2\2\2\u0118+\3\2\2\2\u0119\u0117")
+        buf.write("\3\2\2\2\u011a\u011b\7\34\2\2\u011b\u011c\7:\2\2\u011c")
+        buf.write("\u011f\5\64\33\2\u011d\u011e\7\67\2\2\u011e\u0120\5$\23")
+        buf.write("\2\u011f\u011d\3\2\2\2\u011f\u0120\3\2\2\2\u0120\u0121")
+        buf.write("\3\2\2\2\u0121\u0122\7;\2\2\u0122\u0143\3\2\2\2\u0123")
+        buf.write("\u0124\7\5\2\2\u0124\u0126\7:\2\2\u0125\u0127\5$\23\2")
+        buf.write("\u0126\u0125\3\2\2\2\u0126\u0127\3\2\2\2\u0127\u0128\3")
+        buf.write("\2\2\2\u0128\u0143\7;\2\2\u0129\u012a\7\13\2\2\u012a\u012b")
+        buf.write("\7:\2\2\u012b\u012c\5\64\33\2\u012c\u012d\7\67\2\2\u012d")
+        buf.write('\u012e\5"\22\2\u012e\u012f\7;\2\2\u012f\u0143\3\2\2\2')
+        buf.write("\u0130\u0131\7\35\2\2\u0131\u0132\7:\2\2\u0132\u0135\5")
+        buf.write("\64\33\2\u0133\u0134\7\67\2\2\u0134\u0136\5$\23\2\u0135")
+        buf.write("\u0133\3\2\2\2\u0135\u0136\3\2\2\2\u0136\u0137\3\2\2\2")
+        buf.write("\u0137\u0138\7;\2\2\u0138\u0143\3\2\2\2\u0139\u013a\7")
+        buf.write("\36\2\2\u013a\u013b\7:\2\2\u013b\u013e\5\64\33\2\u013c")
+        buf.write("\u013d\7\67\2\2\u013d\u013f\5$\23\2\u013e\u013c\3\2\2")
+        buf.write("\2\u013e\u013f\3\2\2\2\u013f\u0140\3\2\2\2\u0140\u0141")
+        buf.write("\7;\2\2\u0141\u0143\3\2\2\2\u0142\u011a\3\2\2\2\u0142")
+        buf.write("\u0123\3\2\2\2\u0142\u0129\3\2\2\2\u0142\u0130\3\2\2\2")
+        buf.write("\u0142\u0139\3\2\2\2\u0143-\3\2\2\2\u0144\u0145\t\r\2")
+        buf.write("\2\u0145/\3\2\2\2\u0146\u0147\t\16\2\2\u0147\61\3\2\2")
+        buf.write("\2\u0148\u0149\t\17\2\2\u0149\63\3\2\2\2\u014a\u014b\7")
+        buf.write("Q\2\2\u014b\65\3\2\2\2\31\67<LW\\b|\u008c\u009a\u00a6")
+        buf.write("\u00aa\u00ae\u00cf\u00e6\u00e8\u0104\u0115\u0117\u011f")
+        buf.write("\u0126\u0135\u013e\u0142")
         return buf.getvalue()
 
 
@@ -326,7 +325,6 @@ class BmcQueryParser(Parser):
         "GT",
         "FLOAT",
         "HEX_INT",
-        "POSITIVE_INT",
         "INT",
         "TRUE",
         "FALSE",
@@ -357,15 +355,14 @@ class BmcQueryParser(Parser):
     RULE_event_range_selector = 15
     RULE_event_cycle_selector = 16
     RULE_frame_selector = 17
-    RULE_positive_integer = 18
-    RULE_integer_literal = 19
-    RULE_bmc_num_expression = 20
-    RULE_bmc_cond_expression = 21
-    RULE_bmc_boolean_atom = 22
-    RULE_num_literal = 23
-    RULE_bool_literal = 24
-    RULE_math_const = 25
-    RULE_string_literal = 26
+    RULE_integer_literal = 18
+    RULE_bmc_num_expression = 19
+    RULE_bmc_cond_expression = 20
+    RULE_bmc_boolean_atom = 21
+    RULE_num_literal = 22
+    RULE_bool_literal = 23
+    RULE_math_const = 24
+    RULE_string_literal = 25
 
     ruleNames = [
         "query",
@@ -386,7 +383,6 @@ class BmcQueryParser(Parser):
         "event_range_selector",
         "event_cycle_selector",
         "frame_selector",
-        "positive_integer",
         "integer_literal",
         "bmc_num_expression",
         "bmc_cond_expression",
@@ -471,17 +467,16 @@ class BmcQueryParser(Parser):
     GT = 71
     FLOAT = 72
     HEX_INT = 73
-    POSITIVE_INT = 74
-    INT = 75
-    TRUE = 76
-    FALSE = 77
-    UFUNC_NAME = 78
-    ID = 79
-    STRING = 80
-    MULTILINE_COMMENT = 81
-    LINE_COMMENT = 82
-    PYTHON_COMMENT = 83
-    WS = 84
+    INT = 74
+    TRUE = 75
+    FALSE = 76
+    UFUNC_NAME = 77
+    ID = 78
+    STRING = 79
+    MULTILINE_COMMENT = 80
+    LINE_COMMENT = 81
+    PYTHON_COMMENT = 82
+    WS = 83
 
     def __init__(self, input: TokenStream, output: TextIO = sys.stdout):
         super().__init__(input, output)
@@ -533,26 +528,26 @@ class BmcQueryParser(Parser):
         self._la = 0  # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 55
+            self.state = 53
             self._errHandler.sync(self)
             _la = self._input.LA(1)
             if _la == BmcQueryParser.INIT:
-                self.state = 54
+                self.state = 52
                 self.init_clause()
 
-            self.state = 60
+            self.state = 58
             self._errHandler.sync(self)
             _la = self._input.LA(1)
             while _la == BmcQueryParser.ASSUME:
-                self.state = 57
+                self.state = 55
                 self.assume_clause()
-                self.state = 62
+                self.state = 60
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
 
-            self.state = 63
+            self.state = 61
             self.check_clause()
-            self.state = 64
+            self.state = 62
             self.match(BmcQueryParser.EOF)
         except RecognitionException as re:
             localctx.exception = re
@@ -596,9 +591,9 @@ class BmcQueryParser(Parser):
         self.enterRule(localctx, 2, self.RULE_bmc_num_expression_entry)
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 66
+            self.state = 64
             self.bmc_num_expression(0)
-            self.state = 67
+            self.state = 65
             self.match(BmcQueryParser.EOF)
         except RecognitionException as re:
             localctx.exception = re
@@ -644,9 +639,9 @@ class BmcQueryParser(Parser):
         self.enterRule(localctx, 4, self.RULE_bmc_cond_expression_entry)
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 69
+            self.state = 67
             self.bmc_cond_expression(0)
-            self.state = 70
+            self.state = 68
             self.match(BmcQueryParser.EOF)
         except RecognitionException as re:
             localctx.exception = re
@@ -700,20 +695,20 @@ class BmcQueryParser(Parser):
         self._la = 0  # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 72
+            self.state = 70
             self.match(BmcQueryParser.INIT)
-            self.state = 73
+            self.state = 71
             self.init_target()
-            self.state = 76
+            self.state = 74
             self._errHandler.sync(self)
             _la = self._input.LA(1)
             if _la == BmcQueryParser.WHERE:
-                self.state = 74
+                self.state = 72
                 self.match(BmcQueryParser.WHERE)
-                self.state = 75
+                self.state = 73
                 self.bmc_cond_expression(0)
 
-            self.state = 78
+            self.state = 76
             self.match(BmcQueryParser.SEMI)
         except RecognitionException as re:
             localctx.exception = re
@@ -766,28 +761,28 @@ class BmcQueryParser(Parser):
         localctx = BmcQueryParser.Init_targetContext(self, self._ctx, self.state)
         self.enterRule(localctx, 8, self.RULE_init_target)
         try:
-            self.state = 87
+            self.state = 85
             self._errHandler.sync(self)
             token = self._input.LA(1)
             if token in [BmcQueryParser.COLD]:
                 self.enterOuterAlt(localctx, 1)
-                self.state = 80
+                self.state = 78
                 self.match(BmcQueryParser.COLD)
                 pass
             elif token in [BmcQueryParser.TERMINATED]:
                 self.enterOuterAlt(localctx, 2)
-                self.state = 81
+                self.state = 79
                 self.match(BmcQueryParser.TERMINATED)
                 pass
             elif token in [BmcQueryParser.STATE]:
                 self.enterOuterAlt(localctx, 3)
-                self.state = 82
+                self.state = 80
                 self.match(BmcQueryParser.STATE)
-                self.state = 83
+                self.state = 81
                 self.match(BmcQueryParser.LPAREN)
-                self.state = 84
+                self.state = 82
                 self.string_literal()
-                self.state = 85
+                self.state = 83
                 self.match(BmcQueryParser.RPAREN)
                 pass
             else:
@@ -835,24 +830,24 @@ class BmcQueryParser(Parser):
         localctx = BmcQueryParser.Assume_clauseContext(self, self._ctx, self.state)
         self.enterRule(localctx, 10, self.RULE_assume_clause)
         try:
-            self.state = 92
+            self.state = 90
             self._errHandler.sync(self)
             la_ = self._interp.adaptivePredict(self._input, 4, self._ctx)
             if la_ == 1:
                 self.enterOuterAlt(localctx, 1)
-                self.state = 89
+                self.state = 87
                 self.frame_assume()
                 pass
 
             elif la_ == 2:
                 self.enterOuterAlt(localctx, 2)
-                self.state = 90
+                self.state = 88
                 self.event_assume()
                 pass
 
             elif la_ == 3:
                 self.enterOuterAlt(localctx, 3)
-                self.state = 91
+                self.state = 89
                 self.cardinality_assume()
                 pass
 
@@ -913,29 +908,29 @@ class BmcQueryParser(Parser):
         self.enterRule(localctx, 12, self.RULE_frame_assume)
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 94
+            self.state = 92
             self.match(BmcQueryParser.ASSUME)
-            self.state = 98
+            self.state = 96
             self._errHandler.sync(self)
             token = self._input.LA(1)
             if token in [BmcQueryParser.ALWAYS]:
-                self.state = 95
+                self.state = 93
                 self.match(BmcQueryParser.ALWAYS)
                 pass
             elif token in [BmcQueryParser.AT]:
-                self.state = 96
+                self.state = 94
                 self.match(BmcQueryParser.AT)
-                self.state = 97
+                self.state = 95
                 self.integer_literal()
                 pass
             else:
                 raise NoViableAltException(self)
 
-            self.state = 100
+            self.state = 98
             self.match(BmcQueryParser.COLON)
-            self.state = 101
+            self.state = 99
             self.bmc_cond_expression(0)
-            self.state = 102
+            self.state = 100
             self.match(BmcQueryParser.SEMI)
         except RecognitionException as re:
             localctx.exception = re
@@ -1003,25 +998,25 @@ class BmcQueryParser(Parser):
         self.enterRule(localctx, 14, self.RULE_event_assume)
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 104
+            self.state = 102
             self.match(BmcQueryParser.ASSUME)
-            self.state = 105
+            self.state = 103
             self.match(BmcQueryParser.EVENT)
-            self.state = 106
+            self.state = 104
             self.match(BmcQueryParser.LPAREN)
-            self.state = 107
+            self.state = 105
             self.string_literal()
-            self.state = 108
+            self.state = 106
             self.match(BmcQueryParser.COMMA)
-            self.state = 109
+            self.state = 107
             self.event_range_selector()
-            self.state = 110
+            self.state = 108
             self.match(BmcQueryParser.RPAREN)
-            self.state = 111
+            self.state = 109
             self.bool_cmp_op()
-            self.state = 112
+            self.state = 110
             self.bool_literal()
-            self.state = 113
+            self.state = 111
             self.match(BmcQueryParser.SEMI)
         except RecognitionException as re:
             localctx.exception = re
@@ -1084,33 +1079,33 @@ class BmcQueryParser(Parser):
         self.enterRule(localctx, 16, self.RULE_cardinality_assume)
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 115
+            self.state = 113
             self.match(BmcQueryParser.ASSUME)
-            self.state = 116
+            self.state = 114
             self.match(BmcQueryParser.EVENTS)
-            self.state = 117
+            self.state = 115
             self.match(BmcQueryParser.CARDINALITY)
-            self.state = 124
+            self.state = 122
             self._errHandler.sync(self)
             token = self._input.LA(1)
             if token in [BmcQueryParser.ANY]:
-                self.state = 118
+                self.state = 116
                 self.match(BmcQueryParser.ANY)
                 pass
             elif token in [BmcQueryParser.AT_MOST_ONE]:
-                self.state = 119
+                self.state = 117
                 self.match(BmcQueryParser.AT_MOST_ONE)
-                self.state = 120
+                self.state = 118
                 self.match(BmcQueryParser.LBRACE)
-                self.state = 121
+                self.state = 119
                 self.string_list()
-                self.state = 122
+                self.state = 120
                 self.match(BmcQueryParser.RBRACE)
                 pass
             else:
                 raise NoViableAltException(self)
 
-            self.state = 126
+            self.state = 124
             self.match(BmcQueryParser.SEMI)
         except RecognitionException as re:
             localctx.exception = re
@@ -1138,8 +1133,8 @@ class BmcQueryParser(Parser):
         def LE(self):
             return self.getToken(BmcQueryParser.LE, 0)
 
-        def positive_integer(self):
-            return self.getTypedRuleContext(BmcQueryParser.Positive_integerContext, 0)
+        def integer_literal(self):
+            return self.getTypedRuleContext(BmcQueryParser.Integer_literalContext, 0)
 
         def COLON(self):
             return self.getToken(BmcQueryParser.COLON, 0)
@@ -1167,19 +1162,19 @@ class BmcQueryParser(Parser):
         self.enterRule(localctx, 18, self.RULE_check_clause)
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 128
+            self.state = 126
             self.match(BmcQueryParser.CHECK)
-            self.state = 129
+            self.state = 127
             self.property_kind()
-            self.state = 130
+            self.state = 128
             self.match(BmcQueryParser.LE)
-            self.state = 131
-            self.positive_integer()
-            self.state = 132
+            self.state = 129
+            self.integer_literal()
+            self.state = 130
             self.match(BmcQueryParser.COLON)
-            self.state = 133
+            self.state = 131
             self.property_body()
-            self.state = 134
+            self.state = 132
             self.match(BmcQueryParser.SEMI)
         except RecognitionException as re:
             localctx.exception = re
@@ -1237,7 +1232,7 @@ class BmcQueryParser(Parser):
         self._la = 0  # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 136
+            self.state = 134
             _la = self._input.LA(1)
             if not (
                 ((_la) & ~0x3F) == 0
@@ -1302,12 +1297,12 @@ class BmcQueryParser(Parser):
         localctx = BmcQueryParser.Property_bodyContext(self, self._ctx, self.state)
         self.enterRule(localctx, 22, self.RULE_property_body)
         try:
-            self.state = 140
+            self.state = 138
             self._errHandler.sync(self)
             token = self._input.LA(1)
             if token in [BmcQueryParser.TRIGGER]:
                 self.enterOuterAlt(localctx, 1)
-                self.state = 138
+                self.state = 136
                 self.response_property_body()
                 pass
             elif token in [
@@ -1328,7 +1323,6 @@ class BmcQueryParser(Parser):
                 BmcQueryParser.MINUS,
                 BmcQueryParser.FLOAT,
                 BmcQueryParser.HEX_INT,
-                BmcQueryParser.POSITIVE_INT,
                 BmcQueryParser.INT,
                 BmcQueryParser.TRUE,
                 BmcQueryParser.FALSE,
@@ -1336,7 +1330,7 @@ class BmcQueryParser(Parser):
                 BmcQueryParser.ID,
             ]:
                 self.enterOuterAlt(localctx, 2)
-                self.state = 139
+                self.state = 137
                 self.bmc_cond_expression(0)
                 pass
             else:
@@ -1378,8 +1372,8 @@ class BmcQueryParser(Parser):
         def WITHIN(self):
             return self.getToken(BmcQueryParser.WITHIN, 0)
 
-        def positive_integer(self):
-            return self.getTypedRuleContext(BmcQueryParser.Positive_integerContext, 0)
+        def integer_literal(self):
+            return self.getTypedRuleContext(BmcQueryParser.Integer_literalContext, 0)
 
         def getRuleIndex(self):
             return BmcQueryParser.RULE_response_property_body
@@ -1400,17 +1394,17 @@ class BmcQueryParser(Parser):
         self.enterRule(localctx, 24, self.RULE_response_property_body)
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 142
+            self.state = 140
             self.match(BmcQueryParser.TRIGGER)
-            self.state = 143
+            self.state = 141
             self.bmc_cond_expression(0)
-            self.state = 144
+            self.state = 142
             self.match(BmcQueryParser.ARROW)
-            self.state = 145
+            self.state = 143
             self.match(BmcQueryParser.WITHIN)
-            self.state = 146
-            self.positive_integer()
-            self.state = 147
+            self.state = 144
+            self.integer_literal()
+            self.state = 145
             self.bmc_cond_expression(0)
         except RecognitionException as re:
             localctx.exception = re
@@ -1459,17 +1453,17 @@ class BmcQueryParser(Parser):
         self._la = 0  # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 149
+            self.state = 147
             self.string_literal()
-            self.state = 154
+            self.state = 152
             self._errHandler.sync(self)
             _la = self._input.LA(1)
             while _la == BmcQueryParser.COMMA:
-                self.state = 150
+                self.state = 148
                 self.match(BmcQueryParser.COMMA)
-                self.state = 151
+                self.state = 149
                 self.string_literal()
-                self.state = 156
+                self.state = 154
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
 
@@ -1514,7 +1508,7 @@ class BmcQueryParser(Parser):
         self._la = 0  # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 157
+            self.state = 155
             _la = self._input.LA(1)
             if not (_la == BmcQueryParser.EQ or _la == BmcQueryParser.NE):
                 self._errHandler.recoverInline(self)
@@ -1573,34 +1567,34 @@ class BmcQueryParser(Parser):
         )
         self.enterRule(localctx, 30, self.RULE_event_range_selector)
         try:
-            self.state = 166
+            self.state = 164
             self._errHandler.sync(self)
             la_ = self._interp.adaptivePredict(self._input, 9, self._ctx)
             if la_ == 1:
                 self.enterOuterAlt(localctx, 1)
-                self.state = 159
+                self.state = 157
                 self.match(BmcQueryParser.STAR)
                 pass
 
             elif la_ == 2:
                 self.enterOuterAlt(localctx, 2)
-                self.state = 160
+                self.state = 158
                 self.integer_literal()
                 pass
 
             elif la_ == 3:
                 self.enterOuterAlt(localctx, 3)
-                self.state = 161
+                self.state = 159
                 self.integer_literal()
-                self.state = 162
+                self.state = 160
                 self.match(BmcQueryParser.DOTDOT)
-                self.state = 163
+                self.state = 161
                 self.integer_literal()
                 pass
 
             elif la_ == 4:
                 self.enterOuterAlt(localctx, 4)
-                self.state = 165
+                self.state = 163
                 self.match(BmcQueryParser.RANGE_INT)
                 pass
 
@@ -1645,17 +1639,17 @@ class BmcQueryParser(Parser):
         )
         self.enterRule(localctx, 32, self.RULE_event_cycle_selector)
         try:
-            self.state = 170
+            self.state = 168
             self._errHandler.sync(self)
             token = self._input.LA(1)
             if token in [BmcQueryParser.CURRENT]:
                 self.enterOuterAlt(localctx, 1)
-                self.state = 168
+                self.state = 166
                 self.match(BmcQueryParser.CURRENT)
                 pass
-            elif token in [BmcQueryParser.POSITIVE_INT, BmcQueryParser.INT]:
+            elif token in [BmcQueryParser.INT]:
                 self.enterOuterAlt(localctx, 2)
-                self.state = 169
+                self.state = 167
                 self.integer_literal()
                 pass
             else:
@@ -1700,61 +1694,22 @@ class BmcQueryParser(Parser):
         localctx = BmcQueryParser.Frame_selectorContext(self, self._ctx, self.state)
         self.enterRule(localctx, 34, self.RULE_frame_selector)
         try:
-            self.state = 174
+            self.state = 172
             self._errHandler.sync(self)
             token = self._input.LA(1)
             if token in [BmcQueryParser.CURRENT]:
                 self.enterOuterAlt(localctx, 1)
-                self.state = 172
+                self.state = 170
                 self.match(BmcQueryParser.CURRENT)
                 pass
-            elif token in [BmcQueryParser.POSITIVE_INT, BmcQueryParser.INT]:
+            elif token in [BmcQueryParser.INT]:
                 self.enterOuterAlt(localctx, 2)
-                self.state = 173
+                self.state = 171
                 self.integer_literal()
                 pass
             else:
                 raise NoViableAltException(self)
 
-        except RecognitionException as re:
-            localctx.exception = re
-            self._errHandler.reportError(self, re)
-            self._errHandler.recover(self, re)
-        finally:
-            self.exitRule()
-        return localctx
-
-    class Positive_integerContext(ParserRuleContext):
-        __slots__ = "parser"
-
-        def __init__(
-            self, parser, parent: ParserRuleContext = None, invokingState: int = -1
-        ):
-            super().__init__(parent, invokingState)
-            self.parser = parser
-
-        def POSITIVE_INT(self):
-            return self.getToken(BmcQueryParser.POSITIVE_INT, 0)
-
-        def getRuleIndex(self):
-            return BmcQueryParser.RULE_positive_integer
-
-        def enterRule(self, listener: ParseTreeListener):
-            if hasattr(listener, "enterPositive_integer"):
-                listener.enterPositive_integer(self)
-
-        def exitRule(self, listener: ParseTreeListener):
-            if hasattr(listener, "exitPositive_integer"):
-                listener.exitPositive_integer(self)
-
-    def positive_integer(self):
-
-        localctx = BmcQueryParser.Positive_integerContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 36, self.RULE_positive_integer)
-        try:
-            self.enterOuterAlt(localctx, 1)
-            self.state = 176
-            self.match(BmcQueryParser.POSITIVE_INT)
         except RecognitionException as re:
             localctx.exception = re
             self._errHandler.reportError(self, re)
@@ -1771,9 +1726,6 @@ class BmcQueryParser(Parser):
         ):
             super().__init__(parent, invokingState)
             self.parser = parser
-
-        def POSITIVE_INT(self):
-            return self.getToken(BmcQueryParser.POSITIVE_INT, 0)
 
         def INT(self):
             return self.getToken(BmcQueryParser.INT, 0)
@@ -1792,17 +1744,11 @@ class BmcQueryParser(Parser):
     def integer_literal(self):
 
         localctx = BmcQueryParser.Integer_literalContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 38, self.RULE_integer_literal)
-        self._la = 0  # Token type
+        self.enterRule(localctx, 36, self.RULE_integer_literal)
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 178
-            _la = self._input.LA(1)
-            if not (_la == BmcQueryParser.POSITIVE_INT or _la == BmcQueryParser.INT):
-                self._errHandler.recoverInline(self)
-            else:
-                self._errHandler.reportMatch(self)
-                self.consume()
+            self.state = 174
+            self.match(BmcQueryParser.INT)
         except RecognitionException as re:
             localctx.exception = re
             self._errHandler.reportError(self, re)
@@ -2110,12 +2056,12 @@ class BmcQueryParser(Parser):
             self, self._ctx, _parentState
         )
         _prevctx = localctx
-        _startState = 40
-        self.enterRecursionRule(localctx, 40, self.RULE_bmc_num_expression, _p)
+        _startState = 38
+        self.enterRecursionRule(localctx, 38, self.RULE_bmc_num_expression, _p)
         self._la = 0  # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 209
+            self.state = 205
             self._errHandler.sync(self)
             la_ = self._interp.adaptivePredict(self._input, 12, self._ctx)
             if la_ == 1:
@@ -2123,11 +2069,11 @@ class BmcQueryParser(Parser):
                 self._ctx = localctx
                 _prevctx = localctx
 
-                self.state = 181
+                self.state = 177
                 self.match(BmcQueryParser.LPAREN)
-                self.state = 182
+                self.state = 178
                 self.bmc_num_expression(0)
-                self.state = 183
+                self.state = 179
                 self.match(BmcQueryParser.RPAREN)
                 pass
 
@@ -2135,7 +2081,7 @@ class BmcQueryParser(Parser):
                 localctx = BmcQueryParser.LiteralExprNumContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
-                self.state = 185
+                self.state = 181
                 self.num_literal()
                 pass
 
@@ -2143,7 +2089,7 @@ class BmcQueryParser(Parser):
                 localctx = BmcQueryParser.IdExprNumContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
-                self.state = 186
+                self.state = 182
                 self.match(BmcQueryParser.ID)
                 pass
 
@@ -2151,7 +2097,7 @@ class BmcQueryParser(Parser):
                 localctx = BmcQueryParser.MathConstExprNumContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
-                self.state = 187
+                self.state = 183
                 self.math_const()
                 pass
 
@@ -2159,13 +2105,13 @@ class BmcQueryParser(Parser):
                 localctx = BmcQueryParser.FrameVarExprNumContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
-                self.state = 188
+                self.state = 184
                 self.match(BmcQueryParser.VAR)
-                self.state = 189
+                self.state = 185
                 self.match(BmcQueryParser.LPAREN)
-                self.state = 190
+                self.state = 186
                 self.string_literal()
-                self.state = 191
+                self.state = 187
                 self.match(BmcQueryParser.RPAREN)
                 pass
 
@@ -2173,7 +2119,7 @@ class BmcQueryParser(Parser):
                 localctx = BmcQueryParser.CycleExprNumContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
-                self.state = 193
+                self.state = 189
                 self.match(BmcQueryParser.CYCLE)
                 pass
 
@@ -2181,7 +2127,7 @@ class BmcQueryParser(Parser):
                 localctx = BmcQueryParser.UnaryExprNumContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
-                self.state = 194
+                self.state = 190
                 localctx.op = self._input.LT(1)
                 _la = self._input.LA(1)
                 if not (_la == BmcQueryParser.PLUS or _la == BmcQueryParser.MINUS):
@@ -2189,7 +2135,7 @@ class BmcQueryParser(Parser):
                 else:
                     self._errHandler.reportMatch(self)
                     self.consume()
-                self.state = 195
+                self.state = 191
                 self.bmc_num_expression(10)
                 pass
 
@@ -2197,13 +2143,13 @@ class BmcQueryParser(Parser):
                 localctx = BmcQueryParser.FuncExprNumContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
-                self.state = 196
+                self.state = 192
                 localctx.func_name = self.match(BmcQueryParser.UFUNC_NAME)
-                self.state = 197
+                self.state = 193
                 self.match(BmcQueryParser.LPAREN)
-                self.state = 198
+                self.state = 194
                 self.bmc_num_expression(0)
-                self.state = 199
+                self.state = 195
                 self.match(BmcQueryParser.RPAREN)
                 pass
 
@@ -2213,24 +2159,24 @@ class BmcQueryParser(Parser):
                 )
                 self._ctx = localctx
                 _prevctx = localctx
-                self.state = 201
+                self.state = 197
                 self.match(BmcQueryParser.LPAREN)
-                self.state = 202
+                self.state = 198
                 self.bmc_cond_expression(0)
-                self.state = 203
+                self.state = 199
                 self.match(BmcQueryParser.RPAREN)
-                self.state = 204
+                self.state = 200
                 self.match(BmcQueryParser.QUESTION)
-                self.state = 205
+                self.state = 201
                 self.bmc_num_expression(0)
-                self.state = 206
+                self.state = 202
                 self.match(BmcQueryParser.COLON)
-                self.state = 207
+                self.state = 203
                 self.bmc_num_expression(1)
                 pass
 
             self._ctx.stop = self._input.LT(-1)
-            self.state = 234
+            self.state = 230
             self._errHandler.sync(self)
             _alt = self._interp.adaptivePredict(self._input, 14, self._ctx)
             while _alt != 2 and _alt != ATN.INVALID_ALT_NUMBER:
@@ -2238,7 +2184,7 @@ class BmcQueryParser(Parser):
                     if self._parseListeners is not None:
                         self.triggerExitRuleEvent()
                     _prevctx = localctx
-                    self.state = 232
+                    self.state = 228
                     self._errHandler.sync(self)
                     la_ = self._interp.adaptivePredict(self._input, 13, self._ctx)
                     if la_ == 1:
@@ -2251,16 +2197,16 @@ class BmcQueryParser(Parser):
                         self.pushNewRecursionContext(
                             localctx, _startState, self.RULE_bmc_num_expression
                         )
-                        self.state = 211
+                        self.state = 207
                         if not self.precpred(self._ctx, 9):
                             from antlr4.error.Errors import FailedPredicateException
 
                             raise FailedPredicateException(
                                 self, "self.precpred(self._ctx, 9)"
                             )
-                        self.state = 212
+                        self.state = 208
                         localctx.op = self.match(BmcQueryParser.POW)
-                        self.state = 213
+                        self.state = 209
                         self.bmc_num_expression(9)
                         pass
 
@@ -2274,14 +2220,14 @@ class BmcQueryParser(Parser):
                         self.pushNewRecursionContext(
                             localctx, _startState, self.RULE_bmc_num_expression
                         )
-                        self.state = 214
+                        self.state = 210
                         if not self.precpred(self._ctx, 8):
                             from antlr4.error.Errors import FailedPredicateException
 
                             raise FailedPredicateException(
                                 self, "self.precpred(self._ctx, 8)"
                             )
-                        self.state = 215
+                        self.state = 211
                         localctx.op = self._input.LT(1)
                         _la = self._input.LA(1)
                         if not (
@@ -2300,7 +2246,7 @@ class BmcQueryParser(Parser):
                         else:
                             self._errHandler.reportMatch(self)
                             self.consume()
-                        self.state = 216
+                        self.state = 212
                         self.bmc_num_expression(9)
                         pass
 
@@ -2314,14 +2260,14 @@ class BmcQueryParser(Parser):
                         self.pushNewRecursionContext(
                             localctx, _startState, self.RULE_bmc_num_expression
                         )
-                        self.state = 217
+                        self.state = 213
                         if not self.precpred(self._ctx, 7):
                             from antlr4.error.Errors import FailedPredicateException
 
                             raise FailedPredicateException(
                                 self, "self.precpred(self._ctx, 7)"
                             )
-                        self.state = 218
+                        self.state = 214
                         localctx.op = self._input.LT(1)
                         _la = self._input.LA(1)
                         if not (
@@ -2331,7 +2277,7 @@ class BmcQueryParser(Parser):
                         else:
                             self._errHandler.reportMatch(self)
                             self.consume()
-                        self.state = 219
+                        self.state = 215
                         self.bmc_num_expression(8)
                         pass
 
@@ -2345,14 +2291,14 @@ class BmcQueryParser(Parser):
                         self.pushNewRecursionContext(
                             localctx, _startState, self.RULE_bmc_num_expression
                         )
-                        self.state = 220
+                        self.state = 216
                         if not self.precpred(self._ctx, 6):
                             from antlr4.error.Errors import FailedPredicateException
 
                             raise FailedPredicateException(
                                 self, "self.precpred(self._ctx, 6)"
                             )
-                        self.state = 221
+                        self.state = 217
                         localctx.op = self._input.LT(1)
                         _la = self._input.LA(1)
                         if not (
@@ -2363,7 +2309,7 @@ class BmcQueryParser(Parser):
                         else:
                             self._errHandler.reportMatch(self)
                             self.consume()
-                        self.state = 222
+                        self.state = 218
                         self.bmc_num_expression(7)
                         pass
 
@@ -2377,16 +2323,16 @@ class BmcQueryParser(Parser):
                         self.pushNewRecursionContext(
                             localctx, _startState, self.RULE_bmc_num_expression
                         )
-                        self.state = 223
+                        self.state = 219
                         if not self.precpred(self._ctx, 5):
                             from antlr4.error.Errors import FailedPredicateException
 
                             raise FailedPredicateException(
                                 self, "self.precpred(self._ctx, 5)"
                             )
-                        self.state = 224
+                        self.state = 220
                         localctx.op = self.match(BmcQueryParser.AMP)
-                        self.state = 225
+                        self.state = 221
                         self.bmc_num_expression(6)
                         pass
 
@@ -2400,16 +2346,16 @@ class BmcQueryParser(Parser):
                         self.pushNewRecursionContext(
                             localctx, _startState, self.RULE_bmc_num_expression
                         )
-                        self.state = 226
+                        self.state = 222
                         if not self.precpred(self._ctx, 4):
                             from antlr4.error.Errors import FailedPredicateException
 
                             raise FailedPredicateException(
                                 self, "self.precpred(self._ctx, 4)"
                             )
-                        self.state = 227
+                        self.state = 223
                         localctx.op = self.match(BmcQueryParser.CARET)
-                        self.state = 228
+                        self.state = 224
                         self.bmc_num_expression(5)
                         pass
 
@@ -2423,20 +2369,20 @@ class BmcQueryParser(Parser):
                         self.pushNewRecursionContext(
                             localctx, _startState, self.RULE_bmc_num_expression
                         )
-                        self.state = 229
+                        self.state = 225
                         if not self.precpred(self._ctx, 3):
                             from antlr4.error.Errors import FailedPredicateException
 
                             raise FailedPredicateException(
                                 self, "self.precpred(self._ctx, 3)"
                             )
-                        self.state = 230
+                        self.state = 226
                         localctx.op = self.match(BmcQueryParser.PIPE)
-                        self.state = 231
+                        self.state = 227
                         self.bmc_num_expression(4)
                         pass
 
-                self.state = 236
+                self.state = 232
                 self._errHandler.sync(self)
                 _alt = self._interp.adaptivePredict(self._input, 14, self._ctx)
 
@@ -2722,12 +2668,12 @@ class BmcQueryParser(Parser):
             self, self._ctx, _parentState
         )
         _prevctx = localctx
-        _startState = 42
-        self.enterRecursionRule(localctx, 42, self.RULE_bmc_cond_expression, _p)
+        _startState = 40
+        self.enterRecursionRule(localctx, 40, self.RULE_bmc_cond_expression, _p)
         self._la = 0  # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 262
+            self.state = 258
             self._errHandler.sync(self)
             la_ = self._interp.adaptivePredict(self._input, 15, self._ctx)
             if la_ == 1:
@@ -2735,11 +2681,11 @@ class BmcQueryParser(Parser):
                 self._ctx = localctx
                 _prevctx = localctx
 
-                self.state = 238
+                self.state = 234
                 self.match(BmcQueryParser.LPAREN)
-                self.state = 239
+                self.state = 235
                 self.bmc_cond_expression(0)
-                self.state = 240
+                self.state = 236
                 self.match(BmcQueryParser.RPAREN)
                 pass
 
@@ -2747,7 +2693,7 @@ class BmcQueryParser(Parser):
                 localctx = BmcQueryParser.LiteralExprCondContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
-                self.state = 242
+                self.state = 238
                 self.bool_literal()
                 pass
 
@@ -2755,7 +2701,7 @@ class BmcQueryParser(Parser):
                 localctx = BmcQueryParser.AtomExprCondContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
-                self.state = 243
+                self.state = 239
                 self.bmc_boolean_atom()
                 pass
 
@@ -2763,7 +2709,7 @@ class BmcQueryParser(Parser):
                 localctx = BmcQueryParser.UnaryExprCondContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
-                self.state = 244
+                self.state = 240
                 localctx.op = self._input.LT(1)
                 _la = self._input.LA(1)
                 if not (_la == BmcQueryParser.NOT_KW or _la == BmcQueryParser.BANG):
@@ -2771,7 +2717,7 @@ class BmcQueryParser(Parser):
                 else:
                     self._errHandler.reportMatch(self)
                     self.consume()
-                self.state = 245
+                self.state = 241
                 self.bmc_cond_expression(9)
                 pass
 
@@ -2779,9 +2725,9 @@ class BmcQueryParser(Parser):
                 localctx = BmcQueryParser.BinaryExprFromNumCondContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
-                self.state = 246
+                self.state = 242
                 self.bmc_num_expression(0)
-                self.state = 247
+                self.state = 243
                 localctx.op = self._input.LT(1)
                 _la = self._input.LA(1)
                 if not (
@@ -2801,7 +2747,7 @@ class BmcQueryParser(Parser):
                 else:
                     self._errHandler.reportMatch(self)
                     self.consume()
-                self.state = 248
+                self.state = 244
                 self.bmc_num_expression(0)
                 pass
 
@@ -2809,9 +2755,9 @@ class BmcQueryParser(Parser):
                 localctx = BmcQueryParser.BinaryExprFromNumCondContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
-                self.state = 250
+                self.state = 246
                 self.bmc_num_expression(0)
-                self.state = 251
+                self.state = 247
                 localctx.op = self._input.LT(1)
                 _la = self._input.LA(1)
                 if not (_la == BmcQueryParser.EQ or _la == BmcQueryParser.NE):
@@ -2819,7 +2765,7 @@ class BmcQueryParser(Parser):
                 else:
                     self._errHandler.reportMatch(self)
                     self.consume()
-                self.state = 252
+                self.state = 248
                 self.bmc_num_expression(0)
                 pass
 
@@ -2829,24 +2775,24 @@ class BmcQueryParser(Parser):
                 )
                 self._ctx = localctx
                 _prevctx = localctx
-                self.state = 254
+                self.state = 250
                 self.match(BmcQueryParser.LPAREN)
-                self.state = 255
+                self.state = 251
                 self.bmc_cond_expression(0)
-                self.state = 256
+                self.state = 252
                 self.match(BmcQueryParser.RPAREN)
-                self.state = 257
+                self.state = 253
                 self.match(BmcQueryParser.QUESTION)
-                self.state = 258
+                self.state = 254
                 self.bmc_cond_expression(0)
-                self.state = 259
+                self.state = 255
                 self.match(BmcQueryParser.COLON)
-                self.state = 260
+                self.state = 256
                 self.bmc_cond_expression(1)
                 pass
 
             self._ctx.stop = self._input.LT(-1)
-            self.state = 281
+            self.state = 277
             self._errHandler.sync(self)
             _alt = self._interp.adaptivePredict(self._input, 17, self._ctx)
             while _alt != 2 and _alt != ATN.INVALID_ALT_NUMBER:
@@ -2854,7 +2800,7 @@ class BmcQueryParser(Parser):
                     if self._parseListeners is not None:
                         self.triggerExitRuleEvent()
                     _prevctx = localctx
-                    self.state = 279
+                    self.state = 275
                     self._errHandler.sync(self)
                     la_ = self._interp.adaptivePredict(self._input, 16, self._ctx)
                     if la_ == 1:
@@ -2867,14 +2813,14 @@ class BmcQueryParser(Parser):
                         self.pushNewRecursionContext(
                             localctx, _startState, self.RULE_bmc_cond_expression
                         )
-                        self.state = 264
+                        self.state = 260
                         if not self.precpred(self._ctx, 6):
                             from antlr4.error.Errors import FailedPredicateException
 
                             raise FailedPredicateException(
                                 self, "self.precpred(self._ctx, 6)"
                             )
-                        self.state = 265
+                        self.state = 261
                         localctx.op = self._input.LT(1)
                         _la = self._input.LA(1)
                         if not (
@@ -2893,7 +2839,7 @@ class BmcQueryParser(Parser):
                         else:
                             self._errHandler.reportMatch(self)
                             self.consume()
-                        self.state = 266
+                        self.state = 262
                         self.bmc_cond_expression(7)
                         pass
 
@@ -2907,14 +2853,14 @@ class BmcQueryParser(Parser):
                         self.pushNewRecursionContext(
                             localctx, _startState, self.RULE_bmc_cond_expression
                         )
-                        self.state = 267
+                        self.state = 263
                         if not self.precpred(self._ctx, 5):
                             from antlr4.error.Errors import FailedPredicateException
 
                             raise FailedPredicateException(
                                 self, "self.precpred(self._ctx, 5)"
                             )
-                        self.state = 268
+                        self.state = 264
                         localctx.op = self._input.LT(1)
                         _la = self._input.LA(1)
                         if not (
@@ -2925,7 +2871,7 @@ class BmcQueryParser(Parser):
                         else:
                             self._errHandler.reportMatch(self)
                             self.consume()
-                        self.state = 269
+                        self.state = 265
                         self.bmc_cond_expression(6)
                         pass
 
@@ -2939,16 +2885,16 @@ class BmcQueryParser(Parser):
                         self.pushNewRecursionContext(
                             localctx, _startState, self.RULE_bmc_cond_expression
                         )
-                        self.state = 270
+                        self.state = 266
                         if not self.precpred(self._ctx, 4):
                             from antlr4.error.Errors import FailedPredicateException
 
                             raise FailedPredicateException(
                                 self, "self.precpred(self._ctx, 4)"
                             )
-                        self.state = 271
+                        self.state = 267
                         localctx.op = self.match(BmcQueryParser.XOR_KW)
-                        self.state = 272
+                        self.state = 268
                         self.bmc_cond_expression(5)
                         pass
 
@@ -2962,14 +2908,14 @@ class BmcQueryParser(Parser):
                         self.pushNewRecursionContext(
                             localctx, _startState, self.RULE_bmc_cond_expression
                         )
-                        self.state = 273
+                        self.state = 269
                         if not self.precpred(self._ctx, 3):
                             from antlr4.error.Errors import FailedPredicateException
 
                             raise FailedPredicateException(
                                 self, "self.precpred(self._ctx, 3)"
                             )
-                        self.state = 274
+                        self.state = 270
                         localctx.op = self._input.LT(1)
                         _la = self._input.LA(1)
                         if not (
@@ -2980,7 +2926,7 @@ class BmcQueryParser(Parser):
                         else:
                             self._errHandler.reportMatch(self)
                             self.consume()
-                        self.state = 275
+                        self.state = 271
                         self.bmc_cond_expression(4)
                         pass
 
@@ -2994,14 +2940,14 @@ class BmcQueryParser(Parser):
                         self.pushNewRecursionContext(
                             localctx, _startState, self.RULE_bmc_cond_expression
                         )
-                        self.state = 276
+                        self.state = 272
                         if not self.precpred(self._ctx, 2):
                             from antlr4.error.Errors import FailedPredicateException
 
                             raise FailedPredicateException(
                                 self, "self.precpred(self._ctx, 2)"
                             )
-                        self.state = 277
+                        self.state = 273
                         localctx.op = self._input.LT(1)
                         _la = self._input.LA(1)
                         if not (
@@ -3012,11 +2958,11 @@ class BmcQueryParser(Parser):
                         else:
                             self._errHandler.reportMatch(self)
                             self.consume()
-                        self.state = 278
+                        self.state = 274
                         self.bmc_cond_expression(2)
                         pass
 
-                self.state = 283
+                self.state = 279
                 self._errHandler.sync(self)
                 _alt = self._interp.adaptivePredict(self._input, 17, self._ctx)
 
@@ -3086,108 +3032,101 @@ class BmcQueryParser(Parser):
     def bmc_boolean_atom(self):
 
         localctx = BmcQueryParser.Bmc_boolean_atomContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 44, self.RULE_bmc_boolean_atom)
+        self.enterRule(localctx, 42, self.RULE_bmc_boolean_atom)
         self._la = 0  # Token type
         try:
-            self.state = 324
+            self.state = 320
             self._errHandler.sync(self)
             token = self._input.LA(1)
             if token in [BmcQueryParser.ACTIVE]:
                 self.enterOuterAlt(localctx, 1)
-                self.state = 284
+                self.state = 280
                 self.match(BmcQueryParser.ACTIVE)
-                self.state = 285
+                self.state = 281
                 self.match(BmcQueryParser.LPAREN)
-                self.state = 286
+                self.state = 282
                 self.string_literal()
-                self.state = 289
+                self.state = 285
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
                 if _la == BmcQueryParser.COMMA:
-                    self.state = 287
+                    self.state = 283
                     self.match(BmcQueryParser.COMMA)
-                    self.state = 288
+                    self.state = 284
                     self.frame_selector()
 
-                self.state = 291
+                self.state = 287
                 self.match(BmcQueryParser.RPAREN)
                 pass
             elif token in [BmcQueryParser.TERMINATED]:
                 self.enterOuterAlt(localctx, 2)
-                self.state = 293
+                self.state = 289
                 self.match(BmcQueryParser.TERMINATED)
-                self.state = 294
+                self.state = 290
                 self.match(BmcQueryParser.LPAREN)
-                self.state = 296
+                self.state = 292
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if ((_la - 29) & ~0x3F) == 0 and (
-                    (1 << (_la - 29))
-                    & (
-                        (1 << (BmcQueryParser.CURRENT - 29))
-                        | (1 << (BmcQueryParser.POSITIVE_INT - 29))
-                        | (1 << (BmcQueryParser.INT - 29))
-                    )
-                ) != 0:
-                    self.state = 295
+                if _la == BmcQueryParser.CURRENT or _la == BmcQueryParser.INT:
+                    self.state = 291
                     self.frame_selector()
 
-                self.state = 298
+                self.state = 294
                 self.match(BmcQueryParser.RPAREN)
                 pass
             elif token in [BmcQueryParser.EVENT]:
                 self.enterOuterAlt(localctx, 3)
-                self.state = 299
+                self.state = 295
                 self.match(BmcQueryParser.EVENT)
-                self.state = 300
+                self.state = 296
                 self.match(BmcQueryParser.LPAREN)
-                self.state = 301
+                self.state = 297
                 self.string_literal()
-                self.state = 302
+                self.state = 298
                 self.match(BmcQueryParser.COMMA)
-                self.state = 303
+                self.state = 299
                 self.event_cycle_selector()
-                self.state = 304
+                self.state = 300
                 self.match(BmcQueryParser.RPAREN)
                 pass
             elif token in [BmcQueryParser.CASE]:
                 self.enterOuterAlt(localctx, 4)
-                self.state = 306
+                self.state = 302
                 self.match(BmcQueryParser.CASE)
-                self.state = 307
+                self.state = 303
                 self.match(BmcQueryParser.LPAREN)
-                self.state = 308
+                self.state = 304
                 self.string_literal()
-                self.state = 311
+                self.state = 307
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
                 if _la == BmcQueryParser.COMMA:
-                    self.state = 309
+                    self.state = 305
                     self.match(BmcQueryParser.COMMA)
-                    self.state = 310
+                    self.state = 306
                     self.frame_selector()
 
-                self.state = 313
+                self.state = 309
                 self.match(BmcQueryParser.RPAREN)
                 pass
             elif token in [BmcQueryParser.CALLED]:
                 self.enterOuterAlt(localctx, 5)
-                self.state = 315
+                self.state = 311
                 self.match(BmcQueryParser.CALLED)
-                self.state = 316
+                self.state = 312
                 self.match(BmcQueryParser.LPAREN)
-                self.state = 317
+                self.state = 313
                 self.string_literal()
-                self.state = 320
+                self.state = 316
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
                 if _la == BmcQueryParser.COMMA:
-                    self.state = 318
+                    self.state = 314
                     self.match(BmcQueryParser.COMMA)
-                    self.state = 319
+                    self.state = 315
                     self.frame_selector()
 
-                self.state = 322
+                self.state = 318
                 self.match(BmcQueryParser.RPAREN)
                 pass
             else:
@@ -3209,9 +3148,6 @@ class BmcQueryParser(Parser):
         ):
             super().__init__(parent, invokingState)
             self.parser = parser
-
-        def POSITIVE_INT(self):
-            return self.getToken(BmcQueryParser.POSITIVE_INT, 0)
 
         def INT(self):
             return self.getToken(BmcQueryParser.INT, 0)
@@ -3236,11 +3172,11 @@ class BmcQueryParser(Parser):
     def num_literal(self):
 
         localctx = BmcQueryParser.Num_literalContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 46, self.RULE_num_literal)
+        self.enterRule(localctx, 44, self.RULE_num_literal)
         self._la = 0  # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 326
+            self.state = 322
             _la = self._input.LA(1)
             if not (
                 ((_la - 72) & ~0x3F) == 0
@@ -3249,7 +3185,6 @@ class BmcQueryParser(Parser):
                     & (
                         (1 << (BmcQueryParser.FLOAT - 72))
                         | (1 << (BmcQueryParser.HEX_INT - 72))
-                        | (1 << (BmcQueryParser.POSITIVE_INT - 72))
                         | (1 << (BmcQueryParser.INT - 72))
                     )
                 )
@@ -3296,11 +3231,11 @@ class BmcQueryParser(Parser):
     def bool_literal(self):
 
         localctx = BmcQueryParser.Bool_literalContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 48, self.RULE_bool_literal)
+        self.enterRule(localctx, 46, self.RULE_bool_literal)
         self._la = 0  # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 328
+            self.state = 324
             _la = self._input.LA(1)
             if not (_la == BmcQueryParser.TRUE or _la == BmcQueryParser.FALSE):
                 self._errHandler.recoverInline(self)
@@ -3347,11 +3282,11 @@ class BmcQueryParser(Parser):
     def math_const(self):
 
         localctx = BmcQueryParser.Math_constContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 50, self.RULE_math_const)
+        self.enterRule(localctx, 48, self.RULE_math_const)
         self._la = 0  # Token type
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 330
+            self.state = 326
             _la = self._input.LA(1)
             if not (
                 ((_la) & ~0x3F) == 0
@@ -3403,10 +3338,10 @@ class BmcQueryParser(Parser):
     def string_literal(self):
 
         localctx = BmcQueryParser.String_literalContext(self, self._ctx, self.state)
-        self.enterRule(localctx, 52, self.RULE_string_literal)
+        self.enterRule(localctx, 50, self.RULE_string_literal)
         try:
             self.enterOuterAlt(localctx, 1)
-            self.state = 332
+            self.state = 328
             self.match(BmcQueryParser.STRING)
         except RecognitionException as re:
             localctx.exception = re
@@ -3419,8 +3354,8 @@ class BmcQueryParser(Parser):
     def sempred(self, localctx: RuleContext, ruleIndex: int, predIndex: int):
         if self._predicates == None:
             self._predicates = dict()
-        self._predicates[20] = self.bmc_num_expression_sempred
-        self._predicates[21] = self.bmc_cond_expression_sempred
+        self._predicates[19] = self.bmc_num_expression_sempred
+        self._predicates[20] = self.bmc_cond_expression_sempred
         pred = self._predicates.get(ruleIndex, None)
         if pred is None:
             raise Exception("No predicate with index:" + str(ruleIndex))

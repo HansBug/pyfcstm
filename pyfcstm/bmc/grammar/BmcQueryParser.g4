@@ -54,7 +54,7 @@ cardinality_assume
     ;
 
 check_clause
-    : CHECK property_kind LE positive_integer COLON property_body SEMI
+    : CHECK property_kind LE integer_literal COLON property_body SEMI
     ;
 
 property_kind
@@ -73,7 +73,7 @@ property_body
     ;
 
 response_property_body
-    : TRIGGER bmc_cond_expression ARROW WITHIN positive_integer bmc_cond_expression
+    : TRIGGER bmc_cond_expression ARROW WITHIN integer_literal bmc_cond_expression
     ;
 
 string_list
@@ -102,13 +102,8 @@ frame_selector
     | integer_literal
     ;
 
-positive_integer
-    : POSITIVE_INT
-    ;
-
 integer_literal
-    : POSITIVE_INT
-    | INT
+    : INT
     ;
 
 bmc_num_expression
@@ -182,8 +177,7 @@ bmc_boolean_atom
     ;
 
 num_literal
-    : POSITIVE_INT
-    | INT
+    : INT
     | FLOAT
     | HEX_INT
     ;

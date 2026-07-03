@@ -36,7 +36,7 @@ You can check with CLI command as well
     :linenos:
 
 .. literalinclude:: cli_check.demo.sh.txt
-    :language: txt
+    :language: text
     :linenos:
 
 pyfcstm is still under development, you can also check out the \

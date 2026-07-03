@@ -2226,6 +2226,6 @@ DFS 验证机制
 
 更多信息，请探索：
 
-- :doc:`../visualization/index` - 可视化状态机
-- :doc:`../dsl/index` - 高级 DSL 特性
+- :doc:`../visualization/index_zh` - 可视化状态机
+- :doc:`../dsl/index_zh` - 高级 DSL 特性
 - :doc:`../render/index_zh` - 从状态机生成代码

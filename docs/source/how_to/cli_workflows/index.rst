@@ -3,28 +3,91 @@
 CLI workflows
 =============
 
-Status
-------
+Use this guide when you know the task you want to complete. For exact option
+facts, see :doc:`/reference/cli/index`.
 
-This page is an information-architecture stub. It establishes a stable target page and cross-reference label before the full content migration happens.
+Get help for commands
+---------------------
 
-Document mode
--------------
+Start with the top-level help, then inspect the subcommand you want to use:
 
-* Mode: How-to guide
-* Planned content scope: user-facing documentation
-* Stable label: ``sec-how-to-cli-workflows``
+.. code-block:: bash
 
-Current authority
------------------
+   pyfcstm --help
+   pyfcstm simulate --help
+   pyfcstm inspect --help
+   pyfcstm generate --help
+   pyfcstm plantuml --help
 
-The current authoritative content remains in :doc:`../../tutorials/cli/index`.
+Run a short simulation
+----------------------
 
-CLI task workflows will move here; command facts will move to the CLI reference.
+Use batch mode when you want a reproducible command transcript:
 
-Non-goals for this stub
------------------------
+.. code-block:: bash
 
-* Do not copy the old long-form content into this skeleton.
-* Do not rename this page's stable label during the migration.
-* Do not move or delete the old tutorial path while this stub exists.
+   pyfcstm simulate -i machine.fcstm -e "current; cycle; current"
+
+Use the interactive simulator when you want to explore events and hot starts by
+hand:
+
+.. code-block:: bash
+
+   pyfcstm simulate -i machine.fcstm
+
+Export an inspect report
+------------------------
+
+Human output is the default:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i machine.fcstm
+
+Scripts should request the structured format explicitly:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i machine.fcstm --format json -o machine.inspect.json
+
+For LLM-assisted repair, use the LLM-oriented formats:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i machine.fcstm --format llm-md -o machine.inspect.md
+
+Generate code from a built-in template
+--------------------------------------
+
+For packaged built-in templates, use ``--template``:
+
+.. code-block:: bash
+
+   pyfcstm generate -i machine.fcstm --template python -o generated/python --clear
+
+Use ``-t`` / ``--template-dir`` only when you intentionally provide a custom
+template directory that you own.
+
+Export PlantUML source
+----------------------
+
+Use ``plantuml`` when you want a stable source file that can be versioned or
+rendered by another tool:
+
+.. code-block:: bash
+
+   pyfcstm plantuml -i machine.fcstm -o machine.puml
+
+Render a final diagram directly only when your environment has a usable
+PlantUML backend:
+
+.. code-block:: bash
+
+   pyfcstm visualize -i machine.fcstm -t svg -o machine.svg --no-open
+
+Next steps
+----------
+
+* :doc:`/how_to/generation/index` covers generated-runtime tasks.
+* :doc:`/how_to/inspect/index` covers CI and LLM-oriented inspect use.
+* :doc:`/how_to/visualization/index` covers diagram export tasks.

@@ -1,40 +1,11 @@
-安装
-===================
+安装入口页
+==========
 
-pyfcstm 目前托管在 PyPI 上，需要 Python >= 3.7，并且已在 CPython 3.7 到 3.14 上完成测试。
+安装现在归入任务指南，而不是教程章节。请使用 :doc:`/how_to/installation/index_zh` 获取维护中的安装步骤、验证命令和排查清单。
 
-你可以使用以下命令从 PyPI 简单安装 pyfcstm：
+安装后如果想走一遍引导式首次运行，请继续阅读 :doc:`/tutorials/quick_start/index_zh`。
 
-.. code:: shell
+兼容说明
+--------
 
-    pip install pyfcstm
-
-你也可以通过 GitHub 安装最新版本：
-
-.. code:: shell
-
-    pip install -U git+https://github.com/hansbug/pyfcstm@main
-
-你可以通过以下 Python 脚本检查你的安装：
-
-.. literalinclude:: install_check.demo.py
-    :language: python
-    :linenos:
-
-输出应该如下所示，这意味着你的安装成功了。
-
-.. literalinclude:: install_check.demo.py.txt
-    :language: text
-    :linenos:
-
-你也可以使用 CLI 命令进行检查
-
-.. literalinclude:: cli_check.demo.sh
-    :language: shell
-    :linenos:
-
-.. literalinclude:: cli_check.demo.sh.txt
-    :language: text
-    :linenos:
-
-pyfcstm 仍在开发中，你也可以通过 `https://hansbug.github.io/pyfcstm/main/index.html <https://hansbug.github.io/pyfcstm/main/index.html>`_ 查看稳定版本的文档。
+本页继续保留，确保指向 ``tutorials/installation/`` 的旧链接在文档重组期间仍然可用。

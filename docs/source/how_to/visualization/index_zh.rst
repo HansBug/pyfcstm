@@ -1,30 +1,59 @@
 .. _sec-how-to-visualization-zh:
 
 可视化任务指南
-========================================
+==============
 
-状态
-----
+当你需要导出图表 artifact 时，使用本指南。选项事实请见 :doc:`/reference/visualization_options/index_zh`。
 
-本页是信息架构占位页。它先建立稳定目标页和交叉引用 label，完整内容迁移留给后续迁移工作。
+导出 PlantUML 源码
+------------------
 
-文档模式
---------
+PlantUML 源码确定且易于 review：
 
-* 模式：任务指南
-* 计划内容范围：用户侧文档
-* 稳定 label：``sec-how-to-visualization-zh``
+.. code-block:: bash
 
-当前权威内容
-------------
+   pyfcstm plantuml -i machine.fcstm -o machine.puml
 
-当前权威内容仍在 :doc:`../../tutorials/visualization/index_zh`。
+用 ``-l`` 选择详细级别预设：
 
-图表导出和渲染后端任务将迁移到这里。
+.. code-block:: bash
 
-本占位页非目标
---------------
+   pyfcstm plantuml -i machine.fcstm -l full -o machine.full.puml
 
-* 不在本骨架页复制旧长文内容。
-* 迁移期间不要重命名本页稳定 label。
-* 本占位页存在期间，不移动或删除旧教程路径。
+用重复的 ``-c key=value`` 参数覆盖类型化选项：
+
+.. code-block:: bash
+
+   pyfcstm plantuml -i machine.fcstm \
+     -c show_events=true \
+     -c max_depth=3 \
+     -o machine.events.puml
+
+直接渲染最终文件
+----------------
+
+环境中有本地或远端 PlantUML renderer 时，使用 ``visualize``：
+
+.. code-block:: bash
+
+   pyfcstm visualize -i machine.fcstm -t svg -o machine.svg --no-open
+
+只检查 renderer 可用性，不执行渲染：
+
+.. code-block:: bash
+
+   pyfcstm visualize --check --renderer auto
+
+选择 renderer mode
+------------------
+
+* ``--renderer auto`` 先尝试本地渲染，失败后回退到远端渲染。
+* ``--renderer local`` 使用 Java 和 PlantUML jar。
+* ``--renderer remote`` 使用 PlantUML 服务。
+
+在 CI 或其他 headless 环境中，优先使用 ``--no-open``，避免 viewer 启动影响 job 结果。
+
+需要时使用 Python API
+---------------------
+
+CLI ``-c`` 支持类型化标量和元组选项。自定义颜色字典等对象值配置需要使用 Python API。

@@ -3,28 +3,60 @@
 Visualization tasks
 ===================
 
-Status
-------
+Use this guide when you want to export diagram artifacts. For option facts, see
+:doc:`/reference/visualization_options/index`.
 
-This page is an information-architecture stub. It establishes a stable target page and cross-reference label before the full content migration happens.
+Export PlantUML source
+----------------------
 
-Document mode
--------------
+PlantUML source is deterministic and easy to review:
 
-* Mode: How-to guide
-* Planned content scope: user-facing documentation
-* Stable label: ``sec-how-to-visualization``
+.. code-block:: bash
 
-Current authority
------------------
+   pyfcstm plantuml -i machine.fcstm -o machine.puml
 
-The current authoritative content remains in :doc:`../../tutorials/visualization/index`.
+Use detail presets with ``-l``:
 
-Diagram export and rendering backend tasks will move here.
+.. code-block:: bash
 
-Non-goals for this stub
------------------------
+   pyfcstm plantuml -i machine.fcstm -l full -o machine.full.puml
 
-* Do not copy the old long-form content into this skeleton.
-* Do not rename this page's stable label during the migration.
-* Do not move or delete the old tutorial path while this stub exists.
+Override typed options with repeated ``-c key=value`` arguments:
+
+.. code-block:: bash
+
+   pyfcstm plantuml -i machine.fcstm \
+     -c show_events=true \
+     -c max_depth=3 \
+     -o machine.events.puml
+
+Render a final file directly
+----------------------------
+
+Use ``visualize`` when your environment has a local or remote PlantUML renderer:
+
+.. code-block:: bash
+
+   pyfcstm visualize -i machine.fcstm -t svg -o machine.svg --no-open
+
+Check renderer availability without rendering:
+
+.. code-block:: bash
+
+   pyfcstm visualize --check --renderer auto
+
+Choose a renderer mode
+----------------------
+
+* ``--renderer auto`` tries local rendering first and falls back to remote rendering.
+* ``--renderer local`` uses Java and a PlantUML jar.
+* ``--renderer remote`` uses a PlantUML service.
+
+In CI or other headless environments, prefer ``--no-open`` so viewer launch is
+not part of the job result.
+
+Use Python API when needed
+--------------------------
+
+CLI ``-c`` supports typed scalar and tuple options. Use the Python API for
+object-valued configuration such as custom color dictionaries.

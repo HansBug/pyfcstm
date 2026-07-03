@@ -192,88 +192,34 @@ This is useful for:
 inspect Command
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Inspect a state machine DSL file and emit a human-readable report by default.
-Use ``--format json`` when scripts, CI jobs, or editor integrations need the
-full structured model report. The JSON shape matches
-``inspect_model(model).to_json()`` and includes states, transitions, variables,
-metrics, derived graphs, and diagnostics. When a model uses combo transition
-triggers, the report also exposes ``combo_transitions`` and ``combo_origins``
-so tools can relate generated pseudo-chain edges back to the original trigger
-terms.
-
-For combo trigger diagnostics, ``inspect`` reports source-level warning codes
-against the original combo terms rather than the generated pseudo states:
-
-- ``W_COMBO_DUPLICATE_EVENT``: the same event appears more than once in one
-  combo trigger. The diagnostic ``span`` points at the repeated term, and
-  ``refs.first_term_span`` points at the first occurrence.
-- ``W_COMBO_GUARD_CONST_TRUE`` / ``W_COMBO_GUARD_CONST_FALSE``: a combo guard is
-  proven always true or always false by the Python Z3-backed analyzer. The
-  diagnostic ``span`` points at the bracketed guard term, and
-  ``refs.value_span`` points at the expression inside the brackets.
-- ``W_COMBO_GUARD_PREFIX_IMPLIED`` / ``W_COMBO_GUARD_PREFIX_CONTRADICTS``: the
-  preceding guard prefix already implies the current guard, or makes it
-  impossible. The diagnostic ``span`` points at the current guard, and
-  ``refs.prior_term_span`` points at the decisive earlier guard.
-
-All combo warning ``refs`` include ``origin_id``, ``term_index``,
-``transition_span``, ``trigger_span``, and the relevant term spans so editor and
-UI integrations can map warnings back to the author-written DSL range.
-Solver-backed guard warnings are intentionally Python-inspect diagnostics;
-JavaScript-side tools should consume these JSON diagnostics instead of
-re-implementing local solver approximations.
+Inspect a state machine DSL file. The command is human-readable by default and
+uses explicit ``--format`` values for machine-readable reports. Keep this page
+as a short command reference; the full diagnostics walkthrough lives in
+:doc:`/tutorials/inspect/index`.
 
 **Syntax**:
 
 .. code-block:: bash
 
    pyfcstm inspect -i <input_file> [-o <output_file>] [--format human|json|llm-json|llm-md] \
-     [--color auto|always|never] \
-     [--enable-verify] \
-     [--max-complexity-tier structural|smt_linear|smt_nonlinear_decidable|smt_undecidable_heuristic] \
-     [--max-call-count-scaling linear_in_transitions] [--smt-timeout-ms <ms>]
+     [--color auto|always|never] [--enable-verify]
 
-**Parameters**:
-
-- ``-i, --input-code``: Path to input state machine DSL file (required)
-- ``-o, --output``: Path to output file (optional, outputs to stdout when not specified)
-- ``--format``: Output format. ``human`` is the default; use ``json`` for the full machine-readable report. ``llm-json`` and ``llm-md`` are stable LLM-oriented repair formats using schema ``pyfcstm.inspect.llm.v1``.
-- ``--color``: ANSI color policy for human output only. ``auto`` enables color only for interactive stdout, ``always`` forces color on stdout, and ``never`` disables color. ``-o`` files and machine formats are always ANSI-free.
-- ``--enable-verify``: Run inspect-eligible ``pyfcstm.verify`` algorithms and append their diagnostics
-- ``--max-complexity-tier``: Highest verify tier allowed by the inspect adapter; default is ``structural``
-- ``--max-call-count-scaling``: Highest call-count scaling allowed by the inspect adapter; default is ``linear_in_transitions``
-- ``--smt-timeout-ms``: Optional SMT timeout forwarded to SMT-local verify algorithms; ``0`` is forwarded unchanged and follows Z3 semantics, where no finite timeout is configured
-
-**Default human output and explicit JSON**
+**Common examples**:
 
 .. code-block:: bash
 
+   # Human-readable diagnostics
    pyfcstm inspect -i simple_machine.fcstm
-   pyfcstm inspect -i simple_machine.fcstm --color always
+
+   # Full structured report for CI or editor tooling
    pyfcstm inspect -i simple_machine.fcstm --format json -o simple_machine.inspect.json
 
-By default, ``inspect`` emits a checker-style human-readable report and does not run
-verify-backed checks. Human output and the stable ``llm-json`` / ``llm-md`` formats include a small source context window around each diagnostic so nearby state and transition structure remains visible; the LLM formats also include provenance, repair guidance, and do-not notes for repair loops. Use ``--format json`` for the full JSON contract aligned
-with ``inspect_model(model).to_json()`` and with the existing cross-end default
-diagnostics contract. If an output filename suffix looks mismatched, such as
-writing the default human report to ``.json``, the CLI emits a warning on
-stderr without changing the requested format. Color is purely visual: ``NO_COLOR``
-with any non-empty value, ``TERM=dumb``, pipe output, and ``-o`` output all keep
-human text plain, while ``json``, ``llm-json``, and ``llm-md`` never receive ANSI
-escape sequences even if ``--color always`` is passed.
+   # LLM-oriented repair context
+   pyfcstm inspect -i simple_machine.fcstm --format llm-md -o simple_machine.inspect.md
 
-**Opt in to verify-backed diagnostics**
-
-.. code-block:: bash
-
-   pyfcstm inspect -i simple_machine.fcstm \
-     --enable-verify --max-complexity-tier smt_linear --smt-timeout-ms 1000
-
-The automatic inspect path still rejects ``bmc_search`` because BMC requires an
-explicit query depth and is not a bounded local diagnostic pass. It also rejects
-``k_unrollings`` and ``k_unrollings_times_branching`` call-count policies. The
-CLI parses those values only to return a controlled policy error instead of
-silently letting them enter automatic inspection.
+``-o`` only changes the output location; pass ``--format json`` when a script
+expects JSON. ``--color`` affects human output only. Optional verify-backed
+diagnostics require ``--enable-verify`` and remain bounded by inspect policy.
 
 visualize Command
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

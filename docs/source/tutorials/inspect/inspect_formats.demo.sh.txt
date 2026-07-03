@@ -1,0 +1,33 @@
+=== JSON summary ===
+root: InspectDemo
+states: 6
+transitions: 5
+combo_transitions: 4
+combo_origins: 2
+diagnostic_count: 13
+diagnostic_codes_sample: W_DURING_CONST_ASSIGN, W_COMBO_DUPLICATE_EVENT, W_COMBO_GUARD_PREFIX_IMPLIED, W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE
+first_diagnostic_keys: code, message, refs, severity, span
+suggested_fix_key: True
+numeric_target_templates: c, c_poll, cpp, cpp_poll
+numeric_runtime_note: C/C++ deployment profile risk: the default C-family templates use PYFCSTM_GENERATED_INT64, while Python generated runtimes may not have the same fixed-width integer carrying risk.
+
+=== LLM JSON shape ===
+top_level_keys: diagnostics, input, repair_protocol, schema_status, schema_version, status, summary
+first_diagnostic_keys: code, do_not, location, message, provenance, recommended_actions, refs, repair_guidance, severity, source, source_excerpt, summary
+recommended_actions: 2
+do_not: 1
+repair_guidance: 0
+
+=== LLM Markdown excerpt ===
+# FCSTM Inspect Report
+
+- Schema: `pyfcstm.inspect.llm.v1`
+- Schema status: `stable`
+- Status: `warning`
+- Input: `inspect_diagnostics.fcstm`
+- Diagnostics: 0 errors / 9 warnings / 4 infos
+
+## Repair protocol
+
+- Make the smallest source edit that preserves the modeler's apparent intent.
+- Use diagnostic source/provenance before choosing a fix; inspect-static warnings are not solver proofs.

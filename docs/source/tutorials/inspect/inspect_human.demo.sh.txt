@@ -1,0 +1,42 @@
+[WARN] FCSTM Inspect Report: inspect_diagnostics.fcstm
+
+Summary
+  status: warning
+  root: InspectDemo
+  states: 6 total / 3 leaf
+  transitions: 5
+  variables: 5
+  diagnostics: 0 errors / 9 warnings / 4 infos
+
+[WARN] W_DURING_CONST_ASSIGN
+  During action in 'InspectDemo.Active' assigns 'counter' to the same constant value every cycle.
+  --> inspect_diagnostics.fcstm:12:13
+    |
+ 11 |         during {
+ 12 |             counter = 1;
+    |             ^^^^^^^^^^^^
+ 13 |         }
+    |
+   = source: inspect-static
+   = why: The during block writes the same constant numeric value on every cycle, which often indicates initialization logic was placed in ``during`` instead of ``enter``.
+   = fix: kind: move_to_enter; target: action; rationale: Move the assignment to ``enter`` if it should run once on state entry.
+   = fix: kind: rewrite_expression; target: assignment; rationale: Use runtime state in the expression if the value should evolve each cycle.
+   = do-not: Do not suppress the warning by adding a meaningless arithmetic no-op.
+
+[WARN] W_COMBO_DUPLICATE_EVENT
+  Combo trigger repeats event 'InspectDemo.Active.Confirm'; this is legal but usually redundant.
+  --> inspect_diagnostics.fcstm:19:38
+    |
+ 18 |     [*] -> Active;
+ 19 |     Active -> ComboDone :: Confirm + Confirm;
+    |                                      ^^^^^^^
+ 20 |     Active -> Done : [ready > 0] + [ready > -1] effect {
+    |
+   = source: inspect-static
+   = why: The combo trigger contains the same resolved event twice, for example ``E1 + E1``. This is legal but normally redundant because one cycle's input event set already contains ``E1``.
+   = fix: kind: inspect_terms; target: transition; rationale: Check whether the second event was meant to be a different event.
+   = fix: kind: keep_if_intentional; target: transition; rationale: Keep it only if the explicit two-hop pseudo chain is intentional.
+   = do-not: Do not silently delete the repeated event; the explicit pseudo-chain shape may be intentional.
+
+[WARN] W_COMBO_GUARD_PREFIX_IMPLIED
+  Combo guard term '[ready > -1]' is implied by prior combo guard terms.

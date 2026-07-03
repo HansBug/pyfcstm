@@ -105,7 +105,7 @@ guard transitions, and guard-plus-effect transitions:
        state Idle;
        state Active;
 
-       Idle -> Active :: Tick;
+       Idle -> Active : Tick;
        Active -> Idle : if [counter >= 3] effect {
            counter = 0;
        }
@@ -131,8 +131,8 @@ ownership:
        state Idle;
        state Running;
 
-       Idle -> Running :: Start;
-       Running -> Idle :: Stop;
+       Idle -> Running : Start;
+       Running -> Idle : Stop;
    }
 
 The event-scope details are in :doc:`../../reference/dsl/index`. Practical

@@ -91,7 +91,7 @@ leaf state 以 ``;`` 结束。composite state 在 ``{ ... }`` 中包含子声明
        state Idle;
        state Active;
 
-       Idle -> Active :: Tick;
+       Idle -> Active : Tick;
        Active -> Idle : if [counter >= 3] effect {
            counter = 0;
        }
@@ -114,8 +114,8 @@ event 语法和 guard 语法不要混在同一个 transition 形式里。事件�
        state Idle;
        state Running;
 
-       Idle -> Running :: Start;
-       Running -> Idle :: Stop;
+       Idle -> Running : Start;
+       Running -> Idle : Stop;
    }
 
 事件作用域细节见 :doc:`../../reference/dsl/index_zh`。本地、父级和 root-scoped 事件的写法见 :doc:`../../how_to/dsl/index_zh`。

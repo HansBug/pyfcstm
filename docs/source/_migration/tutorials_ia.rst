@@ -320,7 +320,7 @@ Chapter migration records
      - ``Event Definitions`` / ``事件定义``
      - ``tutorials/dsl/index*.rst``, ``how_to/dsl/index*.rst``, ``reference/dsl/index*.rst``, ``explanations/dsl_semantics/index*.rst``
      - merge
-     - Local event introduction remains in tutorial; scope recipes, scope facts, and ownership semantics moved out.
+     - A short event-transition introduction remains in tutorial; local-event recipes, scope facts, and ownership semantics moved out.
    * - ``tutorials/dsl/index*.rst``
      - ``Guard Conditions and Effects`` / ``守卫条件和效果``
      - ``tutorials/dsl/index*.rst``, ``how_to/dsl/index*.rst``, ``reference/dsl/index*.rst``, ``explanations/dsl_semantics/index*.rst``
@@ -371,6 +371,16 @@ Chapter migration records
      - ``reference/dsl/index*.rst``
      - corrected
      - Old text referred to a single ``Grammar.g4``; reference now names ``GrammarParser.g4`` and ``GrammarLexer.g4``.
+   * - ``tutorials/dsl/index*.rst``
+     - pseudo composite state wording
+     - ``reference/dsl/index*.rst``
+     - corrected
+     - Reference now distinguishes the parser shape ``pseudo state Name { ... }`` from model-valid DSL. Model construction reports ``E_PSEUDO_NOT_LEAF`` for pseudo composites, so user-facing docs only present ``pseudo state Name;`` as valid.
+   * - ``tutorials/dsl/index*.rst``
+     - event declaration and ``::`` examples
+     - ``tutorials/dsl/index*.rst``, ``how_to/dsl/index*.rst``, ``reference/dsl/index*.rst``
+     - corrected
+     - Explicit reusable events now use chain-scoped forms such as ``: Start``. Source-local ``:: Event`` examples no longer claim to consume parent-level declarations, and runnable simulate snippets perform the cold-start cycle before sending the event.
    * - ``tutorials/dsl/index*.rst``
      - runtime cycle ordering details
      - ``explanations/execution_semantics/index*.rst``

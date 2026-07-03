@@ -54,10 +54,11 @@ State forms
      - Must choose an initial child with ``[*] -> Child;``.
    * - ``pseudo state Name;``
      - Pseudo leaf state
-     - Used by the model for automatic flow expansion and intermediate routing.
+     - Model-valid pseudo form. Use only for pure intermediate routing.
    * - ``pseudo state Name { ... }``
-     - Pseudo composite state
-     - Rare; keep pseudo states pure unless a feature explicitly requires more.
+     - Parser shape rejected by model validation
+     - The parser can build this AST shape, but model construction reports
+       ``E_PSEUDO_NOT_LEAF``. User DSL should not use pseudo composites.
    * - ``state Name named "Display";``
      - Named state
      - Adds a display name without changing the identifier.
@@ -154,6 +155,11 @@ Declare an event inside a composite state with:
    * - ``: Parent.Child.Event``
      - Dotted chain path
      - Use when an event is owned by a named nested scope.
+
+Declared events are consumed through chain or root scope, such as ``: Start`` or
+``: /Start`` depending on where the event is owned. ``:: Local`` denotes the
+source state's local event namespace; it does not consume a sibling declaration
+with the same spelling.
 
 Guards, effects, and operation blocks
 -------------------------------------

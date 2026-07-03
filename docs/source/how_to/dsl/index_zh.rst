@@ -15,14 +15,13 @@ DSL 任务指南
 写一个小型有效模型
 ------------------
 
-从变量、composite root、一个 initial transition 和两个 leaf state 开始：
+从变量、composite root、一个 initial transition、一个 source-local event transition 和两个 leaf state 开始：
 
 .. code-block:: fcstm
 
    def int ticks = 0;
 
    state Machine {
-       event Step;
        [*] -> Idle;
 
        state Idle;
@@ -42,12 +41,12 @@ DSL 任务指南
 
 .. code-block:: bash
 
-   pyfcstm simulate -i machine.fcstm -e "cycle Step; cycle; current"
+   pyfcstm simulate -i machine.fcstm -e "cycle; cycle Step; current"
 
 写事件作用域
 ------------
 
-事件属于 source state 命名空间时使用 local event：
+事件属于 source state 命名空间时使用 local event。source-local event 不需要在 parent 上声明同名事件：
 
 .. code-block:: fcstm
 

@@ -49,10 +49,11 @@ DSL 参考
      - 必须用 ``[*] -> Child;`` 选择初始子状态。
    * - ``pseudo state Name;``
      - pseudo leaf state
-     - 用于自动流程展开和中继路由。
+     - model-valid pseudo 形式。仅用于纯中继路由。
    * - ``pseudo state Name { ... }``
-     - pseudo composite state
-     - 较少使用；除非功能明确需要，否则 pseudo state 应保持纯中继语义。
+     - 会被 model validation 拒绝的 parser 形状
+     - parser 可以构造这种 AST 形状，但 model construction 会报告
+       ``E_PSEUDO_NOT_LEAF``\ 。用户 DSL 不应使用 pseudo composite。
    * - ``state Name named "Display";``
      - named state
      - 增加显示名，不改变 identifier。
@@ -143,6 +144,9 @@ forced transition 会展开为普通转换，目前不支持 ``effect`` block。
    * - ``: Parent.Child.Event``
      - dotted chain path
      - 事件由具名嵌套作用域拥有时使用。
+
+显式声明的事件通过 chain scope 或 root scope 消费，例如根据 owning state
+写成 ``: Start`` 或 ``: /Start``\ 。``:: Local`` 表示 source state 的本地事件命名空间；它不会消费同级同名事件声明。
 
 Guard、effect 和操作块
 ----------------------

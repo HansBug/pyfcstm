@@ -18,15 +18,14 @@ facts, use :doc:`../../reference/dsl/index`. For semantic background, use
 Write a small valid model
 -------------------------
 
-Start with variables, a composite root, one initial transition, and two leaf
-states:
+Start with variables, a composite root, one initial transition, a source-local
+event transition, and two leaf states:
 
 .. code-block:: fcstm
 
    def int ticks = 0;
 
    state Machine {
-       event Step;
        [*] -> Idle;
 
        state Idle;
@@ -46,12 +45,13 @@ Check it quickly:
 
 .. code-block:: bash
 
-   pyfcstm simulate -i machine.fcstm -e "cycle Step; cycle; current"
+   pyfcstm simulate -i machine.fcstm -e "cycle; cycle Step; current"
 
 Write event scopes
 ------------------
 
-Use local events when the event belongs to the source state’s namespace:
+Use local events when the event belongs to the source state’s namespace. A
+source-local event does not need a sibling declaration on the parent:
 
 .. code-block:: fcstm
 

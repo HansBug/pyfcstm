@@ -1233,6 +1233,39 @@ def test_partition_handles_sentinel_delta_and_accepted_atom_failures(macro_domai
     assert terminated.assignment_count == 0
     assert terminated.bucket_count == 1
 
+    with pytest.raises(InvalidBmcEncoding, match="cannot have build diagnostics"):
+        verify_source_partition(
+            terminate,
+            (terminated_absorb_case(macro_domain),),
+            build_diagnostic_conditions=(BoolTemplate.true(),),
+            max_assignments=1,
+        )
+    diagnostic = diagnostic_source(macro_domain)
+    with pytest.raises(InvalidBmcEncoding, match="cannot have build diagnostics"):
+        verify_source_partition(
+            diagnostic,
+            (diagnostic_absorb_case(macro_domain),),
+            build_diagnostic_conditions=(BoolTemplate.true(),),
+            max_assignments=1,
+        )
+    sentinel_delta = CycleCase(
+        "delta",
+        terminate.source_state_id,
+        terminate.source_state_path,
+        STATE_DIAGNOSTIC_ID,
+        DIAGNOSTIC_CASE_PATH,
+        "%s::delta::%s::0" % (terminate.source_state_path, DIAGNOSTIC_CASE_PATH),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="cannot have delta cases"):
+        verify_source_partition(
+            terminate,
+            (terminated_absorb_case(macro_domain),),
+            delta_cases=(sentinel_delta,),
+            max_assignments=1,
+        )
+
     false_absorb = CycleCase(
         "absorb",
         terminate.source_state_id,
@@ -1667,6 +1700,43 @@ def test_structural_partition_checker_rejects_extra_accepted_atoms():
             source,
             make_large_priority_partition(source, inject_positive_accepted),
         )
+
+
+@pytest.mark.unittest
+def test_sentinel_diagnostics_fail_closed_under_optimized_python():
+    """Sentinel partition validation must not depend on assert statements."""
+    code = """
+from pyfcstm.bmc import build_bmc_domain, terminated_source
+from pyfcstm.bmc.errors import InvalidBmcEncoding
+from pyfcstm.bmc.macro import BoolTemplate, terminated_absorb_case, verify_source_partition
+from pyfcstm.model import load_state_machine_from_text
+
+domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
+source = terminated_source(domain)
+try:
+    verify_source_partition(
+        source,
+        (terminated_absorb_case(domain),),
+        build_diagnostic_conditions=(BoolTemplate.true(),),
+        max_assignments=1,
+    )
+except InvalidBmcEncoding as err:
+    print(type(err).__name__, str(err))
+else:
+    raise SystemExit('sentinel diagnostics were accepted')
+"""
+    result = subprocess.run(
+        [sys.executable, "-O", "-c", code],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+
+    assert (
+        "InvalidBmcEncoding sentinel absorb formal cannot have build diagnostics"
+        in (result.stdout.strip())
+    )
 
 
 @pytest.mark.unittest

@@ -2180,6 +2180,13 @@ def verify_source_partition(
     success = tuple(success_cases)
     delta = tuple(delta_cases)
     diagnostics = tuple(build_diagnostic_conditions)
+    if source.kind in {"terminated", "diagnostic"}:
+        if delta:
+            raise InvalidBmcEncoding("sentinel absorb formal cannot have delta cases.")
+        if diagnostics:
+            raise InvalidBmcEncoding(
+                "sentinel absorb formal cannot have build diagnostics."
+            )
     if delta and not source.allows_semantic_delta:
         raise InvalidBmcEncoding("delta cases require an entry source.")
     for case in success + delta:

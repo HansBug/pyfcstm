@@ -28,9 +28,8 @@ Example::
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
-from typing import Iterable, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from pyfcstm.bmc.domain import STATE_TERMINATE_ID, BmcDomain
 from pyfcstm.bmc.errors import BmcBuildError, InvalidBmcDomain, InvalidBmcEncoding
@@ -85,8 +84,9 @@ class MacroExpansionOptions:
     :param verify_partition: Whether to run the source-local partition
         self-check after building cases, defaults to ``True``.
     :type verify_partition: bool, optional
-    :param partition_max_assignments: Truth-table assignment budget for the
-        current solver-independent checker, defaults to ``4096``.
+    :param partition_max_assignments: Assignment budget for the fallback
+        truth-table checker, defaults to ``4096``.  Structurally recognized
+        accepted/fallback masks can validate without enumerating this budget.
     :type partition_max_assignments: int, optional
 
     Example::
@@ -138,7 +138,7 @@ class _MacroFrontier:
     guard_requirements: Tuple[GuardRequirement, ...]
     priority_exclusions: Tuple[PriorityExclusion, ...]
     case_kind: str
-    path_signatures: Tuple[Tuple[object, ...], ...] = ()
+    path_signatures: Tuple[Tuple[Tuple[object, ...], int], ...] = ()
     depth: int = 0
 
 
@@ -203,28 +203,31 @@ class _MacroExpander:
 
     def __init__(self, source: MacroStepSource, options: MacroExpansionOptions) -> None:
         self.source = source
-        self.domain = source.domain
-        if self.domain is None:
+        domain = source.domain
+        if domain is None:
             raise InvalidBmcEncoding(
                 "macro-step expansion requires a domain-backed source."
             )
-        if not isinstance(self.domain, BmcDomain):
+        if not isinstance(domain, BmcDomain):
             raise InvalidBmcEncoding("source domain must be BmcDomain.")
-        self.model = self.domain.model
-        if self.model is None:
+        model = domain.model
+        if model is None:
             raise InvalidBmcEncoding(
                 "macro-step expansion requires a domain with model back-reference."
             )
+        self.domain = domain
+        self.model = model
         self.options = options
-        self.states_by_path = {
+        self.states_by_path: Dict[str, State] = {
             ".".join(state.path): state for state in self.model.walk_states()
         }
-        self.state_ids = {
+        self.state_ids: Dict[str, int] = {
             entry.path: entry.id
             for entry in self.domain.states
             if not entry.is_sentinel
         }
-        self._case_counters = {}  # type: Dict[str, int]
+        self._case_counters: Dict[str, int] = {}
+        self._failed_guard_requirements: Dict[str, GuardRequirement] = {}
         self._guard_counter = 0
         self._decision_counter = 0
 
@@ -250,6 +253,9 @@ class _MacroExpander:
                     success_cases,
                     diagnostics,
                     expansion.failed,
+                    guard_requirements=self._guard_requirements_for_conditions(
+                        expansion.failed
+                    ),
                 ),
             )
         elif diagnostics:
@@ -265,9 +271,9 @@ class _MacroExpander:
 
     @staticmethod
     def _merge_expansions(expansions: Iterable[_Expansion]) -> _Expansion:
-        outcomes = []
-        failed = []
-        diagnostics = []
+        outcomes: List[_MacroOutcome] = []
+        failed: List[BoolTemplate] = []
+        diagnostics: List[BoolTemplate] = []
         for expansion in expansions:
             outcomes.extend(expansion.outcomes)
             failed.extend(expansion.failed)
@@ -347,11 +353,19 @@ class _MacroExpander:
         if frontier.condition.kind == "false":
             return _Expansion((), (), ())
         signature = self._frontier_signature(frontier)
-        if signature in frontier.path_signatures:
+        for previous_signature, previous_action_count in frontier.path_signatures:
+            if previous_signature != signature:
+                continue
+            if len(frontier.action_blocks) > previous_action_count:
+                raise BmcBuildError(
+                    "macro-step expansion encountered an action-dependent pseudo loop."
+                )
+            self._remember_failed_guard_requirements(frontier)
             return _Expansion((), (frontier.condition,), ())
         frontier = self._replace_frontier(
             frontier,
-            path_signatures=frontier.path_signatures + (signature,),
+            path_signatures=frontier.path_signatures
+            + ((signature, len(frontier.action_blocks)),),
             depth=frontier.depth + 1,
         )
 
@@ -391,6 +405,7 @@ class _MacroExpander:
                 )
             return expanded
         if not frontier.stack[-1].state.is_stoppable:
+            self._remember_failed_guard_requirements(frontier)
             return _Expansion(
                 (), (frontier.condition,) + expanded.failed, expanded.diagnostics
             )
@@ -404,6 +419,7 @@ class _MacroExpander:
         )
         if expanded.outcomes:
             return expanded
+        self._remember_failed_guard_requirements(frontier)
         return _Expansion(
             (), (frontier.condition,) + expanded.failed, expanded.diagnostics
         )
@@ -415,6 +431,7 @@ class _MacroExpander:
         )
         if expanded.outcomes:
             return expanded
+        self._remember_failed_guard_requirements(frontier)
         return _Expansion(
             (), (frontier.condition,) + expanded.failed, expanded.diagnostics
         )
@@ -425,9 +442,9 @@ class _MacroExpander:
         transitions: Sequence[Transition],
         is_initial: bool,
     ) -> _Expansion:
-        outcomes = []  # type: List[_MacroOutcome]
-        failed = []  # type: List[BoolTemplate]
-        diagnostics = []  # type: List[BoolTemplate]
+        outcomes: List[_MacroOutcome] = []
+        failed: List[BoolTemplate] = []
+        diagnostics: List[BoolTemplate] = []
         for index, transition in enumerate(transitions):
             candidate = self._apply_priority_exclusion(frontier, outcomes, is_initial)
             candidate = self._apply_transition_trigger(
@@ -441,6 +458,7 @@ class _MacroExpander:
             if branch_expansion.outcomes:
                 outcomes.extend(branch_expansion.outcomes)
             else:
+                self._remember_failed_guard_requirements(candidate)
                 failed.append(candidate.condition)
             failed.extend(branch_expansion.failed)
             diagnostics.extend(branch_expansion.diagnostics)
@@ -533,7 +551,7 @@ class _MacroExpander:
                     transition_label,
                     transition.guard,
                     "positive",
-                    "initial_guard" if is_initial else "transition_guard",
+                    self._guard_reason(frontier, is_initial),
                     len(frontier.action_blocks),
                 )
                 guard_requirements = guard_requirements + (guard,)
@@ -556,9 +574,9 @@ class _MacroExpander:
             if is_initial
             else self._execute_transition(frontier, transition)
         )
-        outcomes = []
-        failed = []
-        diagnostics = []
+        outcomes: List[_MacroOutcome] = []
+        failed: List[BoolTemplate] = []
+        diagnostics: List[BoolTemplate] = []
         for branch in branches:
             branch_expansion = self._expand_frontier(branch)
             outcomes.extend(branch_expansion.outcomes)
@@ -573,10 +591,11 @@ class _MacroExpander:
     ) -> Tuple[_MacroFrontier, ...]:
         composite_frame = frontier.stack[-1]
         state = composite_frame.state
-        current = self._record_transition_effect(
-            frontier, state, transition, "initial_effect"
-        )
-        target_state = state.substates[transition.to_state]
+        current = self._record_transition_effect(frontier, state, transition)
+        target_name = transition.to_state
+        if not isinstance(target_name, str):
+            raise BmcBuildError("initial transition target must be a child state.")
+        target_state = state.substates[target_name]
         if not target_state.is_pseudo:
             current = self._consume_plain_before_if_pending(current)
         entered = self._enter_state(current, target_state)
@@ -598,11 +617,9 @@ class _MacroExpander:
         current = frontier
         for on_exit in current_state.on_exits:
             current = self._record_func(
-                current, current_state, on_exit, "exit", "state_exit"
+                current, current_state, on_exit, "state_action", "state_exit"
             )
-        current = self._record_transition_effect(
-            current, current_state, transition, "transition_effect"
-        )
+        current = self._record_transition_effect(current, current_state, transition)
         current = self._replace_frontier(current, stack=current.stack[:-1])
 
         if transition.to_state == EXIT_STATE:
@@ -614,7 +631,10 @@ class _MacroExpander:
         parent = current_state.parent
         if parent is None:
             raise BmcBuildError("non-exit transition from root has no parent.")
-        target_state = parent.substates[transition.to_state]
+        target_name = transition.to_state
+        if not isinstance(target_name, str):
+            raise BmcBuildError("transition target must be a sibling state.")
+        target_state = parent.substates[target_name]
         if (
             current_state.is_pseudo
             and current.stack
@@ -634,13 +654,13 @@ class _MacroExpander:
                 current,
                 parent,
                 on_during_after,
-                "during",
+                "state_action",
                 "plain_during_after",
             )
         if parent.is_root_state:
             for on_exit in parent.on_exits:
                 current = self._record_func(
-                    current, parent, on_exit, "exit", "state_exit"
+                    current, parent, on_exit, "state_action", "state_exit"
                 )
             return self._replace_frontier(current, stack=())
         return self._replace_top(current, _FormalStackFrame(parent, "post_child_exit"))
@@ -654,7 +674,7 @@ class _MacroExpander:
         )
         for on_enter in state.on_enters:
             current = self._record_func(
-                current, state, on_enter, "enter", "state_enter"
+                current, state, on_enter, "state_action", "state_enter"
             )
 
         if state.is_leaf_state:
@@ -673,9 +693,28 @@ class _MacroExpander:
         self, frontier: _MacroFrontier, state: State
     ) -> _MacroFrontier:
         current = frontier
-        for owner, func in state.iter_on_during_aspect_recursively():
-            block_kind = "during_aspect" if isinstance(func, OnAspect) else "during"
-            current = self._record_func(current, owner, func, block_kind, "leaf_during")
+        for item in state.iter_on_during_aspect_recursively():
+            if len(item) == 3:
+                owner = item[1]
+                func = item[2]
+            else:
+                owner = item[0]
+                func = item[1]
+            if not isinstance(owner, State) or not isinstance(
+                func, (OnAspect, OnStage)
+            ):
+                raise BmcBuildError("invalid during action traversal item.")
+            if isinstance(func, OnAspect):
+                role = (
+                    "aspect_during_before"
+                    if func.aspect == "before"
+                    else "aspect_during_after"
+                )
+                current = self._record_func(current, owner, func, "aspect_action", role)
+            else:
+                current = self._record_func(
+                    current, owner, func, "state_action", "leaf_during"
+                )
         return current
 
     def _consume_plain_before_if_pending(
@@ -692,7 +731,7 @@ class _MacroExpander:
                 current,
                 frame.state,
                 on_during_before,
-                "during",
+                "state_action",
                 "plain_during_before",
             )
         return self._replace_top(
@@ -723,7 +762,6 @@ class _MacroExpander:
         frontier: _MacroFrontier,
         owner: State,
         transition: Transition,
-        runtime_role: str,
     ) -> _MacroFrontier:
         if not transition.effects:
             return frontier
@@ -731,7 +769,7 @@ class _MacroExpander:
             frontier,
             owner,
             "transition_effect",
-            runtime_role,
+            "transition_effect",
             tuple(transition.effects),
             None,
             self._transition_label(
@@ -874,6 +912,7 @@ class _MacroExpander:
         expansion = self._expand_frontier(active)
         if not expansion.outcomes:
             raise BmcBuildError("stable fallback did not produce an outcome.")
+        failed_guard_requirements = self._guard_requirements_for_conditions(failed)
         return tuple(
             _MacroOutcome(
                 outcome.label,
@@ -882,7 +921,9 @@ class _MacroExpander:
                 outcome.condition,
                 outcome.used_events,
                 outcome.action_blocks,
-                outcome.guard_requirements,
+                _merge_guard_requirements(
+                    outcome.guard_requirements, failed_guard_requirements
+                ),
                 outcome.priority_exclusions,
                 _CASE_KIND_FALLBACK,
                 tuple(failed),
@@ -939,6 +980,35 @@ class _MacroExpander:
             for outcome in outcomes
         )
 
+    def _guard_reason(self, frontier: _MacroFrontier, is_initial: bool) -> str:
+        if is_initial:
+            return "initial_guard"
+        frame = frontier.stack[-1]
+        if frame.mode == "post_child_exit":
+            return "parent_continuation_guard"
+        if frame.state.is_pseudo:
+            return "pseudo_guard"
+        return "transition_guard"
+
+    def _remember_failed_guard_requirements(self, frontier: _MacroFrontier) -> None:
+        for guard in frontier.guard_requirements:
+            self._failed_guard_requirements[guard.requirement_id] = guard
+
+    def _guard_requirements_for_conditions(
+        self, conditions: Sequence[BoolTemplate]
+    ) -> Tuple[GuardRequirement, ...]:
+        ids = {
+            atom[len(_GUARD_ATOM_PREFIX) :]
+            for condition in conditions
+            for atom in condition.variables
+            if atom.startswith(_GUARD_ATOM_PREFIX)
+        }
+        return tuple(
+            self._failed_guard_requirements[item]
+            for item in sorted(ids)
+            if item in self._failed_guard_requirements
+        )
+
     def _allocate_case_label(self, case_kind: str, target_path: str) -> str:
         ordinal = self._case_counters.get(case_kind, 0)
         self._case_counters[case_kind] = ordinal + 1
@@ -968,7 +1038,7 @@ class _MacroExpander:
             for index, item in enumerate(transitions):
                 if item is transition:
                     return index
-        return 0
+        raise BmcBuildError("transition not found on owner state.")
 
     def _event_uses_for_paths(
         self, paths: Sequence[str], polarity: str, reason: str
@@ -998,14 +1068,6 @@ class _MacroExpander:
                 (frame.state.path, frame.mode, frame.plain_before_pending)
                 for frame in frontier.stack
             ),
-            json.dumps(
-                frontier.condition.to_canonical(), sort_keys=True, separators=(",", ":")
-            ),
-            tuple(
-                json.dumps(block.to_canonical(), sort_keys=True, separators=(",", ":"))
-                for block in frontier.action_blocks
-            ),
-            tuple(item.requirement_id for item in frontier.guard_requirements),
             frontier.case_kind,
         )
 
@@ -1064,6 +1126,16 @@ def _merge_event_uses(*groups: Sequence[EventUse]) -> Tuple[EventUse, ...]:
         for item in group:
             by_key[(item.event_id, item.path, item.polarity, item.reason)] = item
     return tuple(by_key[key] for key in sorted(by_key))
+
+
+def _merge_guard_requirements(
+    *groups: Sequence[GuardRequirement],
+) -> Tuple[GuardRequirement, ...]:
+    by_id = {}
+    for group in groups:
+        for item in group:
+            by_id[item.requirement_id] = item
+    return tuple(by_id[key] for key in sorted(by_id))
 
 
 def _event_paths_from_condition(condition: BoolTemplate) -> Tuple[str, ...]:

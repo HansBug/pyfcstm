@@ -116,6 +116,57 @@ def make_case(
     )
 
 
+def make_large_priority_partition(source, condition_hook=None):
+    """Create a synthetic large accepted/fallback partition."""
+    accepted = []
+    for index in range(13):
+        prefix = (
+            BoolTemplate.not_(
+                BoolTemplate.or_(
+                    *[
+                        BoolTemplate.atom("accepted:%s" % case.label)
+                        for case in accepted
+                    ]
+                )
+            )
+            if accepted
+            else BoolTemplate.true()
+        )
+        condition = BoolTemplate.and_(
+            prefix, BoolTemplate.atom("event:Root.Event%d" % index)
+        )
+        if condition_hook is not None:
+            condition = condition_hook(index, accepted, condition)
+        accepted.append(
+            CycleCase(
+                "transition",
+                source.source_state_id,
+                source.source_state_path,
+                source.source_state_id,
+                source.source_state_path,
+                "%s::transition::%s::%d"
+                % (source.source_state_path, source.source_state_path, index),
+                condition,
+                (),
+            )
+        )
+    fallback = CycleCase(
+        "fallback",
+        source.source_state_id,
+        source.source_state_path,
+        source.source_state_id,
+        source.source_state_path,
+        "%s::fallback::%s::0" % (source.source_state_path, source.source_state_path),
+        BoolTemplate.not_(
+            BoolTemplate.or_(
+                *[BoolTemplate.atom("accepted:%s" % case.label) for case in accepted]
+            )
+        ),
+        (),
+    )
+    return tuple(accepted) + (fallback,)
+
+
 @pytest.mark.unittest
 def test_cycle_case_condition_is_control_path_only(macro_domain):
     """CycleCase.condition excludes source guards and writeback formulas."""
@@ -229,7 +280,7 @@ def test_action_block_preserves_if_block_without_condition_split(
 ):
     """ActionBlock stores model statements, including nested IfBlock objects."""
     block = ActionBlock(
-        "during",
+        "state_action",
         "leaf_during",
         macro_domain.state_path_to_id("Root.Plant.Idle"),
         "Root.Plant.Idle",
@@ -463,7 +514,7 @@ def test_macro_step_formal_accepts_entry_delta_and_sentinel_absorb_buckets(
 @pytest.mark.unittest
 def test_verify_boolean_partition_reports_gaps_overlaps_and_budget():
     """Truth-table checker stays build-time only and reports hard failures."""
-    a = BoolTemplate.atom("a")
+    a = BoolTemplate.atom("event:Root.Go")
 
     assert verify_boolean_partition((a, BoolTemplate.not_(a))).bucket_count == 2
     with pytest.raises(BmcBuildError, match="overlap"):
@@ -472,7 +523,53 @@ def test_verify_boolean_partition_reports_gaps_overlaps_and_budget():
         verify_boolean_partition((a, BoolTemplate.false()))
     with pytest.raises(BmcBuildError, match="assignment budget"):
         verify_boolean_partition(
-            (BoolTemplate.true(),), variables=("a", "b"), max_assignments=2
+            (BoolTemplate.true(),),
+            variables=("event:Root.A", "event:Root.B"),
+            max_assignments=2,
+        )
+
+
+@pytest.mark.unittest
+def test_verify_boolean_partition_rejects_unknown_atom_namespace():
+    """Public partition checks fail closed on non-canonical atom prefixes."""
+    atom = BoolTemplate.atom("opaque:bad")
+
+    with pytest.raises(InvalidBmcEncoding, match="atom namespace"):
+        verify_boolean_partition((atom, BoolTemplate.not_(atom)), max_assignments=4)
+
+
+@pytest.mark.unittest
+def test_structural_partition_checker_handles_large_priority_masks():
+    """Large canonical accepted/fallback masks avoid truth-table budget failures."""
+    source = stable_leaf_source(
+        build_bmc_domain(load_state_machine_from_text("state Root;"), 1), "Root"
+    )
+
+    result = verify_source_partition(source, make_large_priority_partition(source))
+
+    assert result.bucket_count == 14
+    assert len(result.variables) == 13
+    assert result.assignment_count == 0
+
+
+@pytest.mark.unittest
+def test_structural_partition_checker_rejects_extra_accepted_atoms():
+    """Structural budget bypass applies only to exact canonical accepted masks."""
+    source = stable_leaf_source(
+        build_bmc_domain(load_state_machine_from_text("state Root;"), 1), "Root"
+    )
+
+    def inject_positive_accepted(index, accepted, condition):
+        if index != 1:
+            return condition
+        return BoolTemplate.and_(
+            condition, BoolTemplate.atom("accepted:%s" % accepted[0].label)
+        )
+
+    with pytest.raises(BmcBuildError, match="assignment budget"):
+        verify_source_partition(
+            source,
+            make_large_priority_partition(source, inject_positive_accepted),
         )
 
 

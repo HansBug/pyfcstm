@@ -12,7 +12,7 @@ from pyfcstm.bmc import (
     entry_source,
     stable_leaf_source,
 )
-from pyfcstm.bmc.expand import MacroExpansionOptions, expand_macro_step_cases
+from pyfcstm.bmc.expand import expand_macro_step_cases
 from pyfcstm.model import IfBlock, load_state_machine_from_text
 
 _FIXTURE = Path(__file__).with_name("fixtures") / "macro_runtime_alignment.fcstm"
@@ -48,7 +48,7 @@ def test_stable_leaf_fallback_records_during_action_blocks_not_var_updates():
 
     assert fallback.condition.variables == ()
     assert [block.runtime_role for block in fallback.action_blocks] == [
-        "leaf_during",
+        "aspect_during_before",
         "leaf_during",
     ]
     assert "var_update" not in fallback.to_canonical()
@@ -138,12 +138,19 @@ def test_runtime_fixture_records_guard_anchors_after_prefix_actions():
         ("x >= 13", 2),
         ("y >= 30", 4),
     ]
-    assert [block.runtime_role for block in to_done.action_blocks[:5]] == [
-        "state_exit",
-        "transition_effect",
-        "transition_effect",
-        "plain_during_after",
-        "state_exit",
+    assert [
+        (block.block_kind, block.runtime_role) for block in to_done.action_blocks[:5]
+    ] == [
+        ("state_action", "state_exit"),
+        ("transition_effect", "transition_effect"),
+        ("transition_effect", "transition_effect"),
+        ("state_action", "plain_during_after"),
+        ("state_action", "state_exit"),
+    ]
+    assert [guard.reason for guard in to_b.guard_requirements] == ["pseudo_guard"]
+    assert [guard.reason for guard in to_done.guard_requirements] == [
+        "pseudo_guard",
+        "parent_continuation_guard",
     ]
 
 
@@ -159,15 +166,15 @@ def test_hot_pseudo_entry_uses_guard_anchor_zero_for_first_route_guard():
     delta = _case_by_kind_target(formal, "delta", "__diagnostic__")
 
     assert [
-        (str(g.expr.to_ast_node()), g.after_action_block_index)
+        (str(g.expr.to_ast_node()), g.after_action_block_index, g.reason)
         for g in to_b.guard_requirements
-    ] == [("x < 13", 0)]
+    ] == [("x < 13", 0, "pseudo_guard")]
     assert [
-        (str(g.expr.to_ast_node()), g.after_action_block_index)
+        (str(g.expr.to_ast_node()), g.after_action_block_index, g.reason)
         for g in to_done.guard_requirements
     ] == [
-        ("x >= 13", 0),
-        ("y >= 30", 2),
+        ("x >= 13", 0, "pseudo_guard"),
+        ("y >= 30", 2, "parent_continuation_guard"),
     ]
     assert _conditions(delta) == {
         "accepted:%s" % to_b.label,
@@ -206,7 +213,7 @@ def test_rejected_pseudo_loop_allows_later_transition_and_fallback():
 
 @pytest.mark.unittest
 def test_variable_progressing_pseudo_loop_fails_closed():
-    """PR-9 refuses to summarize pseudo loops whose convergence depends on effects."""
+    """Macro expansion refuses to summarize pseudo loops that depend on effects."""
     model = load_state_machine_from_text(
         """
         def int x = 0;
@@ -223,8 +230,36 @@ def test_variable_progressing_pseudo_loop_fails_closed():
     )
     domain = build_bmc_domain(model, bound=1)
 
-    with pytest.raises(BmcBuildError, match="micro-step safety limit"):
-        expand_macro_step_cases(
-            stable_leaf_source(domain, "Root.A"),
-            MacroExpansionOptions(max_micro_steps=20),
-        )
+    with pytest.raises(BmcBuildError, match="action-dependent pseudo loop"):
+        expand_macro_step_cases(stable_leaf_source(domain, "Root.A"))
+
+
+@pytest.mark.unittest
+def test_failed_guarded_pseudo_candidate_keeps_failed_guard_metadata():
+    """Fallback failed conditions keep matching guard requirements."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            state A;
+            pseudo state Route;
+            state B;
+            A -> Route : if [x > 5];
+            Route -> Route;
+            Route -> B;
+            [*] -> A;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+
+    formal = expand_macro_step_cases(stable_leaf_source(domain, "Root.A"))
+    fallback = _case_by_kind_target(formal, "fallback", "Root.A")
+
+    assert fallback.failed_conditions
+    assert {atom for item in fallback.failed_conditions for atom in item.variables} == {
+        "guard:g0"
+    }
+    assert [
+        (guard.requirement_id, guard.reason) for guard in fallback.guard_requirements
+    ] == [("g0", "transition_guard")]

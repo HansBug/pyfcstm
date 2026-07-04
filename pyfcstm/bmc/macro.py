@@ -22,9 +22,10 @@ Design contracts:
 * :class:`PriorityExclusion` records declaration-order masks through
   ``accepted:<case_label>`` atoms.  The accepted atom denotes the already lowered
   antecedent of a prior accepted path, not a raw event or guard trigger.
-* Partition verification is a build-time/test-time self-check.  It resolves
-  accepted atoms through the source-local case registry before running the small
-  truth-table checker and never produces clauses for ``Core_N`` or ``Phi_N``.
+* Partition verification is a build-time/test-time self-check.  It first accepts
+  structural accepted/fallback masks that are disjoint by construction, then
+  falls back to a bounded truth-table checker for small non-canonical shapes. It
+  never produces clauses for ``Core_N`` or ``Phi_N``.
 
 The module contains:
 
@@ -53,7 +54,7 @@ from __future__ import annotations
 import itertools
 import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from pyfcstm.bmc.domain import STATE_DIAGNOSTIC_ID, STATE_TERMINATE_ID, BmcDomain
 from pyfcstm.bmc.errors import BmcBuildError, InvalidBmcDomain, InvalidBmcEncoding
@@ -71,8 +72,27 @@ _ACCEPTED_CASE_KINDS = {"transition", "initial"}
 _EVENT_POLARITIES = {"positive", "negative"}
 _EVENT_REASONS = {"trigger", "priority", "fallback", "descent", "assumption"}
 _GUARD_POLARITIES = {"positive", "negative"}
-_GUARD_REASONS = {"transition_guard", "initial_guard", "priority", "fallback"}
+_GUARD_REASONS = {
+    "transition_guard",
+    "initial_guard",
+    "pseudo_guard",
+    "parent_continuation_guard",
+    "priority",
+    "fallback",
+    "delta_exclusion",
+}
 _PRIORITY_REASONS = {"transition_priority", "initial_priority", "fallback", "delta"}
+_ACTION_BLOCK_KINDS = {"state_action", "aspect_action", "transition_effect"}
+_ACTION_RUNTIME_ROLES = {
+    "state_enter",
+    "state_exit",
+    "leaf_during",
+    "plain_during_before",
+    "plain_during_after",
+    "aspect_during_before",
+    "aspect_during_after",
+    "transition_effect",
+}
 _RESERVED_CASE_PATHS = {TERMINATE_CASE_PATH, DIAGNOSTIC_CASE_PATH}
 _SOURCE_STATE_ATOM_PREFIX = "__source_state__:"
 _EVENT_ATOM_PREFIX = "event:"
@@ -387,7 +407,7 @@ class BoolTemplate:
             >>> BoolTemplate.atom('guard:g0').to_canonical()['name']
             'guard:g0'
         """
-        result = {"node": "bool_template", "kind": self.kind}
+        result = {"node": "bool_template", "kind": self.kind}  # type: _CanonicalDict
         if self.kind == "atom":
             result["name"] = self._atom_name()
         if self.operands:
@@ -667,10 +687,12 @@ class PriorityExclusion:
 class ActionBlock:
     """Runtime action block recorded for a macro-step path.
 
-    :param block_kind: Domain block kind such as ``"enter"``, ``"exit"``,
-        ``"during"``, ``"during_aspect"``, or ``"transition_effect"``.
+    :param block_kind: Public block kind: ``"state_action"``,
+        ``"aspect_action"``, or ``"transition_effect"``.
     :type block_kind: str
-    :param runtime_role: Runtime role explaining why the block executes.
+    :param runtime_role: Runtime role explaining why the block executes, such as
+        ``"state_enter"``, ``"leaf_during"``, ``"aspect_during_before"``, or
+        ``"transition_effect"``.
     :type runtime_role: str
     :param owner_state_id: Domain id of the state that owns the block.
     :type owner_state_id: int
@@ -690,7 +712,7 @@ class ActionBlock:
 
     Example::
 
-        >>> ActionBlock('during', 'leaf_during', 0, 'Root', ()).operations
+        >>> ActionBlock('state_action', 'leaf_during', 0, 'Root', ()).operations
         ()
     """
 
@@ -715,12 +737,14 @@ class ActionBlock:
         if not isinstance(self.is_abstract, bool):
             raise InvalidBmcEncoding("is_abstract must be a boolean.")
         object.__setattr__(
-            self, "block_kind", _require_non_empty_string(self.block_kind, "block_kind")
+            self,
+            "block_kind",
+            _validate_choice(self.block_kind, _ACTION_BLOCK_KINDS, "block_kind"),
         )
         object.__setattr__(
             self,
             "runtime_role",
-            _require_non_empty_string(self.runtime_role, "runtime_role"),
+            _validate_choice(self.runtime_role, _ACTION_RUNTIME_ROLES, "runtime_role"),
         )
         object.__setattr__(self, "owner_state_id", owner_state_id)
         object.__setattr__(
@@ -750,8 +774,8 @@ class ActionBlock:
 
         Example::
 
-            >>> ActionBlock('during', 'leaf_during', 0, 'Root', ()).to_canonical()['block_kind']
-            'during'
+            >>> ActionBlock('state_action', 'leaf_during', 0, 'Root', ()).to_canonical()['block_kind']
+            'state_action'
         """
         return {
             "node": "action_block",
@@ -845,6 +869,27 @@ def _validate_condition_atom_prefixes(condition: BoolTemplate, field_name: str) 
             )
 
 
+def _validate_partition_atom_prefixes(
+    conditions: Sequence[BoolTemplate],
+    variables: Optional[Sequence[str]] = None,
+) -> None:
+    for condition in conditions:
+        _validate_condition_atom_prefixes(condition, "partition bucket")
+    if variables is None:
+        return
+    for atom in variables:
+        if atom.startswith(_SOURCE_STATE_ATOM_PREFIX):
+            raise BmcBuildError(
+                "partition variables use reserved source-state atom namespace: %r."
+                % atom
+            )
+        if not atom.startswith(_VALID_CONDITION_PREFIXES):
+            raise BmcBuildError(
+                "partition variables use unsupported macro condition atom namespace: %r."
+                % atom
+            )
+
+
 def _event_atom_paths(condition: BoolTemplate) -> Tuple[str, ...]:
     return tuple(
         sorted(
@@ -873,6 +918,72 @@ def _accepted_atom_labels(condition: BoolTemplate) -> Tuple[str, ...]:
             if atom.startswith(_ACCEPTED_ATOM_PREFIX)
         )
     )
+
+
+def _accepted_union_labels(condition: BoolTemplate) -> Optional[Tuple[str, ...]]:
+    if condition.kind == "false":
+        return ()
+    if condition.kind == "atom":
+        atom = condition._atom_name()
+        if atom.startswith(_ACCEPTED_ATOM_PREFIX):
+            return (atom[len(_ACCEPTED_ATOM_PREFIX) :],)
+        return None
+    if condition.kind != "or":
+        return None
+    labels = []
+    for operand in condition.operands:
+        item = _accepted_union_labels(operand)
+        if item is None or len(item) != 1:
+            return None
+        labels.extend(item)
+    return tuple(sorted(set(labels)))
+
+
+def _condition_uses_expected_accepted_prefix(
+    condition: BoolTemplate, labels: Sequence[str]
+) -> bool:
+    """Return whether ``condition`` has exactly the expected accepted mask."""
+    expected = tuple(labels)
+    if not expected:
+        return not _accepted_atom_labels(condition)
+    expected_mask = BoolTemplate.not_(
+        BoolTemplate.or_(
+            *[
+                BoolTemplate.atom("%s%s" % (_ACCEPTED_ATOM_PREFIX, label))
+                for label in expected
+            ]
+        )
+    )
+    expected_mask_key = _canonical_key(expected_mask)
+    if _canonical_key(condition) == expected_mask_key:
+        return True
+    if condition.kind != "and":
+        return False
+    mask_count = 0
+    for operand in condition.operands:
+        if _canonical_key(operand) == expected_mask_key:
+            mask_count += 1
+            continue
+        if _accepted_atom_labels(operand):
+            return False
+    return mask_count == 1
+
+
+def _condition_uses_exact_accepted_complement(
+    condition: BoolTemplate,
+    labels: Sequence[str],
+    extra_exclusions: Sequence[BoolTemplate] = (),
+) -> bool:
+    exclusions = [
+        BoolTemplate.atom("%s%s" % (_ACCEPTED_ATOM_PREFIX, label)) for label in labels
+    ]
+    exclusions.extend(extra_exclusions)
+    expected = (
+        BoolTemplate.not_(BoolTemplate.or_(*exclusions))
+        if exclusions
+        else BoolTemplate.true()
+    )
+    return _canonical_key(condition) == _canonical_key(expected)
 
 
 def _event_uses_from_paths(
@@ -1208,7 +1319,7 @@ class PartitionCheckResult:
 
     Example::
 
-        >>> PartitionCheckResult(('a',), 2, 2).to_canonical()['assignment_count']
+        >>> PartitionCheckResult(('event:Root.Go',), 2, 2).to_canonical()['assignment_count']
         2
     """
 
@@ -1417,7 +1528,7 @@ class MacroStepFormal:
             raise InvalidBmcEncoding("sentinel absorb case must self-loop sentinel id.")
 
     def verify_partition(self, max_assignments: int = 4096) -> PartitionCheckResult:
-        """Verify local case buckets with the truth-table self-checker.
+        """Verify local case buckets with structural and truth-table self-checks.
 
         :param max_assignments: Maximum assignments to enumerate, defaults to
             ``4096``.
@@ -1425,7 +1536,7 @@ class MacroStepFormal:
         :return: Partition self-check summary.
         :rtype: PartitionCheckResult
         :raises BmcBuildError: If the buckets overlap, leave a gap, or exceed
-            the assignment budget.
+            the assignment budget for a non-structural shape.
 
         Example::
 
@@ -1592,6 +1703,7 @@ def build_fallback_case(
     accepted_cases: Sequence[CycleCase],
     failed_conditions: Sequence[BoolTemplate] = (),
     ordinal: int = 0,
+    guard_requirements: Sequence[GuardRequirement] = (),
 ) -> CycleCase:
     """Build a stable leaf fallback self-cycle.
 
@@ -1611,6 +1723,9 @@ def build_fallback_case(
     :type failed_conditions: Sequence[BoolTemplate], optional
     :param ordinal: Label ordinal, defaults to ``0``.
     :type ordinal: int, optional
+    :param guard_requirements: Guard metadata for atoms referenced by failed
+        diagnostic conditions, defaults to ``()``.
+    :type guard_requirements: Sequence[GuardRequirement], optional
     :return: Fallback case.
     :rtype: CycleCase
     :raises InvalidBmcEncoding: If ``source`` is not a stable leaf source.
@@ -1638,6 +1753,11 @@ def build_fallback_case(
     failed = tuple(failed_conditions)
     if not all(isinstance(item, BoolTemplate) for item in failed):
         raise InvalidBmcEncoding("failed_conditions must contain BoolTemplate objects.")
+    guards = tuple(guard_requirements)
+    if not all(isinstance(item, GuardRequirement) for item in guards):
+        raise InvalidBmcEncoding(
+            "guard_requirements must contain GuardRequirement objects."
+        )
     excluded = _accepted_condition(accepted)
     condition = BoolTemplate.not_(excluded) if accepted else BoolTemplate.true()
     used_events = _event_uses_from_paths(
@@ -1665,6 +1785,7 @@ def build_fallback_case(
         condition,
         (),
         used_events=used_events,
+        guard_requirements=guards,
         priority_exclusions=(priority,) if priority is not None else (),
         failed_conditions=failed,
         domain=domain,
@@ -1678,6 +1799,7 @@ def build_semantic_delta_case(
     build_diagnostic_conditions: Sequence[BoolTemplate] = (),
     failed_conditions: Sequence[BoolTemplate] = (),
     ordinal: int = 0,
+    guard_requirements: Sequence[GuardRequirement] = (),
 ) -> CycleCase:
     """Build a non-stoppable entry uncovered-region delta case.
 
@@ -1698,6 +1820,9 @@ def build_semantic_delta_case(
     :type failed_conditions: Sequence[BoolTemplate], optional
     :param ordinal: Label ordinal, defaults to ``0``.
     :type ordinal: int, optional
+    :param guard_requirements: Guard metadata for atoms referenced by failed
+        diagnostic conditions, defaults to ``()``.
+    :type guard_requirements: Sequence[GuardRequirement], optional
     :return: Semantic delta case targeting the diagnostic sentinel.
     :rtype: CycleCase
     :raises InvalidBmcEncoding: If ``source`` does not allow semantic delta.
@@ -1732,6 +1857,11 @@ def build_semantic_delta_case(
     failed = tuple(failed_conditions)
     if not all(isinstance(item, BoolTemplate) for item in failed):
         raise InvalidBmcEncoding("failed_conditions must contain BoolTemplate objects.")
+    guards = tuple(guard_requirements)
+    if not all(isinstance(item, GuardRequirement) for item in guards):
+        raise InvalidBmcEncoding(
+            "guard_requirements must contain GuardRequirement objects."
+        )
     excluded = []
     if accepted:
         excluded.append(_accepted_condition(accepted))
@@ -1764,6 +1894,7 @@ def build_semantic_delta_case(
         condition,
         (),
         used_events=used_events,
+        guard_requirements=guards,
         priority_exclusions=(priority,) if priority is not None else (),
         failed_conditions=failed,
         domain=domain,
@@ -1817,6 +1948,61 @@ def _resolve_accepted_atoms(
     raise BmcBuildError("unsupported boolean template kind: %r." % condition.kind)
 
 
+def _structural_partition_result(
+    source: MacroStepSource,
+    success: Sequence[CycleCase],
+    delta: Sequence[CycleCase],
+    diagnostics: Sequence[BoolTemplate],
+    variables: Sequence[str],
+) -> Optional[PartitionCheckResult]:
+    if source.kind in {"terminated", "diagnostic"}:
+        if len(success) == 1 and not delta and not diagnostics:
+            return PartitionCheckResult(tuple(variables), 0, 1)
+        return None
+
+    cases = tuple(success) + tuple(delta)
+    accepted_cases = [case for case in cases if case.kind in _ACCEPTED_CASE_KINDS]
+    terminal_cases = [case for case in cases if case.kind not in _ACCEPTED_CASE_KINDS]
+    accepted_labels: List[str] = []
+    remaining: List[CycleCase] = list(accepted_cases)
+    while remaining:
+        candidates = [
+            case
+            for case in remaining
+            if _condition_uses_expected_accepted_prefix(case.condition, accepted_labels)
+        ]
+        if len(candidates) != 1:
+            return None
+        selected = candidates[0]
+        accepted_labels.append(selected.label)
+        remaining.remove(selected)
+
+    if len(terminal_cases) != 1:
+        return None
+    terminal = terminal_cases[0]
+    if terminal.kind == "fallback":
+        if source.kind != "stable_leaf" or delta or diagnostics:
+            return None
+        if not _condition_uses_exact_accepted_complement(
+            terminal.condition, accepted_labels
+        ):
+            return None
+    elif terminal.kind == "delta":
+        if source.kind != "entry":
+            return None
+        if not _condition_uses_exact_accepted_complement(
+            terminal.condition, accepted_labels, diagnostics
+        ):
+            return None
+    else:
+        return None
+
+    if diagnostics and (source.kind != "entry" or not delta):
+        return None
+    bucket_count = len(cases) + (1 if diagnostics else 0)
+    return PartitionCheckResult(tuple(variables), 0, bucket_count)
+
+
 def verify_boolean_partition(
     buckets: Sequence[BoolTemplate],
     variables: Optional[Sequence[str]] = None,
@@ -1839,7 +2025,7 @@ def verify_boolean_partition(
 
     Example::
 
-        >>> a = BoolTemplate.atom('a')
+        >>> a = BoolTemplate.atom('event:Root.Go')
         >>> verify_boolean_partition((a, BoolTemplate.not_(a))).assignment_count
         2
     """
@@ -1854,6 +2040,7 @@ def verify_boolean_partition(
         raise BmcBuildError("max_assignments must be a positive integer.")
     if max_assignments <= 0:
         raise BmcBuildError("max_assignments must be a positive integer.")
+    _validate_partition_atom_prefixes(items, variables)
 
     if variables is None:
         names = sorted(
@@ -1902,10 +2089,11 @@ def verify_source_partition(
 ) -> PartitionCheckResult:
     """Verify one source's local case partition.
 
-    ``accepted:<case_label>`` atoms are resolved through the source-local case
-    registry before truth-table enumeration, so declaration-priority masks are
-    checked against the same accepted-path meaning that later relation lowering
-    will use.
+    Canonical accepted/fallback masks are verified structurally to avoid
+    rejecting large declaration-priority partitions merely because their event
+    or guard atom count exceeds the fallback truth-table budget.  Non-canonical
+    shapes are resolved through the source-local accepted-case registry and then
+    checked by bounded truth-table enumeration.
 
     :param source: Macro-step source profile.
     :type source: MacroStepSource
@@ -1963,11 +2151,23 @@ def verify_source_partition(
             "build_diagnostic_conditions must contain BoolTemplate objects."
         )
 
+    _validate_partition_atom_prefixes(
+        [case.condition for case in success + delta] + list(diagnostics)
+    )
     registry = {case.label: case.condition for case in success + delta}
     buckets = [_resolve_accepted_atoms(case.condition, registry) for case in success]
     buckets.extend(_resolve_accepted_atoms(case.condition, registry) for case in delta)
     if diagnostics:
         buckets.append(BoolTemplate.or_(*diagnostics))
+    variables = sorted(
+        set(itertools.chain.from_iterable(bucket.variables for bucket in buckets))
+    )
+    if 2 ** len(variables) > max_assignments:
+        structural = _structural_partition_result(
+            source, success, delta, diagnostics, variables
+        )
+        if structural is not None:
+            return structural
     return verify_boolean_partition(buckets, max_assignments=max_assignments)
 
 

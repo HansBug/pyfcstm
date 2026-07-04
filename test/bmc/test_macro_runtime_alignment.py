@@ -1,4 +1,4 @@
-"""Runtime-alignment tests for PR-9 macro-step path expansion."""
+"""Runtime-alignment tests for macro-step path expansion."""
 
 from __future__ import annotations
 

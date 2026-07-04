@@ -712,6 +712,19 @@ def test_macro_step_formal_public_validation_rejects_invalid_bucket_shapes(
     )
     with pytest.raises(InvalidBmcEncoding, match="sentinel formal case"):
         MacroStepFormal(terminate, (wrong_sentinel_case,))
+    false_absorb = CycleCase(
+        "absorb",
+        terminate.source_state_id,
+        terminate.source_state_path,
+        terminate.source_state_id,
+        terminate.source_state_path,
+        "%s::absorb::%s::2"
+        % (terminate.source_state_path, terminate.source_state_path),
+        BoolTemplate.false(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="sentinel absorb condition"):
+        MacroStepFormal(terminate, (false_absorb,))
 
     assert (
         MacroStepFormal(stable, (fallback,)).to_canonical()["node"]
@@ -1078,13 +1091,42 @@ def test_partition_resolves_accepted_atoms_through_case_registry(macro_domain):
 @pytest.mark.unittest
 def test_partition_handles_sentinel_delta_and_accepted_atom_failures(macro_domain):
     """Source partition checks cover sentinel, delta, diagnostic, and atom cycles."""
+    terminate = terminated_source(macro_domain)
     terminated = verify_source_partition(
-        terminated_source(macro_domain),
+        terminate,
         (terminated_absorb_case(macro_domain),),
         max_assignments=1,
     )
     assert terminated.assignment_count == 0
     assert terminated.bucket_count == 1
+
+    false_absorb = CycleCase(
+        "absorb",
+        terminate.source_state_id,
+        terminate.source_state_path,
+        terminate.source_state_id,
+        terminate.source_state_path,
+        "%s::absorb::%s::1"
+        % (terminate.source_state_path, terminate.source_state_path),
+        BoolTemplate.false(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="sentinel absorb condition"):
+        verify_source_partition(terminate, (false_absorb,), max_assignments=1)
+
+    sentinel_fallback = CycleCase(
+        "fallback",
+        terminate.source_state_id,
+        terminate.source_state_path,
+        terminate.source_state_id,
+        terminate.source_state_path,
+        "%s::fallback::%s::0"
+        % (terminate.source_state_path, terminate.source_state_path),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="sentinel formal case"):
+        verify_source_partition(terminate, (sentinel_fallback,), max_assignments=1)
 
     entry = entry_source(macro_domain, "Root.Plant")
     accepted = make_case(

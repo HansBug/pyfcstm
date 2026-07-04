@@ -1495,13 +1495,18 @@ class MacroStepFormal:
                 )
 
     def _validate_sentinel_absorb(self, sentinel_id: int) -> None:
-        if len(self.success_cases) != 1:
-            raise InvalidBmcEncoding("sentinel absorb formal must contain one case.")
-        case = self.success_cases[0]
-        if case.kind != "absorb":
-            raise InvalidBmcEncoding("sentinel formal case must be absorb.")
-        assert case.source_state_id == sentinel_id
-        assert case.target_state_id == sentinel_id
+        expected_path = (
+            TERMINATE_CASE_PATH
+            if sentinel_id == STATE_TERMINATE_ID
+            else DIAGNOSTIC_CASE_PATH
+        )
+        _validate_sentinel_absorb_partition(
+            self.success_cases,
+            self.delta_cases,
+            self.build_diagnostic_conditions,
+            sentinel_id,
+            expected_path,
+        )
 
     def verify_partition(self, max_assignments: int = 4096) -> PartitionCheckResult:
         """Verify local case buckets with structural and truth-table self-checks.
@@ -1924,6 +1929,37 @@ def _resolve_accepted_atoms(
     raise BmcBuildError("unsupported boolean template kind: %r." % condition.kind)
 
 
+def _validate_sentinel_absorb_partition(
+    success: Sequence[CycleCase],
+    delta: Sequence[CycleCase],
+    diagnostics: Sequence[BoolTemplate],
+    sentinel_id: int,
+    sentinel_path: str,
+) -> None:
+    if delta:
+        raise InvalidBmcEncoding("sentinel absorb formal cannot have delta cases.")
+    if diagnostics:
+        raise InvalidBmcEncoding(
+            "sentinel absorb formal cannot have build diagnostics."
+        )
+    if len(success) != 1:
+        raise InvalidBmcEncoding("sentinel absorb formal must contain one case.")
+    case = success[0]
+    if case.kind != "absorb":
+        raise InvalidBmcEncoding("sentinel formal case must be absorb.")
+    if (
+        case.source_state_id != sentinel_id
+        or case.target_state_id != sentinel_id
+        or case.source_state_path != sentinel_path
+        or case.target_state_path != sentinel_path
+    ):
+        raise InvalidBmcEncoding(
+            "sentinel absorb case must self-loop the source sentinel."
+        )
+    if case.condition.kind != "true":
+        raise InvalidBmcEncoding("sentinel absorb condition must be true.")
+
+
 def _structural_partition_result(
     source: MacroStepSource,
     success: Sequence[CycleCase],
@@ -1932,9 +1968,16 @@ def _structural_partition_result(
     variables: Sequence[str],
 ) -> Optional[PartitionCheckResult]:
     if source.kind in {"terminated", "diagnostic"}:
-        if len(success) == 1 and not delta and not diagnostics:
-            return PartitionCheckResult(tuple(variables), 0, 1)
-        return None
+        sentinel_id = (
+            STATE_TERMINATE_ID if source.kind == "terminated" else STATE_DIAGNOSTIC_ID
+        )
+        sentinel_path = (
+            TERMINATE_CASE_PATH if source.kind == "terminated" else DIAGNOSTIC_CASE_PATH
+        )
+        _validate_sentinel_absorb_partition(
+            success, delta, diagnostics, sentinel_id, sentinel_path
+        )
+        return PartitionCheckResult(tuple(variables), 0, 1)
 
     cases = tuple(success) + tuple(delta)
     accepted_cases = [case for case in cases if case.kind in _ACCEPTED_CASE_KINDS]
@@ -2085,8 +2128,9 @@ def verify_source_partition(
     :return: Partition self-check summary.
     :rtype: PartitionCheckResult
     :raises BmcBuildError: If the buckets are not complete and disjoint.
-    :raises InvalidBmcEncoding: If delta cases are used for a source that does
-        not allow semantic delta.
+    :raises InvalidBmcEncoding: If the source/case buckets have an invalid
+        shape, including unsupported delta buckets or malformed sentinel absorb
+        partitions.
 
     Example::
 

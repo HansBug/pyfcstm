@@ -1387,6 +1387,10 @@ class _Expander:
 def _literal_int(expr: Expr) -> Optional[int]:
     """Return an integer literal value if ``expr`` is integral syntax.
 
+    Pure integer constant expressions such as ``4 - 1`` and ``2 * (1 + 1)``
+    are folded so threshold normalization can recognize natural guard forms
+    without evaluating expressions that depend on model variables.
+
     :param expr: Model expression to inspect.
     :type expr: pyfcstm.model.Expr
     :return: Integer literal value, or ``None`` for non-integer syntax.
@@ -1394,10 +1398,28 @@ def _literal_int(expr: Expr) -> Optional[int]:
     """
     if isinstance(expr, Integer):
         return expr.value
-    if isinstance(expr, UnaryOp) and expr.op == "-" and isinstance(expr.x, Integer):
-        return -expr.x.value
-    if isinstance(expr, UnaryOp) and expr.op == "+" and isinstance(expr.x, Integer):
-        return expr.x.value
+    if isinstance(expr, UnaryOp) and expr.op in ("+", "-"):
+        value = _literal_int(expr.x)
+        if value is None:
+            return None
+        return value if expr.op == "+" else -value
+    if isinstance(expr, BinaryOp) and expr.op in ("+", "-", "*", "%", "/"):
+        left = _literal_int(expr.x)
+        right = _literal_int(expr.y)
+        if left is None or right is None:
+            return None
+        if expr.op == "+":
+            return left + right
+        if expr.op == "-":
+            return left - right
+        if expr.op == "*":
+            return left * right
+        if right == 0:
+            return None
+        if expr.op == "%":
+            return left % right
+        if left % right == 0:
+            return left // right
     return None
 
 

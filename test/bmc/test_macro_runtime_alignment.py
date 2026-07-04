@@ -547,6 +547,10 @@ def test_variable_progressing_pseudo_loop_after_entry_effect_aligns_with_runtime
         ("4 > x", "4 <= x"),
         ("x < 4", "!(x < 4)"),
         ("4 > x", "3 < x"),
+        ("x <= 4 - 1", "x > 4 - 1"),
+        ("4 > x", "x >= 2 + 2"),
+        ("x < 2 * 2", "!(x < 2 + 2)"),
+        ("x <= 9 % 5 - 1", "4 <= x"),
     ],
 )
 @pytest.mark.parametrize("loop_first", [True, False])

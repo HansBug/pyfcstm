@@ -3,17 +3,30 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
 from pyfcstm.bmc import (
     BmcBuildError,
+    BmcDomain,
+    MacroExpansionOptions,
+    diagnostic_source,
     build_bmc_domain,
     entry_source,
+    terminated_source,
+    InvalidBmcEncoding,
+    MacroStepSource,
     stable_leaf_source,
 )
 from pyfcstm.bmc.expand import expand_macro_step_cases
 from pyfcstm.model import IfBlock, load_state_machine_from_text
+
+
+def _bad_object() -> Any:
+    """Return an intentionally bad value without tripping static type checks."""
+    return cast(Any, object())
+
 
 _FIXTURE = Path(__file__).with_name("fixtures") / "macro_runtime_alignment.fcstm"
 
@@ -27,6 +40,388 @@ def _case_by_kind_target(formal, kind, target_path):
 
 def _conditions(case):
     return set(case.condition.variables)
+
+
+@pytest.mark.unittest
+def test_expand_public_api_rejects_bad_source_and_options():
+    """Public expansion entry validates only its public boundary arguments."""
+    model = load_state_machine_from_text("state Root;")
+    domain = build_bmc_domain(model, bound=1)
+
+    with pytest.raises(InvalidBmcEncoding, match="source must be MacroStepSource"):
+        expand_macro_step_cases(_bad_object())
+    with pytest.raises(
+        InvalidBmcEncoding, match="options must be MacroExpansionOptions"
+    ):
+        expand_macro_step_cases(
+            stable_leaf_source(domain, "Root"), options=_bad_object()
+        )
+    with pytest.raises(InvalidBmcEncoding, match="max_micro_steps"):
+        MacroExpansionOptions(max_micro_steps=0)
+    with pytest.raises(InvalidBmcEncoding, match="max_stack_depth"):
+        MacroExpansionOptions(max_stack_depth=True)
+    with pytest.raises(InvalidBmcEncoding, match="partition_max_assignments"):
+        MacroExpansionOptions(partition_max_assignments=0)
+    with pytest.raises(InvalidBmcEncoding, match="verify_partition"):
+        MacroExpansionOptions(verify_partition="yes")
+
+
+@pytest.mark.unittest
+def test_expand_rejects_domainless_and_modeless_sources():
+    """Expansion requires a source carrying a domain with a model back-reference."""
+    model = load_state_machine_from_text("state Root;")
+    domain = build_bmc_domain(model, bound=1)
+    source = stable_leaf_source(domain, "Root")
+    modeless = BmcDomain(
+        domain.bound,
+        domain.states,
+        domain.events,
+        domain.variables,
+        domain.frames,
+        domain.steps,
+        domain.event_inputs,
+        domain.initial_state_ids,
+        domain.stable_state_ids,
+    )
+
+    with pytest.raises(InvalidBmcEncoding, match="domain-backed source"):
+        expand_macro_step_cases(MacroStepSource("stable_leaf", "recurrence", 0, "Root"))
+    with pytest.raises(InvalidBmcEncoding, match="model back-reference"):
+        expand_macro_step_cases(
+            MacroStepSource(
+                source.kind,
+                source.origin,
+                source.source_state_id,
+                source.source_state_path,
+                domain=modeless,
+            )
+        )
+
+
+@pytest.mark.unittest
+def test_expansion_safety_limits_fail_closed():
+    """Micro-step and stack-depth caps are loud build-time failures."""
+    model = load_state_machine_from_text(
+        """
+        state Root {
+            state Parent {
+                state Child;
+                [*] -> Child;
+            }
+            [*] -> Parent;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+
+    with pytest.raises(BmcBuildError, match="micro-step"):
+        expand_macro_step_cases(
+            entry_source(domain),
+            MacroExpansionOptions(max_micro_steps=1),
+        )
+    with pytest.raises(BmcBuildError, match="stack-depth"):
+        expand_macro_step_cases(
+            stable_leaf_source(domain, "Root.Parent.Child"),
+            MacroExpansionOptions(max_stack_depth=1),
+        )
+
+
+@pytest.mark.unittest
+def test_sentinel_sources_expand_to_absorb_cases():
+    """Terminated and diagnostic macro sources are explicit absorb formals."""
+    model = load_state_machine_from_text("state Root;")
+    domain = build_bmc_domain(model, bound=1)
+
+    terminated = expand_macro_step_cases(terminated_source(domain))
+    diagnostic = expand_macro_step_cases(diagnostic_source(domain))
+
+    assert [
+        (case.kind, case.source_state_path, case.target_state_path)
+        for case in terminated.cases
+    ] == [("absorb", "__terminate__", "__terminate__")]
+    assert [
+        (case.kind, case.source_state_path, case.target_state_path)
+        for case in diagnostic.cases
+    ] == [("absorb", "__diagnostic__", "__diagnostic__")]
+    assert terminated.cases[0].condition.evaluate({}) is True
+    assert diagnostic.cases[0].condition.evaluate({}) is True
+
+
+@pytest.mark.unittest
+def test_root_entry_expands_initial_descent_actions():
+    """Root entry starts from an empty stack and records cold-entry actions."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            enter { x = x + 1; }
+            state A { during { x = x + 2; } }
+            [*] -> A effect { x = x + 4; }
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(entry_source(domain))
+    initial = _case_by_kind_target(formal, "initial", "Root.A")
+
+    assert initial.condition.evaluate({}) is True
+    assert [
+        (block.runtime_role, block.owner_state_path, block.transition_label)
+        for block in initial.action_blocks
+    ] == [
+        ("state_enter", "Root", None),
+        ("transition_effect", "Root", "Root::0::INIT_STATE->A"),
+        ("leaf_during", "Root.A", None),
+    ]
+
+
+@pytest.mark.unittest
+def test_nested_composite_entry_continues_through_initial_child():
+    """Hot entry into a composite target expands its own initial transition."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            state Parent {
+                enter { x = x + 1; }
+                state Child { during { x = x + 2; } }
+                [*] -> Child effect { x = x + 3; }
+            }
+            [*] -> Parent;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(entry_source(domain, "Root.Parent"))
+    initial = _case_by_kind_target(formal, "initial", "Root.Parent.Child")
+
+    assert [
+        (block.runtime_role, block.owner_state_path, block.transition_label)
+        for block in initial.action_blocks
+    ] == [
+        ("transition_effect", "Root.Parent", "Root.Parent::0::INIT_STATE->Child"),
+        ("leaf_during", "Root.Parent.Child", None),
+    ]
+
+
+@pytest.mark.unittest
+def test_non_pseudo_initial_transition_consumes_plain_before_actions():
+    """Composite plain during-before runs before non-pseudo initial children."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            state Parent {
+                during before { x = x + 10; }
+                state Child { during { x = x + 1; } }
+                [*] -> Child;
+            }
+            [*] -> Parent;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(entry_source(domain))
+    initial = _case_by_kind_target(formal, "initial", "Root.Parent.Child")
+
+    assert [block.runtime_role for block in initial.action_blocks] == [
+        "plain_during_before",
+        "leaf_during",
+    ]
+
+
+@pytest.mark.unittest
+def test_literal_boolean_guards_are_folded_before_case_expansion():
+    """Literal true guards add no atom; literal false guards are pruned."""
+    model = load_state_machine_from_text(
+        """
+        state Root {
+            state A;
+            state B;
+            state C;
+            [*] -> A;
+            A -> B : if [false];
+            A -> C : if [true];
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(stable_leaf_source(domain, "Root.A"))
+
+    to_c = _case_by_kind_target(formal, "transition", "Root.C")
+    fallback = _case_by_kind_target(formal, "fallback", "Root.A")
+    assert to_c.condition.evaluate({}) is True
+    assert _conditions(to_c) == set()
+    assert all(case.target_state_path != "Root.B" for case in formal.cases)
+    assert _conditions(fallback) == {"accepted:%s" % to_c.label}
+
+
+@pytest.mark.unittest
+def test_failed_initial_candidate_becomes_entry_delta_with_initial_guard_metadata():
+    """Unstable guarded initial descent is reported as entry semantic delta."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            state Parent {
+                pseudo state Route;
+                state Child;
+                [*] -> Route : if [x > 0];
+                Route -> Route;
+            }
+            [*] -> Parent;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(entry_source(domain, "Root.Parent"))
+    delta = _case_by_kind_target(formal, "delta", "__diagnostic__")
+
+    assert delta.condition.evaluate({}) is True
+    assert {item.name for item in delta.failed_conditions if item.kind == "atom"} == {
+        "guard:g0"
+    }
+    assert [
+        (guard.requirement_id, str(guard.expr.to_ast_node()), guard.reason)
+        for guard in delta.guard_requirements
+    ] == [("g0", "x > 0", "initial_guard")]
+
+
+@pytest.mark.unittest
+def test_failed_parent_continuation_falls_back_with_parent_guard_metadata():
+    """Rejected parent continuation is carried into stable fallback diagnostics."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            state Parent {
+                state Child;
+                [*] -> Child;
+                Child -> [*];
+            }
+            pseudo state Route;
+            [*] -> Parent;
+            Parent -> Route : if [x > 0];
+            Route -> Route;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(stable_leaf_source(domain, "Root.Parent.Child"))
+    fallback = _case_by_kind_target(formal, "fallback", "Root.Parent.Child")
+
+    assert fallback.condition.evaluate({}) is True
+    assert {
+        item.name for item in fallback.failed_conditions if item.kind == "atom"
+    } == {"guard:g0"}
+    assert [
+        (guard.requirement_id, str(guard.expr.to_ast_node()), guard.reason)
+        for guard in fallback.guard_requirements
+    ] == [("g0", "x > 0", "parent_continuation_guard")]
+
+
+@pytest.mark.unittest
+def test_exit_to_root_records_root_exit_and_targets_terminate():
+    """Exit transitions unwind to the terminate sentinel with exit actions."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            exit { x = x + 10; }
+            state A { exit { x = x + 1; } }
+            [*] -> A;
+            A -> [*];
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(stable_leaf_source(domain, "Root.A"))
+    transition = _case_by_kind_target(formal, "transition", "__terminate__")
+
+    assert transition.condition.evaluate({}) is True
+    assert [
+        (block.runtime_role, block.owner_state_path)
+        for block in transition.action_blocks
+    ] == [
+        ("state_exit", "Root.A"),
+        ("state_exit", "Root"),
+    ]
+
+
+@pytest.mark.unittest
+def test_pseudo_exit_clears_pending_plain_before_without_running_it():
+    """Pseudo exit from a just-entered composite clears pending plain-before work."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            state Parent {
+                during before { x = x + 100; }
+                pseudo state Route;
+                [*] -> Route;
+                Route -> [*];
+            }
+            state Done;
+            [*] -> Parent;
+            Parent -> Done;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(entry_source(domain, "Root.Parent"))
+    selected = _case_by_kind_target(formal, "initial", "Root.Done")
+
+    assert [block.runtime_role for block in selected.action_blocks] == []
+
+
+@pytest.mark.unittest
+def test_lifecycle_ref_actions_record_referenced_action_owner_and_name():
+    """Lifecycle refs are resolved to the referenced action block."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            enter Shared { x = x + 1; }
+            state A {
+                enter ref /Shared;
+                during { }
+            }
+            [*] -> A;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(entry_source(domain))
+    selected = _case_by_kind_target(formal, "initial", "Root.A")
+
+    assert [
+        (block.runtime_role, block.owner_state_path, block.action_name)
+        for block in selected.action_blocks
+    ] == [
+        ("state_enter", "Root", "Root.Shared"),
+        ("state_enter", "Root", "Root.Shared"),
+    ]
+
+
+@pytest.mark.unittest
+def test_empty_concrete_actions_do_not_create_action_blocks():
+    """Empty concrete lifecycle actions are no-ops in the action-block plan."""
+    model = load_state_machine_from_text(
+        """
+        state Root {
+            state A {
+                enter { }
+                during { }
+            }
+            [*] -> A;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(entry_source(domain))
+    selected = _case_by_kind_target(formal, "initial", "Root.A")
+
+    assert selected.action_blocks == ()
 
 
 @pytest.mark.unittest

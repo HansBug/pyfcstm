@@ -29,7 +29,7 @@ Example::
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union, cast
 
 from pyfcstm.bmc.domain import STATE_TERMINATE_ID, BmcDomain
 from pyfcstm.bmc.errors import BmcBuildError, InvalidBmcDomain, InvalidBmcEncoding
@@ -694,16 +694,15 @@ class _MacroExpander:
     ) -> _MacroFrontier:
         current = frontier
         for item in state.iter_on_during_aspect_recursively():
-            if len(item) == 3:
-                owner = item[1]
-                func = item[2]
-            else:
-                owner = item[0]
-                func = item[1]
-            if not isinstance(owner, State) or not isinstance(
-                func, (OnAspect, OnStage)
-            ):
-                raise BmcBuildError("invalid during action traversal item.")
+            owner, func = cast(Tuple[State, Union[OnAspect, OnStage]], item)
+            assert isinstance(owner, State), (
+                "State.iter_on_during_aspect_recursively() must yield owner states "
+                "when called without with_ids."
+            )
+            assert isinstance(func, (OnAspect, OnStage)), (
+                "State.iter_on_during_aspect_recursively() must yield lifecycle "
+                "actions when called without with_ids."
+            )
             if isinstance(func, OnAspect):
                 role = (
                     "aspect_during_before"

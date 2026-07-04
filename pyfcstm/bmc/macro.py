@@ -920,25 +920,6 @@ def _accepted_atom_labels(condition: BoolTemplate) -> Tuple[str, ...]:
     )
 
 
-def _accepted_union_labels(condition: BoolTemplate) -> Optional[Tuple[str, ...]]:
-    if condition.kind == "false":
-        return ()
-    if condition.kind == "atom":
-        atom = condition._atom_name()
-        if atom.startswith(_ACCEPTED_ATOM_PREFIX):
-            return (atom[len(_ACCEPTED_ATOM_PREFIX) :],)
-        return None
-    if condition.kind != "or":
-        return None
-    labels = []
-    for operand in condition.operands:
-        item = _accepted_union_labels(operand)
-        if item is None or len(item) != 1:
-            return None
-        labels.extend(item)
-    return tuple(sorted(set(labels)))
-
-
 def _condition_uses_expected_accepted_prefix(
     condition: BoolTemplate, labels: Sequence[str]
 ) -> bool:
@@ -1019,8 +1000,9 @@ def _normalize_accepted_cases(
         raise InvalidBmcEncoding("accepted_cases must be a sequence.")
     accepted = tuple(accepted_cases)
     allowed = tuple(allowed_kinds)
-    if not allowed or any(kind not in _ACCEPTED_CASE_KINDS for kind in allowed):
-        raise InvalidBmcEncoding("accepted case kind policy is invalid.")
+    assert allowed and all(kind in _ACCEPTED_CASE_KINDS for kind in allowed), (
+        "_normalize_accepted_cases only accepts ordinary macro case kind policies."
+    )
     if not all(isinstance(item, CycleCase) for item in accepted):
         raise InvalidBmcEncoding("accepted_cases must contain CycleCase objects.")
     for case in accepted:
@@ -1028,10 +1010,6 @@ def _normalize_accepted_cases(
             raise InvalidBmcEncoding(
                 "accepted_cases for %s may only contain ordinary accepted cases with kinds %r."
                 % (helper_name, allowed)
-            )
-        if case.is_diagnostic:
-            raise InvalidBmcEncoding(
-                "accepted_cases for %s must not contain diagnostic cases." % helper_name
             )
         if not _is_model_or_terminate_target(case):
             raise InvalidBmcEncoding(
@@ -1517,15 +1495,13 @@ class MacroStepFormal:
                 )
 
     def _validate_sentinel_absorb(self, sentinel_id: int) -> None:
-        if self.delta_cases:
-            raise InvalidBmcEncoding("sentinel absorb formals cannot have delta cases.")
         if len(self.success_cases) != 1:
             raise InvalidBmcEncoding("sentinel absorb formal must contain one case.")
         case = self.success_cases[0]
         if case.kind != "absorb":
             raise InvalidBmcEncoding("sentinel formal case must be absorb.")
-        if case.source_state_id != sentinel_id or case.target_state_id != sentinel_id:
-            raise InvalidBmcEncoding("sentinel absorb case must self-loop sentinel id.")
+        assert case.source_state_id == sentinel_id
+        assert case.target_state_id == sentinel_id
 
     def verify_partition(self, max_assignments: int = 4096) -> PartitionCheckResult:
         """Verify local case buckets with structural and truth-table self-checks.
@@ -2040,8 +2016,6 @@ def verify_boolean_partition(
         raise BmcBuildError("max_assignments must be a positive integer.")
     if max_assignments <= 0:
         raise BmcBuildError("max_assignments must be a positive integer.")
-    _validate_partition_atom_prefixes(items, variables)
-
     if variables is None:
         names = sorted(
             set(itertools.chain.from_iterable(item.variables for item in items))
@@ -2053,6 +2027,7 @@ def verify_boolean_partition(
         if not all(isinstance(name, str) and name for name in raw_names):
             raise BmcBuildError("partition variables must be non-empty strings.")
         names = sorted(set(raw_names))
+    _validate_partition_atom_prefixes(items, names)
     assignment_count = 2 ** len(names)
     if assignment_count > max_assignments:
         raise BmcBuildError("partition check exceeded assignment budget.")
@@ -2150,6 +2125,13 @@ def verify_source_partition(
         raise InvalidBmcEncoding(
             "build_diagnostic_conditions must contain BoolTemplate objects."
         )
+
+    if source.kind in {"terminated", "diagnostic"}:
+        structural = _structural_partition_result(
+            source, success, delta, diagnostics, ()
+        )
+        if structural is not None:
+            return structural
 
     _validate_partition_atom_prefixes(
         [case.condition for case in success + delta] + list(diagnostics)

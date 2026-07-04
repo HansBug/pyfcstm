@@ -531,12 +531,10 @@ class _Expander:
         first_loop = self._accelerable_pseudo_loop(first, state)
         second_loop = self._accelerable_pseudo_loop(second, state)
         if first_loop is not None and second_loop is None:
-            loop_transition = first
             exit_transition = second
             loop_has_priority = True
             variable_name, increment, threshold = first_loop
         elif second_loop is not None and first_loop is None:
-            loop_transition = second
             exit_transition = first
             loop_has_priority = False
             variable_name, increment, threshold = second_loop
@@ -547,19 +545,17 @@ class _Expander:
         ):
             return None
 
-        loop_trigger = self._transition_trigger(
-            loop_transition, frontier.store, is_initial=False
-        )[0]
-        exit_trigger = self._transition_trigger(
-            exit_transition, frontier.store, is_initial=False
-        )[0]
+        loop_trigger = self._threshold_store_condition(
+            frontier.store, variable_name, "lt", threshold
+        )
+        exit_trigger = self._threshold_store_condition(
+            frontier.store, variable_name, "ge", threshold
+        )
         if loop_has_priority:
             loop_condition = loop_trigger
             exit_condition = BoolTemplate.not_(loop_trigger)
         else:
-            loop_condition = BoolTemplate.and_(
-                BoolTemplate.not_(exit_trigger), loop_trigger
-            )
+            loop_condition = BoolTemplate.not_(exit_trigger)
             exit_condition = exit_trigger
 
         loop_store = dict(frontier.store.values)
@@ -642,24 +638,22 @@ class _Expander:
         :type transition: pyfcstm.model.Transition
         :param state: Pseudo state that owns the transition.
         :type state: pyfcstm.model.State
-        :return: ``(variable_name, increment, threshold)`` for ``x < K`` plus
-            ``x = x + step`` loops, or ``None`` for unsupported shapes.
+        :return: ``(variable_name, increment, threshold)`` for integer forms
+            equivalent to ``x < K`` plus ``x = x + step`` loops, or ``None``
+            for unsupported shapes.
         :rtype: Optional[Tuple[str, int, int]]
         """
         if transition.from_state != state.name or transition.to_state != state.name:
             return None
         if transition.event is not None:
             return None
-        guard = transition.guard
-        if not isinstance(guard, BinaryOp) or guard.op != "<":
+        guard = _integer_threshold_guard(transition.guard)
+        if guard is None:
             return None
-        if not isinstance(guard.x, Variable):
+        variable_name, relation, threshold = guard
+        if relation != "lt":
             return None
-        variable_name = guard.x.name
         if not self._is_int_variable(variable_name):
-            return None
-        threshold = _literal_int(guard.y)
-        if threshold is None:
             return None
         if len(transition.effects) != 1:
             return None
@@ -686,20 +680,62 @@ class _Expander:
         :type variable_name: str
         :param threshold: Loop threshold.
         :type threshold: int
-        :return: Whether the transition has guard ``x >= K`` and leaves the
-            pseudo state.
+        :return: Whether the transition has an integer guard equivalent to
+            ``x >= K`` and leaves the pseudo state.
         :rtype: bool
         """
         if transition.from_state != state.name or transition.to_state == state.name:
             return False
         if transition.event is not None:
             return False
-        guard = transition.guard
-        if not isinstance(guard, BinaryOp) or guard.op != ">=":
+        guard = _integer_threshold_guard(transition.guard)
+        if guard is None:
             return False
-        if not isinstance(guard.x, Variable) or guard.x.name != variable_name:
-            return False
-        return _literal_int(guard.y) == threshold
+        exit_variable_name, relation, exit_threshold = guard
+        return (
+            exit_variable_name == variable_name
+            and relation == "ge"
+            and exit_threshold == threshold
+        )
+
+    def _threshold_store_condition(
+        self,
+        store: _Store,
+        variable_name: str,
+        relation: str,
+        threshold: int,
+    ) -> BoolTemplate:
+        """Build a normalized threshold condition over the symbolic store.
+
+        :param store: Current symbolic variable store.
+        :type store: _Store
+        :param variable_name: Persistent integer variable to compare.
+        :type variable_name: str
+        :param relation: ``"lt"`` for ``x < threshold`` or ``"ge"`` for
+            ``x >= threshold``.
+        :type relation: str
+        :param threshold: Integer threshold.
+        :type threshold: int
+        :return: Boolean recipe for the normalized comparison.
+        :rtype: pyfcstm.bmc.macro.BoolTemplate
+        :raises BmcBuildError: If the variable is missing or ``relation`` is
+            unsupported.
+        """
+        if variable_name not in store.values:
+            raise BmcBuildError("unknown threshold variable %r." % variable_name)
+        if relation == "lt":
+            return _comparison_condition(
+                store.values[variable_name],
+                "<",
+                _ValueTemplate.const_value(threshold),
+            )
+        if relation == "ge":
+            return _comparison_condition(
+                store.values[variable_name],
+                ">=",
+                _ValueTemplate.const_value(threshold),
+            )
+        raise BmcBuildError("unsupported threshold relation %r." % relation)
 
     def _is_int_variable(self, variable_name: str) -> bool:
         """Return whether ``variable_name`` is a persistent integer variable.
@@ -1349,7 +1385,7 @@ class _Expander:
 
 
 def _literal_int(expr: Expr) -> Optional[int]:
-    """Return an integer literal value if ``expr`` is exactly integral syntax.
+    """Return an integer literal value if ``expr`` is integral syntax.
 
     :param expr: Model expression to inspect.
     :type expr: pyfcstm.model.Expr
@@ -1358,6 +1394,66 @@ def _literal_int(expr: Expr) -> Optional[int]:
     """
     if isinstance(expr, Integer):
         return expr.value
+    if isinstance(expr, UnaryOp) and expr.op == "-" and isinstance(expr.x, Integer):
+        return -expr.x.value
+    if isinstance(expr, UnaryOp) and expr.op == "+" and isinstance(expr.x, Integer):
+        return expr.x.value
+    return None
+
+
+def _integer_threshold_guard(expr: Optional[Expr]) -> Optional[Tuple[str, str, int]]:
+    """Normalize simple integer threshold guards.
+
+    The pseudo-loop accelerator needs to recognize syntactic variants that are
+    equivalent over integer variables.  This helper converts comparisons such
+    as ``x <= K - 1``, ``K > x``, and negated comparisons into a half-line
+    predicate represented as ``(variable_name, relation, threshold)`` where
+    ``relation`` is ``"lt"`` for ``x < threshold`` or ``"ge"`` for
+    ``x >= threshold``.
+
+    :param expr: Candidate guard expression.
+    :type expr: Optional[pyfcstm.model.Expr]
+    :return: Normalized integer threshold predicate, or ``None`` for
+        unsupported syntax.
+    :rtype: Optional[Tuple[str, str, int]]
+
+    Example::
+
+        >>> _integer_threshold_guard(BinaryOp(Variable('x'), '<=', Integer(3)))
+        ('x', 'lt', 4)
+        >>> _integer_threshold_guard(UnaryOp('!', BinaryOp(Variable('x'), '<', Integer(4))))
+        ('x', 'ge', 4)
+    """
+    if isinstance(expr, UnaryOp) and expr.op == "!":
+        inner = _integer_threshold_guard(expr.x)
+        if inner is None:
+            return None
+        variable_name, relation, threshold = inner
+        return variable_name, "ge" if relation == "lt" else "lt", threshold
+    if not isinstance(expr, BinaryOp) or expr.op not in ("<", "<=", ">", ">="):
+        return None
+
+    op = expr.op
+    if isinstance(expr.x, Variable):
+        variable_name = expr.x.name
+        value = _literal_int(expr.y)
+    elif isinstance(expr.y, Variable):
+        variable_name = expr.y.name
+        value = _literal_int(expr.x)
+        op = {"<": ">", "<=": ">=", ">": "<", ">=": "<="}[op]
+    else:
+        return None
+
+    if value is None:
+        return None
+    if op == "<":
+        return variable_name, "lt", value
+    if op == "<=":
+        return variable_name, "lt", value + 1
+    if op == ">":
+        return variable_name, "ge", value + 1
+    if op == ">=":
+        return variable_name, "ge", value
     return None
 
 
@@ -1417,6 +1513,10 @@ def _threshold_reached_value(
         return _ValueTemplate.const_value(threshold)
     threshold_text = _format_number(threshold)
     increment_text = _format_number(increment)
+    # The generated recipe intentionally uses Python/Z3 Euclidean modulo
+    # semantics.  PR-10 relation lowering must preserve that meaning for
+    # negative pre-state values instead of adopting target-language remainder
+    # semantics such as C's truncated ``%``.
     return _ValueTemplate(
         "%s + (((%s) - %s) %% %s)"
         % (threshold_text, value.text, threshold_text, increment_text)

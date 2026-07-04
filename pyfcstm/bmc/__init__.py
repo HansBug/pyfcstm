@@ -13,6 +13,8 @@ Package contracts:
   separate from model-aware binding or solver lowering.
 * Domain-numbering and macro-step exports are resolved lazily so parser-only
   imports do not load ``pyfcstm.model``.
+* Engine exports are resolved lazily; importing :mod:`pyfcstm.bmc` does not
+  prepare queries or load model-aware engine modules.
 * Macro-step contracts are solver-independent and do not import ``z3`` from the
   root package.
 * The root package must not depend on ``pyfcstm.verify`` or its registry.
@@ -93,6 +95,11 @@ Public module structure:
        :func:`verify_boolean_partition`, :func:`verify_source_partition`
      - Construct carry, absorb, fallback, and semantic-delta cases while keeping
        partition self-checks outside formal trace formulas.
+   * - BMC engine preparation
+     - :class:`BmcOptions`, :class:`BmcPreparedContext`,
+       :class:`BmcEngine`, :func:`prepare_bmc_query`
+     - Prepare ``StateMachine + .fbmcq`` inputs into bound query and domain
+       context without solver, witness, CLI, or verify-registry coupling.
    * - Query root model
      - :class:`InitialSpec`, :class:`BmcAssumption`,
        :class:`FrameAssumption`, :class:`EventAssumption`,
@@ -214,22 +221,30 @@ _MACRO_EXPORTS = {
     "verify_source_partition",
 }
 
+_ENGINE_EXPORTS = {
+    "BmcOptions",
+    "BmcPreparedContext",
+    "BmcEngine",
+    "prepare_bmc_query",
+}
+
 _LAZY_EXPORT_MODULES = {
     "pyfcstm.bmc.binding": _BINDING_EXPORTS,
     "pyfcstm.bmc.domain": _DOMAIN_EXPORTS,
     "pyfcstm.bmc.source": _SOURCE_EXPORTS,
     "pyfcstm.bmc.macro": _MACRO_EXPORTS,
+    "pyfcstm.bmc.engine": _ENGINE_EXPORTS,
 }
 
 
 def __getattr__(name: str):
-    """Lazily resolve model-aware binding, domain, and macro-step exports.
+    """Lazily resolve model-aware binding, domain, macro-step, and engine exports.
 
-    Binding, domain numbering, and macro-step helpers are kept behind lazy
-    exports so parser-only callers can import :mod:`pyfcstm.bmc` without
-    loading model-aware or later BMC layers. This preserves the convenience API
-    while keeping parse/query data structures independent from solver and
-    verify-registry wiring.
+    Binding, domain numbering, macro-step helpers, and the preparation engine
+    are kept behind lazy exports so parser-only callers can import
+    :mod:`pyfcstm.bmc` without loading model-aware or later BMC layers. This
+    preserves the convenience API while keeping parse/query data structures
+    independent from solver and verify-registry wiring.
 
     :param name: Attribute name requested from :mod:`pyfcstm.bmc`.
     :type name: str
@@ -273,6 +288,7 @@ def __dir__():
         | _DOMAIN_EXPORTS
         | _SOURCE_EXPORTS
         | _MACRO_EXPORTS
+        | _ENGINE_EXPORTS
     )
 
 
@@ -361,4 +377,8 @@ __all__ = [
     "build_semantic_delta_case",
     "verify_boolean_partition",
     "verify_source_partition",
+    "BmcOptions",
+    "BmcPreparedContext",
+    "BmcEngine",
+    "prepare_bmc_query",
 ]

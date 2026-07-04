@@ -351,6 +351,97 @@ def test_rejected_pseudo_loop_allows_later_transition_and_matches_runtime():
 
 
 @pytest.mark.unittest
+def test_variable_progressing_pseudo_loop_reaches_stable_runtime_target():
+    """Variable-progressing pseudo validation loops match runtime outcomes."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            state A { during { x = x + 10; } }
+            pseudo state P;
+            state B;
+            [*] -> A;
+            A -> P : if [x < 3];
+            P -> P : if [x < 3] effect { x = x + 1; }
+            P -> B : if [x >= 3];
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(stable_leaf_source(domain, "Root.A"))
+
+    for initial_x in (0, 1, 2):
+        selected = _selected_case(formal, initial_x, 0, ())
+        runtime = SimulationRuntime(
+            model,
+            initial_state="Root.A",
+            initial_vars={"x": initial_x},
+        )
+        runtime.cycle([])
+
+        assert selected.kind == "transition"
+        assert selected.target_state_path == "Root.B"
+        assert _updates(selected) == {"x": "3"}
+        assert ".".join(runtime.current_state.path) == "Root.B"
+        assert runtime.vars == {"x": 3}
+
+    fallback = _selected_case(formal, 3, 0, ())
+    runtime = SimulationRuntime(
+        model,
+        initial_state="Root.A",
+        initial_vars={"x": 3},
+    )
+    runtime.cycle([])
+
+    assert fallback.kind == "fallback"
+    assert fallback.target_state_path == "Root.A"
+    assert _updates(fallback) == {"x": "pre:x + 10"}
+    assert ".".join(runtime.current_state.path) == "Root.A"
+    assert runtime.vars == {"x": 13}
+
+
+@pytest.mark.unittest
+def test_variable_progressing_pseudo_loop_with_exit_priority_aligns_with_runtime():
+    """Threshold pseudo-loop acceleration preserves declaration priority."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            state A { during { x = x + 10; } }
+            pseudo state P;
+            state B;
+            [*] -> A;
+            A -> P : if [x < 3];
+            P -> B : if [x >= 3];
+            P -> P : if [x < 3] effect { x = x + 1; }
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(stable_leaf_source(domain, "Root.A"))
+
+    for initial_x in (0, 1, 2):
+        selected = _selected_case(formal, initial_x, 0, ())
+        runtime = SimulationRuntime(
+            model,
+            initial_state="Root.A",
+            initial_vars={"x": initial_x},
+        )
+        runtime.cycle([])
+
+        assert selected.kind == "transition"
+        assert selected.target_state_path == "Root.B"
+        assert _updates(selected) == {"x": "3"}
+        assert ".".join(runtime.current_state.path) == "Root.B"
+        assert runtime.vars == {"x": 3}
+
+    fallback = _selected_case(formal, 3, 0, ())
+    assert fallback.kind == "fallback"
+    assert fallback.target_state_path == "Root.A"
+    assert _updates(fallback) == {"x": "pre:x + 10"}
+
+
+@pytest.mark.unittest
 def test_cold_leaf_root_enters_and_stabilizes_instead_of_terminating():
     """Cold root leaf expansion follows initialization, not root synthetic exit."""
     model = load_state_machine_from_text(

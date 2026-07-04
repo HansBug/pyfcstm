@@ -177,6 +177,33 @@ def test_event_used_by_fallback_condition_is_reported_as_negative_fallback_use()
 
 
 @pytest.mark.unittest
+def test_failed_event_candidate_metadata_is_reported_on_fallback():
+    """Fallback metadata includes event reads from rejected candidates."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            pseudo state P;
+            [*] -> A;
+            A -> P :: Go;
+            A -> B;
+            P -> P;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(stable_leaf_source(domain, "Root.A"))
+    fallback = next(case for case in formal.success_cases if case.kind == "fallback")
+
+    assert fallback.failed_conditions
+    assert [event.path for event in fallback.used_events] == ["Root.A.Go"]
+    assert [event.polarity for event in fallback.used_events] == ["negative"]
+    assert [event.reason for event in fallback.used_events] == ["fallback"]
+
+
+@pytest.mark.unittest
 def test_verify_partition_option_raises_for_budget_too_small():
     """Partition self-check failures surface as build errors, not silent deltas."""
     model = load_state_machine_from_text(

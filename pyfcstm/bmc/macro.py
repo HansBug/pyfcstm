@@ -678,6 +678,36 @@ def _validate_case_state(
         raise InvalidBmcEncoding("%s path does not match %s id." % (role, role))
 
 
+def _event_atom_paths_in_case(case: "CycleCase") -> Tuple[str, ...]:
+    paths = set()
+    for condition in (case.condition,) + case.failed_conditions:
+        for variable in condition.variables:
+            if variable.startswith("event:"):
+                paths.add(variable[len("event:") :])
+    return tuple(sorted(paths))
+
+
+def _event_uses_from_condition(
+    condition: BoolTemplate,
+    domain: BmcDomain,
+    polarity: str,
+    reason: str,
+) -> Tuple[EventUse, ...]:
+    result = []
+    for variable in condition.variables:
+        if not variable.startswith("event:"):
+            continue
+        path = variable[len("event:") :]
+        try:
+            entry = domain.event_by_path(path)
+        except InvalidBmcDomain as err:
+            # InvalidBmcDomain: domain.event_by_path rejects event atoms that
+            # helper-built fallback/delta conditions pulled from malformed input.
+            raise InvalidBmcEncoding(str(err)) from err
+        result.append(EventUse(entry.id, entry.path, polarity, reason))
+    return tuple(sorted(result, key=_canonical_key))
+
+
 def _derive_is_diagnostic(kind: str, target_state_id: int) -> bool:
     return kind in {"diagnostic", "delta"} or (
         kind == "absorb" and target_state_id == STATE_DIAGNOSTIC_ID
@@ -890,6 +920,7 @@ class CycleCase:
             self.target_state_path,
             "target",
         )
+        used_event_paths = set()
         for event_use in self.used_events:
             try:
                 event = domain.event_by_id(event_use.event_id)
@@ -899,6 +930,18 @@ class CycleCase:
                 raise InvalidBmcEncoding(str(err)) from err
             if event.path != event_use.path:
                 raise InvalidBmcEncoding("EventUse path does not match event id.")
+            used_event_paths.add(event.path)
+        for event_path in _event_atom_paths_in_case(self):
+            try:
+                domain.event_by_path(event_path)
+            except InvalidBmcDomain as err:
+                # InvalidBmcDomain: BmcDomain lookup rejects event atoms that
+                # reference paths outside the case's domain snapshot.
+                raise InvalidBmcEncoding(str(err)) from err
+            if event_path not in used_event_paths:
+                raise InvalidBmcEncoding(
+                    "event atoms in case conditions must be listed in used_events."
+                )
         object.__setattr__(
             self,
             "var_update",
@@ -1348,6 +1391,18 @@ def build_fallback_case(
         )
     else:
         condition = BoolTemplate.true()
+    used_events = _event_uses_from_condition(
+        condition,
+        domain,
+        polarity="negative",
+        reason="fallback",
+    )
+    used_events += _event_uses_from_condition(
+        BoolTemplate.or_(*failed),
+        domain,
+        polarity="negative",
+        reason="fallback",
+    )
     return CycleCase(
         "fallback",
         source.source_state_id,
@@ -1362,6 +1417,7 @@ def build_fallback_case(
         ),
         condition,
         carry_var_updates(domain),
+        used_events=used_events,
         failed_conditions=failed,
         domain=domain,
     )
@@ -1438,6 +1494,18 @@ def build_semantic_delta_case(
         condition = BoolTemplate.not_(BoolTemplate.or_(*excluded))
     else:
         condition = BoolTemplate.true()
+    used_events = _event_uses_from_condition(
+        condition,
+        domain,
+        polarity="negative",
+        reason="fallback",
+    )
+    used_events += _event_uses_from_condition(
+        BoolTemplate.or_(*failed),
+        domain,
+        polarity="negative",
+        reason="fallback",
+    )
     return CycleCase(
         "delta",
         source.source_state_id,
@@ -1452,6 +1520,7 @@ def build_semantic_delta_case(
         ),
         condition,
         carry_var_updates(domain),
+        used_events=used_events,
         failed_conditions=failed,
         domain=domain,
     )

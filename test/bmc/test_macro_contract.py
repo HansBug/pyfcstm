@@ -125,6 +125,59 @@ def test_reserved_source_guard_atom_namespace_is_rejected(macro_domain):
 
 
 @pytest.mark.unittest
+def test_event_atoms_require_domain_events_and_metadata(macro_domain):
+    """Domain eager validation covers event atoms in all case conditions."""
+    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
+    ping_id = macro_domain.event_path_to_id("Root.Plant.Ping")
+    carry = carry_var_updates(macro_domain)
+    label = "%s::transition::%s::0" % (
+        source.source_state_path,
+        source.source_state_path,
+    )
+
+    valid = CycleCase(
+        "transition",
+        source.source_state_id,
+        source.source_state_path,
+        source.source_state_id,
+        source.source_state_path,
+        label,
+        BoolTemplate.atom("event:Root.Plant.Ping"),
+        carry,
+        used_events=(EventUse(ping_id, "Root.Plant.Ping", "positive", "trigger"),),
+        domain=macro_domain,
+    )
+    assert valid.used_events[0].path == "Root.Plant.Ping"
+
+    with pytest.raises(InvalidBmcEncoding, match="used_events"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            source.source_state_path,
+            source.source_state_id,
+            source.source_state_path,
+            label,
+            BoolTemplate.atom("event:Root.Plant.Ping"),
+            carry,
+            domain=macro_domain,
+        )
+
+    with pytest.raises(InvalidBmcEncoding, match="Unknown event path"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            source.source_state_path,
+            source.source_state_id,
+            source.source_state_path,
+            label,
+            BoolTemplate.true(),
+            carry,
+            failed_conditions=(BoolTemplate.atom("event:Root.Plant.NoSuch"),),
+            domain=macro_domain,
+        )
+
+
+@pytest.mark.unittest
 def test_empty_fallback_and_delta_conditions_canonicalize_to_true(macro_domain):
     """Uncovered-region helpers use the canonical true template when nothing is excluded."""
     stable = stable_leaf_source(macro_domain, "Root.Plant.Idle")

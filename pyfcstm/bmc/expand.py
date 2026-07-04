@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from pyfcstm.bmc.domain import STATE_TERMINATE_ID, BmcDomain
-from pyfcstm.bmc.errors import BmcBuildError, InvalidBmcEncoding
+from pyfcstm.bmc.errors import BmcBuildError, InvalidBmcDomain, InvalidBmcEncoding
 from pyfcstm.bmc.macro import (
     BoolTemplate,
     CycleCase,
@@ -448,6 +448,10 @@ class _Expander:
         return _Expansion((), (), (frontier.condition,))
 
     def _expand_leaf_active(self, frontier: _MacroFrontier) -> _Expansion:
+        accelerated = self._try_expand_pseudo_threshold_loop(frontier)
+        if accelerated is not None:
+            return accelerated
+
         transitions = frontier.stack[-1].state.transitions_from
         expanded = self._expand_ordered_candidates(
             frontier, transitions, is_initial=False
@@ -491,6 +495,218 @@ class _Expander:
         return _Expansion(
             (), (frontier.condition,) + expanded.failed, expanded.diagnostics
         )
+
+    def _try_expand_pseudo_threshold_loop(
+        self, frontier: _MacroFrontier
+    ) -> Optional[_Expansion]:
+        """Return an accelerated expansion for simple monotone pseudo loops.
+
+        The runtime validation worklist can accept a pseudo self-loop that
+        monotonically increments an integer variable until a complementary exit
+        guard becomes true.  Symbolic recursion cannot prove that convergence
+        by path-signature repetition alone because each loop iteration changes
+        the symbolic store.  This helper recognizes that narrow runtime-safe
+        pattern and summarizes the finite loop as a threshold writeback before
+        executing the ordinary exit transition.
+
+        :param frontier: Current macro frontier whose stack top may be a pseudo
+            state.
+        :type frontier: _MacroFrontier
+        :return: Accelerated expansion, or ``None`` if the frontier does not
+            match the supported monotone pseudo-loop shape.
+        :rtype: Optional[_Expansion]
+        """
+        top = frontier.stack[-1]
+        state = top.state
+        if not state.is_pseudo:
+            return None
+        if not self._pseudo_state_is_accelerable(state):
+            return None
+        transitions = tuple(state.transitions_from)
+        if len(transitions) != 2:
+            return None
+        first, second = transitions
+        first_loop = self._accelerable_pseudo_loop(first, state)
+        second_loop = self._accelerable_pseudo_loop(second, state)
+        if first_loop is not None and second_loop is None:
+            loop_transition = first
+            exit_transition = second
+            loop_has_priority = True
+            variable_name, threshold = first_loop
+        elif second_loop is not None and first_loop is None:
+            loop_transition = second
+            exit_transition = first
+            loop_has_priority = False
+            variable_name, threshold = second_loop
+        else:
+            return None
+        if not self._is_complementary_threshold_exit(
+            exit_transition, state, variable_name, threshold
+        ):
+            return None
+
+        loop_trigger = self._transition_trigger(
+            loop_transition, frontier.store, is_initial=False
+        )[0]
+        exit_trigger = self._transition_trigger(
+            exit_transition, frontier.store, is_initial=False
+        )[0]
+        if loop_has_priority:
+            loop_condition = loop_trigger
+            exit_condition = BoolTemplate.not_(loop_trigger)
+        else:
+            loop_condition = BoolTemplate.and_(
+                BoolTemplate.not_(exit_trigger), loop_trigger
+            )
+            exit_condition = exit_trigger
+
+        loop_store = dict(frontier.store.values)
+        loop_store[variable_name] = _ValueTemplate.const_value(threshold)
+        accelerated_loop = self._replace_frontier(
+            frontier,
+            condition=BoolTemplate.and_(frontier.condition, loop_condition),
+            store=_Store(loop_store),
+        )
+        loop_expansion = (
+            _Expansion((), (), ())
+            if _has_direct_atom_contradiction(accelerated_loop.condition)
+            else self._expand_triggered_transition(accelerated_loop, exit_transition)
+        )
+
+        direct_exit = self._replace_frontier(
+            frontier,
+            condition=BoolTemplate.and_(frontier.condition, exit_condition),
+        )
+        if _has_direct_atom_contradiction(direct_exit.condition):
+            exit_expansion = _Expansion((), (), ())
+        else:
+            exit_expansion = self._expand_triggered_transition(
+                direct_exit, exit_transition
+            )
+
+        return self._merge_expansions((loop_expansion, exit_expansion))
+
+    def _expand_triggered_transition(
+        self, frontier: _MacroFrontier, transition: Transition
+    ) -> _Expansion:
+        """Execute a transition whose trigger is already part of ``frontier``.
+
+        :param frontier: Frontier with the selected transition condition already
+            included.
+        :type frontier: _MacroFrontier
+        :param transition: Transition to execute.
+        :type transition: pyfcstm.model.Transition
+        :return: Expansion produced by executing the transition and continuing
+            to a stable boundary.
+        :rtype: _Expansion
+        """
+        outcomes: List[_MacroOutcome] = []
+        failed: List[BoolTemplate] = []
+        diagnostics: List[BoolTemplate] = []
+        for branch in self._execute_transition(frontier, transition):
+            branch_expansion = self._expand_frontier(branch)
+            outcomes.extend(branch_expansion.outcomes)
+            failed.extend(branch_expansion.failed)
+            diagnostics.extend(branch_expansion.diagnostics)
+        return _Expansion(tuple(outcomes), tuple(failed), tuple(diagnostics))
+
+    @staticmethod
+    def _pseudo_state_is_accelerable(state: State) -> bool:
+        """Return whether a pseudo state has no lifecycle side effects.
+
+        :param state: Pseudo state candidate.
+        :type state: pyfcstm.model.State
+        :return: Whether the state can be summarized without losing lifecycle
+            behavior.
+        :rtype: bool
+        """
+        return not (
+            state.on_enters
+            or state.on_exits
+            or state.on_durings
+            or state.on_during_aspects
+        )
+
+    def _accelerable_pseudo_loop(
+        self, transition: Transition, state: State
+    ) -> Optional[Tuple[str, int]]:
+        """Extract the integer threshold pattern from a pseudo self-loop.
+
+        :param transition: Candidate self-loop transition.
+        :type transition: pyfcstm.model.Transition
+        :param state: Pseudo state that owns the transition.
+        :type state: pyfcstm.model.State
+        :return: ``(variable_name, threshold)`` for ``x < K`` plus
+            ``x = x + 1`` loops, or ``None`` for unsupported shapes.
+        :rtype: Optional[Tuple[str, int]]
+        """
+        if transition.from_state != state.name or transition.to_state != state.name:
+            return None
+        if transition.event is not None:
+            return None
+        guard = transition.guard
+        if not isinstance(guard, BinaryOp) or guard.op != "<":
+            return None
+        if not isinstance(guard.x, Variable):
+            return None
+        variable_name = guard.x.name
+        if not self._is_int_variable(variable_name):
+            return None
+        threshold = _literal_int(guard.y)
+        if threshold is None:
+            return None
+        if len(transition.effects) != 1:
+            return None
+        effect = transition.effects[0]
+        if not _is_unit_increment_effect(effect, variable_name):
+            return None
+        return variable_name, threshold
+
+    def _is_complementary_threshold_exit(
+        self,
+        transition: Transition,
+        state: State,
+        variable_name: str,
+        threshold: int,
+    ) -> bool:
+        """Return whether ``transition`` exits once the loop threshold is met.
+
+        :param transition: Candidate exit transition.
+        :type transition: pyfcstm.model.Transition
+        :param state: Pseudo state that owns the transition.
+        :type state: pyfcstm.model.State
+        :param variable_name: Integer variable advanced by the loop.
+        :type variable_name: str
+        :param threshold: Loop threshold.
+        :type threshold: int
+        :return: Whether the transition has guard ``x >= K`` and leaves the
+            pseudo state.
+        :rtype: bool
+        """
+        if transition.from_state != state.name or transition.to_state == state.name:
+            return False
+        if transition.event is not None:
+            return False
+        guard = transition.guard
+        if not isinstance(guard, BinaryOp) or guard.op != ">=":
+            return False
+        if not isinstance(guard.x, Variable) or guard.x.name != variable_name:
+            return False
+        return _literal_int(guard.y) == threshold
+
+    def _is_int_variable(self, variable_name: str) -> bool:
+        """Return whether ``variable_name`` is a persistent integer variable.
+
+        :param variable_name: Candidate persistent variable name.
+        :type variable_name: str
+        :return: Whether the BMC domain declares it as ``int``.
+        :rtype: bool
+        """
+        try:
+            entry = self.domain.variable_by_name(variable_name)
+        except InvalidBmcDomain:
+            return False
+        return entry.declared_type == "int"
 
     def _expand_ordered_candidates(
         self,
@@ -717,6 +933,12 @@ class _Expander:
             )
         else:
             condition = frontier.condition
+        failed_events = _event_uses_from_condition(
+            BoolTemplate.or_(*failed),
+            self.domain,
+            polarity="negative",
+            reason="fallback",
+        )
         fallback_frontier = self._replace_frontier(
             frontier,
             condition=condition,
@@ -738,7 +960,11 @@ class _Expander:
                 outcome.target_state_path,
                 outcome.condition,
                 outcome.store,
-                _merge_event_uses(outcome.used_events, fallback_events),
+                _merge_event_uses(
+                    outcome.used_events,
+                    fallback_events,
+                    failed_events,
+                ),
                 _CASE_KIND_FALLBACK,
                 tuple(failed),
             )
@@ -1097,6 +1323,79 @@ class _Expander:
         frontiers: Iterable[_MacroFrontier], func
     ) -> Tuple[_MacroFrontier, ...]:
         return tuple(item for frontier in frontiers for item in func(frontier))
+
+
+def _literal_int(expr: Expr) -> Optional[int]:
+    """Return an integer literal value if ``expr`` is exactly integral syntax.
+
+    :param expr: Model expression to inspect.
+    :type expr: pyfcstm.model.Expr
+    :return: Integer literal value, or ``None`` for non-integer syntax.
+    :rtype: Optional[int]
+    """
+    if isinstance(expr, Integer):
+        return expr.value
+    return None
+
+
+def _is_unit_increment_effect(
+    statement: OperationStatement, variable_name: str
+) -> bool:
+    """Return whether a statement writes ``variable_name = variable_name + 1``.
+
+    :param statement: Operation statement to inspect.
+    :type statement: pyfcstm.model.OperationStatement
+    :param variable_name: Persistent variable that should be incremented.
+    :type variable_name: str
+    :return: Whether the statement is the supported unit increment.
+    :rtype: bool
+    """
+    if not isinstance(statement, Operation):
+        return False
+    if statement.var_name != variable_name:
+        return False
+    expr = statement.expr
+    if not isinstance(expr, BinaryOp) or expr.op != "+":
+        return False
+    if isinstance(expr.x, Variable) and expr.x.name == variable_name:
+        return _literal_int(expr.y) == 1
+    if isinstance(expr.y, Variable) and expr.y.name == variable_name:
+        return _literal_int(expr.x) == 1
+    return False
+
+
+def _has_direct_atom_contradiction(condition: BoolTemplate) -> bool:
+    """Return whether a conjunction contains both ``a`` and ``not a``.
+
+    :param condition: Boolean recipe to inspect.
+    :type condition: pyfcstm.bmc.macro.BoolTemplate
+    :return: Whether a direct atom contradiction is present.
+    :rtype: bool
+    """
+    positive = set()
+    negative = set()
+    for item in _conjunctive_literals(condition):
+        if item.kind == "atom":
+            positive.add(item._atom_name())
+        elif item.kind == "not" and item.operands[0].kind == "atom":
+            negative.add(item.operands[0]._atom_name())
+    return bool(positive.intersection(negative))
+
+
+def _conjunctive_literals(condition: BoolTemplate) -> Tuple[BoolTemplate, ...]:
+    """Flatten conjunction operands for direct literal inspection.
+
+    :param condition: Boolean recipe to flatten.
+    :type condition: pyfcstm.bmc.macro.BoolTemplate
+    :return: Tuple of conjunction leaves.
+    :rtype: Tuple[pyfcstm.bmc.macro.BoolTemplate, ...]
+    """
+    if condition.kind == "and":
+        result = []
+        for operand in condition.operands:
+            result.extend(_conjunctive_literals(operand))
+        return tuple(result)
+    return (condition,)
 
 
 def _comparison_condition(

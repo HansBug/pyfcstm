@@ -718,13 +718,48 @@ def test_macro_step_formal_public_validation_rejects_invalid_bucket_shapes(
         terminate.source_state_path,
         terminate.source_state_id,
         terminate.source_state_path,
-        "%s::absorb::%s::2"
+        "%s::absorb::%s::0"
         % (terminate.source_state_path, terminate.source_state_path),
         BoolTemplate.false(),
         (),
     )
     with pytest.raises(InvalidBmcEncoding, match="sentinel absorb condition"):
         MacroStepFormal(terminate, (false_absorb,))
+    absorb_with_action = CycleCase(
+        "absorb",
+        terminate.source_state_id,
+        terminate.source_state_path,
+        terminate.source_state_id,
+        terminate.source_state_path,
+        "%s::absorb::%s::0"
+        % (terminate.source_state_path, terminate.source_state_path),
+        BoolTemplate.true(),
+        (
+            ActionBlock(
+                "state_action",
+                "leaf_during",
+                macro_domain.state_path_to_id("Root.Plant.Idle"),
+                "Root.Plant.Idle",
+                (),
+                is_abstract=True,
+            ),
+        ),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="sentinel absorb case cannot"):
+        MacroStepFormal(terminate, (absorb_with_action,))
+    noncanonical_absorb = CycleCase(
+        "absorb",
+        terminate.source_state_id,
+        terminate.source_state_path,
+        terminate.source_state_id,
+        terminate.source_state_path,
+        "%s::absorb::%s::3"
+        % (terminate.source_state_path, terminate.source_state_path),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="sentinel absorb label"):
+        MacroStepFormal(terminate, (noncanonical_absorb,))
 
     assert (
         MacroStepFormal(stable, (fallback,)).to_canonical()["node"]
@@ -1106,13 +1141,36 @@ def test_partition_handles_sentinel_delta_and_accepted_atom_failures(macro_domai
         terminate.source_state_path,
         terminate.source_state_id,
         terminate.source_state_path,
-        "%s::absorb::%s::1"
+        "%s::absorb::%s::0"
         % (terminate.source_state_path, terminate.source_state_path),
         BoolTemplate.false(),
         (),
     )
     with pytest.raises(InvalidBmcEncoding, match="sentinel absorb condition"):
         verify_source_partition(terminate, (false_absorb,), max_assignments=1)
+
+    absorb_with_action = CycleCase(
+        "absorb",
+        terminate.source_state_id,
+        terminate.source_state_path,
+        terminate.source_state_id,
+        terminate.source_state_path,
+        "%s::absorb::%s::0"
+        % (terminate.source_state_path, terminate.source_state_path),
+        BoolTemplate.true(),
+        (
+            ActionBlock(
+                "state_action",
+                "leaf_during",
+                macro_domain.state_path_to_id("Root.Plant.Idle"),
+                "Root.Plant.Idle",
+                (),
+                is_abstract=True,
+            ),
+        ),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="sentinel absorb case cannot"):
+        verify_source_partition(terminate, (absorb_with_action,), max_assignments=1)
 
     sentinel_fallback = CycleCase(
         "fallback",

@@ -1956,8 +1956,23 @@ def _validate_sentinel_absorb_partition(
         raise InvalidBmcEncoding(
             "sentinel absorb case must self-loop the source sentinel."
         )
+    expected_label = "%s::absorb::%s::0" % (sentinel_path, sentinel_path)
+    if case.label != expected_label:
+        raise InvalidBmcEncoding("sentinel absorb label must be canonical.")
     if case.condition.kind != "true":
         raise InvalidBmcEncoding("sentinel absorb condition must be true.")
+    if case.action_blocks:
+        raise InvalidBmcEncoding("sentinel absorb case cannot have action blocks.")
+    if case.used_events:
+        raise InvalidBmcEncoding("sentinel absorb case cannot use events.")
+    if case.guard_requirements:
+        raise InvalidBmcEncoding("sentinel absorb case cannot have guard requirements.")
+    if case.priority_exclusions:
+        raise InvalidBmcEncoding(
+            "sentinel absorb case cannot have priority exclusions."
+        )
+    if case.failed_conditions:
+        raise InvalidBmcEncoding("sentinel absorb case cannot have failed conditions.")
 
 
 def _structural_partition_result(

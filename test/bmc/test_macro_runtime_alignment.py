@@ -60,6 +60,19 @@ def _updates(case):
     return {item.variable_name: item.expression for item in case.var_update}
 
 
+def _eval_update_expr(expr, x=0, y=0):
+    """Evaluate a generated update expression in the alignment fixture scope."""
+    source = expr.replace("pre:x", "x").replace("pre:y", "y")
+    try:
+        return eval(source, {"__builtins__": {}}, {"x": x, "y": y})
+    except (NameError, SyntaxError, TypeError, ValueError, ZeroDivisionError) as err:
+        # NameError: update references a variable outside this fixture scope;
+        # SyntaxError: malformed generated expression; TypeError/ValueError/
+        # ZeroDivisionError: Python rejects the numeric expression while
+        # emulating runtime writeback.
+        raise BmcBuildError("cannot evaluate update expression %r" % expr) from err
+
+
 def _runtime_after(model, initial_state, x=0, y=0, events=()):
     runtime = SimulationRuntime(
         model,
@@ -439,6 +452,90 @@ def test_variable_progressing_pseudo_loop_with_exit_priority_aligns_with_runtime
     assert fallback.kind == "fallback"
     assert fallback.target_state_path == "Root.A"
     assert _updates(fallback) == {"x": "pre:x + 10"}
+
+
+@pytest.mark.unittest
+def test_variable_progressing_pseudo_loop_with_step_two_aligns_with_runtime():
+    """Threshold pseudo-loop acceleration supports positive non-unit steps."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            state A;
+            pseudo state P;
+            state B;
+            [*] -> A;
+            A -> P : if [x < 4];
+            P -> P : if [x < 4] effect { x = x + 2; }
+            P -> B : if [x >= 4];
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(stable_leaf_source(domain, "Root.A"))
+
+    for initial_x in (0, 1, 2, 3):
+        selected = _selected_case(formal, initial_x, 0, ())
+        runtime = SimulationRuntime(
+            model,
+            initial_state="Root.A",
+            initial_vars={"x": initial_x},
+        )
+        runtime.cycle([])
+
+        assert selected.kind == "transition"
+        assert selected.target_state_path == "Root.B"
+        assert (
+            _eval_update_expr(_updates(selected)["x"], x=initial_x) == runtime.vars["x"]
+        )
+        assert ".".join(runtime.current_state.path) == "Root.B"
+
+    fallback = _selected_case(formal, 4, 0, ())
+    assert fallback.kind == "fallback"
+    assert fallback.target_state_path == "Root.A"
+    assert _updates(fallback) == {"x": "pre:x"}
+
+
+@pytest.mark.unittest
+def test_variable_progressing_pseudo_loop_after_entry_effect_aligns_with_runtime():
+    """Threshold acceleration preserves affine values produced before the loop."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            state A;
+            pseudo state P;
+            state B;
+            [*] -> A;
+            A -> P : if [x < 4] effect { x = x + 1; }
+            P -> P : if [x < 4] effect { x = x + 2; }
+            P -> B : if [x >= 4];
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(stable_leaf_source(domain, "Root.A"))
+
+    for initial_x in (0, 1, 2, 3):
+        selected = _selected_case(formal, initial_x, 0, ())
+        runtime = SimulationRuntime(
+            model,
+            initial_state="Root.A",
+            initial_vars={"x": initial_x},
+        )
+        runtime.cycle([])
+
+        assert selected.kind == "transition"
+        assert selected.target_state_path == "Root.B"
+        assert (
+            _eval_update_expr(_updates(selected)["x"], x=initial_x) == runtime.vars["x"]
+        )
+        assert ".".join(runtime.current_state.path) == "Root.B"
+
+    fallback = _selected_case(formal, 4, 0, ())
+    assert fallback.kind == "fallback"
+    assert fallback.target_state_path == "Root.A"
+    assert _updates(fallback) == {"x": "pre:x"}
 
 
 @pytest.mark.unittest

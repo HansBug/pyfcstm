@@ -5,7 +5,9 @@ solver-independent :class:`pyfcstm.bmc.macro.MacroStepFormal`.  It mirrors the
 cycle-level control flow of :class:`pyfcstm.simulate.SimulationRuntime` without
 creating Z3 symbols or verify-registry entries.  The output conditions remain
 bare case predicates; later relation builders compose the source-state guard and
-lower each case as an implication.
+lower each case as an implication.  Ordered transitions use accepted
+continuations for priority masks, and event reads used only by those masks are
+kept in :class:`pyfcstm.bmc.macro.EventUse` metadata for witness explanations.
 
 The module contains:
 
@@ -532,12 +534,12 @@ class _Expander:
             loop_transition = first
             exit_transition = second
             loop_has_priority = True
-            variable_name, threshold = first_loop
+            variable_name, increment, threshold = first_loop
         elif second_loop is not None and first_loop is None:
             loop_transition = second
             exit_transition = first
             loop_has_priority = False
-            variable_name, threshold = second_loop
+            variable_name, increment, threshold = second_loop
         else:
             return None
         if not self._is_complementary_threshold_exit(
@@ -561,7 +563,11 @@ class _Expander:
             exit_condition = exit_trigger
 
         loop_store = dict(frontier.store.values)
-        loop_store[variable_name] = _ValueTemplate.const_value(threshold)
+        loop_store[variable_name] = _threshold_reached_value(
+            frontier.store.values[variable_name],
+            threshold,
+            increment,
+        )
         accelerated_loop = self._replace_frontier(
             frontier,
             condition=BoolTemplate.and_(frontier.condition, loop_condition),
@@ -629,16 +635,16 @@ class _Expander:
 
     def _accelerable_pseudo_loop(
         self, transition: Transition, state: State
-    ) -> Optional[Tuple[str, int]]:
+    ) -> Optional[Tuple[str, int, int]]:
         """Extract the integer threshold pattern from a pseudo self-loop.
 
         :param transition: Candidate self-loop transition.
         :type transition: pyfcstm.model.Transition
         :param state: Pseudo state that owns the transition.
         :type state: pyfcstm.model.State
-        :return: ``(variable_name, threshold)`` for ``x < K`` plus
-            ``x = x + 1`` loops, or ``None`` for unsupported shapes.
-        :rtype: Optional[Tuple[str, int]]
+        :return: ``(variable_name, increment, threshold)`` for ``x < K`` plus
+            ``x = x + step`` loops, or ``None`` for unsupported shapes.
+        :rtype: Optional[Tuple[str, int, int]]
         """
         if transition.from_state != state.name or transition.to_state != state.name:
             return None
@@ -658,9 +664,10 @@ class _Expander:
         if len(transition.effects) != 1:
             return None
         effect = transition.effects[0]
-        if not _is_unit_increment_effect(effect, variable_name):
+        increment = _positive_integer_increment_effect(effect, variable_name)
+        if increment is None:
             return None
-        return variable_name, threshold
+        return variable_name, increment, threshold
 
     def _is_complementary_threshold_exit(
         self,
@@ -765,6 +772,15 @@ class _Expander:
                 )
             failed.extend(candidate_failed)
             previous_accepted.append(accepted)
+            previous_event_uses = list(
+                _merge_event_uses(
+                    previous_event_uses,
+                    tuple(
+                        EventUse(item.event_id, item.path, "negative", "priority")
+                        for item in raw_events
+                    ),
+                )
+            )
             accepted_event_uses = tuple(
                 item
                 for outcome in candidate_outcomes
@@ -807,6 +823,8 @@ class _Expander:
         transition: Transition,
     ) -> Tuple[_MacroFrontier, ...]:
         top = frontier.stack[-1]
+        if not isinstance(transition.to_state, str):
+            raise BmcBuildError("initial transition target must be a child state.")
         target = top.state.substates[transition.to_state]
         branches = self._execute_operation_block(frontier, transition.effects)
         result = []
@@ -843,6 +861,10 @@ class _Expander:
                     )
                 result.extend(self._finalize_exit_to_parent(popped))
                 continue
+            if not isinstance(transition.to_state, str):
+                raise BmcBuildError("transition target must be a sibling state.")
+            if current_state.parent is None:
+                raise BmcBuildError("root transition cannot target a sibling state.")
             target_state = current_state.parent.substates[transition.to_state]
             current = popped
             if (
@@ -975,7 +997,8 @@ class _Expander:
         self, frontier: _MacroFrontier, state: State
     ) -> Tuple[_MacroFrontier, ...]:
         branches = (frontier,)
-        for _, func in state.iter_on_during_aspect_recursively():
+        for item in state.iter_on_during_aspect_recursively():
+            func = item[-1]
             branches = self._flat_map(
                 branches, lambda item, action=func: self._execute_func(item, action)
             )
@@ -1338,30 +1361,66 @@ def _literal_int(expr: Expr) -> Optional[int]:
     return None
 
 
-def _is_unit_increment_effect(
+def _positive_integer_increment_effect(
     statement: OperationStatement, variable_name: str
-) -> bool:
-    """Return whether a statement writes ``variable_name = variable_name + 1``.
+) -> Optional[int]:
+    """Return the positive integer step for ``variable_name = variable_name + N``.
 
     :param statement: Operation statement to inspect.
     :type statement: pyfcstm.model.OperationStatement
     :param variable_name: Persistent variable that should be incremented.
     :type variable_name: str
-    :return: Whether the statement is the supported unit increment.
-    :rtype: bool
+    :return: Positive integer increment, or ``None`` for unsupported shapes.
+    :rtype: Optional[int]
     """
     if not isinstance(statement, Operation):
-        return False
+        return None
     if statement.var_name != variable_name:
-        return False
+        return None
     expr = statement.expr
     if not isinstance(expr, BinaryOp) or expr.op != "+":
-        return False
+        return None
     if isinstance(expr.x, Variable) and expr.x.name == variable_name:
-        return _literal_int(expr.y) == 1
+        value = _literal_int(expr.y)
+        return value if value is not None and value > 0 else None
     if isinstance(expr.y, Variable) and expr.y.name == variable_name:
-        return _literal_int(expr.x) == 1
-    return False
+        value = _literal_int(expr.x)
+        return value if value is not None and value > 0 else None
+    return None
+
+
+def _threshold_reached_value(
+    value: _ValueTemplate,
+    threshold: int,
+    increment: int,
+) -> _ValueTemplate:
+    """Return the first loop value that satisfies ``x >= threshold``.
+
+    :param value: Current symbolic value before the accelerated loop.
+    :type value: _ValueTemplate
+    :param threshold: Exit threshold.
+    :type threshold: int
+    :param increment: Positive loop increment.
+    :type increment: int
+    :return: First value reached by repeated increments that exits the loop.
+    :rtype: _ValueTemplate
+    :raises BmcBuildError: If the loop input is not a linear expression over
+        pre-state variables or the increment is invalid.
+    """
+    if increment <= 0:
+        raise BmcBuildError("pseudo loop increment must be positive.")
+    if value.linear is None:
+        raise BmcBuildError("pseudo loop acceleration requires a linear integer value.")
+    if any(not name.startswith(_PRE_VAR_PREFIX) for name in value.linear.coeffs):
+        raise BmcBuildError("pseudo loop acceleration requires pre-state variables.")
+    if increment == 1:
+        return _ValueTemplate.const_value(threshold)
+    threshold_text = _format_number(threshold)
+    increment_text = _format_number(increment)
+    return _ValueTemplate(
+        "%s + (((%s) - %s) %% %s)"
+        % (threshold_text, value.text, threshold_text, increment_text)
+    )
 
 
 def _has_direct_atom_contradiction(condition: BoolTemplate) -> bool:

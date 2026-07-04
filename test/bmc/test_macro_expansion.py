@@ -204,6 +204,45 @@ def test_failed_event_candidate_metadata_is_reported_on_fallback():
 
 
 @pytest.mark.unittest
+def test_rejected_event_candidate_metadata_is_reported_on_later_transitions():
+    """Accepted later cases keep event reads used by priority masks."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            state C;
+            pseudo state P;
+            [*] -> A;
+            A -> P :: Go;
+            P -> P;
+            A -> B :: Fire;
+            A -> C;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(stable_leaf_source(domain, "Root.A"))
+    by_target = {case.target_state_path: case for case in formal.success_cases}
+
+    assert sorted(
+        (event.path, event.polarity, event.reason)
+        for event in by_target["Root.B"].used_events
+    ) == [
+        ("Root.A.Fire", "positive", "trigger"),
+        ("Root.A.Go", "negative", "priority"),
+    ]
+    assert sorted(
+        (event.path, event.polarity, event.reason)
+        for event in by_target["Root.C"].used_events
+    ) == [
+        ("Root.A.Fire", "negative", "priority"),
+        ("Root.A.Go", "negative", "priority"),
+    ]
+
+
+@pytest.mark.unittest
 def test_verify_partition_option_raises_for_budget_too_small():
     """Partition self-check failures surface as build errors, not silent deltas."""
     model = load_state_machine_from_text(

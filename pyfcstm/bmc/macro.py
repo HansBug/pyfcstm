@@ -1,36 +1,38 @@
 """Macro-step case contracts for FCSTM bounded model checking.
 
-The macro contract layer defines the data objects exchanged between future
-macro-step expansion and solver-relation lowering.  It does not traverse a
-runtime state machine, build Z3 transition relations, or append partition
-repair constraints to user formulas.  Instead, it makes the shape of each case
-explicit: source and target ids, stable labels, event uses, a bare case
-condition ``gamma``, and an explicit writeback recipe for every persistent
-variable.
+The macro contract layer defines the solver-independent data objects exchanged
+between runtime-aligned macro-step expansion and later relation lowering.  It
+records **which flat control path** a macro-step can take: source/target state
+ids, event/guard control atoms, priority exclusions expressed through accepted
+case labels, and the ordered model action blocks that would execute on that
+path.  It deliberately does not lower operations into variable writeback
+expressions, split action-local ``if`` blocks, or construct Z3 implications.
 
 Design contracts:
 
-* :class:`CycleCase.condition` is the bare case condition.  It never includes
-  the pre-state source guard; later relation builders form ``source_guard and
-  gamma`` before emitting ``A => R``.
-* :class:`VarUpdate` entries are explicit and complete.  Carry-over variables
-  are represented as writeback entries rather than left unconstrained.
-* Fallback and semantic-delta helpers subtract only their source-appropriate
-  ordinary accepted success-case conditions: stable fallback accepts transition
-  cases only, while entry semantic delta accepts transition or initial cases.
-  Build-diagnostic conditions are excluded only where the issue design requires
-  them.  Failed candidate metadata is kept for diagnostics and never removes
-  uncovered regions.
-* Partition verification is a build-time/test-time self-check.  It returns a
-  diagnostic summary or raises :class:`pyfcstm.bmc.errors.BmcBuildError`; it
-  never produces clauses for ``Core_N`` or ``Phi_N``.
+* :class:`CycleCase.condition` contains only control-path atoms.  Valid atom
+  prefixes are ``event:``, ``guard:``, and ``accepted:``; action-local control
+  flow and variable writeback constraints belong to later lowering.
+* :class:`GuardRequirement` stores the raw model guard plus the action-block
+  anchor at which that guard is checked.  Later lowering interleaves action
+  lowering and guard lowering instead of substituting guards in this layer.
+* :class:`ActionBlock` preserves runtime action block boundaries and operation
+  statement objects.  A block may contain an :class:`pyfcstm.model.IfBlock`, but
+  that nested branch is not part of the case condition.
+* :class:`PriorityExclusion` records declaration-order masks through
+  ``accepted:<case_label>`` atoms.  The accepted atom denotes the already lowered
+  antecedent of a prior accepted path, not a raw event or guard trigger.
+* Partition verification is a build-time/test-time self-check.  It resolves
+  accepted atoms through the source-local case registry before running the small
+  truth-table checker and never produces clauses for ``Core_N`` or ``Phi_N``.
 
 The module contains:
 
-* :class:`BoolTemplate` - Small solver-independent boolean recipe for contract
-  tests and partition self-checks.
-* :class:`EventUse` and :class:`VarUpdate` - Event-use and writeback metadata.
-* :class:`CycleCase` - One macro-step relation case.
+* :class:`BoolTemplate` - A small boolean recipe used by contract tests and
+  partition self-checks.
+* :class:`EventUse`, :class:`GuardRequirement`, :class:`ActionBlock`, and
+  :class:`PriorityExclusion` - Metadata for the flat macro-step path plan.
+* :class:`CycleCase` - One macro-step relation case before solver lowering.
 * :class:`MacroStepFormal` - Source-local buckets of success, delta, and build
   diagnostic conditions.
 * Helper constructors for absorb, fallback, semantic-delta, and partition
@@ -51,7 +53,7 @@ from __future__ import annotations
 import itertools
 import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Mapping, Optional, Sequence, Set, Tuple
 
 from pyfcstm.bmc.domain import STATE_DIAGNOSTIC_ID, STATE_TERMINATE_ID, BmcDomain
 from pyfcstm.bmc.errors import BmcBuildError, InvalidBmcDomain, InvalidBmcEncoding
@@ -60,6 +62,7 @@ from pyfcstm.bmc.source import (
     TERMINATE_CASE_PATH,
     MacroStepSource,
 )
+from pyfcstm.model import Expr, IfBlock, Operation, OperationStatement
 
 _CanonicalDict = Dict[str, Any]
 _BOOL_KINDS = {"true", "false", "atom", "not", "and", "or"}
@@ -67,8 +70,19 @@ _CASE_KINDS = {"transition", "fallback", "initial", "absorb", "diagnostic", "del
 _ACCEPTED_CASE_KINDS = {"transition", "initial"}
 _EVENT_POLARITIES = {"positive", "negative"}
 _EVENT_REASONS = {"trigger", "priority", "fallback", "descent", "assumption"}
+_GUARD_POLARITIES = {"positive", "negative"}
+_GUARD_REASONS = {"transition_guard", "initial_guard", "priority", "fallback"}
+_PRIORITY_REASONS = {"transition_priority", "initial_priority", "fallback", "delta"}
 _RESERVED_CASE_PATHS = {TERMINATE_CASE_PATH, DIAGNOSTIC_CASE_PATH}
 _SOURCE_STATE_ATOM_PREFIX = "__source_state__:"
+_EVENT_ATOM_PREFIX = "event:"
+_GUARD_ATOM_PREFIX = "guard:"
+_ACCEPTED_ATOM_PREFIX = "accepted:"
+_VALID_CONDITION_PREFIXES = (
+    _EVENT_ATOM_PREFIX,
+    _GUARD_ATOM_PREFIX,
+    _ACCEPTED_ATOM_PREFIX,
+)
 
 
 def _require_non_empty_string(value: object, field_name: str) -> str:
@@ -83,7 +97,7 @@ def _validate_index(value: object, field_name: str) -> int:
     return value
 
 
-def _validate_choice(value: object, choices: set, field_name: str) -> str:
+def _validate_choice(value: object, choices: Set[str], field_name: str) -> str:
     if not isinstance(value, str) or value not in choices:
         raise InvalidBmcEncoding("Unsupported %s: %r." % (field_name, value))
     return value
@@ -101,9 +115,10 @@ def _canonical_key(item: Any) -> str:
 class BoolTemplate:
     """Solver-independent boolean condition recipe.
 
-    ``BoolTemplate`` is intentionally small.  It is sufficient for macro contract
-    tests and partition proofs, while later solver lowering can map
-    richer case recipes into Z3 without changing the surrounding case contract.
+    ``BoolTemplate`` intentionally supports only constants, atoms, ``not``,
+    ``and``, and ``or``.  That is enough for macro contract checks while later
+    solver lowering can map the recorded event, guard, and accepted atoms into
+    Z3 formulas.
 
     :param kind: ``"true"``, ``"false"``, ``"atom"``, ``"not"``,
         ``"and"``, or ``"or"``.
@@ -116,8 +131,8 @@ class BoolTemplate:
 
     Example::
 
-        >>> gamma = BoolTemplate.atom('gamma')
-        >>> BoolTemplate.not_(gamma).evaluate({'gamma': False})
+        >>> gamma = BoolTemplate.atom('event:Root.Go')
+        >>> BoolTemplate.not_(gamma).evaluate({'event:Root.Go': False})
         True
     """
 
@@ -196,8 +211,8 @@ class BoolTemplate:
 
         Example::
 
-            >>> BoolTemplate.atom('go').variables
-            ('go',)
+            >>> BoolTemplate.atom('guard:g0').variables
+            ('guard:g0',)
         """
         return cls("atom", name=name)
 
@@ -207,16 +222,13 @@ class BoolTemplate:
 
         :param operand: Operand condition.
         :type operand: BoolTemplate
-        :return: Negated condition with constant and double-negation identities
-            reduced.
+        :return: Negated condition with simple identities reduced.
         :rtype: BoolTemplate
 
         Example::
 
             >>> BoolTemplate.not_(BoolTemplate.false()).evaluate({})
             True
-            >>> BoolTemplate.not_(BoolTemplate.not_(BoolTemplate.atom('go'))).to_canonical()['name']
-            'go'
         """
         if not isinstance(operand, BoolTemplate):
             raise InvalidBmcEncoding("operand must be BoolTemplate.")
@@ -234,16 +246,13 @@ class BoolTemplate:
 
         :param operands: Operand conditions.
         :type operands: BoolTemplate
-        :return: Conjunction with identity, absorbing, and idempotent operands
-            reduced, or constant true for an empty input.
+        :return: Reduced conjunction, or constant true for an empty input.
         :rtype: BoolTemplate
 
         Example::
 
             >>> BoolTemplate.and_().evaluate({})
             True
-            >>> BoolTemplate.and_(BoolTemplate.true(), BoolTemplate.atom('go')).to_canonical()['name']
-            'go'
         """
         if not operands:
             return cls.true()
@@ -275,16 +284,13 @@ class BoolTemplate:
 
         :param operands: Operand conditions.
         :type operands: BoolTemplate
-        :return: Disjunction with identity, absorbing, and idempotent operands
-            reduced, or constant false for an empty input.
+        :return: Reduced disjunction, or constant false for an empty input.
         :rtype: BoolTemplate
 
         Example::
 
             >>> BoolTemplate.or_().evaluate({})
             False
-            >>> BoolTemplate.or_(BoolTemplate.false(), BoolTemplate.atom('go')).to_canonical()['name']
-            'go'
         """
         if not operands:
             return cls.false()
@@ -378,10 +384,10 @@ class BoolTemplate:
 
         Example::
 
-            >>> BoolTemplate.atom('gamma').to_canonical()['name']
-            'gamma'
+            >>> BoolTemplate.atom('guard:g0').to_canonical()['name']
+            'guard:g0'
         """
-        result: _CanonicalDict = {"node": "bool_template", "kind": self.kind}
+        result = {"node": "bool_template", "kind": self.kind}
         if self.kind == "atom":
             result["name"] = self._atom_name()
         if self.operands:
@@ -419,9 +425,7 @@ class EventUse:
             raise InvalidBmcEncoding("event_id must be non-negative.")
         object.__setattr__(self, "event_id", event_id)
         object.__setattr__(
-            self,
-            "path",
-            _require_non_empty_string(self.path, "event path"),
+            self, "path", _require_non_empty_string(self.path, "event path")
         )
         object.__setattr__(
             self,
@@ -455,199 +459,339 @@ class EventUse:
 
 
 @dataclass(frozen=True)
-class VarUpdate:
-    """Persistent-variable writeback recipe for one macro-step case.
+class GuardRequirement:
+    """Raw transition guard requirement anchored to an action-block prefix.
 
-    :param variable_id: Domain variable id.
-    :type variable_id: int
-    :param variable_name: Persistent variable name.
-    :type variable_name: str
-    :param expression: Stable expression digest or recipe key used by later
-        lowering.
-    :type expression: str
-    :param is_carry: Whether this update is explicit carry-over, defaults to
-        ``False``.
-    :type is_carry: bool, optional
+    :param requirement_id: Stable per-formal guard requirement id.
+    :type requirement_id: str
+    :param owner_state_id: Domain id of the state whose chooser owns the guard.
+    :type owner_state_id: int
+    :param owner_state_path: Dot-separated owner state path.
+    :type owner_state_path: str
+    :param transition_label: Human-readable transition label.
+    :type transition_label: str
+    :param expr: Raw model expression evaluated by the runtime guard check.
+    :type expr: pyfcstm.model.Expr
+    :param polarity: Guard polarity, normally ``"positive"``.
+    :type polarity: str
+    :param reason: Guard-use reason such as ``"transition_guard"``.
+    :type reason: str
+    :param after_action_block_index: Number of action blocks that have executed
+        before the guard is checked.
+    :type after_action_block_index: int
 
     Example::
 
-        >>> VarUpdate(0, 'x', 'pre:x', is_carry=True).is_carry
-        True
+        >>> from pyfcstm.model.expr import Boolean
+        >>> GuardRequirement('g0', 0, 'Root', 'Root -> A', Boolean(True), 'positive', 'transition_guard', 0).atom_name
+        'guard:g0'
     """
 
-    variable_id: int
-    variable_name: str
-    expression: str
-    is_carry: bool = False
+    requirement_id: str
+    owner_state_id: int
+    owner_state_path: str
+    transition_label: str
+    expr: Expr
+    polarity: str
+    reason: str
+    after_action_block_index: int
 
     def __post_init__(self) -> None:
+        owner_state_id = _validate_index(self.owner_state_id, "owner_state_id")
+        if owner_state_id < 0:
+            raise InvalidBmcEncoding("owner_state_id must be non-negative.")
+        if not isinstance(self.expr, Expr):
+            raise InvalidBmcEncoding("guard requirement expr must be Expr.")
+        anchor = _validate_index(
+            self.after_action_block_index, "after_action_block_index"
+        )
+        if anchor < 0:
+            raise InvalidBmcEncoding("after_action_block_index must be non-negative.")
         object.__setattr__(
             self,
-            "variable_id",
-            _validate_index(self.variable_id, "variable_id"),
+            "requirement_id",
+            _require_non_empty_string(self.requirement_id, "requirement_id"),
         )
-        if self.variable_id < 0:
-            raise InvalidBmcEncoding("variable_id must be non-negative.")
+        object.__setattr__(self, "owner_state_id", owner_state_id)
         object.__setattr__(
             self,
-            "variable_name",
-            _require_non_empty_string(self.variable_name, "variable_name"),
+            "owner_state_path",
+            _require_non_empty_string(self.owner_state_path, "owner_state_path"),
         )
         object.__setattr__(
             self,
-            "expression",
-            _require_non_empty_string(self.expression, "expression"),
+            "transition_label",
+            _require_non_empty_string(self.transition_label, "transition_label"),
         )
-        if not isinstance(self.is_carry, bool):
-            raise InvalidBmcEncoding("is_carry must be a boolean.")
+        object.__setattr__(
+            self,
+            "polarity",
+            _validate_choice(self.polarity, _GUARD_POLARITIES, "guard polarity"),
+        )
+        object.__setattr__(
+            self,
+            "reason",
+            _validate_choice(self.reason, _GUARD_REASONS, "guard reason"),
+        )
+        object.__setattr__(self, "after_action_block_index", anchor)
+
+    @property
+    def atom_name(self) -> str:
+        """Return the boolean atom name for this guard.
+
+        :return: Atom name in the ``guard:<id>`` namespace.
+        :rtype: str
+
+        Example::
+
+            >>> from pyfcstm.model.expr import Boolean
+            >>> GuardRequirement('g0', 0, 'Root', 't', Boolean(True), 'positive', 'transition_guard', 0).atom_name
+            'guard:g0'
+        """
+        return "%s%s" % (_GUARD_ATOM_PREFIX, self.requirement_id)
 
     def to_canonical(self) -> _CanonicalDict:
-        """Return a JSON-stable variable update dictionary.
+        """Return a JSON-stable guard requirement dictionary.
 
-        :return: Canonical variable update.
+        :return: Canonical guard requirement metadata.
         :rtype: Dict[str, object]
 
         Example::
 
-            >>> VarUpdate(0, 'x', 'pre:x').to_canonical()['variable_name']
-            'x'
+            >>> from pyfcstm.model.expr import Boolean
+            >>> GuardRequirement('g0', 0, 'Root', 't', Boolean(True), 'positive', 'transition_guard', 0).to_canonical()['atom']
+            'guard:g0'
         """
         return {
-            "node": "var_update",
-            "variable_id": self.variable_id,
-            "variable_name": self.variable_name,
-            "expression": self.expression,
-            "is_carry": self.is_carry,
+            "node": "guard_requirement",
+            "requirement_id": self.requirement_id,
+            "atom": self.atom_name,
+            "owner_state_id": self.owner_state_id,
+            "owner_state_path": self.owner_state_path,
+            "transition_label": self.transition_label,
+            "expr": _expr_to_text(self.expr),
+            "polarity": self.polarity,
+            "reason": self.reason,
+            "after_action_block_index": self.after_action_block_index,
         }
 
 
-def carry_var_updates(domain: BmcDomain) -> Tuple[VarUpdate, ...]:
-    """Return explicit carry-over updates for every persistent variable.
+@dataclass(frozen=True)
+class PriorityExclusion:
+    """Priority mask that excludes previously accepted control paths.
 
-    :param domain: Domain snapshot whose variables should be carried.
-    :type domain: BmcDomain
-    :return: Complete carry-over update tuple sorted by variable id.
-    :rtype: Tuple[VarUpdate, ...]
-    :raises InvalidBmcEncoding: If ``domain`` is not a BMC domain.
-
-    Example::
-
-        >>> from pyfcstm.bmc.domain import build_bmc_domain
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> domain = build_bmc_domain(load_state_machine_from_text('def int x = 0; state Root;'), 1)
-        >>> carry_var_updates(domain)[0].expression
-        'pre:x'
-    """
-    if not isinstance(domain, BmcDomain):
-        raise InvalidBmcEncoding("domain must be BmcDomain.")
-    return tuple(
-        VarUpdate(entry.id, entry.name, "pre:%s" % entry.name, is_carry=True)
-        for entry in domain.variables
-    )
-
-
-def var_update_for(
-    domain: BmcDomain,
-    variable: object,
-    expression: str,
-    is_carry: bool = False,
-) -> VarUpdate:
-    """Build one variable update from a domain variable id or name.
-
-    :param domain: Domain snapshot that owns the variable.
-    :type domain: BmcDomain
-    :param variable: Variable id or name.
-    :type variable: int or str
-    :param expression: Stable expression digest or recipe key.
-    :type expression: str
-    :param is_carry: Whether this update is carry-over, defaults to ``False``.
-    :type is_carry: bool, optional
-    :return: Variable update entry.
-    :rtype: VarUpdate
-    :raises InvalidBmcEncoding: If ``variable`` cannot be resolved.
+    :param decision_id: Stable id for the chooser decision point.
+    :type decision_id: str
+    :param reason: Exclusion reason such as ``"transition_priority"``.
+    :type reason: str
+    :param excluded_case_labels: Case labels excluded by this mask.
+    :type excluded_case_labels: Tuple[str, ...]
+    :param excluded_condition: Boolean template over ``accepted:`` atoms.
+    :type excluded_condition: BoolTemplate
+    :param event_paths: Event paths read by excluded cases, defaults to ``()``.
+    :type event_paths: Tuple[str, ...], optional
+    :param guard_requirement_ids: Guard ids read by excluded cases, defaults to
+        ``()``.
+    :type guard_requirement_ids: Tuple[str, ...], optional
 
     Example::
 
-        >>> from pyfcstm.bmc.domain import build_bmc_domain
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> domain = build_bmc_domain(load_state_machine_from_text('def int x = 0; state Root;'), 1)
-        >>> var_update_for(domain, 'x', 'x+1').variable_id
-        0
+        >>> mask = PriorityExclusion('d0', 'transition_priority', ('c0',), BoolTemplate.atom('accepted:c0'))
+        >>> mask.excluded_case_labels
+        ('c0',)
     """
-    if not isinstance(domain, BmcDomain):
-        raise InvalidBmcEncoding("domain must be BmcDomain.")
-    try:
-        if isinstance(variable, str):
-            entry = domain.variable_by_name(variable)
-        elif isinstance(variable, bool) or not isinstance(variable, int):
-            raise InvalidBmcEncoding("variable must be a variable id or name.")
-        else:
-            entry = domain.variable_by_id(variable)
-    except InvalidBmcDomain as err:
-        # InvalidBmcDomain: BmcDomain lookup rejects unknown variable ids or
-        # names supplied by this writeback recipe constructor.
-        raise InvalidBmcEncoding(str(err)) from err
-    return VarUpdate(entry.id, entry.name, expression, is_carry=is_carry)
 
+    decision_id: str
+    reason: str
+    excluded_case_labels: Tuple[str, ...]
+    excluded_condition: BoolTemplate
+    event_paths: Tuple[str, ...] = ()
+    guard_requirement_ids: Tuple[str, ...] = ()
 
-def build_var_updates(
-    domain: BmcDomain,
-    updates: Sequence[VarUpdate],
-) -> Tuple[VarUpdate, ...]:
-    """Validate and normalize a complete writeback tuple.
-
-    :param domain: Domain snapshot whose persistent variables must be covered.
-    :type domain: BmcDomain
-    :param updates: Candidate variable updates.
-    :type updates: Sequence[VarUpdate]
-    :return: Updates sorted by variable id.
-    :rtype: Tuple[VarUpdate, ...]
-    :raises InvalidBmcEncoding: If an update is missing, duplicated, or
-        references an unknown variable.
-
-    Example::
-
-        >>> from pyfcstm.bmc.domain import build_bmc_domain
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> domain = build_bmc_domain(load_state_machine_from_text('def int x = 0; state Root;'), 1)
-        >>> build_var_updates(domain, carry_var_updates(domain))[0].variable_name
-        'x'
-    """
-    if not isinstance(domain, BmcDomain):
-        raise InvalidBmcEncoding("domain must be BmcDomain.")
-    if not isinstance(updates, (list, tuple)):
-        raise InvalidBmcEncoding("updates must be a sequence.")
-    items = tuple(updates)
-    if not all(isinstance(item, VarUpdate) for item in items):
-        raise InvalidBmcEncoding("updates must contain VarUpdate objects.")
-
-    by_id = {}
-    by_name = {}
-    for item in items:
-        if item.variable_id in by_id:
+    def __post_init__(self) -> None:
+        labels = tuple(self.excluded_case_labels)
+        if not labels:
+            raise InvalidBmcEncoding("excluded_case_labels must not be empty.")
+        if not all(isinstance(item, str) and item for item in labels):
             raise InvalidBmcEncoding(
-                "Duplicate variable update id: %r." % item.variable_id
+                "excluded_case_labels must contain non-empty strings."
             )
-        if item.variable_name in by_name:
-            raise InvalidBmcEncoding(
-                "Duplicate variable update name: %r." % item.variable_name
-            )
-        try:
-            entry = domain.variable_by_id(item.variable_id)
-        except InvalidBmcDomain as err:
-            # InvalidBmcDomain: domain.variable_by_id rejects unknown variable ids
-            # supplied by this macro-step writeback recipe.
-            raise InvalidBmcEncoding(str(err)) from err
-        if entry.name != item.variable_name:
-            raise InvalidBmcEncoding("Variable update id/name mismatch.")
-        by_id[item.variable_id] = item
-        by_name[item.variable_name] = item
+        if not isinstance(self.excluded_condition, BoolTemplate):
+            raise InvalidBmcEncoding("excluded_condition must be BoolTemplate.")
+        for atom in self.excluded_condition.variables:
+            if not atom.startswith(_ACCEPTED_ATOM_PREFIX):
+                raise InvalidBmcEncoding(
+                    "priority excluded_condition must use accepted atoms."
+                )
+        object.__setattr__(
+            self,
+            "decision_id",
+            _require_non_empty_string(self.decision_id, "decision_id"),
+        )
+        object.__setattr__(
+            self,
+            "reason",
+            _validate_choice(self.reason, _PRIORITY_REASONS, "priority reason"),
+        )
+        object.__setattr__(self, "excluded_case_labels", tuple(sorted(labels)))
+        object.__setattr__(self, "event_paths", tuple(sorted(set(self.event_paths))))
+        object.__setattr__(
+            self,
+            "guard_requirement_ids",
+            tuple(sorted(set(self.guard_requirement_ids))),
+        )
 
-    expected_ids = tuple(entry.id for entry in domain.variables)
-    actual_ids = tuple(sorted(by_id))
-    if actual_ids != expected_ids:
-        raise InvalidBmcEncoding("var_update must cover every persistent variable.")
-    return tuple(by_id[index] for index in expected_ids)
+    def to_canonical(self) -> _CanonicalDict:
+        """Return a JSON-stable priority-exclusion dictionary.
+
+        :return: Canonical priority metadata.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> PriorityExclusion('d0', 'transition_priority', ('c0',), BoolTemplate.atom('accepted:c0')).to_canonical()['reason']
+            'transition_priority'
+        """
+        return {
+            "node": "priority_exclusion",
+            "decision_id": self.decision_id,
+            "reason": self.reason,
+            "excluded_case_labels": list(self.excluded_case_labels),
+            "excluded_condition": self.excluded_condition.to_canonical(),
+            "event_paths": list(self.event_paths),
+            "guard_requirement_ids": list(self.guard_requirement_ids),
+        }
+
+
+@dataclass(frozen=True)
+class ActionBlock:
+    """Runtime action block recorded for a macro-step path.
+
+    :param block_kind: Domain block kind such as ``"enter"``, ``"exit"``,
+        ``"during"``, ``"during_aspect"``, or ``"transition_effect"``.
+    :type block_kind: str
+    :param runtime_role: Runtime role explaining why the block executes.
+    :type runtime_role: str
+    :param owner_state_id: Domain id of the state that owns the block.
+    :type owner_state_id: int
+    :param owner_state_path: Dot-separated owner state path.
+    :type owner_state_path: str
+    :param operations: Ordered model statements in the block.
+    :type operations: Tuple[pyfcstm.model.OperationStatement, ...]
+    :param action_name: Optional model action function name, defaults to
+        ``None``.
+    :type action_name: str, optional
+    :param transition_label: Optional transition label for effect blocks,
+        defaults to ``None``.
+    :type transition_label: str, optional
+    :param is_abstract: Whether this block represents an abstract hook, defaults
+        to ``False``.
+    :type is_abstract: bool, optional
+
+    Example::
+
+        >>> ActionBlock('during', 'leaf_during', 0, 'Root', ()).operations
+        ()
+    """
+
+    block_kind: str
+    runtime_role: str
+    owner_state_id: int
+    owner_state_path: str
+    operations: Tuple[OperationStatement, ...]
+    action_name: Optional[str] = None
+    transition_label: Optional[str] = None
+    is_abstract: bool = False
+
+    def __post_init__(self) -> None:
+        owner_state_id = _validate_index(self.owner_state_id, "owner_state_id")
+        if owner_state_id < 0:
+            raise InvalidBmcEncoding("owner_state_id must be non-negative.")
+        operations = tuple(self.operations)
+        if not all(isinstance(item, OperationStatement) for item in operations):
+            raise InvalidBmcEncoding(
+                "operations must contain OperationStatement objects."
+            )
+        if not isinstance(self.is_abstract, bool):
+            raise InvalidBmcEncoding("is_abstract must be a boolean.")
+        object.__setattr__(
+            self, "block_kind", _require_non_empty_string(self.block_kind, "block_kind")
+        )
+        object.__setattr__(
+            self,
+            "runtime_role",
+            _require_non_empty_string(self.runtime_role, "runtime_role"),
+        )
+        object.__setattr__(self, "owner_state_id", owner_state_id)
+        object.__setattr__(
+            self,
+            "owner_state_path",
+            _require_non_empty_string(self.owner_state_path, "owner_state_path"),
+        )
+        object.__setattr__(self, "operations", operations)
+        if self.action_name is not None:
+            object.__setattr__(
+                self,
+                "action_name",
+                _require_non_empty_string(self.action_name, "action_name"),
+            )
+        if self.transition_label is not None:
+            object.__setattr__(
+                self,
+                "transition_label",
+                _require_non_empty_string(self.transition_label, "transition_label"),
+            )
+
+    def to_canonical(self) -> _CanonicalDict:
+        """Return a JSON-stable action-block dictionary.
+
+        :return: Canonical action-block metadata.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> ActionBlock('during', 'leaf_during', 0, 'Root', ()).to_canonical()['block_kind']
+            'during'
+        """
+        return {
+            "node": "action_block",
+            "block_kind": self.block_kind,
+            "runtime_role": self.runtime_role,
+            "owner_state_id": self.owner_state_id,
+            "owner_state_path": self.owner_state_path,
+            "action_name": self.action_name,
+            "transition_label": self.transition_label,
+            "is_abstract": self.is_abstract,
+            "operations": [_statement_to_canonical(item) for item in self.operations],
+        }
+
+
+def _expr_to_text(expr: Expr) -> str:
+    return str(expr.to_ast_node())
+
+
+def _statement_to_canonical(statement: OperationStatement) -> _CanonicalDict:
+    if isinstance(statement, Operation):
+        return {
+            "node": "operation",
+            "var_name": statement.var_name,
+            "expr": _expr_to_text(statement.expr),
+        }
+    if isinstance(statement, IfBlock):
+        branches = []
+        for branch in statement.branches:
+            branches.append(
+                {
+                    "condition": _expr_to_text(branch.condition)
+                    if branch.condition is not None
+                    else None,
+                    "statements": [
+                        _statement_to_canonical(item) for item in branch.statements
+                    ],
+                }
+            )
+        return {"node": "if_block", "branches": branches}
+    return {"node": type(statement).__name__}
 
 
 def _expected_case_path(domain: BmcDomain, state_id: int) -> str:
@@ -678,52 +822,80 @@ def _validate_case_state(
         raise InvalidBmcEncoding("%s path does not match %s id." % (role, role))
 
 
-def _event_atom_paths_in_case(case: "CycleCase") -> Tuple[str, ...]:
-    paths = set()
-    for condition in (case.condition,) + case.failed_conditions:
-        for variable in condition.variables:
-            if variable.startswith("event:"):
-                paths.add(variable[len("event:") :])
-    return tuple(sorted(paths))
-
-
-def _event_uses_from_condition(
-    condition: BoolTemplate,
-    domain: BmcDomain,
-    polarity: str,
-    reason: str,
-) -> Tuple[EventUse, ...]:
-    result = []
-    for variable in condition.variables:
-        if not variable.startswith("event:"):
-            continue
-        path = variable[len("event:") :]
-        try:
-            entry = domain.event_by_path(path)
-        except InvalidBmcDomain as err:
-            # InvalidBmcDomain: domain.event_by_path rejects event atoms that
-            # helper-built fallback/delta conditions pulled from malformed input.
-            raise InvalidBmcEncoding(str(err)) from err
-        result.append(EventUse(entry.id, entry.path, polarity, reason))
-    return tuple(sorted(result, key=_canonical_key))
-
-
 def _derive_is_diagnostic(kind: str, target_state_id: int) -> bool:
     return kind in {"diagnostic", "delta"} or (
         kind == "absorb" and target_state_id == STATE_DIAGNOSTIC_ID
     )
 
 
-def _validate_non_reserved_condition_atoms(
-    condition: BoolTemplate,
-    field_name: str,
-) -> None:
-    for variable in condition.variables:
-        if variable.startswith(_SOURCE_STATE_ATOM_PREFIX):
+def _condition_atoms(condition: BoolTemplate) -> Tuple[str, ...]:
+    return condition.variables
+
+
+def _validate_condition_atom_prefixes(condition: BoolTemplate, field_name: str) -> None:
+    for atom in _condition_atoms(condition):
+        if atom.startswith(_SOURCE_STATE_ATOM_PREFIX):
             raise InvalidBmcEncoding(
-                "%s uses reserved source-state atom namespace: %r."
-                % (field_name, variable)
+                "%s uses reserved source-state atom namespace: %r." % (field_name, atom)
             )
+        if not atom.startswith(_VALID_CONDITION_PREFIXES):
+            raise InvalidBmcEncoding(
+                "%s uses unsupported macro condition atom namespace: %r."
+                % (field_name, atom)
+            )
+
+
+def _event_atom_paths(condition: BoolTemplate) -> Tuple[str, ...]:
+    return tuple(
+        sorted(
+            atom[len(_EVENT_ATOM_PREFIX) :]
+            for atom in condition.variables
+            if atom.startswith(_EVENT_ATOM_PREFIX)
+        )
+    )
+
+
+def _guard_atom_ids(condition: BoolTemplate) -> Tuple[str, ...]:
+    return tuple(
+        sorted(
+            atom[len(_GUARD_ATOM_PREFIX) :]
+            for atom in condition.variables
+            if atom.startswith(_GUARD_ATOM_PREFIX)
+        )
+    )
+
+
+def _accepted_atom_labels(condition: BoolTemplate) -> Tuple[str, ...]:
+    return tuple(
+        sorted(
+            atom[len(_ACCEPTED_ATOM_PREFIX) :]
+            for atom in condition.variables
+            if atom.startswith(_ACCEPTED_ATOM_PREFIX)
+        )
+    )
+
+
+def _event_uses_from_paths(
+    domain: BmcDomain, paths: Sequence[str], polarity: str, reason: str
+) -> Tuple[EventUse, ...]:
+    result = []
+    for path in sorted(set(paths)):
+        try:
+            entry = domain.event_by_path(path)
+        except InvalidBmcDomain as err:
+            # InvalidBmcDomain: domain.event_by_path rejects event paths copied
+            # from malformed macro control atoms.
+            raise InvalidBmcEncoding(str(err)) from err
+        result.append(EventUse(entry.id, entry.path, polarity, reason))
+    return tuple(result)
+
+
+def _event_uses_from_condition(
+    condition: BoolTemplate, domain: BmcDomain, polarity: str, reason: str
+) -> Tuple[EventUse, ...]:
+    return _event_uses_from_paths(
+        domain, _event_atom_paths(condition), polarity, reason
+    )
 
 
 def _normalize_accepted_cases(
@@ -743,8 +915,8 @@ def _normalize_accepted_cases(
     for case in accepted:
         if case.kind not in allowed:
             raise InvalidBmcEncoding(
-                "accepted_cases for %s may only contain ordinary accepted "
-                "cases with kinds %r." % (helper_name, allowed)
+                "accepted_cases for %s may only contain ordinary accepted cases with kinds %r."
+                % (helper_name, allowed)
             )
         if case.is_diagnostic:
             raise InvalidBmcEncoding(
@@ -781,25 +953,27 @@ class CycleCase:
     :type target_state_id: int
     :param target_state_path: Target path used by the case label.
     :type target_state_path: str
-    :param label: Stable label in
-        ``source_path::case_kind::target_path::ordinal`` form.
+    :param label: Stable label in ``source_path::case_kind::target_path::ordinal``
+        form.
     :type label: str
-    :param condition: Bare case condition ``gamma`` without a source guard.
+    :param condition: Bare control-path condition without a source-state guard.
     :type condition: BoolTemplate
-    :param var_update: Explicit updates for every persistent variable.
-    :type var_update: Tuple[VarUpdate, ...]
+    :param action_blocks: Runtime action blocks executed by this path.
+    :type action_blocks: Tuple[ActionBlock, ...]
     :param used_events: Event inputs read by this case, defaults to ``()``.
     :type used_events: Tuple[EventUse, ...], optional
+    :param guard_requirements: Guard requirements read by this case, defaults to
+        ``()``.
+    :type guard_requirements: Tuple[GuardRequirement, ...], optional
+    :param priority_exclusions: Priority masks applied by this case, defaults to
+        ``()``.
+    :type priority_exclusions: Tuple[PriorityExclusion, ...], optional
     :param failed_conditions: Diagnostic-only failed candidate conditions,
         defaults to ``()``.
     :type failed_conditions: Tuple[BoolTemplate, ...], optional
     :param domain: Optional domain used for eager validation, defaults to
         ``None``.
     :type domain: BmcDomain, optional
-
-    :ivar is_diagnostic: Derived diagnostic classification.  It is true for
-        ``delta`` cases and diagnostic absorb cases.
-    :vartype is_diagnostic: bool
 
     Example::
 
@@ -815,8 +989,10 @@ class CycleCase:
     target_state_path: str
     label: str
     condition: BoolTemplate
-    var_update: Tuple[VarUpdate, ...]
+    action_blocks: Tuple[ActionBlock, ...]
     used_events: Tuple[EventUse, ...] = ()
+    guard_requirements: Tuple[GuardRequirement, ...] = ()
+    priority_exclusions: Tuple[PriorityExclusion, ...] = ()
     failed_conditions: Tuple[BoolTemplate, ...] = ()
     domain: Optional[BmcDomain] = field(default=None, repr=False, compare=False)
     is_diagnostic: bool = field(init=False)
@@ -826,28 +1002,38 @@ class CycleCase:
         source_id = _validate_index(self.source_state_id, "source_state_id")
         target_id = _validate_index(self.target_state_id, "target_state_id")
         source_path = _require_non_empty_string(
-            self.source_state_path,
-            "source_state_path",
+            self.source_state_path, "source_state_path"
         )
         target_path = _require_non_empty_string(
-            self.target_state_path,
-            "target_state_path",
+            self.target_state_path, "target_state_path"
         )
         label = _require_non_empty_string(self.label, "label")
         if not isinstance(self.condition, BoolTemplate):
             raise InvalidBmcEncoding("condition must be BoolTemplate.")
-        _validate_non_reserved_condition_atoms(self.condition, "condition")
+        _validate_condition_atom_prefixes(self.condition, "condition")
+        action_blocks = tuple(self.action_blocks)
+        if not all(isinstance(item, ActionBlock) for item in action_blocks):
+            raise InvalidBmcEncoding("action_blocks must contain ActionBlock objects.")
         used_events = tuple(self.used_events)
         if not all(isinstance(item, EventUse) for item in used_events):
             raise InvalidBmcEncoding("used_events must contain EventUse objects.")
+        guard_requirements = tuple(self.guard_requirements)
+        if not all(isinstance(item, GuardRequirement) for item in guard_requirements):
+            raise InvalidBmcEncoding(
+                "guard_requirements must contain GuardRequirement objects."
+            )
+        priority_exclusions = tuple(self.priority_exclusions)
+        if not all(isinstance(item, PriorityExclusion) for item in priority_exclusions):
+            raise InvalidBmcEncoding(
+                "priority_exclusions must contain PriorityExclusion objects."
+            )
         failed_conditions = tuple(self.failed_conditions)
         if not all(isinstance(item, BoolTemplate) for item in failed_conditions):
             raise InvalidBmcEncoding(
                 "failed_conditions must contain BoolTemplate objects."
             )
-        var_update = tuple(self.var_update)
-        if not all(isinstance(item, VarUpdate) for item in var_update):
-            raise InvalidBmcEncoding("var_update must contain VarUpdate objects.")
+        for item in failed_conditions:
+            _validate_condition_atom_prefixes(item, "failed_conditions")
 
         object.__setattr__(self, "kind", kind)
         object.__setattr__(self, "source_state_id", source_id)
@@ -855,10 +1041,22 @@ class CycleCase:
         object.__setattr__(self, "source_state_path", source_path)
         object.__setattr__(self, "target_state_path", target_path)
         object.__setattr__(self, "label", label)
+        object.__setattr__(self, "action_blocks", action_blocks)
+        event_by_key = {_canonical_key(item): item for item in used_events}
         object.__setattr__(
             self,
             "used_events",
-            tuple(sorted(used_events, key=_canonical_key)),
+            tuple(event_by_key[key] for key in sorted(event_by_key)),
+        )
+        object.__setattr__(
+            self,
+            "guard_requirements",
+            tuple(sorted(guard_requirements, key=lambda item: item.requirement_id)),
+        )
+        object.__setattr__(
+            self,
+            "priority_exclusions",
+            tuple(sorted(priority_exclusions, key=lambda item: item.decision_id)),
         )
         object.__setattr__(
             self,
@@ -866,16 +1064,12 @@ class CycleCase:
             tuple(sorted(failed_conditions, key=_canonical_key)),
         )
         object.__setattr__(
-            self,
-            "var_update",
-            tuple(sorted(var_update, key=lambda item: item.variable_id)),
-        )
-        object.__setattr__(
             self, "is_diagnostic", _derive_is_diagnostic(kind, target_id)
         )
 
         self._validate_label()
         self._validate_kind_shape()
+        self._validate_local_atom_links()
         if self.domain is not None:
             if not isinstance(self.domain, BmcDomain):
                 raise InvalidBmcEncoding("domain must be BmcDomain.")
@@ -901,24 +1095,36 @@ class CycleCase:
                 raise InvalidBmcEncoding("absorb cases must self-loop.")
             if self.source_state_id not in {STATE_TERMINATE_ID, STATE_DIAGNOSTIC_ID}:
                 raise InvalidBmcEncoding("absorb cases must use sentinel states.")
-        if self.kind in {"delta", "diagnostic"}:
-            if self.target_state_id != STATE_DIAGNOSTIC_ID:
-                raise InvalidBmcEncoding(
-                    "diagnostic and delta cases target diagnostic."
-                )
+        if (
+            self.kind in {"delta", "diagnostic"}
+            and self.target_state_id != STATE_DIAGNOSTIC_ID
+        ):
+            raise InvalidBmcEncoding("diagnostic and delta cases target diagnostic.")
+
+    def _validate_local_atom_links(self) -> None:
+        condition_guard_ids = set(_guard_atom_ids(self.condition))
+        for failed in self.failed_conditions:
+            condition_guard_ids.update(_guard_atom_ids(failed))
+        declared_guard_ids = {item.requirement_id for item in self.guard_requirements}
+        missing = sorted(condition_guard_ids - declared_guard_ids)
+        if missing:
+            raise InvalidBmcEncoding(
+                "guard atoms must have matching GuardRequirement: %r." % missing[0]
+            )
+        if len(declared_guard_ids) != len(self.guard_requirements):
+            raise InvalidBmcEncoding("Duplicate guard requirement id.")
+        if any(
+            item.after_action_block_index > len(self.action_blocks)
+            for item in self.guard_requirements
+        ):
+            raise InvalidBmcEncoding("guard anchor exceeds action block count.")
 
     def _validate_against_domain(self, domain: BmcDomain) -> None:
         _validate_case_state(
-            domain,
-            self.source_state_id,
-            self.source_state_path,
-            "source",
+            domain, self.source_state_id, self.source_state_path, "source"
         )
         _validate_case_state(
-            domain,
-            self.target_state_id,
-            self.target_state_path,
-            "target",
+            domain, self.target_state_id, self.target_state_path, "target"
         )
         used_event_paths = set()
         for event_use in self.used_events:
@@ -931,7 +1137,9 @@ class CycleCase:
             if event.path != event_use.path:
                 raise InvalidBmcEncoding("EventUse path does not match event id.")
             used_event_paths.add(event.path)
-        for event_path in _event_atom_paths_in_case(self):
+        for event_path in _event_atom_paths(self.condition) + tuple(
+            path for item in self.failed_conditions for path in _event_atom_paths(item)
+        ):
             try:
                 domain.event_by_path(event_path)
             except InvalidBmcDomain as err:
@@ -942,11 +1150,14 @@ class CycleCase:
                 raise InvalidBmcEncoding(
                     "event atoms in case conditions must be listed in used_events."
                 )
-        object.__setattr__(
-            self,
-            "var_update",
-            build_var_updates(domain, self.var_update),
-        )
+        for guard in self.guard_requirements:
+            _validate_case_state(
+                domain, guard.owner_state_id, guard.owner_state_path, "guard owner"
+            )
+        for block in self.action_blocks:
+            _validate_case_state(
+                domain, block.owner_state_id, block.owner_state_path, "action owner"
+            )
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable case dictionary.
@@ -970,8 +1181,14 @@ class CycleCase:
             "label": self.label,
             "is_diagnostic": self.is_diagnostic,
             "used_events": [item.to_canonical() for item in self.used_events],
+            "guard_requirements": [
+                item.to_canonical() for item in self.guard_requirements
+            ],
+            "priority_exclusions": [
+                item.to_canonical() for item in self.priority_exclusions
+            ],
+            "action_blocks": [item.to_canonical() for item in self.action_blocks],
             "condition": self.condition.to_canonical(),
-            "var_update": [item.to_canonical() for item in self.var_update],
             "failed_conditions": [
                 item.to_canonical() for item in self.failed_conditions
             ],
@@ -1097,10 +1314,9 @@ class MacroStepFormal:
         Example::
 
             >>> source = MacroStepSource('entry', 'initial', 0, 'Root')
-            >>> MacroStepFormal(source, (), ()).cases
-            Traceback (most recent call last):
-            ...
-            pyfcstm.bmc.errors.InvalidBmcEncoding: MacroStepFormal must contain at least one relation case.
+            >>> case = CycleCase('delta', 0, 'Root', -2, '__diagnostic__', 'Root::delta::__diagnostic__::0', BoolTemplate.true(), ())
+            >>> MacroStepFormal(source, (), (case,)).cases[0].kind
+            'delta'
         """
         return self.success_cases + self.delta_cases
 
@@ -1119,6 +1335,7 @@ class MacroStepFormal:
             if case.source_state_path != self.source.source_state_path:
                 raise InvalidBmcEncoding("case source path must match formal source.")
             self._validate_case_domain_contract(case)
+        self._validate_accepted_atom_registry(labels)
         for case in self.success_cases:
             if case.kind == "delta":
                 raise InvalidBmcEncoding("success_cases must not contain delta cases.")
@@ -1143,6 +1360,22 @@ class MacroStepFormal:
     def _validate_case_domain_contract(self, case: CycleCase) -> None:
         if self.source.domain is not None:
             case._validate_against_domain(self.source.domain)
+
+    def _validate_accepted_atom_registry(self, labels: Set[str]) -> None:
+        for case in self.cases:
+            for condition in (case.condition,) + case.failed_conditions:
+                for label in _accepted_atom_labels(condition):
+                    if label not in labels:
+                        raise InvalidBmcEncoding(
+                            "accepted atom references unknown case label: %r." % label
+                        )
+            for priority in case.priority_exclusions:
+                for label in priority.excluded_case_labels:
+                    if label not in labels:
+                        raise InvalidBmcEncoding(
+                            "priority exclusion references unknown case label: %r."
+                            % label
+                        )
 
     def _validate_success_case_shape(self, case: CycleCase) -> None:
         if self.source.kind == "stable_leaf":
@@ -1183,10 +1416,7 @@ class MacroStepFormal:
         if case.source_state_id != sentinel_id or case.target_state_id != sentinel_id:
             raise InvalidBmcEncoding("sentinel absorb case must self-loop sentinel id.")
 
-    def verify_partition(
-        self,
-        max_assignments: int = 4096,
-    ) -> PartitionCheckResult:
+    def verify_partition(self, max_assignments: int = 4096) -> PartitionCheckResult:
         """Verify local case buckets with the truth-table self-checker.
 
         :param max_assignments: Maximum assignments to enumerate, defaults to
@@ -1194,8 +1424,8 @@ class MacroStepFormal:
         :type max_assignments: int, optional
         :return: Partition self-check summary.
         :rtype: PartitionCheckResult
-        :raises BmcBuildError: If the buckets overlap, leave a gap, or cannot
-            be checked within the assignment budget.
+        :raises BmcBuildError: If the buckets overlap, leave a gap, or exceed
+            the assignment budget.
 
         Example::
 
@@ -1236,42 +1466,34 @@ class MacroStepFormal:
         }
 
 
-def case_antecedent_condition(case: CycleCase) -> BoolTemplate:
-    """Return ``source_guard and gamma`` for diagnostic comparison.
+def case_path_condition(case: CycleCase) -> BoolTemplate:
+    """Return the solver-independent control-path condition for ``case``.
 
-    The returned recipe mirrors the later relation-builder boundary but
-    is still solver-independent.  It proves that the source guard is composed
-    outside :attr:`CycleCase.condition`.  Source guards use the reserved
-    ``"__source_state__:"`` atom namespace so synthetic case conditions cannot
-    collide with the helper's guard atom.
+    The helper intentionally returns :attr:`CycleCase.condition` without adding
+    a source-state guard.  Later relation builders are responsible for building
+    the final antecedent and emitting ``Implies(A, R)``.
 
-    :param case: Case whose antecedent should be represented.
+    :param case: Case whose control-path condition should be returned.
     :type case: CycleCase
-    :return: Source-guarded antecedent recipe.
+    :return: Bare case condition.
     :rtype: BoolTemplate
     :raises InvalidBmcEncoding: If ``case`` is not a cycle case.
 
     Example::
 
-        >>> case = CycleCase(
-        ...     'transition', 0, 'Root', 0, 'Root',
-        ...     'Root::transition::Root::0', BoolTemplate.atom('g'), ()
-        ... )
-        >>> case_antecedent_condition(case).variables
-        ('__source_state__:0', 'g')
+        >>> case = CycleCase('transition', 0, 'Root', 0, 'Root', 'Root::transition::Root::0', BoolTemplate.true(), ())
+        >>> case_path_condition(case).evaluate({})
+        True
     """
     if not isinstance(case, CycleCase):
         raise InvalidBmcEncoding("case must be CycleCase.")
-    return BoolTemplate.and_(
-        BoolTemplate.atom("%s%d" % (_SOURCE_STATE_ATOM_PREFIX, case.source_state_id)),
-        case.condition,
-    )
+    return case.condition
 
 
 def terminated_absorb_case(domain: BmcDomain) -> CycleCase:
     """Build the terminate sentinel absorb case.
 
-    :param domain: Domain snapshot whose sentinel and variables are used.
+    :param domain: Domain snapshot whose sentinel entries are used.
     :type domain: BmcDomain
     :return: Terminated self-loop absorb case.
     :rtype: CycleCase
@@ -1292,7 +1514,7 @@ def terminated_absorb_case(domain: BmcDomain) -> CycleCase:
         TERMINATE_CASE_PATH,
         "%s::absorb::%s::0" % (TERMINATE_CASE_PATH, TERMINATE_CASE_PATH),
         BoolTemplate.true(),
-        carry_var_updates(domain),
+        (),
         domain=domain,
     )
 
@@ -1300,7 +1522,7 @@ def terminated_absorb_case(domain: BmcDomain) -> CycleCase:
 def diagnostic_absorb_case(domain: BmcDomain) -> CycleCase:
     """Build the diagnostic sentinel absorb case.
 
-    :param domain: Domain snapshot whose sentinel and variables are used.
+    :param domain: Domain snapshot whose sentinel entries are used.
     :type domain: BmcDomain
     :return: Diagnostic self-loop absorb case.
     :rtype: CycleCase
@@ -1321,13 +1543,47 @@ def diagnostic_absorb_case(domain: BmcDomain) -> CycleCase:
         DIAGNOSTIC_CASE_PATH,
         "%s::absorb::%s::0" % (DIAGNOSTIC_CASE_PATH, DIAGNOSTIC_CASE_PATH),
         BoolTemplate.true(),
-        carry_var_updates(domain),
+        (),
         domain=domain,
     )
 
 
 def _case_label(source_path: str, kind: str, target_path: str, ordinal: int) -> str:
     return "%s::%s::%s::%d" % (source_path, kind, target_path, ordinal)
+
+
+def _accepted_condition(accepted: Sequence[CycleCase]) -> BoolTemplate:
+    if not accepted:
+        return BoolTemplate.false()
+    return BoolTemplate.or_(
+        *[
+            BoolTemplate.atom("%s%s" % (_ACCEPTED_ATOM_PREFIX, case.label))
+            for case in accepted
+        ]
+    )
+
+
+def _priority_exclusion_for_accepted(
+    decision_id: str,
+    reason: str,
+    accepted: Sequence[CycleCase],
+) -> Optional[PriorityExclusion]:
+    if not accepted:
+        return None
+    event_paths = sorted(
+        {event.path for case in accepted for event in case.used_events}
+    )
+    guard_ids = sorted(
+        {guard.requirement_id for case in accepted for guard in case.guard_requirements}
+    )
+    return PriorityExclusion(
+        decision_id,
+        reason,
+        tuple(case.label for case in accepted),
+        _accepted_condition(accepted),
+        tuple(event_paths),
+        tuple(guard_ids),
+    )
 
 
 def build_fallback_case(
@@ -1339,11 +1595,11 @@ def build_fallback_case(
 ) -> CycleCase:
     """Build a stable leaf fallback self-cycle.
 
-    The fallback condition negates only accepted case conditions.  Failed
-    candidate conditions are copied as metadata and do not shrink the fallback
-    region.
+    The fallback condition negates accepted case labels rather than reusing raw
+    trigger/guard predicates.  Failed candidate conditions remain diagnostic
+    metadata and do not shrink the fallback region.
 
-    :param domain: Domain snapshot whose variables are carried.
+    :param domain: Domain snapshot whose event ids are used.
     :type domain: BmcDomain
     :param source: Stable leaf source.
     :type source: MacroStepSource
@@ -1375,33 +1631,27 @@ def build_fallback_case(
     if ordinal < 0:
         raise InvalidBmcEncoding("ordinal must be non-negative.")
     accepted = _normalize_accepted_cases(
-        accepted_cases,
-        source,
-        "fallback",
-        ("transition",),
+        accepted_cases, source, "fallback", ("transition",)
     )
     if not isinstance(failed_conditions, (list, tuple)):
         raise InvalidBmcEncoding("failed_conditions must be a sequence.")
     failed = tuple(failed_conditions)
     if not all(isinstance(item, BoolTemplate) for item in failed):
         raise InvalidBmcEncoding("failed_conditions must contain BoolTemplate objects.")
-    if accepted:
-        condition = BoolTemplate.not_(
-            BoolTemplate.or_(*[case.condition for case in accepted])
-        )
-    else:
-        condition = BoolTemplate.true()
-    used_events = _event_uses_from_condition(
-        condition,
+    excluded = _accepted_condition(accepted)
+    condition = BoolTemplate.not_(excluded) if accepted else BoolTemplate.true()
+    used_events = _event_uses_from_paths(
         domain,
-        polarity="negative",
-        reason="fallback",
+        [event.path for case in accepted for event in case.used_events],
+        "negative",
+        "fallback",
     )
+    used_events += _event_uses_from_condition(condition, domain, "negative", "fallback")
     used_events += _event_uses_from_condition(
-        BoolTemplate.or_(*failed),
-        domain,
-        polarity="negative",
-        reason="fallback",
+        BoolTemplate.or_(*failed), domain, "negative", "fallback"
+    )
+    priority = _priority_exclusion_for_accepted(
+        "fallback:%s:%d" % (source.source_state_path, ordinal), "fallback", accepted
     )
     return CycleCase(
         "fallback",
@@ -1410,14 +1660,12 @@ def build_fallback_case(
         source.source_state_id,
         source.source_state_path,
         _case_label(
-            source.source_state_path,
-            "fallback",
-            source.source_state_path,
-            ordinal,
+            source.source_state_path, "fallback", source.source_state_path, ordinal
         ),
         condition,
-        carry_var_updates(domain),
+        (),
         used_events=used_events,
+        priority_exclusions=(priority,) if priority is not None else (),
         failed_conditions=failed,
         domain=domain,
     )
@@ -1433,15 +1681,14 @@ def build_semantic_delta_case(
 ) -> CycleCase:
     """Build a non-stoppable entry uncovered-region delta case.
 
-    The delta condition negates accepted case conditions and build-diagnostic
-    conditions.  Failed candidate conditions are copied as metadata only.
+    The delta condition negates accepted case labels and build-diagnostic
+    conditions.  Failed candidate conditions remain diagnostic metadata only.
 
-    :param domain: Domain snapshot whose variables are carried.
+    :param domain: Domain snapshot whose event ids are used.
     :type domain: BmcDomain
     :param source: Initial entry source.
     :type source: MacroStepSource
-    :param accepted_cases: Accepted transition or initial success cases for the
-        same entry source.
+    :param accepted_cases: Accepted transition or initial success cases.
     :type accepted_cases: Sequence[CycleCase]
     :param build_diagnostic_conditions: Build diagnostic conditions excluded
         from semantic delta, defaults to ``()``.
@@ -1471,10 +1718,7 @@ def build_semantic_delta_case(
     if ordinal < 0:
         raise InvalidBmcEncoding("ordinal must be non-negative.")
     accepted = _normalize_accepted_cases(
-        accepted_cases,
-        source,
-        "delta",
-        ("transition", "initial"),
+        accepted_cases, source, "delta", ("transition", "initial")
     )
     if not isinstance(build_diagnostic_conditions, (list, tuple)):
         raise InvalidBmcEncoding("build_diagnostic_conditions must be a sequence.")
@@ -1488,23 +1732,27 @@ def build_semantic_delta_case(
     failed = tuple(failed_conditions)
     if not all(isinstance(item, BoolTemplate) for item in failed):
         raise InvalidBmcEncoding("failed_conditions must contain BoolTemplate objects.")
-    excluded = [case.condition for case in accepted]
+    excluded = []
+    if accepted:
+        excluded.append(_accepted_condition(accepted))
     excluded.extend(diagnostics)
-    if excluded:
-        condition = BoolTemplate.not_(BoolTemplate.or_(*excluded))
-    else:
-        condition = BoolTemplate.true()
-    used_events = _event_uses_from_condition(
-        condition,
-        domain,
-        polarity="negative",
-        reason="fallback",
+    condition = (
+        BoolTemplate.not_(BoolTemplate.or_(*excluded))
+        if excluded
+        else BoolTemplate.true()
     )
-    used_events += _event_uses_from_condition(
-        BoolTemplate.or_(*failed),
+    used_events = _event_uses_from_paths(
         domain,
-        polarity="negative",
-        reason="fallback",
+        [event.path for case in accepted for event in case.used_events],
+        "negative",
+        "fallback",
+    )
+    used_events += _event_uses_from_condition(condition, domain, "negative", "fallback")
+    used_events += _event_uses_from_condition(
+        BoolTemplate.or_(*failed), domain, "negative", "fallback"
+    )
+    priority = _priority_exclusion_for_accepted(
+        "delta:%s:%d" % (source.source_state_path, ordinal), "delta", accepted
     )
     return CycleCase(
         "delta",
@@ -1512,18 +1760,61 @@ def build_semantic_delta_case(
         source.source_state_path,
         STATE_DIAGNOSTIC_ID,
         DIAGNOSTIC_CASE_PATH,
-        _case_label(
-            source.source_state_path,
-            "delta",
-            DIAGNOSTIC_CASE_PATH,
-            ordinal,
-        ),
+        _case_label(source.source_state_path, "delta", DIAGNOSTIC_CASE_PATH, ordinal),
         condition,
-        carry_var_updates(domain),
+        (),
         used_events=used_events,
+        priority_exclusions=(priority,) if priority is not None else (),
         failed_conditions=failed,
         domain=domain,
     )
+
+
+def _resolve_accepted_atoms(
+    condition: BoolTemplate,
+    registry: Mapping[str, BoolTemplate],
+    active: Optional[Set[str]] = None,
+) -> BoolTemplate:
+    if active is None:
+        active = set()
+    if condition.kind == "atom":
+        atom = condition._atom_name()
+        if not atom.startswith(_ACCEPTED_ATOM_PREFIX):
+            return condition
+        label = atom[len(_ACCEPTED_ATOM_PREFIX) :]
+        if label not in registry:
+            raise BmcBuildError(
+                "accepted atom references unknown case label: %r." % label
+            )
+        if label in active:
+            raise BmcBuildError(
+                "accepted atom cycle detected for case label: %r." % label
+            )
+        active.add(label)
+        resolved = _resolve_accepted_atoms(registry[label], registry, active)
+        active.remove(label)
+        return resolved
+    if condition.kind in {"true", "false"}:
+        return condition
+    if condition.kind == "not":
+        return BoolTemplate.not_(
+            _resolve_accepted_atoms(condition.operands[0], registry, active)
+        )
+    if condition.kind == "and":
+        return BoolTemplate.and_(
+            *[
+                _resolve_accepted_atoms(item, registry, active)
+                for item in condition.operands
+            ]
+        )
+    if condition.kind == "or":
+        return BoolTemplate.or_(
+            *[
+                _resolve_accepted_atoms(item, registry, active)
+                for item in condition.operands
+            ]
+        )
+    raise BmcBuildError("unsupported boolean template kind: %r." % condition.kind)
 
 
 def verify_boolean_partition(
@@ -1532,11 +1823,6 @@ def verify_boolean_partition(
     max_assignments: int = 4096,
 ) -> PartitionCheckResult:
     """Verify that boolean buckets are complete and pairwise disjoint.
-
-    This helper is deliberately a self-check.  It enumerates a small synthetic
-    boolean universe and raises :class:`BmcBuildError` on gaps, overlaps, or an
-    assignment budget overflow.  It returns only a summary and never returns
-    solver clauses.
 
     :param buckets: Boolean bucket conditions.
     :type buckets: Sequence[BoolTemplate]
@@ -1548,7 +1834,7 @@ def verify_boolean_partition(
     :type max_assignments: int, optional
     :return: Partition self-check summary.
     :rtype: PartitionCheckResult
-    :raises BmcBuildError: If the partition is not exactly-one or cannot be
+    :raises BmcBuildError: If the partition is not exactly one or cannot be
         checked.
 
     Example::
@@ -1616,9 +1902,10 @@ def verify_source_partition(
 ) -> PartitionCheckResult:
     """Verify one source's local case partition.
 
-    Build-diagnostic conditions form one extra local bucket.  That bucket must
-    be disjoint from every success and delta case, and the combined buckets must
-    still cover the whole synthetic boolean universe.
+    ``accepted:<case_label>`` atoms are resolved through the source-local case
+    registry before truth-table enumeration, so declaration-priority masks are
+    checked against the same accepted-path meaning that later relation lowering
+    will use.
 
     :param source: Macro-step source profile.
     :type source: MacroStepSource
@@ -1641,11 +1928,8 @@ def verify_source_partition(
     Example::
 
         >>> source = MacroStepSource('entry', 'initial', 0, 'Root')
-        >>> delta = CycleCase(
-        ...     'delta', 0, 'Root', -2, '__diagnostic__',
-        ...     'Root::delta::__diagnostic__::0', BoolTemplate.true(), ()
-        ... )
-        >>> verify_source_partition(source, (), (delta,)).bucket_count
+        >>> case = CycleCase('delta', 0, 'Root', -2, '__diagnostic__', 'Root::delta::__diagnostic__::0', BoolTemplate.true(), ())
+        >>> verify_source_partition(source, (), (case,)).bucket_count
         1
     """
     if not isinstance(source, MacroStepSource):
@@ -1678,8 +1962,10 @@ def verify_source_partition(
         raise InvalidBmcEncoding(
             "build_diagnostic_conditions must contain BoolTemplate objects."
         )
-    buckets = [case.condition for case in success]
-    buckets.extend(case.condition for case in delta)
+
+    registry = {case.label: case.condition for case in success + delta}
+    buckets = [_resolve_accepted_atoms(case.condition, registry) for case in success]
+    buckets.extend(_resolve_accepted_atoms(case.condition, registry) for case in delta)
     if diagnostics:
         buckets.append(BoolTemplate.or_(*diagnostics))
     return verify_boolean_partition(buckets, max_assignments=max_assignments)
@@ -1688,14 +1974,13 @@ def verify_source_partition(
 __all__ = [
     "BoolTemplate",
     "EventUse",
-    "VarUpdate",
+    "GuardRequirement",
+    "PriorityExclusion",
+    "ActionBlock",
     "CycleCase",
     "PartitionCheckResult",
     "MacroStepFormal",
-    "carry_var_updates",
-    "var_update_for",
-    "build_var_updates",
-    "case_antecedent_condition",
+    "case_path_condition",
     "terminated_absorb_case",
     "diagnostic_absorb_case",
     "build_fallback_case",

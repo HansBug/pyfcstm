@@ -80,18 +80,19 @@ Public module structure:
      - Describe initial and recurrence source profiles without reading
        initial ``where`` predicates or building solver relations.
    * - Macro-step case data
-     - :class:`BoolTemplate`, :class:`EventUse`, :class:`VarUpdate`,
-       :class:`CycleCase`, :class:`MacroStepFormal`,
-       :class:`PartitionCheckResult`
-     - Freeze case labels, bare conditions, explicit variable writeback,
-       source-local buckets, and build-time partition summaries.
+     - :class:`BoolTemplate`, :class:`EventUse`,
+       :class:`GuardRequirement`, :class:`PriorityExclusion`,
+       :class:`ActionBlock`, :class:`CycleCase`,
+       :class:`MacroStepFormal`, :class:`PartitionCheckResult`
+     - Freeze case labels, control-path conditions, anchored guards,
+       runtime action blocks, source-local buckets, and build-time partition
+       summaries.
    * - Macro-step case helpers
-     - :func:`carry_var_updates`, :func:`var_update_for`,
-       :func:`build_var_updates`, :func:`case_antecedent_condition`,
-       :func:`terminated_absorb_case`, :func:`diagnostic_absorb_case`,
+     - :func:`case_path_condition`, :func:`terminated_absorb_case`,
+       :func:`diagnostic_absorb_case`,
        :func:`build_fallback_case`, :func:`build_semantic_delta_case`,
        :func:`verify_boolean_partition`, :func:`verify_source_partition`
-     - Construct carry, absorb, fallback, and semantic-delta cases while keeping
+     - Construct absorb, fallback, and semantic-delta cases while keeping
        partition self-checks outside formal trace formulas.
    * - Macro-step expansion
      - :class:`MacroExpansionOptions`, :func:`expand_macro_step_cases`
@@ -207,14 +208,13 @@ _EXPAND_EXPORTS = {
 _MACRO_EXPORTS = {
     "BoolTemplate",
     "EventUse",
-    "VarUpdate",
+    "GuardRequirement",
+    "PriorityExclusion",
+    "ActionBlock",
     "CycleCase",
     "PartitionCheckResult",
     "MacroStepFormal",
-    "carry_var_updates",
-    "var_update_for",
-    "build_var_updates",
-    "case_antecedent_condition",
+    "case_path_condition",
     "terminated_absorb_case",
     "diagnostic_absorb_case",
     "build_fallback_case",
@@ -360,14 +360,13 @@ __all__ = [
     "expand_macro_step_cases",
     "BoolTemplate",
     "EventUse",
-    "VarUpdate",
+    "GuardRequirement",
+    "PriorityExclusion",
+    "ActionBlock",
     "CycleCase",
     "PartitionCheckResult",
     "MacroStepFormal",
-    "carry_var_updates",
-    "var_update_for",
-    "build_var_updates",
-    "case_antecedent_condition",
+    "case_path_condition",
     "terminated_absorb_case",
     "diagnostic_absorb_case",
     "build_fallback_case",

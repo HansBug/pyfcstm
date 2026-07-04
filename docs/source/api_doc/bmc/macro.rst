@@ -26,18 +26,32 @@ EventUse
     :members: __post_init__,to_canonical,event_id,path,polarity,reason
 
 
-VarUpdate
+GuardRequirement
 -----------------------------------------------------
 
-.. autoclass:: VarUpdate
-    :members: __post_init__,to_canonical,variable_id,variable_name,expression,is_carry
+.. autoclass:: GuardRequirement
+    :members: __post_init__,atom_name,to_canonical,requirement_id,owner_state_id,owner_state_path,transition_label,expr,polarity,reason,after_action_block_index
+
+
+PriorityExclusion
+-----------------------------------------------------
+
+.. autoclass:: PriorityExclusion
+    :members: __post_init__,to_canonical,decision_id,reason,excluded_case_labels,excluded_condition,event_paths,guard_requirement_ids
+
+
+ActionBlock
+-----------------------------------------------------
+
+.. autoclass:: ActionBlock
+    :members: __post_init__,to_canonical,block_kind,runtime_role,owner_state_id,owner_state_path,operations,action_name,transition_label,is_abstract
 
 
 CycleCase
 -----------------------------------------------------
 
 .. autoclass:: CycleCase
-    :members: __post_init__,to_canonical,kind,source_state_id,source_state_path,target_state_id,target_state_path,label,condition,var_update,used_events,failed_conditions,domain,is_diagnostic
+    :members: __post_init__,to_canonical,kind,source_state_id,source_state_path,target_state_id,target_state_path,label,condition,action_blocks,used_events,guard_requirements,priority_exclusions,failed_conditions,domain,is_diagnostic
 
 
 PartitionCheckResult
@@ -54,28 +68,10 @@ MacroStepFormal
     :members: __post_init__,cases,verify_partition,to_canonical,source,success_cases,delta_cases,build_diagnostic_conditions
 
 
-carry\_var\_updates
+case\_path\_condition
 -----------------------------------------------------
 
-.. autofunction:: carry_var_updates
-
-
-var\_update\_for
------------------------------------------------------
-
-.. autofunction:: var_update_for
-
-
-build\_var\_updates
------------------------------------------------------
-
-.. autofunction:: build_var_updates
-
-
-case\_antecedent\_condition
------------------------------------------------------
-
-.. autofunction:: case_antecedent_condition
+.. autofunction:: case_path_condition
 
 
 terminated\_absorb\_case

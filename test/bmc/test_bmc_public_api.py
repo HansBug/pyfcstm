@@ -83,14 +83,13 @@ def test_bmc_public_api_exports_exact_names():
         "source_from_initial_spec",
         "BoolTemplate",
         "EventUse",
-        "VarUpdate",
+        "GuardRequirement",
+        "PriorityExclusion",
+        "ActionBlock",
         "CycleCase",
         "PartitionCheckResult",
         "MacroStepFormal",
-        "carry_var_updates",
-        "var_update_for",
-        "build_var_updates",
-        "case_antecedent_condition",
+        "case_path_condition",
         "terminated_absorb_case",
         "diagnostic_absorb_case",
         "build_fallback_case",
@@ -123,14 +122,13 @@ def test_bmc_public_api_exports_exact_names():
         "source_from_initial_spec",
         "BoolTemplate",
         "EventUse",
-        "VarUpdate",
+        "GuardRequirement",
+        "PriorityExclusion",
+        "ActionBlock",
         "CycleCase",
         "PartitionCheckResult",
         "MacroStepFormal",
-        "carry_var_updates",
-        "var_update_for",
-        "build_var_updates",
-        "case_antecedent_condition",
+        "case_path_condition",
         "terminated_absorb_case",
         "diagnostic_absorb_case",
         "build_fallback_case",
@@ -151,10 +149,7 @@ def test_bmc_public_api_exports_exact_names():
         "terminated_source",
         "diagnostic_source",
         "source_from_initial_spec",
-        "carry_var_updates",
-        "var_update_for",
-        "build_var_updates",
-        "case_antecedent_condition",
+        "case_path_condition",
         "terminated_absorb_case",
         "diagnostic_absorb_case",
         "build_fallback_case",
@@ -170,8 +165,8 @@ def test_bmc_public_api_exports_exact_names():
         assert callable(getattr(bmc, name))
     assert bmc.STATE_TERMINATE_ID == -1
     assert bmc.STATE_DIAGNOSTIC_ID == -2
-    assert bmc.TERMINATE_CASE_PATH == "__terminate__"
     assert bmc.DIAGNOSTIC_CASE_PATH == "__diagnostic__"
+    assert bmc.TERMINATE_CASE_PATH == "__terminate__"
     assert "BmcDomain" in dir(bmc)
 
     with pytest.raises(AttributeError, match="NoSuchBmcExport"):
@@ -276,14 +271,13 @@ def test_submodule_all_exports_are_exact():
     assert set(macro.__all__) == {
         "BoolTemplate",
         "EventUse",
-        "VarUpdate",
+        "GuardRequirement",
+        "PriorityExclusion",
+        "ActionBlock",
         "CycleCase",
         "PartitionCheckResult",
         "MacroStepFormal",
-        "carry_var_updates",
-        "var_update_for",
-        "build_var_updates",
-        "case_antecedent_condition",
+        "case_path_condition",
         "terminated_absorb_case",
         "diagnostic_absorb_case",
         "build_fallback_case",
@@ -310,7 +304,7 @@ def test_bmc_does_not_import_verify_registry():
 
 @pytest.mark.unittest
 def test_bmc_import_does_not_load_verify_modules():
-    """Importing BMC in a fresh process keeps verify internals unloaded."""
+    """Importing BMC in a fresh process keeps model and verify internals unloaded."""
     code = (
         "import sys; "
         "import pyfcstm.bmc; "

@@ -98,6 +98,10 @@ def test_bmc_public_api_exports_exact_names():
         "verify_source_partition",
         "MacroExpansionOptions",
         "expand_macro_step_cases",
+        "BmcOptions",
+        "BmcPreparedContext",
+        "BmcEngine",
+        "prepare_bmc_query",
     }
 
     assert set(bmc.__all__) == expected
@@ -137,6 +141,10 @@ def test_bmc_public_api_exports_exact_names():
         "verify_source_partition",
         "MacroExpansionOptions",
         "expand_macro_step_cases",
+        "BmcOptions",
+        "BmcPreparedContext",
+        "BmcEngine",
+        "prepare_bmc_query",
     }
     function_names = {
         "parse_bmc_query",
@@ -158,6 +166,7 @@ def test_bmc_public_api_exports_exact_names():
         "verify_source_partition",
         "build_bmc_domain",
         "expand_macro_step_cases",
+        "prepare_bmc_query",
     }
     for name in expected - lazy_names - function_names:
         assert getattr(bmc, name).__name__ == name
@@ -167,7 +176,10 @@ def test_bmc_public_api_exports_exact_names():
     assert bmc.STATE_DIAGNOSTIC_ID == -2
     assert bmc.DIAGNOSTIC_CASE_PATH == "__diagnostic__"
     assert bmc.TERMINATE_CASE_PATH == "__terminate__"
+    assert bmc.BmcEngine.__name__ == "BmcEngine"
+    assert bmc.BmcOptions().__class__.__name__ == "BmcOptions"
     assert "BmcDomain" in dir(bmc)
+    assert "BmcEngine" in dir(bmc)
 
     with pytest.raises(AttributeError, match="NoSuchBmcExport"):
         getattr(bmc, "NoSuchBmcExport")
@@ -185,6 +197,7 @@ def test_submodule_all_exports_are_exact():
     source = importlib.import_module("pyfcstm.bmc.source")
     macro = importlib.import_module("pyfcstm.bmc.macro")
     expand = importlib.import_module("pyfcstm.bmc.expand")
+    engine = importlib.import_module("pyfcstm.bmc.engine")
 
     assert set(errors.__all__) == {
         "BmcError",
@@ -288,6 +301,12 @@ def test_submodule_all_exports_are_exact():
     assert set(expand.__all__) == {
         "MacroExpansionOptions",
         "expand_macro_step_cases",
+    }
+    assert set(engine.__all__) == {
+        "BmcOptions",
+        "BmcPreparedContext",
+        "BmcEngine",
+        "prepare_bmc_query",
     }
 
 

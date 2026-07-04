@@ -125,6 +125,21 @@ def make_case(
     )
 
 
+def make_sentinel_absorb_case(source, **kwargs):
+    """Create a synthetic sentinel absorb case for validation tests."""
+    return CycleCase(
+        "absorb",
+        source.source_state_id,
+        source.source_state_path,
+        source.source_state_id,
+        source.source_state_path,
+        "%s::absorb::%s::0" % (source.source_state_path, source.source_state_path),
+        BoolTemplate.true(),
+        kwargs.pop("action_blocks", ()),
+        **kwargs,
+    )
+
+
 def make_large_priority_partition(source, condition_hook=None):
     """Create a synthetic large accepted/fallback partition."""
     accepted = []
@@ -725,6 +740,21 @@ def test_macro_step_formal_public_validation_rejects_invalid_bucket_shapes(
     )
     with pytest.raises(InvalidBmcEncoding, match="sentinel absorb condition"):
         MacroStepFormal(terminate, (false_absorb,))
+    raw_terminate = MacroStepSource(
+        "terminated", "recurrence", STATE_TERMINATE_ID, TERMINATE_CASE_PATH
+    )
+    absorb_to_diagnostic = CycleCase(
+        "absorb",
+        raw_terminate.source_state_id,
+        raw_terminate.source_state_path,
+        raw_terminate.source_state_id,
+        DIAGNOSTIC_CASE_PATH,
+        "%s::absorb::%s::0" % (raw_terminate.source_state_path, DIAGNOSTIC_CASE_PATH),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="self-loop"):
+        MacroStepFormal(raw_terminate, (absorb_to_diagnostic,))
     absorb_with_action = CycleCase(
         "absorb",
         terminate.source_state_id,
@@ -769,6 +799,74 @@ def test_macro_step_formal_public_validation_rejects_invalid_bucket_shapes(
         PartitionCheckResult((), 0, 1).to_canonical()["node"]
         == "partition_check_result"
     )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ("field_name", "payload_key", "message"),
+    [
+        ("used_events", "used_events", "sentinel absorb case cannot use events"),
+        (
+            "guard_requirements",
+            "guard_requirements",
+            "sentinel absorb case cannot have guard requirements",
+        ),
+        (
+            "priority_exclusions",
+            "priority_exclusions",
+            "sentinel absorb case cannot have priority exclusions",
+        ),
+        (
+            "failed_conditions",
+            "failed_conditions",
+            "sentinel absorb case cannot have failed conditions",
+        ),
+    ],
+)
+def test_sentinel_absorb_rejects_runtime_metadata_on_public_paths(
+    macro_domain, field_name, payload_key, message
+):
+    """Sentinel absorb buckets stay pure through both public validation paths."""
+    terminate = terminated_source(macro_domain)
+    event = macro_domain.event_by_path("Root.Go")
+    payloads = {
+        "used_events": (EventUse(event.id, event.path, "positive", "trigger"),),
+        "guard_requirements": (
+            GuardRequirement(
+                "g0",
+                macro_domain.state_path_to_id("Root.Plant.Idle"),
+                "Root.Plant.Idle",
+                "Root.Plant.Idle -> Root.Plant.Busy",
+                Boolean(True),
+                "positive",
+                "transition_guard",
+                0,
+            ),
+        ),
+        "priority_exclusions": (
+            PriorityExclusion(
+                "d0",
+                "fallback",
+                (
+                    "%s::absorb::%s::0"
+                    % (terminate.source_state_path, terminate.source_state_path),
+                ),
+                BoolTemplate.atom(
+                    "accepted:%s::absorb::%s::0"
+                    % (terminate.source_state_path, terminate.source_state_path)
+                ),
+            ),
+        ),
+        "failed_conditions": (BoolTemplate.true(),),
+    }
+    malformed = make_sentinel_absorb_case(
+        terminate, **{payload_key: payloads[field_name]}
+    )
+
+    with pytest.raises(InvalidBmcEncoding, match=message):
+        MacroStepFormal(terminate, (malformed,))
+    with pytest.raises(InvalidBmcEncoding, match=message):
+        verify_source_partition(terminate, (malformed,), max_assignments=1)
 
 
 @pytest.mark.unittest
@@ -1148,6 +1246,24 @@ def test_partition_handles_sentinel_delta_and_accepted_atom_failures(macro_domai
     )
     with pytest.raises(InvalidBmcEncoding, match="sentinel absorb condition"):
         verify_source_partition(terminate, (false_absorb,), max_assignments=1)
+
+    raw_terminate = MacroStepSource(
+        "terminated", "recurrence", STATE_TERMINATE_ID, TERMINATE_CASE_PATH
+    )
+    absorb_to_diagnostic = CycleCase(
+        "absorb",
+        raw_terminate.source_state_id,
+        raw_terminate.source_state_path,
+        raw_terminate.source_state_id,
+        DIAGNOSTIC_CASE_PATH,
+        "%s::absorb::%s::0" % (raw_terminate.source_state_path, DIAGNOSTIC_CASE_PATH),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="self-loop"):
+        verify_source_partition(
+            raw_terminate, (absorb_to_diagnostic,), max_assignments=1
+        )
 
     absorb_with_action = CycleCase(
         "absorb",

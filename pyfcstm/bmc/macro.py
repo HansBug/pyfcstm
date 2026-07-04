@@ -600,6 +600,12 @@ class GuardRequirement:
 class PriorityExclusion:
     """Priority mask that excludes previously accepted control paths.
 
+    The event and guard-id fields are explanation metadata for the excluded
+    accepted cases. They do not add conjuncts to the case condition. Lowering
+    code must treat ``excluded_condition`` and ``CycleCase.condition`` as the
+    truth sources and use the metadata only
+    for witness/debug completeness.
+
     :param decision_id: Stable id for the chooser decision point.
     :type decision_id: str
     :param reason: Exclusion reason such as ``"transition_priority"``.
@@ -1502,8 +1508,6 @@ class MacroStepFormal:
         )
         _validate_sentinel_absorb_partition(
             self.success_cases,
-            self.delta_cases,
-            self.build_diagnostic_conditions,
             sentinel_id,
             expected_path,
         )
@@ -1931,17 +1935,27 @@ def _resolve_accepted_atoms(
 
 def _validate_sentinel_absorb_partition(
     success: Sequence[CycleCase],
-    delta: Sequence[CycleCase],
-    diagnostics: Sequence[BoolTemplate],
     sentinel_id: int,
     sentinel_path: str,
 ) -> None:
-    if delta:
-        raise InvalidBmcEncoding("sentinel absorb formal cannot have delta cases.")
-    if diagnostics:
-        raise InvalidBmcEncoding(
-            "sentinel absorb formal cannot have build diagnostics."
-        )
+    """Validate the exact shape of a sentinel self-absorb partition.
+
+    The validator is intentionally fail-fast: if one malformed bucket violates
+    several constraints, the first constraint in this function's structural
+    order determines the reported message. Tests should construct one target
+    violation per case when asserting specific diagnostics.
+
+    :param success: Success bucket under validation.
+    :type success: Sequence[CycleCase]
+    :param sentinel_id: Fixed sentinel state id expected for the source.
+    :type sentinel_id: int
+    :param sentinel_path: Fixed sentinel state path expected for the source.
+    :type sentinel_path: str
+    :return: ``None``.
+    :rtype: None
+    :raises InvalidBmcEncoding: If the buckets are not a single pure sentinel
+        absorb self-loop.
+    """
     if len(success) != 1:
         raise InvalidBmcEncoding("sentinel absorb formal must contain one case.")
     case = success[0]
@@ -1989,9 +2003,10 @@ def _structural_partition_result(
         sentinel_path = (
             TERMINATE_CASE_PATH if source.kind == "terminated" else DIAGNOSTIC_CASE_PATH
         )
-        _validate_sentinel_absorb_partition(
-            success, delta, diagnostics, sentinel_id, sentinel_path
+        assert not delta and not diagnostics, (
+            "sentinel delta and diagnostics are rejected by public preflight"
         )
+        _validate_sentinel_absorb_partition(success, sentinel_id, sentinel_path)
         return PartitionCheckResult(tuple(variables), 0, 1)
 
     cases = tuple(success) + tuple(delta)

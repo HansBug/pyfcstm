@@ -873,6 +873,9 @@ class _MacroExpander:
                     }
                 )
             )
+            # These ids describe guards read by the excluded accepted paths.
+            # They are witness/debug metadata only; the fallback truth source
+            # remains ``condition`` plus ``not(accepted_condition)`` above.
             priority = PriorityExclusion(
                 "fallback%d" % self._decision_counter,
                 "fallback",

@@ -12,6 +12,7 @@ pyfcstm.bmc
     ast
     binding
     domain
+    engine
     errors
     grammar/index
     listener

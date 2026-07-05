@@ -13,10 +13,10 @@ Package contracts:
   separate from model-aware binding or solver lowering.
 * Domain-numbering and macro-step exports are resolved lazily so parser-only
   imports do not load ``pyfcstm.model``.
+* Macro-step contracts and expansion are solver-independent and do not import
+  ``z3`` from the root package.
 * Engine exports are resolved lazily; importing :mod:`pyfcstm.bmc` does not
   prepare queries or load model-aware engine modules.
-* Macro-step contracts are solver-independent and do not import ``z3`` from the
-  root package.
 * The root package must not depend on ``pyfcstm.verify`` or its registry.
 * :func:`str` on exported query and expression dataclasses is reserved for the
   canonical ``.fbmcq`` query DSL spelling.
@@ -82,19 +82,24 @@ Public module structure:
      - Describe initial and recurrence source profiles without reading
        initial ``where`` predicates or building solver relations.
    * - Macro-step case data
-     - :class:`BoolTemplate`, :class:`EventUse`, :class:`VarUpdate`,
-       :class:`CycleCase`, :class:`MacroStepFormal`,
-       :class:`PartitionCheckResult`
-     - Freeze case labels, bare conditions, explicit variable writeback,
-       source-local buckets, and build-time partition summaries.
+     - :class:`BoolTemplate`, :class:`EventUse`,
+       :class:`GuardRequirement`, :class:`PriorityExclusion`,
+       :class:`ActionBlock`, :class:`CycleCase`,
+       :class:`MacroStepFormal`, :class:`PartitionCheckResult`
+     - Freeze case labels, control-path conditions, anchored guards,
+       runtime action blocks, source-local buckets, and build-time partition
+       summaries.
    * - Macro-step case helpers
-     - :func:`carry_var_updates`, :func:`var_update_for`,
-       :func:`build_var_updates`, :func:`case_antecedent_condition`,
-       :func:`terminated_absorb_case`, :func:`diagnostic_absorb_case`,
+     - :func:`case_path_condition`, :func:`terminated_absorb_case`,
+       :func:`diagnostic_absorb_case`,
        :func:`build_fallback_case`, :func:`build_semantic_delta_case`,
        :func:`verify_boolean_partition`, :func:`verify_source_partition`
-     - Construct carry, absorb, fallback, and semantic-delta cases while keeping
+     - Construct absorb, fallback, and semantic-delta cases while keeping
        partition self-checks outside formal trace formulas.
+   * - Macro-step expansion
+     - :class:`MacroExpansionOptions`, :func:`expand_macro_step_cases`
+     - Expand source profiles into runtime-aligned, solver-independent macro-step
+       cases consumed by later relation builders.
    * - BMC engine preparation
      - :class:`BmcOptions`, :class:`BmcPreparedContext`,
        :class:`BmcEngine`, :func:`prepare_bmc_query`
@@ -202,17 +207,21 @@ _SOURCE_EXPORTS = {
     "source_from_initial_spec",
 }
 
+_EXPAND_EXPORTS = {
+    "MacroExpansionOptions",
+    "expand_macro_step_cases",
+}
+
 _MACRO_EXPORTS = {
     "BoolTemplate",
     "EventUse",
-    "VarUpdate",
+    "GuardRequirement",
+    "PriorityExclusion",
+    "ActionBlock",
     "CycleCase",
     "PartitionCheckResult",
     "MacroStepFormal",
-    "carry_var_updates",
-    "var_update_for",
-    "build_var_updates",
-    "case_antecedent_condition",
+    "case_path_condition",
     "terminated_absorb_case",
     "diagnostic_absorb_case",
     "build_fallback_case",
@@ -233,6 +242,7 @@ _LAZY_EXPORT_MODULES = {
     "pyfcstm.bmc.domain": _DOMAIN_EXPORTS,
     "pyfcstm.bmc.source": _SOURCE_EXPORTS,
     "pyfcstm.bmc.macro": _MACRO_EXPORTS,
+    "pyfcstm.bmc.expand": _EXPAND_EXPORTS,
     "pyfcstm.bmc.engine": _ENGINE_EXPORTS,
 }
 
@@ -271,7 +281,7 @@ def __getattr__(name: str):
 
 
 def __dir__():
-    """Return the public module attributes including lazy domain exports.
+    """Return public module attributes including lazy BMC layer exports.
 
     :return: Sorted attribute names for interactive discovery.
     :rtype: list
@@ -288,6 +298,7 @@ def __dir__():
         | _DOMAIN_EXPORTS
         | _SOURCE_EXPORTS
         | _MACRO_EXPORTS
+        | _EXPAND_EXPORTS
         | _ENGINE_EXPORTS
     )
 
@@ -361,16 +372,17 @@ __all__ = [
     "terminated_source",
     "diagnostic_source",
     "source_from_initial_spec",
+    "MacroExpansionOptions",
+    "expand_macro_step_cases",
     "BoolTemplate",
     "EventUse",
-    "VarUpdate",
+    "GuardRequirement",
+    "PriorityExclusion",
+    "ActionBlock",
     "CycleCase",
     "PartitionCheckResult",
     "MacroStepFormal",
-    "carry_var_updates",
-    "var_update_for",
-    "build_var_updates",
-    "case_antecedent_condition",
+    "case_path_condition",
     "terminated_absorb_case",
     "diagnostic_absorb_case",
     "build_fallback_case",

@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from typing import Any, cast
 
 import pytest
 
+import pyfcstm.bmc.expand as expand_module
+import pyfcstm.bmc.macro as macro_module
 from pyfcstm.bmc import (
     STATE_DIAGNOSTIC_ID,
     STATE_TERMINATE_ID,
@@ -15,37 +18,57 @@ from pyfcstm.bmc import (
     build_bmc_domain,
 )
 from pyfcstm.bmc.macro import (
+    ActionBlock,
     BoolTemplate,
     CycleCase,
     EventUse,
+    GuardRequirement,
     MacroStepFormal,
-    VarUpdate,
+    PartitionCheckResult,
+    PriorityExclusion,
     build_fallback_case,
     build_semantic_delta_case,
-    build_var_updates,
-    carry_var_updates,
-    case_antecedent_condition,
+    case_path_condition,
     diagnostic_absorb_case,
     terminated_absorb_case,
-    var_update_for,
     verify_boolean_partition,
     verify_source_partition,
 )
 from pyfcstm.bmc.source import (
     DIAGNOSTIC_CASE_PATH,
+    MacroStepSource,
     TERMINATE_CASE_PATH,
     diagnostic_source,
     entry_source,
     stable_leaf_source,
     terminated_source,
 )
-from pyfcstm.model import load_state_machine_from_text
+from pyfcstm.model import OperationStatement, load_state_machine_from_text
+from pyfcstm.model.expr import Boolean, Variable
+
+
+class _UnknownOperationStatement(OperationStatement):
+    """Operation statement subtype used to exercise canonical fallback logic."""
+
+
+def _bad_object() -> Any:
+    """Return an intentionally bad value without tripping static type checks."""
+    return cast(Any, object())
+
+
+def _assert_internal_bug_message(error: BmcBuildError) -> None:
+    """Assert that internal bug diagnostics route users to the issue tracker."""
+    message = str(error)
+    assert "internal error" in message
+    assert "pyfcstm BMC bug" in message
+    assert "FCSTM input, BMC query or expansion source, and traceback" in message
+    assert "https://github.com/HansBug/pyfcstm/issues" in message
 
 
 @pytest.fixture()
-def macro_domain():
-    """Build a macro-contract fixture with variables and same-short-name events."""
-    model = load_state_machine_from_text(
+def macro_model():
+    """Build a macro-contract fixture model."""
+    return load_state_machine_from_text(
         """
         def int x = 0;
         def float y = 1.0;
@@ -53,7 +76,7 @@ def macro_domain():
             event Go;
             state Plant {
                 event Ping;
-                state Idle;
+                state Idle { during { if [x > 0] { y = y + 1; } else { y = 0; } } }
                 state Busy;
                 [*] -> Idle;
                 Idle -> Busy :: Ping + Go;
@@ -67,15 +90,42 @@ def macro_domain():
         }
         """
     )
-    return build_bmc_domain(model, bound=2)
+
+
+@pytest.fixture()
+def macro_domain(macro_model):
+    """Build a macro-contract fixture with variables and same-short-name events."""
+    return build_bmc_domain(macro_model, bound=2)
+
+
+@pytest.mark.unittest
+def test_internal_bug_messages_link_issue_tracker():
+    """Internal BMC bug diagnostics include actionable reporting guidance."""
+    _assert_internal_bug_message(macro_module._internal_bmc_error("synthetic bug."))
+    _assert_internal_bug_message(
+        expand_module._internal_expansion_error("synthetic expansion bug.")
+    )
+
+
+@pytest.fixture()
+def sample_operation(macro_model):
+    """Return one concrete operation statement from the fixture model."""
+    state = macro_model.root_state.substates["Plant"].substates["Idle"]
+    return state.on_durings[0].operations[0]
 
 
 def make_case(
-    domain, source, label_kind="transition", condition=None, target_path=None, ordinal=0
+    domain,
+    source,
+    label_kind="transition",
+    condition=None,
+    target_path=None,
+    ordinal=0,
+    **kwargs,
 ):
     """Create a valid synthetic case for contract tests."""
     if condition is None:
-        condition = BoolTemplate.atom("g%d" % ordinal)
+        condition = BoolTemplate.true()
     if target_path is None:
         target_path = source.source_state_path
     target_id = domain.state_path_to_id(target_path)
@@ -85,140 +135,987 @@ def make_case(
         source.source_state_path,
         target_id,
         target_path,
-        "%s::%s::%s::%d" % (source.source_state_path, label_kind, target_path, ordinal),
+        "%s::%s::%s::%d"
+        % (
+            source.source_state_path,
+            label_kind,
+            target_path,
+            ordinal,
+        ),
         condition,
-        carry_var_updates(domain),
+        kwargs.pop("action_blocks", ()),
         domain=domain,
+        **kwargs,
     )
 
 
-@pytest.mark.unittest
-def test_cycle_case_condition_is_bare_gamma_and_source_guard_is_composed_later(
-    macro_domain,
-):
-    """CycleCase.condition excludes the pre-state source guard by contract."""
-    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
-    gamma = BoolTemplate.atom("trigger")
-    case = make_case(macro_domain, source, condition=gamma)
-
-    assert case.condition is gamma
-    assert case.condition.variables == ("trigger",)
-    assert (
-        case_antecedent_condition(case).to_canonical()
-        == BoolTemplate.and_(
-            BoolTemplate.atom("__source_state__:%d" % source.source_state_id),
-            gamma,
-        ).to_canonical()
-    )
-
-
-@pytest.mark.unittest
-def test_reserved_source_guard_atom_namespace_is_rejected(macro_domain):
-    """Synthetic gamma atoms cannot collide with composed source-state guards."""
-    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
-    with pytest.raises(InvalidBmcEncoding, match="reserved source-state atom"):
-        make_case(
-            macro_domain,
-            source,
-            condition=BoolTemplate.atom("__source_state__:%d" % source.source_state_id),
-        )
-
-
-@pytest.mark.unittest
-def test_empty_fallback_and_delta_conditions_canonicalize_to_true(macro_domain):
-    """Uncovered-region helpers use the canonical true template when nothing is excluded."""
-    stable = stable_leaf_source(macro_domain, "Root.Plant.Idle")
-    entry = entry_source(macro_domain, "Root.Plant")
-
-    fallback = build_fallback_case(macro_domain, stable, ())
-    delta = build_semantic_delta_case(macro_domain, entry, ())
-
-    assert fallback.condition.to_canonical() == BoolTemplate.true().to_canonical()
-    assert delta.condition.to_canonical() == BoolTemplate.true().to_canonical()
-
-
-@pytest.mark.unittest
-def test_case_target_and_event_use_must_match_domain(macro_domain):
-    """Cases validate target ids and full event paths, including same short names."""
-    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
-    plant_ping = macro_domain.event_by_path("Root.Plant.Ping")
-    backup_ping = macro_domain.event_by_path("Root.Backup.Ping")
-
-    case = CycleCase(
-        "transition",
+def make_sentinel_absorb_case(source, **kwargs):
+    """Create a synthetic sentinel absorb case for validation tests."""
+    return CycleCase(
+        "absorb",
         source.source_state_id,
         source.source_state_path,
-        macro_domain.state_path_to_id("Root.Plant.Busy"),
-        "Root.Plant.Busy",
-        "%s::transition::Root.Plant.Busy::0" % source.source_state_path,
-        BoolTemplate.atom("ping"),
-        carry_var_updates(macro_domain),
-        used_events=(EventUse(plant_ping.id, plant_ping.path, "positive", "trigger"),),
-        domain=macro_domain,
+        source.source_state_id,
+        source.source_state_path,
+        "%s::absorb::%s::0" % (source.source_state_path, source.source_state_path),
+        BoolTemplate.true(),
+        kwargs.pop("action_blocks", ()),
+        **kwargs,
     )
-    assert case.used_events[0].event_id != backup_ping.id
-    assert case.used_events[0].path == "Root.Plant.Ping"
 
-    with pytest.raises(InvalidBmcEncoding, match="target path"):
+
+def make_large_priority_partition(source, condition_hook=None):
+    """Create a synthetic large accepted/fallback partition."""
+    accepted = []
+    for index in range(13):
+        prefix = (
+            BoolTemplate.not_(
+                BoolTemplate.or_(
+                    *[
+                        BoolTemplate.atom("accepted:%s" % case.label)
+                        for case in accepted
+                    ]
+                )
+            )
+            if accepted
+            else BoolTemplate.true()
+        )
+        condition = BoolTemplate.and_(
+            prefix, BoolTemplate.atom("event:Root.Event%d" % index)
+        )
+        if condition_hook is not None:
+            condition = condition_hook(index, accepted, condition)
+        accepted.append(
+            CycleCase(
+                "transition",
+                source.source_state_id,
+                source.source_state_path,
+                source.source_state_id,
+                source.source_state_path,
+                "%s::transition::%s::%d"
+                % (source.source_state_path, source.source_state_path, index),
+                condition,
+                (),
+            )
+        )
+    fallback = CycleCase(
+        "fallback",
+        source.source_state_id,
+        source.source_state_path,
+        source.source_state_id,
+        source.source_state_path,
+        "%s::fallback::%s::0" % (source.source_state_path, source.source_state_path),
+        BoolTemplate.not_(
+            BoolTemplate.or_(
+                *[BoolTemplate.atom("accepted:%s" % case.label) for case in accepted]
+            )
+        ),
+        (),
+    )
+    return tuple(accepted) + (fallback,)
+
+
+@pytest.mark.unittest
+def test_bool_template_public_validation_and_identity_reductions():
+    """BoolTemplate validates public shape and folds simple boolean identities."""
+    atom = BoolTemplate.atom("event:Root.Go")
+
+    assert BoolTemplate.not_(BoolTemplate.true()).kind == "false"
+    assert BoolTemplate.not_(BoolTemplate.false()).kind == "true"
+    assert BoolTemplate.not_(BoolTemplate.not_(atom)) is atom
+    assert BoolTemplate.and_().kind == "true"
+    assert BoolTemplate.and_(BoolTemplate.true()).kind == "true"
+    assert BoolTemplate.and_(atom, BoolTemplate.false()).kind == "false"
+    assert BoolTemplate.or_().kind == "false"
+    assert BoolTemplate.or_(BoolTemplate.false()).kind == "false"
+    assert BoolTemplate.or_(atom, BoolTemplate.true()).kind == "true"
+
+    with pytest.raises(InvalidBmcEncoding, match="Unsupported boolean template kind"):
+        BoolTemplate("xor")
+    with pytest.raises(InvalidBmcEncoding, match="atom name"):
+        BoolTemplate("atom")
+    with pytest.raises(InvalidBmcEncoding, match="atom templates cannot have operands"):
+        BoolTemplate("atom", "a", (atom,))
+    with pytest.raises(
+        InvalidBmcEncoding, match="constant templates cannot have names"
+    ):
+        BoolTemplate("true", "a")
+    with pytest.raises(
+        InvalidBmcEncoding, match="constant templates cannot have operands"
+    ):
+        BoolTemplate("false", operands=(atom,))
+    with pytest.raises(InvalidBmcEncoding, match="not templates cannot have names"):
+        BoolTemplate("not", "a", (atom,))
+    with pytest.raises(InvalidBmcEncoding, match="not templates must have one operand"):
+        BoolTemplate("not", operands=())
+    with pytest.raises(
+        InvalidBmcEncoding, match="compound templates cannot have names"
+    ):
+        BoolTemplate("and", "a", (atom,))
+    with pytest.raises(InvalidBmcEncoding, match="operands must contain"):
+        BoolTemplate("and", operands=(atom, _bad_object()))
+    with pytest.raises(
+        InvalidBmcEncoding, match="compound templates must have operands"
+    ):
+        BoolTemplate("or", operands=())
+    with pytest.raises(InvalidBmcEncoding, match="operands must contain"):
+        BoolTemplate.and_(atom, _bad_object())
+    with pytest.raises(InvalidBmcEncoding, match="operands must contain"):
+        BoolTemplate.or_(atom, _bad_object())
+    with pytest.raises(InvalidBmcEncoding, match="operand must be BoolTemplate"):
+        BoolTemplate.not_(_bad_object())
+
+
+@pytest.mark.unittest
+def test_bool_template_canonical_helpers_cover_raw_values():
+    """Canonical key helpers also support raw JSON-compatible values."""
+    raw = {"b": [2, 1], "a": {"z": True}}
+
+    assert macro_module._canonical_key(raw) == '{"a":{"z":true},"b":[2,1]}'
+
+
+@pytest.mark.unittest
+def test_structural_accepted_prefix_helper_recognizes_exact_masks():
+    """Accepted-mask recognition covers exact and clearly non-canonical shapes."""
+    mask = BoolTemplate.not_(BoolTemplate.atom("accepted:first"))
+
+    assert macro_module._condition_uses_expected_accepted_prefix(mask, ("first",))
+    assert not macro_module._condition_uses_expected_accepted_prefix(
+        BoolTemplate.atom("event:Root.Go"),
+        ("first",),
+    )
+
+
+@pytest.mark.unittest
+def test_bool_template_evaluate_rejects_missing_and_non_boolean_assignments():
+    """BoolTemplate public evaluator fails loudly on malformed assignments."""
+    atom = BoolTemplate.atom("event:Root.Go")
+
+    assert BoolTemplate.and_(
+        atom, BoolTemplate.not_(BoolTemplate.atom("event:Root.Stop"))
+    ).evaluate({"event:Root.Go": True, "event:Root.Stop": False})
+    with pytest.raises(BmcBuildError, match="missing boolean assignment"):
+        atom.evaluate({})
+    with pytest.raises(BmcBuildError, match="must be bool"):
+        atom.evaluate({"event:Root.Go": _bad_object()})
+
+
+@pytest.mark.unittest
+def test_public_contract_dataclasses_reject_invalid_shapes(
+    macro_domain,
+    sample_operation,
+):
+    """Public macro contract objects validate their constructor boundaries."""
+    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
+    expr = Variable("x") > 0
+
+    with pytest.raises(InvalidBmcEncoding, match="event_id must be an integer"):
+        EventUse(True, "Root.Go", "positive", "trigger")
+    with pytest.raises(InvalidBmcEncoding, match="event_id must be non-negative"):
+        EventUse(-1, "Root.Go", "positive", "trigger")
+    with pytest.raises(InvalidBmcEncoding, match="event polarity"):
+        EventUse(0, "Root.Go", "maybe", "trigger")
+    with pytest.raises(InvalidBmcEncoding, match="owner_state_id must be non-negative"):
+        GuardRequirement(
+            "g0",
+            -1,
+            source.source_state_path,
+            "t",
+            expr,
+            "positive",
+            "transition_guard",
+            0,
+        )
+    with pytest.raises(InvalidBmcEncoding, match="guard requirement expr"):
+        GuardRequirement(
+            "g0",
+            source.source_state_id,
+            source.source_state_path,
+            "t",
+            _bad_object(),
+            "positive",
+            "transition_guard",
+            0,
+        )
+    with pytest.raises(InvalidBmcEncoding, match="after_action_block_index"):
+        GuardRequirement(
+            "g0",
+            source.source_state_id,
+            source.source_state_path,
+            "t",
+            expr,
+            "positive",
+            "transition_guard",
+            -1,
+        )
+    with pytest.raises(InvalidBmcEncoding, match="excluded_case_labels"):
+        PriorityExclusion("d0", "fallback", (), BoolTemplate.true())
+    with pytest.raises(InvalidBmcEncoding, match="non-empty strings"):
+        PriorityExclusion("d0", "fallback", ("",), BoolTemplate.true())
+    with pytest.raises(
+        InvalidBmcEncoding, match="excluded_condition must be BoolTemplate"
+    ):
+        PriorityExclusion("d0", "fallback", ("c0",), _bad_object())
+    with pytest.raises(InvalidBmcEncoding, match="accepted atoms"):
+        PriorityExclusion("d0", "fallback", ("c0",), BoolTemplate.atom("event:Root.Go"))
+    with pytest.raises(InvalidBmcEncoding, match="owner_state_id must be non-negative"):
+        ActionBlock("state_action", "leaf_during", -1, "Root.Plant.Idle", ())
+    with pytest.raises(InvalidBmcEncoding, match="OperationStatement"):
+        ActionBlock(
+            "state_action",
+            "leaf_during",
+            source.source_state_id,
+            source.source_state_path,
+            (_bad_object(),),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="is_abstract"):
+        ActionBlock(
+            "state_action",
+            "leaf_during",
+            source.source_state_id,
+            source.source_state_path,
+            (sample_operation,),
+            is_abstract=_bad_object(),
+        )
+    block = ActionBlock(
+        "state_action",
+        "leaf_during",
+        source.source_state_id,
+        source.source_state_path,
+        (_UnknownOperationStatement(),),
+    )
+    assert block.to_canonical()["operations"] == [
+        {"node": "_UnknownOperationStatement"}
+    ]
+
+    priority = PriorityExclusion(
+        "d0",
+        "fallback",
+        ("c0",),
+        BoolTemplate.atom("accepted:c0"),
+    )
+    assert priority.to_canonical()["node"] == "priority_exclusion"
+
+
+@pytest.mark.unittest
+def test_cycle_case_public_validation_rejects_invalid_local_shapes(macro_domain):
+    """CycleCase rejects malformed labels, links, and local metadata."""
+    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
+    target_id = source.source_state_id
+    target_path = source.source_state_path
+    label = "%s::transition::%s::0" % (source.source_state_path, target_path)
+
+    with pytest.raises(InvalidBmcEncoding, match="condition must be BoolTemplate"):
         CycleCase(
             "transition",
             source.source_state_id,
             source.source_state_path,
-            macro_domain.state_path_to_id("Root.Plant.Busy"),
-            "Root.Backup.Idle",
-            "%s::transition::Root.Backup.Idle::0" % source.source_state_path,
-            BoolTemplate.atom("bad_target"),
-            carry_var_updates(macro_domain),
-            domain=macro_domain,
+            target_id,
+            target_path,
+            label,
+            _bad_object(),
+            (),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="action_blocks"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            source.source_state_path,
+            target_id,
+            target_path,
+            label,
+            BoolTemplate.true(),
+            (_bad_object(),),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="used_events"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            source.source_state_path,
+            target_id,
+            target_path,
+            label,
+            BoolTemplate.true(),
+            (),
+            used_events=(_bad_object(),),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="GuardRequirement"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            source.source_state_path,
+            target_id,
+            target_path,
+            label,
+            BoolTemplate.true(),
+            (),
+            guard_requirements=(_bad_object(),),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="PriorityExclusion"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            source.source_state_path,
+            target_id,
+            target_path,
+            label,
+            BoolTemplate.true(),
+            (),
+            priority_exclusions=(_bad_object(),),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="failed_conditions"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            source.source_state_path,
+            target_id,
+            target_path,
+            label,
+            BoolTemplate.true(),
+            (),
+            failed_conditions=(_bad_object(),),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="label must use"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            source.source_state_path,
+            target_id,
+            target_path,
+            "bad",
+            BoolTemplate.true(),
+            (),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="label source path"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            source.source_state_path,
+            target_id,
+            target_path,
+            "Other::transition::%s::0" % target_path,
+            BoolTemplate.true(),
+            (),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="label case kind"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            source.source_state_path,
+            target_id,
+            target_path,
+            "%s::fallback::%s::0" % (source.source_state_path, target_path),
+            BoolTemplate.true(),
+            (),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="label target path"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            source.source_state_path,
+            target_id,
+            target_path,
+            "%s::transition::Other::0" % source.source_state_path,
+            BoolTemplate.true(),
+            (),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="label ordinal"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            source.source_state_path,
+            target_id,
+            target_path,
+            "%s::transition::%s::x" % (source.source_state_path, target_path),
+            BoolTemplate.true(),
+            (),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="absorb cases must self-loop"):
+        CycleCase(
+            "absorb",
+            STATE_TERMINATE_ID,
+            TERMINATE_CASE_PATH,
+            STATE_DIAGNOSTIC_ID,
+            DIAGNOSTIC_CASE_PATH,
+            "%s::absorb::%s::0" % (TERMINATE_CASE_PATH, DIAGNOSTIC_CASE_PATH),
+            BoolTemplate.true(),
+            (),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="absorb cases must use sentinel"):
+        CycleCase(
+            "absorb",
+            source.source_state_id,
+            source.source_state_path,
+            source.source_state_id,
+            source.source_state_path,
+            "%s::absorb::%s::0" % (source.source_state_path, source.source_state_path),
+            BoolTemplate.true(),
+            (),
+        )
+    with pytest.raises(
+        InvalidBmcEncoding, match="diagnostic and delta cases target diagnostic"
+    ):
+        CycleCase(
+            "diagnostic",
+            source.source_state_id,
+            source.source_state_path,
+            target_id,
+            target_path,
+            "%s::diagnostic::%s::0" % (source.source_state_path, target_path),
+            BoolTemplate.true(),
+            (),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="Duplicate guard requirement id"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            source.source_state_path,
+            target_id,
+            target_path,
+            label,
+            BoolTemplate.atom("guard:g0"),
+            (),
+            guard_requirements=(
+                GuardRequirement(
+                    "g0",
+                    source.source_state_id,
+                    source.source_state_path,
+                    "t0",
+                    Boolean(True),
+                    "positive",
+                    "transition_guard",
+                    0,
+                ),
+                GuardRequirement(
+                    "g0",
+                    source.source_state_id,
+                    source.source_state_path,
+                    "t1",
+                    Boolean(True),
+                    "positive",
+                    "transition_guard",
+                    0,
+                ),
+            ),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="domain must be BmcDomain"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            source.source_state_path,
+            target_id,
+            target_path,
+            label,
+            BoolTemplate.true(),
+            (),
+            domain=_bad_object(),
         )
     with pytest.raises(InvalidBmcEncoding, match="EventUse path"):
         CycleCase(
             "transition",
             source.source_state_id,
             source.source_state_path,
-            source.source_state_id,
-            source.source_state_path,
-            "%s::transition::%s::1"
-            % (source.source_state_path, source.source_state_path),
-            BoolTemplate.atom("bad_event"),
-            carry_var_updates(macro_domain),
+            target_id,
+            target_path,
+            label,
+            BoolTemplate.true(),
+            (),
             used_events=(
-                EventUse(plant_ping.id, backup_ping.path, "positive", "trigger"),
+                EventUse(
+                    macro_domain.event_by_path("Root.Go").id,
+                    "Root.Plant.Ping",
+                    "positive",
+                    "trigger",
+                ),
             ),
             domain=macro_domain,
         )
+    reserved_domain = build_bmc_domain(
+        load_state_machine_from_text("state __terminate__;"), bound=1
+    )
+    with pytest.raises(InvalidBmcEncoding, match="reserved macro-step paths"):
+        CycleCase(
+            "transition",
+            reserved_domain.state_path_to_id("__terminate__"),
+            "__terminate__",
+            reserved_domain.state_path_to_id("__terminate__"),
+            "__terminate__",
+            "__terminate__::transition::__terminate__::0",
+            BoolTemplate.true(),
+            (),
+            domain=reserved_domain,
+        )
+    with pytest.raises(InvalidBmcEncoding, match="source path does not match"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            "Other",
+            target_id,
+            target_path,
+            "Other::transition::%s::0" % target_path,
+            BoolTemplate.true(),
+            (),
+            domain=macro_domain,
+        )
+    with pytest.raises(InvalidBmcEncoding, match="case must be CycleCase"):
+        case_path_condition(_bad_object())
 
 
 @pytest.mark.unittest
-def test_var_update_requires_complete_explicit_persistent_var_coverage(macro_domain):
-    """Writeback recipes cover every persistent var and reject unknown or duplicate entries."""
-    complete = carry_var_updates(macro_domain)
-    assert [item.variable_name for item in complete] == ["x", "y"]
-    assert all(item.is_carry for item in complete)
-    assert build_var_updates(macro_domain, complete) == complete
-    assert var_update_for(macro_domain, "x", "x+1").to_canonical() == {
-        "node": "var_update",
-        "variable_id": macro_domain.variable_name_to_id("x"),
-        "variable_name": "x",
-        "expression": "x+1",
-        "is_carry": False,
-    }
+def test_macro_step_formal_public_validation_rejects_invalid_bucket_shapes(
+    macro_domain,
+):
+    """MacroStepFormal validates public source, bucket, and sentinel contracts."""
+    stable = stable_leaf_source(macro_domain, "Root.Plant.Idle")
+    fallback = build_fallback_case(macro_domain, stable, ())
+    transition = make_case(macro_domain, stable, target_path="Root.Plant.Busy")
+    delta = CycleCase(
+        "delta",
+        stable.source_state_id,
+        stable.source_state_path,
+        STATE_DIAGNOSTIC_ID,
+        DIAGNOSTIC_CASE_PATH,
+        "%s::delta::%s::0" % (stable.source_state_path, DIAGNOSTIC_CASE_PATH),
+        BoolTemplate.true(),
+        (),
+    )
 
-    with pytest.raises(InvalidBmcEncoding, match="cover every"):
-        build_var_updates(macro_domain, complete[:1])
-    with pytest.raises(InvalidBmcEncoding, match="Duplicate variable update id"):
-        build_var_updates(macro_domain, complete + (complete[0],))
-    with pytest.raises(InvalidBmcEncoding, match="Unknown variable id"):
-        build_var_updates(macro_domain, complete + (VarUpdate(999, "z", "0"),))
-    with pytest.raises(InvalidBmcEncoding, match="id/name mismatch"):
-        build_var_updates(
+    with pytest.raises(InvalidBmcEncoding, match="source must be MacroStepSource"):
+        MacroStepFormal(_bad_object(), (fallback,))
+    with pytest.raises(InvalidBmcEncoding, match="success_cases must be a sequence"):
+        MacroStepFormal(stable, _bad_object())
+    with pytest.raises(InvalidBmcEncoding, match="delta_cases must be a sequence"):
+        MacroStepFormal(stable, (fallback,), _bad_object())
+    with pytest.raises(InvalidBmcEncoding, match="build_diagnostic_conditions"):
+        MacroStepFormal(stable, (fallback,), (), _bad_object())
+    with pytest.raises(InvalidBmcEncoding, match="CycleCase"):
+        MacroStepFormal(stable, (_bad_object(),))
+    with pytest.raises(InvalidBmcEncoding, match="CycleCase"):
+        MacroStepFormal(stable, (fallback,), (_bad_object(),))
+    with pytest.raises(InvalidBmcEncoding, match="BoolTemplate"):
+        MacroStepFormal(stable, (fallback,), (), (_bad_object(),))
+    with pytest.raises(InvalidBmcEncoding, match="at least one relation case"):
+        MacroStepFormal(stable, ())
+    with pytest.raises(InvalidBmcEncoding, match="case source path"):
+        MacroStepFormal(
+            MacroStepSource(
+                "stable_leaf", "recurrence", stable.source_state_id, "Other"
+            ),
+            (fallback,),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="build diagnostics"):
+        MacroStepFormal(stable, (fallback,), (), (BoolTemplate.true(),))
+    with pytest.raises(
+        InvalidBmcEncoding, match="success_cases must not contain delta"
+    ):
+        MacroStepFormal(stable, (delta,))
+    with pytest.raises(
+        InvalidBmcEncoding, match="stable leaf formal requires a fallback"
+    ):
+        MacroStepFormal(stable, (transition,))
+    with pytest.raises(InvalidBmcEncoding, match="stable leaf success cases"):
+        MacroStepFormal(
+            stable, (make_case(macro_domain, stable, label_kind="initial"), fallback)
+        )
+    bad_fallback_target = CycleCase(
+        "fallback",
+        stable.source_state_id,
+        stable.source_state_path,
+        macro_domain.state_path_to_id("Root.Plant.Busy"),
+        "Root.Plant.Busy",
+        "%s::fallback::Root.Plant.Busy::0" % stable.source_state_path,
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="fallback cases must self-loop"):
+        MacroStepFormal(stable, (bad_fallback_target,))
+    bad_transition_target = CycleCase(
+        "transition",
+        stable.source_state_id,
+        stable.source_state_path,
+        STATE_DIAGNOSTIC_ID,
+        DIAGNOSTIC_CASE_PATH,
+        "%s::transition::%s::0" % (stable.source_state_path, DIAGNOSTIC_CASE_PATH),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="stable leaf transitions"):
+        MacroStepFormal(stable, (bad_transition_target, fallback))
+    bad_priority = CycleCase(
+        "fallback",
+        stable.source_state_id,
+        stable.source_state_path,
+        stable.source_state_id,
+        stable.source_state_path,
+        "%s::fallback::%s::2" % (stable.source_state_path, stable.source_state_path),
+        BoolTemplate.true(),
+        (),
+        priority_exclusions=(
+            PriorityExclusion(
+                "d0",
+                "fallback",
+                ("missing",),
+                BoolTemplate.atom("accepted:missing"),
+            ),
+        ),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="priority exclusion"):
+        MacroStepFormal(stable, (bad_priority,))
+
+    entry = entry_source(macro_domain, "Root.Plant")
+    bad_entry_case = CycleCase(
+        "initial",
+        entry.source_state_id,
+        entry.source_state_path,
+        STATE_DIAGNOSTIC_ID,
+        DIAGNOSTIC_CASE_PATH,
+        "%s::initial::%s::0" % (entry.source_state_path, DIAGNOSTIC_CASE_PATH),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="entry transition and initial cases"):
+        MacroStepFormal(entry, (bad_entry_case,))
+    bad_entry_fallback = CycleCase(
+        "fallback",
+        entry.source_state_id,
+        entry.source_state_path,
+        entry.source_state_id,
+        entry.source_state_path,
+        "%s::fallback::%s::0" % (entry.source_state_path, entry.source_state_path),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="entry success cases"):
+        MacroStepFormal(entry, (bad_entry_fallback,))
+    bad_delta_bucket = make_case(
+        macro_domain,
+        entry,
+        label_kind="transition",
+        target_path="Root.Plant.Idle",
+    )
+    valid_entry_case = make_case(
+        macro_domain,
+        entry,
+        label_kind="initial",
+        target_path="Root.Plant.Idle",
+    )
+    with pytest.raises(InvalidBmcEncoding, match="delta_cases may only contain delta"):
+        MacroStepFormal(entry, (valid_entry_case,), (bad_delta_bucket,))
+
+    terminate = terminated_source(macro_domain)
+    good_absorb = terminated_absorb_case(macro_domain)
+    sentinel_delta = CycleCase(
+        "delta",
+        terminate.source_state_id,
+        terminate.source_state_path,
+        STATE_DIAGNOSTIC_ID,
+        DIAGNOSTIC_CASE_PATH,
+        "%s::delta::%s::0" % (terminate.source_state_path, DIAGNOSTIC_CASE_PATH),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="delta_cases require"):
+        MacroStepFormal(terminate, (good_absorb,), (sentinel_delta,))
+    second_absorb = CycleCase(
+        "absorb",
+        terminate.source_state_id,
+        terminate.source_state_path,
+        terminate.source_state_id,
+        terminate.source_state_path,
+        "%s::absorb::%s::1"
+        % (terminate.source_state_path, terminate.source_state_path),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="must contain one case"):
+        MacroStepFormal(terminate, (good_absorb, second_absorb))
+    wrong_sentinel_case = CycleCase(
+        "transition",
+        terminate.source_state_id,
+        terminate.source_state_path,
+        terminate.source_state_id,
+        terminate.source_state_path,
+        "%s::transition::%s::0"
+        % (terminate.source_state_path, terminate.source_state_path),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="sentinel formal case"):
+        MacroStepFormal(terminate, (wrong_sentinel_case,))
+    false_absorb = CycleCase(
+        "absorb",
+        terminate.source_state_id,
+        terminate.source_state_path,
+        terminate.source_state_id,
+        terminate.source_state_path,
+        "%s::absorb::%s::0"
+        % (terminate.source_state_path, terminate.source_state_path),
+        BoolTemplate.false(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="sentinel absorb condition"):
+        MacroStepFormal(terminate, (false_absorb,))
+    raw_terminate = MacroStepSource(
+        "terminated", "recurrence", STATE_TERMINATE_ID, TERMINATE_CASE_PATH
+    )
+    absorb_to_diagnostic = CycleCase(
+        "absorb",
+        raw_terminate.source_state_id,
+        raw_terminate.source_state_path,
+        raw_terminate.source_state_id,
+        DIAGNOSTIC_CASE_PATH,
+        "%s::absorb::%s::0" % (raw_terminate.source_state_path, DIAGNOSTIC_CASE_PATH),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="self-loop"):
+        MacroStepFormal(raw_terminate, (absorb_to_diagnostic,))
+    absorb_with_action = CycleCase(
+        "absorb",
+        terminate.source_state_id,
+        terminate.source_state_path,
+        terminate.source_state_id,
+        terminate.source_state_path,
+        "%s::absorb::%s::0"
+        % (terminate.source_state_path, terminate.source_state_path),
+        BoolTemplate.true(),
+        (
+            ActionBlock(
+                "state_action",
+                "leaf_during",
+                macro_domain.state_path_to_id("Root.Plant.Idle"),
+                "Root.Plant.Idle",
+                (),
+                is_abstract=True,
+            ),
+        ),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="sentinel absorb case cannot"):
+        MacroStepFormal(terminate, (absorb_with_action,))
+    noncanonical_absorb = CycleCase(
+        "absorb",
+        terminate.source_state_id,
+        terminate.source_state_path,
+        terminate.source_state_id,
+        terminate.source_state_path,
+        "%s::absorb::%s::3"
+        % (terminate.source_state_path, terminate.source_state_path),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="sentinel absorb label"):
+        MacroStepFormal(terminate, (noncanonical_absorb,))
+
+    assert (
+        MacroStepFormal(stable, (fallback,)).to_canonical()["node"]
+        == "macro_step_formal"
+    )
+    assert (
+        PartitionCheckResult((), 0, 1).to_canonical()["node"]
+        == "partition_check_result"
+    )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ("field_name", "payload_key", "message"),
+    [
+        ("used_events", "used_events", "sentinel absorb case cannot use events"),
+        (
+            "guard_requirements",
+            "guard_requirements",
+            "sentinel absorb case cannot have guard requirements",
+        ),
+        (
+            "priority_exclusions",
+            "priority_exclusions",
+            "sentinel absorb case cannot have priority exclusions",
+        ),
+        (
+            "failed_conditions",
+            "failed_conditions",
+            "sentinel absorb case cannot have failed conditions",
+        ),
+    ],
+)
+def test_sentinel_absorb_rejects_runtime_metadata_on_public_paths(
+    macro_domain, field_name, payload_key, message
+):
+    """Sentinel absorb buckets stay pure through both public validation paths."""
+    terminate = terminated_source(macro_domain)
+    event = macro_domain.event_by_path("Root.Go")
+    payloads = {
+        "used_events": (EventUse(event.id, event.path, "positive", "trigger"),),
+        "guard_requirements": (
+            GuardRequirement(
+                "g0",
+                macro_domain.state_path_to_id("Root.Plant.Idle"),
+                "Root.Plant.Idle",
+                "Root.Plant.Idle -> Root.Plant.Busy",
+                Boolean(True),
+                "positive",
+                "transition_guard",
+                0,
+            ),
+        ),
+        "priority_exclusions": (
+            PriorityExclusion(
+                "d0",
+                "fallback",
+                (
+                    "%s::absorb::%s::0"
+                    % (terminate.source_state_path, terminate.source_state_path),
+                ),
+                BoolTemplate.atom(
+                    "accepted:%s::absorb::%s::0"
+                    % (terminate.source_state_path, terminate.source_state_path)
+                ),
+            ),
+        ),
+        "failed_conditions": (BoolTemplate.true(),),
+    }
+    malformed = make_sentinel_absorb_case(
+        terminate, **{payload_key: payloads[field_name]}
+    )
+
+    with pytest.raises(InvalidBmcEncoding, match=message):
+        MacroStepFormal(terminate, (malformed,))
+    with pytest.raises(InvalidBmcEncoding, match=message):
+        verify_source_partition(terminate, (malformed,), max_assignments=1)
+
+
+@pytest.mark.unittest
+def test_cycle_case_condition_is_control_path_only(macro_domain):
+    """CycleCase.condition excludes source guards and writeback formulas."""
+    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
+    gamma = BoolTemplate.atom("event:Root.Plant.Ping")
+    event = macro_domain.event_by_path("Root.Plant.Ping")
+    case = make_case(
+        macro_domain,
+        source,
+        condition=gamma,
+        used_events=(EventUse(event.id, event.path, "positive", "trigger"),),
+    )
+
+    assert case.condition is gamma
+    assert case_path_condition(case) is gamma
+    assert case.to_canonical()["condition"]["name"] == "event:Root.Plant.Ping"
+    assert "var_update" not in case.to_canonical()
+
+
+@pytest.mark.unittest
+def test_unknown_condition_atom_namespaces_are_rejected(macro_domain):
+    """Case conditions fail closed unless atoms use event/guard/accepted namespaces."""
+    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
+
+    for atom in ("plain", "pre:x", "__source_state__:%d" % source.source_state_id):
+        with pytest.raises(InvalidBmcEncoding, match="atom namespace"):
+            make_case(macro_domain, source, condition=BoolTemplate.atom(atom))
+
+
+@pytest.mark.unittest
+def test_event_atoms_require_domain_events_and_metadata(macro_domain):
+    """Domain eager validation covers event atoms in all case conditions."""
+    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
+    ping = macro_domain.event_by_path("Root.Plant.Ping")
+
+    valid = make_case(
+        macro_domain,
+        source,
+        condition=BoolTemplate.atom("event:Root.Plant.Ping"),
+        used_events=(EventUse(ping.id, ping.path, "positive", "trigger"),),
+    )
+    assert valid.used_events[0].path == "Root.Plant.Ping"
+
+    with pytest.raises(InvalidBmcEncoding, match="used_events"):
+        make_case(
             macro_domain,
-            (VarUpdate(complete[0].variable_id, "y", "pre:y"),) + complete[1:],
+            source,
+            condition=BoolTemplate.atom("event:Root.Plant.Ping"),
+        )
+
+    with pytest.raises(InvalidBmcEncoding, match="Unknown event path"):
+        make_case(
+            macro_domain,
+            source,
+            failed_conditions=(BoolTemplate.atom("event:Root.Plant.NoSuch"),),
         )
 
 
 @pytest.mark.unittest
-def test_absorb_cases_are_regular_cases_with_true_gamma_and_carry_all(macro_domain):
+def test_guard_atoms_require_matching_requirement_and_anchor(macro_domain):
+    """Guard atoms point to raw expressions with action-block prefix anchors."""
+    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
+    guard = GuardRequirement(
+        "g0",
+        source.source_state_id,
+        source.source_state_path,
+        "Idle -> Busy",
+        Variable("x") > 0,
+        "positive",
+        "transition_guard",
+        0,
+    )
+    case = make_case(
+        macro_domain,
+        source,
+        condition=BoolTemplate.atom("guard:g0"),
+        guard_requirements=(guard,),
+    )
+
+    assert case.guard_requirements[0].atom_name == "guard:g0"
+    assert case.guard_requirements[0].after_action_block_index == 0
+    assert case.to_canonical()["guard_requirements"][0]["expr"] == "x > 0"
+
+    with pytest.raises(InvalidBmcEncoding, match="matching GuardRequirement"):
+        make_case(macro_domain, source, condition=BoolTemplate.atom("guard:g_missing"))
+
+    with pytest.raises(InvalidBmcEncoding, match="guard anchor"):
+        make_case(
+            macro_domain,
+            source,
+            condition=BoolTemplate.atom("guard:g1"),
+            guard_requirements=(
+                GuardRequirement(
+                    "g1",
+                    source.source_state_id,
+                    source.source_state_path,
+                    "Idle -> Busy",
+                    Boolean(True),
+                    "positive",
+                    "transition_guard",
+                    1,
+                ),
+            ),
+        )
+
+
+@pytest.mark.unittest
+def test_action_block_preserves_if_block_without_condition_split(
+    macro_domain,
+    sample_operation,
+):
+    """ActionBlock stores model statements, including nested IfBlock objects."""
+    block = ActionBlock(
+        "state_action",
+        "leaf_during",
+        macro_domain.state_path_to_id("Root.Plant.Idle"),
+        "Root.Plant.Idle",
+        (sample_operation,),
+        action_name="Root.Plant.Idle.<unnamed>",
+    )
+    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
+    case = make_case(macro_domain, source, action_blocks=(block,))
+
+    assert case.action_blocks[0].operations == (sample_operation,)
+    assert (
+        case.to_canonical()["action_blocks"][0]["operations"][0]["node"] == "if_block"
+    )
+    assert case.condition.variables == ()
+
+
+@pytest.mark.unittest
+def test_absorb_cases_are_regular_cases_with_true_condition(macro_domain):
     """Terminated and diagnostic absorbs are ordinary CycleCase objects."""
     terminate = terminated_absorb_case(macro_domain)
     diagnostic = diagnostic_absorb_case(macro_domain)
@@ -228,45 +1125,44 @@ def test_absorb_cases_are_regular_cases_with_true_gamma_and_carry_all(macro_doma
     assert terminate.source_state_path == TERMINATE_CASE_PATH
     assert terminate.label == "__terminate__::absorb::__terminate__::0"
     assert terminate.condition.evaluate({}) is True
+    assert terminate.action_blocks == ()
     assert terminate.is_diagnostic is False
-    assert [item.variable_name for item in terminate.var_update] == ["x", "y"]
 
     assert diagnostic.source_state_id == STATE_DIAGNOSTIC_ID
     assert diagnostic.target_state_id == STATE_DIAGNOSTIC_ID
     assert diagnostic.source_state_path == DIAGNOSTIC_CASE_PATH
     assert diagnostic.label == "__diagnostic__::absorb::__diagnostic__::0"
     assert diagnostic.condition.evaluate({}) is True
+    assert diagnostic.action_blocks == ()
     assert diagnostic.is_diagnostic is True
 
 
 @pytest.mark.unittest
-def test_fallback_condition_negates_only_accepted_gamma_not_failed_metadata(
-    macro_domain,
-):
-    """Failed raw candidates do not shrink stable leaf fallback uncovered space."""
+def test_fallback_condition_negates_accepted_labels_not_raw_conditions(macro_domain):
+    """Fallback masks use accepted:<label> instead of copying trigger atoms."""
     source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
+    ping = macro_domain.event_by_path("Root.Plant.Ping")
     accepted = make_case(
         macro_domain,
         source,
-        condition=BoolTemplate.atom("accepted"),
+        condition=BoolTemplate.atom("event:Root.Plant.Ping"),
         target_path="Root.Plant.Busy",
+        used_events=(EventUse(ping.id, ping.path, "positive", "trigger"),),
     )
-    failed = BoolTemplate.atom("failed_raw")
+    failed = BoolTemplate.atom("event:Root.Go")
+    root_go = macro_domain.event_by_path("Root.Go")
 
     fallback = build_fallback_case(macro_domain, source, (accepted,), (failed,))
 
     assert fallback.kind == "fallback"
-    assert (
-        fallback.condition.to_canonical()
-        == BoolTemplate.not_(BoolTemplate.atom("accepted")).to_canonical()
-    )
+    assert fallback.condition.variables == ("accepted:%s" % accepted.label,)
+    assert fallback.priority_exclusions[0].excluded_case_labels == (accepted.label,)
+    assert {item.path for item in fallback.used_events} == {ping.path, root_go.path}
     assert fallback.failed_conditions == (failed,)
-    assert fallback.condition.evaluate({"accepted": False, "failed_raw": True}) is True
-    assert fallback.condition.evaluate({"accepted": True, "failed_raw": False}) is False
 
 
 @pytest.mark.unittest
-def test_semantic_delta_condition_excludes_success_and_build_diag_not_failed(
+def test_semantic_delta_condition_excludes_success_labels_and_build_diag(
     macro_domain,
 ):
     """Entry delta leaves failed candidate conditions as diagnostics only."""
@@ -274,127 +1170,540 @@ def test_semantic_delta_condition_excludes_success_and_build_diag_not_failed(
     accepted = make_case(
         macro_domain,
         source,
-        condition=BoolTemplate.atom("accepted"),
+        label_kind="initial",
         target_path="Root.Plant.Idle",
+        condition=BoolTemplate.atom("guard:g0"),
+        guard_requirements=(
+            GuardRequirement(
+                "g0",
+                source.source_state_id,
+                source.source_state_path,
+                "[*] -> Idle",
+                Boolean(True),
+                "positive",
+                "initial_guard",
+                0,
+            ),
+        ),
     )
-    build_diag = BoolTemplate.atom("unsupported")
-    failed = BoolTemplate.atom("failed_raw")
+    build_diag = BoolTemplate.atom("event:Root.Go")
+    root_go = macro_domain.event_by_path("Root.Go")
+    failed = BoolTemplate.atom("event:Root.Plant.Ping")
 
     delta = build_semantic_delta_case(
-        macro_domain, source, (accepted,), (build_diag,), (failed,)
+        macro_domain,
+        source,
+        (accepted,),
+        (build_diag,),
+        (failed,),
     )
 
-    expected = BoolTemplate.not_(
-        BoolTemplate.or_(BoolTemplate.atom("accepted"), build_diag)
-    )
     assert delta.kind == "delta"
     assert delta.target_state_id == STATE_DIAGNOSTIC_ID
-    assert delta.is_diagnostic is True
-    assert delta.condition.to_canonical() == expected.to_canonical()
-    assert delta.failed_conditions == (failed,)
-    assert (
-        delta.condition.evaluate(
-            {"accepted": False, "unsupported": False, "failed_raw": True}
-        )
-        is True
+    assert delta.condition.variables == (
+        "accepted:%s" % accepted.label,
+        "event:Root.Go",
     )
+    assert delta.priority_exclusions[0].excluded_case_labels == (accepted.label,)
+    assert root_go.path in {item.path for item in delta.used_events}
+    assert delta.failed_conditions == (failed,)
 
 
 @pytest.mark.unittest
-def test_fallback_and_delta_helpers_accept_only_ordinary_success_cases(macro_domain):
-    """Fallback and delta helpers apply their source-specific case policies."""
+def test_build_case_helpers_reject_invalid_public_arguments(macro_domain):
+    """Public fallback and delta builders fail closed on malformed inputs."""
     stable = stable_leaf_source(macro_domain, "Root.Plant.Idle")
     entry = entry_source(macro_domain, "Root.Plant")
 
-    stable_transition = make_case(
+    with pytest.raises(InvalidBmcEncoding, match="fallback case requires"):
+        build_fallback_case(macro_domain, entry, ())
+    with pytest.raises(InvalidBmcEncoding, match="ordinal must be non-negative"):
+        build_fallback_case(macro_domain, stable, (), ordinal=-1)
+    with pytest.raises(InvalidBmcEncoding, match="accepted_cases must be a sequence"):
+        build_fallback_case(macro_domain, stable, _bad_object())
+    with pytest.raises(InvalidBmcEncoding, match="CycleCase"):
+        build_fallback_case(macro_domain, stable, (_bad_object(),))
+    with pytest.raises(
+        InvalidBmcEncoding, match="failed_conditions must be a sequence"
+    ):
+        build_fallback_case(macro_domain, stable, (), failed_conditions=_bad_object())
+    with pytest.raises(InvalidBmcEncoding, match="BoolTemplate"):
+        build_fallback_case(
+            macro_domain, stable, (), failed_conditions=(_bad_object(),)
+        )
+    with pytest.raises(InvalidBmcEncoding, match="GuardRequirement"):
+        build_fallback_case(
+            macro_domain, stable, (), guard_requirements=(_bad_object(),)
+        )
+
+    bad_kind = make_case(macro_domain, stable, label_kind="fallback")
+    with pytest.raises(InvalidBmcEncoding, match="ordinary accepted cases"):
+        build_fallback_case(macro_domain, stable, (bad_kind,))
+    bad_source = make_case(
         macro_domain,
-        stable,
-        condition=BoolTemplate.atom("stable_transition"),
-        target_path="Root.Plant.Busy",
+        entry,
+        label_kind="transition",
+        target_path="Root.Plant.Idle",
     )
-    stable_initial = make_case(
-        macro_domain,
-        stable,
-        label_kind="initial",
-        condition=BoolTemplate.atom("stable_initial"),
+    with pytest.raises(InvalidBmcEncoding, match="accepted case source id"):
+        build_fallback_case(macro_domain, stable, (bad_source,))
+    bad_path = CycleCase(
+        "transition",
+        stable.source_state_id,
+        "Other",
+        stable.source_state_id,
+        stable.source_state_path,
+        "Other::transition::%s::0" % stable.source_state_path,
+        BoolTemplate.true(),
+        (),
     )
-    fallback = build_fallback_case(macro_domain, stable, (stable_transition,))
-    stable_diagnostic = CycleCase(
-        "diagnostic",
+    with pytest.raises(InvalidBmcEncoding, match="accepted case source path"):
+        build_fallback_case(macro_domain, stable, (bad_path,))
+    diagnostic = CycleCase(
+        "transition",
         stable.source_state_id,
         stable.source_state_path,
         STATE_DIAGNOSTIC_ID,
         DIAGNOSTIC_CASE_PATH,
-        "%s::diagnostic::%s::0" % (stable.source_state_path, DIAGNOSTIC_CASE_PATH),
-        BoolTemplate.atom("stable_diagnostic"),
-        carry_var_updates(macro_domain),
-        domain=macro_domain,
+        "%s::transition::%s::0" % (stable.source_state_path, DIAGNOSTIC_CASE_PATH),
+        BoolTemplate.true(),
+        (),
     )
+    with pytest.raises(InvalidBmcEncoding, match="target model states or terminate"):
+        build_fallback_case(macro_domain, stable, (diagnostic,))
+    with pytest.raises(InvalidBmcEncoding, match="Unknown event path"):
+        build_fallback_case(
+            macro_domain,
+            stable,
+            (),
+            failed_conditions=(BoolTemplate.atom("event:Root.NoSuch"),),
+        )
 
-    with pytest.raises(InvalidBmcEncoding, match="ordinary accepted cases"):
-        build_fallback_case(macro_domain, stable, (stable_transition, stable_initial))
+    with pytest.raises(InvalidBmcEncoding, match="semantic delta case requires"):
+        build_semantic_delta_case(macro_domain, stable, ())
+    with pytest.raises(InvalidBmcEncoding, match="ordinal must be non-negative"):
+        build_semantic_delta_case(macro_domain, entry, (), ordinal=-1)
+    with pytest.raises(InvalidBmcEncoding, match="build_diagnostic_conditions"):
+        build_semantic_delta_case(
+            macro_domain,
+            entry,
+            (),
+            build_diagnostic_conditions=_bad_object(),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="BoolTemplate"):
+        build_semantic_delta_case(
+            macro_domain,
+            entry,
+            (),
+            build_diagnostic_conditions=(_bad_object(),),
+        )
+    with pytest.raises(InvalidBmcEncoding, match="failed_conditions"):
+        build_semantic_delta_case(
+            macro_domain, entry, (), failed_conditions=_bad_object()
+        )
+    with pytest.raises(InvalidBmcEncoding, match="GuardRequirement"):
+        build_semantic_delta_case(
+            macro_domain, entry, (), guard_requirements=(_bad_object(),)
+        )
+    with pytest.raises(
+        InvalidBmcEncoding, match="failed_conditions must contain BoolTemplate"
+    ):
+        build_semantic_delta_case(
+            macro_domain,
+            entry,
+            (),
+            failed_conditions=(_bad_object(),),
+        )
 
-    assert (
-        fallback.condition.to_canonical()
-        == BoolTemplate.not_(BoolTemplate.atom("stable_transition")).to_canonical()
-    )
 
-    for rejected in (fallback, stable_diagnostic, diagnostic_absorb_case(macro_domain)):
-        with pytest.raises(InvalidBmcEncoding, match="ordinary accepted cases"):
-            build_fallback_case(macro_domain, stable, (rejected,))
-
-    entry_transition = make_case(
+@pytest.mark.unittest
+def test_partition_resolves_accepted_atoms_through_case_registry(macro_domain):
+    """Source partition checks use accepted-path semantics, not free atoms."""
+    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
+    ping = macro_domain.event_by_path("Root.Plant.Ping")
+    transition = make_case(
         macro_domain,
-        entry,
-        condition=BoolTemplate.atom("entry_transition"),
-        target_path="Root.Plant.Idle",
+        source,
+        condition=BoolTemplate.atom("event:Root.Plant.Ping"),
+        target_path="Root.Plant.Busy",
+        used_events=(EventUse(ping.id, ping.path, "positive", "trigger"),),
     )
-    entry_initial = make_case(
+    fallback = build_fallback_case(macro_domain, source, (transition,))
+
+    result = verify_source_partition(source, (transition, fallback))
+
+    assert result.variables == ("event:Root.Plant.Ping",)
+    assert result.assignment_count == 2
+
+
+@pytest.mark.unittest
+def test_partition_handles_sentinel_delta_and_accepted_atom_failures(macro_domain):
+    """Source partition checks cover sentinel, delta, diagnostic, and atom cycles."""
+    terminate = terminated_source(macro_domain)
+    terminated = verify_source_partition(
+        terminate,
+        (terminated_absorb_case(macro_domain),),
+        max_assignments=1,
+    )
+    assert terminated.assignment_count == 0
+    assert terminated.bucket_count == 1
+
+    with pytest.raises(InvalidBmcEncoding, match="cannot have build diagnostics"):
+        verify_source_partition(
+            terminate,
+            (terminated_absorb_case(macro_domain),),
+            build_diagnostic_conditions=(BoolTemplate.true(),),
+            max_assignments=1,
+        )
+    diagnostic = diagnostic_source(macro_domain)
+    with pytest.raises(InvalidBmcEncoding, match="cannot have build diagnostics"):
+        verify_source_partition(
+            diagnostic,
+            (diagnostic_absorb_case(macro_domain),),
+            build_diagnostic_conditions=(BoolTemplate.true(),),
+            max_assignments=1,
+        )
+    sentinel_delta = CycleCase(
+        "delta",
+        terminate.source_state_id,
+        terminate.source_state_path,
+        STATE_DIAGNOSTIC_ID,
+        DIAGNOSTIC_CASE_PATH,
+        "%s::delta::%s::0" % (terminate.source_state_path, DIAGNOSTIC_CASE_PATH),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="cannot have delta cases"):
+        verify_source_partition(
+            terminate,
+            (terminated_absorb_case(macro_domain),),
+            delta_cases=(sentinel_delta,),
+            max_assignments=1,
+        )
+
+    false_absorb = CycleCase(
+        "absorb",
+        terminate.source_state_id,
+        terminate.source_state_path,
+        terminate.source_state_id,
+        terminate.source_state_path,
+        "%s::absorb::%s::0"
+        % (terminate.source_state_path, terminate.source_state_path),
+        BoolTemplate.false(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="sentinel absorb condition"):
+        verify_source_partition(terminate, (false_absorb,), max_assignments=1)
+
+    raw_terminate = MacroStepSource(
+        "terminated", "recurrence", STATE_TERMINATE_ID, TERMINATE_CASE_PATH
+    )
+    absorb_to_diagnostic = CycleCase(
+        "absorb",
+        raw_terminate.source_state_id,
+        raw_terminate.source_state_path,
+        raw_terminate.source_state_id,
+        DIAGNOSTIC_CASE_PATH,
+        "%s::absorb::%s::0" % (raw_terminate.source_state_path, DIAGNOSTIC_CASE_PATH),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="self-loop"):
+        verify_source_partition(
+            raw_terminate, (absorb_to_diagnostic,), max_assignments=1
+        )
+
+    absorb_with_action = CycleCase(
+        "absorb",
+        terminate.source_state_id,
+        terminate.source_state_path,
+        terminate.source_state_id,
+        terminate.source_state_path,
+        "%s::absorb::%s::0"
+        % (terminate.source_state_path, terminate.source_state_path),
+        BoolTemplate.true(),
+        (
+            ActionBlock(
+                "state_action",
+                "leaf_during",
+                macro_domain.state_path_to_id("Root.Plant.Idle"),
+                "Root.Plant.Idle",
+                (),
+                is_abstract=True,
+            ),
+        ),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="sentinel absorb case cannot"):
+        verify_source_partition(terminate, (absorb_with_action,), max_assignments=1)
+
+    sentinel_fallback = CycleCase(
+        "fallback",
+        terminate.source_state_id,
+        terminate.source_state_path,
+        terminate.source_state_id,
+        terminate.source_state_path,
+        "%s::fallback::%s::0"
+        % (terminate.source_state_path, terminate.source_state_path),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="sentinel formal case"):
+        verify_source_partition(terminate, (sentinel_fallback,), max_assignments=1)
+
+    entry = entry_source(macro_domain, "Root.Plant")
+    accepted = make_case(
         macro_domain,
         entry,
         label_kind="initial",
-        condition=BoolTemplate.atom("entry_initial"),
         target_path="Root.Plant.Idle",
+        condition=BoolTemplate.atom("event:Root.Go"),
+        used_events=(
+            EventUse(
+                macro_domain.event_by_path("Root.Go").id,
+                "Root.Go",
+                "positive",
+                "trigger",
+            ),
+        ),
     )
-    delta = build_semantic_delta_case(macro_domain, entry, (entry_transition,))
-    entry_diagnostic = CycleCase(
+    diagnostic_condition = BoolTemplate.atom("event:Root.Plant.Ping")
+    delta = build_semantic_delta_case(
+        macro_domain,
+        entry,
+        (accepted,),
+        build_diagnostic_conditions=(diagnostic_condition,),
+    )
+    result = verify_source_partition(
+        entry,
+        (accepted,),
+        (delta,),
+        (diagnostic_condition,),
+        max_assignments=1,
+    )
+    assert result.assignment_count == 0
+    assert result.bucket_count == 3
+
+    first = CycleCase(
+        "transition",
+        entry.source_state_id,
+        entry.source_state_path,
+        entry.source_state_id,
+        entry.source_state_path,
+        "%s::transition::%s::10" % (entry.source_state_path, entry.source_state_path),
+        BoolTemplate.atom(
+            "accepted:%s::transition::%s::11"
+            % (entry.source_state_path, entry.source_state_path)
+        ),
+        (),
+    )
+    second = CycleCase(
+        "transition",
+        entry.source_state_id,
+        entry.source_state_path,
+        entry.source_state_id,
+        entry.source_state_path,
+        "%s::transition::%s::11" % (entry.source_state_path, entry.source_state_path),
+        BoolTemplate.atom("accepted:%s" % first.label),
+        (),
+    )
+    with pytest.raises(BmcBuildError, match="cycle detected"):
+        verify_source_partition(entry, (first, second), max_assignments=8)
+
+    unknown = CycleCase(
+        "transition",
+        entry.source_state_id,
+        entry.source_state_path,
+        entry.source_state_id,
+        entry.source_state_path,
+        "%s::transition::%s::12" % (entry.source_state_path, entry.source_state_path),
+        BoolTemplate.atom("accepted:missing-label"),
+        (),
+    )
+    with pytest.raises(BmcBuildError, match="unknown case label"):
+        verify_source_partition(entry, (unknown,), max_assignments=8)
+
+
+@pytest.mark.unittest
+def test_structural_partition_negative_shapes_fall_back_to_truth_table_budget(
+    macro_domain,
+):
+    """Structural recognizer refuses malformed accepted/fallback/delta shapes."""
+    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
+
+    accepted_only = make_large_priority_partition(source)[:-1]
+    with pytest.raises(BmcBuildError, match="assignment budget"):
+        verify_source_partition(source, accepted_only, max_assignments=1)
+
+    accepted = make_case(
+        macro_domain,
+        source,
+        condition=BoolTemplate.atom("event:Root.Plant.Ping"),
+        target_path="Root.Plant.Busy",
+        used_events=(
+            EventUse(
+                macro_domain.event_by_path("Root.Plant.Ping").id,
+                "Root.Plant.Ping",
+                "positive",
+                "trigger",
+            ),
+        ),
+    )
+    bad_fallback = CycleCase(
+        "fallback",
+        source.source_state_id,
+        source.source_state_path,
+        source.source_state_id,
+        source.source_state_path,
+        "%s::fallback::%s::20" % (source.source_state_path, source.source_state_path),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(BmcBuildError, match="assignment budget"):
+        verify_source_partition(source, (accepted, bad_fallback), max_assignments=1)
+    with pytest.raises(BmcBuildError, match="overlap"):
+        verify_source_partition(source, (accepted, bad_fallback), max_assignments=8)
+
+    entry = entry_source(macro_domain, "Root.Plant")
+    accepted_entry = make_case(
+        macro_domain,
+        entry,
+        label_kind="initial",
+        target_path="Root.Plant.Idle",
+        condition=BoolTemplate.atom("event:Root.Go"),
+        used_events=(
+            EventUse(
+                macro_domain.event_by_path("Root.Go").id,
+                "Root.Go",
+                "positive",
+                "trigger",
+            ),
+        ),
+    )
+    entry_fallback = CycleCase(
+        "fallback",
+        entry.source_state_id,
+        entry.source_state_path,
+        entry.source_state_id,
+        entry.source_state_path,
+        "%s::fallback::%s::21" % (entry.source_state_path, entry.source_state_path),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(BmcBuildError, match="assignment budget"):
+        verify_source_partition(
+            entry, (accepted_entry, entry_fallback), max_assignments=1
+        )
+    bad_delta = CycleCase(
+        "delta",
+        entry.source_state_id,
+        entry.source_state_path,
+        STATE_DIAGNOSTIC_ID,
+        DIAGNOSTIC_CASE_PATH,
+        "%s::delta::%s::20" % (entry.source_state_path, DIAGNOSTIC_CASE_PATH),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(BmcBuildError, match="assignment budget"):
+        verify_source_partition(
+            entry, (accepted_entry,), (bad_delta,), max_assignments=1
+        )
+    with pytest.raises(BmcBuildError, match="overlap"):
+        verify_source_partition(
+            entry, (accepted_entry,), (bad_delta,), max_assignments=8
+        )
+    diagnostic_terminal = CycleCase(
         "diagnostic",
         entry.source_state_id,
         entry.source_state_path,
         STATE_DIAGNOSTIC_ID,
         DIAGNOSTIC_CASE_PATH,
-        "%s::diagnostic::%s::0" % (entry.source_state_path, DIAGNOSTIC_CASE_PATH),
-        BoolTemplate.atom("entry_diagnostic"),
-        carry_var_updates(macro_domain),
-        domain=macro_domain,
+        "%s::diagnostic::%s::22" % (entry.source_state_path, DIAGNOSTIC_CASE_PATH),
+        BoolTemplate.true(),
+        (),
     )
-
-    delta_with_initial = build_semantic_delta_case(
-        macro_domain, entry, (entry_transition, entry_initial)
-    )
-    assert (
-        delta_with_initial.condition.to_canonical()
-        == BoolTemplate.not_(
-            BoolTemplate.or_(
-                BoolTemplate.atom("entry_transition"),
-                BoolTemplate.atom("entry_initial"),
-            )
-        ).to_canonical()
-    )
-
-    for rejected in (delta, entry_diagnostic, diagnostic_absorb_case(macro_domain)):
-        with pytest.raises(InvalidBmcEncoding, match="ordinary accepted cases"):
-            build_semantic_delta_case(macro_domain, entry, (rejected,))
+    with pytest.raises(BmcBuildError, match="assignment budget"):
+        verify_source_partition(
+            entry, (accepted_entry, diagnostic_terminal), max_assignments=1
+        )
 
 
 @pytest.mark.unittest
-def test_macro_step_formal_revalidates_domainless_cases_against_source_domain(
-    macro_domain,
-):
-    """Domain-backed formals reject case target, event, and writeback bypasses."""
+def test_verify_partition_public_validation_rejects_bad_arguments(macro_domain):
+    """Public partition helpers validate their documented argument boundary."""
     source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
     fallback = build_fallback_case(macro_domain, source, ())
-    carry = carry_var_updates(macro_domain)
+
+    with pytest.raises(BmcBuildError, match="partition buckets"):
+        verify_boolean_partition(_bad_object())
+    with pytest.raises(BmcBuildError, match="at least one bucket"):
+        verify_boolean_partition(())
+    with pytest.raises(BmcBuildError, match="BoolTemplate"):
+        verify_boolean_partition((_bad_object(),))
+    with pytest.raises(BmcBuildError, match="max_assignments"):
+        verify_boolean_partition((BoolTemplate.true(),), max_assignments=True)
+    with pytest.raises(BmcBuildError, match="max_assignments"):
+        verify_boolean_partition((BoolTemplate.true(),), max_assignments=0)
+    with pytest.raises(BmcBuildError, match="partition variables"):
+        verify_boolean_partition((BoolTemplate.true(),), variables=_bad_object())
+    with pytest.raises(BmcBuildError, match="non-empty strings"):
+        verify_boolean_partition((BoolTemplate.true(),), variables=("",))
+    with pytest.raises(BmcBuildError, match="reserved source-state atom"):
+        verify_boolean_partition(
+            (BoolTemplate.true(),),
+            variables=("__source_state__:Root",),
+        )
+    with pytest.raises(BmcBuildError, match="unsupported macro condition atom"):
+        verify_boolean_partition((BoolTemplate.true(),), variables=("opaque:bad",))
+
+    with pytest.raises(InvalidBmcEncoding, match="source must be MacroStepSource"):
+        verify_source_partition(_bad_object(), (fallback,))
+    with pytest.raises(InvalidBmcEncoding, match="success_cases must be a sequence"):
+        verify_source_partition(source, _bad_object())
+    with pytest.raises(InvalidBmcEncoding, match="delta_cases must be a sequence"):
+        verify_source_partition(source, (fallback,), _bad_object())
+    with pytest.raises(InvalidBmcEncoding, match="build_diagnostic_conditions"):
+        verify_source_partition(source, (fallback,), (), _bad_object())
+    with pytest.raises(InvalidBmcEncoding, match="CycleCase"):
+        verify_source_partition(source, (_bad_object(),))
+    with pytest.raises(InvalidBmcEncoding, match="source id mismatch"):
+        verify_source_partition(
+            source, (make_case(macro_domain, entry_source(macro_domain, "Root.Plant")),)
+        )
+    wrong_path = CycleCase(
+        "fallback",
+        source.source_state_id,
+        "Other",
+        source.source_state_id,
+        source.source_state_path,
+        "Other::fallback::%s::0" % source.source_state_path,
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="source path mismatch"):
+        verify_source_partition(source, (wrong_path,))
+    delta = build_semantic_delta_case(
+        macro_domain, entry_source(macro_domain, "Root.Plant"), ()
+    )
+    with pytest.raises(
+        InvalidBmcEncoding, match="success_cases must not contain delta"
+    ):
+        verify_source_partition(entry_source(macro_domain, "Root.Plant"), (delta,))
+    with pytest.raises(InvalidBmcEncoding, match="delta_cases may only contain delta"):
+        entry = entry_source(macro_domain, "Root.Plant")
+        verify_source_partition(entry, (), (make_case(macro_domain, entry),))
+    with pytest.raises(InvalidBmcEncoding, match="BoolTemplate"):
+        verify_source_partition(source, (fallback,), (), (_bad_object(),))
+    with pytest.raises(InvalidBmcEncoding, match="delta cases require"):
+        verify_source_partition(source, (fallback,), (delta,))
+
+
+@pytest.mark.unittest
+def test_macro_step_formal_revalidates_domainless_cases_and_accepted_atoms(
+    macro_domain,
+):
+    """Domain-backed formals reject target, event, guard, and label bypasses."""
+    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
+    fallback = build_fallback_case(macro_domain, source, ())
 
     bad_target = CycleCase(
         "transition",
@@ -403,8 +1712,8 @@ def test_macro_step_formal_revalidates_domainless_cases_against_source_domain(
         999,
         "Missing.Target",
         "%s::transition::Missing.Target::0" % source.source_state_path,
-        BoolTemplate.atom("bad_target"),
-        carry,
+        BoolTemplate.true(),
+        (),
     )
     with pytest.raises(InvalidBmcEncoding, match="Unknown state id"):
         MacroStepFormal(source, (bad_target, fallback))
@@ -416,65 +1725,32 @@ def test_macro_step_formal_revalidates_domainless_cases_against_source_domain(
         source.source_state_id,
         source.source_state_path,
         "%s::transition::%s::1" % (source.source_state_path, source.source_state_path),
-        BoolTemplate.atom("bad_event"),
-        carry,
+        BoolTemplate.true(),
+        (),
         used_events=(EventUse(999, "Missing.Event", "positive", "trigger"),),
     )
     with pytest.raises(InvalidBmcEncoding, match="Unknown event id"):
         MacroStepFormal(source, (bad_event, fallback))
 
-    missing_writeback = CycleCase(
-        "transition",
-        source.source_state_id,
-        source.source_state_path,
-        source.source_state_id,
-        source.source_state_path,
-        "%s::transition::%s::2" % (source.source_state_path, source.source_state_path),
-        BoolTemplate.atom("missing_writeback"),
-        (),
-    )
-    with pytest.raises(InvalidBmcEncoding, match="cover every persistent variable"):
-        MacroStepFormal(source, (missing_writeback, fallback))
-
-
-@pytest.mark.unittest
-def test_macro_step_formal_rejects_stable_leaf_diagnostic_success_case(
-    macro_domain,
-):
-    """Stable leaf formals cannot bypass entry-only delta/diagnostic buckets."""
-    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
-    diagnostic = CycleCase(
-        "diagnostic",
-        source.source_state_id,
-        source.source_state_path,
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        "%s::diagnostic::%s::0" % (source.source_state_path, DIAGNOSTIC_CASE_PATH),
-        BoolTemplate.atom("diagnostic_success"),
-        carry_var_updates(macro_domain),
-        domain=macro_domain,
-    )
-    fallback = CycleCase(
+    unknown_accepted = CycleCase(
         "fallback",
         source.source_state_id,
         source.source_state_path,
         source.source_state_id,
         source.source_state_path,
-        "%s::fallback::%s::0" % (source.source_state_path, source.source_state_path),
-        BoolTemplate.not_(BoolTemplate.atom("diagnostic_success")),
-        carry_var_updates(macro_domain),
-        domain=macro_domain,
+        "%s::fallback::%s::1" % (source.source_state_path, source.source_state_path),
+        BoolTemplate.atom("accepted:no-such-label"),
+        (),
     )
-
-    with pytest.raises(InvalidBmcEncoding, match="stable leaf success cases"):
-        MacroStepFormal(source, (diagnostic, fallback))
+    with pytest.raises(InvalidBmcEncoding, match="unknown case label"):
+        MacroStepFormal(source, (unknown_accepted,))
 
 
 @pytest.mark.unittest
 def test_macro_step_formal_rejects_illegal_delta_buckets_and_label_collisions(
     macro_domain,
 ):
-    """Formal buckets enforce source-local shape before runtime expansion is implemented."""
+    """Formal buckets enforce source-local shape before solver lowering."""
     stable = stable_leaf_source(macro_domain, "Root.Plant.Idle")
     fallback = build_fallback_case(macro_domain, stable, ())
     delta = CycleCase(
@@ -484,8 +1760,8 @@ def test_macro_step_formal_rejects_illegal_delta_buckets_and_label_collisions(
         STATE_DIAGNOSTIC_ID,
         DIAGNOSTIC_CASE_PATH,
         "%s::delta::%s::0" % (stable.source_state_path, DIAGNOSTIC_CASE_PATH),
-        BoolTemplate.atom("delta"),
-        carry_var_updates(macro_domain),
+        BoolTemplate.true(),
+        (),
         domain=macro_domain,
     )
 
@@ -503,148 +1779,133 @@ def test_macro_step_formal_rejects_illegal_delta_buckets_and_label_collisions(
 def test_macro_step_formal_accepts_entry_delta_and_sentinel_absorb_buckets(
     macro_domain,
 ):
-    """Entry formals may contain delta while sentinel formals absorb exactly once."""
+    """Entry formals and sentinel formals accept their dedicated bucket shapes."""
     entry = entry_source(macro_domain, "Root.Plant")
-    success = make_case(
-        macro_domain,
-        entry,
-        condition=BoolTemplate.atom("ok"),
-        target_path="Root.Plant.Idle",
-    )
-    delta = build_semantic_delta_case(macro_domain, entry, (success,))
-    formal = MacroStepFormal(entry, (success,), (delta,))
-    assert formal.cases == (success, delta)
-    assert [case.kind for case in formal.delta_cases] == ["delta"]
+    delta = build_semantic_delta_case(macro_domain, entry, ())
+    assert MacroStepFormal(entry, (), (delta,)).delta_cases == (delta,)
 
-    terminated_formal = MacroStepFormal(
+    terminate = MacroStepFormal(
         terminated_source(macro_domain),
         (terminated_absorb_case(macro_domain),),
     )
-    diagnostic_formal = MacroStepFormal(
+    diagnostic = MacroStepFormal(
         diagnostic_source(macro_domain),
         (diagnostic_absorb_case(macro_domain),),
     )
-    assert terminated_formal.success_cases[0].is_diagnostic is False
-    assert diagnostic_formal.success_cases[0].is_diagnostic is True
-
-    with pytest.raises(InvalidBmcEncoding, match="Duplicate cycle case label"):
-        MacroStepFormal(
-            terminated_source(macro_domain),
-            (
-                terminated_absorb_case(macro_domain),
-                terminated_absorb_case(macro_domain),
-            ),
-        )
+    assert terminate.cases[0].target_state_id == STATE_TERMINATE_ID
+    assert diagnostic.cases[0].target_state_id == STATE_DIAGNOSTIC_ID
 
 
 @pytest.mark.unittest
-def test_partition_verifier_accepts_complete_disjoint_stable_and_entry_universes(
-    macro_domain,
-):
-    """Synthetic truth-table partitions prove fallback and delta bucket contracts."""
-    stable = stable_leaf_source(macro_domain, "Root.Plant.Idle")
-    accepted = make_case(
-        macro_domain,
-        stable,
-        condition=BoolTemplate.atom("accepted"),
-        target_path="Root.Plant.Busy",
-    )
-    fallback = build_fallback_case(macro_domain, stable, (accepted,))
-    result = MacroStepFormal(stable, (accepted, fallback)).verify_partition()
-    assert result.to_canonical() == {
-        "node": "partition_check_result",
-        "variables": ["accepted"],
-        "assignment_count": 2,
-        "bucket_count": 2,
-        "scope": "build-time-self-check",
-    }
+def test_verify_boolean_partition_reports_gaps_overlaps_and_budget():
+    """Truth-table checker stays build-time only and reports hard failures."""
+    a = BoolTemplate.atom("event:Root.Go")
 
-    entry = entry_source(macro_domain, "Root.Plant")
-    success = make_case(
-        macro_domain,
-        entry,
-        condition=BoolTemplate.atom("success"),
-        target_path="Root.Plant.Idle",
-    )
-    build_diag = BoolTemplate.and_(
-        BoolTemplate.atom("build_diag"),
-        BoolTemplate.not_(BoolTemplate.atom("success")),
-    )
-    delta = build_semantic_delta_case(macro_domain, entry, (success,), (build_diag,))
-    entry_result = MacroStepFormal(
-        entry, (success,), (delta,), (build_diag,)
-    ).verify_partition()
-    assert entry_result.variables == ("build_diag", "success")
-    assert entry_result.bucket_count == 3
-
-
-@pytest.mark.unittest
-def test_partition_verifier_fails_closed_on_gap_overlap_and_unknown_budget():
-    """Partition self-checks fail closed and never become Core_N clauses."""
-    a = BoolTemplate.atom("a")
+    assert verify_boolean_partition((a, BoolTemplate.not_(a))).bucket_count == 2
     with pytest.raises(BmcBuildError, match="overlap"):
-        verify_boolean_partition((a, a, BoolTemplate.not_(a)))
+        verify_boolean_partition((a, BoolTemplate.true()))
     with pytest.raises(BmcBuildError, match="gap"):
-        verify_boolean_partition((a,))
-    with pytest.raises(BmcBuildError, match="overlap.*gap"):
-        verify_boolean_partition((a, a))
+        verify_boolean_partition((a, BoolTemplate.false()))
     with pytest.raises(BmcBuildError, match="assignment budget"):
         verify_boolean_partition(
-            (a, BoolTemplate.not_(a)), variables=("a", "b"), max_assignments=2
+            (BoolTemplate.true(),),
+            variables=("event:Root.A", "event:Root.B"),
+            max_assignments=2,
         )
-
-    result = verify_boolean_partition((a, BoolTemplate.not_(a)))
-    assert "clauses" not in result.to_canonical()
-    assert result.to_canonical()["scope"] == "build-time-self-check"
 
 
 @pytest.mark.unittest
-def test_case_validation_rejects_label_kind_and_primitive_mismatches(macro_domain):
-    """CycleCase and metadata constructors fail on malformed contract values."""
-    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
-    with pytest.raises(InvalidBmcEncoding, match="label case kind"):
-        CycleCase(
-            "transition",
-            source.source_state_id,
-            source.source_state_path,
-            source.source_state_id,
-            source.source_state_path,
-            "%s::fallback::%s::0"
-            % (source.source_state_path, source.source_state_path),
-            BoolTemplate.true(),
-            carry_var_updates(macro_domain),
-            domain=macro_domain,
-        )
-    with pytest.raises(InvalidBmcEncoding, match="event_id"):
-        EventUse(-1, "Root.Go", "positive", "trigger")
-    with pytest.raises(InvalidBmcEncoding, match="event polarity"):
-        EventUse(0, "Root.Go", "maybe", "trigger")
-    with pytest.raises(InvalidBmcEncoding, match="boolean template kind"):
-        BoolTemplate("xor")
-    with pytest.raises(InvalidBmcEncoding, match="Unknown state id"):
-        CycleCase(
-            "transition",
-            source.source_state_id,
-            source.source_state_path,
-            9999,
-            "Missing",
-            "%s::transition::Missing::0" % source.source_state_path,
-            BoolTemplate.true(),
-            carry_var_updates(macro_domain),
-            domain=macro_domain,
-        )
-    with pytest.raises(InvalidBmcEncoding, match="operands"):
-        BoolTemplate.or_(BoolTemplate.atom("ok"), object())
+def test_verify_boolean_partition_rejects_unknown_atom_namespace():
+    """Public partition checks fail closed on non-canonical atom prefixes."""
+    atom = BoolTemplate.atom("opaque:bad")
+
+    with pytest.raises(InvalidBmcEncoding, match="atom namespace"):
+        verify_boolean_partition((atom, BoolTemplate.not_(atom)), max_assignments=4)
 
 
 @pytest.mark.unittest
-def test_macro_imports_do_not_load_z3_or_verify_modules():
-    """Macro contracts stay solver-independent and verify-registry independent."""
+def test_structural_partition_checker_handles_large_priority_masks():
+    """Large canonical accepted/fallback masks avoid truth-table budget failures."""
+    source = stable_leaf_source(
+        build_bmc_domain(load_state_machine_from_text("state Root;"), 1), "Root"
+    )
+
+    result = verify_source_partition(source, make_large_priority_partition(source))
+
+    assert result.bucket_count == 14
+    assert len(result.variables) == 13
+    assert result.assignment_count == 0
+
+
+@pytest.mark.unittest
+def test_structural_partition_checker_rejects_extra_accepted_atoms():
+    """Structural budget bypass applies only to exact canonical accepted masks."""
+    source = stable_leaf_source(
+        build_bmc_domain(load_state_machine_from_text("state Root;"), 1), "Root"
+    )
+
+    def inject_positive_accepted(index, accepted, condition):
+        if index != 1:
+            return condition
+        return BoolTemplate.and_(
+            condition, BoolTemplate.atom("accepted:%s" % accepted[0].label)
+        )
+
+    with pytest.raises(BmcBuildError, match="assignment budget"):
+        verify_source_partition(
+            source,
+            make_large_priority_partition(source, inject_positive_accepted),
+        )
+
+
+@pytest.mark.unittest
+def test_sentinel_diagnostics_fail_closed_under_optimized_python():
+    """Sentinel partition validation must not depend on assert statements."""
+    code = """
+from pyfcstm.bmc import build_bmc_domain, terminated_source
+from pyfcstm.bmc.errors import InvalidBmcEncoding
+from pyfcstm.bmc.macro import BoolTemplate, terminated_absorb_case, verify_source_partition
+from pyfcstm.model import load_state_machine_from_text
+
+domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
+source = terminated_source(domain)
+try:
+    verify_source_partition(
+        source,
+        (terminated_absorb_case(domain),),
+        build_diagnostic_conditions=(BoolTemplate.true(),),
+        max_assignments=1,
+    )
+except InvalidBmcEncoding as err:
+    print(type(err).__name__, str(err))
+else:
+    raise SystemExit('sentinel diagnostics were accepted')
+"""
+    result = subprocess.run(
+        [sys.executable, "-O", "-c", code],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+    )
+
+    assert (
+        "InvalidBmcEncoding sentinel absorb formal cannot have build diagnostics"
+        in (result.stdout.strip())
+    )
+
+
+@pytest.mark.unittest
+def test_bmc_macro_import_does_not_load_z3_or_verify_modules():
+    """Importing macro contracts remains independent from solver and verify."""
     code = (
         "import sys; "
         "import pyfcstm.bmc.macro; "
-        "print('z3' in sys.modules); "
-        "print(any(name.startswith('pyfcstm.verify') for name in sys.modules))"
+        "bad = ["
+        "name for name in sys.modules "
+        "if name == 'z3' or name.startswith('pyfcstm.verify')"
+        "]; "
+        "print(bad)"
     )
 
     result = subprocess.run(
@@ -655,561 +1916,4 @@ def test_macro_imports_do_not_load_z3_or_verify_modules():
         universal_newlines=True,
     )
 
-    assert result.stdout.splitlines() == ["False", "False"]
-
-
-@pytest.mark.unittest
-def test_bool_template_validation_and_evaluation_fail_closed():
-    """BoolTemplate rejects malformed recipes and evaluation unknowns."""
-    atom = BoolTemplate.atom("a")
-
-    with pytest.raises(InvalidBmcEncoding, match="operands"):
-        BoolTemplate("atom", name="a", operands=(atom,))
-    with pytest.raises(InvalidBmcEncoding, match="names"):
-        BoolTemplate("true", name="a")
-    with pytest.raises(InvalidBmcEncoding, match="operands"):
-        BoolTemplate("false", operands=(atom,))
-    with pytest.raises(InvalidBmcEncoding, match="names"):
-        BoolTemplate("not", name="a", operands=(atom,))
-    with pytest.raises(InvalidBmcEncoding, match="one operand"):
-        BoolTemplate("not")
-    with pytest.raises(InvalidBmcEncoding, match="names"):
-        BoolTemplate("and", name="a", operands=(atom,))
-    with pytest.raises(InvalidBmcEncoding, match="must have operands"):
-        BoolTemplate("or")
-    with pytest.raises(BmcBuildError, match="missing boolean assignment"):
-        atom.evaluate({})
-    with pytest.raises(BmcBuildError, match="must be bool"):
-        atom.evaluate({"a": 1})
-
-    forged = BoolTemplate.true()
-    object.__setattr__(forged, "kind", "xor")
-    with pytest.raises(BmcBuildError, match="unsupported boolean"):
-        forged.evaluate({})
-
-
-@pytest.mark.unittest
-def test_event_and_var_update_validation_rejects_malformed_metadata(macro_domain):
-    """EventUse and VarUpdate reject malformed primitive metadata."""
-    with pytest.raises(InvalidBmcEncoding, match="event_id"):
-        EventUse(True, "Root.Go", "positive", "trigger")
-    with pytest.raises(InvalidBmcEncoding, match="event_id"):
-        EventUse(-1, "Root.Go", "positive", "trigger")
-    with pytest.raises(InvalidBmcEncoding, match="event path"):
-        EventUse(0, "", "positive", "trigger")
-    with pytest.raises(InvalidBmcEncoding, match="event reason"):
-        EventUse(0, "Root.Go", "positive", "unknown")
-
-    with pytest.raises(InvalidBmcEncoding, match="variable_id"):
-        VarUpdate(True, "x", "pre:x")
-    with pytest.raises(InvalidBmcEncoding, match="non-negative"):
-        VarUpdate(-1, "x", "pre:x")
-    with pytest.raises(InvalidBmcEncoding, match="variable_name"):
-        VarUpdate(0, "", "pre:x")
-    with pytest.raises(InvalidBmcEncoding, match="expression"):
-        VarUpdate(0, "x", "")
-    with pytest.raises(InvalidBmcEncoding, match="is_carry"):
-        VarUpdate(0, "x", "pre:x", is_carry=object())
-    with pytest.raises(InvalidBmcEncoding, match="domain"):
-        carry_var_updates(object())
-    with pytest.raises(InvalidBmcEncoding, match="domain"):
-        var_update_for(object(), "x", "pre:x")
-    with pytest.raises(InvalidBmcEncoding, match="variable must"):
-        var_update_for(macro_domain, object(), "pre:x")
-    with pytest.raises(InvalidBmcEncoding, match="Unknown variable name"):
-        var_update_for(macro_domain, "missing", "0")
-    with pytest.raises(InvalidBmcEncoding, match="updates must be a sequence"):
-        build_var_updates(macro_domain, object())
-    with pytest.raises(InvalidBmcEncoding, match="VarUpdate"):
-        build_var_updates(macro_domain, (object(),))
-    duplicate_name = (
-        VarUpdate(macro_domain.variable_name_to_id("x"), "x", "pre:x"),
-        VarUpdate(macro_domain.variable_name_to_id("y"), "x", "pre:x"),
-    )
-    with pytest.raises(InvalidBmcEncoding, match="Duplicate variable update name"):
-        build_var_updates(macro_domain, duplicate_name)
-
-
-@pytest.mark.unittest
-def test_cycle_case_validation_rejects_malformed_contract_fields(macro_domain):
-    """CycleCase rejects malformed labels, metadata, and kind-specific shapes."""
-    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
-    carry = carry_var_updates(macro_domain)
-    label = "%s::transition::%s::0" % (
-        source.source_state_path,
-        source.source_state_path,
-    )
-
-    with pytest.raises(InvalidBmcEncoding, match="condition"):
-        CycleCase(
-            "transition",
-            source.source_state_id,
-            source.source_state_path,
-            source.source_state_id,
-            source.source_state_path,
-            label,
-            object(),
-            carry,
-        )
-    with pytest.raises(InvalidBmcEncoding, match="used_events"):
-        CycleCase(
-            "transition",
-            source.source_state_id,
-            source.source_state_path,
-            source.source_state_id,
-            source.source_state_path,
-            label,
-            BoolTemplate.true(),
-            carry,
-            used_events=(object(),),
-        )
-    with pytest.raises(InvalidBmcEncoding, match="failed_conditions"):
-        CycleCase(
-            "transition",
-            source.source_state_id,
-            source.source_state_path,
-            source.source_state_id,
-            source.source_state_path,
-            label,
-            BoolTemplate.true(),
-            carry,
-            failed_conditions=(object(),),
-        )
-    with pytest.raises(InvalidBmcEncoding, match="var_update"):
-        CycleCase(
-            "transition",
-            source.source_state_id,
-            source.source_state_path,
-            source.source_state_id,
-            source.source_state_path,
-            label,
-            BoolTemplate.true(),
-            (object(),),
-        )
-    with pytest.raises(InvalidBmcEncoding, match="source::kind"):
-        CycleCase(
-            "transition",
-            source.source_state_id,
-            source.source_state_path,
-            source.source_state_id,
-            source.source_state_path,
-            "bad",
-            BoolTemplate.true(),
-            carry,
-        )
-    with pytest.raises(InvalidBmcEncoding, match="label source"):
-        CycleCase(
-            "transition",
-            source.source_state_id,
-            source.source_state_path,
-            source.source_state_id,
-            source.source_state_path,
-            "Other::transition::%s::0" % source.source_state_path,
-            BoolTemplate.true(),
-            carry,
-        )
-    with pytest.raises(InvalidBmcEncoding, match="label target"):
-        CycleCase(
-            "transition",
-            source.source_state_id,
-            source.source_state_path,
-            source.source_state_id,
-            source.source_state_path,
-            "%s::transition::Other::0" % source.source_state_path,
-            BoolTemplate.true(),
-            carry,
-        )
-    with pytest.raises(InvalidBmcEncoding, match="ordinal"):
-        CycleCase(
-            "transition",
-            source.source_state_id,
-            source.source_state_path,
-            source.source_state_id,
-            source.source_state_path,
-            "%s::transition::%s::x"
-            % (source.source_state_path, source.source_state_path),
-            BoolTemplate.true(),
-            carry,
-        )
-    with pytest.raises(InvalidBmcEncoding, match="self-loop"):
-        CycleCase(
-            "absorb",
-            STATE_TERMINATE_ID,
-            TERMINATE_CASE_PATH,
-            STATE_DIAGNOSTIC_ID,
-            DIAGNOSTIC_CASE_PATH,
-            "%s::absorb::%s::0" % (TERMINATE_CASE_PATH, DIAGNOSTIC_CASE_PATH),
-            BoolTemplate.true(),
-            carry,
-        )
-    with pytest.raises(InvalidBmcEncoding, match="sentinel"):
-        CycleCase(
-            "absorb",
-            source.source_state_id,
-            source.source_state_path,
-            source.source_state_id,
-            source.source_state_path,
-            "%s::absorb::%s::0" % (source.source_state_path, source.source_state_path),
-            BoolTemplate.true(),
-            carry,
-        )
-    with pytest.raises(InvalidBmcEncoding, match="target diagnostic"):
-        CycleCase(
-            "delta",
-            source.source_state_id,
-            source.source_state_path,
-            source.source_state_id,
-            source.source_state_path,
-            "%s::delta::%s::0" % (source.source_state_path, source.source_state_path),
-            BoolTemplate.true(),
-            carry,
-        )
-    with pytest.raises(InvalidBmcEncoding, match="domain"):
-        CycleCase(
-            "transition",
-            source.source_state_id,
-            source.source_state_path,
-            source.source_state_id,
-            source.source_state_path,
-            label,
-            BoolTemplate.true(),
-            carry,
-            domain=object(),
-        )
-
-
-@pytest.mark.unittest
-def test_macro_step_formal_validation_rejects_bucket_shape_errors(macro_domain):
-    """MacroStepFormal validates bucket types, source matches, and sentinel formals."""
-    stable = stable_leaf_source(macro_domain, "Root.Plant.Idle")
-    entry = entry_source(macro_domain, "Root.Plant")
-    transition = make_case(macro_domain, entry, target_path="Root.Plant.Idle")
-    stable_transition = make_case(macro_domain, stable)
-    fallback = build_fallback_case(macro_domain, stable, (stable_transition,))
-
-    with pytest.raises(InvalidBmcEncoding, match="source"):
-        MacroStepFormal(object(), (fallback,))
-    with pytest.raises(InvalidBmcEncoding, match="success_cases"):
-        MacroStepFormal(stable, (object(),))
-    with pytest.raises(InvalidBmcEncoding, match="delta_cases"):
-        MacroStepFormal(entry, (transition,), object())
-    with pytest.raises(InvalidBmcEncoding, match="delta_cases"):
-        MacroStepFormal(entry, (transition,), (object(),))
-    with pytest.raises(InvalidBmcEncoding, match="build_diagnostic"):
-        MacroStepFormal(entry, (transition,), (), (object(),))
-    with pytest.raises(InvalidBmcEncoding, match="at least one"):
-        MacroStepFormal(entry, ())
-    with pytest.raises(InvalidBmcEncoding, match="fallback"):
-        MacroStepFormal(stable, (stable_transition,))
-    with pytest.raises(InvalidBmcEncoding, match="build diagnostics"):
-        MacroStepFormal(stable, (fallback,), (), (BoolTemplate.atom("diag"),))
-    misplaced_delta = build_semantic_delta_case(macro_domain, entry, (transition,))
-    with pytest.raises(InvalidBmcEncoding, match="success_cases"):
-        MacroStepFormal(entry, (misplaced_delta,))
-    non_delta = make_case(macro_domain, entry, target_path="Root.Plant.Idle")
-    with pytest.raises(InvalidBmcEncoding, match="delta_cases may only"):
-        MacroStepFormal(entry, (), (non_delta,))
-    with pytest.raises(InvalidBmcEncoding, match="case source id"):
-        MacroStepFormal(terminated_source(macro_domain), (transition,))
-    wrong_sentinel_case = CycleCase(
-        "absorb",
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        "__diagnostic__::absorb::__diagnostic__::0",
-        BoolTemplate.true(),
-        carry_var_updates(macro_domain),
-        domain=macro_domain,
-    )
-    with pytest.raises(InvalidBmcEncoding, match="case source id"):
-        MacroStepFormal(terminated_source(macro_domain), (wrong_sentinel_case,))
-
-
-@pytest.mark.unittest
-def test_fallback_and_delta_helpers_reject_bad_inputs(macro_domain):
-    """Fallback and delta helper constructors validate source and metadata shape."""
-    stable = stable_leaf_source(macro_domain, "Root.Plant.Idle")
-    other_stable = stable_leaf_source(macro_domain, "Root.Backup.Idle")
-    entry = entry_source(macro_domain, "Root.Plant")
-    other_entry = entry_source(macro_domain, "Root.Backup")
-    stable_case = make_case(macro_domain, stable)
-    other_stable_case = make_case(macro_domain, other_stable)
-    entry_case = make_case(macro_domain, entry, target_path="Root.Plant.Idle")
-    other_entry_case = make_case(
-        macro_domain, other_entry, target_path="Root.Backup.Idle"
-    )
-
-    with pytest.raises(InvalidBmcEncoding, match="stable_leaf"):
-        build_fallback_case(macro_domain, entry, ())
-    with pytest.raises(InvalidBmcEncoding, match="ordinal"):
-        build_fallback_case(macro_domain, stable, (), ordinal=-1)
-    with pytest.raises(InvalidBmcEncoding, match="CycleCase"):
-        build_fallback_case(macro_domain, stable, (object(),))
-    with pytest.raises(InvalidBmcEncoding, match="fallback source"):
-        build_fallback_case(macro_domain, stable, (other_stable_case,))
-    stable_initial_case = make_case(macro_domain, stable, label_kind="initial")
-    with pytest.raises(InvalidBmcEncoding, match="ordinary accepted"):
-        build_fallback_case(macro_domain, stable, (stable_initial_case,))
-    with pytest.raises(InvalidBmcEncoding, match="failed_conditions"):
-        build_fallback_case(macro_domain, stable, (stable_case,), (object(),))
-
-    with pytest.raises(InvalidBmcEncoding, match="entry source"):
-        build_semantic_delta_case(macro_domain, stable, ())
-    with pytest.raises(InvalidBmcEncoding, match="ordinal"):
-        build_semantic_delta_case(macro_domain, entry, (), ordinal=-1)
-    with pytest.raises(InvalidBmcEncoding, match="CycleCase"):
-        build_semantic_delta_case(macro_domain, entry, (object(),))
-    with pytest.raises(InvalidBmcEncoding, match="delta source"):
-        build_semantic_delta_case(macro_domain, entry, (other_entry_case,))
-    entry_initial_case = make_case(
-        macro_domain,
-        entry,
-        label_kind="initial",
-        target_path="Root.Plant.Idle",
-    )
-    delta_with_initial = build_semantic_delta_case(
-        macro_domain,
-        entry,
-        (entry_initial_case,),
-    )
-    assert (
-        delta_with_initial.condition.to_canonical()
-        == BoolTemplate.not_(entry_initial_case.condition).to_canonical()
-    )
-    with pytest.raises(InvalidBmcEncoding, match="build_diagnostic"):
-        build_semantic_delta_case(macro_domain, entry, (entry_case,), (object(),))
-    with pytest.raises(InvalidBmcEncoding, match="failed_conditions"):
-        build_semantic_delta_case(macro_domain, entry, (entry_case,), (), (object(),))
-
-
-@pytest.mark.unittest
-def test_partition_helpers_reject_bad_inputs_and_source_mismatches(macro_domain):
-    """Partition self-check helpers reject malformed buckets and case ownership."""
-    stable = stable_leaf_source(macro_domain, "Root.Plant.Idle")
-    entry = entry_source(macro_domain, "Root.Plant")
-    other_entry = entry_source(macro_domain, "Root.Backup")
-    delta = build_semantic_delta_case(macro_domain, entry, ())
-    other_delta = build_semantic_delta_case(macro_domain, other_entry, ())
-
-    with pytest.raises(BmcBuildError, match="at least one"):
-        verify_boolean_partition(())
-    with pytest.raises(BmcBuildError, match="BoolTemplate"):
-        verify_boolean_partition((object(),))
-    with pytest.raises(BmcBuildError, match="max_assignments"):
-        verify_boolean_partition((BoolTemplate.true(),), max_assignments=True)
-    with pytest.raises(BmcBuildError, match="max_assignments"):
-        verify_boolean_partition((BoolTemplate.true(),), max_assignments=0)
-    with pytest.raises(BmcBuildError, match="variables"):
-        verify_boolean_partition((BoolTemplate.true(),), variables=("",))
-    with pytest.raises(BmcBuildError, match="missing boolean assignment"):
-        verify_boolean_partition((BoolTemplate.atom("a"),), variables=())
-
-    with pytest.raises(InvalidBmcEncoding, match="source"):
-        verify_source_partition(object(), (), ())
-    with pytest.raises(InvalidBmcEncoding, match="entry source"):
-        verify_source_partition(stable, (), (delta,))
-    with pytest.raises(InvalidBmcEncoding, match="CycleCase"):
-        verify_source_partition(entry, (object(),), ())
-    with pytest.raises(InvalidBmcEncoding, match="source id"):
-        verify_source_partition(entry, (), (other_delta,))
-    non_delta = make_case(macro_domain, entry, target_path="Root.Plant.Idle")
-    with pytest.raises(InvalidBmcEncoding, match="delta_cases may only"):
-        verify_source_partition(entry, (), (non_delta,))
-    with pytest.raises(InvalidBmcEncoding, match="success_cases"):
-        verify_source_partition(entry, (delta,), ())
-    with pytest.raises(InvalidBmcEncoding, match="build_diagnostic"):
-        verify_source_partition(entry, (), (delta,), (object(),))
-
-
-@pytest.mark.unittest
-def test_additional_macro_contract_branches_are_hardened(macro_domain):
-    """Contract helpers cover no-domain, path-mismatch, and lookup-failure branches."""
-    assert BoolTemplate.true().evaluate({}) is True
-    assert BoolTemplate.false().evaluate({}) is False
-    assert BoolTemplate.and_().kind == "true"
-    assert BoolTemplate.and_(BoolTemplate.atom("a")) == BoolTemplate.atom("a")
-    assert BoolTemplate.or_(BoolTemplate.atom("a")) == BoolTemplate.atom("a")
-    with pytest.raises(InvalidBmcEncoding, match="operands"):
-        BoolTemplate("and", operands=(object(),))
-
-    with pytest.raises(InvalidBmcEncoding, match="Unknown variable id"):
-        var_update_for(macro_domain, 999, "0")
-    with pytest.raises(InvalidBmcEncoding, match="domain"):
-        build_var_updates(object(), ())
-
-    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
-    carry = carry_var_updates(macro_domain)
-    event = macro_domain.event_by_path("Root.Go")
-    with pytest.raises(InvalidBmcEncoding, match="Unknown event id"):
-        CycleCase(
-            "transition",
-            source.source_state_id,
-            source.source_state_path,
-            source.source_state_id,
-            source.source_state_path,
-            "%s::transition::%s::2"
-            % (source.source_state_path, source.source_state_path),
-            BoolTemplate.true(),
-            carry,
-            used_events=(EventUse(event.id + 1000, event.path, "positive", "trigger"),),
-            domain=macro_domain,
-        )
-    plain = CycleCase(
-        "transition",
-        source.source_state_id,
-        source.source_state_path,
-        source.source_state_id,
-        source.source_state_path,
-        "%s::transition::%s::3" % (source.source_state_path, source.source_state_path),
-        BoolTemplate.true(),
-        carry,
-    )
-    assert plain.to_canonical()["label"].endswith("::3")
-    with pytest.raises(InvalidBmcEncoding, match="case"):
-        case_antecedent_condition(object())
-
-    entry = entry_source(macro_domain, "Root.Plant")
-    wrong_path_case = CycleCase(
-        "delta",
-        entry.source_state_id,
-        "Other",
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        "Other::delta::__diagnostic__::0",
-        BoolTemplate.true(),
-        carry,
-    )
-    with pytest.raises(InvalidBmcEncoding, match="case source path"):
-        MacroStepFormal(entry, (), (wrong_path_case,))
-    assert (
-        MacroStepFormal(
-            entry, (), (build_semantic_delta_case(macro_domain, entry, ()),)
-        ).to_canonical()["node"]
-        == "macro_step_formal"
-    )
-
-    diagnostic = diagnostic_source(macro_domain)
-    diagnostic_case = diagnostic_absorb_case(macro_domain)
-    with pytest.raises(InvalidBmcEncoding, match="case source id"):
-        MacroStepFormal(
-            diagnostic,
-            (diagnostic_case,),
-            (build_semantic_delta_case(macro_domain, entry, ()),),
-        )
-    non_absorb = CycleCase(
-        "diagnostic",
-        diagnostic.source_state_id,
-        diagnostic.source_state_path,
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        "__diagnostic__::diagnostic::__diagnostic__::0",
-        BoolTemplate.true(),
-        carry,
-    )
-    with pytest.raises(InvalidBmcEncoding, match="sentinel formal case"):
-        MacroStepFormal(diagnostic, (non_absorb,))
-    with pytest.raises(InvalidBmcEncoding, match="case source id"):
-        MacroStepFormal(diagnostic, (terminated_absorb_case(macro_domain),))
-
-    accepted_wrong_path = CycleCase(
-        "transition",
-        source.source_state_id,
-        "Other",
-        source.source_state_id,
-        source.source_state_path,
-        "Other::transition::%s::0" % source.source_state_path,
-        BoolTemplate.atom("wrong"),
-        carry,
-    )
-    with pytest.raises(InvalidBmcEncoding, match="fallback source"):
-        build_fallback_case(macro_domain, source, (accepted_wrong_path,))
-    entry_wrong_path = CycleCase(
-        "transition",
-        entry.source_state_id,
-        "Other",
-        macro_domain.state_path_to_id("Root.Plant.Idle"),
-        "Root.Plant.Idle",
-        "Other::transition::Root.Plant.Idle::0",
-        BoolTemplate.atom("wrong"),
-        carry,
-    )
-    with pytest.raises(InvalidBmcEncoding, match="delta source"):
-        build_semantic_delta_case(macro_domain, entry, (entry_wrong_path,))
-    with pytest.raises(InvalidBmcEncoding, match="source path"):
-        verify_source_partition(entry, (), (wrong_path_case,))
-
-
-@pytest.mark.unittest
-def test_macro_contract_sequence_type_guards_and_sentinel_absorb_branches(
-    macro_domain,
-):
-    """Sequence guards and sentinel absorb invariants fail closed."""
-    source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
-    entry = entry_source(macro_domain, "Root.Plant")
-    diagnostic = diagnostic_source(macro_domain)
-    terminate = terminated_source(macro_domain)
-    carry = carry_var_updates(macro_domain)
-    success = make_case(macro_domain, source, condition=BoolTemplate.atom("ok"))
-    delta = build_semantic_delta_case(macro_domain, entry, ())
-
-    with pytest.raises(InvalidBmcEncoding, match="success_cases"):
-        MacroStepFormal(source, object())
-    with pytest.raises(InvalidBmcEncoding, match="delta_cases"):
-        MacroStepFormal(entry, (), object())
-    with pytest.raises(InvalidBmcEncoding, match="build_diagnostic_conditions"):
-        MacroStepFormal(entry, (), (delta,), object())
-
-    with pytest.raises(InvalidBmcEncoding, match="case source id"):
-        MacroStepFormal(diagnostic, (diagnostic_absorb_case(macro_domain),), (delta,))
-    second_diagnostic_absorb = CycleCase(
-        "absorb",
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        "__diagnostic__::absorb::__diagnostic__::1",
-        BoolTemplate.true(),
-        carry,
-    )
-    with pytest.raises(InvalidBmcEncoding, match="must contain one case"):
-        MacroStepFormal(
-            diagnostic,
-            (diagnostic_absorb_case(macro_domain), second_diagnostic_absorb),
-        )
-    wrong_sentinel_loop = CycleCase(
-        "absorb",
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        STATE_DIAGNOSTIC_ID,
-        DIAGNOSTIC_CASE_PATH,
-        "__diagnostic__::absorb::__diagnostic__::1",
-        BoolTemplate.true(),
-        carry,
-    )
-    object.__setattr__(wrong_sentinel_loop, "source_state_id", STATE_TERMINATE_ID)
-    object.__setattr__(wrong_sentinel_loop, "source_state_path", TERMINATE_CASE_PATH)
-    with pytest.raises(InvalidBmcEncoding, match="self-loop sentinel id"):
-        MacroStepFormal(terminate, (wrong_sentinel_loop,))
-
-    with pytest.raises(InvalidBmcEncoding, match="accepted_cases"):
-        build_fallback_case(macro_domain, source, object())
-    with pytest.raises(InvalidBmcEncoding, match="failed_conditions"):
-        build_fallback_case(macro_domain, source, (success,), object())
-    with pytest.raises(InvalidBmcEncoding, match="accepted_cases"):
-        build_semantic_delta_case(macro_domain, entry, object())
-    with pytest.raises(InvalidBmcEncoding, match="build_diagnostic_conditions"):
-        build_semantic_delta_case(macro_domain, entry, (), object())
-    with pytest.raises(InvalidBmcEncoding, match="failed_conditions"):
-        build_semantic_delta_case(macro_domain, entry, (), (), object())
-
-    with pytest.raises(BmcBuildError, match="partition buckets"):
-        verify_boolean_partition(object())
-    with pytest.raises(BmcBuildError, match="partition variables"):
-        verify_boolean_partition((BoolTemplate.true(),), variables=object())
-    with pytest.raises(InvalidBmcEncoding, match="success_cases"):
-        verify_source_partition(source, object())
-    with pytest.raises(InvalidBmcEncoding, match="delta_cases"):
-        verify_source_partition(entry, (), object())
-    with pytest.raises(InvalidBmcEncoding, match="build_diagnostic_conditions"):
-        verify_source_partition(entry, (), (delta,), object())
+    assert result.stdout.strip() == "[]"

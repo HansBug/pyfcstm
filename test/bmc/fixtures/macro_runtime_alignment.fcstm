@@ -1,0 +1,46 @@
+def int x = 0;
+def int y = 0;
+
+state Root {
+    >> during before { x = x + 1000; }
+    >> during after { y = y + 1000; }
+
+    state System {
+        during before { y = y + 1; }
+        during after { y = y + 2; }
+        exit { y = y + 4; }
+
+        state A {
+            exit { y = y + 10; }
+            during { x = x + 1; }
+        }
+
+        state Trap {
+            state TrapLeaf {
+                during { x = x + 400; }
+            }
+            [*] -> TrapLeaf :: Arm;
+        }
+
+        pseudo state Route;
+
+        state B {
+            enter { y = y + 1; }
+            during { x = x + 3; }
+        }
+
+        [*] -> A effect { x = x + 10; }
+        A -> Trap :: Tick effect { x = x + 20; }
+        A -> Route :: Tick effect { x = x + 2; }
+        Route -> B : if [x < 13] effect { x = x * 2; }
+        Route -> [*] : if [x >= 13] effect { y = y + 20; }
+    }
+
+    state Done {
+        enter { y = y + 10000; }
+        during { x = x + 10000; }
+    }
+
+    [*] -> System;
+    System -> Done : if [y >= 30] effect { x = x + 100; }
+}

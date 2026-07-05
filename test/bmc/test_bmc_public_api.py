@@ -83,20 +83,21 @@ def test_bmc_public_api_exports_exact_names():
         "source_from_initial_spec",
         "BoolTemplate",
         "EventUse",
-        "VarUpdate",
+        "GuardRequirement",
+        "PriorityExclusion",
+        "ActionBlock",
         "CycleCase",
         "PartitionCheckResult",
         "MacroStepFormal",
-        "carry_var_updates",
-        "var_update_for",
-        "build_var_updates",
-        "case_antecedent_condition",
+        "case_path_condition",
         "terminated_absorb_case",
         "diagnostic_absorb_case",
         "build_fallback_case",
         "build_semantic_delta_case",
         "verify_boolean_partition",
         "verify_source_partition",
+        "MacroExpansionOptions",
+        "expand_macro_step_cases",
         "BmcOptions",
         "BmcPreparedContext",
         "BmcEngine",
@@ -125,20 +126,21 @@ def test_bmc_public_api_exports_exact_names():
         "source_from_initial_spec",
         "BoolTemplate",
         "EventUse",
-        "VarUpdate",
+        "GuardRequirement",
+        "PriorityExclusion",
+        "ActionBlock",
         "CycleCase",
         "PartitionCheckResult",
         "MacroStepFormal",
-        "carry_var_updates",
-        "var_update_for",
-        "build_var_updates",
-        "case_antecedent_condition",
+        "case_path_condition",
         "terminated_absorb_case",
         "diagnostic_absorb_case",
         "build_fallback_case",
         "build_semantic_delta_case",
         "verify_boolean_partition",
         "verify_source_partition",
+        "MacroExpansionOptions",
+        "expand_macro_step_cases",
         "BmcOptions",
         "BmcPreparedContext",
         "BmcEngine",
@@ -155,10 +157,7 @@ def test_bmc_public_api_exports_exact_names():
         "terminated_source",
         "diagnostic_source",
         "source_from_initial_spec",
-        "carry_var_updates",
-        "var_update_for",
-        "build_var_updates",
-        "case_antecedent_condition",
+        "case_path_condition",
         "terminated_absorb_case",
         "diagnostic_absorb_case",
         "build_fallback_case",
@@ -166,6 +165,7 @@ def test_bmc_public_api_exports_exact_names():
         "verify_boolean_partition",
         "verify_source_partition",
         "build_bmc_domain",
+        "expand_macro_step_cases",
         "prepare_bmc_query",
     }
     for name in expected - lazy_names - function_names:
@@ -174,8 +174,8 @@ def test_bmc_public_api_exports_exact_names():
         assert callable(getattr(bmc, name))
     assert bmc.STATE_TERMINATE_ID == -1
     assert bmc.STATE_DIAGNOSTIC_ID == -2
-    assert bmc.TERMINATE_CASE_PATH == "__terminate__"
     assert bmc.DIAGNOSTIC_CASE_PATH == "__diagnostic__"
+    assert bmc.TERMINATE_CASE_PATH == "__terminate__"
     assert bmc.BmcEngine.__name__ == "BmcEngine"
     assert bmc.BmcOptions().__class__.__name__ == "BmcOptions"
     assert "BmcDomain" in dir(bmc)
@@ -196,6 +196,7 @@ def test_submodule_all_exports_are_exact():
     binding = importlib.import_module("pyfcstm.bmc.binding")
     source = importlib.import_module("pyfcstm.bmc.source")
     macro = importlib.import_module("pyfcstm.bmc.macro")
+    expand = importlib.import_module("pyfcstm.bmc.expand")
     engine = importlib.import_module("pyfcstm.bmc.engine")
 
     assert set(errors.__all__) == {
@@ -283,20 +284,23 @@ def test_submodule_all_exports_are_exact():
     assert set(macro.__all__) == {
         "BoolTemplate",
         "EventUse",
-        "VarUpdate",
+        "GuardRequirement",
+        "PriorityExclusion",
+        "ActionBlock",
         "CycleCase",
         "PartitionCheckResult",
         "MacroStepFormal",
-        "carry_var_updates",
-        "var_update_for",
-        "build_var_updates",
-        "case_antecedent_condition",
+        "case_path_condition",
         "terminated_absorb_case",
         "diagnostic_absorb_case",
         "build_fallback_case",
         "build_semantic_delta_case",
         "verify_boolean_partition",
         "verify_source_partition",
+    }
+    assert set(expand.__all__) == {
+        "MacroExpansionOptions",
+        "expand_macro_step_cases",
     }
     assert set(engine.__all__) == {
         "BmcOptions",
@@ -319,7 +323,7 @@ def test_bmc_does_not_import_verify_registry():
 
 @pytest.mark.unittest
 def test_bmc_import_does_not_load_verify_modules():
-    """Importing BMC in a fresh process keeps verify internals unloaded."""
+    """Importing BMC in a fresh process keeps model and verify internals unloaded."""
     code = (
         "import sys; "
         "import pyfcstm.bmc; "

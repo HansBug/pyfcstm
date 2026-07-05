@@ -14,6 +14,7 @@ pyfcstm.bmc
     domain
     engine
     errors
+    expand
     grammar/index
     listener
     macro

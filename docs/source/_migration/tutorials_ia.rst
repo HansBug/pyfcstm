@@ -340,7 +340,7 @@ Chapter migration records
      - ``Real-World Example: Smart Thermostat`` / ``实际示例：智能恒温器``
      - ``tutorials/dsl/index*.rst``
      - keep tutorial
-     - Retained as the first complete example through ``thermostat_example.fcstm``.
+     - Retained as an advanced complete example; first runnable path now uses compact warning-free ``first_thermostat.fcstm``.
    * - ``tutorials/dsl/index*.rst``
      - ``Comment Styles`` / ``注释样式``
      - ``reference/dsl/index*.rst``
@@ -1330,11 +1330,12 @@ DSL feature checklist
 .. csv-table:: DSL feature checklist
    :header: "feature_id", "family", "fact source", "new owner pages", "verification"
 
-   dsl-top-level-root,top-level,GrammarParser.g4 state_machine_dsl / def_assignment,"tutorials/dsl, reference/dsl",thermostat_example.fcstm inspect
+   dsl-top-level-root,top-level,GrammarParser.g4 state_machine_dsl / def_assignment,"tutorials/dsl, reference/dsl",first_thermostat.fcstm inspect
    dsl-import-preamble,import,preamble_program / constant_definition / initial_assignment,"how_to/dsl, reference/dsl, explanations/dsl_semantics",import examples inspect
    dsl-state-leaf-composite-pseudo,state,state_definition / E_PSEUDO_NOT_LEAF,"tutorials/dsl, how_to/dsl, reference/dsl, explanations/dsl_semantics",pseudo_state_demo inspect
    dsl-transition-normal,transition,transition_definition,"tutorials/dsl, how_to/dsl, reference/dsl",guards_and_effects inspect
-   dsl-transition-forced-combo,transition,transition_force_definition / combo rules / W_COMBO_*,"how_to/dsl, reference/dsl, explanations/dsl_semantics",forced_transitions inspect plus fragment audit
+   dsl-transition-forced,transition,transition_force_definition,"how_to/dsl, reference/dsl, explanations/dsl_semantics",forced_transitions inspect
+   dsl-transition-combo,transition,combo_transition_trigger / entry_combo_transition_trigger / W_COMBO_*,"how_to/dsl, reference/dsl, explanations/dsl_semantics",combo fragments plus semantic fixture audit
    dsl-event-scopes,event,event_definition / chain_id,"tutorials/dsl, how_to/dsl, reference/dsl, explanations/dsl_semantics",event_scoping examples inspect
    dsl-expression-reference,expression,num_expression / cond_expression,"how_to/dsl, reference/dsl, explanations/dsl_semantics",expression_demo inspect
    dsl-operation-blocks,operation,operational_statement / if_statement,"tutorials/dsl, how_to/dsl, reference/dsl",guards_and_effects inspect
@@ -1525,7 +1526,7 @@ The old DSL page contains 108 resource directives when counted with ``grep -cE "
    L2226,literalinclude,abstract_reference_demo.fcstm,Abstract and Reference Actions Example,how_to/dsl lifecycle and reference/dsl lifecycle forms,kept as literalinclude,pyfcstm inspect where file is a full model
    L2263,code-block,fcstm,Common Errors,reference/how-to prose or checked-in literalinclude replacement,audited as legacy inline block; fragment unless reintroduced as validated full block,full reintroduced blocks parse/inspect; fragments marked partial
    L2296,code-block,fcstm,Common Errors,reference/how-to prose or checked-in literalinclude replacement,audited as legacy inline block; fragment unless reintroduced as validated full block,full reintroduced blocks parse/inspect; fragments marked partial
-   L2340,literalinclude,thermostat_example.fcstm,Real-World Example: Smart Thermostat,tutorials/dsl first runnable model,kept as literalinclude,pyfcstm inspect where file is a full model
+   L2340,literalinclude,thermostat_example.fcstm,Real-World Example: Smart Thermostat,tutorials/dsl advanced complete resource and migration audit; first runnable replaced by first_thermostat.fcstm,kept as checked resource but no longer first runnable,pyfcstm inspect where file is a full model; first runnable inspect is warning-free
    L2386,code-block,fcstm,Comment Styles,reference/how-to prose or checked-in literalinclude replacement,audited as legacy inline block; fragment unless reintroduced as validated full block,full reintroduced blocks parse/inspect; fragments marked partial
    L2396,code-block,fcstm,Comment Styles,reference/how-to prose or checked-in literalinclude replacement,audited as legacy inline block; fragment unless reintroduced as validated full block,full reintroduced blocks parse/inspect; fragments marked partial
    L2405,code-block,fcstm,Comment Styles,reference/how-to prose or checked-in literalinclude replacement,audited as legacy inline block; fragment unless reintroduced as validated full block,full reintroduced blocks parse/inspect; fragments marked partial

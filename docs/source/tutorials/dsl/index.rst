@@ -36,7 +36,6 @@ child states and an initial transition.
 Fragment showing the skeleton::
 
    def int temperature = 20;
-   def int target = 22;
 
    state Thermostat {
        [*] -> Idle;
@@ -58,7 +57,6 @@ arithmetic:
 Fragment::
 
    def int temperature = 20;
-   def int target = 22;
    def float gain = 0.5;
 
 Use the full expression reference when you need hexadecimal literals,
@@ -91,7 +89,7 @@ events use ``:: EventName``. Guard transitions use ``: if [condition]``.
 
 Fragment::
 
-   Idle -> Heating : if [temperature < target];
+   Idle -> Heating : if [temperature < 20];
    Heating -> Idle :: StopHeating;
 
 Ordinary transitions intentionally keep event syntax and guard syntax separate.
@@ -107,13 +105,12 @@ them.
 
 Fragment::
 
-   Idle -> Heating : if [temperature < target] effect {
-       delta = target - temperature;
-       temperature = temperature + delta;
+   Idle -> Heating : if [temperature < 20] effect {
+       temperature = temperature + 1;
    }
 
 Assignments require arithmetic expressions. Guards require conditions. A
-comparison such as ``temperature < target`` bridges arithmetic expressions into a
+comparison such as ``temperature < 20`` bridges arithmetic expressions into a
 condition.
 
 Add minimal lifecycle hooks
@@ -145,21 +142,21 @@ Run and inspect the model
 
 The first runnable tutorial model is kept as a checked-in source file:
 
-.. literalinclude:: thermostat_example.fcstm
+.. literalinclude:: first_thermostat.fcstm
    :language: fcstm
-   :caption: ``thermostat_example.fcstm``
+   :caption: ``first_thermostat.fcstm``
 
 Run a short simulation from this directory:
 
 .. code-block:: bash
 
-   pyfcstm simulate -i thermostat_example.fcstm -e "cycle; cycle; current"
+   pyfcstm simulate -i first_thermostat.fcstm -e "cycle; cycle; current"
 
 Then inspect the model structure and diagnostics:
 
 .. code-block:: bash
 
-   pyfcstm inspect -i thermostat_example.fcstm --format json -o thermostat.inspect.json
+   pyfcstm inspect -i first_thermostat.fcstm --format json -o first_thermostat.inspect.json
 
 Only short command outputs belong in this tutorial. If inspect reports a syntax,
 model, combo, import, or C/C++ deployment-profile warning, use the diagnostics

@@ -30,7 +30,6 @@ operator、import mapping、transition 变体或 diagnostic code。
 .. code-block:: fcstm
 
    def int temperature = 20;
-   def int target = 22;
 
    state Thermostat {
        [*] -> Idle;
@@ -49,7 +48,6 @@ operator、import mapping、transition 变体或 diagnostic code。
 .. code-block:: fcstm
 
    def int temperature = 20;
-   def int target = 22;
    def float gain = 0.5;
 
 需要 hexadecimal literal、``pi`` / ``E`` / ``tau``、math function、bitwise operator、boolean operator 或 C-style ternary expression 时，查看完整表达式参考：:ref:`dsl-expression-reference-zh`。
@@ -80,7 +78,7 @@ transition 在 owner scope 中解析 target。如果 target 是某个 composite 
 
 .. code-block:: fcstm
 
-   Idle -> Heating : if [temperature < target];
+   Idle -> Heating : if [temperature < 20];
    Heating -> Idle :: StopHeating;
 
 普通 transition 刻意把 event syntax 和 guard syntax 分开。确实需要 event-plus-guard 行为时，请使用 combo-trigger 的任务指南和参考表，而不是自行混写普通形式。
@@ -94,12 +92,11 @@ guard 是 condition expression。effect 是 operation block，用来更新持久
 
 .. code-block:: fcstm
 
-   Idle -> Heating : if [temperature < target] effect {
-       delta = target - temperature;
-       temperature = temperature + delta;
+   Idle -> Heating : if [temperature < 20] effect {
+       temperature = temperature + 1;
    }
 
-assignment 需要 arithmetic expression。guard 需要 condition。``temperature < target`` 这样的比较把 arithmetic expression 桥接为 condition。
+assignment 需要 arithmetic expression。guard 需要 condition。``temperature < 20`` 这样的比较把 arithmetic expression 桥接为 condition。
 
 添加最小生命周期动作
 --------------------
@@ -129,21 +126,21 @@ named action、``abstract`` hook、documentation-comment abstract hook、``ref``
 
 本教程的 first runnable model 是仓库中的源文件：
 
-.. literalinclude:: thermostat_example.fcstm
+.. literalinclude:: first_thermostat.fcstm
    :language: fcstm
-   :caption: ``thermostat_example.fcstm``
+   :caption: ``first_thermostat.fcstm``
 
 在本目录运行短 simulation：
 
 .. code-block:: bash
 
-   pyfcstm simulate -i thermostat_example.fcstm -e "cycle; cycle; current"
+   pyfcstm simulate -i first_thermostat.fcstm -e "cycle; cycle; current"
 
 然后检查模型结构和 diagnostics：
 
 .. code-block:: bash
 
-   pyfcstm inspect -i thermostat_example.fcstm --format json -o thermostat.inspect.json
+   pyfcstm inspect -i first_thermostat.fcstm --format json -o first_thermostat.inspect.json
 
 教程只展示短命令和关键输出。如果 inspect 报出 syntax、model、combo、import 或 C/C++ deployment-profile warning，请使用 diagnostics 和 how-to 页面做定向修复。
 

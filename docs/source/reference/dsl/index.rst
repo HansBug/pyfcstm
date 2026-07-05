@@ -39,41 +39,113 @@ Every row still has a reference or explanation landing point.
      - Explanation coverage
      - Example / verification
      - EN/ZH
+   * - ``dsl-lexical-comments``
+     - lexical
+     - ``GrammarLexer.g4`` comments / strings / IDs
+     - N/A: tutorial hides token table
+     - N/A: task pages use snippets
+     - :ref:`dsl-lexical-forms`
+     - N/A: syntax token facts
+     - reference table review
+     - synced
    * - ``dsl-top-level-root``
      - top-level
-     - ``state_machine_dsl`` / ``def_assignment``
+     - ``state_machine_dsl`` / root ``state_definition``
      - :ref:`sec-tutorials-dsl`
      - :ref:`dsl-small-valid-model-task`
      - :ref:`dsl-top-level-forms`
      - :ref:`dsl-root-design`
-     - ``thermostat_example.fcstm`` inspect
+     - ``first_thermostat.fcstm`` inspect
      - synced
-   * - ``dsl-state-leaf-composite-pseudo``
+   * - ``dsl-top-level-def``
+     - top-level
+     - ``def_assignment`` / ``init_expression``
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-expression-safety-task`
+     - :ref:`dsl-top-level-forms`
+     - :ref:`dsl-expression-separation`
+     - ``first_thermostat.fcstm`` inspect
+     - synced
+   * - ``dsl-import-preamble``
+     - import
+     - ``preamble_program`` / ``constant_definition`` / ``initial_assignment``
+     - N/A: tutorial skips imports
+     - :ref:`dsl-import-task`
+     - :ref:`dsl-import-preamble-forms`
+     - :ref:`dsl-import-assembly-semantics`
+     - ``import_host_*.fcstm`` inspect
+     - synced
+   * - ``dsl-state-leaf-composite``
      - state
-     - ``state_definition`` / ``E_PSEUDO_NOT_LEAF``
+     - ``state_definition`` leaf/composite branches
      - :ref:`sec-tutorials-dsl`
      - :ref:`dsl-state-target-task`
      - :ref:`dsl-state-forms`
      - :ref:`dsl-ownership-name-resolution`
+     - ``first_thermostat.fcstm`` inspect
+     - synced
+   * - ``dsl-state-pseudo``
+     - state
+     - ``PSEUDO STATE`` / ``E_PSEUDO_NOT_LEAF``
+     - N/A: tutorial links advanced routing
+     - :ref:`dsl-state-target-task`
+     - :ref:`dsl-state-forms`
+     - :ref:`dsl-combo-relay-semantics`
      - ``pseudo_state_demo.fcstm`` inspect
      - synced
-   * - ``dsl-transition-normal``
+   * - ``dsl-state-target-resolution``
+     - state
+     - model state lookup / transition ownership
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-state-target-task`
+     - :ref:`dsl-state-forms`
+     - :ref:`dsl-ownership-name-resolution`
+     - scope snippets / model validation
+     - synced
+   * - ``dsl-transition-initial``
      - transition
-     - ``transition_definition``
+     - ``entryTransitionDefinition``
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-small-valid-model-task`
+     - :ref:`dsl-transition-forms`
+     - :ref:`dsl-composite-entry-semantics`
+     - ``first_thermostat.fcstm`` inspect
+     - synced
+   * - ``dsl-transition-plain-event``
+     - transition
+     - ``normalTransitionDefinition`` / event terms
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-guards-effects-task` / :ref:`dsl-event-scopes-task`
+     - :ref:`dsl-transition-forms`
+     - :ref:`dsl-event-ownership-signal`
+     - ``event_scoping_complete.fcstm`` inspect
+     - synced
+   * - ``dsl-transition-guard-effect``
+     - transition
+     - ``COLON IF`` / ``EFFECT`` operation block
      - :ref:`sec-tutorials-dsl`
      - :ref:`dsl-guards-effects-task`
      - :ref:`dsl-transition-forms`
-     - :ref:`dsl-composite-entry-semantics`
+     - :ref:`dsl-expression-separation`
      - ``guards_and_effects.fcstm`` inspect
      - synced
-   * - ``dsl-transition-forced-combo``
+   * - ``dsl-transition-combo``
      - transition
-     - ``transition_force_definition`` / combo rules
-     - N/A: advanced transition
-     - :ref:`dsl-forced-transition-task` / :ref:`dsl-combo-transition-task`
+     - ``combo_transition_trigger`` / ``entry_combo_transition_trigger``
+     - N/A: tutorial links advanced transition
+     - :ref:`dsl-combo-transition-task`
      - :ref:`dsl-transition-forms`
      - :ref:`dsl-combo-relay-semantics`
-     - ``forced_transitions.fcstm`` inspect and combo fragments
+     - combo fragments + semantic fixtures
+     - synced
+   * - ``dsl-transition-forced``
+     - transition
+     - ``transition_force_definition``
+     - N/A: tutorial links advanced transition
+     - :ref:`dsl-forced-transition-task`
+     - :ref:`dsl-transition-forms`
+     - :ref:`dsl-forced-transition-expansion`
+     - ``forced_transitions.fcstm`` inspect
      - synced
    * - ``dsl-event-scopes``
      - event
@@ -84,6 +156,51 @@ Every row still has a reference or explanation landing point.
      - :ref:`dsl-event-ownership-signal`
      - ``event_scoping_complete.fcstm`` inspect
      - synced
+   * - ``dsl-operation-assignment-temp``
+     - operation
+     - ``operation_assignment`` / local temp tracking
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-guards-effects-task`
+     - :ref:`dsl-operation-blocks`
+     - :ref:`dsl-expression-separation`
+     - ``guards_and_effects.fcstm`` inspect
+     - synced
+   * - ``dsl-operation-conditionals``
+     - operation
+     - ``if_statement`` / empty statement
+     - N/A: tutorial keeps blocks small
+     - :ref:`dsl-guards-effects-task`
+     - :ref:`dsl-operation-blocks`
+     - :ref:`dsl-expression-separation`
+     - ``guards_and_effects.fcstm`` inspect
+     - synced
+   * - ``dsl-expression-init``
+     - expression
+     - ``init_expression``
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-expression-safety-task`
+     - :ref:`dsl-expression-reference`
+     - :ref:`dsl-expression-separation`
+     - top-level initializer snippets
+     - synced
+   * - ``dsl-expression-runtime``
+     - expression
+     - ``num_expression`` / math functions / bitwise
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-expression-safety-task`
+     - :ref:`dsl-expression-reference`
+     - :ref:`dsl-expression-separation`
+     - ``expression_demo.fcstm`` inspect
+     - synced
+   * - ``dsl-expression-condition``
+     - expression
+     - ``cond_expression`` / comparison / boolean ops
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-expression-safety-task`
+     - :ref:`dsl-expression-reference`
+     - :ref:`dsl-expression-separation`
+     - ``expression_demo.fcstm`` inspect
+     - synced
    * - ``dsl-expression-ternary``
      - expression
      - ``conditionalCStyleExprNum`` / ``conditionalCStyleCondNum``
@@ -93,19 +210,19 @@ Every row still has a reference or explanation landing point.
      - :ref:`dsl-expression-separation`
      - ``expression_demo.fcstm`` inspect
      - synced
-   * - ``dsl-operation-blocks``
-     - operation
-     - ``operational_statement`` / ``if_statement``
-     - :ref:`sec-tutorials-dsl`
-     - :ref:`dsl-guards-effects-task`
-     - :ref:`dsl-operation-blocks`
-     - :ref:`dsl-expression-separation`
-     - ``guards_and_effects.fcstm`` inspect
-     - synced
-   * - ``dsl-lifecycle-forms``
+   * - ``dsl-lifecycle-concrete``
      - lifecycle
-     - ``enter_definition`` / ``during_definition`` / ``exit_definition``
+     - ``enter`` / ``during`` / ``exit`` operation forms
      - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-lifecycle-task`
+     - :ref:`dsl-lifecycle-forms`
+     - :ref:`dsl-lifecycle-hooks-semantics`
+     - ``first_thermostat.fcstm`` inspect
+     - synced
+   * - ``dsl-lifecycle-named-abstract-ref``
+     - lifecycle
+     - named / ``abstract`` / doc-comment / ``ref`` branches
+     - N/A: tutorial links advanced hooks
      - :ref:`dsl-lifecycle-task`
      - :ref:`dsl-lifecycle-forms`
      - :ref:`dsl-lifecycle-hooks-semantics`
@@ -120,23 +237,41 @@ Every row still has a reference or explanation landing point.
      - :ref:`dsl-during-aspect-semantics`
      - lifecycle diagrams / fragments
      - synced
-   * - ``dsl-import-preamble``
+   * - ``dsl-import-basic-alias``
      - import
-     - ``import_statement`` / ``preamble_program``
+     - ``import_statement`` header
      - N/A: tutorial skips imports
      - :ref:`dsl-import-task`
      - :ref:`dsl-import-forms`
      - :ref:`dsl-import-assembly-semantics`
-     - ``import_host_*.fcstm`` inspect
+     - ``import_host_basic.fcstm`` inspect
      - synced
-   * - ``dsl-diagnostics-risk``
+   * - ``dsl-import-mapping``
+     - import
+     - ``def_mapping_statement`` / ``event_mapping_statement``
+     - N/A: tutorial skips imports
+     - :ref:`dsl-import-task`
+     - :ref:`dsl-import-forms`
+     - :ref:`dsl-import-assembly-semantics`
+     - ``import_host_mapped.fcstm`` inspect
+     - synced
+   * - ``dsl-import-directory-boundary``
+     - import
+     - import path resolution in ``model/imports.py``
+     - N/A: tutorial skips imports
+     - :ref:`dsl-import-task`
+     - :ref:`dsl-import-forms`
+     - :ref:`dsl-import-assembly-semantics`
+     - ``import_host_directory.fcstm`` inspect
+     - synced
+   * - ``dsl-diagnostics-target-risk``
      - diagnostics
      - ``pyfcstm/diagnostics/codes.yaml`` / analyzers
      - :ref:`sec-tutorials-dsl`
      - :ref:`dsl-diagnostics-task`
      - :ref:`dsl-diagnostics-risk`
      - :ref:`dsl-expression-separation`
-     - inspect JSON review
+     - risk wording line audit
      - synced
 
 .. _dsl-lexical-forms:
@@ -188,8 +323,9 @@ Facts:
 
 * Persistent variable types are ``int`` and ``float``.
 * Declarations must appear before the single root ``state``.
-* Initializers use ``init_expression`` and may not read runtime-only local
-  temporaries.
+* Initializers use ``init_expression``. This subset accepts literals, math
+  constants, arithmetic, bitwise operators, and unary math functions, but it
+  does not accept runtime variable references or C-style ternary expressions.
 * The root may be leaf or composite, but practical models usually use composite
   root state.
 
@@ -285,9 +421,9 @@ Transition forms
      - Yes
      - Event syntax is not part of this ordinary form.
    * - Combo trigger
-     - ``Event + [guard]`` terms through combo rules
+     - ``[guard]`` alias or ``Event + [guard]`` terms through combo rules
      - Yes for normal/entry combo expansion
-     - Used for explicit event-plus-guard or multiple-term triggers.
+     - Used for explicit event-plus-guard, guard alias, or multiple-term triggers.
    * - Forced transition
      - ``!State -> Target ...;`` or ``!* -> Target ...;``
      - No
@@ -302,7 +438,9 @@ Combo details:
 * Local combo uses ``::`` and local event terms.
 * Chain/root combo uses ``:`` and ``chain_id`` event terms.
 * Entry combo triggers are accepted on initial transitions.
-* ``: if [condition]`` is a guard alias for a single guard trigger.
+* ``: [condition]`` is the combo guard alias for a single guard trigger;
+  ``: if [condition]`` is the ordinary guard spelling.
+* Leading guard combo terms such as ``: [enabled] + Start`` are accepted.
 * Duplicate event terms and constant guards are diagnostics targets.
 * Combo pseudo relay states are generated routing helpers. They must not be
   treated as business states or aspect-action execution points.
@@ -311,7 +449,8 @@ Forced transition details:
 
 * ``!State`` expands from a named source state.
 * ``!*`` expands from all applicable source states in the owner scope.
-* Forced forms can carry local, chain/root, or guard triggers.
+* Forced forms can carry one local, chain/root, or guard trigger.
+* Forced forms cannot carry combo ``+`` trigger chains.
 * Forced forms cannot have ``effect`` blocks; put side effects on explicit normal
   transitions if needed.
 

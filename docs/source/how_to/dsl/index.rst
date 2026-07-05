@@ -31,9 +31,9 @@ Write a small valid model
 -------------------------
 
 Start with one root composite, one initial transition, and child leaf states.
-The tutorial uses the thermostat example as the first runnable model:
+The tutorial uses a compact thermostat example as the first runnable model:
 
-.. literalinclude:: ../../tutorials/dsl/thermostat_example.fcstm
+.. literalinclude:: ../../tutorials/dsl/first_thermostat.fcstm
    :language: fcstm
    :caption: First runnable DSL model
 
@@ -41,7 +41,7 @@ Check it with:
 
 .. code-block:: bash
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/thermostat_example.fcstm --format json
+   pyfcstm inspect -i docs/source/tutorials/dsl/first_thermostat.fcstm --format json
 
 .. _dsl-state-target-task:
 
@@ -90,7 +90,16 @@ states need an absolute reference:
 
 Fragment::
 
-   Worker.Idle -> Worker.Active : /Start;
+   state System {
+       [*] -> Worker;
+       event Start;
+       state Worker {
+           [*] -> Idle;
+           state Idle;
+           state Active;
+           Idle -> Active : /Start;
+       }
+   }
 
 Checked examples:
 
@@ -123,9 +132,12 @@ after assignment inside the same block.
 Use expressions safely
 ----------------------
 
-Assignments and numeric initializers use arithmetic expressions. Guards use
-condition expressions. Comparisons bridge numeric expressions into conditions.
-Use the expression reference for precedence and every supported operator.
+Assignments use runtime numeric expressions. Top-level and import-preamble
+initializers use the stricter ``init_expression`` subset: literals, math
+constants, arithmetic, bitwise operators, and unary math functions, but no
+runtime variable reads and no C-style ternary. Guards use condition expressions.
+Comparisons bridge numeric expressions into conditions. Use the expression
+reference for precedence and every supported operator.
 
 Examples to keep straight:
 
@@ -203,8 +215,9 @@ Write forced transitions
 ------------------------
 
 Use forced transitions when one declaration should expand over multiple source
-states. They may target a state or the exit marker and may use local, chain,
-root, or guard triggers. They do not support ``effect`` blocks.
+states. They may target a state or the exit marker and may use one local, chain,
+root, or guard trigger. They do not support combo ``+`` triggers or ``effect``
+blocks.
 
 .. literalinclude:: ../../tutorials/dsl/forced_transitions.fcstm
    :language: fcstm
@@ -216,16 +229,20 @@ Write combo transitions
 -----------------------
 
 Use combo triggers when a transition needs multiple trigger terms. Supported
-families include ordinary combo, entry combo, and forced combo. Use ``+`` between
-event and guard terms.
+families include ordinary combo and entry combo. Use ``+`` between event and
+guard terms. Forced transitions are a separate shorthand and do not accept combo
+``+`` triggers.
 
 Fragments::
 
    Idle -> Running :: Start + [enabled == 1];
+   Idle -> Running : [enabled == 1];
+   Idle -> Running : [enabled == 1] + Start;
    [*] -> Running :: Boot + [enabled == 1];
-   !* -> Fault : /Stop + [enabled == 0];
 
-Combo expansion uses pseudo relay states. Duplicate event terms, guard aliases,
+``: [condition]`` is the combo guard alias. Use ``: if [condition]`` for
+the ordinary single-guard spelling when no combo terms are needed. Combo
+expansion uses pseudo relay states. Duplicate event terms, guard aliases,
 constant guards, pseudo-name extension, and reserved ``__combo`` names are
 reported through diagnostics. Detailed expansion semantics live in
 :ref:`dsl-combo-relay-semantics`.
@@ -287,6 +304,22 @@ Short workflow:
 
    pyfcstm inspect -i model.fcstm --format json -o model.inspect.json
    python -m json.tool model.inspect.json | sed -n '1,80p'
+
+Common first fixes:
+
+.. list-table:: Diagnostic repair shortcuts
+   :header-rows: 1
+
+   * - Signal
+     - What to check first
+   * - ``W_GUARD_VARS_NEVER_CHANGE``
+     - A guard may read only constants or variables never updated by ``during`` / ``effect``.
+   * - ``W_DURING_CONST_ASSIGN``
+     - Constant setup probably belongs in ``enter`` instead of every active cycle.
+   * - ``W_COMBO_*``
+     - Recheck combo trigger terms and remember forced transitions do not support combo ``+`` chains.
+
+Full code descriptions live in :doc:`../../reference/diagnostics_codes/index`.
 
 C/C++ deployment-profile warnings are target-specific review signals for C-family
 templates such as ``c``, ``c_poll``, ``cpp``, and ``cpp_poll``. They must not be

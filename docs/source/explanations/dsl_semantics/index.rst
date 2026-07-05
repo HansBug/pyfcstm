@@ -143,6 +143,8 @@ Important boundaries:
 
 Runtime ordering details belong to :doc:`../execution_semantics/index`.
 
+.. _dsl-forced-transition-expansion:
+
 Forced transition expansion
 ---------------------------
 

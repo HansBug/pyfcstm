@@ -97,6 +97,8 @@ Pseudo states 表示 control-flow routing。Combo transitions 使用这个概念
 
 Runtime ordering details 属于 :doc:`../execution_semantics/index_zh`。
 
+.. _dsl-forced-transition-expansion-zh:
+
 Forced transition 展开
 ----------------------------
 

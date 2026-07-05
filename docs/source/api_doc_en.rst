@@ -1,6 +1,21 @@
 API Documentation
 -------------------------
 
+This page is the generated Python API map for pyfcstm.
+It belongs to the Reference section: use it when you already
+know which module, class, function, or data object you need to
+inspect.
+
+If you are choosing a user-facing workflow or looking up CLI,
+DSL, inspect report, diagnostics code, visualization option, or
+template configuration facts, start from :doc:`Reference map <reference/index>`.
+That reference map points to focused reference pages before this
+complete API map.
+
+The toctree below is generated from ``pyfcstm/`` by
+``make rst_auto`` and should remain the infrastructure-backed
+module tree.
+
 .. toctree::
     :maxdepth: 2
     :caption: API Documentation

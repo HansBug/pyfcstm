@@ -1,10 +1,9 @@
-Tutorials
-=========
+Tutorial roadmap
+================
 
-Use these pages when you want a guided first-success path. Tutorials are short,
-ordered walkthroughs: they introduce one concept at a time, run real commands,
-and point to task guides or reference pages when the details become too broad
-for a learning path.
+Use this page to choose a guided first-success path. The global navigation lists
+each tutorial directly; this roadmap explains the recommended order and where to
+go next when a tutorial points beyond its learning scope.
 
 Before you start
 ----------------
@@ -22,29 +21,14 @@ Recommended path
 5. Generate a runtime with :doc:`generation/index`.
 6. Export a diagram with :doc:`visualization/index`.
 
-.. toctree::
-   :maxdepth: 2
-
-   quick_start/index
-   dsl/index
-   simulation/index
-   inspect/index
-   generation/index
-   visualization/index
-
 Compatibility landing pages
 ---------------------------
 
-Older documentation URLs remain available as short landing pages. They are not
-the main learning path anymore, but they keep old bookmarks and search results
-usable while pointing to the new task, explanation, or reference homes.
+Older tutorial URLs remain available as short landing pages, but they are not
+part of the main learning path anymore:
 
-.. toctree::
-   :maxdepth: 1
-   :hidden:
-
-   installation/index
-   cli/index
-   render/index
-   grammar/index
-   structure/index
+* :doc:`installation/index`
+* :doc:`cli/index`
+* :doc:`render/index`
+* :doc:`grammar/index`
+* :doc:`structure/index`

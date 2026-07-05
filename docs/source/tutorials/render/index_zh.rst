@@ -1,3 +1,5 @@
+:orphan:
+
 .. _sec-tutorials-render-zh:
 
 模板系统教程

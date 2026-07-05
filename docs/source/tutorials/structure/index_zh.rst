@@ -1,3 +1,5 @@
+:orphan:
+
 .. _sec-tutorials-structure-zh:
 
 项目结构指南

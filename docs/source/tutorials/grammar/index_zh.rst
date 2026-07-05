@@ -1,3 +1,5 @@
+:orphan:
+
 .. _sec-tutorials-grammar-zh:
 
 FCSTM 语法高亮指南

@@ -1,3 +1,5 @@
+:orphan:
+
 .. _sec-tutorials-grammar:
 
 FCSTM syntax highlighting guide

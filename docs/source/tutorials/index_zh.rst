@@ -1,7 +1,7 @@
-教程
-====
+教程路线图
+==========
 
-当你需要引导式首次成功路径时，请阅读这些页面。教程应当短小、有顺序、运行真实命令，并在细节超过学习路径范围时指向任务指南或参考页。
+本页用于选择引导式首次成功路径。全站左侧导航会直接列出每个教程；本路线图说明推荐阅读顺序，以及当教程内容超出学习路径范围时应去哪里继续查阅。
 
 开始之前
 --------
@@ -18,27 +18,13 @@
 5. 使用 :doc:`generation/index_zh` 生成 runtime。
 6. 使用 :doc:`visualization/index_zh` 导出图。
 
-.. toctree::
-   :maxdepth: 2
-
-   quick_start/index_zh
-   dsl/index_zh
-   simulation/index_zh
-   inspect/index_zh
-   generation/index_zh
-   visualization/index_zh
-
 兼容入口页
 ----------
 
-旧文档 URL 继续作为短 landing page 保留。它们不再是主要学习路径，但可以让旧书签和搜索结果继续可用，并指向新的任务、解释或参考位置。
+旧教程 URL 继续作为短 landing page 保留，但它们不再是主要学习路径的一部分：
 
-.. toctree::
-   :maxdepth: 1
-   :hidden:
-
-   installation/index_zh
-   cli/index_zh
-   render/index_zh
-   grammar/index_zh
-   structure/index_zh
+* :doc:`installation/index_zh`
+* :doc:`cli/index_zh`
+* :doc:`render/index_zh`
+* :doc:`grammar/index_zh`
+* :doc:`structure/index_zh`

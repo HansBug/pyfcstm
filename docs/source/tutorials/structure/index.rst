@@ -1,3 +1,5 @@
+:orphan:
+
 .. _sec-tutorials-structure:
 
 Project structure guide

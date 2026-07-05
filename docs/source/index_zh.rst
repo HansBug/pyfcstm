@@ -81,58 +81,118 @@ pyfcstm 遵循三阶段流水线：
 教程
 -------------------------
 
-教程提供学习路径和首次成功流程。它们应当帮助读者先建立可运行的心智模型，再进入任务指南或参考页。
+教程提供学习路径和首次成功流程。路线图放在第一项，后面直接列出具体教程页面，让首页左侧导航可以直接展示完整学习路径。
 
 .. toctree::
     :maxdepth: 2
     :caption: 教程
     :hidden:
 
-    tutorials/index_zh
+    教程路线图 <tutorials/index_zh>
+    tutorials/quick_start/index_zh
+    tutorials/dsl/index_zh
+    tutorials/simulation/index_zh
+    tutorials/inspect/index_zh
+    tutorials/generation/index_zh
+    tutorials/visualization/index_zh
 
-* :doc:`tutorials/index_zh`
+* :doc:`教程路线图 <tutorials/index_zh>`
+* :doc:`tutorials/quick_start/index_zh`
+* :doc:`tutorials/dsl/index_zh`
+* :doc:`tutorials/simulation/index_zh`
+* :doc:`tutorials/inspect/index_zh`
+* :doc:`tutorials/generation/index_zh`
+* :doc:`tutorials/visualization/index_zh`
 
 任务指南
 --------
 
-任务指南面向具体操作。当你已经知道要完成什么任务，并需要具体命令或检查清单时，请阅读这一部分。
+任务指南面向具体操作。路线图放在第一项，后面直接列出具体任务页面，让首页左侧导航不需要再点进分类页才能看到工作流。
 
 .. toctree::
     :maxdepth: 2
     :caption: 任务指南
     :hidden:
 
-    how_to/index_zh
+    任务指南路线图 <how_to/index_zh>
+    how_to/installation/index_zh
+    how_to/cli_workflows/index_zh
+    how_to/dsl/index_zh
+    how_to/simulation/index_zh
+    how_to/inspect/index_zh
+    how_to/generation/index_zh
+    how_to/visualization/index_zh
+    how_to/templates/index_zh
+    how_to/grammar_editor/index_zh
 
-* :doc:`how_to/index_zh`
+* :doc:`任务指南路线图 <how_to/index_zh>`
+* :doc:`how_to/installation/index_zh`
+* :doc:`how_to/cli_workflows/index_zh`
+* :doc:`how_to/dsl/index_zh`
+* :doc:`how_to/simulation/index_zh`
+* :doc:`how_to/inspect/index_zh`
+* :doc:`how_to/generation/index_zh`
+* :doc:`how_to/visualization/index_zh`
+* :doc:`how_to/templates/index_zh`
+* :doc:`how_to/grammar_editor/index_zh`
 
 解释
 ----
 
-解释页说明语义、架构、边界和取舍，用于理解 pyfcstm 为什么这样工作。
+解释页说明语义、架构、边界和取舍。地图页放在第一项，后面直接列出具体解释主题。
 
 .. toctree::
     :maxdepth: 2
     :caption: 解释
     :hidden:
 
-    explanations/index_zh
+    解释地图 <explanations/index_zh>
+    explanations/architecture/index_zh
+    explanations/dsl_semantics/index_zh
+    explanations/execution_semantics/index_zh
+    explanations/diagnostics/index_zh
+    explanations/template_rendering/index_zh
+    explanations/grammar_tooling/index_zh
 
-* :doc:`explanations/index_zh`
+* :doc:`解释地图 <explanations/index_zh>`
+* :doc:`explanations/architecture/index_zh`
+* :doc:`explanations/dsl_semantics/index_zh`
+* :doc:`explanations/execution_semantics/index_zh`
+* :doc:`explanations/diagnostics/index_zh`
+* :doc:`explanations/template_rendering/index_zh`
+* :doc:`explanations/grammar_tooling/index_zh`
 
 参考
 ----
 
-参考页用于查准事实。自动生成 API 文档保持原状，并作为参考区最后一项可达。
+参考页用于查准事实。地图页放在第一项，自动生成 API 文档保持为参考区最后一项。
 
 .. toctree::
     :maxdepth: 2
     :caption: 参考
     :hidden:
 
-    reference/index_zh
+    参考地图 <reference/index_zh>
+    reference/cli/index_zh
+    reference/dsl/index_zh
+    reference/inspect_report/index_zh
+    reference/diagnostics_codes/index_zh
+    reference/visualization_options/index_zh
+    reference/template_config/index_zh
+    reference/grammar_tooling/index_zh
+    reference/builtin_templates/index_zh
+    API 文档 <api_doc_zh>
 
-* :doc:`reference/index_zh`
+* :doc:`参考地图 <reference/index_zh>`
+* :doc:`reference/cli/index_zh`
+* :doc:`reference/dsl/index_zh`
+* :doc:`reference/inspect_report/index_zh`
+* :doc:`reference/diagnostics_codes/index_zh`
+* :doc:`reference/visualization_options/index_zh`
+* :doc:`reference/template_config/index_zh`
+* :doc:`reference/grammar_tooling/index_zh`
+* :doc:`reference/builtin_templates/index_zh`
+* :doc:`API 文档 <api_doc_zh>`
 
 版本说明
 -------------------------

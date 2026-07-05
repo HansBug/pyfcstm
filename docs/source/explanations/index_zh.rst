@@ -1,5 +1,7 @@
-解释
-==
+解释地图
+========
+
+本页用于选择背景阅读。全站左侧导航会直接列出每个解释主题；本地图说明这些主题之间的关系。
 
 本区主承诺
 ----------
@@ -11,17 +13,12 @@
 
 本区不是逐步操作指南，也不应该成为 CLI 或 DSL 精确事实的唯一来源。
 
-主题
-----
+主题地图
+--------
 
-当你需要语义背景、架构理由或设计边界时，请阅读下面的页面。需要逐步任务时，请使用 :doc:`../how_to/index_zh`。
-
-.. toctree::
-    :maxdepth: 2
-
-    architecture/index_zh
-    dsl_semantics/index_zh
-    execution_semantics/index_zh
-    diagnostics/index_zh
-    template_rendering/index_zh
-    grammar_tooling/index_zh
+* :doc:`architecture/index_zh` — 仓库层次和 DSL-to-output pipeline。
+* :doc:`dsl_semantics/index_zh` — DSL 概念和建模语义。
+* :doc:`execution_semantics/index_zh` — runtime 和 simulator 执行行为。
+* :doc:`diagnostics/index_zh` — inspect 与 diagnostics 的能力边界。
+* :doc:`template_rendering/index_zh` — 模板渲染和打包设计。
+* :doc:`grammar_tooling/index_zh` — grammar、highlighter 和 editor tooling 的耦合关系。

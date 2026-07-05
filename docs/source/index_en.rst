@@ -81,58 +81,125 @@ The framework provides:
 Tutorials
 -------------------------
 
-Tutorials provide learning paths and first-success walkthroughs. They help readers build a working mental model before they jump into task guides or reference pages.
+Tutorials provide learning paths and first-success walkthroughs. The roadmap is
+listed first, followed by the concrete tutorial pages so the left navigation can
+show the whole learning path directly from this home page.
 
 .. toctree::
     :maxdepth: 2
     :caption: Tutorials
     :hidden:
 
-    tutorials/index
+    Tutorial roadmap <tutorials/index>
+    tutorials/quick_start/index
+    tutorials/dsl/index
+    tutorials/simulation/index
+    tutorials/inspect/index
+    tutorials/generation/index
+    tutorials/visualization/index
 
-* :doc:`tutorials/index`
+* :doc:`Tutorial roadmap <tutorials/index>`
+* :doc:`tutorials/quick_start/index`
+* :doc:`tutorials/dsl/index`
+* :doc:`tutorials/simulation/index`
+* :doc:`tutorials/inspect/index`
+* :doc:`tutorials/generation/index`
+* :doc:`tutorials/visualization/index`
 
 How-to Guides
 -------------
 
-How-to guides are task-oriented pages. Use them when you know what you want to do and need a concrete command sequence or checklist.
+How-to guides are task-oriented pages. The roadmap is listed first, followed by
+concrete tasks so the left navigation exposes the available workflows without an
+extra click through a category page.
 
 .. toctree::
     :maxdepth: 2
     :caption: How-to Guides
     :hidden:
 
-    how_to/index
+    How-to roadmap <how_to/index>
+    how_to/installation/index
+    how_to/cli_workflows/index
+    how_to/dsl/index
+    how_to/simulation/index
+    how_to/inspect/index
+    how_to/generation/index
+    how_to/visualization/index
+    how_to/templates/index
+    how_to/grammar_editor/index
 
-* :doc:`how_to/index`
+* :doc:`How-to roadmap <how_to/index>`
+* :doc:`how_to/installation/index`
+* :doc:`how_to/cli_workflows/index`
+* :doc:`how_to/dsl/index`
+* :doc:`how_to/simulation/index`
+* :doc:`how_to/inspect/index`
+* :doc:`how_to/generation/index`
+* :doc:`how_to/visualization/index`
+* :doc:`how_to/templates/index`
+* :doc:`how_to/grammar_editor/index`
 
 Explanations
 ------------
 
-Explanations describe semantics, architecture, boundaries, and trade-offs. They are for understanding why pyfcstm behaves the way it does.
+Explanations describe semantics, architecture, boundaries, and trade-offs. The
+map page comes first, then the individual explanation topics are listed directly
+in the global navigation.
 
 .. toctree::
     :maxdepth: 2
     :caption: Explanations
     :hidden:
 
-    explanations/index
+    Explanation map <explanations/index>
+    explanations/architecture/index
+    explanations/dsl_semantics/index
+    explanations/execution_semantics/index
+    explanations/diagnostics/index
+    explanations/template_rendering/index
+    explanations/grammar_tooling/index
 
-* :doc:`explanations/index`
+* :doc:`Explanation map <explanations/index>`
+* :doc:`explanations/architecture/index`
+* :doc:`explanations/dsl_semantics/index`
+* :doc:`explanations/execution_semantics/index`
+* :doc:`explanations/diagnostics/index`
+* :doc:`explanations/template_rendering/index`
+* :doc:`explanations/grammar_tooling/index`
 
 Reference
 ---------
 
-Reference pages are for exact facts. The generated API documentation remains intact and is reachable as the last item of the reference area.
+Reference pages are for exact facts. The map page is listed first and the
+generated API documentation remains the last item in this reference area.
 
 .. toctree::
     :maxdepth: 2
     :caption: Reference
     :hidden:
 
-    reference/index
+    Reference map <reference/index>
+    reference/cli/index
+    reference/dsl/index
+    reference/inspect_report/index
+    reference/diagnostics_codes/index
+    reference/visualization_options/index
+    reference/template_config/index
+    reference/grammar_tooling/index
+    reference/builtin_templates/index
+    API Documentation <api_doc_en>
 
-* :doc:`reference/index`
+* :doc:`Reference map <reference/index>`
+* :doc:`reference/cli/index`
+* :doc:`reference/dsl/index`
+* :doc:`reference/inspect_report/index`
+* :doc:`reference/diagnostics_codes/index`
+* :doc:`reference/visualization_options/index`
+* :doc:`reference/template_config/index`
+* :doc:`reference/grammar_tooling/index`
+* :doc:`reference/builtin_templates/index`
+* :doc:`API Documentation <api_doc_en>`
 
 Release Notes
 -------------------------

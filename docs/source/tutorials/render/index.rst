@@ -1,3 +1,5 @@
+:orphan:
+
 .. _sec-tutorials-render:
 
 Template system tutorial

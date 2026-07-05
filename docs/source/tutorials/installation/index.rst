@@ -1,3 +1,5 @@
+:orphan:
+
 Installation landing page
 =========================
 

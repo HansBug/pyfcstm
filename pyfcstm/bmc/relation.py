@@ -184,6 +184,12 @@ class _LoweredValue:
 
 
 @dataclass(frozen=True)
+class _LoweredBoolTemplate:
+    expr: z3.BoolRef
+    definedness_constraints: Tuple[DomainConstraint, ...] = ()
+
+
+@dataclass(frozen=True)
 class BmcTraceSymbols:
     """Z3 symbols for one bounded BMC trace.
 
@@ -480,7 +486,10 @@ class BmcCaseRelation:
     :type step_index: int
     :param case: Macro-step case that was lowered.
     :type case: pyfcstm.bmc.macro.CycleCase
-    :param selector: Case-selector symbol bound to ``antecedent``.
+    :param selector: Case-selector symbol bound to ``antecedent``.  The
+        relation builder treats macro-step partition validity as an upstream
+        contract: selector equality exposes selected cases but does not
+        independently diagnose malformed partitions.
     :type selector: z3.BoolRef
     :param antecedent: Source guard and lowered case condition.
     :type antecedent: z3.BoolRef
@@ -711,7 +720,10 @@ class BmcCoreFormula:
     :type core: z3.BoolRef
     :param steps: Lowered step relations.
     :type steps: Tuple[BmcStepRelation, ...]
-    :param diagnostics: Builder diagnostics, defaults to ``()``.
+    :param diagnostics: Reserved build-time diagnostics, defaults to ``()``.
+        Relation-level semantic-delta information is currently exposed through
+        case metadata, so this tuple is empty in the initial core-relation
+        builder.
     :type diagnostics: Tuple[str, ...], optional
 
     Example::
@@ -1179,8 +1191,29 @@ def _translate_model_expr(expr: Expr, env: Mapping[str, _Z3Expr], label: str):
 class _CaseLowering:
     case: CycleCase
     guard_terms: Mapping[str, z3.BoolRef]
+    guard_definedness: Mapping[str, Tuple[DomainConstraint, ...]]
     final_env: Mapping[str, z3.ArithRef]
     definedness_constraints: Tuple[DomainConstraint, ...]
+
+
+def _guarded_domain_constraints(
+    guard: z3.BoolRef,
+    constraints: Sequence[DomainConstraint],
+) -> Tuple[DomainConstraint, ...]:
+    if z3.is_true(guard):
+        return tuple(constraints)
+    return tuple(
+        DomainConstraint(z3.Implies(guard, item.constraint), item.source)
+        for item in constraints
+    )
+
+
+def _append_guarded_constraints(
+    target: List[DomainConstraint],
+    guard: z3.BoolRef,
+    constraints: Sequence[DomainConstraint],
+) -> None:
+    target.extend(_guarded_domain_constraints(guard, constraints))
 
 
 def _lower_guard_requirement(
@@ -1237,6 +1270,7 @@ def _prepare_case_lowering(
         guards_by_anchor.setdefault(guard.after_action_block_index, []).append(guard)
     env = dict(pre_env)
     guard_terms: Dict[str, z3.BoolRef] = {}
+    guard_definedness: Dict[str, Tuple[DomainConstraint, ...]] = {}
     definedness: List[DomainConstraint] = []
     for anchor in range(len(case.action_blocks) + 1):
         for guard in sorted(
@@ -1246,6 +1280,7 @@ def _prepare_case_lowering(
                 guard, env, definedness, case.label
             )
             guard_terms[guard.requirement_id] = term
+            guard_definedness[guard.requirement_id] = tuple(new_definedness)
             definedness = list(new_definedness)
         if anchor < len(case.action_blocks):
             env, block_definedness = _execute_action_block(
@@ -1255,6 +1290,7 @@ def _prepare_case_lowering(
     return _CaseLowering(
         case=case,
         guard_terms=guard_terms,
+        guard_definedness=guard_definedness,
         final_env=env,
         definedness_constraints=tuple(definedness),
     )
@@ -1267,27 +1303,30 @@ def _lower_bool_template(
     active: Set[str],
     symbols: BmcTraceSymbols,
     step_index: int,
-) -> z3.BoolRef:
+) -> _LoweredBoolTemplate:
     if template.kind == "true":
-        return z3.BoolVal(True)
+        return _LoweredBoolTemplate(z3.BoolVal(True))
     if (
         template.kind == "false"
     ):  # pragma: no cover - false macro paths are pruned before lowering.
-        return z3.BoolVal(False)
+        return _LoweredBoolTemplate(z3.BoolVal(False))
     if template.kind == "not":
-        return z3.Not(
-            _lower_bool_template(
-                template.operands[0],
-                lowering,
-                accepted_lookup,
-                active,
-                symbols,
-                step_index,
-            )
+        operand = _lower_bool_template(
+            template.operands[0],
+            lowering,
+            accepted_lookup,
+            active,
+            symbols,
+            step_index,
+        )
+        return _LoweredBoolTemplate(
+            z3.Not(operand.expr), operand.definedness_constraints
         )
     if template.kind == "and":
-        return _and(
-            _lower_bool_template(
+        expr = z3.BoolVal(True)
+        definedness: List[DomainConstraint] = []
+        for item in template.operands:
+            lowered = _lower_bool_template(
                 item,
                 lowering,
                 accepted_lookup,
@@ -1295,11 +1334,16 @@ def _lower_bool_template(
                 symbols,
                 step_index,
             )
-            for item in template.operands
-        )
+            _append_guarded_constraints(
+                definedness, expr, lowered.definedness_constraints
+            )
+            expr = z3.And(expr, lowered.expr)
+        return _LoweredBoolTemplate(expr, tuple(definedness))
     if template.kind == "or":
-        return _or(
-            _lower_bool_template(
+        expr = z3.BoolVal(False)
+        definedness = []
+        for item in template.operands:
+            lowered = _lower_bool_template(
                 item,
                 lowering,
                 accepted_lookup,
@@ -1307,18 +1351,26 @@ def _lower_bool_template(
                 symbols,
                 step_index,
             )
-            for item in template.operands
-        )
+            _append_guarded_constraints(
+                definedness, z3.Not(expr), lowered.definedness_constraints
+            )
+            expr = z3.Or(expr, lowered.expr)
+        return _LoweredBoolTemplate(expr, tuple(definedness))
     if template.kind == "atom":
         atom = template.name
         if atom is None:  # pragma: no cover - BoolTemplate validates atom names.
             raise _internal_bmc_error("BoolTemplate atom has no name.")
         if atom.startswith(_EVENT_ATOM_PREFIX):
-            return symbols.event_input(step_index, atom[len(_EVENT_ATOM_PREFIX) :])
+            return _LoweredBoolTemplate(
+                symbols.event_input(step_index, atom[len(_EVENT_ATOM_PREFIX) :])
+            )
         if atom.startswith(_GUARD_ATOM_PREFIX):
             guard_id = atom[len(_GUARD_ATOM_PREFIX) :]
             try:
-                return lowering.guard_terms[guard_id]
+                return _LoweredBoolTemplate(
+                    lowering.guard_terms[guard_id],
+                    lowering.guard_definedness[guard_id],
+                )
             except KeyError as err:  # pragma: no cover - macro validation pairs guard atoms and requirements.
                 # KeyError: macro validation should have guaranteed that guard
                 # atoms have matching guard requirements.
@@ -1338,12 +1390,12 @@ def _build_case_relation(
     step_index: int,
     symbols: BmcTraceSymbols,
     lowering: _CaseLowering,
-    antecedents: Mapping[str, z3.BoolRef],
+    antecedents: Mapping[str, _LoweredBoolTemplate],
 ) -> BmcCaseRelation:
     case = lowering.case
     selector = symbols.case_selector(step_index, case.label)
     source_guard = symbols.frame_state(step_index) == z3.IntVal(case.source_state_id)
-    condition = antecedents[case.label]
+    condition = antecedents[case.label].expr
     antecedent = _and((source_guard, condition))
     post_constraints: List[z3.ExprRef] = [
         symbols.frame_state(step_index + 1) == z3.IntVal(case.target_state_id)
@@ -1368,7 +1420,11 @@ def _build_case_relation(
         post_constraints.append(
             symbols.frame_var(step_index + 1, var.name) == arith_value
         )
-    post_constraints.extend(_domain_constraints_exprs(lowering.definedness_constraints))
+    definedness_constraints = (
+        *antecedents[case.label].definedness_constraints,
+        *lowering.definedness_constraints,
+    )
+    post_constraints.extend(_domain_constraints_exprs(definedness_constraints))
     consequent = _and(post_constraints)
     implication = z3.Implies(antecedent, consequent)
     selector_constraint = selector == antecedent
@@ -1382,7 +1438,7 @@ def _build_case_relation(
         selector_constraint=selector_constraint,
         post_var_exprs=post_var_exprs,
         guard_terms=lowering.guard_terms,
-        definedness_constraints=lowering.definedness_constraints,
+        definedness_constraints=definedness_constraints,
     )
 
 
@@ -1403,9 +1459,9 @@ def _build_step_relation(
     lowerings = {
         case.label: _prepare_case_lowering(case, pre_env) for case in case_list
     }
-    condition_cache: Dict[str, z3.BoolRef] = {}
+    condition_cache: Dict[str, _LoweredBoolTemplate] = {}
 
-    def accepted_lookup(label: str, active: Set[str]) -> z3.BoolRef:
+    def accepted_lookup(label: str, active: Set[str]) -> _LoweredBoolTemplate:
         if (
             label not in lowerings
         ):  # pragma: no cover - macro validation keeps accepted labels local.
@@ -1417,9 +1473,15 @@ def _build_step_relation(
         source_guard = symbols.frame_state(step_index) == z3.IntVal(
             accepted_case.source_state_id
         )
-        return _and((source_guard, condition_for(label, active)))
+        condition = condition_for(label, active)
+        return _LoweredBoolTemplate(
+            _and((source_guard, condition.expr)),
+            _guarded_domain_constraints(
+                source_guard, condition.definedness_constraints
+            ),
+        )
 
-    def condition_for(label: str, active: Set[str]) -> z3.BoolRef:
+    def condition_for(label: str, active: Set[str]) -> _LoweredBoolTemplate:
         if label in condition_cache:
             return condition_cache[label]
         if (
@@ -1493,6 +1555,8 @@ def _formals_by_step(
     if context.bound == 1:
         return (initial,)
     recurrence = _recurrence_formals(context.domain)
+    # Recurrence formals are step-invariant immutable macro contracts, so the
+    # same tuple can be shared safely across recurrence steps.
     return (initial,) + tuple(recurrence for _ in range(1, context.bound))
 
 

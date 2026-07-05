@@ -10,6 +10,7 @@ import pytest
 from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
 from pyfcstm.model import load_state_machine_from_text
 from pyfcstm.simulate import SimulationRuntime
+from pyfcstm.simulate.runtime import SimulationRuntimeExpressionError
 
 _MACRO_ALIGNMENT_FIXTURE = (
     Path(__file__).with_name("fixtures") / "macro_runtime_alignment.fcstm"
@@ -309,6 +310,44 @@ def test_relation_fallback_negates_failed_guard_and_runs_during() -> None:
     )
     assert "Not" in str(selected.antecedent)
     assert _solver(core.core, core.symbols.frame_var(1, "x") != 0).check() == z3.unsat
+
+
+@pytest.mark.unittest
+def test_relation_guard_definedness_blocks_fallback_false_witness() -> None:
+    """Undefined transition guards cannot be converted into fallback traces."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 1;
+        def int y = 0;
+        state Root {
+            state A { during { x = x + 1; } }
+            state B;
+            [*] -> A;
+            A -> B : if [x / y > 0];
+        }
+        """
+    )
+    runtime = SimulationRuntime(
+        model, initial_state="Root.A", initial_vars={"x": 1, "y": 0}
+    )
+    with pytest.raises(SimulationRuntimeExpressionError, match="division by zero"):
+        runtime.cycle([])
+    context = BmcEngine(model).prepare(
+        'init state("Root.A") where x == 1 && y == 0;\n'
+        'check reach <= 1: active("Root.A");'
+    )
+    core = build_bmc_core_formula(context)
+    fallback = next(
+        relation
+        for relation in core.steps[0].case_relations
+        if relation.case.kind == "fallback"
+    )
+
+    assert _solver(core.core).check() == z3.unsat
+    assert _solver(core.core, fallback.selector).check() == z3.unsat
+    assert any(
+        "F_0_y" in str(item.constraint) for item in fallback.definedness_constraints
+    )
 
 
 @pytest.mark.unittest

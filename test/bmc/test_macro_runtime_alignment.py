@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from pyfcstm.bmc import build_bmc_domain, entry_source, stable_leaf_source
+from pyfcstm.bmc import (
+    STATE_TERMINATE_ID,
+    TERMINATE_CASE_PATH,
+    build_bmc_domain,
+    entry_source,
+    stable_leaf_source,
+)
 from pyfcstm.bmc.expand import expand_macro_step_cases
 from pyfcstm.model import IfBlock, Operation, load_state_machine_from_text
 from pyfcstm.simulate import SimulationRuntime
@@ -112,6 +118,25 @@ def _runtime_cycle(model, state, initial_vars, events):
     )
     runtime.cycle(list(events))
     return ".".join(runtime.current_state.path), dict(runtime.vars)
+
+
+@pytest.mark.unittest
+def test_root_leaf_exit_expands_to_runtime_termination():
+    """A root leaf exit transition is a valid terminate path, not corruption."""
+    model = load_state_machine_from_text("state Root;")
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(stable_leaf_source(domain, "Root"))
+
+    case = _selected_case(formal, {}, ())
+    runtime = SimulationRuntime(model, initial_state="Root", initial_vars={})
+    runtime.cycle([])
+
+    assert case.kind == "transition"
+    assert case.target_state_id == STATE_TERMINATE_ID
+    assert case.target_state_path == TERMINATE_CASE_PATH
+    assert case.action_blocks == ()
+    assert runtime.is_ended
+    assert runtime.brief_stack == []
 
 
 @pytest.mark.unittest

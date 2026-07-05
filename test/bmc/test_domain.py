@@ -351,6 +351,21 @@ def test_build_domain_rejects_invalid_model_or_bound(adversarial_model):
     with pytest.raises(InvalidBmcDomain):
         build_bmc_domain(object(), bound=1)
 
+    domain = build_bmc_domain(adversarial_model, bound=1)
+    with pytest.raises(InvalidBmcDomain, match="model must be StateMachine"):
+        BmcDomain(
+            domain.bound,
+            domain.states,
+            domain.events,
+            domain.variables,
+            domain.frames,
+            domain.steps,
+            domain.event_inputs,
+            domain.initial_state_ids,
+            domain.stable_state_ids,
+            model=object(),
+        )
+
 
 @pytest.mark.unittest
 def test_domain_entry_validation_rejects_malformed_values():

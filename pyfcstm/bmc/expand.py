@@ -668,9 +668,7 @@ class _MacroExpander:
 
     def _finalize_exit_to_parent(self, frontier: _MacroFrontier) -> _MacroFrontier:
         if not frontier.stack:
-            raise _internal_expansion_error(  # pragma: no cover
-                "exit-to-parent finalization received an empty runtime stack."
-            )
+            return frontier
         parent = frontier.stack[-1].state
         current = frontier
         for on_during_after in parent.list_on_durings(aspect="after"):

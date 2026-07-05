@@ -108,8 +108,9 @@ _VALID_CONDITION_PREFIXES = (
 def _internal_bmc_error(detail: str) -> BmcBuildError:
     return BmcBuildError(
         "internal error: %s This indicates a pyfcstm BMC bug or a corrupted "
-        "internal object; please report this issue with the FCSTM input, query, "
-        "and traceback at https://github.com/HansBug/pyfcstm/issues." % detail
+        "internal object; please report this issue with the FCSTM input, BMC "
+        "query or expansion source, and traceback at "
+        "https://github.com/HansBug/pyfcstm/issues." % detail
     )
 
 

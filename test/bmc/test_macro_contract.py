@@ -61,7 +61,7 @@ def _assert_internal_bug_message(error: BmcBuildError) -> None:
     message = str(error)
     assert "internal error" in message
     assert "pyfcstm BMC bug" in message
-    assert "FCSTM input, query, and traceback" in message
+    assert "FCSTM input, BMC query or expansion source, and traceback" in message
     assert "https://github.com/HansBug/pyfcstm/issues" in message
 
 

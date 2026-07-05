@@ -8,6 +8,8 @@ from typing import Any, cast
 
 import pytest
 
+import pyfcstm.bmc.expand as expand_module
+import pyfcstm.bmc.macro as macro_module
 from pyfcstm.bmc import (
     STATE_DIAGNOSTIC_ID,
     STATE_TERMINATE_ID,
@@ -41,13 +43,26 @@ from pyfcstm.bmc.source import (
     stable_leaf_source,
     terminated_source,
 )
-from pyfcstm.model import load_state_machine_from_text
+from pyfcstm.model import OperationStatement, load_state_machine_from_text
 from pyfcstm.model.expr import Boolean, Variable
+
+
+class _UnknownOperationStatement(OperationStatement):
+    """Operation statement subtype used to exercise canonical fallback logic."""
 
 
 def _bad_object() -> Any:
     """Return an intentionally bad value without tripping static type checks."""
     return cast(Any, object())
+
+
+def _assert_internal_bug_message(error: BmcBuildError) -> None:
+    """Assert that internal bug diagnostics route users to the issue tracker."""
+    message = str(error)
+    assert "internal error" in message
+    assert "pyfcstm BMC bug" in message
+    assert "FCSTM input, query, and traceback" in message
+    assert "https://github.com/HansBug/pyfcstm/issues" in message
 
 
 @pytest.fixture()
@@ -81,6 +96,15 @@ def macro_model():
 def macro_domain(macro_model):
     """Build a macro-contract fixture with variables and same-short-name events."""
     return build_bmc_domain(macro_model, bound=2)
+
+
+@pytest.mark.unittest
+def test_internal_bug_messages_link_issue_tracker():
+    """Internal BMC bug diagnostics include actionable reporting guidance."""
+    _assert_internal_bug_message(macro_module._internal_bmc_error("synthetic bug."))
+    _assert_internal_bug_message(
+        expand_module._internal_expansion_error("synthetic expansion bug.")
+    )
 
 
 @pytest.fixture()
@@ -228,14 +252,38 @@ def test_bool_template_public_validation_and_identity_reductions():
         InvalidBmcEncoding, match="compound templates cannot have names"
     ):
         BoolTemplate("and", "a", (atom,))
+    with pytest.raises(InvalidBmcEncoding, match="operands must contain"):
+        BoolTemplate("and", operands=(atom, _bad_object()))
     with pytest.raises(
         InvalidBmcEncoding, match="compound templates must have operands"
     ):
         BoolTemplate("or", operands=())
     with pytest.raises(InvalidBmcEncoding, match="operands must contain"):
         BoolTemplate.and_(atom, _bad_object())
+    with pytest.raises(InvalidBmcEncoding, match="operands must contain"):
+        BoolTemplate.or_(atom, _bad_object())
     with pytest.raises(InvalidBmcEncoding, match="operand must be BoolTemplate"):
         BoolTemplate.not_(_bad_object())
+
+
+@pytest.mark.unittest
+def test_bool_template_canonical_helpers_cover_raw_values():
+    """Canonical key helpers also support raw JSON-compatible values."""
+    raw = {"b": [2, 1], "a": {"z": True}}
+
+    assert macro_module._canonical_key(raw) == '{"a":{"z":true},"b":[2,1]}'
+
+
+@pytest.mark.unittest
+def test_structural_accepted_prefix_helper_recognizes_exact_masks():
+    """Accepted-mask recognition covers exact and clearly non-canonical shapes."""
+    mask = BoolTemplate.not_(BoolTemplate.atom("accepted:first"))
+
+    assert macro_module._condition_uses_expected_accepted_prefix(mask, ("first",))
+    assert not macro_module._condition_uses_expected_accepted_prefix(
+        BoolTemplate.atom("event:Root.Go"),
+        ("first",),
+    )
 
 
 @pytest.mark.unittest
@@ -261,6 +309,8 @@ def test_public_contract_dataclasses_reject_invalid_shapes(
     source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
     expr = Variable("x") > 0
 
+    with pytest.raises(InvalidBmcEncoding, match="event_id must be an integer"):
+        EventUse(True, "Root.Go", "positive", "trigger")
     with pytest.raises(InvalidBmcEncoding, match="event_id must be non-negative"):
         EventUse(-1, "Root.Go", "positive", "trigger")
     with pytest.raises(InvalidBmcEncoding, match="event polarity"):
@@ -327,6 +377,16 @@ def test_public_contract_dataclasses_reject_invalid_shapes(
             (sample_operation,),
             is_abstract=_bad_object(),
         )
+    block = ActionBlock(
+        "state_action",
+        "leaf_during",
+        source.source_state_id,
+        source.source_state_path,
+        (_UnknownOperationStatement(),),
+    )
+    assert block.to_canonical()["operations"] == [
+        {"node": "_UnknownOperationStatement"}
+    ]
 
     priority = PriorityExclusion(
         "d0",
@@ -570,6 +630,35 @@ def test_cycle_case_public_validation_rejects_invalid_local_shapes(macro_domain)
             ),
             domain=macro_domain,
         )
+    reserved_domain = build_bmc_domain(
+        load_state_machine_from_text("state __terminate__;"), bound=1
+    )
+    with pytest.raises(InvalidBmcEncoding, match="reserved macro-step paths"):
+        CycleCase(
+            "transition",
+            reserved_domain.state_path_to_id("__terminate__"),
+            "__terminate__",
+            reserved_domain.state_path_to_id("__terminate__"),
+            "__terminate__",
+            "__terminate__::transition::__terminate__::0",
+            BoolTemplate.true(),
+            (),
+            domain=reserved_domain,
+        )
+    with pytest.raises(InvalidBmcEncoding, match="source path does not match"):
+        CycleCase(
+            "transition",
+            source.source_state_id,
+            "Other",
+            target_id,
+            target_path,
+            "Other::transition::%s::0" % target_path,
+            BoolTemplate.true(),
+            (),
+            domain=macro_domain,
+        )
+    with pytest.raises(InvalidBmcEncoding, match="case must be CycleCase"):
+        case_path_condition(_bad_object())
 
 
 @pytest.mark.unittest
@@ -686,6 +775,32 @@ def test_macro_step_formal_public_validation_rejects_invalid_bucket_shapes(
     )
     with pytest.raises(InvalidBmcEncoding, match="entry transition and initial cases"):
         MacroStepFormal(entry, (bad_entry_case,))
+    bad_entry_fallback = CycleCase(
+        "fallback",
+        entry.source_state_id,
+        entry.source_state_path,
+        entry.source_state_id,
+        entry.source_state_path,
+        "%s::fallback::%s::0" % (entry.source_state_path, entry.source_state_path),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(InvalidBmcEncoding, match="entry success cases"):
+        MacroStepFormal(entry, (bad_entry_fallback,))
+    bad_delta_bucket = make_case(
+        macro_domain,
+        entry,
+        label_kind="transition",
+        target_path="Root.Plant.Idle",
+    )
+    valid_entry_case = make_case(
+        macro_domain,
+        entry,
+        label_kind="initial",
+        target_path="Root.Plant.Idle",
+    )
+    with pytest.raises(InvalidBmcEncoding, match="delta_cases may only contain delta"):
+        MacroStepFormal(entry, (valid_entry_case,), (bad_delta_bucket,))
 
     terminate = terminated_source(macro_domain)
     good_absorb = terminated_absorb_case(macro_domain)
@@ -1443,6 +1558,8 @@ def test_structural_partition_negative_shapes_fall_back_to_truth_table_budget(
         BoolTemplate.true(),
         (),
     )
+    with pytest.raises(BmcBuildError, match="assignment budget"):
+        verify_source_partition(source, (accepted, bad_fallback), max_assignments=1)
     with pytest.raises(BmcBuildError, match="overlap"):
         verify_source_partition(source, (accepted, bad_fallback), max_assignments=8)
 
@@ -1462,6 +1579,20 @@ def test_structural_partition_negative_shapes_fall_back_to_truth_table_budget(
             ),
         ),
     )
+    entry_fallback = CycleCase(
+        "fallback",
+        entry.source_state_id,
+        entry.source_state_path,
+        entry.source_state_id,
+        entry.source_state_path,
+        "%s::fallback::%s::21" % (entry.source_state_path, entry.source_state_path),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(BmcBuildError, match="assignment budget"):
+        verify_source_partition(
+            entry, (accepted_entry, entry_fallback), max_assignments=1
+        )
     bad_delta = CycleCase(
         "delta",
         entry.source_state_id,
@@ -1472,9 +1603,27 @@ def test_structural_partition_negative_shapes_fall_back_to_truth_table_budget(
         BoolTemplate.true(),
         (),
     )
+    with pytest.raises(BmcBuildError, match="assignment budget"):
+        verify_source_partition(
+            entry, (accepted_entry,), (bad_delta,), max_assignments=1
+        )
     with pytest.raises(BmcBuildError, match="overlap"):
         verify_source_partition(
             entry, (accepted_entry,), (bad_delta,), max_assignments=8
+        )
+    diagnostic_terminal = CycleCase(
+        "diagnostic",
+        entry.source_state_id,
+        entry.source_state_path,
+        STATE_DIAGNOSTIC_ID,
+        DIAGNOSTIC_CASE_PATH,
+        "%s::diagnostic::%s::22" % (entry.source_state_path, DIAGNOSTIC_CASE_PATH),
+        BoolTemplate.true(),
+        (),
+    )
+    with pytest.raises(BmcBuildError, match="assignment budget"):
+        verify_source_partition(
+            entry, (accepted_entry, diagnostic_terminal), max_assignments=1
         )
 
 
@@ -1498,6 +1647,13 @@ def test_verify_partition_public_validation_rejects_bad_arguments(macro_domain):
         verify_boolean_partition((BoolTemplate.true(),), variables=_bad_object())
     with pytest.raises(BmcBuildError, match="non-empty strings"):
         verify_boolean_partition((BoolTemplate.true(),), variables=("",))
+    with pytest.raises(BmcBuildError, match="reserved source-state atom"):
+        verify_boolean_partition(
+            (BoolTemplate.true(),),
+            variables=("__source_state__:Root",),
+        )
+    with pytest.raises(BmcBuildError, match="unsupported macro condition atom"):
+        verify_boolean_partition((BoolTemplate.true(),), variables=("opaque:bad",))
 
     with pytest.raises(InvalidBmcEncoding, match="source must be MacroStepSource"):
         verify_source_partition(_bad_object(), (fallback,))

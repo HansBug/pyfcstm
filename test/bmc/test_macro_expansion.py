@@ -19,7 +19,13 @@ from pyfcstm.bmc import (
     MacroStepSource,
     stable_leaf_source,
 )
-from pyfcstm.bmc.expand import expand_macro_step_cases
+from pyfcstm.bmc.expand import (
+    _FormalStackFrame,
+    _MacroExpander,
+    _MacroFrontier,
+    expand_macro_step_cases,
+)
+from pyfcstm.bmc.macro import BoolTemplate
 from pyfcstm.model import IfBlock, load_state_machine_from_text
 
 
@@ -96,6 +102,157 @@ def test_expand_rejects_domainless_and_modeless_sources():
                 domain=modeless,
             )
         )
+
+
+@pytest.mark.unittest
+def test_expand_rejects_inconsistent_domain_model_snapshots():
+    """Expansion fails loudly when a domain back-reference no longer matches ids."""
+    source_model = load_state_machine_from_text(
+        """
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """
+    )
+    source_domain = build_bmc_domain(source_model, bound=1)
+    missing_source_domain = BmcDomain(
+        source_domain.bound,
+        source_domain.states,
+        source_domain.events,
+        source_domain.variables,
+        source_domain.frames,
+        source_domain.steps,
+        source_domain.event_inputs,
+        source_domain.initial_state_ids,
+        source_domain.stable_state_ids,
+        model=load_state_machine_from_text("state Root;"),
+    )
+    source = MacroStepSource(
+        "stable_leaf",
+        "recurrence",
+        source_domain.state_path_to_id("Root.A"),
+        "Root.A",
+        domain=missing_source_domain,
+    )
+
+    with pytest.raises(InvalidBmcEncoding, match="source state is not present"):
+        expand_macro_step_cases(source)
+
+    target_model = load_state_machine_from_text(
+        """
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """
+    )
+    target_domain = build_bmc_domain(load_state_machine_from_text("state Root;"), 1)
+    missing_target_domain = BmcDomain(
+        target_domain.bound,
+        target_domain.states,
+        target_domain.events,
+        target_domain.variables,
+        target_domain.frames,
+        target_domain.steps,
+        target_domain.event_inputs,
+        target_domain.initial_state_ids,
+        target_domain.stable_state_ids,
+        model=target_model,
+    )
+
+    with pytest.raises(InvalidBmcEncoding, match="Unknown state path"):
+        expand_macro_step_cases(entry_source(missing_target_domain))
+
+
+@pytest.mark.unittest
+def test_expand_rejects_event_paths_missing_from_domain_snapshot():
+    """Event atoms discovered in model transitions must be present in the domain."""
+    model = load_state_machine_from_text(
+        """
+        state Root {
+            state A { event Go; }
+            state B;
+            [*] -> A;
+            A -> B :: Go;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    eventless_domain = BmcDomain(
+        domain.bound,
+        domain.states,
+        (),
+        domain.variables,
+        domain.frames,
+        domain.steps,
+        (),
+        domain.initial_state_ids,
+        domain.stable_state_ids,
+        model=model,
+    )
+    source = MacroStepSource(
+        "stable_leaf",
+        "recurrence",
+        domain.state_path_to_id("Root.A"),
+        "Root.A",
+        domain=eventless_domain,
+    )
+
+    with pytest.raises(InvalidBmcEncoding, match="Unknown event path"):
+        expand_macro_step_cases(source)
+
+
+@pytest.mark.unittest
+def test_internal_frontier_helpers_prune_false_and_clear_pending_pseudo_exit():
+    """Internal frontier helpers keep false paths empty and clear pseudo-exit state."""
+    model = load_state_machine_from_text(
+        """
+        state Root {
+            state Parent {
+                pseudo state Route;
+                [*] -> Route;
+                Route -> [*];
+            }
+            [*] -> Parent;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    expander = _MacroExpander(entry_source(domain), MacroExpansionOptions())
+    root = model.root_state
+    parent = root.substates["Parent"]
+    route = parent.substates["Route"]
+
+    false_frontier = _MacroFrontier(
+        (_FormalStackFrame(root, "active"),),
+        BoolTemplate.false(),
+        (),
+        (),
+        (),
+        (),
+        "initial",
+    )
+    false_expansion = expander._expand_frontier(false_frontier)
+    assert false_expansion.outcomes == ()
+    assert false_expansion.failed == ()
+    assert false_expansion.diagnostics == ()
+
+    pending_frontier = _MacroFrontier(
+        (_FormalStackFrame(parent, "init_wait", plain_before_pending=True),),
+        BoolTemplate.true(),
+        (),
+        (),
+        (),
+        (),
+        "initial",
+    )
+    cleared = expander._clear_parent_plain_before_pending_after_pseudo_exit(
+        pending_frontier,
+        route,
+    )
+    assert cleared.stack[-1].state is parent
+    assert not cleared.stack[-1].plain_before_pending
 
 
 @pytest.mark.unittest

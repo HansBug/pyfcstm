@@ -212,3 +212,153 @@ def test_runtime_alignment_condition_has_no_action_if_atoms():
     assert isinstance(case.action_blocks[0].operations[0], IfBlock)
     assert _replay_action_prefix(case, {"x": 2}) == {"x": 3}
     assert _replay_action_prefix(case, {"x": 0}) == {"x": -1}
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ("events", "expected_target", "expected_roles", "expected_x"),
+    [
+        (
+            (),
+            "Root.A",
+            [
+                "aspect_during_before",
+                "aspect_during_before",
+                "leaf_during",
+                "leaf_during",
+                "aspect_during_after",
+                "aspect_during_after",
+            ],
+            111107,
+        ),
+        (
+            ("Root.Go",),
+            "Root.B",
+            [
+                "state_exit",
+                "state_exit",
+                "state_enter",
+                "state_enter",
+                "aspect_during_before",
+                "aspect_during_before",
+                "leaf_during",
+                "leaf_during",
+                "aspect_during_after",
+                "aspect_during_after",
+            ],
+            111145,
+        ),
+    ],
+)
+def test_multiple_lifecycle_actions_preserve_runtime_order(
+    events,
+    expected_target,
+    expected_roles,
+    expected_x,
+):
+    """Repeated actions in the same lifecycle stage remain ordered blocks."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            event Go;
+            >> during before { x = x + 100; }
+            >> during before { x = x + 1000; }
+            >> during after { x = x + 10000; }
+            >> during after { x = x + 100000; }
+            state A {
+                enter { x = x + 1; }
+                enter { x = x + 2; }
+                during { x = x + 3; }
+                during { x = x + 4; }
+                exit { x = x + 5; }
+                exit { x = x + 6; }
+            }
+            state B {
+                enter { x = x + 7; }
+                enter { x = x + 8; }
+                during { x = x + 9; }
+                during { x = x + 10; }
+            }
+            [*] -> A;
+            A -> B : Go;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(stable_leaf_source(domain, "Root.A"))
+
+    case = _selected_case(formal, {"x": 0}, events)
+    runtime_state, runtime_vars = _runtime_cycle(model, "Root.A", {"x": 0}, events)
+
+    assert case.target_state_path == expected_target
+    assert [block.runtime_role for block in case.action_blocks] == expected_roles
+    assert _replay_action_prefix(case, {"x": 0}) == {"x": expected_x}
+    assert runtime_state == expected_target
+    assert runtime_vars == {"x": expected_x}
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ("events", "expected_target", "expected_actions"),
+    [
+        (
+            (),
+            "Root.A",
+            [
+                ("aspect_during_before", "Root.RootBefore"),
+                ("leaf_during", "Root.A.ADuring"),
+                ("aspect_during_after", "Root.RootAfter"),
+            ],
+        ),
+        (
+            ("Root.Go",),
+            "Root.B",
+            [
+                ("state_exit", "Root.A.AExit"),
+                ("aspect_during_before", "Root.RootBefore"),
+                ("aspect_during_after", "Root.RootAfter"),
+            ],
+        ),
+    ],
+)
+def test_abstract_actions_are_recorded_as_noop_occurrence_blocks(
+    events,
+    expected_target,
+    expected_actions,
+):
+    """Abstract actions remain observable blocks while preserving no-op vars."""
+    model = load_state_machine_from_text(
+        """
+        def int x = 0;
+        state Root {
+            event Go;
+            >> during before abstract RootBefore;
+            >> during after abstract RootAfter;
+            state A {
+                enter abstract AEnter;
+                during abstract ADuring;
+                exit abstract AExit;
+            }
+            state B;
+            [*] -> A;
+            A -> B : Go;
+        }
+        """
+    )
+    domain = build_bmc_domain(model, bound=1)
+    formal = expand_macro_step_cases(stable_leaf_source(domain, "Root.A"))
+
+    case = _selected_case(formal, {"x": 0}, events)
+    runtime_state, runtime_vars = _runtime_cycle(model, "Root.A", {"x": 0}, events)
+
+    assert case.target_state_path == expected_target
+    assert [
+        (block.runtime_role, block.action_name) for block in case.action_blocks
+    ] == expected_actions
+    assert all(
+        block.is_abstract and block.operations == () for block in case.action_blocks
+    )
+    assert _replay_action_prefix(case, {"x": 0}) == {"x": 0}
+    assert runtime_state == expected_target
+    assert runtime_vars == {"x": 0}

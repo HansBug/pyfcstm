@@ -64,6 +64,14 @@ _GUARD_ATOM_PREFIX = "guard:"
 _ACCEPTED_ATOM_PREFIX = "accepted:"
 
 
+def _internal_expansion_error(detail: str) -> BmcBuildError:
+    return BmcBuildError(
+        "internal error: %s This indicates a pyfcstm BMC bug or a corrupted "
+        "internal object; please report this issue with the FCSTM input, query, "
+        "and traceback at https://github.com/HansBug/pyfcstm/issues." % detail
+    )
+
+
 def _validate_positive_int(value: object, field_name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise InvalidBmcEncoding("%s must be a positive integer." % field_name)
@@ -209,7 +217,9 @@ class _MacroExpander:
                 "macro-step expansion requires a domain-backed source."
             )
         if not isinstance(domain, BmcDomain):
-            raise InvalidBmcEncoding("source domain must be BmcDomain.")
+            raise _internal_expansion_error(  # pragma: no cover
+                "macro-step source domain is not a BmcDomain after source validation."
+            )
         model = domain.model
         if model is None:
             raise InvalidBmcEncoding(
@@ -259,8 +269,9 @@ class _MacroExpander:
                 ),
             )
         elif diagnostics:
-            raise BmcBuildError(
-                "stable macro-step source produced unsupported build diagnostic conditions."
+            raise _internal_expansion_error(  # pragma: no cover
+                "stable macro-step source produced unsupported build diagnostic "
+                "conditions."
             )
         formal = MacroStepFormal(self.source, success_cases, delta_cases, diagnostics)
         if self.options.verify_partition:
@@ -299,7 +310,10 @@ class _MacroExpander:
             )
 
         if self.source.kind != "entry":
-            raise InvalidBmcEncoding("unsupported source kind: %r." % self.source.kind)
+            raise _internal_expansion_error(  # pragma: no cover
+                "unsupported source kind reached macro expansion: %r."
+                % self.source.kind
+            )
         if state.is_root_state:
             base = _MacroFrontier(
                 (),
@@ -386,7 +400,9 @@ class _MacroExpander:
             return self._expand_initial_transitions(frontier)
         if top.mode == "post_child_exit":
             return self._expand_parent_continuation(frontier)
-        return _Expansion((), (), (frontier.condition,))
+        raise _internal_expansion_error(  # pragma: no cover
+            "unsupported macro frontier stack frame mode: %r." % top.mode
+        )
 
     def _expand_leaf_active(self, frontier: _MacroFrontier) -> _Expansion:
         transitions = frontier.stack[-1].state.transitions_from
@@ -594,7 +610,9 @@ class _MacroExpander:
         current = self._record_transition_effect(frontier, state, transition)
         target_name = transition.to_state
         if not isinstance(target_name, str):
-            raise BmcBuildError("initial transition target must be a child state.")
+            raise _internal_expansion_error(  # pragma: no cover
+                "initial transition target is not a child state name."
+            )
         target_state = state.substates[target_name]
         if not target_state.is_pseudo:
             current = self._consume_plain_before_if_pending(current)
@@ -630,10 +648,14 @@ class _MacroExpander:
 
         parent = current_state.parent
         if parent is None:
-            raise BmcBuildError("non-exit transition from root has no parent.")
+            raise _internal_expansion_error(  # pragma: no cover
+                "non-exit transition source has no parent state."
+            )
         target_name = transition.to_state
         if not isinstance(target_name, str):
-            raise BmcBuildError("transition target must be a sibling state.")
+            raise _internal_expansion_error(  # pragma: no cover
+                "transition target is not a sibling state name."
+            )
         target_state = parent.substates[target_name]
         if (
             current_state.is_pseudo
@@ -646,7 +668,9 @@ class _MacroExpander:
 
     def _finalize_exit_to_parent(self, frontier: _MacroFrontier) -> _MacroFrontier:
         if not frontier.stack:
-            return frontier
+            raise _internal_expansion_error(  # pragma: no cover
+                "exit-to-parent finalization received an empty runtime stack."
+            )
         parent = frontier.stack[-1].state
         current = frontier
         for on_during_after in parent.list_on_durings(aspect="after"):
@@ -695,14 +719,16 @@ class _MacroExpander:
         current = frontier
         for item in state.iter_on_during_aspect_recursively():
             owner, func = cast(Tuple[State, Union[OnAspect, OnStage]], item)
-            assert isinstance(owner, State), (
-                "State.iter_on_during_aspect_recursively() must yield owner states "
-                "when called without with_ids."
-            )
-            assert isinstance(func, (OnAspect, OnStage)), (
-                "State.iter_on_during_aspect_recursively() must yield lifecycle "
-                "actions when called without with_ids."
-            )
+            if not isinstance(owner, State):
+                raise _internal_expansion_error(  # pragma: no cover
+                    "State.iter_on_during_aspect_recursively() yielded a non-State "
+                    "owner when called without with_ids."
+                )
+            if not isinstance(func, (OnAspect, OnStage)):
+                raise _internal_expansion_error(  # pragma: no cover
+                    "State.iter_on_during_aspect_recursively() yielded a non-lifecycle "
+                    "action when called without with_ids."
+                )
             if isinstance(func, OnAspect):
                 role = (
                     "aspect_during_before"
@@ -720,7 +746,9 @@ class _MacroExpander:
         self, frontier: _MacroFrontier
     ) -> _MacroFrontier:
         if not frontier.stack:
-            return frontier
+            raise _internal_expansion_error(  # pragma: no cover
+                "plain during-before consumption received an empty runtime stack."
+            )
         frame = frontier.stack[-1]
         if not frame.plain_before_pending:
             return frontier
@@ -787,13 +815,17 @@ class _MacroExpander:
     ) -> _MacroFrontier:
         if isinstance(func, (OnStage, OnAspect)) and func.is_ref:
             if func.ref is None:
-                raise BmcBuildError("action reference is missing a target.")
+                raise _internal_expansion_error(  # pragma: no cover
+                    "action reference is missing its resolved target."
+                )
             ref_owner = func.ref.parent if func.ref.parent is not None else owner
             return self._record_func(
                 frontier, ref_owner, func.ref, block_kind, runtime_role
             )
         if not isinstance(func, (OnStage, OnAspect)):
-            raise BmcBuildError("unsupported lifecycle action type.")
+            raise _internal_expansion_error(  # pragma: no cover
+                "unsupported lifecycle action object reached macro expansion."
+            )
         operations = () if func.is_abstract else tuple(func.operations)
         if not operations and not func.is_abstract:
             return frontier
@@ -913,7 +945,9 @@ class _MacroExpander:
         )
         expansion = self._expand_frontier(active)
         if not expansion.outcomes:
-            raise BmcBuildError("stable fallback did not produce an outcome.")
+            raise _internal_expansion_error(  # pragma: no cover
+                "stable fallback did not produce a stable or terminal outcome."
+            )
         failed_guard_requirements = self._guard_requirements_for_conditions(failed)
         return tuple(
             _MacroOutcome(
@@ -1040,7 +1074,9 @@ class _MacroExpander:
             for index, item in enumerate(transitions):
                 if item is transition:
                     return index
-        raise BmcBuildError("transition not found on owner state.")
+        raise _internal_expansion_error(  # pragma: no cover
+            "transition object was not found on its owner state."
+        )
 
     def _event_uses_for_paths(
         self, paths: Sequence[str], polarity: str, reason: str

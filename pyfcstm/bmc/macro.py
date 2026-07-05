@@ -105,6 +105,14 @@ _VALID_CONDITION_PREFIXES = (
 )
 
 
+def _internal_bmc_error(detail: str) -> BmcBuildError:
+    return BmcBuildError(
+        "internal error: %s This indicates a pyfcstm BMC bug or a corrupted "
+        "internal object; please report this issue with the FCSTM input, query, "
+        "and traceback at https://github.com/HansBug/pyfcstm/issues." % detail
+    )
+
+
 def _require_non_empty_string(value: object, field_name: str) -> str:
     if not isinstance(value, str) or not value:
         raise InvalidBmcEncoding("%s must be a non-empty string." % field_name)
@@ -358,7 +366,9 @@ class BoolTemplate:
     def _atom_name(self) -> str:
         name = self.name
         if name is None:
-            raise BmcBuildError("atom template is missing a name.")
+            raise _internal_bmc_error(
+                "atom template is missing a name."
+            )  # pragma: no cover
         return name
 
     def evaluate(self, values: Mapping[str, bool]) -> bool:
@@ -394,7 +404,9 @@ class BoolTemplate:
             return all(operand.evaluate(values) for operand in self.operands)
         if self.kind == "or":
             return any(operand.evaluate(values) for operand in self.operands)
-        raise BmcBuildError("unsupported boolean template kind: %r." % self.kind)
+        raise _internal_bmc_error(  # pragma: no cover
+            "unsupported boolean template kind while evaluating: %r." % self.kind
+        )
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable condition recipe.
@@ -1006,9 +1018,10 @@ def _normalize_accepted_cases(
         raise InvalidBmcEncoding("accepted_cases must be a sequence.")
     accepted = tuple(accepted_cases)
     allowed = tuple(allowed_kinds)
-    assert allowed and all(kind in _ACCEPTED_CASE_KINDS for kind in allowed), (
-        "_normalize_accepted_cases only accepts ordinary macro case kind policies."
-    )
+    if not allowed or not all(kind in _ACCEPTED_CASE_KINDS for kind in allowed):
+        raise _internal_bmc_error(  # pragma: no cover
+            "_normalize_accepted_cases only accepts ordinary macro case kind policies."
+        )
     if not all(isinstance(item, CycleCase) for item in accepted):
         raise InvalidBmcEncoding("accepted_cases must contain CycleCase objects.")
     for case in accepted:
@@ -1930,7 +1943,10 @@ def _resolve_accepted_atoms(
                 for item in condition.operands
             ]
         )
-    raise BmcBuildError("unsupported boolean template kind: %r." % condition.kind)
+    raise _internal_bmc_error(  # pragma: no cover
+        "unsupported boolean template kind while resolving accepted atoms: %r."
+        % condition.kind
+    )
 
 
 def _validate_sentinel_absorb_partition(
@@ -2003,9 +2019,11 @@ def _structural_partition_result(
         sentinel_path = (
             TERMINATE_CASE_PATH if source.kind == "terminated" else DIAGNOSTIC_CASE_PATH
         )
-        assert not delta and not diagnostics, (
-            "sentinel delta and diagnostics are rejected by public preflight"
-        )
+        if delta or diagnostics:
+            raise _internal_bmc_error(  # pragma: no cover
+                "sentinel structural partition received delta or diagnostic buckets "
+                "after public preflight."
+            )
         _validate_sentinel_absorb_partition(success, sentinel_id, sentinel_path)
         return PartitionCheckResult(tuple(variables), 0, 1)
 
@@ -2038,7 +2056,13 @@ def _structural_partition_result(
             return None
     elif terminal.kind == "delta":
         if source.kind != "entry":
-            return None
+            # Public verify_source_partition() rejects non-entry delta buckets
+            # before structural recognition; reaching this branch means an
+            # internal caller bypassed that preflight.
+            raise _internal_bmc_error(  # pragma: no cover
+                "delta structural partition reached a non-entry source after "
+                "public preflight."
+            )
         if not _condition_uses_exact_accepted_complement(
             terminal.condition, accepted_labels, diagnostics
         ):
@@ -2047,7 +2071,14 @@ def _structural_partition_result(
         return None
 
     if diagnostics and (source.kind != "entry" or not delta):
-        return None
+        # The fallback branch rejects diagnostics above, public preflight rejects
+        # non-entry delta buckets, and the only accepted diagnostic shape has a
+        # delta bucket.  Keep this as a loud structural guard for corrupted
+        # internal callers.
+        raise _internal_bmc_error(  # pragma: no cover
+            "diagnostic structural partition reached an unsupported source or "
+            "missing delta bucket after public preflight."
+        )
     bucket_count = len(cases) + (1 if diagnostics else 0)
     return PartitionCheckResult(tuple(variables), 0, bucket_count)
 

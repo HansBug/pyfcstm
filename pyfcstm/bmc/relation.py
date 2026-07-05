@@ -1021,6 +1021,26 @@ def _lower_bmc_num_expr(
         condition = _lower_bmc_cond_expr(
             expr.condition, symbols, frame_index=frame_index, step_index=step_index
         )
+        condition_expr = _expect_bool(condition.expr, label)
+        if z3.is_true(condition_expr):
+            if_true = _lower_bmc_num_expr(
+                expr.if_true, symbols, frame_index=frame_index, step_index=step_index
+            )
+            return _LoweredValue(
+                _expect_arith(if_true.expr, label),
+                (*condition.definedness_constraints, *if_true.definedness_constraints),
+            )
+        if z3.is_false(condition_expr):
+            if_false = _lower_bmc_num_expr(
+                expr.if_false, symbols, frame_index=frame_index, step_index=step_index
+            )
+            return _LoweredValue(
+                _expect_arith(if_false.expr, label),
+                (
+                    *condition.definedness_constraints,
+                    *if_false.definedness_constraints,
+                ),
+            )
         if_true = _lower_bmc_num_expr(
             expr.if_true, symbols, frame_index=frame_index, step_index=step_index
         )
@@ -1029,14 +1049,18 @@ def _lower_bmc_num_expr(
         )
         return _LoweredValue(
             z3.If(
-                _expect_bool(condition.expr, label),
+                condition_expr,
                 _expect_arith(if_true.expr, label),
                 _expect_arith(if_false.expr, label),
             ),
             (
                 *condition.definedness_constraints,
-                *if_true.definedness_constraints,
-                *if_false.definedness_constraints,
+                *_guarded_domain_constraints(
+                    condition_expr, if_true.definedness_constraints
+                ),
+                *_guarded_domain_constraints(
+                    z3.Not(condition_expr), if_false.definedness_constraints
+                ),
             ),
         )
     if isinstance(expr, bmc_ast.UFuncCall):
@@ -1095,34 +1119,82 @@ def _lower_bmc_cond_expr(
         left = _lower_bmc_cond_expr(
             expr.left, symbols, frame_index=frame_index, step_index=step_index
         )
+        left_expr = _expect_bool(left.expr, label)
+        if expr.op == "&&" and z3.is_false(left_expr):
+            return _LoweredValue(z3.BoolVal(False), left.definedness_constraints)
+        if expr.op == "||" and z3.is_true(left_expr):
+            return _LoweredValue(z3.BoolVal(True), left.definedness_constraints)
         right = _lower_bmc_cond_expr(
             expr.right, symbols, frame_index=frame_index, step_index=step_index
         )
-        left_expr = _expect_bool(left.expr, label)
         right_expr = _expect_bool(right.expr, label)
         if expr.op == "&&":
             value = z3.And(left_expr, right_expr)
+            definedness_constraints = (
+                *left.definedness_constraints,
+                *_guarded_domain_constraints(left_expr, right.definedness_constraints),
+            )
         elif expr.op == "||":
             value = z3.Or(left_expr, right_expr)
+            definedness_constraints = (
+                *left.definedness_constraints,
+                *_guarded_domain_constraints(
+                    z3.Not(left_expr), right.definedness_constraints
+                ),
+            )
         elif expr.op == "=>":
             value = z3.Implies(left_expr, right_expr)
+            definedness_constraints = (
+                *left.definedness_constraints,
+                *right.definedness_constraints,
+            )
         elif expr.op == "xor":
             value = z3.Xor(left_expr, right_expr)
+            definedness_constraints = (
+                *left.definedness_constraints,
+                *right.definedness_constraints,
+            )
         elif expr.op in {"iff", "=="}:
             value = left_expr == right_expr
+            definedness_constraints = (
+                *left.definedness_constraints,
+                *right.definedness_constraints,
+            )
         elif expr.op == "!=":
             value = left_expr != right_expr
+            definedness_constraints = (
+                *left.definedness_constraints,
+                *right.definedness_constraints,
+            )
         else:
             raise UnsupportedBmcQuery(  # pragma: no cover - AST validates operator names.
                 "%s uses unsupported condition operator %r." % (label, expr.op)
             )
-        return _LoweredValue(
-            value, (*left.definedness_constraints, *right.definedness_constraints)
-        )
+        return _LoweredValue(value, definedness_constraints)
     if isinstance(expr, bmc_ast.CondConditionalOp):
         condition = _lower_bmc_cond_expr(
             expr.condition, symbols, frame_index=frame_index, step_index=step_index
         )
+        condition_expr = _expect_bool(condition.expr, label)
+        if z3.is_true(condition_expr):
+            if_true = _lower_bmc_cond_expr(
+                expr.if_true, symbols, frame_index=frame_index, step_index=step_index
+            )
+            return _LoweredValue(
+                _expect_bool(if_true.expr, label),
+                (*condition.definedness_constraints, *if_true.definedness_constraints),
+            )
+        if z3.is_false(condition_expr):
+            if_false = _lower_bmc_cond_expr(
+                expr.if_false, symbols, frame_index=frame_index, step_index=step_index
+            )
+            return _LoweredValue(
+                _expect_bool(if_false.expr, label),
+                (
+                    *condition.definedness_constraints,
+                    *if_false.definedness_constraints,
+                ),
+            )
         if_true = _lower_bmc_cond_expr(
             expr.if_true, symbols, frame_index=frame_index, step_index=step_index
         )
@@ -1131,14 +1203,18 @@ def _lower_bmc_cond_expr(
         )
         return _LoweredValue(
             z3.If(
-                _expect_bool(condition.expr, label),
+                condition_expr,
                 _expect_bool(if_true.expr, label),
                 _expect_bool(if_false.expr, label),
             ),
             (
                 *condition.definedness_constraints,
-                *if_true.definedness_constraints,
-                *if_false.definedness_constraints,
+                *_guarded_domain_constraints(
+                    condition_expr, if_true.definedness_constraints
+                ),
+                *_guarded_domain_constraints(
+                    z3.Not(condition_expr), if_false.definedness_constraints
+                ),
             ),
         )
     if isinstance(expr, bmc_ast.Active):

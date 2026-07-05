@@ -228,6 +228,58 @@ def test_frame_assumption_definedness_constraints_can_make_core_unsat() -> None:
 
 
 @pytest.mark.unittest
+def test_frame_assumption_logical_short_circuit_guards_definedness() -> None:
+    """Skipped logical operands do not add runtime-definedness constraints."""
+    model = load_state_machine_from_text("def int x = 0; state Root;")
+
+    for query in (
+        'assume always: true || (1 / x > 0);\ncheck reach <= 1: active("Root");',
+        'assume always: !(false && (1 / x > 0));\ncheck reach <= 1: active("Root");',
+        'assume always: x == 0 || (1 / x > 0);\ncheck reach <= 1: active("Root");',
+        'assume always: !(x != 0 && (1 / x > 0));\ncheck reach <= 1: active("Root");',
+    ):
+        core = build_bmc_core_formula(BmcEngine(model).prepare(query))
+        assert _solver(core.core).check() == z3.sat
+
+    for query in (
+        'assume always: false || (1 / x > 0);\ncheck reach <= 1: active("Root");',
+        'assume always: true && (1 / x > 0);\ncheck reach <= 1: active("Root");',
+        'assume always: x != 0 || (1 / x > 0);\ncheck reach <= 1: active("Root");',
+        'assume always: !(x == 0 && (1 / x > 0));\ncheck reach <= 1: active("Root");',
+    ):
+        core = build_bmc_core_formula(BmcEngine(model).prepare(query))
+        assert _solver(core.core).check() == z3.unsat
+
+
+@pytest.mark.unittest
+def test_frame_assumption_conditional_guards_branch_definedness() -> None:
+    """Skipped conditional branches do not constrain runtime-definedness."""
+    model = load_state_machine_from_text("def int x = 0; state Root;")
+
+    for query in (
+        "assume always: ((true) ? 1 : (1 / x)) == 1;\n"
+        'check reach <= 1: active("Root");',
+        "assume always: ((false) ? (1 / x) : 1) == 1;\n"
+        'check reach <= 1: active("Root");',
+        "assume always: (true) ? true : (1 / x > 0);\n"
+        'check reach <= 1: active("Root");',
+        "assume always: (false) ? (1 / x > 0) : true;\n"
+        'check reach <= 1: active("Root");',
+    ):
+        core = build_bmc_core_formula(BmcEngine(model).prepare(query))
+        assert _solver(core.core).check() == z3.sat
+
+    for query in (
+        "assume always: ((false) ? 1 : (1 / x)) == 1;\n"
+        'check reach <= 1: active("Root");',
+        "assume always: (false) ? true : (1 / x > 0);\n"
+        'check reach <= 1: active("Root");',
+    ):
+        core = build_bmc_core_formula(BmcEngine(model).prepare(query))
+        assert _solver(core.core).check() == z3.unsat
+
+
+@pytest.mark.unittest
 def test_unsupported_frame_expression_reports_structured_bmc_error() -> None:
     """Unsupported Z3 operations do not leak raw Python or Z3 exceptions."""
     model = load_state_machine_from_text("def int x = 4; def int y = 2; state Root;")

@@ -231,7 +231,9 @@ def _failure_from_exception(
         return TranslationFailure("type_error", str(err), source=source)
     if isinstance(err, z3.Z3Exception):
         return TranslationFailure("z3_error", str(err), source=source)
-    raise AssertionError(f"Unexpected translation exception: {type(err).__name__}") from err
+    raise AssertionError(
+        f"Unexpected translation exception: {type(err).__name__}"
+    ) from err
 
 
 def _failure_result(
@@ -421,6 +423,81 @@ def _constraint_exprs(items: Sequence[DomainConstraint]) -> Tuple[z3.ExprRef, ..
     return tuple(item.constraint for item in items)
 
 
+def _guarded_domain_constraints(
+    selector: z3.ExprRef,
+    items: Sequence[DomainConstraint],
+) -> Tuple[DomainConstraint, ...]:
+    """Guard runtime-definedness constraints by a lazy evaluation selector.
+
+    :param selector: Predicate under which ``items`` are evaluated.
+    :type selector: z3.ExprRef
+    :param items: Runtime-definedness constraints from a lazy operand.
+    :type items: Sequence[DomainConstraint]
+    :return: Constraints wrapped as ``Implies(selector, constraint)``.
+    :rtype: Tuple[DomainConstraint, ...]
+
+    Example::
+
+        >>> x = z3.Int("x")
+        >>> guarded = _guarded_domain_constraints(x > 0, (DomainConstraint(x != 0),))
+        >>> guarded[0].constraint
+        Implies(x > 0, x != 0)
+    """
+    if not items:
+        return ()
+    if z3.is_true(selector):
+        return tuple(items)
+    return tuple(
+        DomainConstraint(z3.Implies(selector, item.constraint), item.source)
+        for item in items
+    )
+
+
+def _logical_left_type_failure(
+    op: str,
+    left: ExprDomain,
+    *,
+    assumptions: Sequence[z3.ExprRef],
+    source: Optional[DomainSource],
+) -> ExprDomain:
+    """Build the structured failure for a non-Boolean lazy left operand.
+
+    :param op: Logical operator being translated.
+    :type op: str
+    :param left: Already translated left operand.
+    :type left: ExprDomain
+    :param assumptions: Caller-known facts to preserve on the result.
+    :type assumptions: Sequence[z3.ExprRef]
+    :param source: Optional source metadata attached to the failure.
+    :type source: Optional[DomainSource]
+    :return: Failed expression-domain result carrying left-side metadata.
+    :rtype: ExprDomain
+
+    Example::
+
+        >>> result = _logical_left_type_failure(
+        ...     "&&",
+        ...     ExprDomain(z3.IntVal(1)),
+        ...     assumptions=(),
+        ...     source=DomainSource(label="guard"),
+        ... )
+        >>> result.failure.kind
+        'type_error'
+        >>> result.failure.source.label
+        'guard'
+    """
+    return _failure_result(
+        TranslationFailure(
+            "type_error",
+            "Logical operator %r requires a Boolean left operand." % op,
+            source=source,
+        ),
+        assumptions=assumptions,
+        definedness_constraints=left.definedness_constraints,
+        feasibility_checks=left.feasibility_checks,
+    )
+
+
 def _branch_feasibility(
     selector: z3.ExprRef,
     *,
@@ -553,6 +630,105 @@ def _translate_expr_domain(
         )
         if left.failure is not None:
             return left
+        if expr.op in ("&&", "||"):
+            if not z3.is_bool(left.z3_expr):
+                return _logical_left_type_failure(
+                    expr.op, left, assumptions=assumptions, source=source
+                )
+            if expr.op == "&&":
+                right_selector = left.z3_expr
+                if z3.is_false(right_selector):
+                    return _with_parts(
+                        z3.BoolVal(False),
+                        assumptions=assumptions,
+                        definedness_constraints=left.definedness_constraints,
+                        feasibility_checks=left.feasibility_checks,
+                    )
+            else:
+                if z3.is_true(left.z3_expr):
+                    return _with_parts(
+                        z3.BoolVal(True),
+                        assumptions=assumptions,
+                        definedness_constraints=left.definedness_constraints,
+                        feasibility_checks=left.feasibility_checks,
+                    )
+                right_selector = z3.Not(left.z3_expr)
+
+            feasibility_checks: List[BranchFeasibility] = list(left.feasibility_checks)
+            right_reachable = True
+            if prune_unreachable:
+                right_check = _branch_feasibility(
+                    right_selector,
+                    assumptions=assumptions,
+                    path_conditions=path_conditions,
+                    condition_domains=left.definedness_constraints,
+                    source=source,
+                    timeout_ms=timeout_ms,
+                )
+                feasibility_checks.append(right_check)
+                right_reachable = right_check.status != "unsat"
+            if not right_reachable:
+                return _with_parts(
+                    z3.BoolVal(False) if expr.op == "&&" else z3.BoolVal(True),
+                    assumptions=assumptions,
+                    definedness_constraints=left.definedness_constraints,
+                    feasibility_checks=feasibility_checks,
+                )
+
+            right = _translate_expr_domain(
+                expr.y,
+                z3_vars,
+                assumptions=assumptions,
+                path_conditions=(
+                    *path_conditions,
+                    *_constraint_exprs(left.definedness_constraints),
+                    right_selector,
+                ),
+                source=source,
+                prune_unreachable=prune_unreachable,
+                timeout_ms=timeout_ms,
+            )
+            guarded_right_domains = _guarded_domain_constraints(
+                right_selector, right.definedness_constraints
+            )
+            if right.failure is not None:
+                return _failure_result(
+                    right.failure,
+                    assumptions=assumptions,
+                    definedness_constraints=(
+                        *left.definedness_constraints,
+                        *guarded_right_domains,
+                    ),
+                    feasibility_checks=(
+                        *feasibility_checks,
+                        *right.feasibility_checks,
+                    ),
+                )
+
+            z3_expr, failure = _apply_or_failure(
+                lambda: _apply_binary_z3(
+                    expr.op,
+                    left.z3_expr,
+                    right.z3_expr,
+                    expr.x,
+                    expr.y,
+                    warning_stacklevel=6,
+                ),
+                source,
+            )
+            return _with_parts(
+                z3_expr,
+                assumptions=assumptions,
+                definedness_constraints=(
+                    *left.definedness_constraints,
+                    *guarded_right_domains,
+                ),
+                failure=failure,
+                feasibility_checks=(
+                    *feasibility_checks,
+                    *right.feasibility_checks,
+                ),
+            )
         right = _translate_expr_domain(
             expr.y,
             z3_vars,

@@ -351,6 +351,36 @@ def test_relation_guard_definedness_blocks_fallback_false_witness() -> None:
 
 
 @pytest.mark.unittest
+def test_relation_guard_logical_short_circuit_matches_runtime() -> None:
+    """Transition guards use FCSTM short-circuit definedness semantics."""
+    core, selected, runtime = _assert_relation_matches_runtime(
+        """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B : if [x == 0 || (1 / x > 0)];
+        }
+        """,
+        'init state("Root.A") where x == 0;\ncheck reach <= 1: active("Root.B");',
+        initial_state="Root.A",
+        initial_vars={"x": 0},
+    )
+
+    assert selected.case.kind == "transition"
+    assert _runtime_state(runtime) == "Root.B"
+    assert (
+        _solver(
+            core.core,
+            core.symbols.frame_state(1)
+            != core.context.domain.state_path_to_id("Root.B"),
+        ).check()
+        == z3.unsat
+    )
+
+
+@pytest.mark.unittest
 def test_relation_pseudo_guard_anchor_uses_prefix_actions() -> None:
     """Pseudo guards are lowered after prior transition effects execute."""
     core, selected, runtime = _assert_relation_matches_runtime(

@@ -370,7 +370,10 @@ Import assembly pipeline 还会解析 preamble entry point。
      - ``pseudo state Name { ... }``
      - Parser shape 存在，但 model validation 会用 ``E_PSEUDO_NOT_LEAF`` 拒绝 non-leaf pseudo states。
 
-State path 在接受 path 的形式中使用 dotted identifiers。Transition target resolution 仍由 owning state scope 决定；避免越过 composite owner 直接跳到 nested leaf。
+部分带 path 的形式会通过 ``chain_id`` 使用 dotted identifiers，例如 event scope、import mapping 或 action
+reference。Transition 的 ``from_state`` 和 ``to_state`` endpoint 则不同：它们是 owning state scope 中解析的
+plain identifiers，不是 dotted path。若需要进入 nested leaf，应把 transition 写在拥有该 leaf 的 composite 内部，
+或 transition 到 composite 并让它的 initial transition 选择 child。
 
 .. _dsl-transition-forms-zh:
 

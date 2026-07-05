@@ -380,9 +380,12 @@ State forms
      - ``pseudo state Name { ... }``
      - Parser shape exists, but model validation rejects non-leaf pseudo states with ``E_PSEUDO_NOT_LEAF``.
 
-State paths use dotted identifiers through ``chain_id`` in forms that accept a
-path. Transition target resolution is still scoped by the owning state; avoid
-jumping over a composite owner to a nested leaf.
+Some path-bearing forms use dotted identifiers through ``chain_id``, for
+example event scopes, import mappings, or action references. Transition
+``from_state`` and ``to_state`` endpoints are different: they are plain
+identifiers resolved in the owning state scope, not dotted paths. To reach a
+nested leaf, put the transition inside the composite that owns that leaf, or
+transition to the composite and let its initial transition select the child.
 
 .. _dsl-transition-forms:
 

@@ -44,6 +44,8 @@ Common codes
      - warning
      - A non-pseudo state uses the reserved combo relay prefix.
 
+.. _diag-c-cpp-risk-wording:
+
 C/C++ target-profile scope
 --------------------------
 
@@ -51,6 +53,8 @@ C/C++ target-profile scope
 warnings are about C-family generated runtimes. They apply to ``c``,
 ``c_poll``, ``cpp``, and ``cpp_poll`` deployment review, not to Python generated
 runtime overflow behavior.
+
+.. _diag-combo-relay-scope:
 
 Combo relay scope
 -----------------

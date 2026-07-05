@@ -1,24 +1,178 @@
+
 .. _sec-reference-dsl-zh:
 
 DSL 参考
-========
+==============
 
-.. contents:: 目录
+.. contents:: 参考地图
    :local:
    :depth: 2
 
 范围
-----
+----------
 
-本页是面向事实查询的 DSL reference。内容已对照当前拆分后的 grammar 文件，尤其是 ``pyfcstm/dsl/grammar/GrammarParser.g4`` 和 ``pyfcstm/dsl/grammar/GrammarLexer.g4``。第一次学习请看 :doc:`../../tutorials/dsl/index_zh`，任务写法请看 :doc:`../../how_to/dsl/index_zh`，语义背景请看 :doc:`../../explanations/dsl_semantics/index_zh`。
+本页是面向事实查询的 FCSTM DSL reference。它对照当前拆分后的 grammar 文件，尤其是 ``pyfcstm/dsl/grammar/GrammarParser.g4`` 和 ``pyfcstm/dsl/grammar/GrammarLexer.g4``。需要学习路径请看 :doc:`../../tutorials/dsl/index_zh`，任务写法请看 :doc:`../../how_to/dsl/index_zh`，语义背景请看 :doc:`../../explanations/dsl_semantics/index_zh`。
 
-顶层结构
---------
+.. _dsl-coverage-matrix-zh:
+
+DSL 覆盖矩阵
+----------------
+
+``N/A`` 表示该页面类型有意不承担这个 leaf ability。每一行仍然必须有 reference 或 explanation 落点。
+
+.. list-table:: DSL 能力覆盖
+   :header-rows: 1
+   :widths: 16 13 22 18 18 18 18 24 14
+
+   * - feature_id
+     - 能力族
+     - 事实源
+     - Tutorial 覆盖
+     - How-to 覆盖
+     - Reference 覆盖
+     - Explanation 覆盖
+     - 示例 / 验证
+     - EN/ZH
+   * - ``dsl-top-level-root``
+     - top-level
+     - ``state_machine_dsl`` / ``def_assignment``
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-small-valid-model-task-zh`
+     - :ref:`dsl-top-level-forms-zh`
+     - :ref:`dsl-root-design-zh`
+     - ``thermostat_example.fcstm`` inspect
+     - synced
+   * - ``dsl-state-leaf-composite-pseudo``
+     - state
+     - ``state_definition`` / ``E_PSEUDO_NOT_LEAF``
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-state-target-task-zh`
+     - :ref:`dsl-state-forms-zh`
+     - :ref:`dsl-ownership-name-resolution-zh`
+     - ``pseudo_state_demo.fcstm`` inspect
+     - synced
+   * - ``dsl-transition-normal``
+     - transition
+     - ``transition_definition``
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-guards-effects-task-zh`
+     - :ref:`dsl-transition-forms-zh`
+     - :ref:`dsl-composite-entry-semantics-zh`
+     - ``guards_and_effects.fcstm`` inspect
+     - synced
+   * - ``dsl-transition-forced-combo``
+     - transition
+     - ``transition_force_definition`` / combo rules
+     - N/A：advanced transition
+     - :ref:`dsl-forced-transition-task-zh` / :ref:`dsl-combo-transition-task-zh`
+     - :ref:`dsl-transition-forms-zh`
+     - :ref:`dsl-combo-relay-semantics-zh`
+     - ``forced_transitions.fcstm`` inspect and combo fragments
+     - synced
+   * - ``dsl-event-scopes``
+     - event
+     - ``event_definition`` / ``chain_id``
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-event-scopes-task-zh`
+     - :ref:`dsl-events-scopes-zh`
+     - :ref:`dsl-event-ownership-signal-zh`
+     - ``event_scoping_complete.fcstm`` inspect
+     - synced
+   * - ``dsl-expression-ternary``
+     - expression
+     - ``conditionalCStyleExprNum`` / ``conditionalCStyleCondNum``
+     - N/A：tutorial 保持简单 arithmetic
+     - :ref:`dsl-expression-safety-task-zh`
+     - :ref:`dsl-expression-reference-zh`
+     - :ref:`dsl-expression-separation-zh`
+     - ``expression_demo.fcstm`` inspect
+     - synced
+   * - ``dsl-operation-blocks``
+     - operation
+     - ``operational_statement`` / ``if_statement``
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-guards-effects-task-zh`
+     - :ref:`dsl-operation-blocks-zh`
+     - :ref:`dsl-expression-separation-zh`
+     - ``guards_and_effects.fcstm`` inspect
+     - synced
+   * - ``dsl-lifecycle-forms``
+     - lifecycle
+     - ``enter_definition`` / ``during_definition`` / ``exit_definition``
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-lifecycle-task-zh`
+     - :ref:`dsl-lifecycle-forms-zh`
+     - :ref:`dsl-lifecycle-hooks-semantics-zh`
+     - ``abstract_reference_demo.fcstm`` inspect
+     - synced
+   * - ``dsl-aspect-forms``
+     - aspect
+     - ``during_aspect_definition``
+     - N/A：tutorial 只给入口链接
+     - :ref:`dsl-aspect-task-zh`
+     - :ref:`dsl-aspect-forms-zh`
+     - :ref:`dsl-during-aspect-semantics-zh`
+     - lifecycle diagrams / fragments
+     - synced
+   * - ``dsl-import-preamble``
+     - import
+     - ``import_statement`` / ``preamble_program``
+     - N/A：tutorial 不展开 import
+     - :ref:`dsl-import-task-zh`
+     - :ref:`dsl-import-forms-zh`
+     - :ref:`dsl-import-assembly-semantics-zh`
+     - ``import_host_*.fcstm`` inspect
+     - synced
+   * - ``dsl-diagnostics-risk``
+     - diagnostics
+     - ``pyfcstm/diagnostics/codes.yaml`` / analyzers
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-diagnostics-task-zh`
+     - :ref:`dsl-diagnostics-risk-zh`
+     - :ref:`dsl-expression-separation-zh`
+     - inspect JSON review
+     - synced
+
+.. _dsl-lexical-forms-zh:
+
+词法与注释形式
+---------------
+
+.. list-table:: Lexical forms
+   :header-rows: 1
+
+   * - 形式
+     - Syntax / tokens
+     - Notes
+   * - Identifier
+     - ``[a-zA-Z_][a-zA-Z0-9_]*``
+     - 用于 variables、states、events、action names、aliases 和 path parts。
+   * - String
+     - single 或 double quoted strings
+     - Import paths 和 ``named`` labels 使用 strings；常见 escape sequences 由 lexer 处理。
+   * - Comments
+     - ``/* ... */``、``// ...``、``# ...``
+     - Multiline comment 在特定 lifecycle forms 中可以成为 abstract-action documentation。
+   * - Keywords
+     - ``def``、``state``、``pseudo``、``event``、``import``、``enter``、``during``、``exit``、``abstract``、``ref``
+     - Keywords 由 lexer rules 保留。
+   * - Compact import tokens
+     - selector patterns and target templates
+     - Compact forms 在 import-specific lexer modes 中 tokenized，对 whitespace 敏感。
+
+.. _dsl-top-level-forms-zh:
+
+顶层程序形式
+--------------
+
+普通 DSL entry 是零个或多个持久变量声明，后面接一个 root state。
+
+片段：
 
 .. code-block:: fcstm
 
    def int counter = 0;
-   def float target = 22.5;
+   def float threshold = 3.5;
 
    state Root {
        [*] -> Idle;
@@ -27,253 +181,405 @@ DSL 参考
 
 事实：
 
-* 持久变量写在唯一根 ``state`` 之前。
-* 当前持久变量类型是 ``int`` 和 ``float``。
-* 顶层只能有一个 root state definition。
-* 注释可使用 ``// ...``、``# ...`` 或 ``/* ... */``。
+* 持久变量类型是 ``int`` 和 ``float``。
+* 声明必须出现在唯一 root ``state`` 之前。
+* Initializers 使用 ``init_expression``，不能读取 runtime-only local temporaries。
+* root 可以是 leaf 或 composite；实际模型通常使用 composite root state。
+
+.. _dsl-import-preamble-forms-zh:
+
+Import preamble 形式
+--------------------------
+
+Import assembly pipeline 还会解析 preamble entry point。
+
+.. list-table:: Preamble forms
+   :header-rows: 1
+
+   * - Rule
+     - Syntax
+     - Meaning
+   * - ``constant_definition``
+     - ``name = init_expression;``
+     - 为 import assembly 定义 constant-like preamble value。
+   * - ``initial_assignment``
+     - ``name := init_expression;``
+     - 在 import preamble context 中提供 initial assignment。
+
+这些 forms 不是普通 top-level ``def`` declarations。它们让 imported modules 在被 host 重写之前暴露 assembly-time constants 或 initial values。
+
+.. _dsl-state-forms-zh:
 
 状态形式
---------
-
-.. list-table:: 状态定义形式
-   :header-rows: 1
-
-   * - 形式
-     - 含义
-     - 说明
-   * - ``state Name;``
-     - leaf state
-     - 不包含子声明。
-   * - ``state Name { ... }``
-     - composite state
-     - 必须用 ``[*] -> Child;`` 选择初始子状态。
-   * - ``pseudo state Name;``
-     - pseudo leaf state
-     - model-valid pseudo 形式。仅用于纯中继路由。
-   * - ``pseudo state Name { ... }``
-     - 会被 model validation 拒绝的 parser 形状
-     - parser 可以构造这种 AST 形状，但 model construction 会报告
-       ``E_PSEUDO_NOT_LEAF``\ 。用户 DSL 不应使用 pseudo composite。
-   * - ``state Name named "Display";``
-     - named state
-     - 增加显示名，不改变 identifier。
-
-转换形式
---------
-
-.. list-table:: 常见转换形式
-   :header-rows: 1
-
-   * - 形式
-     - 含义
-     - 是否允许 effect
-   * - ``[*] -> Target;``
-     - composite 内初始转换
-     - 允许：``effect { ... }``
-   * - ``Source -> Target;``
-     - plain transition
-     - 允许
-   * - ``Source -> Target :: LocalEvent;``
-     - 本地事件转换
-     - 允许
-   * - ``Source -> Target : ParentEvent;``
-     - chain-scoped 事件转换
-     - 允许
-   * - ``Source -> Target : /RootEvent;``
-     - root-scoped 事件转换
-     - 允许
-   * - ``Source -> Target : if [condition];``
-     - guard transition
-     - 允许
-   * - ``Source -> [*];``
-     - 到 owning composite exit marker 的退出转换
-     - 允许
-
-普通转换不要把 event 语法和 ``: if [...]`` guard 语法混在一起。显式组合请使用 combo trigger 形式。
-
-Combo trigger 形式
-~~~~~~~~~~~~~~~~~~
-
-combo trigger 用 ``+`` 连接 event term 和 guard term。parser 接受如下形式：
-
-.. code-block:: fcstm
-
-   Source -> Target :: Event + [x > 0];
-   Source -> Target : Parent.Event + [x > 0];
-   Source -> Target : [x > 0] + Parent.Event;
-
-DSL 语义解释页说明 combo trigger 如何展开，以及为什么会出现 pseudo 中继状态。完整 runtime cycle 行为留给执行语义文档。
-
-强制转换形式
-~~~~~~~~~~~~
-
-.. code-block:: fcstm
-
-   !State -> Target :: Event;
-   !State -> [*] : if [condition];
-   !* -> Target : /Reset;
-   !* -> [*];
-
-forced transition 会展开为普通转换，目前不支持 ``effect`` block。需要更新变量时，请在显式普通转换上写 side effect。
-
-事件和作用域
 ------------
 
-在 composite state 内声明事件：
-
-.. code-block:: fcstm
-
-   event Start;
-   event Stop named "Stop button";
-
-.. list-table:: 事件作用域形式
+.. list-table:: State forms
    :header-rows: 1
 
    * - 形式
-     - 含义
-     - 常见用途
-   * - ``:: Local``
-     - source-local event name
-     - 从 source state 命名空间解析事件。
-   * - ``: ParentEvent``
-     - chain-scoped event path
-     - 沿 containing scopes 搜索事件。
-   * - ``: /GlobalEvent``
-     - root-scoped absolute path
-     - 从 root namespace 解析事件。
-   * - ``: Parent.Child.Event``
-     - dotted chain path
-     - 事件由具名嵌套作用域拥有时使用。
+     - Syntax
+     - 边界
+   * - Leaf state
+     - ``state Name;``
+     - Stoppable runtime state。
+   * - Named leaf state
+     - ``state Name named "Label";``
+     - 添加 display metadata。
+   * - Composite state
+     - ``state Name { ... }``
+     - 拥有 child declarations；必须选择 initial child。
+   * - Pseudo state
+     - ``pseudo state Name;``
+     - Routing helper；combo relay 使用时应保持 leaf-like 且 action-free。
+   * - Pseudo composite syntax
+     - ``pseudo state Name { ... }``
+     - Parser shape 存在，但 model validation 会用 ``E_PSEUDO_NOT_LEAF`` 拒绝 non-leaf pseudo states。
 
-显式声明的事件通过 chain scope 或 root scope 消费，例如根据 owning state
-写成 ``: Start`` 或 ``: /Start``\ 。``:: Local`` 表示 source state 的本地事件命名空间；它不会消费同级同名事件声明。
+State path 在接受 path 的形式中使用 dotted identifiers。Transition target resolution 仍由 owning state scope 决定；避免越过 composite owner 直接跳到 nested leaf。
 
-Guard、effect 和操作块
-----------------------
+.. _dsl-transition-forms-zh:
 
-guard 在方括号中使用 condition expression：
+转移形式
+------------
 
-.. code-block:: fcstm
-
-   A -> B : if [temperature >= target && failures < 3];
-
-effect 和 lifecycle action 使用 operation statements：
-
-.. code-block:: fcstm
-
-   A -> B effect {
-       failures = failures + 1;
-       tmp = failures * 2;
-   }
-
-事实：
-
-* 赋值右侧需要 arithmetic expression。
-* guard 需要 boolean condition。
-* block-local 临时名可以在同一个 block 中先赋值再读取。
-* operation block 内可以使用 ``if [condition] { ... } else { ... }``。
-
-表达式事实
-----------
-
-.. list-table:: 表达式类别
+.. list-table:: Transition families
    :header-rows: 1
 
-   * - 类别
-     - 示例
-     - 使用位置
-   * - 整数字面量
-     - ``0``、``42``、``0xFF``
-     - ``int`` 初始化和 arithmetic expression。
-   * - 浮点字面量
-     - ``3.14``、``.5``、``1e-6``
-     - ``float`` 初始化和 arithmetic expression。
-   * - 常量
-     - ``pi``、``E``、``tau``
-     - numeric expression。
-   * - 算术运算符
-     - ``+``、``-``、``*``、``/``、``%``、``**``
-     - numeric expression。
-   * - 位运算符
-     - ``&``、``|``、``^``、``<<``、``>>``
-     - integer-style numeric expression。
-   * - 比较
-     - ``<``、``<=``、``==``、``!=``、``>=``、``>``
-     - 把 numeric expression 转成 condition。
-   * - 布尔运算符
-     - ``&&`` / ``and``、``||`` / ``or``、``!`` / ``not``
-     - condition。
-   * - 蕴含 / 等价
-     - ``=>`` / ``implies``、``iff``
-     - condition。
-   * - 布尔 xor
-     - ``xor``
-     - condition。不要把 numeric ``^`` 当成 boolean xor。
+   * - Family
+     - Syntax shape
+     - Effect allowed?
+     - Notes
+   * - Initial transition
+     - ``[*] -> Target;`` 或带 entry combo trigger
+     - Yes
+     - 为 composite 选择 initial child。
+   * - Normal transition
+     - ``Source -> Target;``
+     - Yes
+     - Source 和 target 在 owner scope 中解析。
+   * - Exit transition
+     - ``Source -> [*];``
+     - Yes
+     - 通过 composite exit marker 离开。
+   * - Event transition
+     - ``Source -> Target :: Local;`` 或 ``: EventPath``
+     - Yes
+     - 普通 event form，不混入 guard syntax。
+   * - Guard transition
+     - ``Source -> Target : if [condition];``
+     - Yes
+     - Guard expression 只能是 condition。
+   * - Guard plus effect
+     - ``Source -> Target : if [condition] effect { ... }``
+     - Yes
+     - Event syntax 不属于这个 ordinary form。
+   * - Combo trigger
+     - 通过 combo rules 使用 ``Event + [guard]`` terms
+     - Yes for normal/entry combo expansion
+     - 用于显式 event-plus-guard 或多 trigger terms。
+   * - Forced transition
+     - ``!State -> Target ...;`` 或 ``!* -> Target ...;``
+     - No
+     - 展开到选定 source states。
+   * - Forced exit transition
+     - ``!State -> [*] ...;`` 或 ``!* -> [*] ...;``
+     - No
+     - Forced form 指向 exit marker。
 
-lexer 支持的 unary math function 包括 ``sin``、``cos``、``tan``、``sqrt``、``exp``、``log``、``log10``、``abs``、``ceil``、``floor``、``round``、``trunc`` 以及相关反函数 / 双曲函数。
+Combo details：
+
+* Local combo 使用 ``::`` 和 local event terms。
+* Chain/root combo 使用 ``:`` 和 ``chain_id`` event terms。
+* Entry combo triggers 可用于 initial transitions。
+* ``: if [condition]`` 是 single guard trigger 的 guard alias。
+* Duplicate event terms 和 constant guards 是 diagnostics targets。
+* Combo pseudo relay states 是 generated routing helpers，不是 business states，也不是 aspect-action execution points。
+
+Forced transition details：
+
+* ``!State`` 从 named source state 展开。
+* ``!*`` 从 owner scope 中所有适用 source states 展开。
+* Forced forms 可以带 local、chain/root 或 guard triggers。
+* Forced forms 不能有 ``effect`` block；需要 side effect 时请写 explicit normal transition。
+
+.. _dsl-events-scopes-zh:
+
+事件与作用域
+--------------
+
+.. list-table:: Event scope forms
+   :header-rows: 1
+
+   * - Form
+     - Syntax
+     - Meaning
+   * - Event declaration
+     - ``event Name;`` 或 ``event Name named "Label";``
+     - 声明 containing state 拥有的 event。
+   * - Source-local event
+     - ``:: Name``
+     - Source state local namespace 中的 event。
+   * - Chain event
+     - ``: Name`` 或 ``: Parent.Event``
+     - 相对于 owning scope 的 event path。
+   * - Root event
+     - ``: /Name`` 或 ``: /Path.Event``
+     - 从 root 开始的 absolute event path。
+
+``chain_id`` 是可选 ``/`` 后接一个或多个 dotted identifiers。Source-private signals 使用 local events，containing protocols 使用 chain paths，全局拥有的事件使用 root paths。
+
+.. _dsl-operation-blocks-zh:
+
+Operation blocks
+------------------------
+
+Operation blocks 出现在 effects 和 lifecycle bodies 中。
+
+.. list-table:: Operation statements
+   :header-rows: 1
+
+   * - Statement
+     - Syntax
+     - Notes
+   * - Assignment
+     - ``name = num_expression;``
+     - 更新 persistent variable 或引入 block-local temporary。
+   * - Conditional block
+     - ``if [condition] { ... } else if [condition] { ... } else { ... }``
+     - Conditions 使用 ``cond_expression``。
+   * - Empty statement
+     - ``;``
+     - 作为 no-op statement 接受。
+
+Block-local temporary 只在当前 operation block 内有效，并且只能在赋值后读取。Persistent variables 必须在 top-level ``def`` list 中声明。
+
+.. _dsl-expression-reference-zh:
+
+表达式参考
+-------------
+
+.. list-table:: Numeric expression facts
+   :header-rows: 1
+
+   * - Category
+     - Forms
+     - Notes
+   * - Literals
+     - decimal integer、hexadecimal integer、float
+     - Float tokens 支持 decimal / exponent forms。
+   * - Constants
+     - ``pi``、``E``、``tau``
+     - Math constants 可用于 initializers 和 numeric expressions。
+   * - Variables
+     - ``ID``
+     - Runtime numeric variable 或 block-local temporary。
+   * - Unary
+     - ``+x``、``-x``
+     - Prefix numeric sign。
+   * - Power
+     - ``x ** y``
+     - Right associative。
+   * - Multiplicative
+     - ``*``、``/``、``%``
+     - Numeric arithmetic。
+   * - Additive
+     - ``+``、``-``
+     - Numeric arithmetic。
+   * - Shift / bitwise
+     - ``<<``、``>>``、``&``、``^``、``|``
+     - Numeric bitwise operators；C/C++ profiles 可能触发 target warnings。
+   * - Function call
+     - ``sin(x)``、``sqrt(x)``、``abs(x)``、``sign(x)`` 等 lexer-listed math functions
+     - 仅 unary math functions。
+   * - C-style ternary
+     - ``(cond) ? num_expr : num_expr``
+     - ``?`` 前的 condition 必须加 parentheses。
+
+.. list-table:: Condition expression facts
+   :header-rows: 1
+
+   * - Category
+     - Forms
+     - Notes
+   * - Boolean literals
+     - ``true`` / ``false`` variants
+     - Lexer 接受常见大小写 variants。
+   * - Not
+     - ``!cond`` 或 ``not cond``
+     - Prefix condition negation。
+   * - Numeric comparison
+     - ``<``、``>``、``<=``、``>=``、``==``、``!=``
+     - 把 numeric expressions 桥接为 conditions。
+   * - Condition equality
+     - ``cond == cond``、``cond != cond``、``cond iff cond``
+     - Condition-level equality and equivalence。
+   * - Boolean composition
+     - ``&&`` / ``and``、``||`` / ``or``、``xor``
+     - 不要用 ``^`` 表示 boolean xor；``^`` 是 numeric bitwise xor。
+   * - Implication
+     - ``=>`` 或 ``implies``
+     - Right associative；不要用 ``->`` 表示 implication。
+   * - C-style ternary
+     - ``(cond) ? cond : cond``
+     - Condition result ternary。
+
+Operator precedence 按 grammar rule order 从紧到松：parentheses/literals/functions、unary signs、power、multiplicative、additive、shift、bitwise ``&`` / ``^`` / ``|``、comparisons、condition equality / ``iff``、``and``、``xor``、``or``、implication 和 ternary forms。
+
+.. _dsl-lifecycle-forms-zh:
 
 生命周期形式
-------------
+--------------
 
-.. list-table:: lifecycle action 形式
+.. list-table:: Lifecycle action forms
    :header-rows: 1
 
-   * - 形式
-     - 含义
-   * - ``enter { ... }``
-     - 进入 state 时执行的 concrete action。
-   * - ``enter Name { ... }``
-     - 具名 concrete enter action。
-   * - ``enter abstract Hook;``
-     - 由 runtime integration 提供的 abstract hook。
-   * - ``enter ref Path.To.Action;``
-     - 引用具名 lifecycle action。
-   * - ``during { ... }``
-     - active cycle 中执行的 concrete action。
-   * - ``during before { ... }`` / ``during after { ... }``
-     - composite before/after action 形式。
-   * - ``>> during before { ... }`` / ``>> during after { ... }``
-     - 面向 descendant leaf-state cycles 的 aspect action。
-   * - ``exit { ... }``
-     - 离开 state 时执行的 concrete action。
+   * - Stage
+     - Concrete
+     - Named concrete
+     - Abstract
+     - Doc-comment abstract
+     - Ref
+   * - ``enter``
+     - ``enter { ... }``
+     - ``enter Name { ... }``
+     - ``enter abstract Name;``
+     - ``enter abstract Name? /* doc */``
+     - ``enter Name? ref Path;``
+   * - ``during``
+     - ``during { ... }``
+     - ``during Name { ... }``
+     - ``during abstract Name;``
+     - ``during abstract Name? /* doc */``
+     - ``during Name? ref Path;``
+   * - ``during before``
+     - ``during before { ... }``
+     - ``during before Name { ... }``
+     - ``during before abstract Name;``
+     - ``during before abstract Name? /* doc */``
+     - ``during before Name? ref Path;``
+   * - ``during after``
+     - ``during after { ... }``
+     - ``during after Name { ... }``
+     - ``during after abstract Name;``
+     - ``during after abstract Name? /* doc */``
+     - ``during after Name? ref Path;``
+   * - ``exit``
+     - ``exit { ... }``
+     - ``exit Name { ... }``
+     - ``exit abstract Name;``
+     - ``exit abstract Name? /* doc */``
+     - ``exit Name? ref Path;``
 
-按照 grammar，``enter``、``during``、``>> during`` 和 ``exit`` 都有对应的具名、``abstract``、文档注释和 ``ref`` 变体。
+``ref`` 指向 named lifecycle action path，不指向 state 或 event。Doc-comment abstract forms 使用 multiline comment 作为 documentation metadata。
+
+.. _dsl-aspect-forms-zh:
+
+Aspect 形式
+-----------------
+
+Aspect actions 使用 ``>> during before`` 或 ``>> during after``。它们支持和 lifecycle ``during before/after`` 相同的 concrete、named、abstract、doc-comment abstract 与 ref families。
+
+.. list-table:: Aspect facts
+   :header-rows: 1
+
+   * - Form
+     - Example shape
+     - Boundary
+   * - Concrete aspect
+     - ``>> during before { ... }``
+     - 在 descendant leaf-state active cycles 中运行。
+   * - Named aspect
+     - ``>> during after Trace { ... }``
+     - 为 generated hooks 提供 stable name。
+   * - Abstract aspect
+     - ``>> during before abstract Trace;``
+     - Generated code 调用 user-provided behavior。
+   * - Ref aspect
+     - ``>> during after ref Path;``
+     - 复用 named action。
+   * - Combo pseudo relay
+     - N/A
+     - Aspect actions 不在 combo pseudo relay chains 内执行。
+
+.. _dsl-import-forms-zh:
 
 Import 形式
------------
+-----------------
 
-import 只能写在 composite state 内：
-
-.. code-block:: fcstm
-
-   import "worker.fcstm" as Worker;
-
-   import "worker.fcstm" as Worker named "Worker subsystem" {
-       def * -> worker_$0;
-       event /Done -> /WorkerDone;
-   }
-
-.. list-table:: import mapping 形式
+.. list-table:: Import syntax facts
    :header-rows: 1
 
-   * - 形式
-     - 含义
-   * - ``def * -> prefix_$0;``
-     - fallback variable mapping。
-   * - ``def {a, b} -> mapped_$0;``
-     - set selector mapping。
-   * - ``def sensor_* -> sensor_$0;``
-     - compact wildcard selector 和 target template。
-   * - ``def exact -> renamed;``
-     - exact variable mapping。
-   * - ``event Source.Event -> Target.Event;``
-     - event mapping，可选 ``named "Display"``。
+   * - Form
+     - Syntax
+     - Notes
+   * - Basic import
+     - ``import "file.fcstm" as Alias;``
+     - 把 imported root 加为 child ``Alias``。
+   * - Named import
+     - ``import "file.fcstm" as Alias named "Label";``
+     - 添加 display metadata。
+   * - Import block
+     - ``import "file.fcstm" as Alias { ... }``
+     - 包含 mapping statements。
+   * - Def fallback selector
+     - ``def * -> target;``
+     - Fallback variable mapping。
+   * - Def set selector
+     - ``def {a, b} -> target;``
+     - 映射一组 variables。
+   * - Def pattern selector
+     - ``def sensor_* -> sensor_$0;``
+     - Pattern selector 是 compact 且 whitespace-sensitive。
+   * - Def exact selector
+     - ``def value -> renamed;``
+     - 映射一个 variable。
+   * - Target template
+     - ``ID``、compact template 或 ``*``
+     - Compact templates 可使用 ``$0`` 或 ``${0}`` placeholders。
+   * - Event mapping
+     - ``event Source.Path -> Target.Path;``
+     - 可带 ``named "Label"``。
+   * - Directory entry
+     - ``import "./dir/main.fcstm" as Subsystem;``
+     - 使用显式文件；不支持 bare directory import。
 
-compact selector 和 target-template 对空白敏感，因为 lexer 会在 import-specific mode 中识别它们。若空白切开 compact pattern，parser 会在 mapping 位置报错。
+File resolution、recursive loading、conflict detection、mapping precedence 和 model assembly 在 parsing 后的 Python import/model code 中实现。
 
-事实校验说明
-------------
+.. _dsl-diagnostics-risk-zh:
 
-本页使用当前拆分 grammar 文件名：``GrammarParser.g4`` 和 ``GrammarLexer.g4``。旧文档中提过的单个 ``Grammar.g4`` 已不是当前源码布局。
+Diagnostics 与 target-risk wording
+-----------------------------------------
 
-面向 LLM prompt 的建模规则另见包内指南 ``pyfcstm/llm/fcstm_grammar_guide.md``。
+Diagnostics 来自 syntax parsing、model validation、inspect analyzers 和 optional verification phases。用户可见 DSL docs 必须保留每个 diagnostic 的 target scope。
+
+.. list-table:: Diagnostics wording facts
+   :header-rows: 1
+
+   * - Area
+     - Codes / source
+     - Wording rule
+   * - Combo expansion
+     - ``W_COMBO_*``、``I_COMBO_PSEUDO_NAME_EXTENDED``、``E_COMBO_PSEUDO_NAME_COLLISION``
+     - 解释 pseudo relay purity 和 name-extension behavior，不暗示 aspect 在 relays 内运行。
+   * - Pseudo state shape
+     - ``E_PSEUDO_NOT_LEAF``
+     - Parser shape 不等于 model validity。
+   * - Numeric literal / operation risk
+     - ``W_NUMERIC_*`` and numeric analyzer
+     - 除非其他 target 有自己的 evidence，否则描述为 ``c``、``c_poll``、``cpp``、``cpp_poll`` 的 C/C++ deployment-profile risk。
+   * - Python generated runtime
+     - 不从 C/C++ warnings 自动继承
+     - 除非 Python-specific diagnostic 明确说明，否则不要声称 Python generated code 有同样 fixed-width 或 undefined-behavior risk。
+
+Code-level wording 请看 :doc:`../../reference/diagnostics_codes/index_zh`。
+
+.. _dsl-fact-check-notes-zh:
+
+事实核对说明
+--------------
+
+* Grammar facts 来自 ``GrammarParser.g4`` 和 ``GrammarLexer.g4``。
+* AST shape 与 export details 来自 ``pyfcstm/dsl/node.py`` 和 ``pyfcstm/dsl/listener.py``。
+* Import assembly facts 来自 ``pyfcstm/model/imports.py``。
+* Target-risk diagnostics 来自 ``pyfcstm/diagnostics/codes.yaml`` 和 ``pyfcstm/diagnostics/analyzers/``。
+* LLM-facing syntax guidance 在 ``pyfcstm/llm/fcstm_grammar_guide.md`` 中。本页不修改该 packaged guide。

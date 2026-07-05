@@ -42,10 +42,14 @@
      - warning
      - 非伪状态使用了保留的 combo relay 前缀。
 
+.. _diag-c-cpp-risk-wording-zh:
+
 C/C++ target-profile 范围
 --------------------------------
 
 ``W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE`` 和相关数值部署 warning 关注 C-family generated runtimes。它们适用于 ``c``、``c_poll``、``cpp`` 和 ``cpp_poll`` 部署审查，不代表 Python generated runtime 也有同样 overflow 行为。
+
+.. _diag-combo-relay-scope-zh:
 
 Combo relay 范围
 ----------------

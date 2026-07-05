@@ -1,272 +1,183 @@
-PyFCSTM DSL first model tutorial
+.. _sec-tutorials-dsl:
+
+Write your first FCSTM DSL model
 ================================
 
-.. contents:: Table of Contents
+.. contents:: Page map
    :local:
    :depth: 2
 
 Overview
 --------
 
-This tutorial is the short learning path for writing your first FCSTM DSL
-model. It intentionally avoids being a complete language reference. When you
-need a task recipe, a grammar fact, or a semantic explanation, use these pages:
+This tutorial is the short first-success path for the FCSTM DSL. It teaches one
+small model that can be parsed, simulated, and inspected. It deliberately does
+not try to list every operator, import mapping, transition variant, or diagnostic
+code.
 
-* :doc:`../../how_to/dsl/index` for task-oriented DSL writing recipes.
-* :doc:`../../reference/dsl/index` for syntax forms, operators, and boundary
-  tables.
-* :doc:`../../explanations/dsl_semantics/index` for why the DSL behaves the way
-  it does.
+Use the split pages when you need more detail:
 
-The examples here build a small controller that can be parsed and simulated.
+* :doc:`../../how_to/dsl/index` for task recipes such as event scopes, imports,
+  lifecycle reuse, and combo transitions.
+* :doc:`../../reference/dsl/index` for exact grammar forms and coverage matrix
+  rows.
+* :doc:`../../explanations/dsl_semantics/index` for ownership, lifecycle, combo,
+  and import semantics.
+* :doc:`../../reference/diagnostics_codes/index` for diagnostics wording and
+  target-profile risk boundaries.
 
-Language Structure
-------------------
+Start with one valid root
+-------------------------
 
-A DSL file has variable declarations first, followed by exactly one root
-``state``:
+A runnable FCSTM file has persistent variable declarations first, then exactly
+one root ``state``. Most real models use a composite root because it can own
+child states and an initial transition.
 
-.. code-block:: fcstm
+Fragment showing the skeleton::
 
-   def int counter = 0;
+   def int temperature = 20;
+   def int target = 22;
 
-   state Controller {
+   state Thermostat {
        [*] -> Idle;
        state Idle;
    }
 
-Variables are persistent model variables. The current primitive types are
-``int`` and ``float``. The root state may be a leaf state or, more commonly, a
-composite state that owns substates and transitions.
+The declarations are not local variables; they are persistent model variables.
+The root state owns the name-resolution tree for child states, events,
+transitions, and lifecycle actions.
 
-Variable Definitions
---------------------
-
-Declare variables before the root state. Initial values may use numeric
-literals, constants, arithmetic, and supported math functions:
-
-.. code-block:: fcstm
-
-   def int retries = 0;
-   def int flags = 0x00;
-   def float target = 22.5;
-   def float radius = sqrt(16.0);
-
-Use variables from guards and operation blocks after declaration:
-
-.. code-block:: fcstm
-
-   def int count = 0;
-
-   state Counter {
-       [*] -> Ready;
-       state Ready {
-           during {
-               count = count + 1;
-           }
-       }
-   }
-
-For the full literal and expression table, see
-:doc:`../../reference/dsl/index`.
-
-State Definitions
------------------
-
-A leaf state ends with ``;``. A composite state owns nested declarations inside
-``{ ... }`` and must choose an initial child with ``[*] -> Child;``:
-
-.. code-block:: fcstm
-
-   state Door {
-       [*] -> Closed;
-
-       state Closed;
-       state Open;
-   }
-
-Composite states let you model hierarchy. Put transitions in the scope where
-their source and target names are resolved. If you need a transition to an inner
-leaf, place that transition inside the owning composite instead of jumping over
-its parent.
-
-Transition Definitions
-----------------------
-
-The most common transition forms are plain transitions, event transitions,
-guard transitions, and guard-plus-effect transitions:
-
-.. code-block:: fcstm
-
-   state Controller {
-       event Tick;
-       [*] -> Idle;
-
-       state Idle;
-       state Active;
-
-       Idle -> Active : Tick;
-       Active -> Idle : if [counter >= 3] effect {
-           counter = 0;
-       }
-   }
-
-Keep event syntax and guard syntax in separate transition forms. Event-triggered
-transitions use ``:: EventName`` for a local event or ``: EventPath`` for a
-chain/root-scoped event. Guard transitions use ``: if [condition]``.
-
-Event Definitions
------------------
-
-Declare explicit events when you want reusable names and diagrams to show event
-ownership:
-
-.. code-block:: fcstm
-
-   state Controller {
-       event Start;
-       event Stop;
-
-       [*] -> Idle;
-       state Idle;
-       state Running;
-
-       Idle -> Running : Start;
-       Running -> Idle : Stop;
-   }
-
-The event-scope details are in :doc:`../../reference/dsl/index`. Practical
-recipes for local, parent, and root-scoped events are in
-:doc:`../../how_to/dsl/index`.
-
-Guard Conditions and Effects
+Add variables and arithmetic
 ----------------------------
 
-Guards are boolean conditions. Effects and lifecycle actions contain operation
-blocks, where assignments update persistent variables and block-local temporary
-variables may be introduced before they are read:
+The current persistent variable types are ``int`` and ``float``. Initial values
+may use numeric literals, math constants, unary signs, arithmetic, bitwise
+operators, and supported math functions. The tutorial only needs simple
+arithmetic:
 
-.. code-block:: fcstm
+Fragment::
 
-   def int attempts = 0;
+   def int temperature = 20;
+   def int target = 22;
+   def float gain = 0.5;
 
-   state RetryController {
-       event Failed;
-       [*] -> Ready;
+Use the full expression reference when you need hexadecimal literals,
+``pi``/``E``/``tau``, math functions, bitwise operators, boolean operators, or
+C-style ternary expressions: :ref:`dsl-expression-reference`.
 
-       state Ready;
-       state Backoff;
+Add leaf and composite states
+-----------------------------
 
-       Ready -> Backoff :: Failed effect {
-           attempts = attempts + 1;
+A leaf state ends with ``;``. A composite state owns nested declarations inside
+``{ ... }`` and must choose an initial child with ``[*] -> Child;``.
+
+Fragment::
+
+   state Thermostat {
+       [*] -> Idle;
+       state Idle;
+       state Heating;
+   }
+
+Transitions resolve targets in their owner scope. If a target is an inner leaf
+owned by a composite, put the transition inside that composite, or transition to
+the composite and let its initial transition choose the child.
+
+Add events and transitions
+--------------------------
+
+The first model only needs event transitions and guard transitions. Source-local
+events use ``:: EventName``. Guard transitions use ``: if [condition]``.
+
+Fragment::
+
+   Idle -> Heating : if [temperature < target];
+   Heating -> Idle :: StopHeating;
+
+Ordinary transitions intentionally keep event syntax and guard syntax separate.
+When you truly need event-plus-guard behavior, use the combo-trigger recipes and
+reference tables rather than inventing a mixed ordinary form.
+
+Add guards and effects
+----------------------
+
+Guards are condition expressions. Effects are operation blocks that update
+persistent variables and may use block-local temporary variables after assigning
+them.
+
+Fragment::
+
+   Idle -> Heating : if [temperature < target] effect {
+       delta = target - temperature;
+       temperature = temperature + delta;
+   }
+
+Assignments require arithmetic expressions. Guards require conditions. A
+comparison such as ``temperature < target`` bridges arithmetic expressions into a
+condition.
+
+Add minimal lifecycle hooks
+---------------------------
+
+Lifecycle blocks run at state boundaries or active cycles. For a first model,
+keep them concrete and local:
+
+Fragment::
+
+   state Heating {
+       enter {
+           heating_on = 1;
        }
-
-       Backoff -> Ready : if [attempts < 3];
-   }
-
-Use comparison operators such as ``<``, ``<=``, ``==``, ``!=``, ``>=``, and
-``>`` to bridge arithmetic expressions into conditions. Use ``&&`` / ``and`` and
-``||`` / ``or`` for boolean composition.
-
-Expression System
------------------
-
-Arithmetic and logical expressions are separate. Assignments expect arithmetic
-expressions; guards expect conditions:
-
-.. code-block:: fcstm
-
-   def int x = 1;
-   def float y = 2.0;
-
-   state ExprDemo {
-       [*] -> A;
-       state A;
-       state B;
-
-       A -> B : if [(x + 1) >= 2 && y < 3.0];
-   }
-
-For every operator and function, use the reference table rather than this
-learning page: :doc:`../../reference/dsl/index`.
-
-Lifecycle Actions
------------------
-
-Lifecycle actions run when states are entered, cycled, or exited. A minimal
-leaf-state example is:
-
-.. code-block:: fcstm
-
-   def int cycles = 0;
-
-   state Worker {
-       [*] -> Active;
-       state Active {
-           enter {
-               cycles = 0;
-           }
-           during {
-               cycles = cycles + 1;
-           }
-           exit {
-               cycles = 0;
-           }
+       during {
+           temperature = temperature + 1;
+       }
+       exit {
+           heating_on = 0;
        }
    }
 
-For named actions, ``abstract`` hooks, ``ref`` reuse, and ``>> during`` aspect
-actions, see :doc:`../../how_to/dsl/index` and
-:doc:`../../explanations/dsl_semantics/index`.
+Named actions, ``abstract`` hooks, documentation-comment abstract hooks, ``ref``
+reuse, ``during before`` / ``during after``, and ``>> during`` aspects are
+covered in the task guide and reference.
 
-Real-World Example: Smart Thermostat
-------------------------------------
+Run and inspect the model
+-------------------------
 
-A small thermostat model combines variables, events, guards, effects, and
-hierarchy:
+The first runnable tutorial model is kept as a checked-in source file:
 
 .. literalinclude:: thermostat_example.fcstm
    :language: fcstm
-   :caption: Minimal thermostat DSL example
+   :caption: ``thermostat_example.fcstm``
 
-You can simulate the checked-in example:
+Run a short simulation from this directory:
 
 .. code-block:: bash
 
-   pyfcstm simulate -i docs/source/tutorials/dsl/thermostat_example.fcstm -e "cycle; current"
+   pyfcstm simulate -i thermostat_example.fcstm -e "cycle; cycle; current"
 
-Semantic Validation Rules
--------------------------
+Then inspect the model structure and diagnostics:
 
-This page only introduces the common rules that keep the first model valid:
+.. code-block:: bash
 
-* Declare variables before the root state.
-* Use one top-level root ``state``.
-* Give each composite state one initial transition.
-* Keep transition targets inside the correct scope.
-* Use arithmetic expressions in assignments and boolean conditions in guards.
+   pyfcstm inspect -i thermostat_example.fcstm --format json -o thermostat.inspect.json
 
-Detailed diagnostics, boundary cases, and deployment risk wording belong to the
-inspect and reference pages, not this tutorial.
+Only short command outputs belong in this tutorial. If inspect reports a syntax,
+model, combo, import, or C/C++ deployment-profile warning, use the diagnostics
+and how-to pages for targeted repair steps.
 
-Import Assembly
----------------
+Where next
+----------
 
-Imports assemble another FCSTM file as a child subsystem inside a composite
-state. For a first DSL model, skip imports. When you need them, start with the
-how-to recipe and then check the syntax table:
-
-* :doc:`../../how_to/dsl/index` for practical import tasks.
-* :doc:`../../reference/dsl/index` for import selectors and mapping forms.
-* :doc:`../../explanations/dsl_semantics/index` for assembly boundaries.
-
-Summary
--------
-
-You have now seen the minimum FCSTM DSL path: variables, a root state,
-substates, transitions, events, guards, effects, lifecycle actions, and a small
-model you can simulate. Use the split pages for deeper work:
-
-* Write a task: :doc:`../../how_to/dsl/index`.
-* Check exact syntax: :doc:`../../reference/dsl/index`.
-* Understand semantics: :doc:`../../explanations/dsl_semantics/index`.
+* Event scopes: :ref:`dsl-event-scopes-task` and :ref:`dsl-events-scopes`.
+* Guard/effect operation blocks: :ref:`dsl-guards-effects-task` and
+  :ref:`dsl-operation-blocks`.
+* Expressions: :ref:`dsl-expression-safety-task` and
+  :ref:`dsl-expression-reference`.
+* Lifecycle, abstract hooks, refs, and aspects:
+  :ref:`dsl-lifecycle-task`, :ref:`dsl-lifecycle-forms`, and
+  :ref:`dsl-aspect-forms`.
+* Forced and combo transitions: :ref:`dsl-forced-transition-task`,
+  :ref:`dsl-combo-transition-task`, and :ref:`dsl-transition-forms`.
+* Imports: :ref:`dsl-import-task` and :ref:`dsl-import-forms`.
+* Diagnostics and target risk wording: :ref:`dsl-diagnostics-task`,
+  :ref:`dsl-diagnostics-risk`, and :doc:`../../reference/diagnostics_codes/index`.

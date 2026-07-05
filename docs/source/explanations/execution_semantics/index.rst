@@ -25,6 +25,8 @@ variable map.  The high-level phases are:
 The simulator uses speculative validation so a transition that cannot reach a
 stoppable state does not partially mutate the real runtime.
 
+.. _exec-composite-entry-order:
+
 Initial entry through composites
 --------------------------------
 
@@ -64,6 +66,8 @@ For a source-to-target transition, source exit happens before the effect, and
 target entry happens after the effect.  If no transition commits, the active
 leaf's ordinary ``during`` path runs instead.
 
+.. _exec-during-aspect-order:
+
 Aspect during actions
 ---------------------
 
@@ -75,6 +79,8 @@ Pseudo states are automatic routing states.  They are not normal stoppable leaf
 states, and ancestor aspect during actions do not execute for the pseudo states
 inside a pseudo/combo routing chain.  The semantic effect of the whole chain is
 validated as part of the surrounding transition path.
+
+.. _exec-combo-order:
 
 Transition priority and validation
 ----------------------------------

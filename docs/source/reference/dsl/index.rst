@@ -1,29 +1,183 @@
+
 .. _sec-reference-dsl:
 
 DSL reference
 =============
 
-.. contents:: Table of Contents
+.. contents:: Reference map
    :local:
    :depth: 2
 
 Scope
 -----
 
-This page is the fact-oriented DSL reference. It is checked against the current
+This is the fact-oriented FCSTM DSL reference. It is checked against the current
 split grammar files, especially ``pyfcstm/dsl/grammar/GrammarParser.g4`` and
-``pyfcstm/dsl/grammar/GrammarLexer.g4``. Use it when you need exact forms and
-boundaries. Use :doc:`../../tutorials/dsl/index` for the first learning path,
-:doc:`../../how_to/dsl/index` for recipes, and
+``pyfcstm/dsl/grammar/GrammarLexer.g4``. Use it for exact forms and boundaries.
+Use :doc:`../../tutorials/dsl/index` for a learning path,
+:doc:`../../how_to/dsl/index` for task recipes, and
 :doc:`../../explanations/dsl_semantics/index` for semantic background.
 
-Top-level structure
+.. _dsl-coverage-matrix:
+
+DSL coverage matrix
 -------------------
 
-.. code-block:: fcstm
+``N/A`` means that the page type intentionally does not own that leaf ability.
+Every row still has a reference or explanation landing point.
+
+.. list-table:: DSL capability coverage
+   :header-rows: 1
+   :widths: 16 13 22 18 18 18 18 24 14
+
+   * - feature_id
+     - Family
+     - Fact source
+     - Tutorial coverage
+     - How-to coverage
+     - Reference coverage
+     - Explanation coverage
+     - Example / verification
+     - EN/ZH
+   * - ``dsl-top-level-root``
+     - top-level
+     - ``state_machine_dsl`` / ``def_assignment``
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-small-valid-model-task`
+     - :ref:`dsl-top-level-forms`
+     - :ref:`dsl-root-design`
+     - ``thermostat_example.fcstm`` inspect
+     - synced
+   * - ``dsl-state-leaf-composite-pseudo``
+     - state
+     - ``state_definition`` / ``E_PSEUDO_NOT_LEAF``
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-state-target-task`
+     - :ref:`dsl-state-forms`
+     - :ref:`dsl-ownership-name-resolution`
+     - ``pseudo_state_demo.fcstm`` inspect
+     - synced
+   * - ``dsl-transition-normal``
+     - transition
+     - ``transition_definition``
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-guards-effects-task`
+     - :ref:`dsl-transition-forms`
+     - :ref:`dsl-composite-entry-semantics`
+     - ``guards_and_effects.fcstm`` inspect
+     - synced
+   * - ``dsl-transition-forced-combo``
+     - transition
+     - ``transition_force_definition`` / combo rules
+     - N/A: advanced transition
+     - :ref:`dsl-forced-transition-task` / :ref:`dsl-combo-transition-task`
+     - :ref:`dsl-transition-forms`
+     - :ref:`dsl-combo-relay-semantics`
+     - ``forced_transitions.fcstm`` inspect and combo fragments
+     - synced
+   * - ``dsl-event-scopes``
+     - event
+     - ``event_definition`` / ``chain_id``
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-event-scopes-task`
+     - :ref:`dsl-events-scopes`
+     - :ref:`dsl-event-ownership-signal`
+     - ``event_scoping_complete.fcstm`` inspect
+     - synced
+   * - ``dsl-expression-ternary``
+     - expression
+     - ``conditionalCStyleExprNum`` / ``conditionalCStyleCondNum``
+     - N/A: tutorial keeps arithmetic simple
+     - :ref:`dsl-expression-safety-task`
+     - :ref:`dsl-expression-reference`
+     - :ref:`dsl-expression-separation`
+     - ``expression_demo.fcstm`` inspect
+     - synced
+   * - ``dsl-operation-blocks``
+     - operation
+     - ``operational_statement`` / ``if_statement``
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-guards-effects-task`
+     - :ref:`dsl-operation-blocks`
+     - :ref:`dsl-expression-separation`
+     - ``guards_and_effects.fcstm`` inspect
+     - synced
+   * - ``dsl-lifecycle-forms``
+     - lifecycle
+     - ``enter_definition`` / ``during_definition`` / ``exit_definition``
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-lifecycle-task`
+     - :ref:`dsl-lifecycle-forms`
+     - :ref:`dsl-lifecycle-hooks-semantics`
+     - ``abstract_reference_demo.fcstm`` inspect
+     - synced
+   * - ``dsl-aspect-forms``
+     - aspect
+     - ``during_aspect_definition``
+     - N/A: tutorial only links
+     - :ref:`dsl-aspect-task`
+     - :ref:`dsl-aspect-forms`
+     - :ref:`dsl-during-aspect-semantics`
+     - lifecycle diagrams / fragments
+     - synced
+   * - ``dsl-import-preamble``
+     - import
+     - ``import_statement`` / ``preamble_program``
+     - N/A: tutorial skips imports
+     - :ref:`dsl-import-task`
+     - :ref:`dsl-import-forms`
+     - :ref:`dsl-import-assembly-semantics`
+     - ``import_host_*.fcstm`` inspect
+     - synced
+   * - ``dsl-diagnostics-risk``
+     - diagnostics
+     - ``pyfcstm/diagnostics/codes.yaml`` / analyzers
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-diagnostics-task`
+     - :ref:`dsl-diagnostics-risk`
+     - :ref:`dsl-expression-separation`
+     - inspect JSON review
+     - synced
+
+.. _dsl-lexical-forms:
+
+Lexical and comment forms
+-------------------------
+
+.. list-table:: Lexical forms
+   :header-rows: 1
+
+   * - Form
+     - Syntax / tokens
+     - Notes
+   * - Identifier
+     - ``[a-zA-Z_][a-zA-Z0-9_]*``
+     - Used for variables, states, events, action names, aliases, and path parts.
+   * - String
+     - Single or double quoted strings
+     - Import paths and ``named`` labels use strings; common escape sequences are lexed.
+   * - Comments
+     - ``/* ... */``, ``// ...``, ``# ...``
+     - Multiline comments may become abstract-action documentation in specific lifecycle forms.
+   * - Keywords
+     - ``def``, ``state``, ``pseudo``, ``event``, ``import``, ``enter``, ``during``, ``exit``, ``abstract``, ``ref``
+     - Keywords are reserved by lexer rules.
+   * - Compact import tokens
+     - selector patterns and target templates
+     - Compact forms are tokenized in import-specific lexer modes and are whitespace-sensitive.
+
+.. _dsl-top-level-forms:
+
+Top-level program forms
+-----------------------
+
+A normal DSL entry has zero or more persistent variable declarations followed by
+one root state:
+
+Fragment::
 
    def int counter = 0;
-   def float target = 22.5;
+   def float threshold = 3.5;
 
    state Root {
        [*] -> Idle;
@@ -32,202 +186,266 @@ Top-level structure
 
 Facts:
 
-* Persistent variables appear before the single root ``state``.
-* Supported persistent variable types are ``int`` and ``float``.
-* The root state is the only top-level state definition.
-* Comments may use ``// ...``, ``# ...``, or ``/* ... */`` forms.
+* Persistent variable types are ``int`` and ``float``.
+* Declarations must appear before the single root ``state``.
+* Initializers use ``init_expression`` and may not read runtime-only local
+  temporaries.
+* The root may be leaf or composite, but practical models usually use composite
+  root state.
+
+.. _dsl-import-preamble-forms:
+
+Import preamble forms
+---------------------
+
+The import assembly pipeline also parses a preamble entry point:
+
+.. list-table:: Preamble forms
+   :header-rows: 1
+
+   * - Rule
+     - Syntax
+     - Meaning
+   * - ``constant_definition``
+     - ``name = init_expression;``
+     - Defines a constant-like preamble value for import assembly.
+   * - ``initial_assignment``
+     - ``name := init_expression;``
+     - Provides an initial assignment in the import preamble context.
+
+These forms are not ordinary top-level ``def`` declarations. They exist so
+imported modules can expose assembly-time constants or initial values before the
+model is rewritten into the host.
+
+.. _dsl-state-forms:
 
 State forms
 -----------
 
-.. list-table:: State definition forms
+.. list-table:: State forms
    :header-rows: 1
 
    * - Form
-     - Meaning
-     - Notes
-   * - ``state Name;``
-     - Leaf state
-     - No nested declarations.
-   * - ``state Name { ... }``
-     - Composite state
-     - Must choose an initial child with ``[*] -> Child;``.
-   * - ``pseudo state Name;``
-     - Pseudo leaf state
-     - Model-valid pseudo form. Use only for pure intermediate routing.
-   * - ``pseudo state Name { ... }``
-     - Parser shape rejected by model validation
-     - The parser can build this AST shape, but model construction reports
-       ``E_PSEUDO_NOT_LEAF``. User DSL should not use pseudo composites.
-   * - ``state Name named "Display";``
-     - Named state
-     - Adds a display name without changing the identifier.
+     - Syntax
+     - Boundary
+   * - Leaf state
+     - ``state Name;``
+     - Stoppable runtime state.
+   * - Named leaf state
+     - ``state Name named "Label";``
+     - Adds display metadata.
+   * - Composite state
+     - ``state Name { ... }``
+     - Owns child declarations; must choose an initial child.
+   * - Pseudo state
+     - ``pseudo state Name;``
+     - Routing helper; should be leaf-like and action-free for combo relay use.
+   * - Pseudo composite syntax
+     - ``pseudo state Name { ... }``
+     - Parser shape exists, but model validation rejects non-leaf pseudo states with ``E_PSEUDO_NOT_LEAF``.
+
+State paths use dotted identifiers through ``chain_id`` in forms that accept a
+path. Transition target resolution is still scoped by the owning state; avoid
+jumping over a composite owner to a nested leaf.
+
+.. _dsl-transition-forms:
 
 Transition forms
 ----------------
 
-.. list-table:: Common transition forms
+.. list-table:: Transition families
    :header-rows: 1
 
-   * - Form
-     - Meaning
-     - Effect allowed
-   * - ``[*] -> Target;``
-     - Initial transition inside a composite state
-     - Yes: ``effect { ... }``
-   * - ``Source -> Target;``
-     - Plain transition
+   * - Family
+     - Syntax shape
+     - Effect allowed?
+     - Notes
+   * - Initial transition
+     - ``[*] -> Target;`` or with entry combo trigger
      - Yes
-   * - ``Source -> Target :: LocalEvent;``
-     - Local event transition
+     - Selects initial child for a composite.
+   * - Normal transition
+     - ``Source -> Target;``
      - Yes
-   * - ``Source -> Target : ParentEvent;``
-     - Chain-scoped event transition
+     - Source and target resolve in owner scope.
+   * - Exit transition
+     - ``Source -> [*];``
      - Yes
-   * - ``Source -> Target : /RootEvent;``
-     - Root-scoped event transition
+     - Leaves through the composite exit marker.
+   * - Event transition
+     - ``Source -> Target :: Local;`` or ``: EventPath``
      - Yes
-   * - ``Source -> Target : if [condition];``
-     - Guard transition
+     - Ordinary event form without guard syntax.
+   * - Guard transition
+     - ``Source -> Target : if [condition];``
      - Yes
-   * - ``Source -> [*];``
-     - Exit transition to the owning composite exit marker
+     - Guard expression is condition-only.
+   * - Guard plus effect
+     - ``Source -> Target : if [condition] effect { ... }``
      - Yes
+     - Event syntax is not part of this ordinary form.
+   * - Combo trigger
+     - ``Event + [guard]`` terms through combo rules
+     - Yes for normal/entry combo expansion
+     - Used for explicit event-plus-guard or multiple-term triggers.
+   * - Forced transition
+     - ``!State -> Target ...;`` or ``!* -> Target ...;``
+     - No
+     - Expands over selected sources.
+   * - Forced exit transition
+     - ``!State -> [*] ...;`` or ``!* -> [*] ...;``
+     - No
+     - Forced form targeting exit marker.
 
-Do not combine event syntax and ``: if [...]`` guard syntax in one ordinary
-transition. Combo trigger syntax exists for the explicit combined forms below.
+Combo details:
 
-Combo trigger forms
-~~~~~~~~~~~~~~~~~~~
+* Local combo uses ``::`` and local event terms.
+* Chain/root combo uses ``:`` and ``chain_id`` event terms.
+* Entry combo triggers are accepted on initial transitions.
+* ``: if [condition]`` is a guard alias for a single guard trigger.
+* Duplicate event terms and constant guards are diagnostics targets.
+* Combo pseudo relay states are generated routing helpers. They must not be
+  treated as business states or aspect-action execution points.
 
-A combo trigger joins event and guard terms with ``+``. The parser accepts forms
-such as:
+Forced transition details:
 
-.. code-block:: fcstm
+* ``!State`` expands from a named source state.
+* ``!*`` expands from all applicable source states in the owner scope.
+* Forced forms can carry local, chain/root, or guard triggers.
+* Forced forms cannot have ``effect`` blocks; put side effects on explicit normal
+  transitions if needed.
 
-   Source -> Target :: Event + [x > 0];
-   Source -> Target : Parent.Event + [x > 0];
-   Source -> Target : [x > 0] + Parent.Event;
-
-The DSL semantics page explains how combo triggers are expanded and why pseudo
-intermediate states exist. Runtime cycle details are intentionally deferred to
-execution-semantics documentation.
-
-Forced transition forms
-~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: fcstm
-
-   !State -> Target :: Event;
-   !State -> [*] : if [condition];
-   !* -> Target : /Reset;
-   !* -> [*];
-
-Forced transitions expand into normal transitions and currently do not support
-``effect`` blocks. Keep side effects on explicit normal transitions when you need
-state updates.
+.. _dsl-events-scopes:
 
 Events and scopes
 -----------------
-
-Declare an event inside a composite state with:
-
-.. code-block:: fcstm
-
-   event Start;
-   event Stop named "Stop button";
 
 .. list-table:: Event scope forms
    :header-rows: 1
 
    * - Form
+     - Syntax
      - Meaning
-     - Typical use
-   * - ``:: Local``
-     - Source-local event name
-     - Event is resolved from the source state namespace.
-   * - ``: ParentEvent``
-     - Chain-scoped event path
-     - Event is searched through containing scopes.
-   * - ``: /GlobalEvent``
-     - Root-scoped absolute path
-     - Event is resolved from the root namespace.
-   * - ``: Parent.Child.Event``
-     - Dotted chain path
-     - Use when an event is owned by a named nested scope.
+   * - Event declaration
+     - ``event Name;`` or ``event Name named "Label";``
+     - Declares an event owned by the containing state.
+   * - Source-local event
+     - ``:: Name``
+     - Event in the source state's local namespace.
+   * - Chain event
+     - ``: Name`` or ``: Parent.Event``
+     - Event path relative to an owning scope.
+   * - Root event
+     - ``: /Name`` or ``: /Path.Event``
+     - Absolute event path from root.
 
-Declared events are consumed through chain or root scope, such as ``: Start`` or
-``: /Start`` depending on where the event is owned. ``:: Local`` denotes the
-source state's local event namespace; it does not consume a sibling declaration
-with the same spelling.
+``chain_id`` is ``/`` optional followed by one or more dotted identifiers. Use
+local events for source-private signals, chain paths for containing protocols,
+and root paths for globally owned events.
 
-Guards, effects, and operation blocks
--------------------------------------
+.. _dsl-operation-blocks:
 
-Guards use condition expressions inside square brackets:
-
-.. code-block:: fcstm
-
-   A -> B : if [temperature >= target && failures < 3];
-
-Effects and lifecycle actions use operation statements:
-
-.. code-block:: fcstm
-
-   A -> B effect {
-       failures = failures + 1;
-       tmp = failures * 2;
-   }
-
-Facts:
-
-* Assignments require arithmetic expressions on the right-hand side.
-* Guards require boolean conditions.
-* A block-local temporary name may be assigned before it is read in the same
-  block.
-* ``if [condition] { ... } else { ... }`` is valid inside operation blocks.
-
-Expression facts
+Operation blocks
 ----------------
 
-.. list-table:: Expression categories
+Operation blocks appear in effects and lifecycle bodies.
+
+.. list-table:: Operation statements
+   :header-rows: 1
+
+   * - Statement
+     - Syntax
+     - Notes
+   * - Assignment
+     - ``name = num_expression;``
+     - Updates a persistent variable or introduces a block-local temporary.
+   * - Conditional block
+     - ``if [condition] { ... } else if [condition] { ... } else { ... }``
+     - Conditions use ``cond_expression``.
+   * - Empty statement
+     - ``;``
+     - Accepted as a no-op statement.
+
+A block-local temporary is local to the current operation block and can only be
+read after assignment in that block. Persistent variables must be declared in the
+top-level ``def`` list.
+
+.. _dsl-expression-reference:
+
+Expression reference
+--------------------
+
+.. list-table:: Numeric expression facts
    :header-rows: 1
 
    * - Category
-     - Examples
-     - Where it is used
-   * - Integer literals
-     - ``0``, ``42``, ``0xFF``
-     - ``int`` initialization and arithmetic expressions.
-   * - Float literals
-     - ``3.14``, ``.5``, ``1e-6``
-     - ``float`` initialization and arithmetic expressions.
+     - Forms
+     - Notes
+   * - Literals
+     - decimal integer, hexadecimal integer, float
+     - Float tokens support decimal/exponent forms.
    * - Constants
      - ``pi``, ``E``, ``tau``
-     - Numeric expressions.
-   * - Arithmetic operators
-     - ``+``, ``-``, ``*``, ``/``, ``%``, ``**``
-     - Numeric expressions.
-   * - Bitwise operators
-     - ``&``, ``|``, ``^``, ``<<``, ``>>``
-     - Integer-style numeric expressions.
-   * - Comparisons
-     - ``<``, ``<=``, ``==``, ``!=``, ``>=``, ``>``
-     - Bridge numeric expressions into conditions.
-   * - Boolean operators
-     - ``&&`` / ``and``, ``||`` / ``or``, ``!`` / ``not``
-     - Conditions.
-   * - Implication/equivalence
-     - ``=>`` / ``implies``, ``iff``
-     - Conditions.
-   * - Boolean xor
-     - ``xor``
-     - Conditions. Do not use numeric ``^`` as boolean xor.
+     - Math constants for initializers and numeric expressions.
+   * - Variables
+     - ``ID``
+     - Runtime numeric variable or block-local temporary.
+   * - Unary
+     - ``+x``, ``-x``
+     - Prefix numeric sign.
+   * - Power
+     - ``x ** y``
+     - Right associative.
+   * - Multiplicative
+     - ``*``, ``/``, ``%``
+     - Numeric arithmetic.
+   * - Additive
+     - ``+``, ``-``
+     - Numeric arithmetic.
+   * - Shift / bitwise
+     - ``<<``, ``>>``, ``&``, ``^``, ``|``
+     - Numeric bitwise operators; target warnings may apply for C/C++ profiles.
+   * - Function call
+     - ``sin(x)``, ``sqrt(x)``, ``abs(x)``, ``sign(x)``, and lexer-listed math functions
+     - Unary math functions only.
+   * - C-style ternary
+     - ``(cond) ? num_expr : num_expr``
+     - Condition must be parenthesized before ``?``.
 
-Supported unary math function names are tokenized by the lexer and include
-``sin``, ``cos``, ``tan``, ``sqrt``, ``exp``, ``log``, ``log10``, ``abs``,
-``ceil``, ``floor``, ``round``, ``trunc``, and related inverse/hyperbolic
-forms.
+.. list-table:: Condition expression facts
+   :header-rows: 1
+
+   * - Category
+     - Forms
+     - Notes
+   * - Boolean literals
+     - ``true`` / ``false`` variants
+     - Lexer accepts common case variants.
+   * - Not
+     - ``!cond`` or ``not cond``
+     - Prefix condition negation.
+   * - Numeric comparison
+     - ``<``, ``>``, ``<=``, ``>=``, ``==``, ``!=``
+     - Bridges numeric expressions into conditions.
+   * - Condition equality
+     - ``cond == cond``, ``cond != cond``, ``cond iff cond``
+     - Condition-level equality and equivalence.
+   * - Boolean composition
+     - ``&&`` / ``and``, ``||`` / ``or``, ``xor``
+     - Do not use ``^`` for boolean xor; ``^`` is numeric bitwise xor.
+   * - Implication
+     - ``=>`` or ``implies``
+     - Right associative; do not use ``->`` as implication.
+   * - C-style ternary
+     - ``(cond) ? cond : cond``
+     - Condition result ternary.
+
+Operator precedence follows the grammar rule order from tight to loose:
+parentheses/literals/functions, unary signs, power, multiplicative, additive,
+shift, bitwise ``&`` / ``^`` / ``|``, comparisons, condition equality/``iff``,
+``and``, ``xor``, ``or``, implication, and ternary forms.
+
+.. _dsl-lifecycle-forms:
 
 Lifecycle forms
 ---------------
@@ -235,69 +453,162 @@ Lifecycle forms
 .. list-table:: Lifecycle action forms
    :header-rows: 1
 
-   * - Form
-     - Meaning
-   * - ``enter { ... }``
-     - Concrete action when entering the state.
-   * - ``enter Name { ... }``
-     - Named concrete enter action.
-   * - ``enter abstract Hook;``
-     - Abstract hook supplied by runtime integration.
-   * - ``enter ref Path.To.Action;``
-     - Reference to a named lifecycle action.
-   * - ``during { ... }``
-     - Concrete action during an active cycle.
-   * - ``during before { ... }`` / ``during after { ... }``
-     - Composite before/after action forms.
-   * - ``>> during before { ... }`` / ``>> during after { ... }``
-     - Aspect actions for descendant leaf-state cycles.
-   * - ``exit { ... }``
-     - Concrete action when leaving the state.
+   * - Stage
+     - Concrete
+     - Named concrete
+     - Abstract
+     - Doc-comment abstract
+     - Ref
+   * - ``enter``
+     - ``enter { ... }``
+     - ``enter Name { ... }``
+     - ``enter abstract Name;``
+     - ``enter abstract Name? /* doc */``
+     - ``enter Name? ref Path;``
+   * - ``during``
+     - ``during { ... }``
+     - ``during Name { ... }``
+     - ``during abstract Name;``
+     - ``during abstract Name? /* doc */``
+     - ``during Name? ref Path;``
+   * - ``during before``
+     - ``during before { ... }``
+     - ``during before Name { ... }``
+     - ``during before abstract Name;``
+     - ``during before abstract Name? /* doc */``
+     - ``during before Name? ref Path;``
+   * - ``during after``
+     - ``during after { ... }``
+     - ``during after Name { ... }``
+     - ``during after abstract Name;``
+     - ``during after abstract Name? /* doc */``
+     - ``during after Name? ref Path;``
+   * - ``exit``
+     - ``exit { ... }``
+     - ``exit Name { ... }``
+     - ``exit abstract Name;``
+     - ``exit abstract Name? /* doc */``
+     - ``exit Name? ref Path;``
 
-The same named, ``abstract``, documentation-comment, and ``ref`` variants exist
-for ``enter``, ``during``, ``>> during``, and ``exit`` according to the grammar.
+A ``ref`` points to a named lifecycle action path, not to a state or event.
+Doc-comment abstract forms use the multiline comment as documentation metadata.
+
+.. _dsl-aspect-forms:
+
+Aspect forms
+------------
+
+Aspect actions are written with ``>> during before`` or ``>> during after``.
+They support the same concrete, named, abstract, doc-comment abstract, and ref
+families as lifecycle ``during before/after`` forms.
+
+.. list-table:: Aspect facts
+   :header-rows: 1
+
+   * - Form
+     - Example shape
+     - Boundary
+   * - Concrete aspect
+     - ``>> during before { ... }``
+     - Runs for descendant leaf-state active cycles.
+   * - Named aspect
+     - ``>> during after Trace { ... }``
+     - Gives generated hooks a stable name.
+   * - Abstract aspect
+     - ``>> during before abstract Trace;``
+     - Generated code calls user-provided behavior.
+   * - Ref aspect
+     - ``>> during after ref Path;``
+     - Reuses a named action.
+   * - Combo pseudo relay
+     - N/A
+     - Aspect actions do not execute inside combo pseudo relay chains.
+
+.. _dsl-import-forms:
 
 Import forms
 ------------
 
-Imports are legal inside composite states:
-
-.. code-block:: fcstm
-
-   import "worker.fcstm" as Worker;
-
-   import "worker.fcstm" as Worker named "Worker subsystem" {
-       def * -> worker_$0;
-       event /Done -> /WorkerDone;
-   }
-
-.. list-table:: Import mapping forms
+.. list-table:: Import syntax facts
    :header-rows: 1
 
    * - Form
-     - Meaning
-   * - ``def * -> prefix_$0;``
+     - Syntax
+     - Notes
+   * - Basic import
+     - ``import "file.fcstm" as Alias;``
+     - Adds imported root as child ``Alias``.
+   * - Named import
+     - ``import "file.fcstm" as Alias named "Label";``
+     - Adds display metadata.
+   * - Import block
+     - ``import "file.fcstm" as Alias { ... }``
+     - Contains mapping statements.
+   * - Def fallback selector
+     - ``def * -> target;``
      - Fallback variable mapping.
-   * - ``def {a, b} -> mapped_$0;``
-     - Set selector mapping.
-   * - ``def sensor_* -> sensor_$0;``
-     - Compact wildcard selector and target template.
-   * - ``def exact -> renamed;``
-     - Exact variable mapping.
-   * - ``event Source.Event -> Target.Event;``
-     - Event mapping, with optional ``named "Display"``.
+   * - Def set selector
+     - ``def {a, b} -> target;``
+     - Maps a set of variables.
+   * - Def pattern selector
+     - ``def sensor_* -> sensor_$0;``
+     - Pattern selector is compact and whitespace-sensitive.
+   * - Def exact selector
+     - ``def value -> renamed;``
+     - Maps one variable.
+   * - Target template
+     - ``ID``, compact template, or ``*``
+     - Compact templates may use ``$0`` or ``${0}`` placeholders.
+   * - Event mapping
+     - ``event Source.Path -> Target.Path;``
+     - May include ``named "Label"``.
+   * - Directory entry
+     - ``import "./dir/main.fcstm" as Subsystem;``
+     - Use an explicit file; bare directory import is unsupported.
 
-Compact selector and target-template forms are whitespace-sensitive because the
-lexer recognizes them in import-specific modes. If whitespace splits the compact
-pattern, parsing fails at the mapping location.
+File resolution, recursive loading, conflict detection, mapping precedence, and
+model assembly are implemented after parsing in Python import/model code.
+
+.. _dsl-diagnostics-risk:
+
+Diagnostics and target-risk wording
+-----------------------------------
+
+Diagnostics come from syntax parsing, model validation, inspect analyzers, and
+optional verification phases. User-facing DSL docs must preserve the target
+scope of each diagnostic.
+
+.. list-table:: Diagnostics wording facts
+   :header-rows: 1
+
+   * - Area
+     - Codes / source
+     - Wording rule
+   * - Combo expansion
+     - ``W_COMBO_*``, ``I_COMBO_PSEUDO_NAME_EXTENDED``, ``E_COMBO_PSEUDO_NAME_COLLISION``
+     - Explain pseudo relay purity and name-extension behavior without implying aspects run inside relays.
+   * - Pseudo state shape
+     - ``E_PSEUDO_NOT_LEAF``
+     - Parser shape is not the same as model validity.
+   * - Numeric literal / operation risk
+     - ``W_NUMERIC_*`` and numeric analyzer
+     - Describe as C/C++ deployment-profile risk for ``c``, ``c_poll``, ``cpp``, and ``cpp_poll`` unless another target has its own evidence.
+   * - Python generated runtime
+     - No generic carry-over from C/C++ warnings
+     - Do not claim Python generated code has the same fixed-width or undefined-behavior risk unless a Python-specific diagnostic says so.
+
+Use :doc:`../../reference/diagnostics_codes/index` for code-level wording.
+
+.. _dsl-fact-check-notes:
 
 Fact-check notes
 ----------------
 
-This page intentionally names the current split grammar files:
-``GrammarParser.g4`` and ``GrammarLexer.g4``. Older documentation sometimes
-referred to a single ``Grammar.g4`` file; that is no longer the current source
-layout.
-
-For LLM prompt-oriented modeling rules, also see the packaged guide at
-``pyfcstm/llm/fcstm_grammar_guide.md``.
+* Grammar facts come from ``GrammarParser.g4`` and ``GrammarLexer.g4``.
+* AST shape and export details come from ``pyfcstm/dsl/node.py`` and
+  ``pyfcstm/dsl/listener.py``.
+* Import assembly facts come from ``pyfcstm/model/imports.py``.
+* Target-risk diagnostics come from ``pyfcstm/diagnostics/codes.yaml`` and
+  ``pyfcstm/diagnostics/analyzers/``.
+* LLM-facing syntax guidance is in ``pyfcstm/llm/fcstm_grammar_guide.md``. This
+  page does not modify that packaged guide.

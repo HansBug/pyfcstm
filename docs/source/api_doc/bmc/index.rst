@@ -20,6 +20,7 @@ pyfcstm.bmc
     macro
     parse
     query
+    relation
     source
 
 \_\_all\_\_

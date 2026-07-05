@@ -105,6 +105,13 @@ Public module structure:
        :class:`BmcEngine`, :func:`prepare_bmc_query`
      - Prepare ``StateMachine + .fbmcq`` inputs into bound query and domain
        context without solver, witness, CLI, or verify-registry coupling.
+   * - BMC relation builder
+     - :class:`BmcTraceSymbols`, :class:`BmcCaseRelation`,
+       :class:`BmcStepRelation`, :class:`BmcCoreFormula`,
+       :func:`build_bmc_core_formula`
+     - Lower prepared contexts and macro-step cases into ``Core_N`` while
+       leaving health gates, objectives, solving, and witness replay to later
+       modules.
    * - Query root model
      - :class:`InitialSpec`, :class:`BmcAssumption`,
        :class:`FrameAssumption`, :class:`EventAssumption`,
@@ -237,6 +244,14 @@ _ENGINE_EXPORTS = {
     "prepare_bmc_query",
 }
 
+_RELATION_EXPORTS = {
+    "BmcTraceSymbols",
+    "BmcCaseRelation",
+    "BmcStepRelation",
+    "BmcCoreFormula",
+    "build_bmc_core_formula",
+}
+
 _LAZY_EXPORT_MODULES = {
     "pyfcstm.bmc.binding": _BINDING_EXPORTS,
     "pyfcstm.bmc.domain": _DOMAIN_EXPORTS,
@@ -244,6 +259,7 @@ _LAZY_EXPORT_MODULES = {
     "pyfcstm.bmc.macro": _MACRO_EXPORTS,
     "pyfcstm.bmc.expand": _EXPAND_EXPORTS,
     "pyfcstm.bmc.engine": _ENGINE_EXPORTS,
+    "pyfcstm.bmc.relation": _RELATION_EXPORTS,
 }
 
 
@@ -300,6 +316,7 @@ def __dir__():
         | _MACRO_EXPORTS
         | _EXPAND_EXPORTS
         | _ENGINE_EXPORTS
+        | _RELATION_EXPORTS
     )
 
 
@@ -393,4 +410,9 @@ __all__ = [
     "BmcPreparedContext",
     "BmcEngine",
     "prepare_bmc_query",
+    "BmcTraceSymbols",
+    "BmcCaseRelation",
+    "BmcStepRelation",
+    "BmcCoreFormula",
+    "build_bmc_core_formula",
 ]

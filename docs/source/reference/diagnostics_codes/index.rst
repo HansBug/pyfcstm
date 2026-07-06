@@ -58,6 +58,9 @@ Common codes
    * - ``W_GUARD_VARS_NEVER_CHANGE``
      - warning
      - A guard reads only variables that are never changed by actions/effects. Add the missing write or simplify the guard if the initial-value-only behavior is intentional.
+   * - ``W_UNWRITTEN_READ_VAR``
+     - warning
+     - An operation reads a variable before any write in the same block can define its value. Initialize it earlier or reorder the block so the write is visible.
    * - ``W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE``
      - warning
      - An integer literal is outside the default C-family generated integer range. Treat it as a C/C++ deployment-profile warning, not as a Python runtime overflow claim.
@@ -70,6 +73,9 @@ Common codes
    * - ``I_UNREFERENCED_VAR_MAYBE_ABSTRACT``
      - info
      - A variable is not used by DSL data flow, but visible abstract actions might use it externally.
+   * - ``I_TRANSITION_NEVER_EVENT_TRIGGERED``
+     - info
+     - An event-triggered transition is not fired by any checked event path. Keep it if external events trigger it, or remove/rename the event if it is stale.
 
 Runnable diagnostic examples
 ----------------------------

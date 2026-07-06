@@ -141,9 +141,11 @@ Verify and inspect event ownership:
 
    pyfcstm inspect -i docs/source/tutorials/dsl/event_scoping_complete.fcstm --format json
 
-In JSON, check ``events[].qualified_name`` and ``events[].scope``. Do not write
-``:/Start`` in actual DSL; that shorthand is prose only. The valid absolute form
-is ``: /Start`` with the ``:`` token followed by a root path.
+In JSON, check ``events[].qualified_name`` and ``events[].scope``. For readability, prefer
+``: /Start`` because it separates the event-scope ``:`` token from the absolute
+root path. The compact spelling ``:/Start`` is accepted by the current parser and
+serializes to the same absolute event, but the spaced form is easier to teach,
+search, and review.
 
 .. _dsl-guards-effects-task:
 

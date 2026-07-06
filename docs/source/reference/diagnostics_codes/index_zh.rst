@@ -53,6 +53,9 @@ Error 会阻塞 model construction。Warning 和 info 不一定阻塞 simulation
    * - ``W_GUARD_VARS_NEVER_CHANGE``
      - warning
      - Guard 只读取从不被 action/effect 修改的变量。添加缺失的 write，或确认 initial-value-only 行为后简化 guard。
+   * - ``W_UNWRITTEN_READ_VAR``
+     - warning
+     - Operation 在同一 block 中读到了尚未被 write 定义的变量。应提前初始化，或调整 block 顺序让 write 先可见。
    * - ``W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE``
      - warning
      - Integer literal 超出默认 C-family generated integer range。这是 C/C++ deployment-profile warning，不是 Python runtime overflow 结论。
@@ -65,6 +68,9 @@ Error 会阻塞 model construction。Warning 和 info 不一定阻塞 simulation
    * - ``I_UNREFERENCED_VAR_MAYBE_ABSTRACT``
      - info
      - 变量未被 DSL data flow 使用，但 visible abstract actions 可能在外部使用它。
+   * - ``I_TRANSITION_NEVER_EVENT_TRIGGERED``
+     - info
+     - Event-triggered transition 没有被 checked event path 触发。若它由外部 event 触发可保留，否则应移除或重命名 stale event。
 
 可运行 diagnostic 示例
 ----------------------

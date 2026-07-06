@@ -131,7 +131,9 @@ Checked example：
 
    pyfcstm inspect -i docs/source/tutorials/dsl/event_scoping_complete.fcstm --format json
 
-在 JSON 中查看 ``events[].qualified_name`` 和 ``events[].scope``。不要在实际 DSL 中写 ``:/Start``；那只是说明文字里的简写。合法 absolute form 是 ``: /Start``。
+在 JSON 中查看 ``events[].qualified_name`` 和 ``events[].scope``。为了可读性，推荐写成 ``: /Start``\ ，因为它把 event-scope
+``:`` token 和 absolute root path 分开。当前 parser 也接受紧凑写法 ``:/Start``\ ，并会序列化成同一个 absolute event，
+但带空格的写法更适合教学、搜索和 review。
 
 .. _dsl-guards-effects-task-zh:
 

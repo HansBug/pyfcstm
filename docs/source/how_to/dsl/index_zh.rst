@@ -522,7 +522,7 @@ JSON 中重点看：
 
 .. literalinclude:: ../../tutorials/dsl/import_host_basic.fcstm
    :language: fcstm
-   :caption: 基本导入 host；预期诊断：两个 ``W_UNREFERENCED_VAR``\ 。
+   :caption: 基本导入宿主模型；预期诊断：两个 ``W_UNREFERENCED_VAR``\ 。
 
 映射导入：
 

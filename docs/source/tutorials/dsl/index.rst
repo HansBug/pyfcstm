@@ -109,6 +109,19 @@ The complete tutorial model is checked in as ``first_thermostat.fcstm``:
    :language: fcstm
    :caption: ``docs/source/tutorials/dsl/first_thermostat.fcstm``
 
+The diagram gives the same model shape visually:
+
+.. figure:: first_thermostat.fcstm.puml.svg
+   :alt: State diagram for the first thermostat model
+   :align: center
+
+   ``Thermostat`` is the authored root composite state. ``Idle`` and
+   ``Heating`` are authored leaf states, and the guarded edges come directly
+   from ``Idle -> Heating`` and ``Heating -> Idle`` in the DSL. The initial
+   edge ``[*] -> Idle`` selects the first active leaf. This first diagram has
+   no generated states, which makes it a useful baseline before you study
+   combo or forced expansion.
+
 Inspect it from the repository root:
 
 .. code-block:: bash
@@ -162,7 +175,41 @@ The first cycle enters ``Idle`` and runs its ``during`` action. On the second
 cycle the ``Idle -> Heating`` guard is true, so the transition fires and
 ``Heating.enter`` runs.
 
-Step 6: learn the next DSL feature deliberately
+Step 6: repair one deliberate syntax error
+------------------------------------------
+
+Inspect is also the fastest way to repair a small DSL mistake. Ordinary event
+syntax and ordinary guard syntax are separate transition forms, so this
+intentionally bad fixture fails:
+
+.. literalinclude:: event_guard_mixed_invalid.fcstm.txt
+   :language: fcstm
+   :caption: Intentional parser error; expected excerpt: ``Unexpected token 'if'``.
+
+Run it as a normal input file:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/event_guard_mixed_invalid.fcstm.txt --format human --color never
+
+The useful excerpt is:
+
+.. code-block:: text
+
+   Syntax error at line 7, column 17, near 'if': Unexpected token 'if'
+
+Repair it by using combo syntax when both an event term and a guard term are
+part of the same trigger:
+
+.. code-block:: fcstm
+
+   A -> B :: Go + [ready > 0];
+
+That is the minimal loop to practice on every future model change: run
+``pyfcstm inspect``, read the code and source span, then repair the DSL form
+that the diagnostic points to.
+
+Step 7: learn the next DSL feature deliberately
 -----------------------------------------------
 
 Do not jump from this tutorial straight into a giant model. Add one DSL feature

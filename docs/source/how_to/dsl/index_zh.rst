@@ -11,9 +11,9 @@ DSL 任务指南
 如何使用本页
 ------------
 
-本页不是语法目录，而是 FCSTM DSL 的任务手册。每个任务配方（recipe）都说明什么时候使用、推荐写法、如何验证、预期诊断、常见错误和深入阅读位置。
+本页不是语法目录，而是 FCSTM DSL 的任务手册。每个任务配方都说明什么时候使用、推荐写法、如何验证、预期诊断、常见错误和深入阅读位置。
 
-所有引用已检查示例（checked example）的命令都默认从仓库根目录运行。
+所有引用已检查示例的命令都默认从仓库根目录运行。
 
 术语约定：本页首次出现必要英文术语时采用“中文（English）”格式，后文只使用中文。诊断（diagnostics）是
 ``pyfcstm inspect`` 给出的检查结果，目标配置（target profile）是生成目标语言或运行时配置，拥有者作用域
@@ -145,7 +145,15 @@ DSL 任务指南
 
 .. literalinclude:: ../../tutorials/dsl/event_scoping_complete.fcstm
    :language: fcstm
-   :caption: 完整 event scope 示例；预期诊断：演示用 ``counter`` 触发 ``W_UNREFERENCED_VAR``\ 。
+   :caption: 完整事件作用域示例；预期诊断：演示用 ``counter`` 触发 ``W_UNREFERENCED_VAR``\ 。
+
+.. figure:: ../../tutorials/dsl/event_scoping_complete.fcstm.puml.svg
+   :alt: 事件作用域状态图
+   :align: center
+
+   阅读这张图时，先问每个信号由谁拥有。使用 ``::`` 的边消费来源状态本地事件；使用
+   ``: Name`` 的边消费包含状态或命名状态拥有的事件；使用 ``: /Name`` 的边消费根事件命名空间下的事件。
+   复核时查看 ``events[].qualified_name`` 和 ``events[].scope``\ ，确认检查报告中的拥有者与图中标签一致。
 
 验证命令：
 
@@ -279,11 +287,26 @@ DSL 任务指南
 
 生命周期顺序可参考：
 
-.. image:: ../../tutorials/dsl/leaf_state_lifecycle.puml.svg
+.. figure:: ../../tutorials/dsl/leaf_state_lifecycle.puml.svg
    :alt: 叶状态生命周期
+   :align: center
 
-.. image:: ../../tutorials/dsl/composite_state_lifecycle.puml.svg
+   叶状态在变为活动时执行 ``enter``\ ，保持活动时执行 ``during``\ ，离开前执行 ``exit``\ 。
+   这是作者写出的业务行为，不是组合转换生成的中继结构。
+
+.. figure:: ../../tutorials/dsl/composite_state_lifecycle.puml.svg
    :alt: 复合状态生命周期
+   :align: center
+
+   复合状态是子状态选择边界。普通 ``during before`` / ``during after`` 是边界动作；
+   它们不同于祖先 ``>> during`` 切面，也不会观察组合中继链里的每一跳。
+
+.. figure:: ../../tutorials/dsl/abstract_reference_demo.fcstm.puml.svg
+   :alt: 抽象动作和引用动作状态图
+   :align: center
+
+   这张图用来区分动作路径和状态路径。``ref`` 复用命名生命周期动作，不调用状态或事件。
+   如果 ``ref`` 路径看起来意外，应同时检查动作列表和引用关系。
 
 验证已检查生命周期示例：
 
@@ -308,6 +331,14 @@ DSL 任务指南
 .. literalinclude:: ../../tutorials/dsl/hierarchy_execution.fcstm
    :language: fcstm
    :caption: 切面与层级执行示例；预期诊断：``W_UNREFERENCED_VAR`` 和 ``I_TRANSITION_NEVER_EVENT_TRIGGERED``\ 。
+
+.. figure:: ../../tutorials/dsl/hierarchy_execution.fcstm.puml.svg
+   :alt: 层级执行状态图
+   :align: center
+
+   这张图把作者写出的层级和运行时顺序分开看。父状态与子状态是作者 DSL 节点；
+   切面动作不是业务状态，也不会画成组合中继节点。复核行为挂在边界上还是后代叶周期上时，
+   应把检查输出里的生命周期 / 动作字段和图中的层级一起读。
 
 解释：
 
@@ -510,13 +541,13 @@ JSON 中重点看：
 
 .. literalinclude:: ../../tutorials/dsl/import_worker.fcstm
    :language: fcstm
-   :caption: Imported worker module；预期诊断：两个 ``W_UNREFERENCED_VAR``\ 。
+   :caption: 被导入工作模块；预期诊断：两个 ``W_UNREFERENCED_VAR``\ 。
 
 目录入口导入：
 
 .. literalinclude:: ../../tutorials/dsl/import_host_directory.fcstm
    :language: fcstm
-   :caption: 通过显式 ``main.fcstm`` entry file 的 directory-style import；预期诊断：``W_UNUSED_EVENT``、``W_DEADLOCK_LEAF`` 和 ``W_UNREFERENCED_VAR``\ ，均来自演示用 imported resources。
+   :caption: 通过显式 ``main.fcstm`` 入口文件执行目录式导入；预期诊断：``W_UNUSED_EVENT``、``W_DEADLOCK_LEAF`` 和 ``W_UNREFERENCED_VAR``\ ，均来自演示用被导入资源。
 
 映射事实：
 
@@ -595,7 +626,7 @@ JSON 中重点看：
 
 .. literalinclude:: ../../tutorials/dsl/event_guard_mixed_invalid.fcstm.txt
    :language: fcstm
-   :caption: 故意 parser error；预期 excerpt：``Unexpected token 'if'``\ 。
+   :caption: 故意解析错误；预期摘录：``Unexpected token 'if'``\ 。
 
 它失败的原因是普通事件语法和普通守卫语法是两种独立转换形式。修复为组合语法：
 

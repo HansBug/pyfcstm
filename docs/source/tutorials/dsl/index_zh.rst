@@ -163,7 +163,36 @@
 第一个周期进入 ``Idle`` 并执行 ``Idle.during``。第二个周期中 ``Idle -> Heating`` 的守卫条件为真，因此转换触发，
 然后执行 ``Heating.enter``。
 
-步骤 6：按主题继续学习
+步骤 6：修复一个故意语法错误
+----------------------------
+
+检查也是修复 DSL 小错误最快的入口。普通事件语法和普通守卫语法是两种独立转换形式，所以这个故意坏掉的文本夹具会失败：
+
+.. literalinclude:: event_guard_mixed_invalid.fcstm.txt
+   :language: fcstm
+   :caption: 故意解析错误；预期摘录：``Unexpected token 'if'``\ 。
+
+把它当普通输入文件运行：
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/event_guard_mixed_invalid.fcstm.txt --format human --color never
+
+关键摘录为：
+
+.. code-block:: text
+
+   Syntax error at line 7, column 17, near 'if': Unexpected token 'if'
+
+当同一个触发器需要同时包含事件项和守卫项时，用组合语法修复：
+
+.. code-block:: fcstm
+
+   A -> B :: Go + [ready > 0];
+
+以后每次改模型都可以按这个最小循环操作：运行 ``pyfcstm inspect``，阅读诊断码和源码区间，再修复诊断指向的 DSL 形式。
+
+步骤 7：按主题继续学习
 ----------------------
 
 不要从这个教程直接跳到巨型模型。每次只加一个 DSL 能力，并在每次修改后重新阅读检查输出。

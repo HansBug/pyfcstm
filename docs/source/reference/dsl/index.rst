@@ -259,6 +259,148 @@ Forced transition details:
 * Forced forms cannot have ``effect`` blocks; put side effects on explicit normal
   transitions if needed.
 
+.. _dsl-combo-expansion-reference:
+
+Combo expansion quasi-spec
+--------------------------
+
+Combo transitions represent an ordered trigger chain in one cycle. They are not
+ordinary event suffixes glued to ordinary guard suffixes; model construction
+expands them into pseudo relay states.
+
+Author-written example from ``combo_transitions.fcstm``:
+
+.. code-block:: fcstm
+
+   Waiting -> Accepted :: Request + [ready > 0] + Confirm effect {
+       accepted = accepted + 1;
+   }
+
+Conceptually, that shape expands like this. Real generated names use the
+reserved ``__combo_`` prefix plus a hash; the names below are explanatory only
+and must not be hand-written into business models.
+
+.. code-block:: fcstm
+
+   Waiting -> __combo_waiting_request :: Request;
+   __combo_waiting_request -> __combo_waiting_ready : if [ready > 0];
+   __combo_waiting_ready -> Accepted :: Confirm effect {
+       accepted = accepted + 1;
+   }
+
+.. figure:: ../../tutorials/dsl/combo_transitions.fcstm.puml.svg
+   :alt: Combo transition expansion state diagram
+   :align: center
+
+   ``Waiting``, ``Accepted``, ``Retrying``, and ``Booted`` are authored
+   business states. Nodes with the ``__combo_`` prefix are generated pseudo
+   relay states. The authored business intent from ``Waiting`` to ``Accepted``
+   becomes three hops: consume ``Request``, test ``ready > 0``, then consume
+   ``Confirm`` and run the original effect.
+
+.. list-table:: Combo expansion assertions
+   :header-rows: 1
+   :widths: 24 36 40
+
+   * - Authored trigger term
+     - Expanded edge
+     - Assertion
+   * - ``Request``
+     - ``Waiting -> __combo_* :: Request``
+     - The first hop consumes the event and does not run the original effect.
+   * - ``[ready > 0]``
+     - ``__combo_* -> __combo_* : if [ready > 0]``
+     - The guard term becomes a relay-edge guard; if it fails, the chain does not advance.
+   * - ``Confirm``
+     - ``__combo_* -> Accepted :: Confirm effect { ... }``
+     - The final hop reaches the target state and is the only hop carrying the original effect.
+   * - Pseudo relay state
+     - ``state.name`` starts with ``__combo_``
+     - The node must remain pure routing: pseudo, action-free, and not an aspect execution point.
+   * - Provenance fields
+     - ``combo_origins`` / ``combo_transitions``
+     - Diagnostics can point back to authored trigger terms instead of only to generated nodes.
+
+Verify with:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/combo_transitions.fcstm --format json
+
+Expected facts:
+
+* ``states`` contains ``is_pseudo=true`` states whose names start with ``__combo_``;
+* ``combo_origins[].terms`` records the authored ``Request``, ``[ready > 0]``, and ``Confirm`` terms with source spans;
+* prefix ``combo_transitions`` entries have empty ``effect``; the final hop has ``accepted = accepted + 1;``;
+* the generated relay names do not appear in authored source and should not be depended on.
+
+Common error:
+
+.. code-block:: fcstm
+
+   // Bad ordinary syntax: an event suffix followed by an ordinary guard suffix.
+   Waiting -> Accepted :: Request if [ready > 0];
+
+   // Good combo syntax: use a guard term in the combo trigger.
+   Waiting -> Accepted :: Request + [ready > 0];
+
+.. _dsl-forced-expansion-reference:
+
+Forced expansion quasi-spec
+---------------------------
+
+Forced transitions expand over a source set. They are not combo chains. One
+declaration is copied into multiple ordinary transitions, which is useful for
+modeling many states reacting to the same emergency event or guard.
+
+Author-written example from ``forced_transitions.fcstm``:
+
+.. code-block:: fcstm
+
+   !* -> ErrorHandler :: CriticalError;
+   !Running -> SafeMode :: EmergencyStop;
+
+.. figure:: ../../tutorials/dsl/forced_transitions.fcstm.puml.svg
+   :alt: Forced transition expansion state diagram
+   :align: center
+
+   ``System`` directly owns ``Initializing``, ``Running``, ``SafeMode``, and
+   ``ErrorHandler``. ``!*`` expands in that owner scope; ``!Running`` also
+   contributes exits from the ``Running`` boundary and related child paths. The
+   inspected model therefore contains more ordinary edges than the two authored
+   forced declarations.
+
+.. list-table:: Forced expansion assertions
+   :header-rows: 1
+   :widths: 22 30 48
+
+   * - Authored form
+     - Expansion meaning
+     - Inspect assertion
+   * - ``!* -> ErrorHandler :: CriticalError;``
+     - Expand from all applicable sources in the current owner scope.
+     - ``forced_transitions[].from_path`` is ``*`` and ``expansion_count`` gives the number of generated edges.
+   * - ``!Running -> SafeMode :: EmergencyStop;``
+     - Expand from the ``Running`` boundary and related child exits.
+     - Expanded edges keep ``forced_origin`` so diagnostics and diagrams can trace back to the declaration.
+   * - No effect block
+     - Forced declarations cannot write ``effect``.
+     - Expanded edges have empty ``effect``; shared behavior belongs in target ``enter`` or explicit normal edges.
+   * - No combo chain
+     - Forced declarations cannot use ``+``.
+     - Use explicit normal combo transitions when a source needs ordered trigger terms.
+
+Verify with:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/forced_transitions.fcstm --format json
+
+The JSON report should contain a ``forced_transitions`` summary and multiple
+expanded edges with ``forced_origin``. Once expanded, those edges are ordinary
+transitions for lifecycle ordering: source ``exit`` and target ``enter`` still
+run according to runtime semantics.
+
 .. _dsl-events-scopes:
 
 Events and scopes
@@ -668,7 +810,7 @@ Every row still has a reference or explanation landing point.
      - ``combo_transition_trigger`` / ``entry_combo_transition_trigger``
      - N/A: tutorial links advanced transition
      - :ref:`dsl-combo-transition-task`
-     - :ref:`dsl-transition-forms`
+     - :ref:`dsl-transition-forms` / :ref:`dsl-combo-expansion-reference`
      - :ref:`dsl-combo-relay-semantics`
      - ``combo_transitions.fcstm`` inspect
      - synced
@@ -677,7 +819,7 @@ Every row still has a reference or explanation landing point.
      - ``transition_force_definition``
      - N/A: tutorial links advanced transition
      - :ref:`dsl-forced-transition-task`
-     - :ref:`dsl-transition-forms`
+     - :ref:`dsl-transition-forms` / :ref:`dsl-forced-expansion-reference`
      - :ref:`dsl-forced-transition-expansion`
      - ``forced_transitions.fcstm`` inspect
      - synced

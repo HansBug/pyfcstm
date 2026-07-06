@@ -156,6 +156,16 @@ Checked examples:
    :language: fcstm
    :caption: Complete event scopes; expected diagnostics: ``W_UNREFERENCED_VAR`` for the demonstration counter.
 
+.. figure:: ../../tutorials/dsl/event_scoping_complete.fcstm.puml.svg
+   :alt: Event scope state diagram
+   :align: center
+
+   Read this diagram by asking who owns each signal. Edges written with ``::``
+   use source-local events, edges written with ``: Name`` use a containing or
+   named owner, and edges written with ``: /Name`` use the root event
+   namespace. Inspect ``events[].qualified_name`` and ``events[].scope`` to
+   confirm the same ownership that the diagram labels suggest.
+
 Verify and inspect event ownership:
 
 .. code-block:: bash
@@ -303,11 +313,31 @@ reference forms:
 
 Review the diagrams when you need lifecycle ordering:
 
-.. image:: ../../tutorials/dsl/leaf_state_lifecycle.puml.svg
+.. figure:: ../../tutorials/dsl/leaf_state_lifecycle.puml.svg
    :alt: Leaf state lifecycle
+   :align: center
 
-.. image:: ../../tutorials/dsl/composite_state_lifecycle.puml.svg
+   A leaf state can run ``enter`` when it becomes active, ``during`` while it
+   stays active, and ``exit`` before it is left. This is authored behavior, not
+   generated relay machinery.
+
+.. figure:: ../../tutorials/dsl/composite_state_lifecycle.puml.svg
    :alt: Composite state lifecycle
+   :align: center
+
+   A composite state is a boundary around child selection. Its ordinary
+   ``during before`` / ``during after`` actions are boundary actions; they are
+   not the same as ancestor ``>> during`` aspects and they do not observe every
+   combo relay hop.
+
+.. figure:: ../../tutorials/dsl/abstract_reference_demo.fcstm.puml.svg
+   :alt: Abstract and reference action diagram
+   :align: center
+
+   This diagram is useful for checking that action paths and state paths are
+   different concepts. ``ref`` reuses a named lifecycle action; it does not call
+   a state or an event. Inspect the generated action list and references when a
+   ``ref`` path looks surprising.
 
 Verify the checked lifecycle example:
 
@@ -334,6 +364,16 @@ with plain ``during before`` / ``during after`` actions on a composite.
 .. literalinclude:: ../../tutorials/dsl/hierarchy_execution.fcstm
    :language: fcstm
    :caption: Aspect and hierarchy execution example; expected diagnostics: ``W_UNREFERENCED_VAR`` and ``I_TRANSITION_NEVER_EVENT_TRIGGERED`` for demonstration-only model parts.
+
+.. figure:: ../../tutorials/dsl/hierarchy_execution.fcstm.puml.svg
+   :alt: Hierarchy execution state diagram
+   :align: center
+
+   The figure separates authored hierarchy from runtime ordering. Parent and
+   child states are authored DSL nodes; aspect actions are not drawn as business
+   states. Use inspect lifecycle/action fields together with the diagram to
+   confirm whether behavior is attached to a boundary or to descendant leaf
+   cycles.
 
 Interpretation:
 
@@ -374,6 +414,17 @@ effects.
 .. literalinclude:: ../../tutorials/dsl/forced_transitions.fcstm
    :language: fcstm
    :caption: Forced transition example; expected diagnostics: two ``W_UNREFERENCED_VAR`` warnings for demonstration-only variables.
+
+.. figure:: ../../tutorials/dsl/forced_transitions.fcstm.puml.svg
+   :alt: Forced transition expansion diagram
+   :align: center
+
+   The authored DSL has only two forced declarations, but the inspected model
+   contains multiple ordinary expanded transitions carrying ``forced_origin``.
+   ``!*`` expands over applicable sources in the owner scope, while
+   ``!Running`` contributes exits from the ``Running`` boundary and related
+   child paths. The expansion still follows ordinary exit and target-entry
+   semantics.
 
 Rules:
 
@@ -420,6 +471,16 @@ PlantUML consume the expanded model.
    :language: fcstm
    :caption: Normal combo, entry combo, guard alias, root event term, effects, and generated pseudo relay states; expected diagnostics: none.
 
+.. figure:: ../../tutorials/dsl/combo_transitions.fcstm.puml.svg
+   :alt: Combo transition expansion diagram
+   :align: center
+
+   Nodes whose names start with ``__combo_`` are generated pseudo relay states,
+   not authored business states. For
+   ``Waiting -> Accepted :: Request + [ready > 0] + Confirm``, the diagram
+   shows one event edge, one guard edge, and one final event edge into
+   ``Accepted``. The original ``effect`` belongs only to the final hop.
+
 Verify the expansion:
 
 .. code-block:: bash
@@ -433,6 +494,42 @@ Useful JSON fields:
   original combo.
 * ``states`` includes generated pseudo states with ``is_pseudo=true`` and names
   beginning with ``__combo_``.
+
+Conceptual expansion:
+
+.. code-block:: fcstm
+
+   // Authored form.
+   Waiting -> Accepted :: Request + [ready > 0] + Confirm effect {
+       accepted = accepted + 1;
+   }
+
+   // Conceptual expansion. Real relay names include a hash and must not be hand-written.
+   Waiting -> __combo_waiting_request :: Request;
+   __combo_waiting_request -> __combo_waiting_ready : if [ready > 0];
+   __combo_waiting_ready -> Accepted :: Confirm effect {
+       accepted = accepted + 1;
+   }
+
+.. list-table:: How to read combo expansion
+   :header-rows: 1
+   :widths: 24 36 40
+
+   * - Trigger term
+     - Expanded edge
+     - What to inspect
+   * - ``Request``
+     - Business state to first pseudo relay event edge.
+     - The corresponding ``combo_transitions`` item has empty ``effect``.
+   * - ``[ready > 0]``
+     - Guard edge between pseudo relays.
+     - If the guard is false, the chain does not reach the target state.
+   * - ``Confirm``
+     - Final hop into the business target.
+     - The original ``effect`` appears only on this hop.
+   * - ``__combo_`` state
+     - Generated pure routing node.
+     - It is pseudo, action-free, and not an aspect execution point.
 
 Repair examples:
 
@@ -470,6 +567,15 @@ Mapping import:
 .. literalinclude:: ../../tutorials/dsl/import_host_mapped.fcstm
    :language: fcstm
    :caption: Import with variable and event mappings; expected diagnostics: three ``W_UNREFERENCED_VAR`` warnings.
+
+.. figure:: ../../tutorials/dsl/import_host_mapped.fcstm.puml.svg
+   :alt: Host model after import mapping
+   :align: center
+
+   The host model attaches the imported module under an alias. The mapping
+   block is not a text-replacement script; it rewrites variables and event paths
+   during model assembly. Check both the diagram's state tree and inspect's
+   variable, event, and transition paths when validating an import.
 
 Imported worker:
 

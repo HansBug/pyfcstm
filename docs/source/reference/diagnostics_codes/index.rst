@@ -136,3 +136,11 @@ Combo relay pseudo-state warnings are about generated relay purity and reserved
 names. They do not mean ``during before`` aspect actions execute inside combo
 relay pseudo states. A relay pseudo state should remain a pure routing helper;
 observable business behavior belongs on authored states or transition effects.
+
+.. figure:: ../../tutorials/dsl/combo_duplicate_event.fcstm.puml.svg
+   :alt: Duplicate combo event warning diagram
+   :align: center
+
+   The ``__combo_`` nodes in this diagram are generated expansion structure.
+   ``W_COMBO_DUPLICATE_EVENT`` should guide the user back to the repeated
+   authored trigger term, not ask them to edit generated relay nodes directly.

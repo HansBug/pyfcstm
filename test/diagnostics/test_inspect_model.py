@@ -3685,3 +3685,23 @@ def test_left_nested_implication_guard_keeps_required_parentheses():
     )
 
     assert report.transitions[1].guard == '(a > 0 => b > 0) => c > 0'
+
+
+@pytest.mark.unittest
+def test_implication_guard_parenthesizes_lower_precedence_right_operand():
+    report = inspect_model(
+        _parse("""
+    def int a = 1;
+    def int b = 0;
+    def int c = 0;
+
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [(a > 0 => ((b > 0) ? true : c > 0))];
+    }
+    """)
+    )
+
+    assert report.transitions[1].guard == 'a > 0 => ((b > 0) ? true : c > 0)'

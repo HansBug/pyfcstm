@@ -38,6 +38,15 @@ This is not only parser convenience. Code generation needs one runtime object,
 one variable store, and one root active stack. Import assembly also needs one
 host tree into which imported modules can be rewritten.
 
+.. figure:: ../../tutorials/dsl/first_thermostat.fcstm.puml.svg
+   :alt: First thermostat model diagram
+   :align: center
+
+   This baseline diagram has only the authored root composite and two authored
+   leaf states. It shows the three model surfaces that later examples build on:
+   one variable table, one state tree, and one transition graph. Combo and
+   forced expansion add generated structure onto those same surfaces.
+
 .. _dsl-ownership-name-resolution:
 
 Ownership tree and name resolution
@@ -94,6 +103,15 @@ Plain composite ``during before`` / ``during after`` does not wrap that
 child-to-child movement. That boundary keeps composite entry/exit behavior from
 turning into hidden behavior on every internal state change.
 
+.. figure:: ../../tutorials/dsl/hierarchy_execution.fcstm.puml.svg
+   :alt: Hierarchy execution example diagram
+   :align: center
+
+   Use this figure to separate boundary entry from child-to-child movement. The
+   parent and child states are authored DSL nodes; inspect lifecycle fields show
+   whether behavior belongs to the composite boundary, a leaf, or an aspect on
+   descendant leaf cycles.
+
 .. _dsl-event-ownership-signal:
 
 Event scopes as ownership signals
@@ -125,6 +143,15 @@ scope unless a continuation term explicitly starts with ``/``.
 Forced transitions use similar trigger spellings, but they are declaration
 expansion shorthand. A forced trigger still produces ordinary expanded
 transitions; it is not a combo chain and it cannot carry an effect.
+
+.. figure:: ../../tutorials/dsl/event_scoping_complete.fcstm.puml.svg
+   :alt: Event scoping example diagram
+   :align: center
+
+   The event-scope diagram should be read as an ownership map. Source-local
+   events move with their source state; root events act more like a public
+   protocol. Inspect ``event`` and ``event_scope`` fields when the same visual
+   edge could be interpreted as local or global.
 
 .. _dsl-expression-separation:
 
@@ -182,6 +209,14 @@ Lifecycle actions attach behavior to state boundaries and active cycles:
 event. That keeps reusable behavior explicit and avoids making state names double
 as callable procedures.
 
+.. figure:: ../../tutorials/dsl/abstract_reference_demo.fcstm.puml.svg
+   :alt: Abstract and reference action example diagram
+   :align: center
+
+   This figure is a reminder that state paths and action paths are separate
+   namespaces. Generated runtimes can expose stable hooks for abstract and named
+   lifecycle actions because the DSL records those actions explicitly.
+
 .. _dsl-during-aspect-semantics:
 
 During before/after and aspects
@@ -237,6 +272,36 @@ be duplicated on every relay hop. If any required event or guard term is absent
 in the same cycle, the chain does not complete and the visible state should not
 silently advance to the final target.
 
+.. figure:: ../../tutorials/dsl/combo_transitions.fcstm.puml.svg
+   :alt: Combo expansion semantics diagram
+   :align: center
+
+   The ``__combo_`` nodes in this diagram are generated pseudo relay states.
+   They have no business lifecycle actions and should not be treated as stable
+   business states. The authored transition from ``Waiting`` to ``Accepted`` is
+   split into event, guard, and final event-plus-effect hops; only the final hop
+   reaches the business target and runs the original effect.
+
+.. list-table:: Combo semantic checkpoints
+   :header-rows: 1
+   :widths: 22 38 40
+
+   * - Checkpoint
+     - Runtime meaning
+     - Design reason
+   * - First event hop
+     - Consume ``Request`` and move into a relay.
+     - Preserve trigger order without running business side effects early.
+   * - Middle guard hop
+     - Test ``ready > 0``.
+     - A false guard keeps the chain from masquerading as a completed business transition.
+   * - Final event hop
+     - Consume ``Confirm``, enter ``Accepted``, and run the original effect.
+     - Execute the effect exactly once after the complete trigger chain is satisfied.
+   * - Pseudo relay state
+     - Carry routing only.
+     - Prevent generated structure from leaking into business semantics.
+
 ``W_COMBO_DUPLICATE_EVENT`` and combo guard diagnostics point back to the
 author-written trigger terms, not merely to generated pseudo states. This is why
 inspect diagnostics can guide an LLM or user back to the original DSL source.
@@ -264,6 +329,36 @@ Forced transitions also cannot carry combo ``+`` chains. Combo is ordered relay
 expansion; forced is source-set expansion. Keeping them separate makes the
 expanded model inspectable.
 
+.. figure:: ../../tutorials/dsl/forced_transitions.fcstm.puml.svg
+   :alt: Forced expansion semantics diagram
+   :align: center
+
+   The diagram contains more expanded edges than authored forced declarations.
+   ``!*`` covers applicable sources in the current owner scope, while
+   ``!Running`` reaches the ``Running`` boundary and related child exits.
+   Because the expanded edges are ordinary transitions, source exits and target
+   entries still run normally; the forced declaration itself carries no effect.
+
+.. list-table:: Forced versus combo expansion
+   :header-rows: 1
+   :widths: 24 38 38
+
+   * - Topic
+     - Combo transition
+     - Forced transition
+   * - Expansion dimension
+     - Ordered trigger terms become a relay chain.
+     - One source pattern becomes multiple edges.
+   * - Intermediate state
+     - Generated pseudo relay states.
+     - No trigger-order relay chain.
+   * - Effect action
+     - Allowed, but only on the final hop.
+     - Disallowed to avoid hidden side-effect cloning.
+   * - Good use case
+     - Event and guard terms must be satisfied in sequence.
+     - Many states respond to one emergency event or guard.
+
 .. _dsl-import-assembly-semantics:
 
 Import assembly semantics
@@ -289,6 +384,15 @@ Mapping templates are not arbitrary code. ``$0`` is the whole matched imported
 variable name; ``$1`` / ``${1}`` are capture groups from wildcard selectors;
 ``*`` is the fallback template. Directory projects must import a concrete entry
 file such as ``./line/main.fcstm`` because a bare directory is not DSL source.
+
+.. figure:: ../../tutorials/dsl/import_host_mapped.fcstm.puml.svg
+   :alt: Imported module assembled into a host model
+   :align: center
+
+   The imported module appears under its host alias in the state tree. Variable
+   and event mappings are not drawn as scripts, but they affect inspect's
+   variable list, event table, and resolved transition paths. Use those fields
+   as the evidence when reviewing import assembly.
 
 Design boundaries
 -----------------

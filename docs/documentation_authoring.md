@@ -34,7 +34,7 @@ pyfcstm documentation follows four roles. Choose the role before writing the pag
 | Explanations | Why the system behaves this way. | Semantics, ordering, design motivation, tradeoffs, diagrams or traces where useful, and boundaries. | A copy of syntax tables or CLI help with no reasoning. |
 | Reference | Accurate facts readers can look up. | Tables, fields, defaults, legal and illegal forms, edge cases, diagnostics, and links to source facts. | A narrative tutorial or a vague overview that omits exact facts. |
 
-If one page naturally wants to do all four jobs, split it. A short roadmap page may link to sibling pages, but it must not use a toctree to make those sibling pages children.
+If one page naturally wants to do all four jobs, split it. A short roadmap page may link to sibling pages, but it must not use a toctree to make those sibling pages children. Prefer splitting first by page role, then by capability family when one role page becomes too broad. For example, a DSL rewrite should normally keep a short learning tutorial, task-oriented how-to sections, a dense reference, and one or more semantic explanation pages rather than one giant mixed page.
 
 ## Module coverage inventory
 
@@ -57,7 +57,7 @@ Before writing or restructuring a module, create a coverage inventory. This can 
 | Migration and landing pages | Where old headings, old URLs, and moved assets now land. | Existing information appears lost. |
 | Verification | Commands or review checks that prove the documentation matches the implementation. | “Done” cannot be audited. |
 
-A missing required field is an Important review finding by default. It becomes Critical when the missing field can hide a behavior gap, incorrect fact, broken example, or lost migration content.
+A missing required field is an Important review finding by default. It becomes Critical when the missing field can hide a behavior gap, incorrect fact, broken example, or lost migration content. A field is too vague to audit when it contains only a label, slogan, or one-word placeholder instead of concrete file paths, commands, pages, examples, or review checks. Treat vague fields as missing until the author adds enough detail for another maintainer to reproduce the reasoning.
 
 ### Example inventory: generation module
 
@@ -181,9 +181,9 @@ Figures derived from source files must keep their source-output pair traceable. 
 
 ## Bilingual and Chinese terminology discipline
 
-When a page has both English and Chinese variants, keep them synchronized in scope, examples, file references, and warnings. They do not need word-for-word translation, but they must teach the same capability and expose the same risks.
+When a page has both English and Chinese variants, keep them synchronized in scope, examples, file references, and warnings. They do not need word-for-word translation, but they must teach the same capability and expose the same risks. If only one language changes, record the reason and the follow-up plan in the PR body or migration note.
 
-Chinese prose should use Chinese terms. When an English term is needed for precision, introduce it once per page in the form `中文术语（English term）`, then use the Chinese term afterwards.
+Chinese prose should use Chinese terms. When an English term is needed for precision, introduce it once per page in the form `中文术语（English term）`, then use the Chinese term afterwards. Use the same Chinese term for the same English concept across related pages unless a page explicitly explains why a different translation is intentional. For included fragments or shared snippets, treat the rendered page as the reader-facing boundary: the final page should introduce the term before relying on the Chinese-only form.
 
 Keep these verbatim for correctness:
 
@@ -236,6 +236,14 @@ NO_CONTENTS_BUILD=1 READTHEDOCS_LANGUAGE=zh sphinx-build -b html docs/source /tm
 rg -n 'class="problematic"|<span class="problematic"' /tmp/pyfcstm-html-check-en /tmp/pyfcstm-html-check-zh -g '*.html'
 ```
 
+`rg` is the preferred local scan tool because it is already used throughout this repository's maintainer guidance. If it is not available, use an equivalent recursive grep command, for example:
+
+```bash
+grep -RInE --include='*.html' 'class="problematic"|<span class="problematic"' /tmp/pyfcstm-html-check-en /tmp/pyfcstm-html-check-zh
+```
+
+For bilingual page changes, also perform a content-synchronization review. Confirm that each changed English or Chinese page has the corresponding language update, or record an explicit deferral. Compare changed headings, commands, examples, warnings, file paths, and diagnostics; a clean HTML build only proves syntax, not translation coverage.
+
 For generated documentation resources, use the generation workflow documented in `CLAUDE.md` rather than editing generated outputs directly. Run `make contents` when source resources changed and generated outputs must be refreshed.
 
 For public Python API or generated API index changes, run `make rst_auto` and include intentional generated RST updates.
@@ -256,6 +264,7 @@ A Critical issue blocks ready-to-merge. Examples:
 - Navigation or toctree changes break discoverability or create an incorrect parent-child structure.
 - A migration deletes or hides existing user-visible information without a reason.
 - Risk scope is wrong, for example saying a warning applies to all generated targets when it only affects C/C++ deployment.
+- No verification evidence is provided, or the claimed verification steps use tools, paths, or inputs that are unavailable in the repository environment and cannot be independently repeated.
 
 ### Important
 
@@ -264,9 +273,10 @@ An Important issue should be fixed before merge unless explicitly deferred with 
 - Required inventory fields are present but too vague to audit.
 - A page role is mixed enough that readers cannot tell whether it is a tutorial, how-to, explanation, or reference.
 - Expected output or failure behavior is missing from a command-heavy guide.
-- Chinese terminology discipline is inconsistent across a page.
+- Chinese terminology discipline is inconsistent across a page, or related pages use different Chinese terms for the same English concept without an explicit reason.
 - A diagram is added without explaining what it proves.
 - Verification commands do not match the files actually changed.
+- Bilingual changes update one language but omit the matching language page without an explicit deferral.
 
 ### Minor
 
@@ -278,3 +288,30 @@ A Minor issue is useful to fix but should not block progress by itself. Examples
 - A non-essential example could be shorter.
 
 When this guide is changed, apply the same C/I/M rules to the change itself. If the guide would allow a thin, unverifiable, or ambiguous version of itself to pass, the guide is not ready.
+
+## Self-check for this guide
+
+This section records how the guide satisfies its own rules. Keep it updated when the guide changes materially.
+
+| Inventory field | This guide's answer |
+|---|---|
+| Scope | Maintainer and agent discipline for writing, restructuring, and reviewing pyfcstm documentation. |
+| Source facts | `CLAUDE.md` documentation rules, the current Diátaxis documentation tree under `docs/source/`, PR review patterns from the tutorials overhaul, and repository commands listed in maintainer guidance. |
+| Capability list | Define page roles, require coverage inventory, set example and diagram rules, preserve bilingual terminology discipline, protect navigation/migration structure, define verification expectations, and classify review findings. |
+| Tutorial path | Not applicable: this is a maintainer policy file, not a user tutorial. The guide explicitly stays outside the Sphinx toctree. |
+| How-to tasks | Decide page role, fill module inventory, write acceptable pages, reject unacceptable pages, verify documentation changes, and review with C/I/M levels. |
+| Explanation topics | Why documentation needs role separation, traceable examples, explicit boundaries, bilingual synchronization, and proportional verification. |
+| Reference facts | Required inventory fields, page contract tables, migration record fields, verification commands, and C/I/M examples. |
+| Boundaries and counterexamples | The guide names unacceptable page shapes, zero-verification PRs, false implementation claims, untraceable migrations, broken navigation, and wrong risk scope. |
+| Diagnostics and errors | Documentation review defects are classified as Critical, Important, or Minor; product diagnostic codes are referenced only when target documentation needs them. |
+| Examples and resources | The generation-module inventory is the worked non-DSL example; command snippets are short and tied to repository guidance. |
+| Migration and landing pages | The guide does not move user-facing pages; it adds a `CLAUDE.md` entry so the non-Sphinx policy file remains discoverable. |
+| Verification | `git diff --check`, `make rst_auto`, and reviewer C/I/M checks are the relevant verification path for this policy-only change; Sphinx HTML checks are required only when Sphinx source pages change. |
+
+Applied to this guide itself:
+
+- Tutorial contract: not applicable because this file is not a tutorial and says so.
+- How-to contract: satisfied by concrete task rules for inventory, examples, navigation, migration, verification, and review.
+- Explanation contract: satisfied by rationale for role separation, boundaries, and verification.
+- Reference contract: satisfied by structured fields, failure modes, examples, commands, and C/I/M tables.
+- Critical self-check: a future edit that removes verification requirements, makes inventory fields optional, hides this file from `CLAUDE.md`, or permits false implementation facts must block merge.

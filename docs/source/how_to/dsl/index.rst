@@ -92,6 +92,20 @@ The fix is either ``Outside -> Parent;`` or moving the child-targeting
 transition inside ``Parent``. Read :ref:`dsl-state-forms` and
 :ref:`dsl-ownership-name-resolution` for the exact rule.
 
+If you save that bad model as ``/tmp/nested_target_invalid.fcstm``, verify the
+failure with:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i /tmp/nested_target_invalid.fcstm --format human --color never
+
+Expected excerpt:
+
+.. code-block:: text
+
+   Invalid state machine model ... Unknown to state 'ChildB' of transition:
+   Outside -> ChildB; (line 9)
+
 Verify a checked hierarchy example:
 
 .. code-block:: bash
@@ -104,6 +118,13 @@ Expected excerpt:
 
    root: HierarchyDemo
    diagnostics: 0 errors / 1 warnings / 1 infos
+
+Pseudo states are route-only leaf helpers, not business states with lifecycle
+behavior. The legacy pseudo-state example is kept as a checked resource:
+
+.. literalinclude:: ../../tutorials/dsl/pseudo_state_demo.fcstm
+   :language: fcstm
+   :caption: Pseudo-state routing example; expected diagnostics: one ``W_UNREFERENCED_VAR`` and three ``I_TRANSITION_NEVER_EVENT_TRIGGERED`` notes.
 
 .. _dsl-event-scopes-task:
 
@@ -147,6 +168,10 @@ root path. The compact spelling ``:/Start`` is accepted by the current parser an
 serializes to the same absolute event, but the spaced form is easier to teach,
 search, and review.
 
+Common mistake: do not move between ``::`` and ``:`` only for aesthetics. The
+spelling changes who owns the event, which can change import mapping,
+simulation input names, and inspect ``events[].scope`` output.
+
 .. _dsl-guards-effects-task:
 
 Write guards, effects, and operation blocks
@@ -177,7 +202,7 @@ Verify it:
 
    pyfcstm inspect -i docs/source/tutorials/dsl/operation_blocks_complete.fcstm --format human --color never
 
-Expected diagnostic count is zero. If you see ``E_UNDEFINED_VAR`` with
+Expected diagnostic count is zero. Common mistake: if you see ``E_UNDEFINED_VAR`` with
 ``refs.is_temporary=true``, the usual fix is to assign the temporary before its
 first read in the same block.
 
@@ -251,6 +276,8 @@ Use concrete lifecycle actions when the model itself owns the behavior. Use
 ``abstract`` when generated code should call a user-provided hook. Use ``ref``
 when multiple states should reuse a named lifecycle action.
 
+Fragment pattern (not a complete checked file; the checked complete file follows):
+
 .. code-block:: fcstm
 
    state Device {
@@ -265,6 +292,8 @@ when multiple states should reuse a named lifecycle action.
    }
 
 ``ref`` points to a named lifecycle action, not to a state and not to an event.
+Common mistake: ``enter ref /Idle`` tries to reference a state path, not a named
+lifecycle action; name the action first, then reference that action path.
 The checked example below shows concrete, abstract, doc-comment abstract, and
 reference forms:
 
@@ -314,6 +343,10 @@ Interpretation:
   entry/exit semantics and does not wrap child-to-child transitions;
 * aspect actions do not run inside combo pseudo relay states.
 
+Common mistake: do not use an aspect to observe combo relay hops. Combo relay
+pseudo states are generated routing machinery, so business logging belongs on
+authored states or transition effects.
+
 See :ref:`dsl-during-aspect-semantics` for the detailed boundary.
 
 Verify the checked aspect example:
@@ -354,6 +387,10 @@ Rules:
 If you need shared side effects, put them in the target state's ``enter`` block
 or write explicit normal transitions with visible ``effect`` blocks. See
 :ref:`dsl-forced-transition-expansion` for why the DSL keeps this restriction.
+
+Common mistake: ``!* -> Target :: Event effect { ... };`` is invalid. Forced
+transitions expand to many ordinary transitions, so cloning side effects would
+hide behavior; write explicit normal transitions when effects are required.
 
 Verify the expansion size:
 
@@ -440,6 +477,12 @@ Imported worker:
    :language: fcstm
    :caption: Imported worker module; expected diagnostics: two ``W_UNREFERENCED_VAR`` warnings.
 
+Directory entry import:
+
+.. literalinclude:: ../../tutorials/dsl/import_host_directory.fcstm
+   :language: fcstm
+   :caption: Directory-style import through an explicit ``main.fcstm`` entry file; expected diagnostics: ``W_UNUSED_EVENT``, ``W_DEADLOCK_LEAF``, and ``W_UNREFERENCED_VAR`` for demonstration-only imported resources.
+
 Mapping facts:
 
 * ``def speed -> plant_speed;`` maps one imported variable to one host variable.
@@ -450,6 +493,11 @@ Mapping facts:
 * ``event /Start -> Start;`` maps an imported root event to a host event.
 * Directory projects must import a concrete entry file such as
   ``./import_line/main.fcstm``; a bare directory is not a DSL file.
+
+Common mistakes: a bare directory path is not loaded as DSL source; an out-of-range
+placeholder such as ``$2`` in ``def sensor_* -> left_$2;`` reports an import
+mapping validation error. Use ``$0`` for the whole imported name and ``$1`` /
+``${1}`` for the first wildcard capture.
 
 Preamble forms such as ``name = value;`` and ``name := value;`` are parser-helper
 entry points used by import assembly tests and helpers. They are not ordinary
@@ -468,6 +516,19 @@ Expected excerpt:
 
    root: System
    variables: 3
+   diagnostics: 0 errors / 3 warnings / 0 infos
+
+Verify the directory-entry import:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/import_host_directory.fcstm --format human --color never
+
+Expected excerpt:
+
+.. code-block:: text
+
+   root: Factory
    diagnostics: 0 errors / 3 warnings / 0 infos
 
 .. _dsl-diagnostics-task:
@@ -495,8 +556,8 @@ A diagnostic has a ``code``, ``severity``, human message, source span, and
      - ``W_COMBO_DUPLICATE_EVENT``
      - Check whether the second event term is a typo. Keep it only if the explicit two-hop relay is intentional.
    * - ``guard_vars_never_change.fcstm``
-     - ``W_GUARD_VARS_NEVER_CHANGE``
-     - Add the missing lifecycle/effect write, or simplify the guard if an initial-value-only guard is intentional.
+     - ``W_UNWRITTEN_READ_VAR`` + ``W_GUARD_VARS_NEVER_CHANGE`` + ``I_TRANSITION_NEVER_EVENT_TRIGGERED``
+     - Add the missing lifecycle/effect write, or simplify the guard if an initial-value-only guard is intentional; the exit transition info is expected for this minimal warning fixture.
    * - ``during_const_assign.fcstm``
      - ``W_DURING_CONST_ASSIGN``
      - Move one-time initialization to ``enter`` or make the ``during`` expression depend on runtime state.

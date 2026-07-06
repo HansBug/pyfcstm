@@ -94,8 +94,8 @@ valid DSL files, not broken parser fixtures.
      - ``warning: W_COMBO_DUPLICATE_EVENT``
      - Inspect points to the repeated combo term via ``refs.term_span`` and ``refs.first_term_span``.
    * - ``guard_vars_never_change.fcstm``
-     - ``warning: W_GUARD_VARS_NEVER_CHANGE``
-     - A guard that only reads initial values may be fixed or intentionally documented.
+     - ``warning: W_UNWRITTEN_READ_VAR`` + ``warning: W_GUARD_VARS_NEVER_CHANGE`` + ``info: I_TRANSITION_NEVER_EVENT_TRIGGERED``
+     - A guard that only reads initial values may be fixed or intentionally documented; the extra read/write and fallthrough diagnostics are expected for this compact fixture.
    * - ``during_const_assign.fcstm``
      - ``warning: W_DURING_CONST_ASSIGN``
      - Repeated constant assignment in ``during`` often belongs in ``enter``.

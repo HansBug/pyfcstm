@@ -75,6 +75,10 @@ A leaf ``during`` action runs on an ordinary active cycle. An ``enter`` action
 runs when the state is entered. This version changes ``temperature`` so both
 guards can eventually change truth value.
 
+Patch fragment: replace the two leaf declarations from Step 2 with the two
+state blocks below. This snippet is not a complete ``.fcstm`` file by itself;
+Step 4 shows the checked complete model.
+
 .. code-block:: fcstm
 
    state Idle {

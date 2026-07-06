@@ -387,34 +387,35 @@ Operator precedence 按 grammar rule order 从紧到松：parentheses/literals/f
      - ``enter { ... }``
      - ``enter Name { ... }``
      - ``enter abstract Name;``
-     - ``enter abstract Name? /* doc */``
-     - ``enter Name? ref Path;``
+     - ``enter abstract Name /* doc */`` 或 ``enter abstract /* doc */``
+     - ``enter ref Path;`` 或 ``enter Name ref Path;``
    * - ``during``
      - ``during { ... }``
      - ``during Name { ... }``
      - ``during abstract Name;``
-     - ``during abstract Name? /* doc */``
-     - ``during Name? ref Path;``
+     - ``during abstract Name /* doc */`` 或 ``during abstract /* doc */``
+     - ``during ref Path;`` 或 ``during Name ref Path;``
    * - ``during before``
      - ``during before { ... }``
      - ``during before Name { ... }``
      - ``during before abstract Name;``
-     - ``during before abstract Name? /* doc */``
-     - ``during before Name? ref Path;``
+     - ``during before abstract Name /* doc */`` 或 ``during before abstract /* doc */``
+     - ``during before ref Path;`` 或 ``during before Name ref Path;``
    * - ``during after``
      - ``during after { ... }``
      - ``during after Name { ... }``
      - ``during after abstract Name;``
-     - ``during after abstract Name? /* doc */``
-     - ``during after Name? ref Path;``
+     - ``during after abstract Name /* doc */`` 或 ``during after abstract /* doc */``
+     - ``during after ref Path;`` 或 ``during after Name ref Path;``
    * - ``exit``
      - ``exit { ... }``
      - ``exit Name { ... }``
      - ``exit abstract Name;``
-     - ``exit abstract Name? /* doc */``
-     - ``exit Name? ref Path;``
+     - ``exit abstract Name /* doc */`` 或 ``exit abstract /* doc */``
+     - ``exit ref Path;`` 或 ``exit Name ref Path;``
 
-``ref`` 指向 named lifecycle action path，不指向 state 或 event。Doc-comment abstract forms 使用 multiline comment 作为 documentation metadata。
+``ref`` 指向 named lifecycle action path，不指向 state 或 event。Doc-comment abstract forms 使用 multiline comment 作为 documentation metadata；上表中的 optional
+``Name`` 是说明文字，不是字面 ``Name?`` token。
 
 .. _dsl-aspect-forms-zh:
 
@@ -472,14 +473,14 @@ Import 形式
      - ``def {a, b} -> target;``
      - 映射一组 variables。
    * - Def pattern selector
-     - ``def sensor_* -> sensor_$0;``
-     - Pattern selector 是 compact 且 whitespace-sensitive。
+     - ``def sensor_* -> sensor_$1;``
+     - Pattern selector 是 compact 且 whitespace-sensitive；``$1`` 表示第一个 wildcard capture。
    * - Def exact selector
      - ``def value -> renamed;``
      - 映射一个 variable。
    * - Target template
      - ``ID``、compact template 或 ``*``
-     - Compact templates 可使用 ``$0`` 或 ``${0}`` placeholders。
+     - ``$0`` / ``${0}`` 表示完整 imported name；``$1`` / ``${1}`` 表示第一个 wildcard capture。Bare ``*`` 保留 imported name。
    * - Event mapping
      - ``event Source.Path -> Target.Path;``
      - 可带 ``named "Label"``。

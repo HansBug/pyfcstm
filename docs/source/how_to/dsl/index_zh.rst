@@ -16,14 +16,16 @@ DSL 任务指南
 所有引用 checked example 的命令都默认从仓库根目录运行。
 
 术语约定：``recipe`` 是可执行任务配方，``checked example`` 是已纳入构建/测试检查的示例，
-``diagnostics`` 是 inspect 给出的诊断，``target profile`` 是生成目标语言/运行时配置。
+``diagnostics`` 是 inspect 给出的诊断，``target profile`` 是生成目标语言/运行时配置，``owner scope``
+是拥有当前声明的状态作用域，``endpoint`` 是 transition 的源/目标端点，``pseudo relay state``
+是 combo 展开生成的伪中继状态。
 
 .. _dsl-small-valid-model-task-zh:
 
 写一个小型有效模型
 ------------------
 
-当你需要在加入高级功能前做最小 sanity check 时，从一个 root composite、一个 initial transition 和几个 leaf states 开始。
+当你需要在加入高级功能前做最小健全性检查（sanity check）时，从一个根复合状态（root composite）、一个 initial transition 和几个 leaf states 开始。
 
 .. literalinclude:: ../../tutorials/dsl/first_thermostat.fcstm
    :language: fcstm
@@ -82,6 +84,19 @@ DSL 任务指南
 
 修复方式是写 ``Outside -> Parent;``，或把指向 child 的 transition 移入 ``Parent``。精确规则见 :ref:`dsl-state-forms-zh` 和 :ref:`dsl-ownership-name-resolution-zh`。
 
+如果把上面的坏模型保存为 ``/tmp/nested_target_invalid.fcstm``，可用下面命令验证失败：
+
+.. code-block:: bash
+
+   pyfcstm inspect -i /tmp/nested_target_invalid.fcstm --format human --color never
+
+预期会看到：
+
+.. code-block:: text
+
+   Invalid state machine model ... Unknown to state 'ChildB' of transition:
+   Outside -> ChildB; (line 9)
+
 验证一个 checked hierarchy 示例：
 
 .. code-block:: bash
@@ -94,6 +109,12 @@ DSL 任务指南
 
    root: HierarchyDemo
    diagnostics: 0 errors / 1 warnings / 1 infos
+
+Pseudo state 是只负责 routing 的 leaf helper，不应承载业务 lifecycle behavior。这个 legacy pseudo-state 示例作为 checked resource 保留：
+
+.. literalinclude:: ../../tutorials/dsl/pseudo_state_demo.fcstm
+   :language: fcstm
+   :caption: Pseudo-state routing 示例；预期 diagnostics：一个 ``W_UNREFERENCED_VAR`` 和三个 ``I_TRANSITION_NEVER_EVENT_TRIGGERED``\ 。
 
 .. _dsl-event-scopes-task-zh:
 
@@ -135,6 +156,9 @@ Checked example：
 ``:`` token 和 absolute root path 分开。当前 parser 也接受紧凑写法 ``:/Start``\ ，并会序列化成同一个 absolute event，
 但带空格的写法更适合教学、搜索和 review。
 
+常见错误：不要只因为“看起来更短”就在 ``::`` 和 ``:`` 之间切换。这个拼写会改变 event owner，进而影响 import mapping、
+simulation input name 和 inspect 的 ``events[].scope`` 输出。
+
 .. _dsl-guards-effects-task-zh:
 
 编写 guard、effect 和 operation block
@@ -161,7 +185,7 @@ Guard 决定 transition 是否 enabled。Effect 在 source exit 之后、target 
 
    pyfcstm inspect -i docs/source/tutorials/dsl/operation_blocks_complete.fcstm --format human --color never
 
-如果看到 ``E_UNDEFINED_VAR`` 且 ``refs.is_temporary=true``，通常说明 temporary 在同一个 block 内先被读取后被赋值。
+常见错误：如果看到 ``E_UNDEFINED_VAR`` 且 ``refs.is_temporary=true``，通常说明 temporary 在同一个 block 内先被读取后被赋值。
 
 .. _dsl-expression-safety-task-zh:
 
@@ -194,6 +218,8 @@ Checked example：
    :caption: Runtime expression、condition operator、implication、xor/iff 和 ternary form；预期 diagnostics：none。
 
 常见拼写陷阱：
+
+Fragment pattern（片段，不是完整 checked file；后面有完整 checked file）：
 
 .. code-block:: fcstm
 
@@ -228,6 +254,8 @@ Checked example：
 
 模型自己拥有行为时使用 concrete lifecycle action；generated code 需要调用用户行为时使用 ``abstract``；多个 state 复用 named lifecycle action 时使用 ``ref``。
 
+Fragment pattern（片段，不是完整 checked file；后面有完整 checked file）：
+
 .. code-block:: fcstm
 
    state Device {
@@ -242,6 +270,7 @@ Checked example：
    }
 
 ``ref`` 指向 named lifecycle action，不指向 state 或 event。
+常见错误：``enter ref /Idle`` 是在引用 state path，而不是 named lifecycle action。应先命名 action，再引用这个 action path。
 
 .. literalinclude:: ../../tutorials/dsl/abstract_reference_demo.fcstm
    :language: fcstm
@@ -284,7 +313,10 @@ Lifecycle ordering 可参考：
 * ancestor ``>> during before`` 在 active leaf ``during`` 前运行；
 * ancestor ``>> during after`` 在 active leaf ``during`` 后运行；
 * plain composite ``during before`` / ``during after`` 属于 composite entry/exit 语义，不包裹 child-to-child transition；
-* aspect action 不在 combo pseudo relay state 内运行。
+* aspect action 不在 combo 伪中继状态（combo pseudo relay state）内运行。
+
+常见错误：不要用 aspect 去观察 combo relay hop。Combo relay pseudo state 是 generated routing machinery；业务日志应放在
+authored state 或 transition effect 上。
 
 详见 :ref:`dsl-during-aspect-semantics-zh`。
 
@@ -321,6 +353,9 @@ Lifecycle ordering 可参考：
 
 需要共享 side effect 时，把行为放到 target ``enter``，或写显式 normal transitions。原因见 :ref:`dsl-forced-transition-expansion-zh`。
 
+常见错误：``!* -> Target :: Event effect { ... };`` 是非法的。Forced transition 会展开成多条普通 transition，复制 side effect
+会隐藏行为；需要 effect 时请写显式 normal transition。
+
 验证展开规模：
 
 .. code-block:: bash
@@ -340,7 +375,7 @@ Lifecycle ordering 可参考：
 编写 combo transition
 ---------------------
 
-当一个 transition 需要同一个 cycle 内按顺序满足多个 event term 和 guard term 时，使用 combo trigger。Combo transition 在 model construction 阶段展开成 pseudo relay states；simulation、inspect、generation 和 PlantUML 都消费展开后的模型。
+当一个 transition 需要同一个 cycle 内按顺序满足多个 event term 和 guard term 时，使用 combo trigger。Combo transition 在 model construction 阶段展开成伪中继状态（pseudo relay states）；simulation、inspect、generation 和 PlantUML 都消费展开后的模型。
 
 .. literalinclude:: ../../tutorials/dsl/combo_transitions.fcstm
    :language: fcstm
@@ -355,7 +390,7 @@ Lifecycle ordering 可参考：
 JSON 中重点看：
 
 * ``combo_origins`` 保留 author-written trigger 和每个 term；
-* ``combo_transitions`` 列出带 provenance 的 generated edges；
+* ``combo_transitions`` 列出带溯源信息（provenance）的 generated edges；
 * ``states`` 中会出现 ``is_pseudo=true`` 且以 ``__combo_`` 开头的 generated pseudo states。
 
 修复示例：
@@ -399,6 +434,12 @@ Imported worker：
    :language: fcstm
    :caption: Imported worker module；预期 diagnostics：两个 ``W_UNREFERENCED_VAR``\ 。
 
+Directory entry import：
+
+.. literalinclude:: ../../tutorials/dsl/import_host_directory.fcstm
+   :language: fcstm
+   :caption: 通过显式 ``main.fcstm`` entry file 的 directory-style import；预期 diagnostics：``W_UNUSED_EVENT``、``W_DEADLOCK_LEAF`` 和 ``W_UNREFERENCED_VAR``\ ，均来自演示用 imported resources。
+
 Mapping facts：
 
 * ``def speed -> plant_speed;`` 映射一个 imported variable 到一个 host variable。
@@ -406,6 +447,9 @@ Mapping facts：
 * ``def * -> prefix_$0;`` 是 fallback mapping；``$0`` 表示完整 imported variable name。
 * ``event /Start -> Start;`` 映射 imported root event 到 host event。
 * Directory project 必须 import 具体 entry file，例如 ``./import_line/main.fcstm``；bare directory 不是 DSL file。
+
+常见错误：bare directory path 不会被当作 DSL source 加载；``def sensor_* -> left_$2;`` 这样的 out-of-range placeholder
+会触发 import mapping validation error。``$0`` 表示完整 imported name，``$1`` / ``${1}`` 表示第一个 wildcard capture。
 
 Preamble form（如 ``name = value;`` 和 ``name := value;``）是 import assembly helper/test 使用的 parser-helper entry point，不是普通 ``state_machine_dsl`` 文件里的 root-level ``def``。边界见 :ref:`dsl-import-preamble-forms-zh`。
 
@@ -421,6 +465,19 @@ Preamble form（如 ``name = value;`` 和 ``name := value;``）是 import assemb
 
    root: System
    variables: 3
+   diagnostics: 0 errors / 3 warnings / 0 infos
+
+验证 directory-entry import：
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/import_host_directory.fcstm --format human --color never
+
+预期摘录：
+
+.. code-block:: text
+
+   root: Factory
    diagnostics: 0 errors / 3 warnings / 0 infos
 
 .. _dsl-diagnostics-task-zh:
@@ -447,8 +504,8 @@ Diagnostic 包含 ``code``、``severity``、human message、source span 和 ``re
      - ``W_COMBO_DUPLICATE_EVENT``
      - 检查第二个 event term 是否写错。只有确实需要显式 two-hop relay 时才保留。
    * - ``guard_vars_never_change.fcstm``
-     - ``W_GUARD_VARS_NEVER_CHANGE``
-     - 添加缺失的 lifecycle/effect write，或确认这是 intentional initial-value-only guard 后简化 guard。
+     - ``W_UNWRITTEN_READ_VAR`` + ``W_GUARD_VARS_NEVER_CHANGE`` + ``I_TRANSITION_NEVER_EVENT_TRIGGERED``
+     - 添加缺失的 lifecycle/effect write，或确认这是 intentional initial-value-only guard 后简化 guard；exit transition info 是这个最小 warning fixture 的预期输出。
    * - ``during_const_assign.fcstm``
      - ``W_DURING_CONST_ASSIGN``
      - 一次性初始化移到 ``enter``，或让 ``during`` expression 依赖 runtime state。

@@ -88,8 +88,8 @@ Error 会阻塞 model construction。Warning 和 info 不一定阻塞 simulation
      - ``warning: W_COMBO_DUPLICATE_EVENT``
      - Inspect 通过 ``refs.term_span`` 和 ``refs.first_term_span`` 指向重复 combo term。
    * - ``guard_vars_never_change.fcstm``
-     - ``warning: W_GUARD_VARS_NEVER_CHANGE``
-     - 只读取初始值的 guard 需要修复，或明确记录为 intentional。
+     - ``warning: W_UNWRITTEN_READ_VAR`` + ``warning: W_GUARD_VARS_NEVER_CHANGE`` + ``info: I_TRANSITION_NEVER_EVENT_TRIGGERED``
+     - 只读取初始值的 guard 需要修复，或明确记录为 intentional；额外 read/write 和 fallthrough diagnostics 是这个紧凑 fixture 的预期输出。
    * - ``during_const_assign.fcstm``
      - ``warning: W_DURING_CONST_ASSIGN``
      - ``during`` 中反复赋常量通常应移到 ``enter``。

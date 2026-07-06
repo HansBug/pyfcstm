@@ -35,7 +35,7 @@ DSL 语义解释
 所有权树与名称解析
 ------------------
 
-State、event、lifecycle action 和 import 都由 state 拥有。Transition 只能直接命名它所在 owner scope 可见的 endpoint。
+State、event、lifecycle action 和 import 都由 state 拥有。Transition 只能直接命名它所在拥有者作用域（owner scope）可见的端点（endpoint）。
 
 .. code-block:: fcstm
 
@@ -170,7 +170,7 @@ During before/after 与 aspects
    parent   >> during after
    ancestor >> during after
 
-Child-to-child transition 不运行 plain composite ``during before`` 或 ``during after``。Combo pseudo relay state 也不执行 aspect action。Relay state 是 routing machinery；如果 aspect 观察每个 relay hop，就会把实现细节变成业务行为。
+Child-to-child transition 不运行 plain composite ``during before`` 或 ``during after``。Combo 伪中继状态（combo pseudo relay state）也不执行 aspect action。Relay state 是 routing machinery；如果 aspect 观察每个 relay hop，就会把实现细节变成业务行为。
 
 .. _dsl-combo-relay-semantics-zh:
 
@@ -187,10 +187,10 @@ Combo transition 解决 event-plus-guard 需求，不需要发明一个把普通
        accepted = accepted + 1;
    }
 
-Model construction 会把它展开成 pseudo relay chain。Inspect 保留两种视图：
+Model construction 会把它展开成伪中继链（pseudo relay chain）。Inspect 保留两种视图：
 
 * ``combo_origins`` 记录原始 trigger terms 和 source spans；
-* ``combo_transitions`` 记录带 provenance 的 generated edges；
+* ``combo_transitions`` 记录带溯源信息（provenance）的 generated edges；
 * generated pseudo states 使用 reserved ``__combo_`` prefix。
 
 Final effect 属于到 ``Accepted`` 的语义 transition，不能复制到每个 relay hop。如果同一个 cycle 中缺少某个 required event 或 guard term，chain 不完成，可见 state 不应悄悄前进到 final target。

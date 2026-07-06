@@ -407,35 +407,37 @@ Lifecycle forms
      - ``enter { ... }``
      - ``enter Name { ... }``
      - ``enter abstract Name;``
-     - ``enter abstract Name? /* doc */``
-     - ``enter Name? ref Path;``
+     - ``enter abstract Name /* doc */`` or ``enter abstract /* doc */``
+     - ``enter ref Path;`` or ``enter Name ref Path;``
    * - ``during``
      - ``during { ... }``
      - ``during Name { ... }``
      - ``during abstract Name;``
-     - ``during abstract Name? /* doc */``
-     - ``during Name? ref Path;``
+     - ``during abstract Name /* doc */`` or ``during abstract /* doc */``
+     - ``during ref Path;`` or ``during Name ref Path;``
    * - ``during before``
      - ``during before { ... }``
      - ``during before Name { ... }``
      - ``during before abstract Name;``
-     - ``during before abstract Name? /* doc */``
-     - ``during before Name? ref Path;``
+     - ``during before abstract Name /* doc */`` or ``during before abstract /* doc */``
+     - ``during before ref Path;`` or ``during before Name ref Path;``
    * - ``during after``
      - ``during after { ... }``
      - ``during after Name { ... }``
      - ``during after abstract Name;``
-     - ``during after abstract Name? /* doc */``
-     - ``during after Name? ref Path;``
+     - ``during after abstract Name /* doc */`` or ``during after abstract /* doc */``
+     - ``during after ref Path;`` or ``during after Name ref Path;``
    * - ``exit``
      - ``exit { ... }``
      - ``exit Name { ... }``
      - ``exit abstract Name;``
-     - ``exit abstract Name? /* doc */``
-     - ``exit Name? ref Path;``
+     - ``exit abstract Name /* doc */`` or ``exit abstract /* doc */``
+     - ``exit ref Path;`` or ``exit Name ref Path;``
 
 A ``ref`` points to a named lifecycle action path, not to a state or event.
-Doc-comment abstract forms use the multiline comment as documentation metadata.
+Doc-comment abstract forms use the multiline comment as documentation metadata;
+the optional ``Name`` shown above is prose notation, not a literal ``Name?``
+token.
 
 .. _dsl-aspect-forms:
 
@@ -495,14 +497,14 @@ Import forms
      - ``def {a, b} -> target;``
      - Maps a set of variables.
    * - Def pattern selector
-     - ``def sensor_* -> sensor_$0;``
-     - Pattern selector is compact and whitespace-sensitive.
+     - ``def sensor_* -> sensor_$1;``
+     - Pattern selector is compact and whitespace-sensitive; ``$1`` is the first wildcard capture.
    * - Def exact selector
      - ``def value -> renamed;``
      - Maps one variable.
    * - Target template
      - ``ID``, compact template, or ``*``
-     - Compact templates may use ``$0`` or ``${0}`` placeholders.
+     - ``$0`` / ``${0}`` mean the full imported name; ``$1`` / ``${1}`` mean the first wildcard capture. Bare ``*`` keeps the imported name.
    * - Event mapping
      - ``event Source.Path -> Target.Path;``
      - May include ``named "Label"``.

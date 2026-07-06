@@ -621,8 +621,16 @@ class _MacroExpander:
         result = []
         for item in entered:
             if any(frame.state is composite_frame.state for frame in item.stack):
+                plain_before_pending = (
+                    composite_frame.plain_before_pending
+                    if target_state.is_pseudo
+                    else False
+                )
                 item = self._replace_frame(
-                    item, composite_frame.state, "active", plain_before_pending=False
+                    item,
+                    composite_frame.state,
+                    "active",
+                    plain_before_pending=plain_before_pending,
                 )
             result.append(item)
         return tuple(result)

@@ -11,6 +11,8 @@ categories:
 - validation
 - pseudo_chain
 - template_alignment
+exclude_runners:
+- bmc_core
 initial:
   state: Root.P
   vars:

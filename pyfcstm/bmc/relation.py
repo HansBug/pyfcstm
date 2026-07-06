@@ -150,7 +150,11 @@ def _domain_constraints_exprs(
 
 
 def _failure_message(kind: str, reason: str, label: str) -> str:
-    return "%s failed while lowering %s: %s" % (kind, label, reason)
+    return "unsupported_bmc_core: %s failed while lowering %s: %s" % (
+        kind,
+        label,
+        reason,
+    )
 
 
 def _raise_expr_failure(result, label: str) -> None:

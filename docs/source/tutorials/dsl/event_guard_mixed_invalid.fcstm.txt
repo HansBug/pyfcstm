@@ -1,0 +1,8 @@
+def int ready = 1;
+
+state BadEventGuardMixed {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: Go if [ready > 0];
+}

@@ -20,6 +20,8 @@ runtime 维护一条从根状态到当前叶状态的活动栈。调用 ``cycle(
 
 仿真器使用推测性验证；无法到达可停止状态的转换不会部分修改真实 runtime。
 
+.. _exec-composite-entry-order-zh:
+
 通过复合状态初始进入
 --------------------
 
@@ -50,12 +52,16 @@ runtime 维护一条从根状态到当前叶状态的活动栈。调用 ``cycle(
 
 对于源到目标转换，源状态 exit 先于 effect，目标状态 enter 后于 effect。如果没有转换提交，则会运行活动叶状态的普通 ``during`` 路径。
 
+.. _exec-during-aspect-order-zh:
+
 切面 during 动作
 ----------------
 
 ``>> during before`` 和 ``>> during after`` 是祖先状态贡献给后代叶状态周期的切面动作。它们不同于普通复合状态 ``during before`` / ``during after`` 块。
 
 伪状态是自动路由状态。它们不是普通可停止叶状态，祖先切面 during 动作不会作用在 pseudo/combo 路由链内部的伪状态上。整条链的语义效果会作为外层转换路径的一部分被验证。
+
+.. _exec-combo-order-zh:
 
 转换优先级和验证
 ----------------

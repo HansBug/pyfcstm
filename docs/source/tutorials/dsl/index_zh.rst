@@ -1,238 +1,230 @@
-PyFCSTM DSL 第一个模型教程
-==========================
+.. _sec-tutorials-dsl-zh:
 
-.. contents:: 目录
+编写第一个 FCSTM DSL 模型
+==============================
+
+.. contents:: 页面地图
    :local:
    :depth: 2
 
-概述
-----
-
-本页是编写第一个 FCSTM DSL 模型的短学习路径，不再承担完整语言参考职责。需要任务步骤、语法事实或语义解释时，请转到：
-
-* :doc:`../../how_to/dsl/index_zh`：面向任务的 DSL 写法。
-* :doc:`../../reference/dsl/index_zh`：语法形式、运算符和边界表。
-* :doc:`../../explanations/dsl_semantics/index_zh`：DSL 语义和设计取舍。
-
-本页示例会构造一个可以解析并仿真的小控制器。
-
-语言结构
---------
-
-DSL 文件先写变量声明，然后写且只写一个根 ``state``：
-
-.. code-block:: fcstm
-
-   def int counter = 0;
-
-   state Controller {
-       [*] -> Idle;
-       state Idle;
-   }
-
-变量是持久模型变量。当前基础类型是 ``int`` 和 ``float``。根状态通常是一个 composite state，用来拥有子状态和转换。
-
-变量定义
---------
-
-变量必须在根状态之前声明。初始值可以使用数字字面量、常量、算术表达式和支持的数学函数：
-
-.. code-block:: fcstm
-
-   def int retries = 0;
-   def int flags = 0x00;
-   def float target = 22.5;
-   def float radius = sqrt(16.0);
-
-声明后可以在 guard 和操作块里使用变量：
-
-.. code-block:: fcstm
-
-   def int count = 0;
-
-   state Counter {
-       [*] -> Ready;
-       state Ready {
-           during {
-               count = count + 1;
-           }
-       }
-   }
-
-完整字面量和表达式表见 :doc:`../../reference/dsl/index_zh`。
-
-状态定义
---------
-
-leaf state 以 ``;`` 结束。composite state 在 ``{ ... }`` 中包含子声明，并且必须用 ``[*] -> Child;`` 选择初始子状态：
-
-.. code-block:: fcstm
-
-   state Door {
-       [*] -> Closed;
-
-       state Closed;
-       state Open;
-   }
-
-层级状态用于描述嵌套行为。转换应该写在 source 和 target 名称可以被解析到的作用域中。不要从外层直接跳到某个 composite 内部 leaf；应把转换写在拥有该 leaf 的 composite 内。
-
-转换定义
---------
-
-最常见的转换形式是 plain transition、event transition、guard transition 和 guard-plus-effect transition：
-
-.. code-block:: fcstm
-
-   state Controller {
-       event Tick;
-       [*] -> Idle;
-
-       state Idle;
-       state Active;
-
-       Idle -> Active : Tick;
-       Active -> Idle : if [counter >= 3] effect {
-           counter = 0;
-       }
-   }
-
-event 语法和 guard 语法不要混在同一个 transition 形式里。事件转换使用 ``:: EventName`` 表示本地事件，或使用 ``: EventPath`` 表示链式 / root 作用域事件。guard 转换使用 ``: if [condition]``。
-
-事件定义
---------
-
-需要可复用事件名并希望图中展示事件归属时，可以显式声明事件：
-
-.. code-block:: fcstm
-
-   state Controller {
-       event Start;
-       event Stop;
-
-       [*] -> Idle;
-       state Idle;
-       state Running;
-
-       Idle -> Running : Start;
-       Running -> Idle : Stop;
-   }
-
-事件作用域细节见 :doc:`../../reference/dsl/index_zh`。本地、父级和 root-scoped 事件的写法见 :doc:`../../how_to/dsl/index_zh`。
-
-守卫条件和效果
+本教程覆盖什么
 --------------
 
-guard 是布尔条件。effect 和 lifecycle action 中可以写操作块，操作块里的赋值会更新持久变量，也可以先赋值再读取 block-local 临时变量：
+这一页是 FCSTM DSL 的首次成功路径：构建一个小型温控器模型，运行它，并阅读第一份检查报告
+（inspect report）。它不会试图一次性列完所有运算符、导入映射（import mapping）、组合转换
+（combo transition）或诊断码（diagnostic code）。这些高级主题后文只称为导入映射、组合转换和诊断码。
 
-.. code-block:: fcstm
+* :doc:`../../how_to/dsl/index_zh` 按任务给出写法、示例、命令、预期诊断和修复步骤。
+* :doc:`../../reference/dsl/index_zh` 用来查精确语法和覆盖矩阵。
+* :doc:`../../explanations/dsl_semantics/index_zh` 解释所有权、运行时语义、组合转换展开、强制转换展开和导入组装。
+* :doc:`../../reference/diagnostics_codes/index_zh` 解释诊断码和目标配置风险警告。
 
-   def int attempts = 0;
+下面所有命令都默认从仓库根目录复制运行。
 
-   state RetryController {
-       event Failed;
-       [*] -> Ready;
+术语约定：本页首次使用必要英文术语时采用“中文（English）”格式，后文只使用中文。持久变量
+（persistent variable）是模型长期保存的数据；复合状态（composite state）拥有子状态；初始转换
+（initial transition）选择复合状态的起始子状态；条件表达式（condition expression）决定转换是否可用；
+数值表达式（numeric expression）计算变量值。
 
-       state Ready;
-       state Backoff;
-
-       Ready -> Backoff :: Failed effect {
-           attempts = attempts + 1;
-       }
-
-       Backoff -> Ready : if [attempts < 3];
-   }
-
-比较运算符 ``<``、``<=``、``==``、``!=``、``>=``、``>`` 把 arithmetic expression 连接成 condition。布尔组合使用 ``&&`` / ``and`` 和 ``||`` / ``or``。
-
-表达式系统
-----------
-
-算术表达式和逻辑条件是两类东西。赋值需要算术表达式，guard 需要 condition：
-
-.. code-block:: fcstm
-
-   def int x = 1;
-   def float y = 2.0;
-
-   state ExprDemo {
-       [*] -> A;
-       state A;
-       state B;
-
-       A -> B : if [(x + 1) >= 2 && y < 3.0];
-   }
-
-所有运算符和函数请查 :doc:`../../reference/dsl/index_zh`，不要把本教程当成完整 reference。
-
-生命周期动作
-------------
-
-lifecycle action 在进入、循环或退出状态时执行。一个最小 leaf-state 示例是：
-
-.. code-block:: fcstm
-
-   def int cycles = 0;
-
-   state Worker {
-       [*] -> Active;
-       state Active {
-           enter {
-               cycles = 0;
-           }
-           during {
-               cycles = cycles + 1;
-           }
-           exit {
-               cycles = 0;
-           }
-       }
-   }
-
-命名 action、``abstract`` hook、``ref`` 复用以及 ``>> during`` aspect action 见 :doc:`../../how_to/dsl/index_zh` 和 :doc:`../../explanations/dsl_semantics/index_zh`。
-
-实际示例：智能恒温器
+步骤 1：建立最小结构
 --------------------
 
-这个小恒温器模型组合了变量、事件、guard、effect 和层级：
+普通 ``.fcstm`` 文件先写持久变量，再写唯一根状态（root state）。实际模型通常把根状态写成复合状态，
+因为它需要拥有子状态（child state）和初始转换。
 
-.. literalinclude:: thermostat_example.fcstm
+.. code-block:: fcstm
+
+   def int temperature = 20;
+
+   state Thermostat {
+       [*] -> Idle;
+       state Idle;
+   }
+
+``def`` 声明的是模型持久状态，不是某个操作块（operation block）内的临时变量。根状态随后成为子状态、
+事件（event）、转换（transition）、生命周期动作（lifecycle action）和导入（import）的所有权树
+（ownership tree）。
+
+步骤 2：添加另一个叶状态和守卫条件
+----------------------------------
+
+叶状态（leaf state）以 ``;`` 结束。写在 ``Thermostat`` 内的转换可以使用 ``Thermostat`` 直接拥有的子状态名称。
+
+.. code-block:: fcstm
+
+   def int temperature = 20;
+
+   state Thermostat {
+       [*] -> Idle;
+       state Idle;
+       state Heating;
+
+       Idle -> Heating : if [temperature < 20];
+       Heating -> Idle : if [temperature >= 22];
+   }
+
+``: if`` 后面是条件表达式。``temperature`` 是数值表达式；比较表达式把数值桥接成条件。
+
+步骤 3：添加生命周期动作
+------------------------
+
+叶状态的 ``during`` 动作在普通活动周期（active cycle）中运行。``enter`` 动作在进入状态时运行。
+下面的版本会修改 ``temperature``，因此两个守卫条件（guard）的真假会随周期改变。
+
+补丁片段（patch fragment）：把步骤 2 中两个叶状态声明替换成下面两个状态块。这个片段本身不是完整
+``.fcstm`` 文件；步骤 4 展示已提交并验证过的完整模型。
+
+.. code-block:: fcstm
+
+   state Idle {
+       during {
+           temperature = temperature - 1;
+       }
+   }
+
+   state Heating {
+       enter {
+           temperature = temperature + 1;
+       }
+       during {
+           temperature = temperature + 1;
+       }
+   }
+
+操作块可以包含赋值和 ``if`` 分支。若某个名字没有用 ``def`` 声明，但先在块内被赋值，它就是只在当前块内有效的临时变量；完整示例见任务指南页面。
+
+步骤 4：检查完整文件
+--------------------
+
+完整教程模型已经提交为 ``first_thermostat.fcstm``：
+
+.. literalinclude:: first_thermostat.fcstm
    :language: fcstm
-   :caption: 最小恒温器 DSL 示例
+   :caption: ``docs/source/tutorials/dsl/first_thermostat.fcstm``
 
-可以直接仿真这个已入库示例：
+模型图先给出整体形状：
+
+.. figure:: first_thermostat.fcstm.puml.svg
+   :alt: 第一个温控器模型的状态图
+   :align: center
+
+   图中 ``Thermostat`` 是根复合状态，``Idle`` 和 ``Heating`` 是作者写的两个叶状态。两条有守卫条件的边来自
+   DSL 中的 ``Idle -> Heating`` 和 ``Heating -> Idle``；初始边 ``[*] -> Idle`` 表示进入模型时先停在
+   ``Idle``。这张图没有生成状态，适合作为后续理解组合转换和强制转换展开的基线。
+
+从仓库根目录运行检查命令：
 
 .. code-block:: bash
 
-   pyfcstm simulate -i docs/source/tutorials/dsl/thermostat_example.fcstm -e "cycle; current"
+   pyfcstm inspect -i docs/source/tutorials/dsl/first_thermostat.fcstm --format human --color never
 
-语义验证规则
-------------
+关键输出应为：
 
-本页只介绍让第一个模型有效的常见规则：
+.. code-block:: text
 
-* 在根状态之前声明变量。
-* 只写一个顶层根 ``state``。
-* 每个 composite state 都选择一个初始子状态。
-* 转换 target 要放在正确作用域内。
-* 赋值里使用 arithmetic expression，guard 里使用 boolean condition。
+   [OK] FCSTM Inspect Report: docs/source/tutorials/dsl/first_thermostat.fcstm
 
-更详细的 diagnostics、边界情况和部署风险措辞属于 inspect 和 reference 页面，不放在本教程里。
+   Summary
+     status: ok
+     root: Thermostat
+     states: 3 total / 2 leaf
+     transitions: 3
+     variables: 1
+     diagnostics: 0 errors / 0 warnings / 0 infos
 
-Import 装配
------------
+   No diagnostics.
 
-import 会把另一个 FCSTM 文件装配成 composite state 内的子系统。第一次写 DSL 时可以先跳过 import。需要 import 时，从任务指南和语法表开始：
+如果这里出现错误，应先修复再进入仿真（simulation）或代码生成（code generation）。后文只称仿真和代码生成。警告和信息也值得阅读，
+因为它们通常会指出具体目标配置、转换、变量或源码位置。
 
-* :doc:`../../how_to/dsl/index_zh`：import 实用任务。
-* :doc:`../../reference/dsl/index_zh`：import selector 和 mapping 形式。
-* :doc:`../../explanations/dsl_semantics/index_zh`：装配语义边界。
+步骤 5：运行两个周期
+--------------------
 
-总结
-----
+运行批处理仿真（batch simulation）：
 
-你已经走完最小 FCSTM DSL 路径：变量、根状态、子状态、转换、事件、guard、effect、lifecycle action，以及一个可以仿真的小模型。深入使用时请转到：
+.. code-block:: bash
 
-* 写任务：:doc:`../../how_to/dsl/index_zh`。
-* 查语法：:doc:`../../reference/dsl/index_zh`。
-* 理解语义：:doc:`../../explanations/dsl_semantics/index_zh`。
+   pyfcstm simulate -i docs/source/tutorials/dsl/first_thermostat.fcstm --no-color -e "cycle; cycle; current"
+
+关键输出为：
+
+.. code-block:: text
+
+   Cycle: 1
+   Current State: Thermostat.Idle
+   Variables:
+     temperature = 19
+
+   Cycle: 2
+   Current State: Thermostat.Heating
+   Variables:
+     temperature = 21
+
+第一个周期进入 ``Idle`` 并执行 ``Idle.during``。第二个周期中 ``Idle -> Heating`` 的守卫条件为真，因此转换触发，
+然后执行 ``Heating.enter``。
+
+步骤 6：修复一个故意语法错误
+----------------------------
+
+检查也是修复 DSL 小错误最快的入口。普通事件语法和普通守卫语法是两种独立转换形式，所以这个故意坏掉的文本夹具会失败：
+
+.. literalinclude:: event_guard_mixed_invalid.fcstm.txt
+   :language: fcstm
+   :caption: 故意解析错误；预期摘录：``Unexpected token 'if'``\ 。
+
+把它当普通输入文件运行：
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/event_guard_mixed_invalid.fcstm.txt --format human --color never
+
+关键摘录为：
+
+.. code-block:: text
+
+   Syntax error at line 7, column 17, near 'if': Unexpected token 'if'
+
+当同一个触发器需要同时包含事件项和守卫项时，用组合语法修复：
+
+.. code-block:: fcstm
+
+   A -> B :: Go + [ready > 0];
+
+以后每次改模型都可以按这个最小循环操作：运行 ``pyfcstm inspect``，阅读诊断码和源码区间，再修复诊断指向的 DSL 形式。
+
+步骤 7：按主题继续学习
+----------------------
+
+不要从这个教程直接跳到巨型模型。每次只加一个 DSL 能力，并在每次修改后重新阅读检查输出。
+
+.. list-table:: 下一步
+   :header-rows: 1
+   :widths: 24 38 38
+
+   * - 目标
+     - 从这里开始
+     - 原因
+   * - 添加源状态本地、父级或根事件
+     - :ref:`dsl-event-scopes-task-zh`
+     - 事件作用域决定事件名称由谁拥有、如何复用。
+   * - 添加效果动作、临时变量和 ``if`` 分支
+     - :ref:`dsl-guards-effects-task-zh`
+     - 效果动作在转换执行时更新变量，不参与守卫条件测试本身。
+   * - 使用完整表达式语言
+     - :ref:`dsl-expression-safety-task-zh`
+     - 数值表达式、条件表达式和三目形式的合法位置不同。
+   * - 复用生命周期行为
+     - :ref:`dsl-lifecycle-task-zh`
+     - ``abstract`` 和 ``ref`` 是 DSL 结构连接生成运行时钩子的桥梁。
+   * - 建模多项触发器
+     - :ref:`dsl-combo-transition-task-zh`
+     - 组合转换会展开成伪中继状态（pseudo relay state），后文只称伪中继状态，同时保留作者语义。
+   * - 用一个声明覆盖多个来源状态
+     - :ref:`dsl-forced-transition-task-zh`
+     - 强制转换（forced transition）是展开简写，后文只称强制转换，因此有意不支持效果动作块。
+   * - 把模型拆成多个文件
+     - :ref:`dsl-import-task-zh`
+     - 导入会组装状态机模块，并按映射重写变量和事件。
+   * - 修复诊断
+     - :ref:`dsl-diagnostics-task-zh`
+     - 检查诊断包含诊断码、严重级别、源码位置、结构化引用和修复建议。

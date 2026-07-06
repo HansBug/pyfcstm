@@ -1,0 +1,9 @@
+def int sensor = 0;
+
+state GuardVarsNeverChange {
+    state Idle;
+    state Active;
+    [*] -> Idle;
+    Idle -> Active : if [sensor > 10];
+    Active -> [*];
+}

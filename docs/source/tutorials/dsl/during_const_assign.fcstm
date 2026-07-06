@@ -1,0 +1,11 @@
+def int signal = 0;
+
+state DuringConstAssign {
+    state Idle {
+        during {
+            signal = (2 + 3) * 4;
+        }
+    }
+    [*] -> Idle;
+    Idle -> [*] : if [signal >= 0];
+}

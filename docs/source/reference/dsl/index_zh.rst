@@ -13,260 +13,48 @@ DSL 参考
 
 本页是面向事实查询的 FCSTM DSL reference。它对照当前拆分后的 grammar 文件，尤其是 ``pyfcstm/dsl/grammar/GrammarParser.g4`` 和 ``pyfcstm/dsl/grammar/GrammarLexer.g4``。需要学习路径请看 :doc:`../../tutorials/dsl/index_zh`，任务写法请看 :doc:`../../how_to/dsl/index_zh`，语义背景请看 :doc:`../../explanations/dsl_semantics/index_zh`。
 
-.. _dsl-coverage-matrix-zh:
+.. _dsl-syntax-quick-index-zh:
 
-DSL 覆盖矩阵
-----------------
+语法速查索引
+------------
 
-``N/A`` 表示该页面类型有意不承担这个 leaf ability。每一行仍然必须有 reference 或 explanation 落点。
+需要查精确 form 时先看这里。本 reference 中的示例默认是 fragment；只有明确说是
+``docs/source/tutorials/dsl`` 下 checked file 的内容才是完整示例。任务指南会把主要 form 链到完整示例和验证命令。
 
-.. list-table:: DSL 能力覆盖
+.. list-table:: 语法族
    :header-rows: 1
-   :widths: 16 13 22 18 18 18 18 24 14
+   :widths: 24 38 38
 
-   * - feature_id
-     - 能力族
-     - 事实源
-     - Tutorial 覆盖
-     - How-to 覆盖
-     - Reference 覆盖
-     - Explanation 覆盖
-     - 示例 / 验证
-     - EN/ZH
-   * - ``dsl-lexical-comments``
-     - lexical
-     - ``GrammarLexer.g4`` comments / strings / IDs
-     - N/A：tutorial 不展示 token table
-     - N/A：task page 使用 snippets
-     - :ref:`dsl-lexical-forms-zh`
-     - N/A：syntax token facts
-     - reference table review
-     - synced
-   * - ``dsl-top-level-root``
-     - top-level
-     - ``state_machine_dsl`` / root ``state_definition``
-     - :ref:`sec-tutorials-dsl-zh`
-     - :ref:`dsl-small-valid-model-task-zh`
+   * - 能力族
+     - 主要 forms
+     - 详情
+   * - Program boundary
+     - ``def int x = 0;`` / 一个 root ``state``
      - :ref:`dsl-top-level-forms-zh`
-     - :ref:`dsl-root-design-zh`
-     - ``first_thermostat.fcstm`` inspect
-     - synced
-   * - ``dsl-top-level-def``
-     - top-level
-     - ``def_assignment`` / ``init_expression``
-     - :ref:`sec-tutorials-dsl-zh`
-     - :ref:`dsl-expression-safety-task-zh`
-     - :ref:`dsl-top-level-forms-zh`
-     - :ref:`dsl-expression-separation-zh`
-     - ``first_thermostat.fcstm`` inspect
-     - synced
-   * - ``dsl-import-preamble``
-     - import
-     - ``preamble_program`` / ``constant_definition`` / ``initial_assignment``
-     - N/A：tutorial 不展开 import
-     - :ref:`dsl-import-task-zh`
-     - :ref:`dsl-import-preamble-forms-zh`
-     - :ref:`dsl-import-assembly-semantics-zh`
-     - ``import_host_*.fcstm`` inspect
-     - synced
-   * - ``dsl-state-leaf-composite``
-     - state
-     - ``state_definition`` leaf/composite branches
-     - :ref:`sec-tutorials-dsl-zh`
-     - :ref:`dsl-state-target-task-zh`
+   * - States
+     - ``state A;`` / ``state A { ... }`` / ``pseudo state P;``
      - :ref:`dsl-state-forms-zh`
-     - :ref:`dsl-ownership-name-resolution-zh`
-     - ``first_thermostat.fcstm`` inspect
-     - synced
-   * - ``dsl-state-pseudo``
-     - state
-     - ``PSEUDO STATE`` / ``E_PSEUDO_NOT_LEAF``
-     - N/A：tutorial 只链接高级 routing
-     - :ref:`dsl-state-target-task-zh`
-     - :ref:`dsl-state-forms-zh`
-     - :ref:`dsl-combo-relay-semantics-zh`
-     - ``pseudo_state_demo.fcstm`` inspect
-     - synced
-   * - ``dsl-state-target-resolution``
-     - state
-     - model state lookup / transition ownership
-     - :ref:`sec-tutorials-dsl-zh`
-     - :ref:`dsl-state-target-task-zh`
-     - :ref:`dsl-state-forms-zh`
-     - :ref:`dsl-ownership-name-resolution-zh`
-     - scope snippets / model validation
-     - synced
-   * - ``dsl-transition-initial``
-     - transition
-     - ``entryTransitionDefinition``
-     - :ref:`sec-tutorials-dsl-zh`
-     - :ref:`dsl-small-valid-model-task-zh`
+   * - Transitions
+     - plain、event、guard、guard+effect、combo、forced、entry、exit
      - :ref:`dsl-transition-forms-zh`
-     - :ref:`dsl-composite-entry-semantics-zh`
-     - ``first_thermostat.fcstm`` inspect
-     - synced
-   * - ``dsl-transition-plain-event``
-     - transition
-     - ``normalTransitionDefinition`` / event terms
-     - :ref:`sec-tutorials-dsl-zh`
-     - :ref:`dsl-guards-effects-task-zh` / :ref:`dsl-event-scopes-task-zh`
-     - :ref:`dsl-transition-forms-zh`
-     - :ref:`dsl-event-ownership-signal-zh`
-     - ``event_scoping_complete.fcstm`` inspect
-     - synced
-   * - ``dsl-transition-guard-effect``
-     - transition
-     - ``COLON IF`` / ``EFFECT`` operation block
-     - :ref:`sec-tutorials-dsl-zh`
-     - :ref:`dsl-guards-effects-task-zh`
-     - :ref:`dsl-transition-forms-zh`
-     - :ref:`dsl-expression-separation-zh`
-     - ``guards_and_effects.fcstm`` inspect
-     - synced
-   * - ``dsl-transition-combo``
-     - transition
-     - ``combo_transition_trigger`` / ``entry_combo_transition_trigger``
-     - N/A：tutorial 只链接高级 transition
-     - :ref:`dsl-combo-transition-task-zh`
-     - :ref:`dsl-transition-forms-zh`
-     - :ref:`dsl-combo-relay-semantics-zh`
-     - combo fragments + semantic fixtures
-     - synced
-   * - ``dsl-transition-forced``
-     - transition
-     - ``transition_force_definition``
-     - N/A：tutorial 只链接高级 transition
-     - :ref:`dsl-forced-transition-task-zh`
-     - :ref:`dsl-transition-forms-zh`
-     - :ref:`dsl-forced-transition-expansion-zh`
-     - ``forced_transitions.fcstm`` inspect
-     - synced
-   * - ``dsl-event-scopes``
-     - event
-     - ``event_definition`` / ``chain_id``
-     - :ref:`sec-tutorials-dsl-zh`
-     - :ref:`dsl-event-scopes-task-zh`
+   * - Events
+     - ``:: Local`` / ``: Chain`` / ``: /RootEvent``
      - :ref:`dsl-events-scopes-zh`
-     - :ref:`dsl-event-ownership-signal-zh`
-     - ``event_scoping_complete.fcstm`` inspect
-     - synced
-   * - ``dsl-operation-assignment-temp``
-     - operation
-     - ``operation_assignment`` / local temp tracking
-     - :ref:`sec-tutorials-dsl-zh`
-     - :ref:`dsl-guards-effects-task-zh`
+   * - Operation blocks
+     - assignment、block-local temporary、``if`` / ``else if`` / ``else``、empty statement
      - :ref:`dsl-operation-blocks-zh`
-     - :ref:`dsl-expression-separation-zh`
-     - ``guards_and_effects.fcstm`` inspect
-     - synced
-   * - ``dsl-operation-conditionals``
-     - operation
-     - ``if_statement`` / empty statement
-     - N/A：tutorial 保持 block 简短
-     - :ref:`dsl-guards-effects-task-zh`
-     - :ref:`dsl-operation-blocks-zh`
-     - :ref:`dsl-expression-separation-zh`
-     - ``guards_and_effects.fcstm`` inspect
-     - synced
-   * - ``dsl-expression-init``
-     - expression
-     - ``init_expression``
-     - :ref:`sec-tutorials-dsl-zh`
-     - :ref:`dsl-expression-safety-task-zh`
+   * - Expressions
+     - init、numeric、condition、ternary、operator precedence
      - :ref:`dsl-expression-reference-zh`
-     - :ref:`dsl-expression-separation-zh`
-     - top-level initializer snippets
-     - synced
-   * - ``dsl-expression-runtime``
-     - expression
-     - ``num_expression`` / math functions / bitwise
-     - :ref:`sec-tutorials-dsl-zh`
-     - :ref:`dsl-expression-safety-task-zh`
-     - :ref:`dsl-expression-reference-zh`
-     - :ref:`dsl-expression-separation-zh`
-     - ``expression_demo.fcstm`` inspect
-     - synced
-   * - ``dsl-expression-condition``
-     - expression
-     - ``cond_expression`` / comparison / boolean ops
-     - :ref:`sec-tutorials-dsl-zh`
-     - :ref:`dsl-expression-safety-task-zh`
-     - :ref:`dsl-expression-reference-zh`
-     - :ref:`dsl-expression-separation-zh`
-     - ``expression_demo.fcstm`` inspect
-     - synced
-   * - ``dsl-expression-ternary``
-     - expression
-     - ``conditionalCStyleExprNum`` / ``conditionalCStyleCondNum``
-     - N/A：tutorial 保持 arithmetic 简单
-     - :ref:`dsl-expression-safety-task-zh`
-     - :ref:`dsl-expression-reference-zh`
-     - :ref:`dsl-expression-separation-zh`
-     - ``expression_demo.fcstm`` inspect
-     - synced
-   * - ``dsl-lifecycle-concrete``
-     - lifecycle
-     - ``enter`` / ``during`` / ``exit`` operation forms
-     - :ref:`sec-tutorials-dsl-zh`
-     - :ref:`dsl-lifecycle-task-zh`
-     - :ref:`dsl-lifecycle-forms-zh`
-     - :ref:`dsl-lifecycle-hooks-semantics-zh`
-     - ``first_thermostat.fcstm`` inspect
-     - synced
-   * - ``dsl-lifecycle-named-abstract-ref``
-     - lifecycle
-     - named / ``abstract`` / doc-comment / ``ref`` branches
-     - N/A：tutorial 只链接高级 hook
-     - :ref:`dsl-lifecycle-task-zh`
-     - :ref:`dsl-lifecycle-forms-zh`
-     - :ref:`dsl-lifecycle-hooks-semantics-zh`
-     - ``abstract_reference_demo.fcstm`` inspect
-     - synced
-   * - ``dsl-aspect-forms``
-     - aspect
-     - ``during_aspect_definition``
-     - N/A：tutorial 只给入口链接
-     - :ref:`dsl-aspect-task-zh`
-     - :ref:`dsl-aspect-forms-zh`
-     - :ref:`dsl-during-aspect-semantics-zh`
-     - lifecycle diagrams / fragments
-     - synced
-   * - ``dsl-import-basic-alias``
-     - import
-     - ``import_statement`` header
-     - N/A：tutorial 不展开 import
-     - :ref:`dsl-import-task-zh`
+   * - Lifecycle and aspects
+     - ``enter`` / ``during`` / ``exit``；``abstract``；``ref``；``>> during``
+     - :ref:`dsl-lifecycle-forms-zh`、:ref:`dsl-aspect-forms-zh`
+   * - Imports
+     - ``import "path" as Alias`` 和 mapping block
      - :ref:`dsl-import-forms-zh`
-     - :ref:`dsl-import-assembly-semantics-zh`
-     - ``import_host_basic.fcstm`` inspect
-     - synced
-   * - ``dsl-import-mapping``
-     - import
-     - ``def_mapping_statement`` / ``event_mapping_statement``
-     - N/A：tutorial 不展开 import
-     - :ref:`dsl-import-task-zh`
-     - :ref:`dsl-import-forms-zh`
-     - :ref:`dsl-import-assembly-semantics-zh`
-     - ``import_host_mapped.fcstm`` inspect
-     - synced
-   * - ``dsl-import-directory-boundary``
-     - import
-     - import path resolution in ``model/imports.py``
-     - N/A：tutorial 不展开 import
-     - :ref:`dsl-import-task-zh`
-     - :ref:`dsl-import-forms-zh`
-     - :ref:`dsl-import-assembly-semantics-zh`
-     - ``import_host_directory.fcstm`` inspect
-     - synced
-   * - ``dsl-diagnostics-target-risk``
-     - diagnostics
-     - ``pyfcstm/diagnostics/codes.yaml`` / analyzers
-     - :ref:`sec-tutorials-dsl-zh`
-     - :ref:`dsl-diagnostics-task-zh`
+   * - Diagnostics wording
+     - target-specific warning，尤其是 C/C++ deployment-profile risk
      - :ref:`dsl-diagnostics-risk-zh`
-     - :ref:`dsl-expression-separation-zh`
-     - risk wording line audit
-     - synced
 
 .. _dsl-lexical-forms-zh:
 
@@ -712,6 +500,266 @@ Diagnostics 来自 syntax parsing、model validation、inspect analyzers 和 opt
      - 除非 Python-specific diagnostic 明确说明，否则不要声称 Python generated code 有同样 fixed-width 或 undefined-behavior risk。
 
 Code-level wording 请看 :doc:`../../reference/diagnostics_codes/index_zh`。
+
+覆盖附录
+--------
+
+下面的 matrix 面向 maintainer 和 reviewer。它有意放在用户语法事实之后，避免普通读者在查 DSL form 前先被 migration audit table 阻挡。
+
+.. _dsl-coverage-matrix-zh:
+
+DSL 覆盖矩阵
+----------------
+
+``N/A`` 表示该页面类型有意不承担这个 leaf ability。每一行仍然必须有 reference 或 explanation 落点。
+
+.. list-table:: DSL 能力覆盖
+   :header-rows: 1
+   :widths: 16 13 22 18 18 18 18 24 14
+
+   * - feature_id
+     - 能力族
+     - 事实源
+     - Tutorial 覆盖
+     - How-to 覆盖
+     - Reference 覆盖
+     - Explanation 覆盖
+     - 示例 / 验证
+     - EN/ZH
+   * - ``dsl-lexical-comments``
+     - lexical
+     - ``GrammarLexer.g4`` comments / strings / IDs
+     - N/A：tutorial 不展示 token table
+     - N/A：task page 使用 snippets
+     - :ref:`dsl-lexical-forms-zh`
+     - N/A：syntax token facts
+     - reference table review
+     - synced
+   * - ``dsl-top-level-root``
+     - top-level
+     - ``state_machine_dsl`` / root ``state_definition``
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-small-valid-model-task-zh`
+     - :ref:`dsl-top-level-forms-zh`
+     - :ref:`dsl-root-design-zh`
+     - ``first_thermostat.fcstm`` inspect
+     - synced
+   * - ``dsl-top-level-def``
+     - top-level
+     - ``def_assignment`` / ``init_expression``
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-expression-safety-task-zh`
+     - :ref:`dsl-top-level-forms-zh`
+     - :ref:`dsl-expression-separation-zh`
+     - ``first_thermostat.fcstm`` inspect
+     - synced
+   * - ``dsl-import-preamble``
+     - import
+     - ``preamble_program`` / ``constant_definition`` / ``initial_assignment``
+     - N/A：tutorial 不展开 import
+     - :ref:`dsl-import-task-zh`
+     - :ref:`dsl-import-preamble-forms-zh`
+     - :ref:`dsl-import-assembly-semantics-zh`
+     - ``import_host_*.fcstm`` inspect
+     - synced
+   * - ``dsl-state-leaf-composite``
+     - state
+     - ``state_definition`` leaf/composite branches
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-state-target-task-zh`
+     - :ref:`dsl-state-forms-zh`
+     - :ref:`dsl-ownership-name-resolution-zh`
+     - ``first_thermostat.fcstm`` inspect
+     - synced
+   * - ``dsl-state-pseudo``
+     - state
+     - ``PSEUDO STATE`` / ``E_PSEUDO_NOT_LEAF``
+     - N/A：tutorial 只链接高级 routing
+     - :ref:`dsl-state-target-task-zh`
+     - :ref:`dsl-state-forms-zh`
+     - :ref:`dsl-combo-relay-semantics-zh`
+     - ``pseudo_state_demo.fcstm`` inspect
+     - synced
+   * - ``dsl-state-target-resolution``
+     - state
+     - model state lookup / transition ownership
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-state-target-task-zh`
+     - :ref:`dsl-state-forms-zh`
+     - :ref:`dsl-ownership-name-resolution-zh`
+     - scope snippets / model validation
+     - synced
+   * - ``dsl-transition-initial``
+     - transition
+     - ``entryTransitionDefinition``
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-small-valid-model-task-zh`
+     - :ref:`dsl-transition-forms-zh`
+     - :ref:`dsl-composite-entry-semantics-zh`
+     - ``first_thermostat.fcstm`` inspect
+     - synced
+   * - ``dsl-transition-plain-event``
+     - transition
+     - ``normalTransitionDefinition`` / event terms
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-guards-effects-task-zh` / :ref:`dsl-event-scopes-task-zh`
+     - :ref:`dsl-transition-forms-zh`
+     - :ref:`dsl-event-ownership-signal-zh`
+     - ``event_scoping_complete.fcstm`` inspect
+     - synced
+   * - ``dsl-transition-guard-effect``
+     - transition
+     - ``COLON IF`` / ``EFFECT`` operation block
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-guards-effects-task-zh`
+     - :ref:`dsl-transition-forms-zh`
+     - :ref:`dsl-expression-separation-zh`
+     - ``operation_blocks_complete.fcstm`` inspect
+     - synced
+   * - ``dsl-transition-combo``
+     - transition
+     - ``combo_transition_trigger`` / ``entry_combo_transition_trigger``
+     - N/A：tutorial 只链接高级 transition
+     - :ref:`dsl-combo-transition-task-zh`
+     - :ref:`dsl-transition-forms-zh`
+     - :ref:`dsl-combo-relay-semantics-zh`
+     - ``combo_transitions.fcstm`` inspect
+     - synced
+   * - ``dsl-transition-forced``
+     - transition
+     - ``transition_force_definition``
+     - N/A：tutorial 只链接高级 transition
+     - :ref:`dsl-forced-transition-task-zh`
+     - :ref:`dsl-transition-forms-zh`
+     - :ref:`dsl-forced-transition-expansion-zh`
+     - ``forced_transitions.fcstm`` inspect
+     - synced
+   * - ``dsl-event-scopes``
+     - event
+     - ``event_definition`` / ``chain_id``
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-event-scopes-task-zh`
+     - :ref:`dsl-events-scopes-zh`
+     - :ref:`dsl-event-ownership-signal-zh`
+     - ``event_scoping_complete.fcstm`` inspect
+     - synced
+   * - ``dsl-operation-assignment-temp``
+     - operation
+     - ``operation_assignment`` / local temp tracking
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-guards-effects-task-zh`
+     - :ref:`dsl-operation-blocks-zh`
+     - :ref:`dsl-expression-separation-zh`
+     - ``operation_blocks_complete.fcstm`` inspect
+     - synced
+   * - ``dsl-operation-conditionals``
+     - operation
+     - ``if_statement`` / empty statement
+     - N/A：tutorial 保持 block 简短
+     - :ref:`dsl-guards-effects-task-zh`
+     - :ref:`dsl-operation-blocks-zh`
+     - :ref:`dsl-expression-separation-zh`
+     - ``operation_blocks_complete.fcstm`` inspect
+     - synced
+   * - ``dsl-expression-init``
+     - expression
+     - ``init_expression``
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-expression-safety-task-zh`
+     - :ref:`dsl-expression-reference-zh`
+     - :ref:`dsl-expression-separation-zh`
+     - top-level initializer snippets
+     - synced
+   * - ``dsl-expression-runtime``
+     - expression
+     - ``num_expression`` / math functions / bitwise
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-expression-safety-task-zh`
+     - :ref:`dsl-expression-reference-zh`
+     - :ref:`dsl-expression-separation-zh`
+     - ``expression_condition_ternary.fcstm`` inspect
+     - synced
+   * - ``dsl-expression-condition``
+     - expression
+     - ``cond_expression`` / comparison / boolean ops
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-expression-safety-task-zh`
+     - :ref:`dsl-expression-reference-zh`
+     - :ref:`dsl-expression-separation-zh`
+     - ``expression_condition_ternary.fcstm`` inspect
+     - synced
+   * - ``dsl-expression-ternary``
+     - expression
+     - ``conditionalCStyleExprNum`` / ``conditionalCStyleCondNum``
+     - N/A：tutorial 保持 arithmetic 简单
+     - :ref:`dsl-expression-safety-task-zh`
+     - :ref:`dsl-expression-reference-zh`
+     - :ref:`dsl-expression-separation-zh`
+     - ``expression_condition_ternary.fcstm`` inspect
+     - synced
+   * - ``dsl-lifecycle-concrete``
+     - lifecycle
+     - ``enter`` / ``during`` / ``exit`` operation forms
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-lifecycle-task-zh`
+     - :ref:`dsl-lifecycle-forms-zh`
+     - :ref:`dsl-lifecycle-hooks-semantics-zh`
+     - ``first_thermostat.fcstm`` inspect
+     - synced
+   * - ``dsl-lifecycle-named-abstract-ref``
+     - lifecycle
+     - named / ``abstract`` / doc-comment / ``ref`` branches
+     - N/A：tutorial 只链接高级 hook
+     - :ref:`dsl-lifecycle-task-zh`
+     - :ref:`dsl-lifecycle-forms-zh`
+     - :ref:`dsl-lifecycle-hooks-semantics-zh`
+     - ``abstract_reference_demo.fcstm`` inspect
+     - synced
+   * - ``dsl-aspect-forms``
+     - aspect
+     - ``during_aspect_definition``
+     - N/A：tutorial 只给入口链接
+     - :ref:`dsl-aspect-task-zh`
+     - :ref:`dsl-aspect-forms-zh`
+     - :ref:`dsl-during-aspect-semantics-zh`
+     - ``hierarchy_execution.fcstm`` inspect
+     - synced
+   * - ``dsl-import-basic-alias``
+     - import
+     - ``import_statement`` header
+     - N/A：tutorial 不展开 import
+     - :ref:`dsl-import-task-zh`
+     - :ref:`dsl-import-forms-zh`
+     - :ref:`dsl-import-assembly-semantics-zh`
+     - ``import_host_basic.fcstm`` inspect
+     - synced
+   * - ``dsl-import-mapping``
+     - import
+     - ``def_mapping_statement`` / ``event_mapping_statement``
+     - N/A：tutorial 不展开 import
+     - :ref:`dsl-import-task-zh`
+     - :ref:`dsl-import-forms-zh`
+     - :ref:`dsl-import-assembly-semantics-zh`
+     - ``import_host_mapped.fcstm`` inspect
+     - synced
+   * - ``dsl-import-directory-boundary``
+     - import
+     - import path resolution in ``model/imports.py``
+     - N/A：tutorial 不展开 import
+     - :ref:`dsl-import-task-zh`
+     - :ref:`dsl-import-forms-zh`
+     - :ref:`dsl-import-assembly-semantics-zh`
+     - ``import_host_directory.fcstm`` inspect
+     - synced
+   * - ``dsl-diagnostics-target-risk``
+     - diagnostics
+     - ``pyfcstm/diagnostics/codes.yaml`` / analyzers
+     - :ref:`sec-tutorials-dsl-zh`
+     - :ref:`dsl-diagnostics-task-zh`
+     - :ref:`dsl-diagnostics-risk-zh`
+     - :ref:`dsl-expression-separation-zh`
+     - risk wording line audit
+     - synced
 
 .. _dsl-fact-check-notes-zh:
 

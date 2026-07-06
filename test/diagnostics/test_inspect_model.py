@@ -3634,3 +3634,34 @@ def test_nested_transition_indexes_follow_parent_first_model_order():
         (2, 'Root.A.X', 'Root.A.Y'),
         (3, 'Root.A.X', 'Root.A.Y'),
     ]
+
+
+@pytest.mark.unittest
+def test_condition_operator_guards_render_in_inspect_payload():
+    report = inspect_model(
+        _parse("""
+    def int x = 1;
+    def int y = 2;
+    def int flag = 0;
+
+    state Root {
+        state A {
+            enter {
+                flag = flag + 1;
+            }
+        }
+        state B;
+        state C;
+        [*] -> A;
+        A -> B : if [((x > 0 => y > 0) && ((x < y) xor (flag == 0)))];
+        B -> C : if [(x < y) iff true];
+        C -> A : if [(x < y) ? true : false];
+    }
+    """)
+    )
+
+    assert [transition.guard for transition in report.transitions[1:]] == [
+        '(x > 0 => y > 0) && (x < y xor flag == 0)',
+        'x < y iff true',
+        '(x < y) ? true : false',
+    ]

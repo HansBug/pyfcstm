@@ -8,50 +8,59 @@ DSL task guide
    :local:
    :depth: 2
 
-Scope and task map
-------------------
+How to use this page
+--------------------
 
-This page starts from concrete authoring tasks. It gives short snippets or links
-to checked-in examples, then points to :doc:`../../reference/dsl/index` for the
-complete facts and to :doc:`../../explanations/dsl_semantics/index` for the
-semantic background.
+This page is not a syntax catalog. It is a set of recipes for authoring or
+repairing common FCSTM DSL shapes. Each recipe states when to use the feature,
+what to write, how to verify it, what diagnostics to expect, and where to read
+more.
 
-Use the tasks below when you need to write or repair a specific DSL shape:
-
-* state ownership and transition targets;
-* event scopes;
-* guards, effects, operation blocks, and expressions;
-* lifecycle actions, ``abstract`` hooks, ``ref``, and ``>> during`` aspects;
-* forced transitions and combo transitions;
-* imports and diagnostics.
+A command that mentions a checked example is intended to run from the repository
+root.
 
 .. _dsl-small-valid-model-task:
 
 Write a small valid model
 -------------------------
 
-Start with one root composite, one initial transition, and child leaf states.
-The tutorial uses a compact thermostat example as the first runnable model:
+Use this when you need a minimal sanity check before adding advanced features.
+Start with one root composite, one initial transition, and leaf states owned by
+that composite.
 
 .. literalinclude:: ../../tutorials/dsl/first_thermostat.fcstm
    :language: fcstm
-   :caption: First runnable DSL model
+   :caption: First runnable model; expected diagnostics: none.
 
-Check it with:
+Verify it:
 
 .. code-block:: bash
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/first_thermostat.fcstm --format json
+   pyfcstm inspect -i docs/source/tutorials/dsl/first_thermostat.fcstm --format human --color never
+
+Expected summary:
+
+.. code-block:: text
+
+   status: ok
+   root: Thermostat
+   diagnostics: 0 errors / 0 warnings / 0 infos
+
+Common mistake: putting a transition before both endpoint states exist. Keep the
+state declarations and transitions inside the same owning composite unless the
+transition intentionally enters or exits that composite boundary.
 
 .. _dsl-state-target-task:
 
 Organize states and resolve targets
 -----------------------------------
 
-Place transitions in the state scope that owns their source and target names.
-Sibling transitions belong in the parent composite:
+Use this when a transition says it cannot find a state, or when you are unsure
+where a transition should be declared.
 
-Fragment::
+Recommended complete pattern:
+
+.. code-block:: fcstm
 
    state Parent {
        [*] -> ChildA;
@@ -60,126 +69,182 @@ Fragment::
        ChildA -> ChildB;
    }
 
-A transition from outside ``Parent`` should target ``Parent`` rather than jumping
-directly to ``Parent.ChildB``. The composite entry then uses its initial
-transition. Use pseudo states only as routing nodes; user-visible business
-states should be normal leaf or composite states.
+``ChildA -> ChildB`` belongs inside ``Parent`` because ``Parent`` owns both
+names. From outside ``Parent``, target ``Parent`` itself and let ``Parent`` use
+its initial transition.
+
+Intentional bad pattern:
+
+.. code-block:: fcstm
+
+   state Root {
+       [*] -> Outside;
+       state Outside;
+       state Parent {
+           [*] -> ChildA;
+           state ChildA;
+           state ChildB;
+       }
+       Outside -> ChildB;  // invalid: ChildB is not owned by Root
+   }
+
+The fix is either ``Outside -> Parent;`` or moving the child-targeting
+transition inside ``Parent``. Read :ref:`dsl-state-forms` and
+:ref:`dsl-ownership-name-resolution` for the exact rule.
 
 .. _dsl-event-scopes-task:
 
 Write event scopes
 ------------------
 
-Use a source-local event when the event is private to the source state:
+Use events for discrete external triggers. Choose the spelling by ownership:
 
-Fragment::
+.. list-table:: Event-scope recipe
+   :header-rows: 1
+   :widths: 24 34 42
 
-   Idle -> Heating :: Heat;
-
-Use a chain-scoped event when the event is owned by a containing or named state:
-
-Fragment::
-
-   state Controller {
-       event Start;
-       Idle -> Running : Start;
-   }
-
-Use a root-scoped event when the event is owned by the root state and nested
-states need an absolute reference:
-
-Fragment::
-
-   state System {
-       [*] -> Worker;
-       event Start;
-       state Worker {
-           [*] -> Idle;
-           state Idle;
-           state Active;
-           Idle -> Active : /Start;
-       }
-   }
+   * - Need
+     - Write
+     - Meaning
+   * - Private event of the source state
+     - ``Idle -> Heating :: Heat;``
+     - Event is local to ``Idle``.
+   * - Event owned by containing or named state
+     - ``Idle -> Running : Start;``
+     - Event resolves through the containing ownership chain.
+   * - Root-owned event
+     - ``Worker -> Active : /Start;``
+     - Event path starts below the root state.
 
 Checked examples:
 
 .. literalinclude:: ../../tutorials/dsl/event_scoping_complete.fcstm
    :language: fcstm
-   :caption: Complete event-scope example
+   :caption: Complete event scopes; expected diagnostics: ``W_UNREFERENCED_VAR`` for the demonstration counter.
 
-.. literalinclude:: ../../tutorials/dsl/event_scoping_comparison.fcstm
-   :language: fcstm
-   :caption: Event-scope comparison example
+Verify and inspect event ownership:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/event_scoping_complete.fcstm --format json
+
+In JSON, check ``events[].qualified_name`` and ``events[].scope``. Do not write
+``:/Start`` in actual DSL; that shorthand is prose only. The valid absolute form
+is ``: /Start`` with the ``:`` token followed by a root path.
 
 .. _dsl-guards-effects-task:
 
 Write guards, effects, and operation blocks
 -------------------------------------------
 
-Use ``: if [condition]`` for guard transitions. Add ``effect { ... }`` when the
-transition updates variables:
+Use guards to decide whether a transition is enabled. Use effects for updates
+that happen after the source exits and before the target enters.
 
-.. literalinclude:: ../../tutorials/dsl/guards_and_effects.fcstm
+A complete operation-block example is checked in:
+
+.. literalinclude:: ../../tutorials/dsl/operation_blocks_complete.fcstm
    :language: fcstm
-   :caption: Guards, effects, temporary variables, and ``if`` blocks
+   :caption: Assignments, block-local temporary, ``if`` / ``else if`` / ``else``, empty statement, and ternary assignment; expected diagnostics: none.
 
-Operation blocks support assignments, block-local temporaries, ``if`` / ``else
-if`` / ``else`` blocks, and empty statements. A local temporary may be read only
-after assignment inside the same block.
+Key points demonstrated by the file:
+
+* ``delta`` and ``next_sample`` are block-local temporaries. They can be read
+  only after assignment inside the same block.
+* ``if [condition] { ... } else if [condition] { ... } else { ... }`` is legal
+  inside operation blocks.
+* A standalone ``;`` is an accepted empty statement.
+* Guard conditions and assignment expressions are different languages: guards
+  use condition expressions; assignments use numeric expressions.
+
+Verify it:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/operation_blocks_complete.fcstm --format human --color never
+
+Expected diagnostic count is zero. If you see ``E_UNDEFINED_VAR`` with
+``refs.is_temporary=true``, the usual fix is to assign the temporary before its
+first read in the same block.
 
 .. _dsl-expression-safety-task:
 
 Use expressions safely
 ----------------------
 
-Assignments use runtime numeric expressions. Top-level and import-preamble
-initializers use the stricter ``init_expression`` subset: literals, math
-constants, arithmetic, bitwise operators, and unary math functions, but no
-runtime variable reads and no C-style ternary. Guards use condition expressions.
-Comparisons bridge numeric expressions into conditions. Use the expression
-reference for precedence and every supported operator.
+Use this when an expression parses in one place but not another. FCSTM has three
+expression contexts:
 
-Examples to keep straight:
+.. list-table:: Expression contexts
+   :header-rows: 1
+   :widths: 22 38 40
 
-Fragment::
+   * - Context
+     - Accepts
+     - Does not accept
+   * - ``init_expression``
+     - literals, ``pi`` / ``E`` / ``tau``, arithmetic, bitwise operators, unary math functions
+     - runtime variable reads, ternary expressions
+   * - ``num_expression``
+     - runtime variables, arithmetic, bitwise, math functions, numeric ternary
+     - condition-only operators outside a parenthesized ternary condition
+   * - ``cond_expression``
+     - comparisons, ``&&`` / ``and``, ``||`` / ``or``, ``!`` / ``not``, ``=>`` / ``implies``, ``xor``, ``iff``, condition ternary
+     - numeric assignment statements
 
-   value = abs(sensor - target) + 1;
-   ready = (temperature >= target) ? 1 : 0;
-   Idle -> Heating : if [temperature < target && enabled == 1];
+Checked expression examples:
 
-The complete expression demo is checked in and should stay parseable:
-
-.. literalinclude:: ../../tutorials/dsl/expression_demo.fcstm
+.. literalinclude:: ../../tutorials/dsl/expression_condition_ternary.fcstm
    :language: fcstm
-   :caption: Expression demo
+   :caption: Runtime expressions, condition operators, implication, xor/iff, and ternary forms; expected diagnostics: none.
+
+A smaller fragment showing the most common spelling traps:
+
+.. code-block:: fcstm
+
+   // Good: boolean xor is the word "xor".
+   A -> B : if [(left > 0) xor (right > 0)];
+
+   // Good: implication is "=>" or "implies" in a condition.
+   A -> B : if [request > 0 => ready > 0];
+
+   // Good: numeric bitwise xor remains "^".
+   flags = flags ^ 0x01;
+
+Do not use ``->`` for implication; it is transition syntax. Do not use ``^`` as
+boolean xor. See :ref:`dsl-expression-reference` and
+:ref:`dsl-expression-separation` for precedence and design rationale.
 
 .. _dsl-lifecycle-task:
 
 Write lifecycle hooks, refs, and abstract hooks
 -----------------------------------------------
 
-Use concrete ``enter``, ``during``, and ``exit`` blocks for local state behavior.
-Use named lifecycle actions when the generated extension point should have a
-stable name. Use ``abstract`` when generated code should call user-provided
-behavior. Use ``ref`` to reuse a named lifecycle action.
+Use concrete lifecycle actions when the model itself owns the behavior. Use
+``abstract`` when generated code should call a user-provided hook. Use ``ref``
+when multiple states should reuse a named lifecycle action.
 
-Fragment::
+.. code-block:: fcstm
 
-   state Active {
-       enter Setup {
-           flag = 1;
+   state Device {
+       enter SharedInit {
+           ready = 1;
        }
-       during abstract Tick;
-       exit ref Cleanup;
+
+       state Idle {
+           enter ref /SharedInit;
+           during abstract PollHardware;
+       }
    }
 
-The checked example covers abstract and reference forms:
+``ref`` points to a named lifecycle action, not to a state and not to an event.
+The checked example below shows concrete, abstract, doc-comment abstract, and
+reference forms:
 
 .. literalinclude:: ../../tutorials/dsl/abstract_reference_demo.fcstm
    :language: fcstm
-   :caption: Abstract and reference action example
+   :caption: Abstract and reference actions; expected diagnostics: two ``I_UNREFERENCED_VAR_MAYBE_ABSTRACT`` entries and one ``I_TRANSITION_NEVER_EVENT_TRIGGERED`` note.
 
-Lifecycle diagrams remain as explanatory resources:
+Review the diagrams when you need lifecycle ordering:
 
 .. image:: ../../tutorials/dsl/leaf_state_lifecycle.puml.svg
    :alt: Leaf state lifecycle
@@ -192,136 +257,181 @@ Lifecycle diagrams remain as explanatory resources:
 Use during aspects
 ------------------
 
-``>> during before`` and ``>> during after`` are aspect actions contributed by
-an ancestor to descendant leaf-state active cycles.
+Use ``>> during before`` and ``>> during after`` on an ancestor when monitoring
+or logging should wrap descendant leaf-state active cycles. Do not confuse them
+with plain ``during before`` / ``during after`` actions on a composite.
 
-Fragment::
+.. literalinclude:: ../../tutorials/dsl/hierarchy_execution.fcstm
+   :language: fcstm
+   :caption: Aspect and hierarchy execution example; expected diagnostics: ``W_UNREFERENCED_VAR`` and ``I_TRANSITION_NEVER_EVENT_TRIGGERED`` for demonstration-only model parts.
 
-   state Root {
-       [*] -> Child;
-       >> during before {
-           trace = trace + 1;
-       }
-       state Child;
-   }
+Interpretation:
 
-Do not use aspects as a way to add observable business behavior to combo pseudo
-relay states. The pseudo relay chain is routing machinery; aspect actions do not
-run inside the relay.
+* ancestor ``>> during before`` runs before the active leaf ``during``;
+* ancestor ``>> during after`` runs after the active leaf ``during``;
+* plain composite ``during before`` / ``during after`` is part of composite
+  entry/exit semantics and does not wrap child-to-child transitions;
+* aspect actions do not run inside combo pseudo relay states.
+
+See :ref:`dsl-during-aspect-semantics` for the detailed boundary.
 
 .. _dsl-forced-transition-task:
 
 Write forced transitions
 ------------------------
 
-Use forced transitions when one declaration should expand over multiple source
-states. They may target a state or the exit marker and may use one local, chain,
-root, or guard trigger. They do not support combo ``+`` triggers or ``effect``
-blocks.
+Use forced transitions when one declaration should expand over many source
+states. Forced transitions are expansion shorthand, not a way to hide shared side
+effects.
 
 .. literalinclude:: ../../tutorials/dsl/forced_transitions.fcstm
    :language: fcstm
-   :caption: Forced transition examples
+   :caption: Forced transition example; expected diagnostics: two ``W_UNREFERENCED_VAR`` warnings for demonstration-only variables.
+
+Rules:
+
+* ``!State -> Target :: Event;`` expands from the named source and its reachable
+  nested sources.
+* ``!* -> Target :: Event;`` expands from all applicable sources in the owner
+  scope.
+* A forced transition may have one local, chain/root, or guard trigger.
+* It cannot have a combo ``+`` chain and cannot have an ``effect`` block.
+
+If you need shared side effects, put them in the target state's ``enter`` block
+or write explicit normal transitions with visible ``effect`` blocks. See
+:ref:`dsl-forced-transition-expansion` for why the DSL keeps this restriction.
 
 .. _dsl-combo-transition-task:
 
 Write combo transitions
 -----------------------
 
-Use combo triggers when a transition needs multiple trigger terms. Supported
-families include ordinary combo and entry combo. Use ``+`` between event and
-guard terms. Forced transitions are a separate shorthand and do not accept combo
-``+`` triggers.
+Use combo triggers when one transition should require an ordered chain of event
+terms and guard terms in the same cycle. Combo transitions expand into pseudo
+relay states during model construction; simulation, inspect, generation, and
+PlantUML consume the expanded model.
 
-Fragments::
+.. literalinclude:: ../../tutorials/dsl/combo_transitions.fcstm
+   :language: fcstm
+   :caption: Normal combo, entry combo, guard alias, root event term, effects, and generated pseudo relay states; expected diagnostics: none.
 
-   Idle -> Running :: Start + [enabled == 1];
-   Idle -> Running : [enabled == 1];
-   Idle -> Running : [enabled == 1] + Start;
-   [*] -> Running :: Boot + [enabled == 1];
+Verify the expansion:
 
-``: [condition]`` is the combo guard alias. Use ``: if [condition]`` for
-the ordinary single-guard spelling when no combo terms are needed. Combo
-expansion uses pseudo relay states. Duplicate event terms, guard aliases,
-constant guards, pseudo-name extension, and reserved ``__combo`` names are
-reported through diagnostics. Detailed expansion semantics live in
-:ref:`dsl-combo-relay-semantics`.
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/combo_transitions.fcstm --format json
+
+Useful JSON fields:
+
+* ``combo_origins`` keeps the author-written trigger and each term.
+* ``combo_transitions`` lists generated edges that carry provenance back to the
+  original combo.
+* ``states`` includes generated pseudo states with ``is_pseudo=true`` and names
+  beginning with ``__combo_``.
+
+Repair examples:
+
+.. code-block:: fcstm
+
+   // Bad ordinary syntax: event suffix plus separate guard suffix.
+   A -> B :: Go if [ready > 0];
+
+   // Good combo syntax: event term plus bracketed guard term.
+   A -> B :: Go + [ready > 0];
+
+Repeated event terms are legal but suspicious. The checked warning example is:
+
+.. literalinclude:: ../../tutorials/dsl/combo_duplicate_event.fcstm
+   :language: fcstm
+   :caption: Intentional duplicate-event combo example; expected diagnostics: ``W_COMBO_DUPLICATE_EVENT`` and ``I_TRANSITION_NEVER_EVENT_TRIGGERED``.
 
 .. _dsl-import-task:
 
 Assemble imports
 ----------------
 
-Import a file as a child subsystem:
+Use imports when a composite state should include another FCSTM module as a
+child. Imports are parsed in the DSL, then path resolution and assembly run in
+the Python model/import layer.
+
+Basic import:
 
 .. literalinclude:: ../../tutorials/dsl/import_host_basic.fcstm
    :language: fcstm
    :caption: Basic import host
 
-The imported worker is:
-
-.. literalinclude:: ../../tutorials/dsl/import_worker.fcstm
-   :language: fcstm
-   :caption: Imported worker
-
-Map variables and events when parent and child names need rewriting:
+Mapping import:
 
 .. literalinclude:: ../../tutorials/dsl/import_host_mapped.fcstm
    :language: fcstm
-   :caption: Import with mappings
+   :caption: Import with variable and event mappings
 
-Directory-organized subsystems must import an explicit file such as
-``./import_line/main.fcstm``. A bare directory import is not supported:
+Imported worker:
 
-.. literalinclude:: ../../tutorials/dsl/import_host_directory.fcstm
+.. literalinclude:: ../../tutorials/dsl/import_worker.fcstm
    :language: fcstm
-   :caption: Explicit directory ``main.fcstm`` import
+   :caption: Imported worker module
 
-.. literalinclude:: ../../tutorials/dsl/import_line/main.fcstm
-   :language: fcstm
-   :caption: Directory subsystem entry file
+Mapping facts:
 
-.. literalinclude:: ../../tutorials/dsl/import_line/subsystems/robot.fcstm
-   :language: fcstm
-   :caption: Nested subsystem file
+* ``def speed -> plant_speed;`` maps one imported variable to one host variable.
+* ``def sensor_* -> left_$1;`` captures the wildcard suffix and inserts it into
+  the target template.
+* ``def * -> prefix_$0;`` is a fallback mapping; ``$0`` is the whole imported
+  variable name.
+* ``event /Start -> Start;`` maps an imported root event to a host event.
+* Directory projects must import a concrete entry file such as
+  ``./import_line/main.fcstm``; a bare directory is not a DSL file.
 
-Import preamble statements inside imported files use ``x = value;`` for
-constants and ``x := value;`` for initial assignments. They are parsed by the
-preamble entry point, not as ordinary top-level ``def`` declarations.
+Preamble forms such as ``name = value;`` and ``name := value;`` are parser-helper
+entry points used by import assembly tests and helpers. They are not ordinary
+root-level ``def`` declarations in a normal ``state_machine_dsl`` file. See
+:ref:`dsl-import-preamble-forms` for the exact boundary.
 
 .. _dsl-diagnostics-task:
 
-Diagnose and fix DSL errors
----------------------------
+Diagnose and repair DSL errors
+------------------------------
 
-When parsing fails, fix syntax first. When model validation fails, inspect the
-state/event/transition ownership facts. When diagnostics report combo, import,
-or target-profile risk, follow the code-specific message and reference table.
-
-Short workflow:
+Use inspect diagnostics as a repair loop:
 
 .. code-block:: bash
 
-   pyfcstm inspect -i model.fcstm --format json -o model.inspect.json
-   python -m json.tool model.inspect.json | sed -n '1,80p'
+   pyfcstm inspect -i docs/source/tutorials/dsl/combo_duplicate_event.fcstm --format json
 
-Common first fixes:
+A diagnostic has a ``code``, ``severity``, human message, source span, and
+``refs`` payload. Many diagnostics also carry a suggested fix.
 
-.. list-table:: Diagnostic repair shortcuts
+.. list-table:: Diagnostic repair lab
    :header-rows: 1
+   :widths: 22 30 48
 
-   * - Signal
-     - What to check first
-   * - ``W_GUARD_VARS_NEVER_CHANGE``
-     - A guard may read only constants or variables never updated by ``during`` / ``effect``.
-   * - ``W_DURING_CONST_ASSIGN``
-     - Constant setup probably belongs in ``enter`` instead of every active cycle.
-   * - ``W_COMBO_*``
-     - Recheck combo trigger terms and remember forced transitions do not support combo ``+`` chains.
+   * - Example
+     - Expected code
+     - Repair direction
+   * - ``combo_duplicate_event.fcstm``
+     - ``W_COMBO_DUPLICATE_EVENT``
+     - Check whether the second event term is a typo. Keep it only if the explicit two-hop relay is intentional.
+   * - ``guard_vars_never_change.fcstm``
+     - ``W_GUARD_VARS_NEVER_CHANGE``
+     - Add the missing lifecycle/effect write, or simplify the guard if an initial-value-only guard is intentional.
+   * - ``during_const_assign.fcstm``
+     - ``W_DURING_CONST_ASSIGN``
+     - Move one-time initialization to ``enter`` or make the ``during`` expression depend on runtime state.
+   * - ``numeric_target_range.fcstm``
+     - ``W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE``
+     - Treat it as a C/C++ deployment-profile warning for ``c`` / ``c_poll`` / ``cpp`` / ``cpp_poll``. It is not evidence that Python generated code has the same fixed-width risk.
 
-Full code descriptions live in :doc:`../../reference/diagnostics_codes/index`.
+Minimal bad syntax example kept as a text fixture because it is intentionally not parseable as ``*.fcstm``:
 
-C/C++ deployment-profile warnings are target-specific review signals for C-family
-templates such as ``c``, ``c_poll``, ``cpp``, and ``cpp_poll``. They must not be
-reported as proof that Python generated code has the same risk unless the Python
-runtime path has its own diagnostic evidence.
+.. literalinclude:: ../../tutorials/dsl/event_guard_mixed_invalid.fcstm.txt
+   :language: fcstm
+   :caption: Intentional parser error; expected excerpt: ``Unexpected token 'if'``.
+
+It fails because ordinary event syntax and ordinary guard syntax are two separate transition forms. Repair it as combo syntax:
+
+.. code-block:: fcstm
+
+   A -> B :: Go + [ready > 0];
+
+For code-level details, read :doc:`../../reference/diagnostics_codes/index`.

@@ -1333,15 +1333,51 @@ DSL feature checklist
    dsl-top-level-root,top-level,GrammarParser.g4 state_machine_dsl / def_assignment,"tutorials/dsl, reference/dsl",first_thermostat.fcstm inspect
    dsl-import-preamble,import,preamble_program / constant_definition / initial_assignment,"how_to/dsl, reference/dsl, explanations/dsl_semantics",import examples inspect
    dsl-state-leaf-composite-pseudo,state,state_definition / E_PSEUDO_NOT_LEAF,"tutorials/dsl, how_to/dsl, reference/dsl, explanations/dsl_semantics",pseudo_state_demo inspect
-   dsl-transition-normal,transition,transition_definition,"tutorials/dsl, how_to/dsl, reference/dsl",guards_and_effects inspect
+   dsl-transition-normal,transition,transition_definition,"tutorials/dsl, how_to/dsl, reference/dsl",operation_blocks_complete.fcstm inspect
    dsl-transition-forced,transition,transition_force_definition,"how_to/dsl, reference/dsl, explanations/dsl_semantics",forced_transitions inspect
-   dsl-transition-combo,transition,combo_transition_trigger / entry_combo_transition_trigger / W_COMBO_*,"how_to/dsl, reference/dsl, explanations/dsl_semantics",combo fragments plus semantic fixture audit
+   dsl-transition-combo,transition,combo_transition_trigger / entry_combo_transition_trigger / W_COMBO_*,"how_to/dsl, reference/dsl, explanations/dsl_semantics","combo_transitions.fcstm inspect, combo_duplicate_event.fcstm inspect, event_guard_mixed_invalid.fcstm.txt parse-error fixture"
    dsl-event-scopes,event,event_definition / chain_id,"tutorials/dsl, how_to/dsl, reference/dsl, explanations/dsl_semantics",event_scoping examples inspect
-   dsl-expression-reference,expression,num_expression / cond_expression,"how_to/dsl, reference/dsl, explanations/dsl_semantics",expression_demo inspect
-   dsl-operation-blocks,operation,operational_statement / if_statement,"tutorials/dsl, how_to/dsl, reference/dsl",guards_and_effects inspect
+   dsl-expression-reference,expression,num_expression / cond_expression,"how_to/dsl, reference/dsl, explanations/dsl_semantics",expression_condition_ternary.fcstm inspect
+   dsl-operation-blocks,operation,operational_statement / if_statement,"how_to/dsl, reference/dsl",operation_blocks_complete.fcstm inspect
    dsl-lifecycle-forms,lifecycle,enter_definition / during_definition / exit_definition,"tutorials/dsl, how_to/dsl, reference/dsl, explanations/dsl_semantics",abstract_reference_demo inspect
-   dsl-aspect-forms,aspect,during_aspect_definition,"how_to/dsl, reference/dsl, explanations/dsl_semantics",lifecycle diagrams and fragments
+   dsl-aspect-forms,aspect,during_aspect_definition,"how_to/dsl, reference/dsl, explanations/dsl_semantics",hierarchy_execution.fcstm inspect
    dsl-diagnostics-risk,diagnostics,diagnostics/codes.yaml / analyzers,"how_to/dsl, reference/dsl, diagnostics_codes",risk wording line audit
+
+
+New DSL example resources added by the repair pass
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Added DSL examples
+   :header-rows: 1
+   :widths: 30 35 35
+
+   * - Resource
+     - Purpose
+     - Expected diagnostics
+   * - ``tutorials/dsl/combo_transitions.fcstm``
+     - Normal combo, entry combo, guard alias, root event term, effects, and pseudo relay provenance.
+     - none
+   * - ``tutorials/dsl/operation_blocks_complete.fcstm``
+     - Block-local temporaries, ``if`` / ``else if`` / ``else``, empty statement, and ternary assignment.
+     - none
+   * - ``tutorials/dsl/expression_condition_ternary.fcstm``
+     - Condition operators including implication, ``xor``, ``iff``, and ternary expressions.
+     - none
+   * - ``tutorials/dsl/combo_duplicate_event.fcstm``
+     - Intentional duplicate combo event diagnostic.
+     - ``W_COMBO_DUPLICATE_EVENT`` and ``I_TRANSITION_NEVER_EVENT_TRIGGERED``
+   * - ``tutorials/dsl/event_guard_mixed_invalid.fcstm.txt``
+     - Intentional parser-error fixture for ordinary event syntax plus ordinary guard syntax.
+     - parse error excerpt: ``Unexpected token 'if'``
+   * - ``tutorials/dsl/guard_vars_never_change.fcstm``
+     - Intentional initial-value-only guard diagnostic.
+     - ``W_UNWRITTEN_READ_VAR``, ``W_GUARD_VARS_NEVER_CHANGE``, and ``I_TRANSITION_NEVER_EVENT_TRIGGERED``
+   * - ``tutorials/dsl/during_const_assign.fcstm``
+     - Intentional constant ``during`` assignment diagnostic.
+     - ``W_DURING_CONST_ASSIGN``
+   * - ``tutorials/dsl/numeric_target_range.fcstm``
+     - C/C++ target-profile numeric range warning.
+     - ``W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE``
 
 Old DSL heading migration table
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

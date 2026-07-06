@@ -1,4 +1,3 @@
-
 .. _sec-explanations-dsl-semantics:
 
 DSL semantics explanation
@@ -11,10 +10,10 @@ DSL semantics explanation
 Scope
 -----
 
-This page explains why the FCSTM DSL is shaped the way it is. It is not a syntax
-table; use :doc:`../../reference/dsl/index` for exact forms. It is not a first
-success tutorial; use :doc:`../../tutorials/dsl/index` for that. Complete runtime
-cycle ordering, hot start, and simulator history belong to
+This page explains why the FCSTM DSL behaves the way it does. It is not the
+syntax table; use :doc:`../../reference/dsl/index` for exact grammar forms. It
+is not the first tutorial; use :doc:`../../tutorials/dsl/index` for a runnable
+starting path. Complete simulator internals live in
 :doc:`../execution_semantics/index`.
 
 .. _dsl-root-design:
@@ -22,74 +21,136 @@ cycle ordering, hot start, and simulator history belong to
 Why variables come before one root state
 ----------------------------------------
 
-A model describes one hierarchical controller. Persistent variables come first so
-all state behavior has a known data surface before transitions and lifecycle
-actions are read. The single root state gives every state, event, transition,
-import, and lifecycle action a common ownership tree.
+A FCSTM model is one controller with one active-state stack. Persistent
+variables come before the root so every guard, effect, lifecycle action, import
+mapping, and diagnostic pass can use the same data surface.
 
-This structure also makes generation predictable. Templates can allocate one
-runtime object, one active-stack representation, and one variable store. Import
-assembly can then rewrite child subsystems into that tree instead of merging
-several unrelated roots.
+.. code-block:: fcstm
+
+   def int temperature = 20;
+
+   state Thermostat {
+       [*] -> Idle;
+       state Idle;
+   }
+
+This is not only parser convenience. Code generation needs one runtime object,
+one variable store, and one root active stack. Import assembly also needs one
+host tree into which imported modules can be rewritten.
 
 .. _dsl-ownership-name-resolution:
 
 Ownership tree and name resolution
 ----------------------------------
 
-States, events, and lifecycle actions are owned by states. Name resolution is
-therefore a modeling rule, not just a parser convenience. A transition that moves
-between two child states should live in the parent that owns both names. A
-transition from outside a composite should enter the composite boundary and let
-that composite pick its child through the initial transition.
+States, events, lifecycle actions, and imports are owned by states. A transition
+can directly name endpoints visible in the state where the transition is written.
 
-This keeps ownership local and prevents a parent-level rule from depending on a
-private leaf that belongs to a child composite.
+.. code-block:: fcstm
+
+   state Root {
+       [*] -> Parent;
+
+       state Parent {
+           [*] -> ChildA;
+           state ChildA;
+           state ChildB;
+           ChildA -> ChildB;
+       }
+   }
+
+``ChildA -> ChildB`` belongs inside ``Parent``. If a parent-level rule wrote
+``RootOutside -> ChildB`` while ``ChildB`` is private to ``Parent``, the rule
+would couple the parent to a nested implementation detail. The DSL instead
+encourages boundary routing: enter ``Parent`` and let ``Parent`` choose a child,
+or move the child-targeting transition into ``Parent``.
+
+Inspect exposes the resolved paths in ``transitions[].from_path`` and
+``transitions[].to_path``. That is the evidence to use when checking whether a
+transition landed on the boundary or an internal child.
 
 .. _dsl-composite-entry-semantics:
 
 Composite entry and initial transitions
 ---------------------------------------
 
-A composite state is an active boundary plus a child-selection rule. Entering a
-composite means entering the boundary first, then following its initial
-transition to the selected child. This is different from a child-to-child
-transition inside the composite, where the owner already knows both endpoints.
+A composite state is both a boundary and a child-selection rule. Entering the
+boundary is not the same thing as already being in a leaf child.
 
-When a transition target is a composite, the target is the boundary. The initial
-transition decides the child path. This is why the DSL discourages outer-scope
-jumps directly to inner leaves.
+Initial entry through a composite follows this conceptual order:
+
+1. enter the composite boundary;
+2. evaluate and apply the composite's initial transition;
+3. run plain composite ``during before``;
+4. enter the selected child.
+
+A child-to-child transition is different:
+
+1. exit the source child;
+2. run the transition effect;
+3. enter the target child.
+
+Plain composite ``during before`` / ``during after`` does not wrap that
+child-to-child movement. That boundary keeps composite entry/exit behavior from
+turning into hidden behavior on every internal state change.
 
 .. _dsl-event-ownership-signal:
 
 Event scopes as ownership signals
 ---------------------------------
 
-The three event scope spellings communicate ownership distance:
+Event spelling tells readers who owns the signal:
 
-* ``:: Local`` says the source state owns or names the event locally.
-* ``: EventPath`` says a containing or named scope owns the event.
-* ``: /RootEvent`` says the event path is absolute from the root.
+.. list-table:: Event ownership
+   :header-rows: 1
+   :widths: 22 36 42
 
-The distinction matters for refactoring. A root event can be moved or renamed as
-a public protocol. A local event can remain private to one state without forcing
-sibling states to agree on a shared event declaration.
+   * - Spelling
+     - Example
+     - Meaning
+   * - ``::``
+     - ``Idle -> Heating :: Heat;``
+     - The source state owns a private event name.
+   * - ``:``
+     - ``Idle -> Running : Start;``
+     - A containing or named state owns the event path.
+   * - ``: /``
+     - ``Worker -> Active : /Start;``
+     - The path starts from the root-owned event namespace.
+
+The spelling matters during refactoring. A source-local event can be copied with
+one state; a root event is public protocol. Combo terms inherit the leading
+scope unless a continuation term explicitly starts with ``/``.
+
+Forced transitions use similar trigger spellings, but they are declaration
+expansion shorthand. A forced trigger still produces ordinary expanded
+transitions; it is not a combo chain and it cannot carry an effect.
 
 .. _dsl-expression-separation:
 
-Guards, effects, and expression separation
-------------------------------------------
+Guard, effect, and expression separation
+----------------------------------------
 
-The DSL separates numeric expressions from conditions because control flow and
-value computation have different portability risks. Assignments and numeric
-initializers update numbers. Guards decide whether a transition is enabled.
-Comparisons bridge numeric values into conditions.
+The DSL separates numeric expressions from conditions because value computation
+and control-flow decisions have different portability and diagnostic needs.
 
-This separation is especially visible when docs discuss generated C/C++ code.
-Warnings about fixed-width integers, division-by-zero policy, or bitwise
-operation profiles are C/C++ deployment-profile warnings. They should not be
-worded as Python generated-runtime failures unless Python-specific evidence
-exists.
+.. code-block:: fcstm
+
+   Sampling -> Done : if [sensor >= target] effect {
+       next_sample = sensor + 1;
+       alarm_count = (next_sample > target) ? alarm_count + 1 : alarm_count;
+   };
+
+The guard is tested first. The effect runs only after the transition is chosen.
+``next_sample`` is a block-local temporary inside the effect; it does not become
+persistent state after the block exits.
+
+This separation is also where target-profile warnings must stay precise. A
+numeric diagnostic about fixed-width integer range, division policy, shift count,
+or float bitwise behavior is a C/C++ deployment-profile warning for ``c``,
+``c_poll``, ``cpp``, and ``cpp_poll`` unless the diagnostic explicitly says
+otherwise. It is not evidence that the Python generated runtime has the same
+fixed-width or undefined-behavior risk.
 
 .. _dsl-lifecycle-hooks-semantics:
 
@@ -97,90 +158,150 @@ Lifecycle, abstract hooks, and refs
 -----------------------------------
 
 Lifecycle actions attach behavior to state boundaries and active cycles:
-``enter`` on entry, ``during`` while active, and ``exit`` on exit. Named actions
-make generated extension points discoverable. ``abstract`` hooks tell generated
-code to call user-provided behavior without editing generated files. ``ref``
-reuses a named lifecycle action while keeping the state tree explicit.
 
-The design keeps model structure and integration behavior separate. The DSL says
-where behavior belongs; the generated runtime exposes target-language hooks for
-how abstract behavior is implemented.
+* ``enter`` belongs to entry;
+* plain leaf ``during`` belongs to ordinary active cycles;
+* ``exit`` belongs to exit;
+* named actions create stable reference targets and generated hook names;
+* ``abstract`` says generated code must call a user-provided implementation;
+* ``ref`` reuses a named lifecycle action path.
+
+.. code-block:: fcstm
+
+   state Device {
+       enter SharedInit {
+           ready = 1;
+       }
+       state Idle {
+           enter ref /SharedInit;
+           during abstract PollHardware;
+       }
+   }
+
+``ref`` deliberately points to a named lifecycle action, not to a state or an
+event. That keeps reusable behavior explicit and avoids making state names double
+as callable procedures.
 
 .. _dsl-during-aspect-semantics:
 
 During before/after and aspects
 -------------------------------
 
-Plain ``during before`` / ``during after`` belongs to a composite lifecycle
-boundary. ``>> during before`` / ``>> during after`` are aspect actions that an
-ancestor contributes to descendant leaf-state active cycles. They are different
-features even though both use during-stage vocabulary.
+Two different features use during-stage words:
 
-Aspects do not run inside combo pseudo relay states. Pseudo relays are routing
-machinery created to evaluate expanded transition terms; letting ancestor
-aspects observe each relay would turn an implementation detail into business
-behavior.
+* plain ``during before`` / ``during after`` belongs to the composite boundary;
+* ``>> during before`` / ``>> during after`` is an aspect contributed by an
+  ancestor to descendant leaf-state active cycles.
+
+The checked ``hierarchy_execution.fcstm`` example uses numeric additions to make
+ordering observable. Conceptually, a leaf active cycle sees:
+
+.. code-block:: text
+
+   ancestor >> during before
+   parent   >> during before
+   leaf     during
+   parent   >> during after
+   ancestor >> during after
+
+A child-to-child transition does not run plain composite ``during before`` or
+``during after``. Combo pseudo relay states also do not receive aspect actions.
+Relay states are routing machinery; letting aspects observe each relay hop would
+turn an implementation detail into business behavior.
 
 .. _dsl-combo-relay-semantics:
 
 Pseudo and combo relay semantics
 --------------------------------
 
-Pseudo states represent control-flow routing. Combo transitions use that idea to
-turn an event-plus-guard or multi-term trigger into a chain of simpler routing
-checks. The chain should have the same external meaning as the original combo
-transition, while diagnostics can still inspect each term.
+Combo transitions solve the event-plus-guard problem without inventing an
+ordinary transition form that mixes separate event and guard suffixes.
 
-Important boundaries:
+Author-written transition:
 
-* relay pseudo states should be pure routing helpers;
-* reserved ``__combo`` names belong to generated relay machinery;
-* effect placement must preserve the semantic effect of the original combo
-  transition;
-* duplicate event and constant guard diagnostics help catch surprising trigger
-  definitions;
-* aspects do not execute inside the relay chain.
+.. code-block:: fcstm
 
-Runtime ordering details belong to :doc:`../execution_semantics/index`.
+   Waiting -> Accepted :: Request + [ready > 0] + Confirm effect {
+       accepted = accepted + 1;
+   }
+
+Model construction expands this into a pseudo relay chain. Inspect keeps both
+views:
+
+* ``combo_origins`` records the original trigger terms and source spans;
+* ``combo_transitions`` records generated edges with provenance;
+* generated pseudo states are named with the reserved ``__combo_`` prefix.
+
+The final effect belongs to the semantic transition to ``Accepted``. It must not
+be duplicated on every relay hop. If any required event or guard term is absent
+in the same cycle, the chain does not complete and the visible state should not
+silently advance to the final target.
+
+``W_COMBO_DUPLICATE_EVENT`` and combo guard diagnostics point back to the
+author-written trigger terms, not merely to generated pseudo states. This is why
+inspect diagnostics can guide an LLM or user back to the original DSL source.
 
 .. _dsl-forced-transition-expansion:
 
 Forced transition expansion
 ---------------------------
 
-Forced transitions are shorthand for expanding one declaration across selected
-source states. ``!State`` expands from one named source; ``!*`` expands from all
-applicable sources in the owner scope. Forced transitions intentionally do not
-support ``effect`` blocks because an expanded declaration with side effects would
-be hard to audit and would obscure which source actually owns the update.
+Forced transitions are a different kind of expansion. They duplicate one source
+pattern over multiple concrete sources:
 
-When effects are needed, write explicit normal transitions so the source, target,
-trigger, and update block are all visible.
+.. code-block:: fcstm
+
+   !* -> ErrorHandler :: CriticalError;
+
+The expanded transitions are ordinary transitions for runtime purposes: normal
+exit actions still run, then the target's entry behavior runs. Forced
+transitions cannot carry ``effect`` blocks because a side-effectful many-source
+shorthand is hard to audit. If the same update must happen for all expanded
+sources, put it in the target ``enter`` action or write explicit normal
+transitions.
+
+Forced transitions also cannot carry combo ``+`` chains. Combo is ordered relay
+expansion; forced is source-set expansion. Keeping them separate makes the
+expanded model inspectable.
 
 .. _dsl-import-assembly-semantics:
 
 Import assembly semantics
 -------------------------
 
-Import syntax is parsed inside composite states, but path resolution and model
-assembly happen after parsing. This split keeps the grammar structural while the
-Python import/model layer handles file lookup, recursive loading, aliasing,
-variable mappings, event mappings, conflict checks, and diagnostics.
+Import syntax is legal inside composite states, but file loading and module
+assembly run after parsing.
 
-Directory-oriented projects must import an explicit entry file such as
-``./line/main.fcstm``. A bare directory is not a DSL file and should not be
-documented as supported.
+.. code-block:: fcstm
+
+   import "./import_worker.fcstm" as LeftWorker {
+       def sensor_* -> left_$1;
+       def speed -> plant_speed;
+       event /Start -> Start named "Shared Start";
+   }
+
+The parser records the path, alias, optional display name, and mapping
+statements. The import/model layer then resolves the path, loads the imported
+root, checks conflicts, rewrites variable names, rewrites event paths, and adds
+the imported root as a child state under the alias.
+
+Mapping templates are not arbitrary code. ``$0`` is the whole matched imported
+variable name; ``$1`` / ``${1}`` are capture groups from wildcard selectors;
+``*`` is the fallback template. Directory projects must import a concrete entry
+file such as ``./line/main.fcstm`` because a bare directory is not DSL source.
 
 Design boundaries
 -----------------
 
 The DSL is intentionally narrower than a general programming language:
 
-* no loops inside operation blocks;
-* no arbitrary function definitions;
-* arithmetic and condition expressions are separate;
-* imports assemble state-machine modules instead of executing code;
-* generated-target risks must be described with target scope.
+* no loops in operation blocks;
+* no user-defined functions in DSL source;
+* event syntax and ordinary guard syntax are not combined on the same ordinary
+  transition;
+* forced transitions have no effects and no combo chains;
+* combo relay pseudo states are pure routing helpers;
+* target-risk diagnostics must name their target profile.
 
-These constraints keep models inspectable, renderable, simulatable, and suitable
-for code generation across multiple target languages.
+Those boundaries keep models parseable, inspectable, simulatable, and suitable
+for multi-language code generation.

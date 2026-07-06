@@ -7,33 +7,32 @@ Write your first FCSTM DSL model
    :local:
    :depth: 2
 
-Overview
---------
-
-This tutorial is the short first-success path for the FCSTM DSL. It teaches one
-small model that can be parsed, simulated, and inspected. It deliberately does
-not try to list every operator, import mapping, transition variant, or diagnostic
-code.
-
-Use the split pages when you need more detail:
-
-* :doc:`../../how_to/dsl/index` for task recipes such as event scopes, imports,
-  lifecycle reuse, and combo transitions.
-* :doc:`../../reference/dsl/index` for exact grammar forms and coverage matrix
-  rows.
-* :doc:`../../explanations/dsl_semantics/index` for ownership, lifecycle, combo,
-  and import semantics.
-* :doc:`../../reference/diagnostics_codes/index` for diagnostics wording and
-  target-profile risk boundaries.
-
-Start with one valid root
+What this tutorial covers
 -------------------------
 
-A runnable FCSTM file has persistent variable declarations first, then exactly
-one root ``state``. Most real models use a composite root because it can own
-child states and an initial transition.
+This page is the first-success path for the FCSTM DSL. It builds one small
+thermostat model, runs it, and shows how to read the first inspect report. It
+intentionally stays narrow: once you have the first model working, use the other
+DSL pages for breadth.
 
-Fragment showing the skeleton::
+* :doc:`../../how_to/dsl/index` answers concrete authoring questions with
+  recipes, examples, commands, expected diagnostics, and repair steps.
+* :doc:`../../reference/dsl/index` is the syntax reference and coverage index.
+* :doc:`../../explanations/dsl_semantics/index` explains runtime meaning,
+  ownership, combo expansion, forced expansion, and import assembly.
+* :doc:`../../reference/diagnostics_codes/index` explains diagnostic codes and
+  target-profile warnings.
+
+All commands below are meant to be copied from the repository root.
+
+Step 1: create the smallest shape
+---------------------------------
+
+A normal ``.fcstm`` file starts with persistent variables and then exactly one
+root ``state``. A practical root is usually composite because it owns child
+states and an initial transition.
+
+.. code-block:: fcstm
 
    def int temperature = 20;
 
@@ -42,139 +41,157 @@ Fragment showing the skeleton::
        state Idle;
    }
 
-The declarations are not local variables; they are persistent model variables.
-The root state owns the name-resolution tree for child states, events,
-transitions, and lifecycle actions.
+The ``def`` line allocates model state. It is not a block-local variable. The
+root state then becomes the ownership tree for child states, events, transitions,
+lifecycle actions, and imports.
 
-Add variables and arithmetic
-----------------------------
+Step 2: add another leaf and guards
+-----------------------------------
 
-The current persistent variable types are ``int`` and ``float``. Initial values
-may use numeric literals, math constants, unary signs, arithmetic, bitwise
-operators, and supported math functions. The tutorial only needs simple
-arithmetic:
+A leaf state ends with ``;``. A transition written in ``Thermostat`` can use the
+child names owned directly by ``Thermostat``.
 
-Fragment::
+.. code-block:: fcstm
 
    def int temperature = 20;
-   def float gain = 0.5;
-
-Use the full expression reference when you need hexadecimal literals,
-``pi``/``E``/``tau``, math functions, bitwise operators, boolean operators, or
-C-style ternary expressions: :ref:`dsl-expression-reference`.
-
-Add leaf and composite states
------------------------------
-
-A leaf state ends with ``;``. A composite state owns nested declarations inside
-``{ ... }`` and must choose an initial child with ``[*] -> Child;``.
-
-Fragment::
 
    state Thermostat {
        [*] -> Idle;
        state Idle;
        state Heating;
+
+       Idle -> Heating : if [temperature < 20];
+       Heating -> Idle : if [temperature >= 22];
    }
 
-Transitions resolve targets in their owner scope. If a target is an inner leaf
-owned by a composite, put the transition inside that composite, or transition to
-the composite and let its initial transition choose the child.
-
-Add events and transitions
---------------------------
-
-The first model only needs event transitions and guard transitions. Source-local
-events use ``:: EventName``. Guard transitions use ``: if [condition]``.
-
-Fragment::
-
-   Idle -> Heating : if [temperature < 20];
-   Heating -> Idle :: StopHeating;
-
-Ordinary transitions intentionally keep event syntax and guard syntax separate.
-When you truly need event-plus-guard behavior, use the combo-trigger recipes and
-reference tables rather than inventing a mixed ordinary form.
-
-Add guards and effects
-----------------------
-
-Guards are condition expressions. Effects are operation blocks that update
-persistent variables and may use block-local temporary variables after assigning
-them.
-
-Fragment::
-
-   Idle -> Heating : if [temperature < 20] effect {
-       temperature = temperature + 1;
-   }
-
-Assignments require arithmetic expressions. Guards require conditions. A
-comparison such as ``temperature < 20`` bridges arithmetic expressions into a
+The guard after ``: if`` is a condition expression. The variable
+``temperature`` is a numeric expression; the comparisons turn it into a
 condition.
 
-Add minimal lifecycle hooks
----------------------------
+Step 3: add lifecycle actions
+-----------------------------
 
-Lifecycle blocks run at state boundaries or active cycles. For a first model,
-keep them concrete and local:
+A leaf ``during`` action runs on an ordinary active cycle. An ``enter`` action
+runs when the state is entered. This version changes ``temperature`` so both
+guards can eventually change truth value.
 
-Fragment::
+.. code-block:: fcstm
+
+   state Idle {
+       during {
+           temperature = temperature - 1;
+       }
+   }
 
    state Heating {
        enter {
-           heating_on = 1;
+           temperature = temperature + 1;
        }
        during {
            temperature = temperature + 1;
        }
-       exit {
-           heating_on = 0;
-       }
    }
 
-Named actions, ``abstract`` hooks, documentation-comment abstract hooks, ``ref``
-reuse, ``during before`` / ``during after``, and ``>> during`` aspects are
-covered in the task guide and reference.
+Operation blocks contain statements such as assignments and ``if`` blocks. A
+name assigned inside a block before it is declared as ``def`` is a temporary for
+that block only; the how-to page shows this in a complete example.
 
-Run and inspect the model
--------------------------
+Step 4: inspect the complete file
+---------------------------------
 
-The first runnable tutorial model is kept as a checked-in source file:
+The complete tutorial model is checked in as ``first_thermostat.fcstm``:
 
 .. literalinclude:: first_thermostat.fcstm
    :language: fcstm
-   :caption: ``first_thermostat.fcstm``
+   :caption: ``docs/source/tutorials/dsl/first_thermostat.fcstm``
 
-Run a short simulation from this directory:
-
-.. code-block:: bash
-
-   pyfcstm simulate -i first_thermostat.fcstm -e "cycle; cycle; current"
-
-Then inspect the model structure and diagnostics:
+Inspect it from the repository root:
 
 .. code-block:: bash
 
-   pyfcstm inspect -i first_thermostat.fcstm --format json -o first_thermostat.inspect.json
+   pyfcstm inspect -i docs/source/tutorials/dsl/first_thermostat.fcstm --format human --color never
 
-Only short command outputs belong in this tutorial. If inspect reports a syntax,
-model, combo, import, or C/C++ deployment-profile warning, use the diagnostics
-and how-to pages for targeted repair steps.
+Expected short output:
 
-Where next
-----------
+.. code-block:: text
 
-* Event scopes: :ref:`dsl-event-scopes-task` and :ref:`dsl-events-scopes`.
-* Guard/effect operation blocks: :ref:`dsl-guards-effects-task` and
-  :ref:`dsl-operation-blocks`.
-* Expressions: :ref:`dsl-expression-safety-task` and
-  :ref:`dsl-expression-reference`.
-* Lifecycle, abstract hooks, refs, and aspects:
-  :ref:`dsl-lifecycle-task`, :ref:`dsl-lifecycle-forms`, and
-  :ref:`dsl-aspect-forms`.
-* Forced and combo transitions: :ref:`dsl-forced-transition-task`,
-  :ref:`dsl-combo-transition-task`, and :ref:`dsl-transition-forms`.
-* Imports: :ref:`dsl-import-task` and :ref:`dsl-import-forms`.
-* Diagnostics and target risk wording: :ref:`dsl-diagnostics-task`,
-  :ref:`dsl-diagnostics-risk`, and :doc:`../../reference/diagnostics_codes/index`.
+   [OK] FCSTM Inspect Report: docs/source/tutorials/dsl/first_thermostat.fcstm
+
+   Summary
+     status: ok
+     root: Thermostat
+     states: 3 total / 2 leaf
+     transitions: 3
+     variables: 1
+     diagnostics: 0 errors / 0 warnings / 0 infos
+
+   No diagnostics.
+
+If this command reports errors, fix those before trying simulation or code
+generation. Warnings and infos are still worth reading because they usually say
+which target profile, transition, variable, or source span needs attention.
+
+Step 5: run two cycles
+----------------------
+
+Run a short batch simulation:
+
+.. code-block:: bash
+
+   pyfcstm simulate -i docs/source/tutorials/dsl/first_thermostat.fcstm --no-color -e "cycle; cycle; current"
+
+The important lines are:
+
+.. code-block:: text
+
+   Cycle: 1
+   Current State: Thermostat.Idle
+   Variables:
+     temperature = 19
+
+   Cycle: 2
+   Current State: Thermostat.Heating
+   Variables:
+     temperature = 21
+
+The first cycle enters ``Idle`` and runs its ``during`` action. On the second
+cycle the ``Idle -> Heating`` guard is true, so the transition fires and
+``Heating.enter`` runs.
+
+Step 6: learn the next DSL feature deliberately
+-----------------------------------------------
+
+Do not jump from this tutorial straight into a giant model. Add one DSL feature
+at a time and verify the inspect output after each change.
+
+.. list-table:: Next steps
+   :header-rows: 1
+   :widths: 24 38 38
+
+   * - Goal
+     - Start with
+     - Why
+   * - Add source-local, parent, or root events
+     - :ref:`dsl-event-scopes-task`
+     - Event scope changes who owns and reuses the event name.
+   * - Add effects, temporaries, and ``if`` blocks
+     - :ref:`dsl-guards-effects-task`
+     - Effects mutate variables at transition time, not while guards are being tested.
+   * - Use the full expression language
+     - :ref:`dsl-expression-safety-task`
+     - Numeric expressions, condition expressions, and ternary forms have different legal contexts.
+   * - Reuse lifecycle behavior
+     - :ref:`dsl-lifecycle-task`
+     - ``abstract`` and ``ref`` are the bridge from DSL structure to generated runtime hooks.
+   * - Model multi-term triggers
+     - :ref:`dsl-combo-transition-task`
+     - Combo transitions expand into pseudo relay states while preserving authored semantics.
+   * - Apply one declaration to many sources
+     - :ref:`dsl-forced-transition-task`
+     - Forced transitions are expansion shorthand and intentionally have no effect block.
+   * - Split a model across files
+     - :ref:`dsl-import-task`
+     - Imports assemble state-machine modules and rewrite variables/events according to mappings.
+   * - Repair diagnostics
+     - :ref:`dsl-diagnostics-task`
+     - Inspect diagnostics include code, severity, source span, refs, and suggested fixes.

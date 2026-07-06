@@ -18,261 +18,50 @@ Use :doc:`../../tutorials/dsl/index` for a learning path,
 :doc:`../../how_to/dsl/index` for task recipes, and
 :doc:`../../explanations/dsl_semantics/index` for semantic background.
 
-.. _dsl-coverage-matrix:
+.. _dsl-syntax-quick-index:
 
-DSL coverage matrix
--------------------
+Syntax quick index
+------------------
 
-``N/A`` means that the page type intentionally does not own that leaf ability.
-Every row still has a reference or explanation landing point.
+Start here when you need to find the exact form. Examples in this reference are
+fragments unless they are introduced as checked files under
+``docs/source/tutorials/dsl``. The task guide links each major form to a complete
+example and verification command.
 
-.. list-table:: DSL capability coverage
+.. list-table:: Syntax families
    :header-rows: 1
-   :widths: 16 13 22 18 18 18 18 24 14
+   :widths: 24 38 38
 
-   * - feature_id
-     - Family
-     - Fact source
-     - Tutorial coverage
-     - How-to coverage
-     - Reference coverage
-     - Explanation coverage
-     - Example / verification
-     - EN/ZH
-   * - ``dsl-lexical-comments``
-     - lexical
-     - ``GrammarLexer.g4`` comments / strings / IDs
-     - N/A: tutorial hides token table
-     - N/A: task pages use snippets
-     - :ref:`dsl-lexical-forms`
-     - N/A: syntax token facts
-     - reference table review
-     - synced
-   * - ``dsl-top-level-root``
-     - top-level
-     - ``state_machine_dsl`` / root ``state_definition``
-     - :ref:`sec-tutorials-dsl`
-     - :ref:`dsl-small-valid-model-task`
+   * - Family
+     - Main forms
+     - Details
+   * - Program boundary
+     - ``def int x = 0;`` / one root ``state``
      - :ref:`dsl-top-level-forms`
-     - :ref:`dsl-root-design`
-     - ``first_thermostat.fcstm`` inspect
-     - synced
-   * - ``dsl-top-level-def``
-     - top-level
-     - ``def_assignment`` / ``init_expression``
-     - :ref:`sec-tutorials-dsl`
-     - :ref:`dsl-expression-safety-task`
-     - :ref:`dsl-top-level-forms`
-     - :ref:`dsl-expression-separation`
-     - ``first_thermostat.fcstm`` inspect
-     - synced
-   * - ``dsl-import-preamble``
-     - import
-     - ``preamble_program`` / ``constant_definition`` / ``initial_assignment``
-     - N/A: tutorial skips imports
-     - :ref:`dsl-import-task`
-     - :ref:`dsl-import-preamble-forms`
-     - :ref:`dsl-import-assembly-semantics`
-     - ``import_host_*.fcstm`` inspect
-     - synced
-   * - ``dsl-state-leaf-composite``
-     - state
-     - ``state_definition`` leaf/composite branches
-     - :ref:`sec-tutorials-dsl`
-     - :ref:`dsl-state-target-task`
+   * - States
+     - ``state A;`` / ``state A { ... }`` / ``pseudo state P;``
      - :ref:`dsl-state-forms`
-     - :ref:`dsl-ownership-name-resolution`
-     - ``first_thermostat.fcstm`` inspect
-     - synced
-   * - ``dsl-state-pseudo``
-     - state
-     - ``PSEUDO STATE`` / ``E_PSEUDO_NOT_LEAF``
-     - N/A: tutorial links advanced routing
-     - :ref:`dsl-state-target-task`
-     - :ref:`dsl-state-forms`
-     - :ref:`dsl-combo-relay-semantics`
-     - ``pseudo_state_demo.fcstm`` inspect
-     - synced
-   * - ``dsl-state-target-resolution``
-     - state
-     - model state lookup / transition ownership
-     - :ref:`sec-tutorials-dsl`
-     - :ref:`dsl-state-target-task`
-     - :ref:`dsl-state-forms`
-     - :ref:`dsl-ownership-name-resolution`
-     - scope snippets / model validation
-     - synced
-   * - ``dsl-transition-initial``
-     - transition
-     - ``entryTransitionDefinition``
-     - :ref:`sec-tutorials-dsl`
-     - :ref:`dsl-small-valid-model-task`
+   * - Transitions
+     - plain, event, guard, guard+effect, combo, forced, entry, exit
      - :ref:`dsl-transition-forms`
-     - :ref:`dsl-composite-entry-semantics`
-     - ``first_thermostat.fcstm`` inspect
-     - synced
-   * - ``dsl-transition-plain-event``
-     - transition
-     - ``normalTransitionDefinition`` / event terms
-     - :ref:`sec-tutorials-dsl`
-     - :ref:`dsl-guards-effects-task` / :ref:`dsl-event-scopes-task`
-     - :ref:`dsl-transition-forms`
-     - :ref:`dsl-event-ownership-signal`
-     - ``event_scoping_complete.fcstm`` inspect
-     - synced
-   * - ``dsl-transition-guard-effect``
-     - transition
-     - ``COLON IF`` / ``EFFECT`` operation block
-     - :ref:`sec-tutorials-dsl`
-     - :ref:`dsl-guards-effects-task`
-     - :ref:`dsl-transition-forms`
-     - :ref:`dsl-expression-separation`
-     - ``guards_and_effects.fcstm`` inspect
-     - synced
-   * - ``dsl-transition-combo``
-     - transition
-     - ``combo_transition_trigger`` / ``entry_combo_transition_trigger``
-     - N/A: tutorial links advanced transition
-     - :ref:`dsl-combo-transition-task`
-     - :ref:`dsl-transition-forms`
-     - :ref:`dsl-combo-relay-semantics`
-     - combo fragments + semantic fixtures
-     - synced
-   * - ``dsl-transition-forced``
-     - transition
-     - ``transition_force_definition``
-     - N/A: tutorial links advanced transition
-     - :ref:`dsl-forced-transition-task`
-     - :ref:`dsl-transition-forms`
-     - :ref:`dsl-forced-transition-expansion`
-     - ``forced_transitions.fcstm`` inspect
-     - synced
-   * - ``dsl-event-scopes``
-     - event
-     - ``event_definition`` / ``chain_id``
-     - :ref:`sec-tutorials-dsl`
-     - :ref:`dsl-event-scopes-task`
+   * - Events
+     - ``:: Local`` / ``: Chain`` / ``: /RootEvent``
      - :ref:`dsl-events-scopes`
-     - :ref:`dsl-event-ownership-signal`
-     - ``event_scoping_complete.fcstm`` inspect
-     - synced
-   * - ``dsl-operation-assignment-temp``
-     - operation
-     - ``operation_assignment`` / local temp tracking
-     - :ref:`sec-tutorials-dsl`
-     - :ref:`dsl-guards-effects-task`
+   * - Operation blocks
+     - assignment, block-local temporary, ``if`` / ``else if`` / ``else``, empty statement
      - :ref:`dsl-operation-blocks`
-     - :ref:`dsl-expression-separation`
-     - ``guards_and_effects.fcstm`` inspect
-     - synced
-   * - ``dsl-operation-conditionals``
-     - operation
-     - ``if_statement`` / empty statement
-     - N/A: tutorial keeps blocks small
-     - :ref:`dsl-guards-effects-task`
-     - :ref:`dsl-operation-blocks`
-     - :ref:`dsl-expression-separation`
-     - ``guards_and_effects.fcstm`` inspect
-     - synced
-   * - ``dsl-expression-init``
-     - expression
-     - ``init_expression``
-     - :ref:`sec-tutorials-dsl`
-     - :ref:`dsl-expression-safety-task`
+   * - Expressions
+     - init, numeric, condition, ternary, operator precedence
      - :ref:`dsl-expression-reference`
-     - :ref:`dsl-expression-separation`
-     - top-level initializer snippets
-     - synced
-   * - ``dsl-expression-runtime``
-     - expression
-     - ``num_expression`` / math functions / bitwise
-     - :ref:`sec-tutorials-dsl`
-     - :ref:`dsl-expression-safety-task`
-     - :ref:`dsl-expression-reference`
-     - :ref:`dsl-expression-separation`
-     - ``expression_demo.fcstm`` inspect
-     - synced
-   * - ``dsl-expression-condition``
-     - expression
-     - ``cond_expression`` / comparison / boolean ops
-     - :ref:`sec-tutorials-dsl`
-     - :ref:`dsl-expression-safety-task`
-     - :ref:`dsl-expression-reference`
-     - :ref:`dsl-expression-separation`
-     - ``expression_demo.fcstm`` inspect
-     - synced
-   * - ``dsl-expression-ternary``
-     - expression
-     - ``conditionalCStyleExprNum`` / ``conditionalCStyleCondNum``
-     - N/A: tutorial keeps arithmetic simple
-     - :ref:`dsl-expression-safety-task`
-     - :ref:`dsl-expression-reference`
-     - :ref:`dsl-expression-separation`
-     - ``expression_demo.fcstm`` inspect
-     - synced
-   * - ``dsl-lifecycle-concrete``
-     - lifecycle
-     - ``enter`` / ``during`` / ``exit`` operation forms
-     - :ref:`sec-tutorials-dsl`
-     - :ref:`dsl-lifecycle-task`
-     - :ref:`dsl-lifecycle-forms`
-     - :ref:`dsl-lifecycle-hooks-semantics`
-     - ``first_thermostat.fcstm`` inspect
-     - synced
-   * - ``dsl-lifecycle-named-abstract-ref``
-     - lifecycle
-     - named / ``abstract`` / doc-comment / ``ref`` branches
-     - N/A: tutorial links advanced hooks
-     - :ref:`dsl-lifecycle-task`
-     - :ref:`dsl-lifecycle-forms`
-     - :ref:`dsl-lifecycle-hooks-semantics`
-     - ``abstract_reference_demo.fcstm`` inspect
-     - synced
-   * - ``dsl-aspect-forms``
-     - aspect
-     - ``during_aspect_definition``
-     - N/A: tutorial only links
-     - :ref:`dsl-aspect-task`
-     - :ref:`dsl-aspect-forms`
-     - :ref:`dsl-during-aspect-semantics`
-     - lifecycle diagrams / fragments
-     - synced
-   * - ``dsl-import-basic-alias``
-     - import
-     - ``import_statement`` header
-     - N/A: tutorial skips imports
-     - :ref:`dsl-import-task`
+   * - Lifecycle and aspects
+     - ``enter`` / ``during`` / ``exit``; ``abstract``; ``ref``; ``>> during``
+     - :ref:`dsl-lifecycle-forms`, :ref:`dsl-aspect-forms`
+   * - Imports
+     - ``import "path" as Alias`` and mapping block
      - :ref:`dsl-import-forms`
-     - :ref:`dsl-import-assembly-semantics`
-     - ``import_host_basic.fcstm`` inspect
-     - synced
-   * - ``dsl-import-mapping``
-     - import
-     - ``def_mapping_statement`` / ``event_mapping_statement``
-     - N/A: tutorial skips imports
-     - :ref:`dsl-import-task`
-     - :ref:`dsl-import-forms`
-     - :ref:`dsl-import-assembly-semantics`
-     - ``import_host_mapped.fcstm`` inspect
-     - synced
-   * - ``dsl-import-directory-boundary``
-     - import
-     - import path resolution in ``model/imports.py``
-     - N/A: tutorial skips imports
-     - :ref:`dsl-import-task`
-     - :ref:`dsl-import-forms`
-     - :ref:`dsl-import-assembly-semantics`
-     - ``import_host_directory.fcstm`` inspect
-     - synced
-   * - ``dsl-diagnostics-target-risk``
-     - diagnostics
-     - ``pyfcstm/diagnostics/codes.yaml`` / analyzers
-     - :ref:`sec-tutorials-dsl`
-     - :ref:`dsl-diagnostics-task`
+   * - Diagnostics wording
+     - target-specific warnings, especially C/C++ deployment-profile risks
      - :ref:`dsl-diagnostics-risk`
-     - :ref:`dsl-expression-separation`
-     - risk wording line audit
-     - synced
 
 .. _dsl-lexical-forms:
 
@@ -740,6 +529,269 @@ scope of each diagnostic.
      - Do not claim Python generated code has the same fixed-width or undefined-behavior risk unless a Python-specific diagnostic says so.
 
 Use :doc:`../../reference/diagnostics_codes/index` for code-level wording.
+
+Coverage appendix
+-----------------
+
+The next matrix is for maintainers and reviewers. It is intentionally placed
+after the user-facing syntax facts so normal readers can look up DSL forms
+without first crossing a migration audit table.
+
+.. _dsl-coverage-matrix:
+
+DSL coverage matrix
+-------------------
+
+``N/A`` means that the page type intentionally does not own that leaf ability.
+Every row still has a reference or explanation landing point.
+
+.. list-table:: DSL capability coverage
+   :header-rows: 1
+   :widths: 16 13 22 18 18 18 18 24 14
+
+   * - feature_id
+     - Family
+     - Fact source
+     - Tutorial coverage
+     - How-to coverage
+     - Reference coverage
+     - Explanation coverage
+     - Example / verification
+     - EN/ZH
+   * - ``dsl-lexical-comments``
+     - lexical
+     - ``GrammarLexer.g4`` comments / strings / IDs
+     - N/A: tutorial hides token table
+     - N/A: task pages use snippets
+     - :ref:`dsl-lexical-forms`
+     - N/A: syntax token facts
+     - reference table review
+     - synced
+   * - ``dsl-top-level-root``
+     - top-level
+     - ``state_machine_dsl`` / root ``state_definition``
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-small-valid-model-task`
+     - :ref:`dsl-top-level-forms`
+     - :ref:`dsl-root-design`
+     - ``first_thermostat.fcstm`` inspect
+     - synced
+   * - ``dsl-top-level-def``
+     - top-level
+     - ``def_assignment`` / ``init_expression``
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-expression-safety-task`
+     - :ref:`dsl-top-level-forms`
+     - :ref:`dsl-expression-separation`
+     - ``first_thermostat.fcstm`` inspect
+     - synced
+   * - ``dsl-import-preamble``
+     - import
+     - ``preamble_program`` / ``constant_definition`` / ``initial_assignment``
+     - N/A: tutorial skips imports
+     - :ref:`dsl-import-task`
+     - :ref:`dsl-import-preamble-forms`
+     - :ref:`dsl-import-assembly-semantics`
+     - ``import_host_*.fcstm`` inspect
+     - synced
+   * - ``dsl-state-leaf-composite``
+     - state
+     - ``state_definition`` leaf/composite branches
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-state-target-task`
+     - :ref:`dsl-state-forms`
+     - :ref:`dsl-ownership-name-resolution`
+     - ``first_thermostat.fcstm`` inspect
+     - synced
+   * - ``dsl-state-pseudo``
+     - state
+     - ``PSEUDO STATE`` / ``E_PSEUDO_NOT_LEAF``
+     - N/A: tutorial links advanced routing
+     - :ref:`dsl-state-target-task`
+     - :ref:`dsl-state-forms`
+     - :ref:`dsl-combo-relay-semantics`
+     - ``pseudo_state_demo.fcstm`` inspect
+     - synced
+   * - ``dsl-state-target-resolution``
+     - state
+     - model state lookup / transition ownership
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-state-target-task`
+     - :ref:`dsl-state-forms`
+     - :ref:`dsl-ownership-name-resolution`
+     - scope snippets / model validation
+     - synced
+   * - ``dsl-transition-initial``
+     - transition
+     - ``entryTransitionDefinition``
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-small-valid-model-task`
+     - :ref:`dsl-transition-forms`
+     - :ref:`dsl-composite-entry-semantics`
+     - ``first_thermostat.fcstm`` inspect
+     - synced
+   * - ``dsl-transition-plain-event``
+     - transition
+     - ``normalTransitionDefinition`` / event terms
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-guards-effects-task` / :ref:`dsl-event-scopes-task`
+     - :ref:`dsl-transition-forms`
+     - :ref:`dsl-event-ownership-signal`
+     - ``event_scoping_complete.fcstm`` inspect
+     - synced
+   * - ``dsl-transition-guard-effect``
+     - transition
+     - ``COLON IF`` / ``EFFECT`` operation block
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-guards-effects-task`
+     - :ref:`dsl-transition-forms`
+     - :ref:`dsl-expression-separation`
+     - ``operation_blocks_complete.fcstm`` inspect
+     - synced
+   * - ``dsl-transition-combo``
+     - transition
+     - ``combo_transition_trigger`` / ``entry_combo_transition_trigger``
+     - N/A: tutorial links advanced transition
+     - :ref:`dsl-combo-transition-task`
+     - :ref:`dsl-transition-forms`
+     - :ref:`dsl-combo-relay-semantics`
+     - ``combo_transitions.fcstm`` inspect
+     - synced
+   * - ``dsl-transition-forced``
+     - transition
+     - ``transition_force_definition``
+     - N/A: tutorial links advanced transition
+     - :ref:`dsl-forced-transition-task`
+     - :ref:`dsl-transition-forms`
+     - :ref:`dsl-forced-transition-expansion`
+     - ``forced_transitions.fcstm`` inspect
+     - synced
+   * - ``dsl-event-scopes``
+     - event
+     - ``event_definition`` / ``chain_id``
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-event-scopes-task`
+     - :ref:`dsl-events-scopes`
+     - :ref:`dsl-event-ownership-signal`
+     - ``event_scoping_complete.fcstm`` inspect
+     - synced
+   * - ``dsl-operation-assignment-temp``
+     - operation
+     - ``operation_assignment`` / local temp tracking
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-guards-effects-task`
+     - :ref:`dsl-operation-blocks`
+     - :ref:`dsl-expression-separation`
+     - ``operation_blocks_complete.fcstm`` inspect
+     - synced
+   * - ``dsl-operation-conditionals``
+     - operation
+     - ``if_statement`` / empty statement
+     - N/A: tutorial keeps blocks small
+     - :ref:`dsl-guards-effects-task`
+     - :ref:`dsl-operation-blocks`
+     - :ref:`dsl-expression-separation`
+     - ``operation_blocks_complete.fcstm`` inspect
+     - synced
+   * - ``dsl-expression-init``
+     - expression
+     - ``init_expression``
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-expression-safety-task`
+     - :ref:`dsl-expression-reference`
+     - :ref:`dsl-expression-separation`
+     - top-level initializer snippets
+     - synced
+   * - ``dsl-expression-runtime``
+     - expression
+     - ``num_expression`` / math functions / bitwise
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-expression-safety-task`
+     - :ref:`dsl-expression-reference`
+     - :ref:`dsl-expression-separation`
+     - ``expression_condition_ternary.fcstm`` inspect
+     - synced
+   * - ``dsl-expression-condition``
+     - expression
+     - ``cond_expression`` / comparison / boolean ops
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-expression-safety-task`
+     - :ref:`dsl-expression-reference`
+     - :ref:`dsl-expression-separation`
+     - ``expression_condition_ternary.fcstm`` inspect
+     - synced
+   * - ``dsl-expression-ternary``
+     - expression
+     - ``conditionalCStyleExprNum`` / ``conditionalCStyleCondNum``
+     - N/A: tutorial keeps arithmetic simple
+     - :ref:`dsl-expression-safety-task`
+     - :ref:`dsl-expression-reference`
+     - :ref:`dsl-expression-separation`
+     - ``expression_condition_ternary.fcstm`` inspect
+     - synced
+   * - ``dsl-lifecycle-concrete``
+     - lifecycle
+     - ``enter`` / ``during`` / ``exit`` operation forms
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-lifecycle-task`
+     - :ref:`dsl-lifecycle-forms`
+     - :ref:`dsl-lifecycle-hooks-semantics`
+     - ``first_thermostat.fcstm`` inspect
+     - synced
+   * - ``dsl-lifecycle-named-abstract-ref``
+     - lifecycle
+     - named / ``abstract`` / doc-comment / ``ref`` branches
+     - N/A: tutorial links advanced hooks
+     - :ref:`dsl-lifecycle-task`
+     - :ref:`dsl-lifecycle-forms`
+     - :ref:`dsl-lifecycle-hooks-semantics`
+     - ``abstract_reference_demo.fcstm`` inspect
+     - synced
+   * - ``dsl-aspect-forms``
+     - aspect
+     - ``during_aspect_definition``
+     - N/A: tutorial only links
+     - :ref:`dsl-aspect-task`
+     - :ref:`dsl-aspect-forms`
+     - :ref:`dsl-during-aspect-semantics`
+     - ``hierarchy_execution.fcstm`` inspect
+     - synced
+   * - ``dsl-import-basic-alias``
+     - import
+     - ``import_statement`` header
+     - N/A: tutorial skips imports
+     - :ref:`dsl-import-task`
+     - :ref:`dsl-import-forms`
+     - :ref:`dsl-import-assembly-semantics`
+     - ``import_host_basic.fcstm`` inspect
+     - synced
+   * - ``dsl-import-mapping``
+     - import
+     - ``def_mapping_statement`` / ``event_mapping_statement``
+     - N/A: tutorial skips imports
+     - :ref:`dsl-import-task`
+     - :ref:`dsl-import-forms`
+     - :ref:`dsl-import-assembly-semantics`
+     - ``import_host_mapped.fcstm`` inspect
+     - synced
+   * - ``dsl-import-directory-boundary``
+     - import
+     - import path resolution in ``model/imports.py``
+     - N/A: tutorial skips imports
+     - :ref:`dsl-import-task`
+     - :ref:`dsl-import-forms`
+     - :ref:`dsl-import-assembly-semantics`
+     - ``import_host_directory.fcstm`` inspect
+     - synced
+   * - ``dsl-diagnostics-target-risk``
+     - diagnostics
+     - ``pyfcstm/diagnostics/codes.yaml`` / analyzers
+     - :ref:`sec-tutorials-dsl`
+     - :ref:`dsl-diagnostics-task`
+     - :ref:`dsl-diagnostics-risk`
+     - :ref:`dsl-expression-separation`
+     - risk wording line audit
+     - synced
 
 .. _dsl-fact-check-notes:
 

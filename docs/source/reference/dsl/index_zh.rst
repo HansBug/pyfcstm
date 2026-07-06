@@ -21,6 +21,10 @@ DSL 参考
 需要查精确 form 时先看这里。本 reference 中的示例默认是 fragment；只有明确说是
 ``docs/source/tutorials/dsl`` 下 checked file 的内容才是完整示例。任务指南会把主要 form 链到完整示例和验证命令。
 
+术语约定：``identifier`` 是标识符，``string`` 是字符串，``comment`` 是注释，``keyword`` 是关键字；
+``persistent variable`` 是持久变量，``composite`` 是复合状态，``child state`` 是子状态；
+``initial transition`` 是初始转换，``condition expression`` 是条件表达式，``numeric expression`` 是数值表达式。
+
 .. list-table:: 语法族
    :header-rows: 1
    :widths: 24 38 38
@@ -130,6 +134,18 @@ Import assembly pipeline 还会解析 preamble entry point。
      - 在 import preamble context 中提供 initial assignment。
 
 这些 forms 不是普通 top-level ``def`` declarations。它们让 imported modules 在被 host 重写之前暴露 assembly-time constants 或 initial values。
+
+最小 parser-helper 验证：
+
+.. code-block:: python
+
+   from pyfcstm.dsl.parse import parse_preamble
+
+   print(parse_preamble("limit = 3;"))
+   print(parse_preamble("speed := 5;"))
+
+这是 parser-helper fact，不是完整 ``.fcstm`` 文件的普通用户入口。用户面对的 import 示例仍应使用具体文件，
+例如 ``import "./line/main.fcstm" as Line;``\ 。
 
 .. _dsl-state-forms-zh:
 
@@ -560,7 +576,7 @@ DSL 覆盖矩阵
      - :ref:`dsl-import-task-zh`
      - :ref:`dsl-import-preamble-forms-zh`
      - :ref:`dsl-import-assembly-semantics-zh`
-     - ``import_host_*.fcstm`` inspect
+     - ``parse_preamble("limit = 3;")`` / parser-helper only
      - synced
    * - ``dsl-state-leaf-composite``
      - state

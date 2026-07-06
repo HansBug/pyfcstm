@@ -129,6 +129,11 @@ _OP_PRECEDENCE = {
     '?:': 5,
 }
 
+_RIGHT_ASSOCIATIVE_BINARY_OPS = frozenset({
+    '**',
+    '=>',
+})
+
 _FLOAT_EPSILON = 1e-10
 
 
@@ -789,11 +794,19 @@ def _expr_text(expr: Optional['Expr']) -> Optional[str]:
         if left is None or right is None:
             return None
         left_precedence = _expr_precedence(expr.x)
-        if left_precedence is not None and left_precedence < my_precedence:
-            left = f'({left})'
+        if left_precedence is not None:
+            if op in _RIGHT_ASSOCIATIVE_BINARY_OPS:
+                if left_precedence <= my_precedence:
+                    left = f'({left})'
+            elif left_precedence < my_precedence:
+                left = f'({left})'
         right_precedence = _expr_precedence(expr.y)
-        if right_precedence is not None and right_precedence <= my_precedence:
-            right = f'({right})'
+        if right_precedence is not None:
+            if op in _RIGHT_ASSOCIATIVE_BINARY_OPS:
+                if right_precedence < my_precedence:
+                    right = f'({right})'
+            elif right_precedence <= my_precedence:
+                right = f'({right})'
         return f'{left} {op} {right}'
     if isinstance(expr, ConditionalOp):
         my_precedence = _OP_PRECEDENCE['?:']

@@ -15,6 +15,9 @@ DSL 任务指南
 
 所有引用 checked example 的命令都默认从仓库根目录运行。
 
+术语约定：``recipe`` 是可执行任务配方，``checked example`` 是已纳入构建/测试检查的示例，
+``diagnostics`` 是 inspect 给出的诊断，``target profile`` 是生成目标语言/运行时配置。
+
 .. _dsl-small-valid-model-task-zh:
 
 写一个小型有效模型
@@ -62,7 +65,7 @@ DSL 任务指南
 
 ``ChildA -> ChildB`` 写在 ``Parent`` 内，因为 ``Parent`` 拥有这两个名字。从 ``Parent`` 外部进入时，应 target ``Parent``，再由 ``Parent`` 的 initial transition 选择 child。
 
-故意错误模式：
+常见错误：从外部直接 target 另一个 composite 拥有的 child state。
 
 .. code-block:: fcstm
 
@@ -78,6 +81,19 @@ DSL 任务指南
    }
 
 修复方式是写 ``Outside -> Parent;``，或把指向 child 的 transition 移入 ``Parent``。精确规则见 :ref:`dsl-state-forms-zh` 和 :ref:`dsl-ownership-name-resolution-zh`。
+
+验证一个 checked hierarchy 示例：
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/hierarchy_execution.fcstm --format human --color never
+
+预期摘录：
+
+.. code-block:: text
+
+   root: HierarchyDemo
+   diagnostics: 0 errors / 1 warnings / 1 infos
 
 .. _dsl-event-scopes-task-zh:
 
@@ -190,6 +206,19 @@ Checked example：
 
 不要用 ``->`` 表示 implication；它是 transition 语法。不要把 ``^`` 当 boolean xor。完整 precedence 见 :ref:`dsl-expression-reference-zh` 和 :ref:`dsl-expression-separation-zh`。
 
+验证 checked expression 示例：
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/expression_condition_ternary.fcstm --format human --color never
+
+预期摘录：
+
+.. code-block:: text
+
+   root: ExpressionConditionTernary
+   diagnostics: 0 errors / 0 warnings / 0 infos
+
 .. _dsl-lifecycle-task-zh:
 
 编写 lifecycle hook、ref 和 abstract hook
@@ -224,6 +253,19 @@ Lifecycle ordering 可参考：
 .. image:: ../../tutorials/dsl/composite_state_lifecycle.puml.svg
    :alt: Composite state lifecycle
 
+验证 checked lifecycle 示例：
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/abstract_reference_demo.fcstm --format human --color never
+
+预期摘录：
+
+.. code-block:: text
+
+   root: AbstractReferenceDemo
+   diagnostics: 0 errors / 0 warnings / 3 infos
+
 .. _dsl-aspect-task-zh:
 
 使用 during aspect
@@ -244,6 +286,19 @@ Lifecycle ordering 可参考：
 
 详见 :ref:`dsl-during-aspect-semantics-zh`。
 
+验证 checked aspect 示例：
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/hierarchy_execution.fcstm --format human --color never
+
+预期摘录：
+
+.. code-block:: text
+
+   root: HierarchyDemo
+   diagnostics: 0 errors / 1 warnings / 1 infos
+
 .. _dsl-forced-transition-task-zh:
 
 编写 forced transition
@@ -263,6 +318,20 @@ Lifecycle ordering 可参考：
 * 它不能带 combo ``+`` chain，也不能有 ``effect`` block。
 
 需要共享 side effect 时，把行为放到 target ``enter``，或写显式 normal transitions。原因见 :ref:`dsl-forced-transition-expansion-zh`。
+
+验证展开规模：
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/forced_transitions.fcstm --format human --color never
+
+预期摘录：
+
+.. code-block:: text
+
+   root: System
+   transitions: 17
+   diagnostics: 0 errors / 2 warnings / 0 infos
 
 .. _dsl-combo-transition-task-zh:
 
@@ -314,19 +383,19 @@ Basic import：
 
 .. literalinclude:: ../../tutorials/dsl/import_host_basic.fcstm
    :language: fcstm
-   :caption: Basic import host
+   :caption: Basic import host；预期 diagnostics：两个 ``W_UNREFERENCED_VAR``\ 。
 
 Mapping import：
 
 .. literalinclude:: ../../tutorials/dsl/import_host_mapped.fcstm
    :language: fcstm
-   :caption: Import with variable and event mappings
+   :caption: Import with variable and event mappings；预期 diagnostics：三个 ``W_UNREFERENCED_VAR``\ 。
 
 Imported worker：
 
 .. literalinclude:: ../../tutorials/dsl/import_worker.fcstm
    :language: fcstm
-   :caption: Imported worker module
+   :caption: Imported worker module；预期 diagnostics：两个 ``W_UNREFERENCED_VAR``\ 。
 
 Mapping facts：
 
@@ -337,6 +406,20 @@ Mapping facts：
 * Directory project 必须 import 具体 entry file，例如 ``./import_line/main.fcstm``；bare directory 不是 DSL file。
 
 Preamble form（如 ``name = value;`` 和 ``name := value;``）是 import assembly helper/test 使用的 parser-helper entry point，不是普通 ``state_machine_dsl`` 文件里的 root-level ``def``。边界见 :ref:`dsl-import-preamble-forms-zh`。
+
+从仓库根目录验证 mapped import：
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/import_host_mapped.fcstm --format human --color never
+
+预期摘录：
+
+.. code-block:: text
+
+   root: System
+   variables: 3
+   diagnostics: 0 errors / 3 warnings / 0 infos
 
 .. _dsl-diagnostics-task-zh:
 
@@ -384,3 +467,16 @@ Diagnostic 包含 ``code``、``severity``、human message、source span 和 ``re
    A -> B :: Go + [ready > 0];
 
 Code-level 细节见 :doc:`../../reference/diagnostics_codes/index_zh`。
+
+验证 intentional warning 文件：
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/combo_duplicate_event.fcstm --format human --color never
+
+预期摘录：
+
+.. code-block:: text
+
+   W_COMBO_DUPLICATE_EVENT
+   diagnostics: 0 errors / 1 warnings / 1 infos

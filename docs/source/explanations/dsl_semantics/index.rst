@@ -303,5 +303,26 @@ The DSL is intentionally narrower than a general programming language:
 * combo relay pseudo states are pure routing helpers;
 * target-risk diagnostics must name their target profile.
 
+The event-plus-guard boundary is intentionally visible. This ordinary transition
+shape is invalid:
+
+.. literalinclude:: ../../tutorials/dsl/event_guard_mixed_invalid.fcstm.txt
+   :language: fcstm
+   :caption: Invalid ordinary event-plus-guard suffix; expected parser excerpt: ``Unexpected token 'if'``.
+
+Use combo syntax when both terms are required:
+
+.. code-block:: fcstm
+
+   A -> B :: Go + [ready > 0];
+
+The other boundaries fail at the parser or model-validation layer rather than
+being silently rewritten. For example, a forced transition with an ``effect``
+block is rejected instead of cloning a side effect across many sources; a combo
+relay pseudo state with lifecycle actions is rejected or warned as routing
+machinery, not treated as business behavior; and numeric target-risk warnings
+must stay scoped to the C/C++ deployment profiles that have fixed-width or
+undefined-behavior risk.
+
 Those boundaries keep models parseable, inspectable, simulatable, and suitable
 for multi-language code generation.

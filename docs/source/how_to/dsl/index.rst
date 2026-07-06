@@ -73,7 +73,7 @@ Recommended complete pattern:
 names. From outside ``Parent``, target ``Parent`` itself and let ``Parent`` use
 its initial transition.
 
-Intentional bad pattern:
+Common mistake: targeting a child owned by another composite from the outside.
 
 .. code-block:: fcstm
 
@@ -91,6 +91,19 @@ Intentional bad pattern:
 The fix is either ``Outside -> Parent;`` or moving the child-targeting
 transition inside ``Parent``. Read :ref:`dsl-state-forms` and
 :ref:`dsl-ownership-name-resolution` for the exact rule.
+
+Verify a checked hierarchy example:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/hierarchy_execution.fcstm --format human --color never
+
+Expected excerpt:
+
+.. code-block:: text
+
+   root: HierarchyDemo
+   diagnostics: 0 errors / 1 warnings / 1 infos
 
 .. _dsl-event-scopes-task:
 
@@ -214,6 +227,19 @@ Do not use ``->`` for implication; it is transition syntax. Do not use ``^`` as
 boolean xor. See :ref:`dsl-expression-reference` and
 :ref:`dsl-expression-separation` for precedence and design rationale.
 
+Verify the checked expression example:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/expression_condition_ternary.fcstm --format human --color never
+
+Expected excerpt:
+
+.. code-block:: text
+
+   root: ExpressionConditionTernary
+   diagnostics: 0 errors / 0 warnings / 0 infos
+
 .. _dsl-lifecycle-task:
 
 Write lifecycle hooks, refs, and abstract hooks
@@ -252,6 +278,19 @@ Review the diagrams when you need lifecycle ordering:
 .. image:: ../../tutorials/dsl/composite_state_lifecycle.puml.svg
    :alt: Composite state lifecycle
 
+Verify the checked lifecycle example:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/abstract_reference_demo.fcstm --format human --color never
+
+Expected excerpt:
+
+.. code-block:: text
+
+   root: AbstractReferenceDemo
+   diagnostics: 0 errors / 0 warnings / 3 infos
+
 .. _dsl-aspect-task:
 
 Use during aspects
@@ -274,6 +313,19 @@ Interpretation:
 * aspect actions do not run inside combo pseudo relay states.
 
 See :ref:`dsl-during-aspect-semantics` for the detailed boundary.
+
+Verify the checked aspect example:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/hierarchy_execution.fcstm --format human --color never
+
+Expected excerpt:
+
+.. code-block:: text
+
+   root: HierarchyDemo
+   diagnostics: 0 errors / 1 warnings / 1 infos
 
 .. _dsl-forced-transition-task:
 
@@ -300,6 +352,20 @@ Rules:
 If you need shared side effects, put them in the target state's ``enter`` block
 or write explicit normal transitions with visible ``effect`` blocks. See
 :ref:`dsl-forced-transition-expansion` for why the DSL keeps this restriction.
+
+Verify the expansion size:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/forced_transitions.fcstm --format human --color never
+
+Expected excerpt:
+
+.. code-block:: text
+
+   root: System
+   transitions: 17
+   diagnostics: 0 errors / 2 warnings / 0 infos
 
 .. _dsl-combo-transition-task:
 
@@ -358,19 +424,19 @@ Basic import:
 
 .. literalinclude:: ../../tutorials/dsl/import_host_basic.fcstm
    :language: fcstm
-   :caption: Basic import host
+   :caption: Basic import host; expected diagnostics: two ``W_UNREFERENCED_VAR`` warnings.
 
 Mapping import:
 
 .. literalinclude:: ../../tutorials/dsl/import_host_mapped.fcstm
    :language: fcstm
-   :caption: Import with variable and event mappings
+   :caption: Import with variable and event mappings; expected diagnostics: three ``W_UNREFERENCED_VAR`` warnings.
 
 Imported worker:
 
 .. literalinclude:: ../../tutorials/dsl/import_worker.fcstm
    :language: fcstm
-   :caption: Imported worker module
+   :caption: Imported worker module; expected diagnostics: two ``W_UNREFERENCED_VAR`` warnings.
 
 Mapping facts:
 
@@ -387,6 +453,20 @@ Preamble forms such as ``name = value;`` and ``name := value;`` are parser-helpe
 entry points used by import assembly tests and helpers. They are not ordinary
 root-level ``def`` declarations in a normal ``state_machine_dsl`` file. See
 :ref:`dsl-import-preamble-forms` for the exact boundary.
+
+Verify the mapped import from the repository root:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/import_host_mapped.fcstm --format human --color never
+
+Expected excerpt:
+
+.. code-block:: text
+
+   root: System
+   variables: 3
+   diagnostics: 0 errors / 3 warnings / 0 infos
 
 .. _dsl-diagnostics-task:
 
@@ -435,3 +515,16 @@ It fails because ordinary event syntax and ordinary guard syntax are two separat
    A -> B :: Go + [ready > 0];
 
 For code-level details, read :doc:`../../reference/diagnostics_codes/index`.
+
+Verify the intentional warning file:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/combo_duplicate_event.fcstm --format human --color never
+
+Expected excerpt:
+
+.. code-block:: text
+
+   W_COMBO_DUPLICATE_EVENT
+   diagnostics: 0 errors / 1 warnings / 1 infos

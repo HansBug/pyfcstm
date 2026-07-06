@@ -142,6 +142,19 @@ These forms are not ordinary top-level ``def`` declarations. They exist so
 imported modules can expose assembly-time constants or initial values before the
 model is rewritten into the host.
 
+Minimal parser-helper verification:
+
+.. code-block:: python
+
+   from pyfcstm.dsl.parse import parse_preamble
+
+   print(parse_preamble("limit = 3;"))
+   print(parse_preamble("speed := 5;"))
+
+This is a parser-helper fact, not a normal user entry point for complete
+``.fcstm`` files. User-facing import examples should still use concrete import
+files such as ``import "./line/main.fcstm" as Line;``.
+
 .. _dsl-state-forms:
 
 State forms
@@ -592,7 +605,7 @@ Every row still has a reference or explanation landing point.
      - :ref:`dsl-import-task`
      - :ref:`dsl-import-preamble-forms`
      - :ref:`dsl-import-assembly-semantics`
-     - ``import_host_*.fcstm`` inspect
+     - ``parse_preamble("limit = 3;")`` / parser-helper only
      - synced
    * - ``dsl-state-leaf-composite``
      - state

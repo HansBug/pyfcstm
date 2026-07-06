@@ -243,4 +243,18 @@ DSL 有意比通用编程语言更窄：
 * combo relay pseudo state 是纯 routing helper；
 * target-risk diagnostic 必须说明 target profile。
 
+event-plus-guard 边界是有意暴露出来的。下面这种 ordinary transition form 非法：
+
+.. literalinclude:: ../../tutorials/dsl/event_guard_mixed_invalid.fcstm.txt
+   :language: fcstm
+   :caption: 非法 ordinary event-plus-guard suffix；预期 parser 摘录：``Unexpected token 'if'``\ 。
+
+需要同时要求 event 和 guard 时，请使用 combo syntax：
+
+.. code-block:: fcstm
+
+   A -> B :: Go + [ready > 0];
+
+其他边界也会在 parser 或 model-validation 层失败，而不是被静默改写。例如：带 ``effect`` block 的 forced transition 会被拒绝，而不是把 side effect 克隆到多个 source；带 lifecycle action 的 combo relay pseudo state 会被拒绝或告警，因为它只是 routing machinery，不是业务 state；numeric target-risk warning 也必须限定到具有 fixed-width 或 undefined-behavior 风险的 C/C++ deployment profiles。
+
 这些边界让模型保持 parseable、inspectable、simulatable，并适合生成多种 target language 的代码。

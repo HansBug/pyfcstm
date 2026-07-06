@@ -1331,7 +1331,7 @@ DSL feature checklist
    :header: "feature_id", "family", "fact source", "new owner pages", "verification"
 
    dsl-top-level-root,top-level,GrammarParser.g4 state_machine_dsl / def_assignment,"tutorials/dsl, reference/dsl",first_thermostat.fcstm inspect
-   dsl-import-preamble,import,preamble_program / constant_definition / initial_assignment,"how_to/dsl, reference/dsl, explanations/dsl_semantics",import examples inspect
+   dsl-import-preamble,import,preamble_program / constant_definition / initial_assignment,"how_to/dsl, reference/dsl, explanations/dsl_semantics","parse_preamble helper only; not normal .fcstm entry point"
    dsl-state-leaf-composite-pseudo,state,state_definition / E_PSEUDO_NOT_LEAF,"tutorials/dsl, how_to/dsl, reference/dsl, explanations/dsl_semantics",pseudo_state_demo inspect
    dsl-transition-normal,transition,transition_definition,"tutorials/dsl, how_to/dsl, reference/dsl",operation_blocks_complete.fcstm inspect
    dsl-transition-forced,transition,transition_force_definition,"how_to/dsl, reference/dsl, explanations/dsl_semantics",forced_transitions inspect

@@ -11,25 +11,26 @@ DSL 任务指南
 如何使用本页
 ------------
 
-本页不是语法目录，而是 FCSTM DSL 的任务手册。每个 recipe 都说明什么时候使用、推荐写法、如何验证、预期 diagnostics、常见错误和深入阅读位置。
+本页不是语法目录，而是 FCSTM DSL 的任务手册。每个任务配方（recipe）都说明什么时候使用、推荐写法、如何验证、预期诊断、常见错误和深入阅读位置。
 
-所有引用 checked example 的命令都默认从仓库根目录运行。
+所有引用已检查示例（checked example）的命令都默认从仓库根目录运行。
 
-术语约定：``recipe`` 是可执行任务配方，``checked example`` 是已纳入构建/测试检查的示例，
-``diagnostics`` 是 inspect 给出的诊断，``target profile`` 是生成目标语言/运行时配置，``owner scope``
-是拥有当前声明的状态作用域，``endpoint`` 是 transition 的源/目标端点，``pseudo relay state``
-是 combo 展开生成的伪中继状态。
+术语约定：本页首次出现必要英文术语时采用“中文（English）”格式，后文只使用中文。诊断（diagnostics）是
+``pyfcstm inspect`` 给出的检查结果，目标配置（target profile）是生成目标语言或运行时配置，拥有者作用域
+（owner scope）是拥有当前声明的状态作用域，端点（endpoint）是转换（transition）的来源或目标，伪中继状态
+（pseudo relay state）是组合转换（combo transition）展开生成的纯路由节点。代码、命令、文件路径、JSON 字段、诊断码和 DSL
+关键字保持原文。
 
 .. _dsl-small-valid-model-task-zh:
 
 写一个小型有效模型
 ------------------
 
-当你需要在加入高级功能前做最小健全性检查（sanity check）时，从一个根复合状态（root composite）、一个 initial transition 和几个 leaf states 开始。
+当你需要在加入高级功能前做最小健全性检查（sanity check）时，从一个根复合状态（root composite）、一个初始转换（initial transition）和几个叶状态（leaf state）开始。
 
 .. literalinclude:: ../../tutorials/dsl/first_thermostat.fcstm
    :language: fcstm
-   :caption: 第一个可运行模型；预期 diagnostics：none。
+   :caption: 第一个可运行模型；预期诊断：无。
 
 验证命令：
 
@@ -45,14 +46,14 @@ DSL 任务指南
    root: Thermostat
    diagnostics: 0 errors / 0 warnings / 0 infos
 
-常见错误：在 endpoint state 声明之前或不在同一个 owner scope 中写 transition。除非 transition 本来就是进入或离开 composite boundary，否则应把 endpoint 和 transition 放在同一个 owning composite 内。
+常见错误：在端点状态声明之前，或不在同一个拥有者作用域中写转换。除非转换本来就是进入或离开复合状态边界，否则应把端点和转换放在同一个拥有复合状态内。
 
 .. _dsl-state-target-task-zh:
 
-组织 state 并解析 target
-------------------------
+组织状态并解析目标
+------------------
 
-当 transition 报告找不到 state，或你不确定 transition 应该写在哪里时，用这个规则：transition 只能直接引用当前 owner scope 能看到的 endpoint 名称。
+当转换报告找不到状态，或你不确定转换应该写在哪里时，用这个规则：转换只能直接引用当前拥有者作用域能看到的端点名称。
 
 推荐完整模式：
 
@@ -65,9 +66,9 @@ DSL 任务指南
        ChildA -> ChildB;
    }
 
-``ChildA -> ChildB`` 写在 ``Parent`` 内，因为 ``Parent`` 拥有这两个名字。从 ``Parent`` 外部进入时，应 target ``Parent``，再由 ``Parent`` 的 initial transition 选择 child。
+``ChildA -> ChildB`` 写在 ``Parent`` 内，因为 ``Parent`` 拥有这两个名字。从 ``Parent`` 外部进入时，应以 ``Parent`` 为目标，再由 ``Parent`` 的初始转换选择子状态。
 
-常见错误：从外部直接 target 另一个 composite 拥有的 child state。
+常见错误：从外部直接以另一个复合状态拥有的子状态为目标。
 
 .. code-block:: fcstm
 
@@ -79,10 +80,10 @@ DSL 任务指南
            state ChildA;
            state ChildB;
        }
-       Outside -> ChildB;  // invalid: ChildB 不属于 Root
+       Outside -> ChildB;  // 错误：ChildB 不属于 Root
    }
 
-修复方式是写 ``Outside -> Parent;``，或把指向 child 的 transition 移入 ``Parent``。精确规则见 :ref:`dsl-state-forms-zh` 和 :ref:`dsl-ownership-name-resolution-zh`。
+修复方式是写 ``Outside -> Parent;``，或把指向子状态的转换移入 ``Parent``。精确规则见 :ref:`dsl-state-forms-zh` 和 :ref:`dsl-ownership-name-resolution-zh`。
 
 如果把上面的坏模型保存为 ``/tmp/nested_target_invalid.fcstm``，可用下面命令验证失败：
 
@@ -97,7 +98,7 @@ DSL 任务指南
    Invalid state machine model ... Unknown to state 'ChildB' of transition:
    Outside -> ChildB; (line 9)
 
-验证一个 checked hierarchy 示例：
+验证一个已检查层级示例：
 
 .. code-block:: bash
 
@@ -110,41 +111,41 @@ DSL 任务指南
    root: HierarchyDemo
    diagnostics: 0 errors / 1 warnings / 1 infos
 
-Pseudo state 是只负责 routing 的 leaf helper，不应承载业务 lifecycle behavior。这个 legacy pseudo-state 示例作为 checked resource 保留：
+伪状态只负责路由，是叶状态辅助节点，不应承载业务生命周期行为。这个遗留伪状态示例作为已检查资源保留：
 
 .. literalinclude:: ../../tutorials/dsl/pseudo_state_demo.fcstm
    :language: fcstm
-   :caption: Pseudo-state routing 示例；预期 diagnostics：一个 ``W_UNREFERENCED_VAR`` 和三个 ``I_TRANSITION_NEVER_EVENT_TRIGGERED``\ 。
+   :caption: 伪状态路由示例；预期诊断：一个 ``W_UNREFERENCED_VAR`` 和三个 ``I_TRANSITION_NEVER_EVENT_TRIGGERED``\ 。
 
 .. _dsl-event-scopes-task-zh:
 
-编写 event scope
-----------------
+编写事件作用域
+--------------
 
-离散外部触发建议用 event。根据 ownership 选择拼写：
+离散外部触发建议用事件。根据所有权选择拼写：
 
-.. list-table:: Event-scope recipe
+.. list-table:: 事件作用域写法
    :header-rows: 1
    :widths: 24 34 42
 
    * - 需求
      - 写法
      - 含义
-   * - Source state 私有事件
+   * - 来源状态私有事件
      - ``Idle -> Heating :: Heat;``
-     - Event local to ``Idle``。
-   * - Containing 或 named state 拥有的事件
+     - 事件归 ``Idle`` 本地拥有。
+   * - 包含状态或命名状态拥有的事件
      - ``Idle -> Running : Start;``
-     - Event 沿 ownership chain 解析。
-   * - Root-owned event
+     - 事件沿所有权链解析。
+   * - 根状态拥有的事件
      - ``Worker -> Active : /Start;``
-     - Event path 从 root 下方开始。
+     - 事件路径从根状态下方开始。
 
-Checked example：
+已检查示例：
 
 .. literalinclude:: ../../tutorials/dsl/event_scoping_complete.fcstm
    :language: fcstm
-   :caption: 完整 event scope 示例；预期 diagnostics：演示用 ``counter`` 触发 ``W_UNREFERENCED_VAR``\ 。
+   :caption: 完整 event scope 示例；预期诊断：演示用 ``counter`` 触发 ``W_UNREFERENCED_VAR``\ 。
 
 验证命令：
 
@@ -152,32 +153,32 @@ Checked example：
 
    pyfcstm inspect -i docs/source/tutorials/dsl/event_scoping_complete.fcstm --format json
 
-在 JSON 中查看 ``events[].qualified_name`` 和 ``events[].scope``。为了可读性，推荐写成 ``: /Start``\ ，因为它把 event-scope
-``:`` token 和 absolute root path 分开。当前 parser 也接受紧凑写法 ``:/Start``\ ，并会序列化成同一个 absolute event，
-但带空格的写法更适合教学、搜索和 review。
+在 JSON 中查看 ``events[].qualified_name`` 和 ``events[].scope``。为了可读性，推荐写成 ``: /Start``\ ，因为它把事件作用域
+``:`` 词法符号和绝对根路径分开。当前解析器也接受紧凑写法 ``:/Start``\ ，并会序列化成同一个绝对事件，
+但带空格的写法更适合教学、搜索和复核。
 
-常见错误：不要只因为“看起来更短”就在 ``::`` 和 ``:`` 之间切换。这个拼写会改变 event owner，进而影响 import mapping、
-simulation input name 和 inspect 的 ``events[].scope`` 输出。
+常见错误：不要只因为“看起来更短”就在 ``::`` 和 ``:`` 之间切换。这个拼写会改变事件拥有者，进而影响导入映射、
+仿真输入名称和检查报告的 ``events[].scope`` 输出。
 
 .. _dsl-guards-effects-task-zh:
 
-编写 guard、effect 和 operation block
-----------------------------------------------
+编写守卫条件、效果动作和操作块
+--------------------------------
 
-Guard 决定 transition 是否 enabled。Effect 在 source exit 之后、target enter 之前更新变量。
+守卫条件决定转换是否可用。效果动作在来源退出之后、目标进入之前更新变量。
 
-完整 operation-block 示例：
+完整操作块示例：
 
 .. literalinclude:: ../../tutorials/dsl/operation_blocks_complete.fcstm
    :language: fcstm
-   :caption: Assignment、block-local temporary、``if`` / ``else if`` / ``else``、empty statement 和 ternary assignment；预期 diagnostics：none。
+   :caption: 赋值、块内临时变量、``if`` / ``else if`` / ``else``、空语句和三目赋值；预期诊断：无。
 
 示例中的关键点：
 
-* ``delta`` 和 ``next_sample`` 是 block-local temporary，只能在同一个 block 内赋值后读取。
-* Operation block 内支持 ``if [condition] { ... } else if [condition] { ... } else { ... }``。
-* 单独的 ``;`` 是合法 no-op statement。
-* Guard condition 和 assignment RHS 是不同表达式上下文。
+* ``delta`` 和 ``next_sample`` 是块内临时变量，只能在同一个块内赋值后读取。
+* 操作块内支持 ``if [condition] { ... } else if [condition] { ... } else { ... }``。
+* 单独的 ``;`` 是合法空操作语句。
+* 守卫条件和赋值右侧是不同表达式上下文。
 
 验证命令：
 
@@ -185,16 +186,16 @@ Guard 决定 transition 是否 enabled。Effect 在 source exit 之后、target 
 
    pyfcstm inspect -i docs/source/tutorials/dsl/operation_blocks_complete.fcstm --format human --color never
 
-常见错误：如果看到 ``E_UNDEFINED_VAR`` 且 ``refs.is_temporary=true``，通常说明 temporary 在同一个 block 内先被读取后被赋值。
+常见错误：如果看到 ``E_UNDEFINED_VAR`` 且 ``refs.is_temporary=true``，通常说明临时变量在同一个块内先被读取后被赋值。
 
 .. _dsl-expression-safety-task-zh:
 
-安全使用 expression
--------------------
+安全使用表达式
+--------------
 
 表达式有三个上下文：
 
-.. list-table:: Expression contexts
+.. list-table:: 表达式上下文
    :header-rows: 1
    :widths: 22 38 40
 
@@ -202,39 +203,39 @@ Guard 决定 transition 是否 enabled。Effect 在 source exit 之后、target 
      - 接受
      - 不接受
    * - ``init_expression``
-     - literal、``pi`` / ``E`` / ``tau``、arithmetic、bitwise、unary math function
-     - runtime variable read、ternary expression
+     - 字面量、``pi`` / ``E`` / ``tau``、算术、位运算、一元数学函数
+     - 运行时变量读取、三目表达式
    * - ``num_expression``
-     - runtime variable、arithmetic、bitwise、math function、numeric ternary
-     - condition-only operator 直接出现在 numeric assignment 中
+     - 运行时变量、算术、位运算、数学函数、数值三目表达式
+     - 条件专用运算符直接出现在数值赋值中
    * - ``cond_expression``
-     - comparison、``&&`` / ``and``、``||`` / ``or``、``!`` / ``not``、``=>`` / ``implies``、``xor``、``iff``、condition ternary
-     - numeric assignment statement
+     - 比较、``&&`` / ``and``、``||`` / ``or``、``!`` / ``not``、``=>`` / ``implies``、``xor``、``iff``、条件三目表达式
+     - 数值赋值语句
 
-Checked example：
+已检查示例：
 
 .. literalinclude:: ../../tutorials/dsl/expression_condition_ternary.fcstm
    :language: fcstm
-   :caption: Runtime expression、condition operator、implication、xor/iff 和 ternary form；预期 diagnostics：none。
+   :caption: 运行时表达式、条件运算符、蕴含、xor / iff 和三目形式；预期诊断：无。
 
 常见拼写陷阱：
 
-Fragment pattern（片段，不是完整 checked file；后面有完整 checked file）：
+片段模式（片段，不是完整已验证文件；后面有完整已验证文件）：
 
 .. code-block:: fcstm
 
-   // Good: boolean xor 使用 word "xor"。
+   // 正确：布尔异或使用 "xor"。
    A -> B : if [(left > 0) xor (right > 0)];
 
-   // Good: implication 在 condition 中使用 "=>" 或 "implies"。
+   // 正确：蕴含在条件中使用 "=>" 或 "implies"。
    A -> B : if [request > 0 => ready > 0];
 
-   // Good: numeric bitwise xor 仍然是 "^"。
+   // 正确：数值位异或仍然是 "^"。
    flags = flags ^ 0x01;
 
-不要用 ``->`` 表示 implication；它是 transition 语法。不要把 ``^`` 当 boolean xor。完整 precedence 见 :ref:`dsl-expression-reference-zh` 和 :ref:`dsl-expression-separation-zh`。
+不要用 ``->`` 表示蕴含；它是转换语法。不要把 ``^`` 当布尔异或。完整优先级见 :ref:`dsl-expression-reference-zh` 和 :ref:`dsl-expression-separation-zh`。
 
-验证 checked expression 示例：
+验证已检查表达式示例：
 
 .. code-block:: bash
 
@@ -249,12 +250,12 @@ Fragment pattern（片段，不是完整 checked file；后面有完整 checked 
 
 .. _dsl-lifecycle-task-zh:
 
-编写 lifecycle hook、ref 和 abstract hook
-----------------------------------------------------
+编写生命周期钩子、引用和抽象钩子
+--------------------------------
 
-模型自己拥有行为时使用 concrete lifecycle action；generated code 需要调用用户行为时使用 ``abstract``；多个 state 复用 named lifecycle action 时使用 ``ref``。
+模型自己拥有行为时使用具体生命周期动作；生成代码需要调用用户行为时使用 ``abstract``；多个状态复用命名生命周期动作时使用 ``ref``。
 
-Fragment pattern（片段，不是完整 checked file；后面有完整 checked file）：
+片段模式（片段，不是完整已验证文件；后面有完整已验证文件）：
 
 .. code-block:: fcstm
 
@@ -269,22 +270,22 @@ Fragment pattern（片段，不是完整 checked file；后面有完整 checked 
        }
    }
 
-``ref`` 指向 named lifecycle action，不指向 state 或 event。
-常见错误：``enter ref /Idle`` 是在引用 state path，而不是 named lifecycle action。应先命名 action，再引用这个 action path。
+``ref`` 指向命名生命周期动作，不指向状态或事件。
+常见错误：``enter ref /Idle`` 是在引用状态路径，而不是命名生命周期动作。应先命名动作，再引用这个动作路径。
 
 .. literalinclude:: ../../tutorials/dsl/abstract_reference_demo.fcstm
    :language: fcstm
-   :caption: Abstract 和 reference action 示例；预期 diagnostics：两个 ``I_UNREFERENCED_VAR_MAYBE_ABSTRACT`` 和一个 ``I_TRANSITION_NEVER_EVENT_TRIGGERED``\ 。
+   :caption: 抽象动作和引用动作示例；预期诊断：两个 ``I_UNREFERENCED_VAR_MAYBE_ABSTRACT`` 和一个 ``I_TRANSITION_NEVER_EVENT_TRIGGERED``\ 。
 
-Lifecycle ordering 可参考：
+生命周期顺序可参考：
 
 .. image:: ../../tutorials/dsl/leaf_state_lifecycle.puml.svg
-   :alt: Leaf state lifecycle
+   :alt: 叶状态生命周期
 
 .. image:: ../../tutorials/dsl/composite_state_lifecycle.puml.svg
-   :alt: Composite state lifecycle
+   :alt: 复合状态生命周期
 
-验证 checked lifecycle 示例：
+验证已检查生命周期示例：
 
 .. code-block:: bash
 
@@ -299,28 +300,27 @@ Lifecycle ordering 可参考：
 
 .. _dsl-aspect-task-zh:
 
-使用 during aspect
-------------------
+使用活动切面
+------------
 
-当 ancestor 需要在 descendant leaf-state active cycle 前后做监控或日志时，使用 ``>> during before`` 和 ``>> during after``。不要把它们和 composite 的 plain ``during before`` / ``during after`` 混为一谈。
+当祖先状态需要在后代叶状态活动周期前后做监控或日志时，使用 ``>> during before`` 和 ``>> during after``。不要把它们和复合状态的普通 ``during before`` / ``during after`` 混为一谈。
 
 .. literalinclude:: ../../tutorials/dsl/hierarchy_execution.fcstm
    :language: fcstm
-   :caption: Aspect 与 hierarchy execution 示例；预期 diagnostics：``W_UNREFERENCED_VAR`` 和 ``I_TRANSITION_NEVER_EVENT_TRIGGERED``\ 。
+   :caption: 切面与层级执行示例；预期诊断：``W_UNREFERENCED_VAR`` 和 ``I_TRANSITION_NEVER_EVENT_TRIGGERED``\ 。
 
 解释：
 
-* ancestor ``>> during before`` 在 active leaf ``during`` 前运行；
-* ancestor ``>> during after`` 在 active leaf ``during`` 后运行；
-* plain composite ``during before`` / ``during after`` 属于 composite entry/exit 语义，不包裹 child-to-child transition；
-* aspect action 不在 combo 伪中继状态（combo pseudo relay state）内运行。
+* 祖先状态 ``>> during before`` 在活动叶状态 ``during`` 前运行；
+* 祖先状态 ``>> during after`` 在活动叶状态 ``during`` 后运行；
+* 普通复合状态 ``during before`` / ``during after`` 属于复合状态进入/退出语义，不包裹子状态到子状态转换；
+* 切面动作不在组合伪中继状态内运行。
 
-常见错误：不要用 aspect 去观察 combo relay hop。Combo relay pseudo state 是 generated routing machinery；业务日志应放在
-authored state 或 transition effect 上。
+常见错误：不要用切面去观察组合中继跳转。伪中继状态是生成的路由结构；业务日志应放在作者写的状态或转换效果动作上。
 
 详见 :ref:`dsl-during-aspect-semantics-zh`。
 
-验证 checked aspect 示例：
+验证已检查切面示例：
 
 .. code-block:: bash
 
@@ -335,26 +335,33 @@ authored state 或 transition effect 上。
 
 .. _dsl-forced-transition-task-zh:
 
-编写 forced transition
+编写强制转换
 ----------------------
 
-当一个声明要展开到多个 source states 时使用 forced transition。Forced transition 是 expansion shorthand，不是隐藏共享 side effect 的办法。
+当一个声明要展开到多个来源状态时使用强制转换。强制转换是展开简写，不是隐藏共享副作用的办法。
 
 .. literalinclude:: ../../tutorials/dsl/forced_transitions.fcstm
    :language: fcstm
-   :caption: Forced transition 示例；预期 diagnostics：两个演示变量触发 ``W_UNREFERENCED_VAR``\ 。
+   :caption: 强制转换示例；预期诊断：两个演示变量触发 ``W_UNREFERENCED_VAR``\ 。
+
+.. figure:: ../../tutorials/dsl/forced_transitions.fcstm.puml.svg
+   :alt: 强制转换展开图
+   :align: center
+
+   这张图展示强制转换展开后的结构。源码里只有两条强制声明，但检查模型中会出现多条带
+   ``forced_origin`` 的展开转换。图中 ``Running`` 的子状态也会通过退出标记参与紧急停止路径，
+   这说明强制转换不是“跳过层级”，而是在展开后仍遵循普通退出语义。
 
 规则：
 
-* ``!State -> Target :: Event;`` 从 named source 及其可达 nested sources 展开。
-* ``!* -> Target :: Event;`` 从 owner scope 内所有适用 source 展开。
-* Forced transition 可以带一个 local、chain/root 或 guard trigger。
-* 它不能带 combo ``+`` chain，也不能有 ``effect`` block。
+* ``!State -> Target :: Event;`` 从命名来源及其可达嵌套来源展开。
+* ``!* -> Target :: Event;`` 从拥有者作用域内所有适用来源展开。
+* 强制转换可以带一个本地、链式 / 根事件或守卫触发器。
+* 它不能带组合 ``+`` 链，也不能有 ``effect`` 块。
 
-需要共享 side effect 时，把行为放到 target ``enter``，或写显式 normal transitions。原因见 :ref:`dsl-forced-transition-expansion-zh`。
+需要共享副作用时，把行为放到目标状态 ``enter``，或写显式普通转换。原因见 :ref:`dsl-forced-transition-expansion-zh`。
 
-常见错误：``!* -> Target :: Event effect { ... };`` 是非法的。Forced transition 会展开成多条普通 transition，复制 side effect
-会隐藏行为；需要 effect 时请写显式 normal transition。
+常见错误：``!* -> Target :: Event effect { ... };`` 是非法的。强制转换会展开成多条普通转换，复制副作用会隐藏行为；需要效果动作时请写显式普通转换。
 
 验证展开规模：
 
@@ -370,16 +377,44 @@ authored state 或 transition effect 上。
    transitions: 17
    diagnostics: 0 errors / 2 warnings / 0 infos
 
+展开读法：
+
+.. list-table:: 强制转换展开读法
+   :header-rows: 1
+   :widths: 26 34 40
+
+   * - 作者写法
+     - 展开效果
+     - 用户应检查什么
+   * - ``!* -> ErrorHandler :: CriticalError;``
+     - 当前拥有者作用域内多个状态都能响应 ``CriticalError``。
+     - ``forced_transitions[].from_path`` 为 ``*``，``expansion_count`` 给出展开数量。
+   * - ``!Running -> SafeMode :: EmergencyStop;``
+     - ``Running`` 及其相关子路径会得到紧急停止出口。
+     - 展开边的 ``forced_origin`` 保留原始声明文本。
+   * - 不允许 ``effect``
+     - 展开不会复制副作用。
+     - 共享副作用应放到 ``SafeMode.enter`` / ``ErrorHandler.enter``，或写显式普通转换。
+
 .. _dsl-combo-transition-task-zh:
 
-编写 combo transition
+编写组合转换
 ---------------------
 
-当一个 transition 需要同一个 cycle 内按顺序满足多个 event term 和 guard term 时，使用 combo trigger。Combo transition 在 model construction 阶段展开成伪中继状态（pseudo relay states）；simulation、inspect、generation 和 PlantUML 都消费展开后的模型。
+当一个转换需要在同一个周期内按顺序满足多个事件项和守卫项时，使用组合触发器。组合转换在模型构建阶段展开成伪中继状态；仿真、检查、生成和 PlantUML 都消费展开后的模型。
 
 .. literalinclude:: ../../tutorials/dsl/combo_transitions.fcstm
    :language: fcstm
-   :caption: Normal combo、entry combo、guard alias、root event term、effect 和 generated pseudo relay states；预期 diagnostics：none。
+   :caption: 普通组合、初始组合、守卫别名、根事件项、效果动作和生成的伪中继状态；预期诊断：无。
+
+.. figure:: ../../tutorials/dsl/combo_transitions.fcstm.puml.svg
+   :alt: 组合转换展开图
+   :align: center
+
+   图中的 ``__combo_`` 节点是生成的伪中继状态，不是作者写的业务状态。以
+   ``Waiting -> Accepted :: Request + [ready > 0] + Confirm`` 为例，图中会先从
+   ``Waiting`` 到第一个中继节点消费 ``Request``，再经过守卫边，最后消费 ``Confirm`` 进入
+   ``Accepted``。原始效果动作只在最后一跳执行。
 
 验证展开：
 
@@ -389,71 +424,114 @@ authored state 或 transition effect 上。
 
 JSON 中重点看：
 
-* ``combo_origins`` 保留 author-written trigger 和每个 term；
-* ``combo_transitions`` 列出带溯源信息（provenance）的 generated edges；
-* ``states`` 中会出现 ``is_pseudo=true`` 且以 ``__combo_`` 开头的 generated pseudo states。
+* ``combo_origins`` 保留作者写的触发器和每个项；
+* ``combo_transitions`` 列出带溯源信息的生成边；
+* ``states`` 中会出现 ``is_pseudo=true`` 且以 ``__combo_`` 开头的生成伪状态。
+
+概念展开：
+
+.. code-block:: fcstm
+
+   // 作者写法
+   Waiting -> Accepted :: Request + [ready > 0] + Confirm effect {
+       accepted = accepted + 1;
+   }
+
+   // 概念展开。真实中继名带哈希，不应手写。
+   Waiting -> __combo_waiting_request :: Request;
+   __combo_waiting_request -> __combo_waiting_ready : if [ready > 0];
+   __combo_waiting_ready -> Accepted :: Confirm effect {
+       accepted = accepted + 1;
+   }
+
+.. list-table:: 组合转换展开读法
+   :header-rows: 1
+   :widths: 24 36 40
+
+   * - 触发项
+     - 展开边
+     - 用户应检查什么
+   * - ``Request``
+     - 从业务状态到第一个伪中继状态的事件边。
+     - ``combo_transitions`` 中这一跳 ``effect`` 为空。
+   * - ``[ready > 0]``
+     - 两个伪中继状态之间的守卫边。
+     - 守卫失败时不会进入目标状态。
+   * - ``Confirm``
+     - 最后一跳进入目标状态。
+     - 原始 ``effect`` 只在这一跳出现。
+   * - ``__combo_`` 状态
+     - 生成的纯路由节点。
+     - 不写业务动作；不执行切面动作。
 
 修复示例：
 
 .. code-block:: fcstm
 
-   // Bad: ordinary event suffix 后又接 guard suffix。
+   // 错误：普通事件后缀后又接守卫后缀。
    A -> B :: Go if [ready > 0];
 
-   // Good: combo 使用 bracketed guard term。
+   // 正确：组合转换使用方括号守卫项。
    A -> B :: Go + [ready > 0];
 
-重复 event term 合法但可疑。Checked warning 示例：
+重复事件项合法但可疑。已验证警告示例：
 
 .. literalinclude:: ../../tutorials/dsl/combo_duplicate_event.fcstm
    :language: fcstm
-   :caption: 故意重复 event term 的 combo 示例；预期 diagnostics：``W_COMBO_DUPLICATE_EVENT`` 和 ``I_TRANSITION_NEVER_EVENT_TRIGGERED``\ 。
+   :caption: 故意重复事件项的组合示例；预期诊断：``W_COMBO_DUPLICATE_EVENT`` 和 ``I_TRANSITION_NEVER_EVENT_TRIGGERED``\ 。
 
 .. _dsl-import-task-zh:
 
-组装 import
+组装导入
 -----------
 
-当一个 composite state 需要把另一个 FCSTM module 作为 child 时使用 import。Import syntax 在 DSL 中解析；path resolution 和 assembly 在 Python model/import 层执行。
+当一个复合状态需要把另一个 FCSTM 模块作为子状态时使用导入。导入语法在 DSL 中解析；路径解析和组装在 Python 模型 / 导入层执行。
 
-Basic import：
+基本导入：
 
 .. literalinclude:: ../../tutorials/dsl/import_host_basic.fcstm
    :language: fcstm
-   :caption: Basic import host；预期 diagnostics：两个 ``W_UNREFERENCED_VAR``\ 。
+   :caption: 基本导入 host；预期诊断：两个 ``W_UNREFERENCED_VAR``\ 。
 
-Mapping import：
+映射导入：
 
 .. literalinclude:: ../../tutorials/dsl/import_host_mapped.fcstm
    :language: fcstm
-   :caption: Import with variable and event mappings；预期 diagnostics：三个 ``W_UNREFERENCED_VAR``\ 。
+   :caption: 带变量和事件映射的导入；预期诊断：三个 ``W_UNREFERENCED_VAR``\ 。
 
-Imported worker：
+.. figure:: ../../tutorials/dsl/import_host_mapped.fcstm.puml.svg
+   :alt: 导入映射后的宿主模型图
+   :align: center
+
+   图中宿主模型把被导入模块挂到别名下面。映射不是文本替换脚本，而是模型组装阶段的重写：
+   变量名和事件路径按映射表变成宿主可见的名称。复核时应同时看图中的状态树和检查输出中的变量、事件、转换路径。
+
+被导入工作模块：
 
 .. literalinclude:: ../../tutorials/dsl/import_worker.fcstm
    :language: fcstm
-   :caption: Imported worker module；预期 diagnostics：两个 ``W_UNREFERENCED_VAR``\ 。
+   :caption: Imported worker module；预期诊断：两个 ``W_UNREFERENCED_VAR``\ 。
 
-Directory entry import：
+目录入口导入：
 
 .. literalinclude:: ../../tutorials/dsl/import_host_directory.fcstm
    :language: fcstm
-   :caption: 通过显式 ``main.fcstm`` entry file 的 directory-style import；预期 diagnostics：``W_UNUSED_EVENT``、``W_DEADLOCK_LEAF`` 和 ``W_UNREFERENCED_VAR``\ ，均来自演示用 imported resources。
+   :caption: 通过显式 ``main.fcstm`` entry file 的 directory-style import；预期诊断：``W_UNUSED_EVENT``、``W_DEADLOCK_LEAF`` 和 ``W_UNREFERENCED_VAR``\ ，均来自演示用 imported resources。
 
-Mapping facts：
+映射事实：
 
-* ``def speed -> plant_speed;`` 映射一个 imported variable 到一个 host variable。
-* ``def sensor_* -> left_$1;`` 捕获 wildcard suffix，并插入 target template。
-* ``def * -> prefix_$0;`` 是 fallback mapping；``$0`` 表示完整 imported variable name。
-* ``event /Start -> Start;`` 映射 imported root event 到 host event。
-* Directory project 必须 import 具体 entry file，例如 ``./import_line/main.fcstm``；bare directory 不是 DSL file。
+* ``def speed -> plant_speed;`` 映射一个被导入变量到一个宿主变量。
+* ``def sensor_* -> left_$1;`` 捕获通配后缀，并插入目标模板。
+* ``def * -> prefix_$0;`` 是兜底映射；``$0`` 表示完整被导入变量名。
+* ``event /Start -> Start;`` 映射被导入根事件到宿主事件。
+* 目录项目必须导入具体入口文件，例如 ``./import_line/main.fcstm``；裸目录不是 DSL 文件。
 
-常见错误：bare directory path 不会被当作 DSL source 加载；``def sensor_* -> left_$2;`` 这样的 out-of-range placeholder
-会触发 import mapping validation error。``$0`` 表示完整 imported name，``$1`` / ``${1}`` 表示第一个 wildcard capture。
+常见错误：裸目录路径不会被当作 DSL 源加载；``def sensor_* -> left_$2;`` 这样的越界占位符
+会触发导入映射验证错误。``$0`` 表示完整被导入名称，``$1`` / ``${1}`` 表示第一个通配捕获。
 
-Preamble form（如 ``name = value;`` 和 ``name := value;``）是 import assembly helper/test 使用的 parser-helper entry point，不是普通 ``state_machine_dsl`` 文件里的 root-level ``def``。边界见 :ref:`dsl-import-preamble-forms-zh`。
+前置片段形式（preamble form，如 ``name = value;`` 和 ``name := value;``）是导入组装辅助测试使用的解析辅助入口，不是普通 ``state_machine_dsl`` 文件里的根级 ``def``。边界见 :ref:`dsl-import-preamble-forms-zh`。
 
-从仓库根目录验证 mapped import：
+从仓库根目录验证映射导入：
 
 .. code-block:: bash
 
@@ -467,7 +545,7 @@ Preamble form（如 ``name = value;`` 和 ``name := value;``）是 import assemb
    variables: 3
    diagnostics: 0 errors / 3 warnings / 0 infos
 
-验证 directory-entry import：
+验证目录入口导入：
 
 .. code-block:: bash
 
@@ -485,49 +563,49 @@ Preamble form（如 ``name = value;`` 和 ``name := value;``）是 import assemb
 诊断并修复 DSL 错误
 --------------------
 
-把 inspect diagnostics 当成 repair loop：
+把检查诊断当成修复循环：
 
 .. code-block:: bash
 
    pyfcstm inspect -i docs/source/tutorials/dsl/combo_duplicate_event.fcstm --format json
 
-Diagnostic 包含 ``code``、``severity``、human message、source span 和 ``refs`` payload。很多 diagnostic 也携带 suggested fix。
+诊断包含 ``code``、``severity``、面向人的消息、源码区间和 ``refs`` 载荷。很多诊断也携带建议修复。
 
-.. list-table:: Diagnostic repair lab
+.. list-table:: 诊断修复练习
    :header-rows: 1
    :widths: 22 30 48
 
    * - 示例
-     - 预期 code
+     - 预期诊断码
      - 修复方向
    * - ``combo_duplicate_event.fcstm``
      - ``W_COMBO_DUPLICATE_EVENT``
-     - 检查第二个 event term 是否写错。只有确实需要显式 two-hop relay 时才保留。
+     - 检查第二个事件项是否写错。只有确实需要显式两跳中继时才保留。
    * - ``guard_vars_never_change.fcstm``
      - ``W_UNWRITTEN_READ_VAR`` + ``W_GUARD_VARS_NEVER_CHANGE`` + ``I_TRANSITION_NEVER_EVENT_TRIGGERED``
-     - 添加缺失的 lifecycle/effect write，或确认这是 intentional initial-value-only guard 后简化 guard；exit transition info 是这个最小 warning fixture 的预期输出。
+     - 添加缺失的生命周期 / 效果动作写入，或确认这是有意的初值守卫后简化守卫；退出转换信息是这个最小警告示例的预期输出。
    * - ``during_const_assign.fcstm``
      - ``W_DURING_CONST_ASSIGN``
-     - 一次性初始化移到 ``enter``，或让 ``during`` expression 依赖 runtime state。
+     - 一次性初始化移到 ``enter``，或让 ``during`` 表达式依赖运行时状态。
    * - ``numeric_target_range.fcstm``
      - ``W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE``
-     - 这是 ``c`` / ``c_poll`` / ``cpp`` / ``cpp_poll`` 的 C/C++ deployment-profile warning，不代表 Python generated code 具有同样 fixed-width risk。
+     - 这是 ``c`` / ``c_poll`` / ``cpp`` / ``cpp_poll`` 的 C/C++ 部署配置警告，不代表 Python 生成代码具有同样固定位宽风险。
 
-最小坏语法示例作为 text fixture 保存，因为它故意不是可解析的 ``*.fcstm`` 文件：
+最小坏语法示例作为文本夹具（text fixture）保存，因为它故意不是可解析的 ``*.fcstm`` 文件：
 
 .. literalinclude:: ../../tutorials/dsl/event_guard_mixed_invalid.fcstm.txt
    :language: fcstm
    :caption: 故意 parser error；预期 excerpt：``Unexpected token 'if'``\ 。
 
-它失败的原因是 ordinary event syntax 和 ordinary guard syntax 是两种独立 transition forms。修复为 combo syntax：
+它失败的原因是普通事件语法和普通守卫语法是两种独立转换形式。修复为组合语法：
 
 .. code-block:: fcstm
 
    A -> B :: Go + [ready > 0];
 
-Code-level 细节见 :doc:`../../reference/diagnostics_codes/index_zh`。
+代码层细节见 :doc:`../../reference/diagnostics_codes/index_zh`。
 
-验证 intentional warning 文件：
+验证有意触发警告的文件：
 
 .. code-block:: bash
 

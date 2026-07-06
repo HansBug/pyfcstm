@@ -1309,6 +1309,35 @@ Requires: `sphinx`, `sphinx-multiversion`, `plantumlcli`, `graphviz` (`dot`), `j
 Language selection via `READTHEDOCS_LANGUAGE` env var (default `en`). [docs/source/conf.py](docs/source/conf.py) copies
 `index_<lang>.rst` → `index.rst` at build time. Language codes normalized (`zh-CN`, `zh_CN` → `zh`).
 
+#### Chinese Technical Terminology Discipline
+
+Chinese documentation should read as Chinese prose, not as English prose with Chinese glue words. In ordinary Chinese
+sentences, prefer Chinese technical terms. When an English term is genuinely needed for precision, write it only at the
+first occurrence on the same page as ``中文术语（English term）`` and use the Chinese term alone afterwards.
+
+Examples:
+
+- First occurrence: ``组合转换（combo transition）``; later occurrences: ``组合转换``.
+- First occurrence: ``强制转换（forced transition）``; later occurrences: ``强制转换``.
+- First occurrence: ``伪中继状态（pseudo relay state）``; later occurrences: ``伪中继状态``.
+
+This rule applies to normal paragraphs, list items, table headings, table cells, figure captions, and tutorial
+explanations. Do not repeatedly sprinkle words such as ``combo``, ``forced``, ``relay``, ``runtime``, ``source``,
+``target``, ``generated``, ``checked``, ``form``, or ``fact`` through Chinese prose after the concept has been
+introduced.
+
+Literal correctness still wins where text is not prose. Keep the following verbatim:
+
+- code, commands, file paths, module paths, API names, identifiers, and generated output
+- DSL keywords such as ``state``, ``enter``, ``during``, ``exit``, and ``effect``
+- grammar rule names such as ``combo_transition_trigger``
+- JSON field names, diagnostic codes, target template names, and target identifiers such as ``c``, ``cpp``, and
+  ``python``
+- short source-code labels where translating would make the example inaccurate
+
+When reviewing Chinese documentation, treat unnecessary English-term repetition as a real documentation-quality issue.
+If a page needs a terminology reminder, add a compact term list near the beginning and then keep later prose Chinese.
+
 #### File Naming Conventions
 
 - Root level: `index_en.rst`, `index_zh.rst` (sources); `index.rst` (generated—do not edit directly)

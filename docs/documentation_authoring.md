@@ -111,13 +111,14 @@ Required source-fact checklist:
 
 - `pyfcstm/entry/generate.py`;
 - `pyfcstm/render/render.py`, `pyfcstm/render/env.py`, `pyfcstm/render/func.py`,
-  `pyfcstm/render/expr.py`, and `pyfcstm/render/statement.py`;
+  `pyfcstm/render/expr.py`, `pyfcstm/render/statement.py`, and `pyfcstm/render/c_runtime.py`;
 - `pyfcstm/template/__init__.py` and `pyfcstm/template/index.json`;
 - `templates/README*.md`, `templates/*/README*.md`, `templates/*/README*.j2`,
   `templates/*/config.yaml`, and `templates/*/template.json`;
-- `tools/package_templates.py` when documenting built-in template packaging or maintainer workflows;
-- `test/render/*` and `test/template/*` when documenting renderer validation, generated-runtime behavior, or built-in
-  template guarantees.
+- `tools/package_templates.py`, `setup.py`, and `MANIFEST.in` when documenting built-in template packaging,
+  source-install, or maintainer workflows;
+- `test/entry/test_generate.py`, `test/render/*`, and `test/template/*` when documenting CLI errors, renderer
+  validation, generated-runtime behavior, or built-in template guarantees.
 
 Minimum capability checklist:
 
@@ -144,6 +145,9 @@ Reference floors:
   user-visible generated-file and entry-point contract. A matrix of names alone is too thin.
 - Generation-related CLI reference must include the missing-template, both-template-options, unknown-template, invalid
   config, and template render failure classes that are visible to users.
+- C-family generation claims must read the renderer helper layer that the templates import. If a page documents C/C++
+  target-specific expression, condition, action-body, reset, diagnostic, or failure behavior, `pyfcstm/render/c_runtime.py`
+  and the generated-template tests are mandatory source facts.
 
 ### Inspect and diagnostics
 
@@ -156,7 +160,8 @@ Required source-fact checklist:
 - `pyfcstm/diagnostics/schema.json`;
 - `pyfcstm/diagnostics/inspect_llm_report_schema.json`;
 - `pyfcstm/diagnostics/codes.yaml`;
-- `test/entry/test_inspect.py`, `test/diagnostics/`, and `test/verify/test_inspect_adapter.py`.
+- `test/entry/test_inspect.py`, `test/diagnostics/`, and `test/verify/test_inspect_adapter.py`, including any
+  tests that validate `codes.yaml` structure or registry drift.
 
 Minimum capability checklist:
 
@@ -164,7 +169,8 @@ Minimum capability checklist:
   boundaries;
 - `ModelInspect` top-level fields, metrics, diagnostics, summary sections, source metadata, and schema-version facts;
 - LLM-oriented report fields and their intended repair-guidance boundary;
-- diagnostic-code registry counts or distribution, severity levels, capability tiers, and code ownership;
+- diagnostic-code registry counts or distribution, severity levels, emission context where discoverable, capability
+  tiers when verify-specific diagnostics depend on them, and code ownership;
 - verify-policy rejection examples where inspect output is consumed by verification tooling.
 
 Reference floors:
@@ -172,9 +178,17 @@ Reference floors:
 - `reference/inspect_report/` must contain enough field-level detail for a user to parse the JSON without reading the
   Python implementation.
 - `reference/diagnostics_codes/` must explain the complete registry shape and cannot document only the most common
-  codes unless the omitted groups are explicitly linked or deferred with a reason.
+  codes unless the omitted groups are explicitly linked or deferred with a reason. The minimum acceptable shape is a
+  complete one-row-per-code table or an equivalent generated appendix that lists every current code from `codes.yaml`,
+  its severity, short meaning, and documented trigger context.
 - Verification must include at least one human-output check, one JSON parse check, one LLM-report check when that report
   is in scope, and one invalid-input or policy-rejection example when failure behavior is documented.
+- Diagnostics references must distinguish default static checks from diagnostics that require `--enable-verify`,
+  solver-backed analysis, or a specific verify complexity tier when that distinction is part of the implementation. If
+  the source registry does not expose a machine-readable trigger field, the documentation must state how the trigger was
+  inferred or explicitly defer the trigger-detail table.
+- When LLM-oriented inspect output is documented, `inspect_llm_report_schema.json` needs its own field-level coverage or
+  a clearly linked subsection under `reference/inspect_report/`; it should not be reduced to a tutorial excerpt.
 
 ### Simulation and execution semantics
 
@@ -203,9 +217,16 @@ Minimum capability checklist:
 Reference floors:
 
 - A simulation reference page or section must exist when public simulation commands or API facts are documented; leaving
-  all exact facts in tutorials and explanations is too thin.
+  all exact facts in tutorials and explanations is too thin. At minimum it must cover CLI options, batch and REPL
+  commands, settings, event input forms, export/history formats, relevant Python API constructors or methods, and public
+  exceptions such as DFS or validation failures.
 - Execution-order explanations must include an ordering matrix or trace examples for the semantic cases they claim to
   cover. If a scenario is intentionally omitted, say which fixture or behavior family owns it.
+- Runtime-semantics explanations must map fixture families to the behaviors they prove when semantic fixture tests are
+  the evidence source. Important families include lifecycle ordering, aspect actions, pseudo chains, combo routing,
+  speculative validation rollback, hot start, terminal/end handling, and abstract-handler context.
+- If simulation examples use checked-in `.demo.*` files without a common Makefile target, the page or PR must still
+  record the exact manual command used to regenerate each output; otherwise the output is not auditable.
 
 ### CLI workflows, installation, and visualization
 
@@ -218,8 +239,8 @@ Required source-fact checklist:
   documenting installation or environment facts;
 - `pyfcstm/model/plantuml.py`, visualization option objects, and visualization entry points when documenting PlantUML
   or image rendering;
-- `test/entry/*`, `test/model/test_plantuml.py`, visualization tests, and docs `.demo.*` resources when documenting
-  command behavior.
+- `test/entry/*`, `test/model/test_plantuml.py`, `test/utils/test_parse.py`, visualization tests, and docs `.demo.*`
+  resources when documenting command behavior, `-c key=value` parsing, or rendered-output behavior.
 
 Minimum CLI workflow checklist:
 
@@ -228,13 +249,17 @@ Minimum CLI workflow checklist:
 - missing input, unknown option, invalid config, and invalid command examples where users are likely to see them;
 - a short expected output or success signal for every command-heavy how-to step, or an explicit note that the command is
   schematic.
+- When CLI help or options are changed or documented, the PR must record the exact help commands that were compared.
+  For failure examples, distinguish Click usage errors, Click choice errors, repository `ClickErrorException` errors,
+  and downstream runtime/backend failures when they have different exit codes or streams.
 
 Minimum installation checklist:
 
 - ordinary package installation, source-checkout usage, editable/developer usage when documented, and `python -m pyfcstm`
   fallback when console scripts are unavailable;
 - Python version support, core dependencies, test dependencies, documentation dependencies, and feature-specific external
-  dependencies as separate rows;
+  dependencies as separate rows. The source facts for this matrix include `setup.py`, every relevant
+  `requirements*.txt` file, and any Makefile or workflow target that installs extra tooling;
 - common failures such as `pyfcstm: command not found`, mismatched `pip` and Python interpreter, unsupported Python
   version, missing PlantUML backend, and missing native toolchain;
 - release-artifact claims only when they are traceable to a current release workflow or release page. Otherwise write a
@@ -248,6 +273,10 @@ Minimum visualization checklist:
 - `-c key=value` parser facts, legal value forms, illegal examples, unknown keys, and options that must be set through
   dedicated flags rather than generic config;
 - `PlantUMLOptions` fields, defaults, presets, and resolution order when those facts appear in reference pages.
+- visualization pages that mention direct rendering must account for tested behavior families such as strict-open
+  handling, GUI suppression through environment or CI detection, local/remote/auto renderer checks, suffix mismatch, and
+  backend success-without-output failures. If a behavior is intentionally omitted from user docs, say which reference or
+  test owns the boundary.
 
 Reference floors:
 
@@ -423,7 +452,7 @@ grep -RInE --include='*.html' 'class="problematic"|<span class="problematic"' /t
 
 For bilingual page changes, also perform a content-synchronization review. Confirm that each changed English or Chinese page has the corresponding language update, or record an explicit deferral. Compare changed headings, commands, examples, warnings, file paths, and diagnostics; a clean HTML build only proves syntax, not translation coverage.
 
-For generated documentation resources, use the generation workflow documented in `CLAUDE.md` rather than editing generated outputs directly. Run `make contents` when source resources changed and generated outputs must be refreshed.
+For generated documentation resources, use the generation workflow documented in `CLAUDE.md` rather than editing generated outputs directly. The broad `CLAUDE.md` reminder to run `make contents` applies to Sphinx/source-resource documentation changes that may refresh generated outputs. For policy-only files outside the Sphinx tree, or prose-only changes that do not affect generated resources, record why `make contents` is not applicable; otherwise run it and include any intentional generated updates.
 
 For public Python API or generated API index changes, run `make rst_auto` and include intentional generated RST updates.
 
@@ -475,7 +504,7 @@ This section records how the guide satisfies its own rules. Keep it updated when
 | Inventory field | This guide's answer |
 |---|---|
 | Scope | Maintainer and agent discipline for writing, restructuring, and reviewing pyfcstm documentation. |
-| Source facts | `CLAUDE.md` documentation rules, the current Diátaxis documentation tree under `docs/source/`, PR review patterns from the tutorials overhaul, no-context reviewer experiments over non-DSL modules, and repository commands listed in maintainer guidance. |
+| Source facts | `CLAUDE.md` documentation rules, the current Diátaxis documentation tree under `docs/source/`, repository-local source and test coverage for high-traffic documentation modules, and repository commands listed in maintainer guidance. |
 | Capability list | Define page roles, require coverage inventory, set module-specific coverage floors, set example and diagram rules, preserve bilingual terminology discipline, protect navigation/migration structure, define verification expectations, and classify review findings. |
 | Tutorial path | Not applicable: this is a maintainer policy file, not a user tutorial. The guide explicitly stays outside the Sphinx toctree. |
 | How-to tasks | Decide page role, fill module inventory, write acceptable pages, reject unacceptable pages, verify documentation changes, and review with C/I/M levels. |
@@ -485,7 +514,7 @@ This section records how the guide satisfies its own rules. Keep it updated when
 | Diagnostics and errors | Documentation review defects are classified as Critical, Important, or Minor; product diagnostic codes are referenced only when target documentation needs them. |
 | Examples and resources | The generation-module inventory is the worked non-DSL example; command snippets are short and tied to repository guidance. |
 | Migration and landing pages | The guide does not move user-facing pages; it adds a `CLAUDE.md` entry so the non-Sphinx policy file remains discoverable. |
-| Verification | `git diff --check`, `make rst_auto`, and reviewer C/I/M checks are the relevant verification path for this policy-only change; Sphinx HTML checks are required only when Sphinx source pages change. |
+| Verification | `git diff --check`, `make rst_auto`, and reviewer C/I/M checks are the relevant verification path for this policy-only change; Sphinx HTML and `make contents` checks are required when Sphinx source pages or generated documentation resources change. |
 
 Applied to this guide itself:
 

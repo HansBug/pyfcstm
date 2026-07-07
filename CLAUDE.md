@@ -1291,7 +1291,9 @@ make doc_clean  # Clean Sphinx build output only
 - `*.ipynb` for notebooks (with outputs cleared)
 - `*.rst`, `*.md` for documentation text
 
-Run `make contents` before committing documentation changes.
+Run `make contents` before committing Sphinx source or documentation resource changes that may refresh generated
+outputs. For policy-only files outside the Sphinx tree, or prose-only changes that do not affect generated resources,
+record why `make contents` is not applicable; otherwise run it and commit any intentional generated updates.
 
 #### Example Workflow
 
